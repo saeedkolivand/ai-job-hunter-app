@@ -222,3 +222,21 @@ export const useCheckBrowser = () => {
     staleTime: Infinity,
   });
 };
+
+/**
+ * Where this app's binary lives, for the agent-CLI / MCP registration commands
+ * in Developer settings. `data.exePath` may be `null` — the shell could not
+ * resolve it, and the UI has to say so rather than render half a command.
+ *
+ * `staleTime: Infinity`: the answer is the path of the process currently
+ * serving this very query, so it cannot change while the app is running (a
+ * moved install is a new launch). See `system.agentCliInfo` for the contract.
+ */
+export const useAgentCliInfo = () => {
+  const api = useAppClient();
+  return useQuery({
+    queryKey: keys.system.agentCliInfo,
+    queryFn: () => api.system.agentCliInfo(),
+    staleTime: Infinity,
+  });
+};

@@ -1,6 +1,6 @@
 # Agent CLI (`ajh-tauri agent <verb>`)
 
-Last updated: 2026-09-02
+Last updated: 2026-09-03
 
 A headless CLI mode of the shipped `ajh-tauri` binary, invoked alongside the running desktop app. Enables external programs (shell scripts, LLM agents, CI pipelines) to query job data, profile fields, and trigger commands without a GUI. The same binary, no separate install.
 
@@ -25,14 +25,16 @@ Exit codes distinguish four outcomes (see `ajh-tauri agent --help` for the full 
 
 The `error` field in exit-code-2 replies carries a fixed sentinel (not a path, URL, or echoed input). A `detail` field may also be present with additional context (e.g., the specific validation error). Full sentinel list in `ajh-tauri agent --help`.
 
-## Binary locations (v0.145.0+)
+## Binary locations
 
-| Platform                     | Path                                                                                      | On `PATH` by default?                                                              |
-| ---------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| **Linux** (deb/rpm)          | `/usr/bin/ajh-tauri`                                                                      | Yes                                                                                |
-| **macOS Homebrew**           | Symlinked via `brew install --cask ai-job-hunter`                                         | Yes                                                                                |
-| **macOS dmg drag-install**   | `/Applications/AI Job Hunter.app/Contents/MacOS/ajh-tauri`                                | No; add to `$PATH` if needed                                                       |
-| **Windows** (nsis, per-user) | User's local install directory (use `~/.ajh-agent/agent.json` to locate programmatically) | Yes, from the release after v0.145.0 (NSIS hook); before that, invoke by full path |
+The CLI is the shipped `ajh-tauri` executable itself, so where it lands — and whether anything puts it on `PATH` — is decided by each platform's packaging, not by this page. Never hardcode a path or assume `PATH`: resolve it at runtime through the pointer file (**Discovery**, below), or read it out of the app at **Settings → Developer**.
+
+Where each platform's truth lives — read the source, it moves with packaging:
+
+- **Windows (NSIS, per-user)** — the installer's PATH hook, `apps/desktop/src-tauri/windows/hooks.nsh`, wired via `bundle.windows.nsis.installerHooks` in `apps/desktop/src-tauri/tauri.conf.json`.
+- **macOS** — the Homebrew cask's `binary` stanza (`Casks/ai-job-hunter.rb`). That stanza _is_ the linking step, so whether an install is reachable by name follows from whether it went through the cask.
+- **Linux (deb/rpm)** — Tauri's own bundle layout for the `deb`/`rpm` entries in `bundle.targets` (`apps/desktop/src-tauri/tauri.conf.json`); the repo adds no override.
+- **Linux (AppImage)** — nothing is installed; the durable path is the `.AppImage` file the user launched, identified by the `launched_appimage` predicate in `apps/desktop/src-tauri/src/platform/config.rs` — never the transient mount path a process inside the image reports for itself.
 
 ## Discovery
 
@@ -43,7 +45,9 @@ A program can locate the app's binary and data directory via the pointer file:
 { "exePath": "/path/to/ajh-tauri", "dataDir": "/path/to/app-data" }
 ```
 
-Written by the app on every launch (idempotent). This is the supported mechanism for automated discovery.
+Its location is owned by `platform::config::agent_pointer_path`; `extension_bridge::register` writes it on every launch (idempotent). This is the supported mechanism for automated discovery.
+
+The `exePath` it publishes is resolved by `platform::config::agent_cli_exe_path` (see [ADR-037](decision-records/adr-037-agent-cli-as-binary-mode-thin-client.md)'s amendment for the AppImage case). For a human rather than a program, the same value is shown in the app at **Settings → Developer**, together with ready-to-copy Claude Code and Codex registration commands that already carry the path and the chosen access tier. That card is backed by `commands::system::system_agent_cli_info`, which is renderer-only: it is classified `NotExposed` in `extension_bridge/agent_cli/policy.rs`, so the agent tier cannot call it and an agent discovers the path through the pointer file instead. Card, command and pointer file all read the one resolver, so they cannot disagree.
 
 ## Design & constraints
 

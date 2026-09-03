@@ -636,10 +636,12 @@ button[aria-disabled='true'] {
 }
 
 /* ── Focus rings ─────────────────────────────────────────────────────────── */
-/* Visible default focus ring for every keyboard-focusable element. Components
-   that render their own ring pair `focus-visible:outline-none` with it (higher
-   specificity than this bare `:focus-visible`), so they opt out automatically —
-   no double ring. This closes the WCAG 2.4.7 hole left by a blanket reset. */
+/* Visible default focus ring for every keyboard-focusable element. This rule is
+   UNLAYERED while Tailwind v4 emits utilities inside @layer, so an unlayered
+   rule wins at any specificity: a `focus-visible:outline-none` class does NOT
+   opt a component out of it. Opt-outs live below, as unlayered CSS beside this
+   ring (or as an inline style, the DropdownSearch precedent). This closes the
+   WCAG 2.4.7 hole left by a blanket reset. */
 :focus-visible {
   outline: 2px solid var(--color-brand);
   outline-offset: 2px;

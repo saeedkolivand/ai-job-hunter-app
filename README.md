@@ -354,7 +354,9 @@ ajh-tauri agent --help
 export PATH="/Applications/AI Job Hunter.app/Contents/MacOS:$PATH"
 ```
 
-On **Windows**, the installer adds the per-user install directory to your `PATH` — **from the next release onward**. On v0.145.0 and earlier, invoke the binary by full path (use `~/.ajh-agent/agent.json` to locate it programmatically).
+On **Windows**, the NSIS installer adds its per-user install directory to your `PATH`. If `ajh-tauri` still isn't found, invoke it by full path — `~/.ajh-agent/agent.json` carries it as `exePath` (the app rewrites that file on every launch).
+
+**In the app:** Settings → Developer shows this binary's path and ready-to-copy registration commands for Claude Code and Codex with that path already filled in.
 
 **Requirements:** Bridge-backed calls need the app running; `--help`, MCP startup (`initialize`) and the local `commands` tool do not. The CLI communicates over a local loopback bridge with mutual HMAC-SHA256 authentication (the pairing token is used only as an HMAC key and is never sent on the wire). Run `ajh-tauri agent --help` to see all verbs, exit codes, and error sentinels. For the design rationale see <a href="docs/knowledge/decision-records/adr-037-agent-cli-as-binary-mode-thin-client.md" target="_blank" rel="noopener noreferrer">ADR-037</a> and <a href="docs/knowledge/decision-records/adr-038-agent-cli-full-parity-two-tier.md" target="_blank" rel="noopener noreferrer">ADR-038</a>; for the full policy table, use the MCP `commands` tool or read `apps/desktop/src-tauri/src/extension_bridge/agent_cli/policy.rs` (`agent schema` lists only the five curated resources).
 
@@ -387,7 +389,7 @@ The flags only decide which tools the model can _see_; every write still goes th
 <details>
 <summary>Codex</summary>
 
-Add to your `~/.codex/config.toml` (or create it). On Windows use the full `exePath` from `~/.ajh-agent/agent.json` until the PATH hook ships in a release:
+Add to your `~/.codex/config.toml` (or create it):
 
 ```toml
 [mcp_servers.ai-job-hunter]

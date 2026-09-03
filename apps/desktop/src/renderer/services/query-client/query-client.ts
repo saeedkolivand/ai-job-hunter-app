@@ -66,6 +66,7 @@ export const keys = {
     checkBrowser: ['system', 'checkBrowser'] as const,
     launchAtLogin: ['system', 'launchAtLogin'] as const,
     accent: ['system', 'accent'] as const,
+    agentCliInfo: ['system', 'agentCliInfo'] as const,
   },
   jobs: { all: ['jobs'] as const, detail: (id: string) => ['jobs', id] as const },
   ai: {

@@ -63,6 +63,12 @@ pub enum QueryMode {
     /// filter list, and under [`QueryMode::All`] its function words ("how",
     /// "my", "as") turn it into a conjunction no help entry satisfies, so the
     /// arm returns zero hits for a perfectly answerable question.
+    ///
+    /// Those same function words are then the mode's own problem: each one is
+    /// an OR branch matching most of the corpus. The caller passes the list to
+    /// drop ([`LexicalIndex::search_any`]'s `stopwords`), because which words
+    /// carry no signal is a property of the corpus's LANGUAGE, which this
+    /// module deliberately knows nothing about.
     Any,
 }
 
@@ -97,7 +103,7 @@ const ANY_MIN_TOKEN_CHARS: usize = 2;
 /// ONE quoting implementation for both modes on purpose: an `OR` variant with
 /// its own escaping would be a second place for that hardening to drift out
 /// of, including the NUL-byte case `LexicalIndex::search` documents.
-fn sanitize_query(query: &str, mode: QueryMode) -> String {
+fn sanitize_query(query: &str, mode: QueryMode, stopwords: &[&str]) -> String {
     let quote = |tok: &str| format!("\"{}\"", tok.replace('"', "\"\""));
     match mode {
         QueryMode::All => query
@@ -110,14 +116,48 @@ fn sanitize_query(query: &str, mode: QueryMode) -> String {
                 .split_whitespace()
                 // ASCII-gated on purpose — see [`ANY_MIN_TOKEN_CHARS`].
                 .filter(|tok| !(tok.is_ascii() && tok.chars().count() < ANY_MIN_TOKEN_CHARS))
+                .filter(|tok| !is_stopword(tok, stopwords))
                 .map(&quote)
                 .collect();
+            // Covers BOTH filters above: a question made entirely of function
+            // words ("What is it?") would otherwise sanitize to the empty
+            // string, which `search_in` answers with zero hits — reported as
+            // `Ran`, and on a default install that is the only arm there is.
+            // Falling back to the unfiltered tokens ranks it badly rather
+            // than silently answering nothing.
+            //
+            // This is only the TOKEN-list half of that fallback. A question
+            // whose surviving tokens are all absent from the corpus ("Where
+            // is my stuff?" — `stuff` is in no entry) sanitizes to a
+            // NON-empty expression that still matches zero rows, which this
+            // check cannot see; `search_in` catches that one on the RESULT
+            // set. Two halves of one rule, deliberately in the two places
+            // that can each observe their own half.
             if tokens.is_empty() {
                 tokens = query.split_whitespace().map(quote).collect();
             }
             tokens.join(" OR ")
         }
     }
+}
+
+/// Whether a RAW query token is on the drop list.
+///
+/// Folded before the comparison, because tokens reach here exactly as typed:
+/// `"How"` and `"work?"` are what `split_whitespace` yields, so the obvious
+/// `stopwords.contains(&tok)` silently matches neither — a filter that no-ops
+/// on precisely the tokens it was added for, with every lowercase unpunctuated
+/// test still passing. Lowercased, and trimmed of leading/trailing
+/// non-alphanumerics (FTS5's own tokenizer does the same thing later, so this
+/// folding does not change which documents a surviving token matches).
+fn is_stopword(token: &str, stopwords: &[&str]) -> bool {
+    if stopwords.is_empty() {
+        return false;
+    }
+    let folded = token
+        .trim_matches(|c: char| !c.is_alphanumeric())
+        .to_lowercase();
+    !folded.is_empty() && stopwords.contains(&folded.as_str())
 }
 
 /// An in-memory FTS5 index, built fresh per search (see module doc).
@@ -188,7 +228,9 @@ impl LexicalIndex {
     /// — `commands::hybrid_search` maps `Err` to `ArmStatus::Unavailable` —
     /// which is an L3 reporting decision, not this L1 module's to make.
     pub fn search(&self, query: &str, limit: usize) -> AppResult<Vec<String>> {
-        self.search_in(query, QueryMode::All, limit)
+        // No drop list: under [`QueryMode::All`] every token NARROWS the
+        // result, so dropping one would silently widen a user's own filter.
+        self.search_in(query, QueryMode::All, &[], limit)
     }
 
     /// [`Self::search`]'s sibling for a QUESTION rather than a search box:
@@ -200,15 +242,71 @@ impl LexicalIndex {
     /// postings search box must stay on AND (every word the user typed is a
     /// filter), so the two callers state which contract they want at the call
     /// site instead of passing a flag that could be flipped for both at once.
-    pub fn search_any(&self, query: &str, limit: usize) -> AppResult<Vec<String>> {
-        self.search_in(query, QueryMode::Any, limit)
+    ///
+    /// `stopwords` are the question's own function words to drop before the
+    /// OR-join, lowercased and already folded by the caller's table. Passed IN
+    /// rather than looked up here: which words carry no signal depends on the
+    /// corpus's language, and this module indexes text without knowing (or
+    /// wanting to know) what language it is in. Pass `&[]` to drop nothing.
+    ///
+    /// **Dropping a token can never turn hits into a miss.** A drop list only
+    /// costs recall, so both ways it can zero out a result are undone rather
+    /// than reported as an honest "no answer": if it empties the TOKEN list
+    /// the unfiltered tokens are used instead ([`sanitize_query`]), and if
+    /// the surviving tokens match no ROW the unfiltered expression is run
+    /// once more ([`Self::search_in`]). A non-empty result is never re-ranked
+    /// — that would undo the filtering itself.
+    pub fn search_any(
+        &self,
+        query: &str,
+        limit: usize,
+        stopwords: &[&str],
+    ) -> AppResult<Vec<String>> {
+        self.search_in(query, QueryMode::Any, stopwords, limit)
     }
 
-    fn search_in(&self, query: &str, mode: QueryMode, limit: usize) -> AppResult<Vec<String>> {
-        let sanitized = sanitize_query(query, mode);
+    fn search_in(
+        &self,
+        query: &str,
+        mode: QueryMode,
+        stopwords: &[&str],
+        limit: usize,
+    ) -> AppResult<Vec<String>> {
+        let sanitized = sanitize_query(query, mode, stopwords);
         if sanitized.is_empty() {
             return Ok(Vec::new());
         }
+        let hits = self.match_ids(&sanitized, limit)?;
+        // The RESULT-set half of the drop list's fallback (see
+        // `sanitize_query`'s own note). A dropped token can only ever cost
+        // recall, so a filtered query that matched NOTHING has nothing to
+        // lose by being asked again unfiltered: "Where is my stuff?" keeps
+        // only `stuff`, which is in no help entry, and the arm reported
+        // `Ran` with zero hits for a question the unfiltered expression
+        // answers at rank 2 — on a default install (`semantic_scoring` off)
+        // that is the only arm there is.
+        //
+        // Narrow on purpose: ONLY when a drop list was actually applied
+        // (`Any` + non-empty `stopwords`), only when the two expressions
+        // really differ (nothing was dropped ⇒ nothing to retry), and only
+        // on a genuinely EMPTY result — never a re-rank of a non-empty one,
+        // which would undo the filtering the list exists for. At most one
+        // extra query per search, against an in-memory index.
+        if !hits.is_empty() || mode != QueryMode::Any || stopwords.is_empty() {
+            return Ok(hits);
+        }
+        let unfiltered = sanitize_query(query, mode, &[]);
+        if unfiltered.is_empty() || unfiltered == sanitized {
+            return Ok(hits);
+        }
+        self.match_ids(&unfiltered, limit)
+    }
+
+    /// Run one already-sanitized `MATCH` expression and map its rows back to
+    /// caller ids. Split out of [`Self::search_in`] so the fallback above
+    /// re-runs the query without a second copy of the SQL, the weights or
+    /// the row-id mapping.
+    fn match_ids(&self, expression: &str, limit: usize) -> AppResult<Vec<String>> {
         let (w_title, w_company, w_location, w_description) = BM25_WEIGHTS;
         // `ORDER BY bm25(...)` ascending (the default) is correct as written:
         // FTS5's bm25() returns SMALLER values for a BETTER match.
@@ -217,7 +315,7 @@ impl LexicalIndex {
         let mut stmt = self.conn.prepare(sql)?;
         let rows = stmt.query_map(
             params![
-                sanitized,
+                expression,
                 w_title,
                 w_company,
                 w_location,

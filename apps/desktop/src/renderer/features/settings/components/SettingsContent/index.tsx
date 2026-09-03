@@ -10,6 +10,7 @@ import { ContactProfileTab } from '@/features/settings/components/contact/Contac
 import { GeneralSection } from '@/features/settings/components/general-section';
 import { AppearanceCard } from '@/features/settings/components/general-section/AppearanceCard';
 import { AgencyCompaniesPreferences } from '@/features/settings/components/preferences/AgencyCompaniesPreferences';
+import { AgentCliSection } from '@/features/settings/components/preferences/AgentCliSection';
 import { AggregatorKeysSettings } from '@/features/settings/components/preferences/AggregatorKeysSettings';
 import { DeveloperPreferences } from '@/features/settings/components/preferences/DeveloperPreferences';
 import { JobLocationPreferences } from '@/features/settings/components/preferences/JobLocationPreferences';
@@ -101,9 +102,14 @@ export function SettingsContent({
       </div>
     ),
     developer: () => (
-      <div data-settings-anchor="developer-tools">
-        <DeveloperPreferences />
-      </div>
+      <>
+        <div data-settings-anchor="developer-tools">
+          <DeveloperPreferences />
+        </div>
+        <div data-settings-anchor="developer-agent-cli">
+          <AgentCliSection />
+        </div>
+      </>
     ),
     about: () => (
       <div data-settings-anchor="about-info">

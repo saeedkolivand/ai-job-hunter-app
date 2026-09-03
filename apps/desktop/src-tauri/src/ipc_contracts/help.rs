@@ -7,6 +7,10 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct HelpSearchRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub query_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locale: Option<String>,
     pub query: String,
     pub entries: Vec<HelpSearchRequestEntry>,
     #[serde(default = "default_help_search_request_limit")]

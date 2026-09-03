@@ -801,7 +801,7 @@ fn advance_authenticated_refuses_agent_call_from_a_non_cli_origin() {
 }
 
 /// ADR-038 §3/§4 — the exhaustive counterpart to `agent_call::tests`' 4
-/// hand-picked `gate` cases: walks every ONE of the 166 real `POLICY` rows
+/// hand-picked `gate` cases: walks every ONE of the 167 real `POLICY` rows
 /// (not a representative sample) and asserts `dispatch`'s own gate
 /// (`agent_call::gate` — called directly by `dispatch`, never a parallel
 /// copy) agrees with what that row's declared `Effect` promises:
@@ -827,7 +827,7 @@ fn advance_authenticated_refuses_agent_call_from_a_non_cli_origin() {
 /// against) fails on the FIRST Irreversible row this walks
 /// (`system_open_external`), because that row's `Effect` still correctly
 /// says `Irreversible` while the (mutated) gate now claims it is
-/// dispatchable with no confirm. Walking all 166 real rows — not 2-3
+/// dispatchable with no confirm. Walking all 167 real rows — not 2-3
 /// representative ones — is what makes that failure immediate rather than
 /// dependent on which rows a smaller hand-picked sample happened to include.
 #[test]
@@ -886,8 +886,8 @@ fn agent_call_gate_matches_every_policy_rows_declared_effect() {
     }
     // Hand-written literal (not derived from `POLICY.len()` itself — same
     // "pair a loop with a literal" discipline `policy.rs`'s own tests use):
-    // every one of the 166 rows must actually have been walked.
-    assert_eq!(checked, 166);
+    // every one of the 167 rows must actually have been walked.
+    assert_eq!(checked, 167);
 }
 
 // ── AUTO status.update gate (defense-in-depth, Task #22) ──────────────────────

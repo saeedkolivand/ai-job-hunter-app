@@ -23,6 +23,7 @@ export const system = {
   checkBrowser: () => invoke('system_check_browser'),
   openDevtools: () => invoke('system_open_devtools'),
   getProtocolVersion: () => invoke<string>('system_get_protocol_version'),
+  agentCliInfo: () => invoke<{ exePath: string | null }>('system_agent_cli_info'),
   // OS accent-color change (Windows personalization). Emitted by the WinRT
   // `UISettings::ColorValuesChanged` watcher — see `platform::accent_watcher`.
   // Payload is unused; the renderer re-pulls `accentColor` on the signal.

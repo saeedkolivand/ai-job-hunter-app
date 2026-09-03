@@ -1,4 +1,4 @@
-//! ADR-038 §1 — the command policy table: every one of the 166
+//! ADR-038 §1 — the command policy table: every one of the 167
 //! `#[tauri::command]` sites registered in `tauri::generate_handler!`
 //! (`lib.rs`), classified by [`Effect`]. Phase 1 (this table) shipped with
 //! nothing dispatching through it; Phase 2 (`super::super::agent_call`) reads
@@ -99,6 +99,39 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
         ),
     },
     PolicyEntry { path: "commands::system::system_get_protocol_version", effect: Effect::Read },
+    // Reclassified `NotExposed` from `Read` (external review of the MCP pass)
+    // on the SAME recipient axis as `extension_bridge_status` below, applied
+    // to a value that is not a secret. Nothing is persisted and nothing is
+    // spent — the first axis this table was built on says `Read` — but the
+    // response is an absolute filesystem path that on Windows and macOS sits
+    // inside the user's home directory and therefore carries their account
+    // name, and an MCP `call-read` client forwards every tool result to its
+    // own cloud model provider and writes it into an on-disk transcript.
+    //
+    // The value exists for ONE recipient: the renderer's Settings → Developer
+    // card, which renders ready-to-paste registration snippets. Handing it to
+    // the agent tier adds nothing an agent can use — a client that reached
+    // this dispatcher launched this binary and so already holds the path, and
+    // a program that does not reads it from the launch-time pointer file
+    // `~/.ajh-agent/agent.json`, which is the documented discovery contract
+    // (`docs/knowledge/agent-cli.md`). So the exposure is all cost and no
+    // capability.
+    //
+    // No `ProofSource` in this table reads this row (grep `read_command:
+    // "system_agent_cli_info"`: zero hits), so no ceremony depends on it. The
+    // `#[tauri::command]` stays registered and reachable from renderer IPC
+    // exactly as before — only this CLI/MCP dispatch surface loses the ability
+    // to name it.
+    PolicyEntry {
+        path: "commands::system::system_agent_cli_info",
+        effect: Effect::NotExposed(
+            "returns the absolute path of the app binary, which on Windows and macOS is a \
+             home-directory path carrying the user's account name; a CLI/MCP caller launched \
+             this binary and already holds that path (the pointer file ~/.ajh-agent/agent.json \
+             is the discovery contract for one that did not), so exposing it here only puts a \
+             user path into a persisted LLM transcript",
+        ),
+    },
 
     // commands/menu.rs
     PolicyEntry {

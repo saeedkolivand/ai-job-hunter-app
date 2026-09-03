@@ -137,6 +137,24 @@ describe('support corpus / translations parity', () => {
     expect(sections.map((section) => section.id)).toContain('applications');
   });
 
+  it('names the agent-CLI card exactly as Settings labels it, in both locales', () => {
+    // This FAQ answer sends the user to a card BY ITS TITLE, and the help chat
+    // is grounded in that answer — so a rename in Settings would not just make
+    // the entry stale, it would have the assistant repeat a name that is not
+    // on screen anywhere. The title has one home; this pins the copy to it.
+    const TITLE_KEY = 'settings.developer.agentCli.title';
+    const ANSWER_KEY = 'support.faq.agentCliQuestions.headlessMode.a';
+    // Floor FIRST, in both locales: `toContain('')` holds for every string, so
+    // a title that resolved to nothing — missing, or blank in one bundle —
+    // would satisfy the loop below while proving nothing about the copy.
+    expect(unresolved([TITLE_KEY, ANSWER_KEY])).toEqual([]);
+    for (const [locale, bundle] of Object.entries(BUNDLES)) {
+      const title = String(lookup(bundle, TITLE_KEY));
+      const answer = String(lookup(bundle, ANSWER_KEY));
+      expect(`${locale}: ${answer}`).toContain(title);
+    }
+  });
+
   it('gives every entry a unique id within its section', () => {
     // The id is the React list key for the accordions, so a duplicate silently
     // drops an entry from the rendered list.

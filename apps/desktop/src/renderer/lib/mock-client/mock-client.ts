@@ -73,6 +73,12 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       checkBrowser: async () => ({ detected: false }),
       openDevtools: noop,
       getProtocolVersion: async () => '1.1.0',
+      // A path with a SPACE in it, on purpose: every consumer of this value
+      // has to quote it (a shell command, a TOML value), and a space-free stub
+      // would let an unquoted snippet pass Storybook and e2e unnoticed.
+      agentCliInfo: async () => ({
+        exePath: 'C:\\Users\\demo\\AppData\\Local\\AI Job Hunter\\ajh-tauri.exe',
+      }),
       onAccentChanged: unsub,
     },
 

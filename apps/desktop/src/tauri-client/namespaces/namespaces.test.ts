@@ -52,6 +52,12 @@ describe('tauri-client namespaces', () => {
     system.setLocale('de');
     expect(invoke).toHaveBeenCalledWith('system_set_locale', { locale: 'de' });
 
+    // No-arg read: the Settings agent-CLI card and the agent pointer file are
+    // fed by the SAME Rust helper, so a renamed command here would silently
+    // leave the card empty rather than fail to compile.
+    system.agentCliInfo();
+    expect(invoke).toHaveBeenCalledWith('system_agent_cli_info');
+
     scrape.boards({ boards: ['linkedin'], query: 'react', amount: 25 });
     expect(invoke).toHaveBeenCalledWith('scrape_boards', {
       req: { boards: ['linkedin'], query: 'react', amount: 25 },
@@ -87,10 +93,18 @@ describe('tauri-client namespaces', () => {
     // `#[tauri::command] help_search(req: HelpSearchRequest)` deserializes),
     // exactly like `scrape_hybrid_search` above — a flattened payload would
     // silently arrive as a missing argument on the Rust side.
-    help.search({ query: 'how do i export a pdf', entries: [], limit: 3 });
-    expect(invoke).toHaveBeenCalledWith('help_search', {
-      req: { query: 'how do i export a pdf', entries: [], limit: 3 },
-    });
+    // `queryId` and `locale` ride the SAME envelope: the id is what
+    // `jobs.cancel` later names, so a wrapper that dropped either field would
+    // leave the retrieval uncancellable with nothing else failing.
+    const helpReq = {
+      queryId: 'help-1',
+      locale: 'en',
+      query: 'how do i export a pdf',
+      entries: [],
+      limit: 3,
+    };
+    help.search(helpReq);
+    expect(invoke).toHaveBeenCalledWith('help_search', { req: helpReq });
   });
 
   it('wires event subscriptions through listen and forwards payloads', () => {

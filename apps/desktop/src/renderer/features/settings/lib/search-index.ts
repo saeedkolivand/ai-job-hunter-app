@@ -418,6 +418,23 @@ export const SEARCH_INDEX: SearchEntry[] = [
     ],
     anchor: 'developer-tools',
   },
+  {
+    id: 'developer-agent-cli',
+    section: 'developer',
+    titleKey: 'settings.developer.agentCli.title',
+    keywords: [
+      'mcp',
+      'cli',
+      'agent',
+      'claude code',
+      'codex',
+      'model context protocol',
+      'ajh-tauri',
+      'terminal',
+      'command line',
+    ],
+    anchor: 'developer-agent-cli',
+  },
 
   // ── about ────────────────────────────────────────────────────────────────────
   {
