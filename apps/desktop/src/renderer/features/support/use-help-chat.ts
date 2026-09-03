@@ -12,7 +12,7 @@ import { TRACKED_INTERACTION_TYPES } from '@/constants/interactions';
 import { getSupportSections } from '@/features/support/support-data';
 import { generateHelpAnswer } from '@/lib/generate';
 import { buildProviderProfile } from '@/lib/generate/provider-context';
-import { useFetchHelpDataSources, useHelpSearch } from '@/services';
+import { useCancelJob, useFetchHelpDataSources, useHelpSearch } from '@/services';
 
 /** One entry of the shipped corpus, with the id `help:search` ranks by. */
 interface CorpusEntry extends HelpChatEntry {
@@ -28,6 +28,16 @@ interface CorpusEntry extends HelpChatEntry {
  * see the glance below.
  */
 const APPLICATIONS_SECTION = 'applications';
+
+/**
+ * Prefix every minted `queryId` carries. MUST match the Rust-side check in
+ * `commands::help` on top of `HelpSearchRequestSchema`'s own `.startsWith` —
+ * mirrored, not imported, exactly as `usePostingsSearch` mirrors its
+ * `search-` prefix. The prefix is what keeps this caller-minted id space from
+ * naming a live `job-`/`run-`/`search-` id in the shared cancel registry.
+ * A UUID v4 is 36 chars, so the prefixed id stays well under the 64-char cap.
+ */
+const QUERY_ID_PREFIX = 'help-';
 
 /** A single chat turn. Session-only — nothing here is ever persisted. */
 export interface HelpChatMessage {
@@ -113,6 +123,7 @@ export function useHelpChat({ model, canUse }: Params) {
   const { t, i18n } = useTranslation();
   const search = useHelpSearch();
   const fetchDataSources = useFetchHelpDataSources();
+  const cancelJob = useCancelJob();
 
   const [turns, setTurns] = useState<HelpChatMessage[]>([]);
   const [answer, setAnswer] = useState('');
@@ -131,15 +142,49 @@ export function useHelpChat({ model, canUse }: Params) {
   const nonceRef = useRef(0);
   // Whether the in-flight question has reached its STREAM. `help_search` and the
   // data-glance reads are Tauri commands: the controller's signal cannot cancel
-  // them, it can only make the renderer ignore the reply. So until this flips,
-  // `stop()` has nothing it can actually stop — see there.
+  // them, it can only make the renderer ignore the reply. What CAN stop the
+  // retrieval leg is `jobs.cancel(queryId)` — see `cancelRetrieval` below.
   const streamPhaseRef = useRef(false);
+  // The `queryId` of the retrieval leg that is still cancellable, or `null`.
+  // Cleared the moment `help_search` settles: cancelling a completed id is a
+  // no-op that still emits a `job.cancelled` event and invalidates the whole
+  // jobs list, so the id must not outlive the leg it names.
+  const queryIdRef = useRef<string | null>(null);
+  // Latest cancel handle. `useCancelJob()` returns a fresh object each render,
+  // so the unmount cleanup below (which MUST have an empty dep list — a
+  // cleanup that re-ran every render would cancel the question in flight)
+  // reads it through a ref instead of closing over it.
+  const cancelJobRef = useRef(cancelJob);
+  useEffect(() => {
+    cancelJobRef.current = cancelJob;
+  });
 
-  // Abort an in-flight stream on unmount — the Help page is a route, so
-  // navigating away is the common case, not the exception.
+  /**
+   * Stop the backend half of an in-flight question, if there is one.
+   *
+   * Best-effort and fire-and-forget, mirroring `usePostingsSearch`: the invoke
+   * promise is not abortable, so this only makes the dense arm give up sooner
+   * — the reply is already being ignored either way. A failed cancel is
+   * nothing the user can act on and nothing they asked for, so it is swallowed
+   * rather than turned into a toast about a request they never made.
+   */
+  const cancelRetrieval = () => {
+    const queryId = queryIdRef.current;
+    if (!queryId) return;
+    queryIdRef.current = null;
+    void cancelJobRef.current.mutateAsync(queryId).catch(() => {});
+  };
+
+  // Abort an in-flight stream on unmount, and cancel the retrieval leg behind
+  // it — the Help page is a route, so navigating away is the common case, not
+  // the exception, and the embedding pass it leaves behind is the expensive
+  // half. Inlined rather than calling `cancelRetrieval`: the dep list has to
+  // stay empty (see `cancelJobRef`).
   useEffect(
     () => () => {
       abortRef.current?.abort();
+      const queryId = queryIdRef.current;
+      if (queryId) void cancelJobRef.current.mutateAsync(queryId).catch(() => {});
     },
     []
   );
@@ -147,19 +192,22 @@ export function useHelpChat({ model, canUse }: Params) {
   /**
    * Stop the current stream, keeping whatever text already arrived.
    *
-   * Busy-state release is deliberately conditional. During RETRIEVAL there is
-   * no stream yet and the in-flight `help_search` is a Tauri command that
-   * cannot be cancelled — clearing `streaming` there would put the Ask button
-   * back while a cold embedding call is still running, so the next question
-   * would start a SECOND one alongside it. In that phase the abort is recorded
-   * (the reply is dropped) and `run`'s `finally` releases the button the moment
-   * the uncancellable leg settles. Once the stream has started, aborting really
-   * does end the work, so Ask comes back immediately as before.
+   * Busy-state release is deliberately conditional, and stays that way now
+   * that the retrieval leg IS cancellable. During RETRIEVAL the cancel makes
+   * the backend give up sooner, not instantly — it is checked between dense
+   * candidates and raced against each embed, so an embed already in flight
+   * still finishes. Clearing `streaming` here would hand the Ask button back
+   * during that window and let a second question's run share the first run's
+   * `finally`. So the abort is recorded (the reply is dropped), the cancel is
+   * sent, and `run`'s `finally` releases the button when the leg actually
+   * settles. Once the stream has started, aborting really does end the work,
+   * so Ask comes back immediately as before.
    */
   const stop = () => {
     const controller = abortRef.current;
     if (!controller || controller.signal.aborted) return;
     controller.abort();
+    if (!streamPhaseRef.current) cancelRetrieval();
     const partial = answerRef.current;
     answerRef.current = '';
     setAnswer('');
@@ -205,6 +253,9 @@ export function useHelpChat({ model, canUse }: Params) {
     // `false`; without this the first controller is dropped un-aborted and its
     // stream keeps writing turns into a transcript that moved on.
     abortRef.current?.abort();
+    // …and stop the replaced run's retrieval in the backend too, for the same
+    // reason: the abort only makes the renderer ignore its reply.
+    cancelRetrieval();
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -213,6 +264,8 @@ export function useHelpChat({ model, canUse }: Params) {
     pendingRef.current = {};
     nonceRef.current += 1;
     const nonce = nonceRef.current;
+    const queryId = `${QUERY_ID_PREFIX}${crypto.randomUUID()}`;
+    queryIdRef.current = queryId;
 
     setAnswer('');
     setError(null);
@@ -236,15 +289,26 @@ export function useHelpChat({ model, canUse }: Params) {
       }
 
       const result = await search.mutateAsync({
+        // Minted per question, so a Stop or an unmount can name THIS retrieval
+        // to `jobs.cancel` — there is no separate cancel channel.
+        queryId,
+        // The locale the `entries` below are written in: it selects the
+        // function-word list the lexical arm drops from the question. Sending
+        // the UI language rather than a constant is what keeps a German
+        // question from being filtered with an English list, or not at all.
+        locale: i18n.language,
         query,
-        // Only the three fields the contract names: `section` is a local
-        // routing hint, and sending a field the schema does not describe is
-        // how a wire shape drifts away from it.
+        // Only the fields the contract names: `section` is a local routing
+        // hint, and sending a field the schema does not describe is how a wire
+        // shape drifts away from it.
         entries: corpus.map(({ id, title, body }) => ({ id, title, body })),
         // The SAME budget the prompt builder will apply: asking for more
         // entries than the prompt can carry pays to embed text it then drops.
         limit: sizing.maxEntries,
       });
+      // The retrieval leg is done, cancellable or not — drop the id so a later
+      // Stop/unmount cannot fire a cancel for work that already finished.
+      queryIdRef.current = null;
       if (controller.signal.aborted) return false;
 
       const byId = new Map(corpus.map((entry) => [entry.id, entry]));
@@ -320,6 +384,9 @@ export function useHelpChat({ model, canUse }: Params) {
       if (abortRef.current === controller) {
         abortRef.current = null;
         streamPhaseRef.current = false;
+        // Safety net for the path the clear after `search.mutateAsync` misses:
+        // a retrieval that REJECTED never reached it.
+        if (queryIdRef.current === queryId) queryIdRef.current = null;
         setStreaming(false);
       }
     }

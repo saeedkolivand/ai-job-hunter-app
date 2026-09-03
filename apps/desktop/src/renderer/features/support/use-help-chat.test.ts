@@ -7,6 +7,8 @@ vi.mock('@/lib/generate', () => ({
   generateHelpAnswer: vi.fn().mockResolvedValue('Open the document and click Export.'),
 }));
 
+import i18n from '@ajh/translations';
+
 import { generateHelpAnswer } from '@/lib/generate';
 import { createMockClient, renderHookWithClient } from '@/test-support';
 
@@ -59,12 +61,19 @@ function render(model = 'llama3:70b', overrides = {}) {
   return { ...rendered, mock };
 }
 
+interface SearchRequest {
+  queryId: string;
+  locale: string;
+  query: string;
+  entries: Array<{ id: string; title: string; body: string }>;
+  limit: number;
+}
+
+const searchArgAt = (search: ReturnType<typeof vi.fn>, index: number) =>
+  search.mock.calls[index]?.[0] as SearchRequest;
+
 const searchArg = (mock: ReturnType<typeof client>) =>
-  (mock.help.search as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
-    query: string;
-    entries: Array<{ id: string; title: string; body: string }>;
-    limit: number;
-  };
+  searchArgAt(mock.help.search as ReturnType<typeof vi.fn>, 0);
 
 const generateArg = () =>
   vi.mocked(generateHelpAnswer).mock.calls[0]?.[0] as Parameters<typeof generateHelpAnswer>[0];
@@ -386,8 +395,9 @@ describe('useHelpChat', () => {
       result.current.stop();
     });
 
-    // `help_search` is a Tauri command — the abort cannot cancel it, only make
-    // the reply be ignored. Handing the Ask button back HERE is what lets a
+    // The cancel below makes the backend give up SOONER, not instantly (it is
+    // checked between dense candidates), and the invoke promise is not
+    // abortable either way. Handing the Ask button back HERE is what lets a
     // second cold search run alongside the first one.
     expect(result.current.streaming).toBe(true);
     expect(search).toHaveBeenCalledTimes(1);
@@ -401,6 +411,161 @@ describe('useHelpChat', () => {
     // no model call and no assistant turn came out of the stopped question.
     expect(generateHelpAnswer).not.toHaveBeenCalled();
     expect(result.current.turns.map((turn) => turn.role)).toEqual(['user']);
+  });
+
+  // ── cancellation of the retrieval leg ──────────────────────────────────────
+  //
+  // `help_search` runs a dense arm that embeds one entry per cache miss, and a
+  // Tauri invoke is not abortable from the renderer. `jobs.cancel(queryId)` is
+  // the ONLY way to stop that work; the id below is the only thing that names
+  // it, which is why the shape of the id is asserted and not just its presence.
+
+  it('mints a distinct help- queryId per question and sends the active UI locale', async () => {
+    const { result, mock } = render();
+    const search = mock.help.search as ReturnType<typeof vi.fn>;
+
+    await act(async () => {
+      await result.current.send('how do i export a pdf');
+    });
+    await act(async () => {
+      await result.current.send('and how do i track a job');
+    });
+
+    const first = searchArgAt(search, 0);
+    const second = searchArgAt(search, 1);
+    for (const req of [first, second]) {
+      // The prefix is what keeps this id from naming a live `job-`/`run-`/
+      // `search-` run in the shared cancel registry; the cap is the schema's.
+      expect(req.queryId.startsWith('help-')).toBe(true);
+      expect(req.queryId.length).toBeLessThanOrEqual(64);
+      // A full BCP-47 tag, region and all (`en-US` here) — the Rust side
+      // normalises to the primary subtag, so this is deliberately not pinned
+      // to a bare `en`.
+      expect(req.locale).toMatch(/^en(-|$)/);
+    }
+    // Per QUESTION, not per session: a reused id would let a cancel for the
+    // first question kill the second one's retrieval.
+    expect(second.queryId).not.toBe(first.queryId);
+  });
+
+  it('follows the UI language rather than sending a fixed locale', async () => {
+    // Without this the assertion above passes for a hardcoded 'en': the whole
+    // point of the field is that a German corpus is filtered with the German
+    // function-word list.
+    await act(async () => {
+      await i18n.changeLanguage('de');
+    });
+    try {
+      const { result, mock } = render();
+      await act(async () => {
+        await result.current.send('wie exportiere ich ein pdf');
+      });
+      expect(searchArg(mock).locale).toMatch(/^de(-|$)/);
+    } finally {
+      await act(async () => {
+        await i18n.changeLanguage('en-US');
+      });
+    }
+  });
+
+  it('a Stop during RETRIEVAL cancels the backend leg by the id it sent', async () => {
+    let settle: ((value: unknown) => void) | undefined;
+    const search = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settle = resolve;
+        })
+    );
+    const { result, mock } = render('llama3:70b', { 'help.search': search });
+
+    await act(async () => {
+      void result.current.send('how do i export a pdf');
+      await waitFor(() => expect(result.current.streaming).toBe(true));
+    });
+    const { queryId } = searchArgAt(search, 0);
+
+    act(() => {
+      result.current.stop();
+    });
+
+    await waitFor(() => expect(mock.jobs.cancel).toHaveBeenCalledWith(queryId));
+
+    // Once the leg settles the id names nothing, so a later Stop must not fire
+    // a second cancel — that would be a no-op that still emits a jobs event.
+    await act(async () => {
+      settle?.({ results: [HIT], mode: 'hybrid', arms: { lexical: 'ran', dense: 'ran' } });
+      await waitFor(() => expect(result.current.streaming).toBe(false));
+    });
+    act(() => {
+      result.current.stop();
+    });
+    expect(mock.jobs.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('unmounting mid-RETRIEVAL cancels the leg — navigating away is the common case', async () => {
+    const search = vi.fn().mockImplementation(() => new Promise(() => {}));
+    const { result, mock, unmount } = render('llama3:70b', { 'help.search': search });
+
+    await act(async () => {
+      void result.current.send('how do i export a pdf');
+      await waitFor(() => expect(result.current.streaming).toBe(true));
+    });
+    const { queryId } = searchArgAt(search, 0);
+
+    unmount();
+
+    await waitFor(() => expect(mock.jobs.cancel).toHaveBeenCalledWith(queryId));
+  });
+
+  it('unmounting mid-STREAM does not cancel — the retrieval leg is already done', async () => {
+    vi.mocked(generateHelpAnswer).mockImplementationOnce(() => new Promise(() => {}));
+    const { result, mock, unmount } = render();
+
+    await act(async () => {
+      void result.current.send('how do i export a pdf');
+      await waitFor(() => expect(generateHelpAnswer).toHaveBeenCalled());
+    });
+
+    unmount();
+    // A bare assertion straight after `unmount()` would pass for the wrong
+    // reason: `mutateAsync` reaches the client several microtasks later, so
+    // nothing has been called yet either way. Wait past the point where the
+    // mid-RETRIEVAL test's cancel has already landed.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    // `jobs.cancel` on a finished id is not free: it emits `job.cancelled` for
+    // an id with no job record and invalidates the whole jobs list.
+    expect(mock.jobs.cancel).not.toHaveBeenCalled();
+  });
+
+  it('a second question cancels the retrieval of the run it replaces', async () => {
+    const search = vi
+      .fn()
+      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockResolvedValue({
+        results: [HIT],
+        mode: 'hybrid',
+        arms: { lexical: 'ran', dense: 'ran' },
+      });
+    const { result, mock } = render('llama3:70b', { 'help.search': search });
+    // The handle a component captured BEFORE the first run re-rendered: its
+    // `streaming` guard is a closed-over `false`, so both calls get in.
+    const staleSend = result.current.send;
+
+    await act(async () => {
+      void staleSend('first question');
+      await waitFor(() => expect(result.current.streaming).toBe(true));
+    });
+    const first = searchArgAt(search, 0);
+
+    await act(async () => {
+      await staleSend('second question');
+    });
+
+    expect(mock.jobs.cancel).toHaveBeenCalledWith(first.queryId);
+    expect(searchArgAt(search, 1).queryId).not.toBe(first.queryId);
   });
 
   it('a second question aborts the run it replaces — one assistant turn, not two', async () => {
