@@ -73,3 +73,13 @@ and boots with **no `ApplicationStore`** — the user's entire application track
 
 The data directory also holds ~15 separate SQLite files plus JSON stores, so a second reader would
 reimplement the store layer, and `AJH_DATA_DIR` never escapes the app process anyway.
+
+## Amendment — 2026-09-03
+
+§3's pointer file no longer takes `exePath` from `current_exe()` directly: it comes from
+`platform::config::agent_cli_exe_path`, which prefers the launched `.AppImage` file over the transient
+mount path `current_exe()` reports from inside one — but only when this process was actually launched
+from that image, because the AppImage runtime exports its variables to every descendant, so an inherited
+value alone would publish another app's path. The predicate and the reason for each of its conditions
+are documented on `launched_appimage`. The Settings → Developer card reads the same helper, so the
+pointer file and the UI cannot disagree.

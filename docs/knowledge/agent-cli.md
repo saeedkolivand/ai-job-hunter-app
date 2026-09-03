@@ -1,6 +1,6 @@
 # Agent CLI (`ajh-tauri agent <verb>`)
 
-Last updated: 2026-09-02
+Last updated: 2026-09-03
 
 A headless CLI mode of the shipped `ajh-tauri` binary, invoked alongside the running desktop app. Enables external programs (shell scripts, LLM agents, CI pipelines) to query job data, profile fields, and trigger commands without a GUI. The same binary, no separate install.
 
@@ -27,12 +27,13 @@ The `error` field in exit-code-2 replies carries a fixed sentinel (not a path, U
 
 ## Binary locations (v0.145.0+)
 
-| Platform                     | Path                                                                                      | On `PATH` by default?                                                              |
-| ---------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| **Linux** (deb/rpm)          | `/usr/bin/ajh-tauri`                                                                      | Yes                                                                                |
-| **macOS Homebrew**           | Symlinked via `brew install --cask ai-job-hunter`                                         | Yes                                                                                |
-| **macOS dmg drag-install**   | `/Applications/AI Job Hunter.app/Contents/MacOS/ajh-tauri`                                | No; add to `$PATH` if needed                                                       |
-| **Windows** (nsis, per-user) | User's local install directory (use `~/.ajh-agent/agent.json` to locate programmatically) | Yes, from the release after v0.145.0 (NSIS hook); before that, invoke by full path |
+| Platform                     | Path                                                                                                                | On `PATH` by default?                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| **Linux** (deb/rpm)          | `/usr/bin/ajh-tauri`                                                                                                | Yes                                                                                |
+| **Linux AppImage**           | The `.AppImage` file the user launched — NOT the transient mount path a process inside the image reports for itself | No; use the pointer file or the Settings card below                                |
+| **macOS Homebrew**           | Symlinked via `brew install --cask ai-job-hunter`                                                                   | Yes                                                                                |
+| **macOS dmg drag-install**   | `/Applications/AI Job Hunter.app/Contents/MacOS/ajh-tauri`                                                          | No; add to `$PATH` if needed                                                       |
+| **Windows** (nsis, per-user) | User's local install directory (use `~/.ajh-agent/agent.json` to locate programmatically)                           | Yes, from the release after v0.145.0 (NSIS hook); before that, invoke by full path |
 
 ## Discovery
 
@@ -44,6 +45,8 @@ A program can locate the app's binary and data directory via the pointer file:
 ```
 
 Written by the app on every launch (idempotent). This is the supported mechanism for automated discovery.
+
+The `exePath` it publishes is resolved by `platform::config::agent_cli_exe_path` (see [ADR-037](decision-records/adr-037-agent-cli-as-binary-mode-thin-client.md)'s amendment for the AppImage case). For a human rather than a program, the same value is one `Effect::Read` command away (`commands::system::system_agent_cli_info`) and is shown in the app at **Settings → Developer**, together with ready-to-copy Claude Code and Codex registration commands that already carry the path and the chosen access tier. Card, command and pointer file all read the one resolver, so they cannot disagree.
 
 ## Design & constraints
 
