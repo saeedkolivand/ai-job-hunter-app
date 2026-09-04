@@ -1362,7 +1362,8 @@ export interface AutopilotBestMatch {
   key: string;
   title: string;
   company: string;
-  /** The canonical member's url — the "view job" target. */
+  /** The canonical member's url — the "view job" target. May not be the same
+   *  posting `score` was computed from; see `scoreUrl`. */
   url: string;
   location?: string;
   board?: string;
@@ -1374,6 +1375,12 @@ export interface AutopilotBestMatch {
   score: number;
   scoreSource: 'keyword' | 'combined';
   scoreProvisional?: boolean;
+  /** Present only when `score`/`scoreSource`/`scoreProvisional` belong to a
+   *  DIFFERENT member than `url` (the best-scored member decides the score,
+   *  the content-richest decides `url`, and they aren't always the same
+   *  posting). Carries that member's own url so a caller can look up the
+   *  actual posting the displayed score belongs to. */
+  scoreUrl?: string;
   postedAt?: number;
   /** EARLIEST discovery across every source that surfaced this job. */
   foundAt: number;
@@ -4059,13 +4066,17 @@ Resolve a single posting (incl. full description) from its URL.
 #### `scrape.updateDescription`
 
 ```ts
-updateDescription(req: { id: string; description: string }): Promise<boolean>;
+updateDescription(req: { url: string; description: string }): Promise<boolean>;
 ```
 
-Write a freshly-resolved full description back into the live postings cache
-by posting id, so the match scorer reads the full text instead of the
-truncated aggregator snippet. Returns `true` when an entry was updated,
-`false` when the id is no longer in the live cache.
+Write a freshly-resolved full description back into every store that can
+carry a copy of this posting, addressed by `url` (not a board-synthetic
+posting id — no reader outside the live cache can supply that): the live
+postings cache AND every matching found-job row persisted by an
+autopilot, so the match scorer reads the full text instead of the
+truncated aggregator snippet wherever the posting was surfaced from.
+Returns `true` when at least one of those stores had a matching row,
+`false` when neither did.
 
 #### `scrape.listPostings`
 
