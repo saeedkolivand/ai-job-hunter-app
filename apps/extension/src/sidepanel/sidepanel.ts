@@ -70,10 +70,25 @@ function follow(tabId: number | null): void {
   unsubscribe = subscribeAnswerState(tabId, (state) => answerTools.render(state));
 }
 
+/** This panel's own window — resolved once, since a panel never migrates
+ *  windows. Every tab lookup below is pinned to it, so an activation or focus
+ *  change in an UNRELATED window can never hijack this panel's subscription. */
+let panelWindowId: number | null = null;
+
+async function resolvePanelWindowId(): Promise<number | null> {
+  try {
+    const win = await browser.windows.getCurrent();
+    return typeof win.id === 'number' ? win.id : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The active tab of the window this panel belongs to. */
 async function activeTabId(): Promise<number | null> {
+  if (panelWindowId === null) return null;
   try {
-    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await browser.tabs.query({ active: true, windowId: panelWindowId });
     return typeof tab?.id === 'number' ? tab.id : null;
   } catch {
     return null;
@@ -81,13 +96,18 @@ async function activeTabId(): Promise<number | null> {
 }
 
 browser.tabs.onActivated.addListener((info) => {
+  if (info.windowId !== panelWindowId) return;
   follow(info.tabId);
 });
 
-// A window focus change moves the "current window" out from under a panel that
-// is per window on Chrome and per window on Firefox alike, so re-resolve.
+// A window focus change can flip which tab is "active" in THIS panel's own
+// window (e.g. a tab activated there while unfocused) — re-resolve, still
+// scoped to `panelWindowId`, never to whichever window just gained focus.
 browser.windows?.onFocusChanged.addListener(() => {
   void activeTabId().then(follow);
 });
 
-void activeTabId().then(follow);
+void resolvePanelWindowId().then((id) => {
+  panelWindowId = id;
+  void activeTabId().then(follow);
+});

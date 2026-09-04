@@ -379,7 +379,10 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
         // not read as a required choice, and it deliberately does nothing.
         b.classList.add('chip--neutral');
         b.title = 'Leave this as it is';
-        b.addEventListener('click', () => setNotice('Left as it is.', 'ok'));
+        b.addEventListener('click', () => {
+          setNotice('Left as it is.', 'ok');
+          rerender();
+        });
       } else {
         // Gated on the SHARED stream too, not just this view's own `busy`: a
         // stream started by another surface (or by this same view before a

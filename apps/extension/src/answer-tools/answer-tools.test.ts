@@ -16,6 +16,7 @@ import {
 } from '@ajh/shared/extension-protocol';
 
 import type { AnswerRow, AnswerState } from '../lib/answer-state';
+import type { PopupRequest, PopupResponse } from '../lib/messages';
 import {
   acceptSentence,
   fitLimitChip,
@@ -336,6 +337,19 @@ describe('mountAnswerTools (the rendered row)', () => {
       .forEach((b) => b.click());
 
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('renders the "Left as it is." notice immediately on click — the ONLY feedback this no-op control gives (regression)', () => {
+    const { host, view } = mount();
+    view.render(state());
+    openFirstRow(host);
+
+    const asIs = [...host.querySelectorAll<HTMLButtonElement>('.chip')].find(
+      (b) => b.textContent === 'As is'
+    );
+    asIs?.click();
+
+    expect(host.querySelector('.msg')?.textContent).toBe('Left as it is.');
   });
 
   // ── render() tears the whole section down on every call (a stream tick

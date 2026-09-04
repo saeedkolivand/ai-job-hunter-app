@@ -1879,6 +1879,24 @@ describe('openAnswerPanel (#btn-open-panel)', () => {
 
     expect(byId<HTMLElement>('import-msg').textContent).toContain('no side panel');
   });
+
+  it('reports the unresolved tab, not a false "no side panel", when sidePanel exists but activeTabId has not resolved yet (regression)', async () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    mutableBrowser.sidePanel = { open };
+    // No tab from `tabs.query` this time — `activeTabId` stays `null`.
+    vi.mocked(browser.tabs.query).mockResolvedValueOnce([]);
+    await bootstrapAnswerTools();
+    byId<HTMLElement>('import-msg').textContent = '';
+
+    byId<HTMLButtonElement>('btn-open-panel').click();
+
+    // Chrome DOES have a side panel here — the true cause is the unresolved
+    // tab id, and the message must say so instead of the Firefox-shaped "this
+    // browser has no side panel" line, which is false on this browser.
+    expect(open).not.toHaveBeenCalled();
+    expect(byId<HTMLElement>('import-msg').textContent).not.toContain('no side panel');
+    expect(byId<HTMLElement>('import-msg').textContent).toContain('this tab');
+  });
 });
 
 // ── unpair (#btn-unpair, now reachable via the "?" help popover) ────────────

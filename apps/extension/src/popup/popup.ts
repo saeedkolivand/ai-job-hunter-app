@@ -500,6 +500,13 @@ function openAnswerPanel(): void {
     });
     return;
   }
+  if (chromePanel) {
+    // The panel API exists (Chrome) but bootstrap hasn't resolved a tab id
+    // yet — report THAT, not "this browser has no side panel", which is
+    // false here and points the user at the wrong fix.
+    setMsg(els.importMsg, 'Could not open the side panel for this tab.', 'err');
+    return;
+  }
   const sidebar = (browser as { sidebarAction?: { open(): Promise<void> } }).sidebarAction;
   if (!sidebar) {
     setMsg(els.importMsg, 'This browser has no side panel — the tools above still work.', 'err');

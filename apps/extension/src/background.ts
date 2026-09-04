@@ -248,18 +248,18 @@ async function broadcastStatus(): Promise<void> {
   }
 }
 
-/** Client-side mirror of the Rust `answer_assist::DRAFT_CAP` (4000 chars) —
- *  bounds how far {@link assistBuffer}'s text can grow. The desktop already
- *  clamps each `assist.chunk` live so this should never actually trip in
- *  normal operation; it exists so the interrupted/error path (which shows
- *  whatever text had already accumulated) can never render an unbounded
- *  draft even if that server-side guarantee were ever violated. */
-const ASSIST_DRAFT_CAP = 4_000;
-
-/** Append `delta` to `text`, clamped to {@link ASSIST_DRAFT_CAP}. */
+/** Append `delta` to `text`, clamped to the shared
+ *  {@link EXTENSION_ANSWER_ASSIST_MAX_CHARS} cap — the same cap the Rust
+ *  `answer_assist::DRAFT_CAP` mirrors. The desktop already clamps each
+ *  `assist.chunk` live so this should never actually trip in normal
+ *  operation; it exists so the interrupted/error path (which shows whatever
+ *  text had already accumulated) can never render an unbounded draft even if
+ *  that server-side guarantee were ever violated. */
 function growAssistDraft(text: string, delta: string): string {
   const grown = text + delta;
-  return grown.length > ASSIST_DRAFT_CAP ? grown.slice(0, ASSIST_DRAFT_CAP) : grown;
+  return grown.length > EXTENSION_ANSWER_ASSIST_MAX_CHARS
+    ? grown.slice(0, EXTENSION_ANSWER_ASSIST_MAX_CHARS)
+    : grown;
 }
 
 /**
@@ -819,6 +819,7 @@ async function runAnswerAssist(
   } catch {
     url = undefined;
   }
+  const tabIdForRun = await activeTabId().catch(() => null);
 
   // A newer overlapping call already reset (and may have already finished)
   // the buffer while the awaits above were pending — this run must not reset
@@ -829,7 +830,7 @@ async function runAnswerAssist(
     return { ok: false, error: 'Superseded by a newer request.' };
   }
 
-  assistTabId = await activeTabId().catch(() => null);
+  assistTabId = tabIdForRun;
   assistBuffer = {
     text: '',
     done: false,
@@ -1204,9 +1205,13 @@ async function runAnswerScan(): Promise<PopupResponse> {
 
 /** Add (or reuse) a free-text row — the manual entry and the context-menu
  *  selection both land here. No page access: a question the scan missed is
- *  still a question worth drafting, it just has nowhere to be accepted into. */
-async function runAnswerAddRow(question: string): Promise<PopupResponse> {
-  const tabId = await activeTabId();
+ *  still a question worth drafting, it just has nowhere to be accepted into.
+ *  `explicitTabId` lets a caller that already has the right tab (the
+ *  context-menu gesture) pin the row to it directly — falls back to the
+ *  active-tab query only when absent, so a focus change between the gesture
+ *  and this call can't land the row in the wrong tab's record. */
+async function runAnswerAddRow(question: string, explicitTabId?: number): Promise<PopupResponse> {
+  const tabId = explicitTabId ?? (await activeTabId());
   const existing = await readAnswerState(tabId);
   const state: AnswerState = existing ?? {
     tabId,
@@ -1558,7 +1563,7 @@ async function handleAnswerMenuClick(
   const question = (info.selectionText ?? '').trim().slice(0, MAX_SELECTION_QUESTION);
   if (!question) return;
   openAnswerPanel(tab?.id);
-  await runAnswerAddRow(question);
+  await runAnswerAddRow(question, tab?.id);
 }
 
 /**

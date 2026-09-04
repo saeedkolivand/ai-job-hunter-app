@@ -544,16 +544,23 @@ export function subscribeAnswerState(
   onState: (state: AnswerState | null) => void
 ): () => void {
   const key = answerStateKey(tabId);
+  // A change can arrive while the initial read below is still in flight; once
+  // that happens, the read resolving later must not overwrite it with the
+  // (now stale) value it fetched before the change landed.
+  let delivered = false;
   const listener = (
     changes: Record<string, Browser.storage.StorageChange>,
     areaName: string
   ): void => {
     if (areaName !== 'session' || !(key in changes)) return;
     const value = changes[key]?.newValue;
+    delivered = true;
     onState(isAnswerState(value) ? value : null);
   };
 
   browser.storage.onChanged.addListener(listener);
-  void readAnswerState(tabId).then(onState);
+  void readAnswerState(tabId).then((state) => {
+    if (!delivered) onState(state);
+  });
   return () => browser.storage.onChanged.removeListener(listener);
 }

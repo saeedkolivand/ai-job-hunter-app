@@ -1442,33 +1442,38 @@ describe('the terminal stream-mirror write never clobbers the settled row (CRITI
     if (!rowId) throw new Error('expected a row');
 
     // Gate `storage.session.get` deterministically on the TERMINAL stream
-    // mirror's own read. Call order within `runAnswerAssist`'s terminal step
-    // (`void broadcastAssistProgress()` fires `mirrorAssistToState()`'s read
-    // BEFORE `await settleRowFromAssist(...)` issues its own) means the 4th
-    // `get()` after the scan is always this mirror's read: #1 the initial
-    // buffer-reset broadcast, #2/#3 the two `onChunk` broadcasts, #4 the
-    // terminal broadcast. Capturing the stored value at CALL TIME (via the
-    // real mock implementation) but resolving the returned promise only once
-    // this test releases `gate` is what makes the race deterministic: under
-    // the OLD unserialized `updateAnswerState`, settle's read+mutate+write
-    // (call #5, ungated) runs to completion while this call is still
-    // pending, and this call's STALE snapshot then clobbers settle's write
-    // the moment it is released.
+    // mirror's own read — recognized by its CONTENT, not by which call number
+    // it happens to be: the stored record's `stream.text` already equals the
+    // full accumulated draft, but `stream.done` is still `false` (the
+    // terminal write that flips it to `true` hasn't landed yet). Any OTHER
+    // read (the initial reset, an in-progress chunk, settle's own read after
+    // `done` flips) fails this check, so an unrelated read added anywhere in
+    // the flow can never shift which one gets gated. Capturing the stored
+    // value at CALL TIME (via the real mock implementation) but resolving the
+    // returned promise only once this test releases `gate` is what makes the
+    // race deterministic: under the OLD unserialized `updateAnswerState`,
+    // settle's read+mutate+write (ungated) runs to completion while this call
+    // is still pending, and this call's STALE snapshot then clobbers settle's
+    // write the moment it is released.
+    const FULL_DRAFT = 'Because I like solving real problems.';
     const sessionGetMock = vi.mocked(browser.storage.session.get);
     const realGet = sessionGetMock.getMockImplementation();
     if (!realGet) throw new Error('expected the default storage.session.get mock');
-    let getCalls = 0;
+    let gated = false;
     let releaseGate: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
       releaseGate = resolve;
     });
     sessionGetMock.mockImplementation(((key: string) => {
-      getCalls += 1;
-      if (getCalls === 4) {
-        const stale = realGet(key) as Promise<unknown>;
-        return stale.then((value) => gate.then(() => value));
-      }
-      return realGet(key);
+      const read = realGet(key) as Promise<Record<string, unknown>>;
+      return read.then((value) => {
+        const state = value[key] as { stream?: { done?: boolean; text?: string } } | undefined;
+        if (!gated && state?.stream?.done === false && state.stream.text === FULL_DRAFT) {
+          gated = true;
+          return gate.then(() => value);
+        }
+        return value;
+      });
     }) as typeof realGet);
 
     mockClient.answerAssist.mockImplementationOnce(
@@ -1524,6 +1529,94 @@ describe('the terminal stream-mirror write never clobbers the settled row (CRITI
     );
     expect(regenerate).not.toBeUndefined();
     expect(regenerate?.disabled).toBe(false);
+  });
+});
+
+describe('a late activeTabId() must not re-arm a superseded run (regression)', () => {
+  it('a run whose activeTabId() resolves AFTER a newer run already reset the buffer neither overwrites it nor fires its own billable request', async () => {
+    const tabId = 851;
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    const tabInfo = [{ id: tabId, url: 'https://jobs.example.com/posting/851' } as never];
+    tabsQueryMock.mockResolvedValue(tabInfo);
+
+    executeScriptMock.mockResolvedValueOnce([
+      {
+        result: {
+          questions: [
+            { question: 'Why this role?', index: 0 },
+            { question: 'What motivates you?', index: 0 },
+          ],
+          filled: [],
+        },
+      },
+    ] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'not paired' });
+    const scanned = await send({ kind: 'answerScan' });
+    if (!scanned.ok || scanned.kind !== 'answerState' || !scanned.state) {
+      throw new Error('expected an answerState response');
+    }
+    const rowA = scanned.state.rows[0]?.id;
+    const rowB = scanned.state.rows[1]?.id;
+    if (!rowA || !rowB) throw new Error('expected two rows');
+
+    // A request naming a `rowId` resolves through `runAnswerRowAssist` first,
+    // which makes its OWN `activeTabId()` call before ever reaching
+    // `runAnswerAssist` — so run A's three `tabs.query` calls, in order, are
+    // `runAnswerRowAssist`'s `activeTabId()`, `runAnswerAssist`'s
+    // `activeTabUrl()`, then `runAnswerAssist`'s OWN `activeTabId()` (the
+    // bug-relevant one). Gate that THIRD call; run B starts and finishes
+    // entirely afterward, landing on counts 4-6, never gated.
+    let queryCalls = 0;
+    let releaseGate: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    tabsQueryMock.mockImplementation(() => {
+      queryCalls += 1;
+      return queryCalls === 3 ? gate.then(() => tabInfo) : Promise.resolve(tabInfo);
+    });
+
+    mockClient.answerAssist.mockImplementation(async (_payload, onChunk?: (d: string) => void) => {
+      onChunk?.('drafted');
+      return { ok: true, question: 'x', draft: 'drafted', sourced: {} };
+    });
+
+    // Run A: gets past the gen check with `assistTabId` still unresolved.
+    const runA = send({
+      kind: 'answerAssist',
+      question: 'Why this role?',
+      searchWeb: false,
+      mode: 'draft',
+      rowId: rowA,
+    });
+    await flush();
+
+    // Run B starts (bumps `assistGeneration`) and runs to completion while
+    // run A is still suspended on the gate above.
+    const runB = await send({
+      kind: 'answerAssist',
+      question: 'What motivates you?',
+      searchWeb: false,
+      mode: 'draft',
+      rowId: rowB,
+    });
+    expect(runB.ok).toBe(true);
+
+    // Release run A's gate. Under the bug, A would resume believing it is
+    // still current, clobber the buffer B just wrote, and fire its OWN
+    // billable request — the exact thing the generation guard exists to stop.
+    releaseGate?.();
+    const resultA = await runA;
+    expect(resultA).toEqual({ ok: false, error: 'Superseded by a newer request.' });
+    expect(mockClient.answerAssist).toHaveBeenCalledTimes(1);
+
+    const { readAnswerState } = await import('./lib/answer-state');
+    const settled = await readAnswerState(tabId);
+    expect(settled?.stream?.rowId).toBe(rowB);
+    expect(settled?.rows.find((r) => r.id === rowB)?.versions).toHaveLength(1);
+    expect(settled?.rows.find((r) => r.id === rowA)?.versions).toHaveLength(0);
+
+    tabsQueryMock.mockResolvedValue(tabInfo);
   });
 });
 
@@ -1868,6 +1961,7 @@ describe('answerAddRow request (ADR-044)', () => {
 
 describe('answerSelectVersion request (ADR-044)', () => {
   it('selects a version by index, and falls back to -1 (the page text) for an out-of-range index', async () => {
+    const { updateAnswerState } = await import('./lib/answer-state');
     tabsQueryMock.mockResolvedValue([
       { id: 204, url: 'https://jobs.example.com/posting/5' } as never,
     ]);
@@ -1881,6 +1975,25 @@ describe('answerSelectVersion request (ADR-044)', () => {
     }
     const rowId = scanned.state.rows[0]?.id;
     if (!rowId) throw new Error('expected a row');
+
+    // Seed a version to select — a fresh row has none, so `version: 0` would
+    // ALSO fall back to -1, and the test would never actually exercise the
+    // in-range branch it claims to cover.
+    await updateAnswerState(204, (state) => ({
+      ...state,
+      rows: state.rows.map((row) =>
+        row.id === rowId
+          ? { ...row, versions: [{ label: 'v1', text: 'A drafted answer.', kind: 'draft' }] }
+          : row
+      ),
+    }));
+
+    const inRange = await send({ kind: 'answerSelectVersion', rowId, version: 0 });
+    if (inRange.ok && inRange.kind === 'answerState') {
+      expect(inRange.state?.rows[0]?.selected).toBe(0);
+    } else {
+      throw new Error('expected an answerState response');
+    }
 
     const outOfRange = await send({ kind: 'answerSelectVersion', rowId, version: 5 });
     if (outOfRange.ok && outOfRange.kind === 'answerState') {
@@ -2005,6 +2118,42 @@ describe('the context-menu entry (ADR-044 decision 2)', () => {
     } else {
       throw new Error('expected an answerState response');
     }
+  });
+
+  it('adds the row to the CLICKED tab even when a fresh active-tab query would resolve to a DIFFERENT tab (regression)', async () => {
+    const onClicked = vi.mocked(browser.contextMenus.onClicked.addListener).mock.calls[0]?.[0];
+    if (!onClicked) throw new Error('context-menu click listener not registered');
+    const { readAnswerState } = await import('./lib/answer-state');
+
+    const clickedTabId = 208;
+    const otherActiveTabId = 209;
+    // Whichever tab a FRESH `{active:true,currentWindow:true}` query would
+    // resolve to right now is a DIFFERENT tab than the one the context-menu
+    // event actually fired on (e.g. focus moved to another window between
+    // the gesture and this call) — the row must still land on the CLICKED
+    // tab, not on whatever `activeTabId()` would independently resolve.
+    tabsQueryMock.mockResolvedValue([
+      { id: otherActiveTabId, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+
+    onClicked(
+      {
+        menuItemId: 'ajh-answer-selection',
+        selectionText: 'Tell me about a conflict you resolved.',
+      } as never,
+      { id: clickedTabId } as never
+    );
+    await flush();
+
+    const clickedState = await readAnswerState(clickedTabId);
+    expect(clickedState?.rows.map((r) => r.question)).toContain(
+      'Tell me about a conflict you resolved.'
+    );
+
+    const otherState = await readAnswerState(otherActiveTabId);
+    expect(otherState?.rows.map((r) => r.question) ?? []).not.toContain(
+      'Tell me about a conflict you resolved.'
+    );
   });
 
   it('ignores a click on a different menu id', async () => {
