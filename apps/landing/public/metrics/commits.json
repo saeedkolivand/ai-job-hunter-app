@@ -1,5 +1,197 @@
 [
   {
+    "sha": "7195ca9611830e202fc6d2d38bb4a269ea67f904",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-03T08:01:12Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "489786c7d04acb44f1e9d85bdbc9bebd66585f28",
+    "commit": {
+      "message": "chore: sync landing download version to v0.146.0",
+      "author": {
+        "date": "2026-09-03T04:51:40Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "e03a70d569e66ec150332effc240032deb2d049f",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.146.0 [skip ci]",
+      "author": {
+        "date": "2026-09-03T04:50:49Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "ee49262ce06005addf3767ff54de4b7b1a0a5bc0",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-03T04:32:36Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "0f76837851c618c2805d284ef5157e8397baa521",
+    "commit": {
+      "message": "chore(release): 0.146.0 [skip ci]",
+      "author": {
+        "date": "2026-09-03T04:11:25Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "f5fa164d0bd9d5386a1b6c40ae1819dbfaa1be0e",
+    "commit": {
+      "message": "feat: per-language help retrieval with cancellation, agent cli settings card, cross-os mcp smoke (#1102)",
+      "author": {
+        "date": "2026-09-03T04:08:31Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "c77de253bb74a33e52530fa648ba4d380baf0dba",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-02T23:52:11Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "0c14e8f15a38f4ced0a5f3bf5a9f5c96cfcb3702",
+    "commit": {
+      "message": "feat: help chat, a11y lint over the design system, orphan copy cleanup and the mcp residuals (#1101)",
+      "author": {
+        "date": "2026-09-02T23:27:51Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "a546557456e1d145c351b4a46705539d8befe72e",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-02T18:45:13Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "84cbcc6d5edb79ae245ddc494e8fc7ad678d986f",
+    "commit": {
+      "message": "chore: bump the desktop-rust group (#1097)",
+      "author": {
+        "date": "2026-09-02T18:21:05Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "b6c31f08f277e079101fdca969bcc1b7a5efd4c6",
+    "commit": {
+      "message": "chore: bump the javascript group with 26 updates (#1099)",
+      "author": {
+        "date": "2026-09-02T18:18:56Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "be667116eed959ba7c046188bae43ab8f19baa62",
+    "commit": {
+      "message": "chore: bump the ci-actions group with 4 updates (#1098)",
+      "author": {
+        "date": "2026-09-02T18:18:35Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "d71d5756a5f22ac6e788a4b5e314801ef2e40ca1",
+    "commit": {
+      "message": "chore: bump the codeql-action group with 3 updates (#1096)",
+      "author": {
+        "date": "2026-09-02T18:17:43Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "9867c060fc97e67c1df9662efa27b0295fe2d734",
+    "commit": {
+      "message": "feat: persistent next-step tile on the dashboard (#1095)",
+      "author": {
+        "date": "2026-09-02T17:46:44Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "ad6fa2f24f083daad9b18aa95af516933ad31b51",
+    "commit": {
+      "message": "feat: searchable help page over a corrected, feature-grouped corpus (#1094)",
+      "author": {
+        "date": "2026-09-02T10:29:15Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "ce2133295aa0f2b20e6ec680da148fc535d21337",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-02T07:53:23Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "e98b9421792337c4f0d5382af97e9b5a4bb7c4f1",
     "commit": {
       "message": "docs: record the live client handshakes in adr-040 (#1093)",
@@ -1005,198 +1197,6 @@
     },
     "author": {
       "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "ee9ca540fef9427b4d38d2836ea85996038373af",
-    "commit": {
-      "message": "docs: replace three extrapolated git-history figures with a measured one (#1067)",
-      "author": {
-        "date": "2026-08-21T16:44:29Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "28595504651253338815a34508e7c2b3ce317c6b",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-08-21T16:29:15Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "5ddd0d46b601fb0f3ce4fd1b9a1dfbd3d4ae472a",
-    "commit": {
-      "message": "chore: stop committing generated images, and fix the note that said otherwise (#1066)",
-      "author": {
-        "date": "2026-08-21T16:17:14Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "c8f02a5d95252ed69ea6df2bb0fcfc64e9b7c929",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-08-21T15:44:44Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "25543821feda49c332fa0f73c6fdd1773db6c2db",
-    "commit": {
-      "message": "feat: put the growth charts on the home page, and stop the repo doubling yearly (#1065)",
-      "author": {
-        "date": "2026-08-21T15:21:34Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "2ab0cfce340816725d9a6cef53894b108c688485",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.139.3 [skip ci]",
-      "author": {
-        "date": "2026-08-21T05:27:24Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "ee595899e2bfc689a945f1297f9b3a83dd5d4196",
-    "commit": {
-      "message": "feat(landing): ask for support on the download page, in the page's own voice (#1064)",
-      "author": {
-        "date": "2026-08-21T04:43:58Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "b585e520561a72e3842e07ca28c3cea84b972fe9",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-08-21T03:59:33Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "86b3366ad638a1a66507e5e84468eff6e0f3397d",
-    "commit": {
-      "message": "feat: surface the match score on the résumé, and self-host the growth charts (#1063)",
-      "author": {
-        "date": "2026-08-21T03:06:55Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "7938dd60108da043f3d942c7cda18f0df2d8dcb2",
-    "commit": {
-      "message": "chore: sync landing download version to v0.139.3",
-      "author": {
-        "date": "2026-08-21T00:25:54Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "74f46b92b0e56173e5e61b0e56585439eb71e3af",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.139.3 [skip ci]",
-      "author": {
-        "date": "2026-08-21T00:25:26Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "83d8b73735805bf005c2c2a28aaee877eaac2b2b",
-    "commit": {
-      "message": "chore(release): 0.139.3 [skip ci]",
-      "author": {
-        "date": "2026-08-20T22:18:50Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "6cb19f1a80680fc7f23f950525f51c45862acb5c",
-    "commit": {
-      "message": "docs: make the thin-pointer rule reach the agent that writes docs (#1062)",
-      "author": {
-        "date": "2026-08-20T22:17:36Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "ecc8519b01ff73f9253f905ebd453b25e0da7879",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-08-20T21:11:53Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "914f31a722fc88ab13cc909c9935091e6ea9f127",
-    "commit": {
-      "message": "fix(export): give résumé entries the hierarchy they were never structured for (#1061)",
-      "author": {
-        "date": "2026-08-20T21:00:06Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "5e07ca59c31bb0a73967b5118a2e333b3e09e840",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-08-20T20:24:00Z"
-      }
-    },
-    "author": {
-      "login": "github"
     }
   }
 ]
