@@ -75,6 +75,21 @@ So the open questions were the _surface_, the _state behind it_, and what the UI
 - **Verified against Chrome's documentation** (developer.chrome.com, read 2026-09-03), on the two rules decisions 2 and 3 rest on: the `activeTab` grant is per tab, is granted by the action, a context-menu item or a keyboard shortcut, and lasts for the same-origin session; and a declared default popup takes priority over opening the panel on the action click, which is why decision 2 opens the panel from inside the popup instead.
 - **Not verified**: `parse_max_chars` has no caller in this branch — nothing puts `maxChars` into the draft prompt and nothing re-asks on an overshoot, so decision 6's code-enforced half is deferred until a sibling PR (#1103) merges and the extension path degrades to the panel counting the returned text itself, exactly as decision 6 says a pre-field desktop should. No visual verification was possible without running the app: not of the panel or the popup's "Open answer panel" control, and not of the desktop-side inline-rewrite popover fix this same PR carries (the clipping fix folded in alongside the panel) — each is verified only at the DOM-assertion / unit-test level, never rendered and looked at.
 
+## Amendment — 2026-09-05
+
+Decision 2 shipped one context-menu entry (`ajh-answer-selection`), scoped to `contexts: ['selection']`, so a plain right-click with nothing selected showed nothing from this extension. A second entry now ships alongside it: `ajh-answer-open-panel`, registered on `contexts: ['page', 'editable']`, titled "Open answer panel" to match the popup's own control of the same name, and its click handler calls `openAnswerPanel` directly with no row added — there is nothing to prefill.
+
+An earlier draft of this amendment claimed `'page'` and `'selection'` are independent Chrome context categories that stack. **That was verified against the wrong source and is false.** Checked against Chromium's actual matching code (`ExtensionContextAndPatternMatch`, `chrome/browser/extensions/context_menu_helpers.cc`): `PAGE` is the least-specific context and is examined only when none of `has_link`, `has_selection`, `params.is_editable`, or a media type apply — it is a **fallback**, suppressed the moment any of those apply. So the two entries are mutually exclusive in the case this amendment originally described (plain page vs. plain selection): right-clicking on selected text shows `ajh-answer-selection` alone, never both.
+
+`editable` was added to `ajh-answer-open-panel`'s contexts (widening it from `['page']`) because the fallback-suppression rule above means a page-only entry never appears inside an editable field either — and application-form text fields are the primary place this extension is used from. Four cases result:
+
+- Plain page background, nothing selected, not editable: only `ajh-answer-open-panel` shows.
+- Selected text, not editable: only `ajh-answer-selection` shows (`page` suppressed by the selection).
+- Inside an editable field, no selection: only `ajh-answer-open-panel` shows (`editable` is one of its two declared contexts).
+- Inside an editable field WITH a selection (e.g. text the user already typed): **both** match — `ajh-answer-open-panel` via `editable`, `ajh-answer-selection` via `selection` — and this is the one case where Chrome's documented submenu-collapse behaviour genuinely applies. Verified against Chrome's documentation (developer.chrome.com/docs/extensions/reference/api/contextMenus, read 2026-09-05): "if more than one [item] from your extension is visible at once, Google Chrome automatically collapses them into a single parent menu," titled with this extension's own manifest `name` (`'AI Job Hunter — Job Importer'`), per `ContextMenuMatcher::GetTopLevelContextMenuTitle`'s fallback — not the shorter `'AI Job Hunter'` an earlier draft assumed.
+
+No manifest/permission change: `contextMenus` was already declared for decision 2's entry, and widening its `contexts` array costs no new permission.
+
 ## References
 
 - Manifest + permission pins: `apps/extension/src/manifest.ts`, `apps/extension/src/manifest.test.ts`

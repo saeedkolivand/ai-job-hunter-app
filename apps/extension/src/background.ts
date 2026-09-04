@@ -1523,19 +1523,51 @@ browser.runtime.onMessage.addListener(
 );
 
 /**
- * The ONE context-menu entry (ADR-044 decision 2). It is registered on
+ * The selection-scoped context-menu entry (ADR-044 decision 2, amended — see
+ * `ANSWER_PANEL_MENU_ID` for the second entry). It is registered on
  * `selection` only, so it never appears on a page the user has not selected
  * text on, and clicking it is ITSELF the gesture that grants `activeTab` for
  * that tab — one of the gestures Chrome documents for `sidePanel.open`.
  */
 const ANSWER_MENU_ID = 'ajh-answer-selection';
 
+/**
+ * The plain-right-click entry: opens the panel with nothing prefilled, so it
+ * has no selection to require. Registered on `contexts: ['page', 'editable']`
+ * rather than `'all'`, which would also fire on links/images/video — more
+ * than a bare "open the panel" gesture needs.
+ *
+ * `'page'` is Chrome's LEAST-specific context, not an independent one: per
+ * Chromium's own matching rule (`ExtensionContextAndPatternMatch`,
+ * `chrome/browser/extensions/context_menu_helpers.cc`), a `page`-scoped item
+ * is suppressed whenever a selection, a link, an editable field, or a media
+ * element is under the cursor — those all take priority over the fallback.
+ * So the two entries are mutually exclusive in the common case, not stacked:
+ *   - plain background, nothing selected, not editable: only this entry.
+ *   - selected text, not editable: only `ANSWER_MENU_ID` (`page` suppressed
+ *     by the selection).
+ *   - inside an editable field, nothing selected: only this entry
+ *     (`editable` is one of its two declared contexts — added because the
+ *     primary use of this extension is answering questions inside
+ *     application-form fields, and a bare `page` context is suppressed
+ *     there too, showing nothing).
+ *   - inside an editable field WITH a selection: BOTH match (this entry via
+ *     `editable`, `ANSWER_MENU_ID` via `selection`) — the one case where
+ *     Chrome's documented "multiple visible items collapse into a single
+ *     parent submenu" behaviour
+ *     (developer.chrome.com/docs/extensions/reference/api/contextMenus, read
+ *     2026-09-05) actually applies, titled with this extension's own
+ *     manifest `name` (`'AI Job Hunter — Job Importer'`, see `manifest.ts`),
+ *     not a shorter label.
+ */
+const ANSWER_PANEL_MENU_ID = 'ajh-answer-open-panel';
+
 /** Longest selection accepted as a question. A selection is untrusted page
  *  content; the desktop clamps it again, this just avoids carrying a whole
  *  article into the row list. */
 const MAX_SELECTION_QUESTION = 500;
 
-/** (Re)create the context-menu entry. `removeAll` first because
+/** (Re)create the context-menu entries. `removeAll` first because
  *  `onInstalled` fires on every update and `create` throws on a duplicate id,
  *  which would otherwise poison the whole listener. */
 function installContextMenu(): void {
@@ -1546,6 +1578,11 @@ function installContextMenu(): void {
       id: ANSWER_MENU_ID,
       title: 'Answer this with AI Job Hunter',
       contexts: ['selection'],
+    });
+    menus.create({
+      id: ANSWER_PANEL_MENU_ID,
+      title: 'Open answer panel',
+      contexts: ['page', 'editable'],
     });
   });
 }
@@ -1591,6 +1628,10 @@ function openAnswerPanel(tabId: number | undefined): void {
 
 if (browser.contextMenus) {
   browser.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === ANSWER_PANEL_MENU_ID) {
+      openAnswerPanel(tab?.id);
+      return;
+    }
     if (info.menuItemId !== ANSWER_MENU_ID) return;
     void handleAnswerMenuClick(info, tab);
   });
