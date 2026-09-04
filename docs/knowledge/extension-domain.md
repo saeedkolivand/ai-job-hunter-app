@@ -1,6 +1,6 @@
 # Extension domain (browser extension + desktop bridge)
 
-Last updated: 2026-09-03 (`answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
+Last updated: 2026-09-04 (`answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
 
 Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tauri-security-reviewer`.
 
@@ -144,13 +144,7 @@ To guard against cancellation-race bugs and billable-job leaks, every in-flight 
 
 ### Compose budget on a reasoning model
 
-A reasoning model spends its thinking out of the **same output budget** as the answer, so a per-surface budget sized for a full-length answer alone can be eaten entirely by reasoning and end as `finish_reason: length` with no text at all. `answer.assist` therefore (all in [`extension_bridge/answer_assist.rs`](../../apps/desktop/src-tauri/src/extension_bridge/answer_assist.rs), whose constant docs carry the derivation — never restate the numbers here):
-
-- sizes its compose budget (`ANSWER_ASSIST_MAX_TOKENS`) to leave room for thinking on top of the visible answer's own `DRAFT_CAP`;
-- asks for the **cheapest reasoning tier the resolved model actually lists**, and sends no effort at all when it lists none ([`Completer::low_effort`](../../apps/desktop/src-tauri/src/pipeline/mod.rs) → `low_effort_level`);
-- retries **exactly once**, at `ANSWER_ASSIST_RETRY_MAX_TOKENS`, on the single predicate [`is_empty_answer_length_cut`](../../apps/desktop/src-tauri/src/commands/ai_provider/stream.rs) — no other failure retries, and a request cancelled between the attempts is not paid for.
-
-Each attempt gets its own `DRAFT_CAP` window over one append-only buffer (so the wire is bounded by two attempts, never more), the request emits **one** `assist.done`, and the retry contributes only its own tail to the draft.
+A reasoning model spends its thinking out of the **same output budget** as the answer, so a per-surface budget sized for a full-length answer alone can be eaten entirely by reasoning and end as `finish_reason: length` with no text at all. `answer.assist`'s budget sizing, effort-tier selection, one-retry rule, cancellation handling and per-attempt cap window are owned by [`extension_bridge/answer_assist.rs::compose_with_length_retry`](../../apps/desktop/src-tauri/src/extension_bridge/answer_assist.rs) and [`stream.rs::ComposeStream`](../../apps/desktop/src-tauri/src/extension_bridge/stream.rs) — read their doc comments for the contract rather than restating it here, where it would drift from the constants and predicates those symbols own.
 
 ## Store policy
 
