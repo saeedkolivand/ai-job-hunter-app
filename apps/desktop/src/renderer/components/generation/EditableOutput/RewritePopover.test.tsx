@@ -240,6 +240,80 @@ describe('RewritePopover — timeout', () => {
   });
 });
 
+describe('RewritePopover — retry gets its own timeout window (HIGH)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it('re-arms the timeout before the one re-ask, so a retry that itself takes close to the full window still settles instead of hitting the shared deadline', async () => {
+    const over = 'x'.repeat(30);
+    const insideLimit = 'y'.repeat(10);
+    let resolveFirst!: (value: string) => void;
+    let resolveRetry!: (value: string) => void;
+    let calls = 0;
+    vi.mocked(rewriteSelection).mockImplementation(
+      ({ signal }: { signal?: AbortSignal }) =>
+        new Promise<string>((resolve, reject) => {
+          calls += 1;
+          const thisCall = calls;
+          signal?.addEventListener('abort', () =>
+            reject(new DOMException('Aborted', 'AbortError'))
+          );
+          if (thisCall === 1) resolveFirst = resolve;
+          else resolveRetry = resolve;
+        })
+    );
+
+    renderPopover();
+    await runInstruction('rewrite this under 20 characters');
+
+    // Burn almost the entire window on the FIRST attempt before it resolves —
+    // mirrors the design's own measured numbers (a single long stream up to
+    // ~152 s against the ~300 s resolved ceiling here).
+    await act(async () => {
+      vi.advanceTimersByTime(RESOLVED_TIMEOUT_MS - 1_000);
+    });
+
+    await act(async () => {
+      resolveFirst(over);
+      // Flush the `.then(async (first) => …)` re-ask leg: the exceeds-limit
+      // check, the timer re-arm, and the retry's own `attempt()` call.
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(vi.mocked(rewriteSelection)).toHaveBeenCalledTimes(2);
+
+    // The retry now runs almost the FULL window on its own clock. With the bug
+    // (a shared, un-reset timer) the ORIGINAL deadline — only ~1 s away at this
+    // point — would fire here and abort the retry, discarding `over`.
+    await act(async () => {
+      vi.advanceTimersByTime(RESOLVED_TIMEOUT_MS - 1_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText('aiGenerate.rewrite.failed')).toBeNull();
+
+    await act(async () => {
+      resolveRetry(insideLimit);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(insideLimit)).toBeTruthy();
+    expect(screen.queryByText('aiGenerate.rewrite.failed')).toBeNull();
+    expect(acceptButton().disabled).toBe(false);
+  });
+});
+
 describe('RewritePopover — unchanged result (C2)', () => {
   afterEach(() => {
     vi.clearAllMocks();

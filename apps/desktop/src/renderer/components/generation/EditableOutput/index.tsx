@@ -287,6 +287,10 @@ export function EditableOutput({
       {frozen && (
         <>
           <div className="fixed inset-0 z-[680]" onClick={closeRewrite} aria-hidden="true" />
+          {/* Only positions the popover for the pre-portal instant (`toolbarEl`
+              starts null before the ref callback fires) — once `anchorEl` is
+              set, `RewritePopover` portals to `document.body` and this wrapper
+              has no effect on it. */}
           <div className="absolute right-0 top-0 z-[700]">
             <RewritePopover
               target={frozen.target}

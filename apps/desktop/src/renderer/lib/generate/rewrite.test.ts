@@ -56,6 +56,13 @@ describe('isUnchangedRewrite', () => {
     // Leading/interior punctuation survives — it can carry meaning.
     expect(normalizeRewriteText('"a, b"')).toBe('"a, b');
   });
+
+  it('is false when the result drops a trailing SYMBOL that carries meaning', () => {
+    // "+" is a symbol (\p{S}), not punctuation (\p{P}) — dropping it changes
+    // "at least $2M" to exactly $2M, so it must NOT be treated as unchanged.
+    expect(isUnchangedRewrite('Grew ARR to $2M+', 'Grew ARR to $2M')).toBe(false);
+    expect(normalizeRewriteText('Grew ARR to $2M+')).toBe('Grew ARR to $2M+');
+  });
 });
 
 // ─── Numeric limit parsing (C4) ──────────────────────────────────────────────

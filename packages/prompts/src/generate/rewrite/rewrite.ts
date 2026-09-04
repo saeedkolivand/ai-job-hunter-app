@@ -47,7 +47,11 @@ export interface RewriteParams {
    * ruleset, because the transport `locale` cannot carry it: `AiGenerateRequest`
    * only accepts the supported OUTPUT languages (`safeLocale` clamps anything
    * else to `en`), so a Dutch span used to arrive with an English locale and
-   * came back in English. Omitted → the previous English-defaulted behaviour.
+   * came back in English. Optional for callers with no detected/fallback
+   * language of their own; the current sole caller (`rewriteSelection` in
+   * `apps/desktop/src/renderer/lib/generate/generation/generation.ts`, via
+   * `deriveRewriteLocale`) always resolves and supplies a truthy value, so the
+   * omitted-language branch is not exercised on today's call path.
    */
   language?: string;
 }

@@ -216,10 +216,14 @@ export function RewritePopover({
     // (close/unmount/new run) so the catch block surfaces the error instead of
     // silently swallowing it.
     let timedOut = false;
-    const timeoutId = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, resolveRewriteTimeoutMs(model));
+    // `let`, not `const`: the one re-ask below re-arms this with its OWN fresh
+    // window (see there) rather than sharing what's left of the first attempt's.
+    const armTimeout = () =>
+      setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, resolveRewriteTimeoutMs(model));
+    let timeoutId = armTimeout();
     // A reasoning pass on a long span streams for a minute or more with nothing
     // on screen; say so rather than looking dead.
     const stillWorkingId = setTimeout(() => setStillWorking(true), STILL_WORKING_MS);
@@ -252,6 +256,14 @@ export function RewritePopover({
           return;
         }
         // Exactly ONE re-ask, carrying the measured overshoot — never a loop.
+        // Re-arm the timeout with its OWN full window: the first attempt may
+        // have already burned most of the shared budget (a single stream
+        // measured up to ~152 s), and without this the retry could be aborted
+        // almost immediately — discarding the first attempt's perfectly
+        // usable (if over-limit) draft still sitting in `first` for a hard
+        // error instead of the honest over-limit-Accept path below.
+        clearTimeout(timeoutId);
+        timeoutId = armTimeout();
         const retry = await attempt(
           buildOvershootInstruction(trimmed, limit, measureRewriteLength(first, limit.unit))
         );

@@ -7,6 +7,7 @@ import { usePreferencesStore } from '@/store/preferences-store';
 
 import { _registerClient } from '../../app-client';
 import { createMockClient } from '../../mock-client';
+import { computeStreamTimeoutMs } from '../stream-promise';
 import {
   extractMetadata,
   generateApplicationAnswer,
@@ -24,6 +25,7 @@ import {
   lookupSalaryRange,
   researchAnswer,
   researchCompany,
+  resolveRewriteTimeoutMs,
   rewriteSelection,
   seedHeaderFromProfile,
   synthesizeResume,
@@ -1704,6 +1706,29 @@ describe('local model limits wiring', () => {
     // Routing no longer crosses the wire, and the cloud path sends no local ctx.
     expect(arg.provider).toBeUndefined();
     expect(arg.contextWindow).toBeUndefined();
+  });
+});
+
+describe('resolveRewriteTimeoutMs', () => {
+  it.each(['low', 'high', 'xhigh'] as const)(
+    "equals computeStreamTimeoutMs for the active provider's resolved effort (%s)",
+    (effort) => {
+      setActive('ollama', 'llama3');
+      usePreferencesStore.setState({
+        aiProviderConfig: {
+          activeProvider: 'ollama',
+          providers: { ollama: { model: 'llama3', effort } },
+        },
+      });
+
+      expect(resolveRewriteTimeoutMs('llama3')).toBe(computeStreamTimeoutMs(effort));
+    }
+  );
+
+  it('falls back to the flat baseline when the active provider has no configured effort', () => {
+    setActive('ollama', 'llama3');
+
+    expect(resolveRewriteTimeoutMs('llama3')).toBe(computeStreamTimeoutMs(undefined));
   });
 });
 

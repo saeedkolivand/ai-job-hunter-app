@@ -25,15 +25,18 @@ import { detectLanguage } from '@ajh/shared/language-detection';
 
 /**
  * Normalise for the unchanged comparison: collapse every whitespace run to a
- * single space, then drop trailing punctuation/symbols. Deliberately NOT
- * case-folding — "make this all caps" is a real instruction whose result must
- * still count as changed.
+ * single space, then drop trailing punctuation only (`\p{P}` — NOT `\p{S}`
+ * symbols: a trailing symbol can carry meaning a result legitimately drops,
+ * e.g. "Grew ARR to $2M+" vs "Grew ARR to $2M" must NOT normalise to the same
+ * string — the dropped "+" changes "at least $2M" to exactly $2M).
+ * Deliberately NOT case-folding — "make this all caps" is a real instruction
+ * whose result must still count as changed.
  */
 export function normalizeRewriteText(text: string): string {
   return text
     .replace(/\s+/gu, ' ')
     .trim()
-    .replace(/[\p{P}\p{S}]+$/u, '')
+    .replace(/\p{P}+$/u, '')
     .trim();
 }
 
