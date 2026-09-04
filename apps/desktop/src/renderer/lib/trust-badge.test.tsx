@@ -96,6 +96,7 @@ const FLAG_LABEL: Record<TrustFlag, string> = {
   suspiciousDomain: 'Suspicious domain',
   companyDomainMismatch: "Domain doesn't match company",
   implausibleCompany: 'Company name looks implausible',
+  descriptionUnavailable: 'No description available',
 };
 
 const ALL_FLAGS = Object.keys(FLAG_LABEL) as TrustFlag[];

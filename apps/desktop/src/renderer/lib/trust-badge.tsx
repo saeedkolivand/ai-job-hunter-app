@@ -21,6 +21,7 @@ const FLAG_KEY: Record<TrustFlag, string> = {
   suspiciousDomain: 'suspiciousDomain',
   companyDomainMismatch: 'companyDomainMismatch',
   implausibleCompany: 'implausibleCompany',
+  descriptionUnavailable: 'descriptionUnavailable',
 };
 
 /**
