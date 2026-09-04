@@ -272,3 +272,29 @@ describe('buildRewritePrompt — DOC_VOICE carries the positive humanize blocks'
     expect(system).toContain('CADENCE');
   });
 });
+
+// ─── Span language (measured: a Dutch span came back in English 12 of 18 runs) ─
+
+describe('buildRewritePrompt — span language', () => {
+  it('names the span language in rule 7 when the caller detected one', () => {
+    const { system } = buildRewritePrompt({ ...BASE_PARAMS, language: 'nl' });
+    // The CODE, never the raw code: the model reads a language name.
+    expect(system).toMatch(/written in Dutch/);
+    expect(system).toMatch(/write your output in Dutch/);
+    expect(system).not.toContain('written in nl');
+  });
+
+  it('picks the span language for the natural-voice ruleset, not English', () => {
+    // 'de' has a curated German lexicon; a phrase only that block contains
+    // proves `language` reached `antiAiTellLexical`, not just rule 7.
+    const { system } = buildRewritePrompt({ ...BASE_PARAMS, language: 'de' });
+    expect(system).toContain('Anti-KI-Floskeln');
+    expect(system).not.toContain('NATURAL VOICE (anti-AI-tell) for German output');
+  });
+
+  it('omitting the language keeps the previous English-defaulted behaviour', () => {
+    const { system } = buildRewritePrompt(BASE_PARAMS);
+    expect(system).toMatch(/same language as the selected span/i);
+    expect(system).not.toMatch(/The span is written in/);
+  });
+});

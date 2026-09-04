@@ -10,16 +10,10 @@
 
 import { browser } from '@wxt-dev/browser';
 
-import type { ExtensionAnswerSuggestion, ExtensionRewritePreset } from '@ajh/shared';
-
-import type { FilledField, ScannedQuestion } from '../lib/answers-capture';
+import { copyText, mountAnswerTools } from '../answer-tools/answer-tools';
+import { subscribeAnswerState } from '../lib/answer-state';
 import type { ConnectionStatus, PopupRequest, PopupResponse } from '../lib/messages';
-import {
-  getAnswerToolsExpanded,
-  hasAnswerToolsPreference,
-  looksLikeToken,
-  setAnswerToolsExpanded,
-} from '../lib/storage';
+import { getAnswerToolsExpanded, looksLikeToken, setAnswerToolsExpanded } from '../lib/storage';
 
 import './popup.css';
 
@@ -287,90 +281,6 @@ export function resolveAnswersSaveResponse(res: PopupResponse): {
 }
 
 /**
- * Pair each desktop-returned suggestion with its scan-time fill correlation.
- * When `scanned` contains EXACTLY ONE field sharing the suggestion's exact
- * question text, `fieldIndex` is `0` (that field's own occurrence index).
- * When `scanned` contains NONE or MORE THAN ONE such field, `fieldIndex` is
- * `null` and `multipleMatches` records which case it was — a page with two+
- * fields sharing the identical label is ambiguous (which one would "Fill"
- * even mean?), so it must never guess: Fill is omitted and the row falls back
- * to Copy-only, same fail-safe discipline as `locateQuestionField`'s re-scan.
- *
- * Pure: no DOM access, no side effects.
- */
-export interface RenderedSuggestion {
-  suggestion: ExtensionAnswerSuggestion;
-  fieldIndex: number | null;
-  /** `true` when the scan found MORE THAN ONE field sharing this exact
-   *  question text — the row shows a "fill manually" hint instead of a
-   *  (necessarily ambiguous) Fill button. */
-  multipleMatches: boolean;
-  /** Total live fields sharing this exact question text AT SCAN TIME (always
-   *  `1` whenever `fieldIndex` is non-null). Sent alongside `fieldIndex` on a
-   *  Fill click so the fill-time re-scan can refuse if the CURRENT count
-   *  differs — a same-labelled field inserted earlier in DOM order between
-   *  scan and click must never silently receive the fill. */
-  scanCount: number;
-}
-
-export function correlateSuggestions(
-  suggestions: ExtensionAnswerSuggestion[],
-  scanned: ScannedQuestion[]
-): RenderedSuggestion[] {
-  return suggestions.map((suggestion) => {
-    const matches = scanned.filter((q) => q.question === suggestion.question).length;
-    return {
-      suggestion,
-      fieldIndex: matches === 1 ? 0 : null,
-      multipleMatches: matches > 1,
-      scanCount: matches,
-    };
-  });
-}
-
-/**
- * Given an `answersSuggest` response, return the message text + tone plus the
- * suggestions to render and the scan-time correlation list. Mirrors
- * `resolveAnswersSaveResponse` — this verb's errors ARE shown (a deliberate
- * click, not a passive check).
- *
- * Pure: no DOM access, no side effects.
- */
-export function resolveAnswersSuggestResponse(res: PopupResponse): {
-  text: string;
-  tone: 'ok' | 'err';
-  suggestions: ExtensionAnswerSuggestion[];
-  scanned: ScannedQuestion[];
-} {
-  if (!res.ok) return { text: res.error, tone: 'err', suggestions: [], scanned: [] };
-  if (res.kind !== 'answersSuggest') {
-    return {
-      text: 'Unexpected response — please retry.',
-      tone: 'err',
-      suggestions: [],
-      scanned: [],
-    };
-  }
-  const { result, scanned } = res;
-  if (!result.ok) return { text: result.error, tone: 'err', suggestions: [], scanned };
-  if (result.suggestions.length === 0) {
-    return {
-      text: 'No matching past answers found for this form.',
-      tone: 'ok',
-      suggestions: [],
-      scanned,
-    };
-  }
-  const count = result.suggestions.length;
-  return {
-    text: `Found ${count} suggestion${count === 1 ? '' : 's'} for this form.`,
-    tone: 'ok',
-    suggestions: result.suggestions,
-    scanned,
-  };
-}
-
-/**
  * Given a `fill` response, return the popup message + tone. The detailed summary
  * lives in the in-page overlay; the popup shows a short confirmation (or the
  * desktop's refusal when autofill is opted out). Handles the "nothing matched"
@@ -447,73 +357,6 @@ export function resolveMatchLiveResponse(res: PopupResponse): MatchLiveView {
   };
 }
 
-/**
- * Given an `answerAssist` response, return the message text + tone plus the
- * draft to render (`null` when there is nothing to show — an error).
- * Mirrors `resolveMatchLiveResponse` — this verb's errors ARE shown (a
- * deliberate click, not a passive check).
- *
- * Pure: no DOM access, no side effects.
- */
-export interface AnswerAssistView {
-  text: string;
-  tone: 'ok' | 'err';
-  draft: string | null;
-}
-
-export function resolveAnswerAssistResponse(res: PopupResponse): AnswerAssistView {
-  if (!res.ok) return { text: res.error, tone: 'err', draft: null };
-  if (res.kind !== 'answerAssist') {
-    return { text: 'Unexpected response — please retry.', tone: 'err', draft: null };
-  }
-  const { result } = res;
-  if (!result.ok) return { text: result.error, tone: 'err', draft: null };
-  return { text: 'Draft ready — review before using it.', tone: 'ok', draft: result.draft };
-}
-
-/**
- * Given the background's current/last streamed `answer.assist` snapshot
- * (`{text, done, interrupted}` — see `PopupResponse`'s `answerAssistProgress`
- * doc), return what the popup should render. Used for BOTH the live push
- * while a stream is running and the popup-open reattach query.
- * `draft === null` means there is nothing to show at all (no stream has run
- * this session) — the caller should leave the draft box untouched.
- *
- * Pure: no DOM access, no side effects.
- */
-export function resolveAssistProgressView(progress: {
-  text: string;
-  done: boolean;
-  interrupted: boolean;
-}): AnswerAssistView {
-  if (!progress.text) return { text: '', tone: 'ok', draft: null };
-  if (progress.interrupted) {
-    return {
-      text: 'Connection interrupted — here is what arrived so far.',
-      tone: 'err',
-      draft: progress.text,
-    };
-  }
-  if (!progress.done) {
-    return { text: 'Drafting an answer…', tone: 'ok', draft: progress.text };
-  }
-  return { text: 'Draft ready — review before using it.', tone: 'ok', draft: progress.text };
-}
-
-/**
- * Populate the "pick a scanned question" `<select>` from the most recent
- * questions-mode scan (deduped by exact text, in scan order). Pure DOM
- * projection so it's straightforward to re-derive whenever
- * `lastScannedQuestions` changes — no separate scan injection for this
- * feature, it reuses whatever "Suggest answers for this form" last scanned.
- *
- * Pure: no side effects beyond the returned option list (the caller writes it
- * into the DOM).
- */
-export function buildAssistPickerOptions(scanned: { question: string }[]): string[] {
-  return [...new Set(scanned.map((q) => q.question).filter((q) => q.trim().length > 0))];
-}
-
 function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`missing element #${id}`);
@@ -534,32 +377,11 @@ const els = {
   btnMarkApplied: byId<HTMLButtonElement>('btn-mark-applied'),
   groupForm: byId<HTMLElement>('group-form'),
   answerTools: byId<HTMLDetailsElement>('answer-tools'),
-  // The base "Answer tools" label is static HTML text; this is the dedicated
-  // `aria-live="polite"` count span appended after it (Task #30 review fix —
-  // a screen reader must hear the count even while the disclosure is closed,
-  // and rewriting the WHOLE summary's textContent would wipe this child span).
-  answerToolsCount: byId<HTMLElement>('answer-tools-count'),
   btnSaveAnswers: byId<HTMLButtonElement>('btn-save-answers'),
-  btnSuggestAnswers: byId<HTMLButtonElement>('btn-suggest-answers'),
-  suggestionsList: byId<HTMLDivElement>('suggestions-list'),
   btnCheckFit: byId<HTMLButtonElement>('btn-check-fit'),
   matchResult: byId<HTMLDivElement>('match-result'),
-  assistPicker: byId<HTMLSelectElement>('assist-picker'),
-  assistQuestion: byId<HTMLTextAreaElement>('assist-question'),
-  chkSearchWeb: byId<HTMLInputElement>('chk-search-web'),
-  btnAssist: byId<HTMLButtonElement>('btn-assist'),
-  assistResult: byId<HTMLDivElement>('assist-result'),
-  assistDraft: byId<HTMLParagraphElement>('assist-draft'),
-  btnCopyAssist: byId<HTMLButtonElement>('btn-copy-assist'),
-  rewritePicker: byId<HTMLSelectElement>('rewrite-picker'),
-  rewritePreset: byId<HTMLSelectElement>('rewrite-preset'),
-  rewriteInstruction: byId<HTMLInputElement>('rewrite-instruction'),
-  btnRewrite: byId<HTMLButtonElement>('btn-rewrite'),
-  rewriteResult: byId<HTMLDivElement>('rewrite-result'),
-  rewriteDraft: byId<HTMLParagraphElement>('rewrite-draft'),
-  btnCopyRewrite: byId<HTMLButtonElement>('btn-copy-rewrite'),
-  btnAcceptRewrite: byId<HTMLButtonElement>('btn-accept-rewrite'),
-  btnRestoreRewrite: byId<HTMLButtonElement>('btn-restore-rewrite'),
+  answerToolsHost: byId<HTMLDivElement>('answer-tools-host'),
+  btnOpenPanel: byId<HTMLButtonElement>('btn-open-panel'),
   appliedStatus: byId<HTMLParagraphElement>('applied-status'),
   chkApplied: byId<HTMLInputElement>('chk-applied'),
   importMsg: byId<HTMLParagraphElement>('import-msg'),
@@ -638,64 +460,71 @@ let hasShownOffline = false;
 let lastRenderedPhase: ConnectionStatus['phase'] | null = null;
 
 /**
- * The most recent questions-mode scan (`{question, index}[]`), kept so the
- * currently-rendered suggestion rows can correlate each suggestion to a live
- * fill target — see `correlateSuggestions`. Cleared whenever the popup
- * leaves the `connected` view (see `render`) so a stale correlation can
- * never survive into a different page.
+ * The tab this popup is looking at. Read once at bootstrap via `tabs.query`,
+ * which returns a tab's ID without the `tabs` permission (only its url/title
+ * are gated behind that), so the shared state stays keyed per tab while
+ * `tabs` stays on the manifest denylist.
  */
-let lastScannedQuestions: ScannedQuestion[] = [];
-
-/**
- * The most recent filled-fields scan (`{question, index, answer}[]`, PR 11)
- * — the rewrite picker's option list. Populated by the SAME "Save my answers
- * from this page" scan `answersSave` already runs (see `capture.ts`), no
- * separate injection. Cleared on leaving `connected` — same discipline as
- * {@link lastScannedQuestions}.
- */
-let lastScannedFilled: FilledField[] = [];
-
-/**
- * The currently-picked rewrite target — the field's scan-time correlation
- * (`question`/`index`/`expectedCount`, mirroring `answerFill`'s own
- * correlation shape), the FROZEN original text at pick time (what "Restore
- * original" re-injects, NEVER updated), and `expectedValue` — what THIS
- * popup instance believes the field currently holds, sent on every
- * Accept/Restore so `replaceFilledField` can refuse (never clobber) a
- * manual edit made since. Starts equal to `originalAnswer` and is updated to
- * whatever text a successful Accept/Restore just wrote, so the NEXT
- * Accept/Restore compares against the right baseline — see
- * `sendRewriteReplace`. `null` until the picker selects a field; reset
- * whenever the picker changes or a fresh scan re-renders it.
- */
-let rewriteTarget: {
-  question: string;
-  index: number;
-  expectedCount: number;
-  originalAnswer: string;
-  expectedValue: string;
-} | null = null;
-
-/**
- * Which draft box the CURRENT (or most recently started, in THIS popup
- * instance) `answer.assist` stream feeds — draft's `assistDraft` or
- * rewrite's `rewriteDraft`. Both modes share the SAME background-owned
- * streaming buffer/generation guard (see `background.ts`'s `assistBuffer`
- * doc) — this local flag is only about which of the two boxes a live
- * `answerAssistProgress` push (or the popup-open reattach) should update; it
- * does not affect which request is actually in flight. Set right before
- * `doAssist`/`doRewrite` sends its request. Defaults to `'draft'` — a popup
- * reopened mid-stream (this flag reset to its default by the fresh
- * instance) falls back to the draft box, a documented, minor limitation
- * (PR 11 does not thread mode through the reattach path).
- */
-let activeAssistKind: 'draft' | 'rewrite' = 'draft';
+let activeTabId: number | null = null;
 
 /** Send a typed request to the background and return its typed response. */
 async function send(req: PopupRequest): Promise<PopupResponse> {
   const res = (await browser.runtime.sendMessage(req)) as PopupResponse | undefined;
   if (!res) return { ok: false, error: 'No response from the extension background.' };
   return res;
+}
+
+/**
+ * The Answer-tools section — the SAME component the side panel mounts, over
+ * the SAME shared state (ADR-044 decision 1). Everything the two surfaces
+ * have to agree about lives in that state; this is only a view of it.
+ */
+const answerTools = mountAnswerTools(els.answerToolsHost, { send, copy: copyText });
+
+/**
+ * Open the answer panel. Called SYNCHRONOUSLY from the click handler on both
+ * browsers, because both `chrome.sidePanel.open` and
+ * `browser.sidebarAction.open` require a user gesture and an await before
+ * either one spends it. There is no `setOptions` call to make first: the
+ * panel's path is declared in the manifest, which is exactly why doing it
+ * that way is safe here. The toolbar click cannot open the panel itself — a
+ * declared `default_popup` takes priority over that behaviour, which is why
+ * this control exists at all (ADR-044 decision 2).
+ */
+function openAnswerPanel(): void {
+  const chromePanel = (browser as { sidePanel?: { open(o: { tabId: number }): Promise<void> } })
+    .sidePanel;
+  if (chromePanel && activeTabId !== null) {
+    void chromePanel.open({ tabId: activeTabId }).catch(() => {
+      setMsg(els.importMsg, 'Could not open the side panel.', 'err');
+    });
+    return;
+  }
+  if (chromePanel) {
+    // The panel API exists (Chrome) but bootstrap hasn't resolved a tab id
+    // yet — report THAT, not "this browser has no side panel", which is
+    // false here and points the user at the wrong fix.
+    setMsg(els.importMsg, 'Could not open the side panel for this tab.', 'err');
+    return;
+  }
+  const sidebar = (browser as { sidebarAction?: { open(): Promise<void> } }).sidebarAction;
+  if (!sidebar) {
+    setMsg(els.importMsg, 'This browser has no side panel — the tools above still work.', 'err');
+    return;
+  }
+  void sidebar.open().catch(() => {
+    setMsg(els.importMsg, 'Could not open the sidebar.', 'err');
+  });
+}
+
+/**
+ * Rescan the page into the shared answer state. Fire-and-forget: it runs off
+ * a gesture the user made for another reason (opening the popup, saving their
+ * answers), so a failure must never talk over what they actually asked for —
+ * the Answer-tools section shows its own empty state instead.
+ */
+function runAnswerScan(): void {
+  void send({ kind: 'answerScan' }).catch(() => undefined);
 }
 
 /** Toggle the Form group + Answer-tools disclosure — each on its OWN signal
@@ -731,6 +560,9 @@ function render(status: ConnectionStatus): void {
     if (lastRenderedPhase !== 'connected') {
       void runAppliedAutoCheck();
       void runFieldsProbeCheck();
+      // Opening the popup IS the gesture that grants `activeTab`, so it is the
+      // right (and only free) moment to scan the page into the shared state.
+      void runAnswerScan();
     }
   } else {
     // Left (or never entered) `connected` — clear any status line/button label
@@ -741,33 +573,15 @@ function render(status: ConnectionStatus): void {
     els.btnImport.textContent = IMPORT_LABEL_DEFAULT;
     els.btnMarkApplied.hidden = true;
     els.btnMarkApplied.disabled = false;
-    // A stale suggestion list (and its fill correlation) must never linger
-    // into a different page's connected view.
-    els.suggestionsList.hidden = true;
-    els.suggestionsList.textContent = '';
-    els.answerToolsCount.textContent = '';
-    lastScannedQuestions = [];
-    // Invalidate any in-flight auto-suggest chain (Task #30) — same discipline
-    // as `fieldsProbeGeneration` below, own counter since the auto-suggest
-    // chain (autofill.check → scan → answers.suggest) outlives one fieldsProbe
-    // round trip.
-    autoSuggestGeneration += 1;
     // A stale "Check fit" score from a previous page must never linger either.
     els.matchResult.hidden = true;
     els.matchResult.textContent = '';
-    // A stale AI-answer draft (and the picker it was scanned against) must
-    // never linger into a different page's connected view either.
-    els.assistResult.hidden = true;
-    els.assistDraft.textContent = '';
-    els.assistQuestion.value = '';
-    els.chkSearchWeb.checked = false;
-    renderAssistPicker([]);
-    // A stale rewrite draft/target must never linger either (PR 11).
-    renderRewritePicker([]);
-    els.rewriteResult.hidden = true;
-    els.rewriteDraft.textContent = '';
-    els.rewriteInstruction.value = '';
-    els.rewritePreset.value = '';
+    // The Answer-tools rows are NOT cleared here: they live in the shared
+    // per-tab state, not in this popup instance, and losing connection to the
+    // desktop is not a reason to throw away drafts the user can still copy
+    // (ADR-044 decision 3 keeps the rows even after a navigation). Rendering
+    // `null` only empties what THIS view is showing.
+    answerTools.render(null);
     // Invalidate any in-flight fieldsProbe BEFORE resetting visibility: a
     // pending `hasFields:false` from the page just left could otherwise
     // resolve AFTER this reset and hide the groups again in a phase that was
@@ -968,74 +782,9 @@ async function runFieldsProbeCheck(): Promise<void> {
     const res = await send({ kind: 'fieldsProbe' });
     if (myGeneration !== fieldsProbeGeneration) return;
     setToolGroupsVisible(resolveFieldsProbeResponse(res));
-    // Auto-suggest (Task #30): only on a GENUINELY resolved `hasAnswerFields:
-    // true` — never on the catch's fail-open default below, which doesn't
-    // actually confirm there's anything to suggest for.
-    if (res.ok && res.kind === 'fieldsProbe' && res.hasAnswerFields) {
-      void runAutoSuggest();
-    }
   } catch {
     if (myGeneration !== fieldsProbeGeneration) return;
     setToolGroupsVisible({ showFormGroup: true, showAnswerTools: true });
-  }
-}
-
-/**
- * Generation guard for {@link runAutoSuggest} — separate from
- * `fieldsProbeGeneration` since the auto-suggest chain (`autofill.check` →
- * scan → `answers.suggest`) outlives one fieldsProbe round trip; bumped
- * alongside it on leaving `connected` (see `render`).
- */
-let autoSuggestGeneration = 0;
-
-/**
- * Auto-run "Suggest answers for this form" (Task #30), fired by
- * {@link runFieldsProbeCheck} once per connected transition when the
- * just-resolved probe found answer-capturable fields AND the desktop's
- * assisted-autofill opt-in reads on (`autofill.check` — a pure client-side
- * shortcut; the desktop still enforces the REAL gate on `answers.suggest`
- * itself). UNLIKE `doSuggestAnswers`, this is SILENT: it never writes the
- * "Looking for matching answers…" line to the shared `#import-msg`, and zero
- * results stay silent too (no "No matching past answers" message) — an
- * auto-run must never talk over whatever the user is doing. Only a
- * non-empty result renders anything: the suggestion rows, the Answer-tools
- * `<summary>` count (via `renderSuggestions`), and — only when the user has
- * never expressed a collapse/expand preference — auto-expands the
- * disclosure. Errors are swallowed the same way (silent, never shown).
- *
- * Shares its DOM with `doSuggestAnswers` (the manual click) — a deliberate
- * click always wins (review fix): `doSuggestAnswers` bumps
- * `autoSuggestGeneration` at entry, so a chain already in flight fails its
- * own next generation check below and bails before rendering; the
- * `els.btnSuggestAnswers.disabled` check right before rendering is this
- * path's complementary guard for a FRESH chain (a reconnect firing this
- * function anew) that starts while a manual click is still mid-flight.
- */
-async function runAutoSuggest(): Promise<void> {
-  autoSuggestGeneration += 1;
-  const myGeneration = autoSuggestGeneration;
-  try {
-    const check = await send({ kind: 'autofillCheck' });
-    if (myGeneration !== autoSuggestGeneration) return;
-    if (!check.ok || check.kind !== 'autofillCheck' || !check.enabled) return;
-
-    const res = await send({ kind: 'answersSuggest' });
-    if (myGeneration !== autoSuggestGeneration) return;
-    const { suggestions, scanned } = resolveAnswersSuggestResponse(res);
-    lastScannedQuestions = scanned;
-    if (suggestions.length === 0) return; // silent — nothing found
-    // A manual click is mid-flight (or one just started) — never render over
-    // it; the deliberate click always wins.
-    if (els.btnSuggestAnswers.disabled) return;
-
-    renderSuggestions(suggestions);
-    renderAssistPicker(scanned);
-    if (!(await hasAnswerToolsPreference())) {
-      if (myGeneration !== autoSuggestGeneration || els.btnSuggestAnswers.disabled) return;
-      els.answerTools.open = true;
-    }
-  } catch {
-    // Silent — an auto-run must never surface a transport error to the user.
   }
 }
 
@@ -1072,8 +821,7 @@ async function doMarkApplied(): Promise<void> {
  * and shows the result in the existing message area — UNLIKE the passive
  * auto-check, failures ARE shown here (this is a deliberate click action).
  * Also renders the rewrite picker (PR 11) from the SAME response's `filled`
- * scan — no separate scan injection for that feature, mirroring how
- * `doSuggestAnswers` feeds the draft-mode picker from its own scan.
+ * scan — no separate scan injection for that feature.
  */
 async function doSaveAnswers(): Promise<void> {
   els.btnSaveAnswers.disabled = true;
@@ -1082,491 +830,16 @@ async function doSaveAnswers(): Promise<void> {
     const res = await send({ kind: 'answersSave' });
     const { text, tone } = resolveAnswersSaveResponse(res);
     setMsg(els.importMsg, text, tone);
-    renderRewritePicker(res.ok && res.kind === 'answersSave' ? res.filled : []);
+    // The rows that a saved answer can now be rewritten from live in the
+    // shared state, so a save is a reason to re-scan rather than to update a
+    // picker this view owns. Fire-and-forget: the save already succeeded.
+    void runAnswerScan();
   } catch {
     // A transport/messaging rejection must not strand the status on "Saving…".
     setMsg(els.importMsg, 'Could not save your answers. Please retry.', 'err');
   } finally {
     els.btnSaveAnswers.disabled = false;
   }
-}
-
-/** Truncate an answer preview for the suggestion row (never the full text —
- *  this is a preview, the full text travels to Copy/Fill unchanged). */
-function truncateAnswer(s: string, max = 140): string {
-  const t = s.trim();
-  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
-}
-
-/** Copy `text` to the clipboard; returns whether it succeeded. Extension
- *  pages may call `navigator.clipboard.writeText` on a user gesture without
- *  an extra permission. */
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Click handler for a suggestion row's Copy button — briefly confirms on
- *  the button itself, never touches the shared message area. */
-async function doCopySuggestion(text: string, btn: HTMLButtonElement): Promise<void> {
-  const original = btn.textContent;
-  const ok = await copyText(text);
-  btn.textContent = ok ? '✓ Copied' : 'Copy failed';
-  setTimeout(() => {
-    btn.textContent = original;
-  }, 1200);
-}
-
-/**
- * Click handler for a suggestion row's "Fill this field" button. `question`/
- * `fieldIndex`/`expectedCount` are the SAME scan-time correlation the
- * collector produced — the filler re-locates that exact field and fails safe
- * (never a different field) if the page changed since the scan, INCLUDING a
- * same-labelled field inserted/removed elsewhere on the page (a count change,
- * not just an out-of-range index).
- */
-async function doFillSuggestion(
-  question: string,
-  fieldIndex: number,
-  expectedCount: number,
-  answer: string,
-  btn: HTMLButtonElement
-): Promise<void> {
-  btn.disabled = true;
-  const original = btn.textContent;
-  try {
-    const res = await send({
-      kind: 'answerFill',
-      question,
-      index: fieldIndex,
-      count: expectedCount,
-      answer,
-    });
-    if (res.ok && res.kind === 'answerFill' && res.result.filled) {
-      btn.textContent = '✓ Filled';
-      return;
-    }
-    const text =
-      res.ok && res.kind === 'answerFill'
-        ? (res.result.error ?? 'Could not fill this field.')
-        : !res.ok
-          ? res.error
-          : 'Could not fill this field.';
-    setMsg(els.importMsg, text, 'err');
-    btn.disabled = false;
-    btn.textContent = original;
-  } catch {
-    setMsg(els.importMsg, 'Could not fill this field. Please retry.', 'err');
-    btn.disabled = false;
-    btn.textContent = original;
-  }
-}
-
-/** Build one suggestion row: question / answer preview / source (always
- *  including the matched candidate's original `sourceQuestion`, so a
- *  cross-question match is visible, not silent), plus Copy and (when a live
- *  target exists and the question is not salary-like) Fill. When the scan
- *  found more than one field sharing this exact question — which one to fill
- *  is ambiguous — a short hint replaces Fill instead of guessing.
- *  `textContent` only — no `innerHTML` with page/desktop-derived text. */
-function buildSuggestionRow(item: RenderedSuggestion): HTMLElement {
-  const { suggestion, fieldIndex, multipleMatches, scanCount } = item;
-  const row = document.createElement('div');
-  row.className = 'suggestion';
-
-  const q = document.createElement('p');
-  q.className = 'suggestion__question';
-  q.textContent = suggestion.question;
-  row.append(q);
-
-  const a = document.createElement('p');
-  a.className = 'suggestion__answer';
-  a.textContent = truncateAnswer(suggestion.answer);
-  row.append(a);
-
-  const sourceTitle = suggestion.sourceTitle?.trim();
-  const sourceCompany = suggestion.sourceCompany?.trim();
-  const sourceQuestion = suggestion.sourceQuestion.trim();
-  if (sourceTitle || sourceCompany || sourceQuestion) {
-    const name =
-      sourceTitle && sourceCompany
-        ? `${sourceTitle} @ ${sourceCompany}`
-        : (sourceTitle ?? sourceCompany);
-    const src = document.createElement('p');
-    src.className = 'suggestion__source';
-    // Always shows the matched candidate's ORIGINAL question text — makes a
-    // cross-question match (two questions similar enough on filler words to
-    // score above the matcher's threshold but about different things)
-    // self-evident rather than silent, whether or not it names an
-    // application below.
-    const bits = [`answered as: "${sourceQuestion}"`];
-    if (name) bits.push(`from your ${name} application`);
-    src.textContent = bits.join(' — ');
-    row.append(src);
-  }
-
-  const actions = document.createElement('div');
-  actions.className = 'suggestion__actions';
-
-  const copyBtn = document.createElement('button');
-  copyBtn.type = 'button';
-  copyBtn.className = 'btn btn--small btn--quiet';
-  copyBtn.textContent = 'Copy';
-  copyBtn.addEventListener('click', () => void doCopySuggestion(suggestion.answer, copyBtn));
-  actions.append(copyBtn);
-
-  // Salary-like questions are Copy-only (never fillable), and Fill is only
-  // offered when the scan found a live target for this exact question.
-  if (!suggestion.salary && fieldIndex !== null) {
-    const fillBtn = document.createElement('button');
-    fillBtn.type = 'button';
-    fillBtn.className = 'btn btn--small btn--quiet';
-    fillBtn.textContent = 'Fill this field';
-    fillBtn.addEventListener(
-      'click',
-      () =>
-        void doFillSuggestion(
-          suggestion.question,
-          fieldIndex,
-          scanCount,
-          suggestion.answer,
-          fillBtn
-        )
-    );
-    actions.append(fillBtn);
-  } else if (!suggestion.salary && multipleMatches) {
-    // Ambiguous: more than one live field shares this exact label, so there is
-    // no single field to target — never guess, tell the user to fill by hand.
-    const hint = document.createElement('p');
-    hint.className = 'suggestion__hint';
-    hint.textContent = 'Multiple matching fields — fill manually.';
-    actions.append(hint);
-  }
-
-  row.append(actions);
-  return row;
-}
-
-/**
- * Render the suggestion list — clears any prior rows first (no stale DOM from
- * a previous scan) — and updates the Answer-tools `<summary>`'s `aria-live`
- * count span (Task #30, whenever suggestions are showing — manual click OR
- * auto-found; cleared back to empty once the list is empty again). The base
- * "Answer tools" label is static HTML text, untouched here — only the
- * dedicated count span is written, so a screen reader announces just the
- * count delta instead of re-reading the whole label on every scan.
- */
-function renderSuggestions(suggestions: ExtensionAnswerSuggestion[]): void {
-  els.suggestionsList.textContent = '';
-  const rows = correlateSuggestions(suggestions, lastScannedQuestions);
-  for (const item of rows) {
-    els.suggestionsList.append(buildSuggestionRow(item));
-  }
-  els.suggestionsList.hidden = rows.length === 0;
-  els.answerToolsCount.textContent = rows.length > 0 ? ` (${rows.length})` : '';
-}
-
-/**
- * Click handler for "Suggest answers for this form". Scans the active tab's
- * empty candidate fields, sends their labels as `answers.suggest`, and
- * renders the returned suggestions. Errors ARE shown (a deliberate click).
- *
- * Shares its DOM (suggestionsList, `lastScannedQuestions`, the Answer-tools
- * summary count) with {@link runAutoSuggest} — a deliberate click must always
- * win over the passive auto-run. Bumping `autoSuggestGeneration` here
- * invalidates any auto chain already in flight (its own post-await checks
- * will now see a stale generation and bail before rendering); disabling
- * {@link els.btnSuggestAnswers} for the duration is the auto path's
- * complementary guard for a FRESH auto chain that starts while this click is
- * still mid-flight (a reconnect on a different page) — see
- * `runAutoSuggest`'s doc.
- */
-async function doSuggestAnswers(): Promise<void> {
-  autoSuggestGeneration += 1;
-  els.btnSuggestAnswers.disabled = true;
-  els.suggestionsList.hidden = true;
-  els.suggestionsList.textContent = '';
-  setMsg(els.importMsg, 'Looking for matching answers…', 'muted');
-  try {
-    const res = await send({ kind: 'answersSuggest' });
-    const { text, tone, suggestions, scanned } = resolveAnswersSuggestResponse(res);
-    lastScannedQuestions = scanned;
-    setMsg(els.importMsg, text, tone);
-    renderSuggestions(suggestions);
-    // "Help me answer…"'s picker reuses this SAME scan — no separate
-    // injection for that feature.
-    renderAssistPicker(scanned);
-  } catch {
-    // A transport/messaging rejection must not strand the status on "Looking…".
-    setMsg(els.importMsg, 'Could not suggest answers for this page. Please retry.', 'err');
-  } finally {
-    els.btnSuggestAnswers.disabled = false;
-  }
-}
-
-/** Rebuild the "pick a scanned question" `<select>` options from the most
- *  recent questions-mode scan — clears any prior options first (no stale
- *  entries from a previous page/scan). A change back to the picker's
- *  placeholder value is a no-op (the textarea is left as the user typed it). */
-function renderAssistPicker(scanned: { question: string }[]): void {
-  const placeholder = els.assistPicker.options[0];
-  els.assistPicker.textContent = '';
-  if (placeholder) els.assistPicker.append(placeholder);
-  for (const question of buildAssistPickerOptions(scanned)) {
-    const opt = document.createElement('option');
-    opt.value = question;
-    opt.textContent = question;
-    els.assistPicker.append(opt);
-  }
-  els.assistPicker.value = '';
-}
-
-/**
- * Click handler for "Help me answer…" — the first BILLABLE-AI verb on the
- * bridge. Sends the textarea's (trimmed) text plus the "Search the web"
- * toggle. Errors ARE shown (a deliberate click, not a passive check) —
- * mirrors `doCheckFit`.
- */
-async function doAssist(): Promise<void> {
-  const question = els.assistQuestion.value.trim();
-  if (!question) {
-    setMsg(els.importMsg, 'Type or pick a question first.', 'err');
-    return;
-  }
-  activeAssistKind = 'draft';
-  els.btnAssist.disabled = true;
-  els.assistResult.hidden = true;
-  els.assistDraft.textContent = '';
-  setMsg(els.importMsg, 'Drafting an answer…', 'muted');
-  try {
-    const res = await send({ kind: 'answerAssist', question, searchWeb: els.chkSearchWeb.checked });
-    const view = resolveAnswerAssistResponse(res);
-    setMsg(els.importMsg, view.text, view.tone);
-    if (view.draft !== null) {
-      // textContent only — this is AI-generated text, never rendered as HTML.
-      els.assistDraft.textContent = view.draft;
-      els.assistResult.hidden = false;
-    }
-  } catch {
-    // A transport/messaging rejection must not strand the status on "Drafting…".
-    setMsg(els.importMsg, 'Could not draft an answer. Please retry.', 'err');
-  } finally {
-    els.btnAssist.disabled = false;
-  }
-}
-
-/** Click handler for the draft's Copy button — mirrors `doCopySuggestion`
- *  (briefly confirms on the button itself, never touches the shared message
- *  area). Copy-only: there is no fill path for AI-generated text. */
-async function doCopyAssistDraft(): Promise<void> {
-  const original = els.btnCopyAssist.textContent;
-  const ok = await copyText(els.assistDraft.textContent ?? '');
-  els.btnCopyAssist.textContent = ok ? '✓ Copied' : 'Copy failed';
-  setTimeout(() => {
-    els.btnCopyAssist.textContent = original;
-  }, 1200);
-}
-
-// ── Rewrite mode (extension PR 11) ──────────────────────────────────────────
-
-/** Rebuild the "pick a filled answer" `<select>` options from the most
- *  recent filled-fields scan (see `lastScannedFilled`) — clears any prior
- *  options first (no stale entries from a previous page/scan). Options are
- *  keyed by array index (not question text — the same question can appear
- *  more than once) and labelled with an occurrence suffix when a question
- *  repeats. Mirrors `renderAssistPicker`. */
-function renderRewritePicker(filled: FilledField[]): void {
-  lastScannedFilled = filled;
-  const placeholder = els.rewritePicker.options[0];
-  els.rewritePicker.textContent = '';
-  if (placeholder) els.rewritePicker.append(placeholder);
-  filled.forEach((f, i) => {
-    const opt = document.createElement('option');
-    opt.value = String(i);
-    opt.textContent = f.index > 0 ? `${f.question} (${f.index + 1})` : f.question;
-    els.rewritePicker.append(opt);
-  });
-  els.rewritePicker.value = '';
-  rewriteTarget = null;
-  els.rewriteResult.hidden = true;
-  els.rewriteDraft.textContent = '';
-}
-
-/** Change handler for the rewrite picker — freezes the picked field's
- *  scan-time correlation (`question`/`index`/`expectedCount`, the SAME
- *  shape `answerFill`/`answerReplace` use) plus its CURRENT text as
- *  {@link rewriteTarget}, so Accept/Restore always act on exactly the field
- *  the user picked, never a moving target. `expectedCount` is the total
- *  number of scanned fields sharing this exact question text — the same
- *  fail-safe correlation `locateFilledField` re-checks on Accept/Restore.
- *
- *  `raw` is checked for emptiness BEFORE the `Number()` coercion —
- *  `Number('')` is `0`, not `NaN`, so a naive `Number.isInteger(Number(raw))`
- *  guard would treat the picker's OWN placeholder (value `''`, selected when
- *  the user picks it back, or on a fresh render) as if index 0 had been
- *  picked, silently re-freezing whatever field happens to be first in
- *  `lastScannedFilled` instead of correctly clearing {@link rewriteTarget}. */
-function onRewritePickerChange(): void {
-  const raw = els.rewritePicker.value;
-  const picked = raw ? lastScannedFilled[Number(raw)] : undefined;
-  els.rewriteResult.hidden = true;
-  els.rewriteDraft.textContent = '';
-  els.rewriteInstruction.value = '';
-  if (!picked) {
-    rewriteTarget = null;
-    return;
-  }
-  const expectedCount = lastScannedFilled.filter((f) => f.question === picked.question).length;
-  rewriteTarget = {
-    question: picked.question,
-    index: picked.index,
-    expectedCount,
-    originalAnswer: picked.answer,
-    expectedValue: picked.answer,
-  };
-}
-
-/**
- * Run a rewrite — preset button click (`preset` set, runs immediately,
- * mirrors the in-app `RewritePopover`'s `onPreset`) or the free-text submit
- * button (`preset` omitted, uses the typed instruction). Streams into its
- * own draft box (never `assistDraft`), reusing the SAME `answer.assist`
- * request/streaming buffer as draft mode — `mode: 'rewrite'` plus the picked
- * field's frozen `originalAnswer` as `existingAnswer`. Errors ARE shown (a
- * deliberate click) — mirrors `doAssist`.
- */
-async function doRewrite(preset?: ExtensionRewritePreset): Promise<void> {
-  if (!rewriteTarget) {
-    setMsg(els.importMsg, 'Pick a filled answer first.', 'err');
-    return;
-  }
-  const instruction = els.rewriteInstruction.value.trim();
-  if (!preset && !instruction) {
-    setMsg(els.importMsg, 'Pick a preset or type an instruction.', 'err');
-    return;
-  }
-  activeAssistKind = 'rewrite';
-  els.btnRewrite.disabled = true;
-  els.rewriteResult.hidden = true;
-  els.rewriteDraft.textContent = '';
-  setMsg(els.importMsg, 'Rewriting…', 'muted');
-  try {
-    const res = await send({
-      kind: 'answerAssist',
-      question: rewriteTarget.question,
-      searchWeb: false,
-      mode: 'rewrite',
-      existingAnswer: rewriteTarget.originalAnswer,
-      ...(preset ? { preset } : {}),
-      ...(instruction ? { instruction } : {}),
-    });
-    const view = resolveAnswerAssistResponse(res);
-    setMsg(els.importMsg, view.text, view.tone);
-    if (view.draft !== null) {
-      // textContent only — this is AI-generated text, never rendered as HTML.
-      els.rewriteDraft.textContent = view.draft;
-      els.rewriteResult.hidden = false;
-    }
-  } catch {
-    // A transport/messaging rejection must not strand the status on "Rewriting…".
-    setMsg(els.importMsg, 'Could not rewrite this answer. Please retry.', 'err');
-  } finally {
-    els.btnRewrite.disabled = false;
-  }
-}
-
-/** Click handler for the rewrite draft's Copy button — mirrors
- *  `doCopyAssistDraft` exactly. */
-async function doCopyRewriteDraft(): Promise<void> {
-  const original = els.btnCopyRewrite.textContent;
-  const ok = await copyText(els.rewriteDraft.textContent ?? '');
-  els.btnCopyRewrite.textContent = ok ? '✓ Copied' : 'Copy failed';
-  setTimeout(() => {
-    els.btnCopyRewrite.textContent = original;
-  }, 1200);
-}
-
-/**
- * Send an `answerReplace` for {@link rewriteTarget} with `text`, showing the
- * outcome in the shared message area — shared by Accept (the rewritten
- * draft) and Restore original (the frozen `originalAnswer`); the ONLY
- * difference between the two is which `text` is passed. Sends the tracked
- * `expectedValue` too, so `replaceFilledField` can refuse (a distinct
- * error, surfaced verbatim below) rather than clobber a manual edit the
- * user made to the field since the pick.
- * Fails safe on any page mutation since the pick (never a different field)
- * — see `replaceFilledField`. Never submits the form.
- *
- * On a SUCCESSFUL write, updates `rewriteTarget.expectedValue` to `text` —
- * the field now holds `text`, not whatever it held before — so the NEXT
- * Accept/Restore compares against the CURRENT baseline instead of a stale
- * one (without this, a successful Accept would make an immediately
- * following Restore wrongly refuse, since the field no longer holds the
- * value this same popup last believed was there).
- */
-async function sendRewriteReplace(
-  text: string,
-  btn: HTMLButtonElement,
-  successMsg: string,
-  failureFallback: string
-): Promise<void> {
-  if (!rewriteTarget || !text) return;
-  // capture before await: a mid-flight re-pick must not corrupt a different target's expectedValue
-  const target = rewriteTarget;
-  btn.disabled = true;
-  try {
-    const res = await send({
-      kind: 'answerReplace',
-      question: target.question,
-      index: target.index,
-      count: target.expectedCount,
-      text,
-      expectedValue: target.expectedValue,
-    });
-    if (res.ok && res.kind === 'answerReplace' && res.result.filled) {
-      target.expectedValue = text;
-      setMsg(els.importMsg, successMsg, 'ok');
-    } else {
-      const msg =
-        res.ok && res.kind === 'answerReplace'
-          ? (res.result.error ?? failureFallback)
-          : !res.ok
-            ? res.error
-            : failureFallback;
-      setMsg(els.importMsg, msg, 'err');
-    }
-  } catch {
-    setMsg(els.importMsg, `${failureFallback} Please retry.`, 'err');
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-/** Click handler for "Accept" — writes the rewritten draft onto the picked
- *  field. */
-async function doAcceptRewrite(): Promise<void> {
-  await sendRewriteReplace(
-    els.rewriteDraft.textContent ?? '',
-    els.btnAcceptRewrite,
-    'Replaced the field on the page.',
-    'Could not replace this field.'
-  );
-}
-
-/** Click handler for "Restore original" — re-injects the FROZEN pre-rewrite
- *  text (never the current draft box), the SAME replace path Accept uses. */
-async function doRestoreRewrite(): Promise<void> {
-  if (!rewriteTarget) return;
-  await sendRewriteReplace(
-    rewriteTarget.originalAnswer,
-    els.btnRestoreRewrite,
-    'Restored the original answer.',
-    'Could not restore this field.'
-  );
 }
 
 /** Build the "Check fit" score card — score / source+résumé line / gap chips.
@@ -1760,24 +1033,10 @@ function wire(): void {
   els.btnFill.addEventListener('click', () => void doFill());
   els.btnMarkApplied.addEventListener('click', () => void doMarkApplied());
   els.btnSaveAnswers.addEventListener('click', () => void doSaveAnswers());
-  els.btnSuggestAnswers.addEventListener('click', () => void doSuggestAnswers());
   els.btnCheckFit.addEventListener('click', () => void doCheckFit());
-  els.assistPicker.addEventListener('change', () => {
-    if (els.assistPicker.value) els.assistQuestion.value = els.assistPicker.value;
-  });
-  els.btnAssist.addEventListener('click', () => void doAssist());
-  els.btnCopyAssist.addEventListener('click', () => void doCopyAssistDraft());
-  els.rewritePicker.addEventListener('change', onRewritePickerChange);
-  els.rewritePreset.addEventListener('change', () => {
-    const preset = els.rewritePreset.value;
-    if (!preset) return;
-    void doRewrite(preset as ExtensionRewritePreset);
-    els.rewritePreset.value = '';
-  });
-  els.btnRewrite.addEventListener('click', () => void doRewrite());
-  els.btnCopyRewrite.addEventListener('click', () => void doCopyRewriteDraft());
-  els.btnAcceptRewrite.addEventListener('click', () => void doAcceptRewrite());
-  els.btnRestoreRewrite.addEventListener('click', () => void doRestoreRewrite());
+  // NOT `void openAnswerPanel()` behind an await: opening the panel needs the
+  // user gesture this click IS, and any await before the call spends it.
+  els.btnOpenPanel.addEventListener('click', openAnswerPanel);
   els.btnSaveToken.addEventListener('click', () => void savePairing());
   els.tokenInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') void savePairing();
@@ -1803,81 +1062,30 @@ function wire(): void {
   browser.runtime.onMessage.addListener((message: unknown) => {
     const res = message as PopupResponse;
     if (res && res.ok && res.kind === 'status') render(res.status);
-    // Live streaming preview: the background pushes one of these per
-    // `assist.chunk` (and once more on settle) while a draft is in flight —
-    // update only the dedicated draft box for ongoing chunks, never the
-    // shared `importMsg` status line `doAssist` itself owns for this same
-    // request. The one exception is the terminal interrupted case: a popup
-    // reopened mid-stream has no `doAssist` await of its own to fall back on
-    // (see `reattachAssistProgress`), so THIS listener is the only place it
-    // ever learns the stream later failed — without this, it would keep
-    // showing the last partial draft with no indication it's incomplete.
-    // Mirrors `reattachAssistProgress`'s own interruption rendering.
-    if (res && res.ok && res.kind === 'answerAssistProgress') {
-      // Reflect in-flight state on THIS popup instance too — a popup reattached
-      // to a still-running stream (see `reattachAssistProgress`) keeps learning
-      // about it here, and must stay disabled until the stream is terminal
-      // (never a silent re-trigger that would race/corrupt the shared buffer —
-      // see `assistGeneration` in background.ts). Always re-enables once done,
-      // so a terminal push never leaves the button stuck disabled. Routed by
-      // `activeAssistKind` (draft vs. rewrite, PR 11) to the matching box/button
-      // — both modes share the SAME background buffer.
-      const btn = activeAssistKind === 'rewrite' ? els.btnRewrite : els.btnAssist;
-      btn.disabled = !res.done;
-      const view = resolveAssistProgressView(res);
-      if (view.draft !== null) {
-        if (activeAssistKind === 'rewrite') {
-          els.rewriteDraft.textContent = view.draft;
-          els.rewriteResult.hidden = false;
-        } else {
-          els.assistDraft.textContent = view.draft;
-          els.assistResult.hidden = false;
-        }
-      }
-      if (view.tone === 'err') setMsg(els.importMsg, view.text, 'err');
+    // The streamed draft itself is NOT rendered from this push any more: the
+    // background mirrors every chunk into the shared per-tab state, and the
+    // Answer-tools component below is subscribed to it, so the popup and the
+    // panel show the same stream without either of them owning it. What is
+    // still worth doing here is surfacing a TERMINAL interruption on the
+    // shared status line, which the row itself cannot say as loudly.
+    if (res && res.ok && res.kind === 'answerAssistProgress' && res.done && res.interrupted) {
+      setMsg(els.importMsg, 'Connection interrupted — here is what arrived so far.', 'err');
     }
   });
 }
 
 /**
- * On popup open, reattach to any in-flight/just-finished streaming
- * `answer.assist` the background is holding — so closing the popup
- * mid-stream and reopening shows what already arrived instead of a blank
- * view. No-op when no stream has run this session. Runs BEFORE any user
- * click, so setting the shared `importMsg` line on the interrupted case is
- * safe (nothing else has written to it yet in this fresh popup instance).
+ * Apply the persisted Answer-tools expand/collapse preference, then subscribe
+ * the shared Answer-tools component to THIS tab's state — in that order, so a
+ * buffered draft (which always wins) is never immediately re-collapsed by a
+ * stale "collapsed" preference applied after it.
  *
- * Also disables `btnAssist` when the reattached stream is still in flight —
- * a freshly-opened popup's button defaults to enabled, and clicking it while
- * the prior run is still streaming would start a second overlapping
- * `runAnswerAssist` (see `assistGeneration` in background.ts). Re-enabled
- * once the reattached stream is terminal, and by the live-push listener
- * above if it finishes while this popup stays open.
- */
-async function reattachAssistProgress(): Promise<void> {
-  try {
-    const res = await send({ kind: 'answerAssistProgress' });
-    if (!res.ok || res.kind !== 'answerAssistProgress') return;
-    els.btnAssist.disabled = !res.done;
-    const view = resolveAssistProgressView(res);
-    if (view.draft === null) return;
-    // A buffered/still-streaming draft exists from before this popup opened —
-    // auto-expand the Answer-tools disclosure so it's visible (never leave the
-    // user hunting for a result they already started).
-    els.answerTools.open = true;
-    els.assistDraft.textContent = view.draft;
-    els.assistResult.hidden = false;
-    if (view.tone === 'err') setMsg(els.importMsg, view.text, 'err');
-  } catch {
-    // Best-effort — a transport hiccup on open just means no reattach.
-  }
-}
-
-/**
- * Apply the persisted Answer-tools expand/collapse preference, THEN check for
- * a reattachable stream — in that order, so an active/buffered draft (which
- * always wins) is never immediately re-collapsed by a stale "collapsed"
- * preference applied after it.
+ * The subscription is what replaces the old popup-open reattach: the
+ * background mirrors an in-flight stream into the state, so a popup that
+ * opens mid-stream renders it from the first `render` call rather than
+ * querying for it. A tab id that cannot be read (no active tab) leaves the
+ * component on its empty state, which is also what it shows before the first
+ * scan.
  *
  * Exported (unlike the other `do*`/render helpers) because nothing wires a
  * user click to re-run this bootstrap — it only ever runs once, automatically,
@@ -1889,7 +1097,18 @@ export async function bootstrapAnswerTools(): Promise<void> {
   } catch {
     // Best-effort — a storage read hiccup just keeps the collapsed default.
   }
-  await reattachAssistProgress();
+  try {
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    activeTabId = typeof tab?.id === 'number' ? tab.id : null;
+    // The "N questions · M to go" summary is rendered ONCE, by the panel body
+    // itself (`answer-tools.ts`'s `render()`) — it needs it there for the side
+    // panel, which has no `<summary>` disclosure. Duplicating it into this
+    // `<summary>` line as well showed it twice in the popup.
+    if (activeTabId !== null)
+      subscribeAnswerState(activeTabId, (state) => answerTools.render(state));
+  } catch {
+    // Best-effort — no tab id just means the section renders its empty state.
+  }
 }
 
 wire();

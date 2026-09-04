@@ -1,11 +1,16 @@
 /**
- * RewritePopover — timeout tests
+ * RewritePopover — timeout, unchanged-result, limit enforcement and portal mode.
  *
  * Verifies the client-side safety net added in Fix #8b:
- *  - A stalled provider stream is aborted after REWRITE_TIMEOUT_MS and the
- *    error state is surfaced (not silently swallowed).
+ *  - A stalled provider stream is aborted at the EFFORT-SCALED bound the shared
+ *    stream helper uses (never a hardcoded 60 s, which sat below the backend's
+ *    own deadline for the same request) and the error state is surfaced.
  *  - The timeout is cleared when the stream resolves normally — no spurious
  *    error fires after a successful rewrite.
+ * Plus the three measured defects: a result identical to the selection is a
+ * neutral "unchanged" state and not an Accept-able success, a numeric limit in
+ * the instruction is verified by code with exactly ONE re-ask, and a long
+ * reasoning pass says it is still working instead of looking dead.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
@@ -15,9 +20,15 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 
+// The bound `resolveRewriteTimeoutMs` hands back in these tests — deliberately
+// far above the deleted 60 s constant, so a test advancing past 60 s can prove
+// the popover no longer aborts there.
+const { RESOLVED_TIMEOUT_MS } = vi.hoisted(() => ({ RESOLVED_TIMEOUT_MS: 300_000 }));
+
 // ── lib/generate — stall by default (controlled per-test via mockImplementation) ──
 vi.mock('@/lib/generate', () => ({
   rewriteSelection: vi.fn(),
+  resolveRewriteTimeoutMs: () => RESOLVED_TIMEOUT_MS,
 }));
 
 // ── motion/react — strip animation props, render plain div ────────────────────
@@ -95,16 +106,37 @@ import { RewritePopover } from './RewritePopover';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
+const SELECTION = 'some selected text';
+
 function renderPopover() {
   return render(
     <RewritePopover
-      target={{ selection: 'some selected text', before: '', after: '' }}
+      target={{ selection: SELECTION, before: '', after: '' }}
       docType="resume"
       model="test-model"
       onAccept={vi.fn()}
       onClose={vi.fn()}
     />
   );
+}
+
+/** The Accept button, whose enabled state is the honesty contract under test. */
+function acceptButton(): HTMLButtonElement {
+  return screen.getByRole('button', { name: /aiGenerate\.rewrite\.accept/i });
+}
+
+/** Run the free-instruction path with `text`, then flush the promise chain. */
+async function runInstruction(text: string) {
+  fireEvent.change(screen.getByPlaceholderText('aiGenerate.rewrite.instructionPlaceholder'), {
+    target: { value: text },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'aiGenerate.rewrite.submit' }));
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
 }
 
 /**
@@ -133,21 +165,52 @@ describe('RewritePopover — timeout', () => {
     vi.clearAllMocks();
   });
 
-  it('surfaces aiGenerate.rewrite.failed after REWRITE_TIMEOUT_MS with a stalled stream', async () => {
+  it('does NOT abort at the deleted 60 s constant, and surfaces aiGenerate.rewrite.failed at the resolved bound', async () => {
     renderPopover();
 
     // Trigger run() via the first preset chip.
     fireEvent.click(screen.getByText('aiGenerate.rewrite.presets.shorten'));
 
-    // Advance the clock past the 60 s client timeout.
+    // 60 s used to kill the stream here while the backend was still streaming
+    // (its own deadline is 300 s scaled by effort). Nothing may happen yet.
     await act(async () => {
       vi.advanceTimersByTime(60_001);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('aiGenerate.rewrite.failed')).toBeNull();
+
+    // Past the bound `resolveRewriteTimeoutMs` actually returned: abort + error.
+    await act(async () => {
+      vi.advanceTimersByTime(RESOLVED_TIMEOUT_MS);
       // Flush the abort-event → rejection → .catch microtask chain.
       await Promise.resolve();
       await Promise.resolve();
     });
 
     expect(screen.getByText('aiGenerate.rewrite.failed')).toBeTruthy();
+  });
+
+  it('shows the still-working line once a stream passes ~20 s, and drops it when the stream lands', async () => {
+    renderPopover();
+
+    fireEvent.click(screen.getByText('aiGenerate.rewrite.presets.shorten'));
+    expect(screen.queryByText('aiGenerate.rewrite.stillWorking')).toBeNull();
+
+    await act(async () => {
+      vi.advanceTimersByTime(20_001);
+      await Promise.resolve();
+    });
+    expect(screen.getByText('aiGenerate.rewrite.stillWorking')).toBeTruthy();
+
+    // The stall mock rejects on abort; abort via the resolved bound and the
+    // line must go away with the stream.
+    await act(async () => {
+      vi.advanceTimersByTime(RESOLVED_TIMEOUT_MS);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.queryByText('aiGenerate.rewrite.stillWorking')).toBeNull();
   });
 
   it('does NOT show error and clears streaming when the stream resolves before timeout', async () => {
@@ -167,13 +230,167 @@ describe('RewritePopover — timeout', () => {
     // Advance past what would have been the timeout — must NOT fire the error
     // since clearTimeout(timeoutId) ran in .finally.
     await act(async () => {
-      vi.advanceTimersByTime(60_001);
+      vi.advanceTimersByTime(RESOLVED_TIMEOUT_MS + 1);
       await Promise.resolve();
     });
 
     expect(screen.queryByText('aiGenerate.rewrite.failed')).toBeNull();
     // The rewrite result is displayed.
     expect(screen.getByText('rewritten text')).toBeTruthy();
+  });
+});
+
+describe('RewritePopover — retry gets its own timeout window (HIGH)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it('re-arms the timeout before the one re-ask, so a retry that itself takes close to the full window still settles instead of hitting the shared deadline', async () => {
+    const over = 'x'.repeat(30);
+    const insideLimit = 'y'.repeat(10);
+    let resolveFirst!: (value: string) => void;
+    let resolveRetry!: (value: string) => void;
+    let calls = 0;
+    vi.mocked(rewriteSelection).mockImplementation(
+      ({ signal }: { signal?: AbortSignal }) =>
+        new Promise<string>((resolve, reject) => {
+          calls += 1;
+          const thisCall = calls;
+          signal?.addEventListener('abort', () =>
+            reject(new DOMException('Aborted', 'AbortError'))
+          );
+          if (thisCall === 1) resolveFirst = resolve;
+          else resolveRetry = resolve;
+        })
+    );
+
+    renderPopover();
+    await runInstruction('rewrite this under 20 characters');
+
+    // Burn almost the entire window on the FIRST attempt before it resolves —
+    // mirrors the design's own measured numbers (a single long stream up to
+    // ~152 s against the ~300 s resolved ceiling here).
+    await act(async () => {
+      vi.advanceTimersByTime(RESOLVED_TIMEOUT_MS - 1_000);
+    });
+
+    await act(async () => {
+      resolveFirst(over);
+      // Flush the `.then(async (first) => …)` re-ask leg: the exceeds-limit
+      // check, the timer re-arm, and the retry's own `attempt()` call.
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(vi.mocked(rewriteSelection)).toHaveBeenCalledTimes(2);
+
+    // The retry now runs almost the FULL window on its own clock. With the bug
+    // (a shared, un-reset timer) the ORIGINAL deadline — only ~1 s away at this
+    // point — would fire here and abort the retry, discarding `over`.
+    await act(async () => {
+      vi.advanceTimersByTime(RESOLVED_TIMEOUT_MS - 1_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText('aiGenerate.rewrite.failed')).toBeNull();
+
+    await act(async () => {
+      resolveRetry(insideLimit);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(insideLimit)).toBeTruthy();
+    expect(screen.queryByText('aiGenerate.rewrite.failed')).toBeNull();
+    expect(acceptButton().disabled).toBe(false);
+  });
+});
+
+describe('RewritePopover — unchanged result (C2)', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('shows the neutral unchanged notice and DISABLES Accept when the result echoes the selection', async () => {
+    // The measured no-op: the result differed from the input by one comma.
+    vi.mocked(rewriteSelection).mockResolvedValue(`${SELECTION},`);
+    renderPopover();
+
+    await runInstruction('tighten this');
+
+    expect(screen.getByText('aiGenerate.rewrite.unchanged')).toBeTruthy();
+    // Neutral, NOT an error.
+    expect(screen.queryByText('aiGenerate.rewrite.failed')).toBeNull();
+    expect(acceptButton().disabled).toBe(true);
+    // Regenerate stays live so the user can ask again.
+    expect(screen.getByRole('button', { name: 'aiGenerate.rewrite.regenerate' })).toBeTruthy();
+  });
+
+  it('leaves Accept enabled and shows no notice for a genuinely different result', async () => {
+    vi.mocked(rewriteSelection).mockResolvedValue('a completely different sentence');
+    renderPopover();
+
+    await runInstruction('tighten this');
+
+    expect(screen.queryByText('aiGenerate.rewrite.unchanged')).toBeNull();
+    expect(acceptButton().disabled).toBe(false);
+  });
+});
+
+describe('RewritePopover — code-enforced length limit (C4)', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('re-asks exactly ONCE with the measured overshoot when the result breaks the parsed limit', async () => {
+    const over = 'x'.repeat(30);
+    const inside = 'y'.repeat(10);
+    vi.mocked(rewriteSelection)
+      .mockResolvedValueOnce(over)
+      .mockResolvedValueOnce(inside)
+      .mockResolvedValue('never reached');
+    renderPopover();
+
+    await runInstruction('rewrite this under 20 characters');
+
+    expect(vi.mocked(rewriteSelection)).toHaveBeenCalledTimes(2);
+    const secondInstruction = vi.mocked(rewriteSelection).mock.calls[1]?.[0].instruction as string;
+    expect(secondInstruction).toContain('rewrite this under 20 characters');
+    expect(secondInstruction).toContain('30 characters');
+    expect(secondInstruction).toContain('cut at least 10 characters');
+    // Inside the limit on the retry → no count line, Accept live.
+    expect(screen.queryByText('aiGenerate.rewrite.overLimit.chars')).toBeNull();
+    expect(acceptButton().disabled).toBe(false);
+  });
+
+  it('never asks a third time, and shows the count next to a still-enabled Accept', async () => {
+    vi.mocked(rewriteSelection).mockResolvedValue('x'.repeat(30));
+    renderPopover();
+
+    await runInstruction('rewrite this under 20 characters');
+
+    expect(vi.mocked(rewriteSelection)).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('aiGenerate.rewrite.overLimit.chars')).toBeTruthy();
+    // Advisory, not a block: the user decides.
+    expect(acceptButton().disabled).toBe(false);
+  });
+
+  it('does not re-ask at all when the instruction carries no numeric limit', async () => {
+    vi.mocked(rewriteSelection).mockResolvedValue('x'.repeat(400));
+    renderPopover();
+
+    await runInstruction('make this punchier');
+
+    expect(vi.mocked(rewriteSelection)).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('aiGenerate.rewrite.overLimit.chars')).toBeNull();
   });
 });
 

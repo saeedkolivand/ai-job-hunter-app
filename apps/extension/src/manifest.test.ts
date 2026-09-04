@@ -29,7 +29,11 @@
  *    loopback — rather than as string equality, so `http://127.0.0.1.evil.com/*`
  *    cannot pass by looking right;
  *  * both browser targets compared to each other, so a per-target delta cannot
- *    smuggle a permission into one build only.
+ *    smuggle a permission into one build only — since ADR-044 that is equality
+ *    modulo ONE DECLARED delta ({@link CHROME_ONLY_PERMISSIONS}), which is
+ *    strictly weaker than pure equality and is therefore paired with an
+ *    assertion that the Firefox build carries the manifest key it uses
+ *    INSTEAD of that permission. An undeclared delta still fails.
  */
 
 import { readFileSync } from 'node:fs';
@@ -49,7 +53,31 @@ const README = join(HERE, '..', 'README.md');
  * Adding one here is the moment to ask whether the README table, the store
  * listing and the privacy page still tell the truth.
  */
-const ALLOWED_PERMISSIONS = ['activeTab', 'storage', 'scripting', 'nativeMessaging'];
+const ALLOWED_PERMISSIONS: Record<BrowserTarget, string[]> = {
+  chrome: ['activeTab', 'storage', 'scripting', 'nativeMessaging', 'contextMenus', 'sidePanel'],
+  firefox: ['activeTab', 'storage', 'scripting', 'nativeMessaging', 'contextMenus'],
+};
+
+/**
+ * The ONE per-target permission delta this project has argued for, spelled out
+ * so the both-targets pin below can subtract it and still compare the rest for
+ * equality (ADR-044 decision 7).
+ *
+ * Chrome's side panel needs a permission; Firefox's sidebar needs none — it is
+ * a manifest key (`sidebar_action`). That asymmetry is a browser fact, not a
+ * capability difference, so the exception is written down rather than inferred
+ * from two lists that merely happen to differ. Growing this map is the moment
+ * to argue the next exception in review; every OTHER difference still fails.
+ */
+const DECLARED_PERMISSION_DELTA: Record<BrowserTarget, string[]> = {
+  chrome: ['sidePanel'],
+  firefox: [],
+};
+
+/** Every permission any target may hold — what the README table must justify. */
+const ALL_ALLOWED_PERMISSIONS = [
+  ...new Set([...ALLOWED_PERMISSIONS.chrome, ...ALLOWED_PERMISSIONS.firefox]),
+];
 
 /**
  * Permissions that must never appear, whatever the literal above says.
@@ -84,7 +112,7 @@ const hostPermissionsOf = (t: BrowserTarget) => buildManifest(t).host_permission
 
 describe.each(TARGETS)('%s manifest — permission surface', (target) => {
   it('requests exactly the permissions this extension is allowed to hold', () => {
-    expect([...permissionsOf(target)].sort()).toEqual([...ALLOWED_PERMISSIONS].sort());
+    expect([...permissionsOf(target)].sort()).toEqual([...ALLOWED_PERMISSIONS[target]].sort());
   });
 
   it('holds none of the permissions the README says it does not', () => {
@@ -131,11 +159,64 @@ describe.each(TARGETS)('%s manifest — permission surface', (target) => {
 });
 
 describe('both targets', () => {
-  it('share one permission surface, so a per-target delta cannot smuggle one in', () => {
-    expect([...permissionsOf('chrome')].sort()).toEqual([...permissionsOf('firefox')].sort());
+  /** A target's permissions minus the delta declared for it. */
+  const sharedPartOf = (t: BrowserTarget) =>
+    permissionsOf(t)
+      .filter((p) => !DECLARED_PERMISSION_DELTA[t].includes(p))
+      .sort();
+
+  it('share one permission surface apart from the ONE declared delta', () => {
+    expect(sharedPartOf('chrome')).toEqual(sharedPartOf('firefox'));
     expect([...hostPermissionsOf('chrome')].sort()).toEqual(
       [...hostPermissionsOf('firefox')].sort()
     );
+  });
+
+  it('actually holds every permission the delta declares, so the exception is not stale', () => {
+    // Without this, a delta entry left behind after the permission was dropped
+    // would silently widen the subtraction above and let a REAL smuggled
+    // permission through under its name.
+    for (const target of TARGETS) {
+      const held = new Set(permissionsOf(target));
+      for (const p of DECLARED_PERMISSION_DELTA[target]) {
+        expect(held, `${target} declares a delta for \`${p}\` it does not hold`).toContain(p);
+      }
+    }
+  });
+
+  it('gives Firefox the sidebar manifest key whenever Chrome holds the side-panel permission', () => {
+    // The delta is only defensible because Firefox reaches the SAME capability
+    // through a manifest key instead of a permission. If Chrome kept the
+    // permission and Firefox lost its sidebar, the "one surface, one argued
+    // exception" claim would be false and the panel would exist on one build
+    // only.
+    if (!permissionsOf('chrome').includes('sidePanel')) return;
+
+    const sidebar = buildManifest('firefox').sidebar_action as
+      | { default_panel?: string; default_title?: string; default_icon?: Record<string, string> }
+      | undefined;
+
+    expect(sidebar?.default_panel, 'firefox has no sidebar_action.default_panel').toBeTruthy();
+    expect(sidebar?.default_title, 'firefox sidebar has no title').toBeTruthy();
+    expect(Object.keys(sidebar?.default_icon ?? {}).length).toBeGreaterThan(0);
+    // Both targets must point at the SAME panel document — one page, two
+    // browser surfaces (ADR-044 decision 1's "two views of one state").
+    const chromePanel = (
+      buildManifest('chrome').side_panel as { default_path?: string } | undefined
+    )?.default_path;
+    expect(sidebar?.default_panel).toBe(chromePanel);
+  });
+
+  it('never opens the panel on the action click, which a declared popup overrides anyway', () => {
+    // ADR-044 decision 2 / decision 10a: with `action.default_popup` declared,
+    // Chrome ignores `openPanelOnActionClick`, so shipping it would be a lie in
+    // the manifest AND in the docs. The panel is opened from the popup's own
+    // click handler and from the context-menu entry instead.
+    for (const target of TARGETS) {
+      const manifest = buildManifest(target);
+      expect(JSON.stringify(manifest)).not.toContain('openPanelOnActionClick');
+      expect((manifest.action as { default_popup?: string }).default_popup).toBe('popup.html');
+    }
   });
 });
 
@@ -163,7 +244,7 @@ describe('README parity', () => {
     // The README table is the human-readable justification a store reviewer and a
     // user actually read. A permission present in the build and absent from the
     // table is an undocumented capability.
-    const undocumented = ALLOWED_PERMISSIONS.filter((p) => !readme.includes(`\`${p}\``));
+    const undocumented = ALL_ALLOWED_PERMISSIONS.filter((p) => !readme.includes(`\`${p}\``));
 
     expect(undocumented, 'requested but not justified in the README table').toEqual([]);
   });

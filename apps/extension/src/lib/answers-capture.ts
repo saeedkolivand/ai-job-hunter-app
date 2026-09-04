@@ -51,6 +51,26 @@ export interface CapturedAnswer {
 export interface ScannedQuestion {
   question: string;
   index: number;
+  /** The field's OWN length limit, read from its `maxlength` attribute
+   *  ({@link fieldMaxChars}), or absent when the field declares none. Purely
+   *  extension-internal page data: the panel renders a live "n / limit"
+   *  counter from it and forwards it as the draft request's optional
+   *  character limit (ADR-044 decision 6). Never a promise about the page —
+   *  a field can still be rejected server-side for other reasons. */
+  maxChars?: number;
+}
+
+/**
+ * A field's own declared character limit, or `undefined` when it declares
+ * none. `maxLength` is `-1` on an input/textarea with no `maxlength`
+ * attribute (and some pages write `maxlength="0"`, which would mean "no
+ * characters allowed" and is never a real budget), so only a POSITIVE value
+ * counts. Page-derived and therefore untrusted: it is clamped again before it
+ * reaches the wire, and the desktop clamps it a third time.
+ */
+function fieldMaxChars(el: HTMLElement): number | undefined {
+  if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement)) return undefined;
+  return el.maxLength > 0 ? el.maxLength : undefined;
 }
 
 /** `<input>` types this collector reads. Narrower than autofill's
@@ -189,7 +209,8 @@ export function collectQuestions(doc: Document): ScannedQuestion[] {
     if (!question) continue;
     const index = counts.get(question) ?? 0;
     counts.set(question, index + 1);
-    out.push({ question, index });
+    const maxChars = fieldMaxChars(el);
+    out.push(maxChars === undefined ? { question, index } : { question, index, maxChars });
   }
 
   return out;
@@ -237,6 +258,11 @@ export interface FilledField {
   question: string;
   index: number;
   answer: string;
+  /** Same as {@link ScannedQuestion.maxChars} — the field's own `maxlength`,
+   *  absent when it declares none. A filled field's limit is what the panel's
+   *  "n / limit" counter measures the CURRENT text and every rewritten
+   *  version against. */
+  maxChars?: number;
 }
 
 /**
@@ -286,7 +312,10 @@ export function collectFilledFields(doc: Document): FilledField[] {
     if (!answer) continue;
     const index = counts.get(question) ?? 0;
     counts.set(question, index + 1);
-    out.push({ question, index, answer });
+    const maxChars = fieldMaxChars(el);
+    out.push(
+      maxChars === undefined ? { question, index, answer } : { question, index, answer, maxChars }
+    );
   }
 
   return out;

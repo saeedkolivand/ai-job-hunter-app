@@ -154,9 +154,12 @@ export function buildInterviewQuestionsPrompt(params: {
 
   const conv = letterConventions(market);
   // Every branch renders a language NAME, never a bare ISO code: "Write the
-  // questions in de." is a weaker directive than "…in German." (and models do
-  // occasionally echo the code back). `languageDisplayName` passes a value that is
-  // already a name through unchanged, so it is safe on either form.
+  // questions in de." is a weaker directive than "…in German." `meta.targetLanguage`
+  // is model-extracted from the (untrusted) job ad with no allowlist upstream, so
+  // `languageDisplayName` only echoes it back when it is still SHAPED like a real
+  // code (e.g. an uncurated-but-real one like `nl`); anything else — including a
+  // stray full name or an injected string — degrades to a neutral phrase instead
+  // of landing unescaped in this prompt.
   const metaLanguage = languageDisplayName(meta.targetLanguage || 'en');
   // An explicit `language` is a deliberate user choice, so it wins over the
   // `meta.mismatch` proxy (which only guesses that the ad and résumé disagree).

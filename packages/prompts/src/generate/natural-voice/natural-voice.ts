@@ -743,12 +743,43 @@ const LANGUAGE_DISPLAY_NAMES: Record<string, string> = {
 };
 
 /**
- * Human-readable name for a language CODE, for interpolation into a directive.
- * A value that is already a name (or an unlisted code) is returned unchanged, so
- * this is safe to call on either form.
+ * Shape gate for a language VALUE that reaches {@link languageDisplayName}
+ * unmapped: either a real ISO 639-1 code with an optional region/script subtag
+ * ('de', 'pt-br', 'zh-Hant') or a plain language NAME ('German', 'Ukrainian') —
+ * `meta.targetLanguage` legitimately arrives as either form (JSON metadata
+ * extraction yields a code; `extractMetadata`'s regex-fallback path yields a
+ * NAME — see `interview-questions.ts`). `packages/prompts` is zero-deps (no
+ * `@ajh/shared`), so this is a self-contained, generic shape check rather than
+ * a copy of either package's curated code/name list: short letters-only text,
+ * plus a space/hyphen/apostrophe for a multi-word or hyphenated name. `\s` is
+ * deliberately NOT used in the character class — it matches a newline too.
+ */
+const PLAUSIBLE_LANGUAGE_VALUE = /^\p{L}[\p{L} '-]{0,23}$/u;
+
+/**
+ * Human-readable name for a language CODE (or already-a-name value), for
+ * interpolation into a directive. An unlisted-but-plausibly-SHAPED value (e.g.
+ * a newly-added `OUTPUT_LANGUAGES` entry not yet curated here, a detected code
+ * like `nl`, or an already-a-name value like `German`) is returned unchanged,
+ * so a new supported language gets a correct, if terser, directive with zero
+ * change here.
+ *
+ * Anything NOT shaped like a real code or name is never echoed back: `code`
+ * can arrive from an UNVALIDATED source (`RewriteParams.language` /
+ * `meta.targetLanguage`, ultimately sourced from a scraped job ad's
+ * model-extracted `jobAdLanguage` with no allowlist upstream), and echoing an
+ * arbitrary string here would interpolate it, unescaped, straight into the
+ * anti-AI-tell / rewrite system prompt — a prompt-injection vector. A
+ * `$`-anchored regex alone would not close this: `/^[a-z]{2}$/.test('de\n')`
+ * is `true` in JS (`$` matches before a trailing newline even without `m`),
+ * so an embedded newline is rejected explicitly too.
  */
 export function languageDisplayName(code: string): string {
-  return LANGUAGE_DISPLAY_NAMES[code] ?? code;
+  const known = LANGUAGE_DISPLAY_NAMES[code];
+  if (known) return known;
+  const isPlausible =
+    typeof code === 'string' && !code.includes('\n') && PLAUSIBLE_LANGUAGE_VALUE.test(code);
+  return isPlausible ? code : 'the target language';
 }
 
 /**

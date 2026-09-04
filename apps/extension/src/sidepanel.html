@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Job Hunter — Answer tools</title>
+    <!-- No inline script/style: the bundled module (which imports the POPUP's
+         stylesheet, not a fork of it) is loaded externally to satisfy the MV3
+         content security policy. -->
+  </head>
+  <!-- `panel` widens the fixed 360px popup body to the panel's own width. It is
+       the only visual difference between the two surfaces — everything else is
+       the same stylesheet and the same component (ADR-044 decision 1). -->
+  <body class="panel">
+    <main class="app">
+      <header class="head">
+        <h1 class="title">
+          Answers
+          <svg class="title__ul" viewBox="0 0 120 8" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M3 5 Q34 1 62 4 T117 4" />
+          </svg>
+        </h1>
+      </header>
+
+      <!-- The panel is an extension page with NO page access of its own: every
+           control that reads or writes the page goes through the background,
+           which holds the `activeTab` grant a gesture created. That is why the
+           panel can stay open across a blur without widening anything. -->
+      <section class="view">
+        <div id="answer-tools-host" class="atools"></div>
+      </section>
+    </main>
+
+    <script type="module" src="./sidepanel/sidepanel.ts"></script>
+  </body>
+</html>

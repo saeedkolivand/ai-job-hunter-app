@@ -6,13 +6,27 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, Input, Tag, transition, useFocusTrap } from '@ajh/ui';
 
-import { type RewriteDocType, rewriteSelection } from '@/lib/generate';
+import { resolveRewriteTimeoutMs, type RewriteDocType, rewriteSelection } from '@/lib/generate';
+// The pure limit/unchanged helpers come from their own module rather than the
+// `@/lib/generate` barrel, so a test that stubs the barrel's IPC-backed exports
+// still runs the real parser and the real unchanged predicate.
+import {
+  buildOvershootInstruction,
+  exceedsRewriteLimit,
+  isUnchangedRewrite,
+  measureRewriteLength,
+  parseRewriteLimit,
+  type RewriteLimit,
+  type RewriteLimitUnit,
+} from '@/lib/generate/rewrite';
 
 /** The quick-action presets — id maps to an i18n label + a preset instruction. */
 const PRESETS = ['shorten', 'expand', 'rephrase', 'impact', 'grammar'] as const;
 
-/** Abort a stalled rewrite after this many ms so the popover never wedges. */
-const REWRITE_TIMEOUT_MS = 60_000;
+/** How long a rewrite may stream before the popover says it is still working.
+ *  A default-effort rewrite of a long span measured 7-34 s typically, with
+ *  individual streams of 91-152 s — long enough to look dead without a line. */
+const STILL_WORKING_MS = 20_000;
 /** Matches the panel's `w-[22rem]` — clamps left-edge overflow when the trigger
  *  sits near a viewport edge (anchored-portal mode only). */
 const POPOVER_WIDTH_PX = 352;
@@ -31,13 +45,17 @@ interface RewritePopoverProps {
   target: RewriteTarget;
   docType: RewriteDocType;
   model: string;
-  /** Document language (the generation's `meta.targetLanguage`) so the rewrite
-   *  streams in the same language as the document. Defaults to 'en'. */
+  /** FALLBACK document language (the generation's `meta.targetLanguage`), used
+   *  only when the SELECTION's own language cannot be detected — the rewrite
+   *  streams in the span's language, which is not always the document's
+   *  (`rewriteSelection` → `deriveRewriteLocale`). Defaults to 'en'. */
   locale?: string;
   /** Called with the accepted replacement text for the frozen range. */
   onAccept: (replacement: string) => void;
-  /** Called to dismiss the popover (Cancel / Escape) — there is no backdrop in
-   *  either anchored-portal or inline mode, so outside-click doesn't dismiss. */
+  /** Called to dismiss the popover (Cancel / Escape). This component renders no
+   *  backdrop of its own in either mode; a caller that wants outside-click
+   *  dismissal renders its own click-catcher and calls this (`EditableOutput`
+   *  does — its catcher sits under the portaled panel's `z-toast`). */
   onClose: () => void;
   /**
    * When set, the popover portals to `document.body` and fixed-positions itself
@@ -73,6 +91,18 @@ export function RewritePopover({
   const [streaming, setStreaming] = useState(false);
   const [result, setResult] = useState('');
   const [error, setError] = useState<string | null>(null);
+  /** The finished result came back identical to the selection (F3): a no-op,
+   *  not an error and not something to Accept. */
+  const [unchanged, setUnchanged] = useState(false);
+  /** Set when a parsed numeric limit is STILL exceeded after the one re-ask —
+   *  the count is shown next to Accept and the user decides. */
+  const [overLimit, setOverLimit] = useState<{
+    n: number;
+    limit: number;
+    unit: RewriteLimitUnit;
+  } | null>(null);
+  /** A long reasoning pass has been streaming for {@link STILL_WORKING_MS}. */
+  const [stillWorking, setStillWorking] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   // Trap keyboard focus inside the popover while it is open so Tab cannot escape
@@ -139,6 +169,30 @@ export function RewritePopover({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  /**
+   * Land a finished attempt: the result is shown either way, but Accept is only
+   * offered for a rewrite that actually changed something. An over-limit count
+   * is advisory (the user decides) — it never blocks Accept.
+   */
+  const settle = (cleaned: string, limit: RewriteLimit | null) => {
+    setResult(cleaned);
+    if (!cleaned) {
+      setError(t('aiGenerate.rewrite.empty'));
+      return;
+    }
+    if (isUnchangedRewrite(target.selection, cleaned)) {
+      setUnchanged(true);
+      return;
+    }
+    if (limit && exceedsRewriteLimit(cleaned, limit)) {
+      setOverLimit({
+        n: measureRewriteLength(cleaned, limit.unit),
+        limit: limit.max,
+        unit: limit.unit,
+      });
+    }
+  };
+
   const run = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || streaming) return;
@@ -149,33 +203,72 @@ export function RewritePopover({
     lastInstructionRef.current = trimmed;
     setError(null);
     setResult('');
+    setUnchanged(false);
+    setOverLimit(null);
+    setStillWorking(false);
     setStreaming(true);
 
-    // Client-side safety net: abort a stalled provider after REWRITE_TIMEOUT_MS.
-    // `timedOut` distinguishes this from a user-initiated abort (close/unmount/new
-    // run) so the catch block surfaces the error instead of silently swallowing it.
+    // Client-side safety net: abort a stalled provider at the SAME effort-scaled
+    // bound the shared stream helper uses for this request, so the renderer can
+    // no longer kill a generation the backend is still legitimately streaming
+    // (the previous fixed 60 s sat BELOW the backend deadline and did fire on a
+    // long span). `timedOut` distinguishes this from a user-initiated abort
+    // (close/unmount/new run) so the catch block surfaces the error instead of
+    // silently swallowing it.
     let timedOut = false;
-    const timeoutId = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, REWRITE_TIMEOUT_MS);
+    // `let`, not `const`: the one re-ask below re-arms this with its OWN fresh
+    // window (see there) rather than sharing what's left of the first attempt's.
+    const armTimeout = () =>
+      setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, resolveRewriteTimeoutMs(model));
+    let timeoutId = armTimeout();
+    // A reasoning pass on a long span streams for a minute or more with nothing
+    // on screen; say so rather than looking dead.
+    const stillWorkingId = setTimeout(() => setStillWorking(true), STILL_WORKING_MS);
 
-    rewriteSelection({
-      selection: target.selection,
-      instruction: trimmed,
-      before: target.before,
-      after: target.after,
-      docType,
-      model,
-      locale,
-      onToken: (tok) => setResult((prev) => prev + tok),
-      signal: controller.signal,
-    })
-      .then((full) => {
+    // A numeric length limit in the instruction is verified by CODE, never
+    // trusted from the model (measured: "under 200 characters" landed over the
+    // line about half the time, "at most 40 words" missed every run).
+    const limit = parseRewriteLimit(trimmed);
+
+    const attempt = (instructionText: string) => {
+      setResult('');
+      return rewriteSelection({
+        selection: target.selection,
+        instruction: instructionText,
+        before: target.before,
+        after: target.after,
+        docType,
+        model,
+        locale,
+        onToken: (tok) => setResult((prev) => prev + tok),
+        signal: controller.signal,
+      }).then((full) => full.trim());
+    };
+
+    attempt(trimmed)
+      .then(async (first) => {
         if (controller.signal.aborted) return;
-        const cleaned = full.trim();
-        setResult(cleaned);
-        if (!cleaned) setError(t('aiGenerate.rewrite.empty'));
+        if (!limit || !exceedsRewriteLimit(first, limit)) {
+          settle(first, limit);
+          return;
+        }
+        // Exactly ONE re-ask, carrying the measured overshoot — never a loop.
+        // Re-arm the timeout with its OWN full window: the first attempt may
+        // have already burned most of the shared budget (a single stream
+        // measured up to ~152 s), and without this the retry could be aborted
+        // almost immediately — discarding the first attempt's perfectly
+        // usable (if over-limit) draft still sitting in `first` for a hard
+        // error instead of the honest over-limit-Accept path below.
+        clearTimeout(timeoutId);
+        timeoutId = armTimeout();
+        const retry = await attempt(
+          buildOvershootInstruction(trimmed, limit, measureRewriteLength(first, limit.unit))
+        );
+        if (controller.signal.aborted) return;
+        settle(retry, limit);
       })
       .catch(() => {
         // Suppress error for user-initiated abort (close / unmount / new run).
@@ -185,13 +278,17 @@ export function RewritePopover({
       })
       .finally(() => {
         clearTimeout(timeoutId);
+        clearTimeout(stillWorkingId);
         // Only clear `streaming` for the run that owns the current controller. A
         // newer run() has already set `streaming = true` and swapped `abortRef`;
         // clearing unconditionally here would re-enable the buttons mid-flight.
         // Guarding on the controller (rather than `aborted`) also re-enables the
         // buttons after an abort that wasn't followed by a new run — so a cancelled
         // rewrite never wedges the UI with permanently disabled buttons.
-        if (abortRef.current === controller) setStreaming(false);
+        if (abortRef.current === controller) {
+          setStreaming(false);
+          setStillWorking(false);
+        }
       });
   };
 
@@ -201,7 +298,10 @@ export function RewritePopover({
     run(presetInstruction);
   };
 
-  const canAccept = !streaming && !!result.trim() && !error;
+  // A result identical to the selection is a no-op, so there is nothing to
+  // accept — Regenerate stays live. An over-limit result IS acceptable (the
+  // count next to Accept is the honest part; the user decides).
+  const canAccept = !streaming && !!result.trim() && !error && !unchanged;
 
   // Anchored-portal mode: fixed-position below-right of the trigger, clamped so
   // the (fixed-width) panel never runs off the left edge, and flipped ABOVE the
@@ -331,12 +431,42 @@ export function RewritePopover({
                 {result || '…'}
               </p>
             )}
+            {/* A long reasoning pass looks dead without this line. */}
+            {streaming && stillWorking && (
+              <p
+                role="status"
+                aria-live="polite"
+                className="mt-1 text-[10px] italic text-foreground/45"
+              >
+                {t('aiGenerate.rewrite.stillWorking')}
+              </p>
+            )}
+            {/* Neutral, NOT an error: the model handed the selection back. */}
+            {unchanged && !streaming && (
+              <p
+                role="status"
+                aria-live="polite"
+                className="mt-1 rounded-md bg-muted px-2 py-1.5 text-[11px] text-foreground/60"
+              >
+                {t('aiGenerate.rewrite.unchanged')}
+              </p>
+            )}
           </div>
         )}
       </div>
 
       {/* Actions */}
       <div className="flex items-center justify-end gap-2 border-t border-[var(--border-clear)] px-3 py-2">
+        {/* Still over the parsed limit after the one re-ask — the honest count
+            sits next to Accept and the user decides. */}
+        {overLimit && !streaming && (
+          <span role="status" aria-live="polite" className="mr-auto text-[10px] text-foreground/50">
+            {t(`aiGenerate.rewrite.overLimit.${overLimit.unit}`, {
+              n: overLimit.n,
+              limit: overLimit.limit,
+            })}
+          </span>
+        )}
         <Button
           variant="unstyled"
           type="button"

@@ -1,6 +1,6 @@
 # Knowledge base (`docs/knowledge/`)
 
-Last updated: 2026-09-02
+Last updated: 2026-09-03
 
 A **thin, pointer-style** index for AI agents (and humans). It describes _shape and contracts_ and points at the **owning source symbol**; it deliberately does **not** copy drift-prone literals (scoring weights, template/board counts) — those live in code.
 
@@ -89,6 +89,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-041](decision-records/adr-041-searchable-help-page-over-compiled-in-entries.md)         | Searchable help page over compiled-in, localized entries; client-side matching, no model or IPC; partly supersedes ADR-0006 (FAQ-only)                                                                |
 | [ADR-042](decision-records/adr-042-dashboard-next-step-tile-derived-not-stored.md)           | Dashboard next-step tile derived from live state, not stored; collapses to one line when setup is complete, never dismissible; extension and autopilot deliberately not steps                         |
 | [ADR-043](decision-records/adr-043-help-chat-over-the-shipped-corpus.md)                     | Help chatbot over the shipped corpus: renderer-supplied entries, shipped retrieval module, dense arm behind semantic-scoring opt-in, text-hash vector cache                                           |
+| [ADR-044](decision-records/adr-044-extension-answer-tools-side-panel-and-popup.md)           | Extension Answer tools in a side panel (`chrome.sidePanel` / `sidebar_action`) AND the popup, as two views of one per-tab+origin state; page access stays user-gestured; in-page card deferred        |
 
 ### The `NNNN-` series (closed)
 

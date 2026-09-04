@@ -20,6 +20,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type Browser, browser } from '@wxt-dev/browser';
 
+import type { AnswerRow } from './lib/answer-state';
 import type { AutofillSummary } from './lib/autofill';
 import type { PopupRequest, PopupResponse } from './lib/messages';
 import { getToken } from './lib/storage';
@@ -59,8 +60,43 @@ vi.mock('@wxt-dev/browser', () => ({
       sendMessage: vi.fn(),
       reload: vi.fn(),
     },
-    tabs: { query: vi.fn() },
+    tabs: {
+      query: vi.fn(),
+      // ADR-044: a navigation invalidates a tab's answer state for WRITING and
+      // a closed tab drops it entirely, so background.ts subscribes to both at
+      // module load. Registered here so that load does not throw.
+      onUpdated: { addListener: vi.fn() },
+      onRemoved: { addListener: vi.fn() },
+    },
     scripting: { executeScript: vi.fn() },
+    // The ONE context-menu entry (selection only). `removeAll` takes the
+    // callback `installContextMenu` passes it, so the mock has to invoke it or
+    // `create` is never reached.
+    contextMenus: {
+      removeAll: vi.fn((cb?: () => void) => cb?.()),
+      create: vi.fn(),
+      onClicked: { addListener: vi.fn() },
+    },
+    // The shared answer state lives in `storage.session`; `onChanged` is what
+    // both surfaces subscribe to. An in-memory area is enough here — the
+    // background is the only writer.
+    storage: {
+      session: (() => {
+        const store: Record<string, unknown> = {};
+        return {
+          get: vi.fn((key: string) => Promise.resolve({ [key]: store[key] })),
+          set: vi.fn((entries: Record<string, unknown>) => {
+            Object.assign(store, entries);
+            return Promise.resolve();
+          }),
+          remove: vi.fn((key: string) => {
+            delete store[key];
+            return Promise.resolve();
+          }),
+        };
+      })(),
+      onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
+    },
     action: {
       setBadgeText: vi.fn().mockResolvedValue(undefined),
       setBadgeBackgroundColor: vi.fn().mockResolvedValue(undefined),
@@ -1044,6 +1080,7 @@ describe('answerAssist streaming buffer', () => {
       text: 'Because I am drawn to it.',
       done: true,
       interrupted: false,
+      rowId: '',
     });
 
     const progress = await send({ kind: 'answerAssistProgress' });
@@ -1053,6 +1090,7 @@ describe('answerAssist streaming buffer', () => {
       text: 'Because I am drawn to it.',
       done: true,
       interrupted: false,
+      rowId: '',
     });
   });
 
@@ -1080,6 +1118,7 @@ describe('answerAssist streaming buffer', () => {
       text: 'Because I ',
       done: true,
       interrupted: true,
+      rowId: '',
     });
   });
 
@@ -1110,6 +1149,7 @@ describe('answerAssist streaming buffer', () => {
           text: '',
           done: false,
           interrupted: false,
+          rowId: '',
         });
         onChunk?.('fresh answer');
         return { ok: true, question: 'Q2', draft: 'fresh answer', sourced: {} };
@@ -1200,6 +1240,7 @@ describe('answerAssist streaming buffer', () => {
       text: 'B chunk',
       done: true,
       interrupted: false,
+      rowId: '',
     });
   });
 
@@ -1242,6 +1283,7 @@ describe('answerAssist streaming buffer', () => {
       text: 'B chunk',
       done: true,
       interrupted: false,
+      rowId: '',
     });
 
     // A's getToken() finally resolves — A must bail out as superseded before
@@ -1263,7 +1305,318 @@ describe('answerAssist streaming buffer', () => {
       text: 'B chunk',
       done: true,
       interrupted: false,
+      rowId: '',
     });
+  });
+});
+
+// ── settleRowFromAssist — the "unchanged rewrite" no-op guard (Finding 4) ───
+
+describe('settleRowFromAssist — a chip rewrite that comes back unchanged', () => {
+  /** Scan one row, then draft it once so there is a version a rewrite can
+   *  reshape (`runAnswerRowAssist` refuses a rewrite with nothing to reshape
+   *  yet), returning its id. */
+  async function scanAndDraft(tabId: number, draftText: string): Promise<string> {
+    tabsQueryMock.mockResolvedValue([
+      { id: tabId, url: `https://jobs.example.com/posting/${tabId}` } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: { questions: [{ question: 'Why this role?', index: 0 }], filled: [] } },
+    ] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'not paired' });
+    const scanned = await send({ kind: 'answerScan' });
+    if (!scanned.ok || scanned.kind !== 'answerState' || !scanned.state) {
+      throw new Error('expected an answerState response');
+    }
+    const rowId = scanned.state.rows[0]?.id;
+    if (!rowId) throw new Error('expected a row');
+
+    mockClient.answerAssist.mockResolvedValueOnce({
+      ok: true,
+      question: 'Why this role?',
+      draft: draftText,
+      sourced: {},
+    });
+    await send({
+      kind: 'answerAssist',
+      question: 'Why this role?',
+      searchWeb: false,
+      mode: 'draft',
+      rowId,
+    });
+    return rowId;
+  }
+
+  /** Read the row list back without disturbing selection — `version: 0` is a
+   *  no-op re-select of the version the draft above already selected. */
+  async function readRows(rowId: string): Promise<AnswerRow[]> {
+    const res = await send({ kind: 'answerSelectVersion', rowId, version: 0 });
+    if (!res.ok || res.kind !== 'answerState' || !res.state) {
+      throw new Error('expected an answerState response');
+    }
+    return res.state.rows;
+  }
+
+  it('does not append a new version, and sets a neutral (non-error) row notice', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    const rowId = await scanAndDraft(310, 'Led the migration and shipped the payment service.');
+
+    // "Shorten" comes back with only a trailing comma added — the measured
+    // no-op shape (ADR-044 / the desktop's F3 twin).
+    mockClient.answerAssist.mockResolvedValueOnce({
+      ok: true,
+      question: 'Why this role?',
+      draft: 'Led the migration and shipped the payment service,',
+      sourced: {},
+    });
+    await send({
+      kind: 'answerAssist',
+      question: 'Why this role?',
+      searchWeb: false,
+      mode: 'rewrite',
+      preset: 'shorten',
+      rowId,
+    });
+
+    const rows = await readRows(rowId);
+    // Mutation guard: without the unchanged-rewrite check this grows to 2 and
+    // `notice` stays undefined — REVERT `settleRowFromAssist`'s rewrite branch
+    // and this assertion is what catches it.
+    expect(rows[0]?.versions).toHaveLength(1);
+    expect(rows[0]?.notice).toMatch(/came back the same/);
+    expect(rows[0]?.error).toBeUndefined();
+  });
+
+  it('still appends a genuinely different rewrite, and clears any stale notice', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    const rowId = await scanAndDraft(311, 'Led the migration and shipped the payment service.');
+
+    mockClient.answerAssist.mockResolvedValueOnce({
+      ok: true,
+      question: 'Why this role?',
+      draft: 'Led migration; shipped payments.',
+      sourced: {},
+    });
+    await send({
+      kind: 'answerAssist',
+      question: 'Why this role?',
+      searchWeb: false,
+      mode: 'rewrite',
+      preset: 'shorten',
+      rowId,
+    });
+
+    const rows = await readRows(rowId);
+    expect(rows[0]?.versions).toHaveLength(2);
+    expect(rows[0]?.notice).toBeUndefined();
+  });
+});
+
+// ── updateAnswerState — the lost-update race between the terminal stream
+// mirror (broadcastAssistProgress → mirrorAssistToState) and settling the row
+// (settleRowFromAssist), both of which read-modify-write the SAME tab's
+// storage.session record with no serialization before answer-state.ts's
+// per-tab write queue (pr-reviewer CRITICAL 2). ───────────────────────────────
+
+describe('the terminal stream-mirror write never clobbers the settled row (CRITICAL 2)', () => {
+  it('a two-chunk draft ends with BOTH stream.done:true AND the drafted version appended, and the settled row renders with its controls enabled', async () => {
+    const { readAnswerState } = await import('./lib/answer-state');
+    const { mountAnswerTools } = await import('./answer-tools/answer-tools');
+
+    const tabId = 900;
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: tabId, url: `https://jobs.example.com/posting/${tabId}` } as never,
+    ]);
+
+    // Scan the page so there is a row to draft.
+    executeScriptMock.mockResolvedValueOnce([
+      { result: { questions: [{ question: 'Why this role?', index: 0 }], filled: [] } },
+    ] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'not paired' });
+    const scanned = await send({ kind: 'answerScan' });
+    if (!scanned.ok || scanned.kind !== 'answerState' || !scanned.state) {
+      throw new Error('expected an answerState response');
+    }
+    const rowId = scanned.state.rows[0]?.id;
+    if (!rowId) throw new Error('expected a row');
+
+    // Gate `storage.session.get` deterministically on the TERMINAL stream
+    // mirror's own read — recognized by its CONTENT, not by which call number
+    // it happens to be: the stored record's `stream.text` already equals the
+    // full accumulated draft, but `stream.done` is still `false` (the
+    // terminal write that flips it to `true` hasn't landed yet). Any OTHER
+    // read (the initial reset, an in-progress chunk, settle's own read after
+    // `done` flips) fails this check, so an unrelated read added anywhere in
+    // the flow can never shift which one gets gated. Capturing the stored
+    // value at CALL TIME (via the real mock implementation) but resolving the
+    // returned promise only once this test releases `gate` is what makes the
+    // race deterministic: under the OLD unserialized `updateAnswerState`,
+    // settle's read+mutate+write (ungated) runs to completion while this call
+    // is still pending, and this call's STALE snapshot then clobbers settle's
+    // write the moment it is released.
+    const FULL_DRAFT = 'Because I like solving real problems.';
+    const sessionGetMock = vi.mocked(browser.storage.session.get);
+    const realGet = sessionGetMock.getMockImplementation();
+    if (!realGet) throw new Error('expected the default storage.session.get mock');
+    let gated = false;
+    let releaseGate: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    sessionGetMock.mockImplementation(((key: string) => {
+      const read = realGet(key) as Promise<Record<string, unknown>>;
+      return read.then((value) => {
+        const state = value[key] as { stream?: { done?: boolean; text?: string } } | undefined;
+        if (!gated && state?.stream?.done === false && state.stream.text === FULL_DRAFT) {
+          gated = true;
+          return gate.then(() => value);
+        }
+        return value;
+      });
+    }) as typeof realGet);
+
+    mockClient.answerAssist.mockImplementationOnce(
+      async (_payload, onChunk?: (d: string) => void) => {
+        onChunk?.('Because I ');
+        onChunk?.('like solving real problems.');
+        return {
+          ok: true,
+          question: 'Why this role?',
+          draft: 'Because I like solving real problems.',
+          sourced: {},
+        };
+      }
+    );
+
+    const assistDone = send({
+      kind: 'answerAssist',
+      question: 'Why this role?',
+      searchWeb: false,
+      mode: 'draft',
+      rowId,
+    });
+
+    // Give settle's own (ungated) read+mutate+write a chance to run to
+    // completion (under the OLD code) while the terminal mirror's read is
+    // still stuck on `gate`, then release it and let everything settle.
+    await flush();
+    releaseGate?.();
+    await assistDone;
+    await flush();
+    sessionGetMock.mockImplementation(realGet);
+
+    const settled = await readAnswerState(tabId);
+    if (!settled) throw new Error('expected a settled answer state');
+    // Mutation guard: revert `updateAnswerState`'s per-tab queue (call
+    // `readAnswerState`/`writeAnswerState` directly again) and EITHER of
+    // these goes red, depending on which write lands last.
+    expect(settled.stream?.done).toBe(true);
+    expect(settled.rows.find((r) => r.id === rowId)?.versions).toHaveLength(1);
+
+    // Close the loop into the UI (the same shared component both surfaces
+    // mount): a lost `stream.done` combined with Finding 5's streaming gate
+    // (`streaming = state.stream?.rowId === row.id && !state.stream.done`)
+    // permanently disables every control on this row, on a FRESH mount, with
+    // no escape on a single-question form.
+    const host = document.createElement('div');
+    document.body.append(host);
+    const view = mountAnswerTools(host, { send, copy: vi.fn(async () => true) });
+    view.render(settled);
+    host.querySelector<HTMLButtonElement>('.arow__head')?.click();
+    const regenerate = [...host.querySelectorAll<HTMLButtonElement>('.btn')].find(
+      (b) => b.textContent === 'Regenerate'
+    );
+    expect(regenerate).not.toBeUndefined();
+    expect(regenerate?.disabled).toBe(false);
+  });
+});
+
+describe('a late activeTabId() must not re-arm a superseded run (regression)', () => {
+  it('a run whose activeTabId() resolves AFTER a newer run already reset the buffer neither overwrites it nor fires its own billable request', async () => {
+    const tabId = 851;
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    const tabInfo = [{ id: tabId, url: 'https://jobs.example.com/posting/851' } as never];
+    tabsQueryMock.mockResolvedValue(tabInfo);
+
+    executeScriptMock.mockResolvedValueOnce([
+      {
+        result: {
+          questions: [
+            { question: 'Why this role?', index: 0 },
+            { question: 'What motivates you?', index: 0 },
+          ],
+          filled: [],
+        },
+      },
+    ] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'not paired' });
+    const scanned = await send({ kind: 'answerScan' });
+    if (!scanned.ok || scanned.kind !== 'answerState' || !scanned.state) {
+      throw new Error('expected an answerState response');
+    }
+    const rowA = scanned.state.rows[0]?.id;
+    const rowB = scanned.state.rows[1]?.id;
+    if (!rowA || !rowB) throw new Error('expected two rows');
+
+    // A request naming a `rowId` resolves through `runAnswerRowAssist` first,
+    // which makes its OWN `activeTabId()` call before ever reaching
+    // `runAnswerAssist` — so run A's three `tabs.query` calls, in order, are
+    // `runAnswerRowAssist`'s `activeTabId()`, `runAnswerAssist`'s
+    // `activeTabUrl()`, then `runAnswerAssist`'s OWN `activeTabId()` (the
+    // bug-relevant one). Gate that THIRD call; run B starts and finishes
+    // entirely afterward, landing on counts 4-6, never gated.
+    let queryCalls = 0;
+    let releaseGate: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    tabsQueryMock.mockImplementation(() => {
+      queryCalls += 1;
+      return queryCalls === 3 ? gate.then(() => tabInfo) : Promise.resolve(tabInfo);
+    });
+
+    mockClient.answerAssist.mockImplementation(async (_payload, onChunk?: (d: string) => void) => {
+      onChunk?.('drafted');
+      return { ok: true, question: 'x', draft: 'drafted', sourced: {} };
+    });
+
+    // Run A: gets past the gen check with `assistTabId` still unresolved.
+    const runA = send({
+      kind: 'answerAssist',
+      question: 'Why this role?',
+      searchWeb: false,
+      mode: 'draft',
+      rowId: rowA,
+    });
+    await flush();
+
+    // Run B starts (bumps `assistGeneration`) and runs to completion while
+    // run A is still suspended on the gate above.
+    const runB = await send({
+      kind: 'answerAssist',
+      question: 'What motivates you?',
+      searchWeb: false,
+      mode: 'draft',
+      rowId: rowB,
+    });
+    expect(runB.ok).toBe(true);
+
+    // Release run A's gate. Under the bug, A would resume believing it is
+    // still current, clobber the buffer B just wrote, and fire its OWN
+    // billable request — the exact thing the generation guard exists to stop.
+    releaseGate?.();
+    const resultA = await runA;
+    expect(resultA).toEqual({ ok: false, error: 'Superseded by a newer request.' });
+    expect(mockClient.answerAssist).toHaveBeenCalledTimes(1);
+
+    const { readAnswerState } = await import('./lib/answer-state');
+    const settled = await readAnswerState(tabId);
+    expect(settled?.stream?.rowId).toBe(rowB);
+    expect(settled?.rows.find((r) => r.id === rowB)?.versions).toHaveLength(1);
+    expect(settled?.rows.find((r) => r.id === rowA)?.versions).toHaveLength(0);
+
+    tabsQueryMock.mockResolvedValue(tabInfo);
   });
 });
 
@@ -1503,6 +1856,315 @@ describe('answerReplace request', () => {
     });
 
     expect(res).toEqual({ ok: false, error: 'Could not replace this field.' });
+  });
+});
+
+// ── ADR-044: the shared per-(tab, origin) answer state, driven entirely
+// through the popup-request dispatcher — scan, free-text add, version select,
+// Accept/Restore, and the context-menu entry that opens the panel. Each test
+// picks its OWN tabId (the mocked `storage.session` area is a module-level
+// store, never reset between tests) so no test can read another's state. ──
+
+describe('answerScan request (ADR-044)', () => {
+  it('injects capture-rows.js, captures the origin at gesture time, and writes the built state', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 200, url: 'https://jobs.example.com/posting/1' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([
+      {
+        result: {
+          questions: [{ question: 'Why this role?', index: 0 }],
+          filled: [{ question: 'Company name', index: 0, answer: 'Acme' }],
+        },
+      },
+    ] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'not paired' });
+
+    const res = await send({ kind: 'answerScan' });
+
+    expect(executeScriptMock).toHaveBeenCalledWith({
+      target: { tabId: 200 },
+      files: ['capture-rows.js'],
+    });
+    expect(res.ok).toBe(true);
+    if (res.ok && res.kind === 'answerState') {
+      expect(res.state?.tabId).toBe(200);
+      expect(res.state?.origin).toBe('https://jobs.example.com');
+      expect(res.state?.pageChanged).toBe(false);
+      expect(res.state?.rows.map((r) => r.question)).toEqual(['Why this role?', 'Company name']);
+    } else {
+      throw new Error('expected an answerState response');
+    }
+  });
+
+  it('surfaces "Could not read the questions on this page." when the injected script returns a non-scan value', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 201, url: 'https://jobs.example.com/posting/2' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: null }] as never);
+
+    const res = await send({ kind: 'answerScan' });
+
+    expect(res).toEqual({ ok: false, error: 'Could not read the questions on this page.' });
+  });
+});
+
+describe('answerAddRow request (ADR-044)', () => {
+  it('creates a fresh state (unscanned page) carrying only the free-text row', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 202, url: 'https://jobs.example.com/posting/3' } as never,
+    ]);
+
+    const res = await send({ kind: 'answerAddRow', question: 'What is your visa status?' });
+
+    expect(res.ok).toBe(true);
+    if (res.ok && res.kind === 'answerState') {
+      expect(res.state?.rows).toHaveLength(1);
+      expect(res.state?.rows[0]).toMatchObject({
+        question: 'What is your visa status?',
+        field: null,
+        status: 'empty',
+      });
+    } else {
+      throw new Error('expected an answerState response');
+    }
+  });
+
+  it('prepends onto an existing scan rather than replacing it, and reuses the row on a repeated question', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 203, url: 'https://jobs.example.com/posting/4' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: { questions: [{ question: 'Why this role?', index: 0 }], filled: [] } },
+    ] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'not paired' });
+    await send({ kind: 'answerScan' });
+
+    const first = await send({ kind: 'answerAddRow', question: 'A question the scan missed' });
+    const second = await send({ kind: 'answerAddRow', question: 'A question the scan missed' });
+
+    if (first.ok && first.kind === 'answerState' && second.ok && second.kind === 'answerState') {
+      expect(first.state?.rows.map((r) => r.question)).toEqual([
+        'A question the scan missed',
+        'Why this role?',
+      ]);
+      // Same question added twice reuses the row rather than stacking a duplicate.
+      expect(second.state?.rows.map((r) => r.question)).toEqual([
+        'A question the scan missed',
+        'Why this role?',
+      ]);
+    } else {
+      throw new Error('expected two answerState responses');
+    }
+  });
+});
+
+describe('answerSelectVersion request (ADR-044)', () => {
+  it('selects a version by index, and falls back to -1 (the page text) for an out-of-range index', async () => {
+    const { updateAnswerState } = await import('./lib/answer-state');
+    tabsQueryMock.mockResolvedValue([
+      { id: 204, url: 'https://jobs.example.com/posting/5' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: { questions: [{ question: 'Why this role?', index: 0 }], filled: [] } },
+    ] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'not paired' });
+    const scanned = await send({ kind: 'answerScan' });
+    if (!scanned.ok || scanned.kind !== 'answerState' || !scanned.state) {
+      throw new Error('expected an answerState response');
+    }
+    const rowId = scanned.state.rows[0]?.id;
+    if (!rowId) throw new Error('expected a row');
+
+    // Seed a version to select — a fresh row has none, so `version: 0` would
+    // ALSO fall back to -1, and the test would never actually exercise the
+    // in-range branch it claims to cover.
+    await updateAnswerState(204, (state) => ({
+      ...state,
+      rows: state.rows.map((row) =>
+        row.id === rowId
+          ? { ...row, versions: [{ label: 'v1', text: 'A drafted answer.', kind: 'draft' }] }
+          : row
+      ),
+    }));
+
+    const inRange = await send({ kind: 'answerSelectVersion', rowId, version: 0 });
+    if (inRange.ok && inRange.kind === 'answerState') {
+      expect(inRange.state?.rows[0]?.selected).toBe(0);
+    } else {
+      throw new Error('expected an answerState response');
+    }
+
+    const outOfRange = await send({ kind: 'answerSelectVersion', rowId, version: 5 });
+    if (outOfRange.ok && outOfRange.kind === 'answerState') {
+      expect(outOfRange.state?.rows[0]?.selected).toBe(-1);
+    } else {
+      throw new Error('expected an answerState response');
+    }
+  });
+});
+
+describe('answerAccept / answerRestoreOriginal requests (ADR-044)', () => {
+  it('writes the selected text into an EMPTY field via answer-fill.js and remembers it as currentText', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 205, url: 'https://jobs.example.com/posting/6' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: { questions: [{ question: 'Why this role?', index: 0 }], filled: [] } },
+    ] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'not paired' });
+    const scanned = await send({ kind: 'answerScan' });
+    if (!scanned.ok || scanned.kind !== 'answerState' || !scanned.state) {
+      throw new Error('expected an answerState response');
+    }
+    const rowId = scanned.state.rows[0]?.id;
+    if (!rowId) throw new Error('expected a row');
+
+    executeScriptMock.mockResolvedValueOnce([{}] as never); // answer-fill.js registration
+    executeScriptMock.mockResolvedValueOnce([{ result: { filled: true } }] as never);
+
+    // A freshly-scanned row has no drafted version yet, so Restore (which
+    // always has text — the frozen scan-time original, `''` for an empty
+    // field) is what exercises `writeRowText`'s fail-safe write path here;
+    // Accept goes through the identical function with a different source text.
+    const res = await send({ kind: 'answerRestoreOriginal', rowId });
+
+    // Call 1 was the scan's own capture-rows.js injection; 2 and 3 are this write.
+    expect(executeScriptMock).toHaveBeenNthCalledWith(2, {
+      target: { tabId: 205 },
+      files: ['answer-fill.js'],
+    });
+    expect(executeScriptMock).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        target: { tabId: 205 },
+        args: ['Why this role?', 0, 1, '', '__ajhRunAnswerFill'],
+      })
+    );
+    expect(res).toEqual({ ok: true, kind: 'answerAccept', result: { filled: true } });
+  });
+
+  it('refuses to write once the page has changed, without touching the tab at all', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 206, url: 'https://jobs.example.com/posting/7' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: { questions: [{ question: 'Why this role?', index: 0 }], filled: [] } },
+    ] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'not paired' });
+    const scanned = await send({ kind: 'answerScan' });
+    if (!scanned.ok || scanned.kind !== 'answerState' || !scanned.state) {
+      throw new Error('expected an answerState response');
+    }
+    const rowId = scanned.state.rows[0]?.id;
+    if (!rowId) throw new Error('expected a row');
+
+    // A navigation flips pageChanged — the onUpdated listener does this in the
+    // real worker; call the registered callback directly the same way the
+    // onMessage listener is driven above.
+    const onUpdated = vi.mocked(browser.tabs.onUpdated.addListener).mock.calls[0]?.[0];
+    onUpdated?.(206, { status: 'loading' } as never, {} as never);
+    await flush();
+
+    executeScriptMock.mockClear();
+    const res = await send({ kind: 'answerRestoreOriginal', rowId });
+
+    expect(res).toEqual({
+      ok: false,
+      error: 'This page changed. Click the toolbar icon to scan it, then try again.',
+    });
+    expect(executeScriptMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('the context-menu entry (ADR-044 decision 2)', () => {
+  it('registers exactly one selection-only entry with the documented title', () => {
+    const onInstalled = vi.mocked(browser.runtime.onInstalled.addListener).mock.calls[0]?.[0];
+    vi.mocked(browser.contextMenus.create).mockClear();
+
+    onInstalled?.({} as never);
+
+    expect(browser.contextMenus.create).toHaveBeenCalledTimes(1);
+    expect(browser.contextMenus.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Answer this with AI Job Hunter',
+        contexts: ['selection'],
+      })
+    );
+  });
+
+  it('adds the trimmed selection as a free-text row on click, keyed to the clicked tab', async () => {
+    const onClicked = vi.mocked(browser.contextMenus.onClicked.addListener).mock.calls[0]?.[0];
+    if (!onClicked) throw new Error('context-menu click listener not registered');
+    tabsQueryMock.mockResolvedValue([
+      { id: 207, url: 'https://jobs.example.com/posting/8' } as never,
+    ]);
+
+    onClicked(
+      {
+        menuItemId: 'ajh-answer-selection',
+        selectionText: '  Describe a challenge you solved.  ',
+      } as never,
+      { id: 207 } as never
+    );
+    await flush();
+
+    // Read the resulting state back by asking for one more row.
+    const res = await send({ kind: 'answerAddRow', question: 'a second question' });
+    if (res.ok && res.kind === 'answerState') {
+      expect(res.state?.rows.map((r) => r.question)).toContain('Describe a challenge you solved.');
+    } else {
+      throw new Error('expected an answerState response');
+    }
+  });
+
+  it('adds the row to the CLICKED tab even when a fresh active-tab query would resolve to a DIFFERENT tab (regression)', async () => {
+    const onClicked = vi.mocked(browser.contextMenus.onClicked.addListener).mock.calls[0]?.[0];
+    if (!onClicked) throw new Error('context-menu click listener not registered');
+    const { readAnswerState } = await import('./lib/answer-state');
+
+    const clickedTabId = 208;
+    const otherActiveTabId = 209;
+    // Whichever tab a FRESH `{active:true,currentWindow:true}` query would
+    // resolve to right now is a DIFFERENT tab than the one the context-menu
+    // event actually fired on (e.g. focus moved to another window between
+    // the gesture and this call) — the row must still land on the CLICKED
+    // tab, not on whatever `activeTabId()` would independently resolve.
+    tabsQueryMock.mockResolvedValue([
+      { id: otherActiveTabId, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+
+    onClicked(
+      {
+        menuItemId: 'ajh-answer-selection',
+        selectionText: 'Tell me about a conflict you resolved.',
+      } as never,
+      { id: clickedTabId } as never
+    );
+    await flush();
+
+    const clickedState = await readAnswerState(clickedTabId);
+    expect(clickedState?.rows.map((r) => r.question)).toContain(
+      'Tell me about a conflict you resolved.'
+    );
+
+    const otherState = await readAnswerState(otherActiveTabId);
+    expect(otherState?.rows.map((r) => r.question) ?? []).not.toContain(
+      'Tell me about a conflict you resolved.'
+    );
+  });
+
+  it('ignores a click on a different menu id', async () => {
+    const onClicked = vi.mocked(browser.contextMenus.onClicked.addListener).mock.calls[0]?.[0];
+    if (!onClicked) throw new Error('context-menu click listener not registered');
+    tabsQueryMock.mockClear();
+
+    onClicked({ menuItemId: 'some-other-entry', selectionText: 'ignored' } as never, {} as never);
+    await flush();
+
+    expect(tabsQueryMock).not.toHaveBeenCalled();
   });
 });
 

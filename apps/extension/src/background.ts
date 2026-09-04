@@ -16,12 +16,30 @@ import type {
   ExtensionMatchLiveRequest,
   ExtensionRewritePreset,
 } from '@ajh/shared';
+// Runtime import, so it comes from the dedicated entrypoint rather than the
+// barrel — see the note at the top of `answer-tools/answer-tools.ts`.
+import { EXTENSION_ANSWER_ASSIST_MAX_CHARS } from '@ajh/shared/extension-protocol';
 
 // TYPE-ONLY import from the answer-fill module — same rationale as the
 // autofill.ts import below: `answer-fill.js`/`answer-replace.js` are
 // classic-script injection targets, so their runtime code must be imported
 // ONLY by `answer-fill.ts`/`answer-replace.ts`.
 import type { FillAnswerResult } from './lib/answer-fill';
+import {
+  addFreeRow,
+  type AnswerRow,
+  type AnswerScan,
+  type AnswerState,
+  appendVersion,
+  buildRows,
+  clearAnswerState,
+  isUnchangedRewrite,
+  readAnswerState,
+  rewriteBaseText,
+  selectedText,
+  updateAnswerState,
+  writeAnswerState,
+} from './lib/answer-state';
 // Same type-only rationale as the autofill.ts import above — capture.js /
 // capture-questions.js are ALSO classic-script injection targets (see
 // vite.config.mts's `injectedEntries`), so this import must stay type-only
@@ -82,6 +100,9 @@ const GESTURE_KINDS: ReadonlySet<PopupRequest['kind']> = new Set([
   'answersSuggest',
   'answerFill',
   'answerReplace',
+  'answerScan',
+  'answerAccept',
+  'answerRestoreOriginal',
   'matchLive',
 ]);
 
@@ -227,18 +248,18 @@ async function broadcastStatus(): Promise<void> {
   }
 }
 
-/** Client-side mirror of the Rust `answer_assist::DRAFT_CAP` (4000 chars) —
- *  bounds how far {@link assistBuffer}'s text can grow. The desktop already
- *  clamps each `assist.chunk` live so this should never actually trip in
- *  normal operation; it exists so the interrupted/error path (which shows
- *  whatever text had already accumulated) can never render an unbounded
- *  draft even if that server-side guarantee were ever violated. */
-const ASSIST_DRAFT_CAP = 4_000;
-
-/** Append `delta` to `text`, clamped to {@link ASSIST_DRAFT_CAP}. */
+/** Append `delta` to `text`, clamped to the shared
+ *  {@link EXTENSION_ANSWER_ASSIST_MAX_CHARS} cap — the same cap the Rust
+ *  `answer_assist::DRAFT_CAP` mirrors. The desktop already clamps each
+ *  `assist.chunk` live so this should never actually trip in normal
+ *  operation; it exists so the interrupted/error path (which shows whatever
+ *  text had already accumulated) can never render an unbounded draft even if
+ *  that server-side guarantee were ever violated. */
 function growAssistDraft(text: string, delta: string): string {
   const grown = text + delta;
-  return grown.length > ASSIST_DRAFT_CAP ? grown.slice(0, ASSIST_DRAFT_CAP) : grown;
+  return grown.length > EXTENSION_ANSWER_ASSIST_MAX_CHARS
+    ? grown.slice(0, EXTENSION_ANSWER_ASSIST_MAX_CHARS)
+    : grown;
 }
 
 /**
@@ -258,11 +279,59 @@ function growAssistDraft(text: string, delta: string): string {
  * re-trigger `runAnswerAssist` while the first run is still in flight.
  * {@link assistGeneration} is what makes overlap safe — see `runAnswerAssist`.
  */
-let assistBuffer: { text: string; done: boolean; interrupted: boolean } = {
+let assistBuffer: {
+  text: string;
+  done: boolean;
+  interrupted: boolean;
+  /** Which answer ROW this stream belongs to (ADR-044 decision 1), or `''`
+   *  when the caller has no row model. The generation guard below is what
+   *  keeps the single slot safe; the row id is what lets BOTH surfaces render
+   *  the stream against the right question instead of against whatever was
+   *  asked for last. It rides on the buffer rather than beside it so a
+   *  superseding run replaces the text and its owner atomically. */
+  rowId: string;
+  /** `draft` (grounded, Regenerate) vs `rewrite` (reshape of the previous
+   *  version). The UI says which is running rather than implying they are the
+   *  same dial. */
+  kind: 'draft' | 'rewrite';
+} = {
   text: '',
   done: true,
   interrupted: false,
+  rowId: '',
+  kind: 'draft',
 };
+
+/**
+ * The tab whose shared answer state {@link assistBuffer} is mirrored into.
+ * Captured with the row id when a run starts, because the mirror has to reach
+ * the SAME `storage.session` record both views are subscribed to and the
+ * active tab can change under a long stream.
+ */
+let assistTabId: number | null = null;
+
+/**
+ * Mirror the current assist buffer into the shared answer state, so a popup
+ * that is closed (or was never open) and a panel on another surface both see
+ * the same stream. Best-effort by construction: the buffer is still the
+ * authority for the popup's own reattach query, and a failed session write
+ * must never fail the user's click.
+ */
+async function mirrorAssistToState(): Promise<void> {
+  const tabId = assistTabId;
+  if (tabId === null || !assistBuffer.rowId) return;
+  const snapshot = { ...assistBuffer };
+  await updateAnswerState(tabId, (state) => ({
+    ...state,
+    stream: {
+      rowId: snapshot.rowId,
+      text: snapshot.text,
+      done: snapshot.done,
+      interrupted: snapshot.interrupted,
+      kind: snapshot.kind,
+    },
+  }));
+}
 
 /**
  * Single-flight generation counter for {@link assistBuffer}. `runAnswerAssist`
@@ -276,11 +345,19 @@ let assistGeneration = 0;
 /** Push the current assist buffer to any listening popup — mirrors
  *  `broadcastStatus` (no-op, silently, if none is open). */
 async function broadcastAssistProgress(): Promise<void> {
+  void mirrorAssistToState();
   try {
-    const message: PopupResponse = { ok: true, kind: 'answerAssistProgress', ...assistBuffer };
+    const message: PopupResponse = {
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: assistBuffer.text,
+      done: assistBuffer.done,
+      interrupted: assistBuffer.interrupted,
+      rowId: assistBuffer.rowId,
+    };
     await browser.runtime.sendMessage(message);
   } catch {
-    // No popup open — fine.
+    // No popup/panel open — fine.
   }
 }
 
@@ -724,9 +801,12 @@ async function runAnswerAssist(
   mode?: 'draft' | 'rewrite',
   existingAnswer?: string,
   preset?: ExtensionRewritePreset,
-  instruction?: string
+  instruction?: string,
+  rowId?: string,
+  maxChars?: number
 ): Promise<PopupResponse> {
   const gen = ++assistGeneration;
+  const streamKind: 'draft' | 'rewrite' = mode === 'rewrite' ? 'rewrite' : 'draft';
 
   const token = await getToken();
   if (!token) {
@@ -739,6 +819,7 @@ async function runAnswerAssist(
   } catch {
     url = undefined;
   }
+  const tabIdForRun = await activeTabId().catch(() => null);
 
   // A newer overlapping call already reset (and may have already finished)
   // the buffer while the awaits above were pending — this run must not reset
@@ -749,7 +830,14 @@ async function runAnswerAssist(
     return { ok: false, error: 'Superseded by a newer request.' };
   }
 
-  assistBuffer = { text: '', done: false, interrupted: false };
+  assistTabId = tabIdForRun;
+  assistBuffer = {
+    text: '',
+    done: false,
+    interrupted: false,
+    rowId: rowId ?? '',
+    kind: streamKind,
+  };
   void broadcastAssistProgress();
 
   const payload: ExtensionAnswerAssistRequest = { question, searchWeb };
@@ -758,10 +846,17 @@ async function runAnswerAssist(
   if (existingAnswer !== undefined) payload.existingAnswer = existingAnswer;
   if (preset) payload.preset = preset;
   if (instruction) payload.instruction = instruction;
+  // DRAFT MODE ONLY (ADR-044 decision 6): the wire ignores the limit in
+  // rewrite mode, so sending it there would be a claim the desktop does not
+  // honour. The value is page-derived — clamp it to the shared bound before it
+  // leaves, even though the desktop clamps it again.
+  const limit = clampMaxChars(maxChars);
+  if (streamKind === 'draft' && limit !== undefined) payload.maxChars = limit;
   try {
     const result = await getClient().answerAssist(payload, (delta) => {
       if (gen !== assistGeneration) return; // superseded — drop this late chunk
       assistBuffer = {
+        ...assistBuffer,
         text: growAssistDraft(assistBuffer.text, delta),
         done: false,
         interrupted: false,
@@ -770,17 +865,22 @@ async function runAnswerAssist(
     });
     if (gen === assistGeneration) {
       assistBuffer = {
+        ...assistBuffer,
         text: result.ok ? result.draft : assistBuffer.text,
         done: true,
         interrupted: !result.ok && assistBuffer.text.length > 0,
       };
       void broadcastAssistProgress();
+      // A finished run becomes a VERSION on its row (session-only, ADR-033
+      // untouched). A refusal becomes the row's error instead, verbatim, so
+      // the panel can match it against the shared refusal sentinels.
+      if (rowId) await settleRowFromAssist(rowId, streamKind, result);
     }
     return { ok: true, kind: 'answerAssist', result };
   } catch (err) {
     if (gen === assistGeneration) {
       assistBuffer = {
-        text: assistBuffer.text,
+        ...assistBuffer,
         done: true,
         interrupted: assistBuffer.text.length > 0,
       };
@@ -788,6 +888,82 @@ async function runAnswerAssist(
     }
     throw err;
   }
+}
+
+/** Bound a page-derived character limit to the shared wire ceiling. Rejects
+ *  anything that is not a positive integer — a page that writes
+ *  `maxlength="abc"` or a negative value must contribute nothing, not a
+ *  nonsense limit the desktop then has to argue with. */
+function clampMaxChars(value: number | undefined): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  const floored = Math.floor(value);
+  if (floored <= 0) return undefined;
+  return Math.min(floored, EXTENSION_ANSWER_ASSIST_MAX_CHARS);
+}
+
+/** The neutral notice for a chip rewrite that came back unchanged (measured
+ *  live, same defect class as the desktop's F3 — see `isUnchangedRewrite`). */
+const UNCHANGED_REWRITE_NOTICE =
+  'That came back the same — try Regenerate for a fresh draft, or a different instruction.';
+
+/**
+ * Fold a settled `answer.assist` reply into its row: a success appends the
+ * new version (and selects it), a refusal records the error text verbatim so
+ * the view can match the shared sentinels. Never throws — the caller's own
+ * response is what settles the click.
+ *
+ * A REWRITE (never a draft — Regenerate is expected to differ, a chip is not)
+ * whose result is unchanged from the version it reshaped is not appended as a
+ * fresh version at all: that would present a no-op as if it worked, with
+ * Accept enabled on text identical to what is already on screen. It becomes a
+ * neutral per-row {@link AnswerRow.notice} instead.
+ */
+async function settleRowFromAssist(
+  rowId: string,
+  kind: 'draft' | 'rewrite',
+  result:
+    | { ok: true; draft: string; sourced: Record<string, boolean | undefined> }
+    | { ok: false; error: string }
+): Promise<void> {
+  if (assistTabId === null) return;
+  await updateAnswerState(assistTabId, (state) => {
+    if (!result.ok) {
+      return {
+        ...state,
+        rows: state.rows.map((row) => {
+          if (row.id !== rowId) return row;
+          const next: AnswerRow = { ...row, error: result.error };
+          delete next.notice;
+          return next;
+        }),
+      };
+    }
+    if (kind === 'rewrite') {
+      const row = state.rows.find((r) => r.id === rowId);
+      if (row && isUnchangedRewrite(rewriteBaseText(row), result.draft)) {
+        return {
+          ...state,
+          rows: state.rows.map((r) => {
+            if (r.id !== rowId) return r;
+            const next: AnswerRow = { ...r, notice: UNCHANGED_REWRITE_NOTICE };
+            delete next.error;
+            return next;
+          }),
+        };
+      }
+    }
+    // A rewrite is grounded on nothing, so it carries no flags at all rather
+    // than three falses that would render an empty "grounded on" line.
+    const sourced =
+      kind === 'draft'
+        ? {
+            web: result.sourced.web === true,
+            brief: result.sourced.brief === true,
+            salary: result.sourced.salary === true,
+          }
+        : undefined;
+    return { ...state, rows: appendVersion(state.rows, rowId, result.draft, kind, sourced) };
+  });
 }
 
 /**
@@ -922,6 +1098,253 @@ async function runAnswerReplace(
   return { ok: true, kind: 'answerReplace', result };
 }
 
+// ── shared answer state (ADR-044) ────────────────────────────────────────────
+
+/** The active tab's id. Available WITHOUT the `tabs` permission (only a tab's
+ *  url/title are gated behind it), which is what lets the state be keyed per
+ *  tab while `tabs` stays on the manifest denylist. */
+async function activeTabId(): Promise<number> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tabId = tab?.id;
+  if (typeof tabId !== 'number') throw new Error('No active tab.');
+  return tabId;
+}
+
+/**
+ * The active tab's ORIGIN, read at GESTURE TIME (ADR-044 decision 1 and the
+ * design log's amendment 10d). This only works because the click that got us
+ * here just granted `activeTab` for this tab, which is what makes its url
+ * readable — it is NOT a `tabs`-permission lookup, and `tabs` stays on the
+ * denylist. Degrades to `''` rather than throwing: an unreadable origin costs
+ * the state its "same page?" check, never the scan.
+ */
+async function activeTabOriginAtGesture(): Promise<string> {
+  try {
+    return new URL(await activeTabUrl()).origin;
+  } catch {
+    return '';
+  }
+}
+
+/** Minimal guard for `capture-rows.js`'s completion value across the
+ *  `executeScript` boundary — same discipline as `isScannedQuestions`. */
+function isAnswerScan(v: unknown): v is AnswerScan {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return isScannedQuestions(o.questions) && isFilledFields(o.filled);
+}
+
+/** Inject the answer-rows collector into the active tab and return its scan. */
+async function captureActiveTabRows(tabId: number): Promise<AnswerScan> {
+  const results = await browser.scripting.executeScript({
+    target: { tabId },
+    files: ['capture-rows.js'],
+  });
+  const scan = results[0]?.result;
+  if (!isAnswerScan(scan)) throw new Error('Could not read the questions on this page.');
+  return scan;
+}
+
+/**
+ * Which of `questions` a past application can already answer, and with what.
+ * BEST-EFFORT: every failure (not paired, bridge down, the autofill opt-in
+ * off, a desktop refusal) folds to an empty map, so a row simply stays
+ * `empty` instead of the whole scan failing over a status badge. Salary-shaped
+ * suggestions are dropped for the same reason the suggestion rows never offer
+ * to fill them.
+ */
+async function savedAnswersFor(
+  questions: string[]
+): Promise<Map<string, { answer: string; source?: string }>> {
+  const out = new Map<string, { answer: string; source?: string }>();
+  if (questions.length === 0) return out;
+  try {
+    const result = await getClient().suggestAnswers(questions.slice(0, MAX_SUGGEST_QUESTIONS));
+    if (!result.ok) return out;
+    for (const s of result.suggestions) {
+      if (s.salary || out.has(s.question)) continue;
+      const source = [s.sourceTitle, s.sourceCompany].filter(Boolean).join(' at ');
+      out.set(s.question, source ? { answer: s.answer, source } : { answer: s.answer });
+    }
+  } catch {
+    // Folded on purpose — see this function's doc.
+  }
+  return out;
+}
+
+/**
+ * The gesture that (re)builds the shared answer state for the active tab:
+ * inject the rows collector, capture the origin, look up saved answers, and
+ * write the result to `storage.session`, where BOTH surfaces are subscribed.
+ *
+ * Versions already drafted on a row survive the rescan (`buildRows`), so
+ * running this on every popup open — and on the panel's Rescan for a
+ * multi-step form — never costs the user work.
+ */
+async function runAnswerScan(): Promise<PopupResponse> {
+  const tabId = await activeTabId();
+  const origin = await activeTabOriginAtGesture();
+  const scan = await captureActiveTabRows(tabId);
+  const previous = await readAnswerState(tabId);
+  const savedFor = await savedAnswersFor([...new Set(scan.questions.map((q) => q.question))]);
+
+  const state: AnswerState = {
+    tabId,
+    origin,
+    scannedAt: Date.now(),
+    rows: buildRows(scan, savedFor, previous?.rows ?? []),
+    stream: previous?.stream ?? null,
+    // The scan itself IS the re-arm: it only ran because a gesture granted
+    // `activeTab` for this tab, so whatever navigation set the flag is now
+    // accounted for.
+    pageChanged: false,
+  };
+  await writeAnswerState(state);
+  return { ok: true, kind: 'answerState', state };
+}
+
+/** Add (or reuse) a free-text row — the manual entry and the context-menu
+ *  selection both land here. No page access: a question the scan missed is
+ *  still a question worth drafting, it just has nowhere to be accepted into.
+ *  `explicitTabId` lets a caller that already has the right tab (the
+ *  context-menu gesture) pin the row to it directly — falls back to the
+ *  active-tab query only when absent, so a focus change between the gesture
+ *  and this call can't land the row in the wrong tab's record. */
+async function runAnswerAddRow(question: string, explicitTabId?: number): Promise<PopupResponse> {
+  const tabId = explicitTabId ?? (await activeTabId());
+  const existing = await readAnswerState(tabId);
+  const state: AnswerState = existing ?? {
+    tabId,
+    origin: await activeTabOriginAtGesture(),
+    scannedAt: Date.now(),
+    rows: [],
+    stream: null,
+    // Nothing has been scanned, so nothing claims to know the page — the
+    // write controls are gated on a row HAVING a field, not on this flag.
+    pageChanged: false,
+  };
+  const next: AnswerState = { ...state, rows: addFreeRow(state.rows, question) };
+  await writeAnswerState(next);
+  return { ok: true, kind: 'answerState', state: next };
+}
+
+/** Show a different version of a row. Pure state — Restore in decision 5's
+ *  sense; it writes nothing to the page until the user presses Accept. */
+async function runAnswerSelectVersion(rowId: string, version: number): Promise<PopupResponse> {
+  const tabId = await activeTabId();
+  const state = await updateAnswerState(tabId, (current) => ({
+    ...current,
+    rows: current.rows.map((row) =>
+      row.id === rowId
+        ? { ...row, selected: version >= 0 && version < row.versions.length ? version : -1 }
+        : row
+    ),
+  }));
+  return { ok: true, kind: 'answerState', state };
+}
+
+/** Find a row by id, or throw the message the surface renders. */
+function requireRow(state: AnswerState | null, rowId: string): AnswerRow {
+  const row = state?.rows.find((r) => r.id === rowId);
+  if (!row) throw new Error('That question is no longer on this page — rescan and try again.');
+  return row;
+}
+
+/**
+ * Write `text` into `row`'s field through the SAME fail-safe path the popup's
+ * per-row Fill and rewrite Accept already use, chosen by the row's field kind:
+ * an `empty` field goes through `answer-fill.js` (which refuses unless the
+ * same-question EMPTY field count still matches), a `filled` one through
+ * `answer-replace.js` (which refuses that AND any text that is no longer what
+ * we believe is in the field). On success the row's `currentText` moves to
+ * what was written, so a second Accept still knows what it is replacing.
+ */
+async function writeRowText(rowId: string, text: string): Promise<PopupResponse> {
+  const token = await getToken();
+  if (!token) {
+    return { ok: false, error: 'Not paired. Paste your pairing token first.' };
+  }
+
+  const tabId = await activeTabId();
+  const state = await readAnswerState(tabId);
+  if (state?.pageChanged) {
+    return {
+      ok: false,
+      error: 'This page changed. Click the toolbar icon to scan it, then try again.',
+    };
+  }
+  const row = requireRow(state, rowId);
+  const field = row.field;
+  if (!field) {
+    return { ok: false, error: 'This question is not on the page, so there is nothing to fill.' };
+  }
+
+  const result =
+    field.kind === 'empty'
+      ? await injectAnswerFill(row.question, field.index, field.count, text)
+      : await injectAnswerReplace(row.question, field.index, field.count, text, field.currentText);
+
+  if (result.filled) {
+    await updateAnswerState(tabId, (current) => ({
+      ...current,
+      rows: current.rows.map((r) =>
+        r.id === rowId && r.field ? { ...r, field: { ...r.field, currentText: text } } : r
+      ),
+    }));
+  }
+  return { ok: true, kind: 'answerAccept', result };
+}
+
+/** Accept: write the version currently on screen into the field. */
+async function runAnswerAccept(rowId: string): Promise<PopupResponse> {
+  const tabId = await activeTabId();
+  const row = requireRow(await readAnswerState(tabId), rowId);
+  return writeRowText(rowId, selectedText(row));
+}
+
+/** Restore original: put the field's FROZEN scan-time text back. */
+async function runAnswerRestoreOriginal(rowId: string): Promise<PopupResponse> {
+  const tabId = await activeTabId();
+  const row = requireRow(await readAnswerState(tabId), rowId);
+  return writeRowText(rowId, row.field?.originalText ?? '');
+}
+
+/**
+ * Draft or rewrite for one row, resolved against the row's OWN state so the
+ * two verbs can never be confused at the call site: a rewrite starts from the
+ * row's latest version (never the selected one — see `rewriteBaseText`) and
+ * carries no limit; a draft carries the field's `maxlength` and no existing
+ * answer. This is the single place ADR-044 decision 5's "chips reshape,
+ * Regenerate rethinks" becomes two different requests.
+ */
+async function runAnswerRowAssist(
+  rowId: string,
+  searchWeb: boolean,
+  mode: 'draft' | 'rewrite',
+  preset?: ExtensionRewritePreset,
+  instruction?: string
+): Promise<PopupResponse> {
+  const tabId = await activeTabId();
+  const row = requireRow(await readAnswerState(tabId), rowId);
+  if (mode === 'rewrite') {
+    const base = rewriteBaseText(row);
+    if (!base.trim()) {
+      return { ok: false, error: 'There is nothing to reshape yet — draft an answer first.' };
+    }
+    return runAnswerAssist(row.question, false, 'rewrite', base, preset, instruction, rowId);
+  }
+  return runAnswerAssist(
+    row.question,
+    searchWeb,
+    'draft',
+    undefined,
+    undefined,
+    instruction,
+    rowId,
+    row.field?.maxChars
+  );
+}
+
 /** Central popup-request dispatcher. Never throws — maps errors to `ok:false`. */
 async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
   try {
@@ -980,16 +1403,46 @@ async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
       case 'matchLive':
         return await runMatchLive();
       case 'answerAssist':
-        return await runAnswerAssist(
-          req.question,
-          req.searchWeb,
-          req.mode,
-          req.existingAnswer,
-          req.preset,
-          req.instruction
-        );
+        // A request that names a ROW is resolved against that row's own state
+        // (its latest version, its field's limit) rather than trusting the
+        // caller to have assembled them — see `runAnswerRowAssist`.
+        return req.rowId
+          ? await runAnswerRowAssist(
+              req.rowId,
+              req.searchWeb,
+              req.mode === 'rewrite' ? 'rewrite' : 'draft',
+              req.preset,
+              req.instruction
+            )
+          : await runAnswerAssist(
+              req.question,
+              req.searchWeb,
+              req.mode,
+              req.existingAnswer,
+              req.preset,
+              req.instruction,
+              undefined,
+              req.maxChars
+            );
       case 'answerAssistProgress':
-        return { ok: true, kind: 'answerAssistProgress', ...assistBuffer };
+        return {
+          ok: true,
+          kind: 'answerAssistProgress',
+          text: assistBuffer.text,
+          done: assistBuffer.done,
+          interrupted: assistBuffer.interrupted,
+          rowId: assistBuffer.rowId,
+        };
+      case 'answerScan':
+        return await runAnswerScan();
+      case 'answerAddRow':
+        return await runAnswerAddRow(req.question);
+      case 'answerSelectVersion':
+        return await runAnswerSelectVersion(req.rowId, req.version);
+      case 'answerAccept':
+        return await runAnswerAccept(req.rowId);
+      case 'answerRestoreOriginal':
+        return await runAnswerRestoreOriginal(req.rowId);
       case 'answerReplace':
         return await runAnswerReplace(
           req.question,
@@ -1069,12 +1522,109 @@ browser.runtime.onMessage.addListener(
   }
 );
 
+/**
+ * The ONE context-menu entry (ADR-044 decision 2). It is registered on
+ * `selection` only, so it never appears on a page the user has not selected
+ * text on, and clicking it is ITSELF the gesture that grants `activeTab` for
+ * that tab — one of the gestures Chrome documents for `sidePanel.open`.
+ */
+const ANSWER_MENU_ID = 'ajh-answer-selection';
+
+/** Longest selection accepted as a question. A selection is untrusted page
+ *  content; the desktop clamps it again, this just avoids carrying a whole
+ *  article into the row list. */
+const MAX_SELECTION_QUESTION = 500;
+
+/** (Re)create the context-menu entry. `removeAll` first because
+ *  `onInstalled` fires on every update and `create` throws on a duplicate id,
+ *  which would otherwise poison the whole listener. */
+function installContextMenu(): void {
+  const menus = browser.contextMenus;
+  if (!menus) return;
+  menus.removeAll(() => {
+    menus.create({
+      id: ANSWER_MENU_ID,
+      title: 'Answer this with AI Job Hunter',
+      contexts: ['selection'],
+    });
+  });
+}
+
+/**
+ * Context-menu click: add the selection as a free-text row, then open the
+ * panel. `open` is called from inside this handler because THIS click is the
+ * user gesture — anything awaited before it loses the gesture, which is why
+ * the row is added after the panel is opened rather than before.
+ */
+async function handleAnswerMenuClick(
+  info: Browser.contextMenus.OnClickData,
+  tab: Browser.tabs.Tab | undefined
+): Promise<void> {
+  const question = (info.selectionText ?? '').trim().slice(0, MAX_SELECTION_QUESTION);
+  if (!question) return;
+  openAnswerPanel(tab?.id);
+  await runAnswerAddRow(question, tab?.id);
+}
+
+/**
+ * Open the answer panel for `tabId` on whichever browser we are on. Chrome's
+ * `sidePanel.open` and Firefox's `sidebarAction.open` BOTH require a user
+ * gesture and are therefore called synchronously from a click handler, never
+ * after an await. The panel's `default_path` is declared in the manifest, so
+ * there is no `setOptions` call to lose the gesture on (design log 10a).
+ */
+function openAnswerPanel(tabId: number | undefined): void {
+  const chromePanel = (browser as { sidePanel?: { open(o: { tabId: number }): Promise<void> } })
+    .sidePanel;
+  if (chromePanel && typeof tabId === 'number') {
+    void chromePanel.open({ tabId }).catch(() => {
+      // A revoked gesture or a window that cannot host a panel — the popup's
+      // own control is still there, so there is nothing to report here.
+    });
+    return;
+  }
+  const sidebar = (browser as { sidebarAction?: { open(): Promise<void> } }).sidebarAction;
+  void sidebar?.open().catch(() => {
+    // Same rationale as above.
+  });
+}
+
+if (browser.contextMenus) {
+  browser.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId !== ANSWER_MENU_ID) return;
+    void handleAnswerMenuClick(info, tab);
+  });
+}
+
+/**
+ * A navigation in a tab invalidates that tab's answer state for WRITING (the
+ * `activeTab` grant may be gone and the scanned fields may be gone with it),
+ * but not for READING — decision 3 keeps the rows and replaces the write
+ * controls. Deliberately conservative: without the `tabs` permission the url
+ * is not readable here, so a same-origin navigation flips the flag too. The
+ * cost is one extra toolbar click; the alternative is a write control that
+ * silently does nothing.
+ */
+browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status !== 'loading') return;
+  void updateAnswerState(tabId, (state) =>
+    state.pageChanged ? null : { ...state, pageChanged: true }
+  );
+});
+
+// The tab is gone, and so is anything its rows referred to.
+browser.tabs.onRemoved.addListener((tabId) => {
+  void clearAnswerState(tabId);
+});
+
 // Re-probe on the lifecycle wake points so a freshly-started worker reconnects.
 browser.runtime.onStartup.addListener(() => {
   void getClient().ensureConnected();
+  installContextMenu();
 });
 browser.runtime.onInstalled.addListener(() => {
   void getClient().ensureConnected();
+  installContextMenu();
 });
 
 // Kick an initial probe when the worker first loads.

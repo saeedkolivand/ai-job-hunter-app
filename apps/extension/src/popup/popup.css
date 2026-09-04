@@ -53,7 +53,7 @@
   /* Low-opacity group divider — derived from --card-border so it adapts to
    * the dark-mode override below without a second definition. */
   --divider: color-mix(in srgb, var(--card-border) 22%, transparent);
-  /* Border for the quiet/flat button tier + the assist/rewrite inputs.
+  /* Border for the quiet/flat button tier + the Answer-tools inputs.
    * Light mode: --card-border is already opaque ink against a near-white
    * card (>>3:1) — safe to reuse directly. Dark mode overrides this to its
    * own higher-alpha value below (see that block's comment) since
@@ -491,63 +491,6 @@ details.group[open] > summary::before {
 
 /* answers.suggest reply — one card per suggestion (question / answer preview
  * / source, plus Copy + optional Fill). */
-.suggestions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.suggestion {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px 9px;
-  border: 1.5px solid var(--card-border);
-  border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
-  background: var(--card);
-}
-
-.suggestion__question {
-  margin: 0;
-  font-family: var(--sans);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.suggestion__answer {
-  margin: 0;
-  font-family: var(--sans);
-  font-size: 12px;
-  color: var(--ink-soft);
-}
-
-.suggestion__source {
-  margin: 0;
-  font-family: var(--sans);
-  font-size: 11px;
-  font-style: italic;
-  color: var(--ink-soft);
-}
-
-.suggestion__actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 2px;
-}
-
-/* Ambiguous fill correlation (2+ live fields share the suggestion's exact
- * label) — a short hint stands in for the (necessarily guessy) Fill button. */
-.suggestion__hint {
-  margin: 0;
-  font-family: var(--sans);
-  font-size: 11px;
-  color: var(--ink-soft);
-}
-
-/* match.live reply — "Check fit" score card (score / source+resume line /
- * missing-keyword chips). */
 .match-result {
   display: flex;
   flex-direction: column;
@@ -598,78 +541,9 @@ details.group[open] > summary::before {
 /* .btn--small's own shadow (above) would otherwise outrank .btn--quiet's
  * (equal specificity, later in source order) — this combined selector wins
  * on specificity regardless of declaration order, so a small quiet button
- * (e.g. the suggestion-row Copy/Fill buttons) stays flat. */
+ * (e.g. the Answer-tools row actions) stays flat. */
 .btn--small.btn--quiet {
   box-shadow: none;
-}
-
-/* answer.assist ("Help me answer…") — question picker + textarea + draft
- * result card. The dashed hand-drawn border accent stays ONLY on .token (the
- * pairing input); these get a plain 1px hairline instead, so the assist/
- * rewrite controls read as calmer, denser form controls. */
-.assist {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.assist__label {
-  font-family: var(--sans);
-  font-size: 11px;
-  color: var(--ink-soft);
-}
-
-.assist__picker,
-.assist__question {
-  width: 100%;
-  font-family: var(--sans);
-  font-size: 12px;
-  padding: 8px 10px;
-  border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
-  border: 1px solid var(--quiet-border);
-  background: var(--token-bg);
-  color: var(--ink);
-}
-
-.assist__question {
-  resize: vertical;
-}
-
-.assist__question::placeholder {
-  color: var(--placeholder);
-}
-
-.assist__picker:focus,
-.assist__question:focus {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.assist-result {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 6px 9px;
-  border: 1.5px solid var(--card-border);
-  border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
-  background: var(--card);
-}
-
-.assist-result__draft {
-  margin: 0;
-  font-family: var(--sans);
-  font-size: 12px;
-  color: var(--ink);
-  white-space: pre-wrap;
-}
-
-/* Rewrite mode (PR 11) — Accept/Restore/Copy action row (the quick-preset row
- * is now the #rewrite-preset <select> — see .assist__picker). Mirrors
- * .suggestion__actions's flex-row treatment. */
-.rewrite-result__actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .empty__body {
@@ -679,9 +553,297 @@ details.group[open] > summary::before {
   color: var(--ink-soft);
 }
 
+/* ── Answer tools (ADR-044) ──────────────────────────────────────────────────
+ * ONE stylesheet for ONE component, loaded unchanged by the popup and by the
+ * side panel. The only surface difference is `.panel` below, which releases
+ * the popup's fixed body width — everything else has to look the same in both
+ * places, because it IS the same DOM.
+ */
+
+.atools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.atools__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.atools__summary {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.atools__add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.arows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* One application question. Collapsed rows are a list; the open one is the
+ * composer — an accordion, because two open composers in a 360px popup is
+ * unreadable. */
+.arow {
+  border: 1.5px solid var(--card-border);
+  border-radius: 11px 8px 12px 7px / 7px 12px 8px 11px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.arow--open {
+  box-shadow: 3px 3px 0 var(--shadow);
+}
+
+.arow__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.arow__q {
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+/* Status badge. Every variant carries its own WORD, so the state never rests
+ * on colour alone (deuteranopia-safe, same discipline as the status pill). */
+.arow__badge {
+  flex: none;
+  padding: 2px 7px;
+  border: 1px solid var(--quiet-border);
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.2px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.arow__badge--saved-available {
+  border-color: var(--pill-connected-border);
+  color: var(--pill-connected-fg);
+  background: var(--pill-connected-bg);
+}
+
+.arow__badge--drafted {
+  border-color: var(--red-ink);
+  color: var(--red-ink);
+}
+
+.arow__body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 0 10px 10px;
+  border-top: 1px solid var(--divider);
+  padding-top: 9px;
+}
+
+.arow__counter {
+  margin: 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+
+/* Over the field's own limit. Bold as well as red — the number is the message
+ * and it must survive a monochrome screenshot. */
+.arow__counter--over {
+  color: var(--red-ink);
+  font-weight: 700;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.chips__label {
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.chip {
+  padding: 3px 9px;
+  border: 1px solid var(--quiet-border);
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.chip:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+
+.chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The explicit "As is" neutral — dashed, so it reads as "change nothing"
+ * rather than as one more transformation to choose between. */
+.chip--neutral {
+  border-style: dashed;
+  color: var(--ink-soft);
+}
+
+.arow__instruction {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--quiet-border);
+  border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
+  background: var(--token-bg);
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.arow__instruction::placeholder {
+  color: var(--placeholder);
+}
+
+.arow__instruction:focus {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.vtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.vtab {
+  padding: 2px 9px;
+  border: 1px solid var(--quiet-border);
+  border-radius: 8px 6px 9px 5px / 5px 9px 6px 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.vtab--on {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--card);
+}
+
+.arow__text {
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--divider);
+  border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
+  background: var(--token-bg);
+  font-size: 12px;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
+/* A stream still arriving, marked with a caret so "nothing is happening" and
+ * "still writing" are not the same picture. */
+.arow__text--live::after {
+  content: '▍';
+  color: var(--red);
+}
+
+.arow__hint,
+.arow__grounded,
+.arow__accept-note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.arow__grounded {
+  color: var(--ok);
+}
+
+.arow__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A saved answer from a PAST application, shown with where it came from so it
+ * is never mistaken for one written for this posting. */
+.arow__saved {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 7px 9px;
+  border: 1px solid var(--pill-connected-border);
+  border-radius: 10px 8px 11px 7px / 7px 11px 8px 10px;
+  background: var(--pill-connected-bg);
+}
+
+.arow__saved-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--pill-connected-fg);
+}
+
+.arow__saved-body {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
+.arow__saved-src {
+  margin: 0;
+  font-size: 10.5px;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+.msg--muted {
+  color: var(--ink-soft);
+}
+
+/* The side panel is the same document at a different width: release the
+ * popup's fixed 360px and cap the line length so long answers stay readable. */
+.panel {
+  width: auto;
+  max-width: 560px;
+}
+
 /* Keyboard a11y: a visible focus ring on every interactive control. */
 .btn:focus-visible,
 .link:focus-visible,
+.chip:focus-visible,
+.vtab:focus-visible,
+.arow__head:focus-visible,
 .check input:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
@@ -714,14 +876,14 @@ details.group[open] > summary::before {
     --shadow: rgba(0, 0, 0, 0.45);
 
     /* Warm light border replaces the ink border on dark surfaces. Kept
-     * low-alpha for the thin 1.5px card outlines (.suggestion/.match-result/
-     * .assist-result/.help-popover) it was tuned for. */
+     * low-alpha for the thin 1.5px card outlines (.match-result/.arow/
+     * .help-popover) it was tuned for. */
     --card-border: rgba(240, 231, 214, 0.16);
     /* --quiet-border and --divider get their OWN higher alpha here — deriving
      * either from --card-border above would compound its already-low alpha
      * into an effectively invisible ~1.05:1 wash (verified: WCAG contrast
      * against --card #241f19). 0.4 clears the ≥3:1 non-text-contrast target
-     * for the quiet button tier + assist/rewrite inputs; 0.28 is a
+     * for the quiet button tier + the Answer-tools inputs; 0.28 is a
      * deliberately lighter touch for the group dividers, which are
      * decorative section separators, not interactive-control borders. */
     --quiet-border: rgba(240, 231, 214, 0.4);

@@ -271,6 +271,28 @@ describe('EditableOutput — F4 inline rewrite splice (Source path)', () => {
     expect(firstCall[0].endsWith('SUFFIX')).toBe(true);
   });
 
+  it('opens the popover in PORTAL mode, outside every overflow-hidden ancestor', () => {
+    // The measured defect: rendered inline, the popover sat inside this
+    // component's own root AND the caller's fixed-height card, both
+    // overflow-hidden, so the result and the entire Cancel / Regenerate /
+    // Accept footer were clipped and Accept could not be clicked. Passing
+    // `anchorEl` (the always-mounted toolbar row) is what takes the portal
+    // branch; drop that prop and the dialog lands back inside `container`.
+    mockRewriteSelection.mockImplementation(async () => REPLACEMENT);
+
+    const { container } = render(
+      <EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />
+    );
+
+    switchToSource();
+    simulateSourceSelection(SEL_START, SEL_END);
+    openRewritePopover();
+
+    const dialog = screen.getByRole('dialog');
+    expect(container.contains(dialog)).toBe(false);
+    expect(dialog.className).toContain('z-toast');
+  });
+
   it('Cancel leaves onChange uncalled and text unchanged', () => {
     mockRewriteSelection.mockImplementation(async () => REPLACEMENT);
 

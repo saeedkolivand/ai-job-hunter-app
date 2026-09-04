@@ -1,6 +1,6 @@
 # Extension domain (browser extension + desktop bridge)
 
-Last updated: 2026-09-04 (`answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
+Last updated: 2026-09-04 (ADR-044: extension Answer tools side panel + popup, shared per-tab state, draft-time `maxChars` field; `answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
 
 Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tauri-security-reviewer`.
 
@@ -145,6 +145,20 @@ To guard against cancellation-race bugs and billable-job leaks, every in-flight 
 ### Compose budget on a reasoning model
 
 A reasoning model spends its thinking out of the **same output budget** as the answer, so a per-surface budget sized for a full-length answer alone can be eaten entirely by reasoning and end as `finish_reason: length` with no text at all. `answer.assist`'s budget sizing, effort-tier selection, one-retry rule, cancellation handling and per-attempt cap window are owned by [`extension_bridge/answer_assist.rs::compose_with_length_retry`](../../apps/desktop/src-tauri/src/extension_bridge/answer_assist.rs) and [`stream.rs::ComposeStream`](../../apps/desktop/src-tauri/src/extension_bridge/stream.rs) — read their doc comments for the contract rather than restating it here, where it would drift from the constants and predicates those symbols own.
+
+## Answer tools — side panel + popup, one shared state (ADR-044)
+
+Two views over one state keyed by **tab id alone** (`answerStateKey(tabId)`, origin captured into the record itself — see that function's doc for why), so a draft survives the popup closing: the popup (`apps/extension/src/popup/popup.ts`) keeps the full Answer tools section, and a side panel (`apps/extension/src/sidepanel/sidepanel.ts` — Chrome `chrome.sidePanel`, Firefox `sidebar_action`) is a second view mounting the same `mountAnswerTools` component (`apps/extension/src/answer-tools/answer-tools.ts`) against the same record. The shared state (`AnswerState`, `subscribeAnswerState`, `apps/extension/src/lib/answer-state.ts`) lives in `chrome.storage.session`. Full record: [ADR-044](decision-records/adr-044-extension-answer-tools-side-panel-and-popup.md).
+
+**Gesture model** (identical on both browsers — `background.ts::openAnswerPanel` / `popup.ts::openAnswerPanel`): the toolbar click grants `activeTab` and opens the popup (a declared `default_popup` takes priority over `openPanelOnActionClick`); the popup's own "Open answer panel" control opens the panel from that same click, synchronously; a context-menu entry on selected text (`background.ts::handleAnswerMenuClick`, `contextMenus` permission) is the second gesture path. There is no open-on-action-click anywhere in this codebase — `manifest.test.ts` asserts its absence.
+
+**After ANY navigation** (same-origin included, not only cross-origin), the panel keeps its rows (state the extension holds itself) and replaces every write control with a line pointing back at the toolbar icon. The underlying `activeTab` grant itself only dies on a cross-origin navigation, but this extension has no way to tell same-origin from cross-origin apart without the `tabs` permission (denylisted), so `AnswerState.pageChanged` — see its own doc comment for the tradeoff — is set on every navigation regardless, and read by `background.ts`'s write handlers (`answerAccept` / `answerRestoreOriginal`) before either touches the tab.
+
+**Character limit** (`ExtensionAnswerAssistRequest.maxChars`, draft mode only — `packages/shared/src/ipc/extension-protocol.ts` / `extension-protocol-constants.ts`): an optional field carrying the picked field's own `maxlength`, clamped to `EXTENSION_ANSWER_ASSIST_MAX_CHARS`. The desktop-side ceiling is `parse_max_chars` / `DRAFT_CAP` in `apps/desktop/src-tauri/src/extension_bridge/answer_assist.rs` — see that function's own doc comment for its current caller status — pinned to the shared TS constant by `answer_assist_max_chars_matches_ts` in `extension_bridge/test.rs`. The panel enforces the limit itself today, by counting the returned text against the field's `maxlength` and falling back to a "fit the limit" rewrite chip when it is over.
+
+**Refusal sentinels**: the two `answer.assist` `ok:false` strings a client is allowed to match by identity (opt-in off / no usable provider) now live as shared constants — `EXTENSION_AI_ASSIST_OFF_MESSAGE` / `EXTENSION_NO_PROVIDER_MESSAGE` in `extension-protocol-constants.ts` — mirroring the Rust sentinels declared beside the handler (`AI_ASSIST_OFF_MESSAGE` / `NO_PROVIDER_MESSAGE`, `answer_assist.rs`) and pinned by the same hand-enumerated parity test that already covers the wire-type constants (`message_type_constants_match_ts`, `extension_bridge/test.rs`). Every other `answer.assist` error stays opaque and is rendered verbatim — see "Wire-error discipline" above.
+
+**Permissions**: the panel adds Chrome's `sidePanel` permission (Firefox declares the `sidebar_action` manifest key instead — no permission) and `contextMenus` (both targets) — the one declared per-target delta in `manifest.ts` (`CHROME_ONLY_PERMISSIONS`) / `manifest.test.ts` (`DECLARED_PERMISSION_DELTA`). Justification rows: `apps/extension/README.md`'s permission table.
 
 ## Store policy
 

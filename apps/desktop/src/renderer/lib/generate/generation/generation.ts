@@ -73,7 +73,8 @@ import {
   resolveTemperatureOverride,
   type TemperatureStep,
 } from '../provider-context';
-import { awaitAiStream } from '../stream-promise';
+import { deriveRewriteLocale } from '../rewrite';
+import { awaitAiStream, computeStreamTimeoutMs } from '../stream-promise';
 
 export type { GenerationMeta, GenerationMode };
 export { MODES } from '@ajh/prompts/generate';
@@ -1593,6 +1594,14 @@ const REWRITE_STEP: Record<RewriteDocType, TemperatureStep> = {
  * instructed to return ONLY the rewritten span; `extractPlainText` strips any
  * stray markdown/thinking the model echoes. Pass `onToken` to stream the rewrite
  * into a preview and `signal` to abort an in-flight rewrite.
+ *
+ * The output language is derived from the SELECTION
+ * ({@link deriveRewriteLocale}), not from the document: a Dutch span inside a
+ * document whose `meta.targetLanguage` is `en` came back in English in 12 of 18
+ * measured runs. The derived language is what the prompt names, and it is also
+ * sent as the transport locale — but the transport can only carry a supported
+ * OUTPUT language (`safeLocale` clamps `nl` to `en`), so the PROMPT is the part
+ * that actually pins the language.
  */
 export async function rewriteSelection(params: {
   selection: string;
@@ -1601,8 +1610,9 @@ export async function rewriteSelection(params: {
   after: string;
   docType: RewriteDocType;
   model: string;
-  /** Document language so the rewrite streams in the right locale (default 'en').
-   *  Pass the generation's `meta.targetLanguage`. `streamGenerate` clamps it to a
+  /** FALLBACK document language, used only when the selection's own language
+   *  cannot be detected (default 'en'). Pass the generation's
+   *  `meta.targetLanguage`. `streamGenerate` clamps the resolved value to a
    *  supported locale via `safeLocale`. */
   locale?: string;
   onToken?: (tok: string) => void;
@@ -1620,9 +1630,12 @@ export async function rewriteSelection(params: {
     signal,
   } = params;
   const profile = buildProviderProfile(model);
+  // The span's own language wins over the document's; `locale` is the fallback
+  // for a span too short/ambiguous to detect.
+  const language = deriveRewriteLocale(selection, locale);
 
   const { system, user } = buildRewritePrompt(
-    { selection, instruction, before, after, docType },
+    { selection, instruction, before, after, docType, language },
     profile
   );
   // Bypassed `resolveTemperature`/`resolveSampling` entirely (bare `0.3`) —
@@ -1638,12 +1651,29 @@ export async function rewriteSelection(params: {
     user,
     onToken ?? (() => {}),
     sampling.temperature,
-    locale,
+    language,
     signal,
     undefined,
     sampling.intent
   );
   return extractPlainText(raw);
+}
+
+/**
+ * The renderer-side abort bound for ONE inline rewrite, in ms: the shared
+ * effort-scaled stream budget ({@link computeStreamTimeoutMs}) for the SAME
+ * `effort` {@link rewriteSelection}'s request carries (the active provider's
+ * setting — this surface deliberately does not ask for a cheaper tier, since a
+ * low tier measured STRICTLY worse at honouring a length limit).
+ *
+ * Exists because the popover previously hard-coded 60 s, which is BELOW the
+ * backend's own deadline for the same request (300 s × the effort multiplier) —
+ * inverting the invariant `computeStreamTimeoutMs` exists to hold, so a long
+ * reasoning pass was killed client-side while the backend was still streaming.
+ */
+export function resolveRewriteTimeoutMs(model: string): number {
+  const { providerSettings } = resolveActiveProvider(model);
+  return computeStreamTimeoutMs(providerSettings?.effort);
 }
 
 /**

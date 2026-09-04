@@ -133,6 +133,16 @@ export function EditableOutput({
   const rewriteLocale = meta?.targetLanguage ?? 'en';
 
   const [view, setView] = useState<'preview' | 'edit' | 'source'>('preview');
+  // Anchor for the rewrite popover's PORTAL mode. Rendered inline, the popover
+  // was clipped by two `overflow-hidden` ancestors (this component's own root and
+  // the Documents generation card's fixed-height box): the result and the whole
+  // Cancel / Regenerate / Accept footer sat below the cut, so Accept could not be
+  // clicked at all. The ref is on the always-mounted toolbar ROW, never on the
+  // trigger button — that button unmounts the moment `frozen` is set, which would
+  // leave `anchorEl` null and drop the popover straight back into inline mode.
+  // State (not a plain ref) because the popover needs a re-render once the node
+  // exists, and the row's right edge is where the popover aligns.
+  const [toolbarEl, setToolbarEl] = useState<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const editorRef = useRef<RichTextEditorHandle | null>(null);
 
@@ -263,15 +273,24 @@ export function EditableOutput({
   const isEditing = view === 'edit' || view === 'source';
   const rewriteVisible = enableRewrite && isEditing;
 
-  // Shared rewrite popover — anchored to a toolbar position above the editor
+  // Shared rewrite popover — anchored to the toolbar row above the editor
   // (neither surface exposes per-char coords, so no caret-pixel math). Rendered in
   // both the WYSIWYG (Edit) and raw (Source) surfaces; the `frozen.mode` set when
-  // it opened decides how Accept splices the result.
+  // it opened decides how Accept splices the result. `anchorEl` puts it in PORTAL
+  // mode so no `overflow-hidden` ancestor can clip its footer; the click-catcher
+  // below stays at z-680, under the portaled panel's `z-toast` (700), so an
+  // outside click still dismisses without swallowing clicks on the panel itself.
+  // The inline branch remains as a fallback for a first paint before the toolbar
+  // node is measured.
   const rewriteOverlay = (
     <AnimatePresence>
       {frozen && (
         <>
           <div className="fixed inset-0 z-[680]" onClick={closeRewrite} aria-hidden="true" />
+          {/* Only positions the popover for the pre-portal instant (`toolbarEl`
+              starts null before the ref callback fires) — once `anchorEl` is
+              set, `RewritePopover` portals to `document.body` and this wrapper
+              has no effect on it. */}
           <div className="absolute right-0 top-0 z-[700]">
             <RewritePopover
               target={frozen.target}
@@ -280,6 +299,7 @@ export function EditableOutput({
               locale={rewriteLocale}
               onAccept={acceptRewrite}
               onClose={closeRewrite}
+              anchorEl={toolbarEl}
             />
           </div>
         </>
@@ -289,7 +309,7 @@ export function EditableOutput({
 
   return (
     <div className={cn('flex min-h-0 flex-col', className)}>
-      <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+      <div ref={setToolbarEl} className="mb-2 flex shrink-0 items-center justify-between gap-2">
         {/* Rewrite trigger — left, only in Edit/Source with a live selection. */}
         <div className="flex items-center">
           {rewriteVisible && hasSelection && !frozen && (

@@ -49,7 +49,8 @@ function webExtensionAssets(): Plugin {
 /**
  * `content.ts` (Scan-mode DOM capture), `fill.ts` (assisted autofill),
  * `capture.ts` (answers capture), `capture-questions.ts` (questions-mode
- * collector), `answer-fill.ts` (single-field answer fill), `answer-replace.ts`
+ * collector), `capture-rows.ts` (the ADR-044 answer-rows scan),
+ * `answer-fill.ts` (single-field answer fill), `answer-replace.ts`
  * (single-field answer REPLACE, extension PR 11's rewrite Accept/Restore),
  * and `probe-fields.ts` (the popup's fillable-fields probe) are ALL injected
  * via `chrome.scripting.executeScript({ files: [...] })`, which runs as a
@@ -74,27 +75,29 @@ function webExtensionAssets(): Plugin {
  * instead. `emptyOutDir: false` so neither pass wipes what the other (or the
  * main build) already wrote.
  *
- * MINIFICATION IS OFF for this pass, and that is load-bearing. Four of these
- * scripts (`content`, `capture`, `capture-questions`, `probe-fields`) answer
- * the background by COMPLETION VALUE — `executeScript({ files })` hands back
- * whatever the file's LAST STATEMENT evaluates to — and a minifier is entitled
- * to rewrite away a trailing pure expression whose value it believes nobody
- * reads. Vite 8's default minifier (oxc — `build.minify: true` resolves to
- * `'oxc'`) did exactly that to `capture.ts`, folding
+ * MINIFICATION IS OFF for this pass, and that is load-bearing. Several of
+ * these scripts (`content`, `capture`, `capture-questions`, `capture-rows`,
+ * `probe-fields`) answer the background by COMPLETION VALUE —
+ * `executeScript({ files })` hands back whatever the file's LAST STATEMENT
+ * evaluates to — and a minifier is entitled to rewrite away a trailing pure
+ * expression whose value it believes nobody reads. Vite 8's default minifier
+ * (oxc — `build.minify: true` resolves to `'oxc'`) did exactly that to
+ * `capture.ts`, folding
  * `(() => ({ answers: a(document), filled: b(document) }))()` into
  * `a(document),b(document);`: the completion value became the last CALL's
- * array, `background.ts`'s `isCaptureResult` rejected it, and "Save my answers
- * from this page" failed with "Could not read the answers on this page." on
- * every page — in the store build, the release zip, and a fresh local build.
- * `content.js` and `capture-questions.js` survived only incidentally (a
- * try/catch body, a bare array return), so keeping the minifier off the whole
- * pass — rather than hand-picking trailing expressions this minifier version
- * happens not to fold — is what removes the CLASS instead of the instance. A
- * completion value is a contract no minifier can see, so it does not get to
- * optimise it; these files are tens of KB each, and readable injected source is
- * what AMO source-code review wants anyway. `src/build-output.test.ts`
- * evaluates the BUILT files and asserts their completion values, so re-enabling
- * minification here fails a test instead of a release.
+ * array, `background.ts`'s `isCaptureResult` rejected it, and "Save my
+ * answers from this page" failed with "Could not read the answers on this
+ * page." on every page — in the store build, the release zip, and a fresh
+ * local build. `content.js` and `capture-questions.js` survived only
+ * incidentally (a try/catch body, a bare array return), so keeping the
+ * minifier off the whole pass — rather than hand-picking trailing expressions
+ * this minifier version happens not to fold — is what removes the CLASS
+ * instead of the instance. A completion value is a contract no minifier can
+ * see, so it does not get to optimise it; these files are tens of KB each,
+ * and readable injected source is what AMO source-code review wants anyway.
+ * `src/build-output.test.ts` evaluates the BUILT files and asserts their
+ * completion values, so re-enabling minification here fails a test instead of
+ * a release.
  */
 
 /** Every classic script injected via `executeScript({ files })`, each built in
@@ -104,6 +107,7 @@ export const INJECTED_ENTRIES = [
   'fill',
   'capture',
   'capture-questions',
+  'capture-rows',
   'answer-fill',
   'answer-replace',
   'submit-watch',
@@ -166,6 +170,7 @@ export default defineConfig({
       input: {
         background: resolve(srcDir, 'background.ts'),
         popup: resolve(srcDir, 'popup.html'),
+        sidepanel: resolve(srcDir, 'sidepanel.html'),
       },
       output: {
         // Stable, manifest-referenced filenames at the dist root.
