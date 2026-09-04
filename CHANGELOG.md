@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.146.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.146.1...v0.146.2) (2026-09-04)
+
+### 🐛 Bug Fixes
+
+* posting score, trust and agent-cli addressing integrity ([#1104](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1104)-[#1107](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1107)) ([#1109](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1109)) ([84ef96d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/84ef96d377a5d83ca632261fc8f5285744869b13))
+
 ## [0.146.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.146.0...v0.146.1) (2026-09-04)
 
 ### 🐛 Bug Fixes
