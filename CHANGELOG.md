@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.146.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.146.0...v0.146.1) (2026-09-04)
+
+### 🐛 Bug Fixes
+
+* extension answer tools capture script and reasoning-aware draft budget ([#1103](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1103)) ([1034ca5](https://github.com/saeedkolivand/ai-job-hunter-app/commit/1034ca546f21556c211fad54e7370d18a5cca7b0))
+* give extension answer tools a side panel; fix the inline rewrite popover ([#1108](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1108)) ([57be898](https://github.com/saeedkolivand/ai-job-hunter-app/commit/57be8988d8496a4ee79456a40b284c1565b4acbf)), closes [#1103](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1103)
+
 ## [0.146.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.145.2...v0.146.0) (2026-09-03)
 
 ### ✨ Features
