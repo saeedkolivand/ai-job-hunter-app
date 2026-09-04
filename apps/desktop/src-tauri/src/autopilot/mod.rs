@@ -784,6 +784,66 @@ impl AutopilotStore {
         self.save(map);
     }
 
+    /// Patch `description` on every [`FoundJob`] — across EVERY autopilot
+    /// record, not just one — whose own `url` normalizes to `normalized_url`
+    /// (issue #1106 part b). `PostingsCache` (`postings::mod`) is a
+    /// completely disjoint, session-lifetime store that a posting surfaced
+    /// via `job`/`best-matches`/`autopilot_best_matches` never touches (those
+    /// resources read `found_jobs` directly — see `agent_read`'s module
+    /// doc); a correction from `commands::scrape::scrape_update_description`
+    /// must reach this store too or the exact case issue #1106 reports (a
+    /// correction that silently doesn't stick) stays unfixed. Same
+    /// load-mutate-save shape as [`Self::recompute_record_clusters`] just
+    /// above, but over every record and every matching row within it — the
+    /// same posting can legitimately appear more than once across different
+    /// autopilots. Returns the number of rows updated (`0` when nothing
+    /// matched, so the caller can tell it found nothing to correct).
+    ///
+    /// Also recomputes `trust` (via [`crate::scraping::trust::assess_trust`],
+    /// the same three-arg call `commands::autopilot::build_found_job` makes)
+    /// — `trust` is genuinely description-scoped, so a correction from an
+    /// empty/title-only description to a real one clears the stale
+    /// `DescriptionUnavailable` flag immediately instead of leaving it
+    /// contradicting the now-visible full text until the next scrape
+    /// re-derives it (issue #1106).
+    ///
+    /// `score_provisional` is deliberately left UNTOUCHED here. It describes
+    /// the `score` field (see `packages/shared/src/types/index.ts`'s doc
+    /// comment on `MatchScoreSummary.provisional`), and — per the doc comment
+    /// above — the numeric `score` itself is NOT recomputed by a manual text
+    /// correction, so nothing about the flag's meaning has changed either. A
+    /// prior version of this function derived `score_provisional` from the
+    /// NEW description's blank-ness, which asserted freshness of a number
+    /// that never moved (the exact dishonesty issue #1105 exists to close).
+    /// It only goes back to `false` once an actual autopilot run re-scores
+    /// the corrected content.
+    pub fn update_found_job_descriptions(&self, normalized_url: &str, description: &str) -> u32 {
+        let mut map = self.load();
+        let mut updated = 0u32;
+        for ap in map.values_mut() {
+            let mut changed = false;
+            for job in &mut ap.found_jobs {
+                if crate::applications::normalize_job_url(&job.url) == normalized_url {
+                    job.description = Some(description.to_string());
+                    job.trust = Some(crate::scraping::trust::assess_trust(
+                        &job.url,
+                        &job.company,
+                        description,
+                    ));
+                    changed = true;
+                    updated += 1;
+                }
+            }
+            if changed {
+                ap.updated_at = now_ms();
+            }
+        }
+        if updated > 0 {
+            self.save(map);
+        }
+        updated
+    }
+
     // ── Persistence ───────────────────────────────────────────────────────────
 
     fn load(&self) -> HashMap<String, Autopilot> {

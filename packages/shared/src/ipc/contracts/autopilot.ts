@@ -118,7 +118,8 @@ export interface AutopilotBestMatch {
   key: string;
   title: string;
   company: string;
-  /** The canonical member's url — the "view job" target. */
+  /** The canonical member's url — the "view job" target. May not be the same
+   *  posting `score` was computed from; see `scoreUrl`. */
   url: string;
   location?: string;
   board?: string;
@@ -130,6 +131,12 @@ export interface AutopilotBestMatch {
   score: number;
   scoreSource: 'keyword' | 'combined';
   scoreProvisional?: boolean;
+  /** Present only when `score`/`scoreSource`/`scoreProvisional` belong to a
+   *  DIFFERENT member than `url` (the best-scored member decides the score,
+   *  the content-richest decides `url`, and they aren't always the same
+   *  posting). Carries that member's own url so a caller can look up the
+   *  actual posting the displayed score belongs to. */
+  scoreUrl?: string;
   postedAt?: number;
   /** EARLIEST discovery across every source that surfaced this job. */
   foundAt: number;
