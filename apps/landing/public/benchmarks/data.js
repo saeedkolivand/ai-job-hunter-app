@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788534191451,
+  "lastUpdate": 1788555488308,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "a69cace83b81daa5a87737f126ad69c8350df260",
-          "message": "ci: credit external contributors with @mentions in release notes (#697)\n\n* ci: credit external contributors with @mentions in release notes (corrected)\n\nCORRECTED IMPLEMENTATION: Properly wrap preset transform, not replace it.\n\nConvert .releaserc.json → release.config.mjs (ESM with top-level await).\nResolve preset factory with top-level await to extract its transform function,\nthen wrap it with a composition that:\n1. Calls preset's transform first (preserves type→section bucketing, hidden\n   filtering, reference linkification, BREAKING CHANGE handling)\n2. Respects the preset's filtering (returns false/null for hidden commits)\n3. Augments the result with (@<login>) credit if applicable\n\nThis fixes the v10 empty-notes gotcha: directly setting writerOpts.transform\nREPLACES the preset transform entirely, losing all the preset's logic.\nBy wrapping, we preserve the preset's work while adding attribution.\n\nAdd comprehensive tests covering:\n- extractGitHubLogin unit tests (6 cases)\n- Config loads with ESM and top-level await\n- Transform is properly wrapped in release-notes-generator plugin options\n- Guard script still validates notes correctly (9 tests, all passing)\n\nUpdate eslint.config.mjs to allow CommonJS in release.config.mjs (if needed\nfor CI compatibility—actually ESM now so may not be needed, but kept for safety).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* test: add real end-to-end render test for release notes with contributor credits\n\nAdd comprehensive test that validates the wrapped preset transform by rendering\nactual release notes through @semantic-release/release-notes-generator. This\ntest would have caught the replace-not-wrap bug because the output would have\nbeen broken (no sections, leaked chore, no linkification).\n\nTest covers synthetic commits (thejesh23 fix, owner feat, chore) and asserts:\n1. Non-empty notes output\n2. Section grouping preserved (### headers present)\n3. Exactly one (@thejesh23) credit for external contributor\n4. Owner commits have NO (@mention) suffix\n5. Hidden commits (chore/ci/test) filtered out entirely\n6. References (#679) linkified in GitHub URLs\n\nHermetic fixture (no git dependency) ensures test is stable across branches.\nComplements existing extractGitHubLogin unit tests and config structure checks.\n\nThis render test guards the v10 empty-notes gotcha forever: if transform ever\nreverts to replace-not-wrap, these assertions will fail loudly.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* ci: dedupe login-extraction and fix stale .releaserc.json doc refs\n\nRe-validation of the contributor-credit release-notes change found two\ndrift risks and fixed them before push:\n\n- release.config.mjs defined its own copy of extractGitHubLogin instead\n  of importing the one in scripts/release-notes-transform.cjs, so the\n  unit tests (which do import from that file) were not actually\n  exercising the production regex — the two could silently drift.\n  release.config.mjs now imports the single implementation.\n- eslint.config.mjs's config-file override still referenced a\n  .releaserc.cjs path that never existed on this branch; removed (the\n  new release.config.mjs is already covered by the *.config.* glob).\n- Nine docs/agent-config files (CLAUDE.md x2, CONTRIBUTING.md,\n  docs/DEPLOYMENT.md, docs/DESIGN_DECISIONS.md, ADR-024,\n  .claude/agents/project-steward.md, .claude/skills/deployment-rules,\n  .claude/review-routes.json, a Rust doc-comment, and the guard script's\n  comment) still named the removed .releaserc.json; updated to\n  release.config.mjs. The review-routes.json glob was live-checked by\n  `pnpm check:agent-system`, which failed until fixed.\n\n* fix: harden preset transform resolution and esm require in test\n\nAddress two findings from the AI review gate:\n\n1. Harden release.config.mjs resolvePresetTransform to handle both\n   preset.writer.transform and preset.writerOpts.transform shapes,\n   for version robustness across preset versions (some use writer,\n   others writerOpts). Add explicit function type-check before\n   returning. Update comment to remove imprecise 'commits' mention\n   and clarify that both shapes are handled.\n\n2. Fix scripts/release-notes-transform.test.mjs line 161: add proper\n   ESM-compatible require via createRequire(import.meta.url) at the\n   top of the file (line 4), so the test works under plain node,\n   not just vitest's shim. Guard-validates test still passes.\n\nBoth gates verified:\n- pnpm test -- --project scripts: 15/15 suites, 31/31 tests (including\n  real generateNotes E2E render confirming 3 (@thejesh23) credits)\n- pnpm lint:strict: zero warnings/errors\n- pnpm check:agent-system: in sync\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-          "timestamp": "2026-07-17T04:55:40+02:00",
-          "tree_id": "6a91ca6750ff8352feab4885160c235e327c6dcf",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/a69cace83b81daa5a87737f126ad69c8350df260"
-        },
-        "date": 1784257435457,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 1725401,
-            "range": "± 31521",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2059871,
-            "range": "± 10997",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 228067,
-            "range": "± 3297",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 302749,
             "range": "± 13992",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "84ef96d377a5d83ca632261fc8f5285744869b13",
+          "message": "fix: posting score, trust and agent-cli addressing integrity (#1104-#1107) (#1109)\n\n* fix: recognize every adzuna market host and flag postings with no description\n\nCompanyDomainMismatch fired for nearly every Adzuna-sourced posting\nregardless of employer legitimacy, because the allowlist recognized\nonly api.adzuna.com while Adzuna's own redirect_url also points at\nper-market websites (www.adzuna.de and, less obviously, compound\nccTLDs like www.adzuna.co.uk covering 7 of 19 supported markets,\nincluding the UK). is_adzuna_market_host now recognizes both shapes,\nanchored so no lookalike host (adzuna.evil.com, a compound-shaped\nspoof) can borrow the exemption.\n\nSeparately, a posting with an empty description (LinkedIn's free-tier\nboard returns one for every listing) carried full High trust with no\nsignal anything was missing, because assess_trust never saw the\ndescription at all. It now takes a third parameter and a new\nDescriptionUnavailable flag caps trust below High when the text is\nblank, through the same score-penalty mechanism every other flag uses.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* fix: stop autopilot from hiding a title-only match behind a full-confidence score\n\nbest-matches could show a URL and a score from two different rows in\nthe same cluster, because the row's display fields came from the\ncluster's canonical (richest-content) member while its score came from\na different, best-scored member. A new scoreUrl field names which\nposting a displayed score actually belongs to whenever the two\ndiverge, so a client is never left following a URL that doesn't own\nthe number next to it.\n\nSeparately, re-admitting a job a minMatchScore change had just\nfiltered out could overwrite a persisted, semantically-reranked\nCombined score with a cheaper same-run Keyword-only one, potentially\ndropping a genuinely good match out of best-matches entirely (the\nqualifying cut is higher for Keyword than Combined). Re-admission now\nrefuses to downgrade a persisted Combined score to a Keyword one,\nwithout blocking the reverse: a real same-run upgrade still applies.\n\nscore_provisional (the muted-score marker) also never fired for a\nposting with no usable description or requirements text unless it\nhappened to come from an aggregator snippet, letting a bare-title\nkeyword match round to 100% with full apparent confidence; it now\nalso fires whenever the scoring text was title-only, honestly\nincluding the LinkedIn and five other boards this affects.\n\nCorrecting a posting's description now refreshes its trust flags to\nmatch the new text, but deliberately leaves score_provisional alone —\nthe numeric score isn't recomputed by a manual correction, so nothing\nabout its confidence has actually changed.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* fix: wire the new description-unavailable trust flag into the renderer\n\nTrustFlag gained a DescriptionUnavailable variant on the Rust side;\nthe wire type's flags union and the trust badge's exhaustive flag-key\nmap both need every variant mapped or a build breaks, by design, so a\nnew flag can never reach the renderer with no label the way one did\nbefore this repeated safeguard existed.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* fix: let scrape_update_description correct a posting by url, not an internal id\n\nThe command required an id that addressed only the session-lifetime\nPostingsCache, but no Agent/MCP read command ever exposes that id —\nevery reader addresses a posting by url. Worse, even a correct\nid-based lookup could never reach a posting surfaced via job or\nbest-matches, since those read Autopilot.found_jobs, a completely\nseparate persisted store the old id-keyed cache write never touched.\n\nThe request now carries url, matched the same way job_resource\nalready resolves one — canonicalized through board-specific rewrites\n(so a LinkedIn search-view link and its canonical view-url land on the\nidentical identity) before normalizing, with an explicit http(s)\nscheme required so a stale caller's old id-shaped value is rejected\nup front rather than silently missing both stores. The write now\nreaches both PostingsCache and every matching found-job row across\nevery autopilot, and refuses an empty description outright — this\ncommand corrects a description, it must never be able to blank one.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* docs: regenerate api.md for this branch's contract changes\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* refactor: derive the update-description request type from its contract\n\nTwo call sites duplicated the same inline { url, description } object\ntype the ScrapeContract interface already declares. Deriving both from\nParameters<ScrapeContract['updateDescription']>[0] means a future\nfield change on the contract can no longer drift silently out of sync\nwith either caller.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* fix: close two trust-module gaps a review found (blank-description check, adzuna spoofing)\n\nDescriptionUnavailable used a raw .trim().is_empty() check, weaker than\ndescription_is_blank (commands::autopilot's no_jd_text predicate) — a\ndescription that's just a bare URL or markdown noise read as \"usable\"\nscoring text and got full trust. Switch assess_trust to call the shared\npredicate so both checks agree on the same input.\n\nis_adzuna_market_host's single-label branch accepted adzuna.<any TLD>,\nletting a squatted lookalike (adzuna.xyz, adzuna.top, ...) suppress\nCompanyDomainMismatch for a spoofed posting. Restrict it to a curated\nADZUNA_SINGLE_LABEL_TLDS allowlist (11 ccTLD markets + the us -> com\nexception), mirroring how the compound-ccTLD branch already works.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Sonnet 5 <noreply@anthropic.com>",
+          "timestamp": "2026-09-04T22:33:24+02:00",
+          "tree_id": "d68d15b048bcfb34f39fc913030fa0cf71e5b35b",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/84ef96d377a5d83ca632261fc8f5285744869b13"
+        },
+        "date": 1788555487204,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2273493,
+            "range": "± 63577",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2791233,
+            "range": "± 91616",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 335420,
+            "range": "± 14866",
             "unit": "ns/iter"
           }
         ]
