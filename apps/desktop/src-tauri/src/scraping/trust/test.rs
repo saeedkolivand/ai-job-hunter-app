@@ -273,6 +273,57 @@ fn adzuna_compound_lookalike_suffix_does_not_match() {
     assert_eq!(a.flags, vec![TrustFlag::CompanyDomainMismatch]);
 }
 
+/// Two more curated single-label markets beyond the pre-existing `.de`
+/// coverage — guards against a fix that only special-cased the one TLD
+/// already under test rather than actually curating the list.
+#[test]
+fn adzuna_market_website_single_label_fr_suppresses_mismatch() {
+    let a = assess_trust(
+        "https://www.adzuna.fr/details/4172839571",
+        "Weyland-Yutani",
+        "A real description.",
+    );
+    assert_eq!(a.score, 100);
+    assert_eq!(a.level, TrustLevel::High);
+    assert!(a.flags.is_empty());
+}
+
+/// The `us` market's real domain is `adzuna.com`, not `adzuna.us` — the one
+/// exception to the ccTLD-matches-country-code pattern the other 11
+/// single-label markets follow. Regression for a curated list that dropped
+/// (or mis-mapped) the US entry.
+#[test]
+fn adzuna_market_website_us_special_case_com_suppresses_mismatch() {
+    let a = assess_trust(
+        "https://www.adzuna.com/details/4172839571",
+        "Weyland-Yutani",
+        "A real description.",
+    );
+    assert_eq!(a.score, 100);
+    assert_eq!(a.level, TrustLevel::High);
+    assert!(a.flags.is_empty());
+}
+
+/// Security regression: before curating `ADZUNA_SINGLE_LABEL_TLDS`,
+/// `is_adzuna_market_host`'s single-label branch accepted `adzuna.<any
+/// TLD>`, so a squatted lookalike domain (an attacker registering
+/// `adzuna.xyz`, `adzuna.top`, etc. — cheap SLD-squatting under an unrelated
+/// TLD) suppressed `CompanyDomainMismatch` for a spoofed posting exactly
+/// like a real Adzuna market host would. This is the attack case the curated
+/// list closes. Mutation-checked: reverting to the old "any single-label
+/// TLD" branch turns this red (the flag stops firing).
+#[test]
+fn adzuna_lookalike_unrecognized_tld_triggers_mismatch() {
+    for url in ["https://www.adzuna.xyz/j", "https://adzuna.top/j"] {
+        let a = assess_trust(url, "Weyland-Yutani", "A real description.");
+        assert_eq!(
+            a.flags,
+            vec![TrustFlag::CompanyDomainMismatch],
+            "url={url} — unrecognized-TLD lookalike must not suppress the mismatch flag"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // assess_trust — combined penalties
 // ---------------------------------------------------------------------------
@@ -617,6 +668,46 @@ fn non_empty_description_does_not_affect_the_happy_path() {
     assert_eq!(a.score, 100);
     assert_eq!(a.level, TrustLevel::High);
     assert!(a.flags.is_empty(), "expected no flags, got {:?}", a.flags);
+}
+
+/// Regression for CodeRabbit's finding on this PR: `assess_trust` previously
+/// used a raw `.trim().is_empty()` check, weaker than
+/// `crate::documents::keywords::description_is_blank` — the SAME
+/// "is there usable scoring text" concept `commands::autopilot`'s
+/// `no_jd_text` already uses. A description that's just a bare URL has no
+/// markdown noise to strip, but `markdown_to_plain` still reduces it to
+/// nothing usable once run through the shared predicate. Mutation-checked:
+/// reverting to the raw `.trim().is_empty()` check turns this red (the flag
+/// stops firing, level stays `High`).
+#[test]
+fn bare_url_description_flags_and_caps_below_high() {
+    let a = assess_trust(
+        "https://stripe.com/jobs/1",
+        "Stripe",
+        "http://example.com/careers",
+    );
+    assert_ne!(a.level, TrustLevel::High, "must be capped below High");
+    assert_eq!(a.flags, vec![TrustFlag::DescriptionUnavailable]);
+}
+
+/// Same regression, markdown-only noise instead of a bare URL — both inputs
+/// read as "non-empty" under the old raw check but reduce to nothing under
+/// `markdown_to_plain`.
+#[test]
+fn markdown_only_noise_description_flags_and_caps_below_high() {
+    for description in ["***", "[](url)"] {
+        let a = assess_trust("https://stripe.com/jobs/1", "Stripe", description);
+        assert_ne!(
+            a.level,
+            TrustLevel::High,
+            "description={description:?} — must be capped below High"
+        );
+        assert_eq!(
+            a.flags,
+            vec![TrustFlag::DescriptionUnavailable],
+            "description={description:?}"
+        );
+    }
 }
 
 /// Stacks with an independent flag (`CompanyDomainMismatch`) rather than

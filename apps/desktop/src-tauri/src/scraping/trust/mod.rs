@@ -45,13 +45,16 @@ pub enum TrustFlag {
     /// function's doc comment for why appending it here is safe for every
     /// `TrustAssessment`/`FoundJob` record already on disk.
     ImplausibleCompany,
-    /// The posting's own description is empty (or whitespace-only) —
-    /// LinkedIn's free/guest board sets `description: Some(String::new())`
-    /// for every posting (a "will be filled in background" promise that was
-    /// never implemented), so a title-only stub otherwise reads identically
-    /// to a fully-described posting. Additive variant, same as
-    /// [`ImplausibleCompany`] above — safe for every `TrustAssessment`/
-    /// `FoundJob` record already on disk.
+    /// The posting's own description carries no usable scoring text — empty,
+    /// whitespace-only, or blank once markdown noise (a bare URL, `***`,
+    /// `[](url)`, …) is stripped, per
+    /// `crate::documents::keywords::description_is_blank`, the same predicate
+    /// `commands::autopilot`'s `no_jd_text` uses. LinkedIn's free/guest board
+    /// sets `description: Some(String::new())` for every posting (a "will be
+    /// filled in background" promise that was never implemented), so a
+    /// title-only stub otherwise reads identically to a fully-described
+    /// posting. Additive variant, same as [`ImplausibleCompany`] above — safe
+    /// for every `TrustAssessment`/`FoundJob` record already on disk.
     DescriptionUnavailable,
 }
 
@@ -160,10 +163,15 @@ pub fn assess_trust(url: &str, company: &str, description: &str) -> TrustAssessm
         }
     }
 
-    if description.trim().is_empty() {
+    if crate::documents::keywords::description_is_blank(Some(description)) {
         // Same -15 order of magnitude as `CompanyDomainMismatch` — enough to
         // guarantee `finish` never reports `TrustLevel::High` for a
         // stubbed-out posting, regardless of what else is (or isn't) flagged.
+        // `description_is_blank` (not a raw `.trim().is_empty()`) so this
+        // agrees with `commands::autopilot`'s `no_jd_text` on what counts as
+        // "no usable text" — a bare URL or markdown-only noise strips down to
+        // nothing via `markdown_to_plain` first (issue #1106's shared
+        // predicate; see that fn's doc comment).
         flags.push(TrustFlag::DescriptionUnavailable);
         score -= 15;
     }
@@ -185,18 +193,35 @@ const ADZUNA_COMPOUND_TLDS: &[&str] = &[
     "co.uk", "com.au", "co.za", "co.nz", "com.mx", "com.br", "co.in",
 ];
 
+/// The remaining 12 `ADZUNA_SUPPORTED_COUNTRIES` markets not covered by
+/// [`ADZUNA_COMPOUND_TLDS`] — their real per-market website is a bare
+/// single-label TLD. Eleven map directly to their own ccTLD
+/// (`at`/`be`/`ca`/`ch`/`de`/`es`/`fr`/`it`/`nl`/`pl`/`sg` → `adzuna.<cc>`);
+/// `us` is the one exception to the ccTLD-matches-country-code pattern —
+/// Adzuna's US site is `adzuna.com`, not `adzuna.us`. Curated (not derived
+/// from `ADZUNA_SUPPORTED_COUNTRIES` programmatically) on purpose — see
+/// [`is_adzuna_market_host`]'s doc comment for why.
+const ADZUNA_SINGLE_LABEL_TLDS: &[&str] = &[
+    "at", "be", "ca", "ch", "de", "es", "fr", "it", "nl", "pl", "sg", "com",
+];
+
 /// True for Adzuna's own per-market website host — `www.adzuna.<tld>` (e.g.
 /// `www.adzuna.de`, `www.adzuna.it`) or the bare `adzuna.<tld>`, AND the
 /// compound-ccTLD shape some markets use instead (`www.adzuna.co.uk`,
 /// `www.adzuna.com.au`, …, see [`ADZUNA_COMPOUND_TLDS`]) — Adzuna's
 /// `redirect_url` sometimes points here instead of the `api.adzuna.com` API
 /// host in [`ATS_ALLOWLIST`]. Covers every `ADZUNA_SUPPORTED_COUNTRIES`
-/// market, both shapes. The first branch (single TLD label) is intentionally
-/// permissive — it matches `adzuna.<any single-label TLD>`, not only the 19
-/// currently-supported markets — since `trust` is advisory and never a gate
-/// (see this module's own doc), so a hypothetical future market needs no
-/// code change here; only the compound-ccTLD branch is a curated, bounded
-/// list, because a compound suffix has no general parseable shape.
+/// market, both shapes. Both branches are now curated, bounded allowlists —
+/// the single-TLD branch checks [`ADZUNA_SINGLE_LABEL_TLDS`], mirroring
+/// exactly how the compound branch already checks [`ADZUNA_COMPOUND_TLDS`].
+/// This was previously "any single-label TLD after `adzuna`", which let an
+/// attacker who registered e.g. `adzuna.xyz` or `adzuna.top` (cheap
+/// SLD-squatting under an unrelated TLD) suppress `CompanyDomainMismatch`
+/// for a spoofed posting; the trust score being advisory-only doesn't excuse
+/// a host check that's wrong on its own terms, so this is now bounded to
+/// Adzuna's real markets, same as the compound branch always was. A future
+/// new Adzuna market needs a one-line addition here, same as it already does
+/// for a compound-ccTLD market.
 ///
 /// Anchored on `adzuna` being the SECOND-TO-LAST label (single TLD) or
 /// THIRD-TO-LAST label with the trailing two labels forming a known compound
@@ -208,7 +233,7 @@ fn is_adzuna_market_host(host: &str) -> bool {
     let labels: Vec<&str> = host.split('.').collect();
     let n = labels.len();
     if n >= 2 && labels[n - 2] == "adzuna" {
-        return true;
+        return ADZUNA_SINGLE_LABEL_TLDS.contains(&labels[n - 1]);
     }
     if n >= 3 && labels[n - 3] == "adzuna" {
         let suffix = format!("{}.{}", labels[n - 2], labels[n - 1]);

@@ -254,8 +254,10 @@ computed.
     ATS allowlist, and the host doesn't plausibly name the company (normalized
     slug or a ≥3-char word match).
   - `ImplausibleCompany` — the company name itself looks fake/placeholder.
-  - `DescriptionUnavailable` — the posting's description is empty/whitespace
-    (issue #1105) — see the enum's own doc comment for the exact predicate.
+  - `DescriptionUnavailable` — the posting's description has no usable
+    scoring text, via the same `description_is_blank` predicate
+    `commands::autopilot`'s `no_jd_text` uses (issue #1105/#1106) — see the
+    enum's own doc comment for the exact predicate.
 - **ATS allowlist** — never raises `CompanyDomainMismatch`. See `ATS_ALLOWLIST`
   constant in `apps/desktop/src-tauri/src/scraping/trust/mod.rs`; includes the
   standard ATS platforms (Greenhouse, Lever, etc.) plus our 24 `SCRAPERS` boards
