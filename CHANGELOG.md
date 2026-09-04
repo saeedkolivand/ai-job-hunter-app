@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.147.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.146.2...v0.147.0) (2026-09-04)
+
+### ✨ Features
+
+* open the answer panel from a plain right-click on the page ([#1110](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1110)) ([be7ec50](https://github.com/saeedkolivand/ai-job-hunter-app/commit/be7ec50bfb10b8a10589fa1a51b16c5f5a09e3d6))
+
 ## [0.146.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.146.1...v0.146.2) (2026-09-04)
 
 ### 🐛 Bug Fixes
