@@ -59,7 +59,8 @@ impl PostingsCache {
     ///
     /// Linear scan over a `Vec` is correct here: the frontend caps the list at ~500
     /// items, so the O(n) scan is cheap and a HashMap/index map would be premature.
-    /// Mirrors the existing linear-scan-by-`id` in [`Self::update_description`].
+    /// [`Self::update_description`] does its own linear scan too, matched by `url`
+    /// (not `id` — see that method's own doc for why, issue #1106).
     ///
     /// When a replace happens, any cached embedding for that id is dropped
     /// ONLY when the embedded TEXT actually changed (title + description —
@@ -93,7 +94,9 @@ impl PostingsCache {
         &self.items
     }
 
-    /// Patch the `description` of the cached posting whose `id` matches, in place.
+    /// Patch the `description` of every cached posting whose own `url` field
+    /// normalizes (via [`crate::applications::normalize_job_url`]) to
+    /// `normalized_url`, in place (issue #1106).
     ///
     /// Aggregator list scrapes store only a truncated snippet; once the detail
     /// pane resolves the full description we write it back here so the match
@@ -101,45 +104,57 @@ impl PostingsCache {
     /// the full text. We mutate the EXISTING entry rather than pushing a new one:
     /// [`Self::add`] upserts by id (it would replace, not duplicate, the row), so
     /// routing the patch through `add` would needlessly rebuild the whole value.
-    /// Each item is stored
-    /// as a JSON object, so we patch the `description` field on the matching object
-    /// directly.
+    /// Each item is stored as a JSON object, so we patch the `description` field
+    /// on the matching object directly.
     ///
-    /// Returns `true` when an entry was updated, `false` when no item carries that
-    /// id (no row is created in either case).
-    pub fn update_description(&mut self, id: &str, description: &str) -> bool {
+    /// Addressed by `url`, not the board-synthetic `id` this method used before:
+    /// `id` has no meaning off this in-memory cache (no Agent/MCP read command
+    /// ever exposed it — `extension_bridge::agent_read`'s own module doc: "`url`
+    /// is the CROSS-RESOURCE KEY — not an id"), so `url` is the one identity a
+    /// caller — the renderer or the agent CLI — can actually supply.
+    /// `normalized_url` must already be normalized: `scrape_update_description`
+    /// normalizes once and reuses that same value for this cache AND for
+    /// `AutopilotStore::update_found_job_descriptions`, never re-derived per item.
+    ///
+    /// Returns `true` when AT LEAST ONE entry was updated, `false` when no
+    /// item's url matches (no row is created in either case). Every matching
+    /// item is patched, not just the first — two board-synthetic ids can
+    /// legitimately share one url within a single session.
+    pub fn update_description(&mut self, normalized_url: &str, description: &str) -> bool {
         // Two-pass approach to avoid holding a simultaneous mutable borrow on
-        // `self.items` while also mutating `self.embeddings`.
-        //
-        // Pass 1: check whether the description is actually changing and patch
-        //         the item. Track whether an invalidation is needed.
-        let mut needs_embedding_invalidation = false;
+        // `self.items` while also mutating `self.embeddings` (which is keyed by
+        // `id`, not `url` — each matched item's OWN id is collected in pass 1).
+        let mut stale_embedding_ids: Vec<String> = Vec::new();
         let mut found = false;
         for item in &mut self.items {
-            if item.get("id").and_then(Value::as_str) == Some(id) {
-                if let Some(obj) = item.as_object_mut() {
-                    // Only invalidate the cached embedding when the text actually
-                    // changes. If the full description is identical to what's
-                    // already stored (e.g. a duplicate resolve-on-open call) we
-                    // keep the embedding; otherwise the stale snippet embedding
-                    // would be reused on the next score after a description update,
-                    // defeating the resolve-on-open re-score.
-                    let existing = obj.get("description").and_then(Value::as_str).unwrap_or("");
-                    if existing != description {
-                        needs_embedding_invalidation = true;
-                    }
-                    obj.insert(
-                        "description".to_string(),
-                        Value::String(description.to_string()),
-                    );
-                    found = true;
-                    break;
+            let item_url = item.get("url").and_then(Value::as_str).unwrap_or("");
+            if crate::applications::normalize_job_url(item_url) != normalized_url {
+                continue;
+            }
+            let Some(obj) = item.as_object_mut() else {
+                continue;
+            };
+            found = true;
+            // Only invalidate the cached embedding when the text actually
+            // changes. If the full description is identical to what's
+            // already stored (e.g. a duplicate resolve-on-open call) we
+            // keep the embedding; otherwise the stale snippet embedding
+            // would be reused on the next score after a description update,
+            // defeating the resolve-on-open re-score.
+            let existing = obj.get("description").and_then(Value::as_str).unwrap_or("");
+            if existing != description {
+                if let Some(id) = obj.get("id").and_then(Value::as_str) {
+                    stale_embedding_ids.push(id.to_string());
                 }
             }
+            obj.insert(
+                "description".to_string(),
+                Value::String(description.to_string()),
+            );
         }
-        // Pass 2: drop the stale embedding now that `self.items` borrow is released.
-        if needs_embedding_invalidation {
-            self.embeddings.remove(id);
+        // Pass 2: drop stale embeddings now that `self.items` borrow is released.
+        for id in stale_embedding_ids {
+            self.embeddings.remove(&id);
         }
         found
     }

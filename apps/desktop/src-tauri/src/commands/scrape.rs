@@ -57,7 +57,14 @@ pub struct ScrapeRemoveInteractionRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScrapeUpdateDescriptionRequest {
-    pub id: String,
+    /// Renamed from `id` (issue #1106): the board-synthetic `id`
+    /// `PostingsCache` upserts by has no meaning off that one in-memory
+    /// cache, and no Agent/MCP read command ever exposed it — every reader
+    /// (`job`/`best-matches`/`autopilot_best_matches`, and the renderer's own
+    /// `JobDetailPane`) already has the posting's `url`. See
+    /// `scrape_update_description`'s own doc for the two stores this now
+    /// addresses by url.
+    pub url: String,
     pub description: String,
 }
 
@@ -610,32 +617,91 @@ pub async fn scrape_resolve_url(app: AppHandle, url: String) -> Value {
     }
 }
 
-/// Write a freshly-resolved full description back into the live postings cache,
-/// keyed by posting id. The detail pane resolves a fuller description on demand
-/// (see [`scrape_resolve_url`]); without this, match scoring would continue reading the
-/// truncated aggregator snippet from the cache and produce incorrect scores.
+/// Write a freshly-resolved full description back into BOTH stores that can
+/// carry a copy of this posting, addressed by `url` (issue #1106): the live
+/// [`PostingsCache`] (session-lifetime, in-memory) AND every matching
+/// `FoundJob` row across every persisted `Autopilot` record
+/// (`AutopilotStore::update_found_job_descriptions`). `id` — this command's
+/// old parameter — was a board-synthetic key with no meaning off
+/// `PostingsCache`: no Agent/MCP read command ever exposed it, and even a
+/// correct `id`-based lookup would still silently miss every posting
+/// surfaced via `job`/`best-matches`/`autopilot_best_matches`, which read
+/// `Autopilot.found_jobs` directly and never touch `PostingsCache` at all.
+/// `url` is the one identity every surface already shares — see
+/// `extension_bridge::agent_read`'s own module doc ("`url` is the
+/// CROSS-RESOURCE KEY — not an id").
 ///
-/// Mutates the EXISTING cache entry in place (no new row, no persistence beyond
-/// the in-memory cache — matching the cache's lifecycle). Returns `true` when an
-/// entry was updated, `false` when the id isn't in the live cache (e.g. the cache
-/// was cleared by a new search between resolve and write-back). The match-score
-/// cache is job-text-hash-keyed, so updating the description invalidates cached
-/// scores for that job; on-demand scoring via `useJobMatchScore` will recompute.
-/// Validate the write-back inputs, returning the trimmed id on success. Pure (no
-/// `AppHandle`) so the error paths are unit-tested directly. Rejects an empty id
-/// and an over-cap description rather than silently truncating, so the caller can
+/// The detail pane resolves a fuller description on demand (see
+/// [`scrape_resolve_url`]); without this, match scoring would continue
+/// reading the truncated aggregator snippet from whichever store still held
+/// it. The match-score cache is job-text-hash-keyed, so updating the
+/// description invalidates cached scores for that job; on-demand scoring via
+/// `useJobMatchScore` will recompute.
+///
+/// Both stores are tried independently and unconditionally — see
+/// [`either_store_updated`] for the resulting `data: true`/`false` rule.
+///
+/// Validate the write-back inputs, returning the NORMALIZED url on success
+/// (reused as-is for both stores, never re-derived per store). Pure (no
+/// `AppHandle`) so the error paths are unit-tested directly. Rejects an empty
+/// or non-http(s) url (an explicit `http://`/`https://` prefix is REQUIRED —
+/// `normalize_job_url` alone passes a schemeless bare token like the
+/// pre-rename `id` shape straight through unchanged, which would otherwise
+/// validate and then miss both stores as a silent, honest-looking
+/// `data: false`), an empty/whitespace-only description (this command
+/// CORRECTS a description, it does not clear one — an empty string here
+/// would otherwise wipe every matching row across both stores), and an
+/// over-cap description rather than silently truncating, so the caller can
 /// tell the write didn't take effect as sent.
-fn validate_update_description(id: &str, description: &str) -> AppResult<String> {
-    let id = id.trim();
-    if id.is_empty() {
-        return Err(AppError::Validation("id is required".to_string()));
+///
+/// Canonicalizes via [`crate::scraping::scrape_url::canonical_job_url`]
+/// BEFORE normalizing — the exact two-line pipeline
+/// `extension_bridge::agent_read::job_resource` uses — so a board-specific
+/// search/SPA-view url (e.g. LinkedIn's `?currentJobId=` search view) lands
+/// on the SAME identity a `job`/`answers.save` read resolves it to, rather
+/// than a normalized value neither store was ever keyed by (issue #1106
+/// follow-up).
+fn validate_update_description(url: &str, description: &str) -> AppResult<String> {
+    let url = url.trim();
+    if url.is_empty() {
+        return Err(AppError::Validation("url is required".to_string()));
+    }
+    if description.trim().is_empty() {
+        return Err(AppError::Validation(
+            "description must not be empty — this command corrects a description, it does not \
+             clear one"
+                .to_string(),
+        ));
     }
     if description.len() > MAX_DESCRIPTION_LEN {
         return Err(AppError::Validation(format!(
             "description exceeds the {MAX_DESCRIPTION_LEN}-byte cap"
         )));
     }
-    Ok(id.to_string())
+    let lower = url.to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return Err(AppError::Validation(
+            "url must have an explicit http(s) scheme".to_string(),
+        ));
+    }
+    let canonical = crate::scraping::scrape_url::canonical_job_url(url);
+    let effective = canonical.as_deref().unwrap_or(url);
+    let normalized = crate::applications::normalize_job_url(effective);
+    if normalized.is_empty() {
+        return Err(AppError::Validation(
+            "url is not a valid http(s) URL".to_string(),
+        ));
+    }
+    Ok(normalized)
+}
+
+/// Whether either backing store had a matching row to correct — the `data`
+/// bit `scrape_update_description` returns. Its own tiny pure fn so "success
+/// iff EITHER `PostingsCache` or `Autopilot.found_jobs` matched, honest
+/// failure only when NEITHER did" is asserted directly rather than only
+/// implied by the command body.
+fn either_store_updated(cache_hit: bool, found_jobs_updated: u32) -> bool {
+    cache_hit || found_jobs_updated > 0
 }
 
 #[tauri::command]
@@ -643,10 +709,17 @@ pub fn scrape_update_description(
     app: AppHandle,
     req: ScrapeUpdateDescriptionRequest,
 ) -> AppResult<bool> {
-    let id = validate_update_description(&req.id, &req.description)?;
-    let cache = app.state::<Mutex<PostingsCache>>();
-    let updated = cache.lock().update_description(&id, &req.description);
-    Ok(updated)
+    let normalized_url = validate_update_description(&req.url, &req.description)?;
+    let cache_hit = {
+        let cache = app.state::<Mutex<PostingsCache>>();
+        cache
+            .lock()
+            .update_description(&normalized_url, &req.description)
+    };
+    let found_jobs_updated = crate::commands::autopilot::store(&app)
+        .lock()
+        .update_found_job_descriptions(&normalized_url, &req.description);
+    Ok(either_store_updated(cache_hit, found_jobs_updated))
 }
 
 #[tauri::command]
@@ -712,12 +785,12 @@ mod test {
     }
 
     // The request must deserialize from the camelCase wire shape the renderer
-    // sends (`id`/`description`). Pins the serde contract without an AppHandle.
+    // sends (`url`/`description`). Pins the serde contract without an AppHandle.
     #[test]
     fn update_description_request_deserializes_camel_case() {
-        let json = r#"{"id":"job-1","description":"full text"}"#;
+        let json = r#"{"url":"https://example.com/jobs/1","description":"full text"}"#;
         let req: ScrapeUpdateDescriptionRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(req.id, "job-1");
+        assert_eq!(req.url, "https://example.com/jobs/1");
         assert_eq!(req.description, "full text");
     }
 
@@ -732,20 +805,68 @@ mod test {
     }
 
     #[test]
-    fn validate_rejects_empty_or_whitespace_id() {
+    fn validate_rejects_empty_or_whitespace_url() {
         assert!(
             matches!(
                 validate_update_description("", "text"),
                 Err(AppError::Validation(_))
             ),
-            "empty id must be a validation error"
+            "empty url must be a validation error"
         );
         assert!(
             matches!(
                 validate_update_description("   ", "text"),
                 Err(AppError::Validation(_))
             ),
-            "whitespace-only id must be a validation error"
+            "whitespace-only url must be a validation error"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_a_non_http_scheme() {
+        assert!(
+            matches!(
+                validate_update_description("javascript:alert(1)", "text"),
+                Err(AppError::Validation(_))
+            ),
+            "a non-http(s) scheme must normalize to empty and be rejected"
+        );
+    }
+
+    // ── review round 2 (issue #1106 follow-up): schemeless input must be
+    // rejected, not silently treated as a "valid" url ──────────────────────
+    // `normalize_job_url("job-1")` returns `"job-1"` unchanged (no scheme to
+    // strip), so without an explicit scheme check a stale caller sending the
+    // pre-rename `id` shape would validate and then miss both stores as a
+    // silent, honest-looking `data: false`.
+
+    #[test]
+    fn validate_rejects_a_schemeless_bare_token() {
+        assert!(
+            matches!(
+                validate_update_description("job-1", "text"),
+                Err(AppError::Validation(_))
+            ),
+            "a schemeless bare token must be rejected up front, not normalized \
+             unchanged and looked up as if it were a valid url"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_the_pre_rename_board_synthetic_id_shape() {
+        // This particular shape happens to already be caught upstream (its
+        // `greenhouse:` prefix parses as an explicit non-http(s) scheme, so
+        // `normalize_job_url` alone already neutralizes it to ""); pinned
+        // anyway as a regression guard on the exact shape called out in
+        // review, alongside the schemeless-bare-token case above which the
+        // NEW explicit-scheme check is what actually catches.
+        assert!(
+            matches!(
+                validate_update_description("greenhouse:12345", "text"),
+                Err(AppError::Validation(_))
+            ),
+            "a stale caller sending the OLD board-synthetic id format must get a \
+             validation error, not a silent honest-looking data:false"
         );
     }
 
@@ -754,20 +875,97 @@ mod test {
         let too_long = "x".repeat(MAX_DESCRIPTION_LEN + 1);
         assert!(
             matches!(
-                validate_update_description("job-1", &too_long),
+                validate_update_description("https://example.com/jobs/1", &too_long),
                 Err(AppError::Validation(_))
             ),
             "a description past the cap must be rejected, not truncated"
         );
     }
 
+    // ── review round 3 (issue #1106 follow-up, MEDIUM/data-loss): an empty
+    // description must be rejected up front, not silently wiped into every
+    // matching row across both stores ───────────────────────────────────────
+
     #[test]
-    fn validate_accepts_valid_input_and_trims_id() {
+    fn validate_rejects_empty_or_whitespace_description() {
+        assert!(
+            matches!(
+                validate_update_description("https://example.com/jobs/1", ""),
+                Err(AppError::Validation(_))
+            ),
+            "an empty description must be a validation error, not a silent wipe"
+        );
+        assert!(
+            matches!(
+                validate_update_description("https://example.com/jobs/1", "   "),
+                Err(AppError::Validation(_))
+            ),
+            "a whitespace-only description must be a validation error too"
+        );
+    }
+
+    #[test]
+    fn validate_accepts_valid_input_and_normalizes_the_url() {
         // At-cap is allowed (boundary): only strictly-over-cap is rejected.
         let at_cap = "x".repeat(MAX_DESCRIPTION_LEN);
-        let id = validate_update_description("  job-1  ", &at_cap)
-            .expect("a trimmed non-empty id with an at-cap description must validate");
-        assert_eq!(id, "job-1", "the validated id must be trimmed");
+        let normalized =
+            validate_update_description("  HTTPS://Example.com/Jobs/1/?utm_source=x  ", &at_cap)
+                .expect("a normalizable url with an at-cap description must validate");
+        assert_eq!(
+            normalized, "https://example.com/jobs/1",
+            "the returned value is the NORMALIZED url (lowercase host, no trailing slash, \
+             tracking params dropped), reused as-is for both stores"
+        );
+    }
+
+    // ── review round 2 (issue #1106 follow-up, HIGH): the write-back identity
+    // must canonicalize BEFORE normalizing, exactly like
+    // `extension_bridge::agent_read::job_resource` does, so a board-specific
+    // search/SPA-view url resolves to the same key a `job`/`answers.save`
+    // read would use ──────────────────────────────────────────────────────
+
+    #[test]
+    fn validate_canonicalizes_a_linkedin_search_view_url_to_the_same_identity_job_resource_uses() {
+        let search_view = "https://www.linkedin.com/jobs/search/?currentJobId=4185657072";
+        let canonical_view = "https://www.linkedin.com/jobs/view/4185657072";
+
+        let from_search = validate_update_description(search_view, "text")
+            .expect("a recognised LinkedIn url must validate");
+        let from_canonical = validate_update_description(canonical_view, "text")
+            .expect("the canonical view url must validate");
+
+        assert_eq!(
+            from_search, from_canonical,
+            "the search-view and canonical-view urls for the SAME job must normalize \
+             to the identical identity — previously the search-view url normalized to \
+             .../jobs/search with the id dropped entirely, matching neither store"
+        );
+        assert_eq!(
+            from_search, "https://linkedin.com/jobs/view/4185657072",
+            "must land on the canonical /jobs/view/<id> shape, not the raw search path"
+        );
+    }
+
+    // ── either_store_updated (issue #1106 — the two-store OR semantics) ──────
+
+    #[test]
+    fn either_store_updated_is_true_when_only_the_cache_matched() {
+        assert!(either_store_updated(true, 0));
+    }
+
+    #[test]
+    fn either_store_updated_is_true_when_only_found_jobs_matched() {
+        assert!(either_store_updated(false, 1));
+    }
+
+    #[test]
+    fn either_store_updated_is_true_when_both_matched() {
+        assert!(either_store_updated(true, 2));
+    }
+
+    #[test]
+    fn either_store_updated_is_false_when_neither_matched() {
+        assert!(!either_store_updated(false, 0));
     }
 
     // ── backfill_country_code (pre-scrape cancellation) ──────────────────────

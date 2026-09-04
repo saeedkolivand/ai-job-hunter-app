@@ -80,7 +80,7 @@ export const useUpdatePostingDescription = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: { id: string; description: string }) => api.scrape.updateDescription(req),
+    mutationFn: (req: { url: string; description: string }) => api.scrape.updateDescription(req),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.postings.all }),
   });
 };

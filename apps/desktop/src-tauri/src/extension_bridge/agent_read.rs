@@ -430,6 +430,15 @@ struct AgentBestMatch {
     score: f64,
     score_source: crate::autopilot::ScoreSource,
     score_provisional: bool,
+    /// Mirrors `commands::autopilot::best_matches::BestMatchRow::score_url`
+    /// field-for-field (issue #1106/#1104 cross-scope fix): present only when
+    /// `score`/`scoreSource`/`scoreProvisional` belong to a DIFFERENT cluster
+    /// member than the one `url` names — see that field's own doc for why a
+    /// row's displayed score and displayed url aren't always the same real
+    /// posting. Passthrough, not forbidden — no fencing needed (it's a url,
+    /// not free text).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    score_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     posted_at: Option<i64>,
     found_at: u64,
@@ -981,6 +990,20 @@ mod tests {
     /// A `BestMatchRow`-shaped JSON row, hand-built to match its EXACT wire
     /// shape (`commands::autopilot::best_matches::BestMatchRow`) including the
     /// three fields this projection must drop.
+    ///
+    /// This has to be a hand-typed literal, not a real `BestMatchRow`
+    /// instance run through `serde_json::to_value` — `best_matches` is a
+    /// module private to `commands::autopilot` (`mod best_matches;`, no
+    /// `pub`), so it cannot be named from this file at all (verified: naming
+    /// it here is `error[E0603]: module 'best_matches' is private`), and
+    /// widening that declaration lives in `commands/autopilot.rs`, out of
+    /// scope for this change. The compile-time backstop for a `BestMatchRow`
+    /// rename instead lives NEXT TO the struct itself:
+    /// `commands::autopilot::best_matches::tests::best_match_row_wire_shape_is_pinned`
+    /// builds a real struct literal (so a rename/add/remove is either a
+    /// compile error there or an assertion failure) — keep this literal and
+    /// that test's expected key list in sync (review round 2, issue #1106
+    /// follow-up).
     fn full_best_match_row_json() -> Value {
         json!({
             "key": "cluster-abc",
@@ -995,6 +1018,7 @@ mod tests {
             "score": 82.0,
             "scoreSource": "combined",
             "scoreProvisional": false,
+            "scoreUrl": "https://boards.example.com/jobs/42-other-member",
             "postedAt": 1_699_000_000i64,
             "foundAt": 1_700_000_000u64,
             "applied": false,
@@ -1028,11 +1052,16 @@ mod tests {
                 "score",
                 "scoreProvisional",
                 "scoreSource",
+                "scoreUrl",
                 "sources",
                 "title",
                 "trust",
                 "url",
             ]
+        );
+        assert_eq!(
+            row["scoreUrl"], "https://boards.example.com/jobs/42-other-member",
+            "scoreUrl must pass through — it names which member the displayed score belongs to"
         );
         assert_eq!(out["returned"], 1);
         assert_eq!(out["total"], 1);

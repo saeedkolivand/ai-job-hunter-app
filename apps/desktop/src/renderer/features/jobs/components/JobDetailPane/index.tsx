@@ -172,7 +172,7 @@ function DetailContent({
       // Latch only AFTER persist resolves so a transient IPC failure doesn't
       // permanently prevent a re-score with the full text.
       doneRef.current = true;
-      void updateDescription({ id: posting.id, description })
+      void updateDescription({ url: posting.url, description })
         .catch(() => {
           // Persist failure is non-fatal — still score off the in-memory text,
           // but clear the latch so the pane can retry on next open.
@@ -188,6 +188,7 @@ function DetailContent({
     description,
     descLoading,
     posting.id,
+    posting.url,
     resolved.isFetched,
     resolved.isFetching,
     resolvedLonger,

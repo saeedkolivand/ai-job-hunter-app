@@ -649,6 +649,18 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     // again, no user-authored content is lost, and `DiscoveredCompanyStore`
     // is `Resettable` (`privacy_reset_app` wipes it, `commands::privacy`).
     PolicyEntry { path: "commands::scrape::scrape_resolve_url", effect: Effect::Reversible },
+    // Re-verified (issue #1106): now addressed by `url` and reaches a SECOND
+    // store (`AutopilotStore::update_found_job_descriptions`, a persisted
+    // `FoundJob.description` patch across every matching record) rather than
+    // only the ephemeral `PostingsCache`. Still `Reversible`, not
+    // `Irreversible`: a description patch is itself re-correctable by another
+    // call to this same command, and re-derivable by re-scraping/resolving —
+    // no user-authored content is lost, same reasoning as `scrape_url`/
+    // `scrape_resolve_url` just above. No `ProofSource` is added: that type
+    // only attaches to `Effect::Irreversible(ProofSource)` in this table
+    // (`Reversible` is a unit variant with no payload) — wiring a proof
+    // requirement onto a `Reversible` row would need an `Effect` enum change,
+    // out of scope for this fix.
     PolicyEntry { path: "commands::scrape::scrape_update_description", effect: Effect::Reversible },
     PolicyEntry { path: "commands::scrape::scrape_persist_job", effect: Effect::Reversible },
     // Verified: the code's OWN doc comment calls this "the real undo for
