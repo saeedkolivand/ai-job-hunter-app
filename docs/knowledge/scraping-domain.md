@@ -1,6 +1,6 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-08-22
+Last updated: 2026-09-04
 
 Describes the job-scraping subsystem: the board registry (`SCRAPERS` in `apps/desktop/src-tauri/src/scraping/boards/mod.rs`), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
@@ -235,17 +235,17 @@ drop** — a low score never removes a posting, it only lowers the level for a
 renderer badge (separate frontend pass). No config/enabled toggle; always
 computed.
 
-- **Module:** `apps/desktop/src-tauri/src/scraping/trust/mod.rs` —
-  `pub fn assess_trust(url: &str, company: &str) -> TrustAssessment` (pure,
-  no I/O, no new deps — `reqwest::Url`, i.e. the `url` crate reqwest
-  re-exports). All helpers `pub(crate)` for fixture testing.
+- **Module:** `apps/desktop/src-tauri/src/scraping/trust/mod.rs` — `assess_trust`
+  (pure, no I/O, no new deps — `reqwest::Url`, i.e. the `url` crate reqwest
+  re-exports; see the function's own signature for its current parameters).
+  All helpers `pub(crate)` for fixture testing.
 - **Shape:** `TrustAssessment { score: u8, level: TrustLevel, flags: Vec<TrustFlag> }`.
   `score` starts at 100 and is only ever decreased, clamped `0..=100`.
   `level`: `>=90 High`, `>=60 Medium`, else `Low`. The renderer `TrustBadge` only displays for `'medium'` or `'low'`; `'high'` renders no badge (no badge = trusted, noise-free).
-- **Flags** — four signals, each decrements `score` by a penalty amount (see
-  `SUSPICIOUS_DOMAINS`, `ATS_ALLOWLIST`, and `finish()` in
-  `apps/desktop/src-tauri/src/scraping/trust/mod.rs` for penalty magnitudes
-  and thresholds):
+- **Flags** — each decrements `score` by a penalty amount (see the `TrustFlag`
+  enum, `SUSPICIOUS_DOMAINS`, `ATS_ALLOWLIST`, and `finish()` in
+  `apps/desktop/src-tauri/src/scraping/trust/mod.rs` for the current variant
+  set, penalty magnitudes, and thresholds):
   - `MissingApplyUrl` (early return) — `url` empty/whitespace.
   - `InvalidUrl` (early return) — `url` doesn't parse or scheme isn't `http(s)`.
   - `SuspiciousDomain` — host is a URL shortener (see `SUSPICIOUS_DOMAINS`
@@ -253,12 +253,19 @@ computed.
   - `CompanyDomainMismatch` — `company` is non-empty, the host isn't on the
     ATS allowlist, and the host doesn't plausibly name the company (normalized
     slug or a ≥3-char word match).
+  - `ImplausibleCompany` — the company name itself looks fake/placeholder.
+  - `DescriptionUnavailable` — the posting's description is empty/whitespace
+    (issue #1105) — see the enum's own doc comment for the exact predicate.
 - **ATS allowlist** — never raises `CompanyDomainMismatch`. See `ATS_ALLOWLIST`
   constant in `apps/desktop/src-tauri/src/scraping/trust/mod.rs`; includes the
   standard ATS platforms (Greenhouse, Lever, etc.) plus our 24 `SCRAPERS` boards
   where `JobPosting.url` is systematically the BOARD's own domain rather than the
-  employer's, plus the Adzuna aggregator (whose redirect host is a constant
-  `api.adzuna.com` — country code is a path segment, not a subdomain).
+  employer's, plus the Adzuna aggregator — which returns `redirect_url`s in
+  **two** distinct host shapes (the API host, `api.adzuna.com`, and a
+  per-market website host, `is_adzuna_market_host` in the same file, covering
+  every `ADZUNA_SUPPORTED_COUNTRIES` market in both its single-label-TLD and
+  compound-ccTLD forms), not the single constant host previously assumed here
+  (issue #1107).
 - **`company_matches_host` is an unanchored substring heuristic**, not
   label-boundary matching — see the doc comment in `trust/mod.rs` for the
   known both-direction trade-off (misses a brand-embedding phishing host like
@@ -386,7 +393,7 @@ Per-board scrape outcomes are now visible via a shared `BoardSummaryChips` compo
 - **Resolver:** `apps/desktop/src-tauri/src/commands/scrape.rs: scrape_resolve_url(app, url)` — public command invoked by detail pane
 - **Re-dispatch:** `apps/desktop/src-tauri/src/scraping/scrape_url/mod.rs: resolve()` — follows redirect and re-dispatches handlers per final URL
 - **Pane gate:** `apps/desktop/src/renderer/features/jobs/components/JobDetailPane/index.tsx` — on-open resolve if (isAggregatorSource && descLength < 700); keep-longer merge logic
-- **Description mutation & re-score:** Backend command `scrape_update_description(id, text)` writes resolved text to the live `PostingsCache`. The frontend's `MatchScoresProvider` holds a reactive `requested` set; when the description is updated, the per-job match score is re-computed on-demand via `useJobMatchScore` (single-job scoring, not batch). See IPC contract in `packages/shared/src/ipc/contracts/scrape.ts`.
+- **Description mutation & re-score:** Backend command `scrape_update_description` (`ScrapeUpdateDescriptionRequest`, `commands/scrape.rs`) addresses the posting by `url` (not a board-synthetic id — see the request struct's own doc), and writes the resolved text to BOTH the live `PostingsCache` and every matching `FoundJob` row across every persisted autopilot (`AutopilotStore::update_found_job_descriptions`), so a correction reaches postings surfaced via the Agent/MCP read resources too, not only the session-lifetime cache. The frontend's `MatchScoresProvider` holds a reactive `requested` set; when the description is updated, the per-job match score is re-computed on-demand via `useJobMatchScore` (single-job scoring, not batch). Not a generated IPC contract — the request type is hand-declared on both sides (`commands/scrape.rs` / `tauri-client/namespaces/scrape/scrape.ts`).
 
 ## Source pointers
 
