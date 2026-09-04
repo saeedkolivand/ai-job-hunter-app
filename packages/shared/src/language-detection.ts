@@ -127,6 +127,32 @@ export function toLanguageCode(value: string): string {
   return byName ?? trimmed;
 }
 
+/** Shape of a real ISO 639-1 code, optionally with a 2-letter region subtag
+ *  ('de', 'pt-br'). Mirrors the check `generation.ts` already uses to gate a
+ *  language value before it reaches a prompt. */
+const LANGUAGE_CODE_SHAPE = /^[a-z]{2}(-[a-z]{2})?$/i;
+
+/**
+ * True when `value` is SHAPED like a real ISO 639-1 (+ optional region) code —
+ * not a membership check against {@link LANGUAGE_MAP} or {@link LANGUAGE_NAMES},
+ * both of which are narrower than the real set of codes a model can legitimately
+ * return (e.g. Polish, Ukrainian). Use this as a defense-in-depth gate before
+ * interpolating a language VALUE that reached here from an untrusted source
+ * (a scraped job ad, via `metadata.ts`'s `toLanguage`) into a prompt.
+ *
+ * A `$`-anchored regex alone is not a safe gate: `/^[a-z]{2}$/.test('de\n')` is
+ * `true` in JS because `$` matches immediately before a trailing newline even
+ * without the `m` flag, so an embedded newline is rejected explicitly too.
+ */
+export function isPlausibleLanguageCode(value: string): boolean {
+  return (
+    typeof value === 'string' &&
+    value.length <= 5 &&
+    !value.includes('\n') &&
+    LANGUAGE_CODE_SHAPE.test(value)
+  );
+}
+
 /**
  * Languages whose scripts the bundled PDF fonts do not yet cover (Chinese,
  * Japanese, Korean). These render as tofu in PDF export until Noto CJK ships, so

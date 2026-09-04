@@ -19,7 +19,11 @@
  *     `meta.targetLanguage` is `en` came back in English in 12 of 18 runs.
  */
 
-import { detectLanguage } from '@ajh/shared/language-detection';
+import {
+  detectLanguage,
+  isPlausibleLanguageCode,
+  toLanguageCode,
+} from '@ajh/shared/language-detection';
 
 // ─── Unchanged-result predicate ───────────────────────────────────────────────
 
@@ -129,10 +133,23 @@ export function exceedsRewriteLimit(text: string, limit: RewriteLimit): boolean 
  * only when detection is unsure. `detectLanguage` returns `'unknown'` for a
  * span under 20 characters or an undetermined script, which is exactly the
  * "unsure" case — a short span is best served by the document's language.
+ *
+ * `fallback` is NOT trusted: it is model-extracted from a scraped job ad
+ * (`metadata.ts`'s `toLanguage`, which only trims the value), so a short span
+ * would otherwise hand an unvalidated, attacker-influenceable string straight
+ * to `buildRewritePrompt`'s `languageDisplayName`, which echoes an unrecognized
+ * value back verbatim into the system prompt (prompt injection). Normalized
+ * through {@link toLanguageCode} first — `fallback` can legitimately arrive as
+ * a NAME instead of a code (`extractMetadata`'s regex-fallback path yields
+ * 'German' rather than 'de') — then gated with {@link isPlausibleLanguageCode}
+ * so only a real short language-code SHAPE ever passes through; anything else
+ * (an injected sentence, 'unknown', empty) degrades to `'en'`.
  */
 export function deriveRewriteLocale(selection: string, fallback = 'en'): string {
   const detected = detectLanguage(selection);
-  return detected === 'unknown' ? fallback || 'en' : detected;
+  if (detected !== 'unknown') return detected;
+  const normalized = toLanguageCode(fallback);
+  return isPlausibleLanguageCode(normalized) ? normalized : 'en';
 }
 
 /**
