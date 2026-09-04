@@ -351,12 +351,15 @@ export function appendVersion(
  * Normalise for the unchanged-rewrite comparison: collapse every whitespace
  * run to a single space, then drop ONLY trailing punctuation (`\p{P}` —
  * commas, periods, quotes — Unicode category `Po`/`Ps`/`Pe`/…, which does NOT
- * include a math/currency symbol like `+`/`$`). Deliberately NOT `\p{S}`: the
- * desktop's twin helper (`apps/desktop/src/renderer/lib/generate/rewrite.ts`)
- * strips `\p{P}\p{S}` together, which misclassifies a genuinely different
- * result ("20" vs "20+", meaning "at least 20") as unchanged. Also
- * deliberately NOT case-folding — "make this all caps" is a real rewrite
- * whose result must still count as changed.
+ * include a math/currency symbol like `+`/`$`). Deliberately NOT `\p{S}`: a
+ * trailing symbol can carry meaning a result legitimately drops, e.g. "Grew
+ * ARR to $2M+" vs "Grew ARR to $2M" must NOT normalise to the same string —
+ * the dropped "+" changes "at least $2M" to exactly $2M. Identical to the
+ * desktop's twin helper (`apps/desktop/src/renderer/lib/generate/rewrite.ts`'s
+ * `normalizeRewriteText`), which excludes `\p{S}` for the same reason — do
+ * not reintroduce it here to "restore parity". Also deliberately NOT
+ * case-folding — "make this all caps" is a real rewrite whose result must
+ * still count as changed.
  */
 export function normalizeAnswerText(text: string): string {
   return text
@@ -466,20 +469,48 @@ export async function clearAnswerState(tabId: number): Promise<void> {
 }
 
 /**
- * Read-modify-write one tab's state under the background's own single-threaded
- * event loop. Returns the written state, or `null` when `mutate` declined (it
- * returned `null`) or there was nothing to mutate.
+ * Per-tab FIFO of pending {@link updateAnswerState} calls. `await`ing between
+ * `readAnswerState` and `writeAnswerState` gives another read-modify-write on
+ * the SAME tab a window to read the pre-mutation record and clobber this
+ * write on landing — the background's own single-threaded event loop does
+ * NOT prevent this (it only guarantees neither read nor write is preempted
+ * mid-await, not that two `await`ing calls stay serialized against each
+ * other). This queue is what actually serializes them: each call chains onto
+ * the previous one for its tab, so a read never starts until the prior
+ * call's write has landed. Different tabs are independent — no reason to
+ * serialize across tabs.
+ */
+const writeQueues = new Map<number, Promise<unknown>>();
+
+/**
+ * Read-modify-write one tab's state, serialized against any other
+ * {@link updateAnswerState} call on the SAME tab via {@link writeQueues} (see
+ * its doc for why this is necessary). Returns the written state, or `null`
+ * when `mutate` declined (it returned `null`) or there was nothing to
+ * mutate.
  */
 export async function updateAnswerState(
   tabId: number,
   mutate: (state: AnswerState) => AnswerState | null
 ): Promise<AnswerState | null> {
-  const current = await readAnswerState(tabId);
-  if (!current) return null;
-  const next = mutate(current);
-  if (!next) return null;
-  await writeAnswerState(next);
-  return next;
+  const prior = writeQueues.get(tabId) ?? Promise.resolve();
+  const task = prior.then(async () => {
+    const current = await readAnswerState(tabId);
+    if (!current) return null;
+    const next = mutate(current);
+    if (!next) return null;
+    await writeAnswerState(next);
+    return next;
+  });
+  // The queue's own chain must never wedge on a rejection (the NEXT caller's
+  // `prior` would otherwise stay rejected forever) — swallow it here. The
+  // ORIGINAL `task` returned below is untouched, so a real error still
+  // reaches THIS call's caller.
+  writeQueues.set(
+    tabId,
+    task.catch(() => undefined)
+  );
+  return task;
 }
 
 /**

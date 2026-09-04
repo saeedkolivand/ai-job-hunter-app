@@ -1412,6 +1412,121 @@ describe('settleRowFromAssist — a chip rewrite that comes back unchanged', () 
   });
 });
 
+// ── updateAnswerState — the lost-update race between the terminal stream
+// mirror (broadcastAssistProgress → mirrorAssistToState) and settling the row
+// (settleRowFromAssist), both of which read-modify-write the SAME tab's
+// storage.session record with no serialization before answer-state.ts's
+// per-tab write queue (pr-reviewer CRITICAL 2). ───────────────────────────────
+
+describe('the terminal stream-mirror write never clobbers the settled row (CRITICAL 2)', () => {
+  it('a two-chunk draft ends with BOTH stream.done:true AND the drafted version appended, and the settled row renders with its controls enabled', async () => {
+    const { readAnswerState } = await import('./lib/answer-state');
+    const { mountAnswerTools } = await import('./answer-tools/answer-tools');
+
+    const tabId = 900;
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: tabId, url: `https://jobs.example.com/posting/${tabId}` } as never,
+    ]);
+
+    // Scan the page so there is a row to draft.
+    executeScriptMock.mockResolvedValueOnce([
+      { result: { questions: [{ question: 'Why this role?', index: 0 }], filled: [] } },
+    ] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'not paired' });
+    const scanned = await send({ kind: 'answerScan' });
+    if (!scanned.ok || scanned.kind !== 'answerState' || !scanned.state) {
+      throw new Error('expected an answerState response');
+    }
+    const rowId = scanned.state.rows[0]?.id;
+    if (!rowId) throw new Error('expected a row');
+
+    // Gate `storage.session.get` deterministically on the TERMINAL stream
+    // mirror's own read. Call order within `runAnswerAssist`'s terminal step
+    // (`void broadcastAssistProgress()` fires `mirrorAssistToState()`'s read
+    // BEFORE `await settleRowFromAssist(...)` issues its own) means the 4th
+    // `get()` after the scan is always this mirror's read: #1 the initial
+    // buffer-reset broadcast, #2/#3 the two `onChunk` broadcasts, #4 the
+    // terminal broadcast. Capturing the stored value at CALL TIME (via the
+    // real mock implementation) but resolving the returned promise only once
+    // this test releases `gate` is what makes the race deterministic: under
+    // the OLD unserialized `updateAnswerState`, settle's read+mutate+write
+    // (call #5, ungated) runs to completion while this call is still
+    // pending, and this call's STALE snapshot then clobbers settle's write
+    // the moment it is released.
+    const sessionGetMock = vi.mocked(browser.storage.session.get);
+    const realGet = sessionGetMock.getMockImplementation();
+    if (!realGet) throw new Error('expected the default storage.session.get mock');
+    let getCalls = 0;
+    let releaseGate: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    sessionGetMock.mockImplementation(((key: string) => {
+      getCalls += 1;
+      if (getCalls === 4) {
+        const stale = realGet(key) as Promise<unknown>;
+        return stale.then((value) => gate.then(() => value));
+      }
+      return realGet(key);
+    }) as typeof realGet);
+
+    mockClient.answerAssist.mockImplementationOnce(
+      async (_payload, onChunk?: (d: string) => void) => {
+        onChunk?.('Because I ');
+        onChunk?.('like solving real problems.');
+        return {
+          ok: true,
+          question: 'Why this role?',
+          draft: 'Because I like solving real problems.',
+          sourced: {},
+        };
+      }
+    );
+
+    const assistDone = send({
+      kind: 'answerAssist',
+      question: 'Why this role?',
+      searchWeb: false,
+      mode: 'draft',
+      rowId,
+    });
+
+    // Give settle's own (ungated) read+mutate+write a chance to run to
+    // completion (under the OLD code) while the terminal mirror's read is
+    // still stuck on `gate`, then release it and let everything settle.
+    await flush();
+    releaseGate?.();
+    await assistDone;
+    await flush();
+    sessionGetMock.mockImplementation(realGet);
+
+    const settled = await readAnswerState(tabId);
+    if (!settled) throw new Error('expected a settled answer state');
+    // Mutation guard: revert `updateAnswerState`'s per-tab queue (call
+    // `readAnswerState`/`writeAnswerState` directly again) and EITHER of
+    // these goes red, depending on which write lands last.
+    expect(settled.stream?.done).toBe(true);
+    expect(settled.rows.find((r) => r.id === rowId)?.versions).toHaveLength(1);
+
+    // Close the loop into the UI (the same shared component both surfaces
+    // mount): a lost `stream.done` combined with Finding 5's streaming gate
+    // (`streaming = state.stream?.rowId === row.id && !state.stream.done`)
+    // permanently disables every control on this row, on a FRESH mount, with
+    // no escape on a single-question form.
+    const host = document.createElement('div');
+    document.body.append(host);
+    const view = mountAnswerTools(host, { send, copy: vi.fn(async () => true) });
+    view.render(settled);
+    host.querySelector<HTMLButtonElement>('.arow__head')?.click();
+    const regenerate = [...host.querySelectorAll<HTMLButtonElement>('.btn')].find(
+      (b) => b.textContent === 'Regenerate'
+    );
+    expect(regenerate).not.toBeUndefined();
+    expect(regenerate?.disabled).toBe(false);
+  });
+});
+
 // ── answerFill request — per-row fill, NEVER a different field ─────────────
 
 describe('answerFill request — not-paired short-circuit', () => {

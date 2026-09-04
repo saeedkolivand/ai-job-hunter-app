@@ -24,7 +24,12 @@
 import { collectFilledFields, collectQuestions } from './lib/answers-capture';
 
 // ── injected-execution entry-point ────────────────────────────────────────────
-// Completion value returned to executeScript → background (mirrors capture.ts:
-// the IIFE's return value is the last statement's value, which is what
-// `executeScript` hands back).
-(() => ({ questions: collectQuestions(document), filled: collectFilledFields(document) }))();
+// Completion value returned to executeScript → background (mirrors
+// probe-fields.ts: a STATEMENT body, not a single-expression arrow, so a
+// minifier folding the two calls into a comma expression can't drop the
+// object literal around them — see vite.config.mts's `minify: false` for the
+// primary fix; this is defense in depth).
+(() => {
+  const questions = collectQuestions(document);
+  return { questions, filled: collectFilledFields(document) };
+})();

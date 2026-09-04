@@ -377,11 +377,6 @@ const els = {
   btnMarkApplied: byId<HTMLButtonElement>('btn-mark-applied'),
   groupForm: byId<HTMLElement>('group-form'),
   answerTools: byId<HTMLDetailsElement>('answer-tools'),
-  // The base "Answer tools" label is static HTML text; this is the dedicated
-  // `aria-live="polite"` count span appended after it (Task #30 review fix —
-  // a screen reader must hear the count even while the disclosure is closed,
-  // and rewriting the WHOLE summary's textContent would wipe this child span).
-  answerToolsCount: byId<HTMLElement>('answer-tools-count'),
   btnSaveAnswers: byId<HTMLButtonElement>('btn-save-answers'),
   btnCheckFit: byId<HTMLButtonElement>('btn-check-fit'),
   matchResult: byId<HTMLDivElement>('match-result'),
@@ -571,7 +566,6 @@ function render(status: ConnectionStatus): void {
     els.btnImport.textContent = IMPORT_LABEL_DEFAULT;
     els.btnMarkApplied.hidden = true;
     els.btnMarkApplied.disabled = false;
-    els.answerToolsCount.textContent = '';
     // A stale "Check fit" score from a previous page must never linger either.
     els.matchResult.hidden = true;
     els.matchResult.textContent = '';

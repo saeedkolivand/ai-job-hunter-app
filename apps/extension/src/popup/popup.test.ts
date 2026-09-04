@@ -60,7 +60,7 @@ function buildPopupDom(): void {
       <button id="btn-save-answers"></button>
     </section>
     <details id="answer-tools">
-      <summary id="answer-tools-summary">Answer tools<span id="answer-tools-count" aria-live="polite"></span></summary>
+      <summary id="answer-tools-summary">Answer tools</summary>
       <div id="answer-tools-host"></div>
       <button id="btn-open-panel"></button>
     </details>

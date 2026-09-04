@@ -386,6 +386,44 @@ describe('mountAnswerTools (the rendered row)', () => {
     expect(restored?.selectionStart).toBe(2);
   });
 
+  it('keeps the Rescan button FOCUSED across a re-render', () => {
+    const { host, view } = mount();
+    view.render(state());
+
+    const rescan = host.querySelector<HTMLButtonElement>('[data-focus-key="rescan"]');
+    if (!rescan) throw new Error('expected the Rescan button');
+    rescan.focus();
+
+    // Simulates a `storage.onChanged` push for a stream progressing on ANY
+    // row in the tab — `render()` rebuilds unconditionally on every call.
+    view.render(state());
+
+    const restored = host.querySelector<HTMLButtonElement>('[data-focus-key="rescan"]');
+    // Mutation guard: without a `data-focus-key` on this button, focus lands
+    // on `document.body` after every render — several times a second while
+    // anything streams.
+    expect(restored).not.toBeNull();
+    expect(restored).toBe(document.activeElement);
+  });
+
+  it("keeps a row's head toggle FOCUSED across a re-render", () => {
+    const { host, view } = mount();
+    view.render(state());
+    openFirstRow(host);
+
+    const head = host.querySelector<HTMLButtonElement>('.arow__head');
+    if (!head) throw new Error('expected the row head toggle');
+    head.focus();
+
+    view.render(state());
+
+    const restored = host.querySelector<HTMLButtonElement>('.arow__head');
+    // Mutation guard: without a `data-focus-key` on this button, focus lands
+    // on `document.body` after every render.
+    expect(restored).not.toBeNull();
+    expect(restored).toBe(document.activeElement);
+  });
+
   // ── Rescan vs `pageChanged` and a RESOLVED (not thrown) failure — Finding 3 ─
 
   it('disables Rescan once the page has changed, mirroring the per-row write controls', () => {

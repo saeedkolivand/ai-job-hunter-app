@@ -373,6 +373,7 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
     wrap.append(el('span', 'chips__label', label));
     for (const chip of chips) {
       const b = button('chip', chip.label);
+      b.setAttribute('data-focus-key', `chip:${row.id}:${chip.label}`);
       if (!chip.preset && !chip.instruction) {
         // "As is" — the explicit neutral. It is a real control so the row does
         // not read as a required choice, and it deliberately does nothing.
@@ -592,6 +593,7 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
     if (expandedRowId === row.id) wrap.classList.add('arow--open');
 
     const head = button('arow__head', '');
+    head.setAttribute('data-focus-key', `head:${row.id}`);
     head.setAttribute('aria-expanded', String(expandedRowId === row.id));
     head.append(el('span', 'arow__q', row.question));
     head.append(el('span', `arow__badge arow__badge--${row.status}`, statusBadge(row)));
@@ -615,6 +617,7 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
     const head = el('div', 'atools__head');
     head.append(el('p', 'atools__summary', summaryLine(state)));
     const rescan = button('btn btn--small btn--quiet', 'Rescan');
+    rescan.setAttribute('data-focus-key', 'rescan');
     // Disabled once the page has changed (same signal every per-row write
     // control already gates on) — the line right below already tells the
     // user to use the toolbar icon instead (Finding 3).
@@ -660,6 +663,7 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
       addQuestionText = addInput.value;
     });
     const add = button('btn btn--small btn--quiet', 'Add question');
+    add.setAttribute('data-focus-key', 'add-question-submit');
     const submitAdd = (): void => {
       const question = addInput.value.trim();
       if (!question) return;
