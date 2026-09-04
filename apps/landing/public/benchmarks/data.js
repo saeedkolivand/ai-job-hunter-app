@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788409955921,
+  "lastUpdate": 1788529869852,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "b6281d6d84d9f36b24f4de514961799ac43232e0",
-          "message": "fix: track bridge connections with a refcount and push status changes to settings (#693)\n\n* fix(shared): add a bridge live-connection-changed push event\n\nWire-protocol lockstep for the bridge's live-connection change push: a new\nEVENT_CHANNELS.extensionBridge.changed constant, its ExtensionBridgeChangedEvent\npayload type, and the matching onChanged subscription method on the\nExtensionBridgeContract, plus the generated Rust EXTENSION_BRIDGE_CHANGED\nconstant (pnpm gen:ipc).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix(bridge): count live connections instead of one shared flag\n\nBridgeState.connected was a single AtomicBool set true on every AuthOk and\nfalse on ANY socket close. With two browsers paired on the same token,\nwhichever socket closed last decided is_connected() for every other\nstill-open one — Chrome's MV3 service worker idling its socket closed the\nflag while Firefox was still connected, so the Settings pill went stale.\n\nReplace it with an AtomicUsize refcount: inc_connected on AuthOk,\ndec_connected on that same connection's teardown (gated by a per-connection\n`authenticated` flag so an unauthenticated close never decrements), and\nemit `EXTENSION_BRIDGE_CHANGED` only on the 0->1 / ->0 transitions. Saturating\ndecrement so an unmatched call can never wrap the count below zero.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix(desktop): subscribe the renderer to the bridge connection event\n\nWire the client, the app-global root layout, and a new\nuseExtensionBridgeEvents hook to the bridge's live-connection push:\ninvalidates the extension-bridge status query on a 0->1 / ->0 transition so\nthe Settings pill flips immediately on pair/unpair, instead of only on the\nexisting 30s poll (kept as a fallback for a missed/dropped event).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix(desktop): add a manual refresh button to the extension-bridge status\n\nBeside the connection pill in Settings, a RefreshButton that calls\nrefetch() on the status query — its label stays visible and only the icon\nspins while pending, matching this section's other pending-button pattern.\nAlso documents (en+de) that multiple browsers can pair with the same token\nand that Regenerate token disconnects all of them, not just the current one.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* refactor: extract the applied-check read path from the bridge module\n\nextension_bridge/mod.rs grew past the R8 hard LOC cap (tests/architecture.rs)\nonce the live-connection refcount landed. Move the self-contained\napplied.check machinery (AppliedCheckOk, resolve_applied_check,\napplied_result_reply, handle_applied_check) into a sibling applied_check.rs,\nmirroring the existing status_update.rs / autotrack.rs split. Pure move: no\nbehavior change, pub(super) visibility so import_tests.rs keeps direct\naccess, call sites updated to applied_check::handle_applied_check.\n\nmod.rs: 1419 -> 1316 LOC (cap is 1400).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-          "timestamp": "2026-07-16T23:47:23+02:00",
-          "tree_id": "4de6d3ccb74077e51b2ec7775ce9c558f1ca3d2d",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/b6281d6d84d9f36b24f4de514961799ac43232e0"
-        },
-        "date": 1784239053154,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2125104,
-            "range": "± 49147",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2525684,
-            "range": "± 25692",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 287334,
-            "range": "± 13954",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 298117,
             "range": "± 1689",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1034ca546f21556c211fad54e7370d18a5cca7b0",
+          "message": "fix: extension answer tools capture script and reasoning-aware draft budget (#1103)\n\n* fix: keep the injected scripts' completion values out of the minifier\n\nFour injected scripts answer the background by completion value, and the\nper-entry build let the minifier fold capture.js's trailing object literal\ninto two bare calls, so \"Save my answers from this page\" failed on every\npage in every shipped build and the rewrite picker never filled. The pass\nis unminified now, its options are exported, and a test builds the real\nartifacts into a temp dir and asserts what each one evaluates to.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: answer drafts use the lowest reasoning effort, the full budget and one retry on an empty cut\n\nThe bridge's draft and rewrite compose ran with a 1000-token output budget\nand no reasoning effort, so a reasoning model's thinking exhausted the\nbudget before any answer text: \"make it 200 characters\" failed four of\nfour. The lowest effort the provider lists is sent when the model supports\none, the budget is the same cap the wire already enforces on visible text,\nand an empty length cut is retried once with the budget doubled, charging\nthe daily ceiling on both attempts through the same call.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* build: key the extension build cache on its config and pin the injected-entry partition\n\nturbo's build and test inputs now include *.config.*, so a vite.config.mts change can no longer serve a cached\ndist; the legacy esbuild key is dropped from the extension config, and the build-output test asserts which\nentries install globals versus which answer by completion value.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: retry the answer draft inside one registered round and send assist.done once\n\nThe retry re-registered the same reqId under a fresh generation, which leaked the first entry, let a cancel\nbetween the attempts start a billable job, and emitted assist.done after the failed first attempt. register is\nnow generation-scoped and rebinds the one entry, the done frame is sent once from the single exit, the retry is\nskipped when the client gave up, DRAFT_CAP bounds the visible text across both attempts, the budget is 2000\ntokens with the retry at DRAFT_CAP, and only a minimal or low effort tier is ever sent.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: return only the retry's own text from the answer draft and pin the anthropic thinking gate\n\nThe retry handed back the shared cross-attempt buffer, so text the failed first attempt had already forwarded\nwas prepended to the retry's answer; the driver now records the buffer length before each attempt and returns\nthe tail the successful attempt wrote, while the buffer still bounds both attempts under DRAFT_CAP. The\nAnthropic classic-thinking gate is a named predicate asserted against both compose budgets, with its boundary\npinned, and the retry-tail fixture is multi-byte so the byte-offset against char-clamp seam is exercised.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: record the compose budget rule and the unminified injected pass\n\nThe extension README now says which build pass is unminified and why, and the extension-domain page gains a\ncompose-budget note pointing at the owning constants and predicate.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: give the answer-draft retry its own cap window and keep the provider modules under the line cap\n\nA retried draft was clamped against what the failed first attempt had already forwarded, so a long inline\nreasoning pass could leave the retry a stub returned as success; the cap accountant now rebases at each\nattempt while the buffer stays append-only, so the wire is bounded by two attempts of DRAFT_CAP with exactly\none retry. The budget assertion moves next to the Anthropic predicate it is sized against, the test-only\nre-export goes, the extension bridge stream's tests move to their own file, and three doc comments now say\nwhat the code does.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: the compose budget note says each attempt has its own cap window\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: point the compose-budget section at its owning symbols instead of restating them\n\nThe section restated answer.assist's budget sizing, effort selection,\nretry predicate and cap-window behavior as prose bullets alongside the\nsource pointers, which is exactly the drift risk rule 17 exists to\navoid — one of the restated claims (a cancelled request between\nattempts is never paid for) is already only approximately true, since\nthe charge check and the charge itself are not atomic. Replaced with a\npointer to compose_with_length_retry and ComposeStream, whose own doc\ncomments carry the contract.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01PEB84mXWcrYHtHX1xyMkhW\n\n---------\n\nCo-authored-by: Claude Fable 5.1 <noreply@anthropic.com>",
+          "timestamp": "2026-09-04T15:26:18+02:00",
+          "tree_id": "f44afc9a9e4a09f9bf5f83f5aaeaa9c4da4d42ec",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/1034ca546f21556c211fad54e7370d18a5cca7b0"
+        },
+        "date": 1788529869181,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2280344,
+            "range": "± 81111",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2722401,
+            "range": "± 58305",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 314275,
+            "range": "± 17508",
             "unit": "ns/iter"
           }
         ]

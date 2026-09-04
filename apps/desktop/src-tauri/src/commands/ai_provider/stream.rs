@@ -25,7 +25,7 @@ use super::{ProviderId, RequestTrace, StopReason, Usage};
 
 /// One emittable piece pulled from a provider's stream by its `parse` closure.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StreamPiece {
+pub(super) struct StreamPiece {
     /// Text to forward to the renderer. Empty pieces are skipped (so a parser can
     /// signal `done` without text).
     pub delta: String,
@@ -191,6 +191,51 @@ pub(super) fn empty_answer_message(
         (Some(StopReason::Length), _) => EMPTY_ANSWER_LENGTH_MESSAGE,
         _ => EMPTY_ANSWER_MESSAGE,
     }
+}
+
+/// Whether `e` is the empty-answer-because-`finish_reason: length` failure
+/// [`finish`]'s `FinishOutcome::Empty` branch returns — EITHER of the two
+/// messages [`empty_answer_message`] can pick for it
+/// ([`EMPTY_ANSWER_LENGTH_MESSAGE`] and its local-Ollama sibling
+/// [`EMPTY_ANSWER_LENGTH_LOCAL_MESSAGE`]), never the generic
+/// [`EMPTY_ANSWER_MESSAGE`] and never any other provider error.
+///
+/// The classification is as typed as [`AppError`] allows: the variant is
+/// matched structurally ([`AppError::Provider`] — the ONLY variant `finish`
+/// builds this from, so the same text arriving as a `Validation`/`Network`
+/// error is correctly NOT this failure), and the payload is compared against
+/// the two constants above rather than a re-typed string literal, so
+/// rewording either one can never silently un-classify it. A dedicated
+/// `AppError` variant would be strictly better, but that enum is the app-wide
+/// error taxonomy consumed by every IPC surface — a new variant for one
+/// provider outcome is a far larger change than this predicate.
+///
+/// Exists for ONE caller: the extension bridge's `answer.assist` compose
+/// (`extension_bridge::answer_assist`), which retries exactly this failure
+/// once at a larger output budget because the model's own reasoning tokens
+/// are what consumed the budget. Nothing else may retry on it — see that
+/// call site's doc for the spend discipline.
+pub(crate) fn is_empty_answer_length_cut(e: &AppError) -> bool {
+    matches!(
+        e,
+        AppError::Provider(message)
+            if message == EMPTY_ANSWER_LENGTH_MESSAGE
+                || message == EMPTY_ANSWER_LENGTH_LOCAL_MESSAGE
+    )
+}
+
+/// The empty-completion error [`finish`] returns for `stop_reason`/`provider`,
+/// built through THE SAME [`empty_answer_message`] picker and the SAME
+/// `AppError` variant `finish` wraps it in — for a cross-module test that has
+/// to drive a CALLER's handling of that failure without a live stream
+/// (`extension_bridge::answer_assist`'s compose retry). Test-only: production
+/// code never constructs this error anywhere but `finish`.
+#[cfg(test)]
+pub(crate) fn empty_answer_error_for_test(
+    stop_reason: Option<StopReason>,
+    provider: ProviderId,
+) -> AppError {
+    AppError::Provider(empty_answer_message(stop_reason, provider).to_string())
 }
 
 /// Warning body for a **non-empty** completion that still hit `finish_reason:
@@ -658,7 +703,7 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
 /// directly (never through `finish`, which would also wrongly emit a
 /// terminal `job_complete`).
 #[allow(clippy::too_many_arguments)]
-pub async fn stream_response<F>(
+pub(super) async fn stream_response<F>(
     app: &AppHandle,
     job_id: &str,
     trace: &RequestTrace,

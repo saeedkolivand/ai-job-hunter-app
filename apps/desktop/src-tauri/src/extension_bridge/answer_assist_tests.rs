@@ -756,7 +756,7 @@ fn unregister_after_request_also_removes_a_running_entry_on_a_successful_outcome
     // still be cleaned up here, or a successful reqId would leak forever.
     let registry = crate::extension_bridge::stream::AssistStreamRegistry::default();
     let r#gen = registry.begin("req-1").expect("a fresh reqId");
-    assert!(registry.register("req-1", "job-1")); // the Pending -> Running move
+    assert!(registry.register("req-1", r#gen, "job-1")); // the Pending -> Running move
 
     unregister_after_request(&registry, "req-1", r#gen);
 
@@ -824,11 +824,11 @@ fn unregister_after_request_never_clobbers_a_reused_req_ids_successor_entry() {
     let registry = crate::extension_bridge::stream::AssistStreamRegistry::default();
     let canceller = NoopCanceller;
     let gen_a = registry.begin("req-1").expect("A's begin succeeds");
-    assert!(registry.register("req-1", "job-a"));
+    assert!(registry.register("req-1", gen_a, "job-a"));
     registry.cancel(&canceller, "req-1"); // removes A's entry, cancels job-a
 
-    registry.begin("req-1").expect("B may reuse req-1");
-    assert!(registry.register("req-1", "job-b"));
+    let gen_b = registry.begin("req-1").expect("B may reuse req-1");
+    assert!(registry.register("req-1", gen_b, "job-b"));
 
     // A's tail cleanup arrives LATE — after B has already registered.
     unregister_after_request(&registry, "req-1", gen_a);
@@ -836,5 +836,660 @@ fn unregister_after_request_never_clobbers_a_reused_req_ids_successor_entry() {
     assert!(
         registry.contains("req-1"),
         "A's stale, lower-generation cleanup must never remove B's fresh entry"
+    );
+}
+
+// ── compose_with_length_retry (the reasoning-ate-the-budget retry) ──────
+
+/// A [`crate::extension_bridge::FrameSink`] recorder — a local copy of
+/// `stream`'s own test-only sink (duplicated rather than shared, so this file
+/// stays independent of that module's private test internals).
+#[derive(Default)]
+struct RecordingSink {
+    sent: Vec<String>,
+}
+
+#[async_trait::async_trait]
+impl crate::extension_bridge::FrameSink for RecordingSink {
+    async fn send_frame(&mut self, text: String) -> bool {
+        self.sent.push(text);
+        true
+    }
+}
+
+/// The empty-answer error EXACTLY as the shared streaming loop produces it,
+/// built through `commands::ai_provider`'s own message picker rather than
+/// re-typed here — so a reworded constant can never make these fixtures stop
+/// matching the classification under test.
+fn empty_answer(stop_reason: Option<crate::commands::ai_provider::StopReason>) -> AppError {
+    crate::commands::ai_provider::stream::empty_answer_error_for_test(
+        stop_reason,
+        crate::commands::ai_provider::ProviderId::OllamaCloud,
+    )
+}
+
+/// The specific failure this path retries: the model spent its whole output
+/// budget reasoning and the provider ended the stream with
+/// `finish_reason: length` and no answer text.
+fn length_cut() -> AppError {
+    empty_answer(Some(crate::commands::ai_provider::StopReason::Length))
+}
+
+/// One scripted attempt: the visible deltas the provider emits for it, and
+/// how it ends. Both halves matter — an attempt can BOTH forward text and end
+/// as an empty length cut (a local model that spells its reasoning as
+/// ordinary `<think>` prose gets it forwarded as visible deltas while the
+/// provider's own answer accumulator strips it), which is the case the
+/// per-attempt char budget and the tail slice both exist for.
+struct FakeAttempt {
+    delta: String,
+    outcome: AppResult<()>,
+}
+
+/// An attempt that streams `delta` and finishes normally.
+fn streams(delta: impl Into<String>) -> FakeAttempt {
+    FakeAttempt {
+        delta: delta.into(),
+        outcome: Ok(()),
+    }
+}
+
+/// An attempt that streams `delta` and then fails with `e` — the shape a
+/// local model produces when it spells its reasoning as ordinary text and the
+/// provider's answer accumulator strips it back to empty.
+fn streams_then_fails(delta: impl Into<String>, e: AppError) -> FakeAttempt {
+    FakeAttempt {
+        delta: delta.into(),
+        outcome: Err(e),
+    }
+}
+
+/// An attempt that streams nothing and fails with `e`.
+fn fails(e: AppError) -> FakeAttempt {
+    streams_then_fails("", e)
+}
+
+/// A fake compose round: replays a scripted attempt in order, records the
+/// `(max_tokens, effort)` each one was driven with, counts the daily-ceiling
+/// charges, and forwards each attempt's text through the REAL
+/// `stream::forward_chunk`/`FrameSink` path into ONE shared buffer, under the
+/// `cap_base` the production driver hands it — so "the retry's text reaches
+/// the sink", "each attempt gets its own `DRAFT_CAP`" and "the draft is the
+/// successful attempt's tail" are all assertions about the production
+/// forwarding code and the production driver, not about the fake. `finish`
+/// likewise emits the REAL `assist.done` frame.
+struct FakeComposer<'a> {
+    /// One entry per attempt, consumed in order.
+    script: Vec<FakeAttempt>,
+    /// `(max_tokens, effort)` recorded per attempt, in order.
+    attempts: Vec<(u32, Option<String>)>,
+    /// Successful `charge` calls — `Cell` because `charge` takes `&self`,
+    /// exactly as the production trait does.
+    charges: std::cell::Cell<usize>,
+    /// Attempt number (1-based) whose charge the daily ceiling refuses.
+    refuse_charge_at: Option<usize>,
+    /// What `still_wanted` answers — `false` stands in for an `assist.cancel`
+    /// (or the whole connection dropping) landing between the two attempts,
+    /// which takes this request's registry entry away.
+    wanted: bool,
+    /// `finish` calls — the terminal-frame count, cross-checked against the
+    /// `assist.done` frames the sink actually received.
+    finishes: usize,
+    /// Answer chars forwarded across ALL attempts — the fake's stand-in for
+    /// `stream::ComposeStream::forwarded`, shared for the same reason.
+    forwarded: String,
+    limiter: crate::limits::Limiter,
+    sink: &'a mut RecordingSink,
+}
+
+impl DraftComposer for FakeComposer<'_> {
+    fn charge(&self) -> AppResult<()> {
+        let n = self.charges.get() + 1;
+        if self.refuse_charge_at == Some(n) {
+            return Err(to_draft_failed(
+                "daily budget exceeded before compose",
+                AppError::RateLimited("daily ceiling reached".to_string()),
+            ));
+        }
+        // The REAL charge, against a real limiter, so this fake can never
+        // diverge from what one production round-trip actually costs.
+        charge_compose_budget(&self.limiter, "ollama-cloud")?;
+        self.charges.set(n);
+        Ok(())
+    }
+
+    fn still_wanted(&self) -> bool {
+        self.wanted
+    }
+
+    fn drafted(&self) -> &str {
+        &self.forwarded
+    }
+
+    async fn compose(
+        &mut self,
+        max_tokens: u32,
+        effort: Option<&str>,
+        cap_base: usize,
+    ) -> AppResult<()> {
+        self.attempts.push((max_tokens, effort.map(str::to_string)));
+        let index = self.attempts.len() - 1;
+        let slot = self
+            .script
+            .get_mut(index)
+            .expect("the composer must never be driven more times than the script allows");
+        let delta = std::mem::take(&mut slot.delta);
+        // Moved out (not cloned) so the error keeps its EXACT `AppError`
+        // variant — the classification under test is structural.
+        let outcome = std::mem::replace(&mut slot.outcome, Ok(()));
+
+        if !delta.is_empty() {
+            let chunk = crate::events::AiStreamChunk {
+                job_id: "job-1".to_string(),
+                delta,
+                done: false,
+                error: None,
+                thinking: None,
+            };
+            crate::extension_bridge::stream::forward_chunk(
+                &chunk,
+                "req-1",
+                self.sink,
+                &mut self.forwarded,
+                cap_base,
+            )
+            .await;
+        }
+        outcome
+    }
+
+    async fn finish(&mut self) {
+        use crate::extension_bridge::FrameSink as _;
+
+        self.finishes += 1;
+        self.sink
+            .send_frame(crate::extension_bridge::stream::assist_done_frame("req-1"))
+            .await;
+    }
+}
+
+impl<'a> FakeComposer<'a> {
+    fn new(script: Vec<FakeAttempt>, sink: &'a mut RecordingSink) -> Self {
+        Self {
+            script,
+            attempts: Vec::new(),
+            charges: std::cell::Cell::new(0),
+            refuse_charge_at: None,
+            wanted: true,
+            finishes: 0,
+            forwarded: String::new(),
+            limiter: crate::limits::Limiter::new(),
+            sink,
+        }
+    }
+}
+
+/// How many of `sent` are terminal `assist.done` frames — parsed off the
+/// wire text, so this counts what the CLIENT would see.
+fn done_frames(sent: &[String]) -> usize {
+    sent.iter()
+        .filter(|f| {
+            serde_json::from_str::<Value>(f)
+                .ok()
+                .and_then(|v| v["type"].as_str().map(str::to_string))
+                .as_deref()
+                == Some(crate::extension_bridge::msg::ASSIST_DONE)
+        })
+        .count()
+}
+
+#[tokio::test]
+async fn compose_with_length_retry_retries_once_at_the_retry_budget_after_an_empty_length_cut() {
+    let mut sink = RecordingSink::default();
+    let mut round = FakeComposer::new(
+        vec![fails(length_cut()), streams("A grounded answer.")],
+        &mut sink,
+    );
+
+    let text = compose_with_length_retry(
+        &mut round,
+        ANSWER_ASSIST_MAX_TOKENS,
+        ANSWER_ASSIST_RETRY_MAX_TOKENS,
+        Some("low"),
+    )
+    .await
+    .expect("the retry succeeds");
+
+    assert_eq!(text, "A grounded answer.");
+    assert_eq!(
+        round.attempts,
+        vec![
+            (ANSWER_ASSIST_MAX_TOKENS, Some("low".to_string())),
+            (ANSWER_ASSIST_RETRY_MAX_TOKENS, Some("low".to_string())),
+        ],
+        "the retry must run at the LARGER budget, at the same cheap effort"
+    );
+    assert_eq!(
+        round.charges.get(),
+        2,
+        "two round-trips must pay the daily ceiling twice — never once per request"
+    );
+    assert!(
+        sink.sent[0].contains("A grounded answer."),
+        "the retry's text must reach the sink, got {:?}",
+        sink.sent
+    );
+}
+
+/// The `assist.done` contract, which is per REQUEST: the popup deletes its
+/// `assist.chunk` listener for a `reqId` the moment it sees this frame, so a
+/// second attempt whose chunks arrive AFTER one is a stream nothing is
+/// reading (and the client's stall timer can never re-arm).
+///
+/// Mutation check (executed): move `round.finish()` inside `compose_attempts`
+/// so it runs per attempt (the pre-fix shape, where `compose_draft_stream`
+/// itself sent the frame) — this test fails on the count AND on the ordering
+/// assertion.
+#[tokio::test]
+async fn compose_with_length_retry_sends_exactly_one_assist_done_after_every_chunk() {
+    let mut sink = RecordingSink::default();
+    let mut round = FakeComposer::new(
+        vec![fails(length_cut()), streams("the retry's own text")],
+        &mut sink,
+    );
+
+    compose_with_length_retry(
+        &mut round,
+        ANSWER_ASSIST_MAX_TOKENS,
+        ANSWER_ASSIST_RETRY_MAX_TOKENS,
+        Some("low"),
+    )
+    .await
+    .expect("the retry succeeds");
+
+    assert_eq!(round.finishes, 1, "one terminal frame per REQUEST");
+    assert_eq!(
+        done_frames(&sink.sent),
+        1,
+        "…and exactly one reaches the wire, got {:?}",
+        sink.sent
+    );
+    let last = sink.sent.last().expect("frames were sent");
+    assert_eq!(
+        done_frames(std::slice::from_ref(last)),
+        1,
+        "the terminal frame must be LAST — a chunk after it is a chunk the popup drops"
+    );
+    assert!(
+        sink.sent[0].contains("the retry's own text"),
+        "the retry's chunks must reach the sink BEFORE the terminal frame, got {:?}",
+        sink.sent
+    );
+}
+
+/// Chars the CLIENT was actually sent, summed off the `assist.chunk` frames —
+/// the wire total, not the fake's own bookkeeping.
+fn forwarded_chars(sent: &[String]) -> usize {
+    sent.iter()
+        .filter_map(|f| serde_json::from_str::<Value>(f).ok())
+        .filter_map(|v| v["payload"]["delta"].as_str().map(|d| d.chars().count()))
+        .sum()
+}
+
+/// `DRAFT_CAP` bounds each ATTEMPT, not the request: the retry gets a full
+/// window of its own, rebased at its own start. Attempt 1 here both forwards
+/// text AND ends as an empty length cut (see [`FakeAttempt`]) — the
+/// local-model shape where reasoning arrives as ordinary inline `<think>`
+/// prose — and it spends all but 10 chars of a cap doing it. Against one
+/// shared window the retry's 100-char answer would come back as a 10-char
+/// stub with `ok: true`: a silently truncated draft, straight into the field
+/// "Accept" pastes.
+///
+/// The wire is still bounded, just by two attempts rather than one — see
+/// [`compose_with_length_retry_still_clamps_the_retry_at_one_draft_cap`] for
+/// the other half of that bound.
+///
+/// Mutation check (executed): pass `0` as the retry's `cap_base` (the pre-fix
+/// shared window) and both assertions fail — the draft is 10 chars and the
+/// wire total is exactly `DRAFT_CAP`.
+#[tokio::test]
+async fn compose_with_length_retry_gives_the_retry_a_cap_the_failed_attempt_did_not_spend() {
+    let mut sink = RecordingSink::default();
+    let mut round = FakeComposer::new(
+        vec![
+            streams_then_fails("x".repeat(DRAFT_CAP - 10), length_cut()),
+            streams("y".repeat(100)),
+        ],
+        &mut sink,
+    );
+
+    let text = compose_with_length_retry(
+        &mut round,
+        ANSWER_ASSIST_MAX_TOKENS,
+        ANSWER_ASSIST_RETRY_MAX_TOKENS,
+        Some("low"),
+    )
+    .await
+    .expect("the retry succeeds");
+
+    assert_eq!(
+        text,
+        "y".repeat(100),
+        "the retry's answer must arrive whole — a failed attempt's spend may \
+         not truncate it"
+    );
+    assert_eq!(
+        forwarded_chars(&sink.sent),
+        DRAFT_CAP - 10 + 100,
+        "the wire carries attempt 1's prose plus the retry's whole answer"
+    );
+}
+
+/// The other half of the bound: one attempt still never forwards more than
+/// `DRAFT_CAP` chars, so a retried request is bounded at 2 × `DRAFT_CAP` and
+/// the draft returned is bounded at `DRAFT_CAP` — a rebased window is a FRESH
+/// budget, never an unbounded one.
+///
+/// Mutation check (executed): let a rebased window pass its delta through
+/// unclamped (guard `forward_chunk`'s clamp on `cap_base == 0`) and both
+/// assertions fail — the retry forwards, and returns, `DRAFT_CAP + 50` chars.
+#[tokio::test]
+async fn compose_with_length_retry_still_clamps_the_retry_at_one_draft_cap() {
+    let mut sink = RecordingSink::default();
+    let mut round = FakeComposer::new(
+        vec![
+            streams_then_fails("x".repeat(DRAFT_CAP - 10), length_cut()),
+            streams("y".repeat(DRAFT_CAP + 50)),
+        ],
+        &mut sink,
+    );
+
+    let text = compose_with_length_retry(
+        &mut round,
+        ANSWER_ASSIST_MAX_TOKENS,
+        ANSWER_ASSIST_RETRY_MAX_TOKENS,
+        Some("low"),
+    )
+    .await
+    .expect("the retry succeeds");
+
+    assert_eq!(
+        text.chars().count(),
+        DRAFT_CAP,
+        "the retry's own window is one cap, not two"
+    );
+    assert_eq!(
+        forwarded_chars(&sink.sent),
+        DRAFT_CAP - 10 + DRAFT_CAP,
+        "so the whole request stays under 2 x DRAFT_CAP on the wire"
+    );
+}
+
+/// The buffer the two attempts share is a wire LOG, never the request's
+/// result: the draft returned is the text of the attempt that SUCCEEDED,
+/// alone. Attempt 1 here forwards visible prose and STILL ends as the empty
+/// length cut — the local-model shape where reasoning arrives as ordinary
+/// inline `<think>` text, so `forward_chunk` forwards it (it only filters
+/// `thinking == Some(true)`) while the provider's answer accumulator strips
+/// it back to empty. Returning the whole buffer would hand the popup that
+/// discarded reasoning glued in front of the retry's answer, and "Accept"
+/// pastes the result into a real form field.
+///
+/// Mutation check (executed): return the whole shared buffer from
+/// `compose_attempts` (`Ok(round.drafted().to_string())`, the pre-fix shape)
+/// and this test fails — the draft comes back with the reasoning prefix.
+#[tokio::test]
+async fn compose_with_length_retry_returns_only_the_successful_attempts_text() {
+    // Multi-byte on purpose: the tail is cut at a BYTE offset of a buffer that is
+    // only ever clamped by CHARS, so an ASCII fixture would not exercise the seam.
+    const THOUGHT: &str = "<think>Réfléchissons — l'utilisateur veut une réponse courte 🤔";
+    const ANSWER: &str = "Bonjour, ça va très bien 🙂";
+    let mut sink = RecordingSink::default();
+    let mut round = FakeComposer::new(
+        vec![streams_then_fails(THOUGHT, length_cut()), streams(ANSWER)],
+        &mut sink,
+    );
+
+    let text = compose_with_length_retry(
+        &mut round,
+        ANSWER_ASSIST_MAX_TOKENS,
+        ANSWER_ASSIST_RETRY_MAX_TOKENS,
+        Some("low"),
+    )
+    .await
+    .expect("the retry succeeds");
+
+    assert_eq!(
+        text, ANSWER,
+        "the draft is the retry's answer alone — a failed attempt's forwarded \
+         text must never ride back with it"
+    );
+    // …while the failed attempt's chars are still THERE: they went out on the
+    // wire as `assist.chunk` frames and the buffer is append-only, which is
+    // what makes the tail slice possible at all. The buffer spans both
+    // attempts; what the client gets back does not.
+    assert!(
+        round.drafted().starts_with(THOUGHT) && round.drafted().ends_with(ANSWER),
+        "the append-only buffer keeps BOTH attempts, got {:?}",
+        round.drafted()
+    );
+    assert_eq!(
+        round.drafted().chars().count(),
+        THOUGHT.chars().count() + ANSWER.chars().count(),
+        "and it is the sum of the two attempts, each bounded by its own DRAFT_CAP window"
+    );
+}
+
+/// A cancel (or a dropped connection) between the two attempts takes this
+/// request's registry entry away — the retry must then never be charged for,
+/// let alone composed.
+///
+/// Mutation check (executed): drop the `still_wanted` guard from
+/// `compose_attempts` and both assertions fail.
+#[tokio::test]
+async fn compose_with_length_retry_refuses_to_pay_for_a_retry_the_client_gave_up_on() {
+    let mut sink = RecordingSink::default();
+    let mut round = FakeComposer::new(
+        vec![fails(length_cut()), streams("never reached")],
+        &mut sink,
+    );
+    round.wanted = false; // an assist.cancel / disconnect landed in between
+
+    let err = compose_with_length_retry(
+        &mut round,
+        ANSWER_ASSIST_MAX_TOKENS,
+        ANSWER_ASSIST_RETRY_MAX_TOKENS,
+        Some("low"),
+    )
+    .await
+    .expect_err("an abandoned request still fails");
+
+    assert_eq!(err.to_string(), DRAFT_FAILED_MESSAGE);
+    assert_eq!(
+        round.charges.get(),
+        1,
+        "the second round-trip must never be charged for"
+    );
+    assert_eq!(round.attempts.len(), 1, "…nor composed");
+    assert_eq!(
+        round.finishes, 1,
+        "the request still owes its one terminal frame — a stream did run"
+    );
+}
+
+#[tokio::test]
+async fn compose_with_length_retry_charges_and_composes_once_when_the_first_attempt_succeeds() {
+    let mut sink = RecordingSink::default();
+    let mut round = FakeComposer::new(vec![streams("First time lucky.")], &mut sink);
+
+    let text = compose_with_length_retry(
+        &mut round,
+        ANSWER_ASSIST_MAX_TOKENS,
+        ANSWER_ASSIST_RETRY_MAX_TOKENS,
+        Some("low"),
+    )
+    .await
+    .expect("the first attempt succeeds");
+
+    assert_eq!(text, "First time lucky.");
+    assert_eq!(
+        round.attempts,
+        vec![(ANSWER_ASSIST_MAX_TOKENS, Some("low".to_string()))]
+    );
+    assert_eq!(
+        round.charges.get(),
+        1,
+        "one round-trip, one daily-ceiling charge"
+    );
+    assert_eq!(done_frames(&sink.sent), 1, "one terminal frame, as always");
+}
+
+#[tokio::test]
+async fn compose_with_length_retry_never_retries_any_other_failure() {
+    // Each of these is a DIFFERENT way the compose can fail: a transport
+    // error; the GENERIC empty answer (same empty outcome, but no
+    // `finish_reason: length`, so nothing says a larger budget would help);
+    // and the length-cut TEXT carried by a variant `finish` never builds it
+    // as — classification is structural, not a substring search. None of
+    // them may buy a second billable round-trip.
+    let others = [
+        AppError::Network("connection reset".to_string()),
+        empty_answer(None),
+        AppError::Validation(length_cut().to_string()),
+    ];
+
+    for original in others {
+        let label = original.to_string();
+        let mut sink = RecordingSink::default();
+        let mut round =
+            FakeComposer::new(vec![fails(original), streams("never reached")], &mut sink);
+
+        let err = compose_with_length_retry(
+            &mut round,
+            ANSWER_ASSIST_MAX_TOKENS,
+            ANSWER_ASSIST_RETRY_MAX_TOKENS,
+            Some("low"),
+        )
+        .await
+        .expect_err("a non-length-cut failure must surface, not retry");
+
+        assert_eq!(
+            err.to_string(),
+            DRAFT_FAILED_MESSAGE,
+            "every failure still collapses to the fixed wire sentinel"
+        );
+        assert_eq!(round.attempts.len(), 1, "{label} must NOT be retried");
+        assert_eq!(
+            round.charges.get(),
+            1,
+            "{label} must cost exactly one charge"
+        );
+        assert_eq!(
+            done_frames(&sink.sent),
+            1,
+            "{label} still owes its one terminal frame"
+        );
+    }
+}
+
+#[tokio::test]
+async fn compose_with_length_retry_lets_the_daily_ceiling_refuse_the_retry() {
+    // The retry is real spend: it goes through the SAME charge the first
+    // attempt does, so a ceiling that refuses it stops the second
+    // round-trip from ever being made.
+    let mut sink = RecordingSink::default();
+    let mut round = FakeComposer::new(
+        vec![fails(length_cut()), streams("never reached")],
+        &mut sink,
+    );
+    round.refuse_charge_at = Some(2);
+
+    let err = compose_with_length_retry(
+        &mut round,
+        ANSWER_ASSIST_MAX_TOKENS,
+        ANSWER_ASSIST_RETRY_MAX_TOKENS,
+        Some("low"),
+    )
+    .await
+    .expect_err("a refused charge fails the request");
+
+    assert_eq!(err.to_string(), DRAFT_FAILED_MESSAGE);
+    assert_eq!(
+        round.attempts.len(),
+        1,
+        "the retry must never bypass the daily ceiling"
+    );
+}
+
+/// The FIRST charge sits outside the attempt block on purpose: when the daily
+/// ceiling refuses it, no stream ever ran, so the request owes its client no
+/// terminal frame at all — only the `answer.assist.result` error reply. This
+/// is the one path `finish` must NOT run on.
+#[tokio::test]
+async fn compose_with_length_retry_emits_no_terminal_frame_when_the_first_charge_is_refused() {
+    let mut sink = RecordingSink::default();
+    let mut round = FakeComposer::new(vec![streams("never reached")], &mut sink);
+    round.refuse_charge_at = Some(1);
+
+    let err = compose_with_length_retry(
+        &mut round,
+        ANSWER_ASSIST_MAX_TOKENS,
+        ANSWER_ASSIST_RETRY_MAX_TOKENS,
+        Some("low"),
+    )
+    .await
+    .expect_err("a refused charge fails the request");
+
+    assert_eq!(err.to_string(), DRAFT_FAILED_MESSAGE);
+    assert!(round.attempts.is_empty(), "no round-trip was ever made");
+    assert_eq!(round.finishes, 0);
+    assert!(
+        sink.sent.is_empty(),
+        "…so nothing was framed for the client"
+    );
+}
+
+#[tokio::test]
+async fn compose_with_length_retry_sends_no_effort_for_a_model_with_no_cheap_tier() {
+    // `Completer::low_effort` resolves `None` both for a model whose
+    // provider offers no effort levels at all and for one whose lowest tier
+    // is already expensive (see `pipeline::low_effort_level`). That `None`
+    // must reach the request unchanged on BOTH attempts — never a
+    // substituted "low" the provider would reject.
+    let mut sink = RecordingSink::default();
+    let mut round = FakeComposer::new(vec![fails(length_cut()), streams("answer")], &mut sink);
+
+    compose_with_length_retry(
+        &mut round,
+        ANSWER_ASSIST_MAX_TOKENS,
+        ANSWER_ASSIST_RETRY_MAX_TOKENS,
+        None,
+    )
+    .await
+    .expect("the retry succeeds");
+
+    assert_eq!(
+        round.attempts,
+        vec![
+            (ANSWER_ASSIST_MAX_TOKENS, None),
+            (ANSWER_ASSIST_RETRY_MAX_TOKENS, None),
+        ]
+    );
+}
+
+/// The two budget constants' own numeric relationships are asserted at COMPILE
+/// time next to them (`answer_assist.rs`'s `const _: () = { … }`) — a build
+/// failure beats a test failure for a pair of constants. What still needs a
+/// test is the MODE TABLE reading the same one for both modes.
+#[test]
+fn both_modes_compose_at_the_same_first_attempt_budget() {
+    assert_eq!(
+        assist_prompt_for_mode(AssistMode::Draft).1,
+        assist_prompt_for_mode(AssistMode::Rewrite).1,
+        "draft and rewrite share the budget deliberately — see `assist_prompt_for_mode`"
+    );
+    assert_eq!(
+        assist_prompt_for_mode(AssistMode::Draft).1,
+        ANSWER_ASSIST_MAX_TOKENS
     );
 }

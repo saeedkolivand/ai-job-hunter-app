@@ -673,6 +673,55 @@ fn empty_answer_message_points_local_ollama_at_the_control_it_actually_has() {
     }
 }
 
+/// The classification the extension bridge's `answer.assist` retries on —
+/// built from what `finish` ACTUALLY returns for an empty completion (its
+/// `FinishOutcome::Empty` message, wrapped in the `AppError::Provider` its
+/// own branch wraps it in), not from a re-typed message string. If `finish`
+/// ever changed variant, or `empty_answer_message` gained an arm this
+/// predicate does not know about, the retry would silently stop firing (or
+/// start firing on the wrong failure) with nothing else to catch it.
+#[test]
+fn is_empty_answer_length_cut_recognizes_exactly_the_length_truncation_finish_returns() {
+    let as_finish_returns_it =
+        |stop_reason, provider| match finish_outcome("", stop_reason, provider) {
+            FinishOutcome::Empty { message } => AppError::Provider(message.to_string()),
+            FinishOutcome::Complete { .. } => panic!("an empty answer is never Complete"),
+        };
+
+    // BOTH length-cut wordings — the generic one and local Ollama's
+    // Settings-pointing sibling — are the same failure to a caller.
+    for provider in [
+        ProviderId::OllamaCloud,
+        ProviderId::Ollama,
+        ProviderId::OpenAi,
+    ] {
+        assert!(
+            is_empty_answer_length_cut(&as_finish_returns_it(Some(StopReason::Length), provider)),
+            "{} ran out of budget mid-reasoning",
+            provider.as_str()
+        );
+    }
+
+    // An empty answer with no `length` signal is NOT this failure: nothing
+    // says a larger budget would change the outcome, so it must not buy a
+    // second billable round-trip.
+    for reason in [None, Some(StopReason::End), Some(StopReason::Other)] {
+        assert!(!is_empty_answer_length_cut(&as_finish_returns_it(
+            reason,
+            ProviderId::OllamaCloud
+        )));
+    }
+
+    // Structural, not a substring search: the same text in a variant
+    // `finish` never builds is a different failure.
+    assert!(!is_empty_answer_length_cut(&AppError::Validation(
+        EMPTY_ANSWER_LENGTH_MESSAGE.to_string()
+    )));
+    assert!(!is_empty_answer_length_cut(&AppError::Provider(
+        "429 rate limited".to_string()
+    )));
+}
+
 #[test]
 fn empty_answer_message_falls_back_to_the_generic_message_otherwise() {
     // No signal at all (most providers/CLI agents) and a non-`Length`

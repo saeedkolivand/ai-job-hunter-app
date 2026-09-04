@@ -284,8 +284,13 @@ pnpm -F @ajh/extension build:firefox
 
 The build is deterministic: it bundles only this repo's source plus the pinned
 dependencies in `package.json`; the manifest is generated from `src/manifest.ts`
-with no network access. The output is not minified to a single line, so the
-emitted JS stays readable for review.
+with no network access. The classic scripts injected with `executeScript` are
+emitted **unminified** — they answer the background by completion value, which a
+minifier is entitled to fold away, so their build pass turns minification off
+(`injectedEntryConfig` in `vite.config.mts` carries the reasoning, and
+`src/build-output.test.ts` builds the real artifacts and asserts what each one
+evaluates to). The bundled `background`/`popup` entries use Vite's default
+minifier.
 
 ---
 

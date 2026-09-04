@@ -692,13 +692,42 @@ fn the_request_builder_forwards_the_run_effort() {
     let req = text_request("m", "sys", "usr", None, None, None, Some("high"));
     assert_eq!(req.effort.as_deref(), Some("high"));
 
-    // A caller with nothing to scale by (the agentic tool loop / extension
-    // bridge, via `stream_complete`) still gets the provider's own default,
-    // never an invented tier.
+    // A caller with no tier to send — a run with no effort setting, or a
+    // model whose provider offers no effort LEVER at all
+    // (`low_effort_level` on an empty list) — still gets the provider's
+    // own default, never an invented tier. `stream_complete` takes the same
+    // `effort` parameter and hands it straight here, so the extension
+    // bridge's `answer.assist` compose reaches the wire through this line
+    // too (it passes `Completer::low_effort`).
     assert_eq!(
         text_request("m", "s", "u", None, None, None, None).effort,
         None
     );
+}
+
+/// `Completer::low_effort`'s pure half. The lists themselves — and the
+/// "entry 0 is the minimum" invariant `.first()` rests on — are pinned
+/// against the REAL adapters in `commands::ai_provider::tests`; what belongs
+/// here is the empty case (the one every provider without an effort lever
+/// takes) and the CHEAP-tier filter on top of entry 0.
+///
+/// Mutation check (executed): return `levels.last().copied()` and the
+/// three-tier case fails; return `Some("low")` for an empty list and the
+/// first assertion fails; drop the `minimal`/`low` filter and the
+/// `["high"]`/`["medium", …]` cases fail.
+#[test]
+fn the_low_effort_level_is_entry_zero_and_only_when_entry_zero_is_cheap() {
+    use crate::pipeline::low_effort_level;
+
+    assert_eq!(low_effort_level(&[]), None);
+    assert_eq!(low_effort_level(&["low", "medium", "high"]), Some("low"));
+    assert_eq!(low_effort_level(&["minimal", "low"]), Some("minimal"));
+
+    // Entry 0 is this list's minimum, and it is still NOT cheap: the caller
+    // wants "spend less of the output budget on thinking", so an expensive
+    // lowest tier means there is nothing worth asking for — send nothing.
+    assert_eq!(low_effort_level(&["high"]), None);
+    assert_eq!(low_effort_level(&["medium", "high"]), None);
 }
 
 /// The stage override's resolve seam takes the SAME steps as the active

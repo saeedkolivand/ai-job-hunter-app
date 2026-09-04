@@ -80,7 +80,12 @@ pub mod agent_cli;
 /// The `agent.query` read-only agent/CLI surface (issue #1084 PR 1) — see its
 /// module doc.
 mod agent_read;
-mod answer_assist;
+/// `answer.assist` — see its module doc. `pub(crate)` for its two compose
+/// budgets alone: they are sized against Anthropic's classic-thinking gate,
+/// and that relationship is asserted next to the gate itself, in
+/// `commands::ai_provider::anthropic`'s tests. Everything else here stays
+/// `pub(super)`/private.
+pub(crate) mod answer_assist;
 mod answer_rewrite;
 mod answers_save;
 mod answers_suggest;
