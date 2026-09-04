@@ -2102,7 +2102,7 @@ describe('the context-menu entries (ADR-044 decision 2)', () => {
       expect.objectContaining({
         id: 'ajh-answer-open-panel',
         title: 'Open answer panel',
-        contexts: ['page'],
+        contexts: ['page', 'editable'],
       })
     );
   });
@@ -2195,8 +2195,35 @@ describe('the context-menu entries (ADR-044 decision 2)', () => {
     // Distinguishes this entry from the selection one: nothing gets added as
     // a row, and it never even reads the tab to figure out where to write one.
     expect(tabsQueryMock).not.toHaveBeenCalled();
+    // `readAnswerState` returns `null` (not `undefined`) for a tab it has
+    // never written — asserting `toHaveLength(0)` on `state?.rows ?? []`
+    // would pass just as well if the read silently returned nothing at all,
+    // so it can't tell "wrote zero rows" apart from "never wrote anything".
     const state = await readAnswerState(clickedTabId);
-    expect(state?.rows ?? []).toHaveLength(0);
+    expect(state).toBeNull();
+  });
+
+  it('falls back to sidebarAction.open() on Firefox, which has no sidePanel API', async () => {
+    const onClicked = vi.mocked(browser.contextMenus.onClicked.addListener).mock.calls[0]?.[0];
+    if (!onClicked) throw new Error('context-menu click listener not registered');
+    // `openAnswerPanel` (background.ts) tries the Chrome `sidePanel` branch
+    // first and falls back to Firefox's `sidebarAction` only when it is
+    // absent — simulate that by removing `sidePanel` from the shared mock
+    // for the duration of this one test.
+    const chromeSidePanel = (browser as { sidePanel?: unknown }).sidePanel;
+    const sidebarOpenMock = vi.fn().mockResolvedValue(undefined);
+    (browser as { sidePanel?: unknown }).sidePanel = undefined;
+    (browser as { sidebarAction?: { open: typeof sidebarOpenMock } }).sidebarAction = {
+      open: sidebarOpenMock,
+    };
+    try {
+      onClicked({ menuItemId: 'ajh-answer-open-panel' } as never, { id: 212 } as never);
+      await flush();
+      expect(sidebarOpenMock).toHaveBeenCalledTimes(1);
+    } finally {
+      (browser as { sidePanel?: unknown }).sidePanel = chromeSidePanel;
+      delete (browser as { sidebarAction?: unknown }).sidebarAction;
+    }
   });
 });
 

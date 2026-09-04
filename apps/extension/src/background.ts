@@ -1533,17 +1533,32 @@ const ANSWER_MENU_ID = 'ajh-answer-selection';
 
 /**
  * The plain-right-click entry: opens the panel with nothing prefilled, so it
- * has no selection to require and is registered on `contexts: ['page']`
- * (the generic page background) rather than `'all'`, which would also fire
- * on images/links/etc. — more than a bare "open the panel" gesture needs.
- * `'page'` and `'selection'` are independent Chrome context categories, not
- * mutually exclusive ones: right-clicking ON selected text matches both. Per
- * Chrome's own docs (developer.chrome.com/docs/extensions/reference/api/contextMenus,
- * read 2026-09-05): "if more than one [item] from your extension is visible
- * at once, Google Chrome automatically collapses them into a single parent
- * menu" — so this does not show as two flat top-level entries in that case,
- * it folds into one "AI Job Hunter" submenu holding both. Expected, not a bug
- * to route around.
+ * has no selection to require. Registered on `contexts: ['page', 'editable']`
+ * rather than `'all'`, which would also fire on links/images/video — more
+ * than a bare "open the panel" gesture needs.
+ *
+ * `'page'` is Chrome's LEAST-specific context, not an independent one: per
+ * Chromium's own matching rule (`ExtensionContextAndPatternMatch`,
+ * `chrome/browser/extensions/context_menu_helpers.cc`), a `page`-scoped item
+ * is suppressed whenever a selection, a link, an editable field, or a media
+ * element is under the cursor — those all take priority over the fallback.
+ * So the two entries are mutually exclusive in the common case, not stacked:
+ *   - plain background, nothing selected, not editable: only this entry.
+ *   - selected text, not editable: only `ANSWER_MENU_ID` (`page` suppressed
+ *     by the selection).
+ *   - inside an editable field, nothing selected: only this entry
+ *     (`editable` is one of its two declared contexts — added because the
+ *     primary use of this extension is answering questions inside
+ *     application-form fields, and a bare `page` context is suppressed
+ *     there too, showing nothing).
+ *   - inside an editable field WITH a selection: BOTH match (this entry via
+ *     `editable`, `ANSWER_MENU_ID` via `selection`) — the one case where
+ *     Chrome's documented "multiple visible items collapse into a single
+ *     parent submenu" behaviour
+ *     (developer.chrome.com/docs/extensions/reference/api/contextMenus, read
+ *     2026-09-05) actually applies, titled with this extension's own
+ *     manifest `name` (`'AI Job Hunter — Job Importer'`, see `manifest.ts`),
+ *     not a shorter label.
  */
 const ANSWER_PANEL_MENU_ID = 'ajh-answer-open-panel';
 
@@ -1567,7 +1582,7 @@ function installContextMenu(): void {
     menus.create({
       id: ANSWER_PANEL_MENU_ID,
       title: 'Open answer panel',
-      contexts: ['page'],
+      contexts: ['page', 'editable'],
     });
   });
 }
