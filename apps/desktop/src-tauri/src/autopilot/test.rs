@@ -1419,6 +1419,211 @@ fn no_tombstones() -> std::collections::HashSet<(String, String)> {
     std::collections::HashSet::new()
 }
 
+// ── update_found_job_descriptions (issue #1106 part b) ────────────────────────
+
+#[test]
+fn update_found_job_descriptions_patches_the_matching_row() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let ap = store.create(serde_json::json!({
+        "name": "AP1",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+    }));
+    store.record_run(
+        &ap.id,
+        1,
+        0,
+        vec![found_job("https://boards.example.com/jobs/1", 1)],
+        Vec::new(),
+        &no_tombstones(),
+        &[],
+    );
+
+    let normalized = crate::applications::normalize_job_url("https://boards.example.com/jobs/1");
+    let updated = store.update_found_job_descriptions(&normalized, "corrected text");
+    assert_eq!(updated, 1, "exactly one row must be patched");
+
+    let list = store.list();
+    assert_eq!(
+        list[0].found_jobs[0].description.as_deref(),
+        Some("corrected text")
+    );
+}
+
+#[test]
+fn update_found_job_descriptions_returns_zero_when_no_url_matches() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let ap = store.create(serde_json::json!({
+        "name": "AP1",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+    }));
+    store.record_run(
+        &ap.id,
+        1,
+        0,
+        vec![found_job("https://boards.example.com/jobs/1", 1)],
+        Vec::new(),
+        &no_tombstones(),
+        &[],
+    );
+
+    let normalized = crate::applications::normalize_job_url("https://nowhere.example.com/x");
+    let updated = store.update_found_job_descriptions(&normalized, "ignored");
+    assert_eq!(updated, 0, "an unmatched url must patch nothing");
+    assert_eq!(
+        store.list()[0].found_jobs[0].description,
+        None,
+        "the unrelated row must be untouched on a miss"
+    );
+}
+
+/// The same posting can legitimately surface under more than one autopilot
+/// (two separate searches both matched it) — every row must update, not just
+/// the first record iterated.
+#[test]
+fn update_found_job_descriptions_updates_every_matching_row_across_autopilots() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let shared_url = "https://boards.example.com/jobs/shared";
+
+    let ap1 = store.create(serde_json::json!({
+        "name": "AP1",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+    }));
+    let ap2 = store.create(serde_json::json!({
+        "name": "AP2",
+        "target": { "board": "indeed", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+    }));
+    store.record_run(
+        &ap1.id,
+        1,
+        0,
+        vec![found_job(shared_url, 1)],
+        Vec::new(),
+        &no_tombstones(),
+        &[],
+    );
+    store.record_run(
+        &ap2.id,
+        1,
+        0,
+        vec![found_job(shared_url, 2)],
+        Vec::new(),
+        &no_tombstones(),
+        &[],
+    );
+
+    let normalized = crate::applications::normalize_job_url(shared_url);
+    let updated = store.update_found_job_descriptions(&normalized, "shared correction");
+    assert_eq!(
+        updated, 2,
+        "both autopilots' rows for the same url must update, not just the first"
+    );
+    for ap in store.list() {
+        assert_eq!(
+            ap.found_jobs[0].description.as_deref(),
+            Some("shared correction"),
+            "every matching row across every autopilot must be patched"
+        );
+    }
+}
+
+// ── update_found_job_descriptions recomputes description-dependent trust but
+// leaves score_provisional untouched (issue #1106 / #1106 shared-seam fix) ──
+// `score_provisional` describes the `score` field, which a manual text
+// correction deliberately does NOT recompute (see the doc comment on
+// `update_found_job_descriptions`) — so the flag must survive unchanged here,
+// only `trust` (genuinely description-scoped) may react.
+
+#[test]
+fn update_found_job_descriptions_clears_stale_trust_but_leaves_score_provisional_untouched() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let ap = store.create(serde_json::json!({
+        "name": "AP1",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+    }));
+
+    // `company_matches_host("Acme", "acme.com")` is true, so the ONLY trust
+    // flag in play is the description-driven one — isolates the assertion
+    // below to the thing this fix changes.
+    let url = "https://acme.com/careers/1";
+    let empty_desc_trust = crate::scraping::trust::assess_trust(url, "Acme", "");
+    assert!(
+        empty_desc_trust
+            .flags
+            .contains(&crate::scraping::trust::TrustFlag::DescriptionUnavailable),
+        "seed sanity check: an empty description must carry DescriptionUnavailable"
+    );
+
+    let mut seeded = found_job_full(url, "Rust Engineer", "Acme", 1);
+    seeded.score = Some(70.0);
+    // Mirrors `build_found_job`'s `no_jd_text`-driven provisional marker for
+    // a title-only posting (empty description, no requirements).
+    seeded.score_provisional = true;
+    seeded.trust = Some(empty_desc_trust);
+    store.record_run(
+        &ap.id,
+        1,
+        0,
+        vec![seeded],
+        Vec::new(),
+        &no_tombstones(),
+        &[],
+    );
+
+    let normalized = crate::applications::normalize_job_url(url);
+    let full_description = "We are looking for a Senior Rust Engineer to build our \
+         distributed systems platform. You will own the async runtime, mentor \
+         junior engineers, and ship production services used by millions of \
+         users daily.";
+    let updated = store.update_found_job_descriptions(&normalized, full_description);
+    assert_eq!(updated, 1);
+
+    let job = &store.list()[0].found_jobs[0];
+    let trust = job.trust.as_ref().expect("trust must still be set");
+    assert!(
+        !trust
+            .flags
+            .contains(&crate::scraping::trust::TrustFlag::DescriptionUnavailable),
+        "a real, substantial description must clear the stale \
+         DescriptionUnavailable flag, not keep showing a 'no description' \
+         badge next to the now-visible full text"
+    );
+    assert_eq!(
+        trust.level,
+        crate::scraping::trust::TrustLevel::High,
+        "clearing the only flag must read back as a higher trust level"
+    );
+    assert!(
+        job.score_provisional,
+        "score_provisional describes `score`, which a manual description \
+         correction deliberately does not recompute — it must survive \
+         unchanged (still true) until an actual autopilot run re-scores \
+         the corrected content, never flip to false just because the \
+         description changed"
+    );
+}
+
 #[test]
 fn merge_dedups_by_url_preserving_first_seen_and_flagging_new() {
     let existing = vec![found_job("https://a.com/1", 100)];
@@ -1945,12 +2150,18 @@ fn merge_preserves_and_refreshes_trust_across_resurface() {
     let mut existing = found_job("https://a.com/1", 100);
     existing.trust = None; // legacy row, no trust assessment yet
 
-    let resurfaced_trust =
-        crate::scraping::trust::assess_trust("https://linkedin.com/jobs/view/1", "Acme");
+    let resurfaced_trust = crate::scraping::trust::assess_trust(
+        "https://linkedin.com/jobs/view/1",
+        "Acme",
+        "A real description.",
+    );
     let mut resurfaced = found_job("https://a.com/1", 999);
     resurfaced.trust = Some(resurfaced_trust.clone());
-    let fresh_trust =
-        crate::scraping::trust::assess_trust("https://boards.greenhouse.io/acme/jobs/2", "Acme");
+    let fresh_trust = crate::scraping::trust::assess_trust(
+        "https://boards.greenhouse.io/acme/jobs/2",
+        "Acme",
+        "A real description.",
+    );
     let mut fresh = found_job("https://a.com/2", 200);
     fresh.trust = Some(fresh_trust.clone());
 

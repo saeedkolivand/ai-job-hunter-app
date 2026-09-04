@@ -45,6 +45,17 @@ pub enum TrustFlag {
     /// function's doc comment for why appending it here is safe for every
     /// `TrustAssessment`/`FoundJob` record already on disk.
     ImplausibleCompany,
+    /// The posting's own description carries no usable scoring text — empty,
+    /// whitespace-only, or blank once markdown noise (a bare URL, `***`,
+    /// `[](url)`, …) is stripped, per
+    /// `crate::documents::keywords::description_is_blank`, the same predicate
+    /// `commands::autopilot`'s `no_jd_text` uses. LinkedIn's free/guest board
+    /// sets `description: Some(String::new())` for every posting (a "will be
+    /// filled in background" promise that was never implemented), so a
+    /// title-only stub otherwise reads identically to a fully-described
+    /// posting. Additive variant, same as [`ImplausibleCompany`] above — safe
+    /// for every `TrustAssessment`/`FoundJob` record already on disk.
+    DescriptionUnavailable,
 }
 
 /// URL-shortener domains — they obscure the real destination, a classic
@@ -66,13 +77,15 @@ const SUSPICIOUS_DOMAINS: &[&str] = &[
 /// is the BOARD's own domain rather than the employer's — LinkedIn
 /// (`linkedin.com`, always `/jobs/view/<id>`), Berlin Startup Jobs
 /// (`berlinstartupjobs.com`, its own WordPress RSS permalink), and the Adzuna
-/// aggregator (`api.adzuna.com` — the country code is a *path* segment, e.g.
-/// `/v1/api/jobs/de/redirects/…`, not a subdomain, so this one host covers
-/// every market's `redirect_url`), and Jobicy (`jobicy.com` — its own posting
-/// page URL is REQUIRED by Jobicy's ToS attribution, see
-/// `scraping/boards/jobicy/mod.rs`) — so those boards' results aren't
-/// systematically flagged. JSearch's `job_apply_link` is the real employer
-/// URL, so it's intentionally left off this list.
+/// aggregator (`api.adzuna.com`, its API host — separately, see
+/// [`is_adzuna_market_host`] below for Adzuna's *other* host shape: its own
+/// per-market website, e.g. `www.adzuna.de`/`www.adzuna.it` or a
+/// compound-ccTLD market like `www.adzuna.co.uk`, which some `redirect_url`s
+/// point at instead of the API host), and Jobicy
+/// (`jobicy.com` — its own posting page URL is REQUIRED by Jobicy's ToS
+/// attribution, see `scraping/boards/jobicy/mod.rs`) — so those boards'
+/// results aren't systematically flagged. JSearch's `job_apply_link` is the
+/// real employer URL, so it's intentionally left off this list.
 const ATS_ALLOWLIST: &[&str] = &[
     "greenhouse.io",
     "boards.greenhouse.io",
@@ -107,9 +120,9 @@ const ATS_ALLOWLIST: &[&str] = &[
     "jobicy.com",
 ];
 
-/// Score/flag a posting from its apply `url` and `company` name. Pure, no I/O;
-/// never panics on untrusted input.
-pub fn assess_trust(url: &str, company: &str) -> TrustAssessment {
+/// Score/flag a posting from its apply `url`, `company` name, and
+/// `description`. Pure, no I/O; never panics on untrusted input.
+pub fn assess_trust(url: &str, company: &str, description: &str) -> TrustAssessment {
     let mut flags = Vec::new();
 
     if url.trim().is_empty() {
@@ -142,6 +155,7 @@ pub fn assess_trust(url: &str, company: &str) -> TrustAssessment {
             flags.push(TrustFlag::ImplausibleCompany);
             score -= 20;
         } else if !matches_domain_list(&host, ATS_ALLOWLIST)
+            && !is_adzuna_market_host(&host)
             && !company_matches_host(company, &host)
         {
             flags.push(TrustFlag::CompanyDomainMismatch);
@@ -149,7 +163,83 @@ pub fn assess_trust(url: &str, company: &str) -> TrustAssessment {
         }
     }
 
+    if crate::documents::keywords::description_is_blank(Some(description)) {
+        // Same -15 order of magnitude as `CompanyDomainMismatch` — enough to
+        // guarantee `finish` never reports `TrustLevel::High` for a
+        // stubbed-out posting, regardless of what else is (or isn't) flagged.
+        // `description_is_blank` (not a raw `.trim().is_empty()`) so this
+        // agrees with `commands::autopilot`'s `no_jd_text` on what counts as
+        // "no usable text" — a bare URL or markdown-only noise strips down to
+        // nothing via `markdown_to_plain` first (issue #1106's shared
+        // predicate; see that fn's doc comment).
+        flags.push(TrustFlag::DescriptionUnavailable);
+        score -= 15;
+    }
+
     finish(score, flags)
+}
+
+/// Compound ccTLD suffixes used by Adzuna's own per-market websites, for the
+/// `ADZUNA_SUPPORTED_COUNTRIES` markets (`scraping/boards/aggregator/adzuna.rs`)
+/// whose real domain isn't a bare single-label TLD — verified live
+/// (issue #1107 follow-up): `gb`→`co.uk` (Adzuna's HOME market), `au`→`com.au`,
+/// `za`→`co.za`, `nz`→`co.nz`, `mx`→`com.mx`, `br`→`com.br`, `in`→`co.in`.
+/// Every other supported country (`at`/`be`/`ca`/`ch`/`de`/`es`/`fr`/`it`/
+/// `nl`/`pl`/`sg`/`us`) uses a plain single-label TLD (`.de`, `.com`, …),
+/// already covered by [`is_adzuna_market_host`]'s first branch without
+/// needing a per-market entry — so this list only needs the exceptions, not
+/// all 19 markets.
+const ADZUNA_COMPOUND_TLDS: &[&str] = &[
+    "co.uk", "com.au", "co.za", "co.nz", "com.mx", "com.br", "co.in",
+];
+
+/// The remaining 12 `ADZUNA_SUPPORTED_COUNTRIES` markets not covered by
+/// [`ADZUNA_COMPOUND_TLDS`] — their real per-market website is a bare
+/// single-label TLD. Eleven map directly to their own ccTLD
+/// (`at`/`be`/`ca`/`ch`/`de`/`es`/`fr`/`it`/`nl`/`pl`/`sg` → `adzuna.<cc>`);
+/// `us` is the one exception to the ccTLD-matches-country-code pattern —
+/// Adzuna's US site is `adzuna.com`, not `adzuna.us`. Curated (not derived
+/// from `ADZUNA_SUPPORTED_COUNTRIES` programmatically) on purpose — see
+/// [`is_adzuna_market_host`]'s doc comment for why.
+const ADZUNA_SINGLE_LABEL_TLDS: &[&str] = &[
+    "at", "be", "ca", "ch", "de", "es", "fr", "it", "nl", "pl", "sg", "com",
+];
+
+/// True for Adzuna's own per-market website host — `www.adzuna.<tld>` (e.g.
+/// `www.adzuna.de`, `www.adzuna.it`) or the bare `adzuna.<tld>`, AND the
+/// compound-ccTLD shape some markets use instead (`www.adzuna.co.uk`,
+/// `www.adzuna.com.au`, …, see [`ADZUNA_COMPOUND_TLDS`]) — Adzuna's
+/// `redirect_url` sometimes points here instead of the `api.adzuna.com` API
+/// host in [`ATS_ALLOWLIST`]. Covers every `ADZUNA_SUPPORTED_COUNTRIES`
+/// market, both shapes. Both branches are now curated, bounded allowlists —
+/// the single-TLD branch checks [`ADZUNA_SINGLE_LABEL_TLDS`], mirroring
+/// exactly how the compound branch already checks [`ADZUNA_COMPOUND_TLDS`].
+/// This was previously "any single-label TLD after `adzuna`", which let an
+/// attacker who registered e.g. `adzuna.xyz` or `adzuna.top` (cheap
+/// SLD-squatting under an unrelated TLD) suppress `CompanyDomainMismatch`
+/// for a spoofed posting; the trust score being advisory-only doesn't excuse
+/// a host check that's wrong on its own terms, so this is now bounded to
+/// Adzuna's real markets, same as the compound branch always was. A future
+/// new Adzuna market needs a one-line addition here, same as it already does
+/// for a compound-ccTLD market.
+///
+/// Anchored on `adzuna` being the SECOND-TO-LAST label (single TLD) or
+/// THIRD-TO-LAST label with the trailing two labels forming a known compound
+/// suffix — so a lookalike attacker host (`adzuna.evil.com`,
+/// `www.adzuna.evil.com`, `www.adzuna.evil.co.uk`, `adzuna.co.uk.evil.com`)
+/// does NOT match: in every case the labels after `adzuna` are either more
+/// than two, or two labels that aren't in [`ADZUNA_COMPOUND_TLDS`].
+fn is_adzuna_market_host(host: &str) -> bool {
+    let labels: Vec<&str> = host.split('.').collect();
+    let n = labels.len();
+    if n >= 2 && labels[n - 2] == "adzuna" {
+        return ADZUNA_SINGLE_LABEL_TLDS.contains(&labels[n - 1]);
+    }
+    if n >= 3 && labels[n - 3] == "adzuna" {
+        let suffix = format!("{}.{}", labels[n - 2], labels[n - 1]);
+        return ADZUNA_COMPOUND_TLDS.contains(&suffix.as_str());
+    }
+    false
 }
 
 /// Job-board brands that occasionally leak into the "company" field when a
@@ -327,7 +417,11 @@ pub(crate) fn is_implausible_company(name: &str) -> bool {
 /// all-primitive struct, but is tolerated (posting still ships, just without
 /// `trust`) rather than risking a panic on the hot scrape path.
 pub fn attach(job: &mut JobPosting) {
-    let assessment = assess_trust(&job.url, &job.company);
+    let assessment = assess_trust(
+        &job.url,
+        &job.company,
+        job.description.as_deref().unwrap_or(""),
+    );
     if let Ok(value) = serde_json::to_value(&assessment) {
         job.extra.insert("trust".to_string(), value);
     }

@@ -1010,6 +1010,20 @@ pub fn keyword_coverage(
     Some((coverage, gaps))
 }
 
+/// Whether a job description carries no usable JD text at all — absent, or
+/// blank once markdown syntax is stripped ([`markdown_to_plain`]). The
+/// description-only half of `commands::autopilot::build_found_job`'s
+/// `no_jd_text` predicate (which ALSO checks `JobPosting.requirements`, a
+/// field `FoundJob` has no room to carry) — extracted so it and
+/// `autopilot::AutopilotStore::update_found_job_descriptions` (which only
+/// ever has a description to look at, when a caller corrects one after the
+/// fact) can't drift on what counts as "no text" (issue #1106).
+pub fn description_is_blank(description: Option<&str>) -> bool {
+    description
+        .map(|d| markdown_to_plain(d).trim().is_empty())
+        .unwrap_or(true)
+}
+
 /// Strip markdown syntax from a scoring text blob so URL fragments and
 /// formatting tokens do not pollute the ATS keyword set.
 ///

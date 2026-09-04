@@ -974,7 +974,7 @@ describe('JobDetailPane — updateDescription persist on upgrade', () => {
 
     expect(mockUpdateDescMutateAsync).toHaveBeenCalledTimes(1);
     expect(mockUpdateDescMutateAsync).toHaveBeenCalledWith({
-      id: posting.id,
+      url: posting.url,
       description: fullDesc,
     });
   });

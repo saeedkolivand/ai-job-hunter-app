@@ -95,7 +95,10 @@ describe('useUpdatePostingDescription — postings invalidation', () => {
 
     // Trigger the mutation.
     await act(async () => {
-      await result.current.update.mutateAsync({ id: 'job-1', description: 'Full text' });
+      await result.current.update.mutateAsync({
+        url: 'https://example.com/jobs/1',
+        description: 'Full text',
+      });
     });
 
     // The postings query must have re-fired (onSuccess invalidation).
@@ -126,7 +129,10 @@ describe('useUpdatePostingDescription — postings invalidation', () => {
 
     await act(async () => {
       try {
-        await result.current.update.mutateAsync({ id: 'job-1', description: 'Full text' });
+        await result.current.update.mutateAsync({
+          url: 'https://example.com/jobs/1',
+          description: 'Full text',
+        });
       } catch {
         // expected rejection
       }

@@ -1911,7 +1911,7 @@
     "viewJob": "Open posting",
     "applyJob": "Apply",
     "aiNote": "AI note",
-    "provisionalScoreHint": "Estimated from a summary — open the job for the exact match score.",
+    "provisionalScoreHint": "Estimated from limited text — open the job for the exact match score.",
     "scoreLabel": {
       "coverage": "Keyword Coverage %",
       "combined": "Match %"
@@ -2584,7 +2584,8 @@
         "invalidUrl": "Broken apply link",
         "suspiciousDomain": "Suspicious domain",
         "companyDomainMismatch": "Domain doesn't match company",
-        "implausibleCompany": "Company name looks implausible"
+        "implausibleCompany": "Company name looks implausible",
+        "descriptionUnavailable": "No description available"
       },
       "levelDesc": {
         "medium": "Some details of this posting could not be verified. It may still be genuine — worth a second look before applying.",

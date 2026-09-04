@@ -35,7 +35,7 @@ Two phases. **Phase 1 always runs and is embedding-free**; phase 2 runs only whe
 **Phase 1 — keyword prefilter** (`commands/autopilot.rs` → `build_found_job()`):
 
 1. Fetch job postings.
-2. For each job, call `coverage_score()` (cached result if in the `match_scores` table).
+2. For each job, call `coverage_score()` — a pure, uncached in-memory call (no DB I/O).
 3. Filter by the `minMatchScore` threshold (cluster-aware, ADR-029 §g).
 4. Sort by coverage % descending.
 
@@ -45,7 +45,7 @@ Two phases. **Phase 1 always runs and is embedding-free**; phase 2 runs only whe
 6. Degrade per job, never per run: an embed/provider failure leaves THAT job on its keyword score and the loop continues. The daily ceiling, cancellation, a run of consecutive degrades, and a wall clock each stop the loop, leaving every unvisited job keyword-scored. A run never fails because of scoring.
 7. Sort as **two blocks** — re-ranked head by combined score, keyword tail by coverage — because one axis over two scales would let a never-re-ranked keyword score outrank a re-ranked one.
 
-**Autopilot's displayed score** is therefore per-job: a Low/Medium/High MatchBand whose variant (and tier cut points, and metric label) **flips with that job's `scoreSource`** — `coverage` for a keyword score, `combined` for a re-ranked one; '~'-prefixed and muted when provisional from an aggregator snippet. When one list holds both, each row also shows its metric so the two-block order does not read as a sorting bug.
+**Autopilot's displayed score** is therefore per-job: a Low/Medium/High MatchBand whose variant (and tier cut points, and metric label) **flips with that job's `scoreSource`** — `coverage` for a keyword score, `combined` for a re-ranked one; '~'-prefixed and muted when provisional from an aggregator snippet **or from a board whose search results never include a description at all** (title-only scoring — see the boards named on `no_jd_text` in `commands/autopilot.rs::build_found_job`, not just LinkedIn's free tier). When one list holds both, each row also shows its metric so the two-block order does not read as a sorting bug.
 
 ## Jobs Page Combined Score
 

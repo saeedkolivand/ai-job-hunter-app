@@ -7,6 +7,10 @@ use std::collections::HashMap;
 // ---------------------------------------------------------------------------
 
 /// Minimal `JobPosting` fixture — mirrors the shape a board scraper returns.
+/// Carries a non-empty `description` by default (real boards do) so callers
+/// exercising unrelated behavior aren't also tripping the
+/// `DescriptionUnavailable` flag; [`posting_without_description`] below is
+/// the dedicated fixture for that.
 fn posting(url: &str, company: &str) -> JobPosting {
     JobPosting {
         id: "job-1".to_string(),
@@ -16,12 +20,21 @@ fn posting(url: &str, company: &str) -> JobPosting {
         location: None,
         url: url.to_string(),
         source: "manual".to_string(),
-        description: None,
+        description: Some("Own the backend roadmap for a growing team.".to_string()),
         requirements: None,
         posted_at: None,
         captured_at: 0,
         extra: HashMap::new(),
     }
+}
+
+/// Same as [`posting`] but with no description — the LinkedIn free/guest
+/// board's real shape (`description: Some(String::new())`) as well as the
+/// legacy `None` case.
+fn posting_without_description(url: &str, company: &str) -> JobPosting {
+    let mut p = posting(url, company);
+    p.description = None;
+    p
 }
 
 // ---------------------------------------------------------------------------
@@ -30,7 +43,11 @@ fn posting(url: &str, company: &str) -> JobPosting {
 
 #[test]
 fn clean_job_scores_100_high_no_flags() {
-    let a = assess_trust("https://stripe.com/jobs/1", "Stripe");
+    let a = assess_trust(
+        "https://stripe.com/jobs/1",
+        "Stripe",
+        "We build payments infra.",
+    );
     assert_eq!(a.score, 100);
     assert_eq!(a.level, TrustLevel::High);
     assert!(a.flags.is_empty(), "expected no flags, got {:?}", a.flags);
@@ -46,7 +63,7 @@ fn missing_url_flags_and_early_returns() {
         // Company deliberately set to something that would ALSO mismatch, to
         // prove the empty-url branch early-returns before the mismatch check
         // ever runs.
-        let a = assess_trust(url, "Suspicious Co");
+        let a = assess_trust(url, "Suspicious Co", "Some job description.");
         assert_eq!(a.score, 60, "url={url:?}");
         assert_eq!(a.level, TrustLevel::Medium, "url={url:?}");
         assert_eq!(
@@ -69,7 +86,7 @@ fn invalid_url_flags_and_early_returns() {
         "ftp://files.example.com/x",       // parseable, non-http(s) scheme
         "not-a-url-at-all",                // non-parseable (no scheme)
     ] {
-        let a = assess_trust(url, "Suspicious Co");
+        let a = assess_trust(url, "Suspicious Co", "Some job description.");
         assert_eq!(a.score, 50, "url={url:?}");
         assert_eq!(a.level, TrustLevel::Low, "url={url:?}");
         assert_eq!(
@@ -87,7 +104,7 @@ fn invalid_url_flags_and_early_returns() {
 #[test]
 fn suspicious_domain_flagged_and_penalized() {
     // Company left empty so only the suspicious-domain check is exercised.
-    let a = assess_trust("https://bit.ly/x", "");
+    let a = assess_trust("https://bit.ly/x", "", "A real description.");
     assert_eq!(a.score, 75);
     assert_eq!(a.level, TrustLevel::Medium);
     assert_eq!(a.flags, vec![TrustFlag::SuspiciousDomain]);
@@ -95,7 +112,7 @@ fn suspicious_domain_flagged_and_penalized() {
 
 #[test]
 fn suspicious_domain_subdomain_still_flagged() {
-    let a = assess_trust("https://sub.bit.ly/x", "");
+    let a = assess_trust("https://sub.bit.ly/x", "", "A real description.");
     assert_eq!(a.score, 75);
     assert_eq!(a.level, TrustLevel::Medium);
     assert_eq!(a.flags, vec![TrustFlag::SuspiciousDomain]);
@@ -107,7 +124,7 @@ fn suspicious_domain_subdomain_still_flagged() {
 
 #[test]
 fn company_domain_mismatch_flagged_and_penalized() {
-    let a = assess_trust("https://randomhost.xyz/j", "Acme");
+    let a = assess_trust("https://randomhost.xyz/j", "Acme", "A real description.");
     assert_eq!(a.score, 85);
     assert_eq!(a.level, TrustLevel::Medium);
     assert_eq!(a.flags, vec![TrustFlag::CompanyDomainMismatch]);
@@ -125,7 +142,7 @@ fn allowlisted_ats_host_suppresses_mismatch() {
         "https://boards.greenhouse.io/other-corp/jobs/55",
         "https://greenhouse.io/jobs/99",
     ] {
-        let a = assess_trust(url, "Weyland-Yutani");
+        let a = assess_trust(url, "Weyland-Yutani", "A real description.");
         assert_eq!(a.score, 100, "url={url}");
         assert_eq!(a.level, TrustLevel::High, "url={url}");
         assert!(a.flags.is_empty(), "url={url} flags={:?}", a.flags);
@@ -140,10 +157,171 @@ fn adzuna_aggregator_host_suppresses_mismatch() {
     let a = assess_trust(
         "https://api.adzuna.com/v1/api/jobs/de/redirects/123",
         "Weyland-Yutani",
+        "A real description.",
     );
     assert_eq!(a.score, 100);
     assert_eq!(a.level, TrustLevel::High);
     assert!(a.flags.is_empty());
+}
+
+/// Companion to `adzuna_aggregator_host_suppresses_mismatch` above: the
+/// aggregator's OTHER host shape — its own per-market website
+/// (`www.adzuna.<tld>`), not the `api.adzuna.com` API host — must also
+/// suppress `CompanyDomainMismatch`. Regression for issue #1107: the
+/// allowlist covered only `api.adzuna.com`, so every posting whose
+/// `redirect_url` came back in this shape (confirmed in this repo's own
+/// aggregator fixture, `scraping/boards/aggregator/test.rs`, `"redirect_url":
+/// "https://www.adzuna.de/details/…"`) was false-flagged regardless of
+/// employer legitimacy.
+///
+/// Mutation-checked: reverting the `is_adzuna_market_host` allowlist rule
+/// turns this red (`CompanyDomainMismatch` fires) before the fix.
+#[test]
+fn adzuna_market_website_host_suppresses_mismatch() {
+    let a = assess_trust(
+        "https://www.adzuna.de/details/4172839571",
+        "Weyland-Yutani",
+        "A real description.",
+    );
+    assert_eq!(a.score, 100);
+    assert_eq!(a.level, TrustLevel::High);
+    assert!(a.flags.is_empty());
+}
+
+/// A lookalike host must NOT be treated as Adzuna's own site — `adzuna` has
+/// to be immediately followed by a bare TLD, not by more labels belonging to
+/// an unrelated (attacker-controlled) domain.
+#[test]
+fn adzuna_market_host_match_does_not_match_lookalike_domain() {
+    let a = assess_trust(
+        "https://www.adzuna.evil.com/j",
+        "Weyland-Yutani",
+        "A real description.",
+    );
+    assert_eq!(a.flags, vec![TrustFlag::CompanyDomainMismatch]);
+}
+
+/// Regression for the follow-up to issue #1107: `is_adzuna_market_host` only
+/// matched a single-label TLD after `adzuna` (`www.adzuna.de`), so compound
+/// ccTLD markets — including `gb`, Adzuna's HOME market — still false-flagged
+/// every posting. Mutation-checked: reverting the compound-TLD branch turns
+/// this red.
+#[test]
+fn adzuna_market_website_compound_tld_uk_suppresses_mismatch() {
+    let a = assess_trust(
+        "https://www.adzuna.co.uk/details/4172839571",
+        "Weyland-Yutani",
+        "A real description.",
+    );
+    assert_eq!(a.score, 100);
+    assert_eq!(a.level, TrustLevel::High);
+    assert!(a.flags.is_empty());
+}
+
+/// Same compound-TLD branch, a second market (`au`) — guards against a fix
+/// that only special-cased `co.uk` literally instead of matching the general
+/// two-label-suffix shape.
+#[test]
+fn adzuna_market_website_compound_tld_au_suppresses_mismatch() {
+    let a = assess_trust(
+        "https://www.adzuna.com.au/details/4172839571",
+        "Weyland-Yutani",
+        "A real description.",
+    );
+    assert_eq!(a.score, 100);
+    assert_eq!(a.level, TrustLevel::High);
+    assert!(a.flags.is_empty());
+}
+
+/// Third compound-TLD market (`za`) — South Africa's `co.za` shares the
+/// `co.<tld>` shape with `co.uk`/`co.in`/`co.nz`, so this guards that all
+/// four aren't collapsed into one accidentally-loose "co.*" rule.
+#[test]
+fn adzuna_market_website_compound_tld_za_suppresses_mismatch() {
+    let a = assess_trust(
+        "https://www.adzuna.co.za/details/4172839571",
+        "Weyland-Yutani",
+        "A real description.",
+    );
+    assert_eq!(a.score, 100);
+    assert_eq!(a.level, TrustLevel::High);
+    assert!(a.flags.is_empty());
+}
+
+/// A compound-shaped lookalike must NOT match — `adzuna` followed by
+/// `evil.co.uk` (three trailing labels once counted from `adzuna`) is not a
+/// known Adzuna compound suffix.
+#[test]
+fn adzuna_compound_lookalike_subdomain_does_not_match() {
+    let a = assess_trust(
+        "https://www.adzuna.evil.co.uk/j",
+        "Weyland-Yutani",
+        "A real description.",
+    );
+    assert_eq!(a.flags, vec![TrustFlag::CompanyDomainMismatch]);
+}
+
+/// A compound-shaped lookalike where the real attacker domain follows a
+/// legitimate-looking `adzuna.co.uk` prefix — must NOT match either.
+#[test]
+fn adzuna_compound_lookalike_suffix_does_not_match() {
+    let a = assess_trust(
+        "https://adzuna.co.uk.evil.com/j",
+        "Weyland-Yutani",
+        "A real description.",
+    );
+    assert_eq!(a.flags, vec![TrustFlag::CompanyDomainMismatch]);
+}
+
+/// Two more curated single-label markets beyond the pre-existing `.de`
+/// coverage — guards against a fix that only special-cased the one TLD
+/// already under test rather than actually curating the list.
+#[test]
+fn adzuna_market_website_single_label_fr_suppresses_mismatch() {
+    let a = assess_trust(
+        "https://www.adzuna.fr/details/4172839571",
+        "Weyland-Yutani",
+        "A real description.",
+    );
+    assert_eq!(a.score, 100);
+    assert_eq!(a.level, TrustLevel::High);
+    assert!(a.flags.is_empty());
+}
+
+/// The `us` market's real domain is `adzuna.com`, not `adzuna.us` — the one
+/// exception to the ccTLD-matches-country-code pattern the other 11
+/// single-label markets follow. Regression for a curated list that dropped
+/// (or mis-mapped) the US entry.
+#[test]
+fn adzuna_market_website_us_special_case_com_suppresses_mismatch() {
+    let a = assess_trust(
+        "https://www.adzuna.com/details/4172839571",
+        "Weyland-Yutani",
+        "A real description.",
+    );
+    assert_eq!(a.score, 100);
+    assert_eq!(a.level, TrustLevel::High);
+    assert!(a.flags.is_empty());
+}
+
+/// Security regression: before curating `ADZUNA_SINGLE_LABEL_TLDS`,
+/// `is_adzuna_market_host`'s single-label branch accepted `adzuna.<any
+/// TLD>`, so a squatted lookalike domain (an attacker registering
+/// `adzuna.xyz`, `adzuna.top`, etc. — cheap SLD-squatting under an unrelated
+/// TLD) suppressed `CompanyDomainMismatch` for a spoofed posting exactly
+/// like a real Adzuna market host would. This is the attack case the curated
+/// list closes. Mutation-checked: reverting to the old "any single-label
+/// TLD" branch turns this red (the flag stops firing).
+#[test]
+fn adzuna_lookalike_unrecognized_tld_triggers_mismatch() {
+    for url in ["https://www.adzuna.xyz/j", "https://adzuna.top/j"] {
+        let a = assess_trust(url, "Weyland-Yutani", "A real description.");
+        assert_eq!(
+            a.flags,
+            vec![TrustFlag::CompanyDomainMismatch],
+            "url={url} — unrecognized-TLD lookalike must not suppress the mismatch flag"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -152,7 +330,7 @@ fn adzuna_aggregator_host_suppresses_mismatch() {
 
 #[test]
 fn suspicious_and_mismatch_combine() {
-    let a = assess_trust("https://bit.ly/xyz", "Acme");
+    let a = assess_trust("https://bit.ly/xyz", "Acme", "A real description.");
     assert_eq!(a.score, 60);
     assert_eq!(a.level, TrustLevel::Medium);
     assert_eq!(
@@ -441,10 +619,112 @@ fn implausible_company_flagged_and_penalized_instead_of_mismatch() {
     // pre-A1 build would have flagged `CompanyDomainMismatch` (-15) here —
     // this asserts the implausible-company branch takes priority instead
     // (-20, exactly one flag), never both.
-    let a = assess_trust("https://boards.example/jobs/1", "Apply now | LinkedIn");
+    let a = assess_trust(
+        "https://boards.example/jobs/1",
+        "Apply now | LinkedIn",
+        "A real description.",
+    );
     assert_eq!(a.score, 80);
     assert_eq!(a.level, TrustLevel::Medium);
     assert_eq!(a.flags, vec![TrustFlag::ImplausibleCompany]);
+}
+
+// ---------------------------------------------------------------------------
+// assess_trust — description unavailable (issue #1105, trust half)
+// ---------------------------------------------------------------------------
+
+/// LinkedIn's free/guest board sets `description: Some(String::new())` for
+/// every posting — a title-only stub must never come back `TrustLevel::High`.
+/// Mutation-checked: deleting the `description.trim().is_empty()` firing
+/// condition turns this red (flag missing, level stays `High`).
+#[test]
+fn empty_description_flags_and_caps_below_high() {
+    let a = assess_trust("https://stripe.com/jobs/1", "Stripe", "");
+    assert_eq!(a.level, TrustLevel::Medium);
+    assert!(a.level != TrustLevel::High, "must be capped below High");
+    assert_eq!(a.flags, vec![TrustFlag::DescriptionUnavailable]);
+}
+
+/// Same as above with a whitespace-only description — trimmed before the
+/// emptiness check, so this must fire identically to a truly-empty string.
+#[test]
+fn whitespace_only_description_flags_and_caps_below_high() {
+    let a = assess_trust("https://stripe.com/jobs/1", "Stripe", "   \n\t");
+    assert_eq!(a.level, TrustLevel::Medium);
+    assert_eq!(a.flags, vec![TrustFlag::DescriptionUnavailable]);
+}
+
+/// The regression guard that matters most for a signature change touching
+/// every call site: a REAL, non-empty description must leave every existing
+/// check's output byte-for-byte unaffected — same score, same level, same
+/// (empty) flag list as before this parameter existed.
+#[test]
+fn non_empty_description_does_not_affect_the_happy_path() {
+    let a = assess_trust(
+        "https://stripe.com/jobs/1",
+        "Stripe",
+        "We build payments infrastructure for the internet.",
+    );
+    assert_eq!(a.score, 100);
+    assert_eq!(a.level, TrustLevel::High);
+    assert!(a.flags.is_empty(), "expected no flags, got {:?}", a.flags);
+}
+
+/// Regression for CodeRabbit's finding on this PR: `assess_trust` previously
+/// used a raw `.trim().is_empty()` check, weaker than
+/// `crate::documents::keywords::description_is_blank` — the SAME
+/// "is there usable scoring text" concept `commands::autopilot`'s
+/// `no_jd_text` already uses. A description that's just a bare URL has no
+/// markdown noise to strip, but `markdown_to_plain` still reduces it to
+/// nothing usable once run through the shared predicate. Mutation-checked:
+/// reverting to the raw `.trim().is_empty()` check turns this red (the flag
+/// stops firing, level stays `High`).
+#[test]
+fn bare_url_description_flags_and_caps_below_high() {
+    let a = assess_trust(
+        "https://stripe.com/jobs/1",
+        "Stripe",
+        "http://example.com/careers",
+    );
+    assert_ne!(a.level, TrustLevel::High, "must be capped below High");
+    assert_eq!(a.flags, vec![TrustFlag::DescriptionUnavailable]);
+}
+
+/// Same regression, markdown-only noise instead of a bare URL — both inputs
+/// read as "non-empty" under the old raw check but reduce to nothing under
+/// `markdown_to_plain`.
+#[test]
+fn markdown_only_noise_description_flags_and_caps_below_high() {
+    for description in ["***", "[](url)"] {
+        let a = assess_trust("https://stripe.com/jobs/1", "Stripe", description);
+        assert_ne!(
+            a.level,
+            TrustLevel::High,
+            "description={description:?} — must be capped below High"
+        );
+        assert_eq!(
+            a.flags,
+            vec![TrustFlag::DescriptionUnavailable],
+            "description={description:?}"
+        );
+    }
+}
+
+/// Stacks with an independent flag (`CompanyDomainMismatch`) rather than
+/// replacing it — a LinkedIn-shaped stub AND a mismatched host are two
+/// separate problems, both worth surfacing.
+#[test]
+fn empty_description_stacks_with_company_domain_mismatch() {
+    let a = assess_trust("https://randomhost.xyz/j", "Acme", "");
+    assert_eq!(
+        a.flags,
+        vec![
+            TrustFlag::CompanyDomainMismatch,
+            TrustFlag::DescriptionUnavailable
+        ]
+    );
+    assert_eq!(a.score, 70);
+    assert_eq!(a.level, TrustLevel::Medium);
 }
 
 // ---------------------------------------------------------------------------
@@ -463,7 +743,7 @@ fn found_job_carries_trust_from_real_build_found_job() {
     let p = posting("https://randomhost.xyz/j", "Acme");
 
     let found = build_found_job(&p, "", 0);
-    let expected = assess_trust(&p.url, &p.company);
+    let expected = assess_trust(&p.url, &p.company, p.description.as_deref().unwrap_or(""));
 
     let trust = found
         .trust
@@ -477,6 +757,28 @@ fn found_job_carries_trust_from_real_build_found_job() {
     assert_eq!(trust.score, 85);
     assert_eq!(trust.level, TrustLevel::Medium);
     assert_eq!(trust.flags, vec![TrustFlag::CompanyDomainMismatch]);
+}
+
+/// Regression for issue #1105 (trust half): LinkedIn's free/guest board
+/// leaves every posting's `description` empty/`None` (a dead "will be filled
+/// in background" promise). `build_found_job` is the real call site
+/// (`commands/autopilot.rs`) threading the posting's description into
+/// `assess_trust` — this proves that wiring, not a hand-retyped mirror.
+#[test]
+fn found_job_flags_description_unavailable_for_stubbed_posting() {
+    let p = posting_without_description("https://linkedin.com/jobs/view/1", "Acme");
+
+    let found = build_found_job(&p, "", 0);
+    let trust = found
+        .trust
+        .expect("build_found_job must always set Some(..)");
+
+    assert!(
+        trust.flags.contains(&TrustFlag::DescriptionUnavailable),
+        "expected DescriptionUnavailable, got {:?}",
+        trust.flags
+    );
+    assert_ne!(trust.level, TrustLevel::High, "must be capped below High");
 }
 
 /// `build_found_job` pulls scraped salary out of `JobPosting.extra` (Adzuna's

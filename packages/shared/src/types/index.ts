@@ -81,6 +81,7 @@ export interface JobTrustAssessment {
     | 'suspiciousDomain'
     | 'companyDomainMismatch'
     | 'implausibleCompany'
+    | 'descriptionUnavailable'
   >;
 }
 

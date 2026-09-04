@@ -63,6 +63,16 @@ pub(super) struct BestMatchRow {
     pub(super) score: f64,
     pub(super) score_source: ScoreSource,
     pub(super) score_provisional: bool,
+    /// Present only when `score`/`score_source`/`score_provisional` belong to
+    /// a DIFFERENT cluster member than the one `url`/the other display fields
+    /// describe (the best-scored member decides the score — ADR-036's "always
+    /// surface the best available score" — while the content-richest member
+    /// decides display; the two are not always the same real posting). Carries
+    /// that member's own url so a client can tell, and look up, which actual
+    /// posting the displayed score belongs to. `None` means the row is already
+    /// self-consistent: `url` IS that member's url.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) score_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) posted_at: Option<i64>,
     pub(super) found_at: u64,
@@ -271,6 +281,13 @@ pub(super) fn compute_best_matches(
             .unwrap_or(idxs[0]);
         let canonical = jobs[canonical_idx];
 
+        // The score above is the BEST-scored member's; `url` below is the
+        // CANONICAL member's — two different selection rules over the same
+        // cluster, not guaranteed to land on the same real posting (#1104).
+        // Compare by url (not index) so the field is only ever populated when
+        // it would actually carry NEW information for the caller.
+        let score_url = (jobs[best_idx].url != canonical.url).then(|| jobs[best_idx].url.clone());
+
         // EARLIEST discovery across every ORIGIN (not every deduped job) —
         // two origins deduped onto the same key can carry different
         // `found_at` values even though only one `FoundJob` survived above.
@@ -331,6 +348,7 @@ pub(super) fn compute_best_matches(
             score,
             score_source: source,
             score_provisional: jobs[best_idx].score_provisional,
+            score_url,
             posted_at: canonical.posted_at,
             found_at,
             applied: false,
@@ -647,6 +665,11 @@ mod tests {
             Some("greenhouse"),
             "display fields still come from the CANONICAL member, not the best-scored one"
         );
+        assert_eq!(
+            row.score_url, None,
+            "the canonical member IS the best-scored one here, so the row is already \
+             self-consistent — no scoreUrl needed"
+        );
     }
 
     #[test]
@@ -695,6 +718,96 @@ mod tests {
             Some("note from the canonical board copy"),
             "assistant_notes must come from the canonical member, not whichever member \
              happens to be first in input order"
+        );
+        // The higher-scored `first_in_input` (90.0) is NOT the canonical member
+        // here (`canonical_job`, 80.0, wins canonical via its description) — the
+        // exact split that produced #1104: `score` and `url` describe two
+        // different real postings. `scoreUrl` must say so.
+        assert_eq!(out.matches[0].url, "https://x.example.com/job");
+        assert_eq!(out.matches[0].score, 90.0);
+        assert_eq!(
+            out.matches[0].score_url.as_deref(),
+            Some("https://agg.example.com/job?id=1"),
+            "scoreUrl must identify the actual member `score` was computed from, since it \
+             isn't the canonical member `url` displays"
+        );
+    }
+
+    #[test]
+    fn score_url_is_none_when_canonical_and_best_scored_coincide() {
+        // Single-member cluster: canonical and best-scored are trivially the
+        // same job, so scoreUrl must stay absent — a permanently-populated
+        // field for the common case would be noise, not information.
+        let ap = autopilot(
+            "s",
+            AutopilotStatus::Active,
+            vec![job(
+                "https://solo.example.com/job",
+                "Solo Engineer",
+                "SoloCo",
+                Some(90.0),
+                ScoreSource::Keyword,
+            )],
+        );
+        let out = compute_best_matches(&[ap], &no_tombstones(), &[], &no_dismissed());
+        assert_eq!(out.matches.len(), 1);
+        assert_eq!(out.matches[0].score_url, None);
+    }
+
+    #[test]
+    fn score_url_reproduces_the_1104_bug_shape_directly() {
+        // Reproduces issue #1104: a two-member cluster where the richer/
+        // canonical member (direct board, full JD) scores LOWER, within the
+        // SAME score_source block, than a non-canonical member (an aggregator
+        // snippet). The best-scored member decides `score`; the canonical
+        // decides `url`. Before this fix the row silently paired one
+        // member's url with the OTHER member's score; `scoreUrl` now makes
+        // that split explicit and lets a caller resolve it.
+        let canonical_job = FoundJob {
+            description: Some("full JD text".into()),
+            ..job(
+                "https://direct.example.com/job",
+                "Senior Rust Engineer",
+                "Acme",
+                Some(60.0),
+                ScoreSource::Keyword,
+            )
+        };
+        let best_scored = FoundJob {
+            description: None,
+            board: Some(crate::scraping::boards::aggregator::AGGREGATOR_BOARD_ID.into()),
+            ..job(
+                "https://agg.example.com/job?id=7",
+                "Senior Rust Engineer",
+                "Acme",
+                Some(90.0),
+                ScoreSource::Keyword,
+            )
+        };
+        let ap = autopilot(
+            "a",
+            AutopilotStatus::Active,
+            vec![canonical_job, best_scored],
+        );
+        let out = compute_best_matches(&[ap], &no_tombstones(), &[], &no_dismissed());
+        assert_eq!(
+            out.matches.len(),
+            1,
+            "identical title+company joins one cluster"
+        );
+        let row = &out.matches[0];
+        assert_eq!(
+            row.url, "https://direct.example.com/job",
+            "display fields still come from the canonical (richer) member"
+        );
+        assert_eq!(
+            row.score, 90.0,
+            "the cluster's best score still surfaces (ADR-036 intent preserved)"
+        );
+        assert_eq!(
+            row.score_url.as_deref(),
+            Some("https://agg.example.com/job?id=7"),
+            "scoreUrl points at the actual posting the displayed score was computed from"
         );
     }
 
@@ -1183,6 +1296,93 @@ mod tests {
         assert!(
             matches[0].applied,
             "applied via a non-canonical cluster member still marks the row applied"
+        );
+    }
+
+    // ── BestMatchRow wire-shape pin (review round 2, issue #1106 follow-up)
+    // ───────────────────────────────────────────────────────────────────
+    // `extension_bridge::agent_read`'s `best-matches` projection test builds
+    // its own input fixture as a hand-typed JSON literal — it cannot name
+    // `BestMatchRow` directly (this module is private to `commands::
+    // autopilot`, so the two files can't share a fixture-building fn across
+    // that boundary). A hand-typed literal alone would NOT notice a
+    // `BestMatchRow` field rename; it would just keep sending the OLD key
+    // name forever while `agent_read`'s test stayed green. This test is the
+    // compile-time backstop instead: it's a REAL struct literal naming every
+    // field, so renaming, adding, or removing one is either a compile error
+    // (fails the WHOLE crate's test build — nothing "stays green") or an
+    // assertion failure below. If this test's key list ever needs to change,
+    // update `agent_read`'s `full_best_match_row_json()` fixture and
+    // `best_match_projection_has_exact_keys` test to match in the same PR.
+    #[test]
+    fn best_match_row_wire_shape_is_pinned() {
+        let row = BestMatchRow {
+            key: "cluster-abc".to_string(),
+            title: "Backend Engineer".to_string(),
+            company: "Acme".to_string(),
+            url: "https://boards.example.com/jobs/42".to_string(),
+            location: Some("Berlin".to_string()),
+            board: Some("adzuna".to_string()),
+            salary_min: Some(60_000.0),
+            salary_max: Some(80_000.0),
+            salary_currency: Some("EUR".to_string()),
+            score: 82.0,
+            score_source: ScoreSource::Combined,
+            score_provisional: false,
+            score_url: Some("https://boards.example.com/jobs/42-other-member".to_string()),
+            posted_at: Some(1_699_000_000),
+            found_at: 1_700_000_000,
+            applied: false,
+            is_agency: false,
+            trust: Some(crate::scraping::trust::TrustAssessment {
+                score: 90,
+                level: crate::scraping::trust::TrustLevel::High,
+                flags: Vec::new(),
+            }),
+            assistant_notes: Some("secret AI note".to_string()),
+            cluster_members: vec![ClusterMemberRef {
+                key: "k1".to_string(),
+                board: Some("adzuna".to_string()),
+                url: "https://boards.example.com/jobs/42".to_string(),
+            }],
+            sources: vec![BestMatchSource {
+                autopilot_id: "ap-1".to_string(),
+                autopilot_name: "My autopilot".to_string(),
+                paused: false,
+                found_at: 1_700_000_000,
+            }],
+        };
+        let value = serde_json::to_value(&row).expect("BestMatchRow always serializes");
+        let mut keys: Vec<String> = value.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            vec![
+                "applied",
+                "assistantNotes",
+                "board",
+                "clusterMembers",
+                "company",
+                "foundAt",
+                "isAgency",
+                "key",
+                "location",
+                "postedAt",
+                "salaryCurrency",
+                "salaryMax",
+                "salaryMin",
+                "score",
+                "scoreProvisional",
+                "scoreSource",
+                "scoreUrl",
+                "sources",
+                "title",
+                "trust",
+                "url",
+            ],
+            "BestMatchRow's wire shape changed — mirror the change onto \
+             extension_bridge::agent_read's AgentBestMatch projection and its \
+             full_best_match_row_json() test fixture in the same PR"
         );
     }
 }

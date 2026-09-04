@@ -46,12 +46,16 @@ export interface ScrapeContract {
   resolveUrl(req: { url: string }): Promise<JobPosting | null>;
 
   /**
-   * Write a freshly-resolved full description back into the live postings cache
-   * by posting id, so the match scorer reads the full text instead of the
-   * truncated aggregator snippet. Returns `true` when an entry was updated,
-   * `false` when the id is no longer in the live cache.
+   * Write a freshly-resolved full description back into every store that can
+   * carry a copy of this posting, addressed by `url` (not a board-synthetic
+   * posting id — no reader outside the live cache can supply that): the live
+   * postings cache AND every matching found-job row persisted by an
+   * autopilot, so the match scorer reads the full text instead of the
+   * truncated aggregator snippet wherever the posting was surfaced from.
+   * Returns `true` when at least one of those stores had a matching row,
+   * `false` when neither did.
    */
-  updateDescription(req: { id: string; description: string }): Promise<boolean>;
+  updateDescription(req: { url: string; description: string }): Promise<boolean>;
 
   listPostings(): Promise<JobPosting[]>;
 
