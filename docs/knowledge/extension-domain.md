@@ -1,6 +1,6 @@
 # Extension domain (browser extension + desktop bridge)
 
-Last updated: 2026-08-17 (PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
+Last updated: 2026-09-04 (ADR-044: extension Answer tools side panel + popup, shared per-tab state, draft-time `maxChars` field; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
 
 Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tauri-security-reviewer`.
 
@@ -141,6 +141,20 @@ To guard against cancellation-race bugs and billable-job leaks, every in-flight 
 **CancelledEarly invariant (critical):** A `CancelledEarly` marker must never be dropped during `cancel_all()` or `begin()` — if the marker is lost, the entry vanishes from the map, so a later `register()` call (from a retry, or from a race-condition path) finds no marker, thinks the reqId is fresh, and starts a full billable generation for a request the user already cancelled. The fix: `cancel_all()` exhaustively re-inserts **both** `Pending` and already-`CancelledEarly` entries as `CancelledEarly` when draining, so the marker persists until the client fully disconnects or gives up.
 
 **Streaming chunks are ordered per-reqId:** All `assist.chunk`, `assist.done`, and `answer.assist.result` frames for one reqId are sent in order over the same socket/channel, maintaining the invariant that a popup UI can safely concatenate chunks and render a coherent draft (no out-of-order or duplicate chunks).
+
+## Answer tools — side panel + popup, one shared state (ADR-044)
+
+Two views over one per-(tab, origin) state, so a draft survives the popup closing: the popup (`apps/extension/src/popup/popup.ts`) keeps the full Answer tools section, and a side panel (`apps/extension/src/sidepanel/sidepanel.ts` — Chrome `chrome.sidePanel`, Firefox `sidebar_action`) is a second view mounting the same `mountAnswerTools` component (`apps/extension/src/answer-tools/answer-tools.ts`) against the same record. The shared state (`AnswerState`, `subscribeAnswerState`, `apps/extension/src/lib/answer-state.ts`) lives in `chrome.storage.session`, one entry per tab id, with the origin captured from the gesture-granted tab at gesture time — never a `tabs`-permission lookup (`tabs` stays on the manifest denylist). Full record: [ADR-044](decision-records/adr-044-extension-answer-tools-side-panel-and-popup.md).
+
+**Gesture model** (identical on both browsers — `background.ts::openAnswerPanel` / `popup.ts::openAnswerPanel`): the toolbar click grants `activeTab` and opens the popup (a declared `default_popup` takes priority over `openPanelOnActionClick`, so the toolbar click can never open the panel directly); the popup's own "Open answer panel" control opens the panel from that same click, synchronously, before any `await` can spend the gesture; a context-menu entry on selected text (`background.ts::handleAnswerMenuClick`, `contextMenus` permission) is the second gesture path and opens the panel directly. There is no open-on-action-click anywhere in this codebase — `manifest.test.ts` asserts its absence.
+
+**After a cross-origin navigation**, the panel keeps its rows (state the extension holds itself) and replaces every write control with a line pointing back at the toolbar icon: the refusal is `AnswerState.pageChanged`, set conservatively on ANY navigation in the tab (same-origin included — the url is not readable here without the `tabs` permission), and read by `background.ts`'s write handlers (`answerAccept` / `answerRestoreOriginal`) before either touches the tab.
+
+**Character limit** (`ExtensionAnswerAssistRequest.maxChars`, draft mode only — `packages/shared/src/ipc/extension-protocol.ts` / `extension-protocol-constants.ts`): an optional field carrying the picked field's own `maxlength`. The wire bound is shape-only (a positive integer, no upper bound on the wire); the desktop-side ceiling is `parse_max_chars` / `DRAFT_CAP` in `apps/desktop/src-tauri/src/extension_bridge/answer_assist.rs`, pinned to the shared TS constant by `answer_assist_max_chars_matches_ts` in `extension_bridge/test.rs`. **Honest limit**: `parse_max_chars` today has no caller — nothing puts the limit into the draft prompt and nothing verifies the returned text against it desktop-side (see that function's own doc comment for why: it is sequenced behind another in-flight PR). The panel enforces the limit itself, by counting the returned text against the field's `maxlength` and falling back to a "fit the limit" rewrite chip when it is over.
+
+**Refusal sentinels**: the two `answer.assist` `ok:false` strings a client is allowed to match by identity (opt-in off / no usable provider) now live as shared constants — `EXTENSION_AI_ASSIST_OFF_MESSAGE` / `EXTENSION_NO_PROVIDER_MESSAGE` in `extension-protocol-constants.ts` — mirroring the Rust sentinels declared beside the handler (`AI_ASSIST_OFF_MESSAGE` / `NO_PROVIDER_MESSAGE`, `answer_assist.rs`) and pinned by the same hand-enumerated parity test that already covers the wire-type constants (`message_type_constants_match_ts`, `extension_bridge/test.rs`). Every other `answer.assist` error stays opaque and is rendered verbatim — see "Wire-error discipline" above.
+
+**Permissions**: the panel adds Chrome's `sidePanel` permission (Firefox declares the `sidebar_action` manifest key instead — no permission) and `contextMenus` (both targets) — the one declared per-target delta in `manifest.ts` (`CHROME_ONLY_PERMISSIONS`) / `manifest.test.ts` (`DECLARED_PERMISSION_DELTA`). Justification rows: `apps/extension/README.md`'s permission table.
 
 ## Store policy
 
