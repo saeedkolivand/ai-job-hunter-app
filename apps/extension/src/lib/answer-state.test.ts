@@ -19,6 +19,8 @@ import {
   canAccept,
   counterText,
   isOverLimit,
+  isUnchangedRewrite,
+  normalizeAnswerText,
   rewriteBaseText,
   selectedText,
 } from './answer-state';
@@ -135,6 +137,19 @@ describe('buildRows', () => {
     expect(rows[0]?.field?.maxChars).toBe(300);
     expect(rows[1]?.field?.maxChars).toBeUndefined();
   });
+
+  it('carries a row notice through a rescan, same as it does an error', () => {
+    const first = buildRows(scan({ questions: [{ question: 'Why us?', index: 0 }] }), NO_SAVED);
+    const noticed = first.map((r) => ({ ...r, notice: 'That came back the same.' }));
+
+    const rescanned = buildRows(
+      scan({ questions: [{ question: 'Why us?', index: 0 }] }),
+      NO_SAVED,
+      noticed
+    );
+
+    expect(rescanned[0]?.notice).toBe('That came back the same.');
+  });
 });
 
 describe('addFreeRow', () => {
@@ -189,6 +204,13 @@ describe('versions', () => {
   it('clears a previous error when a version lands', () => {
     const errored = [row({ error: 'AI drafting is off.' })];
     expect(appendVersion(errored, 'r', 'ok now', 'draft')[0]?.error).toBeUndefined();
+  });
+
+  it('clears a previous notice when a version lands', () => {
+    const noticed = [row({ notice: 'That came back the same.' })];
+    expect(
+      appendVersion(noticed, 'r', 'a genuinely new draft', 'draft')[0]?.notice
+    ).toBeUndefined();
   });
 
   it('reshapes the LATEST version even while an older one is on screen', () => {
@@ -276,5 +298,39 @@ describe('the character counter', () => {
   it('is over only when it is actually over, not at the limit', () => {
     expect(isOverLimit(withLimit(4), 'abcd')).toBe(false);
     expect(isOverLimit(withLimit(4), 'abcde')).toBe(true);
+  });
+});
+
+describe('isUnchangedRewrite / normalizeAnswerText', () => {
+  const BASE = 'Led the migration and shipped the new payment service with the team.';
+
+  it('is true for a verbatim echo', () => {
+    expect(isUnchangedRewrite(BASE, BASE)).toBe(true);
+  });
+
+  it('is true when only a trailing comma or whitespace run differs', () => {
+    expect(isUnchangedRewrite(BASE, `${BASE},`)).toBe(true);
+    expect(isUnchangedRewrite(BASE, `\n  ${BASE.replace(/ /gu, '  ')}\n`)).toBe(true);
+  });
+
+  it('is NOT unchanged when a trailing SYMBOL changes the meaning (e.g. "20+" vs "20")', () => {
+    // `+` is Unicode category Sm (a symbol, not punctuation) — the desktop
+    // twin's `\p{P}\p{S}` strip drops it and would call these unchanged; this
+    // helper strips only `\p{P}`, so the symbol survives the comparison.
+    expect(isUnchangedRewrite('Grew the team to 20+', 'Grew the team to 20')).toBe(false);
+  });
+
+  it('is false for a genuinely different result', () => {
+    expect(isUnchangedRewrite(BASE, 'Led the migration; shipped payments.')).toBe(false);
+  });
+
+  it('is false for an empty previous version — nothing to compare against', () => {
+    expect(isUnchangedRewrite('   ', '')).toBe(false);
+  });
+
+  it('normalizeAnswerText collapses whitespace and strips only trailing punctuation', () => {
+    expect(normalizeAnswerText('  a   b !!  ')).toBe('a b');
+    // `+` is a symbol, not punctuation — it survives the strip.
+    expect(normalizeAnswerText('a 20+')).toBe('a 20+');
   });
 });

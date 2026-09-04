@@ -33,6 +33,7 @@ import {
   appendVersion,
   buildRows,
   clearAnswerState,
+  isUnchangedRewrite,
   readAnswerState,
   rewriteBaseText,
   selectedText,
@@ -899,11 +900,22 @@ function clampMaxChars(value: number | undefined): number | undefined {
   return Math.min(floored, EXTENSION_ANSWER_ASSIST_MAX_CHARS);
 }
 
+/** The neutral notice for a chip rewrite that came back unchanged (measured
+ *  live, same defect class as the desktop's F3 — see `isUnchangedRewrite`). */
+const UNCHANGED_REWRITE_NOTICE =
+  'That came back the same — try Regenerate for a fresh draft, or a different instruction.';
+
 /**
  * Fold a settled `answer.assist` reply into its row: a success appends the
  * new version (and selects it), a refusal records the error text verbatim so
  * the view can match the shared sentinels. Never throws — the caller's own
  * response is what settles the click.
+ *
+ * A REWRITE (never a draft — Regenerate is expected to differ, a chip is not)
+ * whose result is unchanged from the version it reshaped is not appended as a
+ * fresh version at all: that would present a no-op as if it worked, with
+ * Accept enabled on text identical to what is already on screen. It becomes a
+ * neutral per-row {@link AnswerRow.notice} instead.
  */
 async function settleRowFromAssist(
   rowId: string,
@@ -917,8 +929,27 @@ async function settleRowFromAssist(
     if (!result.ok) {
       return {
         ...state,
-        rows: state.rows.map((row) => (row.id === rowId ? { ...row, error: result.error } : row)),
+        rows: state.rows.map((row) => {
+          if (row.id !== rowId) return row;
+          const next: AnswerRow = { ...row, error: result.error };
+          delete next.notice;
+          return next;
+        }),
       };
+    }
+    if (kind === 'rewrite') {
+      const row = state.rows.find((r) => r.id === rowId);
+      if (row && isUnchangedRewrite(rewriteBaseText(row), result.draft)) {
+        return {
+          ...state,
+          rows: state.rows.map((r) => {
+            if (r.id !== rowId) return r;
+            const next: AnswerRow = { ...r, notice: UNCHANGED_REWRITE_NOTICE };
+            delete next.error;
+            return next;
+          }),
+        };
+      }
     }
     // A rewrite is grounded on nothing, so it carries no flags at all rather
     // than three falses that would render an empty "grounded on" line.

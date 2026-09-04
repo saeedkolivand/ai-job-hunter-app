@@ -21,6 +21,7 @@ import {
   fitLimitChip,
   gatedOffNotice,
   groundedOnLine,
+  iterationHint,
   LENGTH_CHIPS,
   mountAnswerTools,
   statusBadge,
@@ -110,6 +111,34 @@ describe('groundedOnLine', () => {
 
   it('claims nothing for the page’s own text', () => {
     expect(groundedOnLine(row({ selected: -1 }))).toBeNull();
+  });
+});
+
+describe('iterationHint', () => {
+  it('names the posting only when the selected draft actually used one', () => {
+    const groundedOnPosting = iterationHint(
+      row({
+        selected: 0,
+        versions: [{ label: 'v1', text: 'x', kind: 'draft', sourced: { brief: true } }],
+      })
+    );
+    expect(groundedOnPosting).toContain('and this posting');
+
+    // Drafted before a job was matched — `groundedOnLine` shows no posting
+    // for this same version, so the hint must not claim one either.
+    const notGroundedOnPosting = iterationHint(
+      row({
+        selected: 0,
+        versions: [{ label: 'v1', text: 'x', kind: 'draft', sourced: { brief: false } }],
+      })
+    );
+    expect(notGroundedOnPosting).not.toContain('and this posting');
+  });
+
+  it('never claims the posting for a rewrite, which read neither', () => {
+    expect(
+      iterationHint(row({ selected: 0, versions: [{ label: 'v1', text: 'x', kind: 'rewrite' }] }))
+    ).not.toContain('and this posting');
   });
 });
 
@@ -307,5 +336,138 @@ describe('mountAnswerTools (the rendered row)', () => {
       .forEach((b) => b.click());
 
     expect(send).not.toHaveBeenCalled();
+  });
+
+  // ── render() tears the whole section down on every call (a stream tick
+  // anywhere in the tab, via storage.onChanged) — Findings 1/2 ────────────────
+
+  it('keeps the "add a question" input\'s typed text AND focus/caret across a re-render', () => {
+    const { host, view } = mount();
+    view.render(state());
+
+    const addInput = host.querySelector<HTMLInputElement>('[data-focus-key="add-question"]');
+    if (!addInput) throw new Error('expected the add-question input');
+    addInput.value = 'What is your salary expectation?';
+    addInput.dispatchEvent(new Event('input'));
+    addInput.focus();
+    addInput.setSelectionRange(4, 8);
+
+    // Simulates a `storage.onChanged` push for a stream progressing on ANY
+    // row in the tab — `render()` rebuilds unconditionally on every call.
+    view.render(state());
+
+    const restored = host.querySelector<HTMLInputElement>('[data-focus-key="add-question"]');
+    expect(restored).not.toBeNull();
+    // Mutation guard: without the value backing, this is '' — without focus
+    // restoration, `document.activeElement` is `document.body`.
+    expect(restored?.value).toBe('What is your salary expectation?');
+    expect(restored).toBe(document.activeElement);
+    expect(restored?.selectionStart).toBe(4);
+    expect(restored?.selectionEnd).toBe(8);
+  });
+
+  it("keeps a row's instruction input FOCUSED (with its caret) across a re-render", () => {
+    const { host, view } = mount();
+    view.render(state());
+    openFirstRow(host);
+
+    const instruction = host.querySelector<HTMLInputElement>('.arow__instruction');
+    if (!instruction) throw new Error('expected the row instruction input');
+    instruction.value = 'Mention Berlin';
+    instruction.dispatchEvent(new Event('input'));
+    instruction.focus();
+    instruction.setSelectionRange(2, 2);
+
+    view.render(state());
+
+    const restored = host.querySelector<HTMLInputElement>('.arow__instruction');
+    // Mutation guard: without focus restoration this is `document.body`.
+    expect(restored).toBe(document.activeElement);
+    expect(restored?.selectionStart).toBe(2);
+  });
+
+  // ── Rescan vs `pageChanged` and a RESOLVED (not thrown) failure — Finding 3 ─
+
+  it('disables Rescan once the page has changed, mirroring the per-row write controls', () => {
+    const { host, view } = mount();
+    view.render(state({ pageChanged: true }));
+
+    const rescan = [...host.querySelectorAll<HTMLButtonElement>('.atools__head button')].find(
+      (b) => b.textContent === 'Rescan'
+    );
+    expect(rescan?.disabled).toBe(true);
+  });
+
+  it('surfaces a RESOLVED answerScan failure (not just a thrown one) as an error notice', async () => {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const send = vi.fn(async (req: PopupRequest): Promise<PopupResponse> =>
+      req.kind === 'answerScan'
+        ? { ok: false, error: 'Could not read the questions on this page.' }
+        : { ok: true, kind: 'answerState', state: null }
+    );
+    const view = mountAnswerTools(host, { send, copy: vi.fn(async () => true) });
+    view.render(state({ rows: [] }));
+
+    const rescan = [...host.querySelectorAll<HTMLButtonElement>('.atools__head button')].find(
+      (b) => b.textContent === 'Rescan'
+    );
+    rescan?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(host.querySelector('.msg--err')?.textContent).toBe(
+      'Could not read the questions on this page.'
+    );
+  });
+
+  // ── The SHARED stream gates controls, not just this view's own `busy` —
+  // Finding 5 (a stream another surface started, or this view reattaching
+  // mid-stream, leaves `busy` false here) ─────────────────────────────────────
+
+  it('disables chips/Accept/Regenerate while the shared stream targets this row, even with busy=false', () => {
+    const { host, view } = mount();
+    view.render(
+      state({
+        stream: {
+          rowId: 'r',
+          text: 'partial answer',
+          done: false,
+          interrupted: false,
+          kind: 'rewrite',
+        },
+      })
+    );
+    openFirstRow(host);
+
+    const nonNeutralChips = [...host.querySelectorAll<HTMLButtonElement>('.chip')].filter(
+      (b) => !b.classList.contains('chip--neutral')
+    );
+    expect(nonNeutralChips.length).toBeGreaterThan(0);
+    // Mutation guard: without gating on `streaming`, every one of these is
+    // enabled here (`busy` starts `false` on a fresh mount).
+    expect(nonNeutralChips.every((b) => b.disabled)).toBe(true);
+
+    const buttons = [...host.querySelectorAll<HTMLButtonElement>('.btn')];
+    expect(buttons.find((b) => b.textContent === 'Accept into field')?.disabled).toBe(true);
+    expect(buttons.find((b) => b.textContent === 'Regenerate')?.disabled).toBe(true);
+  });
+
+  it('does NOT disable controls for a stream on a DIFFERENT row', () => {
+    const { host, view } = mount();
+    view.render(
+      state({
+        stream: {
+          rowId: 'some-other-row',
+          text: 'x',
+          done: false,
+          interrupted: false,
+          kind: 'rewrite',
+        },
+      })
+    );
+    openFirstRow(host);
+
+    const buttons = [...host.querySelectorAll<HTMLButtonElement>('.btn')];
+    expect(buttons.find((b) => b.textContent === 'Accept into field')?.disabled).toBe(false);
   });
 });

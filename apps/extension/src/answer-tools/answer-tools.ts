@@ -116,9 +116,21 @@ export function groundedOnLine(row: AnswerRow): string | null {
   return `Grounded on: ${parts.join(' · ')}`;
 }
 
-/** The one honest line about what the chips do, versus Regenerate. */
-export const ITERATION_HINT =
-  'Chips reshape this text. Regenerate rethinks it from your résumé and this posting.';
+/**
+ * The one honest line about what the chips do, versus Regenerate — a
+ * function of the ROW rather than a flat constant, because the "and this
+ * posting" clause is only true when the row's own selected draft actually
+ * used one ({@link groundedOnLine}'s same `sourced.brief` signal). A row
+ * drafted before a job was matched must not claim grounding Regenerate would
+ * not actually have.
+ */
+export function iterationHint(row: AnswerRow): string {
+  const version = row.versions[row.selected];
+  const groundedOnPosting = version?.kind === 'draft' && version.sourced?.brief === true;
+  return groundedOnPosting
+    ? 'Chips reshape this text. Regenerate rethinks it from your résumé and this posting.'
+    : 'Chips reshape this text. Regenerate rethinks it from your résumé.';
+}
 
 /** The line that replaces every write control after a navigation. */
 export const PAGE_CHANGED_LINE =
@@ -239,6 +251,22 @@ const button = (className: string, label: string): HTMLButtonElement => {
   return b;
 };
 
+/** The fixed `data-focus-key` for the always-visible "Add question" input —
+ *  there is only one, so a constant is enough (a per-row key needs the row's
+ *  own id; see `renderRowBody`'s instruction input). */
+const ADD_QUESTION_FOCUS_KEY = 'add-question';
+
+/**
+ * What {@link captureFocus} saves about the one focused, `data-focus-key`-
+ * tagged element inside `host`, so {@link restoreFocus} can put both the
+ * caret and the focus back after a full rebuild.
+ */
+interface SavedFocus {
+  key: string;
+  start: number | null;
+  end: number | null;
+}
+
 /**
  * Mount the Answer-tools section into `host`.
  *
@@ -253,12 +281,60 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
   let expandedRowId: string | null = null;
   /** Per-row free-instruction text, view-local for the same reason. */
   const instructions = new Map<string, string>();
+  /** The "add a question" free-text input's value. Same rationale as
+   *  `instructions`, but there is only one such input, so a single variable
+   *  is enough — without it a fresh empty node was created on every render
+   *  and typed text was wiped on every stream tick (Finding 1). */
+  let addQuestionText = '';
   /** The last state rendered, so a local interaction can re-render without
    *  waiting for the storage round trip. */
   let current: AnswerState | null = null;
   /** Set while a request this view issued is in flight, so a double click
    *  cannot start two billable streams from one surface. */
   let busy = false;
+
+  /**
+   * `render()` does an unconditional `host.replaceChildren()` on every call —
+   * including every streamed-token tick anywhere in the tab (Findings 1/2).
+   * Capturing which `data-focus-key`-tagged element has focus (and its caret)
+   * before the rebuild, then restoring it after, closes that generically for
+   * any input this section renders, current or future, without switching the
+   * render loop to incremental DOM patching.
+   */
+  function captureFocus(): SavedFocus | null {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || !host.contains(active)) return null;
+    const key = active.getAttribute('data-focus-key');
+    if (!key) return null;
+    const hasSelection =
+      active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
+    return {
+      key,
+      start: hasSelection ? active.selectionStart : null,
+      end: hasSelection ? active.selectionEnd : null,
+    };
+  }
+
+  function restoreFocus(saved: SavedFocus | null): void {
+    if (!saved) return;
+    for (const candidate of host.querySelectorAll<HTMLElement>('[data-focus-key]')) {
+      if (candidate.getAttribute('data-focus-key') !== saved.key) continue;
+      candidate.focus();
+      if (
+        (candidate instanceof HTMLInputElement || candidate instanceof HTMLTextAreaElement) &&
+        saved.start !== null &&
+        saved.end !== null
+      ) {
+        try {
+          candidate.setSelectionRange(saved.start, saved.end);
+        } catch {
+          // Some input types (e.g. a future `type=number`) refuse a selection
+          // range — losing the caret position is fine, losing focus is not.
+        }
+      }
+      return;
+    }
+  }
 
   const rerender = (): void => render(current);
 
@@ -290,7 +366,8 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
   function renderChipRow(
     row: AnswerRow,
     label: string,
-    chips: readonly RewriteChip[]
+    chips: readonly RewriteChip[],
+    streaming: boolean
   ): HTMLElement {
     const wrap = el('div', 'chips');
     wrap.append(el('span', 'chips__label', label));
@@ -303,7 +380,11 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
         b.title = 'Leave this as it is';
         b.addEventListener('click', () => setNotice('Left as it is.', 'ok'));
       } else {
-        b.disabled = busy;
+        // Gated on the SHARED stream too, not just this view's own `busy`: a
+        // stream started by another surface (or by this same view before a
+        // remount) leaves `busy` false here while the row is still in flight
+        // (Finding 5).
+        b.disabled = busy || streaming;
         b.addEventListener('click', () => {
           void run({
             kind: 'answerAssist',
@@ -345,7 +426,12 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
     return wrap;
   }
 
-  function renderActions(row: AnswerRow, text: string, pageChanged: boolean): HTMLElement {
+  function renderActions(
+    row: AnswerRow,
+    text: string,
+    pageChanged: boolean,
+    streaming: boolean
+  ): HTMLElement {
     const wrap = el('div', 'arow__actions');
 
     // Copy is the PRIMARY action: this is a copy-first tool, and it is the one
@@ -368,7 +454,7 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
     // capability exists.
     if (canAccept(row, pageChanged)) {
       const accept = button('btn btn--small btn--quiet', 'Accept into field');
-      accept.disabled = busy;
+      accept.disabled = busy || streaming;
       accept.addEventListener('click', () => {
         void run({ kind: 'answerAccept', rowId: row.id }, (res) => {
           if (!res.ok) return setNotice(res.error, 'err');
@@ -385,7 +471,7 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
 
       if (row.field?.originalText) {
         const restore = button('btn btn--small btn--quiet', 'Restore original');
-        restore.disabled = busy;
+        restore.disabled = busy || streaming;
         restore.addEventListener('click', () => {
           void run({ kind: 'answerRestoreOriginal', rowId: row.id }, (res) => {
             if (!res.ok) setNotice(res.error, 'err');
@@ -399,7 +485,7 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
       'btn btn--small btn--quiet',
       row.versions.length ? 'Regenerate' : 'Draft this answer'
     );
-    regenerate.disabled = busy;
+    regenerate.disabled = busy || streaming;
     regenerate.addEventListener('click', () => {
       void run({
         kind: 'answerAssist',
@@ -444,14 +530,17 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
     }
 
     if (!state.pageChanged) {
-      body.append(renderChipRow(row, 'Tone', TONE_CHIPS));
+      body.append(renderChipRow(row, 'Tone', TONE_CHIPS, streaming));
       const fit = fitLimitChip(row, text);
-      body.append(renderChipRow(row, 'Length', fit ? [...LENGTH_CHIPS, fit] : LENGTH_CHIPS));
+      body.append(
+        renderChipRow(row, 'Length', fit ? [...LENGTH_CHIPS, fit] : LENGTH_CHIPS, streaming)
+      );
 
       const instruction = el('input', 'arow__instruction');
       instruction.type = 'text';
       instruction.placeholder = 'Describe a change, or leave this empty…';
       instruction.setAttribute('aria-label', `Instruction for “${row.question}”`);
+      instruction.setAttribute('data-focus-key', `instruction:${row.id}`);
       instruction.value = instructions.get(row.id) ?? '';
       instruction.addEventListener('input', () => instructions.set(row.id, instruction.value));
       body.append(instruction);
@@ -475,13 +564,16 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
 
     const grounded = groundedOnLine(row);
     if (grounded) body.append(el('p', 'arow__grounded', grounded));
-    body.append(el('p', 'arow__hint', ITERATION_HINT));
+    body.append(el('p', 'arow__hint', iterationHint(row)));
 
     const gated = gatedOffNotice(row.error);
     if (gated) {
       body.append(el('p', 'msg msg--err', gated));
     } else if (row.error) {
       body.append(el('p', 'msg msg--err', row.error));
+    } else if (row.notice) {
+      // Neutral, never `msg--err` — a no-op rewrite is not a failure.
+      body.append(el('p', 'msg msg--muted', row.notice));
     }
 
     if (state.pageChanged) {
@@ -489,7 +581,7 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
     } else {
       const sentence = acceptSentence(row, state.pageChanged);
       if (sentence) body.append(el('p', 'arow__accept-note', sentence));
-      body.append(renderActions(row, text, state.pageChanged));
+      body.append(renderActions(row, text, state.pageChanged, streaming));
     }
 
     return body;
@@ -517,15 +609,21 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
 
   function render(state: AnswerState | null): void {
     current = state;
+    const savedFocus = captureFocus();
     host.replaceChildren();
 
     const head = el('div', 'atools__head');
     head.append(el('p', 'atools__summary', summaryLine(state)));
     const rescan = button('btn btn--small btn--quiet', 'Rescan');
-    rescan.disabled = busy;
+    // Disabled once the page has changed (same signal every per-row write
+    // control already gates on) — the line right below already tells the
+    // user to use the toolbar icon instead (Finding 3).
+    rescan.disabled = busy || Boolean(state?.pageChanged);
     rescan.title = 'Scan this page again — for a form that shows its questions a step at a time';
     rescan.addEventListener('click', () => {
-      void run({ kind: 'answerScan' });
+      void run({ kind: 'answerScan' }, (res) => {
+        if (!res.ok) setNotice(res.error, 'err');
+      });
     });
     head.append(rescan);
     host.append(head);
@@ -548,15 +646,24 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
 
     // The free-text entry for a question the scan missed. Always available —
     // it needs no page access at all, so it keeps working after a navigation.
+    // Backed by `addQuestionText` (Finding 1): without it this was the ONE
+    // input on the section with no backing store at all, so a fresh empty
+    // node was created — and typed text wiped — on every render.
     const addWrap = el('div', 'atools__add');
     const addInput = el('input', 'arow__instruction');
     addInput.type = 'text';
     addInput.placeholder = 'A question the scan missed…';
     addInput.setAttribute('aria-label', 'Add a question the scan missed');
+    addInput.setAttribute('data-focus-key', ADD_QUESTION_FOCUS_KEY);
+    addInput.value = addQuestionText;
+    addInput.addEventListener('input', () => {
+      addQuestionText = addInput.value;
+    });
     const add = button('btn btn--small btn--quiet', 'Add question');
     const submitAdd = (): void => {
       const question = addInput.value.trim();
       if (!question) return;
+      addQuestionText = '';
       addInput.value = '';
       void run({ kind: 'answerAddRow', question });
     };
@@ -572,6 +679,8 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
       notice.setAttribute('role', 'status');
       host.append(notice);
     }
+
+    restoreFocus(savedFocus);
   }
 
   return { render };

@@ -141,6 +141,13 @@ export interface AnswerRow {
   savedSource?: string;
   /** The last refusal/failure for this row, rendered verbatim. */
   error?: string;
+  /**
+   * A neutral (non-error) note about the row's last action — e.g. a rewrite
+   * that came back unchanged. Rendered with the same muted styling as the
+   * "page changed" line, never the error styling: nothing failed, so nothing
+   * should look like it did. Cleared wherever {@link error} is cleared or set.
+   */
+  notice?: string;
 }
 
 /** The one in-flight (or last-finished) stream, tagged with its row. */
@@ -272,6 +279,7 @@ export function buildRows(
         ? {}
         : { savedAnswer: saved.answer, ...(saved.source ? { savedSource: saved.source } : {}) }),
       ...(prior?.error === undefined ? {} : { error: prior.error }),
+      ...(prior?.notice === undefined ? {} : { notice: prior.notice }),
     });
   };
 
@@ -334,8 +342,39 @@ export function appendVersion(
     const versions = [...row.versions, version];
     const next: AnswerRow = { ...row, versions, selected: versions.length - 1, status: 'drafted' };
     delete next.error;
+    delete next.notice;
     return next;
   });
+}
+
+/**
+ * Normalise for the unchanged-rewrite comparison: collapse every whitespace
+ * run to a single space, then drop ONLY trailing punctuation (`\p{P}` —
+ * commas, periods, quotes — Unicode category `Po`/`Ps`/`Pe`/…, which does NOT
+ * include a math/currency symbol like `+`/`$`). Deliberately NOT `\p{S}`: the
+ * desktop's twin helper (`apps/desktop/src/renderer/lib/generate/rewrite.ts`)
+ * strips `\p{P}\p{S}` together, which misclassifies a genuinely different
+ * result ("20" vs "20+", meaning "at least 20") as unchanged. Also
+ * deliberately NOT case-folding — "make this all caps" is a real rewrite
+ * whose result must still count as changed.
+ */
+export function normalizeAnswerText(text: string): string {
+  return text
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .replace(/\p{P}+$/u, '')
+    .trim();
+}
+
+/**
+ * True when a chip-rewrite came back the same text it started from (ignoring
+ * whitespace and trailing punctuation) — a no-op the desktop's stream reports
+ * as a success. An empty `previous` is never "unchanged": there is nothing to
+ * compare against.
+ */
+export function isUnchangedRewrite(previous: string, next: string): boolean {
+  const before = normalizeAnswerText(previous);
+  return before.length > 0 && before === normalizeAnswerText(next);
 }
 
 /** The text a row currently shows: the selected version, else the page text. */

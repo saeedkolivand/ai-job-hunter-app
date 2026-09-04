@@ -10,7 +10,7 @@
 
 import { browser } from '@wxt-dev/browser';
 
-import { copyText, mountAnswerTools, summaryLine } from '../answer-tools/answer-tools';
+import { copyText, mountAnswerTools } from '../answer-tools/answer-tools';
 import { subscribeAnswerState } from '../lib/answer-state';
 import type { ConnectionStatus, PopupRequest, PopupResponse } from '../lib/messages';
 import { getAnswerToolsExpanded, looksLikeToken, setAnswerToolsExpanded } from '../lib/storage';
@@ -1099,12 +1099,12 @@ export async function bootstrapAnswerTools(): Promise<void> {
   try {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
     activeTabId = typeof tab?.id === 'number' ? tab.id : null;
+    // The "N questions · M to go" summary is rendered ONCE, by the panel body
+    // itself (`answer-tools.ts`'s `render()`) — it needs it there for the side
+    // panel, which has no `<summary>` disclosure. Duplicating it into this
+    // `<summary>` line as well showed it twice in the popup.
     if (activeTabId !== null)
-      subscribeAnswerState(activeTabId, (state) => {
-        answerTools.render(state);
-        els.answerToolsCount.textContent =
-          state && state.rows.length > 0 ? ` — ${summaryLine(state)}` : '';
-      });
+      subscribeAnswerState(activeTabId, (state) => answerTools.render(state));
   } catch {
     // Best-effort — no tab id just means the section renders its empty state.
   }

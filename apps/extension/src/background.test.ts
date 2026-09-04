@@ -20,6 +20,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type Browser, browser } from '@wxt-dev/browser';
 
+import type { AnswerRow } from './lib/answer-state';
 import type { AutofillSummary } from './lib/autofill';
 import type { PopupRequest, PopupResponse } from './lib/messages';
 import { getToken } from './lib/storage';
@@ -1306,6 +1307,108 @@ describe('answerAssist streaming buffer', () => {
       interrupted: false,
       rowId: '',
     });
+  });
+});
+
+// ── settleRowFromAssist — the "unchanged rewrite" no-op guard (Finding 4) ───
+
+describe('settleRowFromAssist — a chip rewrite that comes back unchanged', () => {
+  /** Scan one row, then draft it once so there is a version a rewrite can
+   *  reshape (`runAnswerRowAssist` refuses a rewrite with nothing to reshape
+   *  yet), returning its id. */
+  async function scanAndDraft(tabId: number, draftText: string): Promise<string> {
+    tabsQueryMock.mockResolvedValue([
+      { id: tabId, url: `https://jobs.example.com/posting/${tabId}` } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: { questions: [{ question: 'Why this role?', index: 0 }], filled: [] } },
+    ] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'not paired' });
+    const scanned = await send({ kind: 'answerScan' });
+    if (!scanned.ok || scanned.kind !== 'answerState' || !scanned.state) {
+      throw new Error('expected an answerState response');
+    }
+    const rowId = scanned.state.rows[0]?.id;
+    if (!rowId) throw new Error('expected a row');
+
+    mockClient.answerAssist.mockResolvedValueOnce({
+      ok: true,
+      question: 'Why this role?',
+      draft: draftText,
+      sourced: {},
+    });
+    await send({
+      kind: 'answerAssist',
+      question: 'Why this role?',
+      searchWeb: false,
+      mode: 'draft',
+      rowId,
+    });
+    return rowId;
+  }
+
+  /** Read the row list back without disturbing selection — `version: 0` is a
+   *  no-op re-select of the version the draft above already selected. */
+  async function readRows(rowId: string): Promise<AnswerRow[]> {
+    const res = await send({ kind: 'answerSelectVersion', rowId, version: 0 });
+    if (!res.ok || res.kind !== 'answerState' || !res.state) {
+      throw new Error('expected an answerState response');
+    }
+    return res.state.rows;
+  }
+
+  it('does not append a new version, and sets a neutral (non-error) row notice', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    const rowId = await scanAndDraft(310, 'Led the migration and shipped the payment service.');
+
+    // "Shorten" comes back with only a trailing comma added — the measured
+    // no-op shape (ADR-044 / the desktop's F3 twin).
+    mockClient.answerAssist.mockResolvedValueOnce({
+      ok: true,
+      question: 'Why this role?',
+      draft: 'Led the migration and shipped the payment service,',
+      sourced: {},
+    });
+    await send({
+      kind: 'answerAssist',
+      question: 'Why this role?',
+      searchWeb: false,
+      mode: 'rewrite',
+      preset: 'shorten',
+      rowId,
+    });
+
+    const rows = await readRows(rowId);
+    // Mutation guard: without the unchanged-rewrite check this grows to 2 and
+    // `notice` stays undefined — REVERT `settleRowFromAssist`'s rewrite branch
+    // and this assertion is what catches it.
+    expect(rows[0]?.versions).toHaveLength(1);
+    expect(rows[0]?.notice).toMatch(/came back the same/);
+    expect(rows[0]?.error).toBeUndefined();
+  });
+
+  it('still appends a genuinely different rewrite, and clears any stale notice', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    const rowId = await scanAndDraft(311, 'Led the migration and shipped the payment service.');
+
+    mockClient.answerAssist.mockResolvedValueOnce({
+      ok: true,
+      question: 'Why this role?',
+      draft: 'Led migration; shipped payments.',
+      sourced: {},
+    });
+    await send({
+      kind: 'answerAssist',
+      question: 'Why this role?',
+      searchWeb: false,
+      mode: 'rewrite',
+      preset: 'shorten',
+      rowId,
+    });
+
+    const rows = await readRows(rowId);
+    expect(rows[0]?.versions).toHaveLength(2);
+    expect(rows[0]?.notice).toBeUndefined();
   });
 });
 
