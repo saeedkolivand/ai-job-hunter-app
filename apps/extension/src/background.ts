@@ -1523,19 +1523,36 @@ browser.runtime.onMessage.addListener(
 );
 
 /**
- * The ONE context-menu entry (ADR-044 decision 2). It is registered on
+ * The selection-scoped context-menu entry (ADR-044 decision 2, amended — see
+ * `ANSWER_PANEL_MENU_ID` for the second entry). It is registered on
  * `selection` only, so it never appears on a page the user has not selected
  * text on, and clicking it is ITSELF the gesture that grants `activeTab` for
  * that tab — one of the gestures Chrome documents for `sidePanel.open`.
  */
 const ANSWER_MENU_ID = 'ajh-answer-selection';
 
+/**
+ * The plain-right-click entry: opens the panel with nothing prefilled, so it
+ * has no selection to require and is registered on `contexts: ['page']`
+ * (the generic page background) rather than `'all'`, which would also fire
+ * on images/links/etc. — more than a bare "open the panel" gesture needs.
+ * `'page'` and `'selection'` are independent Chrome context categories, not
+ * mutually exclusive ones: right-clicking ON selected text matches both. Per
+ * Chrome's own docs (developer.chrome.com/docs/extensions/reference/api/contextMenus,
+ * read 2026-09-05): "if more than one [item] from your extension is visible
+ * at once, Google Chrome automatically collapses them into a single parent
+ * menu" — so this does not show as two flat top-level entries in that case,
+ * it folds into one "AI Job Hunter" submenu holding both. Expected, not a bug
+ * to route around.
+ */
+const ANSWER_PANEL_MENU_ID = 'ajh-answer-open-panel';
+
 /** Longest selection accepted as a question. A selection is untrusted page
  *  content; the desktop clamps it again, this just avoids carrying a whole
  *  article into the row list. */
 const MAX_SELECTION_QUESTION = 500;
 
-/** (Re)create the context-menu entry. `removeAll` first because
+/** (Re)create the context-menu entries. `removeAll` first because
  *  `onInstalled` fires on every update and `create` throws on a duplicate id,
  *  which would otherwise poison the whole listener. */
 function installContextMenu(): void {
@@ -1546,6 +1563,11 @@ function installContextMenu(): void {
       id: ANSWER_MENU_ID,
       title: 'Answer this with AI Job Hunter',
       contexts: ['selection'],
+    });
+    menus.create({
+      id: ANSWER_PANEL_MENU_ID,
+      title: 'Open answer panel',
+      contexts: ['page'],
     });
   });
 }
@@ -1591,6 +1613,10 @@ function openAnswerPanel(tabId: number | undefined): void {
 
 if (browser.contextMenus) {
   browser.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === ANSWER_PANEL_MENU_ID) {
+      openAnswerPanel(tab?.id);
+      return;
+    }
     if (info.menuItemId !== ANSWER_MENU_ID) return;
     void handleAnswerMenuClick(info, tab);
   });

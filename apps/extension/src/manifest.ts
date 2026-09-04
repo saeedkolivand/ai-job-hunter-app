@@ -89,10 +89,11 @@ function baseManifest(): ManifestRecord {
     // limited to the active tab by activeTab. nativeMessaging → `runtime.connectNative`
     // to the desktop host (`app.aijobhunter.bridge`), the HTTPS-Only-safe transport
     // that survives Firefox upgrading `ws://` to `wss://`; the loopback
-    // `host_permissions` below stay for the `ws` fallback. contextMenus → the
-    // ONE "Answer this with AI Job Hunter" entry on selected text (ADR-044
-    // decision 2), which is itself the user gesture that grants `activeTab`
-    // and opens the answer panel — no standing page access comes with it.
+    // `host_permissions` below stay for the `ws` fallback. contextMenus → two
+    // entries (ADR-044 decision 2, amended): "Answer this with AI Job Hunter"
+    // on selected text, and "Open answer panel" on a plain page right-click.
+    // Either click is itself the user gesture that grants `activeTab` and
+    // opens the answer panel — no standing page access comes with it.
     permissions: [...SHARED_PERMISSIONS],
     host_permissions: LOOPBACK_HOSTS,
     action: {

@@ -69,14 +69,18 @@ vi.mock('@wxt-dev/browser', () => ({
       onRemoved: { addListener: vi.fn() },
     },
     scripting: { executeScript: vi.fn() },
-    // The ONE context-menu entry (selection only). `removeAll` takes the
-    // callback `installContextMenu` passes it, so the mock has to invoke it or
-    // `create` is never reached.
+    // The two context-menu entries (selection-only, and plain-page).
+    // `removeAll` takes the callback `installContextMenu` passes it, so the
+    // mock has to invoke it or `create` is never reached.
     contextMenus: {
       removeAll: vi.fn((cb?: () => void) => cb?.()),
       create: vi.fn(),
       onClicked: { addListener: vi.fn() },
     },
+    // `openAnswerPanel`'s Chrome branch — asserted directly by the
+    // page-context menu item's click test, since that item has no row to
+    // read back the way the selection item's tests do.
+    sidePanel: { open: vi.fn().mockResolvedValue(undefined) },
     // The shared answer state lives in `storage.session`; `onChanged` is what
     // both surfaces subscribe to. An in-memory area is enough here — the
     // background is the only writer.
@@ -2079,18 +2083,26 @@ describe('answerAccept / answerRestoreOriginal requests (ADR-044)', () => {
   });
 });
 
-describe('the context-menu entry (ADR-044 decision 2)', () => {
-  it('registers exactly one selection-only entry with the documented title', () => {
+describe('the context-menu entries (ADR-044 decision 2)', () => {
+  it('registers both entries: the selection-only one and the plain-page one', () => {
     const onInstalled = vi.mocked(browser.runtime.onInstalled.addListener).mock.calls[0]?.[0];
     vi.mocked(browser.contextMenus.create).mockClear();
 
     onInstalled?.({} as never);
 
-    expect(browser.contextMenus.create).toHaveBeenCalledTimes(1);
+    expect(browser.contextMenus.create).toHaveBeenCalledTimes(2);
     expect(browser.contextMenus.create).toHaveBeenCalledWith(
       expect.objectContaining({
+        id: 'ajh-answer-selection',
         title: 'Answer this with AI Job Hunter',
         contexts: ['selection'],
+      })
+    );
+    expect(browser.contextMenus.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'ajh-answer-open-panel',
+        title: 'Open answer panel',
+        contexts: ['page'],
       })
     );
   });
@@ -2165,6 +2177,26 @@ describe('the context-menu entry (ADR-044 decision 2)', () => {
     await flush();
 
     expect(tabsQueryMock).not.toHaveBeenCalled();
+  });
+
+  it('opens the panel and adds nothing on a plain-page click (no selection to prefill)', async () => {
+    const onClicked = vi.mocked(browser.contextMenus.onClicked.addListener).mock.calls[0]?.[0];
+    if (!onClicked) throw new Error('context-menu click listener not registered');
+    const { readAnswerState } = await import('./lib/answer-state');
+    const sidePanelOpenMock = vi.mocked(browser.sidePanel.open);
+    sidePanelOpenMock.mockClear();
+    tabsQueryMock.mockClear();
+
+    const clickedTabId = 210;
+    onClicked({ menuItemId: 'ajh-answer-open-panel' } as never, { id: clickedTabId } as never);
+    await flush();
+
+    expect(sidePanelOpenMock).toHaveBeenCalledWith({ tabId: clickedTabId });
+    // Distinguishes this entry from the selection one: nothing gets added as
+    // a row, and it never even reads the tab to figure out where to write one.
+    expect(tabsQueryMock).not.toHaveBeenCalled();
+    const state = await readAnswerState(clickedTabId);
+    expect(state?.rows ?? []).toHaveLength(0);
   });
 });
 
