@@ -476,20 +476,90 @@ fn is_job_cancelled(app: &AppHandle, job_id: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Stream the ONE compose call for `answer.assist` — see the module doc's
-/// "Three ways a stream ends early" section for the full picture. Registers
-/// a fresh job under `req_id` on `registry` (THIS connection's own
-/// [`AssistStreamRegistry`] — so a client `assist.cancel` can stop it
-/// early; does NOT `unregister` it on any path out of this function —
-/// `handle_answer_assist` (in `answer_assist`) is the SOLE unregister owner,
-/// once per request, at its single return point, so `req_id` can never be
-/// clobbered by two cleanup sites racing over the same key. See its doc),
-/// drives [`Completer::stream_complete`], forwards every
-/// visible-text delta through `sink` as a cap-clamped `assist.chunk` frame
-/// (see [`forward_chunk`]), sends a terminal `assist.done` frame once the
-/// stream ends, and returns the full accumulated text (or the provider's
-/// error) for the caller to shape into the (unchanged) `answer.assist.result`
-/// terminal reply.
+/// Everything ONE `answer.assist` request's streaming compose works on: the
+/// already-resolved inputs that never change between attempts, plus the three
+/// pieces of state that must SPAN them (the registry entry's generation, the
+/// sink, and the answer budget already forwarded).
+///
+/// A retry is not a second request. `compose_with_length_retry` (in
+/// [`super::answer_assist`]) can drive [`compose_draft_stream`] twice for ONE
+/// `answer.assist` frame, and everything in here belongs to that frame rather
+/// than to an attempt — which is why the retry rebinds the SAME registry
+/// entry (see [`start_and_register`]), appends to the SAME draft buffer
+/// ([`Self::forwarded`] — though each attempt is capped against its OWN
+/// window inside it), and emits ONE terminal `assist.done`
+/// ([`Self::send_done`]). Bundling also takes `compose_draft_stream` from nine
+/// positional parameters to four, so it no longer needs a
+/// `clippy::too_many_arguments` exemption.
+pub(super) struct ComposeStream<'a> {
+    pub(super) app: &'a AppHandle,
+    pub(super) completer: &'a Completer,
+    pub(super) req_id: &'a str,
+    /// The generation [`AssistStreamRegistry::begin`] minted for THIS request,
+    /// threaded down from `handle_answer_assist` — every attempt binds its
+    /// fresh job to that one entry, and the request's single
+    /// `unregister_gen` then still owns it.
+    pub(super) r#gen: u64,
+    pub(super) registry: &'a AssistStreamRegistry,
+    pub(super) system: &'a str,
+    pub(super) user: &'a str,
+    pub(super) sink: &'a mut dyn FrameSink,
+    /// Every answer char forwarded to the client for this REQUEST, across
+    /// every attempt. Append-only, which is what lets
+    /// [`super::answer_assist::attempt_text`] read back one attempt's own
+    /// tail: the draft sent back is the SUCCESSFUL attempt's text alone,
+    /// never a failed attempt's prose riding along into what "Accept" pastes.
+    ///
+    /// It is NOT a shared cap window — each attempt is forwarded against its
+    /// own `DRAFT_CAP`, based at where that attempt's text starts (see
+    /// [`compose_draft_stream`]'s `cap_base`).
+    pub(super) forwarded: String,
+}
+
+impl ComposeStream<'_> {
+    /// Whether this request still owns its registry entry — the spend guard
+    /// `compose_with_length_retry` checks before paying for a retry. Purely a
+    /// registry read — it never probes the transport, so a dropped connection
+    /// shows up here only once the read loop's `cancel_all` drained the entry.
+    /// See [`AssistStreamRegistry::holds_running_gen`].
+    pub(super) fn still_registered(&self) -> bool {
+        self.registry.holds_running_gen(self.req_id, self.r#gen)
+    }
+
+    /// Send the ONE terminal `assist.done` frame this request owes its client
+    /// — at `compose_with_length_retry`'s single exit, never per attempt. The
+    /// popup's frame handler DELETES its `assist.chunk` listener for this
+    /// `reqId` the moment it sees this frame, so a `done` emitted after a
+    /// failed first attempt would drop every chunk of the retry (and leave
+    /// the client's stall timer unable to re-arm) while the desktop streamed
+    /// on into a sink nobody was reading.
+    pub(super) async fn send_done(&mut self) {
+        self.sink.send_frame(assist_done_frame(self.req_id)).await;
+    }
+}
+
+/// Stream ONE compose attempt for `answer.assist` — see the module doc's
+/// "Four ways a stream ends early" section for the full picture. Starts a
+/// fresh job and binds it to `ctx`'s ALREADY-BEGUN registry entry (THIS
+/// connection's own [`AssistStreamRegistry`] — so a client `assist.cancel`
+/// can stop it early; does NOT `unregister` it on any path out of this
+/// function — `handle_answer_assist` (in `answer_assist`) is the SOLE
+/// unregister owner, once per request, at its single return point, so
+/// `req_id` can never be clobbered by two cleanup sites racing over the same
+/// key. See its doc), drives [`Completer::stream_complete`], and forwards
+/// every visible-text delta through `ctx.sink` as a cap-clamped
+/// `assist.chunk` frame (see [`forward_chunk`]), accumulating into
+/// `ctx.forwarded` — from which the caller reads back THIS attempt's own
+/// tail for the `answer.assist.result` terminal reply (see
+/// [`super::answer_assist::attempt_text`]).
+///
+/// It does NOT send the terminal `assist.done` frame: that is
+/// [`ComposeStream::send_done`], called once per REQUEST at the retry's
+/// single exit (see its doc for the client-side listener this ordering
+/// protects). Binding is generation-scoped
+/// ([`AssistStreamRegistry::register`]), so a second attempt rebinds the
+/// first attempt's entry and an attempt whose entry a cancel already removed
+/// refuses to start at all.
 ///
 /// `system`/`max_tokens` are CALLER-supplied (PR 11) rather than hardcoded to
 /// [`super::answer_assist::ANSWER_ASSIST_SYSTEM`]/`ANSWER_ASSIST_MAX_TOKENS`
@@ -498,12 +568,28 @@ fn is_job_cancelled(app: &AppHandle, job_id: &str) -> bool {
 /// compose path instead of a parallel one — the draft caller passes the
 /// draft system/cap unchanged, the rewrite caller passes its own.
 ///
+/// `effort` is caller-supplied for the same reason, and for a second one: the
+/// caller runs this function TWICE on one specific failure (see
+/// `answer_assist::compose_with_length_retry`), and both attempts must be
+/// driven by the SAME resolved tier. It is normally
+/// [`Completer::low_effort`] — on a reasoning model the thinking tokens are
+/// billed against `max_tokens`, so this path buys the cheapest reasoning the
+/// provider offers; `None` (no cheap tier for this model) leaves the request
+/// exactly as it was before this parameter existed.
+///
+/// `cap_base` is where THIS attempt's [`super::answer_assist::DRAFT_CAP`]
+/// window starts in `ctx.forwarded` — the caller's own `drafted().len()`
+/// snapshot for the attempt (see `answer_assist::compose_attempts`), so the
+/// live cap counts only what this attempt forwards and a retry is never
+/// clamped by prose a failed attempt already spent. One value, two uses: the
+/// same snapshot is what the caller slices that attempt's text back out with.
+///
 /// Mechanism: `chat_stream` emits `ai:stream` Tauri events as it drives the
 /// HTTP stream — the SAME channel the renderer's own provider hook listens
 /// to. This registers a SECOND, Rust-side listener for this exact `job_id`
-/// (`tauri::Listener`) and forwards each piece through `sink` instead of into
-/// a webview. A synchronous listener callback can't itself `.await` a socket
-/// write, so it pushes each event onto an unbounded channel that this
+/// (`tauri::Listener`) and forwards each piece through `ctx.sink` instead of
+/// into a webview. A synchronous listener callback can't itself `.await` a
+/// socket write, so it pushes each event onto an unbounded channel that this
 /// function drains CONCURRENTLY with the `stream_complete` future
 /// (`tokio::select!`). Several deltas — including the terminal one — can be
 /// emitted synchronously in one burst right before `stream_complete`
@@ -521,21 +607,25 @@ fn is_job_cancelled(app: &AppHandle, job_id: &str) -> bool {
 /// `Cancelled` for one of those reasons (or an external cancel) — otherwise
 /// `job_fail` would wrongly overwrite it.
 pub(super) async fn compose_draft_stream(
-    app: &AppHandle,
-    completer: &Completer,
-    req_id: &str,
-    registry: &AssistStreamRegistry,
-    system: &str,
+    ctx: &mut ComposeStream<'_>,
     max_tokens: u32,
-    user: &str,
-    sink: &mut dyn FrameSink,
-) -> AppResult<String> {
+    effort: Option<&str>,
+    cap_base: usize,
+) -> AppResult<()> {
+    let app = ctx.app;
+    let completer = ctx.completer;
+    let req_id = ctx.req_id;
+    let system = ctx.system;
+    let user = ctx.user;
+
     // `start_and_register` starts the job BEFORE registering it — see its own
-    // doc for the TOCTOU this order closes. `None` means an `assist.cancel`
-    // raced ahead of this call during the pre-compose window and the job
+    // doc for the TOCTOU this order closes. `None` means this request no
+    // longer owns its registry entry: an `assist.cancel` raced ahead during
+    // the pre-compose window, or (between two attempts) cancelled this
+    // request / dropped the whole connection. Either way the job
     // `start_and_register` itself just started has already been cancelled —
-    // the client already gave up, so never proceed into the stream loop.
-    let Some(job_id) = start_and_register(app, registry, req_id) else {
+    // the client gave up, so never proceed into the stream loop.
+    let Some(job_id) = start_and_register(app, ctx.registry, req_id, ctx.r#gen) else {
         return Err(AppError::Message("Job cancelled".to_string()));
     };
 
@@ -549,18 +639,25 @@ pub(super) async fn compose_draft_stream(
         }
     });
 
-    let mut accumulated = String::new();
     let mut cap_reached = false;
     let mut sink_gone = false;
     let result: AppResult<()>;
     {
-        let mut stream_fut =
-            Box::pin(completer.stream_complete(&job_id, system, user, Some(0.5), Some(max_tokens)));
+        let mut stream_fut = Box::pin(completer.stream_complete(
+            &job_id,
+            system,
+            user,
+            Some(0.5),
+            Some(max_tokens),
+            effort,
+        ));
         loop {
             tokio::select! {
                 maybe = rx.recv() => {
                     if let Some(chunk) = maybe {
-                        match forward_chunk(&chunk, req_id, sink, &mut accumulated).await {
+                        let buf = &mut ctx.forwarded;
+                        let out = forward_chunk(&chunk, req_id, ctx.sink, buf, cap_base).await;
+                        match out {
                             ForwardOutcome::Continue => {}
                             ForwardOutcome::CapReached if !cap_reached => {
                                 cap_reached = true;
@@ -594,11 +691,13 @@ pub(super) async fn compose_draft_stream(
     // closed the frame stream (nothing left to usefully forward).
     while !cap_reached && !sink_gone {
         match rx.try_recv() {
-            Ok(chunk) => match forward_chunk(&chunk, req_id, sink, &mut accumulated).await {
-                ForwardOutcome::Continue => {}
-                ForwardOutcome::CapReached => cap_reached = true,
-                ForwardOutcome::SinkGone => sink_gone = true,
-            },
+            Ok(chunk) => {
+                match forward_chunk(&chunk, req_id, ctx.sink, &mut ctx.forwarded, cap_base).await {
+                    ForwardOutcome::Continue => {}
+                    ForwardOutcome::CapReached => cap_reached = true,
+                    ForwardOutcome::SinkGone => sink_gone = true,
+                }
+            }
             Err(_) => break,
         }
     }
@@ -606,11 +705,12 @@ pub(super) async fn compose_draft_stream(
     app.unlisten(listener_id);
     // No `registry.unregister(req_id)` here — see this function's doc:
     // `handle_answer_assist` is the SOLE unregister owner (one call, at its
-    // single return point, covering every outcome of this function too).
-    sink.send_frame(assist_done_frame(req_id)).await;
+    // single return point, covering every outcome of this function too). No
+    // `assist.done` here either: that frame is per REQUEST, not per attempt
+    // (see `ComposeStream::send_done`).
 
     if cap_reached {
-        return Ok(accumulated);
+        return Ok(());
     }
     if let Err(e) = result {
         // A cancellation THIS function itself triggered (the cap above, or
@@ -628,7 +728,7 @@ pub(super) async fn compose_draft_stream(
         }
         return Err(e);
     }
-    Ok(accumulated)
+    Ok(())
 }
 
 /// Whether `chunk` (an `ai:stream` event for the job [`compose_draft_stream`]
@@ -652,9 +752,8 @@ pub(super) enum ForwardOutcome {
     /// Keep going — under the cap, sink still alive.
     Continue,
     /// [`super::answer_assist::DRAFT_CAP`] was reached (sink still alive) —
-    /// stop forwarding, but the generation itself is left to finish
-    /// naturally (already bounded by `max_tokens`), so real usage still
-    /// gets recorded on the normal completion path.
+    /// stop forwarding; the caller cancels the job immediately to bound cost
+    /// and latency, the same path an `assist.cancel` drives.
     CapReached,
     /// `sink.send_frame` reported the transport is gone (returned `false`)
     /// — no consumer left; the caller should cancel the job immediately,
@@ -663,25 +762,33 @@ pub(super) enum ForwardOutcome {
 }
 
 /// Forward one delta (if any, per [`forwardable_delta`]) through `sink`,
-/// clamped so `accumulated` never grows past
-/// [`super::answer_assist::DRAFT_CAP`] chars — the LIVE, mid-stream sibling
-/// of `resolve_answer_assist`'s own terminal `clamp_chars` safety net. See
-/// [`ForwardOutcome`] for what each return value tells the caller to do.
+/// clamped so `accumulated` never grows more than
+/// [`super::answer_assist::DRAFT_CAP`] chars PAST `cap_base` — the LIVE,
+/// mid-stream sibling of `resolve_answer_assist`'s own terminal `clamp_chars`
+/// safety net. See [`ForwardOutcome`] for what each return value tells the
+/// caller to do.
+///
+/// `cap_base` is where the current attempt's window starts (`0` for a
+/// single-attempt caller — see [`compose_draft_stream`]). Not a
+/// boundary of the buffer it indexes ⇒ the whole buffer is counted instead —
+/// the safe direction, since counting MORE only makes the cap bite sooner.
 pub(super) async fn forward_chunk(
     chunk: &AiStreamChunk,
     req_id: &str,
     sink: &mut dyn FrameSink,
     accumulated: &mut String,
+    cap_base: usize,
 ) -> ForwardOutcome {
     let cap = super::answer_assist::DRAFT_CAP;
+    let spent = |acc: &str| acc.get(cap_base..).unwrap_or(acc).chars().count();
     let Some(delta) = forwardable_delta(chunk) else {
-        return if accumulated.chars().count() >= cap {
+        return if spent(accumulated) >= cap {
             ForwardOutcome::CapReached
         } else {
             ForwardOutcome::Continue
         };
     };
-    let remaining = cap.saturating_sub(accumulated.chars().count());
+    let remaining = cap.saturating_sub(spent(accumulated));
     if remaining == 0 {
         return ForwardOutcome::CapReached;
     }
@@ -697,7 +804,7 @@ pub(super) async fn forward_chunk(
     if !sink.send_frame(assist_chunk_frame(req_id, &piece)).await {
         return ForwardOutcome::SinkGone;
     }
-    if accumulated.chars().count() >= cap {
+    if spent(accumulated) >= cap {
         ForwardOutcome::CapReached
     } else {
         ForwardOutcome::Continue
@@ -715,7 +822,10 @@ fn assist_chunk_frame(req_id: &str, delta: &str) -> String {
 }
 
 /// Build the terminal, no-payload `assist.done` frame for `req_id`.
-fn assist_done_frame(req_id: &str) -> String {
+/// `pub(super)` so `answer_assist`'s fake compose round can emit the REAL
+/// frame — the "exactly one `assist.done` per request" assertion is then
+/// about the production frame, not about a re-typed copy of it.
+pub(super) fn assist_done_frame(req_id: &str) -> String {
     json!({
         "type": msg::ASSIST_DONE,
         "reqId": req_id,
@@ -725,545 +835,5 @@ fn assist_done_frame(req_id: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::super::assist_registry::JobCanceller;
-    use super::*;
-
-    fn as_text(m: Message) -> String {
-        match m {
-            Message::Text(t) => t.to_string(),
-            other => panic!("expected a text frame, got {other:?}"),
-        }
-    }
-
-    // `AssistStreamRegistry`'s own state-machine tests (register/take/
-    // unregister, CWE-639 isolation, cancel/cancel_all, the pre-registration
-    // cancel race, duplicate-reqId rejection) plus `start_and_register`'s
-    // tests now live in `assist_registry` (R8 split — see that module).
-
-    /// A tiny local copy of `assist_registry::tests::RecordingCanceller` —
-    /// duplicated (not shared) so this file's test module stays independent
-    /// of that module's own private test internals. Used only by the ONE
-    /// test below that needs to prove a cancel finds the Pending marker
-    /// `begin_or_reject_duplicate` leaves behind.
-    #[derive(Default)]
-    struct RecordingCanceller {
-        cancelled: std::cell::RefCell<Vec<String>>,
-    }
-
-    impl JobCanceller for RecordingCanceller {
-        fn cancel_job(&self, job_id: &str) {
-            self.cancelled.borrow_mut().push(job_id.to_string());
-        }
-    }
-
-    // ── begin_or_reject_duplicate (HIGH fix: pre-begin cancel-drop —
-    // `begin` must run synchronously, on the read loop's own thread, BEFORE
-    // `tokio::spawn` ever schedules the streaming task) ────────────────────
-
-    #[test]
-    fn begin_or_reject_duplicate_marks_pending_synchronously_before_any_task_runs() {
-        // This whole test has no `.await` at all — `begin_or_reject_duplicate`
-        // is a plain, non-async fn — so a `Some(gen)` return, and `contains`
-        // reporting `true` immediately after, already proves `begin` ran on
-        // the CALLER's thread, not deferred into whatever thread a spawned
-        // task eventually runs on.
-        let registry = AssistStreamRegistry::default();
-        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
-
-        assert!(begin_or_reject_duplicate(&registry, "req-1", &out_tx).is_some());
-        assert!(
-            registry.contains("req-1"),
-            "begin must have run synchronously — before any spawn, before any await"
-        );
-
-        // The exact race this fix closes: a same-connection `assist.cancel`
-        // dispatched right after `spawn_answer_assist` returns (before the
-        // spawned task has run AT ALL) must still find the Pending marker,
-        // never nothing.
-        let canceller = RecordingCanceller::default();
-        registry.cancel(&canceller, "req-1");
-        assert!(
-            canceller.cancelled.borrow().is_empty(),
-            "no job exists yet — Pending just becomes CancelledEarly, nothing to job_cancel"
-        );
-        assert!(
-            !registry.register("req-1", "job-1"),
-            "the cancel that raced ahead of the spawned task's own register call must still win"
-        );
-    }
-
-    #[test]
-    fn begin_or_reject_duplicate_rejects_an_already_active_req_id_via_out_tx() {
-        let registry = AssistStreamRegistry::default();
-        registry.begin("req-1"); // the original request is already in flight
-        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
-
-        assert!(begin_or_reject_duplicate(&registry, "req-1", &out_tx).is_none());
-
-        let frame = out_rx
-            .try_recv()
-            .expect("a duplicate-rejection reply must be enqueued through out_tx directly");
-        let v: Value = serde_json::from_str(&as_text(frame)).unwrap();
-        assert_eq!(v["payload"]["ok"], false);
-        assert_eq!(
-            v["payload"]["error"],
-            super::super::answer_assist::DUPLICATE_REQUEST_MESSAGE
-        );
-        assert!(
-            registry.contains("req-1"),
-            "the ORIGINAL request's entry must be left untouched by the rejected duplicate"
-        );
-    }
-
-    // `start_and_register`'s tests (TOCTOU fix — job_start before register)
-    // now live in `assist_registry` alongside the function itself.
-
-    // ── ChannelFrameSink / channel multiplexing (HIGH fix mechanism) ───────
-
-    #[tokio::test]
-    async fn a_slow_streaming_producer_never_blocks_a_concurrently_enqueued_frame() {
-        // Mirrors the HIGH fix this module exists for: before, a streaming
-        // handler was awaited INLINE in the read loop, so nothing else —
-        // including a same-connection `assist.cancel` reply — could reach
-        // the writer until it finished. Now every producer (the read loop
-        // itself, and any spawned streaming task) enqueues through its OWN
-        // `ChannelFrameSink` clone into the SAME channel; a slow producer
-        // must never delay another producer's frame from being observed.
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
-
-        let mut slow_sink = ChannelFrameSink(tx.clone());
-        tokio::spawn(async move {
-            for i in 0..3 {
-                tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-                slow_sink.send_frame(format!("chunk-{i}")).await;
-            }
-            slow_sink.send_frame("done".to_string()).await;
-        });
-
-        // A concurrent fast frame — e.g. the read loop's own dispatch for a
-        // synchronous verb, or an `assist.cancel` acknowledgement — enqueued
-        // through its OWN sink immediately, before any of the slow
-        // producer's sleeps elapse.
-        let mut fast_sink = ChannelFrameSink(tx.clone());
-        fast_sink.send_frame("fast-reply".to_string()).await;
-
-        let first = rx.recv().await.unwrap();
-        assert_eq!(
-            as_text(first),
-            "fast-reply",
-            "the fast frame must never queue behind the slow stream"
-        );
-
-        for i in 0..3 {
-            let msg = rx.recv().await.unwrap();
-            assert_eq!(as_text(msg), format!("chunk-{i}"));
-        }
-        assert_eq!(as_text(rx.recv().await.unwrap()), "done");
-    }
-
-    // ── run_writer (HIGH fix: write-backpressure / stalled-peer runaway) ───
-
-    /// A sink whose `poll_ready` never resolves `Ready` — mirrors a
-    /// TCP-open-but-not-reading peer: the OS write buffer stays full
-    /// forever, so a plain `writer.send(msg).await` would otherwise hang
-    /// this task indefinitely, with nothing ever erroring. Zero fields, so
-    /// it is `Unpin` automatically.
-    struct StalledSink;
-
-    impl futures::Sink<Message> for StalledSink {
-        type Error = std::io::Error;
-
-        fn poll_ready(
-            self: std::pin::Pin<&mut Self>,
-            _cx: &mut std::task::Context<'_>,
-        ) -> std::task::Poll<Result<(), Self::Error>> {
-            std::task::Poll::Pending
-        }
-
-        fn start_send(self: std::pin::Pin<&mut Self>, _item: Message) -> Result<(), Self::Error> {
-            unreachable!("poll_ready never resolves Ready, so start_send is never reached")
-        }
-
-        fn poll_flush(
-            self: std::pin::Pin<&mut Self>,
-            _cx: &mut std::task::Context<'_>,
-        ) -> std::task::Poll<Result<(), Self::Error>> {
-            std::task::Poll::Pending
-        }
-
-        fn poll_close(
-            self: std::pin::Pin<&mut Self>,
-            _cx: &mut std::task::Context<'_>,
-        ) -> std::task::Poll<Result<(), Self::Error>> {
-            std::task::Poll::Pending
-        }
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn run_writer_breaks_the_loop_once_a_write_stalls_past_write_stall() {
-        // Mirrors the HIGH fix this closes: before, an unbounded channel plus
-        // a peer that keeps the socket open but never reads meant
-        // `writer.send(msg).await` parked forever — nothing ever errored, so
-        // the receiver never dropped, `send_frame` kept reporting success,
-        // and `forward_chunk` kept enqueueing frames for a consumer that
-        // would never read them.
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
-        tx.send(Message::text("hello")).unwrap();
-
-        let writer_task = tokio::spawn(run_writer(StalledSink, rx));
-
-        // Let the spawned task actually run once, so its `WRITE_STALL`
-        // timer registers with the (paused) clock before we advance past it.
-        tokio::task::yield_now().await;
-        tokio::time::advance(WRITE_STALL + std::time::Duration::from_millis(1)).await;
-
-        writer_task
-            .await
-            .expect("run_writer must return, not panic, once its write stalls out");
-
-        // The receiver `run_writer` owned is dropped once its loop breaks —
-        // the NEXT `send_frame` on this same channel must now report the
-        // sink gone, funneling into the EXISTING `SinkGone` → `job_cancel`
-        // path unchanged (no new cancellation mechanism).
-        assert!(
-            !ChannelFrameSink(tx)
-                .send_frame("after-stall".to_string())
-                .await,
-            "a subsequent send_frame must return false once run_writer's receiver is dropped"
-        );
-    }
-
-    // ── next_step (CodeRabbit fix: propagate the writer-timeout into
-    // connection teardown — a DETACHED `run_writer` ending must not go
-    // unnoticed by the read loop until its own next inbound frame, which may
-    // never arrive) ─────────────────────────────────────────────────────────
-
-    #[tokio::test]
-    async fn next_step_reports_writer_ended_without_waiting_on_a_never_resolving_reader() {
-        // Mirrors a stalled-but-open (or quiet/idle) connection: `reader_next`
-        // here NEVER resolves — a real `reader.next()` on such a connection
-        // would behave identically (no frame ever arrives). The writer future
-        // resolves IMMEDIATELY (mirrors `run_writer`'s `JoinHandle` completing
-        // once its `WRITE_STALL` timeout fires). This test completing at all
-        // — rather than hanging forever — is the proof: `next_step` did not
-        // block on the never-resolving reader, so the connection tears down
-        // immediately instead of waiting indefinitely for a frame that may
-        // never come.
-        let reader_next = std::future::pending::<Option<i32>>();
-        let writer_done = std::future::ready(());
-
-        let outcome = next_step(reader_next, writer_done, never_revoked()).await;
-
-        assert!(
-            matches!(outcome, NextStep::WriterEnded),
-            "the writer ending must win the race even though the reader never resolves"
-        );
-    }
-
-    /// A revoke receiver that never fires — the shape of a healthy connection
-    /// whose pairing token is not being rotated.
-    fn never_revoked() -> std::future::Pending<Result<(), tokio::sync::broadcast::error::RecvError>>
-    {
-        std::future::pending()
-    }
-
-    #[tokio::test]
-    async fn next_step_reports_revoked_on_a_quiet_connection() {
-        // A token rotation must reach an IDLE, healthy connection at once — a
-        // paired browser that sends nothing (the normal state between clicks)
-        // would otherwise never learn its pairing died. Both other arms here
-        // never resolve, so this test completing at all is the proof.
-        let reader_next = std::future::pending::<Option<i32>>();
-        let writer_done = std::future::pending::<()>();
-
-        let outcome = next_step(reader_next, writer_done, std::future::ready(Ok(()))).await;
-
-        assert!(
-            matches!(outcome, NextStep::Revoked),
-            "a revoke must win against a quiet reader and a healthy writer"
-        );
-    }
-
-    #[tokio::test]
-    async fn next_step_treats_a_lagged_receiver_as_a_revoke() {
-        // A connection busy in a long dispatch await can miss the ring slot. A
-        // `Lagged` receiver still means "a rotation happened while you weren't
-        // looking" — silently skipping it would strand exactly the socket that
-        // was too busy to notice its pairing died.
-        use tokio::sync::broadcast::error::RecvError;
-        let outcome = next_step(
-            std::future::pending::<Option<i32>>(),
-            std::future::pending::<()>(),
-            std::future::ready(Err(RecvError::Lagged(3))),
-        )
-        .await;
-
-        assert!(
-            matches!(outcome, NextStep::Revoked),
-            "a missed (lagged) rotation signal must revoke, never be skipped"
-        );
-    }
-
-    #[tokio::test]
-    async fn next_step_never_revokes_when_the_channel_merely_closed() {
-        // THE regression guard: a closed channel (app shutdown, or a refactor
-        // that stops holding `revoke_tx`) is NOT a revocation. Mapping it to
-        // `Revoked` would send `token.revoked` to every paired browser at once
-        // and mass-unpair the install on a channel-lifecycle change.
-        use tokio::sync::broadcast::error::RecvError;
-        let outcome = next_step(
-            std::future::pending::<Option<i32>>(),
-            std::future::pending::<()>(),
-            std::future::ready(Err(RecvError::Closed)),
-        )
-        .await;
-
-        assert!(
-            matches!(outcome, NextStep::RevokeWatchLost),
-            "a closed revoke channel must tear down WITHOUT revoking the pairing"
-        );
-    }
-
-    #[tokio::test]
-    async fn next_step_still_reports_a_frame_when_the_writer_is_still_alive() {
-        // The normal case, unaffected by this fix: the writer task is still
-        // running (never resolves in this test), so a frame arriving must
-        // still be reported through — the writer race must never swallow or
-        // delay a normal inbound frame while the writer is healthy.
-        let reader_next = std::future::ready(Some(7));
-        let writer_done = std::future::pending::<()>();
-
-        let outcome = next_step(reader_next, writer_done, never_revoked()).await;
-
-        let NextStep::Frame(value) = outcome else {
-            panic!("expected NextStep::Frame — the writer must never win while a frame is ready");
-        };
-        assert_eq!(value, Some(7));
-    }
-
-    // ── `agent_query_or_cancelled` (MAJOR fix — security review round 2):
-    // an in-flight `agent.query` must never send its reply once this
-    // connection's cancellation token has fired — see `spawn_agent_query`'s
-    // doc for the token-revocation scenario this closes. ────────────────────
-
-    #[tokio::test]
-    async fn agent_query_or_cancelled_suppresses_the_reply_once_cancelled() {
-        let cancel = CancellationToken::new();
-        cancel.cancel();
-        // The query future here never resolves — proof this doesn't wait for
-        // it once `cancel` has already fired. Bounded well past any
-        // reasonable budget so a regression that ignores `cancel` hangs this
-        // test instead of the whole suite.
-        let outcome = tokio::time::timeout(
-            std::time::Duration::from_millis(200),
-            agent_query_or_cancelled(std::future::pending::<String>(), &cancel),
-        )
-        .await;
-        assert_eq!(
-            outcome.ok(),
-            Some(None),
-            "a cancelled connection must suppress the query's reply, never send it"
-        );
-    }
-
-    #[tokio::test]
-    async fn agent_query_or_cancelled_returns_the_reply_when_never_cancelled() {
-        // The normal case, unaffected by this fix: an un-cancelled
-        // connection must still deliver the query's own result unchanged.
-        let cancel = CancellationToken::new();
-        let outcome =
-            agent_query_or_cancelled(std::future::ready("agent.result".to_string()), &cancel).await;
-        assert_eq!(outcome, Some("agent.result".to_string()));
-    }
-
-    #[tokio::test]
-    async fn agent_query_or_cancelled_races_a_cancel_that_fires_mid_flight() {
-        // A cancel arriving WHILE the query is still in flight (not already
-        // cancelled before the race even starts) — the realistic timing for
-        // a token revoked mid-`best-matches`.
-        let cancel = CancellationToken::new();
-        let cancel_clone = cancel.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-            cancel_clone.cancel();
-        });
-        let outcome = tokio::time::timeout(
-            std::time::Duration::from_millis(500),
-            agent_query_or_cancelled(std::future::pending::<String>(), &cancel),
-        )
-        .await;
-        assert_eq!(
-            outcome.ok(),
-            Some(None),
-            "a cancel that fires mid-flight must still suppress the reply"
-        );
-    }
-
-    // ── streaming: forwardable_delta / assist frame builders ────────────────
-
-    fn stream_chunk(delta: &str, done: bool, thinking: Option<bool>) -> AiStreamChunk {
-        AiStreamChunk {
-            job_id: "job-1".to_string(),
-            delta: delta.to_string(),
-            done,
-            error: None,
-            thinking,
-        }
-    }
-
-    #[test]
-    fn forwardable_delta_forwards_a_plain_text_delta() {
-        let chunk = stream_chunk("Because I ", false, None);
-        assert_eq!(forwardable_delta(&chunk), Some("Because I "));
-    }
-
-    #[test]
-    fn forwardable_delta_skips_the_terminal_done_piece() {
-        let chunk = stream_chunk("", true, None);
-        assert_eq!(forwardable_delta(&chunk), None);
-    }
-
-    #[test]
-    fn forwardable_delta_skips_a_thinking_piece() {
-        // A reasoning/thinking delta must never leak into the popup's
-        // streaming preview — only the visible answer streams.
-        let chunk = stream_chunk("pondering…", false, Some(true));
-        assert_eq!(forwardable_delta(&chunk), None);
-    }
-
-    #[test]
-    fn forwardable_delta_skips_an_empty_delta() {
-        let chunk = stream_chunk("", false, Some(false));
-        assert_eq!(forwardable_delta(&chunk), None);
-    }
-
-    // ── forward_chunk (MEDIUM fix: live DRAFT_CAP enforcement; HIGH fix:
-    // dead-sink detection) ───────────────────────────────────────────────────
-
-    #[derive(Default)]
-    struct RecordingSink {
-        sent: Vec<String>,
-    }
-
-    #[async_trait::async_trait]
-    impl FrameSink for RecordingSink {
-        async fn send_frame(&mut self, text: String) -> bool {
-            self.sent.push(text);
-            true
-        }
-    }
-
-    /// A sink whose transport is already gone — `send_frame` always reports
-    /// `false`, mirroring a disconnected client's outbound channel.
-    struct DeadSink;
-
-    #[async_trait::async_trait]
-    impl FrameSink for DeadSink {
-        async fn send_frame(&mut self, _text: String) -> bool {
-            false
-        }
-    }
-
-    #[tokio::test]
-    async fn forward_chunk_stops_growing_accumulated_once_the_draft_cap_is_reached() {
-        let mut sink = RecordingSink::default();
-        let mut accumulated = String::new();
-
-        // A single delta that exactly fills the cap.
-        let cap = super::super::answer_assist::DRAFT_CAP;
-        let first = stream_chunk(&"a".repeat(cap), false, None);
-        let capped = forward_chunk(&first, "req-1", &mut sink, &mut accumulated).await;
-        assert_eq!(capped, ForwardOutcome::CapReached);
-        assert_eq!(accumulated.chars().count(), cap);
-
-        // A second delta arriving after the cap must never grow the buffer
-        // or send another frame.
-        let second = stream_chunk("more text", false, None);
-        let capped_again = forward_chunk(&second, "req-1", &mut sink, &mut accumulated).await;
-        assert_eq!(capped_again, ForwardOutcome::CapReached);
-        assert_eq!(
-            accumulated.chars().count(),
-            cap,
-            "must never exceed the cap"
-        );
-        assert_eq!(
-            sink.sent.len(),
-            1,
-            "the second delta must never be forwarded on the wire"
-        );
-    }
-
-    #[tokio::test]
-    async fn forward_chunk_clamps_a_delta_that_would_cross_the_cap_mid_chunk() {
-        let mut sink = RecordingSink::default();
-        let cap = super::super::answer_assist::DRAFT_CAP;
-        let mut accumulated = "x".repeat(cap - 5);
-
-        // 10 chars incoming, only 5 fit before the cap.
-        let chunk = stream_chunk("0123456789", false, None);
-        let capped = forward_chunk(&chunk, "req-1", &mut sink, &mut accumulated).await;
-
-        assert_eq!(capped, ForwardOutcome::CapReached);
-        assert_eq!(accumulated.chars().count(), cap);
-        assert_eq!(
-            sink.sent.last().unwrap(),
-            &assist_chunk_frame("req-1", "01234")
-        );
-    }
-
-    #[tokio::test]
-    async fn forward_chunk_reports_uncapped_while_under_the_limit() {
-        let mut sink = RecordingSink::default();
-        let mut accumulated = String::new();
-        let chunk = stream_chunk("short delta", false, None);
-        let capped = forward_chunk(&chunk, "req-1", &mut sink, &mut accumulated).await;
-        assert_eq!(capped, ForwardOutcome::Continue);
-        assert_eq!(accumulated, "short delta");
-        assert_eq!(sink.sent, vec![assist_chunk_frame("req-1", "short delta")]);
-    }
-
-    #[tokio::test]
-    async fn forward_chunk_reports_sink_gone_when_send_frame_returns_false() {
-        let mut sink = DeadSink;
-        let mut accumulated = String::new();
-        let chunk = stream_chunk("hello", false, None);
-        let outcome = forward_chunk(&chunk, "req-1", &mut sink, &mut accumulated).await;
-        assert_eq!(outcome, ForwardOutcome::SinkGone);
-        assert_eq!(
-            accumulated, "hello",
-            "the delta is still accumulated locally even though the wire send failed"
-        );
-    }
-
-    #[tokio::test]
-    async fn forward_chunk_never_reports_sink_gone_once_already_capped() {
-        // Once the cap is reached, forward_chunk short-circuits before ever
-        // touching the sink again — a dead sink discovered only AFTER the
-        // cap must never surface, since there's nothing left to send.
-        let mut sink = DeadSink;
-        let cap = super::super::answer_assist::DRAFT_CAP;
-        let mut accumulated = "x".repeat(cap);
-        let chunk = stream_chunk("more", false, None);
-        let outcome = forward_chunk(&chunk, "req-1", &mut sink, &mut accumulated).await;
-        assert_eq!(outcome, ForwardOutcome::CapReached);
-    }
-
-    #[test]
-    fn assist_chunk_frame_carries_the_delta_under_the_reqs_id() {
-        let frame = assist_chunk_frame("req-9", "Because I ");
-        let v: Value = serde_json::from_str(&frame).unwrap();
-        assert_eq!(v["type"], msg::ASSIST_CHUNK);
-        assert_eq!(v["reqId"], "req-9");
-        assert_eq!(v["payload"]["delta"], "Because I ");
-    }
-
-    #[test]
-    fn assist_done_frame_carries_no_payload() {
-        let frame = assist_done_frame("req-9");
-        let v: Value = serde_json::from_str(&frame).unwrap();
-        assert_eq!(v["type"], msg::ASSIST_DONE);
-        assert_eq!(v["reqId"], "req-9");
-        assert!(v["payload"].is_null());
-    }
-}
+#[path = "stream_tests.rs"]
+mod tests;

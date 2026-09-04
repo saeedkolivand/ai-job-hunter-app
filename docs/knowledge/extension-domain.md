@@ -1,6 +1,6 @@
 # Extension domain (browser extension + desktop bridge)
 
-Last updated: 2026-08-17 (PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
+Last updated: 2026-09-04 (`answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
 
 Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tauri-security-reviewer`.
 
@@ -141,6 +141,10 @@ To guard against cancellation-race bugs and billable-job leaks, every in-flight 
 **CancelledEarly invariant (critical):** A `CancelledEarly` marker must never be dropped during `cancel_all()` or `begin()` — if the marker is lost, the entry vanishes from the map, so a later `register()` call (from a retry, or from a race-condition path) finds no marker, thinks the reqId is fresh, and starts a full billable generation for a request the user already cancelled. The fix: `cancel_all()` exhaustively re-inserts **both** `Pending` and already-`CancelledEarly` entries as `CancelledEarly` when draining, so the marker persists until the client fully disconnects or gives up.
 
 **Streaming chunks are ordered per-reqId:** All `assist.chunk`, `assist.done`, and `answer.assist.result` frames for one reqId are sent in order over the same socket/channel, maintaining the invariant that a popup UI can safely concatenate chunks and render a coherent draft (no out-of-order or duplicate chunks).
+
+### Compose budget on a reasoning model
+
+A reasoning model spends its thinking out of the **same output budget** as the answer, so a per-surface budget sized for a full-length answer alone can be eaten entirely by reasoning and end as `finish_reason: length` with no text at all. `answer.assist`'s budget sizing, effort-tier selection, one-retry rule, cancellation handling and per-attempt cap window are owned by [`extension_bridge/answer_assist.rs::compose_with_length_retry`](../../apps/desktop/src-tauri/src/extension_bridge/answer_assist.rs) and [`stream.rs::ComposeStream`](../../apps/desktop/src-tauri/src/extension_bridge/stream.rs) — read their doc comments for the contract rather than restating it here, where it would drift from the constants and predicates those symbols own.
 
 ## Store policy
 
