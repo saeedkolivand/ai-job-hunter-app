@@ -5,6 +5,7 @@ import {
   EVENT_CHANNELS,
   type HybridSearchResult,
   type JobPosting,
+  type ScrapeContract,
   type ScrapeProgressEvent,
 } from '@ajh/shared';
 import type {
@@ -24,7 +25,7 @@ export const scrape = {
   url: (req: ScrapeUrlRequest) => invoke<{ jobId: string }>('scrape_url', { req }),
   resolveUrl: ({ url }: { url: string }) =>
     invoke<JobPosting | null>('scrape_resolve_url', { url }),
-  updateDescription: (req: { url: string; description: string }) =>
+  updateDescription: (req: Parameters<ScrapeContract['updateDescription']>[0]) =>
     invoke<boolean>('scrape_update_description', { req }),
   persistJob: (req: unknown) => invoke<void>('scrape_persist_job', { req }),
   removeInteraction: (req: { jobId: string; interactionType: string }) =>

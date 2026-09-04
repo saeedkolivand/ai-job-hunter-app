@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import type { ScrapeBoardsRequest, ScrapeUrlRequest } from '@ajh/shared';
+import type { ScrapeBoardsRequest, ScrapeContract, ScrapeUrlRequest } from '@ajh/shared';
 import type { PostingsHybridSearchRequest } from '@ajh/shared/schemas';
 
 import { useAppClient } from '@/providers/AppClientProvider';
@@ -80,7 +80,8 @@ export const useUpdatePostingDescription = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: { url: string; description: string }) => api.scrape.updateDescription(req),
+    mutationFn: (req: Parameters<ScrapeContract['updateDescription']>[0]) =>
+      api.scrape.updateDescription(req),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.postings.all }),
   });
 };
