@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "number": 1103,
+    "title": "fix: extension answer tools capture script and reasoning-aware draft budget",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1103",
+    "draft": false,
+    "created_at": "2026-09-03T08:57:43Z",
+    "updated_at": "2026-09-03T09:26:11Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  }
+]

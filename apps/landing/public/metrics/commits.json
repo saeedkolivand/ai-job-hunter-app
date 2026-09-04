@@ -1,5 +1,17 @@
 [
   {
+    "sha": "7195ca9611830e202fc6d2d38bb4a269ea67f904",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-03T08:01:12Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "489786c7d04acb44f1e9d85bdbc9bebd66585f28",
     "commit": {
       "message": "chore: sync landing download version to v0.146.0",
@@ -1181,18 +1193,6 @@
       "message": "feat(landing): show real per-platform download counts on the download buttons (#1068)",
       "author": {
         "date": "2026-08-21T17:02:51Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "ee9ca540fef9427b4d38d2836ea85996038373af",
-    "commit": {
-      "message": "docs: replace three extrapolated git-history figures with a measured one (#1067)",
-      "author": {
-        "date": "2026-08-21T16:44:29Z"
       }
     },
     "author": {
