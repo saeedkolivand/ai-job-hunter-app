@@ -122,6 +122,33 @@ describe('start()', () => {
 
     expect(byId(pillHost, 'status-pill').textContent).toBe('● Connected');
   });
+
+  it('ignores a pushed message of a different kind — no cross-talk with other broadcasts', async () => {
+    const send = vi
+      .fn<[PopupRequest], Promise<PopupResponse>>()
+      .mockResolvedValue({ ok: true, kind: 'status', status: status('not_paired') });
+    const { pillHost, view } = mount({ send });
+
+    view.start();
+    await flush();
+    expect(byId(pillHost, 'status-pill').textContent).toBe('⚠ Not paired');
+
+    const listener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls.at(-1)?.[0];
+    if (!listener) throw new Error('onMessage listener not registered');
+    // A different broadcast kind sharing the same `runtime.onMessage` surface
+    // (e.g. an in-flight answer-assist stream chunk) must not be mistaken for
+    // a status push.
+    listener({
+      ok: true,
+      kind: 'answerAssistProgress',
+      text: 'x',
+      done: false,
+      interrupted: false,
+      rowId: '',
+    });
+
+    expect(byId(pillHost, 'status-pill').textContent).toBe('⚠ Not paired');
+  });
 });
 
 // ── header Retry visibility ─────────────────────────────────────────────────
