@@ -162,11 +162,11 @@ Two views over one state keyed by **tab id alone** (`answerStateKey(tabId)`, ori
 
 ## Job tools — Import/Check-fit/Fill/Save-answers panel parity + trust gate (ADR-045)
 
-A separate shared component, `apps/extension/src/job-tools/job-tools.ts` (`mountJobTools`), mirrors `answer-tools.ts`'s "one component, both surfaces" shape for the popup's four page-scoped action buttons — moved out of `popup.ts` so the side panel gains the same controls over the same wire verbs. Full record: [ADR-045](decision-records/adr-045-job-tools-panel-parity-and-trust-gate.md).
+A separate shared component, `apps/extension/src/job-tools/job-tools.ts` (`mountJobTools`), mirrors `answer-tools.ts`'s "one component, both surfaces" shape for the popup's four page-scoped action buttons, moved out of `popup.ts` so the side panel gains them too. Full record: [ADR-045](decision-records/adr-045-job-tools-panel-parity-and-trust-gate.md).
 
-**The trust gate** (`isPageTrusted`, `job-tools.ts`): derived from the SAME `AnswerState.pageChanged` the Answer-tools section already gates on (no new field), but read more strictly — a tab with no `AnswerState` record at all also counts as untrusted. Untrusted replaces the module's controls with one line, same convention as the Answer-tools write controls' own gated line. Both context-menu entries (`background.ts`'s `installContextMenu`) now re-arm this flag on click, via `rearmPageChangedForGesture`, alongside the pre-existing scan-based re-arm.
+**Trust gate**: `isPageTrusted` (`job-tools.ts`), fed via `JobToolsView.render`/`checkPage`; re-armed by both context-menu entries through `rearmPageChangedForGesture` (`background.ts::installContextMenu`). See ADR-045 for the exact condition, the gated-state UI, and the caller-ordering contract `checkPage` depends on (`sidepanel.ts::follow`).
 
-**Scope boundary**: "Mark as applied" and the popup's adaptive Import re-label are deliberately NOT part of this shared module or the panel — see ADR-045's decision 5 for why, and `JobToolsView.setImportLabel` for the one seam the popup's own (unmoved) `appliedCheck` auto-check uses into it.
+**Scope boundary**: "Mark as applied" and the popup's adaptive Import re-label stay in `popup.ts`, unmoved — `JobToolsView.setImportLabel` is the one seam between them. See ADR-045 decision 5 for why.
 
 ## Store policy
 

@@ -649,6 +649,44 @@ describe('render — the trust gate', () => {
 
     expect(send).toHaveBeenCalledWith({ kind: 'fieldsProbe' });
   });
+
+  it('resets tab-A page-specific state (match-fit score, Form group) when the panel switches to a DIFFERENT already-trusted tab', async () => {
+    const { host, send, view } = mount(async (req) => {
+      if (req.kind === 'matchLive') {
+        return {
+          ok: true,
+          kind: 'matchLive',
+          result: {
+            ok: true,
+            combined: 90,
+            ats: 80,
+            gaps: [],
+            resumeName: 'My Resume',
+            scoreSource: 'keyword',
+          },
+        };
+      }
+      return { ok: true, kind: 'fieldsProbe', hasFormFields: true, hasAnswerFields: true };
+    });
+
+    // Tab A: trusted, and the user ran Check fit — a score is on screen.
+    view.render(answerState({ tabId: 1, pageChanged: false }));
+    host.querySelector<HTMLButtonElement>('#btn-check-fit')!.click();
+    await flush();
+    expect(host.querySelector<HTMLElement>('#match-result')!.hidden).toBe(false);
+
+    // The panel switches to tab B — ALSO already trusted per its OWN
+    // AnswerState record. `isPageTrusted` returns `true` for both, so a
+    // trust-flag-only dedup would wrongly skip resetting anything here.
+    send.mockClear();
+    view.render(answerState({ tabId: 2, pageChanged: false }));
+
+    // Tab A's score must not leak onto tab B.
+    expect(host.querySelector<HTMLElement>('#match-result')!.hidden).toBe(true);
+    expect(host.querySelector<HTMLElement>('#match-result')!.textContent).toBe('');
+    // The Form group re-probes for tab B rather than keeping tab A's answer.
+    expect(send).toHaveBeenCalledWith({ kind: 'fieldsProbe' });
+  });
 });
 
 // ── setImportLabel / reset (the popup's own appliedCheck seam) ───────────────

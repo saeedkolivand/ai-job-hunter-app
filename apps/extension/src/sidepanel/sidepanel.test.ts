@@ -185,8 +185,12 @@ describe('follow() sequencing regression (checkPage must not race the async stat
     expect(jobTools.checkPage).not.toHaveBeenCalled();
     expect(jobTools.render).not.toHaveBeenCalled();
 
-    // The async delivery lands.
-    deliver?.({
+    // The async delivery lands. A non-optional call — if `deliver` was never
+    // captured (the subscription didn't fire the way this test assumes),
+    // this must fail loudly here, not silently no-op into a confusing
+    // "expected N calls, got 0" a few lines down.
+    if (!deliver) throw new Error('subscribeAnswerState callback not captured');
+    deliver({
       tabId: 99,
       origin: 'https://jobs.example.com',
       scannedAt: 1,
@@ -223,9 +227,62 @@ describe('follow() sequencing regression (checkPage must not race the async stat
       stream: null,
       pageChanged: false,
     };
-    deliver?.(state); // first delivery — checkPage fires
-    deliver?.({ ...state, scannedAt: 2 }); // a later push (e.g. an answer accepted)
+    if (!deliver) throw new Error('subscribeAnswerState callback not captured');
+    deliver(state); // first delivery — checkPage fires
+    deliver({ ...state, scannedAt: 2 }); // a later push (e.g. an answer accepted)
 
     expect(jobTools.checkPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a stale follow(A) callback that resolves after follow(B) has already superseded it', () => {
+    let deliverA: ((state: unknown) => void) | undefined;
+    let deliverB: ((state: unknown) => void) | undefined;
+    vi.mocked(subscribeAnswerState)
+      .mockImplementationOnce((_tabId, onState) => {
+        deliverA = onState as (state: unknown) => void;
+        return vi.fn();
+      })
+      .mockImplementationOnce((_tabId, onState) => {
+        deliverB = onState as (state: unknown) => void;
+        return vi.fn();
+      });
+    jobTools.checkPage.mockClear();
+    jobTools.render.mockClear();
+
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+
+    // follow(A) — its read is kicked off but not yet resolved.
+    onActivated({ tabId: 201, windowId: PANEL_WINDOW_ID } as never);
+    // follow(B) supersedes A before A's read resolves. `subscribeAnswerState`'s
+    // returned unsubscribe (called here) does NOT cancel A's in-flight read —
+    // see `followGeneration`'s doc in sidepanel.ts for why that matters.
+    onActivated({ tabId: 202, windowId: PANEL_WINDOW_ID } as never);
+
+    if (!deliverB) throw new Error('deliverB not captured');
+    deliverB({
+      tabId: 202,
+      origin: 'https://jobs.example.com',
+      scannedAt: 1,
+      rows: [],
+      stream: null,
+      pageChanged: false,
+    });
+    jobTools.render.mockClear();
+    jobTools.checkPage.mockClear();
+
+    // A's stale read finally resolves — it must be a complete no-op.
+    if (!deliverA) throw new Error('deliverA not captured');
+    deliverA({
+      tabId: 201,
+      origin: 'https://jobs.example.com',
+      scannedAt: 1,
+      rows: [],
+      stream: null,
+      pageChanged: false,
+    });
+
+    expect(jobTools.render).not.toHaveBeenCalled();
+    expect(jobTools.checkPage).not.toHaveBeenCalled();
   });
 });

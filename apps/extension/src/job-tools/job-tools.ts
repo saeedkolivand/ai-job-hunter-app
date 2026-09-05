@@ -456,6 +456,12 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
   let trusted = true;
   let formGroupVisible = true;
   let fieldsProbeGeneration = 0;
+  /** The tab id this instance last rendered for, or `null` before the first
+   *  `render` call — see `render`'s own doc for why page-specific state must
+   *  reset on a change of THIS, not only on a change of `trusted`: two
+   *  different tabs can both be trusted, and `isPageTrusted` alone cannot
+   *  tell them apart. */
+  let lastTabId: number | null = null;
 
   function setMsg(text: string, tone: 'ok' | 'err' | 'muted'): void {
     msgEl.textContent = text;
@@ -585,21 +591,38 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
 
   // ── the trust gate ──────────────────────────────────────────────────────
 
+  /**
+   * The dedup guard is TWO conditions, not one: `trusted` alone cannot tell
+   * two different (both-trusted) tabs apart, so switching the panel from an
+   * already-gestured tab A to an already-gestured tab B must still reset
+   * page-specific state — a stale Check-fit score or Form-group visibility
+   * from A must never linger on top of B's page, even though `isPageTrusted`
+   * returns `true` for both. `lastTabId` is what catches that case; `trusted`
+   * alone would dedup it away.
+   */
   function render(state: AnswerState | null): void {
     const next = isPageTrusted(state);
-    if (next === trusted) return;
+    const nextTabId = state?.tabId ?? null;
+    if (next === trusted && nextTabId === lastTabId) return;
     trusted = next;
+    lastTabId = nextTabId;
+
+    // Page-specific state belongs to whichever tab this instance last
+    // rendered — reset it on ANY change captured above, not only when trust
+    // flips to false. `formGroupVisible` resets to the fail-open default
+    // (matching `reset()`) rather than lingering on the PREVIOUS tab's
+    // answer until this tab's own probe (below) resolves.
+    fieldsProbeGeneration += 1;
+    matchResult.hidden = true;
+    matchResult.textContent = '';
+    formGroupVisible = true;
+    deps.onAnswerToolsVisibility?.(true);
     if (trusted) {
       // A live grant just landed while this instance stayed mounted (the
-      // panel never remounts on its own) — refresh the fields-gated group
-      // for whatever page this now is.
+      // panel never remounts on its own), OR this is a DIFFERENT
+      // already-trusted tab — either way, refresh the fields-gated group for
+      // whatever page this now is.
       checkPage();
-    } else {
-      // The page we were showing results for is gone — a stale in-flight
-      // probe (or the score card it would render) must not survive it.
-      fieldsProbeGeneration += 1;
-      matchResult.hidden = true;
-      matchResult.textContent = '';
     }
     setMsg('', 'muted');
     redraw();

@@ -2186,22 +2186,24 @@ describe('the context-menu entries (ADR-044 decision 2)', () => {
     const sidePanelOpenMock = vi.mocked(browser.sidePanel.open);
     sidePanelOpenMock.mockClear();
     tabsQueryMock.mockClear();
-    tabsQueryMock.mockResolvedValue([
-      { id: 210, url: 'https://jobs.example.com/posting/11' } as never,
-    ]);
 
     const clickedTabId = 210;
-    onClicked({ menuItemId: 'ajh-answer-open-panel' } as never, { id: clickedTabId } as never);
+    onClicked(
+      { menuItemId: 'ajh-answer-open-panel' } as never,
+      { id: clickedTabId, url: 'https://jobs.example.com/posting/11' } as never
+    );
     await flush();
 
     expect(sidePanelOpenMock).toHaveBeenCalledWith({ tabId: clickedTabId });
-    // A plain right-click IS a qualifying `activeTab` gesture, so — unlike
-    // before this entry had a job-tools panel to gate — it now reads the tab
-    // (for the origin) and writes the SAME minimal record `runAnswerAddRow`
-    // builds for a fresh tab, with `pageChanged` already armed `false`. No
-    // row is added — a bare right-click implies nothing about wanting to
-    // re-scan the page's Answer-tools questions.
-    expect(tabsQueryMock).toHaveBeenCalledTimes(1);
+    // A plain right-click IS a qualifying `activeTab` gesture, so it now
+    // writes the SAME minimal record `runAnswerAddRow` builds for a fresh
+    // tab, with `pageChanged` already armed `false`. The origin comes
+    // DIRECTLY from this click's own `tab.url` — never a fresh `tabs.query`,
+    // which could resolve to a DIFFERENT tab if the user switched away in
+    // the interim (see `rearmPageChangedForGesture`'s doc). No row is added
+    // — a bare right-click implies nothing about wanting to re-scan the
+    // page's Answer-tools questions.
+    expect(tabsQueryMock).not.toHaveBeenCalled();
     const state = await readAnswerState(clickedTabId);
     expect(state).toEqual({
       tabId: clickedTabId,
@@ -2211,6 +2213,25 @@ describe('the context-menu entries (ADR-044 decision 2)', () => {
       stream: null,
       pageChanged: false,
     });
+  });
+
+  it("degrades the new record's origin to '' when the clicked tab has no url, rather than writing something malformed", async () => {
+    const onClicked = vi.mocked(browser.contextMenus.onClicked.addListener).mock.calls[0]?.[0];
+    if (!onClicked) throw new Error('context-menu click listener not registered');
+    const { readAnswerState } = await import('./lib/answer-state');
+    tabsQueryMock.mockClear();
+
+    const clickedTabId = 216;
+    // No `url` field at all on the tab object — same shape a restricted page
+    // (chrome://, a PDF viewer) can hand a context-menu handler.
+    onClicked({ menuItemId: 'ajh-answer-open-panel' } as never, { id: clickedTabId } as never);
+    await flush();
+
+    // Never a fresh tab lookup either, for the same reason as the sibling
+    // test above.
+    expect(tabsQueryMock).not.toHaveBeenCalled();
+    const state = await readAnswerState(clickedTabId);
+    expect(state?.origin).toBe('');
   });
 
   it('clears a STALE pageChanged on the plain-page click without scanning or touching existing rows', async () => {

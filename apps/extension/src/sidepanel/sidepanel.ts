@@ -64,6 +64,20 @@ const jobTools = mountJobTools(byId<HTMLDivElement>('job-tools-host'), { send })
 let unsubscribe: (() => void) | null = null;
 
 /**
+ * Generation guard against a STALE in-flight subscription callback — mirrors
+ * `popup.ts`'s `appliedCheckGeneration`/`fieldsProbeGeneration` pattern
+ * exactly (same stale-response race those already guard against).
+ * `subscribeAnswerState`'s returned unsubscribe (called at the top of
+ * `follow` below) only removes the `storage.onChanged` listener — it does
+ * NOT cancel the in-flight `readAnswerState(tabId).then(onState)` promise
+ * the SAME call already kicked off (`lib/answer-state.ts`). So a rapid
+ * `follow(A)` → `follow(B)` (fast tab-cycling) can still let A's stale
+ * closure fire its `onState` callback AFTER B's own subscription — and
+ * possibly after B's own render — with A's now-irrelevant data.
+ */
+let followGeneration = 0;
+
+/**
  * Point the panel at `tabId`'s state. Dropping the previous subscription
  * first is load-bearing: a panel that accumulated one listener per tab switch
  * would keep re-rendering with a background tab's rows on top of the active
@@ -85,8 +99,14 @@ let unsubscribe: (() => void) | null = null;
  * from `tabs.onActivated`/a focus change is an activation — `firstDelivery`
  * just defers each one's `checkPage()` to the moment it is actually safe to
  * fire, without changing which gesture triggers it.
+ *
+ * `followGeneration` guards the SAME callback against a different race: this
+ * call being superseded by a NEWER `follow()` before its own first delivery
+ * lands (see that flag's own doc).
  */
 function follow(tabId: number | null): void {
+  followGeneration += 1;
+  const myGeneration = followGeneration;
   unsubscribe?.();
   unsubscribe = null;
   if (tabId === null) {
@@ -96,6 +116,9 @@ function follow(tabId: number | null): void {
   }
   let firstDelivery = true;
   unsubscribe = subscribeAnswerState(tabId, (state) => {
+    // A newer `follow()` call has since superseded this one — its render (or
+    // its own in-flight read) must win; bail before touching anything.
+    if (myGeneration !== followGeneration) return;
     answerTools.render(state);
     jobTools.render(state);
     if (firstDelivery) {
