@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788555488308,
+  "lastUpdate": 1788583887701,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "4faf353f1725bc844293ec7e8b3148d418e2209f",
-          "message": "refactor: consolidate static landing into apps/landing and retire the scroll-film app (#737)\n\n* refactor: consolidate static landing into apps/landing and retire the scroll-film app\n\nThe TERMINAL VELOCITY scroll-film (ADR-0016) is abandoned by owner decision mid-M4.\napps/landing is now the self-contained static site formerly at landing/ (no build step,\nno workspace package); pages.yml publishes it directly. The film milestones M1-M3 remain\nin history; the uncommitted M4 tree is preserved in a stash on feat/tv-m4-robot.\nADR-0017 records the decision and supersedes ADR-0016.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: reroute landing review ownership to project-steward for the static site\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: mark gl fleet dormant in routing table and webgl-standards skill per adr-0017\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-          "timestamp": "2026-07-20T20:46:05+02:00",
-          "tree_id": "b7eae4beb3eb9fb287d3a913d69628f86a0b6489",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/4faf353f1725bc844293ec7e8b3148d418e2209f"
-        },
-        "date": 1784573751756,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2229606,
-            "range": "± 58430",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2662471,
-            "range": "± 43590",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 291163,
-            "range": "± 3866",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 335420,
             "range": "± 14866",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8a289ef2b70c7e44b234c74ffd86fd5060891416",
+          "message": "fix: make tray pause/resume-all autopilots actually work (#1112)\n\n* fix: make the tray pause-all item an actual pause/resume toggle\n\nClicking \"Pause all autopilots\" paused every autopilot but never flipped\nback to \"Resume all autopilots\" because the menu item handle was a local\nvariable, never stored past build() for a later click to relabel. pause_all\nwas also one-directional, with no resume counterpart.\n\nStore the item's handle in TrayState (mirroring new_jobs_item) and derive\nthe toggle direction from the store's real state: pause every Active\nautopilot if any is running, otherwise resume every Paused one back to\nActive. Archived autopilots are never touched by either direction. The\nlabel is recomputed from the store post-mutation (and at cold-start from\nthe persisted state) rather than tracked separately.\n\nThe mutation + relabel logic is pulled into an AppHandle-free\ntoggle_pause_all(&AutopilotStore) so it's covered by real tests despite\nthis crate having no tauri::test mock-app harness.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* fix: replace the stale-label tray pause/resume toggle with two static actions\n\nReview of f1de242d found a real regression it introduced: the single stateful\ntoggle's label only got refreshed inside its own click handler, but autopilot\nstatus can also change via autopilot_pause/autopilot_resume (Settings) and\nprivacy_reset_app's autopilot wipe, neither of which touches the tray. A user\npausing both autopilots from Settings left the tray still reading \"Pause all\nautopilots\"; clicking it then derived the opposite action from live store\nstate and resumed everything, against explicit intent.\n\nReplace it with two separate, always-visible, statically-labeled menu items:\n\"Pause all autopilots\" (pauses every currently-Active autopilot, no-op\notherwise) and \"Resume all autopilots\" (resumes every currently-Paused one,\nno-op otherwise). Neither label ever changes, so neither can say the\nopposite of what it does — no relabeling, no cold-start label computation,\nno stored menu-item handle to keep in sync. resume_all is documented as\nliteral: it resumes every Paused autopilot, including ones paused\nindividually from Settings, not just ones a prior pause_all paused.\n\nRewrote the tray test suite for the new shape (9 tests, up from 6): explicit\nno-op coverage for pause_all/resume_all across all-Paused/all-Archived/empty\nstarting states, a single-Active positive case, and a pause-then-resume\nround trip proving a pre-existing individual pause also resumes.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Sonnet 5 <noreply@anthropic.com>",
+          "timestamp": "2026-09-05T06:26:44+02:00",
+          "tree_id": "9c4ab473f25975edebeb05098c908b97e2c8bc7e",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/8a289ef2b70c7e44b234c74ffd86fd5060891416"
+        },
+        "date": 1788583886602,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2332834,
+            "range": "± 65339",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2788942,
+            "range": "± 50737",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 326718,
+            "range": "± 11163",
             "unit": "ns/iter"
           }
         ]
