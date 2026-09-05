@@ -1,5 +1,103 @@
 [
   {
+    "number": 1111,
+    "title": "ui: rename the open-panel control to \"Open AI Job Hunter answer tool\"",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1111",
+    "draft": false,
+    "created_at": "2026-09-05T00:58:50Z",
+    "updated_at": "2026-09-05T05:55:52Z",
+    "merged_at": "2026-09-05T01:14:39Z",
+    "closed_at": "2026-09-05T01:14:39Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1112,
+    "title": "fix: make tray pause/resume-all autopilots actually work",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1112",
+    "draft": false,
+    "created_at": "2026-09-05T04:21:55Z",
+    "updated_at": "2026-09-05T05:55:49Z",
+    "merged_at": "2026-09-05T04:26:45Z",
+    "closed_at": "2026-09-05T04:26:45Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1113,
+    "title": "feat: bring Import/Check fit/Fill form/Save answers into the side panel",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1113",
+    "draft": false,
+    "created_at": "2026-09-05T04:51:23Z",
+    "updated_at": "2026-09-05T05:55:48Z",
+    "merged_at": "2026-09-05T05:53:36Z",
+    "closed_at": "2026-09-05T05:53:36Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1110,
+    "title": "feat: open the answer panel from a plain right-click on the page",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1110",
+    "draft": false,
+    "created_at": "2026-09-04T22:57:47Z",
+    "updated_at": "2026-09-04T23:46:12Z",
+    "merged_at": "2026-09-04T23:29:59Z",
+    "closed_at": "2026-09-04T23:29:59Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1109,
+    "title": "fix: posting score, trust and agent-cli addressing integrity (#1104-#1107)",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1109",
+    "draft": false,
+    "created_at": "2026-09-04T18:37:13Z",
+    "updated_at": "2026-09-04T20:44:55Z",
+    "merged_at": "2026-09-04T20:33:25Z",
+    "closed_at": "2026-09-04T20:33:25Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1103,
+    "title": "fix: extension answer tools capture script and reasoning-aware draft budget",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1103",
+    "draft": false,
+    "created_at": "2026-09-03T08:57:43Z",
+    "updated_at": "2026-09-04T15:04:36Z",
+    "merged_at": "2026-09-04T13:26:19Z",
+    "closed_at": "2026-09-04T13:26:19Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1108,
+    "title": "fix: give extension answer tools a side panel; fix the inline rewrite popover",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1108",
+    "draft": false,
+    "created_at": "2026-09-04T13:13:20Z",
+    "updated_at": "2026-09-04T15:04:33Z",
+    "merged_at": "2026-09-04T14:51:43Z",
+    "closed_at": "2026-09-04T14:51:43Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
     "number": 1102,
     "title": "feat: per-language help retrieval with cancellation, agent cli settings card, cross-os mcp smoke",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1102",
@@ -599,104 +697,6 @@
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1057,
-    "title": "fix: make the v0.139.0 score tab actually score, and stop embeds timing out under load",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1057",
-    "draft": false,
-    "created_at": "2026-08-20T15:04:42Z",
-    "updated_at": "2026-08-20T15:50:22Z",
-    "merged_at": "2026-08-20T15:37:44Z",
-    "closed_at": "2026-08-20T15:37:44Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1056,
-    "title": "feat: job-ad score surfaces, and email tracking v2 with opt-in auto-write",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1056",
-    "draft": false,
-    "created_at": "2026-08-20T07:07:04Z",
-    "updated_at": "2026-08-20T12:29:18Z",
-    "merged_at": "2026-08-20T12:13:45Z",
-    "closed_at": "2026-08-20T12:13:45Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1054,
-    "title": "ci: stop the linux dependency step hanging for the whole job timeout",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1054",
-    "draft": false,
-    "created_at": "2026-08-19T21:56:26Z",
-    "updated_at": "2026-08-20T12:15:40Z",
-    "merged_at": "2026-08-19T21:58:08Z",
-    "closed_at": "2026-08-19T21:58:08Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1055,
-    "title": "fix(landing): stop the a11y page minting phantom numeric urls",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1055",
-    "draft": false,
-    "created_at": "2026-08-20T04:19:41Z",
-    "updated_at": "2026-08-20T12:15:37Z",
-    "merged_at": "2026-08-20T04:19:59Z",
-    "closed_at": "2026-08-20T04:19:59Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1044,
-    "title": "build(deps): bump the codeql-action group with 3 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1044",
-    "draft": false,
-    "created_at": "2026-08-19T16:07:39Z",
-    "updated_at": "2026-08-19T19:47:33Z",
-    "merged_at": "2026-08-19T16:22:57Z",
-    "closed_at": "2026-08-19T16:22:57Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1045,
-    "title": "build(deps): bump taiki-e/install-action from 2.85.11 to 2.86.1",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1045",
-    "draft": false,
-    "created_at": "2026-08-19T16:08:26Z",
-    "updated_at": "2026-08-19T19:47:29Z",
-    "merged_at": "2026-08-19T16:23:01Z",
-    "closed_at": "2026-08-19T16:23:01Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1046,
-    "title": "build(deps): bump swatinem/rust-cache from 2.9.1 to 2.9.2",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1046",
-    "draft": false,
-    "created_at": "2026-08-19T16:08:32Z",
-    "updated_at": "2026-08-19T19:47:27Z",
-    "merged_at": "2026-08-19T16:23:04Z",
-    "closed_at": "2026-08-19T16:23:04Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
     }
   }
 ]

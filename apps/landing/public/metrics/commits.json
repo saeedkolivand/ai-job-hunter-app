@@ -1,5 +1,293 @@
 [
   {
+    "sha": "7c158df5e0fb0da8fd39d6e34dac6adb7d065c8c",
+    "commit": {
+      "message": "chore: sync landing download version to v0.148.0",
+      "author": {
+        "date": "2026-09-05T06:37:21Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "89a9a10e0630cdc92900d474d32e21f2a4ae69eb",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.148.0 [skip ci]",
+      "author": {
+        "date": "2026-09-05T06:36:52Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "f7243153795729bbbcd3ee9c9409b8ed1ff9f62d",
+    "commit": {
+      "message": "chore(release): 0.148.0 [skip ci]",
+      "author": {
+        "date": "2026-09-05T05:55:39Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "cca2e4e82fe409f0a7eed2f3eeaed66609aca462",
+    "commit": {
+      "message": "feat: bring Import/Check fit/Fill form/Save answers into the side panel (#1113)",
+      "author": {
+        "date": "2026-09-05T05:53:36Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "02da30a7d10a8ba04f5d61ff0e253d7c81b1c79d",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-05T04:51:27Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "8a289ef2b70c7e44b234c74ffd86fd5060891416",
+    "commit": {
+      "message": "fix: make tray pause/resume-all autopilots actually work (#1112)",
+      "author": {
+        "date": "2026-09-05T04:26:44Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "12446c07df2c90c53418e73c3658d3526dca33e6",
+    "commit": {
+      "message": "ui: rename the open-panel control to \"Open AI Job Hunter answer tool\" (#1111)",
+      "author": {
+        "date": "2026-09-05T01:14:38Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "05c1e9b7478d794f2f3fad2a8cb7b3085f3158b1",
+    "commit": {
+      "message": "chore: sync landing download version to v0.147.0",
+      "author": {
+        "date": "2026-09-05T00:40:32Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "b959fa16972263a2f3d20165c7aa6661613d97f0",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.147.0 [skip ci]",
+      "author": {
+        "date": "2026-09-05T00:40:00Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "73d7efad8067daabd5faa045f482ee5edace3500",
+    "commit": {
+      "message": "chore(release): 0.147.0 [skip ci]",
+      "author": {
+        "date": "2026-09-04T23:38:08Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "be7ec50bfb10b8a10589fa1a51b16c5f5a09e3d6",
+    "commit": {
+      "message": "feat: open the answer panel from a plain right-click on the page (#1110)",
+      "author": {
+        "date": "2026-09-04T23:29:58Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "4145ca8d1f66f6a414d94c47e30a994b58553f56",
+    "commit": {
+      "message": "chore: sync landing download version to v0.146.2",
+      "author": {
+        "date": "2026-09-04T21:28:00Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "d86387586ea9ac73bff8205e58470ade4f8083cd",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.146.2 [skip ci]",
+      "author": {
+        "date": "2026-09-04T21:27:18Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "f22e07db7eec6c760e54758df458ec63b4e88aa5",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-04T20:58:08Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "dbc1960ca0a4ccca6a8e55542c492e862ff68b23",
+    "commit": {
+      "message": "chore(release): 0.146.2 [skip ci]",
+      "author": {
+        "date": "2026-09-04T20:44:43Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "84ef96d377a5d83ca632261fc8f5285744869b13",
+    "commit": {
+      "message": "fix: posting score, trust and agent-cli addressing integrity (#1104-#1107) (#1109)",
+      "author": {
+        "date": "2026-09-04T20:33:24Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "5ac11085cd07bab920bee847edd58f5d7cfb04e0",
+    "commit": {
+      "message": "chore: sync landing download version to v0.146.1",
+      "author": {
+        "date": "2026-09-04T15:49:25Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "f3927ece880ff387e8d783e824dd279e02a11df3",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.146.1 [skip ci]",
+      "author": {
+        "date": "2026-09-04T15:48:54Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "80fe73fbc5757b3083d18ba721ba87f5b3811f10",
+    "commit": {
+      "message": "chore(release): 0.146.1 [skip ci]",
+      "author": {
+        "date": "2026-09-04T15:04:24Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "446d4aece4a399f040a08962500dbc2c3db2b598",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-04T15:03:11Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "57be8988d8496a4ee79456a40b284c1565b4acbf",
+    "commit": {
+      "message": "fix: give extension answer tools a side panel; fix the inline rewrite popover (#1108)",
+      "author": {
+        "date": "2026-09-04T14:51:43Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "c57678096f2ba90a30bc78f6fbebce727f0d94b7",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-04T13:51:09Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "1034ca546f21556c211fad54e7370d18a5cca7b0",
+    "commit": {
+      "message": "fix: extension answer tools capture script and reasoning-aware draft budget (#1103)",
+      "author": {
+        "date": "2026-09-04T13:26:18Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "6d67e81d97648b7ae94131e0e5d9115bc8c7f4c3",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-04T07:57:17Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "7195ca9611830e202fc6d2d38bb4a269ea67f904",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -909,294 +1197,6 @@
     },
     "author": {
       "login": "github"
-    }
-  },
-  {
-    "sha": "8acc6e5e09fc393d920e54f8edd86a4565cf0dee",
-    "commit": {
-      "message": "chore(release): 0.142.0 [skip ci]",
-      "author": {
-        "date": "2026-08-22T06:07:37Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "1d70c491c3f327d84da5a81059a65da4689ad1d3",
-    "commit": {
-      "message": "feat(scraping): make freehire its own selectable board (#1074)",
-      "author": {
-        "date": "2026-08-22T06:06:28Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "55385ae80fd60f7976a7f0fbb9fedf0b62b9d6df",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-08-22T03:55:29Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "f358f08eb4003851dcbaf0e4617cabe52226e938",
-    "commit": {
-      "message": "chore: sync landing download version to v0.141.2",
-      "author": {
-        "date": "2026-08-22T03:21:16Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "5dafd67746d17600ee68144a4b62d2ade587e18a",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.141.2 [skip ci]",
-      "author": {
-        "date": "2026-08-22T03:20:56Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "39513ade7a24b87edfd7bc79f3fca057f1c7aaca",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-08-22T03:03:30Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "03f0b8e5598a012f09b9e40ab6c4d37ce4db3dc6",
-    "commit": {
-      "message": "chore(release): 0.141.2 [skip ci]",
-      "author": {
-        "date": "2026-08-22T02:40:06Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "52830b0c29885830bf7942af38865530167dba94",
-    "commit": {
-      "message": "fix: make letter-spaced headings, plain-text links and placeholder sections behave (#1073)",
-      "author": {
-        "date": "2026-08-22T02:39:01Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "8d3e32e35196be0dc0a6fa666aad4b878010cd09",
-    "commit": {
-      "message": "chore: sync landing download version to v0.141.1",
-      "author": {
-        "date": "2026-08-22T01:01:31Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "94f10519891f2e2f7d1264fab7aef5c5db503931",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.141.1 [skip ci]",
-      "author": {
-        "date": "2026-08-22T01:01:02Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "6727e647204564e494561e135a94b78bd634a010",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-08-22T00:37:26Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "59d28ab8a4aa867b9bfce3fdc05329b356e89157",
-    "commit": {
-      "message": "chore(release): 0.141.1 [skip ci]",
-      "author": {
-        "date": "2026-08-22T00:14:38Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "c2df7bf6ea04914c8981ccf1961f4457a44ab228",
-    "commit": {
-      "message": "fix(export): render projects from resumes imported as pdf or docx (#1072)",
-      "author": {
-        "date": "2026-08-22T00:13:21Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "1726fcf6e0300949c233d4106ec77e1894d8ec27",
-    "commit": {
-      "message": "chore: sync landing download version to v0.141.0",
-      "author": {
-        "date": "2026-08-21T22:17:12Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "8bf36a30892b12a930953299e48570d4c2ab787f",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.141.0 [skip ci]",
-      "author": {
-        "date": "2026-08-21T22:16:51Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "2f9b1be8a3086633c07058fc0ae63aa01fa83e8b",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-08-21T22:00:12Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "2046769b199006d888ee52db16cd60b847086287",
-    "commit": {
-      "message": "chore(release): 0.141.0 [skip ci]",
-      "author": {
-        "date": "2026-08-21T21:38:13Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "1ff8aa3bb9c770b0bb74540833469f38cf314598",
-    "commit": {
-      "message": "feat(export): render projects as bold name, technologies meta line, description (#1071)",
-      "author": {
-        "date": "2026-08-21T21:35:38Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "10269acc8eec08ca9fe1722aa1690410eccaad98",
-    "commit": {
-      "message": "chore: sync landing download version to v0.140.0",
-      "author": {
-        "date": "2026-08-21T18:26:43Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "0fa0c66b4c4533d695303135beff6b58173c61e9",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.140.0 [skip ci]",
-      "author": {
-        "date": "2026-08-21T18:26:10Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "be5e6680b31dc7850f3bb03717658cb4c328fa54",
-    "commit": {
-      "message": "chore(release): 0.140.0 [skip ci]",
-      "author": {
-        "date": "2026-08-21T17:52:35Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "b3132bac923d0ffa46f190c1ae939ff2f360fc41",
-    "commit": {
-      "message": "docs: repair the citations the history rewrite broke, and stop citing shas (#1070)",
-      "author": {
-        "date": "2026-08-21T17:43:48Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "666ea7bc1edf86cf2e2d411737a67c09ee908484",
-    "commit": {
-      "message": "fix(ci): publish downloads-by-platform.json, and stop it from blocking deploys (#1069)",
-      "author": {
-        "date": "2026-08-21T17:10:58Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "3971a8d7b5a115b5aef37238f2aaf797a326243d",
-    "commit": {
-      "message": "feat(landing): show real per-platform download counts on the download buttons (#1068)",
-      "author": {
-        "date": "2026-08-21T17:02:51Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
     }
   }
 ]
