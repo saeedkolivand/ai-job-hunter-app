@@ -17,6 +17,10 @@ vi.mock('../answer-tools/answer-tools', () => ({
   copyText: vi.fn(),
 }));
 
+vi.mock('../job-tools/job-tools', () => ({
+  mountJobTools: vi.fn(() => ({ render: vi.fn(), checkPage: vi.fn() })),
+}));
+
 vi.mock('../lib/answer-state', () => ({
   subscribeAnswerState: vi.fn(() => vi.fn()),
 }));
@@ -39,9 +43,10 @@ vi.mock('@wxt-dev/browser', () => ({
   },
 }));
 
-document.body.innerHTML = '<div id="answer-tools-host"></div>';
+document.body.innerHTML = '<div id="job-tools-host"></div><div id="answer-tools-host"></div>';
 
 const { subscribeAnswerState } = await import('../lib/answer-state');
+const { mountJobTools } = await import('../job-tools/job-tools');
 await import('./sidepanel');
 
 /** Flush the module-load `resolvePanelWindowId().then(...)` chain. */
@@ -79,5 +84,62 @@ describe('sidepanel window scoping', () => {
     await flush();
 
     expect(subscribeAnswerState).toHaveBeenCalledWith(42, expect.any(Function));
+  });
+});
+
+// ── job-tools wiring (panel parity) ─────────────────────────────────────────
+// `follow()` is BOTH of job-tools's own documented panel trigger points ("on
+// mount and on tab activation" — see job-tools.ts's `JobToolsView.checkPage`
+// doc): the initial call from `resolvePanelWindowId().then(...)` is the
+// mount, every later call from `tabs.onActivated`/a focus change is an
+// activation.
+
+describe('job-tools wiring (panel parity)', () => {
+  const jobTools = vi.mocked(mountJobTools).mock.results[0]?.value as
+    { render: ReturnType<typeof vi.fn>; checkPage: ReturnType<typeof vi.fn> } | undefined;
+  if (!jobTools) throw new Error('mountJobTools was not called at module load');
+
+  it('mounts against #job-tools-host', () => {
+    expect(vi.mocked(mountJobTools)).toHaveBeenCalledWith(
+      document.getElementById('job-tools-host'),
+      expect.objectContaining({ send: expect.any(Function) })
+    );
+  });
+
+  it('calls checkPage again on every tab activation, not just at mount', async () => {
+    await flush();
+    const callsAfterMount = jobTools.checkPage.mock.calls.length;
+    expect(callsAfterMount).toBeGreaterThan(0);
+
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+    onActivated({ tabId: 42, windowId: PANEL_WINDOW_ID } as never);
+    await flush();
+
+    expect(jobTools.checkPage.mock.calls.length).toBeGreaterThan(callsAfterMount);
+  });
+
+  it('feeds the subscribed AnswerState to jobTools.render alongside answerTools.render', async () => {
+    vi.mocked(subscribeAnswerState).mockClear();
+    jobTools.render.mockClear();
+
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+    onActivated({ tabId: 42, windowId: PANEL_WINDOW_ID } as never);
+    await flush();
+
+    const stateCallback = vi.mocked(subscribeAnswerState).mock.calls[0]?.[1];
+    if (!stateCallback) throw new Error('subscribeAnswerState callback not captured');
+    const fakeState = {
+      tabId: 42,
+      origin: 'https://jobs.example.com',
+      scannedAt: 1,
+      rows: [],
+      stream: null,
+      pageChanged: false,
+    };
+    stateCallback(fakeState as never);
+
+    expect(jobTools.render).toHaveBeenCalledWith(fakeState);
   });
 });

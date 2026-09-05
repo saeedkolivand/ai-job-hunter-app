@@ -20,12 +20,16 @@
  * or write of the page goes through the background, which acts under the
  * `activeTab` grant a user gesture created. After a navigation the shared
  * state says so and the component replaces every write control with one line
- * — this file does not need to know about that case at all.
+ * — this file does not need to know about that case at all. The same is now
+ * true of the job-tools controls (Import/Check fit/Fill/Save answers) mounted
+ * below — see `job-tools.ts`'s doc for its own trust gate, which this file
+ * only has to feed via `jobTools.render`/`jobTools.checkPage`.
  */
 
 import { browser } from '@wxt-dev/browser';
 
 import { copyText, mountAnswerTools } from '../answer-tools/answer-tools';
+import { mountJobTools } from '../job-tools/job-tools';
 import { subscribeAnswerState } from '../lib/answer-state';
 import type { PopupRequest, PopupResponse } from '../lib/messages';
 
@@ -51,6 +55,11 @@ const answerTools = mountAnswerTools(byId<HTMLDivElement>('answer-tools-host'), 
   copy: copyText,
 });
 
+// No `onAnswerToolsVisibility` here: the panel's Answer-tools section has no
+// disclosure to gate on the fields probe today (unlike the popup's), and
+// adding that is out of scope for this parity change.
+const jobTools = mountJobTools(byId<HTMLDivElement>('job-tools-host'), { send });
+
 /** Unsubscribe the previous tab's state subscription, if any. */
 let unsubscribe: (() => void) | null = null;
 
@@ -59,15 +68,26 @@ let unsubscribe: (() => void) | null = null;
  * first is load-bearing: a panel that accumulated one listener per tab switch
  * would keep re-rendering with a background tab's rows on top of the active
  * one's, which is exactly the confusion a per-window surface has to avoid.
+ *
+ * `jobTools.checkPage()` is fired here too — this function IS both of the
+ * job-tools trigger points its own doc names for the panel ("mount and tab
+ * activation"): the first call from `resolvePanelWindowId().then(...)` below
+ * is the mount, every later call from `tabs.onActivated`/a focus change is an
+ * activation.
  */
 function follow(tabId: number | null): void {
   unsubscribe?.();
   unsubscribe = null;
   if (tabId === null) {
     answerTools.render(null);
+    jobTools.render(null);
     return;
   }
-  unsubscribe = subscribeAnswerState(tabId, (state) => answerTools.render(state));
+  unsubscribe = subscribeAnswerState(tabId, (state) => {
+    answerTools.render(state);
+    jobTools.render(state);
+  });
+  jobTools.checkPage();
 }
 
 /** This panel's own window — resolved once, since a panel never migrates

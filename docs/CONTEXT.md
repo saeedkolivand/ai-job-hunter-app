@@ -197,6 +197,16 @@ server listens on `127.0.0.1` loopback, validates the Origin header and per-fram
 token, and guards the import URL against SSRF (DNS-rebinding-safe via IP pinning).
 _Avoid_: scrape (the headless board path), Apply (extension imports are Saves)
 
+**Job tools**:
+The four page-scoped action buttons — Import this job, Check fit, Fill this form, Save my
+answers from this page — mounted by BOTH the popup and the side panel from one shared
+component (`apps/extension/src/job-tools/job-tools.ts`), gated on a per-tab trust signal
+the panel needs (the toolbar-click gesture the popup always implicitly has) and the popup
+structurally never does. See
+[ADR-045](knowledge/decision-records/adr-045-job-tools-panel-parity-and-trust-gate.md).
+_Avoid_: Answer tools (the separate, older shared component for drafting/iterating on an
+**Application question** — Job tools never drafts anything)
+
 **Autofill** (a.k.a. assisted autofill):
 The inverse of **Extension import**: the extension writes the user's **own** Contact
 Profile fields (fullName, email, phone, location, linkedin, github, website) _out_ onto

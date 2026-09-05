@@ -25,8 +25,15 @@
       <!-- The panel is an extension page with NO page access of its own: every
            control that reads or writes the page goes through the background,
            which holds the `activeTab` grant a gesture created. That is why the
-           panel can stay open across a blur without widening anything. -->
+           panel can stay open across a blur without widening anything.
+
+           job-tools-host: the shared job-tools component (Import/Check fit/
+           Fill/Save answers — `src/job-tools/job-tools.ts`), also mounted by
+           the popup. Gated on a live `activeTab` grant for THIS panel's
+           active tab (see that module's doc) since, unlike the popup, the
+           panel is never itself a fresh gesture. -->
       <section class="view">
+        <div id="job-tools-host"></div>
         <div id="answer-tools-host" class="atools"></div>
       </section>
     </main>

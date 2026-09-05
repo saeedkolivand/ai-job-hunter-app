@@ -100,8 +100,10 @@
         </button>
         <p class="hint">Import the job on this page into your desktop app.</p>
 
-        <!-- Job group: always shown — import, fit-check, applied state. -->
-        <section class="group" aria-label="Job">
+        <!-- Job status: found/applied state — stays owned by popup.ts directly
+             (not part of the shared job-tools module below; "Mark as applied"
+             was never in the panel-parity scope). -->
+        <section class="group" aria-label="Job status">
           <!-- Fire-and-forget "have I already applied?" line, populated after the
                popup opens (background auto-check). Empty/hidden until (and unless)
                an existing Application is found — never shown on a failure/timeout. -->
@@ -111,54 +113,15 @@
           <button id="btn-mark-applied" class="btn btn--quiet" type="button" hidden>
             Mark as applied
           </button>
-          <button id="btn-import" class="btn btn--primary" type="button">Import this job</button>
-          <!-- Explicit, never automatic: scores the default/most-recent resume against
-               this page's posting (keyword coverage only — a local computation; only
-               the score + a few missing keywords ever leave the device). -->
-          <button
-            id="btn-check-fit"
-            class="btn btn--quiet"
-            type="button"
-            title="Score your resume against this page's job posting"
-          >
-            Check fit
-          </button>
-          <div id="match-result" class="match-result" hidden></div>
-          <label class="check">
-            <input id="chk-applied" type="checkbox" />
-            <span>I already applied to this job</span>
-          </label>
         </section>
 
-        <!-- Form group: assisted autofill + answer capture — hidden (together with
-             the Answer-tools disclosure below) when this page has no fillable
-             fields (see popup.ts's fields probe, run once on connect). NOT
-             hidden by default here: the probe fails OPEN, so this group (and
-             Answer tools) render visible until/unless a CONFIRMED empty scan
-             says otherwise — a deliberate brief flash-then-hide on a
-             fields:false page, never the reverse (a probe bug hiding a
-             feature that's actually there). -->
-        <section id="group-form" class="group group--divided" aria-label="Form">
-          <button
-            id="btn-fill"
-            class="btn btn--primary"
-            type="button"
-            title="Fill this page's form with your saved contact details (opt-in, review before submitting)"
-          >
-            Fill this form
-          </button>
-          <!-- Always offered alongside the mark-as-applied flow — the post-submit
-               one-stop gesture. No match for this page → the desktop refuses with
-               a message to import the job first (never auto-creates). -->
-          <button
-            id="btn-save-answers"
-            class="btn btn--quiet"
-            type="button"
-            title="Save the answers you typed on this page's application form"
-          >
-            Save my answers from this page
-          </button>
-        </section>
+        <!-- Job + Form groups (Import/Check fit, Fill/Save answers): the SHARED
+             job-tools component (`src/job-tools/job-tools.ts`), which the side
+             panel also mounts — this is what gives the panel parity with these
+             four controls. Empty in the markup; the component builds its own
+             DOM into this host, including the Form group's fields-probe
+             visibility (unchanged behavior, moved out of popup.ts). -->
+        <div id="job-tools-host"></div>
 
         <!-- Answer tools: collapsed by default (persisted expand/collapse
              preference — see popup.ts's bootstrapAnswerTools); auto-expands
