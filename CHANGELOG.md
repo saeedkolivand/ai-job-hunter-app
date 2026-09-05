@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.148.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.147.0...v0.148.0) (2026-09-05)
+
+### ✨ Features
+
+* bring Import/Check fit/Fill form/Save answers into the side panel ([#1113](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1113)) ([cca2e4e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/cca2e4e82fe409f0a7eed2f3eeaed66609aca462))
+
+### 🐛 Bug Fixes
+
+* make tray pause/resume-all autopilots actually work ([#1112](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1112)) ([8a289ef](https://github.com/saeedkolivand/ai-job-hunter-app/commit/8a289ef2b70c7e44b234c74ffd86fd5060891416))
+
+### 🎨 UI/UX
+
+* rename the open-panel control to "Open AI Job Hunter answer tool" ([#1111](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1111)) ([12446c0](https://github.com/saeedkolivand/ai-job-hunter-app/commit/12446c07df2c90c53418e73c3658d3526dca33e6)), closes [#btn-open-panel](https://github.com/saeedkolivand/ai-job-hunter-app/issues/btn-open-panel)
+
 ## [0.147.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.146.2...v0.147.0) (2026-09-04)
 
 ### ✨ Features
