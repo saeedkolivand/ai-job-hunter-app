@@ -62,7 +62,7 @@ function buildPopupDom(): void {
     <details id="answer-tools">
       <summary id="answer-tools-summary">Answer tools</summary>
       <div id="answer-tools-host"></div>
-      <button id="btn-open-panel"></button>
+      <button id="btn-open-panel">Open AI Job Hunter answer tool</button>
     </details>
     <button id="btn-check-fit"></button>
     <div id="match-result" hidden></div>
@@ -1859,6 +1859,12 @@ describe('openAnswerPanel (#btn-open-panel)', () => {
     byId<HTMLButtonElement>('btn-open-panel').click();
 
     expect(open).toHaveBeenCalledWith({ tabId: 7 });
+  });
+
+  it('renders the label shared with the context-menu entry of the same name', () => {
+    expect(byId<HTMLButtonElement>('btn-open-panel').textContent?.trim()).toBe(
+      'Open AI Job Hunter answer tool'
+    );
   });
 
   it('falls back to browser.sidebarAction.open() when there is no sidePanel API (Firefox)', async () => {
