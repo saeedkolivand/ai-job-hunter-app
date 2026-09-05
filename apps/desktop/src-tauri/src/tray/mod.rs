@@ -15,7 +15,7 @@ use tauri::{AppHandle, Emitter, Manager, Wry};
 
 use crate::events::{emit_event, AUTOPILOT_FOCUS, MENU_ACTION, MENU_NAVIGATE};
 
-use crate::autopilot::{Autopilot, AutopilotStatus, AutopilotStore};
+use crate::autopilot::{AutopilotStatus, AutopilotStore};
 use crate::commands::notifications::{push_and_notify, OsBanner};
 use crate::notifications::{NewNotification, NotificationRoute};
 
@@ -24,15 +24,17 @@ const SETTINGS_ID: &str = "tray_settings";
 const CHECK_UPDATES_ID: &str = "tray_check_updates";
 const NEW_JOBS_ID: &str = "tray_new_jobs";
 const PAUSE_ALL_ID: &str = "tray_pause_all";
+const RESUME_ALL_ID: &str = "tray_resume_all";
 const QUIT_ID: &str = "tray_quit";
 
-/// Tray-owned state: the dynamic "New jobs" + "Pause/Resume all autopilots"
-/// menu item handles (so a click handler can relabel either one in place),
-/// plus the running unseen-jobs total and which autopilot to focus when the
-/// user clicks it.
+/// Tray-owned state: the dynamic "New jobs" menu item handle (relabeled in
+/// place as unseen jobs arrive), plus the running unseen-jobs total and which
+/// autopilot to focus when the user clicks it. "Pause all autopilots" /
+/// "Resume all autopilots" are two separate, always-visible, statically
+/// labeled menu items (see `pause_all`/`resume_all`) and so need no handle
+/// here — their label never changes, only the store state they act on does.
 pub struct TrayState {
     new_jobs_item: MenuItem<Wry>,
-    pause_all_item: MenuItem<Wry>,
     inner: Mutex<NewJobs>,
 }
 
@@ -68,12 +70,15 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let new_jobs = MenuItemBuilder::with_id(NEW_JOBS_ID, "New jobs: 0")
         .enabled(false)
         .build(app)?;
-    // Cold-start label reflects the store's real current state — the user may
-    // have quit last session with everything already paused from this same
-    // menu, so hardcoding "Pause all autopilots" here would lie until the
-    // next click. See `pause_all_initial_label`.
+    // Two separate, statically-labeled items rather than one toggle — each
+    // label always describes exactly what its own click does, so neither can
+    // ever go stale relative to autopilot status changes made elsewhere
+    // (Settings → Autopilot, the privacy "reset app" wipe). See `pause_all`/
+    // `resume_all`.
     let pause_all_item =
-        MenuItemBuilder::with_id(PAUSE_ALL_ID, pause_all_initial_label(app)).build(app)?;
+        MenuItemBuilder::with_id(PAUSE_ALL_ID, "Pause all autopilots").build(app)?;
+    let resume_all_item =
+        MenuItemBuilder::with_id(RESUME_ALL_ID, "Resume all autopilots").build(app)?;
     let quit = MenuItemBuilder::with_id(QUIT_ID, "Quit").build(app)?;
     let menu = MenuBuilder::new(app)
         .item(&show)
@@ -82,6 +87,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         .separator()
         .item(&new_jobs)
         .item(&pause_all_item)
+        .item(&resume_all_item)
         .separator()
         .item(&quit)
         .build()?;
@@ -113,6 +119,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             ),
             NEW_JOBS_ID => on_new_jobs_click(app),
             PAUSE_ALL_ID => pause_all(app),
+            RESUME_ALL_ID => resume_all(app),
             QUIT_ID => app.exit(0),
             _ => {}
         })
@@ -130,7 +137,6 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
 
     app.manage(TrayState {
         new_jobs_item: new_jobs,
-        pause_all_item,
         inner: Mutex::new(NewJobs::default()),
     });
     // Buffer for a menu intent missed by a backgrounded webview (see `dispatch_menu`).
@@ -355,82 +361,64 @@ fn on_new_jobs_click(app: &AppHandle) {
     handle_notification_click(app);
 }
 
-/// True when at least one non-archived autopilot is currently `Active` — the
-/// signal that decides which direction the "Pause all autopilots" tray toggle
-/// acts next: pause everything (`true`) or resume everything (`false`,
-/// because none are running — they're all paused, all archived, or the list
-/// is empty). `Archived` is a separate, terminal lifecycle state and never
-/// counts as active either way.
-fn any_autopilot_active(autopilots: &[Autopilot]) -> bool {
-    autopilots
-        .iter()
-        .any(|a| a.status == AutopilotStatus::Active)
-}
-
-/// The tray label matching the toggle's current direction, derived straight
-/// from `any_active` rather than a separately-tracked flag — the store is
-/// always the source of truth for which way the toggle currently points.
-fn pause_all_label(any_active: bool) -> &'static str {
-    if any_active {
-        "Pause all autopilots"
-    } else {
-        "Resume all autopilots"
+/// Move every non-archived autopilot currently in `from` to `to`. Shared core
+/// for `pause_all` (Active → Paused) and `resume_all` (Paused → Active),
+/// pulled out of the `AppHandle`-driven click handlers so it's testable
+/// against a real `AutopilotStore` directly — this crate has no `tauri::test`
+/// mock-app harness (see the note in `commands/autopilot/tests.rs`). A no-op
+/// when nothing is currently in `from` (including when the store is empty or
+/// every autopilot is `Archived`).
+fn set_all_status(store: &AutopilotStore, from: AutopilotStatus, to: AutopilotStatus) {
+    let ids: Vec<String> = store
+        .list()
+        .into_iter()
+        .filter(|a| a.status == from)
+        .map(|a| a.id)
+        .collect();
+    for id in ids {
+        store.set_status(&id, to.clone());
     }
 }
 
-/// The tray menu's label at cold-start (`build()`, before any click),
-/// computed from the store's real state rather than hardcoded, so a user who
-/// quit with everything already paused from this same menu doesn't see a
-/// stale "Pause all autopilots" on the next launch. Falls back to the "pause"
-/// label if the store isn't managed yet, mirroring `pause_all`'s own
-/// defensive `try_state` lookup.
-fn pause_all_initial_label(app: &AppHandle) -> &'static str {
-    let Some(store) = app.try_state::<Arc<Mutex<AutopilotStore>>>() else {
-        return pause_all_label(true);
-    };
-    pause_all_label(any_autopilot_active(&store.lock().list()))
-}
-
-/// The toggle's mutation + relabel, pulled out of `pause_all` so it's
-/// testable against a real `AutopilotStore` directly — this crate has no
-/// `tauri::test` mock-app harness (see the note in
-/// `commands/autopilot/tests.rs`), so an `AppHandle`-free helper is the only
-/// way to give this branch a real runnable test. If any non-archived
-/// autopilot is `Active`, pauses every `Active` one (a "pause all" click);
-/// otherwise resumes every `Paused` one back to `Active` (a "resume all"
-/// click). `Archived` autopilots are never touched by either direction.
-/// Returns the label matching the NEW aggregate state, recomputed from the
-/// store post-mutation rather than inferred from which direction was taken.
-fn toggle_pause_all(store: &AutopilotStore) -> &'static str {
-    let autopilots = store.list();
-    let (from, to) = if any_autopilot_active(&autopilots) {
-        (AutopilotStatus::Active, AutopilotStatus::Paused)
-    } else {
-        (AutopilotStatus::Paused, AutopilotStatus::Active)
-    };
-    for ap in autopilots.into_iter().filter(|a| a.status == from) {
-        store.set_status(&ap.id, to.clone());
-    }
-    pause_all_label(any_autopilot_active(&store.list()))
-}
-
-// ponytail: keeping this label live-synced to autopilot status changes made
-// elsewhere (e.g. the Settings → Autopilot page's own per-autopilot
-// pause/resume controls) while the tray menu is sitting open in memory is
-// deliberately out of scope. Checked `tauri::menu` (2.11.5, this workspace's
-// pinned version) for a "menu about to show" hook first — there isn't one —
-// so the cheap upgrade path is a cross-cutting event subscription in this
-// module (listen for the same status-change signal the Settings page would
-// fire and re-run the `any_autopilot_active` check), not worth building until
-// that staleness window is actually reported.
+/// The tray's "Pause all autopilots" item. Pauses every currently-`Active`
+/// (non-archived) autopilot; a no-op if none are `Active`. This label is a
+/// fixed string in `build()` and never changes, so unlike the old single
+/// stateful toggle it can never say the opposite of what a click actually
+/// does — it always pauses whatever is Active right now, regardless of
+/// whether that state came from a previous tray click, the Settings →
+/// Autopilot page, or `privacy_reset_app`. `Archived` autopilots are never
+/// touched.
 fn pause_all(app: &AppHandle) {
     let Some(store) = app.try_state::<Arc<Mutex<AutopilotStore>>>() else {
         return;
     };
-    let label = toggle_pause_all(&store.lock());
-    if let Some(state) = app.try_state::<TrayState>() {
-        let _ = state.pause_all_item.set_text(label);
-    }
+    set_all_status(
+        &store.lock(),
+        AutopilotStatus::Active,
+        AutopilotStatus::Paused,
+    );
+    // Empty id = "refresh autopilots" so the renderer reflects the change.
+    emit_focus(app, "");
+}
+
+/// The tray's "Resume all autopilots" item. Resumes every currently-`Paused`
+/// autopilot back to `Active`; a no-op if none are `Paused`. `Archived`
+/// autopilots are never touched.
+///
+/// "All" is literal: this resumes every `Paused` autopilot regardless of
+/// *why* it was paused, including one the user individually paused from
+/// Settings → Autopilot rather than via this menu's `pause_all`. There is no
+/// record of "which ones did the tray pause" — and there shouldn't be one,
+/// since the button's label says "all", not "the ones I paused".
+fn resume_all(app: &AppHandle) {
+    let Some(store) = app.try_state::<Arc<Mutex<AutopilotStore>>>() else {
+        return;
+    };
+    set_all_status(
+        &store.lock(),
+        AutopilotStatus::Paused,
+        AutopilotStatus::Active,
+    );
     // Empty id = "refresh autopilots" so the renderer reflects the change.
     emit_focus(app, "");
 }
@@ -461,71 +449,156 @@ mod tests {
         ids.iter().map(|id| store.get(id).unwrap().status).collect()
     }
 
-    #[test]
-    fn any_autopilot_active_is_false_when_none_are() {
-        assert!(!any_autopilot_active(&[]));
+    fn pause_all_active(store: &AutopilotStore) {
+        set_all_status(store, AutopilotStatus::Active, AutopilotStatus::Paused);
+    }
+
+    fn resume_all_paused(store: &AutopilotStore) {
+        set_all_status(store, AutopilotStatus::Paused, AutopilotStatus::Active);
     }
 
     #[test]
-    fn pause_all_label_matches_the_any_active_flag() {
-        assert_eq!(pause_all_label(true), "Pause all autopilots");
-        assert_eq!(pause_all_label(false), "Resume all autopilots");
-    }
-
-    #[test]
-    fn all_active_click_pauses_every_one_and_flips_to_resume() {
+    fn pause_all_active_pauses_every_active_one_and_leaves_others_alone() {
         let (store, ids, _temp) = seeded_store(3);
+        store.set_status(&ids[1], AutopilotStatus::Paused);
+        store.set_status(&ids[2], AutopilotStatus::Archived);
 
-        let label = toggle_pause_all(&store);
+        pause_all_active(&store);
 
-        assert_eq!(label, "Resume all autopilots");
         assert_eq!(
             statuses(&store, &ids),
-            vec![AutopilotStatus::Paused; 3],
-            "every autopilot was Active, so a pause-all click must pause all of them"
+            vec![
+                AutopilotStatus::Paused,   // was Active, got paused
+                AutopilotStatus::Paused,   // was already Paused, untouched
+                AutopilotStatus::Archived  // never touched
+            ]
         );
     }
 
     #[test]
-    fn a_second_click_with_everything_paused_resumes_and_flips_back() {
+    fn pause_all_active_pauses_a_single_active_one() {
+        // The positive single-Active case: exactly one autopilot, Active, gets
+        // paused by a `pause_all` click.
+        let (store, ids, _temp) = seeded_store(1);
+
+        pause_all_active(&store);
+
+        assert_eq!(statuses(&store, &ids), vec![AutopilotStatus::Paused]);
+    }
+
+    #[test]
+    fn pause_all_active_is_a_no_op_when_all_are_already_paused() {
         let (store, ids, _temp) = seeded_store(2);
-        toggle_pause_all(&store); // pauses both, flips to "Resume"
+        for id in &ids {
+            store.set_status(id, AutopilotStatus::Paused);
+        }
 
-        let label = toggle_pause_all(&store); // resumes both, flips back
+        pause_all_active(&store);
 
-        assert_eq!(label, "Pause all autopilots");
+        assert_eq!(statuses(&store, &ids), vec![AutopilotStatus::Paused; 2]);
+    }
+
+    #[test]
+    fn pause_all_active_is_a_no_op_when_all_are_archived() {
+        let (store, ids, _temp) = seeded_store(2);
+        for id in &ids {
+            store.set_status(id, AutopilotStatus::Archived);
+        }
+
+        pause_all_active(&store);
+
+        assert_eq!(statuses(&store, &ids), vec![AutopilotStatus::Archived; 2]);
+    }
+
+    #[test]
+    fn pause_all_active_is_a_no_op_on_an_empty_store() {
+        let temp = TempDir::new().unwrap();
+        let store = AutopilotStore::new(&temp.path().to_path_buf());
+
+        // Must not panic on an empty list; nothing to assert beyond that.
+        pause_all_active(&store);
+    }
+
+    #[test]
+    fn resume_all_paused_resumes_every_paused_one_and_leaves_others_alone() {
+        let (store, ids, _temp) = seeded_store(3);
+        store.set_status(&ids[0], AutopilotStatus::Paused);
+        store.set_status(&ids[2], AutopilotStatus::Archived);
+
+        resume_all_paused(&store);
+
+        assert_eq!(
+            statuses(&store, &ids),
+            vec![
+                AutopilotStatus::Active,   // was Paused, got resumed
+                AutopilotStatus::Active,   // was already Active, untouched
+                AutopilotStatus::Archived  // never touched
+            ]
+        );
+    }
+
+    #[test]
+    fn resume_all_paused_is_a_no_op_when_none_are_paused() {
+        let (store, ids, _temp) = seeded_store(2); // all default to Active
+
+        resume_all_paused(&store);
+
         assert_eq!(statuses(&store, &ids), vec![AutopilotStatus::Active; 2]);
     }
 
     #[test]
-    fn archived_autopilots_are_never_touched_by_either_direction() {
+    fn archived_autopilots_are_never_touched_by_either_action() {
         let (store, ids, _temp) = seeded_store(2);
         store.set_status(&ids[0], AutopilotStatus::Archived);
+        store.set_status(&ids[1], AutopilotStatus::Paused);
 
-        toggle_pause_all(&store); // pause direction (the other one is Active)
+        pause_all_active(&store); // nothing is Active, so this is a no-op
         assert_eq!(
             statuses(&store, &ids),
             vec![AutopilotStatus::Archived, AutopilotStatus::Paused]
         );
 
-        toggle_pause_all(&store); // resume direction
+        resume_all_paused(&store); // resumes the Paused one only
         assert_eq!(
             statuses(&store, &ids),
             vec![AutopilotStatus::Archived, AutopilotStatus::Active]
         );
     }
 
+    /// `resume_all` resumes literally every `Paused` autopilot, not just ones
+    /// this session's `pause_all` paused — there is no "which ones did the
+    /// tray pause" record, by design. Seed a mix of Active and already
+    /// individually-Paused (as if the user had paused it from Settings →
+    /// Autopilot before ever touching the tray), run `pause_all` then
+    /// `resume_all`, and confirm every non-archived autopilot round-trips
+    /// back to `Active` — including the one that was Paused before either
+    /// tray action ran.
     #[test]
-    fn mixed_state_pauses_only_the_active_ones_and_flips_to_resume() {
+    fn pause_then_resume_round_trip_resumes_every_non_archived_one_including_a_pre_existing_pause()
+    {
         let (store, ids, _temp) = seeded_store(3);
-        store.set_status(&ids[1], AutopilotStatus::Paused);
+        store.set_status(&ids[0], AutopilotStatus::Paused); // paused before either tray click
+        store.set_status(&ids[2], AutopilotStatus::Archived);
+        // ids[1] stays Active.
 
-        let label = toggle_pause_all(&store);
-
+        pause_all_active(&store); // pauses ids[1]; ids[0] already Paused, ids[2] untouched
         assert_eq!(
-            label, "Resume all autopilots",
-            "any Active autopilot means this was a pause-all click"
+            statuses(&store, &ids),
+            vec![
+                AutopilotStatus::Paused,
+                AutopilotStatus::Paused,
+                AutopilotStatus::Archived
+            ]
         );
-        assert_eq!(statuses(&store, &ids), vec![AutopilotStatus::Paused; 3]);
+
+        resume_all_paused(&store); // resumes BOTH ids[0] and ids[1], including the pre-existing pause
+        assert_eq!(
+            statuses(&store, &ids),
+            vec![
+                AutopilotStatus::Active,
+                AutopilotStatus::Active,
+                AutopilotStatus::Archived
+            ]
+        );
     }
 }
