@@ -149,6 +149,38 @@ describe('start()', () => {
 
     expect(byId(pillHost, 'status-pill').textContent).toBe('⚠ Not paired');
   });
+
+  it('falls back to the offline/Retry view when send() REJECTS (not just times out) — MV3 worker asleep/crashed', async () => {
+    const send = vi
+      .fn<[PopupRequest], Promise<PopupResponse>>()
+      .mockRejectedValueOnce(
+        new Error('Could not establish connection. Receiving end does not exist.')
+      );
+    const { pillHost, viewsHost, view } = mount({ send });
+
+    view.start();
+    await flush();
+
+    expect(byId(pillHost, 'status-pill').textContent).toBe('✕ App not running');
+    expect(byId(viewsHost, 'view-offline').hidden).toBe(false);
+    expect(byId<HTMLButtonElement>(pillHost, 'btn-retry').hidden).toBe(false);
+  });
+});
+
+// ── refresh() rejection ──────────────────────────────────────────────────────
+
+describe('refresh() rejection', () => {
+  it('falls back to the offline/Retry view instead of throwing when send() rejects', async () => {
+    const send = vi
+      .fn<[PopupRequest], Promise<PopupResponse>>()
+      .mockRejectedValueOnce(new Error('message channel closed'));
+    const { pillHost, viewsHost, view } = mount({ send });
+
+    await expect(view.refresh()).resolves.toBeUndefined();
+
+    expect(byId(pillHost, 'status-pill').textContent).toBe('✕ App not running');
+    expect(byId(viewsHost, 'view-offline').hidden).toBe(false);
+  });
 });
 
 // ── header Retry visibility ─────────────────────────────────────────────────

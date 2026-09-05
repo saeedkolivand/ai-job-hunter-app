@@ -91,7 +91,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-043](decision-records/adr-043-help-chat-over-the-shipped-corpus.md)                     | Help chatbot over the shipped corpus: renderer-supplied entries, shipped retrieval module, dense arm behind semantic-scoring opt-in, text-hash vector cache                                           |
 | [ADR-044](decision-records/adr-044-extension-answer-tools-side-panel-and-popup.md)           | Extension Answer tools in a side panel (`chrome.sidePanel` / `sidebar_action`) AND the popup, as two views of one per-tab+origin state; page access stays user-gestured; in-page card deferred        |
 | [ADR-045](decision-records/adr-045-job-tools-panel-parity-and-trust-gate.md)                 | Job-tools panel parity (Import/Check-fit/Fill/Save-answers) via a shared component + a stricter per-tab trust gate reusing `AnswerState.pageChanged`; both context-menu gestures now re-arm it        |
-| [ADR-046](decision-records/adr-046-connection-status-panel-parity-and-live-push.md)          | Connection-status panel parity: the popup's pill/retry + pair/offline/outdated/searching views extracted into a shared component, mounted by both surfaces, live-pushed via `broadcastStatus`         |
+| [ADR-046](decision-records/adr-046-connection-status-panel-parity-and-live-push.md)          | Connection-status panel parity via a shared component, mounted by both surfaces, live-pushed                                                                                                          |
 
 ### The `NNNN-` series (closed)
 

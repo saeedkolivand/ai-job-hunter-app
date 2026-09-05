@@ -313,14 +313,23 @@ export function mountConnectionStatus(
   }
 
   async function refresh(): Promise<void> {
-    const res = await deps.send({ kind: 'getStatus' });
-    render(resolveStatusResponse(res, lastKnownHasToken));
+    try {
+      const res = await deps.send({ kind: 'getStatus' });
+      render(resolveStatusResponse(res, lastKnownHasToken));
+    } catch {
+      // A rejected sendMessage (e.g. the MV3 service worker asleep/crashed —
+      // "Could not establish connection") must still land on SOME rendered
+      // view, not propagate as an unhandled rejection out of this
+      // fire-and-forget call.
+      renderOffline();
+    }
   }
 
   /** First status fetch with a timeout backstop: if the background does not
    *  answer within {@link STATUS_TIMEOUT_MS}, fall back to the offline/Retry
    *  view rather than spin indefinitely. A later status push or Retry will
-   *  recover. */
+   *  recover. A rejected `send()` (not just a slow one) hits the SAME
+   *  fallback via the `catch` below — see `refresh`'s doc for why. */
   async function refreshWithTimeout(): Promise<void> {
     let timedOut = false;
     const timer = setTimeout(() => {
@@ -331,6 +340,8 @@ export function mountConnectionStatus(
       const res = await deps.send({ kind: 'getStatus' });
       if (timedOut) return;
       render(resolveStatusResponse(res, lastKnownHasToken));
+    } catch {
+      if (!timedOut) renderOffline();
     } finally {
       clearTimeout(timer);
     }
