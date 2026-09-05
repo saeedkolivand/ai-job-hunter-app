@@ -1581,7 +1581,7 @@ function installContextMenu(): void {
     });
     menus.create({
       id: ANSWER_PANEL_MENU_ID,
-      title: 'Open answer panel',
+      title: 'Open AI Job Hunter answer tool',
       contexts: ['page', 'editable'],
     });
   });

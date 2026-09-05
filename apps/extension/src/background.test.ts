@@ -2101,7 +2101,7 @@ describe('the context-menu entries (ADR-044 decision 2)', () => {
     expect(browser.contextMenus.create).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'ajh-answer-open-panel',
-        title: 'Open answer panel',
+        title: 'Open AI Job Hunter answer tool',
         contexts: ['page', 'editable'],
       })
     );
