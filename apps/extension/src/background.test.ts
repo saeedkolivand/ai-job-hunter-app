@@ -2179,7 +2179,7 @@ describe('the context-menu entries (ADR-044 decision 2)', () => {
     expect(tabsQueryMock).not.toHaveBeenCalled();
   });
 
-  it('opens the panel and adds nothing on a plain-page click (no selection to prefill)', async () => {
+  it('opens the panel and adds no ROW on a plain-page click (no selection to prefill), but re-arms the trust gate for a tab with no prior state', async () => {
     const onClicked = vi.mocked(browser.contextMenus.onClicked.addListener).mock.calls[0]?.[0];
     if (!onClicked) throw new Error('context-menu click listener not registered');
     const { readAnswerState } = await import('./lib/answer-state');
@@ -2188,19 +2188,110 @@ describe('the context-menu entries (ADR-044 decision 2)', () => {
     tabsQueryMock.mockClear();
 
     const clickedTabId = 210;
-    onClicked({ menuItemId: 'ajh-answer-open-panel' } as never, { id: clickedTabId } as never);
+    onClicked(
+      { menuItemId: 'ajh-answer-open-panel' } as never,
+      { id: clickedTabId, url: 'https://jobs.example.com/posting/11' } as never
+    );
     await flush();
 
     expect(sidePanelOpenMock).toHaveBeenCalledWith({ tabId: clickedTabId });
-    // Distinguishes this entry from the selection one: nothing gets added as
-    // a row, and it never even reads the tab to figure out where to write one.
+    // A plain right-click IS a qualifying `activeTab` gesture, so it now
+    // writes the SAME minimal record `runAnswerAddRow` builds for a fresh
+    // tab, with `pageChanged` already armed `false`. The origin comes
+    // DIRECTLY from this click's own `tab.url` — never a fresh `tabs.query`,
+    // which could resolve to a DIFFERENT tab if the user switched away in
+    // the interim (see `rearmPageChangedForGesture`'s doc). No row is added
+    // — a bare right-click implies nothing about wanting to re-scan the
+    // page's Answer-tools questions.
     expect(tabsQueryMock).not.toHaveBeenCalled();
-    // `readAnswerState` returns `null` (not `undefined`) for a tab it has
-    // never written — asserting `toHaveLength(0)` on `state?.rows ?? []`
-    // would pass just as well if the read silently returned nothing at all,
-    // so it can't tell "wrote zero rows" apart from "never wrote anything".
     const state = await readAnswerState(clickedTabId);
-    expect(state).toBeNull();
+    expect(state).toEqual({
+      tabId: clickedTabId,
+      origin: 'https://jobs.example.com',
+      scannedAt: expect.any(Number),
+      rows: [],
+      stream: null,
+      pageChanged: false,
+    });
+  });
+
+  it("degrades the new record's origin to '' when the clicked tab has no url, rather than writing something malformed", async () => {
+    const onClicked = vi.mocked(browser.contextMenus.onClicked.addListener).mock.calls[0]?.[0];
+    if (!onClicked) throw new Error('context-menu click listener not registered');
+    const { readAnswerState } = await import('./lib/answer-state');
+    tabsQueryMock.mockClear();
+
+    const clickedTabId = 216;
+    // No `url` field at all on the tab object — same shape a restricted page
+    // (chrome://, a PDF viewer) can hand a context-menu handler.
+    onClicked({ menuItemId: 'ajh-answer-open-panel' } as never, { id: clickedTabId } as never);
+    await flush();
+
+    // Never a fresh tab lookup either, for the same reason as the sibling
+    // test above.
+    expect(tabsQueryMock).not.toHaveBeenCalled();
+    const state = await readAnswerState(clickedTabId);
+    expect(state?.origin).toBe('');
+  });
+
+  it('clears a STALE pageChanged on the plain-page click without scanning or touching existing rows', async () => {
+    const onClicked = vi.mocked(browser.contextMenus.onClicked.addListener).mock.calls[0]?.[0];
+    if (!onClicked) throw new Error('context-menu click listener not registered');
+    const { readAnswerState, writeAnswerState } = await import('./lib/answer-state');
+    executeScriptMock.mockClear();
+
+    const clickedTabId = 214;
+    const existingRow: AnswerRow = {
+      id: 'free:Existing question',
+      question: 'Existing question',
+      field: null,
+      status: 'empty',
+      versions: [],
+      selected: -1,
+    };
+    await writeAnswerState({
+      tabId: clickedTabId,
+      origin: 'https://jobs.example.com',
+      scannedAt: 1,
+      rows: [existingRow],
+      stream: null,
+      pageChanged: true,
+    });
+
+    onClicked({ menuItemId: 'ajh-answer-open-panel' } as never, { id: clickedTabId } as never);
+    await flush();
+
+    const state = await readAnswerState(clickedTabId);
+    expect(state?.pageChanged).toBe(false);
+    // No scan, no row mutation.
+    expect(state?.rows).toEqual([existingRow]);
+    expect(executeScriptMock).not.toHaveBeenCalled();
+  });
+
+  it('clears a STALE pageChanged on the selection click too, alongside adding the new row', async () => {
+    const onClicked = vi.mocked(browser.contextMenus.onClicked.addListener).mock.calls[0]?.[0];
+    if (!onClicked) throw new Error('context-menu click listener not registered');
+    const { readAnswerState, writeAnswerState } = await import('./lib/answer-state');
+
+    const clickedTabId = 215;
+    await writeAnswerState({
+      tabId: clickedTabId,
+      origin: 'https://jobs.example.com',
+      scannedAt: 1,
+      rows: [],
+      stream: null,
+      pageChanged: true,
+    });
+
+    onClicked(
+      { menuItemId: 'ajh-answer-selection', selectionText: 'A fresh question.' } as never,
+      { id: clickedTabId } as never
+    );
+    await flush();
+
+    const state = await readAnswerState(clickedTabId);
+    expect(state?.pageChanged).toBe(false);
+    expect(state?.rows.map((r) => r.question)).toContain('A fresh question.');
   });
 
   it('falls back to sidebarAction.open() on Firefox, which has no sidePanel API', async () => {

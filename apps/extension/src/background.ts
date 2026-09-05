@@ -1588,6 +1588,59 @@ function installContextMenu(): void {
 }
 
 /**
+ * Origin from a tab's own `url` field, captured DIRECTLY from the
+ * context-menu event's `tab` object — never a fresh `browser.tabs.query`.
+ * Same degrade-to-`''`-on-parse-failure contract as `activeTabOriginAtGesture`
+ * (missing/malformed url → `''`, never a throw), but sourced from a value the
+ * caller already has at gesture time instead of a live re-query, which could
+ * resolve to a DIFFERENT tab if the user switched away during an intervening
+ * `await` (see `rearmPageChangedForGesture`'s doc for why that distinction
+ * matters here).
+ */
+function originFromTabUrl(url: string | undefined): string {
+  try {
+    return new URL(url ?? '').origin;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Force `pageChanged: false` for `tabId`'s answer state ahead of a
+ * context-menu gesture — a right-click IS a qualifying `activeTab` gesture
+ * (per `runFieldsProbe`/`runAppliedCheck`'s doc), so both context-menu
+ * handlers must re-arm the panel's job-tools trust gate exactly like
+ * `runAnswerScan`'s "the scan itself IS the re-arm" comment, WITHOUT actually
+ * scanning: a bare right-click implies nothing about wanting to re-scan the
+ * page's Answer-tools questions. `updateAnswerState` no-ops when no record
+ * exists yet, so a fresh tab still needs the SAME minimal record
+ * `runAnswerAddRow` builds for one — built here too rather than via a
+ * throwaway `runAnswerAddRow('', tabId)` call, which would silently do
+ * nothing useful for an EXISTING record (it never clears a stale
+ * `pageChanged`).
+ *
+ * `origin` is a PARAMETER, not re-derived internally: this function already
+ * awaits `updateAnswerState` before it would need one, and deriving it via a
+ * fresh `activeTabOriginAtGesture()` (which queries whichever tab is
+ * CURRENTLY active) at that point could read a DIFFERENT tab's url if the
+ * user switched tabs/windows in the interim — the origin has to come from
+ * the gesture's own `tab.url`, captured by the caller before any await (see
+ * `originFromTabUrl`).
+ */
+async function rearmPageChangedForGesture(tabId: number, origin: string): Promise<void> {
+  const updated = await updateAnswerState(tabId, (state) => ({ ...state, pageChanged: false }));
+  if (updated) return;
+  await writeAnswerState({
+    tabId,
+    origin,
+    scannedAt: Date.now(),
+    rows: [],
+    stream: null,
+    pageChanged: false,
+  });
+}
+
+/**
  * Context-menu click: add the selection as a free-text row, then open the
  * panel. `open` is called from inside this handler because THIS click is the
  * user gesture — anything awaited before it loses the gesture, which is why
@@ -1600,6 +1653,9 @@ async function handleAnswerMenuClick(
   const question = (info.selectionText ?? '').trim().slice(0, MAX_SELECTION_QUESTION);
   if (!question) return;
   openAnswerPanel(tab?.id);
+  if (typeof tab?.id === 'number') {
+    await rearmPageChangedForGesture(tab.id, originFromTabUrl(tab.url));
+  }
   await runAnswerAddRow(question, tab?.id);
 }
 
@@ -1630,6 +1686,9 @@ if (browser.contextMenus) {
   browser.contextMenus.onClicked.addListener((info, tab) => {
     if (info.menuItemId === ANSWER_PANEL_MENU_ID) {
       openAnswerPanel(tab?.id);
+      if (typeof tab?.id === 'number') {
+        void rearmPageChangedForGesture(tab.id, originFromTabUrl(tab.url));
+      }
       return;
     }
     if (info.menuItemId !== ANSWER_MENU_ID) return;

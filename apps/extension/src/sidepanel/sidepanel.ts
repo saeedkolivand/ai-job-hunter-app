@@ -20,12 +20,16 @@
  * or write of the page goes through the background, which acts under the
  * `activeTab` grant a user gesture created. After a navigation the shared
  * state says so and the component replaces every write control with one line
- * — this file does not need to know about that case at all.
+ * — this file does not need to know about that case at all. The same is now
+ * true of the job-tools controls (Import/Check fit/Fill/Save answers) mounted
+ * below — see `job-tools.ts`'s doc for its own trust gate, which this file
+ * only has to feed via `jobTools.render`/`jobTools.checkPage`.
  */
 
 import { browser } from '@wxt-dev/browser';
 
 import { copyText, mountAnswerTools } from '../answer-tools/answer-tools';
+import { mountJobTools } from '../job-tools/job-tools';
 import { subscribeAnswerState } from '../lib/answer-state';
 import type { PopupRequest, PopupResponse } from '../lib/messages';
 
@@ -51,23 +55,77 @@ const answerTools = mountAnswerTools(byId<HTMLDivElement>('answer-tools-host'), 
   copy: copyText,
 });
 
+// No `onAnswerToolsVisibility` here: the panel's Answer-tools section has no
+// disclosure to gate on the fields probe today (unlike the popup's), and
+// adding that is out of scope for this parity change.
+const jobTools = mountJobTools(byId<HTMLDivElement>('job-tools-host'), { send });
+
 /** Unsubscribe the previous tab's state subscription, if any. */
 let unsubscribe: (() => void) | null = null;
+
+/**
+ * Generation guard against a STALE in-flight subscription callback — mirrors
+ * `popup.ts`'s `appliedCheckGeneration`/`fieldsProbeGeneration` pattern
+ * exactly (same stale-response race those already guard against).
+ * `subscribeAnswerState`'s returned unsubscribe (called at the top of
+ * `follow` below) only removes the `storage.onChanged` listener — it does
+ * NOT cancel the in-flight `readAnswerState(tabId).then(onState)` promise
+ * the SAME call already kicked off (`lib/answer-state.ts`). So a rapid
+ * `follow(A)` → `follow(B)` (fast tab-cycling) can still let A's stale
+ * closure fire its `onState` callback AFTER B's own subscription — and
+ * possibly after B's own render — with A's now-irrelevant data.
+ */
+let followGeneration = 0;
 
 /**
  * Point the panel at `tabId`'s state. Dropping the previous subscription
  * first is load-bearing: a panel that accumulated one listener per tab switch
  * would keep re-rendering with a background tab's rows on top of the active
  * one's, which is exactly the confusion a per-window surface has to avoid.
+ *
+ * `jobTools.checkPage()` fires from INSIDE the subscription's own first
+ * delivery, never as a separate statement right after `subscribeAnswerState`
+ * — that read is unavoidably asynchronous (`readAnswerState(tabId).then(...)`
+ * in `lib/answer-state.ts`), so a `checkPage()` call placed right here would
+ * run against whatever `jobTools`'s trust flag was left over from BEFORE this
+ * follow (the previous tab, or its cold-mount default) and could fire the
+ * fields probe against a tab job-tools has not actually evaluated yet — the
+ * exact ungated call its own trust gate exists to prevent. Waiting for the
+ * first delivery means `jobTools.render(state)` has already updated that flag
+ * to the tab actually being followed by the time `checkPage()` reads it. This
+ * function is still both of the job-tools trigger points its own doc names
+ * for the panel ("mount and tab activation"): the first call from
+ * `resolvePanelWindowId().then(...)` below is the mount, every later call
+ * from `tabs.onActivated`/a focus change is an activation — `firstDelivery`
+ * just defers each one's `checkPage()` to the moment it is actually safe to
+ * fire, without changing which gesture triggers it.
+ *
+ * `followGeneration` guards the SAME callback against a different race: this
+ * call being superseded by a NEWER `follow()` before its own first delivery
+ * lands (see that flag's own doc).
  */
 function follow(tabId: number | null): void {
+  followGeneration += 1;
+  const myGeneration = followGeneration;
   unsubscribe?.();
   unsubscribe = null;
   if (tabId === null) {
     answerTools.render(null);
+    jobTools.render(null);
     return;
   }
-  unsubscribe = subscribeAnswerState(tabId, (state) => answerTools.render(state));
+  let firstDelivery = true;
+  unsubscribe = subscribeAnswerState(tabId, (state) => {
+    // A newer `follow()` call has since superseded this one — its render (or
+    // its own in-flight read) must win; bail before touching anything.
+    if (myGeneration !== followGeneration) return;
+    answerTools.render(state);
+    jobTools.render(state);
+    if (firstDelivery) {
+      firstDelivery = false;
+      jobTools.checkPage();
+    }
+  });
 }
 
 /** This panel's own window — resolved once, since a panel never migrates

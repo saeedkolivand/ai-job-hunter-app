@@ -1,6 +1,6 @@
 # Extension domain (browser extension + desktop bridge)
 
-Last updated: 2026-09-05 (ADR-044: extension Answer tools side panel + popup, shared per-tab state, draft-time `maxChars` field; `answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
+Last updated: 2026-09-05 (ADR-045: job-tools panel parity + the `isPageTrusted` gate; ADR-044: extension Answer tools side panel + popup, shared per-tab state, draft-time `maxChars` field; `answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
 
 Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tauri-security-reviewer`.
 
@@ -159,6 +159,14 @@ Two views over one state keyed by **tab id alone** (`answerStateKey(tabId)`, ori
 **Refusal sentinels**: the two `answer.assist` `ok:false` strings a client is allowed to match by identity (opt-in off / no usable provider) now live as shared constants — `EXTENSION_AI_ASSIST_OFF_MESSAGE` / `EXTENSION_NO_PROVIDER_MESSAGE` in `extension-protocol-constants.ts` — mirroring the Rust sentinels declared beside the handler (`AI_ASSIST_OFF_MESSAGE` / `NO_PROVIDER_MESSAGE`, `answer_assist.rs`) and pinned by the same hand-enumerated parity test that already covers the wire-type constants (`message_type_constants_match_ts`, `extension_bridge/test.rs`). Every other `answer.assist` error stays opaque and is rendered verbatim — see "Wire-error discipline" above.
 
 **Permissions**: the panel adds Chrome's `sidePanel` permission (Firefox declares the `sidebar_action` manifest key instead — no permission) and `contextMenus` (both targets) — the one declared per-target delta in `manifest.ts` (`CHROME_ONLY_PERMISSIONS`) / `manifest.test.ts` (`DECLARED_PERMISSION_DELTA`). Justification rows: `apps/extension/README.md`'s permission table.
+
+## Job tools — Import/Check-fit/Fill/Save-answers panel parity + trust gate (ADR-045)
+
+A separate shared component, `apps/extension/src/job-tools/job-tools.ts` (`mountJobTools`), mirrors `answer-tools.ts`'s "one component, both surfaces" shape for the popup's four page-scoped action buttons, moved out of `popup.ts` so the side panel gains them too. Full record: [ADR-045](decision-records/adr-045-job-tools-panel-parity-and-trust-gate.md).
+
+**Trust gate**: `isPageTrusted` (`job-tools.ts`), fed via `JobToolsView.render`/`checkPage`; re-armed by both context-menu entries through `rearmPageChangedForGesture` (`background.ts::installContextMenu`). See ADR-045 for the exact condition, the gated-state UI, and the caller-ordering contract `checkPage` depends on (`sidepanel.ts::follow`).
+
+**Scope boundary**: "Mark as applied" and the popup's adaptive Import re-label stay in `popup.ts`, unmoved — `JobToolsView.setImportLabel` is the one seam between them. See ADR-045 decision 5 for why.
 
 ## Store policy
 

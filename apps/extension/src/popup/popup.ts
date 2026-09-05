@@ -11,6 +11,7 @@
 import { browser } from '@wxt-dev/browser';
 
 import { copyText, mountAnswerTools } from '../answer-tools/answer-tools';
+import { IMPORT_LABEL_DEFAULT, IMPORT_LABEL_FOUND, mountJobTools } from '../job-tools/job-tools';
 import { subscribeAnswerState } from '../lib/answer-state';
 import type { ConnectionStatus, PopupRequest, PopupResponse } from '../lib/messages';
 import { getAnswerToolsExpanded, looksLikeToken, setAnswerToolsExpanded } from '../lib/storage';
@@ -33,83 +34,6 @@ export function resolveStatusResponse(
   if (res.ok && res.kind === 'status') return res.status;
   // `!ok` or unexpected kind → offline fallback preserving last-known token.
   return { phase: 'app_not_running', port: null, hasToken: lastKnownHasToken };
-}
-
-/** Where an imported job lands in the desktop app — shown on success so the
- *  user knows where to look (the extension can't focus the native window). */
-const IMPORT_LANDING_HINT = 'Open AI Job Hunter → Applications to view it.';
-
-/** Shown when the job was saved but the description couldn't be read. */
-const IMPORT_PARTIAL_HINT = 'Open AI Job Hunter → Applications to paste it.';
-
-/** Percent-fit suffix appended to the import success/status-unchanged lines
- *  when the desktop populated `matchScore` (a best-effort keyword-only score,
- *  omitted on failure — see `ExtensionImportResult`'s doc) — mirrors the
- *  "Check fit" card's percent treatment (`resolveMatchLiveResponse`) without
- *  the résumé name the import reply doesn't carry. Absent field → empty
- *  string, so the message is byte-identical to before this field existed. */
-function matchScoreSuffix(matchScore: number | undefined): string {
-  return typeof matchScore === 'number' ? ` — ${Math.round(matchScore)}% fit.` : '';
-}
-
-/**
- * Given an `import` response, return the message text and tone to display. On
- * success it names the imported job (when the desktop parsed a title) and points
- * the user at where it landed, instead of a bare “Imported”.
- *
- * `requestedApplied` is the "I already applied" checkbox state sent with the
- * request. The desktop dedup-merges by URL and only ever advances a matched
- * Application's status OUT of `saved` — it never demotes an existing
- * applied-or-further row. So when the checkbox was NOT ticked and the matched
- * row's status is already past `saved`, a bare "Imported" success would read
- * like the status had changed when only the status was left untouched (the
- * desktop meta merge still refreshes title/company/description/answers) —
- * surface that explicitly instead.
- *
- * Pure: no DOM access, no side effects.
- */
-export function resolveImportResponse(
-  res: PopupResponse,
-  requestedApplied: boolean
-): { text: string; tone: 'ok' | 'err' } {
-  if (!res.ok) return { text: res.error, tone: 'err' };
-  if (res.kind !== 'import') return { text: 'Unexpected response — please retry.', tone: 'err' };
-  const { result } = res;
-  if (result.error) return { text: result.error, tone: 'err' };
-  const title = result.title?.trim();
-  if (result.partial) {
-    const lead = title ? `Imported “${title}”` : 'Imported';
-    return {
-      text: `${lead} — couldn't read the description. ${IMPORT_PARTIAL_HINT}`,
-      tone: 'ok',
-    };
-  }
-  const scoreSuffix = matchScoreSuffix(result.matchScore);
-  if (!requestedApplied && result.status && result.status !== 'saved') {
-    const label = capitalize(result.status);
-    const lead = title
-      ? `“${title}” is already tracked as ${label}`
-      : `This job is already tracked as ${label}`;
-    return {
-      text: `${lead} — status unchanged. ${IMPORT_LANDING_HINT}${scoreSuffix}`,
-      tone: 'ok',
-    };
-  }
-  const lead = title ? `Imported “${title}”.` : 'Imported.';
-  return { text: `${lead} ${IMPORT_LANDING_HINT}${scoreSuffix}`, tone: 'ok' };
-}
-
-/** Default/found labels for the import button — adaptive per the applied.check
- *  outcome (same click action either way; the desktop always dedup-merges by
- *  url, so "re-import" is just the honest label when a row already exists). */
-const IMPORT_LABEL_DEFAULT = 'Import this job';
-const IMPORT_LABEL_FOUND = 'Re-import / update';
-
-/** Capitalize a single-word lowercase id (e.g. an `ApplicationStatus` wire id)
- *  for display — reused by both the import transparency message and the
- *  applied-check status line. */
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /** Format an epoch-ms timestamp as a short local date (e.g. "Jun 12", or
@@ -181,37 +105,6 @@ export function resolveShowMarkAppliedButton(res: PopupResponse): boolean {
   return result.status === 'saved';
 }
 
-/** Whether the Form group + the Answer-tools disclosure should each be
- *  shown — see {@link resolveFieldsProbeResponse}. */
-export interface FieldsProbeView {
-  showFormGroup: boolean;
-  showAnswerTools: boolean;
-}
-
-/**
- * Given a `fieldsProbe` response, whether the Form group and the
- * Answer-tools disclosure should each be shown. Fails OPEN (`true` for both)
- * on a transport-level `ok:false` or an unexpected `kind` — mirrors the
- * background's own fail-open fold (`runFieldsProbe`) so a probe bug can
- * never hide either feature; only a CONFIRMED `false` signal hides one.
- *
- * The two booleans are NOT the same gate: `hasFormFields` is the union of
- * autofill-supported identity fields and answer-capturable non-identity
- * fields (so "Fill this form" still shows on an identity-only form, e.g.
- * name/email/phone), while `hasAnswerFields` is the narrower
- * answer-capturable-only signal the Answer-tools disclosure uses (Suggest/
- * rewrite have nothing to act on from identity fields alone) — see
- * `PopupResponse`'s `fieldsProbe` doc.
- *
- * Pure: no DOM access, no side effects.
- */
-export function resolveFieldsProbeResponse(res: PopupResponse): FieldsProbeView {
-  if (!res.ok || res.kind !== 'fieldsProbe') {
-    return { showFormGroup: true, showAnswerTools: true };
-  }
-  return { showFormGroup: res.hasFormFields, showAnswerTools: res.hasAnswerFields };
-}
-
 /**
  * Given a `statusUpdate` response, return the message text + tone. UNLIKE
  * `resolveAppliedStatusLine`/`resolveImportButtonLabel` (which fold every
@@ -238,125 +131,6 @@ export function resolveMarkAppliedResponse(res: PopupResponse): {
   return { text: 'Marked as applied.', tone: 'ok' };
 }
 
-/**
- * Given an `answersSave` response, return the message text + tone. Mirrors
- * `resolveMarkAppliedResponse` — this verb's errors ARE shown (a deliberate
- * click, not a passive check). On success names the job from the reply's
- * `title`/`company` (the smaller change vs. threading the separately-fetched
- * `appliedCheck` state through this confirmation — see the PR-5 handoff) and
- * reports the saved count; a re-capture with nothing new to add reads as a
- * benign "no new answers", never an error. When the desktop dedupes/caps some
- * answers, `skipped` is folded into the copy too — `saved === 0` gets a
- * distinct "already recorded" message instead of the generic no-new-answers one.
- *
- * Pure: no DOM access, no side effects.
- */
-export function resolveAnswersSaveResponse(res: PopupResponse): {
-  text: string;
-  tone: 'ok' | 'err';
-} {
-  if (!res.ok) return { text: res.error, tone: 'err' };
-  if (res.kind !== 'answersSave') {
-    return { text: 'Unexpected response — please retry.', tone: 'err' };
-  }
-  const { result } = res;
-  if (!result.ok) return { text: result.error, tone: 'err' };
-
-  const title = result.title?.trim();
-  const company = result.company?.trim();
-  const name = title && company ? `${title} @ ${company}` : (title ?? company);
-
-  if (result.saved === 0) {
-    if (result.skipped > 0) {
-      const was = result.skipped === 1 ? 'was' : 'were';
-      const noun = `answer${result.skipped === 1 ? '' : 's'}`;
-      return { text: `All ${result.skipped} ${noun} ${was} already recorded.`, tone: 'ok' };
-    }
-    return { text: 'No new answers to save from this page.', tone: 'ok' };
-  }
-  const count = `${result.saved} answer${result.saved === 1 ? '' : 's'}`;
-  const base = name ? `Saved ${count} to ${name}` : `Saved ${count}`;
-  const suffix = result.skipped > 0 ? ` — ${result.skipped} already recorded.` : '.';
-  return { text: `${base}${suffix}`, tone: 'ok' };
-}
-
-/**
- * Given a `fill` response, return the popup message + tone. The detailed summary
- * lives in the in-page overlay; the popup shows a short confirmation (or the
- * desktop's refusal when autofill is opted out). Handles the "nothing matched"
- * case explicitly so a no-op never reads as a failure.
- *
- * Pure: no DOM access, no side effects.
- */
-export function resolveFillResponse(res: PopupResponse): { text: string; tone: 'ok' | 'err' } {
-  if (!res.ok) return { text: res.error, tone: 'err' };
-  if (res.kind !== 'fill') return { text: 'Unexpected response — please retry.', tone: 'err' };
-  const { summary } = res;
-  if (summary.filledNothing) {
-    return { text: 'No matchable fields found on this page.', tone: 'ok' };
-  }
-  const total = summary.filled.reduce((n, f) => n + f.count, 0);
-  const base = `Filled ${total} field${total === 1 ? '' : 's'} — review them on the page`;
-  return {
-    text: summary.nameSplit ? `${base} (name split is a guess — verify).` : `${base}.`,
-    tone: 'ok',
-  };
-}
-
-/** Human-readable label for `scoreSource` — `'combined'` is wire-reserved and
- *  never sent by the current desktop (keyword-only always), but the label
- *  exists so a future desktop's value renders sensibly without a popup change. */
-const SCORE_SOURCE_LABEL: Record<'keyword' | 'combined', string> = {
-  keyword: 'keyword coverage',
-  combined: 'combined (keyword + semantic)',
-};
-
-/** The "Check fit" score to render, or `null` fields when there is nothing to show. */
-export interface MatchLiveView {
-  text: string;
-  tone: 'ok' | 'err';
-  score: number | null;
-  scoreLabel: string | null;
-  resumeName: string | null;
-  gaps: string[];
-}
-
-const NO_MATCH_VIEW = (text: string, tone: 'ok' | 'err'): MatchLiveView => ({
-  text,
-  tone,
-  score: null,
-  scoreLabel: null,
-  resumeName: null,
-  gaps: [],
-});
-
-/**
- * Given a `matchLive` response, return the message text + tone plus the score
- * to render (percent, source label, résumé name, missing-keyword gaps).
- * Mirrors `resolveAnswersSuggestResponse` — this verb's errors ARE shown (a
- * deliberate click, not a passive check).
- *
- * Pure: no DOM access, no side effects.
- */
-export function resolveMatchLiveResponse(res: PopupResponse): MatchLiveView {
-  if (!res.ok) return NO_MATCH_VIEW(res.error, 'err');
-  if (res.kind !== 'matchLive') {
-    return NO_MATCH_VIEW('Unexpected response — please retry.', 'err');
-  }
-  const { result } = res;
-  if (!result.ok) return NO_MATCH_VIEW(result.error, 'err');
-
-  const score = Math.round(result.combined);
-  return {
-    text: `${score}% fit against “${result.resumeName}”.`,
-    tone: 'ok',
-    score,
-    scoreLabel: SCORE_SOURCE_LABEL[result.scoreSource],
-    resumeName: result.resumeName,
-    gaps: result.gaps,
-  };
-}
-
 function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`missing element #${id}`);
@@ -372,18 +146,12 @@ const els = {
     outdated: byId<HTMLElement>('view-outdated'),
     searching: byId<HTMLElement>('view-searching'),
   },
-  btnImport: byId<HTMLButtonElement>('btn-import'),
-  btnFill: byId<HTMLButtonElement>('btn-fill'),
   btnMarkApplied: byId<HTMLButtonElement>('btn-mark-applied'),
-  groupForm: byId<HTMLElement>('group-form'),
   answerTools: byId<HTMLDetailsElement>('answer-tools'),
-  btnSaveAnswers: byId<HTMLButtonElement>('btn-save-answers'),
-  btnCheckFit: byId<HTMLButtonElement>('btn-check-fit'),
-  matchResult: byId<HTMLDivElement>('match-result'),
   answerToolsHost: byId<HTMLDivElement>('answer-tools-host'),
+  jobToolsHost: byId<HTMLDivElement>('job-tools-host'),
   btnOpenPanel: byId<HTMLButtonElement>('btn-open-panel'),
   appliedStatus: byId<HTMLParagraphElement>('applied-status'),
-  chkApplied: byId<HTMLInputElement>('chk-applied'),
   importMsg: byId<HTMLParagraphElement>('import-msg'),
   unpairGroup: byId<HTMLElement>('unpair-group'),
   btnUnpair: byId<HTMLButtonElement>('btn-unpair'),
@@ -482,6 +250,20 @@ async function send(req: PopupRequest): Promise<PopupResponse> {
 const answerTools = mountAnswerTools(els.answerToolsHost, { send, copy: copyText });
 
 /**
+ * The Import/Check-fit/Fill/Save-answers controls — the SAME component the
+ * side panel mounts (see `job-tools.ts`'s doc). `onAnswerToolsVisibility`
+ * forwards the fields probe's other signal to the ONE thing this module has
+ * no opinion on: the `<details>` disclosure around the Answer-tools section
+ * above, which only the popup renders.
+ */
+const jobTools = mountJobTools(els.jobToolsHost, {
+  send,
+  onAnswerToolsVisibility: (visible) => {
+    els.answerTools.hidden = !visible;
+  },
+});
+
+/**
  * Open the answer panel. Called SYNCHRONOUSLY from the click handler on both
  * browsers, because both `chrome.sidePanel.open` and
  * `browser.sidebarAction.open` require a user gesture and an await before
@@ -527,14 +309,6 @@ function runAnswerScan(): void {
   void send({ kind: 'answerScan' }).catch(() => undefined);
 }
 
-/** Toggle the Form group + Answer-tools disclosure — each on its OWN signal
- *  (see {@link FieldsProbeView}'s doc for why they differ), driven by the
- *  fields probe (`runFieldsProbeCheck`). */
-function setToolGroupsVisible(view: FieldsProbeView): void {
-  els.groupForm.hidden = !view.showFormGroup;
-  els.answerTools.hidden = !view.showAnswerTools;
-}
-
 function showView(phase: ConnectionStatus['phase']): void {
   els.views.import.hidden = phase !== 'connected';
   // Show the pairing view for both not_paired and bad_token — the user must
@@ -559,7 +333,7 @@ function render(status: ConnectionStatus): void {
     // this render.
     if (lastRenderedPhase !== 'connected') {
       void runAppliedAutoCheck();
-      void runFieldsProbeCheck();
+      jobTools.checkPage();
       // Opening the popup IS the gesture that grants `activeTab`, so it is the
       // right (and only free) moment to scan the page into the shared state.
       void runAnswerScan();
@@ -570,27 +344,20 @@ function render(status: ConnectionStatus): void {
     // before its own check resolves.
     els.appliedStatus.hidden = true;
     els.appliedStatus.textContent = '';
-    els.btnImport.textContent = IMPORT_LABEL_DEFAULT;
     els.btnMarkApplied.hidden = true;
     els.btnMarkApplied.disabled = false;
-    // A stale "Check fit" score from a previous page must never linger either.
-    els.matchResult.hidden = true;
-    els.matchResult.textContent = '';
+    // Resets the Import label, the match-fit card, and the Form group's
+    // visibility — everything job-tools now owns that this branch used to
+    // reset directly (a stale "no fields on the previous page" hide, or a
+    // stale in-flight fieldsProbe response, must never linger onto a fresh
+    // page before its own probe resolves).
+    jobTools.reset();
     // The Answer-tools rows are NOT cleared here: they live in the shared
     // per-tab state, not in this popup instance, and losing connection to the
     // desktop is not a reason to throw away drafts the user can still copy
     // (ADR-044 decision 3 keeps the rows even after a navigation). Rendering
     // `null` only empties what THIS view is showing.
     answerTools.render(null);
-    // Invalidate any in-flight fieldsProbe BEFORE resetting visibility: a
-    // pending `hasFields:false` from the page just left could otherwise
-    // resolve AFTER this reset and hide the groups again in a phase that was
-    // never gated on it (e.g. after a disconnect) — bumping the generation
-    // makes runFieldsProbeCheck's own resolved-response branch a no-op.
-    fieldsProbeGeneration += 1;
-    // A stale "no fields on the previous page" hide must never linger onto a
-    // fresh page before its own probe resolves — default open/visible again.
-    setToolGroupsVisible({ showFormGroup: true, showAnswerTools: true });
   }
   lastRenderedPhase = status.phase;
 
@@ -730,7 +497,7 @@ async function runAppliedAutoCheck(): Promise<void> {
   // this fresh one resolves.
   els.appliedStatus.hidden = true;
   els.appliedStatus.textContent = '';
-  els.btnImport.textContent = IMPORT_LABEL_DEFAULT;
+  jobTools.setImportLabel(IMPORT_LABEL_DEFAULT);
   els.btnMarkApplied.hidden = true;
   els.btnMarkApplied.disabled = false;
   try {
@@ -742,7 +509,7 @@ async function runAppliedAutoCheck(): Promise<void> {
     const line = resolveAppliedStatusLine(res);
     els.appliedStatus.hidden = line === null;
     els.appliedStatus.textContent = line ?? '';
-    els.btnImport.textContent = resolveImportButtonLabel(res);
+    jobTools.setImportLabel(resolveImportButtonLabel(res));
     // Only a found+saved result shows the button — reset disabled here too,
     // so a re-fire after a successful "Mark as applied" click (which left the
     // button disabled) ends re-enabled for whatever this fresh check renders.
@@ -752,39 +519,9 @@ async function runAppliedAutoCheck(): Promise<void> {
     if (myGeneration !== appliedCheckGeneration) return;
     els.appliedStatus.hidden = true;
     els.appliedStatus.textContent = '';
-    els.btnImport.textContent = IMPORT_LABEL_DEFAULT;
+    jobTools.setImportLabel(IMPORT_LABEL_DEFAULT);
     els.btnMarkApplied.hidden = true;
     els.btnMarkApplied.disabled = false;
-  }
-}
-
-/**
- * Generation guard for {@link runFieldsProbeCheck} — mirrors
- * `appliedCheckGeneration` exactly (same stale-response race the applied
- * auto-check already guards against).
- */
-let fieldsProbeGeneration = 0;
-
-/**
- * Run the fire-and-forget "does this page have fillable form fields?" probe
- * on entering `connected` and gate the Form group + Answer-tools disclosure
- * on the result (each on its own signal — see {@link resolveFieldsProbeResponse}).
- * `runFieldsProbe` in background.ts already folds every failure (no active
- * tab, restricted page, scripting denied) into both signals `true` (fail
- * OPEN), so the catch here only guards a transport-level rejection
- * (message-channel closed) — either way this never hides a group on a probe
- * bug, only on a confirmed empty scan.
- */
-async function runFieldsProbeCheck(): Promise<void> {
-  fieldsProbeGeneration += 1;
-  const myGeneration = fieldsProbeGeneration;
-  try {
-    const res = await send({ kind: 'fieldsProbe' });
-    if (myGeneration !== fieldsProbeGeneration) return;
-    setToolGroupsVisible(resolveFieldsProbeResponse(res));
-  } catch {
-    if (myGeneration !== fieldsProbeGeneration) return;
-    setToolGroupsVisible({ showFormGroup: true, showAnswerTools: true });
   }
 }
 
@@ -816,133 +553,6 @@ async function doMarkApplied(): Promise<void> {
   }
 }
 
-/**
- * Click handler for "Save my answers from this page". Sends `answersSave`
- * and shows the result in the existing message area — UNLIKE the passive
- * auto-check, failures ARE shown here (this is a deliberate click action).
- * Also renders the rewrite picker (PR 11) from the SAME response's `filled`
- * scan — no separate scan injection for that feature.
- */
-async function doSaveAnswers(): Promise<void> {
-  els.btnSaveAnswers.disabled = true;
-  setMsg(els.importMsg, 'Saving your answers…', 'muted');
-  try {
-    const res = await send({ kind: 'answersSave' });
-    const { text, tone } = resolveAnswersSaveResponse(res);
-    setMsg(els.importMsg, text, tone);
-    // The rows that a saved answer can now be rewritten from live in the
-    // shared state, so a save is a reason to re-scan rather than to update a
-    // picker this view owns. Fire-and-forget: the save already succeeded.
-    void runAnswerScan();
-  } catch {
-    // A transport/messaging rejection must not strand the status on "Saving…".
-    setMsg(els.importMsg, 'Could not save your answers. Please retry.', 'err');
-  } finally {
-    els.btnSaveAnswers.disabled = false;
-  }
-}
-
-/** Build the "Check fit" score card — score / source+résumé line / gap chips.
- *  `textContent` only — no `innerHTML` with page/desktop-derived text. */
-function buildMatchResultCard(view: MatchLiveView): HTMLElement {
-  const card = document.createElement('div');
-
-  const score = document.createElement('p');
-  score.className = 'match-result__score';
-  score.textContent = `${view.score}% fit`;
-  card.append(score);
-
-  const meta = document.createElement('p');
-  meta.className = 'match-result__meta';
-  const bits: string[] = [];
-  if (view.scoreLabel) bits.push(view.scoreLabel);
-  if (view.resumeName) bits.push(`against “${view.resumeName}”`);
-  meta.textContent = bits.join(' — ');
-  card.append(meta);
-
-  if (view.gaps.length > 0) {
-    const gapsWrap = document.createElement('div');
-    gapsWrap.className = 'match-result__gaps';
-    for (const gap of view.gaps) {
-      const chip = document.createElement('span');
-      chip.className = 'match-result__gap';
-      chip.textContent = gap;
-      gapsWrap.append(chip);
-    }
-    card.append(gapsWrap);
-  }
-
-  return card;
-}
-
-/** Render the "Check fit" score card — clears any prior card first (no stale
- *  DOM from a previous click). Hidden when there is no score to show (an
- *  error response). */
-function renderMatchResult(view: MatchLiveView): void {
-  els.matchResult.textContent = '';
-  if (view.score === null) {
-    els.matchResult.hidden = true;
-    return;
-  }
-  els.matchResult.append(buildMatchResultCard(view));
-  els.matchResult.hidden = false;
-}
-
-/**
- * Click handler for "Check fit". Scores the default/most-recent résumé
- * against this page's captured posting (keyword coverage only — a local
- * computation; only the score + a few missing keywords ever leave the
- * device). Errors ARE shown (a deliberate click, not a passive check).
- */
-async function doCheckFit(): Promise<void> {
-  els.btnCheckFit.disabled = true;
-  els.matchResult.hidden = true;
-  els.matchResult.textContent = '';
-  setMsg(els.importMsg, 'Checking fit…', 'muted');
-  try {
-    const res = await send({ kind: 'matchLive' });
-    const view = resolveMatchLiveResponse(res);
-    setMsg(els.importMsg, view.text, view.tone);
-    renderMatchResult(view);
-  } catch {
-    // A transport/messaging rejection must not strand the status on "Checking…".
-    setMsg(els.importMsg, 'Could not check fit for this page. Please retry.', 'err');
-  } finally {
-    els.btnCheckFit.disabled = false;
-  }
-}
-
-async function doImport(): Promise<void> {
-  els.btnImport.disabled = true;
-  setMsg(els.importMsg, 'Importing…', 'muted');
-  try {
-    const requestedApplied = els.chkApplied.checked;
-    const res = await send({ kind: 'import', applied: requestedApplied });
-    const { text, tone } = resolveImportResponse(res, requestedApplied);
-    setMsg(els.importMsg, text, tone);
-  } catch {
-    // A transport/messaging rejection must not strand the status on "Importing…".
-    setMsg(els.importMsg, 'Import failed. Please retry.', 'err');
-  } finally {
-    els.btnImport.disabled = false;
-  }
-}
-
-async function doFill(): Promise<void> {
-  els.btnFill.disabled = true;
-  setMsg(els.importMsg, 'Filling…', 'muted');
-  try {
-    const res = await send({ kind: 'fill' });
-    const { text, tone } = resolveFillResponse(res);
-    setMsg(els.importMsg, text, tone);
-  } catch {
-    // A transport/messaging rejection must not strand the status on "Filling…".
-    setMsg(els.importMsg, 'Autofill failed. Please retry.', 'err');
-  } finally {
-    els.btnFill.disabled = false;
-  }
-}
-
 async function savePairing(): Promise<void> {
   const value = els.tokenInput.value.trim();
   if (!looksLikeToken(value)) {
@@ -966,8 +576,9 @@ async function savePairing(): Promise<void> {
     await delay(AUTHORIZED_CONFIRM_MS);
     await refreshUntilSettled();
     if (!els.views.import.hidden) {
-      // Connected view is now shown; move focus off the (hidden) token input.
-      els.btnImport.focus();
+      // Connected view is now shown; move focus off the (hidden) token
+      // input, onto the Import button job-tools now owns.
+      els.jobToolsHost.querySelector<HTMLButtonElement>('#btn-import')?.focus();
     } else {
       // Didn't reach the connected view (e.g. app went away) — restore the
       // actionable label so the pair button works again.
@@ -1029,11 +640,7 @@ async function getApp(): Promise<void> {
 }
 
 function wire(): void {
-  els.btnImport.addEventListener('click', () => void doImport());
-  els.btnFill.addEventListener('click', () => void doFill());
   els.btnMarkApplied.addEventListener('click', () => void doMarkApplied());
-  els.btnSaveAnswers.addEventListener('click', () => void doSaveAnswers());
-  els.btnCheckFit.addEventListener('click', () => void doCheckFit());
   // NOT `void openAnswerPanel()` behind an await: opening the panel needs the
   // user gesture this click IS, and any await before the call spends it.
   els.btnOpenPanel.addEventListener('click', openAnswerPanel);
