@@ -24,11 +24,19 @@
  * true of the job-tools controls (Import/Check fit/Fill/Save answers) mounted
  * below — see `job-tools.ts`'s doc for its own trust gate, which this file
  * only has to feed via `jobTools.render`/`jobTools.checkPage`.
+ *
+ * 3. **It has connection-status awareness (ADR-046)**, unlike before: the
+ *    shared `connection-status.ts` module (also mounted by the popup) owns
+ *    the pill/retry + pair/offline/outdated/searching views, and this file's
+ *    only job is to show/hide `#view-connected` (the job/answer tools above)
+ *    based on the phase it reports — so a click can no longer silently fail
+ *    against a desktop app that isn't there.
  */
 
 import { browser } from '@wxt-dev/browser';
 
 import { copyText, mountAnswerTools } from '../answer-tools/answer-tools';
+import { mountConnectionStatus } from '../connection-status/connection-status';
 import { mountJobTools } from '../job-tools/job-tools';
 import { subscribeAnswerState } from '../lib/answer-state';
 import type { PopupRequest, PopupResponse } from '../lib/messages';
@@ -42,6 +50,12 @@ function byId<T extends HTMLElement>(id: string): T {
   if (!el) throw new Error(`missing element #${id}`);
   return el as T;
 }
+
+const els = {
+  viewConnected: byId<HTMLElement>('view-connected'),
+  connectionPillHost: byId<HTMLDivElement>('connection-pill-host'),
+  connectionViewsHost: byId<HTMLDivElement>('connection-views-host'),
+};
 
 /** Send a typed request to the background — the same seam the popup uses. */
 async function send(req: PopupRequest): Promise<PopupResponse> {
@@ -59,6 +73,23 @@ const answerTools = mountAnswerTools(byId<HTMLDivElement>('answer-tools-host'), 
 // disclosure to gate on the fields probe today (unlike the popup's), and
 // adding that is out of scope for this parity change.
 const jobTools = mountJobTools(byId<HTMLDivElement>('job-tools-host'), { send });
+
+/**
+ * The connection-status pill/retry + the four non-connected views — the SAME
+ * component the popup mounts (ADR-046). `onStatus` fires on every render and
+ * is the panel's ONLY connection-status responsibility: show `view-connected`
+ * (the job/answer tools) only while `phase === 'connected'`, the non-connected
+ * view otherwise. Unlike the popup, the panel needs no `onConnected`/
+ * `onPaired` — its own tab-follow logic (`follow()` below) already runs
+ * `jobTools.checkPage()` independently on mount/tab-activation, and it has no
+ * focus target to move on a fresh pair.
+ */
+mountConnectionStatus(els.connectionPillHost, els.connectionViewsHost, {
+  send,
+  onStatus: (status) => {
+    els.viewConnected.hidden = status.phase !== 'connected';
+  },
+}).start();
 
 /** Unsubscribe the previous tab's state subscription, if any. */
 let unsubscribe: (() => void) | null = null;

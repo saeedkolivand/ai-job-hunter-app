@@ -16,33 +16,11 @@
             <path d="M3 5 Q34 1 62 4 T117 4" />
           </svg>
         </h1>
-        <div class="status">
-          <!-- Sits left of the pill; shown only in the app_not_running state (toggled in render). -->
-          <button
-            id="btn-retry"
-            class="retry"
-            type="button"
-            aria-label="Retry"
-            title="Retry"
-            hidden
-          >
-            <svg
-              viewBox="0 0 24 24"
-              width="11"
-              height="11"
-              aria-hidden="true"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.4"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-              <path d="M21 3v5h-5" />
-            </svg>
-          </button>
-          <!-- role="status" already implies aria-live="polite"; no redundant attr. -->
-          <span id="status-pill" class="pill pill--searching" role="status"> ○ Connecting… </span>
+        <div class="status" id="connection-pill-host">
+          <!-- Retry button + status pill are built by the shared
+               `connection-status.ts` module (ADR-046, also mounted by the
+               side panel) — `prepend`-ed here so they land BEFORE #btn-help
+               below in reading/tab order. -->
           <button
             id="btn-help"
             class="help"
@@ -166,48 +144,10 @@
         <p id="import-msg" class="msg" role="status" aria-live="polite"></p>
       </section>
 
-      <!-- Pairing view: shown when the app is reachable but no token is stored. -->
-      <section id="view-pair" class="view" hidden>
-        <p class="hint">
-          Paste the pairing token from the desktop app's
-          <strong>Settings → Browser extension</strong>.
-        </p>
-        <input
-          id="token-input"
-          class="token"
-          type="text"
-          inputmode="text"
-          autocomplete="off"
-          spellcheck="false"
-          placeholder="64-character pairing token"
-          aria-label="Pairing token"
-        />
-        <p id="pair-msg" class="msg" role="status" aria-live="polite"></p>
-        <button id="btn-save-token" class="btn btn--primary" type="button">Save & pair</button>
-        <button id="btn-open-settings" class="link" type="button">Find my token</button>
-      </section>
-
-      <!-- App-not-running state: the pill reads "✕ App not running", the header Retry
-           re-checks the connection, and "?" explains. Offers the download page for
-           users who don't have the desktop app yet. -->
-      <section id="view-offline" class="view" hidden>
-        <p class="hint">Don’t have the desktop app yet?</p>
-        <button id="btn-get-app" class="btn btn--primary" type="button">Get the app</button>
-      </section>
-
-      <!-- Outdated-desktop state: the pill reads "⟳ Update the app". The stored
-           pairing token is fine — the desktop app is too old to speak the v2
-           handshake, so it must be updated (NOT re-paired). The header Retry
-           re-checks the connection once the app is updated. -->
-      <section id="view-outdated" class="view" hidden>
-        <p class="hint">
-          Your AI Job Hunter desktop app is out of date. Update it to reconnect the extension.
-        </p>
-        <button id="btn-update-app" class="btn btn--primary" type="button">Update the app</button>
-      </section>
-
-      <!-- Searching state: the "○ Connecting…" pill conveys it; no body needed. -->
-      <section id="view-searching" class="view"></section>
+      <!-- The pair / offline / outdated / searching views are built by the
+           shared `connection-status.ts` module (ADR-046, also mounted by the
+           side panel) — see that module's doc for what each renders. -->
+      <div id="connection-views-host"></div>
     </main>
 
     <script type="module" src="./popup/popup.ts"></script>

@@ -20,6 +20,10 @@
             <path d="M3 5 Q34 1 62 4 T117 4" />
           </svg>
         </h1>
+        <!-- Retry button + status pill are built by the shared
+             `connection-status.ts` module (ADR-046, also mounted by the
+             popup). -->
+        <div class="status" id="connection-pill-host"></div>
       </header>
 
       <!-- The panel is an extension page with NO page access of its own: every
@@ -27,15 +31,26 @@
            which holds the `activeTab` grant a gesture created. That is why the
            panel can stay open across a blur without widening anything.
 
+           This section is shown only while `connection-status.ts` reports
+           `phase === 'connected'` (ADR-046) — otherwise the pair/offline/
+           outdated/searching view built into #connection-views-host below
+           takes its place, instead of every button silently failing against
+           a desktop app that isn't there.
+
            job-tools-host: the shared job-tools component (Import/Check fit/
            Fill/Save answers — `src/job-tools/job-tools.ts`), also mounted by
            the popup. Gated on a live `activeTab` grant for THIS panel's
            active tab (see that module's doc) since, unlike the popup, the
            panel is never itself a fresh gesture. -->
-      <section class="view">
+      <section id="view-connected" class="view" hidden>
         <div id="job-tools-host"></div>
         <div id="answer-tools-host" class="atools"></div>
       </section>
+
+      <!-- The pair / offline / outdated / searching views are built by the
+           shared `connection-status.ts` module (ADR-046, also mounted by the
+           popup) — see that module's doc for what each renders. -->
+      <div id="connection-views-host"></div>
     </main>
 
     <script type="module" src="./sidepanel/sidepanel.ts"></script>
