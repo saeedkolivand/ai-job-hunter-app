@@ -91,7 +91,7 @@ function baseManifest(): ManifestRecord {
     // that survives Firefox upgrading `ws://` to `wss://`; the loopback
     // `host_permissions` below stay for the `ws` fallback. contextMenus → two
     // entries (ADR-044 decision 2, amended): "Answer this with AI Job Hunter"
-    // on selected text, and "Open answer panel" on a plain right-click on the
+    // on selected text, and "Open AI Job Hunter answer tool" on a plain right-click on the
     // page or inside an editable field (`contexts: ['page', 'editable']`).
     // Either click is itself the user gesture that grants `activeTab` and
     // opens the answer panel — no standing page access comes with it.
