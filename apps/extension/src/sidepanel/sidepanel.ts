@@ -69,11 +69,22 @@ let unsubscribe: (() => void) | null = null;
  * would keep re-rendering with a background tab's rows on top of the active
  * one's, which is exactly the confusion a per-window surface has to avoid.
  *
- * `jobTools.checkPage()` is fired here too — this function IS both of the
- * job-tools trigger points its own doc names for the panel ("mount and tab
- * activation"): the first call from `resolvePanelWindowId().then(...)` below
- * is the mount, every later call from `tabs.onActivated`/a focus change is an
- * activation.
+ * `jobTools.checkPage()` fires from INSIDE the subscription's own first
+ * delivery, never as a separate statement right after `subscribeAnswerState`
+ * — that read is unavoidably asynchronous (`readAnswerState(tabId).then(...)`
+ * in `lib/answer-state.ts`), so a `checkPage()` call placed right here would
+ * run against whatever `jobTools`'s trust flag was left over from BEFORE this
+ * follow (the previous tab, or its cold-mount default) and could fire the
+ * fields probe against a tab job-tools has not actually evaluated yet — the
+ * exact ungated call its own trust gate exists to prevent. Waiting for the
+ * first delivery means `jobTools.render(state)` has already updated that flag
+ * to the tab actually being followed by the time `checkPage()` reads it. This
+ * function is still both of the job-tools trigger points its own doc names
+ * for the panel ("mount and tab activation"): the first call from
+ * `resolvePanelWindowId().then(...)` below is the mount, every later call
+ * from `tabs.onActivated`/a focus change is an activation — `firstDelivery`
+ * just defers each one's `checkPage()` to the moment it is actually safe to
+ * fire, without changing which gesture triggers it.
  */
 function follow(tabId: number | null): void {
   unsubscribe?.();
@@ -83,11 +94,15 @@ function follow(tabId: number | null): void {
     jobTools.render(null);
     return;
   }
+  let firstDelivery = true;
   unsubscribe = subscribeAnswerState(tabId, (state) => {
     answerTools.render(state);
     jobTools.render(state);
+    if (firstDelivery) {
+      firstDelivery = false;
+      jobTools.checkPage();
+    }
   });
-  jobTools.checkPage();
 }
 
 /** This panel's own window — resolved once, since a panel never migrates

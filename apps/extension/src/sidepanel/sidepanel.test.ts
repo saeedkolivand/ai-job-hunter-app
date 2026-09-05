@@ -22,7 +22,15 @@ vi.mock('../job-tools/job-tools', () => ({
 }));
 
 vi.mock('../lib/answer-state', () => ({
-  subscribeAnswerState: vi.fn(() => vi.fn()),
+  // Mirrors the REAL subscribeAnswerState's shape: it never delivers
+  // synchronously (the real one is `readAnswerState(tabId).then(onState)`),
+  // only on a later microtask — a caller that assumes a same-tick delivery
+  // (the exact bug this file's "follow() sequencing" describe block guards
+  // against) would see this mock behave identically to the real thing.
+  subscribeAnswerState: vi.fn((_tabId: number, onState: (state: unknown) => void) => {
+    queueMicrotask(() => onState(null));
+    return vi.fn();
+  }),
 }));
 
 const PANEL_WINDOW_ID = 100;
@@ -141,5 +149,83 @@ describe('job-tools wiring (panel parity)', () => {
     stateCallback(fakeState as never);
 
     expect(jobTools.render).toHaveBeenCalledWith(fakeState);
+  });
+});
+
+// ── follow() sequencing regression ───────────────────────────────────────────
+// `checkPage()` must never run against a tab job-tools has not actually
+// evaluated: `subscribeAnswerState`'s first delivery is unavoidably
+// asynchronous, so a `checkPage()` call placed as a separate statement right
+// after subscribing would fire against whatever trust was left over from the
+// PREVIOUS tab (or the cold-mount default) — never the newly-followed tab.
+// These tests drive the REAL order of operations (mount → subscribe → first
+// async delivery) instead of calling `checkPage()`/`render()` in isolation,
+// which is what let this regression ship uncaught the first time.
+
+describe('follow() sequencing regression (checkPage must not race the async state delivery)', () => {
+  const jobTools = vi.mocked(mountJobTools).mock.results[0]?.value as
+    { render: ReturnType<typeof vi.fn>; checkPage: ReturnType<typeof vi.fn> } | undefined;
+  if (!jobTools) throw new Error('mountJobTools was not called at module load');
+
+  it("does not call checkPage before the tab's own state has actually been delivered", () => {
+    let deliver: ((state: unknown) => void) | undefined;
+    vi.mocked(subscribeAnswerState).mockImplementationOnce((_tabId, onState) => {
+      deliver = onState as (state: unknown) => void;
+      return vi.fn();
+    });
+    jobTools.checkPage.mockClear();
+    jobTools.render.mockClear();
+
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+    onActivated({ tabId: 99, windowId: PANEL_WINDOW_ID } as never);
+
+    // Nothing has been delivered yet — checkPage must not have fired against
+    // whatever trust the PREVIOUS tab (or the cold-mount default) left behind.
+    expect(jobTools.checkPage).not.toHaveBeenCalled();
+    expect(jobTools.render).not.toHaveBeenCalled();
+
+    // The async delivery lands.
+    deliver?.({
+      tabId: 99,
+      origin: 'https://jobs.example.com',
+      scannedAt: 1,
+      rows: [],
+      stream: null,
+      pageChanged: false,
+    });
+
+    // render() must run BEFORE checkPage() reads the trust it just set.
+    expect(jobTools.render).toHaveBeenCalledTimes(1);
+    expect(jobTools.checkPage).toHaveBeenCalledTimes(1);
+    const renderOrder = jobTools.render.mock.invocationCallOrder[0];
+    const checkPageOrder = jobTools.checkPage.mock.invocationCallOrder[0];
+    expect(renderOrder).toBeLessThan(checkPageOrder as number);
+  });
+
+  it('fires checkPage only on the FIRST delivery for a followed tab, not on later pushes for the same tab', () => {
+    let deliver: ((state: unknown) => void) | undefined;
+    vi.mocked(subscribeAnswerState).mockImplementationOnce((_tabId, onState) => {
+      deliver = onState as (state: unknown) => void;
+      return vi.fn();
+    });
+    jobTools.checkPage.mockClear();
+
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+    onActivated({ tabId: 101, windowId: PANEL_WINDOW_ID } as never);
+
+    const state = {
+      tabId: 101,
+      origin: 'https://jobs.example.com',
+      scannedAt: 1,
+      rows: [],
+      stream: null,
+      pageChanged: false,
+    };
+    deliver?.(state); // first delivery — checkPage fires
+    deliver?.({ ...state, scannedAt: 2 }); // a later push (e.g. an answer accepted)
+
+    expect(jobTools.checkPage).toHaveBeenCalledTimes(1);
   });
 });

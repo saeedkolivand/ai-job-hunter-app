@@ -33,6 +33,16 @@
  * The gate is derived from the SAME `AnswerState.pageChanged` ADR-044 already
  * uses for the Answer-tools write controls — see that module's doc for why
  * the record is scoped per (tab, origin) and re-armed only by a real gesture.
+ *
+ * This module can only enforce the gate against the trust value it currently
+ * holds — it has no way to know a caller just switched to a DIFFERENT tab
+ * until that tab's own `AnswerState` is actually delivered to {@link
+ * JobToolsView.render}. So the caller carries half of this contract: {@link
+ * JobToolsView.checkPage} must never be called as a bare next statement after
+ * subscribing to a newly-followed tab's state (that subscription's first
+ * delivery is unavoidably asynchronous), only from inside that delivery,
+ * after `render` has already run for it — see `sidepanel.ts::follow`'s doc,
+ * the one caller this currently matters for.
  */
 
 import type { AnswerState } from '../lib/answer-state';
@@ -332,7 +342,12 @@ export interface JobToolsView {
   /** Run the fields probe on the surface's own trigger (popup: the bridge's
    *  connect-phase transition; panel: mount + tab activation) — a no-op when
    *  the gate currently reads untrusted, so an ungated call is never made for
-   *  a tab that cannot safely answer it. */
+   *  a tab that cannot safely answer it. This reads whatever `trusted`
+   *  CURRENTLY holds — it does not itself wait for a fresh `AnswerState`, so
+   *  a caller that just switched to a different tab must call `render` with
+   *  that tab's own state FIRST (synchronously in the same callback, not as a
+   *  separate statement racing an async read) or this will run — or skip —
+   *  based on the PREVIOUS tab's trust instead. */
   checkPage: () => void;
   /** Override the Import button's label — used ONLY by the popup's own
    *  (unmoved) `appliedCheck` auto-check for the adaptive re-import wording;
@@ -356,6 +371,8 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
   const gatedMsg = document.createElement('p');
   gatedMsg.id = 'job-tools-gated';
   gatedMsg.className = 'msg msg--muted';
+  gatedMsg.setAttribute('role', 'status');
+  gatedMsg.setAttribute('aria-live', 'polite');
   gatedMsg.textContent = JOB_TOOLS_GATED_LINE;
 
   const activeWrap = document.createElement('div');
@@ -429,13 +446,13 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
   // Starts trusted and STAYS trusted unless a caller feeds `render` a
   // navigated/absent AnswerState — the popup deliberately never calls
   // `render` at all (see this module's doc: it structurally never needs the
-  // gate), so its instance never flips. The panel does call it; defaulting
-  // to trusted here means its own mount/tab-activation `checkPage()` fires
-  // immediately rather than waiting on the subscription's first (async,
-  // usually-fast) read, at the cost of, at worst, one redundant fields-probe
-  // call on a genuinely-untrusted tab (generation-guarded, so never wrong —
-  // just occasionally wasted, and self-corrected the moment the real state
-  // arrives).
+  // gate), so its instance never flips. The panel does call it, once its
+  // subscription's first (unavoidably async) delivery lands — see
+  // `sidepanel.ts::follow`'s doc for why `checkPage()` must never be called
+  // before that delivery, and why THIS default therefore only ever affects
+  // what briefly renders before it (active controls, not the gated line, for
+  // the very first paint of a freshly-mounted instance), never whether an
+  // ungated probe call can reach a tab this module has not yet evaluated.
   let trusted = true;
   let formGroupVisible = true;
   let fieldsProbeGeneration = 0;
