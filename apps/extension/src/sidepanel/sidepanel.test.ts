@@ -21,6 +21,10 @@ vi.mock('../job-tools/job-tools', () => ({
   mountJobTools: vi.fn(() => ({ render: vi.fn(), checkPage: vi.fn() })),
 }));
 
+vi.mock('../connection-status/connection-status', () => ({
+  mountConnectionStatus: vi.fn(() => ({ start: vi.fn() })),
+}));
+
 vi.mock('../lib/answer-state', () => ({
   // Mirrors the REAL subscribeAnswerState's shape: it never delivers
   // synchronously (the real one is `readAnswerState(tabId).then(onState)`),
@@ -37,7 +41,7 @@ const PANEL_WINDOW_ID = 100;
 
 vi.mock('@wxt-dev/browser', () => ({
   browser: {
-    runtime: { sendMessage: vi.fn() },
+    runtime: { sendMessage: vi.fn(), onMessage: { addListener: vi.fn() } },
     windows: {
       getCurrent: vi.fn(() => Promise.resolve({ id: PANEL_WINDOW_ID })),
       onFocusChanged: { addListener: vi.fn() },
@@ -51,10 +55,14 @@ vi.mock('@wxt-dev/browser', () => ({
   },
 }));
 
-document.body.innerHTML = '<div id="job-tools-host"></div><div id="answer-tools-host"></div>';
+document.body.innerHTML =
+  '<div id="view-connected" hidden></div>' +
+  '<div id="job-tools-host"></div><div id="answer-tools-host"></div>' +
+  '<div id="connection-pill-host"></div><div id="connection-views-host"></div>';
 
 const { subscribeAnswerState } = await import('../lib/answer-state');
 const { mountJobTools } = await import('../job-tools/job-tools');
+const { mountConnectionStatus } = await import('../connection-status/connection-status');
 await import('./sidepanel');
 
 /** Flush the module-load `resolvePanelWindowId().then(...)` chain. */
@@ -92,6 +100,40 @@ describe('sidepanel window scoping', () => {
     await flush();
 
     expect(subscribeAnswerState).toHaveBeenCalledWith(42, expect.any(Function));
+  });
+});
+
+// ── connection-status composition (ADR-046) ─────────────────────────────────
+// The panel's ONLY connection-status responsibility: show `#view-connected`
+// (the job/answer tools) only while `phase === 'connected'`. The pill/retry/
+// pairing/offline/outdated/searching behavior itself lives in
+// `connection-status.ts` — see `connection-status.test.ts` for that.
+
+describe('connection-status composition', () => {
+  it('mounts against the pill + views hosts and starts it', () => {
+    expect(vi.mocked(mountConnectionStatus)).toHaveBeenCalledWith(
+      document.getElementById('connection-pill-host'),
+      document.getElementById('connection-views-host'),
+      expect.objectContaining({ send: expect.any(Function), onStatus: expect.any(Function) })
+    );
+    const view = vi.mocked(mountConnectionStatus).mock.results[0]?.value as
+      { start: ReturnType<typeof vi.fn> } | undefined;
+    expect(view?.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows #view-connected only while phase === connected', () => {
+    const onStatus = vi.mocked(mountConnectionStatus).mock.calls[0]?.[2]?.onStatus;
+    if (!onStatus) throw new Error('onStatus dep not captured');
+    const viewConnected = document.getElementById('view-connected') as HTMLElement;
+
+    onStatus({ phase: 'connected', port: 1, hasToken: true });
+    expect(viewConnected.hidden).toBe(false);
+
+    onStatus({ phase: 'app_not_running', port: null, hasToken: true });
+    expect(viewConnected.hidden).toBe(true);
+
+    onStatus({ phase: 'searching', port: null, hasToken: false });
+    expect(viewConnected.hidden).toBe(true);
   });
 });
 

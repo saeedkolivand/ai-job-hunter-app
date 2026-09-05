@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { browser } from '@wxt-dev/browser';
 
 import type { ConnectionStatus } from '../lib/messages';
-import { getAnswerToolsExpanded, looksLikeToken, setAnswerToolsExpanded } from '../lib/storage';
+import { getAnswerToolsExpanded, setAnswerToolsExpanded } from '../lib/storage';
 
 // vi.mock must come before the import that triggers the module side-effects.
 // popup.ts imports @wxt-dev/browser; stub it out so the module-level
@@ -48,11 +48,13 @@ vi.mock('../lib/storage', () => ({
 // the module-level `els` constant is initialised.
 function buildPopupDom(): void {
   document.body.innerHTML = `
-    <span id="status-pill"></span>
     <div id="view-import" hidden></div>
-    <div id="view-pair" hidden></div>
-    <div id="view-offline" hidden></div>
-    <div id="view-searching"></div>
+    <!-- connection-status.ts mounts the pill/retry (with matching ids) into
+         this host, and the four non-connected views into
+         #connection-views-host, at module load — see
+         connection-status.test.ts for that component's own unit tests. -->
+    <div id="connection-pill-host"></div>
+    <div id="connection-views-host"></div>
     <button id="btn-mark-applied" hidden></button>
     <!-- job-tools mounts its own Import/Check-fit/Fill/Save-answers DOM
          (with matching ids) into this host at module load — see
@@ -68,16 +70,8 @@ function buildPopupDom(): void {
     <div id="unpair-group" hidden>
       <button id="btn-unpair"></button>
     </div>
-    <input id="token-input" type="text" />
-    <p id="pair-msg"></p>
-    <button id="btn-save-token"></button>
-    <button id="btn-retry"></button>
-    <button id="btn-open-settings"></button>
     <button id="btn-help"></button>
     <p id="help-popover" hidden></p>
-    <button id="btn-get-app"></button>
-    <div id="view-outdated" hidden></div>
-    <button id="btn-update-app"></button>
   `;
 }
 
@@ -87,7 +81,6 @@ buildPopupDom();
 // listeners at load (wire()), so the behavioral tests below drive the controller
 // by dispatching real clicks on the wired buttons and asserting DOM state.
 const {
-  resolveStatusResponse,
   resolveAppliedStatusLine,
   resolveImportButtonLabel,
   resolveShowMarkAppliedButton,
@@ -96,37 +89,15 @@ const {
 } = await import('./popup');
 
 const sendMessageMock = vi.mocked(browser.runtime.sendMessage);
-const looksLikeTokenMock = vi.mocked(looksLikeToken);
 const getAnswerToolsExpandedMock = vi.mocked(getAnswerToolsExpanded);
 const setAnswerToolsExpandedMock = vi.mocked(setAnswerToolsExpanded);
 const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-// ── resolveStatusResponse ─────────────────────────────────────────────────────
-
-describe('resolveStatusResponse', () => {
-  it('returns the status when response is ok with kind=status', () => {
-    const status = { phase: 'connected' as const, port: 47615, hasToken: true };
-    const res = { ok: true as const, kind: 'status' as const, status };
-    expect(resolveStatusResponse(res, false)).toEqual(status);
-  });
-
-  it('returns an app_not_running offline fallback when ok=false', () => {
-    const res = { ok: false as const, error: 'Service worker not responding.' };
-    const result = resolveStatusResponse(res, true);
-    expect(result.phase).toBe('app_not_running');
-    // Preserves the last-known token state.
-    expect(result.hasToken).toBe(true);
-    expect(result.port).toBeNull();
-  });
-
-  it('returns an app_not_running offline fallback for an unexpected ok kind', () => {
-    // A `{ ok: true, kind: 'token' }` response is not a status reply.
-    const res = { ok: true as const, kind: 'token' as const };
-    const result = resolveStatusResponse(res, false);
-    expect(result.phase).toBe('app_not_running');
-    expect(result.hasToken).toBe(false);
-  });
-});
+// `resolveStatusResponse` + the connection-status pill/retry/pairing/offline/
+// outdated/searching behavior moved to `connection-status.ts` (ADR-046) — see
+// `connection-status.test.ts` for those. `looksLikeToken` is still mocked
+// above because `connection-status.ts` (which this file mounts for real, not
+// mocked) imports it too.
 
 // ── resolveAppliedStatusLine / resolveImportButtonLabel ───────────────────────
 
@@ -384,222 +355,39 @@ describe('help toggle (#btn-help)', () => {
   });
 });
 
-describe('savePairing (#btn-save-token)', () => {
-  const flush = () => new Promise((r) => setTimeout(r, 0));
+// The pill/retry/pairing/offline/outdated/searching behavior — savePairing,
+// "get the app", header Retry visibility, offline-sticky, the outdated-desktop
+// view — all moved to `connection-status.ts` (ADR-046); see
+// `connection-status.test.ts` for those. What's left here is popup.ts's OWN
+// contract with that module: `view-import` (and the "Unpair this device"
+// group) toggle correctly off a real status push through the SAME module.
 
-  beforeEach(() => {
-    sendMessageMock.mockReset();
-    looksLikeTokenMock.mockReturnValue(true);
-    const btn = byId<HTMLButtonElement>('btn-save-token');
-    btn.disabled = false;
-    btn.textContent = 'Save & pair';
-    byId<HTMLInputElement>('token-input').value = 'a'.repeat(64);
-    byId<HTMLElement>('view-import').hidden = true;
-  });
-
-  it('confirms with "✓ Authorized" then flips to the import view on success', async () => {
-    vi.useFakeTimers();
-    try {
-      sendMessageMock.mockResolvedValueOnce({ ok: true, kind: 'token' }).mockResolvedValueOnce({
-        ok: true,
-        kind: 'status',
-        status: { phase: 'connected', port: 1, hasToken: true },
-      });
-
-      byId<HTMLButtonElement>('btn-save-token').click();
-      await vi.runAllTimersAsync();
-
-      expect(byId<HTMLButtonElement>('btn-save-token').textContent).toContain('Authorized');
-      expect(byId<HTMLElement>('view-import').hidden).toBe(false);
-    } finally {
-      // Restore real timers even if an assertion throws, so later tests don't
-      // inherit fake timers and flake.
-      vi.useRealTimers();
-    }
-  });
-
-  it('resets the button when the status refresh does not reach the connected view', async () => {
-    vi.useFakeTimers();
-    try {
-      sendMessageMock.mockResolvedValueOnce({ ok: true, kind: 'token' }).mockResolvedValueOnce({
-        ok: true,
-        kind: 'status',
-        status: { phase: 'app_not_running', port: null, hasToken: true },
-      });
-
-      byId<HTMLButtonElement>('btn-save-token').click();
-      await vi.runAllTimersAsync();
-
-      const btn = byId<HTMLButtonElement>('btn-save-token');
-      expect(btn.disabled).toBe(false);
-      expect(btn.textContent).toBe('Save & pair');
-      expect(byId<HTMLElement>('view-import').hidden).toBe(true);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('restores the actionable button when the pairing request rejects', async () => {
-    sendMessageMock.mockRejectedValueOnce(new Error('transport down'));
-
-    byId<HTMLButtonElement>('btn-save-token').click();
-    await flush();
-    await flush();
-
-    const btn = byId<HTMLButtonElement>('btn-save-token');
-    expect(btn.disabled).toBe(false);
-    expect(btn.textContent).toBe('Save & pair');
-    expect(byId<HTMLParagraphElement>('pair-msg').textContent).toMatch(/failed/i);
-  });
-});
-
-describe('get the app (#btn-get-app)', () => {
-  const flush = () => new Promise((r) => setTimeout(r, 0));
-  const tabsCreateMock = vi.mocked(browser.tabs.create);
-
-  beforeEach(() => {
-    tabsCreateMock.mockReset();
-  });
-
-  it('opens the public download page in a new tab when clicked', async () => {
-    byId<HTMLButtonElement>('btn-get-app').click();
-    await flush();
-
-    expect(tabsCreateMock).toHaveBeenCalledTimes(1);
-    expect(tabsCreateMock).toHaveBeenCalledWith({ url: 'https://aijobhunter.app/download' });
-  });
-
-  it('swallows a tabs.create rejection without propagating an unhandled error', async () => {
-    tabsCreateMock.mockRejectedValueOnce(new Error('tabs unavailable'));
-
-    byId<HTMLButtonElement>('btn-get-app').click();
-    await flush();
-
-    // getApp() wraps tabs.create in try/catch; the rejection is swallowed
-    // inside getApp, so reaching this point without an unhandled rejection is
-    // the assertion. The call still fired exactly once.
-    expect(tabsCreateMock).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('header Retry visibility', () => {
-  // wire() registers a runtime message listener that calls render() on status pushes.
-  // Grab it from the mocked addListener so we can drive render() with a phase.
-  const statusListener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
-    ((message: unknown) => void) | undefined;
-  const push = (phase: ConnectionStatus['phase']) =>
-    statusListener?.({ ok: true, kind: 'status', status: { phase, port: null, hasToken: true } });
-
-  it('is shown only in the app_not_running state', () => {
-    expect(statusListener).toBeTypeOf('function');
-    const retry = byId<HTMLButtonElement>('btn-retry');
-
-    push('app_not_running');
-    expect(retry.hidden).toBe(false);
-
-    push('connected');
-    expect(retry.hidden).toBe(true);
-
-    push('searching');
-    expect(retry.hidden).toBe(true);
-
-    push('not_paired');
-    expect(retry.hidden).toBe(true);
-  });
-});
-
-describe('offline-sticky — searching after app_not_running must not hide offline view', () => {
-  // Reuse the same onMessage listener registered during module load.
+describe('view-import + unpair-group gating (via the real connection-status module)', () => {
   const statusListener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
     ((message: unknown) => void) | undefined;
   if (!statusListener) throw new Error('onMessage status listener not registered');
-  const push = (phase: ConnectionStatus['phase']) =>
-    statusListener({ ok: true, kind: 'status', status: { phase, port: null, hasToken: false } });
+  const push = (phase: ConnectionStatus['phase'], hasToken = true) =>
+    statusListener({ ok: true, kind: 'status', status: { phase, port: null, hasToken } });
 
-  beforeEach(() => {
-    // Reset the sticky flag by pushing a settled phase so each test starts clean.
-    push('connected');
-  });
-
-  it('keeps #view-offline visible and retains the Retry button when searching follows app_not_running', () => {
-    expect(statusListener).toBeTypeOf('function');
-
-    const offlineView = byId<HTMLElement>('view-offline');
-    const searchingView = byId<HTMLElement>('view-searching');
-    const pill = byId<HTMLSpanElement>('status-pill');
-    const retry = byId<HTMLButtonElement>('btn-retry');
-
-    // Step 1: offline view shown.
-    push('app_not_running');
-    expect(offlineView.hidden).toBe(false);
-    expect(searchingView.hidden).toBe(true);
-
-    // Step 2: background reconnect attempt fires a transient `searching`.
-    // The offline guidance must NOT disappear.
-    push('searching');
-    expect(offlineView.hidden).toBe(false);
-    expect(searchingView.hidden).toBe(true);
-    // Pill reflects the reconnect attempt.
-    expect(pill.textContent).toBe('○ Connecting…');
-    // Retry button stays available.
-    expect(retry.hidden).toBe(false);
-  });
-
-  it('switches to the import view when connected arrives after an offline+searching cycle', () => {
-    expect(statusListener).toBeTypeOf('function');
-
-    const offlineView = byId<HTMLElement>('view-offline');
+  it('shows view-import only for connected, and hides it (resetting job/answer tools) otherwise', () => {
     const importView = byId<HTMLElement>('view-import');
-
-    // Simulate the full cycle: offline → searching reconnect → actually connected.
-    push('app_not_running');
-    push('searching');
-    expect(offlineView.hidden).toBe(false);
 
     push('connected');
     expect(importView.hidden).toBe(false);
-    expect(offlineView.hidden).toBe(true);
-  });
 
-  it('does not suppress the first searching spinner before offline has been shown', () => {
-    expect(statusListener).toBeTypeOf('function');
-
-    // After beforeEach pushed `connected`, hasShownOffline is false.
-    // A searching push (first popup open, bridge connecting) should show the spinner.
-    const searchingView = byId<HTMLElement>('view-searching');
-    const offlineView = byId<HTMLElement>('view-offline');
-
-    push('searching');
-    expect(searchingView.hidden).toBe(false);
-    expect(offlineView.hidden).toBe(true);
-  });
-});
-
-// ── outdated-desktop view (v2 handshake force cutover) ──────────────────────────
-
-describe('outdated-desktop view', () => {
-  const statusListener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
-    ((message: unknown) => void) | undefined;
-  if (!statusListener) throw new Error('onMessage status listener not registered');
-  const push = (phase: ConnectionStatus['phase']) =>
-    statusListener({ ok: true, kind: 'status', status: { phase, port: null, hasToken: true } });
-
-  it('shows the dedicated update view (NOT the pairing view) and the update pill', () => {
-    push('outdated');
-
-    const outdatedView = byId<HTMLElement>('view-outdated');
-    const pairView = byId<HTMLElement>('view-pair');
-    const importView = byId<HTMLElement>('view-import');
-    const pill = byId<HTMLSpanElement>('status-pill');
-    const retry = byId<HTMLButtonElement>('btn-retry');
-
-    expect(outdatedView.hidden).toBe(false);
-    // Critical: an outdated desktop is NOT a token problem — never show pairing.
-    expect(pairView.hidden).toBe(true);
+    push('app_not_running');
     expect(importView.hidden).toBe(true);
-    expect(pill.textContent).toBe('⟳ Update the app');
-    // Retry is available so the user can re-probe after updating the app.
-    expect(retry.hidden).toBe(false);
+  });
+
+  it('shows "Unpair this device" only while a pairing token is stored, independent of phase', () => {
+    push('not_paired', false);
+    expect(byId<HTMLElement>('unpair-group').hidden).toBe(true);
+
+    push('connected', true);
+    expect(byId<HTMLElement>('unpair-group').hidden).toBe(false);
+
+    push('app_not_running', false);
+    expect(byId<HTMLElement>('unpair-group').hidden).toBe(true);
   });
 });
 
