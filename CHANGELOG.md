@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.149.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.148.0...v0.149.0) (2026-09-07)
+
+### ✨ Features
+
+* add the terms of use page and link it from onboarding ([#1120](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1120)) ([97e10bd](https://github.com/saeedkolivand/ai-job-hunter-app/commit/97e10bddca3923acc093aa077861c2b3753ee2fa))
+* apache-2.0 relicense, extension store auto-submission and a microsoft store msix flavour ([#1119](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1119)) ([94400be](https://github.com/saeedkolivand/ai-job-hunter-app/commit/94400be3a7b6c2dddb101a441230e0471f1953c4)), closes [#1118](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1118)
+* give the extension side panel connection-status awareness ([#1116](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1116)) ([1bfe935](https://github.com/saeedkolivand/ai-job-hunter-app/commit/1bfe9353cc934e0151be2ed48fd8201bfc001b64))
+* LinkedIn description enrichment + paginated found-jobs MCP resource ([#1117](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1117)) ([e5f4163](https://github.com/saeedkolivand/ai-job-hunter-app/commit/e5f41630b1898a1a2f244607f29fabb4d245b8e1)), closes [#1115](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1115) [#1115](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1115)
+
 ## [0.148.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.147.0...v0.148.0) (2026-09-05)
 
 ### ✨ Features
