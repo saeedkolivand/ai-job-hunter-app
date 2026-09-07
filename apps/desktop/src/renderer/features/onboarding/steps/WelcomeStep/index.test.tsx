@@ -165,6 +165,21 @@ describe('WelcomeStep — terms notice', () => {
     // step advance, and it must not gate one either.
     expect(onNext).not.toHaveBeenCalled();
   });
+
+  it('does not advance the wizard when Enter fires with the terms link focused', async () => {
+    const user = userEvent.setup();
+    const { onNext } = renderStep();
+
+    // A typed name makes canAdvance true, so the ONLY thing standing between
+    // this Enter and onNext is the wrapper's anchor exemption
+    // (activeElementHandlesOwnActivation) — the property this test pins.
+    // The listener lives on `window`, so a keyboard event, not a click.
+    await user.type(screen.getByPlaceholderText('onboarding.welcome.namePlaceholder'), 'Grace');
+    screen.getByRole('link', { name: 'onboarding.welcome.termsNoticeLink' }).focus();
+    await user.keyboard('{Enter}');
+
+    expect(onNext).not.toHaveBeenCalled();
+  });
 });
 
 describe('WelcomeStep — Enter on a different focused control activates THAT control, not the wizard', () => {
