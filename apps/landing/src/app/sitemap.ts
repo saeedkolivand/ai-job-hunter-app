@@ -16,6 +16,7 @@ const ROUTES: [route: string, lastModified: string][] = [
   ['/download', '2026-08-05'],
   ['/how-it-works', '2026-08-05'],
   ['/privacy', '2026-08-05'],
+  ['/terms', '2026-09-07'],
   ['/accessibility', '2026-08-05'],
   ['/world', '2026-08-01'],
   ['/creature', '2026-07-30'],

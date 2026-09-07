@@ -106,6 +106,7 @@ const SECRET_SCAN_FILES = [
   'apps/landing/src/components/privacy/sections/Extension.tsx',
   'apps/landing/src/components/privacy/sections/Desktop.tsx',
   'apps/landing/src/components/privacy/sections/Footer.tsx',
+  'apps/landing/src/components/terms/TermsBody.tsx',
   'apps/landing/src/components/accessibility/AccessibilityBody.tsx',
   'apps/landing/src/components/accessibility/sections/Intro.tsx',
   'apps/landing/src/components/accessibility/sections/Conformance.tsx',

@@ -15,7 +15,7 @@ afterEach(() => {
 // is identical across variants since only the tag (a vs. plain text) differs
 // for the "current" item, never the word itself.
 const FOOT_LINKS_TEXT =
-  'home · how it works · download · privacy · accessibility · ▶ the short film · the agent fleet · architecture · tech radar · design system · GitHub · Chrome extension · Firefox extension · ♥ sponsor';
+  'home · how it works · download · privacy · terms · accessibility · ▶ the short film · the agent fleet · architecture · tech radar · design system · GitHub · Chrome extension · Firefox extension · ♥ sponsor';
 
 describe('SiteFooter', () => {
   it('renders the byline', () => {
@@ -38,6 +38,7 @@ describe('SiteFooter', () => {
       ['/how-it-works', 'how it works'],
       ['/download', 'download'],
       ['/privacy', 'privacy'],
+      ['/terms', 'terms'],
       ['/accessibility', 'accessibility'],
       ['/creature', '▶ the short film'],
       ['/agent-system', 'the agent fleet'],
@@ -62,6 +63,32 @@ describe('SiteFooter', () => {
       '/',
       '/how-it-works',
       '/download',
+      '/terms',
+      '/accessibility',
+      '/creature',
+      '/agent-system',
+      '/architecture-map',
+      '/tech-radar',
+      '/storybook/',
+      GITHUB_REPO,
+      CHROME_EXT,
+      FIREFOX_EXT,
+      SPONSOR,
+    ]);
+  });
+
+  it('renders "terms" as plain text (not a link) when current="terms"', () => {
+    const { container } = render(<SiteFooter current="terms" />);
+    expect(container.querySelector('.foot-links')?.textContent).toBe(FOOT_LINKS_TEXT);
+    const hrefs = Array.from(container.querySelectorAll('.foot-links a')).map((a) =>
+      a.getAttribute('href')
+    );
+    expect(hrefs).not.toContain('/terms');
+    expect(hrefs).toEqual([
+      '/',
+      '/how-it-works',
+      '/download',
+      '/privacy',
       '/accessibility',
       '/creature',
       '/agent-system',
@@ -86,6 +113,7 @@ describe('SiteFooter', () => {
       '/',
       '/how-it-works',
       '/privacy',
+      '/terms',
       '/accessibility',
       '/creature',
       '/agent-system',
@@ -111,6 +139,7 @@ describe('SiteFooter', () => {
       '/how-it-works',
       '/download',
       '/privacy',
+      '/terms',
       '/creature',
       '/agent-system',
       '/architecture-map',
@@ -134,6 +163,7 @@ describe('SiteFooter', () => {
       '/',
       '/download',
       '/privacy',
+      '/terms',
       '/accessibility',
       '/creature',
       '/agent-system',
@@ -164,6 +194,7 @@ describe('SiteFooter', () => {
       '/how-it-works',
       '/download',
       '/privacy',
+      '/terms',
       '/accessibility',
       '/creature',
       '/agent-system',
