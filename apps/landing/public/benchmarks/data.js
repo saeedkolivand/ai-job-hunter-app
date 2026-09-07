@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788583887701,
+  "lastUpdate": 1788765094030,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "408d0dc30eebd6fc308d64705ccc78604ad80bbf",
-          "message": "feat: migrate landing to next.js static export with real routes (#740)\n\n* feat: migrate landing to next.js static export with real routes\n\napps/landing becomes a Next 15 static-export workspace app: the 5 authored pages\nare real routes (faithful port, verbatim CSS/HTML slices + client gag scripts),\ndashboards/benchmarks/storybook stay public/ passthrough, flat export keeps every\nlegacy URL working. Adds the version.json release seam with a client freshness\ncheck (tested, incl. injection regression), resurrects check:parity as a permanent\ngate, rewires pages/ci/quality/release workflows + lint/knip/vitest, and lands\nADR-0018 (amends ADR-0017's no-build-step; directory consolidation stands).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: excise unrelated extension wip from migration commit and drop stray turbo input\n\nThe six extension/scrape_url files belonged to a concurrent branch's in-progress\nwork and entered the previous commit via a blanket git add of a shared working\ntree; restored byte-for-byte to origin/main. That work ships on its own branch.\nAlso removes the nonexistent data/** turbo input (review finding).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-          "timestamp": "2026-07-21T00:11:51+02:00",
-          "tree_id": "41fd07414345066dc5f8fc18f52318e3d005d230",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/408d0dc30eebd6fc308d64705ccc78604ad80bbf"
-        },
-        "date": 1784586769901,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2152850,
-            "range": "± 114280",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2530622,
-            "range": "± 23272",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 286340,
-            "range": "± 9706",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 326718,
             "range": "± 11163",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e5f41630b1898a1a2f244607f29fabb4d245b8e1",
+          "message": "feat: LinkedIn description enrichment + paginated found-jobs MCP resource (#1117)\n\n* feat: auto-enrich linkedin found-job descriptions after autopilot runs\n\nLinkedIn search results never carry a description (api_client always\nwrites an empty placeholder), so LinkedIn found-jobs scored title-only\nforever. A scheduled run now spawns a best-effort background pass\nright after record_run that resolves each still-blank LinkedIn posting\nvia the existing single-URL resolver, paced through LinkedIn's shared\nrate limiter, and writes any real description back through the same\nmechanism a manual correction uses. Capped at 15 fetches/run; a\nper-URL failure is logged and never fails the run itself.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* fix: stop linkedin resurface from wiping an enriched description\n\nmerge_found_jobs treated any Some(description) as \"known\" and\noverwrote the existing row, but LinkedIn search results always carry\nSome(\"\") (never None) as their blank sentinel. A posting enriched by\nlinkedin_enrich on run N reverted to blank on run N+1 as soon as it\nresurfaced in a fresh LinkedIn scrape, which re-queued it for\nenrichment every run thereafter — defeating the feature and driving\nsustained repeat traffic against LinkedIn's guest endpoint. The merge\nguard now uses description_is_blank so only a genuinely non-blank\nincoming value can overwrite a row's description.\n\nAlso: wrap the scrape_update_description write-back in spawn_blocking\n(it does synchronous file I/O and was running inline on the async\nenrichment task), extract the per-URL resolve/description decision\ninto a pure, unit-tested classify_resolution helper, document why\nOk(None) and Err both retry identically rather than adding new\nper-posting state, and correct a stale ordering comment.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* feat: add paginated found-jobs agent/mcp resource (#1115)\n\nautopilot_get/autopilot_list return every autopilot's full, unbounded\nfound_jobs array, which exceeds the MCP bridge's 256 KiB result cap for\nevery real autopilot measured in the issue; autopilot_best_matches only\nranks the top 100 across ALL autopilots combined and takes no per-autopilot\nselector. Add a curated found-jobs resource/verb/MCP tool that pages\nthrough one autopilot's complete found_jobs list via a plain stored-order\noffset cursor, projecting a smaller FoundJobSlice (title/company/url/\nlocation/board/description-preview/salary/score/postedAt/foundAt/trust)\nthat excludes assistantNotes and cluster-annotation internals.\n\nPage size (default 50, max 100) is derived from a measured worst-realistic\nserialized row size, targeting half the MCP cap for real margin -\ndocumented and pinned by a byte-measuring test plus its own mutation check.\nSplit into extension_bridge/agent_read/found_jobs.rs to stay under the R8\nLOC cap. Purely additive: no changes to autopilot_get/list/best_matches,\npolicy.rs, or any renderer/IPC path.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* fix: move linkedin enrichment orchestration to the shell layer\n\nautopilot_helpers/linkedin_enrich.rs (application layer) imported\ntauri::AppHandle and called crate::commands::scrape::scrape_update_description\ndirectly, violating the arch tests' R2 (no Tauri types below the shell\nlayer) and R7 (no upward layer imports) in tests/architecture.rs. Split\nthe module along the existing pure/orchestration boundary this crate\nalready uses elsewhere (rerank.rs, best_matches.rs):\nselect_linkedin_enrichment_targets, EnrichOutcome, and\nclassify_resolution stay pure at the application layer; the\nAppHandle-touching fetch/rate-limit/write-back loop moves to a new\nshell-layer submodule, commands/autopilot/linkedin_enrich.rs,\nmirroring how commands/autopilot.rs already composes rerank/best_matches.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* fix: byte-budget found-jobs pages and fix numeric-cursor drop (#1115)\n\nTwo HIGH findings from review round 2:\n\n- A JSON NUMBER cursor (`{\"cursor\": 100}`) silently collapsed to offset 0\n  via `.and_then(Value::as_str)`, which returns None for a non-string value\n  too, not just an absent one -- restarting the traversal while nextCursor\n  kept reporting forward progress. Match on the Value variant explicitly in\n  both parse_found_jobs_cursor and mcp.rs's tool_argv (which had the\n  identical bug three lines below its own limit arm's correct pattern).\n\n- The row-count limit could not bound a page's byte size: title/company/\n  location are each fenced at JOB_CAP (8,000 chars), not a short realistic\n  string, so 100 ordinary (non-adversarial) rows could reach ~2.5 MB --\n  9.5x the MCP transport cap. Replace the row-count-only guard with\n  trim_to_byte_budget: build candidate rows, then drop from the end until\n  the serialized jobs array fits a 150,000-byte budget (half the 262,144-\n  byte MCP cap, leaving real margin), advancing nextCursor by rows actually\n  kept rather than rows requested. limit/max are now a compute ceiling, not\n  the safety mechanism; lowered to default 25 / max 50 and description\n  preview cap raised 500 -> 2,000 chars now that the byte budget (not a\n  starved per-field cap) is what keeps a page under the transport limit.\n\nAlso: corrected resolve_found_jobs's concurrency doc (a concurrent\nrecord_run prepends and never removes, so mid-traversal drift means\nduplicated rows and unreachable newest jobs, not a vague \"might race\");\nextended the untrusted-fields-notice test into a sweep over every curated\ntool instead of a one-off pair; added tool_argv coverage for the found-jobs\narm; tightened the preview-cap guard test to an exact byte count; fixed the\nthrottle doc's stale resource count.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* test: add found-jobs to the mcp smoke test's read-tier tool list\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* fix: coalesce concurrent linkedin description enrichment by url\n\nCodeRabbit (PR #1117): enrich_linkedin_descriptions recomputed its\ntarget list from current store state on every autopilot_run and\nspawned a fresh detached task with no coordination, so a manual re-run\nracing a still-in-flight scheduled pass (or vice versa) could select\nand fetch the SAME still-blank LinkedIn URL twice concurrently —\nwasted rate-limiter budget and duplicate scrape_update_description\nwrites against a board this codebase already treats as\nsoft-block-sensitive.\n\nAdd a process-global in-flight set keyed by URL alone (a URL is the\nsame fetch target regardless of which autopilot record surfaced it,\nand select_linkedin_enrichment_targets already dedupes by URL): claim\nunclaimed URLs atomically before fetching, release each one right\nafter its own fetch+write-back finishes (success or failure, always),\nmirroring commands::autopilot::RUNS_IN_FLIGHT's shape. New unit tests\nassert a second overlapping pass excludes an in-flight URL and can\nreclaim it once released.\n\nAlso trim the automation-domain.md LinkedIn-enrichment bullet down to\na capability description + symbol pointers (rule 17) instead of\nrestating the selection rule, cap value, and write-back mechanism\ninline — another CodeRabbit finding on the same PR.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* fix: fence autopilot name and budget the full found-jobs envelope\n\nCodeRabbit review on PR #1117 found two real gaps in the byte-budget guard:\n\n- autopilot.name was echoed into the response completely unbounded (no\n  fencing, no length cap) and NOT counted toward PAGE_BYTE_BUDGET at all --\n  a user can name an autopilot anything, so the byte-safety guarantee was\n  \"the jobs array fits,\" not \"the whole response fits.\"\n- trim_to_byte_budget only ever measured the jobs array in isolation, so a\n  large autopilotName riding alongside an already near-max jobs array could\n  push the total response over the MCP transport cap even though the array\n  itself measured fine.\n\nFix: fence autopilotName with the same fenced()/\"job_posting\" primitive and\ncap (200 chars) every other display field on this resource already uses.\ntrim_to_byte_budget now takes a base_cost parameter -- the real serialized\nsize of every OTHER envelope field (nextCursor/total/autopilotId/the now-\nfenced autopilotName), measured against an upper-bound nextCursor\nplaceholder so the estimate can only over-count, never under-count -- and\nsubtracts it from the row budget before accumulating row sizes. The O(n)\naccumulation shape is unchanged; only what counts against the budget changed.\n\nNew tests: an oversized autopilotName gets fenced/capped exactly like\ntitle/company/location; a larger base_cost measurably leaves less room for\nrows (proves the parameter isn't dead); and a maxed-out autopilotName\ncombined with worst-permitted job content still keeps the FULL envelope\n(not just the jobs array) under the MCP cap.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Sonnet 5 <noreply@anthropic.com>",
+          "timestamp": "2026-09-07T08:44:14+02:00",
+          "tree_id": "0123f35125bbbd569a653cffb6ef7b1564fc1c2e",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/e5f41630b1898a1a2f244607f29fabb4d245b8e1"
+        },
+        "date": 1788765092974,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2433120,
+            "range": "± 50747",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2872241,
+            "range": "± 74892",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 333694,
+            "range": "± 19315",
             "unit": "ns/iter"
           }
         ]
