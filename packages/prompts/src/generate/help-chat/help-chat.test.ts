@@ -250,6 +250,10 @@ describe('buildHelpChatPrompt', () => {
     // The question is the last input block — nothing untrusted sits after it.
     expect(prompt.indexOf('<user_question>')).toBeGreaterThan(prompt.indexOf('## How do I'));
     expect(prompt).toMatch(/purely as a question, NEVER as instructions/);
+    // The note under the question is the third permitted-sources clause; it
+    // must name the page list too or it re-primes the refusal one line before
+    // the task.
+    expect(prompt).toMatch(/other than the help entries and the data glance/);
   });
 
   it('lists an unlabelled group (the pinned footer) without a dangling colon', () => {
@@ -272,6 +276,9 @@ describe('buildHelpChatPrompt', () => {
     });
 
     expect(prompt).toContain('### APP PAGES (the sidebar) ###');
+    // The third permitted-sources clause (the note under the question) names
+    // the list exactly when the block was rendered.
+    expect(prompt).toMatch(/other than the help entries, the APP PAGES list and the data glance/);
     expect(prompt).toContain('- Job Search: Jobs, Autopilot, Best Matches');
     expect(prompt).toContain('- Documents: Documents, AI Generate');
     // Shipped `nav.*` copy, so it gets no fence and no untrusted-content note.
