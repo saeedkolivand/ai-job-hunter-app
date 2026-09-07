@@ -90,6 +90,9 @@ describe('TermsBody', () => {
 
     expect(text).toContain('Apache License 2.0');
     expect(text).toContain('without warranty of any kind');
+    // Apache-2.0 §8 keeps the exceptions applicable law and written agreements
+    // carve out, so the summary must carry the qualifier, not a flat "not liable".
+    expect(text).toContain('to the fullest extent permitted by applicable law');
     expect(text).toContain('never submits an application on its own');
   });
 

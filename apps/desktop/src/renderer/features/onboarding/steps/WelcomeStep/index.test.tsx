@@ -179,6 +179,10 @@ describe('WelcomeStep — terms notice', () => {
     await user.keyboard('{Enter}');
 
     expect(onNext).not.toHaveBeenCalled();
+    // And Enter is not merely swallowed: keyboard activation opens the terms,
+    // the same way a click does (user-event synthesises the anchor's click).
+    expect(mockOpenExternal).toHaveBeenCalledTimes(1);
+    expect(mockOpenExternal).toHaveBeenCalledWith('https://aijobhunter.app/terms');
   });
 });
 

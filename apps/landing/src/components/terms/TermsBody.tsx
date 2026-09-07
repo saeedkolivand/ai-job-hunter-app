@@ -44,8 +44,8 @@ export function TermsBody() {
         <p>
           The Apache License 2.0 governs your rights to use, copy, modify and redistribute the
           software. Sections 7 and 8 of that license apply in full: the software comes without
-          warranty of any kind, and the authors are not liable for damages arising from its use.
-          Nothing here narrows the license.
+          warranty of any kind, and, to the fullest extent permitted by applicable law, the authors
+          are not liable for damages arising from its use. Nothing here narrows the license.
         </p>
 
         {/* Your output */}
