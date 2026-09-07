@@ -185,23 +185,23 @@ cargo clippy        # lint
 1. Create the route file: `routes/my-page.tsx`
 2. Export a default component
 
-```typescript
-// routes/my-page.tsx
-import { createFileRoute } from "@tanstack/react-router";
-import { PageShell } from "@/components/layout/PageShell";
+   ```typescript
+   // routes/my-page.tsx
+   import { createFileRoute } from "@tanstack/react-router";
+   import { PageShell } from "@/components/layout/PageShell";
 
-export const Route = createFileRoute("/my-page")({
-  component: MyPage,
-});
+   export const Route = createFileRoute("/my-page")({
+     component: MyPage,
+   });
 
-function MyPage() {
-  return (
-    <PageShell title="My Page">
-      {/* content */}
-    </PageShell>
-  );
-}
-```
+   function MyPage() {
+     return (
+       <PageShell title="My Page">
+         {/* content */}
+       </PageShell>
+     );
+   }
+   ```
 
 3. Add the page to `components/layout/Sidebar/nav.ts` (the sidebar's page list as data — the help chat reads it too) and give its `tourId` an icon in the `NAV_ICONS` map in `components/layout/Sidebar/index.tsx`; a missing icon is a type error
 4. Add the page's `nav.*` i18n key under `packages/translations/src/locales/` — every locale there, not just `en`
