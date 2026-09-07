@@ -368,18 +368,18 @@ On **Windows**, the NSIS installer adds its per-user install directory to your `
 Use `claude mcp add --scope user` to register the server (user scope = per-machine, runs only when you authorize):
 
 ```bash
-claude mcp add --scope user ai-job-hunter -- /path/to/ajh-tauri agent mcp
+claude mcp add --scope user ai-job-hunter -- "/path/to/ajh-tauri" agent mcp
 ```
 
-On Linux/macOS with Homebrew, `ajh-tauri` is already on `PATH`. On Windows and macOS dmg, use the full path from `~/.ajh-agent/agent.json`.
+On Linux/macOS with Homebrew, `ajh-tauri` is already on `PATH`. On Windows and macOS dmg, substitute the `exePath` from `~/.ajh-agent/agent.json` — keep the double quotes, because the default install directory contains a space on both platforms and an unquoted path registers a server that never connects. The in-app Settings → Developer card generates the same command already quoted (`shellDoubleQuoted` in `apps/desktop/src/renderer/features/settings/lib/agent-cli-snippets.ts`).
 
 By default the server is **read-only**: the model can search postings, read your profile and automations, and enumerate the command table. Two launch flags open the write tiers, each a superset of the last:
 
 ```bash
 # undoable state changes — track an application, edit your profile, import a document
-claude mcp add --scope user ai-job-hunter-write -- /path/to/ajh-tauri agent mcp --allow-reversible
+claude mcp add --scope user ai-job-hunter-write -- "/path/to/ajh-tauri" agent mcp --allow-reversible
 # additionally: destructive actions and AI spend — delete documents, remove provider keys, run generation against your API budget
-claude mcp add --scope user ai-job-hunter-unrestricted -- /path/to/ajh-tauri agent mcp --allow-irreversible
+claude mcp add --scope user ai-job-hunter-unrestricted -- "/path/to/ajh-tauri" agent mcp --allow-irreversible
 ```
 
 The flags only decide which tools the model can _see_; every write still goes through the app's own policy table and, for destructive commands, the confirm ceremony (ADR-038).
@@ -393,11 +393,11 @@ Add to your `~/.codex/config.toml` (or create it):
 
 ```toml
 [mcp_servers.ai-job-hunter]
-command = "ajh-tauri"
+command = 'ajh-tauri'
 args = ["agent", "mcp"]
 ```
 
-If `ajh-tauri` is not on your `PATH`, set `command` to the `exePath` from `~/.ajh-agent/agent.json`. The same `--allow-reversible` / `--allow-irreversible` flags go in `args`.
+If `ajh-tauri` is not on your `PATH`, set `command` to the `exePath` from `~/.ajh-agent/agent.json` — keep it single-quoted, because a TOML literal string has no escape sequences and a Windows path is full of backslashes (in a double-quoted basic string they read as invalid escapes and the whole file stops parsing). The Settings → Developer card emits the correctly-quoted form for you (`tomlString` in `apps/desktop/src/renderer/features/settings/lib/agent-cli-snippets.ts`). The same `--allow-reversible` / `--allow-irreversible` flags go in `args`.
 
 </details>
 
