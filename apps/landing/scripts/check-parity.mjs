@@ -46,7 +46,7 @@ const PHRASES = [
   'please hire',
   'does everything but hit submit',
   'pulls from 24 boards',
-  'PolyForm Noncommercial',
+  'selling my misery back to me',
   'ok fine, take the app',
   "no, I still don't have a job",
   'buy me a coffee',

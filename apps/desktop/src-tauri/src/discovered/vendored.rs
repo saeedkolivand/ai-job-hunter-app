@@ -12,9 +12,10 @@
 //! [`Feashliaa/job-board-aggregator`](https://github.com/Feashliaa/job-board-aggregator),
 //! © Riley Dorrington. The upstream *code* repo is MIT, but its README carves
 //! the `data/` datasets themselves out under **CC BY-NC 4.0**
-//! (<https://creativecommons.org/licenses/by-nc/4.0/>) — this app is itself
-//! PolyForm Noncommercial, so no license conflict. Full provenance (upstream
-//! commit, snapshot date, per-asset SHA-256) lives in `ats-slugs/README.md`.
+//! (<https://creativecommons.org/licenses/by-nc/4.0/>) — this app is Apache-2.0,
+//! so these four assets are the one carve-out from that grant and stay CC BY-NC
+//! 4.0. Full provenance (upstream commit, snapshot date, per-asset SHA-256)
+//! lives in `ats-slugs/README.md`.
 //!
 //! It is searched **only**
 //! at typeahead time (`commands::discovery::discovery_search_companies`,

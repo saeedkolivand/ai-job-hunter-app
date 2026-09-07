@@ -7,7 +7,7 @@
     var link='color:#6cc6ff;font:13px/1.7 monospace';
     console.log('%c PLEASE HIRE HIM. ', head);
     console.log('%cmade it this far? you’re either hiring or you’re me at 3am. if it’s the former — he’s alarmingly available 👉 https://github.com/saeedkolivand/ai-job-hunter-app', link);
-    console.log('%c(source’s PolyForm Noncommercial — yours to read & fork, not to sell. like my prospects.)', soft);
+    console.log('%c(source’s Apache-2.0 — yours to read, fork & sell. unlike my prospects.)', soft);
   }catch(e){}
 })();
 

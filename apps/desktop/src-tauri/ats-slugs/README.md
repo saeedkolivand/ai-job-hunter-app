@@ -53,19 +53,21 @@ unknown origin.
 
 ## License / attribution — required in distributed builds
 
-Upstream's `LICENSE` (repo root) is MIT, but the upstream README carves the
-`data/` datasets out under a **separate, stricter license**:
+Upstream's `LICENSE` (the _upstream_ repo's root) is MIT, but the upstream
+README carves the `data/` datasets out under a **separate, stricter license**:
 
 > The curated company datasets in `data/` are licensed under CC BY-NC 4.0
 > (<https://creativecommons.org/licenses/by-nc/4.0/>). \[...\] Commercial use
 > of the datasets requires permission.
 
-This app is itself licensed PolyForm Noncommercial 1.0.0 (see the repo-root
-`LICENSE`), so vendoring CC BY-NC 4.0 data here carries no license conflict —
-but it does mean the MIT grant does **not** cover these four files; treat them
-as CC BY-NC 4.0, attributed to Riley Dorrington
-(<https://github.com/Feashliaa/job-board-aggregator>), and re-check this
-section before any future change to this app's own license.
+This app is licensed Apache-2.0 (see this repo's root `LICENSE`), which grants
+commercial use — so these four files are the one carve-out from that grant.
+Neither upstream's MIT nor this repo's Apache-2.0 covers them: they stay
+CC BY-NC 4.0, attributed to Riley Dorrington
+(<https://github.com/Feashliaa/job-board-aggregator>). A commercial
+redistribution of this app must therefore drop them or obtain the dataset
+author's permission. Re-check this section before any future change to this
+app's own license.
 
 Attribution lives in:
 
