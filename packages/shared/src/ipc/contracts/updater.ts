@@ -43,8 +43,16 @@ export interface UpdaterContract {
   /** Trigger a check. Resolves with the outcome (also emitted on `onStatus`). */
   check(): Promise<UpdateCheckResult>;
 
+  /** Download the update {@link check} found. Resolves either way — the shell
+   *  reports failure on the `updater:status` stream, not by rejecting. On a
+   *  Microsoft Store install the shell refuses instead (the Store owns
+   *  updating); that refusal is defence in depth for a non-renderer caller
+   *  such as the agent CLI, since this signature discards it and the UI never
+   *  offers the action once it has seen `managedBy: 'store'`. */
   download(): Promise<void>;
 
+  /** Install the downloaded update and relaunch. Same Store caveat as
+   *  {@link download}. */
   install(): Promise<void>;
 
   /** Recent release history (newest first) for the in-app changelog. */
