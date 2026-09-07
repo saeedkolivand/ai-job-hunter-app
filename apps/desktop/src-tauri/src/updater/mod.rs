@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 ///   { state: "downloading",   percent }
 ///   { state: "downloaded",    version }
 ///   { state: "error",         message }
+///   { state: "managed",       by: "store" }   — Microsoft Store build
 ///
 /// ── Event channel ────────────────────────────────────────────────────────────
 ///   updater:status  — emitted by every state transition.
@@ -60,6 +61,44 @@ fn download_in_progress_or_done(state: &UpdaterState) -> bool {
     state.downloading || state.downloaded_bytes.is_some()
 }
 
+/// The `updater_check` reply for a build the Microsoft Store owns, or `None`
+/// when this process should check GitHub as usual.
+///
+/// `packaged` comes from [`crate::platform::msix::is_packaged`]; it is a
+/// parameter rather than a call so the decision is testable off-Windows and
+/// without a live `AppHandle` (this crate has no `tauri::test` mock-app
+/// harness — same reason [`download_in_progress_or_done`] is split out).
+///
+/// Shape: the existing `{ available: false }` reply plus an optional
+/// `managedBy` — see `UpdateCheckResult` in
+/// `packages/shared/src/ipc/contracts/updater.ts`. Additive on purpose, so a
+/// client that never heard of the Store flavour still reads it as "no update".
+pub(crate) fn store_managed(packaged: bool) -> Option<Value> {
+    packaged.then(|| json!({ "available": false, "managedBy": "store" }))
+}
+
+/// The pushed counterpart of [`store_managed`] — what the renderer's status
+/// stream carries for a Store build (`use-updater.ts`'s `managed` variant).
+fn managed_status() -> Value {
+    json!({ "state": "managed", "by": "store" })
+}
+
+/// Refusal returned by `updater_download`/`updater_install` on a Store build.
+/// Defence in depth: the renderer never offers those actions once it has seen
+/// the `managed` status, but an IPC caller could still invoke them, and
+/// running the NSIS installer over a packaged install is exactly what
+/// [`crate::platform::msix`] exists to prevent.
+fn store_managed_refusal() -> Value {
+    json!({ "error": "This build is installed from the Microsoft Store — updates are delivered by the Store." })
+}
+
+/// How long after launch the first status is pushed. The silent check has
+/// always waited this out so it does not compete with startup; the Store
+/// announcement reuses it for a second reason — `updater:status` events are
+/// not replayed, so anything emitted before the webview mounts its listeners
+/// is simply lost.
+const STARTUP_STATUS_DELAY: tokio::time::Duration = tokio::time::Duration::from_secs(10);
+
 // ── Commands ──────────────────────────────────────────────────────────────────
 
 /// Check for an available update.
@@ -67,6 +106,15 @@ fn download_in_progress_or_done(state: &UpdaterState) -> bool {
 /// Stores the Update object for use by updater_download.
 #[tauri::command]
 pub async fn updater_check(app: AppHandle) -> Value {
+    // Before the network, before the state: a Store build never checks GitHub
+    // at all. Emitted as well as returned so every mounted listener (banner,
+    // settings panel, menu) converges on the same answer, exactly like the
+    // outcomes below.
+    if let Some(managed) = store_managed(crate::platform::msix::is_packaged()) {
+        emit_status(&app, managed_status());
+        return managed;
+    }
+
     // A finished or in-flight download must never be thrown away by a fresh
     // check. `check()` below unconditionally replaces `pending_update` and
     // resets `downloaded_bytes` to `None` on success — correct the FIRST
@@ -165,6 +213,9 @@ impl Drop for DownloadGuard {
 /// second caller has nothing useful to do but wait.
 #[tauri::command]
 pub async fn updater_download(app: AppHandle) -> Value {
+    if crate::platform::msix::is_packaged() {
+        return store_managed_refusal();
+    }
     let (update, version) = {
         let state = app.state::<Mutex<UpdaterState>>();
         let mut guard = state.lock();
@@ -242,6 +293,9 @@ pub async fn updater_download(app: AppHandle) -> Value {
 /// Uses the Update object and bytes stored by earlier commands — no re-fetch.
 #[tauri::command]
 pub async fn updater_install(app: AppHandle) -> Value {
+    if crate::platform::msix::is_packaged() {
+        return store_managed_refusal();
+    }
     let (update, bytes) = {
         let state = app.state::<Mutex<UpdaterState>>();
         let mut guard = state.lock();
@@ -384,10 +438,23 @@ pub fn updater_changelog() -> Value {
 // ── Background polling ────────────────────────────────────────────────────────
 
 /// Silent check 10 s after launch, then every 4 h.
+///
+/// A Store build gets neither: no first check, no interval, no network. It
+/// announces once (so the settings panel can say where updates come from
+/// without the user pressing anything) and stops there.
 pub fn setup_auto_check(app: &AppHandle) {
+    if crate::platform::msix::is_packaged() {
+        let app_announce = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(STARTUP_STATUS_DELAY).await;
+            emit_status(&app_announce, managed_status());
+        });
+        return;
+    }
+
     let app_10s = app.clone();
     tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+        tokio::time::sleep(STARTUP_STATUS_DELAY).await;
         silent_check(&app_10s).await;
 
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(4 * 60 * 60));

@@ -17,6 +17,9 @@ import { createRequire } from 'node:module';
 import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 
+import { INJECTED_SCRIPT_FILES } from '../injected-entries.mjs';
+import { failsToCompileAsClassicScript } from './classic-script-check.mjs';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXT_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(EXT_ROOT, '..', '..');
@@ -25,35 +28,31 @@ const DIST = path.join(EXT_ROOT, 'dist');
 const { version } = createRequire(import.meta.url)('../package.json');
 const TARGETS = ['chrome', 'firefox'];
 
-// `fill.js`/`capture.js`/`capture-questions.js`/`answer-fill.js` are injected
-// via `chrome.scripting.executeScript({ files: [...] })` as CLASSIC scripts —
-// no ES module support. `vite.config.mts`'s `injectedEntries` plugin builds
-// them each in an isolated Rollup pass specifically so no `import`/`export`
-// statement ever leaks in (see field-signal.ts's header comment); this is the
-// automated guard that invariant doesn't silently regress.
-const INJECTED_CLASSIC_SCRIPTS = [
-  'fill.js',
-  'capture.js',
-  'capture-questions.js',
-  'answer-fill.js',
-  'submit-watch.js',
-];
-const IMPORT_EXPORT_TOKEN_RE = /\b(?:import|export)\b/;
-// A minifier can emit `import`/`export` mid-line (e.g. `...;import{x}from"y";...`),
-// so a line-anchored `^\s*` check misses it. Strip string/template literals and
-// comments first (so the bare word "import"/"export" inside quoted text or a
-// comment doesn't false-positive), then look for the token anywhere in what's
-// left — that also catches a dynamic `import(...)`, which is equally illegal in
-// a classic `executeScript` bundle.
-function containsImportOrExportStatement(src) {
-  const stripped = src
-    .replace(/\/\*[\s\S]*?\*\//g, ' ') // block comments
-    .replace(/\/\/[^\n]*/g, ' ') // line comments
-    .replace(/`(?:\\.|[^`\\])*`/g, ' ') // template literals
-    .replace(/"(?:\\.|[^"\\])*"/g, ' ') // double-quoted strings
-    .replace(/'(?:\\.|[^'\\])*'/g, ' '); // single-quoted strings
-  return IMPORT_EXPORT_TOKEN_RE.test(stripped);
-}
+// Every entry in INJECTED_SCRIPT_FILES is injected via
+// `chrome.scripting.executeScript({ files: [...] })` as a CLASSIC script — no ES
+// module support. `vite.config.mts`'s `injectedEntries` plugin builds them each
+// in an isolated Rollup pass specifically so no `import`/`export` statement ever
+// leaks in (see field-signal.ts's header comment); this is the automated guard
+// that invariant doesn't silently regress.
+//
+// Read from the shared list rather than retyped: the hand-written copy that used
+// to live here covered 5 of the 9 entries, so `content.js`, `capture-rows.js`,
+// `answer-replace.js` and `probe-fields.js` were shipped unguarded.
+const INJECTED_CLASSIC_SCRIPTS = INJECTED_SCRIPT_FILES;
+
+// The check itself lives in `classic-script-check.mjs` — V8's own parser for the
+// script goal, plus a scanner for the one thing that parser cannot see (a
+// dynamic `import(...)`, which is valid script syntax and simply resolves
+// nothing once injected). It is a separate module so `src/classic-script-check.test.ts`
+// can exercise it without running the packager.
+//
+// This used to be a regex over the raw source, which was unsound in BOTH
+// directions: stripping literals with one regex per literal kind desynchronised
+// on a single apostrophe (so appending an import statement to the real built
+// `capture.js`, `fill.js`, `probe-fields.js`, `capture-rows.js` or
+// `answer-replace.js` went undetected), and scanning unstripped source would
+// have failed a perfectly good build on `obj.import(` or the word inside a
+// comment.
 
 // `zip` present? (CI/macOS/Linux). Detect via a cheap version probe.
 const HAS_ZIP = spawnSync('zip', ['-v'], { stdio: 'ignore' }).status === 0;
@@ -68,10 +67,11 @@ function assertClassicScripts(srcDir) {
       );
       process.exit(1);
     }
-    if (containsImportOrExportStatement(readFileSync(filePath, 'utf8'))) {
+    const reason = failsToCompileAsClassicScript(readFileSync(filePath, 'utf8'));
+    if (reason) {
       console.error(
-        `error: ${rel(filePath)} contains an import/export statement — it must be a classic ` +
-          `script (chrome.scripting.executeScript({ files: [...] }) can't load ES modules). ` +
+        `error: ${rel(filePath)} does not parse as a classic script (${reason}) — ` +
+          `chrome.scripting.executeScript({ files: [...] }) can't load ES modules. ` +
           `The injectedEntries isolated-build guarantee in vite.config.mts has regressed.`
       );
       process.exit(1);

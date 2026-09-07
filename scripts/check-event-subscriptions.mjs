@@ -225,7 +225,7 @@ const SUBSCRIBERS = {
   },
   'features/settings/components/update-section/index.tsx': {
     mount: 'route-scoped',
-    hash: '896ef1fd88e1',
+    hash: 'e40e74d85eba',
     note:
       'The THIRD `useUpdater` instance, alongside the always-mounted banner and menu — but ' +
       'the three no longer disagree. `useUpdater` keeps status AND the download-progress ' +
@@ -241,7 +241,14 @@ const SUBSCRIBERS = {
       '`downloaded_bytes` and forces a re-download), and `updater_download` is guarded ' +
       'against re-entry by a Drop-based guard that cannot latch. NOTE the fix lives in ' +
       "`services/use-updater/` and the Rust updater, so this entry's own hash could not have " +
-      'detected it (see the dependency caveat above).',
+      'detected it (see the dependency caveat above). A fourth status rides the same store: on ' +
+      'a Microsoft Store (MSIX) build the shell pushes `managed` ONCE, ~10 s after launch ' +
+      '(`updater::setup_auto_check`) — almost certainly before this route is ever visited. The ' +
+      'always-mounted banner is what receives it and records it into the shared snapshot, so a ' +
+      'panel mounted minutes later still renders "updates come from the Store" rather than a ' +
+      'live "Check now" for an update path the shell would refuse. That line is a `role="status"` ' +
+      'live region, because arriving in the `managed` state REMOVES the control the user just ' +
+      'activated.',
   },
   'features/monitoring/hooks/useActivityFeed.ts': {
     mount: 'route-scoped',

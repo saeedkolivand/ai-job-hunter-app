@@ -4,6 +4,10 @@ node_modules/
 *.gen.ts
 *.tsbuildinfo
 pnpm-lock.yaml
+# apps/extension/tools/amo is an isolated npm project (see its README), so it
+# carries the only package-lock.json in the repo. npm rewrites it in its own
+# formatting on every install, so formatting it here would just churn the diff.
+package-lock.json
 CHANGELOG.md
 **/tauri.conf.json
 # scripts/gen-social-cards.mjs: verbatim HTML template for the og-image generator —

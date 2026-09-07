@@ -1,9 +1,9 @@
-import { Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { FloatingIcon, Switch, withDelay } from '@ajh/ui';
+import { Button, FloatingIcon, Switch, withDelay } from '@ajh/ui';
 
 import { usePreferencesStore } from '@/store/preferences-store';
 
@@ -95,6 +95,30 @@ export function AutoIndexStep({ onBack, onNext, direction, stepIndex, totalSteps
             aria-label={t('onboarding.autoIndex.toggleLabel')}
           />
         </div>
+      </motion.div>
+
+      {/* Same Back/Continue pair every other step renders. The wrapper supplies
+          only the Enter/Escape shortcuts, so without these a mouse-only user is
+          stranded on the step (#1118) — and while the switch has focus, Enter
+          toggles the switch instead of advancing, since a focused control owns
+          its own activation. */}
+      <motion.div
+        initial={{ y: 10, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={withDelay(0.2)}
+        className="flex items-center gap-3"
+      >
+        <Button variant="ghost" onClick={onBack} className="flex items-center gap-1.5">
+          <ArrowLeft size={13} />
+          {t('onboarding.back')}
+        </Button>
+
+        <div className="flex-1" />
+
+        <Button variant="primary" onClick={advance} className="flex items-center gap-1.5">
+          {t('onboarding.continue')}
+          <ArrowRight size={13} />
+        </Button>
       </motion.div>
     </OnboardingStepWrapper>
   );

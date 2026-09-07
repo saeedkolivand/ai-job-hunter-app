@@ -6,6 +6,7 @@ import {
   History,
   Loader2,
   Sparkles,
+  Store,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -116,7 +117,19 @@ export function UpdateSection() {
         ) : null}
       </div>
 
-      {/* Status messages */}
+      {/* Status messages. `managed` (Microsoft Store build) renders no action
+          control at all — the chain above ends at `null` for it — so this line
+          is the whole story: the Store updates the app, this panel cannot. */}
+      {status.state === 'managed' && (
+        // `role="status"` because this line REPLACES the control the user just
+        // activated: the check button disappears on the idle→managed
+        // transition, so without a live region a keyboard/screen-reader user
+        // would lose focus to a silent swap and never hear the reason.
+        <div role="status" className="mt-3 flex items-center gap-2 text-xs text-foreground/50">
+          <Store size={12} />
+          {t('settings.update.managedByStore')}
+        </div>
+      )}
       {(status.state === 'not-available' || noRelease) && (
         <div className="mt-3 flex items-center gap-2 text-xs text-emerald-400/70">
           <CheckCircle2 size={12} />
@@ -204,14 +217,21 @@ export function UpdateSection() {
             {changelog.data?.error && (
               <div className="space-y-2 text-xs text-foreground/50">
                 <p>{t('settings.update.changelogError')}</p>
-                <Button
-                  variant="ghost"
-                  onClick={() => openExternal.mutate(GITHUB_RELEASES_URL)}
-                  className="gap-2 text-foreground/50 hover:text-foreground/80"
-                >
-                  <ExternalLink size={12} />
-                  {t('settings.update.downloadFromGitHub')}
-                </Button>
+                {/* The changelog is just release history, so it stays on a
+                    Store build — but its fallback must not offer the GitHub
+                    installer: that is the second copy of the app this whole
+                    flavour exists to avoid. The other GitHub link, in the
+                    error branch above, is already unreachable when managed. */}
+                {status.state !== 'managed' && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => openExternal.mutate(GITHUB_RELEASES_URL)}
+                    className="gap-2 text-foreground/50 hover:text-foreground/80"
+                  >
+                    <ExternalLink size={12} />
+                    {t('settings.update.downloadFromGitHub')}
+                  </Button>
+                )}
               </div>
             )}
 

@@ -79,6 +79,14 @@ export function useMenuNavigation() {
             notify.open({ key: KEY, variant: 'error', message: res.error });
           } else if (res.available) {
             notify.destroy(KEY); // the UpdateBanner takes over
+          } else if (res.managedBy === 'store') {
+            // A Store build never checked anything — saying "up to date" here
+            // would be a claim we did not make.
+            notify.open({
+              key: KEY,
+              variant: 'info',
+              message: t('settings.update.managedByStore'),
+            });
           } else {
             notify.open({ key: KEY, variant: 'success', message: t('updater.upToDate') });
           }
