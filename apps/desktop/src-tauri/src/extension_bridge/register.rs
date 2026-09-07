@@ -153,9 +153,17 @@ pub fn register_native_host(data_dir: &Path) {
     // VERSION, so the manifest would dangle after the next Store update. The
     // execution-alias shim is the stable, launchable path; `alias_exe_path()`
     // is `None` on every other build, where `current_exe()` stays correct.
-    let exe = match crate::platform::msix::alias_exe_path() {
-        Some(alias) => alias,
-        None => match std::env::current_exe() {
+    let exe = match crate::platform::msix::published_exe_path() {
+        crate::platform::msix::PublishedExe::Alias(alias) => alias,
+        // A packaged build with no usable alias (the user can switch one off
+        // in Settings ▸ Apps ▸ App execution aliases) has NO path worth
+        // publishing, so the whole registration is skipped — including the
+        // pointer below. Writing `current_exe()` instead would register a host
+        // the browser cannot launch. Deliberately not DELETING the existing
+        // manifests either: they are shared with a non-Store install on the
+        // same machine, which may still own a working one.
+        crate::platform::msix::PublishedExe::Unavailable => return,
+        crate::platform::msix::PublishedExe::Unpackaged => match std::env::current_exe() {
             Ok(p) => p,
             Err(e) => {
                 log::warn!("[native_host] current_exe() failed (non-fatal): {e}");

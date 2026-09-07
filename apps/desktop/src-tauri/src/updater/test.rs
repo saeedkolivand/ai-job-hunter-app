@@ -282,21 +282,26 @@ fn test_store_managed_only_when_packaged() {
     );
 }
 
-/// Anchored on the literal wire bytes, not a round-trip: this exact JSON is
-/// what `UpdateCheckResult` in `packages/shared/src/ipc/contracts/updater.ts`
-/// declares, and a renamed/reordered field would be a silent contract break
-/// that a serialize→deserialize test could not see.
+/// Anchored on the FIELDS — the thing `UpdateCheckResult` in
+/// `packages/shared/src/ipc/contracts/updater.ts` actually declares — so a
+/// renamed or dropped field fails while a serializer that reorders keys does
+/// not. (Comparing serialized strings would invent a key-order invariant the
+/// IPC contract does not have.)
 #[test]
-fn test_store_managed_serializes_to_the_contract_shape() {
-    let json = serde_json::to_string(&store_managed(true).unwrap()).unwrap();
-    assert_eq!(json, r#"{"available":false,"managedBy":"store"}"#);
+fn test_store_managed_has_the_contract_shape() {
+    assert_eq!(
+        store_managed(true).unwrap(),
+        json!({ "available": false, "managedBy": "store" })
+    );
 }
 
 /// The pushed shape the renderer's `managed` status variant matches on.
 #[test]
-fn test_managed_status_serializes_to_the_contract_shape() {
-    let json = serde_json::to_string(&managed_status()).unwrap();
-    assert_eq!(json, r#"{"by":"store","state":"managed"}"#);
+fn test_managed_status_has_the_contract_shape() {
+    assert_eq!(
+        managed_status(),
+        json!({ "state": "managed", "by": "store" })
+    );
 }
 
 /// A Store build's download/install refusal is an `error` reply — the shape the

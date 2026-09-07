@@ -16,8 +16,9 @@
 //!    `…\WindowsApps\<PackageFullName>\ajh-tauri.exe` — a directory normal users
 //!    cannot execute from, whose name embeds the package VERSION, so anything
 //!    that records it (the browser native-messaging host, the agent-CLI pointer)
-//!    dangles after the next Store update. [`alias_exe_path`] returns the stable
-//!    execution-alias shim instead.
+//!    dangles after the next Store update. [`published_exe_path`] answers with
+//!    the stable execution-alias shim instead — or with "publish nothing" when
+//!    that shim is missing, which is the only other honest answer.
 //! 3. **Launch at login.** A packaged app registers a `StartupTask` declared in
 //!    the manifest, not a `Run` key pointing at that same version-pinned path.
 //!
@@ -45,6 +46,11 @@ use windows::{
 /// `TaskId` of the `desktop:StartupTask` declared in the manifest. The two are
 /// one contract: renaming it there without renaming it here silently turns
 /// launch-at-login into a no-op on the Store build.
+///
+/// `#[cfg(windows)]` rather than an `allow`: nothing outside the Windows-only
+/// StartupTask code names it, so on every other host it is not "unused", it is
+/// absent.
+#[cfg(windows)]
 const STARTUP_TASK_ID: &str = "AjhLaunchAtLogin";
 
 /// The alias the manifest's `windows.appExecutionAlias` extension registers.
@@ -55,6 +61,12 @@ const ALIAS_EXE_NAME: &str = "ajh-tauri.exe";
 // ── Package identity ─────────────────────────────────────────────────────────
 
 /// What the OS said when asked for this process's package identity.
+///
+/// `Present`/`Unknown` are constructed by the Windows-only probe; the type and
+/// the decision over it stay cross-platform on purpose, so every branch is
+/// unit-tested on every host instead of only on the Windows CI leg — hence an
+/// `allow` off Windows rather than a `#[cfg]` that would take the tests with it.
+#[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Identity {
     /// `APPMODEL_ERROR_NO_PACKAGE` — a plain NSIS/MSI install (or any non-Windows host).
@@ -261,25 +273,55 @@ fn alias_dir() -> Option<PathBuf> {
     Some(alias_directory(Path::new(&local), &family))
 }
 
-/// The path this exe should PUBLISH to other programs on a Store install, or
-/// `None` on any other build (the caller keeps using `current_exe()`).
-///
-/// The family name — unlike the full name — carries no version, so the shim
-/// path survives every Store update; the real exe path does not.
-pub fn alias_exe_path() -> Option<PathBuf> {
-    if !is_packaged() {
-        return None;
+/// What this process may publish to other programs as "the path to this app".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PublishedExe {
+    /// Not a Store build — the caller's own `current_exe()` logic applies,
+    /// unchanged.
+    Unpackaged,
+    /// Store build, execution-alias shim present. This is the path to publish:
+    /// the family name carries no version, so it survives every Store update.
+    Alias(PathBuf),
+    /// Store build, but there is no usable shim — a user can switch an
+    /// execution alias off in Settings ▸ Apps ▸ App execution aliases, and
+    /// `%LOCALAPPDATA%`/the family name can fail to resolve.
+    ///
+    /// **Publish nothing.** The obvious fallback, `current_exe()`, is the
+    /// version-pinned `…\WindowsApps\<PackageFullName>\` path this whole
+    /// mechanism exists to avoid: a normal user cannot execute it and it dies
+    /// at the next Store update, so a consumer that received it would fail
+    /// later and blame the app rather than the disabled alias.
+    Unavailable,
+}
+
+/// Pure decision behind [`published_exe_path`] — three inputs, three outcomes,
+/// unit-tested on every host.
+fn published_exe(packaged: bool, alias: Option<PathBuf>, shim_exists: bool) -> PublishedExe {
+    if !packaged {
+        return PublishedExe::Unpackaged;
     }
-    let path = alias_dir()?.join(ALIAS_EXE_NAME);
-    if !path.is_file() {
+    match alias {
+        Some(path) if shim_exists => PublishedExe::Alias(path),
+        _ => PublishedExe::Unavailable,
+    }
+}
+
+/// The path this exe should PUBLISH to other programs, or the reason there
+/// isn't one. See [`PublishedExe`].
+pub fn published_exe_path() -> PublishedExe {
+    let alias = alias_dir().map(|dir| dir.join(ALIAS_EXE_NAME));
+    let shim_exists = alias.as_deref().is_some_and(Path::is_file);
+    let decision = published_exe(is_packaged(), alias, shim_exists);
+    if decision == PublishedExe::Unavailable {
         // Unverified end-to-end (needs a registered package — see
-        // docs/DEPLOYMENT.md). If the assumption is ever wrong, this line in a
-        // diagnostics bundle is what says so. No path logged (R15).
+        // docs/DEPLOYMENT.md), so if the assumption about where Windows puts
+        // the shim is ever wrong, this line in a diagnostics bundle is what
+        // says so. No path logged (R15).
         log::warn!(
-            "[msix] execution-alias shim not found where expected — the agent-CLI pointer and native-messaging host may not resolve"
+            "[msix] no usable execution-alias shim — skipping the native-messaging host and agent-CLI pointer rather than publishing an unlaunchable path"
         );
     }
-    Some(path)
+    decision
 }
 
 #[cfg(windows)]
@@ -298,9 +340,17 @@ fn package_family_name() -> Option<String> {
 /// function of an `i32` and testable on every host. A `#[cfg(windows)]` test
 /// pins these against the real enum, so they cannot drift silently.
 mod startup_state {
+    // Read only by `enable_outcome`, which is itself only CALLED on Windows —
+    // so off Windows these three are unreachable while `ENABLED`/
+    // `ENABLED_BY_POLICY` (read by the cross-platform `startup_state_is_enabled`)
+    // stay live. Annotated per constant rather than on the module, so a
+    // genuinely dead one added later is still reported.
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(super) const DISABLED: i32 = 0;
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(super) const DISABLED_BY_USER: i32 = 1;
     pub(super) const ENABLED: i32 = 2;
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(super) const DISABLED_BY_POLICY: i32 = 3;
     pub(super) const ENABLED_BY_POLICY: i32 = 4;
 }
@@ -317,6 +367,10 @@ fn startup_state_is_enabled(state: i32) -> bool {
 /// Outcome of asking Windows to enable the task. Unlike the `Run` key, this can
 /// be REFUSED — by the user in Settings ▸ Apps ▸ Startup, or by policy — and a
 /// refusal must reach the UI as an error, not as a silent "off".
+///
+/// Called only from the Windows StartupTask path, but kept cross-platform (see
+/// [`Identity`]) so its refusal branches are unit-tested on every host.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn enable_outcome(state: i32) -> AppResult<bool> {
     match state {
         startup_state::DISABLED_BY_USER => Err(AppError::Message(
@@ -336,12 +390,13 @@ fn enable_outcome(state: i32) -> AppResult<bool> {
 
 /// Whether the packaged app's startup task is enabled, or `None` when this is
 /// not a packaged build — the caller then falls back to the autostart plugin.
-pub fn startup_task_enabled() -> Option<bool> {
+pub async fn startup_task_enabled() -> Option<bool> {
     if !is_packaged() {
         return None;
     }
     Some(
         startup_task_state()
+            .await
             .map(startup_state_is_enabled)
             .unwrap_or(false),
     )
@@ -349,60 +404,65 @@ pub fn startup_task_enabled() -> Option<bool> {
 
 /// Enable/disable the packaged app's startup task, or `None` when this is not a
 /// packaged build. Returns the state the OS actually applied.
-pub fn set_startup_task(enabled: bool) -> Option<AppResult<bool>> {
+pub async fn set_startup_task(enabled: bool) -> Option<AppResult<bool>> {
     if !is_packaged() {
         return None;
     }
-    Some(apply_startup_task(enabled))
+    Some(apply_startup_task(enabled).await)
 }
 
-/// `join()` is `windows-future`'s blocking accessor (it was `get()` before
-/// 0.3): it waits on the operation with no timeout and no message pump.
+/// Genuinely `.await`ed, not blocked on: `windows-future` implements
+/// `IntoFuture` for `IAsyncOperation`, and `IAsyncOperation`, `StartupTask`
+/// and the `AsyncFuture` in between all carry `unsafe impl Send`, so the
+/// future satisfies the `Send + 'static` bound Tauri's async dispatch needs.
 ///
-/// That is why both callers are `#[tauri::command(async)]` — a plain
-/// `#[tauri::command]` runs its body inline on the UI thread (see
-/// `commands/resume.rs` for the traced call path), so an unbounded wait there
-/// freezes the window. `(async)` moves the same synchronous body onto a Tokio
-/// worker, where blocking is merely slow.
+/// The alternative — `join()`, the crate's blocking accessor — waits with no
+/// timeout: inline in a plain `#[tauri::command]` that freezes the UI thread,
+/// and under `(async)` it merely moves the unbounded block onto a Tokio
+/// WORKER, which is a runtime the whole app shares. Awaiting parks instead.
 #[cfg(windows)]
-fn startup_task() -> windows::core::Result<windows::ApplicationModel::StartupTask> {
+async fn startup_task() -> windows::core::Result<windows::ApplicationModel::StartupTask> {
     windows::ApplicationModel::StartupTask::GetAsync(&windows::core::HSTRING::from(
         STARTUP_TASK_ID,
     ))?
-    .join()
+    .await
 }
 
 /// Current state as a raw `i32`, or `None` if the task cannot be reached.
 #[cfg(windows)]
-fn startup_task_state() -> Option<i32> {
-    startup_task()
-        .and_then(|task| task.State())
-        .ok()
-        .map(|s| s.0)
+async fn startup_task_state() -> Option<i32> {
+    let task = startup_task().await.ok()?;
+    task.State().ok().map(|s| s.0)
 }
 
 #[cfg(not(windows))]
-fn startup_task_state() -> Option<i32> {
+async fn startup_task_state() -> Option<i32> {
     None
 }
 
 #[cfg(windows)]
-fn apply_startup_task(enabled: bool) -> AppResult<bool> {
-    let task = startup_task().map_err(|e| AppError::Message(e.message()))?;
+async fn apply_startup_task(enabled: bool) -> AppResult<bool> {
+    let task = startup_task()
+        .await
+        .map_err(|e| AppError::Message(e.message()))?;
     if enabled {
+        // `RequestEnableAsync` may show OS UI, so this is the one call that can
+        // legitimately take a while — all the more reason to await it.
         let state = task
             .RequestEnableAsync()
-            .and_then(|op| op.join())
+            .map_err(|e| AppError::Message(e.message()))?
+            .await
             .map_err(|e| AppError::Message(e.message()))?;
         enable_outcome(state.0)
     } else {
+        // `Disable()` is synchronous in the WinRT API — nothing to await.
         task.Disable().map_err(|e| AppError::Message(e.message()))?;
         Ok(false)
     }
 }
 
 #[cfg(not(windows))]
-fn apply_startup_task(_enabled: bool) -> AppResult<bool> {
+async fn apply_startup_task(_enabled: bool) -> AppResult<bool> {
     Ok(false)
 }
 
@@ -575,13 +635,38 @@ mod tests {
         );
     }
 
-    /// Not packaged here, so nothing may be published — the fallback to
-    /// `current_exe()` in the callers depends on this being `None`.
+    /// The three states a caller has to handle. The middle one is the whole
+    /// point: a packaged build whose shim is missing publishes NOTHING rather
+    /// than falling back to the WindowsApps path.
     #[test]
-    fn alias_exe_path_is_none_when_unpackaged() {
-        assert!(alias_exe_path().is_none());
-        assert!(startup_task_enabled().is_none());
-        assert!(set_startup_task(true).is_none());
+    fn what_may_be_published_has_three_answers() {
+        let alias = root(r"C:\Users\t\AppData\Local\Microsoft\WindowsApps\P_abc\ajh-tauri.exe");
+
+        assert_eq!(
+            published_exe(false, Some(alias.clone()), true),
+            PublishedExe::Unpackaged
+        );
+        assert_eq!(
+            published_exe(true, Some(alias.clone()), true),
+            PublishedExe::Alias(alias.clone())
+        );
+        // Shim gone (a user can switch an execution alias off in Settings).
+        assert_eq!(
+            published_exe(true, Some(alias), false),
+            PublishedExe::Unavailable
+        );
+        // …and the same when the alias path could not even be built.
+        assert_eq!(published_exe(true, None, false), PublishedExe::Unavailable);
+    }
+
+    /// Not packaged here, so the real resolver reports `Unpackaged` — which is
+    /// what keeps every caller's `current_exe()` path byte-identical — and
+    /// neither startup-task entry point does anything.
+    #[tokio::test]
+    async fn nothing_is_published_or_driven_when_unpackaged() {
+        assert_eq!(published_exe_path(), PublishedExe::Unpackaged);
+        assert!(startup_task_enabled().await.is_none());
+        assert!(set_startup_task(true).await.is_none());
     }
 
     #[test]

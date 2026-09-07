@@ -261,15 +261,16 @@ pub async fn system_set_performance_mode(
 /// plugin's key would point at a version-pinned WindowsApps path that stops
 /// working at the next Store update while this command still reported `true`.
 ///
-/// `(async)` on a sync body: reading the task blocks on a WinRT operation with
-/// no timeout, and a plain `#[tauri::command]` would run that inline on the UI
-/// thread (`commands/resume.rs` documents the traced dispatch path). The
-/// attribute moves the same body onto a Tokio worker; the IPC surface is
-/// unchanged — the renderer already awaits a promise, and the agent-CLI policy
-/// table keys on the module path, not the signature.
-#[tauri::command(async)]
-pub fn system_get_launch_at_login(app: AppHandle) -> bool {
-    if let Some(enabled) = crate::platform::msix::startup_task_enabled() {
+/// Genuinely `async`: the WinRT task lookup is awaited rather than blocked on,
+/// so it occupies neither the UI thread (a plain sync `#[tauri::command]` runs
+/// inline there — `commands/resume.rs` documents the traced dispatch path) nor
+/// a Tokio worker for the duration. An `async fn` needs no `(async)`
+/// attribute; Tauri dispatches it asynchronously already. The IPC surface is
+/// unchanged — the renderer awaits a promise either way, and the agent-CLI
+/// policy table keys on the module path, not the signature.
+#[tauri::command]
+pub async fn system_get_launch_at_login(app: AppHandle) -> bool {
+    if let Some(enabled) = crate::platform::msix::startup_task_enabled().await {
         return enabled;
     }
     use tauri_plugin_autostart::ManagerExt;
@@ -283,11 +284,11 @@ pub fn system_get_launch_at_login(app: AppHandle) -> bool {
 /// [`system_get_launch_at_login`]); unlike a `Run` key, Windows can REFUSE to
 /// enable it (the user turned it off in Settings ▸ Apps ▸ Startup, or policy
 /// blocks it), which surfaces here as an error rather than a silent "off".
-/// `(async)` for the same reason as the getter: keep an unbounded blocking
-/// wait off the UI thread.
-#[tauri::command(async)]
-pub fn system_set_launch_at_login(app: AppHandle, enabled: bool) -> AppResult<bool> {
-    if let Some(applied) = crate::platform::msix::set_startup_task(enabled) {
+/// `async` for the same reason as the getter, and more so: enabling can show
+/// OS UI, so the wait is genuinely unbounded.
+#[tauri::command]
+pub async fn system_set_launch_at_login(app: AppHandle, enabled: bool) -> AppResult<bool> {
+    if let Some(applied) = crate::platform::msix::set_startup_task(enabled).await {
         return applied;
     }
     use tauri_plugin_autostart::ManagerExt;

@@ -153,6 +153,17 @@ describe('compareSdkVersions', () => {
     expect(compareSdkVersions('10.0.26100', '10.0.26100.0')).toBe(0);
     expect(compareSdkVersions('10.1', '10.0.99999.0')).toBeLessThan(0);
   });
+
+  // A real SDK install can hold a `-preview` sibling. `Number('0-preview')` is
+  // NaN, and a comparator that returns NaN leaves the order
+  // implementation-defined — so the packer could pick any SDK at all.
+  it('does not let a non-numeric segment poison the ordering', () => {
+    expect(compareSdkVersions('10.0.26100.0-preview', '10.0.26100.1')).toBeGreaterThan(0);
+    expect(compareSdkVersions('10.0.26100.0-preview', '10.0.19041.0')).toBeLessThan(0);
+    expect(
+      ['10.0.26100.0-preview', '10.0.19041.0', '10.0.26100.1'].sort(compareSdkVersions)
+    ).toEqual(['10.0.26100.1', '10.0.26100.0-preview', '10.0.19041.0']);
+  });
 });
 
 describe('path privacy in printed output', () => {
