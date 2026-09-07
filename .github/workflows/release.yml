@@ -12,6 +12,10 @@ name: 🚀 Release
 #       and commits the bump back to main. Does NOT build installers.
 #   - build-installers (default) → build Tauri apps + browser extension for a chosen
 #       tag, then run the cask/manifest/download-page fan-out.
+#   - publish-chrome / publish-firefox → re-run ONE store submission for a chosen
+#       tag (package-extension + that store's publish job, nothing else). For when
+#       one store's job failed and the other went through: a store rejects a
+#       version it already has, so re-running both would only redden the good one.
 # Jobs:
 #   - release: Determine version, sync version files + changelog, create the
 #       GitHub release, and commit the bump back to main (action: release only)
@@ -29,6 +33,8 @@ name: 🚀 Release
 #      semantic-release derives the bump from commit types (feat/fix/perf/BREAKING).
 #   2. Actions → "🚀 Release" → Run workflow → action: build-installers
 #      Leave the version blank for the latest tag, or pass one (e.g. 0.61.0).
+#   3. Only if one store submission failed: action: publish-chrome or
+#      publish-firefox with that same version.
 # ──────────────────────────────────────────────────────────────────────
 
 on:
@@ -40,9 +46,11 @@ on:
         options:
           - build-installers
           - release
+          - publish-chrome
+          - publish-firefox
         default: build-installers
       version:
-        description: 'Version to build installers for, e.g. 0.61.0 (blank = latest tag)'
+        description: 'Version to build installers / publish the extension for, e.g. 0.61.0 (blank = latest tag)'
         required: false
         type: string
 
@@ -699,8 +707,9 @@ jobs:
     name: 🧩 Package Extension
     # Manual-only: the browser extension is built + attached to the Release on
     # demand from the Actions tab ("Run workflow" → action: build-installers) —
-    # mirrors the installer `build` job philosophy.
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'build-installers' }}
+    # mirrors the installer `build` job philosophy. Also the producer for a
+    # single-store re-publish, which rebuilds the same tag's zips.
+    if: ${{ github.event_name == 'workflow_dispatch' && contains(fromJSON('["build-installers", "publish-chrome", "publish-firefox"]'), inputs.action) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Uploads the zipped extension to the GitHub Release (softprops/action-gh-release).
@@ -835,7 +844,7 @@ jobs:
   publish-chrome:
     name: 🧩 Publish to Chrome Web Store
     needs: package-extension
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'build-installers' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.action == 'build-installers' || inputs.action == 'publish-chrome') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -974,8 +983,12 @@ jobs:
           # stream; $GITHUB_STEP_SUMMARY is a file this step writes and the
           # runner uploads as-is, so unbounded output from a third-party tool
           # does not go in it.
+          # Absolute path on purpose: `pnpm --filter … exec` runs the CLI from
+          # apps/extension/, while the existence check above ran from the
+          # workspace root — a relative path passes the check and then resolves
+          # one directory too deep inside the CLI.
           pnpm --filter @ajh/extension exec chrome-webstore-upload \
-            --source "$ZIP" \
+            --source "$GITHUB_WORKSPACE/$ZIP" \
             --extension-id "$CHROME_EXTENSION_ID" \
             --deploy-percentage 100
           echo "::endgroup::"
@@ -1003,7 +1016,7 @@ jobs:
   publish-firefox:
     name: 🦊 Publish to Firefox AMO
     needs: package-extension
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'build-installers' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.action == 'build-installers' || inputs.action == 'publish-firefox') }}
     runs-on: ubuntu-latest
     # The reproducibility gate below does a full workspace install + build of the
     # unpacked source archive, on top of this job's own install.
