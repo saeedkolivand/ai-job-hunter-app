@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use super::instructions::INSTRUCTIONS;
+use super::instructions::{EXPLAINED_IN_PROSE, INSTRUCTIONS};
 use super::*;
 
 /// How long a test waits for a signal that a correct [`serve`] always sends — long enough that a
@@ -1038,32 +1038,104 @@ fn every_error_sentinel_is_named_in_the_final_instructions_except_the_pre_protoc
             text.contains(sentinel),
             "instructions must name every sentinel a tool result can carry, missing `{sentinel}`"
         );
-        // The MEANING travels with the name for the rows the base prose doesn't explain — a bare
-        // name list would leave the client exactly as unable to recover as before.
+        // The MEANING travels with the name for the rows the skip list doesn't claim — a bare
+        // name list would leave the client exactly as unable to recover as before. The escape
+        // hatch is the SAME literal list the builder filters on (MEDIUM fix, review round 4): it
+        // used to be `INSTRUCTIONS.contains(sentinel)`, so a sentinel the prose merely MENTIONED
+        // satisfied both the filter and its own test.
         assert!(
-            text.contains(meaning) || INSTRUCTIONS.contains(sentinel),
+            text.contains(meaning) || EXPLAINED_IN_PROSE.contains(sentinel),
             "`{sentinel}` is only listed, never explained: {text}"
         );
     }
 }
 
 /// The filter, not just the table: a sentinel the base prose already explains must NOT be
-/// re-listed. Mutating `sentinel_table`'s `!INSTRUCTIONS.contains(name)` away is what this
+/// re-listed. Mutating `sentinel_table`'s `!EXPLAINED_IN_PROSE.contains(name)` away is what this
 /// catches — otherwise a raw dump would repeat `app_not_running` in the same string twice.
 #[test]
 fn the_sentinel_table_skips_rows_the_base_prose_already_explains() {
     let text = build_instructions(Tier::Read);
-    for already_named in ["app_not_running", "app_not_located", "connection_lost"] {
-        assert!(
-            INSTRUCTIONS.contains(already_named),
-            "fixture drift: the base prose is supposed to explain `{already_named}`"
-        );
+    for already_named in EXPLAINED_IN_PROSE {
         assert_eq!(
             text.matches(already_named).count(),
             INSTRUCTIONS.matches(already_named).count(),
             "`{already_named}` must not be repeated by the derived table: {text}"
         );
     }
+}
+
+/// The skip list against a SECOND hand-written literal list — the repo's standing pairing rule
+/// (a test that loops over the table it is checking can only catch additions). Removing a name
+/// here is what re-adds a redundant table row for a sentinel the prose already explains; the
+/// loop-over-EXPLAINED_IN_PROSE tests around this one cannot see that by construction.
+#[test]
+fn the_skip_list_matches_a_hand_written_literal_list() {
+    assert_eq!(
+        EXPLAINED_IN_PROSE,
+        ["app_not_running", "app_not_located"],
+        "changing the skip list means re-reading the prose: a name belongs here only if \
+         INSTRUCTIONS says what the sentinel IS and what to do about it, not merely mentions it"
+    );
+}
+
+/// The skip list is hand-written, so it needs both directions pinned (MEDIUM fix, review round 4
+/// — a hand-written list nothing checks is exactly the drift the old substring filter had).
+/// Forward: every name on it is a REAL `ERROR_SENTINELS` row (otherwise it is inert) that the
+/// base prose really does mention. Backward: every sentinel a tool result can carry is either on
+/// the list or has its own derived row — no third state.
+#[test]
+fn every_skip_list_name_is_a_real_sentinel_the_prose_names_and_every_other_row_is_in_the_table() {
+    for name in EXPLAINED_IN_PROSE {
+        assert!(
+            ERROR_SENTINELS.iter().any(|(n, _)| n == name),
+            "`{name}` is not an ERROR_SENTINELS row, so skipping it does nothing"
+        );
+        assert!(
+            INSTRUCTIONS.contains(name),
+            "the base prose must actually explain `{name}` — it is not even mentioned"
+        );
+    }
+    let table = build_instructions(Tier::Read)
+        .strip_prefix(INSTRUCTIONS)
+        .expect("the derived table is appended to the base prose")
+        .to_string();
+    for (sentinel, meaning) in ERROR_SENTINELS {
+        if *sentinel == ERR_RUNTIME_UNAVAILABLE {
+            continue;
+        }
+        if EXPLAINED_IN_PROSE.contains(sentinel) {
+            assert!(
+                !table.contains(sentinel),
+                "`{sentinel}` is claimed as explained by the prose, so the table must skip it"
+            );
+        } else {
+            assert!(
+                table.contains(sentinel) && table.contains(meaning),
+                "`{sentinel}` is neither claimed by the skip list nor listed with its meaning: \
+                 {table}"
+            );
+        }
+    }
+}
+
+/// The row `connection_lost` lost to the old substring filter — the prose names it only inside
+/// "don't retry in a loop", which never says what it IS. Anchored to the sentinel that produced
+/// the finding rather than to the list, so removing it from the table fails here even if someone
+/// adds it to `EXPLAINED_IN_PROSE` at the same time.
+#[test]
+fn connection_lost_gets_its_own_table_row_because_the_prose_only_mentions_it() {
+    let text = build_instructions(Tier::Read);
+    assert!(
+        text.matches(ERR_CONNECTION_LOST).count()
+            > INSTRUCTIONS.matches(ERR_CONNECTION_LOST).count(),
+        "a merely-mentioned sentinel must still be defined by the table: {text}"
+    );
+    let (_, meaning) = ERROR_SENTINELS
+        .iter()
+        .find(|(n, _)| *n == ERR_CONNECTION_LOST)
+        .expect("connection_lost is a sentinel");
+    assert!(text.contains(meaning), "with its meaning: {text}");
 }
 
 #[test]
@@ -1553,6 +1625,41 @@ fn every_declared_argument_still_reaches_the_bridge_or_its_local_result() {
         panic!("commands answers locally");
     };
     assert_eq!(result["isError"], false);
+}
+
+/// MEDIUM fix, review round 4 — the #1134 gate refused MCP's own reserved `_`-prefixed keys,
+/// which no schema declares and any client may attach (`_meta` rides on `tools/list` results in
+/// this very file). Both directions in one test: a reserved key passes, and the typo the gate
+/// exists for is STILL refused when it rides alongside one.
+#[test]
+fn a_reserved_underscore_argument_key_is_ignored_but_a_typo_beside_it_is_still_refused() {
+    let server = Server::new(false, false);
+    for arguments in [
+        json!({ "_meta": { "progressToken": 1 } }),
+        json!({ "_vendorExtension": true }),
+    ] {
+        assert!(
+            matches!(
+                classify_tool_call(
+                    &json!({ "name": TOOL_PROFILE, "arguments": arguments }),
+                    &server,
+                ),
+                ToolCall::Bridge(_)
+            ),
+            "a protocol-reserved key must not turn a valid call into a usage error"
+        );
+    }
+    let payload = local_payload(
+        &json!({
+            "name": TOOL_FOUND_JOBS,
+            "arguments": { "autopilotId": "ap-1", "_meta": { "progressToken": 1 }, "limt": 5 },
+        }),
+        &server,
+    );
+    assert_eq!(
+        payload["error"], ERR_USAGE,
+        "skipping `_`-prefixed keys must not widen into skipping the typo'd ones"
+    );
 }
 
 #[test]

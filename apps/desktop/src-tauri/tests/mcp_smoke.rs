@@ -371,9 +371,20 @@ fn an_undeclared_tool_argument_is_refused_by_the_real_binary() {
             "tools/call",
             json!({ "name": "commands", "arguments": { "effect": "read" } }),
         ),
+        // MCP reserves `_`-prefixed argument keys (`_meta`) and no schema declares them, so the
+        // gate above must let one through — end to end, because that is the half a unit test
+        // over `classify_tool_call` cannot show: a real client attaches `_meta` itself.
+        request(
+            4,
+            "tools/call",
+            json!({
+                "name": "commands",
+                "arguments": { "effect": "read", "_meta": { "progressToken": 7 } },
+            }),
+        ),
     ]);
 
-    assert_eq!(ids(&session), vec![1, 2, 3], "{:#?}", session.frames);
+    assert_eq!(ids(&session), vec![1, 2, 3, 4], "{:#?}", session.frames);
 
     let refused = &session.frames[1];
     assert_eq!(
@@ -396,6 +407,18 @@ fn an_undeclared_tool_argument_is_refused_by_the_real_binary() {
         accepted.pointer("/result/isError").and_then(Value::as_bool),
         Some(true),
         "a DECLARED argument must still work: {accepted}"
+    );
+
+    let reserved = &session.frames[3];
+    assert_ne!(
+        reserved.pointer("/result/isError").and_then(Value::as_bool),
+        Some(true),
+        "a protocol-reserved `_meta` key must not turn a valid call into a usage error: {reserved}"
+    );
+    assert_eq!(
+        result_text(reserved),
+        result_text(accepted),
+        "…and it must not change the answer either"
     );
 
     assert_eq!(session.stderr, "", "stderr must stay empty");

@@ -459,6 +459,35 @@ fn help_text_lists_every_error_sentinel_this_cli_can_emit() {
     }
 }
 
+/// Issue #1132's two-totals distinction is written on TWO surfaces — this
+/// table (which `--help` and the `automations` MCP tool description derive
+/// from) and `agent_read::RESOURCES` (which `agent schema` serves) — and
+/// nothing tied them together, so one could drop a field the other still
+/// explained (MEDIUM fix, review round 4). Both field names, on both
+/// surfaces, in one assertion.
+#[test]
+fn both_automations_descriptions_name_both_totals() {
+    let cli = VERB_TABLE
+        .iter()
+        .find(|v| v.name == "automations")
+        .expect("the automations verb")
+        .returns;
+    let (_, schema) = super::super::agent_read::RESOURCES
+        .iter()
+        .find(|(name, _)| *name == "automations")
+        .expect("the automations resource");
+    for field in ["totalFound", "foundJobsTotal"] {
+        assert!(
+            cli.contains(field),
+            "the --help/MCP description must name `{field}`: {cli}"
+        );
+        assert!(
+            schema.contains(field),
+            "`agent schema`'s own description must name `{field}`: {schema}"
+        );
+    }
+}
+
 #[test]
 fn is_help_request_recognizes_help_h_and_bare_help_verb() {
     assert!(is_help_request(&s(&["--help"])));

@@ -78,7 +78,13 @@ const RES_FOUND_JOBS: &str = "found-jobs";
 /// The `schema_lists_every_known_resource`/`dispatch_rejects_an_unknown_resource`
 /// tests below pin the one drift this convention alone can't prevent — a new
 /// arm added with its own fresh literal instead of reusing a constant here.
-const RESOURCES: &[(&str, &str)] = &[
+///
+/// `pub(super)` for the bridge's own tests only (MEDIUM fix, review round 4):
+/// `agent_cli`'s `both_automations_descriptions_name_both_totals` reads the
+/// `automations` row here against its own `VERB_TABLE` row, because the
+/// `totalFound`/`foundJobsTotal` distinction is written on BOTH surfaces and
+/// nothing tied them together.
+pub(super) const RESOURCES: &[(&str, &str)] = &[
     (
         RES_BEST_MATCHES,
         "Strongest jobs across every autopilot. Optional `limit` (default 20, max 50).",
@@ -597,13 +603,26 @@ fn list_autopilots(app: &AppHandle) -> AppResult<Vec<crate::autopilot::Autopilot
 /// usable http(s) url", exactly as `normalize_job_url` reports it.
 ///
 /// Same canonicalize-then-normalize pipeline `applied.check`/`answers.save`
-/// use, so a lookup here resolves to the exact identity an import would —
-/// with the unreserved-only decode FIRST, so the canonicalizer reads the real
-/// path: a `%2D`-spelled LinkedIn slug is byte-different but semantically
-/// identical (RFC 3986 §6.2.2.2), and neither `canonical_job_url` nor
-/// `normalize_job_url` decodes anything. The scheme guard still runs AFTER
-/// the decode, inside `normalize_job_url`, so `%6Aavascript:…` is caught
-/// rather than smuggled past a raw-byte check.
+/// use, plus an unreserved-only decode FIRST, so the canonicalizer reads the
+/// real path: a `%2D`-spelled LinkedIn slug is byte-different but
+/// semantically identical (RFC 3986 §6.2.2.2), and neither
+/// `canonical_job_url` nor `normalize_job_url` decodes anything. The scheme
+/// guard still runs AFTER the decode, inside `normalize_job_url`, so
+/// `%6Aavascript:…` is caught rather than smuggled past a raw-byte check.
+///
+/// That decode makes this READ deliberately more lenient than the WRITES
+/// (MEDIUM fix, security review round 4 — this doc used to claim the lookup
+/// "resolves to the exact identity an import would", which it does not).
+/// `answers.save`, `answer_assist` and `applied.check` all key on the
+/// UNDECODED spelling, and widening them is out of scope here: their keys are
+/// already-stored identities, so decoding at the write boundary would split
+/// existing rows off from their own history. The consequence is a caller-side
+/// rule, stated on the `job` verb's own `--help`/tool description
+/// (`agent_cli::VERB_TABLE`): reuse the `url` this resource RETURNS rather
+/// than a re-encoded spelling of your own, and every surface agrees on which
+/// posting you mean. Both HALVES of this lookup decode (see [`resolve_job`]
+/// for the stored side) — the leniency is symmetric within the read, never a
+/// one-sided rewrite.
 fn job_lookup_key(raw_url: &str) -> String {
     let decoded = crate::applications::decode_unreserved(raw_url);
     let canonical = crate::scraping::scrape_url::canonical_job_url(&decoded);

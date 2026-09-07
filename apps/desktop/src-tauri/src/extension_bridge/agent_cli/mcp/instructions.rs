@@ -45,19 +45,40 @@ const REVERSIBLE_NOTICE: &str = " The reversible write tier is enabled: call-rev
 const IRREVERSIBLE_NOTICE: &str = " The irreversible tier is enabled: call-irreversible can \
     make changes that cannot be undone through the app, gated by its own --confirm ceremony.";
 
+/// The [`super::super::ERROR_SENTINELS`] rows [`sentinel_table`] skips because the base prose
+/// above already EXPLAINS them — what each one means and what to do about it — so a table row
+/// would only repeat it. Hand-written on purpose (MEDIUM fix, review round 4): the old filter was
+/// `!INSTRUCTIONS.contains(name)`, a substring match that silently counted a bare MENTION as an
+/// explanation. `connection_lost` is the case that proves it — the prose names it only inside
+/// "don't retry in a loop", never says what it IS, and so lost its row while a client still had
+/// no idea what happened. A name may sit here only if the prose really explains it; deleting a
+/// sentence from [`INSTRUCTIONS`] without deleting its entry here now fails a test rather than
+/// quietly dropping the row.
+///
+/// Only ERROR_SENTINELS names belong here — the MCP-only sentinels the prose also explains
+/// (`wrong_tool`, `result_too_large`, `server_busy`, `shutting_down`, `rate_limited`) are not
+/// rows of that table at all, so naming them would be inert (asserted below).
+pub(super) const EXPLAINED_IN_PROSE: &[&str] = &[ERR_APP_NOT_RUNNING, ERR_APP_NOT_LOCATED];
+
 /// The tail of [`build_instructions`]: every [`super::super::ERROR_SENTINELS`] row the base prose
 /// does not already explain (issue #1143 — that table reached only the plain CLI's `--help`, which
 /// no MCP client ever sees, leaving `pairing_token_unavailable`/`pairing_rejected` as bare,
-/// unexplained strings). DERIVED, and filtered by the prose ITSELF rather than by a second
-/// hand-typed name list that would drift the same way. [`ERR_RUNTIME_UNAVAILABLE`] is the one
-/// deliberate omission: [`super::run`] fails to build its runtime BEFORE the protocol starts and
-/// exits 2 on stderr, so no tool result can ever carry it.
+/// unexplained strings). The rows are DERIVED from that table; only the SKIP list
+/// ([`EXPLAINED_IN_PROSE`]) is hand-written. [`ERR_RUNTIME_UNAVAILABLE`] is the one deliberate
+/// omission: [`super::run`] fails to build its runtime BEFORE the protocol starts and exits 2 on
+/// stderr, so no tool result can ever carry it.
 fn sentinel_table() -> String {
     let rows: Vec<String> = ERROR_SENTINELS
         .iter()
-        .filter(|(name, _)| *name != ERR_RUNTIME_UNAVAILABLE && !INSTRUCTIONS.contains(name))
+        .filter(|(name, _)| *name != ERR_RUNTIME_UNAVAILABLE && !EXPLAINED_IN_PROSE.contains(name))
         .map(|(name, meaning)| format!("{name} — {meaning}"))
         .collect();
+    // Degenerate guard: if the skip list ever grew to cover every remaining row, the `format!`
+    // below would emit a dangling "The other error sentinels a tool result can carry: ." — worse
+    // than saying nothing.
+    if rows.is_empty() {
+        return String::new();
+    }
     format!(
         " The other error sentinels a tool result can carry: {}.",
         rows.join("; ")

@@ -929,3 +929,99 @@ fn f() {
         assert!(find_display_leaks(src).is_empty());
     }
 }
+
+// ── Fencing: the `job_complete` producer set is CLOSED and hand-listed ────────────────
+// `extension_bridge::agent_call`'s response walk exempts a `JobRecord`'s whole `result`
+// subtree from prompt-injection fencing (`JOB_RECORD_ANCHOR_FIELDS`), so WHAT each
+// producer completes with is a security property of this crate, not an implementation
+// detail. The warning that spells the exemption out lives on `commands::jobs::job_complete`,
+// the single mutator every completion funnels through — but a warning nobody is forced to
+// read stops nothing. This test is the forcing function: the live call sites must equal the
+// hand-written list below, so a ninth producer fails the build until someone enumerates it
+// here, and enumerating it means reading the exemption. A guard derived only from the
+// source would accept the new producer silently, which is the failure mode the repo's own
+// "a guard driven off its own data can't catch a deletion" lesson names.
+//
+// `(file, enclosing fn)` — a fn appears twice when it completes on two branches. Sorted.
+const JOB_COMPLETE_PRODUCERS: &[(&str, &str)] = &[
+    ("commands/ai/mod.rs", "ai_pull_model"),
+    ("commands/ai/mod.rs", "run_embed_job"),
+    ("commands/ai_provider/cli_agent/mod.rs", "emit_done"),
+    ("commands/ai_provider/stream.rs", "finish"),
+    ("commands/autopilot.rs", "autopilot_run"),
+    ("commands/resume_pipeline/mod.rs", "execute"),
+    ("commands/resume_pipeline/mod.rs", "execute"),
+    ("commands/scrape.rs", "scrape_boards"),
+    ("commands/scrape.rs", "scrape_url"),
+];
+
+/// The name of the nearest `fn` declared at or above `hit` — the enclosing item for a call
+/// inside it, including one inside a nested closure/`async move` block (every real call site
+/// today). Comment lines are skipped so a doc comment naming a fn can't be mistaken for one.
+fn enclosing_fn(lines: &[&str], hit: usize) -> String {
+    for line in lines[..=hit].iter().rev() {
+        if is_comment_line(line) {
+            continue;
+        }
+        let mut head = line.trim_start();
+        for prefix in [
+            "pub(crate) ",
+            "pub(super) ",
+            "pub ",
+            "async ",
+            "unsafe ",
+            "const ",
+        ] {
+            head = head.strip_prefix(prefix).unwrap_or(head);
+        }
+        if let Some(rest) = head.strip_prefix("fn ") {
+            return rest
+                .split(['(', '<'])
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+        }
+    }
+    "<none>".to_string()
+}
+
+/// Every real `job_complete(` call in non-test source, as `(file, enclosing fn)`.
+/// The definition itself is skipped; everything else in the tree is in scope, which is what
+/// lets a producer added in a BRAND NEW file trip this rule.
+fn job_complete_call_sites() -> Vec<(String, String)> {
+    let mut sites = Vec::new();
+    for f in sources().iter().filter(|f| !f.is_test) {
+        let lines: Vec<&str> = f.content.lines().collect();
+        for (i, line) in lines.iter().enumerate() {
+            if is_comment_line(line)
+                || !line.contains("job_complete(")
+                || line.contains("fn job_complete(")
+            {
+                continue;
+            }
+            sites.push((f.rel.clone(), enclosing_fn(&lines, i)));
+        }
+    }
+    sites.sort();
+    sites
+}
+
+#[test]
+fn job_complete_producers_match_a_hand_written_list() {
+    let live = job_complete_call_sites();
+    let expected: Vec<(String, String)> = JOB_COMPLETE_PRODUCERS
+        .iter()
+        .map(|(f, fun)| (f.to_string(), fun.to_string()))
+        .collect();
+    assert_eq!(
+        live, expected,
+        "\nthe set of `commands::jobs::job_complete` call sites changed.\n\
+         A job's `result` is EXEMPT from the agent layer's prompt-injection fencing \
+         (`extension_bridge::agent_call::JOB_RECORD_ANCHOR_FIELDS` skips its whole subtree), \
+         so read the warning on `commands::jobs::job_complete` before updating \
+         JOB_COMPLETE_PRODUCERS in tests/architecture.rs: a completion carrying NEW \
+         third-party text — a scraped posting, an uploaded document's text, an ATS question \
+         label — must fence it itself, because nothing downstream will."
+    );
+}

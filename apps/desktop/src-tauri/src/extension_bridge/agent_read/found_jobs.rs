@@ -241,12 +241,24 @@ fn base_envelope_cost(autopilot_id: &str, autopilot_name: &str, total: usize) ->
 /// echo the caller's own id" discipline.
 const AUTOPILOT_NOT_FOUND_MESSAGE: &str = "no autopilot found for this id";
 
-/// A caller-supplied `cursor` that isn't one this autopilot's own page issued
-/// (wrong autopilot, legacy bare offset, or unparseable). Fixed sentinel — the
-/// caller's value is never echoed back, same discipline as
-/// [`AUTOPILOT_NOT_FOUND_MESSAGE`].
-const INVALID_CURSOR_MESSAGE: &str =
-    "cursor must be a nextCursor returned by this same autopilot's own found-jobs page";
+/// A well-formed `<issuer>:<offset>` cursor issued by a DIFFERENT autopilot —
+/// the issue #1130 case. Split from [`MALFORMED_CURSOR_MESSAGE`] (MEDIUM fix,
+/// review round 4) because the two have different recoveries: this one is
+/// "you are paging the wrong list", where re-sending the same cursor to the
+/// autopilot that issued it works. Fixed sentinel — the caller's value is
+/// never echoed back, same discipline as [`AUTOPILOT_NOT_FOUND_MESSAGE`].
+const WRONG_AUTOPILOT_CURSOR_MESSAGE: &str =
+    "cursor was issued by a different autopilot's found-jobs page — page that autopilot with it, \
+     or restart this one from `cursor: null`";
+
+/// A `cursor` that isn't a nextCursor SHAPE at all: a legacy bare offset, a
+/// JSON number, or anything else unparseable. The recovery differs from
+/// [`WRONG_AUTOPILOT_CURSOR_MESSAGE`]'s — there is no list this value pages,
+/// so the only way forward is a fresh traversal. Fixed sentinel, same
+/// never-echo discipline.
+const MALFORMED_CURSOR_MESSAGE: &str =
+    "cursor must be a nextCursor returned by a found-jobs page — a bare offset is not one; \
+     restart from `cursor: null`";
 
 /// Fence `description` at [`FOUND_JOBS_DESCRIPTION_PREVIEW_CAP`] — the
 /// `found-jobs` twin of `agent_read::fence_description`, which uses the
@@ -370,16 +382,36 @@ pub(super) fn resolve_found_jobs(
 /// documented answer when the stored order moves mid-traversal (see
 /// [`resolve_found_jobs`]). `rsplit_once` so an id that ever contains `:`
 /// still round-trips.
+///
+/// TWO fixed refusal texts, one sentinel kind (MEDIUM fix, review round 4):
+/// [`WRONG_AUTOPILOT_CURSOR_MESSAGE`] when a real cursor is replayed against
+/// the wrong list — recoverable by paging the autopilot that issued it — and
+/// [`MALFORMED_CURSOR_MESSAGE`] for a legacy bare offset or any other
+/// non-cursor, whose only recovery is a fresh traversal. Collapsing them into
+/// one string told a caller holding a still-valid cursor to throw it away.
+/// Neither ever echoes the value it refused.
 fn parse_found_jobs_cursor(payload: &Value, autopilot_id: &str) -> AppResult<usize> {
-    let invalid = || AppError::Validation(INVALID_CURSOR_MESSAGE.to_string());
+    let malformed = || AppError::Validation(MALFORMED_CURSOR_MESSAGE.to_string());
     match payload.get("cursor") {
         None | Some(Value::Null) => Ok(0),
-        Some(Value::String(raw)) => raw
-            .rsplit_once(':')
-            .filter(|(issuer, _)| *issuer == autopilot_id)
-            .and_then(|(_, offset)| offset.parse::<usize>().ok())
-            .ok_or_else(invalid),
-        Some(_) => Err(invalid()),
+        // SHAPE first, issuer second: only a value that really is
+        // `<issuer>:<offset>` can have a meaningfully WRONG issuer.
+        // Checking the issuer first would report a bare `https://…`
+        // (whose `rsplit_once(':')` head is `https`) as another
+        // autopilot's cursor.
+        Some(Value::String(raw)) => {
+            match raw
+                .rsplit_once(':')
+                .and_then(|(issuer, offset)| Some((issuer, offset.parse::<usize>().ok()?)))
+            {
+                Some((issuer, offset)) if issuer == autopilot_id => Ok(offset),
+                Some(_) => Err(AppError::Validation(
+                    WRONG_AUTOPILOT_CURSOR_MESSAGE.to_string(),
+                )),
+                None => Err(malformed()),
+            }
+        }
+        Some(_) => Err(malformed()),
     }
 }
 
@@ -648,7 +680,18 @@ mod tests {
     fn found_jobs_rejects_a_non_numeric_cursor_rather_than_silently_resetting() {
         let err =
             parse_found_jobs_cursor(&json!({ "cursor": "not-a-number" }), "ap-1").unwrap_err();
-        assert_eq!(err.to_string(), INVALID_CURSOR_MESSAGE);
+        assert_eq!(err.to_string(), MALFORMED_CURSOR_MESSAGE);
+    }
+
+    /// A value that HAS a colon but is not a cursor (its head is not an
+    /// autopilot id and its tail is not an offset) reads as malformed, never
+    /// as "another autopilot issued this" — the shape is checked before the
+    /// issuer for exactly this reason.
+    #[test]
+    fn found_jobs_reads_a_colon_bearing_non_cursor_as_malformed_not_as_another_autopilots() {
+        let err = parse_found_jobs_cursor(&json!({ "cursor": "https://jobs.example/x" }), "ap-1")
+            .unwrap_err();
+        assert_eq!(err.to_string(), MALFORMED_CURSOR_MESSAGE);
     }
 
     /// HIGH fix, pre-PR review round 2 — `{"cursor": 100}` (a JSON NUMBER,
@@ -659,7 +702,7 @@ mod tests {
     #[test]
     fn found_jobs_rejects_a_numeric_cursor_rather_than_silently_resetting() {
         let err = parse_found_jobs_cursor(&json!({ "cursor": 100 }), "ap-1").unwrap_err();
-        assert_eq!(err.to_string(), INVALID_CURSOR_MESSAGE);
+        assert_eq!(err.to_string(), MALFORMED_CURSOR_MESSAGE);
     }
 
     #[test]
@@ -694,7 +737,17 @@ mod tests {
             .to_string();
 
         let err = parse_found_jobs_cursor(&json!({ "cursor": issued }), "ap-2").unwrap_err();
-        assert_eq!(err.to_string(), INVALID_CURSOR_MESSAGE);
+        // MEDIUM fix, review round 4 — the two refusals carry DIFFERENT fixed
+        // texts: this one still has a list it pages, the malformed one does
+        // not. Neither ever echoes the caller's value.
+        assert_eq!(err.to_string(), WRONG_AUTOPILOT_CURSOR_MESSAGE);
+        assert_ne!(WRONG_AUTOPILOT_CURSOR_MESSAGE, MALFORMED_CURSOR_MESSAGE);
+        for message in [WRONG_AUTOPILOT_CURSOR_MESSAGE, MALFORMED_CURSOR_MESSAGE] {
+            assert!(
+                !message.contains("ap-1") && !message.contains("ap-2"),
+                "a refusal never echoes the cursor or the id it named: {message}"
+            );
+        }
     }
 
     /// The pre-#1130 wire shape. Rejected, NOT accepted for compatibility —
@@ -703,7 +756,7 @@ mod tests {
     #[test]
     fn found_jobs_rejects_a_bare_numeric_offset_cursor() {
         let err = parse_found_jobs_cursor(&json!({ "cursor": "10" }), "ap-1").unwrap_err();
-        assert_eq!(err.to_string(), INVALID_CURSOR_MESSAGE);
+        assert_eq!(err.to_string(), MALFORMED_CURSOR_MESSAGE);
     }
 
     /// An id containing `:` still round-trips — the reason the parser splits

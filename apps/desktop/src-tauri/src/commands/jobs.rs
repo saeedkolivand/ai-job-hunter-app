@@ -116,10 +116,22 @@ pub fn job_progress(app: &AppHandle, id: &str, p: f64) {
 /// shape (its `JOB_RECORD_ANCHOR_FIELDS`) and skips this value's whole
 /// subtree, so a generated draft read back through `jobs_get`/`jobs_list`
 /// reaches an MCP/CLI caller as the app's own answer instead of wrapped in
-/// `<job_posting>` markup. Every call site today completes with counts or
-/// this app's own AI output, which is what makes that exemption safe.
+/// `<job_posting>` markup.
 ///
-/// So: a job kind that puts THIRD-PARTY text in `result` — a scraped
+/// **What the call sites actually complete with, precisely** (the set is
+/// pinned by `job_complete_producers_match_a_hand_written_list` in
+/// `tests/architecture.rs`, so a ninth producer has to edit that list and
+/// read this warning): mostly counts, ids and status. Two are not, and both
+/// are ACCEPTED rather than overlooked — `scrape_boards` completes with
+/// `scraping::engine::BoardScrapeSummary` rows whose `error`/`skipped`/
+/// `truncated` strings are board-derived and whose keys are on no
+/// `extension_bridge::agent_call::FENCE_FIELD_NAMES` row, and the two
+/// streaming completions (`ai_provider::stream::finish`,
+/// `ai_provider::cli_agent::emit_done`) carry EVERY AI generation this app
+/// makes, research briefs included, which ADR-038 §5 already leaves
+/// unfenced.
+///
+/// So: a job kind that puts new THIRD-PARTY text in `result` — a scraped
 /// posting, an uploaded document's text, an ATS question label — must fence
 /// it ITSELF (`crate::prompt_fence::fenced("job_posting", …, JOB_CAP)`),
 /// because nothing downstream will.

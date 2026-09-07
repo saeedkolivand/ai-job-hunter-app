@@ -141,7 +141,8 @@
 //! [`super::parse_verb`], inheriting its never-echo-the-value discipline for free. The one thing
 //! [`classify_tool_call`] checks first is the argument object's KEY SET, which argv cannot carry
 //! at all — the `additionalProperties:false` every schema here advertises (issue #1134), read off
-//! that tool's own already-built schema rather than a second list.
+//! that tool's own already-built schema rather than a second list, minus the protocol's own
+//! reserved `_`-prefixed keys (see [`is_reserved_argument_key`]).
 
 use std::io::{stdin, stdout, BufRead, BufReader, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -779,6 +780,17 @@ enum ToolCall {
     Bridge(Verb),
 }
 
+/// MCP RESERVES every `_`-prefixed key for the protocol itself (`_meta` is the one in use today,
+/// and a client may attach it to ANY tool call's `arguments`), so the key-set gate below must skip
+/// them: no tool schema declares `_meta`, and refusing it would refuse a spec-conformant call.
+/// Matched on the PREFIX rather than an `_meta` literal, because the reservation is on the prefix
+/// — and a plain typo (`limt`) carries no `_`, so it is still refused. Nothing downstream reads
+/// these keys: [`tool_argv`] builds argv from named keys only, so a reserved key is inert, never
+/// forwarded.
+fn is_reserved_argument_key(key: &str) -> bool {
+    key.starts_with('_')
+}
+
 /// Everything about a `tools/call` that can be decided WITHOUT the bridge. Pure — no dispatch
 /// closure in its signature at all, which is what makes "local tools never queue" a property of
 /// the type rather than of a comment: [`serve`] can run this on its writer thread precisely
@@ -812,7 +824,10 @@ fn classify_tool_call(params: &Value, server: &Server) -> ToolCall {
         .as_object()
         .map_or_else(Vec::new, |p| p.keys().map(String::as_str).collect());
     if let Some(given) = arguments.as_object() {
-        if given.keys().any(|k| !declared.contains(&k.as_str())) {
+        if given
+            .keys()
+            .any(|k| !is_reserved_argument_key(k) && !declared.contains(&k.as_str()))
+        {
             let detail = if declared.is_empty() {
                 "unknown argument (this tool accepts none)".to_string()
             } else {
