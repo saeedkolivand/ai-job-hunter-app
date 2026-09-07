@@ -43,6 +43,8 @@ import {
   type GenerationMode,
   getBodyLinkMap,
   getLinkMap,
+  hasRenderablePages,
+  type HelpChatAppSection,
   type HelpChatEntry,
   type HelpChatTurn,
   injectLinksIntoGeneratedText,
@@ -1155,12 +1157,15 @@ export async function generateJobAdSummary(params: {
  * `analysis` is the temperature step because this reads and summarizes
  * supplied material rather than writing on the candidate's behalf.
  *
- * The entries are the app's own shipped help copy (trusted); the glance,
- * history and question are fenced as untrusted by the prompt builder.
+ * The entries and the sidebar page names are the app's own shipped copy
+ * (trusted); the glance, history and question are fenced as untrusted by the
+ * prompt builder.
  */
 export async function generateHelpAnswer(params: {
   question: string;
   entries: HelpChatEntry[];
+  /** The sidebar's sections and page names, already translated by the caller. */
+  appPages?: HelpChatAppSection[];
   dataGlance?: string;
   history?: HelpChatTurn[];
   model: string;
@@ -1169,7 +1174,8 @@ export async function generateHelpAnswer(params: {
   signal?: AbortSignal;
   onToken?: (tok: string) => void;
 }): Promise<string> {
-  const { question, entries, dataGlance, history, model, language, signal, onToken } = params;
+  const { question, entries, appPages, dataGlance, history, model, language, signal, onToken } =
+    params;
   // Nothing to answer → skip the wasted API call on an empty/whitespace question.
   if (!question.trim()) return '';
   const profile = buildProviderProfile(model);
@@ -1180,10 +1186,17 @@ export async function generateHelpAnswer(params: {
   // keeps an arbitrary string out of the interpolated instruction.
   const lang = language ? OUTPUT_LANGUAGES.find((l) => l.code === language) : undefined;
 
-  const system = buildHelpChatSystemPrompt(lang?.englishName);
+  // The system prompt's APP PAGES clauses (rules 1, 3 and 4) and the user
+  // prompt's APP PAGES block are the same decision, so it is made ONCE here,
+  // off the same input. Without it the rules named a list the user prompt had
+  // not rendered - an instruction to name a page out of nothing, which is the
+  // invention rule 4 exists to forbid.
+  const hasAppPages = hasRenderablePages(appPages);
+  const system = buildHelpChatSystemPrompt(lang?.englishName, { hasAppPages });
   const user = buildHelpChatPrompt({
     question,
     entries,
+    appPages,
     dataGlance,
     history,
     target: profile,

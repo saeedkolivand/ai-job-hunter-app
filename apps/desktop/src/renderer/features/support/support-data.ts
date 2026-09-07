@@ -72,6 +72,11 @@ export function getSupportSections(t: (key: string) => string): Section[] {
           q: t('support.faq.gettingStartedQuestions.replayWizard.q'),
           a: t('support.faq.gettingStartedQuestions.replayWizard.a'),
         },
+        {
+          id: 'githubProjects',
+          q: t('support.faq.gettingStartedQuestions.githubProjects.q'),
+          a: t('support.faq.gettingStartedQuestions.githubProjects.a'),
+        },
       ],
     },
     {
@@ -159,6 +164,16 @@ export function getSupportSections(t: (key: string) => string): Section[] {
           q: t('support.faq.documentsQuestions.multipleResumes.q'),
           a: t('support.faq.documentsQuestions.multipleResumes.a'),
         },
+        {
+          id: 'importFromLinkedin',
+          q: t('support.faq.documentsQuestions.importFromLinkedin.q'),
+          a: t('support.faq.documentsQuestions.importFromLinkedin.a'),
+        },
+        {
+          id: 'contactHeader',
+          q: t('support.faq.documentsQuestions.contactHeader.q'),
+          a: t('support.faq.documentsQuestions.contactHeader.a'),
+        },
       ],
     },
     {
@@ -236,6 +251,11 @@ export function getSupportSections(t: (key: string) => string): Section[] {
           id: 'referral',
           q: t('support.faq.applicationsQuestions.referral.q'),
           a: t('support.faq.applicationsQuestions.referral.a'),
+        },
+        {
+          id: 'applicantDetails',
+          q: t('support.faq.applicationsQuestions.applicantDetails.q'),
+          a: t('support.faq.applicationsQuestions.applicantDetails.a'),
         },
       ],
     },
@@ -427,6 +447,16 @@ export function getSupportSections(t: (key: string) => string): Section[] {
           id: 'resetEverything',
           q: t('support.faq.generalQuestions.resetEverything.q'),
           a: t('support.faq.generalQuestions.resetEverything.a'),
+        },
+        {
+          id: 'changeLanguage',
+          q: t('support.faq.generalQuestions.changeLanguage.q'),
+          a: t('support.faq.generalQuestions.changeLanguage.a'),
+        },
+        {
+          id: 'checkForUpdates',
+          q: t('support.faq.generalQuestions.checkForUpdates.q'),
+          a: t('support.faq.generalQuestions.checkForUpdates.a'),
         },
       ],
     },

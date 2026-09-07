@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788765094030,
+  "lastUpdate": 1788814669243,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "b91a5d1cae12cfc3c6577582694ae24089dd3c79",
-          "message": "fix(extension): parse linkedin job ad from captured page dom instead of authwalled refetch (#741)\n\n* fix(extension): parse linkedin job ad from captured page dom instead of authwalled refetch\n\nthe canonical (spa/list-view) import branch discarded the extension's captured html and\nserver-fetched /jobs/view/<id>, which linkedin authwalls — imports lost the description.\nresolve(canonical) stays primary; on an unusable or description-less result the bridge now\ngap-fills title/description from the hint-scoped detail pane only (whole-document json-ld\nis ignored so a list shell can never import the wrong job). the content-script hint tries\nvisible job-detail-pane containers before main.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: update extension-import canonical-url seam after fix 2d6a7eda\n\ndocument the list-shell JSON-LD scope safeguard: canonical branch never\ncalls parse_from_html() on captured list-shell DOM; only the hint-scoped\njob_root_generic_html() extraction may gap-fill when resolve() fails.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(extension): walk ancestor chain in job-node visibility gate\n\nisHiddenByStyle only checked the matched element's own computed\ndisplay, which does not inherit; reuse field-signal.ts's isHidden\n(ancestor-walk) instead, built via content.ts's own isolated\nRollup pass so the import stays classic-script-safe.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-          "timestamp": "2026-07-21T01:08:02+02:00",
-          "tree_id": "b53f58b48d7005f3acede33a33747d7543ed0792",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/b91a5d1cae12cfc3c6577582694ae24089dd3c79"
-        },
-        "date": 1784589448743,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2208501,
-            "range": "± 16430",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2633551,
-            "range": "± 14462",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 287702,
-            "range": "± 6067",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 333694,
             "range": "± 19315",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9440d7edd2ceb00c9813906a40afd52e6d791f98",
+          "message": "feat: help chat bridges paraphrases, names the page on a miss and answers six more questions (#1145)\n\n* test: pin the create-an-autopilot phrasings in the help retrieval eval\n\nThe 2026-09-06 report said the help chat did not know how to create an\nautopilot; retrieval measured against the real corpus ranks the answering\nentry first for that phrasing family. Two English cases pin it and the\ntop-2 floor rises from 19 to 21 with the measurement.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* feat(prompts): help chat bridges paraphrases, lists the app pages and names one on a miss\n\nThe grounding rules told the model three times to say it does not know\nand never that the user's verb may differ from an entry's title, so a\nretrieved answer could still be refused. Rule 2 now says a different verb\nfor the same task is a match; a miss names the sidebar page the feature\nlives on (from a trusted page list the renderer passes) and the help\nsearch box; the data glance can carry the user's autopilots when asked.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* feat(help): six new help entries for the questions the corpus could not answer\n\nLinkedIn résumé import, the display language, updates and the running\nversion, applicant details for cover letters, GitHub projects in the\nbuilder, and the contact header. Every quoted control was checked against\nthe label the UI renders in both locales.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* test: pin one phrasing per new help entry and raise the eval floors\n\nEXPECTED_ENTRY_COUNT follows the corpus to 57; six user phrasings pin the\nnew entries' reachability and the top-2 floor rises with the measurement\nto 27.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* feat(help): send the sidebar page list and the user's autopilots to the help chat\n\nThe sidebar's nav data moves to a pure module the help chat reads, so\nthe page list the model may name is the sidebar itself, translated by the\nsame t() as the corpus. The data glance carries name, status, run status\nand found count of the user's autopilots only when a retrieved entry is\nabout autopilots, mirroring the recent-application rule.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* fix(prompts): list an unlabelled sidebar group without a dangling colon\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* test(prompts): build the unlabelled-group case from the module fixtures\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* fix(help): the applicant-details entry names the browser extension as the form consumer\n\nAutopilot never submits anything; the salary and start-date fields reach\napplication forms through the extension's answer suggestions.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* fix(prompts): name the page list in each only-clause, drop start from the synonyms, defuse labels\n\nReview fixes: rule 1 and the TASK block now list the APP PAGES block as\na permitted source and carry the page-naming exception; a page is offered\nas where to look if the app has the feature, never as proof it exists;\nstart no longer bridges a run request onto a creation entry; page labels\npass through the same defusing as fenced text and the ### anchor also\ncatches a marker behind a list bullet; a prompt without a page block no\nlonger mentions one.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* fix(help): gate the glance name lists on the top hit, cap autopilots, correct three help claims\n\nThe recent-application and autopilot name lists now ship only when the\ntop-ranked entry is in that section: the answer is written from the top\nentry, and a secondary hit widened disclosure without improving it. The\nhook hands the prompt at most ten autopilots. The contact-header entry\nnow says changes save when leaving a field, the applicant-details entry\nthat the extension uses the salary expectation only, and the updates\nentry that the Store build still shows the changelog. The sidebar's\npinned footer is a named declaration instead of a null-label sentinel.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* docs: amend adr-043 trust boundary, fix the new-page steps, add the help glossary terms\n\nThe trust class is stated as a condition (shipped translation strings\nare trusted, anything a user or a board can write is fenced) instead of\nan enumeration that went stale when the page list arrived; the new-page\nsteps point at the nav data module and the translations package; the\nglossary gains Help entry, Data glance and Page list.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* fix(prompts): the question note names the page list exactly when it was rendered\n\nThe note under the user's question is the third place the prompt states\nits permitted sources; it still listed only the entries and the glance,\none line before the task. It now derives the same clause the TASK block\ndoes, so a prompt without a page block never mentions one. Two stale\nenumerations of what the glance carries name the autopilot names too.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* test: pin one german phrasing per new help entry and raise the german floor\n\nThe German bundle grew by the same six entries; DE_CASES now measures\neach and the top-2 floor rises with the measurement from 14 to 20.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* docs: glossary entries point at their owning symbols; keep the new-page steps in one list\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* fix(prompts): the system prompt names the page list only when one was rendered\n\nBoth help-chat builders now derive every APP PAGES clause from one\npredicate over the page sections, computed once by the caller, so a\nprompt without a page block never authorises naming a page from it.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5.1 <noreply@anthropic.com>",
+          "timestamp": "2026-09-07T22:36:22+02:00",
+          "tree_id": "aec3418a43ea0f4b4e1d02f89b55e30f7af6b807",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/9440d7edd2ceb00c9813906a40afd52e6d791f98"
+        },
+        "date": 1788814666997,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1428426,
+            "range": "± 44584",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 1679404,
+            "range": "± 101185",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 168808,
+            "range": "± 5765",
             "unit": "ns/iter"
           }
         ]

@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 
 import {
   buildHelpDataGlance,
+  type HelpChatAppSection,
   type HelpChatEntry,
   resolveHelpChatSizing,
 } from '@ajh/prompts/generate';
 import { HelpSearchEntrySchema, type HelpSearchResult } from '@ajh/shared/schemas';
 import { useTranslation } from '@ajh/translations';
 
+import { SIDEBAR_NAV } from '@/components/layout/Sidebar/nav';
 import { TRACKED_INTERACTION_TYPES } from '@/constants/interactions';
 import { getSupportSections } from '@/features/support/support-data';
 import { generateHelpAnswer } from '@/lib/generate';
@@ -23,11 +25,21 @@ interface CorpusEntry extends HelpChatEntry {
 
 /**
  * The section whose entries are about the user's tracked applications
- * (`support.faq.applicationsQuestions.*`). Only a question that retrieved one
- * of those is answered any better by knowing WHICH jobs the user applied to —
- * see the glance below.
+ * (`support.faq.applicationsQuestions.*`). Only a question whose TOP-ranked
+ * hit is one of those is answered any better by knowing WHICH jobs the user
+ * applied to — see the glance below.
  */
 const APPLICATIONS_SECTION = 'applications';
+
+/**
+ * The section whose entries are about the user's autopilots
+ * (`support.faq.autopilotQuestions.*`), gating the autopilot NAMES for exactly
+ * the reason {@link APPLICATIONS_SECTION} gates the job titles: they are
+ * user-typed text, and only a question whose TOP-ranked hit is an autopilot
+ * entry is answered any better for having them. Mirrored from the `Section.id`
+ * in `support-data`, like the one above.
+ */
+const AUTOPILOT_SECTION = 'autopilot';
 
 /**
  * Prefix every minted `queryId` carries. MUST match the Rust-side check in
@@ -90,6 +102,25 @@ function buildCorpus(t: (key: string) => string): CorpusEntry[] {
       body: problem.a.slice(0, BODY_MAX),
     }))
   );
+}
+
+/**
+ * The sidebar's own page names, translated — what the prompt's APP PAGES block
+ * is built from, so a question the corpus does not cover can still be answered
+ * with WHERE the feature lives instead of a dead end.
+ *
+ * Shipped `nav.*` copy, the same trust class as the corpus, and it carries
+ * nothing the user typed. The pinned group ships no heading and no
+ * `nav.sections.*` string names it (see `Sidebar/nav`), so it travels with an
+ * empty section name: the page names are the part an answer needs, and
+ * inventing a group label would put copy in front of the model that the app
+ * does not have.
+ */
+function buildAppPages(t: (key: string) => string): HelpChatAppSection[] {
+  return SIDEBAR_NAV.map((section) => ({
+    section: section.labelKey ? t(section.labelKey) : '',
+    pages: section.pages.map((page) => t(page.labelKey)),
+  }));
 }
 
 /**
@@ -290,6 +321,10 @@ export function useHelpChat({ model, canUse }: Params) {
       const profile = buildProviderProfile(model);
       const sizing = resolveHelpChatSizing(profile);
       const corpus = buildCorpus(t);
+      // Built here for the same reason as the corpus above: both are read off
+      // the CURRENT `t`, before the first await, so one question's entries and
+      // page names cannot come from two different languages.
+      const appPages = buildAppPages(t);
       // The transcript BEFORE this question — the model gets continuity without
       // being handed the question twice. On a retry the failed user turn is
       // already the tail, so it is dropped here for exactly the same reason.
@@ -349,9 +384,18 @@ export function useHelpChat({ model, canUse }: Params) {
       // The recent-application list is the only part of the glance carrying the
       // user's job titles and company names, and the only part that leaves the
       // machine as prose. Counts answer "have I tracked anything at all"; the
-      // NAMES only help a question that retrieved an applications entry, so
+      // NAMES only help a question the applications entries actually answer, so
       // that is the only question that pays to send them to the provider.
-      const aboutApplications = used.some((entry) => entry.section === APPLICATIONS_SECTION);
+      //
+      // Gated on the TOP-RANKED entry, never on `some`: retrieval returns the
+      // best few and the answer is written from the first, so a SECONDARY hit —
+      // the maybe the ranker kept — would widen the disclosure without
+      // improving the answer. Observed live: a LinkedIn-import question whose
+      // rank-2 hit was an autopilot entry shipped the user's autopilot names to
+      // the provider. One question, one topic, one list.
+      const aboutApplications = used[0]?.section === APPLICATIONS_SECTION;
+      // Same gate, same reason, for the autopilot names — see AUTOPILOT_SECTION.
+      const aboutAutopilots = used[0]?.section === AUTOPILOT_SECTION;
 
       // Everything uncancellable is behind us; from here a Stop really stops
       // the work, so it may release the Ask button immediately.
@@ -359,6 +403,7 @@ export function useHelpChat({ model, canUse }: Params) {
       const raw = await generateHelpAnswer({
         question: query,
         entries: used.map(({ title, body }) => ({ title, body })),
+        appPages,
         dataGlance: buildHelpDataGlance({
           documentCount: embeddingStatus ? (embeddingStatus.documents?.total ?? 0) : null,
           interactionCounts: interactions ? countTrackedInteractions(interactions) : null,
@@ -366,6 +411,7 @@ export function useHelpChat({ model, canUse }: Params) {
           recentApplications:
             aboutApplications && applications ? recentApplications(applications) : [],
           autopilotCount: autopilots ? autopilots.length : null,
+          autopilots: glanceAutopilots(autopilots, aboutAutopilots),
           target: profile,
         }),
         history,
@@ -447,6 +493,41 @@ function countByStatus(applications: ReadonlyArray<{ status?: string }>): Record
     counts[status] = (counts[status] ?? 0) + 1;
   }
   return counts;
+}
+
+/**
+ * The user's first 10 autopilots for the glance, with the three states the
+ * prompt reads kept apart: `null` = the list could not be read (the glance
+ * omits the line rather than claiming zero), `[]` = readable but this question
+ * is not about autopilots, otherwise the names.
+ *
+ * Capped at 10 like {@link recentApplications} — the glance renders at most 10
+ * under a bare `Autopilots:` heading, so sending more only hands the provider
+ * user-typed names it then drops. No sort: the backend's own order is the one
+ * the list page shows, and there is no `updatedAt` here to rank by.
+ *
+ * The mapping is an explicit PICK, like `recentApplications` below: an
+ * autopilot record also carries the user's résumé text, cover letter and found
+ * jobs, and none of that has any business reaching a provider because someone
+ * asked how autopilots work.
+ */
+function glanceAutopilots(
+  autopilots: ReadonlyArray<{
+    name: string;
+    status: string;
+    runStatus?: string;
+    totalFound: number;
+  }> | null,
+  aboutAutopilots: boolean
+): Array<{ name: string; status: string; runStatus?: string; totalFound: number }> | null {
+  if (!autopilots) return null;
+  if (!aboutAutopilots) return [];
+  return autopilots.slice(0, 10).map((autopilot) => ({
+    name: autopilot.name,
+    status: autopilot.status,
+    runStatus: autopilot.runStatus,
+    totalFound: autopilot.totalFound,
+  }));
 }
 
 /** The 10 most recently touched applications, newest first. */

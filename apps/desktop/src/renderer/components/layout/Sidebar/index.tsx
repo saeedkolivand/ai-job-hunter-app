@@ -29,49 +29,28 @@ import { useContactProfile } from '@/services';
 import { useAppVersion } from '@/services/use-system';
 import { useToggleSidebar, useUserName } from '@/store/preferences-store';
 
-interface NavItem {
-  to: string;
-  label: string;
-  icon: LucideIcon;
-  tourId: string;
-}
-const NAV_SECTIONS: { labelKey: string; items: readonly NavItem[] }[] = [
-  {
-    labelKey: 'nav.sections.workspace',
-    items: [
-      { to: ROUTES.DASHBOARD, label: 'nav.dashboard', icon: LayoutDashboard, tourId: 'dashboard' },
-      {
-        to: ROUTES.APPLICATIONS,
-        label: 'nav.applications',
-        icon: ClipboardList,
-        tourId: 'applications',
-      },
-      { to: ROUTES.JOBS, label: 'nav.jobs', icon: Briefcase, tourId: 'jobs' },
-      { to: ROUTES.ANALYZE, label: 'nav.analyze', icon: Gauge, tourId: 'analyze' },
-      { to: ROUTES.GENERATE, label: 'nav.generate', icon: Wand2, tourId: 'generate' },
-      { to: ROUTES.BUILD, label: 'nav.build', icon: FilePlus2, tourId: 'build' },
-      { to: ROUTES.RESUMES, label: 'nav.documents', icon: FileText, tourId: 'documents' },
-    ],
-  },
-  {
-    labelKey: 'nav.sections.automation',
-    items: [
-      { to: ROUTES.AUTOPILOT, label: 'nav.autopilot', icon: Zap, tourId: 'autopilot' },
-      {
-        to: ROUTES.BEST_MATCHES,
-        label: 'nav.bestMatches',
-        icon: Sparkles,
-        tourId: 'best-matches',
-      },
-      { to: ROUTES.MONITORING, label: 'nav.monitoring', icon: Activity, tourId: 'monitoring' },
-    ],
-  },
-];
+import { HEADED_SECTIONS, type NavTourId, PINNED_SECTION, type SidebarPage } from './nav';
 
-const PINNED_ITEMS: readonly NavItem[] = [
-  { to: ROUTES.SUPPORT, label: 'nav.support', icon: HelpCircle, tourId: 'support' },
-  { to: ROUTES.SETTINGS, label: 'nav.settings', icon: Settings, tourId: 'settings' },
-];
+/**
+ * The icon each page renders with — the presentational half of `./nav`, kept
+ * here because it is the only half that is React. Keyed by `tourId` and typed
+ * total, so a page added to {@link SIDEBAR_NAV} without an icon fails to
+ * compile rather than rendering blank.
+ */
+const NAV_ICONS: Record<NavTourId, LucideIcon> = {
+  dashboard: LayoutDashboard,
+  applications: ClipboardList,
+  jobs: Briefcase,
+  analyze: Gauge,
+  generate: Wand2,
+  build: FilePlus2,
+  documents: FileText,
+  autopilot: Zap,
+  'best-matches': Sparkles,
+  monitoring: Activity,
+  support: HelpCircle,
+  settings: Settings,
+};
 
 // ponytail: query the page's scroll regions by their Tailwind class instead
 // of wiring a ref registry through every route — one nav action doesn't need that.
@@ -104,7 +83,8 @@ export function Sidebar() {
     tooltipTimer.current = setTimeout(() => setVersionTooltip(false), TOOLTIP_HIDE_MS);
   };
 
-  const renderNavItem = ({ to, label, icon: Icon, tourId }: NavItem) => {
+  const renderNavItem = ({ to, labelKey, tourId }: SidebarPage) => {
+    const Icon = NAV_ICONS[tourId];
     const active = pathname === to || (to !== '/' && pathname.startsWith(to + '/'));
     const linkClassName = cn(
       'group relative flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors duration-150',
@@ -121,7 +101,7 @@ export function Sidebar() {
             active ? 'text-brand-soft' : 'text-foreground/35 group-hover:text-foreground/55'
           )}
         />
-        <span className="flex-1 font-medium">{t(label)}</span>
+        <span className="flex-1 font-medium">{t(labelKey)}</span>
       </>
     );
     // Every nav item opens its section's main page — clicking it from a nested
@@ -149,18 +129,20 @@ export function Sidebar() {
         </Button>
       </div>
       <nav className="flex flex-col gap-4">
-        {NAV_SECTIONS.map((section) => (
+        {/* The pinned group is deliberately absent here — it has no heading and
+            is rendered by the footer nav below. */}
+        {HEADED_SECTIONS.map((section) => (
           <div key={section.labelKey}>
             <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
               {t(section.labelKey)}
             </div>
-            <div className="flex flex-col gap-1">{section.items.map(renderNavItem)}</div>
+            <div className="flex flex-col gap-1">{section.pages.map(renderNavItem)}</div>
           </div>
         ))}
       </nav>
 
       <nav className="mt-auto flex flex-col gap-1 border-t border-foreground/[0.06] pb-3 pt-3">
-        {PINNED_ITEMS.map(renderNavItem)}
+        {PINNED_SECTION.pages.map(renderNavItem)}
       </nav>
 
       <div className="space-y-2 px-3 pb-3">
