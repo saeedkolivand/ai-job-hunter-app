@@ -114,6 +114,24 @@ describe('useMenuNavigation', () => {
     expect(setShortcutsOpen).not.toHaveBeenCalled();
   });
 
+  // A Store build's `check` never contacts GitHub — it reports who owns
+  // updates. Saying "you are up to date" there would be a claim about a check
+  // that did not happen. (`t` is mocked to the identity above, so the
+  // assertions are on keys.)
+  it('names the Store as the update owner instead of claiming "up to date"', async () => {
+    check.mockResolvedValueOnce({ available: false, managedBy: 'store' });
+    renderWithPending({ event: 'menu:action', payload: { action: 'check-updates' } });
+
+    await waitFor(() =>
+      expect(notifyApi.open).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'settings.update.managedByStore' })
+      )
+    );
+    expect(notifyApi.open).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'updater.upToDate' })
+    );
+  });
+
   it('opens the shortcuts cheat-sheet on the shortcuts action', async () => {
     renderWithPending({ event: 'menu:action', payload: { action: 'shortcuts' } });
 
