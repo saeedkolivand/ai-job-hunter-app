@@ -110,10 +110,10 @@ agent layer may reshape the envelope — for these two enumerated reasons and no
   times their own size in decimal digits and separators, enough for an ordinary export to overrun the
   MCP result cap with no argument available to narrow it. So the agent layer base64-encodes those
   bytes and marks the encoding explicitly on the reply, and a caller decodes on the marker instead of
-  inferring it from the bytes (`base64_byte_fields` in `agent_call.rs`; its audited `(command, field)`
+  inferring it from the bytes (`base64_byte_fields` in `agent_call/reshape.rs`; its audited `(command, field)`
   pairs carry the measurement that sized the choice).
 
-The page size is an audited constant beside the generic tier in `agent_call.rs`, carrying its derivation
+The page size is an audited constant beside the generic tier's reshaping (`agent_call/reshape.rs`), carrying its derivation
 on the constant itself; the size ceiling is the bridge's own `MAX_FRAME_BYTES`, reused rather than
 copied. That placement is the control: each value is reviewable in one place, and a row that starts
 paging is a change to a line rather than to scattered call sites. The offset/limit/byte-budget

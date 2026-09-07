@@ -1,4 +1,8 @@
 use super::*;
+// The reshaping half moved to `agent_call/reshape.rs` under the R8 LOC
+// cap; its consts and pure fns are `pub(super)` there, so this one glob
+// keeps every test below naming them exactly as it did in-module.
+use super::reshape::*;
 
 // ── split_path / find_policy ────────────────────────────────────────────
 

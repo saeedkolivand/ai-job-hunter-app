@@ -2175,7 +2175,7 @@ fn base64_takes_a_realistic_pdf_export_from_over_the_result_cap_to_under_it() {
          ({before} B vs {MCP_RESULT_MAX_BYTES})"
     );
 
-    agent_call::base64_byte_fields("documents_export_document", &mut payload);
+    agent_call::reshape::base64_byte_fields("documents_export_document", &mut payload);
 
     let after = serde_json::to_string(&payload).unwrap().len();
     assert!(
@@ -2213,7 +2213,7 @@ fn commands_marks_the_paged_rows_and_only_those() {
         let Some(returns) = row["returns"].as_str() else {
             continue;
         };
-        assert_eq!(returns, agent_call::PAGINATED_LIST_NOTE);
+        assert_eq!(returns, agent_call::reshape::PAGINATED_LIST_NOTE);
         noted.push(row["command"].as_str().unwrap());
     }
     noted.sort_unstable();
