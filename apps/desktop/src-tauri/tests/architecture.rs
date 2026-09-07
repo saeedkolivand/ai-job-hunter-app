@@ -986,22 +986,79 @@ fn enclosing_fn(lines: &[&str], hit: usize) -> String {
     "<none>".to_string()
 }
 
-/// Every real `job_complete(` call in non-test source, as `(file, enclosing fn)`.
+/// The identifier every producer calls. Matched as a SUBSTRING, so a path-qualified
+/// `crate::commands::jobs::job_complete(…)` — how every real call site writes it — counts.
+const JOB_COMPLETE_IDENT: &str = "job_complete";
+
+/// Whether the first non-whitespace character after byte `from` on `lines[line]` is a `(`,
+/// i.e. the identifier ending there is being CALLED.
+///
+/// Rust allows any run of whitespace — NEWLINES included — between a callee and its argument
+/// list, so a detector keyed on the literal `job_complete(` silently drops a producer written
+/// as `job_complete (`, or one whose paren rustfmt pushed onto the next line. A guard that
+/// misses a producer fails OPEN (the new completion never gets enumerated, so nobody is forced
+/// to read the fencing exemption warning), which is the direction that matters here. Blank and
+/// comment-only lines are stepped over the same way [`enclosing_fn`] steps over them.
+///
+/// Deliberately NO turbofish handling: `job_complete` is not generic, and accepting `::<…>(`
+/// would mean parsing generic arguments to find the matching `>` — a real parser's job, not a
+/// scan's. A future generic producer trips the hand-written list by failing this scan, which is
+/// the safe way to discover it.
+fn opens_a_call(lines: &[&str], line: usize, from: usize) -> bool {
+    if let Some(rest) = lines[line].get(from..) {
+        let rest = rest.trim_start();
+        if !rest.is_empty() {
+            return rest.starts_with('(');
+        }
+    }
+    lines[line + 1..]
+        .iter()
+        .find(|l| !l.trim().is_empty() && !is_comment_line(l))
+        .is_some_and(|l| l.trim_start().starts_with('('))
+}
+
+/// Every real `job_complete` call in `src`, as the enclosing fn name, in source order.
+/// The definition itself (`fn job_complete`, however it is spaced) is skipped, and so are
+/// comment lines, so a doc comment naming the function never counts as a producer.
+///
+/// Split out from [`job_complete_call_sites`] so the detection can be exercised against inline
+/// fixtures (see `job_complete_detection_logic`) without inventing a fake producer in the
+/// real tree.
+fn job_complete_sites_in(src: &str) -> Vec<String> {
+    let lines: Vec<&str> = src.lines().collect();
+    let mut sites = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        if is_comment_line(line) {
+            continue;
+        }
+        let mut from = 0;
+        while let Some(off) = line[from..].find(JOB_COMPLETE_IDENT) {
+            let start = from + off;
+            let end = start + JOB_COMPLETE_IDENT.len();
+            from = end;
+            // `fn job_complete` is the definition, not a producer.
+            if line[..start].trim_end().ends_with("fn") {
+                continue;
+            }
+            if opens_a_call(&lines, i, end) {
+                sites.push(enclosing_fn(&lines, i));
+            }
+        }
+    }
+    sites
+}
+
+/// Every real `job_complete` call in non-test source, as `(file, enclosing fn)`.
 /// The definition itself is skipped; everything else in the tree is in scope, which is what
 /// lets a producer added in a BRAND NEW file trip this rule.
 fn job_complete_call_sites() -> Vec<(String, String)> {
     let mut sites = Vec::new();
     for f in sources().iter().filter(|f| !f.is_test) {
-        let lines: Vec<&str> = f.content.lines().collect();
-        for (i, line) in lines.iter().enumerate() {
-            if is_comment_line(line)
-                || !line.contains("job_complete(")
-                || line.contains("fn job_complete(")
-            {
-                continue;
-            }
-            sites.push((f.rel.clone(), enclosing_fn(&lines, i)));
-        }
+        sites.extend(
+            job_complete_sites_in(&f.content)
+                .into_iter()
+                .map(|func| (f.rel.clone(), func)),
+        );
     }
     sites.sort();
     sites
@@ -1024,4 +1081,72 @@ fn job_complete_producers_match_a_hand_written_list() {
          third-party text — a scraped posting, an uploaded document's text, an ATS question \
          label — must fence it itself, because nothing downstream will."
     );
+}
+
+/// The scan's own behaviour, driven by inline fixtures rather than by the real tree — the
+/// hand-written list above only ever proves the two agree TODAY, and both are derived from the
+/// same `job_complete(` literal, so neither could catch the detector failing to SEE a call.
+#[cfg(test)]
+mod job_complete_detection_logic {
+    use super::*;
+
+    /// True positive, baseline: the shape every producer is written in today.
+    #[test]
+    fn counts_a_path_qualified_call() {
+        let src = "fn producer() {\n    crate::commands::jobs::job_complete(app, id, result);\n}\n";
+        assert_eq!(job_complete_sites_in(src), vec!["producer".to_string()]);
+    }
+
+    /// True positive: a space between the identifier and its argument list. Legal Rust, and
+    /// invisible to a detector keyed on the literal `job_complete(` — the producer would just
+    /// stop being enumerated, with nothing failing to say so.
+    #[test]
+    fn counts_a_call_with_a_space_before_the_paren() {
+        let src =
+            "fn producer() {\n    crate::commands::jobs::job_complete (app, id, result);\n}\n";
+        assert_eq!(
+            job_complete_sites_in(src),
+            vec!["producer".to_string()],
+            "`job_complete (` is the same call with one extra space"
+        );
+    }
+
+    /// True positive: the argument list opening on the NEXT line — what rustfmt does when the
+    /// qualified path is long enough to fill the line on its own.
+    #[test]
+    fn counts_a_call_with_a_newline_before_the_paren() {
+        let src =
+            "fn producer() {\n    crate::commands::jobs::job_complete\n        (app, id, result);\n}\n";
+        assert_eq!(
+            job_complete_sites_in(src),
+            vec!["producer".to_string()],
+            "a newline between the callee and its arguments is still a call"
+        );
+    }
+
+    /// True negative: the definition is not a producer — including when IT is the thing
+    /// written with a space, which the old `line.contains(\"fn job_complete(\")` guard would
+    /// have stopped excluding the moment the tolerance above was added.
+    #[test]
+    fn does_not_count_the_definition() {
+        let src = "pub fn job_complete (app: &AppHandle, id: &str, result: Value) {\n}\n";
+        assert!(job_complete_sites_in(src).is_empty());
+    }
+
+    /// True negative: a LONGER identifier that merely starts with the name is not a call to it
+    /// — `job_complete_producers_match_a_hand_written_list` is a real symbol in this file.
+    #[test]
+    fn does_not_count_a_longer_identifier() {
+        let src = "fn f() {\n    job_complete_producers_match_a_hand_written_list();\n}\n";
+        assert!(job_complete_sites_in(src).is_empty());
+    }
+
+    /// True negative: a commented-OUT call — the one fixture where the comment check is the
+    /// only thing standing between the scan and a false producer, since the text after the
+    /// identifier is a real argument list.
+    #[test]
+    fn does_not_count_a_commented_out_call() {
+        let src = "fn f() {\n    // job_complete (app, id, result);\n}\n";
+        assert!(job_complete_sites_in(src).is_empty());
+    }
 }

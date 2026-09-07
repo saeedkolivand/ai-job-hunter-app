@@ -505,17 +505,84 @@ const APPLICATION_ANSWER_QUESTION_FIELD: &str = "question";
 /// on this dispatch surface serializes all three anchors together
 /// (`maxRetries` has exactly one producer in the crate).
 ///
-/// The exemption is WHOLESALE and audited, not shape-inspected per value:
-/// `result`'s entire subtree is skipped, so a job kind that starts putting
-/// THIRD-PARTY text there must fence it itself. The warning that says so
-/// lives on `commands::jobs::job_complete` — the single mutator every
-/// completion funnels through — rather than on each producer.
+/// The exemption is WHOLESALE for the NAME-keyed walk and audited, not
+/// shape-inspected per value: no [`FENCE_FIELD_NAMES`] entry fires anywhere
+/// under `result`, so a job kind that starts putting THIRD-PARTY text there
+/// must fence it itself. The warning that says so lives on
+/// `commands::jobs::job_complete` — the single mutator every completion
+/// funnels through — rather than on each producer.
+///
+/// The scrape-diagnostics shapes are carved back out, because auditing the
+/// producer list turned up a completion that already carried third-party
+/// text: [`SCRAPE_SUMMARY_ANCHOR_FIELDS`] and [`BOARD_HEALTH_ANCHOR_FIELDS`]
+/// fence a `BoardScrapeSummary`'s board-written strings wherever they sit
+/// inside `result`. Those are shape rules with enumerated field sets, not a
+/// reopening of the name walk — see [`fence_scrape_summaries_recursive`] for
+/// why the distinction is load-bearing.
 const JOB_RECORD_ANCHOR_FIELDS: [&str; 3] = ["kind", "progress", "maxRetries"];
 
 /// The one `JobRecord` field [`JOB_RECORD_ANCHOR_FIELDS`] exempts. Every
 /// other field still recurses — `payload` included, since a dispatch payload
 /// CAN carry a scraped posting.
 const JOB_RECORD_RESULT_FIELD: &str = "result";
+
+/// `scraping::engine::BoardScrapeSummary`'s own always-present field pair
+/// (`board`, `count` — both non-`Option`, and single words that its
+/// `#[serde(rename_all = "camelCase")]` leaves unchanged) — used to detect a
+/// summary-shaped object so [`SCRAPE_SUMMARY_UNTRUSTED_FIELDS`] can be fenced
+/// by SHAPE.
+///
+/// Shape and never a [`FENCE_FIELD_NAMES`] row, for the same reason
+/// [`APPLICATION_ANSWER_ANCHOR_FIELDS`] is: `error` is one of the most
+/// generic keys on this whole surface — `jobs::JobRecord.error` itself, plus
+/// every refusal envelope — and a flat name entry would wrap this app's own
+/// already-sanitized error strings as though a job board had written them.
+///
+/// Verified distinctive on this dispatch surface: `board` occurs WITHOUT a
+/// sibling `count` on `board_health::BoardHealthEntry` (`{board, health}`)
+/// and on a cluster member (`{key, board?, url}`), and `count` occurs
+/// without a `board` on the `scrape_*` completion envelopes themselves
+/// (`{count, boards}` / `{count}`) — no other struct in the crate
+/// serializes both together.
+const SCRAPE_SUMMARY_ANCHOR_FIELDS: [&str; 2] = ["board", "count"];
+
+/// The board/provider-derived strings a [`SCRAPE_SUMMARY_ANCHOR_FIELDS`]-
+/// detected object carries. Each is written by the REMOTE side of a scrape,
+/// not by this app: `error` is a board's own failure text (an aggregator
+/// provider prefixes its own name onto whatever the upstream API returned),
+/// `skipped` its refusal reason, `truncated` a mid-run page failure. Its
+/// siblings are not here on purpose — `board`/`count` are the anchors and
+/// `notes` is a fixed engine vocabulary. `health` is not a string at all;
+/// its own board-written carrier is covered by
+/// [`BOARD_HEALTH_ANCHOR_FIELDS`] below.
+///
+/// These reach an agent through a completed `scrape_boards` job
+/// (`jobs_get`/`jobs_list`, where [`JOB_RECORD_RESULT_FIELD`] otherwise
+/// exempts the whole subtree) and through `Autopilot.last_run_summaries`
+/// (`autopilot_list`/`autopilot_get`), so the rule is applied to the shape
+/// wherever it appears rather than to either route.
+const SCRAPE_SUMMARY_UNTRUSTED_FIELDS: [&str; 3] = ["error", "skipped", "truncated"];
+
+/// `scraping::board_health::BoardHealth`'s own always-present field pair
+/// (`status`, `consecutive_failures` → `consecutiveFailures`) — the SECOND
+/// shape carrying board-written text in the same payload, because
+/// `board_health::fold` copies `BoardScrapeSummary.error` FORWARD into
+/// `BoardHealth.last_error`. That copy runs through `clean_error`, which
+/// redacts paths/hosts and caps the length — a redactor, not a controlled
+/// vocabulary — so the board's own prose survives it intact and is exactly
+/// as untrusted as the `error` it came from. Fencing one and not the other
+/// would leave the same sentence reachable one level deeper, under
+/// `summary.health.lastError`, and standalone on a `BoardHealthEntry.health`.
+///
+/// `consecutiveFailures` is the distinctive half: it is the only serialized
+/// field of that name in the crate (verified), so no other struct on this
+/// surface can be mistaken for this shape.
+const BOARD_HEALTH_ANCHOR_FIELDS: [&str; 2] = ["status", "consecutiveFailures"];
+
+/// The one board-written string on a [`BOARD_HEALTH_ANCHOR_FIELDS`]-detected
+/// object. Its siblings are counters, epoch-ms timestamps, a derived status
+/// enum and this app's own scrape `job_id` — none of them third-party text.
+const BOARD_HEALTH_UNTRUSTED_FIELDS: [&str; 1] = ["lastError"];
 
 /// True when `map` is an `ai_generations::ApplicationAnswer`-shaped object:
 /// a STRING [`APPLICATION_ANSWER_QUESTION_FIELD`] plus every
@@ -527,6 +594,55 @@ fn is_application_answer_shaped(map: &serde_json::Map<String, Value>) -> bool {
         && APPLICATION_ANSWER_ANCHOR_FIELDS
             .iter()
             .all(|f| map.contains_key(*f))
+}
+
+/// Fence the board-written strings on `map` when its keys match either
+/// scrape-diagnostics shape — [`SCRAPE_SUMMARY_ANCHOR_FIELDS`] →
+/// [`SCRAPE_SUMMARY_UNTRUSTED_FIELDS`], [`BOARD_HEALTH_ANCHOR_FIELDS`] →
+/// [`BOARD_HEALTH_UNTRUSTED_FIELDS`] — and nothing at all on any other
+/// object. The two shapes are checked independently rather than nested: a
+/// `BoardHealth` also reaches this surface standalone, on a
+/// `BoardHealthEntry`, not only under a summary's `health`.
+///
+/// Shared by [`fence_named_fields_recursive`] (diagnostics anywhere OUTSIDE
+/// a job result) and [`fence_scrape_summaries_recursive`] (the copies INSIDE
+/// the otherwise-exempt one), so the two walks can never disagree about
+/// either shape or either field set.
+///
+/// Fencing happens on this READ path rather than at the producer
+/// (`commands::scrape::scrape_boards`, before `job_complete`) on purpose:
+/// the very same strings are what the renderer's per-board chip strip
+/// displays — `BoardSummaryChips` matches `skipped` against a controlled
+/// vocabulary to pick a localized label, and renders `error`, `truncated`
+/// and `health.lastError` as chip detail — reached both by the
+/// `job.completed` event and, on remount, by the watchdog's own `jobs_get`.
+/// A fence baked into the stored result would put `<job_posting>` markup on
+/// screen and knock `skipped` out of every arm of that match; stripping it
+/// back off in the renderer would mean a second, hand-maintained copy of
+/// these field lists in TypeScript, on a path where a miss is visible to the
+/// user.
+fn fence_board_derived_strings(map: &mut serde_json::Map<String, Value>) {
+    for (anchors, fields) in [
+        (
+            SCRAPE_SUMMARY_ANCHOR_FIELDS.as_slice(),
+            SCRAPE_SUMMARY_UNTRUSTED_FIELDS.as_slice(),
+        ),
+        (
+            BOARD_HEALTH_ANCHOR_FIELDS.as_slice(),
+            BOARD_HEALTH_UNTRUSTED_FIELDS.as_slice(),
+        ),
+    ] {
+        if !anchors.iter().all(|f| map.contains_key(*f)) {
+            continue;
+        }
+        for field in fields {
+            if let Some(s) = map.get(*field).and_then(Value::as_str) {
+                let fenced =
+                    crate::prompt_fence::fenced("job_posting", s, crate::prompt_fence::JOB_CAP);
+                map.insert((*field).to_string(), json!(fenced));
+            }
+        }
+    }
 }
 
 /// Fence every [`FENCE_FIELD_NAMES`] string (or string array element)
@@ -543,12 +659,17 @@ fn is_application_answer_shaped(map: &serde_json::Map<String, Value>) -> bool {
 /// dispatchable_policy_row` (tests) for the audited list of rows this is
 /// known to protect.
 ///
-/// Two rules are keyed on an object's SHAPE rather than a field name,
-/// because a name alone cannot tell the two carriers apart:
+/// Some rules are keyed on an object's SHAPE rather than a field name,
+/// because a name alone cannot tell two carriers apart:
 /// [`APPLICATION_ANSWER_ANCHOR_FIELDS`] fences a scraped ATS `question`
-/// without touching `InterviewQuestion.question`, and
+/// without touching `InterviewQuestion.question`;
 /// [`JOB_RECORD_ANCHOR_FIELDS`] exempts a job's own `result` so a generation
-/// read back through `jobs_get` is not labelled as scraped posting text.
+/// read back through `jobs_get` is not labelled as scraped posting text; and
+/// [`SCRAPE_SUMMARY_ANCHOR_FIELDS`]/[`BOARD_HEALTH_ANCHOR_FIELDS`] fence the
+/// board-WRITTEN strings on a `BoardScrapeSummary`/`BoardHealth` without
+/// touching this app's own same-named `error` strings — including inside
+/// that exempt `result`, which is where a completed `scrape_boards` job puts
+/// them.
 fn fence_scraped_fields(data: &mut Value) {
     fence_named_fields_recursive(data);
 }
@@ -561,13 +682,15 @@ fn fence_scraped_fields(data: &mut Value) {
 /// [`fence_scraped_fields`]'s doc for why this is recursive and
 /// unconditional.
 ///
-/// Then the two shape rules: on an [`APPLICATION_ANSWER_ANCHOR_FIELDS`]-
+/// Then the shape rules: on an [`APPLICATION_ANSWER_ANCHOR_FIELDS`]-
 /// detected object the [`APPLICATION_ANSWER_QUESTION_FIELD`] string is
 /// fenced (a scraped ATS question label whose wire key is shared with this
-/// app's own `InterviewQuestion.question`), and on a
-/// [`JOB_RECORD_ANCHOR_FIELDS`]-detected object the recursion skips
-/// [`JOB_RECORD_RESULT_FIELD`] entirely (a job's own output, not scraped
-/// text).
+/// app's own `InterviewQuestion.question`), on a scrape-diagnostics object
+/// [`fence_board_derived_strings`] fences the board-written keys, and on a
+/// [`JOB_RECORD_ANCHOR_FIELDS`]-detected object the recursion hands
+/// [`JOB_RECORD_RESULT_FIELD`] to [`fence_scrape_summaries_recursive`]
+/// instead of walking it (a job's own output, not scraped text — except for
+/// the diagnostics a scrape completes with).
 fn fence_named_fields_recursive(value: &mut Value) {
     match value {
         Value::Object(map) => {
@@ -654,6 +777,19 @@ fn fence_named_fields_recursive(value: &mut Value) {
                     map.insert(APPLICATION_ANSWER_QUESTION_FIELD.to_string(), json!(fenced));
                 }
             }
+            // The scrape-diagnostics shape rules, under the same
+            // `!job_posting_shaped` guard and for the same reason: on a
+            // `JobPosting`-shaped object the
+            // `extra` catch-all above already fenced every unclassified
+            // string, and `fenced` does NOT guard against double-wrapping
+            // (nor does `fence_all_string_leaves`), so a second pass would
+            // leave a wrapper behind after
+            // [`unfence_named_fields_recursive`]'s single strip. Reached by
+            // `Autopilot.last_run_summaries`; the copies inside a
+            // `JobRecord`'s exempt `result` are handled below.
+            if !job_posting_shaped {
+                fence_board_derived_strings(map);
+            }
             // A `JobRecord`'s own `result` is the app's OWN output, not
             // scraped text — see [`JOB_RECORD_ANCHOR_FIELDS`]. The exemption
             // is on the RECURSION only: every other field of this object,
@@ -663,6 +799,13 @@ fn fence_named_fields_recursive(value: &mut Value) {
                 .all(|f| map.contains_key(*f));
             for (key, v) in map.iter_mut() {
                 if job_record_shaped && key.as_str() == JOB_RECORD_RESULT_FIELD {
+                    // The exemption is wholesale for the NAME-keyed walk, and
+                    // stays that way — but `scrape_boards` completes with
+                    // `BoardScrapeSummary` rows, so a diagnostics shape does
+                    // carry third-party text in here. Fence only those
+                    // enumerated keys and nothing else in the subtree; see
+                    // [`SCRAPE_SUMMARY_ANCHOR_FIELDS`].
+                    fence_scrape_summaries_recursive(v);
                     continue;
                 }
                 fence_named_fields_recursive(v);
@@ -671,6 +814,31 @@ fn fence_named_fields_recursive(value: &mut Value) {
         Value::Array(items) => {
             for item in items.iter_mut() {
                 fence_named_fields_recursive(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Walk `value` applying ONLY [`fence_board_derived_strings`] — the single
+/// carve-out inside a `JobRecord`'s otherwise-exempt
+/// [`JOB_RECORD_RESULT_FIELD`]. Deliberately NOT
+/// [`fence_named_fields_recursive`]: running the name-keyed walk in here
+/// would re-open the exact defect the exemption exists to close (a
+/// generation's `{"done": true, "text": …}` labelled as a scraped posting).
+/// A scrape summary and its board health are fenced; everything else in the
+/// subtree is left exactly as the producer wrote it.
+fn fence_scrape_summaries_recursive(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            fence_board_derived_strings(map);
+            for v in map.values_mut() {
+                fence_scrape_summaries_recursive(v);
+            }
+        }
+        Value::Array(items) => {
+            for item in items.iter_mut() {
+                fence_scrape_summaries_recursive(item);
             }
         }
         _ => {}
