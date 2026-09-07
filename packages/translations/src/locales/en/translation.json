@@ -2945,7 +2945,7 @@
         },
         "applicantDetails": {
           "q": "Where do I set my salary expectation so cover letters and answers use it?",
-          "a": "Open Settings → Contact Profile and find \"Applicant details\". Fill in \"Salary expectation\", \"Earliest start date\", \"Notice period\" and \"Remote / hybrid preference\" — all optional, and changes save as you type. Cover letters state them wherever the market expects them (Germany asks for a salary figure and a start date), and autopilot uses them when an application form asks. Left blank, the app answers non-committally and never invents a number or date. This is separate from \"Compensation\" on an application's \"Overview\" tab, which is only a note about that one job."
+          "a": "Open Settings → Contact Profile and find \"Applicant details\". Fill in \"Salary expectation\", \"Earliest start date\", \"Notice period\" and \"Remote / hybrid preference\" — all optional, and changes save as you type. Cover letters state them wherever the market expects them (Germany asks for a salary figure and a start date), and the browser extension uses them when an application form asks. Left blank, the app answers non-committally and never invents a number or date. This is separate from \"Compensation\" on an application's \"Overview\" tab, which is only a note about that one job."
         }
       },
       "autopilot": "Autopilot",

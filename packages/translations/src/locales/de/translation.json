@@ -2949,7 +2949,7 @@
         },
         "applicantDetails": {
           "q": "Wo trage ich meine Gehaltsvorstellung ein, damit Anschreiben und Antworten sie nutzen?",
-          "a": "Öffnen Sie Einstellungen → Kontaktprofil und suchen Sie \"Bewerberangaben\". Tragen Sie \"Gehaltsvorstellung\", \"Frühester Eintrittstermin\", \"Kündigungsfrist\" und \"Remote- / Hybrid-Präferenz\" ein — alles optional, Änderungen werden beim Tippen gespeichert. Anschreiben nennen sie überall dort, wo der Markt sie erwartet (Deutschland fragt nach Gehaltsvorstellung und Eintrittstermin), und der Autopilot nutzt sie, wenn ein Bewerbungsformular danach fragt. Bleiben die Felder leer, antwortet die App unverbindlich und erfindet nie eine Zahl oder ein Datum. Das ist unabhängig von \"Vergütung\" im Tab \"Übersicht\" einer Bewerbung, das nur eine Notiz zu diesem einen Job ist."
+          "a": "Öffnen Sie Einstellungen → Kontaktprofil und suchen Sie \"Bewerberangaben\". Tragen Sie \"Gehaltsvorstellung\", \"Frühester Eintrittstermin\", \"Kündigungsfrist\" und \"Remote- / Hybrid-Präferenz\" ein — alles optional, Änderungen werden beim Tippen gespeichert. Anschreiben nennen sie überall dort, wo der Markt sie erwartet (Deutschland fragt nach Gehaltsvorstellung und Eintrittstermin), und die Browser-Erweiterung nutzt sie, wenn ein Bewerbungsformular danach fragt. Bleiben die Felder leer, antwortet die App unverbindlich und erfindet nie eine Zahl oder ein Datum. Das ist unabhängig von \"Vergütung\" im Tab \"Übersicht\" einer Bewerbung, das nur eine Notiz zu diesem einen Job ist."
         }
       },
       "autopilot": "Autopilot",
