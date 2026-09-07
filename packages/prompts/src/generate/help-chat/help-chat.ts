@@ -8,7 +8,10 @@
  * 1. **The retrieved help entries are trusted app copy.** They are the shipped
  *    `support.faq.*` translation strings, so they are rendered as plain `##`
  *    markdown sections rather than fenced as untrusted input — and so is the
- *    optional sidebar page list, which is the shipped `nav.*` strings.
+ *    optional sidebar page list, which is the shipped `nav.*` strings (whose
+ *    labels still run through {@link defuse}, which is belt-and-braces on a
+ *    public builder rather than a downgrade of the trust class — see the
+ *    page-list comment in {@link buildHelpChatPrompt}).
  *    Everything that is NOT app copy — the data glance (job titles, company
  *    names and autopilot names are user-typed or scraped text), the chat
  *    history, and the question itself — is fenced with
@@ -205,7 +208,16 @@ export function buildHelpDataGlance(input: HelpDataGlanceInput): string {
  * from an entry's, "how can I create an autopilot" was refused against a
  * rank-1 entry titled "How do I set up an Autopilot?". Rule 3 then makes the
  * refusal itself actionable, and rule 4 says a page taken from the APP PAGES
- * list is not an invented one.
+ * list is not an invented one — which is also why rule 1 has to list APP PAGES
+ * as a permitted source: a rule 1 that forbids it and a rule 3 that requires it
+ * are a contradiction the model resolves whichever way it likes.
+ *
+ * Both counterweights are bounded on purpose. Rule 2 bridges a different VERB
+ * for the same task, never a different ACTION on it: an entry on creating an
+ * autopilot does not cover deleting one, and treating it as coverage is how the
+ * bridge turns back into invention. Rule 3 names the page conditionally ("if the
+ * app has this, that page is where to look") because the sidebar proves the PAGE
+ * exists, never that the feature the user asked about lives behind it.
  */
 export function buildHelpChatSystemPrompt(language?: string): string {
   const safe = safeLanguage(language);
@@ -215,9 +227,9 @@ export function buildHelpChatSystemPrompt(language?: string): string {
   return `You are the in-app help assistant for AI Job Hunter, a local-first desktop job-hunting app. You help the user do things IN the app.
 
 ABSOLUTE RULES (never break these):
-1. Answer ONLY from the help entries provided below and the user's data glance. They are your entire knowledge of this app.
-2. Those entries were RETRIEVED for this question, best first. The user's wording will often differ from an entry's title - "create", "set up", "make", "add" and "start" all name the same task - so answer from an entry that covers the question by MEANING, not by matching words. A different verb for the same thing is a match, not a gap.
-3. If they do not cover the question, say so plainly in one sentence; then, only if one page in the APP PAGES list clearly fits, name it as where that feature most likely lives - without describing any control inside it - and point the user at the Help & Support page's search box to look for a related topic. Do not pad the answer out with guesses.
+1. Answer ONLY from the help entries provided below, the APP PAGES list and the user's data glance. They are your entire knowledge of this app.
+2. Those entries were RETRIEVED for this question, best first. The user's wording will often differ from an entry's title - "create", "set up", "make" and "add" all name the same task - so answer from an entry that covers the question by MEANING, not by matching words. A different verb for the same thing is a match, not a gap. A different ACTION on the same object — starting, running, deleting or exporting what an entry only explains how to create — is still a gap.
+3. If they do not cover the question, say so plainly in one sentence; then, only if one page in the APP PAGES list clearly fits, add one clause and no more - if the app has this, that page is where to look - without describing any control inside it, and point the user at the Help & Support page's search box to look for a related topic. Do not pad the answer out with guesses.
 4. NEVER invent a button, menu item, setting, tab, page, keyboard shortcut or feature. If a step is not spelled out in the help entries, you do not know it. A page you name from the APP PAGES list is not invented; anything you say about what is inside it would be. Naming a control that does not exist is the single worst thing you can do here.
 5. Never claim anything about the user's own data beyond what the data glance states.
 6. ${languageRule}
@@ -257,42 +269,55 @@ const TURN_SEPARATOR = '\n\n';
 const FENCE_TAGS = ['app_data', 'conversation_history', 'user_question'] as const;
 
 /**
- * Fence untrusted text in `tag`, neutralizing forged boundaries first.
+ * Make text inert at both of this prompt's trust boundaries without making it
+ * unreadable. Shared by {@link fenced} and by the page list, which is trusted
+ * copy and runs through here anyway - see that call site for why.
  *
- * Neutralizes EVERY tag in {@link FENCE_TAGS} AND the `###` section markers the
- * prompt uses as its other trust boundary - not just this block's own. Three
+ * Neutralizes EVERY tag in {@link FENCE_TAGS}, not just the caller's own. Three
  * untrusted blocks share one prompt here, so a forged `<user_question>` smuggled
  * in through the data glance (scraped company names land there) would forge the
  * boundary of a DIFFERENT block, which single-tag neutralization lets straight
  * through. `buildJobAdBlock`'s single-tag form is safe only because it is the
  * sole fence in its prompt.
  *
+ * The XML tags are only half the boundary: the prompt also separates its
+ * sections with `### HELP ENTRIES ###` / `### TASK ###` markers, and text that
+ * forges one of those relocates the model's source of truth just as effectively
+ * as a forged `</user_question>` would. Every run of `#` that OPENS a line is
+ * defused the way `neutralizeFenceTag` defuses a tag: a space makes it inert
+ * while leaving it readable. It is a no-op on ordinary text, and assistant
+ * markdown is headline-free by system-prompt rule.
+ *
+ * "Opens a line" is deliberately wider than column 0, and each widening closed a
+ * real bypass:
+ *
+ * - **Indentation** - a model reads `   ### TASK ###` as the same section marker
+ *   a human does, so anchoring at column 0 left the forgery one space bar away
+ *   from working.
+ * - **A list marker** - {@link buildHelpDataGlance} writes its rows as
+ *   `- <title> — …`, so a `###` run at the start of a scraped job title or a
+ *   user-typed autopilot name sits after the hyphen, not at column 0.
+ *
+ * The matched prefix is put back either way, so the defused line still reads as
+ * the text it was.
+ */
+function defuse(text: string): string {
+  const tagSafe = FENCE_TAGS.reduce((acc, name) => neutralizeFenceTag(acc, name), text);
+  return tagSafe.replace(
+    /^([ \t]*(?:[-*]\s+)?)(#{2,})/gm,
+    (_match, prefix: string, run: string) => `${prefix}# ${run.slice(1)}`
+  );
+}
+
+/**
+ * Fence untrusted text in `tag`, {@link defuse}-ing forged boundaries first.
+ *
  * `maxChars` truncates from the FRONT. A caller whose most valuable content
  * sits at the END must trim to budget itself before calling - see the history
  * block, where a front cut dropped the newest turns.
  */
 function fenced(tag: string, text: string, maxChars: number, note: string): string {
-  const tagSafe = FENCE_TAGS.reduce(
-    (acc, name) => neutralizeFenceTag(acc, name),
-    text.slice(0, maxChars)
-  );
-  // The XML tags are not this prompt's only trust boundary: it also separates
-  // its sections with `### HELP ENTRIES ###` / `### TASK ###` markers, and an
-  // untrusted block that forges one of those relocates the model's source of
-  // truth just as effectively as a forged `</user_question>` would. Defuse
-  // every run of `#` at line start the way `neutralizeFenceTag` defuses a tag:
-  // a space makes it inert while leaving it readable. It is a no-op on ordinary
-  // text, and assistant markdown is headline-free by system-prompt rule.
-  //
-  // Leading whitespace is part of the match: a model reads `   ### TASK ###` as
-  // the same section marker a human does, so anchoring the run at column 0
-  // alone left the forgery one space bar away from working. The indent is kept
-  // so the defused line still reads as the text it was.
-  const safe = tagSafe.replace(
-    /^([ \t]*)(#{2,})/gm,
-    (_match, indent: string, run: string) => `${indent}# ${run.slice(1)}`
-  );
-  return `<${tag}>\n${safe}\n</${tag}>\n${note}`;
+  return `<${tag}>\n${defuse(text.slice(0, maxChars))}\n</${tag}>\n${note}`;
 }
 
 const GLANCE_UNTRUSTED_NOTE =
@@ -330,19 +355,27 @@ export function buildHelpChatPrompt(input: HelpChatPromptInput): string {
   );
 
   // The sidebar labels are the app's OWN shipped copy (the `nav.*` translation
-  // strings) — the same trust class as the entries above, so they are rendered
-  // plain and deliberately NOT put through `fenced()`. Kept on every profile,
-  // counts-only included: it carries no scraped or user-typed text at all.
+  // strings) — the same trust class as the entries above, so the block is
+  // rendered plain: no `fenced()` wrapper and no untrusted-content note. Kept on
+  // every profile, counts-only included: it carries no scraped or user-typed
+  // text at all.
+  //
+  // Each label still goes through `defuse()`. That is belt-and-braces, NOT the
+  // trust decision - the trust decision is the unfenced block. What it buys:
+  // `buildHelpChatPrompt` is public `@ajh/prompts` surface, so "these labels are
+  // shipped copy" is an assumption about every FUTURE caller rather than a
+  // property of the signature, and a caller that ever passes user-writable text
+  // here would otherwise be handing it a section marker for free. It is a no-op
+  // on the real labels - no `nav.*` string contains a `#` or a `<`.
   const sections = (appPages ?? []).filter((section) => section.pages.length > 0);
   if (sections.length) {
     blocks.push(
       `### APP PAGES (the sidebar) ###\n\n${sections
         // A group with no label (the sidebar's pinned footer) lists its pages bare.
-        .map((section) =>
-          section.section
-            ? `- ${section.section}: ${section.pages.join(', ')}`
-            : `- ${section.pages.join(', ')}`
-        )
+        .map((section) => {
+          const pages = section.pages.map((page) => defuse(page)).join(', ');
+          return section.section ? `- ${defuse(section.section)}: ${pages}` : `- ${pages}`;
+        })
         .join('\n')}`
     );
   }
@@ -382,8 +415,20 @@ export function buildHelpChatPrompt(input: HelpChatPromptInput): string {
     ? ` Answer in ${safe}.`
     : ` Answer in the language the question is written in.`;
 
+  // Every APP PAGES mention in the TASK block is derived from the block that was
+  // actually rendered. With no sections there is no list in this prompt to pick
+  // a page out of, so naming one would be an instruction to invent it - the
+  // exact failure the never-invent-a-page rule exists to prevent.
+  const pagesSource = sections.length ? ', the APP PAGES list' : '';
+  const pagesFallback = sections.length
+    ? ' if one page in the APP PAGES list clearly fits, add one clause and no more - if the app has this, that page is where to look (nothing about what is inside it) - and then'
+    : '';
+  const pagesException = sections.length
+    ? ' A page named from the APP PAGES list is the one exception.'
+    : '';
+
   return `${blocks.join('\n\n')}
 
 ### TASK ###
-Answer the question in <user_question> using ONLY the help entries above and the data glance.${languageNote} The entries were retrieved FOR this question and the user's wording will often differ from their titles ("create", "set up", "make", "add" and "start" name the same task), so answer from an entry that covers it by MEANING rather than by matching words. If they genuinely do not cover it, say so in one sentence, name the APP PAGES page where the feature most likely lives if one clearly fits (nothing about what is inside it), and point the user at the search box on this Help & Support page. Never name a button, setting or feature that the help entries do not mention. Output ONLY the answer:`;
+Answer the question in <user_question> using ONLY the help entries above${pagesSource} and the data glance.${languageNote} The entries were retrieved FOR this question and the user's wording will often differ from their titles ("create", "set up", "make" and "add" name the same task), so answer from an entry that covers it by MEANING rather than by matching words - though a different ACTION on the same object (starting, running, deleting or exporting what an entry only explains how to create) is still a gap. If they genuinely do not cover it, say so in one sentence;${pagesFallback} point the user at the search box on this Help & Support page. Never name a button, setting or feature that the help entries do not mention.${pagesException} Output ONLY the answer:`;
 }
