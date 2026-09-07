@@ -10,21 +10,63 @@ pub async fn job_preferences_get(app: AppHandle) -> Value {
     json!(prefs)
 }
 
-#[tauri::command]
-pub async fn job_preferences_set(app: AppHandle, prefs: Value) -> Value {
-    let store = app.state::<crate::job_preferences::JobPreferencesStore>();
-    let job_prefs: crate::job_preferences::JobPreferences = serde_json::from_value(prefs)
-        .unwrap_or(crate::job_preferences::JobPreferences {
-            location: None,
-            country_code: None,
-            tech_stack: None,
-            salary_expectation: None,
-            extra_agency_companies: None,
-        });
+/// Deserializes a `job_preferences_set` body, REPORTING a failure instead of
+/// substituting a default (#1133). The previous `unwrap_or(<all-None>)` made a
+/// malformed body indistinguishable from a real save:
+/// [`JobPreferencesStore::set`](crate::job_preferences::JobPreferencesStore::set)
+/// is a full-row `UPDATE`, so the substituted default NULLed location, country,
+/// tech stack, salary and agency list while the reply still said
+/// `{"success": true}` — and this command is `Effect::Reversible` in the agent
+/// CLI's policy table, so no confirmation step stands between a caller and that.
+/// `DataStore::import` already propagates the identical error for this same
+/// struct with `?`; this is the command-input mirror of that.
+///
+/// The message deliberately does NOT carry `serde_json`'s own text: that quotes
+/// the offending value back (`invalid type: string "…"`), which would echo the
+/// caller's body — a location, a salary figure — into a reply that agent/MCP
+/// clients log verbatim. What it reports is derived from the body's JSON *type*
+/// alone, which is enough to fix the call: every [`JobPreferences`](crate::job_preferences::JobPreferences)
+/// field is `Option<_>` and unknown keys are ignored, so an object can only fail
+/// by carrying a wrongly-typed field, and a non-object can only fail by not
+/// being an object.
+///
+/// Pure (no `AppHandle`, no store) so both branches are unit-testable — this
+/// crate has no `tauri::test` mock-app harness (see the test module below).
+fn parse_job_preferences(
+    prefs: Value,
+) -> crate::error::AppResult<crate::job_preferences::JobPreferences> {
+    let detail = match &prefs {
+        Value::Object(_) => "a field has the wrong type",
+        Value::Null => "expected an object, got null",
+        Value::Bool(_) => "expected an object, got a boolean",
+        Value::Number(_) => "expected an object, got a number",
+        Value::String(_) => "expected an object, got a string",
+        Value::Array(_) => "expected an object, got an array",
+    };
+    serde_json::from_value(prefs)
+        .map_err(|_| crate::error::AppError::Validation(format!("invalid prefs: {detail}")))
+}
+
+/// The body → store step of [`job_preferences_set`], split out so the
+/// malformed-body branch can be driven against a REAL store in-process (the
+/// command itself needs an `AppHandle` this crate cannot mock). The wire shape
+/// is the sibling setters' one, unchanged for the renderer: `{"success": true}`
+/// on a write, `{"error": …}` on a refusal or a store failure.
+fn set_job_preferences(store: &crate::job_preferences::JobPreferencesStore, prefs: Value) -> Value {
+    let job_prefs = match parse_job_preferences(prefs) {
+        Ok(job_prefs) => job_prefs,
+        Err(e) => return json!({ "error": e.to_string() }),
+    };
     match store.set(&job_prefs) {
         Ok(()) => json!({ "success": true }),
         Err(e) => json!({ "error": e.to_string() }),
     }
+}
+
+#[tauri::command]
+pub async fn job_preferences_set(app: AppHandle, prefs: Value) -> Value {
+    let store = app.state::<crate::job_preferences::JobPreferencesStore>();
+    set_job_preferences(&store, prefs)
 }
 
 /// Single-column extra-agency-companies write (ADR-029 §i) — mirrors
@@ -88,7 +130,118 @@ pub async fn job_preferences_set_semantic_scoring(
 
 #[cfg(test)]
 mod test {
+    use tempfile::TempDir;
+
     use super::*;
+    use crate::job_preferences::{JobPreferences, JobPreferencesStore, TechStackItem};
+
+    /// A store with a full row of real preferences saved — the state #1133's
+    /// silent default-substitution wiped. Every column is populated, so a
+    /// full-row `UPDATE` slipping through is visible in any of them.
+    fn store_with_saved_preferences() -> (TempDir, JobPreferencesStore) {
+        let dir = TempDir::new().unwrap();
+        let store = JobPreferencesStore::open(&dir.path().to_path_buf()).unwrap();
+        store
+            .set(&JobPreferences {
+                location: Some("Berlin".to_string()),
+                country_code: Some("DE".to_string()),
+                tech_stack: Some(vec![TechStackItem {
+                    name: "Rust".to_string(),
+                    category: "language".to_string(),
+                }]),
+                salary_expectation: Some("€75,000".to_string()),
+                extra_agency_companies: Some(vec!["Hays".to_string()]),
+            })
+            .unwrap();
+        (dir, store)
+    }
+
+    /// #1133: the reported repro — `prefs` is a bare string, not an object. It
+    /// must be REFUSED, and (the part that made this data loss rather than a
+    /// bad message) the saved row must survive untouched. Before the fix this
+    /// returned `{"success": true}` after NULLing all five columns.
+    #[test]
+    fn a_malformed_body_is_refused_and_leaves_every_saved_column_intact() {
+        let (_dir, store) = store_with_saved_preferences();
+
+        let reply = set_job_preferences(&store, json!("this-is-a-malformed-string-not-an-object"));
+
+        assert!(
+            reply.get("success").is_none(),
+            "a body that did not parse must never report success: {reply}"
+        );
+        let error = reply["error"].as_str().expect("an error string");
+        assert!(error.starts_with("invalid prefs:"), "got {error}");
+
+        let after = store.get();
+        assert_eq!(after.location.as_deref(), Some("Berlin"));
+        assert_eq!(after.country_code.as_deref(), Some("DE"));
+        assert_eq!(
+            after.tech_stack.map(|ts| ts.len()),
+            Some(1),
+            "the saved tech stack must not be cleared by a refused write"
+        );
+        assert_eq!(after.salary_expectation.as_deref(), Some("€75,000"));
+        assert_eq!(after.extra_agency_companies, Some(vec!["Hays".to_string()]));
+    }
+
+    /// The other half of the refusal path: an object whose field carries the
+    /// wrong type (the likelier real-world shape — a client-side serialization
+    /// bug). Also pins the hardening: the message is built from the body's JSON
+    /// type, so it can never echo the caller's own values back into a reply
+    /// that agent/MCP clients log.
+    #[test]
+    fn a_wrongly_typed_field_is_refused_without_echoing_the_body_back() {
+        let (_dir, store) = store_with_saved_preferences();
+
+        let reply = set_job_preferences(
+            &store,
+            json!({ "location": 4_242_424_242_i64, "salaryExpectation": "SECRET-SALARY-90000" }),
+        );
+
+        let error = reply["error"].as_str().expect("an error string");
+        assert!(
+            !error.contains("SECRET-SALARY-90000") && !error.contains("4242424242"),
+            "the reply must not echo the caller's body: {error}"
+        );
+        assert_eq!(
+            store.get().location.as_deref(),
+            Some("Berlin"),
+            "nothing may be written when the body is refused"
+        );
+    }
+
+    /// The renderer-facing contract: a well-formed body still resolves with the
+    /// exact `{"success": true}` object it has always returned (the renderer's
+    /// `useSetJobPreferences` mutation and the agent CLI both read this shape),
+    /// and the values reach the store.
+    #[test]
+    fn a_valid_body_saves_and_returns_the_unchanged_success_shape() {
+        let dir = TempDir::new().unwrap();
+        let store = JobPreferencesStore::open(&dir.path().to_path_buf()).unwrap();
+
+        let reply = set_job_preferences(
+            &store,
+            json!({
+                "location": "Lisbon",
+                "countryCode": "PT",
+                "tech_stack": [{ "name": "Rust", "category": "language" }],
+                "salaryExpectation": "€75,000",
+                "extraAgencyCompanies": ["Hays"],
+            }),
+        );
+
+        assert_eq!(reply, json!({ "success": true }));
+        let saved = store.get();
+        assert_eq!(saved.location.as_deref(), Some("Lisbon"));
+        assert_eq!(saved.country_code.as_deref(), Some("PT"));
+        assert_eq!(
+            saved.tech_stack.as_ref().map(|ts| ts[0].name.as_str()),
+            Some("Rust")
+        );
+        assert_eq!(saved.salary_expectation.as_deref(), Some("€75,000"));
+        assert_eq!(saved.extra_agency_companies, Some(vec!["Hays".to_string()]));
+    }
 
     /// A compile-time pin on the wire contract above. Reverting this command to
     /// the sibling `Value` shape (`{"error": …}`) makes the crate's tests fail
