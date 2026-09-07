@@ -120,10 +120,11 @@ const TOP_N_NARROW: usize = 2;
 /// connect Ollama so the AI features work?", which ranked 3rd behind an
 /// entry that shares only the word "work". It rose to 18 with that list and
 /// to 19 with the result-set fallback's own case ("Where is my stuff?", rank
-/// 2 — a MISS before the fallback existed). This obligation runs in one
-/// direction: the measurement rose, so the floor rose with it, and neither
-/// case can slip back.
-const TOP_2_FLOOR: usize = 19;
+/// 2 — a MISS before the fallback existed), and to 21 with the 2026-09-06
+/// "create an autopilot" pair (both inside the top 2). This obligation runs
+/// in one direction: the measurement rose, so the floor rose with it, and
+/// neither case can slip back.
+const TOP_2_FLOOR: usize = 21;
 
 /// Build the help entries exactly as the renderer does: one entry per
 /// `support.faq.<section>Questions.<leaf>` node, `id` the dotted leaf path,
@@ -298,6 +299,20 @@ const CASES: &[Case] = &[
         query: "Where is my stuff?",
         expected: "aiGenerateQuestions.whereStored",
         why: "THE result-set fallback case (`retrieval::lexical::LexicalIndex::search_in`), not another ranking one. Every word but `stuff` is on `HELP_STOPWORDS_EN`, and `stuff` is in no entry — so the FILTERED expression is non-empty and matches zero rows, which the token-list fallback cannot see. Without the rerun this row is a MISS on a default install (keyword-only) while the arm still reports `Ran`; with it, the question's own function words rank the entry that answers it. Vague on purpose: a phrasing that names nothing in the corpus is exactly the shape that breaks",
+    },
+    // ── The 2026-09-06 report: the chat said it did not know how to create an
+    // autopilot although this entry answers it. Retrieval was later measured
+    // to rank it first for the whole phrasing family; these rows pin that so a
+    // stopword or weight change cannot quietly re-open the report. ──
+    Case {
+        query: "how can I create an autopilot",
+        expected: "autopilotQuestions.setUpAutopilot",
+        why: "the user's verb (create) is not the entry's (set up); every function word is a stopword, so `create` + `autopilot` must beat whatIsAutopilot on the answer body alone",
+    },
+    Case {
+        query: "how do I make a new autopilot",
+        expected: "autopilotQuestions.setUpAutopilot",
+        why: "same report, third verb: `make`/`new` appear nowhere in the entry, so this is decided by `autopilot` alone against whatIsAutopilot's equal title weight",
     },
 ];
 
@@ -594,7 +609,7 @@ fn hand_written_user_phrasings_reach_their_entry_in_the_lexical_top_3() {
     let (hits, narrow_hits) = report("en", &rows, TOP_2_FLOOR);
     // Literal, not derived-vs-derived: compared with a hand-written number,
     // so a case quietly deleted from CASES fails here instead of passing.
-    assert_table(&rows, hits, narrow_hits, 19, TOP_2_FLOOR);
+    assert_table(&rows, hits, narrow_hits, 21, TOP_2_FLOOR);
 }
 
 #[test]
