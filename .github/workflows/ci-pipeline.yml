@@ -624,7 +624,7 @@ jobs:
       - name: 📊 JS Coverage PR Comment
         if: github.event_name == 'pull_request'
         continue-on-error: true
-        uses: davelosert/vitest-coverage-report-action@8b157684c6a6b259b97d45e72b44242865c0f6a5 # v2.12.2
+        uses: davelosert/vitest-coverage-report-action@c4bbc33a89b7ace0e63d35f1f7d4bcee31155a73 # v2.13.0
 
       # Build the landing static export once, then reuse it for the a11y gate
       # below — no separate job, reuses the Chromium already installed above
@@ -655,7 +655,7 @@ jobs:
       # nothing. Both must be installed before the test step below.
       - name: 🦀 Install cargo-llvm-cov + nextest
         if: always()
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
+        uses: taiki-e/install-action@5bf6ce016fd2e72eefc647cbca1e4213f65955b8 # v2
         with:
           tool: cargo-llvm-cov,nextest
 
@@ -1029,7 +1029,7 @@ jobs:
           echo "::endgroup::"
 
       - name: 🧰 Install cargo-deny + cargo-machete
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2
+        uses: taiki-e/install-action@5bf6ce016fd2e72eefc647cbca1e4213f65955b8 # v2
         with:
           tool: cargo-deny,cargo-machete
 
