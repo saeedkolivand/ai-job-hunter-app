@@ -3028,7 +3028,10 @@
       "subtitle": "Your local, AI-native job hunting assistant. Let's get you set up.",
       "nameLabel": "What's your name?",
       "namePlaceholder": "Enter your name",
-      "next": "Get started"
+      "next": "Get started",
+      "termsNoticePrefix": "By continuing you agree to the",
+      "termsNoticeLink": "Terms of Use",
+      "termsNoticeSuffix": "."
     },
     "prefs": {
       "languageLabel": "Language"
