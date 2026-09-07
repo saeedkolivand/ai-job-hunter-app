@@ -385,10 +385,15 @@ pub(super) fn throttle_key(command: &str) -> &str {
 /// text; ADR-038's own amendment already draws this exact line as a
 /// SEPARATE axis from fencing (ADR-038 §5's "no PII redaction… scoped to
 /// this generic tier by the owner's explicit decision" — this module's own
-/// doc comment above). Flagged for a human/security-critic sanity check
-/// rather than silently expanded, since `ApplicationAnswer.question` (a
-/// THIRD-PARTY ATS form's own question label) is a plausible future
-/// candidate on the SAME reasoning as `title`/`jobDescription` above.
+/// doc comment above).
+///
+/// `ApplicationAnswer.question` — the one THIRD-PARTY item that list used to
+/// flag as a plausible future candidate (a scraped ATS form's own question
+/// label, same reasoning as `title`/`jobDescription`) — IS fenced now, but
+/// by SHAPE and never by name: see [`APPLICATION_ANSWER_ANCHOR_FIELDS`] for
+/// why a flat `question` entry HERE would have silently re-fenced
+/// `InterviewQuestion.question`, which shares the exact wire key on the same
+/// command's response and is this app's own AI output.
 const FENCE_FIELD_NAMES: &[&str] = &[
     // `scraping::types::JobPosting.description` (scrape_resolve_url,
     // scrape_list_postings) AND `autopilot::FoundJob.description`
@@ -456,6 +461,74 @@ const JOB_POSTING_SAFE_FIELDS: &[&str] = &[
     "postedAt",
 ];
 
+/// `ai_generations::ApplicationAnswer`'s own always-present sibling key —
+/// used to detect an `ApplicationAnswer`-shaped object (`{id, question,
+/// answer}`, reachable through `applications_list`/`applications_get`/
+/// `ai_generations_list`) so its [`APPLICATION_ANSWER_QUESTION_FIELD`] — a
+/// THIRD-PARTY ATS form's own question label, captured from the page by
+/// `extension_bridge::answers_save` — is fenced by SHAPE rather than by
+/// name.
+///
+/// Deliberately NOT a [`FENCE_FIELD_NAMES`] entry: a flat name entry would
+/// ALSO re-fence `ai_generations::InterviewQuestion.question` (`{id,
+/// question, why, audience}`), which serializes under the EXACT same wire
+/// key, rides the SAME command's response, and is this app's own AI
+/// coaching output — the one thing that const's own doc says it excludes on
+/// purpose (ADR-038 §5's separate axis). `answer` is the discriminator: an
+/// `ApplicationAnswer` always carries one, an `InterviewQuestion` never
+/// does.
+///
+/// Note `extension_bridge::answers_suggest::answers_suggest_reply` builds a
+/// sibling `{question, answer}` object too, but it is a BRIDGE frame, not a
+/// dispatched command response, so it never reaches this walk; were that
+/// shape ever to move onto this surface it would simply be fenced the same
+/// way — the safe direction.
+const APPLICATION_ANSWER_ANCHOR_FIELDS: [&str; 1] = ["answer"];
+
+/// The single key [`APPLICATION_ANSWER_ANCHOR_FIELDS`] guards, named once so
+/// [`fence_named_fields_recursive`] and [`unfence_named_fields_recursive`]
+/// can never disagree about which field the shape rule covers.
+const APPLICATION_ANSWER_QUESTION_FIELD: &str = "question";
+
+/// `jobs::JobRecord`'s own always-present, distinctively-named fields
+/// (`kind`, `progress`, `max_retries` → `maxRetries` under that struct's
+/// `#[serde(rename_all = "camelCase")]`) — used to detect a
+/// `JobRecord`-shaped object (`jobs_get`, `jobs_list`) so
+/// [`JOB_RECORD_RESULT_FIELD`] can be EXEMPTED from the name-keyed walk.
+///
+/// A completed job's `result` is the app's OWN output — a generated draft or
+/// a model answer under `{"done": true, "text": …}`
+/// (`commands::ai_provider::stream`, `commands::resume_pipeline`) — while
+/// `text` is on [`FENCE_FIELD_NAMES`] for `documents::DocumentRecord.text`,
+/// so before this exemption every generation read back through `jobs_get`
+/// reached the caller wrapped as a scraped posting. Verified no other struct
+/// on this dispatch surface serializes all three anchors together
+/// (`maxRetries` has exactly one producer in the crate).
+///
+/// The exemption is WHOLESALE and audited, not shape-inspected per value:
+/// `result`'s entire subtree is skipped, so a job kind that starts putting
+/// THIRD-PARTY text there must fence it itself. The warning that says so
+/// lives on `commands::jobs::job_complete` — the single mutator every
+/// completion funnels through — rather than on each producer.
+const JOB_RECORD_ANCHOR_FIELDS: [&str; 3] = ["kind", "progress", "maxRetries"];
+
+/// The one `JobRecord` field [`JOB_RECORD_ANCHOR_FIELDS`] exempts. Every
+/// other field still recurses — `payload` included, since a dispatch payload
+/// CAN carry a scraped posting.
+const JOB_RECORD_RESULT_FIELD: &str = "result";
+
+/// True when `map` is an `ai_generations::ApplicationAnswer`-shaped object:
+/// a STRING [`APPLICATION_ANSWER_QUESTION_FIELD`] plus every
+/// [`APPLICATION_ANSWER_ANCHOR_FIELDS`] key. Shared by the fence and the
+/// unfence walk so the two can never disagree about the shape.
+fn is_application_answer_shaped(map: &serde_json::Map<String, Value>) -> bool {
+    map.get(APPLICATION_ANSWER_QUESTION_FIELD)
+        .is_some_and(Value::is_string)
+        && APPLICATION_ANSWER_ANCHOR_FIELDS
+            .iter()
+            .all(|f| map.contains_key(*f))
+}
+
 /// Fence every [`FENCE_FIELD_NAMES`] string (or string array element)
 /// anywhere in `data`'s tree — recurses through the WHOLE response (not just
 /// a top-level object/array, MEDIUM fix — security review round 1), and runs
@@ -469,6 +542,13 @@ const JOB_POSTING_SAFE_FIELDS: &[&str] = &[
 /// See `every_known_posting_text_carrier_is_a_real_freely_
 /// dispatchable_policy_row` (tests) for the audited list of rows this is
 /// known to protect.
+///
+/// Two rules are keyed on an object's SHAPE rather than a field name,
+/// because a name alone cannot tell the two carriers apart:
+/// [`APPLICATION_ANSWER_ANCHOR_FIELDS`] fences a scraped ATS `question`
+/// without touching `InterviewQuestion.question`, and
+/// [`JOB_RECORD_ANCHOR_FIELDS`] exempts a job's own `result` so a generation
+/// read back through `jobs_get` is not labelled as scraped posting text.
 fn fence_scraped_fields(data: &mut Value) {
     fence_named_fields_recursive(data);
 }
@@ -480,6 +560,14 @@ fn fence_scraped_fields(data: &mut Value) {
 /// [`JOB_POSTING_SAFE_FIELDS`] (the flattened `extra` catch-all). See
 /// [`fence_scraped_fields`]'s doc for why this is recursive and
 /// unconditional.
+///
+/// Then the two shape rules: on an [`APPLICATION_ANSWER_ANCHOR_FIELDS`]-
+/// detected object the [`APPLICATION_ANSWER_QUESTION_FIELD`] string is
+/// fenced (a scraped ATS question label whose wire key is shared with this
+/// app's own `InterviewQuestion.question`), and on a
+/// [`JOB_RECORD_ANCHOR_FIELDS`]-detected object the recursion skips
+/// [`JOB_RECORD_RESULT_FIELD`] entirely (a job's own output, not scraped
+/// text).
 fn fence_named_fields_recursive(value: &mut Value) {
     match value {
         Value::Object(map) => {
@@ -502,10 +590,10 @@ fn fence_named_fields_recursive(value: &mut Value) {
                     }
                 }
             }
-            if JOB_POSTING_ANCHOR_FIELDS
+            let job_posting_shaped = JOB_POSTING_ANCHOR_FIELDS
                 .iter()
-                .all(|f| map.contains_key(*f))
-            {
+                .all(|f| map.contains_key(*f));
+            if job_posting_shaped {
                 // ADVISORY fix (security review round 4): used to filter on
                 // `v.is_string()` alone, so a board-chosen `extra` key whose
                 // value is an ARRAY or OBJECT (not reachable today — every
@@ -546,7 +634,37 @@ fn fence_named_fields_recursive(value: &mut Value) {
                     }
                 }
             }
-            for v in map.values_mut() {
+            // Shape-guarded, never a name entry — see
+            // [`APPLICATION_ANSWER_ANCHOR_FIELDS`] for why putting
+            // `question` on [`FENCE_FIELD_NAMES`] would have re-fenced
+            // `InterviewQuestion.question`. Skipped on a `JobPosting`-shaped
+            // object: the catch-all above already fenced every unclassified
+            // string there, and fencing twice would leave a wrapper behind
+            // after [`unfence_named_fields_recursive`]'s single strip.
+            if !job_posting_shaped && is_application_answer_shaped(map) {
+                if let Some(question) = map
+                    .get(APPLICATION_ANSWER_QUESTION_FIELD)
+                    .and_then(Value::as_str)
+                {
+                    let fenced = crate::prompt_fence::fenced(
+                        "job_posting",
+                        question,
+                        crate::prompt_fence::JOB_CAP,
+                    );
+                    map.insert(APPLICATION_ANSWER_QUESTION_FIELD.to_string(), json!(fenced));
+                }
+            }
+            // A `JobRecord`'s own `result` is the app's OWN output, not
+            // scraped text — see [`JOB_RECORD_ANCHOR_FIELDS`]. The exemption
+            // is on the RECURSION only: every other field of this object,
+            // and every other object in the tree, walks as before.
+            let job_record_shaped = JOB_RECORD_ANCHOR_FIELDS
+                .iter()
+                .all(|f| map.contains_key(*f));
+            for (key, v) in map.iter_mut() {
+                if job_record_shaped && key.as_str() == JOB_RECORD_RESULT_FIELD {
+                    continue;
+                }
                 fence_named_fields_recursive(v);
             }
         }
@@ -692,6 +810,12 @@ fn invoke_error_detail(v: &Value) -> String {
 /// place as defense-in-depth at the actual store-write boundary (that
 /// command is also reachable from the renderer's normal `invoke()`, not
 /// only through this dispatcher) rather than removed.
+///
+/// Mirrors [`fence_named_fields_recursive`]'s `ApplicationAnswer` shape rule
+/// too (`answers_save` is a real writer of that exact shape), but NOT its
+/// [`JOB_RECORD_ANCHOR_FIELDS`] exemption: nothing is written back into a
+/// job's `result`, and a strip is a no-op on a value that was never fenced,
+/// so the incoming walk stays deliberately unconditional.
 fn unfence_named_fields_recursive(value: &mut Value) {
     match value {
         Value::Object(map) => {
@@ -707,6 +831,24 @@ fn unfence_named_fields_recursive(value: &mut Value) {
                             *s = crate::prompt_fence::strip_fence_wrapper("job_posting", s);
                         }
                     }
+                }
+            }
+            // The mirror of [`fence_named_fields_recursive`]'s shape guard:
+            // an `ApplicationAnswer`'s `question` goes out fenced, so a
+            // caller echoing that record back into a write (`answers_save`)
+            // must not persist the markup. Same predicate, same field — see
+            // [`APPLICATION_ANSWER_ANCHOR_FIELDS`].
+            if is_application_answer_shaped(map) {
+                if let Some(question) = map
+                    .get(APPLICATION_ANSWER_QUESTION_FIELD)
+                    .and_then(Value::as_str)
+                {
+                    let stripped =
+                        crate::prompt_fence::strip_fence_wrapper("job_posting", question);
+                    map.insert(
+                        APPLICATION_ANSWER_QUESTION_FIELD.to_string(),
+                        json!(stripped),
+                    );
                 }
             }
             for v in map.values_mut() {

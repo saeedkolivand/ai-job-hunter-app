@@ -110,6 +110,19 @@ pub fn job_progress(app: &AppHandle, id: &str, p: f64) {
 }
 
 /// Mark a job completed and emit `job.completed` (the result rides as `data`).
+///
+/// **`result` is EXEMPT from the agent layer's prompt-injection fencing.**
+/// `extension_bridge::agent_call`'s response walk detects a `JobRecord` by
+/// shape (its `JOB_RECORD_ANCHOR_FIELDS`) and skips this value's whole
+/// subtree, so a generated draft read back through `jobs_get`/`jobs_list`
+/// reaches an MCP/CLI caller as the app's own answer instead of wrapped in
+/// `<job_posting>` markup. Every call site today completes with counts or
+/// this app's own AI output, which is what makes that exemption safe.
+///
+/// So: a job kind that puts THIRD-PARTY text in `result` — a scraped
+/// posting, an uploaded document's text, an ATS question label — must fence
+/// it ITSELF (`crate::prompt_fence::fenced("job_posting", …, JOB_CAP)`),
+/// because nothing downstream will.
 pub fn job_complete(app: &AppHandle, id: &str, result: Value) {
     app.state::<Mutex<JobTracker>>()
         .lock()
