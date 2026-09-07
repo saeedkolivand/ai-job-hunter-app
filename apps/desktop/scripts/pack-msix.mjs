@@ -14,8 +14,11 @@
  *
  * Usage: node apps/desktop/scripts/pack-msix.mjs
  *   env MSIX_IDENTITY_NAME, MSIX_PUBLISHER, MSIX_PUBLISHER_DISPLAY_NAME (required)
- *   env AJH_EXE    — override the staged executable (tests / local dry runs)
- *   env MAKEAPPX   — override makeappx.exe discovery
+ *   env AJH_EXE      — override the staged executable (tests / local dry runs)
+ *   env MAKEAPPX     — override makeappx.exe discovery
+ *   env AJH_MSIX_OUT — override the output root (tests; keeps a placeholder
+ *                      package out of the real build tree, where its filename
+ *                      would be indistinguishable from a submittable one)
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -28,8 +31,7 @@ const TAURI_DIR = path.join(APP_DIR, 'src-tauri');
 const REPO_ROOT = path.resolve(APP_DIR, '..', '..');
 
 const MSIX_DIR = path.join(TAURI_DIR, 'windows', 'msix');
-const OUT_DIR = path.join(TAURI_DIR, 'target', 'msix');
-const STAGING_DIR = path.join(OUT_DIR, 'staging');
+const DEFAULT_OUT_DIR = path.join(TAURI_DIR, 'target', 'msix');
 
 /** Identity values Partner Center owns, in the order they are reported missing. */
 const IDENTITY_VARS = ['MSIX_IDENTITY_NAME', 'MSIX_PUBLISHER', 'MSIX_PUBLISHER_DISPLAY_NAME'];
@@ -56,7 +58,8 @@ function xmlEscape(value) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
 /**
@@ -100,7 +103,7 @@ export function readIdentity(env = process.env) {
 }
 
 /** Numeric comparison of SDK directory names (`10.0.26100.0`), newest first. */
-function compareSdkVersions(a, b) {
+export function compareSdkVersions(a, b) {
   const pa = a.split('.').map(Number);
   const pb = b.split('.').map(Number);
   for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
@@ -143,16 +146,45 @@ export function findMakeappx(env = process.env) {
   );
 }
 
-/** Repo-relative path for logging — never print an absolute path. */
-function rel(target) {
-  return path.relative(REPO_ROOT, target).split(path.sep).join('/');
+/**
+ * A path as it may be PRINTED: repo-relative when it is inside the repo,
+ * `<outside repo>/<basename>` when it is not. Never an absolute path, a drive
+ * letter, a home directory or a `../..` climb out of the tree — CI logs and
+ * pasted output are public (AGENTS.md § Path privacy).
+ */
+export function rel(target) {
+  const abs = path.resolve(String(target).replace(/^\\\\\?\\/, ''));
+  const relative = path.relative(REPO_ROOT, abs);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    return `<outside repo>/${path.basename(abs)}`;
+  }
+  return relative.split(path.sep).join('/');
 }
 
-export function packMsix(env = process.env) {
+/** Windows absolute paths, incl. the `\\?\` long-path form makeappx echoes. */
+const ABSOLUTE_PATH = /(?:\\\\\?\\)?[A-Za-z]:[\\/][^\s"'<>|]*/g;
+
+/** Rewrite every absolute path inside a blob of tool output through {@link rel}. */
+export function scrubPaths(text) {
+  return String(text).replace(ABSOLUTE_PATH, (match) => rel(match));
+}
+
+/** Output locations. `AJH_MSIX_OUT` keeps tests out of the real build tree. */
+function outputDirs(env) {
+  const root = env.AJH_MSIX_OUT ? path.resolve(String(env.AJH_MSIX_OUT)) : DEFAULT_OUT_DIR;
+  return { root, staging: path.join(root, 'staging') };
+}
+
+/**
+ * Build the exact directory `makeappx` will pack: the executable, the assets,
+ * and a manifest with every placeholder filled. Separate from {@link packMsix}
+ * so it can be exercised without the Windows SDK installed.
+ */
+export function stageMsix(env = process.env) {
   const identity = readIdentity(env);
   const { version } = JSON.parse(fs.readFileSync(path.join(TAURI_DIR, 'tauri.conf.json'), 'utf8'));
   const storeVersion = toStoreVersion(version);
-  const makeappx = findMakeappx(env);
+  const { root, staging } = outputDirs(env);
 
   const exe = env.AJH_EXE
     ? path.resolve(String(env.AJH_EXE))
@@ -163,12 +195,12 @@ export function packMsix(env = process.env) {
 
   // Rebuilt from scratch every run: a leftover file in the staging directory
   // would be packed into the submission without anyone noticing.
-  fs.rmSync(STAGING_DIR, { recursive: true, force: true });
-  fs.mkdirSync(STAGING_DIR, { recursive: true });
-  fs.copyFileSync(exe, path.join(STAGING_DIR, 'ajh-tauri.exe'));
-  fs.cpSync(path.join(MSIX_DIR, 'Assets'), path.join(STAGING_DIR, 'Assets'), { recursive: true });
+  fs.rmSync(staging, { recursive: true, force: true });
+  fs.mkdirSync(staging, { recursive: true });
+  fs.copyFileSync(exe, path.join(staging, 'ajh-tauri.exe'));
+  fs.cpSync(path.join(MSIX_DIR, 'Assets'), path.join(staging, 'Assets'), { recursive: true });
   fs.writeFileSync(
-    path.join(STAGING_DIR, 'AppxManifest.xml'),
+    path.join(staging, 'AppxManifest.xml'),
     fillManifest(fs.readFileSync(path.join(MSIX_DIR, 'AppxManifest.xml'), 'utf8'), {
       ...identity,
       VERSION: storeVersion,
@@ -176,8 +208,37 @@ export function packMsix(env = process.env) {
     'utf8'
   );
 
-  const output = path.join(OUT_DIR, `AI-Job-Hunter_${storeVersion}_x64.msix`);
-  execFileSync(makeappx, ['pack', '/o', '/d', STAGING_DIR, '/p', output], { stdio: 'inherit' });
+  return { staging, output: path.join(root, `AI-Job-Hunter_${storeVersion}_x64.msix`) };
+}
+
+export function packMsix(env = process.env) {
+  const makeappx = findMakeappx(env);
+  const { staging, output } = stageMsix(env);
+
+  // Piped, not inherited: makeappx echoes the absolute path of every file it
+  // packs, and a spawn failure would otherwise put the whole absolute command
+  // line into the log. Only a summary is printed on success; on failure the
+  // tool's own diagnostics are surfaced with every path scrubbed.
+  //
+  // The failure is captured and re-raised OUTSIDE the catch, deliberately: the
+  // `execFileSync` error carries the full absolute command line in `.message`
+  // and the raw output buffers beside it, so neither it nor a `cause` chain
+  // pointing at it may escape this function. Everything diagnostic about it —
+  // exit code and tool output — is carried over, scrubbed.
+  let failure = null;
+  try {
+    execFileSync(makeappx, ['pack', '/o', '/d', staging, '/p', output], { stdio: 'pipe' });
+  } catch (error) {
+    failure = {
+      status: error.status,
+      details: String(error.stderr ?? '') + String(error.stdout ?? '') || error.message,
+    };
+  }
+  if (failure) {
+    throw new Error(
+      `makeappx pack failed (exit ${failure.status ?? 'n/a'}) for ${rel(staging)}:\n${scrubPaths(failure.details).trim()}`
+    );
+  }
   console.log(`MSIX written to ${rel(output)} (unsigned — the Microsoft Store signs it).`);
   return output;
 }
