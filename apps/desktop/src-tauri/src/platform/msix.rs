@@ -45,6 +45,11 @@ use windows::{
 /// `TaskId` of the `desktop:StartupTask` declared in the manifest. The two are
 /// one contract: renaming it there without renaming it here silently turns
 /// launch-at-login into a no-op on the Store build.
+///
+/// `#[cfg(windows)]` rather than an `allow`: nothing outside the Windows-only
+/// StartupTask code names it, so on every other host it is not "unused", it is
+/// absent.
+#[cfg(windows)]
 const STARTUP_TASK_ID: &str = "AjhLaunchAtLogin";
 
 /// The alias the manifest's `windows.appExecutionAlias` extension registers.
@@ -55,6 +60,12 @@ const ALIAS_EXE_NAME: &str = "ajh-tauri.exe";
 // ── Package identity ─────────────────────────────────────────────────────────
 
 /// What the OS said when asked for this process's package identity.
+///
+/// `Present`/`Unknown` are constructed by the Windows-only probe; the type and
+/// the decision over it stay cross-platform on purpose, so every branch is
+/// unit-tested on every host instead of only on the Windows CI leg — hence an
+/// `allow` off Windows rather than a `#[cfg]` that would take the tests with it.
+#[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Identity {
     /// `APPMODEL_ERROR_NO_PACKAGE` — a plain NSIS/MSI install (or any non-Windows host).
@@ -298,9 +309,17 @@ fn package_family_name() -> Option<String> {
 /// function of an `i32` and testable on every host. A `#[cfg(windows)]` test
 /// pins these against the real enum, so they cannot drift silently.
 mod startup_state {
+    // Read only by `enable_outcome`, which is itself only CALLED on Windows —
+    // so off Windows these three are unreachable while `ENABLED`/
+    // `ENABLED_BY_POLICY` (read by the cross-platform `startup_state_is_enabled`)
+    // stay live. Annotated per constant rather than on the module, so a
+    // genuinely dead one added later is still reported.
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(super) const DISABLED: i32 = 0;
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(super) const DISABLED_BY_USER: i32 = 1;
     pub(super) const ENABLED: i32 = 2;
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(super) const DISABLED_BY_POLICY: i32 = 3;
     pub(super) const ENABLED_BY_POLICY: i32 = 4;
 }
@@ -317,6 +336,10 @@ fn startup_state_is_enabled(state: i32) -> bool {
 /// Outcome of asking Windows to enable the task. Unlike the `Run` key, this can
 /// be REFUSED — by the user in Settings ▸ Apps ▸ Startup, or by policy — and a
 /// refusal must reach the UI as an error, not as a silent "off".
+///
+/// Called only from the Windows StartupTask path, but kept cross-platform (see
+/// [`Identity`]) so its refusal branches are unit-tested on every host.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn enable_outcome(state: i32) -> AppResult<bool> {
     match state {
         startup_state::DISABLED_BY_USER => Err(AppError::Message(
