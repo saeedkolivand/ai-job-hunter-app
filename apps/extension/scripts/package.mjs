@@ -60,17 +60,21 @@ const INJECTED_CLASSIC_SCRIPTS = INJECTED_SCRIPT_FILES;
 // the invariant. Compile only, never run: undefined globals like `document` and
 // `chrome` are irrelevant because nothing executes.
 //
-// Known gap, deliberately not papered over: a DYNAMIC `import(...)` is valid
-// script-goal syntax, so this does not reject it. Neither did the regex in any
-// file where its stripping desynchronised. The isolated single-entry Rollup pass
-// in `vite.config.mts` only emits one if the TypeScript source has one.
+// Script-goal compilation cannot catch a DYNAMIC `import(...)` — it is valid
+// syntax in a script — so that one case still needs a pattern, matched against
+// the raw source (0 false positives across all 18 built artifacts).
+const DYNAMIC_IMPORT_RE = /\bimport\s*\(/;
+
 function failsToCompileAsClassicScript(src) {
   try {
     new Script(src);
-    return null;
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
+  if (DYNAMIC_IMPORT_RE.test(src)) {
+    return 'contains a dynamic import(), which resolves nothing in an injected classic script';
+  }
+  return null;
 }
 
 // `zip` present? (CI/macOS/Linux). Detect via a cheap version probe.

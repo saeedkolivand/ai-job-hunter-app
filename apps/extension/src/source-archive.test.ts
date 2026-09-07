@@ -21,10 +21,30 @@ import {
   README_ENTRY_NAME,
   sourceArchiveName,
 } from '../scripts/source-archive.mjs';
-// Deliberately imported from the BUILD CONFIG rather than from the shared list
-// the README is generated from: the property under test is that the README
-// describes what the build actually emits.
-import { INJECTED_ENTRIES } from '../vite.config.mts';
+
+/**
+ * Hand-written ON PURPOSE — do not replace this with an import.
+ *
+ * The README's list and `injected-entries.mjs` are the same const, so anchoring
+ * the assertion on that const would only prove `x === x`: deleting an entry
+ * would shrink both sides and stay green. This literal is the independent side.
+ * Adding an entry to `injected-entries.mjs` breaks the count assertion below,
+ * and removing one breaks the per-name assertions — so the list a Mozilla
+ * reviewer reads cannot silently gain or lose a file. (`build-output.test.ts`
+ * separately requires a new entry to be classified as completion-value or
+ * global-installing, so a real addition fails in two places, not none.)
+ */
+const EXPECTED_INJECTED_SCRIPTS = [
+  'content.js',
+  'fill.js',
+  'capture.js',
+  'capture-questions.js',
+  'capture-rows.js',
+  'answer-fill.js',
+  'answer-replace.js',
+  'submit-watch.js',
+  'probe-fields.js',
+];
 
 const readme = (over = {}) =>
   buildReadme({
@@ -76,14 +96,14 @@ describe('buildReadme', () => {
   });
 
   // A Mozilla reviewer reads this note to understand why some files in an
-  // otherwise-minified bundle are readable. The hand-written version of the list
-  // silently omitted submit-watch.js, so an entry the build emits had no
-  // explanation at all. `readme()` passes no list — this asserts the DEFAULT the
-  // script ships with still covers everything vite.config.mts builds.
-  it('accounts for every injected script the build emits unminified', () => {
+  // otherwise-minified bundle are readable; the version that was written by hand
+  // omitted submit-watch.js, so a file the build emits had no explanation at all.
+  // `readme()` passes no list, so this exercises the DEFAULT the script ships
+  // with, against the independent literal above.
+  it('names exactly the injected scripts that ship unminified', () => {
     const text = readme();
-    for (const entry of INJECTED_ENTRIES) expect(text).toContain(`\`${entry}.js\``);
-    expect(text).toContain(`These ${INJECTED_ENTRIES.length} files`);
+    for (const file of EXPECTED_INJECTED_SCRIPTS) expect(text).toContain(`\`${file}\``);
+    expect(text).toContain(`These ${EXPECTED_INJECTED_SCRIPTS.length} files`);
   });
 });
 

@@ -70,6 +70,16 @@ updates:
     labels:
       - dependencies
 
+    # image-size reaches this tree only as web-ext -> addons-linter -> image-size
+    # and carries DoS advisories whose sole npm-offered "fix" is downgrading
+    # web-ext across a major, off the AMO submission API this job needs. A PR for
+    # it can therefore never be merged, so don't open one. Not reachable in this
+    # usage either: those parsers run in addons-linter's icon checks, which
+    # `web-ext sign` never invokes, and the only images in scope would be our own
+    # committed icons. Re-check when addons-linter widens its range.
+    ignore:
+      - dependency-name: image-size
+
     commit-message:
       prefix: chore
 

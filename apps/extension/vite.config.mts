@@ -52,13 +52,9 @@ function webExtensionAssets(): Plugin {
 }
 
 /**
- * `content.ts` (Scan-mode DOM capture), `fill.ts` (assisted autofill),
- * `capture.ts` (answers capture), `capture-questions.ts` (questions-mode
- * collector), `capture-rows.ts` (the ADR-044 answer-rows scan),
- * `answer-fill.ts` (single-field answer fill), `answer-replace.ts`
- * (single-field answer REPLACE, extension PR 11's rewrite Accept/Restore),
- * and `probe-fields.ts` (the popup's fillable-fields probe) are ALL injected
- * via `chrome.scripting.executeScript({ files: [...] })`, which runs as a
+ * Every entry in {@link INJECTED_ENTRIES} — `./injected-entries.mjs`, which
+ * names them and says what each one is for — is injected via
+ * `chrome.scripting.executeScript({ files: [...] })`, which runs as a
  * CLASSIC script (no ES modules) — so each compiled bundle must carry ZERO
  * `import` statements. Since PR 5 of the extension roadmap, they genuinely
  * share runtime code (`lib/field-signal.ts`, via `lib/autofill.ts` and
@@ -81,8 +77,9 @@ function webExtensionAssets(): Plugin {
  * main build) already wrote.
  *
  * MINIFICATION IS OFF for this pass, and that is load-bearing. Several of
- * these scripts (`content`, `capture`, `capture-questions`, `capture-rows`,
- * `probe-fields`) answer the background by COMPLETION VALUE —
+ * these scripts answer the background by COMPLETION VALUE (which ones is
+ * `COMPLETION_VALUE_ENTRIES` in `src/build-output.test.ts`, where the split is
+ * asserted to partition {@link INJECTED_ENTRIES}) —
  * `executeScript({ files })` hands back whatever the file's LAST STATEMENT
  * evaluates to — and a minifier is entitled to rewrite away a trailing pure
  * expression whose value it believes nobody reads. Vite 8's default minifier

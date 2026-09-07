@@ -223,13 +223,13 @@ The MV3 extension is already listed on both stores, so every release **submits a
 | `publish-chrome`  | Chrome Web Store | The chrome zip `package-extension` built, uploaded **and** published (= submitted for review)                   |
 | `publish-firefox` | Firefox AMO      | The firefox zip, plus the mandatory reviewable **source archive** (`apps/extension/scripts/source-archive.mjs`) |
 
-Both consume the zips as a workflow artifact from `package-extension`, so what reaches a store is byte-for-byte what is attached to the GitHub Release. They are independent of each other and nothing else `needs:` them — one store failing blocks neither the other store nor the rest of the release fan-out.
+Both consume the zips as a workflow artifact from `package-extension`, so what reaches a store is built from the same files as what is attached to the GitHub Release, never a rebuild. (Chrome gets that zip verbatim; `web-ext` re-zips the directory for AMO, so the submitted xpi is file-for-file rather than byte-for-byte identical.) They are independent of each other and nothing else `needs:` them — one store failing blocks neither the other store nor the rest of the release fan-out.
 
 **A green job means "submitted for review", never "live".** Approval is a human step at Google/Mozilla that lands hours to days later; the jobs deliberately do not wait for it.
 
 Before submitting, `publish-firefox` unpacks the source archive it just built, runs the archive's own documented build commands and byte-compares the result against the shipped package. AMO reviewers do exactly this and pull add-ons that fail it, so a mismatch fails the job **before** anything is uploaded. If it ever goes red, fix the non-determinism in the build (a leaked absolute path or timestamp is the usual cause) — do not loosen the comparison.
 
-Both submission CLIs are lockfile-pinned, and neither is installed in a step that carries a store credential: the Chrome one is a devDependency of `@ajh/extension`, and `web-ext` lives in its own isolated npm project at `apps/extension/tools/amo/` (with the repo's only `package-lock.json`, and its own Dependabot entry). That directory's `README.md` explains why it is outside the pnpm workspace and how to bump it.
+Both submission CLIs are lockfile-pinned, and neither is installed in a step that carries a store credential: the Chrome one is a devDependency of `@ajh/extension`, and `web-ext` lives in its own isolated npm project at `apps/extension/tools/amo/`, pinned by a lockfile outside the pnpm workspace and tracked by its own Dependabot entry. That directory's `README.md` explains why it is isolated, which advisories are accepted, and how to bump it.
 
 ### Repository secrets
 

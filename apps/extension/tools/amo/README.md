@@ -37,6 +37,18 @@ is being fetched or executed:
 2. `node_modules/.bin/web-ext sign …` in a step whose `env:` is the only place
    `WEB_EXT_API_KEY` / `WEB_EXT_API_SECRET` appear.
 
+## Accepted advisories
+
+`npm audit` here reports `image-size` (reached as web-ext → addons-linter →
+image-size) for denial of service via infinite loops in its ICNS and JXL/HEIF
+parsers, which propagates the rating up to `addons-linter` and `web-ext`. The
+only remediation npm offers is downgrading web-ext across a major, off the AMO
+submission API this tool exists to use — so it stays. It is also not reachable
+in this usage: those parsers run in addons-linter's icon checks, which
+`web-ext sign` never invokes, and the only images in scope would be this repo's
+own committed icons. `.github/dependabot.yml` suppresses PRs for it on the same
+grounds; revisit when addons-linter widens its range.
+
 ## Bumping
 
 Dependabot has its own npm entry for this directory (`.github/dependabot.yml`).

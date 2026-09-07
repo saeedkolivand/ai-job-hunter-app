@@ -22,15 +22,15 @@
 // the 9, and the AMO README omitted `submit-watch.js` outright. Add an entry
 // here and all three follow.
 export const INJECTED_ENTRIES = [
-  'content',
-  'fill',
-  'capture',
-  'capture-questions',
-  'capture-rows',
-  'answer-fill',
-  'answer-replace',
-  'submit-watch',
-  'probe-fields',
+  'content', // Scan-mode DOM capture
+  'fill', // assisted autofill
+  'capture', // answers capture
+  'capture-questions', // questions-mode collector
+  'capture-rows', // the ADR-044 answer-rows scan
+  'answer-fill', // single-field answer fill
+  'answer-replace', // single-field answer REPLACE (rewrite Accept/Restore)
+  'submit-watch', // post-submit application watcher
+  'probe-fields', // the popup's fillable-fields probe
 ];
 
 /** The built filenames, at the root of `dist/<target>/`. */
