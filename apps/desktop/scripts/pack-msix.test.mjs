@@ -156,10 +156,11 @@ describe('compareSdkVersions', () => {
 });
 
 describe('path privacy in printed output', () => {
-  it('keeps in-repo paths relative and reduces outside ones to a basename', () => {
+  it('keeps in-repo paths relative and says nothing else about the rest', () => {
     expect(rel(path.join(HERE, 'pack-msix.mjs'))).toBe('apps/desktop/scripts/pack-msix.mjs');
-    const outside = rel(path.join(os.tmpdir(), 'someone', 'secret-dir', 'makeappx.exe'));
-    expect(outside).toBe('<outside repo>/makeappx.exe');
+    // Not even the last segment: outside the repo it is as likely to be a
+    // person's name as a filename.
+    expect(rel(path.join(os.tmpdir(), 'someone', 'First Last'))).toBe('<outside repo>');
   });
 
   // makeappx echoes `\\?\`-prefixed absolute paths for every file it packs, and
@@ -173,7 +174,28 @@ describe('path privacy in printed output', () => {
     const scrubbed = scrubPaths(output);
     expect(scrubbed).not.toMatch(/[A-Za-z]:[\\/]/);
     expect(scrubbed).not.toContain('somebody');
-    expect(scrubbed).toContain('<outside repo>/ajh-tauri.exe');
+    expect(scrubbed).toContain('<outside repo>');
+  });
+
+  // A path terminated at the first SPACE leaves the tail — which is where the
+  // user's name usually is — in the log. Measured on a live run before the fix:
+  // `<outside repo>/ajh probe\John Smith\staging`.
+  it('scrubs paths containing spaces, all the way to the end', () => {
+    const output =
+      'Packing 5 file(s) in "C:\\Users\\John Smith\\ajh probe\\staging" (content directory).';
+    const scrubbed = scrubPaths(output);
+    expect(scrubbed).not.toContain('John Smith');
+    expect(scrubbed).not.toContain('ajh probe');
+    expect(
+      scrubPaths('The content directory (/d) parameter is: C:\\Program Files\\x')
+    ).not.toContain('Program Files');
+  });
+
+  it('scrubs UNC paths too', () => {
+    const scrubbed = scrubPaths('Using "\\\\buildserver\\team share\\First Last\\out.msix".');
+    expect(scrubbed).not.toContain('buildserver');
+    expect(scrubbed).not.toContain('First Last');
+    expect(scrubbed).toContain('<outside repo>');
   });
 });
 
@@ -184,8 +206,12 @@ describe('findMakeappx', () => {
     expect(() => findMakeappx({})).toThrow(/makeappx\.exe not found/);
   });
 
-  it('reports an override that points nowhere', () => {
-    expect(() => findMakeappx({ MAKEAPPX: 'Z:/nope/makeappx.exe' })).toThrow(/missing file/);
+  // The override is user-supplied and typically absolute, so the message that
+  // rejects it goes through `rel()` like every other printed path.
+  it('reports an override that points nowhere without echoing it', () => {
+    const bogus = path.join(os.tmpdir(), 'First Last', 'sdk', 'makeappx.exe');
+    expect(() => findMakeappx({ MAKEAPPX: bogus })).toThrow(/missing file: <outside repo>/);
+    expect(() => findMakeappx({ MAKEAPPX: bogus })).not.toThrow(/First Last/);
   });
 });
 

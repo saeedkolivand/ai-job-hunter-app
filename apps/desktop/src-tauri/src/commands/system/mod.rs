@@ -260,7 +260,14 @@ pub async fn system_set_performance_mode(
 /// instead of the `Run` key — `Some(..)` there, `None` everywhere else. The
 /// plugin's key would point at a version-pinned WindowsApps path that stops
 /// working at the next Store update while this command still reported `true`.
-#[tauri::command]
+///
+/// `(async)` on a sync body: reading the task blocks on a WinRT operation with
+/// no timeout, and a plain `#[tauri::command]` would run that inline on the UI
+/// thread (`commands/resume.rs` documents the traced dispatch path). The
+/// attribute moves the same body onto a Tokio worker; the IPC surface is
+/// unchanged — the renderer already awaits a promise, and the agent-CLI policy
+/// table keys on the module path, not the signature.
+#[tauri::command(async)]
 pub fn system_get_launch_at_login(app: AppHandle) -> bool {
     if let Some(enabled) = crate::platform::msix::startup_task_enabled() {
         return enabled;
@@ -276,7 +283,9 @@ pub fn system_get_launch_at_login(app: AppHandle) -> bool {
 /// [`system_get_launch_at_login`]); unlike a `Run` key, Windows can REFUSE to
 /// enable it (the user turned it off in Settings ▸ Apps ▸ Startup, or policy
 /// blocks it), which surfaces here as an error rather than a silent "off".
-#[tauri::command]
+/// `(async)` for the same reason as the getter: keep an unbounded blocking
+/// wait off the UI thread.
+#[tauri::command(async)]
 pub fn system_set_launch_at_login(app: AppHandle, enabled: bool) -> AppResult<bool> {
     if let Some(applied) = crate::platform::msix::set_startup_task(enabled) {
         return applied;
