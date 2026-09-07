@@ -93,6 +93,8 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-045](decision-records/adr-045-job-tools-panel-parity-and-trust-gate.md)                 | Job-tools panel parity (Import/Check-fit/Fill/Save-answers) via a shared component + a stricter per-tab trust gate reusing `AnswerState.pageChanged`; both context-menu gestures now re-arm it        |
 | [ADR-046](decision-records/adr-046-connection-status-panel-parity-and-live-push.md)          | Connection-status panel parity via a shared component, mounted by both surfaces, live-pushed                                                                                                          |
 | [ADR-047](decision-records/adr-047-relicense-to-apache-2-0.md)                               | Relicense to Apache-2.0 (supersedes ADR-023) so the OSS code-signing programmes apply; vendored CC BY-NC 4.0 ATS datasets are a documented carve-out                                                  |
+| [ADR-048](decision-records/adr-048-automated-extension-store-submission.md)                  | Extension store submission is automated and terminal at "submitted", gated on a source archive that provably rebuilds the shipped package; the AMO tool is pinned outside the pnpm workspace          |
+| [ADR-049](decision-records/adr-049-microsoft-store-msix-flavour.md)                          | Microsoft Store MSIX as a runtime-detected flavour of the same binary (no build variant), updates handed to the Store, write virtualization disabled on purpose                                       |
 
 ### The `NNNN-` series (closed)
 

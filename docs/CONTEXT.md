@@ -581,3 +581,19 @@ the refusal** — the refusal names which Resource yields it, never the value �
 requires a second call to a different Verb, and therefore requires having actually read the
 record. This is the safety property that survives the absence of a dry-run.
 _Avoid_: "confirmation prompt" (there is no interactive prompt; an autonomous caller cannot answer one)
+
+## Domain — Windows distribution
+
+**Flavour**:
+A **container** around the same shipped `ajh-tauri` binary — not a build variant. There is no
+compile-time flag and no second artifact, so which flavour is running is a **runtime** question,
+and anything that must differ branches on that rather than on `cfg!`.
+_Avoid_: "edition" / "build variant" / "build target" (each implies a second binary)
+
+**Store flavour** (in Rust: a **packaged build**):
+The Microsoft Store install — the same binary wrapped in an MSIX package — identified at runtime by
+`platform::msix::is_packaged`. The word marks the closed set of behaviours the Store or its manifest
+owns instead of the app; [ADR-049](knowledge/decision-records/adr-049-microsoft-store-msix-flavour.md)
+is why, `docs/DEPLOYMENT.md` § Microsoft Store (MSIX) is which.
+_Avoid_: "UWP app" (it is a packaged **classic** full-trust app) / "sandboxed build" (write
+virtualization is deliberately disabled) / "Store version" (the version number is the same one)
