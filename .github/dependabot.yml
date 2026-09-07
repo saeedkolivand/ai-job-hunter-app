@@ -50,6 +50,29 @@ updates:
     commit-message:
       prefix: chore
 
+  # The ONE legitimate exception to "no per-member npm entries" above:
+  # apps/extension/tools/amo is deliberately NOT a pnpm workspace member
+  # (pnpm-workspace.yaml globs apps/* and packages/*, which it does not match),
+  # so it has its OWN package-lock.json rather than sharing the root one. It
+  # pins web-ext for the release workflow's Firefox AMO submission — see that
+  # directory's README.md for why it is isolated. Without this entry the pin
+  # would silently rot, which is the whole reason it exists.
+  - package-ecosystem: npm
+    directory: /apps/extension/tools/amo
+    schedule:
+      interval: weekly
+
+    open-pull-requests-limit: 2
+
+    cooldown:
+      default-days: 2
+
+    labels:
+      - dependencies
+
+    commit-message:
+      prefix: chore
+
   - package-ecosystem: cargo
     directory: /apps/desktop/src-tauri
     schedule:

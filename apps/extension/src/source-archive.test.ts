@@ -21,6 +21,10 @@ import {
   README_ENTRY_NAME,
   sourceArchiveName,
 } from '../scripts/source-archive.mjs';
+// Deliberately imported from the BUILD CONFIG rather than from the shared list
+// the README is generated from: the property under test is that the README
+// describes what the build actually emits.
+import { INJECTED_ENTRIES } from '../vite.config.mts';
 
 const readme = (over = {}) =>
   buildReadme({
@@ -69,6 +73,17 @@ describe('buildReadme', () => {
     const text = readme();
     expect(text).toContain('https://nodejs.org/en/download');
     expect(text).toContain('https://pnpm.io/installation');
+  });
+
+  // A Mozilla reviewer reads this note to understand why some files in an
+  // otherwise-minified bundle are readable. The hand-written version of the list
+  // silently omitted submit-watch.js, so an entry the build emits had no
+  // explanation at all. `readme()` passes no list — this asserts the DEFAULT the
+  // script ships with still covers everything vite.config.mts builds.
+  it('accounts for every injected script the build emits unminified', () => {
+    const text = readme();
+    for (const entry of INJECTED_ENTRIES) expect(text).toContain(`\`${entry}.js\``);
+    expect(text).toContain(`These ${INJECTED_ENTRIES.length} files`);
   });
 });
 

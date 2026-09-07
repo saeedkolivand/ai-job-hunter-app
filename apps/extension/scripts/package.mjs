@@ -16,6 +16,9 @@ import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { Script } from 'node:vm';
+
+import { INJECTED_SCRIPT_FILES } from '../injected-entries.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXT_ROOT = path.resolve(__dirname, '..');
@@ -25,34 +28,49 @@ const DIST = path.join(EXT_ROOT, 'dist');
 const { version } = createRequire(import.meta.url)('../package.json');
 const TARGETS = ['chrome', 'firefox'];
 
-// `fill.js`/`capture.js`/`capture-questions.js`/`answer-fill.js` are injected
-// via `chrome.scripting.executeScript({ files: [...] })` as CLASSIC scripts —
-// no ES module support. `vite.config.mts`'s `injectedEntries` plugin builds
-// them each in an isolated Rollup pass specifically so no `import`/`export`
-// statement ever leaks in (see field-signal.ts's header comment); this is the
-// automated guard that invariant doesn't silently regress.
-const INJECTED_CLASSIC_SCRIPTS = [
-  'fill.js',
-  'capture.js',
-  'capture-questions.js',
-  'answer-fill.js',
-  'submit-watch.js',
-];
-const IMPORT_EXPORT_TOKEN_RE = /\b(?:import|export)\b/;
-// A minifier can emit `import`/`export` mid-line (e.g. `...;import{x}from"y";...`),
-// so a line-anchored `^\s*` check misses it. Strip string/template literals and
-// comments first (so the bare word "import"/"export" inside quoted text or a
-// comment doesn't false-positive), then look for the token anywhere in what's
-// left — that also catches a dynamic `import(...)`, which is equally illegal in
-// a classic `executeScript` bundle.
-function containsImportOrExportStatement(src) {
-  const stripped = src
-    .replace(/\/\*[\s\S]*?\*\//g, ' ') // block comments
-    .replace(/\/\/[^\n]*/g, ' ') // line comments
-    .replace(/`(?:\\.|[^`\\])*`/g, ' ') // template literals
-    .replace(/"(?:\\.|[^"\\])*"/g, ' ') // double-quoted strings
-    .replace(/'(?:\\.|[^'\\])*'/g, ' '); // single-quoted strings
-  return IMPORT_EXPORT_TOKEN_RE.test(stripped);
+// Every entry in INJECTED_SCRIPT_FILES is injected via
+// `chrome.scripting.executeScript({ files: [...] })` as a CLASSIC script — no ES
+// module support. `vite.config.mts`'s `injectedEntries` plugin builds them each
+// in an isolated Rollup pass specifically so no `import`/`export` statement ever
+// leaks in (see field-signal.ts's header comment); this is the automated guard
+// that invariant doesn't silently regress.
+//
+// Read from the shared list rather than retyped: the hand-written copy that used
+// to live here covered 5 of the 9 entries, so `content.js`, `capture-rows.js`,
+// `answer-replace.js` and `probe-fields.js` were shipped unguarded.
+const INJECTED_CLASSIC_SCRIPTS = INJECTED_SCRIPT_FILES;
+
+// HOW the check works, and why it is not a text scan.
+//
+// This used to strip comments and string literals with regexes and then look for
+// the token `import`/`export` in what was left. That is unsound, and measurably
+// so: a single apostrophe in a comment or an unbalanced quote inside a string
+// table desynchronises the single-quote stripper, which then swallows everything
+// up to the next apostrophe — including any `import` after it. Appending
+// `import{x}from"./y.js"` to the real built `capture.js`, `fill.js`,
+// `probe-fields.js`, `capture-rows.js` or `answer-replace.js` was NOT detected;
+// only the small `content.js` was. The guard read as if it covered these files
+// and did not.
+//
+// So ask the JavaScript parser instead of pattern-matching around it.
+// `new Script(src)` compiles in the SCRIPT goal — exactly the goal
+// `chrome.scripting.executeScript({ files: [...] })` evaluates these in — and
+// throws `SyntaxError: Cannot use import statement outside a module` on any ES
+// module syntax. That is not a heuristic standing in for the invariant; it IS
+// the invariant. Compile only, never run: undefined globals like `document` and
+// `chrome` are irrelevant because nothing executes.
+//
+// Known gap, deliberately not papered over: a DYNAMIC `import(...)` is valid
+// script-goal syntax, so this does not reject it. Neither did the regex in any
+// file where its stripping desynchronised. The isolated single-entry Rollup pass
+// in `vite.config.mts` only emits one if the TypeScript source has one.
+function failsToCompileAsClassicScript(src) {
+  try {
+    new Script(src);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
 
 // `zip` present? (CI/macOS/Linux). Detect via a cheap version probe.
@@ -68,10 +86,11 @@ function assertClassicScripts(srcDir) {
       );
       process.exit(1);
     }
-    if (containsImportOrExportStatement(readFileSync(filePath, 'utf8'))) {
+    const reason = failsToCompileAsClassicScript(readFileSync(filePath, 'utf8'));
+    if (reason) {
       console.error(
-        `error: ${rel(filePath)} contains an import/export statement — it must be a classic ` +
-          `script (chrome.scripting.executeScript({ files: [...] }) can't load ES modules). ` +
+        `error: ${rel(filePath)} does not parse as a classic script (${reason}) — ` +
+          `chrome.scripting.executeScript({ files: [...] }) can't load ES modules. ` +
           `The injectedEntries isolated-build guarantee in vite.config.mts has regressed.`
       );
       process.exit(1);

@@ -229,6 +229,8 @@ Both consume the zips as a workflow artifact from `package-extension`, so what r
 
 Before submitting, `publish-firefox` unpacks the source archive it just built, runs the archive's own documented build commands and byte-compares the result against the shipped package. AMO reviewers do exactly this and pull add-ons that fail it, so a mismatch fails the job **before** anything is uploaded. If it ever goes red, fix the non-determinism in the build (a leaked absolute path or timestamp is the usual cause) — do not loosen the comparison.
 
+Both submission CLIs are lockfile-pinned, and neither is installed in a step that carries a store credential: the Chrome one is a devDependency of `@ajh/extension`, and `web-ext` lives in its own isolated npm project at `apps/extension/tools/amo/` (with the repo's only `package-lock.json`, and its own Dependabot entry). That directory's `README.md` explains why it is outside the pnpm workspace and how to bump it.
+
 ### Repository secrets
 
 Six, all required; each job checks its own set first and fails naming the missing one, so a misconfiguration never surfaces as an opaque 401. The Chrome **item id** is deliberately not a secret — it is public, and is an `env` constant in the job.

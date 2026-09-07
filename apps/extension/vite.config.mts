@@ -4,7 +4,12 @@ import { fileURLToPath } from 'node:url';
 
 import { defineConfig, type InlineConfig, type Plugin } from 'vite';
 
+import { INJECTED_ENTRIES } from './injected-entries.mjs';
 import { type BrowserTarget, buildManifest } from './src/manifest.ts';
+
+// Re-exported so `src/build-output.test.ts` (and anything else reasoning about
+// the build) keeps importing it from the build config, which is where it is used.
+export { INJECTED_ENTRIES };
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcDir = resolve(here, 'src');
@@ -99,20 +104,6 @@ function webExtensionAssets(): Plugin {
  * completion values, so re-enabling minification here fails a test instead of
  * a release.
  */
-
-/** Every classic script injected via `executeScript({ files })`, each built in
- *  its own isolated single-entry pass. */
-export const INJECTED_ENTRIES = [
-  'content',
-  'fill',
-  'capture',
-  'capture-questions',
-  'capture-rows',
-  'answer-fill',
-  'answer-replace',
-  'submit-watch',
-  'probe-fields',
-] as const;
 
 /**
  * The EXACT options one injected entry is built with. Exported alongside

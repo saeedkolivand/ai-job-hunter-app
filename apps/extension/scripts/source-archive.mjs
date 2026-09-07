@@ -30,6 +30,8 @@ import { tmpdir, type as osType, release as osRelease } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { INJECTED_SCRIPT_FILES } from '../injected-entries.mjs';
+
 const __filename = fileURLToPath(import.meta.url);
 const EXT_ROOT = path.resolve(path.dirname(__filename), '..');
 const REPO_ROOT = path.resolve(EXT_ROOT, '..', '..');
@@ -66,9 +68,16 @@ export function detectOs(readOsRelease = () => readFileSync('/etc/os-release', '
 
 /**
  * The build README placed at the archive root. Every version in it is passed in
- * from the live toolchain — nothing here is a literal that can go stale.
+ * from the live toolchain, and the unminified-script list comes from the build's
+ * own {@link INJECTED_SCRIPT_FILES} — nothing here is a literal that can go stale.
  */
-export function buildReadme({ version, os, node, packageManager }) {
+export function buildReadme({
+  version,
+  os,
+  node,
+  packageManager,
+  injectedScripts = INJECTED_SCRIPT_FILES,
+}) {
   return `# AI Job Hunter — Firefox add-on source build (v${version})
 
 This archive is the complete, unmodified source of the \`ai-job-hunter\`
@@ -117,11 +126,16 @@ zipped into the submitted add-on package (\`manifest.json\` at the zip root).
   fails rather than resolving anything new. The build itself needs no network.
 - \`manifest.json\` is generated at build time from \`apps/extension/src/manifest.ts\`.
   There is no remotely-hosted code, no \`eval\`, and no runtime code fetch.
-- The scripts injected with \`chrome.scripting.executeScript\` (\`content.js\`,
-  \`capture*.js\`, \`fill.js\`, \`answer-*.js\`, \`probe-fields.js\`) are emitted
-  **unminified on purpose** — they return their result to the background page as
-  a completion value, which a minifier is entitled to fold away. See the comment
-  block in \`apps/extension/vite.config.mts\`.
+- These ${injectedScripts.length} files are emitted **unminified on purpose**:
+  ${injectedScripts.map((f) => `\`${f}\``).join(', ')}.
+  Each is injected with \`chrome.scripting.executeScript({ files: [...] })\` as a
+  classic script, and several return their result to the background page as a
+  completion value — something a minifier is entitled to fold away. They are also
+  each built in their own isolated Rollup pass so no shared chunk is hoisted out
+  and \`import\`ed, which classic-script injection cannot load. The reasoning is
+  in \`apps/extension/vite.config.mts\`; the list itself is
+  \`apps/extension/injected-entries.mjs\`, which that config and this README are
+  both generated from.
 - \`apps/desktop/\` (a Tauri app) and \`apps/landing/\` are in this archive because
   they share the monorepo and its lockfile. Neither is needed to build the add-on
   and neither ships inside it; \`apps/extension/README.md\` describes what the

@@ -813,11 +813,15 @@ jobs:
           fi
           echo "All four Chrome Web Store secrets are set."
 
+      # `persist-credentials: false` on both checkouts in this job: it never
+      # pushes, so leaving the job token in .git/config would only mean it is
+      # sitting there while 300+ npm lifecycle scripts run in the same workspace.
       - name: 📥 Checkout Repository (for tag lookup)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           fetch-depth: 0
+          persist-credentials: false
 
       - name: 🏷️ Resolve Version
         id: resolve
@@ -853,6 +857,7 @@ jobs:
         with:
           ref: ${{ steps.resolve.outputs.version }}
           fetch-depth: 1
+          persist-credentials: false
 
       - name: 📦 Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
@@ -863,12 +868,18 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # NO `env:` here, and it must stay that way: this step runs the lifecycle
+      # scripts of the whole dependency tree. The store credentials belong only
+      # to the step that actually talks to the store, below.
       - name: 📥 Install Dependencies
         run: |
           echo "::group::Installing dependencies"
           pnpm install --frozen-lockfile
           echo "::endgroup::"
 
+      # Both zips come from one directory in package-extension, so they land at
+      # the artifact root; the explicit path check below turns any surprise there
+      # into a named error rather than a confusing upload.
       - name: 📥 Download the packaged extension zips
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
@@ -901,10 +912,14 @@ jobs:
           # an unsubmitted manual draft edit is open in the dashboard, and it
           # refuses an upload whose manifest version does not increase (ours is
           # bumped for every app release by scripts/sync-tauri-version.cjs).
+          # Output goes to the job log ONLY. The runner masks secrets in the log
+          # stream; $GITHUB_STEP_SUMMARY is a file this step writes and the
+          # runner uploads as-is, so unbounded output from a third-party tool
+          # does not go in it.
           pnpm --filter @ajh/extension exec chrome-webstore-upload \
             --source "$ZIP" \
             --extension-id "$CHROME_EXTENSION_ID" \
-            --deploy-percentage 100 2>&1 | tee cws-result.log
+            --deploy-percentage 100
           echo "::endgroup::"
 
       - name: 📝 Job Summary
@@ -922,16 +937,8 @@ jobs:
             echo "| Deploy percentage | 100 |"
             echo "| Outcome | ${{ steps.cws.outcome == 'success' && '✅ Submitted for review' || '❌ Failed' }} |"
             echo ""
-            if [ -f cws-result.log ]; then
-              echo "<details><summary>chrome-webstore-upload output</summary>"
-              echo ""
-              echo '```'
-              cat cws-result.log
-              echo '```'
-              echo ""
-              echo "</details>"
-              echo ""
-            fi
+            echo "The store CLI's own output is in the **Upload + submit to the Chrome Web Store** step log, where the runner's secret masking applies. It is deliberately not copied here."
+            echo ""
             echo "> **Submitted ≠ live.** The last state this job can reach is _submitted for review_ (\`PENDING_REVIEW\`); the version goes live only when Google's review approves it, hours to days later. Track it in the [developer dashboard](https://chrome.google.com/webstore/devconsole)."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -963,11 +970,16 @@ jobs:
           fi
           echo "Both AMO API secrets are set."
 
+      # `persist-credentials: false` on both checkouts in this job: it never
+      # pushes and `git archive` needs no network, so leaving the job token in
+      # .git/config would only mean it is sitting there while two full dependency
+      # installs' lifecycle scripts run in the same workspace.
       - name: 📥 Checkout Repository (for tag lookup)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           fetch-depth: 0
+          persist-credentials: false
 
       - name: 🏷️ Resolve Version
         id: resolve
@@ -1003,6 +1015,7 @@ jobs:
         with:
           ref: ${{ steps.resolve.outputs.version }}
           fetch-depth: 1
+          persist-credentials: false
 
       - name: 📦 Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
@@ -1013,12 +1026,32 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # NO `env:` on this step or the AMO tool install below, and it must stay
+      # that way: between them they run the lifecycle scripts of the whole
+      # workspace. WEB_EXT_API_KEY/SECRET can publish a Mozilla-signed version of
+      # every add-on on the account, so they belong only to the single step that
+      # talks to AMO.
       - name: 📥 Install Dependencies
         run: |
           echo "::group::Installing dependencies"
           pnpm install --frozen-lockfile
           echo "::endgroup::"
 
+      # web-ext is pinned by its OWN committed package-lock.json in an isolated
+      # npm project outside the pnpm workspace — `npx web-ext@<version>` would
+      # pin only the entry package and re-resolve ~330 transitive dependencies,
+      # unverified, in the job that holds the AMO credential. `--ignore-scripts`
+      # because nothing in that tree needs a build step. Rationale + how to bump:
+      # apps/extension/tools/amo/README.md.
+      - name: 🧰 Install the pinned AMO submission tool
+        run: |
+          echo "::group::npm ci (apps/extension/tools/amo)"
+          npm ci --ignore-scripts --prefix apps/extension/tools/amo
+          echo "::endgroup::"
+
+      # Both zips come from one directory in package-extension, so they land at
+      # the artifact root; the explicit path checks below turn any surprise there
+      # into a named error rather than a confusing upload.
       - name: 📥 Download the packaged extension zips
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
@@ -1061,6 +1094,18 @@ jobs:
           unzip -q "$SRC_ZIP" -d "$SRC_DIR"
           unzip -q "$FF_ZIP" -d "$SHIPPED_DIR"
 
+          # web-ext re-zips --source-dir itself and silently drops anything
+          # matching its default ignores. The comparison below is between
+          # DIRECTORIES, so such a file would sail through this gate and still be
+          # missing from what AMO actually receives. Assert the package contains
+          # none rather than trusting that it never will.
+          DROPPED="$(find "$SHIPPED_DIR" \( -name '.*' -o -name '*.zip' -o -name '*.xpi' -o -name 'node_modules' \) -printf '%P\n')"
+          if [ -n "$DROPPED" ]; then
+            echo "::error title=Package contains files web-ext would drop::web-ext's default ignore patterns (**/.*, **/*.zip, **/*.xpi, **/node_modules) would exclude these from the AMO upload even though the byte-diff passes, so the submitted add-on would not match the package:"
+            echo "$DROPPED"
+            exit 1
+          fi
+
           echo "::group::Rebuilding from the source archive with its own documented commands"
           # Kept identical to SOURCE_BUILD_README.md's build steps on purpose: if
           # they ever diverge, the reviewer's rebuild is the one that fails.
@@ -1097,8 +1142,11 @@ jobs:
       - name: 🚀 Submit the new version to Firefox AMO
         id: amo
         env:
-          # web-ext maps every option to a WEB_EXT_* variable; the credentials are
-          # passed ONLY that way so they never land in the runner's process list.
+          # THE ONLY step in this job that carries the AMO credential. web-ext
+          # maps every option to a WEB_EXT_* variable, so these are passed as env
+          # rather than flags and never land in the runner's process list. By the
+          # time this runs, every dependency has already been installed and every
+          # lifecycle script has already run, in steps with no secrets in scope.
           WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
           WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
           VERSION: ${{ steps.resolve.outputs.version }}
@@ -1106,12 +1154,6 @@ jobs:
           set -euo pipefail
           RAW="${VERSION#v}"
           echo "::group::web-ext sign --channel listed"
-          # `npx`, not a devDependency: web-ext pulls ~330 packages / ~78 MB
-          # (addons-linter, a second deprecated eslint) into EVERY `pnpm install`
-          # in this monorepo — every CI job and every contributor clone — for a
-          # tool used once per release. Pinned to an exact version, like the
-          # @sentry/cli invocation in the build job above.
-          #
           # `--channel listed` submits a new version of the existing public
           # listing (the add-on id comes from browser_specific_settings.gecko.id
           # in the manifest, so this can only ever update OUR listing).
@@ -1119,13 +1161,21 @@ jobs:
           # submission goes to HUMAN review, so the default 15-minute wait would
           # end every run in a spurious failure. The job's terminal state is
           # "submitted".
-          npx --yes web-ext@10.6.0 sign \
+          #
+          # web-ext re-zips --source-dir itself, applying its own default ignores
+          # (**/.*, **/*.zip, **/*.xpi, **/node_modules) — the reproducibility
+          # gate above asserts the package contains nothing they would drop.
+          #
+          # Output goes to the job log ONLY: the runner masks secrets in the log
+          # stream, but $GITHUB_STEP_SUMMARY is a file this step writes and the
+          # runner uploads as-is.
+          apps/extension/tools/amo/node_modules/.bin/web-ext sign \
             --channel listed \
             --source-dir "$RUNNER_TEMP/amo-shipped" \
             --upload-source-code "apps/extension/dist/ai-job-hunter-extension-source-${RAW}.zip" \
             --artifacts-dir "$RUNNER_TEMP/web-ext-artifacts" \
             --approval-timeout 0 \
-            --no-input 2>&1 | tee amo-result.log
+            --no-input
           echo "::endgroup::"
 
       # Attached even when the gate or the submission failed: a rejected review
@@ -1154,16 +1204,8 @@ jobs:
             echo "| Source archive rebuilds the package | ${{ steps.repro.outcome == 'success' && '✅ Byte-identical' || '❌ Not verified' }} |"
             echo "| Outcome | ${{ steps.amo.outcome == 'success' && '✅ Submitted for review' || '❌ Failed' }} |"
             echo ""
-            if [ -f amo-result.log ]; then
-              echo "<details><summary>web-ext sign output</summary>"
-              echo ""
-              echo '```'
-              cat amo-result.log
-              echo '```'
-              echo ""
-              echo "</details>"
-              echo ""
-            fi
+            echo "\`web-ext\`'s own output is in the **Submit the new version to Firefox AMO** step log, where the runner's secret masking applies. It is deliberately not copied here."
+            echo ""
             echo "> **Submitted ≠ live.** A \`listed\` submission goes to human review at Mozilla; this job ends at _submitted_ and never waits for the signed XPI. Track it in [AMO Developer Hub](https://addons.mozilla.org/developers/addons)."
           } >> "$GITHUB_STEP_SUMMARY"
 
