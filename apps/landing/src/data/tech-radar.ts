@@ -432,7 +432,7 @@ export const RADAR: readonly TechRadarEntry[] = [
   },
   {
     id: 'vitest',
-    name: 'Vitest 4',
+    name: 'Vitest 5',
     ring: 'adopt',
     quadrant: 'build-ship-trust',
     subjectKind: 'dependency',
@@ -440,7 +440,7 @@ export const RADAR: readonly TechRadarEntry[] = [
     summary: 'The one test runner, in every workspace.',
     rationale:
       'A root vitest workspace config aggregates every package + app project — plus a dedicated node-env project for build/release scripts — into one coverage report, so `pnpm test` is a single command regardless of which package changed.',
-    lastReviewed: '2026-08-05',
+    lastReviewed: '2026-09-07',
   },
   {
     id: 'playwright',
