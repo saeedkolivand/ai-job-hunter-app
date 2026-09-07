@@ -1,6 +1,6 @@
 # Deployment — AI Job Hunter
 
-Last updated: 2026-08-16
+Last updated: 2026-09-07
 
 AI Job Hunter is distributed as a native desktop installer built by [Tauri][tauri]. There is no server to deploy — the entire app runs on the end user's machine.
 
@@ -214,9 +214,53 @@ Additional advisory layers:
 
 ---
 
+## Microsoft Store (MSIX)
+
+A second **flavour** of the Windows build, not a second build: the MSIX wraps the very same `ajh-tauri.exe` the NSIS installer ships. Tauri has no MSIX bundle target, so the packaging is ours — manifest template in [`apps/desktop/src-tauri/windows/msix/AppxManifest.xml`](../apps/desktop/src-tauri/windows/msix/AppxManifest.xml) (commented element by element), packer in [`apps/desktop/scripts/pack-msix.mjs`](../apps/desktop/scripts/pack-msix.mjs), wired into the Windows leg of `release.yml` (the "Pack the Microsoft Store MSIX" step).
+
+**The one runtime difference is where updates come from.** `platform::msix::is_packaged()` detects package identity at runtime — no build flag, one binary — and [`src/updater/mod.rs`](../apps/desktop/src-tauri/src/updater/mod.rs) hands updating to the Store when it is set: no check, no background poll, and the settings panel says so instead of offering a download. Running the GitHub updater on a packaged install would install a **second, unmanaged copy** beside the Store one.
+
+Everything else is deliberately identical. The manifest disables registry and file-system write virtualization (which is what the restricted `unvirtualizedResources` capability buys), so the HKCU native-messaging registration, the launch-at-login entry, and the app data directory are the same real locations a non-Store install uses — a user can switch flavours and keep their data. It also declares the `ajh://` protocol and an `ajh-tauri.exe` execution alias, replacing the two things a packaged app may not do for itself: the runtime deep-link registration and the NSIS PATH hook.
+
+> **WebView2:** the MSIX cannot run the Evergreen bootstrapper the NSIS installer uses. Windows 11 has the runtime built in; a Windows 10 machine without it must install WebView2 from Microsoft first.
+
+### Package identity (repository variables)
+
+Identity is assigned by Partner Center, so it is **not committed**. The packer requires three environment variables, supplied in CI as repository variables (Settings ▸ Secrets and variables ▸ Actions ▸ Variables) and read from Partner Center ▸ **Product management ▸ Product identity**:
+
+| Variable                      | Partner Center field                    |
+| ----------------------------- | --------------------------------------- |
+| `MSIX_IDENTITY_NAME`          | Package/Identity/Name                   |
+| `MSIX_PUBLISHER`              | Package/Identity/Publisher              |
+| `MSIX_PUBLISHER_DISPLAY_NAME` | Package/Properties/PublisherDisplayName |
+
+The workflow step is skipped while `MSIX_IDENTITY_NAME` is unset, so the pipeline is unaffected until the listing exists.
+
+### Local test loop
+
+1. `pnpm --filter @ajh/desktop package` (or any `tauri build`) so the exe exists.
+2. Set the three variables and run `node apps/desktop/scripts/pack-msix.mjs`. It needs `makeappx.exe` from the Windows SDK (override with `MAKEAPPX=`), stages the payload under `src-tauri/target/msix/staging/`, and writes the `.msix` next to it.
+3. Enable **Developer Mode**, then register the staged layout directly — faster than installing, and it exercises the manifest: `Add-AppxPackage -Register <staging>\AppxManifest.xml`.
+4. `Get-AppxPackage *AIJobHunter*` to confirm, `Remove-AppxPackage <full-name>` to clean up.
+
+Registering the staged app is the only way to see the packaged-identity code path locally: `platform::msix` returns `false` for every normally-launched build.
+
+### First submission (manual)
+
+The `.msix` is **unsigned on purpose** — the Store signs it during submission — which is why it is a workflow **artifact** (`msix-store-package`, on the `build-installers` run) and never a GitHub Release asset.
+
+1. Download the `msix-store-package` artifact from the release run and unzip it.
+2. Partner Center ▸ your product ▸ **Packages** ▸ upload the `.msix`.
+3. **Submission options** asks for a justification for the restricted capability. State what it is actually for: the app registers a browser **native-messaging host under HKCU** and a **launch-at-login Run entry** that browsers and Windows must read from the real hive rather than a virtualized copy, and it shares its data directory with the non-Store install so users can move between them without losing data.
+4. Submit. Certification for a full-trust desktop app is manual and can take a few days.
+
+Automating this with the `msstore` CLI is a follow-up: it needs an Entra tenant plus an app registration, which do not exist yet.
+
+---
+
 ## Auto-Update
 
-The app checks for updates on launch via Tauri's updater plugin. The update manifest is published to GitHub Releases automatically.
+The app checks for updates on launch via Tauri's updater plugin. The update manifest is published to GitHub Releases automatically. **Not on a Microsoft Store install** — that flavour never reaches any of this; see § Microsoft Store (MSIX).
 
 ### How it works
 

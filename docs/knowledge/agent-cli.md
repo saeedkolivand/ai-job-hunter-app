@@ -1,6 +1,6 @@
 # Agent CLI (`ajh-tauri agent <verb>`)
 
-Last updated: 2026-09-06
+Last updated: 2026-09-07
 
 A headless CLI mode of the shipped `ajh-tauri` binary, invoked alongside the running desktop app. Enables external programs (shell scripts, LLM agents, CI pipelines) to query job data, profile fields, and trigger commands without a GUI. The same binary, no separate install.
 
@@ -32,6 +32,7 @@ The CLI is the shipped `ajh-tauri` executable itself, so where it lands — and 
 Where each platform's truth lives — read the source, it moves with packaging:
 
 - **Windows (NSIS, per-user)** — the installer's PATH hook, `apps/desktop/src-tauri/windows/hooks.nsh`, wired via `bundle.windows.nsis.installerHooks` in `apps/desktop/src-tauri/tauri.conf.json`.
+- **Windows (Microsoft Store, MSIX)** — the `windows.appExecutionAlias` extension in `apps/desktop/src-tauri/windows/msix/AppxManifest.xml`. A packaged app cannot edit `PATH`, so the alias is what makes the same command name resolve; the shim Windows installs is not the exe itself, so a caller that needs a real path still goes through the pointer file.
 - **macOS** — the Homebrew cask's `binary` stanza (`Casks/ai-job-hunter.rb`). That stanza _is_ the linking step, so whether an install is reachable by name follows from whether it went through the cask.
 - **Linux (deb/rpm)** — Tauri's own bundle layout for the `deb`/`rpm` entries in `bundle.targets` (`apps/desktop/src-tauri/tauri.conf.json`); the repo adds no override.
 - **Linux (AppImage)** — nothing is installed; the durable path is the `.AppImage` file the user launched, identified by the `launched_appimage` predicate in `apps/desktop/src-tauri/src/platform/config.rs` — never the transient mount path a process inside the image reports for itself.
