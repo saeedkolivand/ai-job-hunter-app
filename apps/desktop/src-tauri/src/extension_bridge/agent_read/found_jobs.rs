@@ -1,10 +1,13 @@
 //! `found-jobs` resource (issue #1115) — split out of `agent_read`'s own
 //! module under R8's hard LOC cap (`docs/architecture-rules.md`). This is a
-//! private implementation detail of `agent_read` (nothing here is `pub`
-//! outside `pub(super)`); see that module's own doc for the resource-table
-//! picture this fits into. Reaches into `super::` for the shared allowlist
-//! plumbing (`project_value`, `AgentTrust`, `fence_posting_display_fields`,
-//! `list_autopilots`) rather than duplicating any of it — a child module can
+//! private implementation detail of `agent_read` — nothing here is visible
+//! outside `extension_bridge`, and the only items that reach past
+//! `agent_read` itself are the two `limit` constants `agent_cli::mcp` derives
+//! its tool schema from (issue #1129). See that module's own doc for the
+//! resource-table picture this fits into. Reaches into `super::` for the
+//! shared allowlist plumbing (`project_value`, `AgentTrust`,
+//! `fence_posting_display_fields`, `list_autopilots`) rather than
+//! duplicating any of it — a child module can
 //! see its parent's private items, so no visibility widening was needed for
 //! that half; only the three helper fns this module's own tests borrow from
 //! `agent_read::tests` needed `pub(super)` (see their own doc there).
@@ -95,8 +98,16 @@ const FOUND_JOBS_DESCRIPTION_PREVIEW_CAP: usize = 2_000;
 /// [`MAX_FOUND_JOBS_LIMIT`] rows of that shape total well under
 /// [`PAGE_BYTE_BUDGET`], and a caller asking for the max in the common case
 /// gets exactly that many rows back, not a silently-truncated page.
-const DEFAULT_FOUND_JOBS_LIMIT: usize = 25;
-const MAX_FOUND_JOBS_LIMIT: usize = 50;
+///
+/// `pub(in crate::extension_bridge)` (issue #1129) — `agent_cli::mcp` derives
+/// the `found-jobs` tool schema's `limit` description from these two numbers
+/// instead of retyping them, which is how the advertised 50/100 drifted from
+/// the enforced 25/50 in the first place. Visible to the whole bridge, not
+/// merely to `agent_read`, because that consumer is a sibling subtree; the
+/// module declaration itself is widened to match (see `agent_read`'s
+/// `pub(super) mod found_jobs;`).
+pub(in crate::extension_bridge) const DEFAULT_FOUND_JOBS_LIMIT: usize = 25;
+pub(in crate::extension_bridge) const MAX_FOUND_JOBS_LIMIT: usize = 50;
 
 /// The REAL per-response safety net (pre-PR review round 2, HIGH — a
 /// row-count limit cannot bound a page's byte size because a legitimate,
@@ -194,12 +205,60 @@ fn trim_to_byte_budget(candidates: Vec<Value>, base_cost: usize) -> Vec<Value> {
     candidates.into_iter().take(kept).collect()
 }
 
+/// Every envelope byte OTHER than the `jobs` array itself, measured (not
+/// assumed) against the REAL fenced `autopilotName` and `autopilotId` a
+/// response will carry — the fix for the gap [`trim_to_byte_budget`]'s own doc
+/// names (CodeRabbit, PR #1117 review round 3), and the `base_cost` that
+/// function subtracts from [`PAGE_BYTE_BUDGET`].
+///
+/// `nextCursor` isn't known when this runs (it depends on how many rows survive
+/// trimming), so it is measured in the SAME `<autopilotId>:<offset>` shape a
+/// real cursor has (issue #1130 — a bare digit string would under-count a
+/// ~45-byte cursor and silently break the direction this estimate guarantees),
+/// with `total` standing in for the offset: the id half is identical and a real
+/// offset can never exceed `total`, so the estimate can only ever OVER-count and
+/// thus only trim MORE aggressively than strictly required, never less (the safe
+/// direction for a byte budget). `"jobs": []` isolates the fixed cost from the
+/// row-dependent cost [`trim_to_byte_budget`] accumulates; its own two bytes are
+/// subtracted back off because that function counts them itself.
+///
+/// Split out of [`resolve_found_jobs`] so the over-count guarantee is
+/// measurable against a real response rather than re-derived in a test.
+fn base_envelope_cost(autopilot_id: &str, autopilot_name: &str, total: usize) -> usize {
+    let base_envelope = json!({
+        "jobs": [],
+        "nextCursor": format!("{autopilot_id}:{total}"),
+        "total": total,
+        "autopilotId": autopilot_id,
+        "autopilotName": autopilot_name,
+    });
+    serde_json::to_string(&base_envelope)
+        .map_or(usize::MAX, |s| s.len())
+        .saturating_sub(2)
+}
+
 /// Fixed sentinel — mirrors `agent_read::JOB_NOT_FOUND_MESSAGE`'s "never
 /// echo the caller's own id" discipline.
 const AUTOPILOT_NOT_FOUND_MESSAGE: &str = "no autopilot found for this id";
 
-/// A caller-supplied `cursor` that isn't a plain non-negative integer.
-const INVALID_CURSOR_MESSAGE: &str = "cursor must be a non-negative integer offset";
+/// A well-formed `<issuer>:<offset>` cursor issued by a DIFFERENT autopilot —
+/// the issue #1130 case. Split from [`MALFORMED_CURSOR_MESSAGE`] (MEDIUM fix,
+/// review round 4) because the two have different recoveries: this one is
+/// "you are paging the wrong list", where re-sending the same cursor to the
+/// autopilot that issued it works. Fixed sentinel — the caller's value is
+/// never echoed back, same discipline as [`AUTOPILOT_NOT_FOUND_MESSAGE`].
+const WRONG_AUTOPILOT_CURSOR_MESSAGE: &str =
+    "cursor was issued by a different autopilot's found-jobs page — page that autopilot with it, \
+     or restart this one from `cursor: null`";
+
+/// A `cursor` that isn't a nextCursor SHAPE at all: a legacy bare offset, a
+/// JSON number, or anything else unparseable. The recovery differs from
+/// [`WRONG_AUTOPILOT_CURSOR_MESSAGE`]'s — there is no list this value pages,
+/// so the only way forward is a fresh traversal. Fixed sentinel, same
+/// never-echo discipline.
+const MALFORMED_CURSOR_MESSAGE: &str =
+    "cursor must be a nextCursor returned by a found-jobs page — a bare offset is not one; \
+     restart from `cursor: null`";
 
 /// Fence `description` at [`FOUND_JOBS_DESCRIPTION_PREVIEW_CAP`] — the
 /// `found-jobs` twin of `agent_read::fence_description`, which uses the
@@ -247,7 +306,11 @@ fn fence_found_jobs_description(value: &mut Value) {
 /// to SERVE pages over data this process already owns in a stable order. An
 /// offset is sufficient and simpler; forcing that consumer-side type onto a
 /// server-side page would be the "ill-suited abstraction" `author-contract`
-/// warns against, not reuse.
+/// warns against, not reuse. That offset stayed an implementation detail,
+/// but the WIRE cursor is no longer a bare one: it is
+/// `<autopilotId>:<offset>` (issue #1130), so a page can only be resumed
+/// against the list that issued it — see [`parse_found_jobs_cursor`], which
+/// is what turns a caller's cursor back into this fn's `offset` argument.
 pub(super) fn resolve_found_jobs(
     records: &[crate::autopilot::Autopilot],
     autopilot_id: &str,
@@ -275,34 +338,16 @@ pub(super) fn resolve_found_jobs(
 
     let autopilot_name = fence_autopilot_name(&autopilot.name);
 
-    // `base_cost` = every envelope byte OTHER than the `jobs` array itself,
-    // measured (not assumed) against the REAL fenced `autopilotName` and
-    // `autopilotId` this response will actually carry — the fix for the gap
-    // `trim_to_byte_budget`'s own doc names (CodeRabbit, PR #1117 review
-    // round 3). `nextCursor` isn't known yet (it depends on how many rows
-    // survive trimming, decided just below), so it's measured here as a
-    // digit-string the length of `total` — an upper bound, since a real
-    // offset can never exceed `total`, so this can only OVER-count and thus
-    // only trim MORE aggressively than strictly required, never less (the
-    // safe direction for a byte budget). `"jobs": []` isolates the fixed
-    // cost from the row-dependent cost `trim_to_byte_budget` accumulates.
-    let base_envelope = json!({
-        "jobs": [],
-        "nextCursor": total.to_string(),
-        "total": total,
-        "autopilotId": autopilot.id,
-        "autopilotName": autopilot_name,
-    });
-    let base_cost = serde_json::to_string(&base_envelope)
-        .map_or(usize::MAX, |s| s.len())
-        .saturating_sub(2); // the placeholder `[]`'s own two bytes
+    let base_cost = base_envelope_cost(&autopilot.id, &autopilot_name, total);
 
     let page = trim_to_byte_budget(candidates, base_cost);
 
     let returned = page.len();
     let next_offset = offset + returned;
+    // Bound to the autopilot that issued it (issue #1130) — see
+    // [`parse_found_jobs_cursor`] for why a bare offset was unsafe.
     let next_cursor = if next_offset < total {
-        Some(next_offset.to_string())
+        Some(format!("{}:{next_offset}", autopilot.id))
     } else {
         None
     };
@@ -317,22 +362,56 @@ pub(super) fn resolve_found_jobs(
 }
 
 /// Parse `payload`'s `cursor` — absent (or explicit `null`) means "start at
-/// 0"; anything else that doesn't parse as a plain non-negative integer is a
-/// caller error (never silently reset to page 1, which would look like
-/// forward progress while actually restarting the traversal). Matches on
-/// the `Value` variant directly (HIGH fix, pre-PR review round 2) rather
-/// than `.and_then(Value::as_str)`: that combinator returns `None` for a
-/// JSON NUMBER cursor too, not just for an absent one, so `{"cursor": 100}`
-/// used to collapse silently to `Ok(0)` instead of being read as offset 100
-/// or rejected — exactly the failure mode this function's own contract
-/// promises never happens.
-fn parse_found_jobs_cursor(payload: &Value) -> AppResult<usize> {
+/// 0"; anything else that isn't a `<autopilotId>:<offset>` cursor THIS
+/// `autopilot_id`'s own page issued is a caller error (never silently reset
+/// to page 1, which would look like forward progress while actually
+/// restarting the traversal). Matches on the `Value` variant directly (HIGH
+/// fix, pre-PR review round 2) rather than `.and_then(Value::as_str)`: that
+/// combinator returns `None` for a JSON NUMBER cursor too, not just for an
+/// absent one, so `{"cursor": 100}` used to collapse silently to `Ok(0)`
+/// instead of being read as offset 100 or rejected — exactly the failure
+/// mode this function's own contract promises never happens.
+///
+/// The id half is the issue #1130 fix: a bare offset carried no evidence of
+/// which list produced it, so a cursor from a 400-job autopilot replayed
+/// against a 20-job one was silently read as a valid deep offset into the
+/// wrong list — an empty page that looks like a finished traversal. A
+/// LEGACY bare-offset cursor is therefore REJECTED, not accepted for
+/// compatibility: accepting it would leave exactly that hole open, and the
+/// recovery (restart from `cursor: null`) is already this resource's
+/// documented answer when the stored order moves mid-traversal (see
+/// [`resolve_found_jobs`]). `rsplit_once` so an id that ever contains `:`
+/// still round-trips.
+///
+/// TWO fixed refusal texts, one sentinel kind (MEDIUM fix, review round 4):
+/// [`WRONG_AUTOPILOT_CURSOR_MESSAGE`] when a real cursor is replayed against
+/// the wrong list — recoverable by paging the autopilot that issued it — and
+/// [`MALFORMED_CURSOR_MESSAGE`] for a legacy bare offset or any other
+/// non-cursor, whose only recovery is a fresh traversal. Collapsing them into
+/// one string told a caller holding a still-valid cursor to throw it away.
+/// Neither ever echoes the value it refused.
+fn parse_found_jobs_cursor(payload: &Value, autopilot_id: &str) -> AppResult<usize> {
+    let malformed = || AppError::Validation(MALFORMED_CURSOR_MESSAGE.to_string());
     match payload.get("cursor") {
         None | Some(Value::Null) => Ok(0),
-        Some(Value::String(raw)) => raw
-            .parse::<usize>()
-            .map_err(|_| AppError::Validation(INVALID_CURSOR_MESSAGE.to_string())),
-        Some(_) => Err(AppError::Validation(INVALID_CURSOR_MESSAGE.to_string())),
+        // SHAPE first, issuer second: only a value that really is
+        // `<issuer>:<offset>` can have a meaningfully WRONG issuer.
+        // Checking the issuer first would report a bare `https://…`
+        // (whose `rsplit_once(':')` head is `https`) as another
+        // autopilot's cursor.
+        Some(Value::String(raw)) => {
+            match raw
+                .rsplit_once(':')
+                .and_then(|(issuer, offset)| Some((issuer, offset.parse::<usize>().ok()?)))
+            {
+                Some((issuer, offset)) if issuer == autopilot_id => Ok(offset),
+                Some(_) => Err(AppError::Validation(
+                    WRONG_AUTOPILOT_CURSOR_MESSAGE.to_string(),
+                )),
+                None => Err(malformed()),
+            }
+        }
+        Some(_) => Err(malformed()),
     }
 }
 
@@ -346,7 +425,7 @@ pub(super) fn found_jobs_resource(app: &AppHandle, payload: &Value) -> AppResult
     if autopilot_id.is_empty() {
         return Err(AppError::Validation("autopilotId is required".to_string()));
     }
-    let offset = parse_found_jobs_cursor(payload)?;
+    let offset = parse_found_jobs_cursor(payload, autopilot_id)?;
     let limit = clamp_found_jobs_limit(payload);
     let records = list_autopilots(app)?;
     resolve_found_jobs(&records, autopilot_id, offset, limit)
@@ -538,7 +617,12 @@ mod tests {
         let mut seen: Vec<String> = Vec::new();
         let mut cursor: Option<String> = None;
         loop {
-            let offset: usize = cursor.as_deref().map(|c| c.parse().unwrap()).unwrap_or(0);
+            // The cursor goes back through the REAL parser (issue #1130), not a
+            // hand-rolled `parse()` — that round trip is what proves an issued
+            // cursor is actually accepted again, rather than only that the
+            // digits inside it happen to be right.
+            let offset =
+                parse_found_jobs_cursor(&json!({ "cursor": cursor }), "ap-1").expect("own cursor");
             let out =
                 resolve_found_jobs(&records, "ap-1", offset, page_size).expect("page resolves");
             for row in out["jobs"].as_array().unwrap() {
@@ -594,8 +678,20 @@ mod tests {
 
     #[test]
     fn found_jobs_rejects_a_non_numeric_cursor_rather_than_silently_resetting() {
-        let err = parse_found_jobs_cursor(&json!({ "cursor": "not-a-number" })).unwrap_err();
-        assert_eq!(err.to_string(), INVALID_CURSOR_MESSAGE);
+        let err =
+            parse_found_jobs_cursor(&json!({ "cursor": "not-a-number" }), "ap-1").unwrap_err();
+        assert_eq!(err.to_string(), MALFORMED_CURSOR_MESSAGE);
+    }
+
+    /// A value that HAS a colon but is not a cursor (its head is not an
+    /// autopilot id and its tail is not an offset) reads as malformed, never
+    /// as "another autopilot issued this" — the shape is checked before the
+    /// issuer for exactly this reason.
+    #[test]
+    fn found_jobs_reads_a_colon_bearing_non_cursor_as_malformed_not_as_another_autopilots() {
+        let err = parse_found_jobs_cursor(&json!({ "cursor": "https://jobs.example/x" }), "ap-1")
+            .unwrap_err();
+        assert_eq!(err.to_string(), MALFORMED_CURSOR_MESSAGE);
     }
 
     /// HIGH fix, pre-PR review round 2 — `{"cursor": 100}` (a JSON NUMBER,
@@ -605,13 +701,13 @@ mod tests {
     /// a silent restart of the traversal.
     #[test]
     fn found_jobs_rejects_a_numeric_cursor_rather_than_silently_resetting() {
-        let err = parse_found_jobs_cursor(&json!({ "cursor": 100 })).unwrap_err();
-        assert_eq!(err.to_string(), INVALID_CURSOR_MESSAGE);
+        let err = parse_found_jobs_cursor(&json!({ "cursor": 100 }), "ap-1").unwrap_err();
+        assert_eq!(err.to_string(), MALFORMED_CURSOR_MESSAGE);
     }
 
     #[test]
     fn found_jobs_cursor_defaults_to_zero_when_absent() {
-        assert_eq!(parse_found_jobs_cursor(&json!({})).unwrap(), 0);
+        assert_eq!(parse_found_jobs_cursor(&json!({}), "ap-1").unwrap(), 0);
     }
 
     /// An explicit JSON `null` is absent-like, not a type error — mirrors
@@ -620,8 +716,64 @@ mod tests {
     #[test]
     fn found_jobs_cursor_null_is_treated_like_absent() {
         assert_eq!(
-            parse_found_jobs_cursor(&json!({ "cursor": null })).unwrap(),
+            parse_found_jobs_cursor(&json!({ "cursor": null }), "ap-1").unwrap(),
             0
+        );
+    }
+
+    /// The issue #1130 repro: a cursor a LONG list issued, replayed against a
+    /// SHORT one, used to be read as a valid deep offset into the wrong list —
+    /// an empty page indistinguishable from a finished traversal. The cursor is
+    /// taken from a real `resolve_found_jobs` reply, never hand-built, so this
+    /// fails if the two halves of the format ever stop agreeing.
+    #[test]
+    fn found_jobs_rejects_a_cursor_issued_for_a_different_autopilot() {
+        let long = autopilot_with_jobs("ap-1", (0..30).map(numbered_job).collect());
+        let short = autopilot_with_jobs("ap-2", (0..3).map(numbered_job).collect());
+        let records = vec![long, short];
+        let issued = resolve_found_jobs(&records, "ap-1", 0, 10).expect("page 1")["nextCursor"]
+            .as_str()
+            .expect("ap-1 has more pages")
+            .to_string();
+
+        let err = parse_found_jobs_cursor(&json!({ "cursor": issued }), "ap-2").unwrap_err();
+        // MEDIUM fix, review round 4 — the two refusals carry DIFFERENT fixed
+        // texts: this one still has a list it pages, the malformed one does
+        // not. Neither ever echoes the caller's value.
+        assert_eq!(err.to_string(), WRONG_AUTOPILOT_CURSOR_MESSAGE);
+        assert_ne!(WRONG_AUTOPILOT_CURSOR_MESSAGE, MALFORMED_CURSOR_MESSAGE);
+        for message in [WRONG_AUTOPILOT_CURSOR_MESSAGE, MALFORMED_CURSOR_MESSAGE] {
+            assert!(
+                !message.contains("ap-1") && !message.contains("ap-2"),
+                "a refusal never echoes the cursor or the id it named: {message}"
+            );
+        }
+    }
+
+    /// The pre-#1130 wire shape. Rejected, NOT accepted for compatibility —
+    /// accepting a bare offset would leave the cross-autopilot hole open for
+    /// exactly the callers most likely to still be mid-traversal.
+    #[test]
+    fn found_jobs_rejects_a_bare_numeric_offset_cursor() {
+        let err = parse_found_jobs_cursor(&json!({ "cursor": "10" }), "ap-1").unwrap_err();
+        assert_eq!(err.to_string(), MALFORMED_CURSOR_MESSAGE);
+    }
+
+    /// An id containing `:` still round-trips — the reason the parser splits
+    /// from the RIGHT. Pins the property, not today's UUID id format.
+    #[test]
+    fn found_jobs_cursor_round_trips_an_id_containing_a_colon() {
+        let records = vec![autopilot_with_jobs(
+            "ns:ap:1",
+            (0..5).map(numbered_job).collect(),
+        )];
+        let issued = resolve_found_jobs(&records, "ns:ap:1", 0, 2).expect("page 1")["nextCursor"]
+            .as_str()
+            .expect("more pages")
+            .to_string();
+        assert_eq!(
+            parse_found_jobs_cursor(&json!({ "cursor": issued }), "ns:ap:1").unwrap(),
+            2
         );
     }
 
@@ -762,7 +914,7 @@ mod tests {
         );
         assert_eq!(
             page1["nextCursor"].as_str().unwrap(),
-            kept.to_string(),
+            format!("ap-1:{kept}"),
             "nextCursor must reflect rows ACTUALLY kept, not the requested limit"
         );
 
@@ -878,6 +1030,21 @@ mod tests {
             bytes < MCP_RESULT_MAX_BYTES,
             "the FULL envelope, including a maxed-out autopilotName, must stay under the MCP \
              cap, was {bytes} bytes"
+        );
+        // The over-count guarantee, measured against the REAL response rather
+        // than re-derived: whatever `base_envelope_cost` charged must still
+        // cover every non-`jobs` byte the reply actually carries, including the
+        // real `<id>:<offset>` cursor (issue #1130 — a digit-only estimate
+        // under a ~45-byte cursor would break this direction silently).
+        let charged = base_envelope_cost(
+            "ap-1",
+            out["autopilotName"].as_str().unwrap(),
+            out["total"].as_u64().unwrap() as usize,
+        );
+        let rows = serde_json::to_string(&out["jobs"]).unwrap().len();
+        assert!(
+            bytes <= charged + rows,
+            "base_cost must stay an upper bound: {bytes} > {charged} + {rows} rows"
         );
     }
 }

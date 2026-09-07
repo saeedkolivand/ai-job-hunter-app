@@ -351,3 +351,76 @@ fn the_unlocatable_app_session_still_answers_on_the_wire() {
     assert_eq!(session.stderr, "", "stderr must stay empty");
     assert_eq!(session.code, Some(0), "a clean EOF is exit 0");
 }
+
+/// Issue #1134 end to end, against the real binary: every curated schema advertises
+/// `additionalProperties:false`, and a unit test over `classify_tool_call` proves only that the
+/// state machine agrees with itself. `commands` is the right probe because it answers LOCALLY —
+/// no app, no pointer file, no bridge — so the refusal below can only come from the key-set
+/// check, and the valid call beside it proves the check is not a blanket refusal.
+#[test]
+fn an_undeclared_tool_argument_is_refused_by_the_real_binary() {
+    let session = run_session(&[
+        initialize(1),
+        request(
+            2,
+            "tools/call",
+            json!({ "name": "commands", "arguments": { "bogusProp": true } }),
+        ),
+        request(
+            3,
+            "tools/call",
+            json!({ "name": "commands", "arguments": { "effect": "read" } }),
+        ),
+        // MCP reserves `_`-prefixed argument keys (`_meta`) and no schema declares them, so the
+        // gate above must let one through — end to end, because that is the half a unit test
+        // over `classify_tool_call` cannot show: a real client attaches `_meta` itself.
+        request(
+            4,
+            "tools/call",
+            json!({
+                "name": "commands",
+                "arguments": { "effect": "read", "_meta": { "progressToken": 7 } },
+            }),
+        ),
+    ]);
+
+    assert_eq!(ids(&session), vec![1, 2, 3, 4], "{:#?}", session.frames);
+
+    let refused = &session.frames[1];
+    assert_eq!(
+        refused.pointer("/result/isError").and_then(Value::as_bool),
+        Some(true),
+        "an undeclared argument must be refused, not silently dropped: {refused}"
+    );
+    let text = result_text(refused);
+    assert!(
+        text.contains("\"usage\"") && text.contains("exitCode: 2"),
+        "the refusal is a usage result carrying its exit code, not a protocol error: {text}"
+    );
+    assert!(
+        !text.contains("bogusProp"),
+        "the caller's own key is never echoed back: {text}"
+    );
+
+    let accepted = &session.frames[2];
+    assert_ne!(
+        accepted.pointer("/result/isError").and_then(Value::as_bool),
+        Some(true),
+        "a DECLARED argument must still work: {accepted}"
+    );
+
+    let reserved = &session.frames[3];
+    assert_ne!(
+        reserved.pointer("/result/isError").and_then(Value::as_bool),
+        Some(true),
+        "a protocol-reserved `_meta` key must not turn a valid call into a usage error: {reserved}"
+    );
+    assert_eq!(
+        result_text(reserved),
+        result_text(accepted),
+        "…and it must not change the answer either"
+    );
+
+    assert_eq!(session.stderr, "", "stderr must stay empty");
+    assert_eq!(session.code, Some(0), "a clean EOF is exit 0");
+}

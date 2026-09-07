@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
+use super::instructions::{EXPLAINED_IN_PROSE, INSTRUCTIONS};
 use super::*;
 
 /// How long a test waits for a signal that a correct [`serve`] always sends — long enough that a
@@ -990,7 +991,17 @@ fn build_instructions_appends_one_sentence_per_enabled_tier_and_never_duplicates
     let none = build_instructions(Tier::Read);
     let reversible = build_instructions(Tier::Reversible);
     let irreversible = build_instructions(Tier::Irreversible);
-    assert_eq!(none, INSTRUCTIONS, "no flags must not append anything");
+    // Was an exact equality against bare INSTRUCTIONS; issue #1143 appends the derived sentinel
+    // table at EVERY tier, so the invariant this test owns is "leads with the base text and adds
+    // no TIER notice", not "is byte-identical to the base text".
+    assert!(
+        none.starts_with(INSTRUCTIONS),
+        "must still lead with the base text: {none}"
+    );
+    assert!(
+        !none.contains("tier is enabled"),
+        "no flags must append no tier notice: {none}"
+    );
     assert!(reversible.starts_with(INSTRUCTIONS));
     assert!(reversible.contains("reversible write tier is enabled"));
     assert!(
@@ -1004,6 +1015,127 @@ fn build_instructions_appends_one_sentence_per_enabled_tier_and_never_duplicates
         1,
         "must append, never duplicate, the base INSTRUCTIONS text"
     );
+}
+
+/// Issue #1143 — the shipped instructions named 2 of the ~10 sentinels this CLI can return, so a
+/// client hitting `pairing_token_unavailable`/`pairing_rejected` (a moved data dir, a re-pair)
+/// got an unexplained string. Two-sided on purpose: every row must be REACHABLE from the final
+/// text, and the one deliberate omission is asserted ABSENT and anchored to its own const, so
+/// widening the exclusion silently is what fails here rather than passing quietly.
+#[test]
+fn every_error_sentinel_is_named_in_the_final_instructions_except_the_pre_protocol_one() {
+    let text = build_instructions(Tier::Read);
+    for (sentinel, meaning) in ERROR_SENTINELS {
+        if *sentinel == ERR_RUNTIME_UNAVAILABLE {
+            assert!(
+                !text.contains(sentinel),
+                "`{sentinel}` fires before the protocol starts (stderr + exit 2), so no tool \
+                 result can carry it and the instructions must not promise it: {text}"
+            );
+            continue;
+        }
+        assert!(
+            text.contains(sentinel),
+            "instructions must name every sentinel a tool result can carry, missing `{sentinel}`"
+        );
+        // The MEANING travels with the name for the rows the skip list doesn't claim — a bare
+        // name list would leave the client exactly as unable to recover as before. The escape
+        // hatch is the SAME literal list the builder filters on (MEDIUM fix, review round 4): it
+        // used to be `INSTRUCTIONS.contains(sentinel)`, so a sentinel the prose merely MENTIONED
+        // satisfied both the filter and its own test.
+        assert!(
+            text.contains(meaning) || EXPLAINED_IN_PROSE.contains(sentinel),
+            "`{sentinel}` is only listed, never explained: {text}"
+        );
+    }
+}
+
+/// The filter, not just the table: a sentinel the base prose already explains must NOT be
+/// re-listed. Mutating `sentinel_table`'s `!EXPLAINED_IN_PROSE.contains(name)` away is what this
+/// catches — otherwise a raw dump would repeat `app_not_running` in the same string twice.
+#[test]
+fn the_sentinel_table_skips_rows_the_base_prose_already_explains() {
+    let text = build_instructions(Tier::Read);
+    for already_named in EXPLAINED_IN_PROSE {
+        assert_eq!(
+            text.matches(already_named).count(),
+            INSTRUCTIONS.matches(already_named).count(),
+            "`{already_named}` must not be repeated by the derived table: {text}"
+        );
+    }
+}
+
+/// The skip list against a SECOND hand-written literal list — the repo's standing pairing rule
+/// (a test that loops over the table it is checking can only catch additions). Removing a name
+/// here is what re-adds a redundant table row for a sentinel the prose already explains; the
+/// loop-over-EXPLAINED_IN_PROSE tests around this one cannot see that by construction.
+#[test]
+fn the_skip_list_matches_a_hand_written_literal_list() {
+    assert_eq!(
+        EXPLAINED_IN_PROSE,
+        ["app_not_running", "app_not_located"],
+        "changing the skip list means re-reading the prose: a name belongs here only if \
+         INSTRUCTIONS says what the sentinel IS and what to do about it, not merely mentions it"
+    );
+}
+
+/// The skip list is hand-written, so it needs both directions pinned (MEDIUM fix, review round 4
+/// — a hand-written list nothing checks is exactly the drift the old substring filter had).
+/// Forward: every name on it is a REAL `ERROR_SENTINELS` row (otherwise it is inert) that the
+/// base prose really does mention. Backward: every sentinel a tool result can carry is either on
+/// the list or has its own derived row — no third state.
+#[test]
+fn every_skip_list_name_is_a_real_sentinel_the_prose_names_and_every_other_row_is_in_the_table() {
+    for name in EXPLAINED_IN_PROSE {
+        assert!(
+            ERROR_SENTINELS.iter().any(|(n, _)| n == name),
+            "`{name}` is not an ERROR_SENTINELS row, so skipping it does nothing"
+        );
+        assert!(
+            INSTRUCTIONS.contains(name),
+            "the base prose must actually explain `{name}` — it is not even mentioned"
+        );
+    }
+    let table = build_instructions(Tier::Read)
+        .strip_prefix(INSTRUCTIONS)
+        .expect("the derived table is appended to the base prose")
+        .to_string();
+    for (sentinel, meaning) in ERROR_SENTINELS {
+        if *sentinel == ERR_RUNTIME_UNAVAILABLE {
+            continue;
+        }
+        if EXPLAINED_IN_PROSE.contains(sentinel) {
+            assert!(
+                !table.contains(sentinel),
+                "`{sentinel}` is claimed as explained by the prose, so the table must skip it"
+            );
+        } else {
+            assert!(
+                table.contains(sentinel) && table.contains(meaning),
+                "`{sentinel}` is neither claimed by the skip list nor listed with its meaning: \
+                 {table}"
+            );
+        }
+    }
+}
+
+/// The row `connection_lost` lost to the old substring filter — the prose names it only inside
+/// "don't retry in a loop", which never says what it IS. Anchored to the sentinel that produced
+/// the finding rather than to the list, so removing it from the table fails here even if someone
+/// adds it to `EXPLAINED_IN_PROSE` at the same time.
+#[test]
+fn connection_lost_gets_its_own_table_row_because_the_prose_only_mentions_it() {
+    let text = build_instructions(Tier::Read);
+    assert!(
+        text.matches(ERR_CONNECTION_LOST).count()
+            > INSTRUCTIONS.matches(ERR_CONNECTION_LOST).count(),
+        "a merely-mentioned sentinel must still be defined by the table: {text}"
+    );
+    let (_, meaning) = ERROR_SENTINELS
+        .iter()
+        .find(|(n, _)| *n == ERR_CONNECTION_LOST)
+        .expect("connection_lost is a sentinel");
+    assert!(text.contains(meaning), "with its meaning: {text}");
 }
 
 #[test]
@@ -1065,6 +1197,207 @@ fn every_scraped_text_tool_carries_the_same_untrusted_fields_notice() {
              {description}"
         );
     }
+}
+
+// ── Advertised schema text (issues #1129, #1130, #1132, #1144) ──────────
+
+/// One tool's `inputSchema.properties.<field>.description`.
+fn property_description(list: &[Value], tool: &str, field: &str) -> String {
+    list.iter()
+        .find(|t| t["name"] == tool)
+        .unwrap_or_else(|| panic!("{tool} must be listed"))["inputSchema"]["properties"][field]
+        ["description"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{tool}.{field} must declare a description"))
+        .to_string()
+}
+
+fn tool_description(list: &[Value], tool: &str) -> String {
+    list.iter()
+        .find(|t| t["name"] == tool)
+        .unwrap_or_else(|| panic!("{tool} must be listed"))["description"]
+        .as_str()
+        .expect("a description")
+        .to_string()
+}
+
+/// Issue #1129 — the shipped schema advertised "default 50, server cap 100" while the server
+/// enforced 25/50, and an AI client has no other source for those bounds before its first call.
+/// Anchored to the CONSTANTS, never to today's numbers: a test retyping 25/50 would be the same
+/// hand-typed copy that drifted. The stale literal is asserted absent so the old text cannot
+/// creep back in beside a correct one. Each bound is asserted as the WHOLE derived phrase rather
+/// than two independent `contains` calls: separate calls still pass with the default and the cap
+/// transposed, which is exactly the drift this test exists to catch.
+#[test]
+fn both_limit_descriptions_are_derived_from_the_constants_the_server_enforces() {
+    let list = tools(Tier::Read);
+    let found = property_description(&list, TOOL_FOUND_JOBS, "limit");
+    assert!(
+        found.contains(&format!(
+            "default {DEFAULT_FOUND_JOBS_LIMIT}, server cap {MAX_FOUND_JOBS_LIMIT}"
+        )),
+        "found-jobs' limit must advertise the enforced default/cap: {found}"
+    );
+    assert!(
+        !found.contains("100"),
+        "the drifted cap must be gone, not merely joined by the real one: {found}"
+    );
+    let best = property_description(&list, TOOL_BEST_MATCHES, "limit");
+    assert!(
+        best.contains(&format!(
+            "default {DEFAULT_BEST_MATCHES_LIMIT}, server cap {MAX_BEST_MATCHES_LIMIT}"
+        )),
+        "best-matches' limit must advertise the enforced default/cap: {best}"
+    );
+}
+
+/// Issue #1130 — the wire cursor is `<autopilotId>:<offset>`, so calling it an "offset" invited
+/// exactly the cross-autopilot reuse the resolver now rejects.
+#[test]
+fn the_found_jobs_cursor_is_advertised_as_an_opaque_per_autopilot_token() {
+    let cursor = property_description(&tools(Tier::Read), TOOL_FOUND_JOBS, "cursor");
+    assert!(
+        !cursor.contains("offset"),
+        "the cursor is no longer a bare offset and must not be described as one: {cursor}"
+    );
+    assert!(
+        cursor.contains("opaque") && cursor.contains("autopilotId"),
+        "it must say it is opaque and bound to the id that issued it: {cursor}"
+    );
+}
+
+/// Issue #1132 — `totalFound` is the LAST run's kept count and diverged from the traversable
+/// total by up to ~24x on real data, with nothing on the surface saying so.
+#[test]
+fn the_automations_description_distinguishes_both_totals() {
+    let description = tool_description(&tools(Tier::Read), TOOL_AUTOMATIONS);
+    assert!(
+        description.contains("totalFound") && description.contains("foundJobsTotal"),
+        "both totals must be named where a client reads them: {description}"
+    );
+    assert!(
+        description.contains("`totalFound` is the last run's"),
+        "`totalFound` must be qualified as last-run-only: {description}"
+    );
+}
+
+/// Issue #1144 — a well-formed payload sent as the bare `input` fails with an opaque
+/// `invoke_error` on ~24 write commands; the wrapper key isn't derivable, so both channels a
+/// client reads must say it.
+#[test]
+fn the_generic_input_schema_and_the_instructions_both_document_the_wrapper_key() {
+    let input = property_description(&tools(Tier::Read), TOOL_CALL_READ, "input");
+    assert!(
+        input.contains("parameter") && input.contains("invoke_error"),
+        "the input schema must name the wrapper key rule and the recovery signal: {input}"
+    );
+    assert!(
+        INSTRUCTIONS.contains("invoke_error"),
+        "a client that reads only `instructions` must learn the same recovery: {INSTRUCTIONS}"
+    );
+}
+
+/// Roadmap #1146 P6 — `autopilot_run` does its whole scrape inside the app and can outlast this
+/// server's per-call budget, so a timeout must not read as "the run stopped".
+#[test]
+fn call_irreversible_says_long_work_outlives_the_call_and_names_what_to_poll() {
+    let description = tool_description(&tools(Tier::Irreversible), TOOL_CALL_IRREVERSIBLE);
+    assert!(
+        description.contains("autopilot_run") && description.contains("timeout"),
+        "the async shape must be stated on the tool itself: {description}"
+    );
+    assert!(
+        description.contains(TOOL_AUTOMATIONS),
+        "and it must name what to poll instead: {description}"
+    );
+}
+
+// ── title + deterministic order (roadmap #1146 P1, P10) ─────────────────
+
+/// P1 — every client's tool-approval UI shows `title` when present and the raw wire `name` when
+/// not, so a tool added without one is a visible regression. Derived sweep + the hand-written
+/// literal list below, per the "a guard driven off its own data can't catch a deletion" rule.
+#[test]
+fn every_tool_carries_a_non_empty_human_title() {
+    for tool in tools(Tier::Irreversible) {
+        let title = tool["title"].as_str().unwrap_or_default();
+        assert!(
+            !title.is_empty(),
+            "{} must carry a human title",
+            tool["name"]
+        );
+        assert_ne!(
+            title,
+            tool["name"].as_str().unwrap_or_default(),
+            "a title that just repeats the wire name adds nothing"
+        );
+    }
+}
+
+#[test]
+fn tool_titles_match_a_hand_written_literal_list() {
+    let list = tools(Tier::Irreversible);
+    let titles: Vec<&str> = list
+        .iter()
+        .map(|t| t["title"].as_str().unwrap_or_default())
+        .collect();
+    assert_eq!(
+        titles,
+        vec![
+            "Best Matches",
+            "Job by URL",
+            "My Profile",
+            "Automations",
+            "Found Jobs",
+            "Commands",
+            "Call (read)",
+            "Call (reversible)",
+            "Call (irreversible)",
+        ]
+    );
+}
+
+/// P10 — deterministic ordering is what lets a client's prompt cache survive repeated
+/// `tools/list` calls in a long session. Two properties, both mutation-visible: the order is
+/// STABLE call-to-call, and every lower tier is a strict PREFIX of the next, so enabling a write
+/// tier appends rather than reshuffling the read tools a cached prompt already holds.
+#[test]
+fn tools_list_order_is_stable_across_calls_and_prefix_stable_across_tiers() {
+    let ordered = |tier| -> Vec<String> {
+        tools(tier)
+            .iter()
+            .map(|t| t["name"].as_str().unwrap_or_default().to_string())
+            .collect()
+    };
+    let read = ordered(Tier::Read);
+    assert_eq!(read, ordered(Tier::Read), "two calls must agree");
+    assert_eq!(
+        read,
+        vec![
+            "best-matches",
+            "job",
+            "profile",
+            "automations",
+            "found-jobs",
+            "commands",
+            "call-read",
+        ],
+        "the read tier's order is part of the contract, not an accident of construction"
+    );
+    let reversible = ordered(Tier::Reversible);
+    let irreversible = ordered(Tier::Irreversible);
+    assert_eq!(
+        reversible[..read.len()],
+        read[..],
+        "read tier stays a prefix"
+    );
+    assert_eq!(
+        irreversible[..reversible.len()],
+        reversible[..],
+        "reversible tier stays a prefix"
+    );
+    assert_eq!(reversible[read.len()..], ["call-reversible"]);
+    assert_eq!(irreversible[reversible.len()..], ["call-irreversible"]);
 }
 
 // ── Tier (item 21) ───────────────────────────────────────────────────────
@@ -1203,6 +1536,134 @@ fn every_curated_tool_and_call_tool_declares_a_bare_object_schema_with_no_ref() 
         );
         assert!(schema.get("$ref").is_none(), "{}: no $ref", tool["name"]);
     }
+}
+
+// ── additionalProperties:false is ENFORCED, not merely advertised (#1134) ─
+
+/// The payload of a `ToolCall::Local(Ok(..))` outcome, parsed back from `content[0].text`.
+fn local_payload(params: &Value, server: &Server) -> Value {
+    let ToolCall::Local(Ok(result)) = classify_tool_call(params, server) else {
+        panic!("expected a local result for {params}");
+    };
+    let text = result["content"][0]["text"].as_str().expect("a text block");
+    let payload: Value = serde_json::from_str(text).expect("the payload is JSON");
+    assert_eq!(result["isError"], true, "an unknown argument is an error");
+    assert_eq!(result["content"][1]["text"], "exitCode: 2");
+    payload
+}
+
+/// Issue #1134 — every curated schema advertised `additionalProperties:false` and nothing
+/// validated against it, so a typo'd OPTIONAL key silently took that field's default and answered
+/// a quietly-wrong result with `isError:false`.
+#[test]
+fn an_undeclared_argument_on_a_curated_tool_is_a_usage_error_not_a_silent_drop() {
+    let server = Server::new(false, false);
+    // A tool with NO declared properties, and one with a real property typo'd — the two shapes
+    // the issue reproduced live.
+    for arguments in [json!({ "bogusProp": true }), json!({ "limt": 5 })] {
+        let payload = local_payload(
+            &json!({ "name": TOOL_PROFILE, "arguments": arguments }),
+            &server,
+        );
+        assert_eq!(payload["error"], ERR_USAGE);
+    }
+    let payload = local_payload(
+        &json!({ "name": TOOL_FOUND_JOBS, "arguments": { "autopilotId": "ap-1", "limt": 5 } }),
+        &server,
+    );
+    assert_eq!(payload["error"], ERR_USAGE);
+    let detail = payload["detail"].as_str().unwrap_or_default();
+    assert!(
+        detail.contains("limit") && detail.contains("cursor") && detail.contains("autopilotId"),
+        "the detail must name the DECLARED set so a client can correct itself: {detail}"
+    );
+    assert!(
+        !detail.contains("limt"),
+        "the caller's own token is never echoed back (path privacy): {detail}"
+    );
+}
+
+/// The generic tier is covered by the same gate — including `confirm` on `call-read`, whose
+/// schema omits it BY CONSTRUCTION. It used to be accepted and dropped; now the client is told.
+#[test]
+fn an_undeclared_argument_on_call_read_is_a_usage_error() {
+    let server = Server::new(false, false);
+    let payload = local_payload(
+        &json!({
+            "name": TOOL_CALL_READ,
+            "arguments": { "namespace": "jobs", "command": "jobs_list", "confirm": "x" },
+        }),
+        &server,
+    );
+    assert_eq!(payload["error"], ERR_USAGE);
+    let detail = payload["detail"].as_str().unwrap_or_default();
+    assert!(
+        detail.contains("namespace") && detail.contains("input"),
+        "the detail must name call-read's own declared set: {detail}"
+    );
+}
+
+/// The other half of the guard: a DECLARED key set still classifies exactly as before. Without
+/// this, refusing everything would pass the test above.
+#[test]
+fn every_declared_argument_still_reaches_the_bridge_or_its_local_result() {
+    let server = Server::new(false, false);
+    assert!(matches!(
+        classify_tool_call(
+            &json!({
+                "name": TOOL_FOUND_JOBS,
+                "arguments": { "autopilotId": "ap-1", "limit": 5, "cursor": "ap-1:5" },
+            }),
+            &server,
+        ),
+        ToolCall::Bridge(_)
+    ));
+    assert!(matches!(
+        classify_tool_call(&json!({ "name": TOOL_PROFILE, "arguments": {} }), &server),
+        ToolCall::Bridge(_)
+    ));
+    let ToolCall::Local(Ok(result)) = classify_tool_call(
+        &json!({ "name": TOOL_COMMANDS, "arguments": { "effect": "read" } }),
+        &server,
+    ) else {
+        panic!("commands answers locally");
+    };
+    assert_eq!(result["isError"], false);
+}
+
+/// MEDIUM fix, review round 4 — the #1134 gate refused MCP's own reserved `_`-prefixed keys,
+/// which no schema declares and any client may attach (`_meta` rides on `tools/list` results in
+/// this very file). Both directions in one test: a reserved key passes, and the typo the gate
+/// exists for is STILL refused when it rides alongside one.
+#[test]
+fn a_reserved_underscore_argument_key_is_ignored_but_a_typo_beside_it_is_still_refused() {
+    let server = Server::new(false, false);
+    for arguments in [
+        json!({ "_meta": { "progressToken": 1 } }),
+        json!({ "_vendorExtension": true }),
+    ] {
+        assert!(
+            matches!(
+                classify_tool_call(
+                    &json!({ "name": TOOL_PROFILE, "arguments": arguments }),
+                    &server,
+                ),
+                ToolCall::Bridge(_)
+            ),
+            "a protocol-reserved key must not turn a valid call into a usage error"
+        );
+    }
+    let payload = local_payload(
+        &json!({
+            "name": TOOL_FOUND_JOBS,
+            "arguments": { "autopilotId": "ap-1", "_meta": { "progressToken": 1 }, "limt": 5 },
+        }),
+        &server,
+    );
+    assert_eq!(
+        payload["error"], ERR_USAGE,
+        "skipping `_`-prefixed keys must not widen into skipping the typo'd ones"
+    );
 }
 
 #[test]
@@ -1409,6 +1870,10 @@ fn confirm_reaches_the_verb_only_via_the_irreversible_tool() {
     );
 }
 
+/// Still the contract AT THIS LAYER: `tool_argv` never forwards `confirm` off
+/// `call-irreversible`. A real `tools/call` no longer gets this far — `classify_tool_call`
+/// refuses the undeclared key first (issue #1134, tested above) — but the layered guarantee is
+/// what keeps a future caller of `tool_argv` from smuggling a proof through.
 #[test]
 fn a_confirm_argument_sent_to_call_read_is_silently_ignored() {
     let arguments =
@@ -1483,6 +1948,93 @@ fn found_jobs_tool_argv_treats_an_explicit_null_cursor_as_absent() {
             autopilot_id: "ap-1".to_string(),
             limit: None,
             cursor: None,
+        }
+    );
+}
+
+/// Issue #1137 — `limit: null` was forwarded as the literal string `"null"` and failed
+/// `--limit`'s integer parse, while the sibling `cursor` on the same tool already read an
+/// explicit null as absent. BOTH `limit` arms are covered: shipping the fix on one of two
+/// structurally identical arms guarantees a second issue.
+#[test]
+fn an_explicit_null_limit_reads_as_absent_on_both_tools_that_take_one() {
+    assert_eq!(
+        parse_verb(&tool_argv(
+            TOOL_FOUND_JOBS,
+            &json!({ "autopilotId": "ap-1", "limit": null })
+        ))
+        .unwrap(),
+        Verb::FoundJobs {
+            autopilot_id: "ap-1".to_string(),
+            limit: None,
+            cursor: None,
+        }
+    );
+    assert_eq!(
+        parse_verb(&tool_argv(TOOL_BEST_MATCHES, &json!({ "limit": null }))).unwrap(),
+        Verb::BestMatches { limit: None }
+    );
+}
+
+/// The direction the null-filter must NOT regress: a JSON number is still coerced, on the same
+/// two arms. A `filter` that swallowed non-strings would pass the test above and break this one.
+#[test]
+fn a_numeric_limit_still_reaches_parse_verb_on_both_tools() {
+    assert_eq!(
+        parse_verb(&tool_argv(TOOL_BEST_MATCHES, &json!({ "limit": 7 }))).unwrap(),
+        Verb::BestMatches { limit: Some(7) }
+    );
+    assert_eq!(
+        parse_verb(&tool_argv(
+            TOOL_FOUND_JOBS,
+            &json!({ "autopilotId": "ap-1", "limit": 7 })
+        ))
+        .unwrap(),
+        Verb::FoundJobs {
+            autopilot_id: "ap-1".to_string(),
+            limit: Some(7),
+            cursor: None,
+        }
+    );
+}
+
+/// Issue #1140 — a numeric `confirm` (the shape `ProofSource::Count` proofs really take, e.g. a
+/// token count read from `ai_spend_summary`) was dropped by `and_then(Value::as_str)` and
+/// answered exactly like "confirm omitted", so a client could loop forever re-reading the same
+/// proof and re-sending it the same way.
+#[test]
+fn a_non_string_confirm_reaches_the_verb_as_its_json_text_rather_than_being_dropped() {
+    let arguments = json!({
+        "namespace": "documents", "command": "documents_remove", "confirm": 12345,
+    });
+    let verb = parse_verb(&tool_argv(TOOL_CALL_IRREVERSIBLE, &arguments)).unwrap();
+    assert_eq!(
+        verb,
+        Verb::Call {
+            namespace: "documents".to_string(),
+            command: "documents_remove".to_string(),
+            input: json!({}),
+            confirm: Some("12345".to_string()),
+        }
+    );
+}
+
+/// …and the other side of the same fix: an explicit `null` still means "no proof supplied", so a
+/// strict-schema client gets the `confirmation_required` hint rather than a mismatch on a value
+/// it never sent.
+#[test]
+fn an_explicit_null_confirm_still_reads_as_absent() {
+    let arguments = json!({
+        "namespace": "documents", "command": "documents_remove", "confirm": null,
+    });
+    let verb = parse_verb(&tool_argv(TOOL_CALL_IRREVERSIBLE, &arguments)).unwrap();
+    assert_eq!(
+        verb,
+        Verb::Call {
+            namespace: "documents".to_string(),
+            command: "documents_remove".to_string(),
+            input: json!({}),
+            confirm: None,
         }
     );
 }

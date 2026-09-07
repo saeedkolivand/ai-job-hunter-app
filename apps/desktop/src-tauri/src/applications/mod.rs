@@ -34,6 +34,11 @@ mod status_events;
 // Re-exported so `crate::applications::normalize_job_url` keeps resolving after
 // the split (see `job_url` — a verbatim move, no behaviour change).
 pub use job_url::normalize_job_url;
+// The lookup-time leniency that sits BESIDE the normalizer, never inside it
+// (issue #1128) — `pub(crate)`, because only in-process readers comparing two
+// spellings of the same url may use it; see its own doc for why it must never
+// touch a value on its way to being persisted.
+pub(crate) use job_url::decode_unreserved;
 // Same for the reminder projection the scheduler imports (see `reminders`).
 pub use reminders::FollowUpCandidate;
 // `status_events` split out purely for R8 LOC (own doc there). `StatusEvent`

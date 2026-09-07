@@ -177,10 +177,10 @@ enum Verb {
     /// enumerate this: the first two are unbounded (every real autopilot
     /// exceeds the MCP bridge's own result cap) and the third is a
     /// cross-autopilot top-N ranking, not a per-autopilot full traversal.
-    /// `cursor` is a plain decimal offset into the stored `found_jobs`
-    /// order (see `agent_read::resolve_found_jobs`'s doc for why an offset
-    /// is sufficient — that order is stable outside a `record_run`/dedup
-    /// split).
+    /// `cursor` is opaque to this client — it is passed through verbatim in
+    /// both directions and never parsed here; its shape, and the fact that a
+    /// cursor is only valid for the autopilot that issued it (issue #1130),
+    /// live on `agent_read::found_jobs::parse_found_jobs_cursor`.
     FoundJobs {
         autopilot_id: String,
         limit: Option<u64>,
@@ -299,7 +299,12 @@ const VERB_TABLE: &[VerbHelp] = &[
     VerbHelp {
         name: "job",
         args: "<url>",
-        returns: "full detail for one posting",
+        // The url-spelling sentence is the caller-facing half of `agent_read::job_lookup_key`'s
+        // doc (MEDIUM fix, security review round 4): this READ is deliberately lenient about
+        // percent-escapes, the write commands are not, so the spelling a reply hands back is the
+        // one that works on both.
+        returns: "full detail for one posting (pass back the `url` a reply gave you rather than \
+                  re-encoding your own — write commands match the exact spelling)",
     },
     VerbHelp {
         name: "profile",
@@ -310,7 +315,16 @@ const VERB_TABLE: &[VerbHelp] = &[
     VerbHelp {
         name: "automations",
         args: "",
-        returns: "every autopilot and its status",
+        // Issue #1132 — `totalFound` is the LAST run's kept count, while `foundJobsTotal` is the
+        // whole stored list and equals `found-jobs`' own `total`. This string is what `--help`
+        // prints AND what the `automations` MCP tool's description is derived from, but it is NOT
+        // the only place the distinction is written (MEDIUM fix, review round 4 — the old comment
+        // said "named HERE", which reads as "one surface"): `agent schema` serves
+        // `agent_read::RESOURCES`' own copy. The two are pinned together by
+        // `tests::both_automations_descriptions_name_both_totals`, so neither can drop a field
+        // the other still explains.
+        returns: "every autopilot and its status (`totalFound` is the last run's kept count; \
+                  `foundJobsTotal` is the whole stored list `found-jobs` pages through)",
     },
     VerbHelp {
         name: "schema",
@@ -320,9 +334,10 @@ const VERB_TABLE: &[VerbHelp] = &[
     VerbHelp {
         name: "found-jobs",
         args: "<autopilotId> [--limit <n>] [--cursor <c>]",
-        returns: "one page of an autopilot's complete found-jobs list (default/max limit and the \
-                  cursor format are documented on `agent_read::resolve_found_jobs`); repeat with \
-                  the returned cursor until it comes back null to traverse the whole list",
+        returns: "one page of an autopilot's complete found-jobs list (default/max limit are \
+                  documented on `agent_read::found_jobs::resolve_found_jobs`, the cursor format \
+                  on `agent_read::found_jobs::parse_found_jobs_cursor`); repeat with the \
+                  returned cursor until it comes back null to traverse the whole list",
     },
     VerbHelp {
         name: "call",
