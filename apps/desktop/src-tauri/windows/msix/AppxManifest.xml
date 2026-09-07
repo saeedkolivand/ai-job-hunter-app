@@ -20,8 +20,9 @@
   xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
   xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
   xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
-  IgnorableNamespaces="uap uap5 uap10 rescap desktop6">
+  IgnorableNamespaces="uap uap5 uap10 rescap desktop desktop6">
 
   <Identity
     Name="{{IDENTITY_NAME}}"
@@ -115,6 +116,25 @@
             <uap5:ExecutionAlias Alias="ajh-tauri.exe" />
           </uap5:AppExecutionAlias>
         </uap5:Extension>
+
+        <!-- Launch at login. The unpackaged build writes an HKCU `Run` entry
+             (tauri-plugin-autostart); that entry embeds the exe path, which for
+             a packaged app is version-pinned and therefore dead after the next
+             Store update — while the settings toggle would still read "on".
+             A StartupTask is the packaged equivalent and survives updates.
+             `Enabled="false"` because launch-at-login is opt-in: the app asks
+             for it via StartupTask.RequestEnableAsync() when the user turns the
+             toggle on (`platform::msix`, whose STARTUP_TASK_ID must match this
+             TaskId), and Windows — not us — has the final say. -->
+        <desktop:Extension
+          Category="windows.startupTask"
+          Executable="ajh-tauri.exe"
+          EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask
+            TaskId="AjhLaunchAtLogin"
+            Enabled="false"
+            DisplayName="AI Job Hunter" />
+        </desktop:Extension>
       </Extensions>
     </Application>
   </Applications>
