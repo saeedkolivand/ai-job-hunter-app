@@ -122,7 +122,11 @@ export function compareSdkVersions(a, b) {
 export function findMakeappx(env = process.env) {
   const override = env.MAKEAPPX && String(env.MAKEAPPX).trim();
   if (override) {
-    if (!fs.existsSync(override)) throw new Error(`MAKEAPPX points at a missing file: ${override}`);
+    // Through `rel()` like every other printed path: the override is
+    // user-supplied and typically absolute, and this message reaches the log.
+    if (!fs.existsSync(override)) {
+      throw new Error(`MAKEAPPX points at a missing file: ${rel(override)}`);
+    }
     return override;
   }
   const roots = [env['ProgramFiles(x86)'], env.ProgramFiles]
@@ -156,13 +160,26 @@ export function rel(target) {
   const abs = path.resolve(String(target).replace(/^\\\\\?\\/, ''));
   const relative = path.relative(REPO_ROOT, abs);
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
-    return `<outside repo>/${path.basename(abs)}`;
+    // Not even the basename: outside the repo the last segment is as likely to
+    // be a person's name (`…\Users\First Last`) as a filename, and nothing
+    // downstream needs it — the repo-relative case above carries every path a
+    // reader can act on.
+    return '<outside repo>';
   }
   return relative.split(path.sep).join('/');
 }
 
-/** Windows absolute paths, incl. the `\\?\` long-path form makeappx echoes. */
-const ABSOLUTE_PATH = /(?:\\\\\?\\)?[A-Za-z]:[\\/][^\s"'<>|]*/g;
+/**
+ * Windows absolute paths: drive form (incl. the `\\?\` long-path prefix
+ * makeappx echoes) and UNC form.
+ *
+ * Terminated by a quote or a line break, NOT by whitespace: `C:\Users\First
+ * Last\…` and `C:\Program Files\…` both contain spaces, and stopping at the
+ * first one leaves the tail — the part carrying the user's name — in the log.
+ * The cost is over-scrubbing when an unquoted path is followed by prose on the
+ * same line, which is the safe direction here.
+ */
+const ABSOLUTE_PATH = /(?:\\\\\?\\)?[A-Za-z]:[\\/][^"'\r\n]*|\\\\[^\s"'\r\n\\]+\\[^"'\r\n]*/g;
 
 /** Rewrite every absolute path inside a blob of tool output through {@link rel}. */
 export function scrubPaths(text) {
