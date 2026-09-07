@@ -239,7 +239,9 @@ describe('buildHelpChatPrompt', () => {
 
   it('lists an unlabelled group (the pinned footer) without a dangling colon', () => {
     const prompt = buildHelpChatPrompt({
-      ...base,
+      question: 'q',
+      entries: ENTRIES,
+      target: LARGE,
       appPages: [{ section: '', pages: ['Help & Support', 'Settings'] }],
     });
     expect(prompt).toContain('- Help & Support, Settings');
