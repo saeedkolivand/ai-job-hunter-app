@@ -189,12 +189,30 @@ pub(super) fn hint(source: ProofSource) -> String {
                 format!("its own `{}` field", path.join("."))
             }
         }
-        ProofSource::ListMatch { value_field, .. } => {
-            format!("the matching record's own `{value_field}` field")
+        // The three list-shaped sources below all name a read command that
+        // MAY be one of `super::PAGINATED_LIST_COMMANDS`
+        // (`applications_list` backs `privacy_reset_app`'s Count,
+        // `ai_generations_list` backs both `ai_generations_remove` and
+        // `ai_generations_remove_bulk`). Those replies are no longer a bare
+        // array: issue #1136 wrapped them in `{items,total,nextCursor}`, so a
+        // hint that still said "its own array length" pointed a caller at a
+        // key that is not there and at a page that may not hold the record.
+        // Worded generically rather than per-command — the wording stays
+        // correct for an unpaged row too, and a second copy of the paged-row
+        // list here would be exactly the drift this module avoids elsewhere.
+        ProofSource::ListMatch { value_field, .. } => format!(
+            "the matching record's own `{value_field}` field (paging with `cursor` if it is \
+             not on the first page)"
+        ),
+        ProofSource::Count { .. } => {
+            "its own array length: how many records exist (a paged reply reports this as \
+             `total`)"
+                .to_string()
         }
-        ProofSource::Count { .. } => "its own array length (how many records exist)".to_string(),
         ProofSource::MatchCount { .. } => {
-            "the count of the targeted ids that actually exist".to_string()
+            "the count of the targeted ids that actually exist (paging with `cursor` if they \
+             are not all on the first page)"
+                .to_string()
         }
     };
     format!("read {target} and pass {field} as --confirm")
@@ -903,5 +921,55 @@ mod tests {
             path: &[],
         };
         assert!(hint(source).contains("not_a_real_command"));
+    }
+
+    /// Issue #1136 turned `applications_list`/`ai_generations_list` from bare
+    /// arrays into `{items,total,nextCursor}`, and ALL THREE list-shaped proof
+    /// sources name one of those as their read command (`privacy_reset_app`'s
+    /// `Count`, `ai_generations_remove`'s `ListMatch`,
+    /// `ai_generations_remove_bulk`'s `MatchCount`). A hint that still said
+    /// "its own array length" sent the caller looking for a key that is no
+    /// longer in the reply, and for a record that may not be on page one DASH so
+    /// the ceremony's one instruction was wrong for the rows most likely to
+    /// need it.
+    #[test]
+    fn hint_describes_the_paged_reply_shape_for_every_list_shaped_source() {
+        let count = hint(ProofSource::Count {
+            read_command: "applications_list",
+        });
+        assert!(
+            count.contains("`total`"),
+            "a Count proof must name the paged reply's own key: {count}"
+        );
+
+        let list_match = hint(ProofSource::ListMatch {
+            read_command: "ai_generations_list",
+            id_field: &["id"],
+            match_field: "id",
+            value_field: "jobTitle",
+        });
+        assert!(
+            list_match.contains("`cursor`"),
+            "a ListMatch proof must say how to reach a later page: {list_match}"
+        );
+
+        let match_count = hint(ProofSource::MatchCount {
+            read_command: "ai_generations_list",
+            ids_field: &["ids"],
+            match_field: "id",
+        });
+        assert!(
+            match_count.contains("`cursor`"),
+            "a MatchCount proof must say how to reach a later page: {match_count}"
+        );
+
+        // Unchanged guarantee: still built only from `'static` field names,
+        // so still incapable of disclosing a resolved value.
+        for text in [count, list_match, match_count] {
+            assert!(
+                !text.chars().any(|c| c.is_ascii_digit()),
+                "hint leaked something numeric: {text}"
+            );
+        }
     }
 }

@@ -294,8 +294,7 @@ impl Refusal {
                  result was delivered, NOT that nothing happened, so do not re-run a mutating \
                  command on this refusal. Retrying is futile: the outcome is deterministic for \
                  this data. Ask the user to run it outside this session, or use a bounded \
-                 alternative if this command has one (the MCP `commands` tool marks the paged \
-                 ones)."
+                 alternative if this command has one."
             ),
             Refusal::InvalidCursor => super::paging::INVALID_CURSOR_MESSAGE.to_string(),
         }
@@ -336,17 +335,104 @@ fn call_result_reply(
     .to_string()
 }
 
-/// Reply for an `agent.call` arriving over a connection whose handshake
-/// `Origin` wasn't `auth::AGENT_CLI_ORIGIN` — mirrors
-/// `agent_read::origin_refused_reply` exactly, one wire type over.
-pub(super) fn origin_refused_reply(req_id: &str, payload: &Value) -> String {
-    let (namespace, command) = payload_target(payload);
-    call_result_reply(req_id, namespace, command, Err(Refusal::OriginRefused))
+/// Longest caller-supplied `reqId`/`namespace`/`command` a REFUSAL reply
+/// echoes back, in bytes. All three arrive off the wire bounded only by the
+/// bridge's own INCOMING frame cap ([`super::MAX_FRAME_BYTES`], 8 MiB), so a
+/// refusal that echoed them verbatim could itself exceed the very cap it
+/// exists to enforce: a ~8.38 MB `command` made [`enforce_frame_cap`]'s
+/// substitute measure 8,389,135 B against an 8,388,608 B ceiling (HIGH —
+/// security review), and [`origin_refused_reply`]/[`throttled_reply`] echo
+/// the same unbounded strings without ever passing through that check at all.
+/// 256 is far above anything the real [`POLICY`] table can produce (its
+/// longest command name is comfortably under a third of it) and far below
+/// anything that could threaten a frame. That headroom is pinned against the
+/// TABLE, not against a copy of the number here — see
+/// `the_identifier_clamp_leaves_every_real_identifier_untouched`.
+const REFUSAL_IDENT_CAP: usize = 256;
+
+/// A [`REFUSAL_IDENT_CAP`]-bounded prefix of a caller-supplied identifier,
+/// cut on a CHAR BOUNDARY — `&value[..256]` panics mid-codepoint, and this
+/// crate is `panic = "abort"` in release, so a slice panic inside a frame
+/// handler is a silent process death, not an error.
+///
+/// Applied on REFUSAL replies only, never on the success path: a real command
+/// name is short, and a long one is already `unknown_command`, so clamping
+/// there could only make a legitimate reply lie about which command produced
+/// it.
+fn clamp_ident(value: &str) -> &str {
+    if value.len() <= REFUSAL_IDENT_CAP {
+        return value;
+    }
+    let mut end = REFUSAL_IDENT_CAP;
+    while end > 0 && !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    &value[..end]
 }
 
+/// `detail` on [`refusal_reply`]'s last-resort envelope. A FIXED string, so
+/// that envelope's size cannot be influenced by anything the caller sent.
+const REFUSAL_UNDELIVERABLE_DETAIL: &str =
+    "this call's refusal did not fit the bridge's frame cap, so its identifiers and detail \
+     were dropped in order to deliver any reply at all";
+
+/// The ONE builder for every refusal on this surface — the success path keeps
+/// calling [`call_result_reply`] directly. Two properties, neither of which
+/// the raw builder can offer:
+///
+/// 1. **Bounded material only.** The three echoed identifiers go through
+///    [`clamp_ident`]; every `detail` is either a fixed literal, a `'static`
+///    reason off a [`POLICY`] row, a `proof::hint` built from `'static` field
+///    names, or (for [`Refusal::InvokeError`]) a string already capped by
+///    `crate::prompt_fence::JOB_CAP`. So the whole reply is bounded by
+///    construction, not by hoping the inputs were small.
+/// 2. **Measured, not assumed.** Property 1 is an argument about today's
+///    variants; this re-measures the built reply anyway and degrades to a
+///    minimal envelope (empty identifiers, fixed detail, identical `type` and
+///    key set) if it somehow still does not fit. A refusal that blew the cap
+///    would reproduce the exact failure it reports — the caller would get the
+///    content-free `connection_lost` that issue #1135 exists to eliminate.
+fn refusal_reply(req_id: &str, namespace: &str, command: &str, refusal: Refusal) -> String {
+    let sentinel = refusal.sentinel();
+    let reply = call_result_reply(
+        clamp_ident(req_id),
+        clamp_ident(namespace),
+        clamp_ident(command),
+        Err(refusal),
+    );
+    if reply.len() <= super::MAX_FRAME_BYTES {
+        return reply;
+    }
+    json!({
+        "type": super::msg::AGENT_CALL_RESULT,
+        "reqId": "",
+        "payload": {
+            "dispatched": false,
+            "namespace": "",
+            "command": "",
+            "error": sentinel,
+            "detail": REFUSAL_UNDELIVERABLE_DETAIL,
+        },
+    })
+    .to_string()
+}
+
+/// Reply for an `agent.call` arriving over a connection whose handshake
+/// `Origin` wasn't `auth::AGENT_CLI_ORIGIN` — mirrors
+/// `agent_read::origin_refused_reply` exactly, one wire type over. Built
+/// through [`refusal_reply`]: this path never reaches [`enforce_frame_cap`]
+/// (`mod.rs` writes what it returns straight to the socket), so the clamp is
+/// the ONLY thing bounding what it echoes.
+pub(super) fn origin_refused_reply(req_id: &str, payload: &Value) -> String {
+    let (namespace, command) = payload_target(payload);
+    refusal_reply(req_id, namespace, command, Refusal::OriginRefused)
+}
+
+/// Same never-reaches-[`enforce_frame_cap`] path as [`origin_refused_reply`],
+/// and bounded the same way.
 pub(super) fn throttled_reply(req_id: &str, payload: &Value) -> String {
     let (namespace, command) = payload_target(payload);
-    call_result_reply(req_id, namespace, command, Err(Refusal::RateLimited))
+    refusal_reply(req_id, namespace, command, Refusal::RateLimited)
 }
 
 fn payload_target(payload: &Value) -> (&str, &str) {
@@ -685,12 +771,32 @@ pub(super) const PAGINATED_LIST_COMMANDS: &[&str] = &["applications_list", "ai_g
 /// hand-maintained that can drift). Deliberately names no default/cap number
 /// — those live on [`DEFAULT_LIST_PAGE_LIMIT`]/[`MAX_LIST_PAGE_LIMIT`] and a
 /// copy here would be a second source of truth for them.
+///
+/// The pacing numbers ARE spelled out, unlike those two, because this text is
+/// the only thing the consumer (an LLM that cannot read this source) ever
+/// sees, and "burst, then refill" without figures is unactionable. They are a
+/// COPY of `agent_read::AGENT_CHEAP_BURST`/`AGENT_CHEAP_REFILL_SECS`, which
+/// remain the source of truth — change those and this sentence must change
+/// with them (the constants are private to `agent_read`, so this copy cannot
+/// be derived from here without widening them; tracked as the follow-up).
+///
+/// The last sentence states the offset cursor's known weakness rather than
+/// leaving a caller to discover it: this is the same accepted trade-off
+/// `agent_read::found_jobs::resolve_found_jobs` documents at length for
+/// `found-jobs`, and a caller that is told can act on it.
 pub(super) const PAGINATED_LIST_NOTE: &str =
     "returns a paged envelope {items,total,nextCursor} instead of a bare array (the raw list is \
      unbounded and exceeds the result cap). Pass input.limit (clamped server-side) and \
      input.cursor (a prior reply's nextCursor, verbatim; omit for the first page); repeat until \
      nextCursor is null. `total` is the FULL row count, unaffected by paging — it is what an \
-     Effect::Irreversible row whose proof is this list's length wants.";
+     Effect::Irreversible row whose proof is this list's length wants. Pages draw on the \
+     shared cheap throttle bucket nearly every agent call uses (burst 10, one token back per \
+     second), so pace a traversal at roughly one page per second instead of looping as fast as \
+     replies arrive; a rate_limited refusal means wait, not retry at once. The cursor is a \
+     plain offset into the list as it stands right now, so a row added or removed between two \
+     pages can make that boundary repeat or skip a row (accepted, same as the found-jobs \
+     resource) — a `total` that changed between calls is the signal, and restarting with no \
+     cursor is the fix if that matters.";
 
 /// Server-side default/cap for a [`PAGINATED_LIST_COMMANDS`] `limit` — a
 /// CEILING on rows per page, never the transport-size guarantee. That
@@ -798,12 +904,15 @@ pub(super) fn base64_byte_fields(command: &str, data: &mut Value) {
 /// `limit`/`cursor` are REMOVED rather than read in place because they belong
 /// to this layer, not to the command: neither of these two commands declares
 /// any argument at all, and a future one that declared its own `limit` must
-/// not receive the paging layer's copy of it. Clamping vs refusing follows
-/// `found-jobs` exactly (shared primitives, `extension_bridge::paging`): a
-/// junk `limit` clamps to the default (never to "unbounded"), while a junk
-/// `cursor` REFUSES — silently resetting a cursor to 0 looks like forward
-/// progress while actually restarting the traversal, which is how a paging
-/// loop turns into an infinite one.
+/// not receive the paging layer's copy of it. Clamping vs refusing follows the
+/// same RULE `found-jobs` does, on the shared `extension_bridge::paging`
+/// primitives — the clamp and the byte budget are literally shared, while the
+/// cursor GRAMMAR stays each surface's own to evolve (`found-jobs` may scope
+/// its cursor to its issuing autopilot without this tier changing at all).
+/// The rule: a junk `limit` clamps to the default (never to "unbounded"),
+/// while a junk `cursor` REFUSES — silently resetting a cursor to 0 looks
+/// like forward progress while actually restarting the traversal, which is how
+/// a paging loop turns into an infinite one.
 fn take_list_page_args(
     command: &str,
     input: &mut Value,
@@ -811,7 +920,7 @@ fn take_list_page_args(
     if !PAGINATED_LIST_COMMANDS.contains(&command) {
         return Ok(None);
     }
-    let offset = super::paging::parse_offset_cursor(input).map_err(|_| Refusal::InvalidCursor)?;
+    let offset = super::paging::parse_offset_cursor(input).ok_or(Refusal::InvalidCursor)?;
     let limit = super::paging::clamp_limit(input, DEFAULT_LIST_PAGE_LIMIT, MAX_LIST_PAGE_LIMIT);
     if let Some(map) = input.as_object_mut() {
         map.remove("limit");
@@ -1013,10 +1122,9 @@ fn unfence_named_fields_recursive(value: &mut Value) {
 /// `Irreversible` one — the ONE real-invocation chokepoint every dispatched
 /// row funnels through, never a second copy of any of those steps.
 ///
-/// The two response reshapes go LAST, after fencing, and in this order: the
-/// paging trim's byte budget must measure the fenced bytes that will really
-/// ship (fencing expands what it touches), and base64 must see the raw
-/// `Vec<u8>` array rather than something a later step rewrote.
+/// The response side of that is [`reshape_reply`], which owns the ORDER the
+/// three steps run in — extracted so the order is one pure, directly
+/// testable fn rather than three statements whose sequence nothing pins.
 async fn dispatch_direct(
     app: &AppHandle,
     command: &str,
@@ -1027,7 +1135,7 @@ async fn dispatch_direct(
     let outcome = invoke_command(app, command, input)
         .await
         .map_err(|e| Refusal::DispatchFailed(e.to_string()))?;
-    let mut data = match outcome {
+    let data = match outcome {
         InvokeOutcome::Success(v) => v,
         // The command body either legitimately ran and returned a typed
         // `Err`, or Tauri rejected the call before the body ever ran (bad
@@ -1036,12 +1144,40 @@ async fn dispatch_direct(
         // wire-indistinguishable and both refuse rather than dispatch.
         InvokeOutcome::CommandErr(v) => return Err(Refusal::InvokeError(invoke_error_detail(&v))),
     };
+    Ok(reshape_reply(command, data, page_args))
+}
+
+/// Every reshape a dispatched reply gets before it goes on the wire, in the
+/// ONE order they are allowed to run in. Pure — no `AppHandle`, no I/O — so
+/// the ordering itself is testable, which is the reason it is a fn at all
+/// (as three statements inline, nothing failed when they were reordered).
+///
+/// 1. **Fence first.** [`fence_scraped_fields`] is the security property and
+///    is unconditional over the WHOLE reply; narrowing it to "only the rows
+///    we are about to return" would make its coverage depend on a paging
+///    decision.
+/// 2. **Then page.** [`paginate_list_reply`]'s byte budget must measure the
+///    FENCED bytes that will really ship: fencing rewrites every field it
+///    touches (`crate::prompt_fence::JOB_CAP` truncates a long one, the
+///    wrapper adds to a short one), so a budget applied first would be
+///    measuring a payload that no longer exists by the time it ships. This is
+///    the step the test mutation-checks: reorder 1 and 2 and the page's row
+///    count changes.
+/// 3. **Then base64.** [`base64_byte_fields`] must see the raw `Vec<u8>`
+///    array rather than something a later step rewrote, and it writes a
+///    TOP-LEVEL key — after paging, "top level" means the paged envelope. No
+///    command is in both [`PAGINATED_LIST_COMMANDS`] and
+///    [`BASE64_BYTE_FIELDS`] today, so no payload can currently observe 2-vs-3
+///    ordering; that disjointness is itself asserted in the tests, so the day
+///    it stops holding, the guard fires instead of the ordering silently
+///    starting to matter unnoticed.
+fn reshape_reply(command: &str, mut data: Value, page_args: Option<(usize, usize)>) -> Value {
     fence_scraped_fields(&mut data);
     if let Some((offset, limit)) = page_args {
         data = paginate_list_reply(data, offset, limit);
     }
     base64_byte_fields(command, &mut data);
-    Ok(data)
+    data
 }
 
 /// The whole decision [`dispatch_irreversible_confirmed`] makes, with the
@@ -1163,9 +1299,19 @@ async fn dispatch(
 /// Note the asymmetry it deliberately preserves: `dispatched` on the wire
 /// becomes `false` (no result was delivered, and every consumer — including
 /// `agent_cli::exit_code_for_reply`'s exit-2 mapping — reads it that way),
-/// while the refusal's own `detail` states plainly that the command RAN. The
-/// substituted reply is always far smaller than the original, so this can
-/// never itself exceed the cap.
+/// while the refusal's own `detail` states plainly that the command RAN.
+///
+/// The substitute is NOT "always far smaller than the original" — that was
+/// the false absolute this doc used to claim (HIGH, security review). Its
+/// `data` is gone, but it still echoes `reqId`/`namespace`/`command`, and all
+/// three are caller-supplied and bounded only by the 8 MiB INCOMING frame: a
+/// ~8.38 MB `command` produced a substitute of 8,389,135 B against an
+/// 8,388,608 B ceiling, i.e. a refusal that reproduced the failure it
+/// reports. What holds instead is a BOUNDED argument, and it lives in
+/// [`refusal_reply`]: the identifiers are clamped to [`REFUSAL_IDENT_CAP`],
+/// every `detail` is bounded by construction, and the built reply is
+/// re-measured with a minimal-envelope fallback. Hence this fn no longer
+/// builds the substitute itself.
 fn enforce_frame_cap(
     req_id: &str,
     namespace: &str,
@@ -1176,11 +1322,11 @@ fn enforce_frame_cap(
     if reply.len() <= super::MAX_FRAME_BYTES {
         return (reply, dispatched);
     }
-    let refused = call_result_reply(
+    let refused = refusal_reply(
         req_id,
         namespace,
         command,
-        Err(Refusal::ResultTooLarge(reply.len())),
+        Refusal::ResultTooLarge(reply.len()),
     );
     (refused, false)
 }
@@ -1206,7 +1352,14 @@ pub(super) async fn handle_agent_call(app: &AppHandle, req_id: &str, payload: &V
     );
     let outcome = dispatch(app, &namespace, &command, input, confirm).await;
     let dispatched = outcome.is_ok();
-    let reply = call_result_reply(req_id, &namespace, &command, outcome);
+    // Success builds from the raw builder (identifiers verbatim); EVERY
+    // refusal goes through `refusal_reply`, which is where the identifier
+    // clamp lives — a caller-supplied `command` of any length arrives here as
+    // `Refusal::UnknownCommand` long before it could reach the frame cap.
+    let reply = match outcome {
+        Ok(data) => call_result_reply(req_id, &namespace, &command, Ok(data)),
+        Err(refusal) => refusal_reply(req_id, &namespace, &command, refusal),
+    };
     let (reply, dispatched) = enforce_frame_cap(req_id, &namespace, &command, reply, dispatched);
     span.end_with(&format!("dispatched={dispatched}"), dispatched);
     reply

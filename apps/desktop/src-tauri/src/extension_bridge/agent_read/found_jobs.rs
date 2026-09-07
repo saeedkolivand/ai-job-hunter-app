@@ -80,7 +80,7 @@ const FOUND_JOBS_DESCRIPTION_PREVIEW_CAP: usize = 2_000;
 /// Server-side default/cap for `found-jobs`' `limit` — a CEILING on how much
 /// work one call does (project + fence up to this many rows before
 /// trimming), never the actual transport-size guarantee. That guarantee is
-/// [`PAGE_BYTE_BUDGET`] (below), enforced by [`trim_to_byte_budget`] against
+/// [`PAGE_BYTE_BUDGET`] (below), enforced by [`trim_page_to_budget`] against
 /// the REAL serialized bytes of whatever rows actually came back — a
 /// row-count limit alone was proven insufficient in review (an ordinary,
 /// non-adversarial page containing title/company/location text of the
@@ -103,14 +103,14 @@ const MAX_FOUND_JOBS_LIMIT: usize = 50;
 /// row-count limit cannot bound a page's byte size because a legitimate,
 /// non-adversarial posting's title/company/location can each independently
 /// reach `crate::prompt_fence::JOB_CAP` = 8,000 chars, and this resource has
-/// no way to know that in advance of fencing the row). [`trim_to_byte_budget`]
+/// no way to know that in advance of fencing the row). [`trim_page_to_budget`]
 /// checks the ACTUAL serialized bytes of the candidate page and drops rows
 /// from the end — content-independent and exact, unlike trusting any
 /// per-row size assumption.
 ///
 /// Target: half of `agent_cli::mcp::MCP_RESULT_MAX_BYTES` (256 KiB = 262,144
 /// B), leaving real margin for the MCP `content[]`/`isError` wrapper this
-/// payload rides inside on the MCP transport — [`trim_to_byte_budget`]'s
+/// payload rides inside on the MCP transport — [`trim_page_to_budget`]'s
 /// `base_cost` parameter (see [`resolve_found_jobs`]'s call site) accounts
 /// for the REST of this resource's own envelope
 /// (`nextCursor`/`total`/`autopilotId`/`autopilotName`), so this budget is
@@ -151,13 +151,18 @@ fn clamp_found_jobs_limit(payload: &Value) -> usize {
 
 /// This resource's own [`PAGE_BYTE_BUDGET`] applied to the shared trim
 /// (`extension_bridge::paging::trim_to_byte_budget`, which carries the full
-/// rationale and the forward-progress guarantee). In practice this rarely
+/// rationale and the forward-progress guarantee). Named differently from the
+/// primitive it wraps ON PURPOSE (backend-architect review): a wrapper that
+/// shares its callee's name but takes one fewer argument reads like an
+/// overload at every call site, and shadows the real thing inside this module.
+///
+/// In practice this rarely
 /// fires at today's field caps for the `jobs` array alone — even
 /// title+company+location all pinned to `crate::prompt_fence::JOB_CAP` plus a
 /// full [`FOUND_JOBS_DESCRIPTION_PREVIEW_CAP`] description serializes to well
 /// under [`PAGE_BYTE_BUDGET`] for a single row — though a pathological
 /// `base_cost` could still force it.
-fn trim_to_byte_budget(candidates: Vec<Value>, base_cost: usize) -> Vec<Value> {
+fn trim_page_to_budget(candidates: Vec<Value>, base_cost: usize) -> Vec<Value> {
     paging::trim_to_byte_budget(candidates, base_cost, PAGE_BYTE_BUDGET)
 }
 
@@ -179,7 +184,7 @@ fn fence_found_jobs_description(value: &mut Value) {
 
 /// Pure core of `found-jobs`: find the named autopilot, slice its
 /// `found_jobs` at `[offset, offset + limit)`, project + fence each row,
-/// then [`trim_to_byte_budget`] the result before returning it.
+/// then [`trim_page_to_budget`] the result before returning it.
 /// `offset` is a plain index into the STORED order — stable across calls as
 /// long as nothing writes to `found_jobs` between them, which
 /// `AutopilotStore::record_run`'s merge (`autopilot::merge_found_jobs`) and
@@ -242,14 +247,14 @@ pub(super) fn resolve_found_jobs(
     // `base_cost` = every envelope byte OTHER than the `jobs` array itself,
     // measured (not assumed) against the REAL fenced `autopilotName` and
     // `autopilotId` this response will actually carry — the fix for the gap
-    // `trim_to_byte_budget`'s own doc names (CodeRabbit, PR #1117 review
+    // `trim_page_to_budget`'s own doc names (CodeRabbit, PR #1117 review
     // round 3). `nextCursor` isn't known yet (it depends on how many rows
     // survive trimming, decided just below), so it's measured here as a
     // digit-string the length of `total` — an upper bound, since a real
     // offset can never exceed `total`, so this can only OVER-count and thus
     // only trim MORE aggressively than strictly required, never less (the
     // safe direction for a byte budget). `"jobs": []` isolates the fixed
-    // cost from the row-dependent cost `trim_to_byte_budget` accumulates.
+    // cost from the row-dependent cost `trim_page_to_budget` accumulates.
     let base_envelope = json!({
         "jobs": [],
         "nextCursor": total.to_string(),
@@ -261,7 +266,7 @@ pub(super) fn resolve_found_jobs(
         .map_or(usize::MAX, |s| s.len())
         .saturating_sub(2); // the placeholder `[]`'s own two bytes
 
-    let page = trim_to_byte_budget(candidates, base_cost);
+    let page = trim_page_to_budget(candidates, base_cost);
 
     let returned = page.len();
     let next_offset = offset + returned;
@@ -282,9 +287,12 @@ pub(super) fn resolve_found_jobs(
 
 /// The shared cursor parse (`extension_bridge::paging::parse_offset_cursor`,
 /// which carries the full rationale) mapped onto THIS surface's error type —
-/// the rule is shared, the vocabulary is not.
+/// the rule is shared, the vocabulary is not. The primitive returns a bare
+/// `Option` for exactly that reason, so attaching the message is this
+/// wrapper's whole job.
 fn parse_found_jobs_cursor(payload: &Value) -> AppResult<usize> {
-    paging::parse_offset_cursor(payload).map_err(|m| AppError::Validation(m.to_string()))
+    paging::parse_offset_cursor(payload)
+        .ok_or_else(|| AppError::Validation(paging::INVALID_CURSOR_MESSAGE.to_string()))
 }
 
 /// `pub(super)` — dispatched from `agent_read::handle_agent_query`.
@@ -728,21 +736,21 @@ mod tests {
     }
 
     #[test]
-    fn trim_to_byte_budget_keeps_everything_when_already_under_budget() {
+    fn trim_page_to_budget_keeps_everything_when_already_under_budget() {
         let small: Vec<Value> = (0..5).map(|i| json!({ "i": i })).collect();
-        let trimmed = trim_to_byte_budget(small.clone(), 0);
+        let trimmed = trim_page_to_budget(small.clone(), 0);
         assert_eq!(trimmed, small);
     }
 
     #[test]
-    fn trim_to_byte_budget_drops_rows_from_the_end_until_it_fits() {
+    fn trim_page_to_budget_drops_rows_from_the_end_until_it_fits() {
         // Every row is the same fixed size once serialized (`{"s":"aaaa...a"}` with a
         // 1,000-char field) — deterministic, so "one more row would have overflowed"
         // is directly checkable below rather than merely assumed.
         let row = json!({ "s": "a".repeat(1000) });
         let row_len = serde_json::to_string(&row).unwrap().len();
         let candidates: Vec<Value> = (0..500).map(|_| row.clone()).collect();
-        let trimmed = trim_to_byte_budget(candidates, 0);
+        let trimmed = trim_page_to_budget(candidates, 0);
         assert!(
             !trimmed.is_empty() && trimmed.len() < 500,
             "must actually trim"
@@ -761,11 +769,11 @@ mod tests {
     }
 
     #[test]
-    fn trim_to_byte_budget_always_keeps_at_least_one_row() {
+    fn trim_page_to_budget_always_keeps_at_least_one_row() {
         // A single row far larger than the whole budget must still come back —
-        // forward-progress guarantee (see `trim_to_byte_budget`'s own doc).
+        // forward-progress guarantee (see `paging::trim_to_byte_budget`'s doc).
         let huge_row = json!({ "s": "a".repeat(PAGE_BYTE_BUDGET * 2) });
-        let trimmed = trim_to_byte_budget(vec![huge_row.clone(), huge_row], 0);
+        let trimmed = trim_page_to_budget(vec![huge_row.clone(), huge_row], 0);
         assert_eq!(trimmed.len(), 1, "must keep exactly one row, never zero");
     }
 
@@ -773,11 +781,11 @@ mod tests {
     /// takes room away from the rows, rather than being a dead parameter: the
     /// SAME candidates, with a larger `base_cost`, must keep fewer rows.
     #[test]
-    fn trim_to_byte_budget_a_larger_base_cost_leaves_less_room_for_rows() {
+    fn trim_page_to_budget_a_larger_base_cost_leaves_less_room_for_rows() {
         let row = json!({ "s": "a".repeat(1000) });
         let candidates: Vec<Value> = (0..200).map(|_| row.clone()).collect();
-        let kept_with_no_base = trim_to_byte_budget(candidates.clone(), 0).len();
-        let kept_with_big_base = trim_to_byte_budget(candidates, 50_000).len();
+        let kept_with_no_base = trim_page_to_budget(candidates.clone(), 0).len();
+        let kept_with_big_base = trim_page_to_budget(candidates, 50_000).len();
         assert!(
             kept_with_big_base < kept_with_no_base,
             "a non-zero base_cost must leave strictly less room for rows: {kept_with_big_base} \

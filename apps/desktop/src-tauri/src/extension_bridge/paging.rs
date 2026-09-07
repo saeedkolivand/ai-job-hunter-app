@@ -2,21 +2,29 @@
 //! serves pages over an unbounded array THIS process already owns.
 //!
 //! Extracted from `agent_read::found_jobs` (issue #1115, the first surface to
-//! need them) when `agent_call`'s generic tier needed the identical three
-//! decisions for `applications_list`/`ai_generations_list` (issue #1136): how
-//! a cursor is read, how a `limit` is clamped, and how a page is cut down to
-//! a byte budget. Two hand-typed copies of "parse a cursor" is exactly the
-//! shape this repo has already been bitten by — the `{"cursor": 100}`
-//! silently-collapses-to-page-1 defect ([`parse_offset_cursor`]'s own doc)
-//! was fixed once, in one of the copies, and a second copy would have kept
-//! it alive on the other surface.
+//! need them) when `agent_call`'s generic tier needed the same decisions for
+//! `applications_list`/`ai_generations_list` (issue #1136): how a `limit` is
+//! clamped, how a page is cut down to a byte budget, and how a plain offset
+//! cursor is read.
+//!
+//! **The clamp and the byte budget are the shared primitives; the cursor
+//! parse is shared today but is not a guarantee.** Each surface owns its own
+//! cursor VOCABULARY — its error type, its refusal wording — and stays free to
+//! layer a richer, issuer-scoped cursor on top of (or instead of)
+//! [`parse_offset_cursor`] without disturbing the other. What must never be
+//! re-decided per copy is the RULE this parse encodes: an unreadable cursor
+//! refuses, it never silently resets to page 1 — the `{"cursor": 100}`
+//! collapse-to-page-1 defect ([`parse_offset_cursor`]'s own doc) was fixed
+//! once, in one of two hand-typed copies, and the other kept it alive.
 //!
 //! Nothing here knows about any resource, envelope, or error type: the
 //! per-surface constants (default/max limit, byte budget) and the mapping
-//! from [`INVALID_CURSOR_MESSAGE`] onto that surface's own error/refusal type
-//! stay with the caller. A plain offset was chosen over an opaque token for
-//! the reasons `agent_read::found_jobs::resolve_found_jobs` documents at
-//! length; this module inherits that decision rather than re-making it.
+//! from a rejected cursor onto that surface's own error/refusal type stay
+//! with the caller — which is exactly why [`parse_offset_cursor`] returns an
+//! `Option` and not a `Result` carrying one surface's message. A plain offset
+//! was chosen over an opaque token for the reasons
+//! `agent_read::found_jobs::resolve_found_jobs` documents at length; this
+//! module inherits that decision rather than re-making it.
 
 use serde_json::Value;
 
@@ -37,15 +45,21 @@ pub(super) const INVALID_CURSOR_MESSAGE: &str = "cursor must be a non-negative i
 /// or rejected — exactly the failure mode this function's own contract
 /// promises never happens.
 ///
-/// `Err` is [`INVALID_CURSOR_MESSAGE`] rather than a typed error so this
-/// module stays free of any one surface's error vocabulary: `found-jobs`
-/// maps it onto `AppError::Validation`, the generic dispatch tier onto its
-/// own `Refusal`.
-pub(super) fn parse_offset_cursor(payload: &Value) -> Result<usize, &'static str> {
+/// Returns `None` for a rejected cursor rather than a `Result` carrying a
+/// message: a `Result<_, &'static str>` is a stringly error that this crate's
+/// own R6 check (`Result<_, String>` outside `error.rs`, a TEXTUAL arch test)
+/// cannot see, and it forces one surface's wording onto every caller. Each
+/// caller attaches its own instead — `found-jobs` maps the rejection onto
+/// `AppError::Validation(INVALID_CURSOR_MESSAGE)`, the generic dispatch tier
+/// onto its own `Refusal::InvalidCursor` (whose `detail` is that same
+/// constant), so the wire wording is unchanged either way. `Some(0)` for an
+/// absent cursor is a real value and not a fallback for a bad one; the two
+/// cases stay distinguishable, which is the whole contract above.
+pub(super) fn parse_offset_cursor(payload: &Value) -> Option<usize> {
     match payload.get("cursor") {
-        None | Some(Value::Null) => Ok(0),
-        Some(Value::String(raw)) => raw.parse::<usize>().map_err(|_| INVALID_CURSOR_MESSAGE),
-        Some(_) => Err(INVALID_CURSOR_MESSAGE),
+        None | Some(Value::Null) => Some(0),
+        Some(Value::String(raw)) => raw.parse::<usize>().ok(),
+        Some(_) => None,
     }
 }
 
@@ -107,4 +121,112 @@ pub(super) fn trim_to_byte_budget(
         kept = i + 1;
     }
     candidates.into_iter().take(kept).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    // ── clamp_limit ───────────────────────────────────────────────────────
+
+    /// Both bounds AND every "no usable limit" shape in one place. The
+    /// zero/negative/string/absent cases all land on `default` and NEVER on
+    /// "unbounded" — the one interpretation that would defeat paging
+    /// entirely (`agent-cli-standards`: an empty variable must never widen a
+    /// selector).
+    #[test]
+    fn clamp_limit_defaults_every_unusable_shape_and_caps_at_the_max() {
+        for payload in [
+            json!({}),
+            json!({ "limit": 0 }),
+            json!({ "limit": -5 }),
+            json!({ "limit": "20" }),
+            json!({ "limit": null }),
+        ] {
+            assert_eq!(
+                clamp_limit(&payload, 20, 100),
+                20,
+                "must fall back to the default, never to unbounded: {payload}"
+            );
+        }
+        assert_eq!(clamp_limit(&json!({ "limit": 7 }), 20, 100), 7);
+        assert_eq!(clamp_limit(&json!({ "limit": 100 }), 20, 100), 100);
+        assert_eq!(
+            clamp_limit(&json!({ "limit": 10_000 }), 20, 100),
+            100,
+            "an over-max limit is capped, not honoured"
+        );
+    }
+
+    // ── parse_offset_cursor ──────────────────────────────────────────
+
+    #[test]
+    fn parse_offset_cursor_accepts_an_absent_null_or_digit_string_cursor() {
+        assert_eq!(parse_offset_cursor(&json!({})), Some(0));
+        assert_eq!(parse_offset_cursor(&json!({ "cursor": null })), Some(0));
+        assert_eq!(parse_offset_cursor(&json!({ "cursor": "0" })), Some(0));
+        assert_eq!(parse_offset_cursor(&json!({ "cursor": "40" })), Some(40));
+    }
+
+    /// The rejection side, INCLUDING the JSON-number case that used to
+    /// collapse silently to page 1 (this fn's own doc). A rejected cursor is
+    /// `None`, never `Some(0)` — restarting a traversal while looking like
+    /// forward progress is how a paging loop turns into an infinite one.
+    #[test]
+    fn parse_offset_cursor_rejects_anything_that_is_not_a_non_negative_integer_string() {
+        for payload in [
+            json!({ "cursor": 100 }),
+            json!({ "cursor": -1 }),
+            json!({ "cursor": "-1" }),
+            json!({ "cursor": "12.5" }),
+            json!({ "cursor": "abc" }),
+            json!({ "cursor": "" }),
+            json!({ "cursor": true }),
+            json!({ "cursor": ["40"] }),
+            json!({ "cursor": { "offset": 40 } }),
+        ] {
+            assert_eq!(
+                parse_offset_cursor(&payload),
+                None,
+                "must refuse rather than silently restart at 0: {payload}"
+            );
+        }
+    }
+
+    // ── trim_to_byte_budget ──────────────────────────────────────────
+
+    /// The forward-progress guarantee: a single row larger than the WHOLE
+    /// budget still survives, because a page of zero rows whose `nextCursor`
+    /// never advanced would hang every traversal built on this forever. The
+    /// second half pins that this is the only case where the budget is
+    /// exceeded — rows past the first are still dropped.
+    #[test]
+    fn trim_to_byte_budget_keeps_at_least_one_row_and_drops_the_rest() {
+        let huge = json!({ "text": "x".repeat(500) });
+        let trimmed = trim_to_byte_budget(vec![huge.clone(), huge.clone(), huge], 0, 100);
+        assert_eq!(
+            trimmed.len(),
+            1,
+            "exactly one row survives an impossible budget"
+        );
+
+        // An empty input stays empty — "at least one" is never "invent one".
+        assert!(trim_to_byte_budget(Vec::new(), 0, 100).is_empty());
+
+        // Under budget: nothing is dropped.
+        let small = vec![json!({ "id": 1 }), json!({ "id": 2 })];
+        assert_eq!(trim_to_byte_budget(small.clone(), 0, 10_000), small);
+
+        // `base_cost` really is subtracted from the same budget — the same
+        // rows fit with no envelope cost and stop fitting with a large one.
+        let rows: Vec<Value> = (0..20).map(|i| json!({ "id": i })).collect();
+        let with_no_base = trim_to_byte_budget(rows.clone(), 0, 200).len();
+        let with_big_base = trim_to_byte_budget(rows, 190, 200).len();
+        assert!(
+            with_big_base < with_no_base,
+            "a larger base_cost must leave less room for rows ({with_big_base} !< {with_no_base})"
+        );
+    }
 }

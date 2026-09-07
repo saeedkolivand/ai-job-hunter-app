@@ -1410,3 +1410,215 @@ fn base64_byte_fields_never_marks_a_value_it_did_not_re_encode() {
         );
     }
 }
+
+// ── Bounded refusals (security review: the frame-cap fallback could itself
+// exceed the cap) ──
+
+/// The reported defect, reproduced at its reported size: `reqId`, `namespace`
+/// and `command` are caller-supplied and bounded only by the 8 MiB INCOMING
+/// frame, so a cap-sized `command` used to make the `result_too_large`
+/// substitute measure 8,389,135 B against an 8,388,608 B ceiling — a refusal
+/// that reproduced the failure it was reporting. Covers all THREE refusal
+/// paths, including the two (`throttled_reply`/`origin_refused_reply`) that
+/// never pass through `enforce_frame_cap` at all.
+///
+/// The `assert_eq!` on the clamped identifier is what makes this a real
+/// mutation check: `refusal_reply`'s measure-and-degrade fallback would keep
+/// the length assertion green on its own, so the test also insists the reply
+/// still NAMES its target and carries its REAL detail — i.e. that the clamp,
+/// not the last-resort envelope, is what made it fit.
+#[test]
+fn a_refusal_built_from_a_cap_sized_identifier_still_fits_the_frame_cap() {
+    let cap = super::super::MAX_FRAME_BYTES;
+    let huge = "n".repeat(cap);
+    let payload = json!({ "namespace": huge.clone(), "command": huge.clone() });
+
+    let cases = [
+        ("throttled", throttled_reply(&huge, &payload)),
+        ("origin_refused", origin_refused_reply(&huge, &payload)),
+        (
+            "result_too_large",
+            enforce_frame_cap(&huge, &huge, &huge, "x".repeat(cap + 1), true).0,
+        ),
+    ];
+
+    for (label, reply) in cases {
+        assert!(
+            reply.len() <= cap,
+            "{label}: the refusal is {} B, over the {cap} B cap it exists to enforce",
+            reply.len()
+        );
+
+        let parsed: Value = serde_json::from_str(&reply).expect("the refusal is valid JSON");
+        let payload = &parsed["payload"];
+        assert_eq!(parsed["type"], super::super::msg::AGENT_CALL_RESULT);
+        assert!(!payload["dispatched"].as_bool().unwrap());
+
+        let clamped = "n".repeat(REFUSAL_IDENT_CAP);
+        assert_eq!(
+            payload["namespace"].as_str().unwrap(),
+            clamped,
+            "{label}: the identifier must be CLAMPED, not dropped"
+        );
+        assert_eq!(payload["command"].as_str().unwrap(), clamped);
+        assert_eq!(parsed["reqId"].as_str().unwrap(), clamped);
+        assert_ne!(
+            payload["detail"].as_str().unwrap(),
+            REFUSAL_UNDELIVERABLE_DETAIL,
+            "{label}: fitting via the last-resort envelope means the clamp did not do its job"
+        );
+    }
+}
+
+/// The other direction: the clamp must be invisible to every identifier that
+/// can really occur. Driven off the REAL `POLICY` table rather than a
+/// hand-picked sample, so a future row long enough to be truncated fails here
+/// instead of silently shipping a refusal that misnames its own target.
+#[test]
+fn the_identifier_clamp_leaves_every_real_identifier_untouched() {
+    for name in [
+        "",
+        "jobs",
+        "jobs_list",
+        "req-1",
+        "documents_export_document",
+    ] {
+        assert_eq!(clamp_ident(name), name);
+    }
+    for entry in POLICY {
+        let (namespace, command) = split_path(entry.path);
+        assert_eq!(clamp_ident(namespace), namespace);
+        assert_eq!(clamp_ident(command), command);
+    }
+
+    // End to end: an ordinary refusal still echoes both verbatim and carries
+    // its own real detail.
+    let reply = throttled_reply(
+        "req-9",
+        &json!({ "namespace": "jobs", "command": "jobs_list" }),
+    );
+    let parsed: Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(parsed["payload"]["namespace"], "jobs");
+    assert_eq!(parsed["payload"]["command"], "jobs_list");
+    assert_eq!(parsed["reqId"], "req-9");
+    assert_eq!(
+        parsed["payload"]["detail"],
+        super::super::agent_read::THROTTLED_MESSAGE
+    );
+}
+
+/// `&value[..REFUSAL_IDENT_CAP]` panics when the cap lands mid-codepoint, and
+/// release is `panic = "abort"` — inside a frame handler that is a silent
+/// process death, so the boundary walk is load-bearing, not tidiness. 256 is
+/// not a multiple of 3, so the 3-byte case exercises the walk itself.
+#[test]
+fn the_identifier_clamp_cuts_on_a_char_boundary() {
+    for wide in ["字", "é", "🙂"] {
+        let value = wide.repeat(500);
+        let clamped = clamp_ident(&value);
+        assert!(
+            clamped.len() <= REFUSAL_IDENT_CAP,
+            "{wide}: clamped to {} B",
+            clamped.len()
+        );
+        assert!(
+            value.starts_with(clamped),
+            "{wide}: the clamp must be a prefix, never a re-encode"
+        );
+        // Nothing was cut in half: the prefix round-trips as real UTF-8 and
+        // every char in it is the original one.
+        assert!(clamped.chars().all(|c| c.to_string() == wide));
+        assert!(
+            clamped.len() > REFUSAL_IDENT_CAP - 4,
+            "{wide}: the walk must back up to the nearest boundary, not much further"
+        );
+    }
+}
+
+// ── reshape_reply ordering (backend-architect review: nothing pinned the
+// three response steps to an order) ──
+
+/// Fencing MUST run before the page's byte budget is measured. Each row here
+/// is far over `prompt_fence::JOB_CAP`, so fencing TRUNCATES it: fenced, all
+/// five rows fit `LIST_PAGE_BYTE_BUDGET` comfortably; unfenced, only two do.
+/// Swap steps 1 and 2 in `reshape_reply` and this drops to 2 items.
+#[test]
+fn reshape_reply_fences_before_it_measures_the_page_byte_budget() {
+    let rows: Vec<Value> = (0..5)
+        .map(|i| json!({ "id": i, "description": "x".repeat(60_000) }))
+        .collect();
+    // Measured, not assumed: unfenced, three of these rows already blow the
+    // budget while two fit, so an unfenced measurement can only ever yield 2.
+    let row_bytes = serde_json::to_string(&rows[0]).unwrap().len();
+    assert!(
+        2 * row_bytes < LIST_PAGE_BYTE_BUDGET && 3 * row_bytes > LIST_PAGE_BYTE_BUDGET,
+        "the fixture no longer straddles the budget ({row_bytes} B/row)"
+    );
+
+    let out = reshape_reply("applications_list", Value::Array(rows), Some((0, 40)));
+
+    let items = out["items"].as_array().expect("a paged envelope");
+    assert_eq!(
+        items.len(),
+        5,
+        "the budget measured unfenced bytes — fencing truncates each row to \
+         prompt_fence::JOB_CAP, so all five fit the bytes actually shipped"
+    );
+    assert_eq!(out["total"], 5);
+    assert!(out["nextCursor"].is_null());
+    assert!(
+        items[0]["description"]
+            .as_str()
+            .unwrap()
+            .starts_with("<job_posting>"),
+        "the rows that shipped must be the fenced ones"
+    );
+}
+
+/// Step 3 runs last, so it sees whatever paging produced and writes its key at
+/// the top level of THAT value. With today's audited lists no payload can
+/// observe the step-2-vs-3 order (no command appears in both), which is why
+/// the disjointness itself is asserted: the day it stops holding, this fires
+/// and a real ordering assertion becomes possible AND necessary.
+#[test]
+fn reshape_reply_base64_encodes_last_and_the_two_reshape_lists_stay_disjoint() {
+    for (command, _) in BASE64_BYTE_FIELDS {
+        assert!(
+            !PAGINATED_LIST_COMMANDS.contains(command),
+            "`{command}` is now both paged and base64-encoded — reshape_reply's step 2/3 \
+             order just became observable and needs its own assertion"
+        );
+    }
+
+    let out = reshape_reply(
+        "documents_export_document",
+        json!({ "data": [1, 2, 3] }),
+        None,
+    );
+    assert_eq!(out["data"], "AQID");
+    assert_eq!(out["dataEncoding"], "base64");
+
+    // A command in neither list is fenced and otherwise untouched: no
+    // envelope, no marker key.
+    let out = reshape_reply("jobs_list", json!({ "id": "j-1" }), None);
+    assert_eq!(out, json!({ "id": "j-1" }));
+}
+
+/// The discovery note is the ONLY thing the consumer ever reads about paging,
+/// so the two operational facts a traversal needs — pace, and what an offset
+/// cursor cannot promise — have to be in it, not merely in this module's docs.
+#[test]
+fn the_paged_row_note_states_the_pacing_and_the_cursor_stability_caveat() {
+    for clause in [
+        "nextCursor",
+        "throttle bucket",
+        "one page per second",
+        "rate_limited",
+        "repeat or skip a row",
+    ] {
+        assert!(
+            PAGINATED_LIST_NOTE.contains(clause),
+            "the paged-row note must state `{clause}`: {PAGINATED_LIST_NOTE}"
+        );
+    }
+}
