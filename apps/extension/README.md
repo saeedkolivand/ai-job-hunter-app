@@ -260,7 +260,7 @@ The extension has its own CI path, path-filtered to only run when extension file
 turbo run typecheck test build --filter=@ajh/extension
 ```
 
-On release, the **Release workflow** (`action: build-installers`) runs three extension jobs in sequence:
+On release, the **Release workflow** (`action: build-installers`) runs three extension jobs — `package-extension` first, then the two publish jobs **in parallel**, each depending only on it. That is deliberate: one store failing must not block the other.
 
 - `package-extension` — builds both distributions, zips them with `manifest.json` at the zip root (`scripts/package.mjs`), and attaches them to the GitHub Release
 - `publish-chrome` — uploads that chrome zip to the Web Store listing and submits it for review

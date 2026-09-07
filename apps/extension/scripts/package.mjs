@@ -16,9 +16,9 @@ import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { Script } from 'node:vm';
 
 import { INJECTED_SCRIPT_FILES } from '../injected-entries.mjs';
+import { failsToCompileAsClassicScript } from './classic-script-check.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXT_ROOT = path.resolve(__dirname, '..');
@@ -40,42 +40,19 @@ const TARGETS = ['chrome', 'firefox'];
 // `answer-replace.js` and `probe-fields.js` were shipped unguarded.
 const INJECTED_CLASSIC_SCRIPTS = INJECTED_SCRIPT_FILES;
 
-// HOW the check works, and why it is not a text scan.
+// The check itself lives in `classic-script-check.mjs` — V8's own parser for the
+// script goal, plus a scanner for the one thing that parser cannot see (a
+// dynamic `import(...)`, which is valid script syntax and simply resolves
+// nothing once injected). It is a separate module so `src/classic-script-check.test.ts`
+// can exercise it without running the packager.
 //
-// This used to strip comments and string literals with regexes and then look for
-// the token `import`/`export` in what was left. That is unsound, and measurably
-// so: a single apostrophe in a comment or an unbalanced quote inside a string
-// table desynchronises the single-quote stripper, which then swallows everything
-// up to the next apostrophe — including any `import` after it. Appending
-// `import{x}from"./y.js"` to the real built `capture.js`, `fill.js`,
-// `probe-fields.js`, `capture-rows.js` or `answer-replace.js` was NOT detected;
-// only the small `content.js` was. The guard read as if it covered these files
-// and did not.
-//
-// So ask the JavaScript parser instead of pattern-matching around it.
-// `new Script(src)` compiles in the SCRIPT goal — exactly the goal
-// `chrome.scripting.executeScript({ files: [...] })` evaluates these in — and
-// throws `SyntaxError: Cannot use import statement outside a module` on any ES
-// module syntax. That is not a heuristic standing in for the invariant; it IS
-// the invariant. Compile only, never run: undefined globals like `document` and
-// `chrome` are irrelevant because nothing executes.
-//
-// Script-goal compilation cannot catch a DYNAMIC `import(...)` — it is valid
-// syntax in a script — so that one case still needs a pattern, matched against
-// the raw source (0 false positives across all 18 built artifacts).
-const DYNAMIC_IMPORT_RE = /\bimport\s*\(/;
-
-function failsToCompileAsClassicScript(src) {
-  try {
-    new Script(src);
-  } catch (error) {
-    return error instanceof Error ? error.message : String(error);
-  }
-  if (DYNAMIC_IMPORT_RE.test(src)) {
-    return 'contains a dynamic import(), which resolves nothing in an injected classic script';
-  }
-  return null;
-}
+// This used to be a regex over the raw source, which was unsound in BOTH
+// directions: stripping literals with one regex per literal kind desynchronised
+// on a single apostrophe (so appending an import statement to the real built
+// `capture.js`, `fill.js`, `probe-fields.js`, `capture-rows.js` or
+// `answer-replace.js` went undetected), and scanning unstripped source would
+// have failed a perfectly good build on `obj.import(` or the word inside a
+// comment.
 
 // `zip` present? (CI/macOS/Linux). Detect via a cheap version probe.
 const HAS_ZIP = spawnSync('zip', ['-v'], { stdio: 'ignore' }).status === 0;

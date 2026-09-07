@@ -12,6 +12,7 @@
  * `publish-firefox` job unpacks the real archive, runs these very commands and
  * byte-compares the result against the shipped zip before submitting.
  */
+import vitePkg from 'vite/package.json';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -19,7 +20,9 @@ import {
   detectOs,
   parseArgs,
   README_ENTRY_NAME,
+  refMismatch,
   sourceArchiveName,
+  viteNodeRange,
 } from '../scripts/source-archive.mjs';
 
 /**
@@ -95,6 +98,22 @@ describe('buildReadme', () => {
     expect(text).toContain('https://pnpm.io/installation');
   });
 
+  // "any 22.x release works" was simply false — the locked Vite wants
+  // `^20.19.0 || >=22.12.0`, so a reviewer on 22.0 would hit a build failure we
+  // had told them to expect success from. The range is read from Vite's own
+  // `engines`, never written down.
+  it('quotes the Node range Vite actually requires', () => {
+    expect(readme({ nodeRange: '^20.19.0 || >=22.12.0' })).toContain(
+      'Vite pins the supported range at `^20.19.0 || >=22.12.0`'
+    );
+  });
+
+  it('points at Vite instead of inventing a range when it cannot be read', () => {
+    const text = readme({ nodeRange: null });
+    expect(text).toContain('`engines.node`');
+    expect(text).not.toMatch(/any \d+\.x/);
+  });
+
   // A Mozilla reviewer reads this note to understand why some files in an
   // otherwise-minified bundle are readable; the version that was written by hand
   // omitted submit-watch.js, so a file the build emits had no explanation at all.
@@ -132,6 +151,51 @@ describe('parseArgs', () => {
       ref: 'v1.2.3',
       out: 'a/b.zip',
     });
+  });
+});
+
+describe('viteNodeRange', () => {
+  it('reads the range straight out of the installed Vite', () => {
+    expect(viteNodeRange()).toBe(vitePkg.engines.node);
+  });
+
+  it('returns null rather than a guess when Vite cannot be resolved', () => {
+    expect(
+      viteNodeRange(() => {
+        throw new Error('MODULE_NOT_FOUND');
+      })
+    ).toBeNull();
+    expect(viteNodeRange(() => ({}))).toBeNull();
+    expect(viteNodeRange(() => ({ engines: { node: '  ' } }))).toBeNull();
+  });
+});
+
+describe('refMismatch', () => {
+  const at = (map: Record<string, string>) => (ref: string) => map[ref] ?? null;
+
+  it('allows the default HEAD without asking git anything', () => {
+    expect(
+      refMismatch('HEAD', () => {
+        throw new Error('git must not be called');
+      })
+    ).toBeNull();
+  });
+
+  it('allows a tag that points at the checked-out commit', () => {
+    expect(refMismatch('v1.2.3', at({ HEAD: 'abc123', 'v1.2.3^{commit}': 'abc123' }))).toBeNull();
+  });
+
+  // The defect: `git archive` would take the TREE from the tag while the
+  // version, injected-script list and build README came from the worktree.
+  it('refuses a ref that is not the checked-out commit, naming both', () => {
+    const message = refMismatch('v1.2.3', at({ HEAD: 'abc123', 'v1.2.3^{commit}': 'def456' }));
+    expect(message).toContain('abc123');
+    expect(message).toContain('def456');
+    expect(message).toContain('v1.2.3');
+  });
+
+  it('refuses a ref git cannot resolve', () => {
+    expect(refMismatch('nope', at({ HEAD: 'abc123' }))).toContain('not a commit');
   });
 });
 

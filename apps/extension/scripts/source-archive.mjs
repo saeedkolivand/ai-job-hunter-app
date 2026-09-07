@@ -67,9 +67,26 @@ export function detectOs(readOsRelease = () => readFileSync('/etc/os-release', '
 }
 
 /**
+ * The Node range the build actually supports, read from the INSTALLED Vite's
+ * `engines.node`. Not hand-written: "any 22.x" was wrong (the locked Vite wants
+ * `^20.19.0 || >=22.12.0`), and a reviewer following a wrong range gets a build
+ * failure we told them to expect success from. `null` if Vite cannot be
+ * resolved, which the README turns into a pointer instead of a claim.
+ */
+export function viteNodeRange(resolveVitePackage = () => require('vite/package.json')) {
+  try {
+    const range = resolveVitePackage()?.engines?.node;
+    return typeof range === 'string' && range.trim() ? range : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The build README placed at the archive root. Every version in it is passed in
- * from the live toolchain, and the unminified-script list comes from the build's
- * own {@link INJECTED_SCRIPT_FILES} — nothing here is a literal that can go stale.
+ * from the live toolchain, the unminified-script list comes from the build's own
+ * {@link INJECTED_SCRIPT_FILES}, and the Node range comes from Vite's own
+ * `engines` — nothing here is a literal that can go stale.
  */
 export function buildReadme({
   version,
@@ -77,7 +94,11 @@ export function buildReadme({
   node,
   packageManager,
   injectedScripts = INJECTED_SCRIPT_FILES,
+  nodeRange = viteNodeRange(),
 }) {
+  const nodeRequirement = nodeRange
+    ? `Vite pins the supported range at \`${nodeRange}\``
+    : "the supported range is Vite's own `engines.node` (see `node_modules/vite/package.json` after the install below)";
   return `# AI Job Hunter — Firefox add-on source build (v${version})
 
 This archive is the complete, unmodified source of the \`ai-job-hunter\`
@@ -93,8 +114,8 @@ this archive.
 | Node | ${node} |
 | pnpm | ${packageManager.replace(/^pnpm@/, '')} |
 
-- **Node.js** — <https://nodejs.org/en/download> (any 22.x release works; the
-  exact one above is what built the submitted package).
+- **Node.js** — <https://nodejs.org/en/download>. ${nodeRequirement}; the exact
+  version above is the one that built and verified the submitted package.
 - **pnpm** — <https://pnpm.io/installation>. The version is pinned by the
   \`packageManager\` field of the root \`package.json\`, so the simplest install
   is Corepack, which ships with Node:
@@ -143,6 +164,41 @@ zipped into the submitted add-on package (\`manifest.json\` at the zip root).
 `;
 }
 
+/**
+ * `git archive` reads the tree from `ref`, but EVERYTHING else in the archive —
+ * the version, the injected-script list, the README's tool versions — is read
+ * from the checked-out worktree. Point `--ref` at a different commit and you get
+ * an archive whose contents and whose build README disagree, and AMO's whole
+ * reason for wanting the archive (rebuild it, diff it against the package) no
+ * longer holds, because the reproducibility gate only ever ran against the tree
+ * that was built. So refuse rather than emit a mislabelled archive.
+ *
+ * Returns `null` when `ref` resolves to the same commit as `HEAD`, otherwise the
+ * message explaining which two commits disagreed.
+ */
+export function refMismatch(ref, resolve) {
+  if (ref === 'HEAD') return null;
+  const head = resolve('HEAD');
+  const target = resolve(`${ref}^{commit}`);
+  if (!target) return `"${ref}" is not a commit in this repository`;
+  if (!head) return 'HEAD does not resolve to a commit';
+  if (head === target) return null;
+  return (
+    `--ref ${ref} is ${target}, but the checked-out worktree is ${head}. ` +
+    `The archive's tree would come from ${ref} while its build README, version ` +
+    `and file list come from the worktree, so it would be mislabelled. ` +
+    `Check out ${ref}, rebuild, and run this again.`
+  );
+}
+
+function resolveCommit(ref) {
+  const res = spawnSync('git', ['rev-parse', '--verify', '--quiet', ref], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+  });
+  return res.status === 0 ? res.stdout.trim() : null;
+}
+
 /** `--ref <tree-ish>` / `--out <path>`; both optional. */
 export function parseArgs(argv) {
   const args = { ref: 'HEAD', out: undefined };
@@ -161,6 +217,13 @@ export function parseArgs(argv) {
 
 function main() {
   const { ref, out: outArg } = parseArgs(process.argv.slice(2));
+
+  const mismatch = refMismatch(ref, resolveCommit);
+  if (mismatch) {
+    console.error(`error: ${mismatch}`);
+    process.exit(1);
+  }
+
   const { version } = require('../package.json');
   const { packageManager } = require('../../../package.json');
   const out = outArg ? path.resolve(outArg) : path.join(DIST, sourceArchiveName(version));

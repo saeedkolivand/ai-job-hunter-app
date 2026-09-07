@@ -367,8 +367,17 @@ jobs:
       # entirely until the MSIX_* repository variables exist — Partner Center
       # assigns those values, so this ships before the listing does.
       # See docs/DEPLOYMENT.md § Microsoft Store (MSIX).
+      #
+      # Gated on ALL THREE variables, not just the first. The packer requires
+      # every one and throws otherwise, and this step sits BEFORE the release
+      # upload on the Windows leg — so a half-configured set would take the
+      # Windows installers down with it. A partial set means "no MSIX this
+      # release", never "no release".
       - name: 📦 Pack the Microsoft Store MSIX
-        if: success() && matrix.platform == 'windows-latest' && vars.MSIX_IDENTITY_NAME != ''
+        if: >-
+          success() && matrix.platform == 'windows-latest' &&
+          vars.MSIX_IDENTITY_NAME != '' && vars.MSIX_PUBLISHER != '' &&
+          vars.MSIX_PUBLISHER_DISPLAY_NAME != ''
         env:
           MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
           MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
@@ -378,8 +387,14 @@ jobs:
           node apps/desktop/scripts/pack-msix.mjs
           echo "::endgroup::"
 
+      # Same three-variable gate as the pack step: with `if-no-files-found: error`
+      # this would otherwise fail the Windows leg looking for a package the pack
+      # step was skipped for.
       - name: ⬆️ Upload the MSIX artifact
-        if: success() && matrix.platform == 'windows-latest' && vars.MSIX_IDENTITY_NAME != ''
+        if: >-
+          success() && matrix.platform == 'windows-latest' &&
+          vars.MSIX_IDENTITY_NAME != '' && vars.MSIX_PUBLISHER != '' &&
+          vars.MSIX_PUBLISHER_DISPLAY_NAME != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: msix-store-package
