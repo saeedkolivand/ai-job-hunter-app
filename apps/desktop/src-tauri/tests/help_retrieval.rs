@@ -83,7 +83,7 @@ const DE_BUNDLE: &str = include_str!(concat!(
 /// `entries.len()` compared with itself: if the corpus grows or shrinks, this
 /// fails and the cases below get re-checked deliberately rather than the
 /// measurement silently changing meaning underneath them.
-const EXPECTED_ENTRY_COUNT: usize = 51;
+const EXPECTED_ENTRY_COUNT: usize = 57;
 
 /// How deep a hit counts. Three is the request's own default `limit` — the
 /// number of entries the help chat actually grounds an answer in — so this
@@ -120,10 +120,12 @@ const TOP_N_NARROW: usize = 2;
 /// connect Ollama so the AI features work?", which ranked 3rd behind an
 /// entry that shares only the word "work". It rose to 18 with that list and
 /// to 19 with the result-set fallback's own case ("Where is my stuff?", rank
-/// 2 — a MISS before the fallback existed). This obligation runs in one
-/// direction: the measurement rose, so the floor rose with it, and neither
-/// case can slip back.
-const TOP_2_FLOOR: usize = 19;
+/// 2 — a MISS before the fallback existed), and to 21 with the 2026-09-06
+/// "create an autopilot" pair (both inside the top 2), and to 27 with one
+/// phrasing per entry added on 2026-09-07. This obligation runs
+/// in one direction: the measurement rose, so the floor rose with it, and
+/// neither case can slip back.
+const TOP_2_FLOOR: usize = 27;
 
 /// Build the help entries exactly as the renderer does: one entry per
 /// `support.faq.<section>Questions.<leaf>` node, `id` the dotted leaf path,
@@ -299,6 +301,52 @@ const CASES: &[Case] = &[
         expected: "aiGenerateQuestions.whereStored",
         why: "THE result-set fallback case (`retrieval::lexical::LexicalIndex::search_in`), not another ranking one. Every word but `stuff` is on `HELP_STOPWORDS_EN`, and `stuff` is in no entry — so the FILTERED expression is non-empty and matches zero rows, which the token-list fallback cannot see. Without the rerun this row is a MISS on a default install (keyword-only) while the arm still reports `Ran`; with it, the question's own function words rank the entry that answers it. Vague on purpose: a phrasing that names nothing in the corpus is exactly the shape that breaks",
     },
+    // ── The 2026-09-06 report: the chat said it did not know how to create an
+    // autopilot although this entry answers it. Retrieval was later measured
+    // to rank it first for the whole phrasing family; these rows pin that so a
+    // stopword or weight change cannot quietly re-open the report. ──
+    Case {
+        query: "how can I create an autopilot",
+        expected: "autopilotQuestions.setUpAutopilot",
+        why: "the user's verb (create) is not the entry's (set up); every function word is a stopword, so `create` + `autopilot` must beat whatIsAutopilot on the answer body alone",
+    },
+    Case {
+        query: "how do I make a new autopilot",
+        expected: "autopilotQuestions.setUpAutopilot",
+        why: "same report, third verb: `make`/`new` appear nowhere in the entry, so this is decided by `autopilot` alone against whatIsAutopilot's equal title weight",
+    },
+    // ── The six entries added with the page-list change (2026-09-07), one
+    // user phrasing each, so a new entry cannot silently be unreachable. ──
+    Case {
+        query: "import resume from linkedin",
+        expected: "documentsQuestions.importFromLinkedin",
+        why: "must beat importFormats (the file-upload sibling in the same section) and the LinkedIn scraping entries",
+    },
+    Case {
+        query: "change app language to german",
+        expected: "generalQuestions.changeLanguage",
+        why: "\"language\" also appears in the builder's output-language copy; the interface entry has to win",
+    },
+    Case {
+        query: "how do I update to the latest version?",
+        expected: "generalQuestions.checkForUpdates",
+        why: "\"version\" and \"update\" are rare in the corpus, so this is close to a lookup — kept for reachability, not ranking",
+    },
+    Case {
+        query: "how do I add my expected salary?",
+        expected: "applicationsQuestions.applicantDetails",
+        why: "must beat the per-application Compensation note and the salary-lookup entries",
+    },
+    Case {
+        query: "add my github projects to my résumé",
+        expected: "gettingStartedQuestions.githubProjects",
+        why: "\"github\" also sits in the contact-header entry; the builder import has to win on \"projects\"",
+    },
+    Case {
+        query: "how do I change my name or email on the résumé?",
+        expected: "documentsQuestions.contactHeader",
+        why: "\"résumé\", \"name\" and \"email\" are everywhere; only this entry owns the header fields",
+    },
 ];
 
 /// German phrasings, hand-written against the DE bundle's own vocabulary —
@@ -384,6 +432,38 @@ const DE_CASES: &[Case] = &[
         expected: "privacyQuestions.exportImport",
         why: "must beat `whatLeaves`, which is the other entry about the user's Daten",
     },
+    // ── The six entries added on 2026-09-07, one German phrasing each, so the
+    // German bundle's growth is measured and not assumed from the English rows. ──
+    Case {
+        query: "Lebenslauf aus LinkedIn importieren",
+        expected: "documentsQuestions.importFromLinkedin",
+        why: "must beat importFormats (the upload sibling) and the LinkedIn scraping entries",
+    },
+    Case {
+        query: "Sprache der App ändern",
+        expected: "generalQuestions.changeLanguage",
+        why: "\"Sprache\" also appears in the builder's output-language copy; the interface entry has to win",
+    },
+    Case {
+        query: "auf Updates prüfen",
+        expected: "generalQuestions.checkForUpdates",
+        why: "\"Updates\" is rare in the corpus — close to a lookup, kept for reachability",
+    },
+    Case {
+        query: "Gehaltsvorstellung für Anschreiben und Antworten",
+        expected: "applicationsQuestions.applicantDetails",
+        why: "\"Anschreiben\" and \"Antworten\" are all over the corpus; the compound \"Gehaltsvorstellung\" has to carry it past the per-application Vergütung note",
+    },
+    Case {
+        query: "GitHub-Projekte in den Lebenslauf einfügen",
+        expected: "gettingStartedQuestions.githubProjects",
+        why: "\"GitHub\" also sits in the contact-header entry; the builder import has to win on \"Projekte\"",
+    },
+    Case {
+        query: "Name oder E-Mail im Lebenslauf ändern",
+        expected: "documentsQuestions.contactHeader",
+        why: "\"Lebenslauf\" is everywhere; only this entry owns the header fields",
+    },
 ];
 
 /// The German narrow-limit floor, measured the same way [`TOP_2_FLOOR`] is
@@ -391,7 +471,7 @@ const DE_CASES: &[Case] = &[
 /// to make a change pass. Its own number rather than a shared one — the two
 /// corpora rank differently and a single floor would let one language's
 /// regression hide behind the other's promotion.
-const DE_TOP_2_FLOOR: usize = 14;
+const DE_TOP_2_FLOOR: usize = 20;
 
 #[test]
 fn the_help_corpus_maps_to_one_entry_per_faq_leaf() {
@@ -594,14 +674,14 @@ fn hand_written_user_phrasings_reach_their_entry_in_the_lexical_top_3() {
     let (hits, narrow_hits) = report("en", &rows, TOP_2_FLOOR);
     // Literal, not derived-vs-derived: compared with a hand-written number,
     // so a case quietly deleted from CASES fails here instead of passing.
-    assert_table(&rows, hits, narrow_hits, 19, TOP_2_FLOOR);
+    assert_table(&rows, hits, narrow_hits, 27, TOP_2_FLOOR);
 }
 
 #[test]
 fn german_hand_written_user_phrasings_reach_their_entry_in_the_lexical_top_3() {
     let rows = measure_de();
     let (hits, narrow_hits) = report("de", &rows, DE_TOP_2_FLOOR);
-    assert_table(&rows, hits, narrow_hits, 14, DE_TOP_2_FLOOR);
+    assert_table(&rows, hits, narrow_hits, 20, DE_TOP_2_FLOOR);
 }
 
 /// The honesty guard on the tables above: a query that matches exactly ONE of

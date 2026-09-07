@@ -537,6 +537,29 @@ Retired - TERMINAL VELOCITY is a PBR realistic film, no ink boil. The only "on t
 carries over is character animation stepped at ~12 fps against a smooth 60 fps camera.
 _Avoid_: reusing Line boil / `uBoil` for any TERMINAL VELOCITY effect
 
+## Domain — In-app help
+
+**Help entry**:
+One shipped question/answer pair of the help corpus — the `support.faq.*` translation keys,
+assembled by `getSupportSections` (`apps/desktop/src/renderer/features/support/support-data.ts`).
+The searchable Help & Support page lists them and the help chat answers from the ones retrieved
+for a question; what the assistant may answer from is defined by the prompt builders in
+[ADR-043](knowledge/decision-records/adr-043-help-chat-over-the-shipped-corpus.md), not here.
+_Avoid_: "FAQ item", "doc", "article" (each implies prose the app does not have)
+
+**Data glance**:
+The read-only snapshot of the user's own counts and names the help assistant receives alongside
+the entries. A prompt input, **not a data surface**: nothing is read back from it. Shape and limits:
+`buildHelpDataGlance` (`packages/prompts/src/generate/help-chat/`).
+_Avoid_: "context", "user data dump"
+
+**Page list**:
+The sidebar's pages, as the app's own shipped copy, given to the help assistant so an abstention can
+name **where** a feature would live. Declared once as `SIDEBAR_NAV`
+(`apps/desktop/src/renderer/components/layout/Sidebar/nav.ts`) and read by both the sidebar and the
+help chat. Naming a page is not a claim about what is inside it.
+_Avoid_: "app map", "screen list", "screen" (the app's own copy says **page**)
+
 ## Domain — Agent CLI surface
 
 **Command**:
