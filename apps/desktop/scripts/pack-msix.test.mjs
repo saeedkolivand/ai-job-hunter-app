@@ -164,6 +164,18 @@ describe('compareSdkVersions', () => {
       ['10.0.26100.0-preview', '10.0.19041.0', '10.0.26100.1'].sort(compareSdkVersions)
     ).toEqual(['10.0.26100.1', '10.0.26100.0-preview', '10.0.19041.0']);
   });
+
+  // Equal numbers must not be a tie either: with `readdirSync` order deciding,
+  // the packer could sign with a preview SDK on one machine and the release
+  // SDK on another. The plain release wins.
+  it('ranks a preview directory below the release with the same numbers', () => {
+    expect(compareSdkVersions('10.0.26100.0-preview', '10.0.26100.0')).toBeGreaterThan(0);
+    expect(compareSdkVersions('10.0.26100.0', '10.0.26100.0-preview')).toBeLessThan(0);
+    expect(['10.0.26100.0-preview', '10.0.26100.0'].sort(compareSdkVersions)).toEqual([
+      '10.0.26100.0',
+      '10.0.26100.0-preview',
+    ]);
+  });
 });
 
 describe('path privacy in printed output', () => {

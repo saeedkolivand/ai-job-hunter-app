@@ -117,7 +117,10 @@ export function compareSdkVersions(a, b) {
     const diff = (pb[i] ?? 0) - (pa[i] ?? 0);
     if (diff !== 0) return diff;
   }
-  return 0;
+  // Same numbers: a name carrying a non-numeric suffix (`…-preview`) sorts
+  // below the plain release, so directory order never decides between them.
+  const tagged = (name) => /[^\d.]/.test(name);
+  return Number(tagged(a)) - Number(tagged(b));
 }
 
 /**

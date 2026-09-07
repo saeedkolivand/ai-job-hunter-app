@@ -151,8 +151,10 @@ pub fn register_native_host(data_dir: &Path) {
     // which a normal user — and therefore the browser process that has to spawn
     // this host — cannot execute from, and whose name carries the package
     // VERSION, so the manifest would dangle after the next Store update. The
-    // execution-alias shim is the stable, launchable path; `alias_exe_path()`
-    // is `None` on every other build, where `current_exe()` stays correct.
+    // execution-alias shim is the stable, launchable path; `published_exe_path()`
+    // answers `Unpackaged` on every other build, where `current_exe()` stays
+    // correct, and `Unavailable` when the shim is missing, in which case nothing
+    // is published at all.
     let exe = match crate::platform::msix::published_exe_path() {
         crate::platform::msix::PublishedExe::Alias(alias) => alias,
         // A packaged build with no usable alias (the user can switch one off

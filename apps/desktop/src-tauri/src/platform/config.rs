@@ -107,8 +107,9 @@ const APPDIR_ENV: &str = "APPDIR";
 /// reason** and is checked first: there `current_exe()` is inside
 /// `…\WindowsApps\<PackageFullName>\`, a directory a normal user cannot
 /// execute from and whose name changes with every Store update.
-/// [`crate::platform::msix::alias_exe_path`] returns the stable execution-alias
-/// shim, and `None` on every other build, so the AppImage and plain cases below
+/// [`crate::platform::msix::published_exe_path`] answers with the stable
+/// execution-alias shim, with "publish nothing" when that shim is missing, or
+/// with `Unpackaged` on every other build, so the AppImage and plain cases below
 /// are untouched. The two cases cannot both apply (one is Windows-only, the
 /// other Linux-only), so the order between them is documentation, not logic.
 ///
