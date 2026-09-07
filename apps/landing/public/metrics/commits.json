@@ -1,5 +1,41 @@
 [
   {
+    "sha": "bcb6b303065e3ce442ea8626818cef7d126c7fc1",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-07T07:11:34Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "e5f41630b1898a1a2f244607f29fabb4d245b8e1",
+    "commit": {
+      "message": "feat: LinkedIn description enrichment + paginated found-jobs MCP resource (#1117)",
+      "author": {
+        "date": "2026-09-07T06:44:14Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "d46c2771a51c9ec3bd13b404a21945d29981f7c0",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-06T07:53:22Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "1bfe9353cc934e0151be2ed48fd8201bfc001b64",
     "commit": {
       "message": "feat: give the extension side panel connection-status awareness (#1116)",
@@ -1161,42 +1197,6 @@
     },
     "author": {
       "login": "github"
-    }
-  },
-  {
-    "sha": "91209e8bffcfb5d0ed316cec95d48d78d9127a4c",
-    "commit": {
-      "message": "chore(release): 0.142.1 [skip ci]",
-      "author": {
-        "date": "2026-08-22T14:59:57Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "fc339661d47229b12f5699d97933470e47d96c24",
-    "commit": {
-      "message": "fix(scraping): send the requested location to freehire (#1075)",
-      "author": {
-        "date": "2026-08-22T14:58:15Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "7d39be8d55dae324970d810e8bf49cb7188c3e99",
-    "commit": {
-      "message": "chore: sync landing download version to v0.142.0",
-      "author": {
-        "date": "2026-08-22T06:40:00Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
     }
   }
 ]

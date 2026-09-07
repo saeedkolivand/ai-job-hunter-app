@@ -1,5 +1,19 @@
 [
   {
+    "number": 1117,
+    "title": "feat: LinkedIn description enrichment + paginated found-jobs MCP resource",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1117",
+    "draft": false,
+    "created_at": "2026-09-06T01:44:20Z",
+    "updated_at": "2026-09-07T06:58:58Z",
+    "merged_at": "2026-09-07T06:44:14Z",
+    "closed_at": "2026-09-07T06:44:14Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
     "number": 1116,
     "title": "feat: give the extension side panel connection-status awareness",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1116",
@@ -680,20 +694,6 @@
     "updated_at": "2026-08-20T22:19:02Z",
     "merged_at": "2026-08-20T22:17:36Z",
     "closed_at": "2026-08-20T22:17:36Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1058,
-    "title": "build(desktop): stop the route generator treating route tests as routes",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1058",
-    "draft": false,
-    "created_at": "2026-08-20T15:49:53Z",
-    "updated_at": "2026-08-20T16:22:15Z",
-    "merged_at": "2026-08-20T16:07:38Z",
-    "closed_at": "2026-08-20T16:07:38Z",
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"
