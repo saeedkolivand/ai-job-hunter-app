@@ -124,6 +124,18 @@ vi.mock('./lib/bridge', () => ({
   }),
 }));
 
+// `background.ts` has no exports: every listener under test — `onMessage`,
+// `onInstalled`, `tabs.onUpdated`, `contextMenus.onClicked` — is recorded on
+// these mocks by the import BELOW, once, before any test body runs. Vitest 5
+// turned `clearMocks` on by default (a `vi.clearAllMocks()` before every test),
+// which wipes exactly that history — the migration guide names module-load
+// recording as the most affected pattern
+// (https://vitest.dev/guide/migration#clearmocks-is-enabled-by-default). Opt
+// this file out; the runner restores the config after the file, so no other test
+// file is affected, and per-test isolation stays explicit in the `beforeEach`
+// below.
+vi.setConfig({ clearMocks: false });
+
 // Dynamic import AFTER the mocks are in place — background.ts registers its
 // onMessage listener + kicks an initial ensureConnected() probe at module load.
 const backgroundModule = await import('./background');
