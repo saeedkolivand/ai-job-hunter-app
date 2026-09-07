@@ -9,6 +9,7 @@
     "build:chrome": "cross-env BROWSER=chrome vite build",
     "build:firefox": "cross-env BROWSER=firefox vite build",
     "package": "pnpm build && node scripts/package.mjs",
+    "package:source": "node scripts/source-archive.mjs",
     "dev": "cross-env BROWSER=chrome vite build --watch --mode development",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "@types/chrome": "^0.2.7",
+    "chrome-webstore-upload-cli": "4.0.1",
     "cross-env": "^10.1.0",
     "jsdom": "^30.0.1",
     "typescript": "^7.0.2",

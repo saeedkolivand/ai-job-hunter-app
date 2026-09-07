@@ -1,6 +1,6 @@
 # Deployment — AI Job Hunter
 
-Last updated: 2026-08-16
+Last updated: 2026-09-07
 
 AI Job Hunter is distributed as a native desktop installer built by [Tauri][tauri]. There is no server to deploy — the entire app runs on the end user's machine.
 
@@ -211,6 +211,82 @@ Additional advisory layers:
 - **On-demand deep review — Claude** — comment `@claude review` on a PR (repo owner only) to run `claude-review.yml` tag-mode job, an agent-routed deep dive as the `.claude/agents` owner. Inert until invoked. Requires the `CLAUDE_CODE_OAUTH_TOKEN` repo secret (from `claude setup-token`); do **not** also set `ANTHROPIC_API_KEY`.
 
 > CodeRabbit reviews **fork** PRs too (it's a GitHub App, not a `GITHUB_TOKEN` job); fork PRs hit ✅ CI OK + CodeRabbit, and 🤖 AI Review OK fail-opens on forks (no secret access) — consistent with ADR-0008's fail-open list. CodeQL **Default setup** must stay off; the advanced CodeQL job in `security.yml` conflicts with it. See [`docs/knowledge/decision-records/0003-consolidate-ci-workflows.md`](knowledge/decision-records/0003-consolidate-ci-workflows.md).
+
+---
+
+## Browser extension store publishing
+
+The MV3 extension is already listed on both stores, so every release **submits a new version to an existing listing** — never creates one. Two jobs in `release.yml` do it automatically after `package-extension`, on the same `action: build-installers` dispatch:
+
+| Job               | Store            | What it submits                                                                                                 |
+| ----------------- | ---------------- | --------------------------------------------------------------------------------------------------------------- |
+| `publish-chrome`  | Chrome Web Store | The chrome zip `package-extension` built, uploaded **and** published (= submitted for review)                   |
+| `publish-firefox` | Firefox AMO      | The firefox zip, plus the mandatory reviewable **source archive** (`apps/extension/scripts/source-archive.mjs`) |
+
+Both consume the zips as a workflow artifact from `package-extension`, so what reaches a store is byte-for-byte what is attached to the GitHub Release. They are independent of each other and nothing else `needs:` them — one store failing blocks neither the other store nor the rest of the release fan-out.
+
+**A green job means "submitted for review", never "live".** Approval is a human step at Google/Mozilla that lands hours to days later; the jobs deliberately do not wait for it.
+
+Before submitting, `publish-firefox` unpacks the source archive it just built, runs the archive's own documented build commands and byte-compares the result against the shipped package. AMO reviewers do exactly this and pull add-ons that fail it, so a mismatch fails the job **before** anything is uploaded. If it ever goes red, fix the non-determinism in the build (a leaked absolute path or timestamp is the usual cause) — do not loosen the comparison.
+
+### Repository secrets
+
+Six, all required; each job checks its own set first and fails naming the missing one, so a misconfiguration never surfaces as an opaque 401. The Chrome **item id** is deliberately not a secret — it is public, and is an `env` constant in the job.
+
+| Secret                                                    | Where it comes from                      |
+| --------------------------------------------------------- | ---------------------------------------- |
+| `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN` | One-time OAuth setup, below              |
+| `CWS_PUBLISHER_ID`                                        | Chrome Developer Dashboard → **Account** |
+| `AMO_JWT_ISSUER`, `AMO_JWT_SECRET`                        | AMO → **Manage API Keys**                |
+
+#### One-time Chrome Web Store credential setup
+
+1. Create (or reuse) a Google Cloud project and **enable the Chrome Web Store API** on it.
+2. Add an **OAuth client** of type **Desktop app**.
+3. Run `npx chrome-webstore-upload-keys` **signed in as the Google account that owns the listing** (2-step verification must be on) and paste the client id/secret; it returns the refresh token.
+4. The OAuth **consent screen must not be left in "Testing"** — a testing-mode refresh token dies after **7 days**. Set it to Internal, or External + Production.
+5. Copy the **Publisher ID** from the Developer Dashboard's Account page (the v2 API addresses items as `publishers/<id>/items/<item id>`; the extension id alone is not enough).
+
+#### One-time AMO credential setup
+
+Generate a JWT issuer + secret on the AMO **Manage API Keys** page with the account that owns the add-on. The secret is shown once.
+
+### Known failure modes
+
+- **An open manual draft blocks Chrome.** The API refuses to act while an unsubmitted draft edit is pending in the dashboard. Submit or discard it, then re-run.
+- **The version must increase.** Chrome rejects an upload whose manifest version is not higher than the published one. The extension version is bumped for every app release by `scripts/sync-tauri-version.cjs`, so this only bites when re-running a release for an already-submitted tag.
+- **A Chrome refresh token expires after 6 months unused** (and after 7 days if the consent screen was left in Testing). Symptom: `invalid_grant`. Re-run the key generator.
+- **An AMO source-archive mismatch is a rejection**, and a repeat offence gets the add-on taken down. The reproducibility gate exists to catch it in CI instead.
+- **Missing secrets fail the job by design.** Until all six exist, every release run shows two red jobs and no submission happens. Nothing else in the release is affected.
+- **Both jobs run the tag's own code**, so re-running `build-installers` against a tag cut _before_ store publishing existed fails them (the publish tooling is not in that tag's lockfile or scripts). Expected; ignore it, or dispatch only for tags from this feature onward.
+
+---
+
+## Microsoft Store (deferred)
+
+Not implemented, and not started — recorded here so it can be picked up without re-researching. **All of this is a snapshot taken 2026-09-07; re-verify with Microsoft before acting on it.**
+
+**Partner Center already has an "AI Job Hunter" EXE/MSI app in draft** (Availability, Properties and Age ratings are done; Store listing is not started; one x64 EXE package is attached). Two corrections that package needs before anything else:
+
+1. The **Package URL must be the canonical versioned GitHub release URL** (`https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v<version>/<x64 setup .exe>`), not the temporary signed `release-assets.githubusercontent.com` target currently entered — that one expires.
+2. Untick **"installer runs silent without switches"** and give `/S` as the installer parameter. NSIS shows UI otherwise, which fails certification.
+
+Then run the page's **Run validation**.
+
+### Blockers
+
+**1. Code signing.** The Store does not re-sign EXE/MSI submissions: the installer and its PE files must already be **Authenticode-signed with a certificate chaining to the Microsoft Trusted Root Program** (self-signed is rejected). The release workflow has no Authenticode signing today — only the updater's minisign key (see [Updater signing keys](#updater-signing-keys)), which is a different mechanism and does not satisfy this. Since June 2023 signing keys must live on an HSM, so CI signing needs a cloud-signing provider:
+
+- **Azure Trusted Signing** — its individual tier currently onboards US/Canada residents only.
+- **Certum Open Source code signing** (~$50, cloud HSM via SimplySign; needs ID verification plus proof the project is open-source/non-commercial) or a standard **OV cloud certificate** (~$116+/yr) are the realistic routes from Germany.
+
+Tauri's hook for this is `bundle.windows.signCommand`.
+
+**2. CI credentials.** The `msstore` CLI (via the `microsoft/microsoft-store-apppublisher` setup action — the older `microsoft/store-submission` action is archived) needs **Tenant ID, Client ID, Client Secret, Seller ID**. Getting them requires, in order: associate an **Entra tenant** with the Partner Center account (there is none today — Account settings → Tenants is empty; "Create Microsoft Entra ID" there is free), register an app in it, and add that app under **User management** with the **Manager** role. Store automation only supports **free** products and can only **update an app that is already live**, so the _first_ submission has to be manual. Each release after that is `msstore submission update <PartnerCenterId> <package json with the new versioned URL>` followed by `msstore submission publish`.
+
+### Store requirements to design against
+
+An HTTPS **versioned URL that never changes after submission**, an **offline standalone installer**, and **silent install** (a UAC prompt is allowed). Whether Partner Center accepts GitHub's 302 redirect on release download URLs is **untested** — the page's validation will say. The fallback is hosting installers on the R2 CDN behind the landing domain.
 
 ---
 

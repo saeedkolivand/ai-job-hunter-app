@@ -17,6 +17,9 @@ name: 🚀 Release
 #       GitHub release, and commit the bump back to main (action: release only)
 #   - build: Build Tauri apps for Windows, Linux, and macOS (action: build-installers only)
 #   - package-extension: Build + attach browser extension zips (action: build-installers only)
+#   - publish-chrome: Upload + submit the chrome zip to the Chrome Web Store listing
+#   - publish-firefox: Build the AMO source archive, prove it rebuilds the shipped
+#       package, then submit the new version to the Firefox AMO listing
 #   - generate-update-manifest: Publish latest.json for the auto-updater
 #   - update-cask: Pin the Homebrew cask to the built dmgs (version + per-arch sha256)
 #   - update-download-page: Sync apps/landing/src/data/version.json to the built installer URLs
@@ -729,6 +732,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # The store-publish jobs consume THESE bytes, not a re-download of the
+      # release asset: the artifact is the exact zip this job just built and
+      # verified, so what reaches the two stores cannot diverge from what is
+      # attached to the GitHub Release.
+      - name: 📦 Hand the zips to the store-publish jobs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: extension-store-zips
+          path: |
+            apps/extension/dist/ai-job-hunter-extension-chrome-*.zip
+            apps/extension/dist/ai-job-hunter-extension-firefox-*.zip
+          if-no-files-found: error
+          retention-days: 7
+
       - name: 📝 Job Summary
         if: always()
         run: |
@@ -742,6 +759,412 @@ jobs:
             echo "### 🔧 Environment"
             echo "- **Node**: $(node --version)"
             echo "- **pnpm**: $(pnpm --version)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Store publishing ────────────────────────────────────────────────────────
+  # Two jobs, not one: a rejection or an outage at one store must never stop the
+  # other from shipping, and each store's outcome gets its own red/green. Neither
+  # is a `needs:` of anything else (the update-manifest / cask / download-page
+  # fan-out all hang off `build`), so a failed submission cannot take the rest of
+  # the release down with it — keep it that way. No `continue-on-error`: a failed
+  # submission has to be visibly red, or a release silently never reaches a store.
+  #
+  # Both jobs are terminal at "SUBMITTED FOR REVIEW". Approval is a human step at
+  # Google/Mozilla that happens hours-to-days later and outside CI, so a green job
+  # never means "live". Credential setup + failure modes: docs/DEPLOYMENT.md
+  # § Browser extension store publishing.
+
+  publish-chrome:
+    name: 🧩 Publish to Chrome Web Store
+    needs: package-extension
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'build-installers' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    env:
+      # PUBLIC item id — it is in every install URL. The same literal is pinned by
+      # the desktop bridge's origin allowlist (ALLOWED_EXTENSION_IDS in
+      # apps/desktop/src-tauri/src/extension_bridge/auth.rs) and linked from
+      # apps/extension/README.md. Deliberately NOT a secret: hiding it would only
+      # make a misconfigured upload harder to diagnose.
+      CHROME_EXTENSION_ID: oaoekkgkhmgdfnpmfkpphgiikliaicll
+
+    steps:
+      # Fail on a missing credential HERE, with its own name, rather than four
+      # steps later as an opaque 401 from Google. Guarded in the shell, not in
+      # `if:` — the `secrets` context is not available to a step-level `if`.
+      - name: 🔐 Check Chrome Web Store credentials
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+        run: |
+          set -euo pipefail
+          missing=""
+          for name in CWS_CLIENT_ID CWS_CLIENT_SECRET CWS_REFRESH_TOKEN CWS_PUBLISHER_ID; do
+            [ -n "${!name:-}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error title=Chrome Web Store credentials missing::Set these repository secrets before releasing (setup steps: docs/DEPLOYMENT.md § Browser extension store publishing):$missing"
+            exit 1
+          fi
+          echo "All four Chrome Web Store secrets are set."
+
+      - name: 📥 Checkout Repository (for tag lookup)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 🏷️ Resolve Version
+        id: resolve
+        env:
+          # Passed via env (not inline) to avoid script injection from the input.
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${INPUT_VERSION:-}" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="$(git tag --sort=-version:refname | head -n1)"
+          fi
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::No release tags found. Create a release first or provide a version manually."
+            exit 1
+          fi
+
+          VERSION="${VERSION#v}"
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
+            echo "::error::Could not resolve a valid version (got '$VERSION'). Pass one via the workflow input."
+            exit 1
+          fi
+          echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing extension v$VERSION to the Chrome Web Store"
+
+      # The tag's lockfile is what pinned chrome-webstore-upload-cli at release
+      # time, so the CLI is installed from the tag, not from main.
+      - name: 📥 Checkout Release Tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.resolve.outputs.version }}
+          fetch-depth: 1
+
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 📥 Install Dependencies
+        run: |
+          echo "::group::Installing dependencies"
+          pnpm install --frozen-lockfile
+          echo "::endgroup::"
+
+      - name: 📥 Download the packaged extension zips
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: extension-store-zips
+          path: extension-zips
+
+      - name: 🚀 Upload + submit to the Chrome Web Store
+        id: cws
+        env:
+          # chrome-webstore-upload-cli takes the three OAuth values from these
+          # exact variable names and REFUSES them as flags; PUBLISHER_ID is kept
+          # alongside them so no credential is ever visible in a command line.
+          # Access tokens last an hour — the CLI mints a fresh one from the
+          # refresh token on every run.
+          CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          ZIP="extension-zips/ai-job-hunter-extension-chrome-${VERSION#v}.zip"
+          if [ ! -f "$ZIP" ]; then
+            echo "::error title=Chrome zip missing::$ZIP was not in the extension-store-zips artifact — the package-extension job's naming and this job's expectation have drifted."
+            exit 1
+          fi
+          echo "::group::chrome-webstore-upload (upload + publish)"
+          # No subcommand = upload AND publish, i.e. submit for review. Two things
+          # make this fail in ways worth recognising: the API refuses to act while
+          # an unsubmitted manual draft edit is open in the dashboard, and it
+          # refuses an upload whose manifest version does not increase (ours is
+          # bumped for every app release by scripts/sync-tauri-version.cjs).
+          pnpm --filter @ajh/extension exec chrome-webstore-upload \
+            --source "$ZIP" \
+            --extension-id "$CHROME_EXTENSION_ID" \
+            --deploy-percentage 100 2>&1 | tee cws-result.log
+          echo "::endgroup::"
+
+      - name: 📝 Job Summary
+        if: always()
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          {
+            echo "## 🧩 Chrome Web Store Submission"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| Version | \`${VERSION:-unresolved}\` |"
+            echo "| Item | [\`$CHROME_EXTENSION_ID\`](https://chromewebstore.google.com/detail/$CHROME_EXTENSION_ID) |"
+            echo "| Deploy percentage | 100 |"
+            echo "| Outcome | ${{ steps.cws.outcome == 'success' && '✅ Submitted for review' || '❌ Failed' }} |"
+            echo ""
+            if [ -f cws-result.log ]; then
+              echo "<details><summary>chrome-webstore-upload output</summary>"
+              echo ""
+              echo '```'
+              cat cws-result.log
+              echo '```'
+              echo ""
+              echo "</details>"
+              echo ""
+            fi
+            echo "> **Submitted ≠ live.** The last state this job can reach is _submitted for review_ (\`PENDING_REVIEW\`); the version goes live only when Google's review approves it, hours to days later. Track it in the [developer dashboard](https://chrome.google.com/webstore/devconsole)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-firefox:
+    name: 🦊 Publish to Firefox AMO
+    needs: package-extension
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'build-installers' }}
+    runs-on: ubuntu-latest
+    # The reproducibility gate below does a full workspace install + build of the
+    # unpacked source archive, on top of this job's own install.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: 🔐 Check AMO credentials
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          set -euo pipefail
+          missing=""
+          for name in AMO_JWT_ISSUER AMO_JWT_SECRET; do
+            [ -n "${!name:-}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error title=AMO credentials missing::Set these repository secrets before releasing (setup steps: docs/DEPLOYMENT.md § Browser extension store publishing):$missing"
+            exit 1
+          fi
+          echo "Both AMO API secrets are set."
+
+      - name: 📥 Checkout Repository (for tag lookup)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 🏷️ Resolve Version
+        id: resolve
+        env:
+          # Passed via env (not inline) to avoid script injection from the input.
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${INPUT_VERSION:-}" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="$(git tag --sort=-version:refname | head -n1)"
+          fi
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::No release tags found. Create a release first or provide a version manually."
+            exit 1
+          fi
+
+          VERSION="${VERSION#v}"
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
+            echo "::error::Could not resolve a valid version (got '$VERSION'). Pass one via the workflow input."
+            exit 1
+          fi
+          echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing extension v$VERSION to Firefox AMO"
+
+      # The source archive AMO reviewers rebuild from is `git archive` of THIS
+      # checkout, so it has to be the release tag, not main.
+      - name: 📥 Checkout Release Tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.resolve.outputs.version }}
+          fetch-depth: 1
+
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 📥 Install Dependencies
+        run: |
+          echo "::group::Installing dependencies"
+          pnpm install --frozen-lockfile
+          echo "::endgroup::"
+
+      - name: 📥 Download the packaged extension zips
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: extension-store-zips
+          path: extension-zips
+
+      # AMO requires reviewable source for a bundled (Vite) add-on. The archive is
+      # `git archive` of the tag + a generated build README at its root — see
+      # apps/extension/scripts/source-archive.mjs.
+      - name: 📦 Build the AMO source archive
+        run: |
+          echo "::group::Building the AMO source archive"
+          pnpm --filter @ajh/extension package:source
+          echo "::endgroup::"
+
+      # The gate that makes the archive worth submitting. AMO reviewers rebuild
+      # from the submitted source and byte-diff the result against the uploaded
+      # package; a mismatch delays the review or gets the add-on taken down. So
+      # do exactly that here, and fail BEFORE anything is submitted.
+      - name: 🔁 Verify the source archive rebuilds the shipped package
+        id: repro
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          RAW="${VERSION#v}"
+          SRC_ZIP="apps/extension/dist/ai-job-hunter-extension-source-${RAW}.zip"
+          FF_ZIP="extension-zips/ai-job-hunter-extension-firefox-${RAW}.zip"
+          for f in "$SRC_ZIP" "$FF_ZIP"; do
+            if [ ! -f "$f" ]; then
+              echo "::error title=Missing input::$f does not exist — the archive script's or the packager's naming and this job's expectation have drifted."
+              exit 1
+            fi
+          done
+
+          SRC_DIR="$RUNNER_TEMP/amo-source"
+          SHIPPED_DIR="$RUNNER_TEMP/amo-shipped"
+          rm -rf "$SRC_DIR" "$SHIPPED_DIR"
+          mkdir -p "$SRC_DIR" "$SHIPPED_DIR"
+          unzip -q "$SRC_ZIP" -d "$SRC_DIR"
+          unzip -q "$FF_ZIP" -d "$SHIPPED_DIR"
+
+          echo "::group::Rebuilding from the source archive with its own documented commands"
+          # Kept identical to SOURCE_BUILD_README.md's build steps on purpose: if
+          # they ever diverge, the reviewer's rebuild is the one that fails.
+          (
+            cd "$SRC_DIR"
+            pnpm install --frozen-lockfile
+            pnpm -F @ajh/shared build
+            pnpm -F @ajh/extension build:firefox
+          )
+          echo "::endgroup::"
+
+          echo "::group::Diffing the rebuild against the shipped package"
+          # `-q`, not a full diff: these are bundles on one line each, so a
+          # character diff is a 200 kB unreadable log. Which FILES differ (or are
+          # missing on either side) is the whole signal; the byte-level answer is
+          # in the archive artifact this job attaches.
+          if ! diff -rq "$SHIPPED_DIR" "$SRC_DIR/apps/extension/dist/firefox" > "$RUNNER_TEMP/repro.diff"; then
+            echo "::error title=Source archive does not reproduce the package::AMO would reject this submission. NOTHING WAS SUBMITTED. Fix the non-determinism in the build (an absolute path or a timestamp leaking into the bundle is the usual cause) rather than loosening this comparison."
+            cat "$RUNNER_TEMP/repro.diff"
+            {
+              echo "### ❌ Source archive did not reproduce the shipped package"
+              echo ""
+              echo "Nothing was submitted to AMO."
+              echo ""
+              echo '```'
+              head -c 8000 "$RUNNER_TEMP/repro.diff"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "Rebuild is byte-identical to the shipped Firefox package."
+          echo "::endgroup::"
+
+      - name: 🚀 Submit the new version to Firefox AMO
+        id: amo
+        env:
+          # web-ext maps every option to a WEB_EXT_* variable; the credentials are
+          # passed ONLY that way so they never land in the runner's process list.
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          RAW="${VERSION#v}"
+          echo "::group::web-ext sign --channel listed"
+          # `npx`, not a devDependency: web-ext pulls ~330 packages / ~78 MB
+          # (addons-linter, a second deprecated eslint) into EVERY `pnpm install`
+          # in this monorepo — every CI job and every contributor clone — for a
+          # tool used once per release. Pinned to an exact version, like the
+          # @sentry/cli invocation in the build job above.
+          #
+          # `--channel listed` submits a new version of the existing public
+          # listing (the add-on id comes from browser_specific_settings.gecko.id
+          # in the manifest, so this can only ever update OUR listing).
+          # `--approval-timeout 0` disables waiting for the signed XPI: a listed
+          # submission goes to HUMAN review, so the default 15-minute wait would
+          # end every run in a spurious failure. The job's terminal state is
+          # "submitted".
+          npx --yes web-ext@10.6.0 sign \
+            --channel listed \
+            --source-dir "$RUNNER_TEMP/amo-shipped" \
+            --upload-source-code "apps/extension/dist/ai-job-hunter-extension-source-${RAW}.zip" \
+            --artifacts-dir "$RUNNER_TEMP/web-ext-artifacts" \
+            --approval-timeout 0 \
+            --no-input 2>&1 | tee amo-result.log
+          echo "::endgroup::"
+
+      # Attached even when the gate or the submission failed: a rejected review
+      # is reproduced by unpacking THIS archive, not by rebuilding from the tag.
+      - name: 📤 Upload the AMO source archive
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: amo-source-archive
+          path: apps/extension/dist/ai-job-hunter-extension-source-*.zip
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: 📝 Job Summary
+        if: always()
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          {
+            echo "## 🦊 Firefox AMO Submission"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| Version | \`${VERSION:-unresolved}\` |"
+            echo "| Channel | \`listed\` |"
+            echo "| Source archive rebuilds the package | ${{ steps.repro.outcome == 'success' && '✅ Byte-identical' || '❌ Not verified' }} |"
+            echo "| Outcome | ${{ steps.amo.outcome == 'success' && '✅ Submitted for review' || '❌ Failed' }} |"
+            echo ""
+            if [ -f amo-result.log ]; then
+              echo "<details><summary>web-ext sign output</summary>"
+              echo ""
+              echo '```'
+              cat amo-result.log
+              echo '```'
+              echo ""
+              echo "</details>"
+              echo ""
+            fi
+            echo "> **Submitted ≠ live.** A \`listed\` submission goes to human review at Mozilla; this job ends at _submitted_ and never waits for the signed XPI. Track it in [AMO Developer Hub](https://addons.mozilla.org/developers/addons)."
           } >> "$GITHUB_STEP_SUMMARY"
 
   generate-update-manifest:

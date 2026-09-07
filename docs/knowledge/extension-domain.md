@@ -1,6 +1,6 @@
 # Extension domain (browser extension + desktop bridge)
 
-Last updated: 2026-09-05 (ADR-045: job-tools panel parity + the `isPageTrusted` gate; ADR-044: extension Answer tools side panel + popup, shared per-tab state, draft-time `maxChars` field; `answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
+Last updated: 2026-09-07 (ADR-045: job-tools panel parity + the `isPageTrusted` gate; ADR-044: extension Answer tools side panel + popup, shared per-tab state, draft-time `maxChars` field; `answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
 
 Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tauri-security-reviewer`.
 
@@ -171,6 +171,8 @@ A separate shared component, `apps/extension/src/job-tools/job-tools.ts` (`mount
 ## Store policy
 
 Chrome Web Store + Firefox AMO: MV3, no remote code, least-privilege permissions, single-purpose, honest metadata, privacy/data disclosure. Full pre-submission checklist in `.claude/skills/extension-standards/SKILL.md`.
+
+**Submission is automated, approval is not.** Every release dispatch runs `publish-chrome` + `publish-firefox` in `.github/workflows/release.yml` after `package-extension`; the AMO source archive comes from `apps/extension/scripts/source-archive.mjs` and is gated on rebuilding the shipped package byte-for-byte before anything is uploaded. A green job means _submitted for review_. Credentials, secret names and failure modes: `docs/DEPLOYMENT.md` § "Browser extension store publishing".
 
 ## Agent system
 
