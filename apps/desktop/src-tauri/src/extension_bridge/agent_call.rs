@@ -776,9 +776,11 @@ pub(super) const PAGINATED_LIST_COMMANDS: &[&str] = &["applications_list", "ai_g
 /// the only thing the consumer (an LLM that cannot read this source) ever
 /// sees, and "burst, then refill" without figures is unactionable. They are a
 /// COPY of `agent_read::AGENT_CHEAP_BURST`/`AGENT_CHEAP_REFILL_SECS`, which
-/// remain the source of truth — change those and this sentence must change
-/// with them (the constants are private to `agent_read`, so this copy cannot
-/// be derived from here without widening them; tracked as the follow-up).
+/// remain the source of truth. Private there, so this copy cannot be derived
+/// here without widening them; instead `agent_read`'s own test module (which
+/// sees both) asserts this string still contains the `format!`-derived
+/// "burst {N}" and "every {N} s" — so the drift fails a test rather than
+/// shipping a wrong number to the one reader who cannot check it.
 ///
 /// The last sentence states the offset cursor's known weakness rather than
 /// leaving a caller to discover it: this is the same accepted trade-off
@@ -790,8 +792,8 @@ pub(super) const PAGINATED_LIST_NOTE: &str =
      input.cursor (a prior reply's nextCursor, verbatim; omit for the first page); repeat until \
      nextCursor is null. `total` is the FULL row count, unaffected by paging — it is what an \
      Effect::Irreversible row whose proof is this list's length wants. Pages draw on the \
-     shared cheap throttle bucket nearly every agent call uses (burst 10, one token back per \
-     second), so pace a traversal at roughly one page per second instead of looping as fast as \
+     shared cheap throttle bucket nearly every agent call uses (burst 10, one token back every \
+     1 s), so pace a traversal at roughly one page per second instead of looping as fast as \
      replies arrive; a rate_limited refusal means wait, not retry at once. The cursor is a \
      plain offset into the list as it stands right now, so a row added or removed between two \
      pages can make that boundary repeat or skip a row (accepted, same as the found-jobs \

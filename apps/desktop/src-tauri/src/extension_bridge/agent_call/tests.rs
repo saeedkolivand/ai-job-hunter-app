@@ -1359,6 +1359,47 @@ fn the_base64_byte_fields_are_exactly_this_one_audited_pair() {
     assert_eq!(entry.effect, Effect::Read);
 }
 
+/// The other half of that pair — the FIELD name — pinned against the struct
+/// it was audited against rather than against a second copy of the literal.
+/// `BASE64_BYTE_FIELDS` names `data` from memory of
+/// `export::types::ExportResult`; rename that field (or put a
+/// `#[serde(rename)]` on it) and every assertion above still passes while the
+/// pair silently addresses a key no reply carries — i.e. the raw byte array
+/// #1138 exists to shrink ships unencoded. So serialize the REAL struct here,
+/// prove the audited name is the key holding its bytes, and run the re-encode
+/// on that exact value.
+#[test]
+fn the_audited_field_is_the_key_the_real_export_struct_serializes_its_bytes_under() {
+    let (command, field) = BASE64_BYTE_FIELDS[0];
+    let mut value = serde_json::to_value(crate::export::types::ExportResult {
+        data: vec![0x25, 0x50, 0x44, 0x46],
+        mime_type: "application/pdf".to_string(),
+        filename: "resume.pdf".to_string(),
+        report: None,
+    })
+    .expect("ExportResult serializes");
+
+    let bytes = value
+        .get(field)
+        .unwrap_or_else(|| {
+            panic!(
+                "`{field}` is no longer a key of ExportResult's wire shape — \
+             BASE64_BYTE_FIELDS now points at nothing: {value}"
+            )
+        })
+        .as_array()
+        .unwrap_or_else(|| panic!("`{field}` is no longer serialized as an array: {value}"));
+    assert!(
+        bytes.iter().all(|b| b.as_u64().is_some_and(|n| n <= 255)),
+        "`{field}` must be the RAW byte array this re-encodes: {value}"
+    );
+
+    base64_byte_fields(command, &mut value);
+    assert_eq!(value[field].as_str().unwrap(), "JVBERg==", "%PDF, base64'd");
+    let marker = format!("{field}{ENCODING_KEY_SUFFIX}");
+    assert_eq!(value[&marker].as_str().unwrap(), BASE64_ENCODING);
+}
+
 #[test]
 fn base64_byte_fields_encodes_the_export_bytes_and_marks_the_encoding() {
     let mut data = json!({

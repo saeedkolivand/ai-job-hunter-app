@@ -13,9 +13,11 @@ pub async fn job_preferences_get(app: AppHandle) -> Value {
 /// The legacy wire names [`JobPreferences`](crate::job_preferences::JobPreferences)
 /// still accepts (`#[serde(alias)]`, #1149) mapped to their canonical keys.
 /// [`merge_over_stored`] drops the stored row's canonical spelling whenever the
-/// caller addressed that same field under its old name: serde treats a rename
-/// and its alias as ONE field and rejects both spellings as a duplicate, so the
-/// merged object must never carry them together.
+/// caller addressed that same field under its old name — and drops the CALLER's
+/// legacy key instead when the body carries both spellings itself (canonical
+/// wins): serde treats a rename and its alias as ONE field and rejects both
+/// spellings as a duplicate, so the merged object must never carry them
+/// together, whichever side contributed the second one.
 const LEGACY_WIRE_NAMES: &[(&str, &str)] = &[("tech_stack", "techStack")];
 
 /// Overlays the caller's PRESENT keys onto the serialized stored row, which is
@@ -30,7 +32,7 @@ const LEGACY_WIRE_NAMES: &[(&str, &str)] = &[("tech_stack", "techStack")];
 /// key and behaves exactly as it does today.
 fn merge_over_stored(
     stored: &crate::job_preferences::JobPreferences,
-    incoming: serde_json::Map<String, Value>,
+    mut incoming: serde_json::Map<String, Value>,
 ) -> serde_json::Map<String, Value> {
     let mut merged = match serde_json::to_value(stored) {
         Ok(Value::Object(map)) => map,
@@ -40,7 +42,18 @@ fn merge_over_stored(
         _ => serde_json::Map::new(),
     };
     for (legacy, canonical) in LEGACY_WIRE_NAMES {
-        if incoming.contains_key(*legacy) {
+        if !incoming.contains_key(*legacy) {
+            continue;
+        }
+        if incoming.contains_key(*canonical) {
+            // The caller sent BOTH spellings of one field. Serde would refuse
+            // the pair as a duplicate — the same refusal, reported as
+            // "missing or wrong type", that the stored-key removal below
+            // exists to avoid. The canonical key wins and the alias is
+            // dropped: a body carrying both is a caller mid-migration, and
+            // the new name is the one it means.
+            incoming.remove(*legacy);
+        } else {
             merged.remove(*canonical);
         }
     }
@@ -439,6 +452,42 @@ mod test {
         assert_eq!(
             after.tech_stack.as_ref().map(|ts| ts[0].name.as_str()),
             Some("Go")
+        );
+        assert_eq!(
+            after.location.as_deref(),
+            Some("Berlin"),
+            "…and it is still a merge: the unnamed columns survive"
+        );
+    }
+
+    /// A body carrying BOTH spellings of one field used to be refused outright
+    /// ("a field is missing or has the wrong type") — the merge only removed
+    /// the STORED canonical key, so the caller's own pair still reached serde,
+    /// which sees a rename and its alias as one field. The canonical key wins
+    /// and the alias is dropped. Delete the `incoming.remove(*legacy)` branch
+    /// and this fails with that refusal.
+    #[test]
+    fn a_body_carrying_both_spellings_keeps_the_canonical_one() {
+        let (_dir, store) = store_with_saved_preferences();
+
+        let reply = set_job_preferences(
+            &store,
+            json!({
+                "techStack": [{ "name": "Rust", "category": "language" }],
+                "tech_stack": [{ "name": "Go", "category": "language" }],
+            }),
+        );
+
+        assert_eq!(
+            reply,
+            json!({ "success": true }),
+            "both spellings in one body must not be refused as a duplicate: {reply}"
+        );
+        let after = store.get();
+        assert_eq!(
+            after.tech_stack.as_ref().map(|ts| ts[0].name.as_str()),
+            Some("Rust"),
+            "the canonical key wins"
         );
         assert_eq!(
             after.location.as_deref(),

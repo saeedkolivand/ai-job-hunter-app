@@ -1191,6 +1191,26 @@ mod tests {
         assert!(!t.try_acquire_at(RES_SCHEMA, now), "cheap burst exhausted");
     }
 
+    /// `agent_call::PAGINATED_LIST_NOTE` spells THESE two constants out in
+    /// prose for a consumer that cannot read this source, and it cannot
+    /// import them (they are private here) — so the pin lives on this side,
+    /// where both are visible, and is `format!`-derived rather than a third
+    /// hand-written copy. Change either constant, or the wording in the note,
+    /// and this fails.
+    #[test]
+    fn the_paged_row_note_spells_out_this_modules_cheap_throttle_numbers() {
+        let note = crate::extension_bridge::agent_call::PAGINATED_LIST_NOTE;
+        for expected in [
+            format!("burst {}", AGENT_CHEAP_BURST as usize),
+            format!("every {} s", AGENT_CHEAP_REFILL_SECS as usize),
+        ] {
+            assert!(
+                note.contains(&expected),
+                "the paged-row note must state `{expected}`: {note}"
+            );
+        }
+    }
+
     #[test]
     fn best_matches_bucket_is_much_tighter_than_cheap() {
         let mut t = AgentQueryThrottle::new();
