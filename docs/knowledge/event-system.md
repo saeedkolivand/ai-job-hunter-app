@@ -6,7 +6,7 @@ Centralized, one-way event channels — the complement to IPC request/response (
 
 **Registry definition:** `packages/shared/src/events/index.ts`
 
-- `EVENT_CHANNELS` — namespace → { key → wire-name } map; combined view of all 11 namespaces (agent, ai, applications, autopilot, boards, jobs, menu, notifications, scrape, system, updater)
+- `EVENT_CHANNELS` — namespace → { key → wire-name } map; the combined view of every namespace (the namespace roster is the object's own keys; read them there, since a copied list goes stale the first time a namespace is added)
 - `AppEvents` — union type keyed by wire name → payload type; kept in 1:1 sync by the lock test `events.test.ts`
 - **Lock test:** `packages/shared/src/events/events.test.ts` — asserts uniqueness, wire-name collision-free, and `AppEvents ↔ EVENT_CHANNELS` sync; run on every build
 

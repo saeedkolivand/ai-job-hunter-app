@@ -12,7 +12,7 @@ This divergence is **intentional layering** — do not "fix" it.
 
 ## Serde renames are the on-disk backup format
 
-`DocumentRecord` in `apps/desktop/src-tauri/src/documents/mod.rs` carries four field-level serde renames:
+`DocumentRecord` in `apps/desktop/src-tauri/src/documents/mod.rs` carries field-level serde renames (the struct's own `#[serde(rename)]` attributes are the list; these are the ones that exist today):
 
 - `id` → `"_id"`
 - `created_at` → `"createdAt"`

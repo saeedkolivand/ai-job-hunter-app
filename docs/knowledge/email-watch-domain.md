@@ -1,6 +1,6 @@
 # Email-watch domain (IMAP confirmation-email polling)
 
-Last updated: 2026-08-17 (task #23 PR B: email-watch poller, parser, matcher, and scheduler)
+Last updated: 2026-09-07 (task #23 PR B: email-watch poller, parser, matcher, and scheduler)
 
 Owned by `extension-author` (frontend settings UI) and `rust-backend-author` (IMAP polling loop); security co-reviewed by `tauri-security-reviewer`.
 
@@ -14,16 +14,16 @@ See [ADR-0013](decision-records/0013-email-confirmation-watching.md) for the OAu
 
 New module family: `apps/desktop/src-tauri/src/email_watch/` + `email_watch_scheduler.rs` (L2, mirrors `autopilot_scheduler`).
 
-| Module                     | LOC  | Purpose                                                                                                                                                                           |
-| -------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mod.rs`                   | 302  | `EmailWatchStore` (SQLite `email_watch.db`). Account + seen-dedupe tables. Resettable.                                                                                            |
-| `imap_client.rs`           | 250+ | TLS IMAP connector (raw socket + `native-tls`). Validates credentials; fetches headers/bodies PEEK-only. No marking read.                                                         |
-| `parser.rs`                | 577  | RFC2047 subject decode, MIME text/plain extraction, confirmation-email fingerprinting (EN+DE), company/title candidate extraction. Pure fns, no I/O.                              |
-| `matcher.rs`               | 318  | Fuzzy company+title token-Jaccard scoring vs saved Applications. Computes best match or `None` (ambiguous). Pure fns.                                                             |
-| `poller.rs`                | 220+ | Tick orchestration: fetch headers, fingerprint, body-fetch candidates, extract, match. Returns outcomes (matched app IDs + UIDs for deduping).                                    |
-| `email_watch_scheduler.rs` | 307  | L2 module: spawns from Tauri setup. ~15 min interval, exponential backoff on failure, RunGuard concurrent-run protection, invokes parser/matcher/poller, calls `push_and_notify`. |
+| Module                     | Purpose                                                                                                                                                                             |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mod.rs`                   | `EmailWatchStore` (SQLite `email_watch.db`). Account + seen-dedupe tables. Resettable.                                                                                              |
+| `imap_client.rs`           | TLS IMAP connector (raw socket + `native-tls`). Validates credentials; fetches headers/bodies PEEK-only. No marking read.                                                           |
+| `parser.rs`                | RFC2047 subject decode, MIME text/plain extraction, confirmation-email fingerprinting (EN+DE), company/title candidate extraction. Pure fns, no I/O.                                |
+| `matcher.rs`               | Fuzzy company+title token-Jaccard scoring vs saved Applications. Computes best match or `None` (ambiguous). Pure fns.                                                               |
+| `poller.rs`                | Tick orchestration: fetch headers, fingerprint, body-fetch candidates, extract, match. Returns outcomes (matched app IDs + UIDs for deduping).                                      |
+| `email_watch_scheduler.rs` | L2 module: spawns from Tauri setup. Due-gated interval, exponential backoff on failure, RunGuard concurrent-run protection, invokes parser/matcher/poller, calls `push_and_notify`. |
 
-**IPC contract** (`commands/email_watch.rs`, 5 commands): `status()`, `connect()`, `disconnect()`, `set_enabled()`, `check_now()`. See `packages/shared/src/ipc/contracts/emailWatch.ts`.
+**IPC contract**: `commands/email_watch.rs`; the method roster and wire shapes are `packages/shared/src/ipc/contracts/emailWatch.ts`, rendered into `docs/API.md`.
 
 ## Read-only IMAP posture
 
@@ -36,7 +36,7 @@ New module family: `apps/desktop/src-tauri/src/email_watch/` + `email_watch_sche
 
 - **No persistent password** — IMAP app password enters via the UI, is validated by real `LOGIN` + `EXAMINE INBOX` (or returns an error immediately), and **never enters SQLite**. Validated once per `email_watch_connect()` IPC call.
 - **Keychain-only** — a successful connection stores the address + host in SQLite, the password in OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service). The credential persists by design so the poller survives app restarts; it is cleared only on explicit `email_watch_disconnect` or factory reset.
-- **Host prefilled, data-driven** — v1 defaults to `imap.gmail.com:993`; host/port are stored in the account row so future provider auto-config can be data-driven (code change not needed for new providers).
+- **Host prefilled, data-driven** — v1 prefills a single Gmail default (the host/port constants live in `email_watch/imap_client.rs`); host/port are stored in the account row so future provider auto-config can be data-driven (code change not needed for new providers).
 - **Honest disclosure** — an app password grants **full mailbox access** (not readonly over the wire, only our IMAP session is readonly via EXAMINE). Stored in the OS keychain, never in SQLite or app logs.
 
 ## Watermark and UIDVALIDITY contract
@@ -61,53 +61,35 @@ The `seen` table (`uid PK, matched_app_id, ts`) deduplicates per-mailbox:
 
 ## Fingerprinting: confirmation-email patterns (subject-driven, domain-hinted)
 
-**Subject regex families** (the ONLY gate for a candidate):
+**Subject regex families** (the ONLY gate for a candidate): one EN family and one DE family, both in `email_watch/parser.rs`. The patterns themselves live there; copying them here would fork the fingerprint.
 
-```
-EN:
-  - "thank(?:s| you)(?: you)? for (?:applying|your application)"
-  - "we(?:'ve| have)? received your application"
-  - "application (?:confirmation|received)"
-  - "received your application"
+The boundary rules that stop a capture from swallowing the rest of a subject line are part of those patterns, per language, and live with them in `email_watch/parser.rs`; restating the mechanics here would fork the fingerprint exactly as copying the patterns would.
 
-DE:
-  - "ihr(?:e|er) bewerbung"
-  - "eingangsbestätigung"
-  - "deine bewerbung"
-```
-
-Each regex requires an **explicit trailing-boundary alternation** (`$`/punctuation/continuation words like EN `{was|is|has|will}` and DE `{ist|war|wurde}`) outside the capture group to prevent greedy/lazy captures from swallowing trailing sentence continuations (e.g., "Acme Corp was received" mistakenly captures "Acme Corp was received" instead of "Acme Corp").
-
-**Domain hints** (Boost-only, never gate):
-
-- Verified: `greenhouse.io`, `greenhouse-mail.io`
-- Folklore (hints only, no enforcement): `lever`, `workday`, `linkedin`, `indeed`
-
-Hints boost the match score by 0.05 but never gate a candidate. A mismatch cannot be rescued by a domain hint.
+**Domain hints** (Boost-only, never gate): a verified-sender list plus a folklore list of ATS domains, both in `email_watch/matcher.rs`. A hint nudges the match score by `DOMAIN_HINT_BOOST` but never gates a candidate; a mismatch cannot be rescued by a domain hint.
 
 **Metadata extraction** (candidate words):
 
-- Subject + first 500-byte body snippet + sender display-name (fallback)
-- Company token and job title, extracted via 4 per-language regexes (EN title+company, EN company-only, DE title+company, DE company-only)
+- Subject + a bounded body snippet (`SUBJECT_MAX_BYTES` / the body cap in `parser.rs`) + sender display-name (fallback)
+- Company token and job title, extracted via per-language regexes (title+company and company-only, per language); see `parser.rs`
 - ATS-suffix stripping on sender name (e.g., "Acme Corp Careers" → "Acme Corp")
 
 ## Matching: fuzzy company + title scoring
 
 **Matcher** (`matcher.rs`, pure fn):
 
-1. **Company threshold (hard gate)**: company tokens from email must achieve ≥ 0.5 Jaccard overlap with a saved Application's company name. Zero overlap = immediate reject.
-2. **Stopword normalization** (both sides): lowercase + split on non-alphanum + drop generics (`inc, llc, gmbh, corp, ltd, co, company, the, and, und, ag, kg, se`). "Acme Corp" / "Acme, Inc." / "Acme GmbH" all normalize to `{acme}`.
+1. **Company threshold (hard gate)**: company tokens from email must clear `COMPANY_THRESHOLD` Jaccard overlap with a saved Application's company name. Zero overlap = immediate reject.
+2. **Stopword normalization** (both sides): lowercase + split on non-alphanum + drop the legal-form generics listed in `matcher.rs`. "Acme Corp" / "Acme, Inc." / "Acme GmbH" all normalize to `{acme}`.
 3. **Boosts** (applied after the company threshold):
-   - `domain_hint` if sender domain is verified/hinted (+0.05)
-   - `title_boost` if title tokens overlap with any saved Application at this company (×0.1 weight on title Jaccard)
+   - `domain_hint` if sender domain is verified/hinted (`DOMAIN_HINT_BOOST`)
+   - `title_boost` if title tokens overlap with any saved Application at this company (`TITLE_BOOST_WEIGHT` on title Jaccard)
 4. **Ambiguous ties** — if the top two candidates have equal scores, return `None` (never guess; notify when confident).
 5. **Filters to saved Applications only** — `ApplicationStore::list()` returns all records; matcher considers only those with `status == saved`.
 
-**Tuning constants**:
+**Tuning constants**: all three are named consts in `apps/desktop/src-tauri/src/email_watch/matcher.rs`, doc-commented with their rationale; read the values there, they are meant to be retuned once real match-quality data exists.
 
-- `COMPANY_THRESHOLD = 0.5` — two genuinely different company names cannot both cross this bar even with both boosts maxed. Ensures precision.
-- `DOMAIN_HINT_BOOST = 0.05` — a verified sender domain is a weak tie-breaker, never a true gateway.
-- `TITLE_BOOST_WEIGHT = 0.1` — title overlap contributes 10% of the Jaccard score to the final tally. Named consts so they are easy to retune post-launch once real match-quality data exists.
+- `COMPANY_THRESHOLD` — set so two genuinely different company names cannot both cross the bar even with both boosts maxed. Ensures precision.
+- `DOMAIN_HINT_BOOST` — a verified sender domain is a weak tie-breaker, never a true gateway.
+- `TITLE_BOOST_WEIGHT` — how much title overlap contributes to the final tally.
 
 ## Honest limits (document-to-user)
 
@@ -124,7 +106,7 @@ Hints boost the match score by 0.05 but never gate a candidate. A mismatch canno
 ## Notification + confirm flow
 
 - **Trigger**: an email matches the fingerprint AND passes the company-threshold gate and any boosts.
-- **Notification** (always): `push_and_notify(app, NewNotification{ kind: "email.match", title: "Possible application confirmation", body: "{title} · {company}", route: {to: "/applications", search: {highlight: <appId>}} }, OsBanner::WhenUnfocused)`. The OS banner fires out-of-focus; in-focus, the Notification Center card appears.
+- **Notification** (always): one `push_and_notify` call routing to the matched Application row, banner policy `OsBanner::WhenUnfocused`; the kind, copy and route are built in `email_watch_scheduler.rs`. The OS banner fires out-of-focus; in-focus, the Notification Center card appears.
 - **No auto-write**: the user clicks the notification card → desktop navigates to the Application row and highlights it. User manually confirms via the stage-picker UI ("Applied", "Rejected", etc.).
 - **Dedupe**: if the same message ID or UID is already in the `seen` table, it is skipped (no duplicate notifications).
 
@@ -132,16 +114,16 @@ Hints boost the match score by 0.05 but never gate a candidate. A mismatch canno
 
 `email_watch_scheduler.rs`:
 
-- **Startup**: `start(app)` spawns via `tauri::async_runtime::spawn` (never bare `tokio::spawn`), with a 10 s grace period before the first check.
-- **Interval**: 60 s internal tick sweep; `is_due` gates on elapsed time since the last check (success or failure).
-- **Base interval**: `BASE_CHECK_INTERVAL = 15 min` (900 s). Every tick, compare elapsed time against the current backoff interval.
-- **Backoff**: on failure, backoff doubles per attempt (capped at `MAX_BACKOFF = 2 h`), resetting on success. The backoff counter is in-memory (no SQLite persistence); a restart begins at the base interval.
+- **Startup**: `start(app)` spawns via `tauri::async_runtime::spawn` (never bare `tokio::spawn`), after a short grace period before the first check.
+- **Interval**: a fixed internal tick sweep; `is_due` gates on elapsed time since the last check (success or failure).
+- **Base interval**: `BASE_CHECK_INTERVAL`. Every tick, compare elapsed time against the current backoff interval.
+- **Backoff**: on failure, backoff doubles per attempt (capped at `MAX_BACKOFF`), resetting on success. The backoff counter is in-memory (no SQLite persistence); a restart begins at the base interval. Both constants, and the tick/grace durations, are declared at the top of `email_watch_scheduler.rs`.
 - **Concurrency guard** (`RunGuard`): only one `run_check` executes at a time (process-global `AtomicBool`, RAII-released). A concurrent caller refuses immediately with a rate-limit sentinel (never queues or waits).
 - **`run_check_inner(app) -> AppResult<EmailWatchStatus>`**: the shared real fetch+parse+match+notify pass, called by both the scheduler's due-gated tick AND by the `email_watch_check_now` IPC command (manual user trigger). Every exit path (success, skip, error) stamps `last_check_ms` before returning (so consecutive failures backoff, not just successes).
-- **Fetch bounds** (defense against DoS on a huge inbox):
-  - `MAX_HEADERS_PER_TICK = 200` — stops at 200 headers, oldest-uid-first. Remainder picked up next tick.
-  - `MAX_BODY_BYTES = 200_000` — cap before MIME parsing (large attachments are skipped).
-  - `SUBJECT_MAX_BYTES = 500` — bound via `safe_prefix` helper before regex matching.
+- **Fetch bounds** (defense against DoS on a huge inbox), three named consts, each beside the code it bounds:
+  - `MAX_HEADERS_PER_TICK` (`poller.rs`) — stops after that many headers, oldest-uid-first. Remainder picked up next tick.
+  - `MAX_BODY_BYTES` (`imap_client.rs`) — cap before MIME parsing (large attachments are skipped).
+  - `SUBJECT_MAX_BYTES` (`parser.rs`) — bound via `safe_prefix` helper before regex matching.
 
 ## Privacy discipline
 
@@ -151,24 +133,18 @@ Hints boost the match score by 0.05 but never gate a candidate. A mismatch canno
   - `JoinError` task-panic detail (no content).
 - **Test fixtures synthetic-only** — all parser/matcher test cases use synthetic subject/sender/company/title combinations, never real company names or PII.
 
-## New IPC commands
+## IPC commands
 
-| Command                   | In                       | Out                                                          | Notes                                              |
-| ------------------------- | ------------------------ | ------------------------------------------------------------ | -------------------------------------------------- |
-| `email_watch_status`      | —                        | `{connected, address?, enabled, lastCheckAt?, lastMatchAt?}` | Query current state; no setup needed.              |
-| `email_watch_connect`     | `{address, appPassword}` | `{connected, address, enabled, lastCheckAt?, lastMatchAt?}`  | Validate + store account; password never returned. |
-| `email_watch_disconnect`  | —                        | `{…status…}`                                                 | Remove credential + clear account row.             |
-| `email_watch_set_enabled` | `bool`                   | `{…status…}`                                                 | Toggle the polling schedule on/off.                |
-| `email_watch_check_now`   | —                        | `{…status…}`                                                 | Manual tick (rate-limited 60 s min-gap).           |
-
-See `packages/shared/src/ipc/contracts/emailWatch.ts` for the wire shapes.
+The command roster (query status, connect, disconnect, toggle enabled, manual check) is declared in `commands/email_watch.rs`; every method, its arguments and its reply shape are documented as TSDoc on `packages/shared/src/ipc/contracts/emailWatch.ts` and rendered into `docs/API.md`. Notable behavior not visible in the wire shape: the manual check is rate-limited by a minimum gap (see the command's own guard), and no reply ever carries the password back.
 
 ## Dependencies and security review
 
-- **`mail-parser` 0.11.5** (Apache-2.0 OR MIT) — RFC2047 subject decode, MIME text/plain extraction. Cached build (one compile per workspace).
-- **`imap` 3.0.0-alpha.15** (Apache-2.0 OR MIT) — IMAP protocol. Pre-1.0 alpha, pinned exactly (`=3.0.0-alpha.15`) because credential handling is on this path.
-- **`native-tls` 0.2** (MIT) — TLS connector for the manual socket path. Reuses the same OS stack (`reqwest` already depends on it).
-- **TLS backend rationale** — started with `imap`'s `rustls-tls` feature, but it bridges through `rustls-connector` (pinned `^0.19`) to `rustls 0.22`/`webpki 0.102.8`, which have 4 live RUSTSEC advisories with no update path. Switched to `native-tls` instead (same per-OS stack `reqwest` already uses). See the `Cargo.toml` comment.
+Versions and license fields live in `apps/desktop/src-tauri/Cargo.toml` / `Cargo.lock`; only the reasons are recorded here.
+
+- **`mail-parser`** — RFC2047 subject decode, MIME text/plain extraction. Cached build (one compile per workspace).
+- **`imap`** — IMAP protocol. Pre-1.0 alpha, pinned exactly (`=`) because credential handling is on this path.
+- **`native-tls`** — TLS connector for the manual socket path. Reuses the same OS stack (`reqwest` already depends on it).
+- **TLS backend rationale** — started with `imap`'s `rustls-tls` feature, but it bridges through `rustls-connector` to a `rustls`/`webpki` pair carrying live RUSTSEC advisories with no update path. Switched to `native-tls` instead (same per-OS stack `reqwest` already uses). See the `Cargo.toml` comment for the pinned versions and the advisory ids.
 
 ## Related documents
 

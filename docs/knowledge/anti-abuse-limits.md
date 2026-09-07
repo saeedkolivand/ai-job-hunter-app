@@ -1,6 +1,6 @@
 # Anti-Abuse Rate & Concurrency Limits
 
-Last updated: 2026-09-01
+Last updated: 2026-09-07
 
 Canonical source: `apps/desktop/src-tauri/src/limits/mod.rs`
 
@@ -37,9 +37,9 @@ pub struct ConcurrencyGuard {
 
 Three independent guards (all process-local, reset on restart):
 
-1. **Sliding-window request-rate cap** — at most `max_requests` accepted starts of a given command within the last [`RATE_WINDOW`] (60 seconds). Old timestamps age out, so it is a true rolling window.
+1. **Sliding-window request-rate cap** — at most `max_requests` accepted starts of a given command within the last [`RATE_WINDOW`]. Old timestamps age out, so it is a true rolling window.
 2. **Concurrency cap** — at most `max_concurrent` in-flight calls of a command, held as an RAII [`ConcurrencyGuard`] that OWNS a semaphore permit, so a panicking/early-returning handler can never leak a slot. Two admission styles share one budget: `acquire` **rejects** when full, `acquire_queued` **waits** (bounded by a queue-depth cap) — the tailoring pipeline uses the latter, since every call there is a deliberate click.
-3. **Per-vendor daily request ceiling** — a generous runaway-cost backstop: at most `PROVIDER_DAILY_MAX` accepted billable requests per vendor per UTC day (reset at midnight UTC). Keyed by vendor name, not by `ProviderId`, so a **search backend** that bills separately (`exa`) charges its own bucket rather than spending the AI provider's — see [ADR 0023](decision-records/0023-web-search-is-a-separate-axis-from-the-ai-provider.md). **Multi-provider runs** — when per-stage overrides route different stages to different providers (e.g., local Ollama + cloud provider), each provider's cap is charged independently. A max-depth run pays for six stages: `analyze_job`, `match_evidence`, `strategy`, `sections`, `repair`, `llm_judge` (verified in `pipeline/resume/mod.rs::MAX_STAGES`). The free stages (`assemble`, `validate`, override hooks) do not consume provider calls. At a single provider this costs 6 calls per run; with per-stage overrides spreading stages across different providers, each provider's cap is charged independently and linearly.
+3. **Per-vendor daily request ceiling** — a generous runaway-cost backstop: at most `PROVIDER_DAILY_MAX` accepted billable requests per vendor per UTC day (reset at midnight UTC). Keyed by vendor name, not by `ProviderId`, so a **search backend** that bills separately (`exa`) charges its own bucket rather than spending the AI provider's — see [ADR 0023](decision-records/0023-web-search-is-a-separate-axis-from-the-ai-provider.md). **Multi-provider runs** — when per-stage overrides route different stages to different providers (e.g., local Ollama + cloud provider), each provider's cap is charged independently. Which stages a run pays for, and which are free (assembly, deterministic validation, override hooks make no provider call), is owned by `pipeline/resume/mod.rs` (`MAX_STAGES` and the module doc's per-stage call table). At a single provider a run costs that stage count in calls; spreading stages across providers charges each provider's cap independently and linearly.
 
 Defaults are intentionally **generous** so normal interactive use never trips them; they exist to stop pathological loops, not to throttle a human.
 
@@ -51,11 +51,11 @@ When a limit is exceeded, the command returns `AppError::RateLimited(message)`:
 pub enum AppError {
     // ...
     #[error("{0}")]
-    RateLimited(String), // e.g., "Rate limit reached for ai_generate: max 20 requests per 60s. Try again shortly."
+    RateLimited(String), // message names the command and the cap it hit
 }
 ```
 
-The variant's code string is `"RATE_LIMITED"` (line 67 of `error.rs`), and it is marked retriable (line 75), so the renderer can catch it, display a user-facing message, and retry after a delay.
+The wire code the renderer matches on, and whether the variant counts as retriable, are both decided by the error mapping in `error.rs` (the `code()` arm and the retriable predicate for `AppError::RateLimited`); read them there. The contract this page depends on is only that the variant is classified retriable, so the renderer can surface a user-facing message and retry after a delay.
 
 ## Usage
 
@@ -88,7 +88,7 @@ The `_guard` is an RAII [`ConcurrencyGuard`] — when it drops (at function end 
 
 ### Scraping Commands
 
-Applied to `scrape_board` and `scrape_url` in `commands/scrape.rs` (lines 65–72, 307–316):
+Applied to `scrape_board` and `scrape_url` in `commands/scrape.rs`:
 
 ```rust
 #[tauri::command]
@@ -111,7 +111,7 @@ pub async fn scrape_board(
 
 ### Agent Run Command
 
-Applied to `agent_run` in `commands/agent.rs` (lines 68–69):
+Applied to `agent_run` in `commands/agent.rs`:
 
 ```rust
 let _guard = limiter.acquire(
@@ -131,7 +131,7 @@ defined and doc-commented with their rationale:
 `SCRAPE_*`, `AGENT_RUN_*`, `RATE_WINDOW` and `PROVIDER_DAILY_MAX` constants).
 Values were copied here before and drifted; a pointer cannot.
 
-All caps are **fixed compile-time constants**. A settings UI to configure them is a known follow-up (limits/mod.rs line 29).
+All caps are **fixed compile-time constants**. A settings UI to configure them is a known follow-up, recorded in the `limits/mod.rs` module doc.
 
 ## Related
 

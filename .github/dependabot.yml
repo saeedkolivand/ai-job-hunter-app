@@ -24,9 +24,24 @@ updates:
     # packages/*, build tooling), because they share the root lockfile and
     # cannot be split per-directory (see the note at the top of this entry).
     groups:
+      # vitest and its @vitest/* companions peer-pin each other to the EXACT
+      # same version (@vitest/browser-playwright 5.0.0 peers `vitest: 5.0.0`),
+      # so a lone major bump of one of them breaks every vitest project at
+      # startup (#1124 took the root `pnpm test` down with a missing export).
+      # Bump the family in one PR, all update types, and keep it out of the
+      # catch-all below — a lockstep group silently absorbed by a catch-all
+      # stops being a lockstep group (same reasoning as typst in the cargo entry).
+      vitest:
+        patterns:
+          - vitest
+          - '@vitest/*'
+
       javascript:
         patterns:
           - '*'
+        exclude-patterns:
+          - vitest
+          - '@vitest/*'
         update-types:
           - minor
           - patch
@@ -44,6 +59,19 @@ updates:
     # protects that pin too. Drop only when BOTH constraints clear.
     ignore:
       - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
+
+      # conventional-changelog-conventionalcommits v10 renders through
+      # conventional-changelog-writer 9, but @semantic-release/release-notes-generator
+      # (the 14.x that semantic-release 25 ships) still drives writer 8. A v10
+      # preset therefore yields a header-only CHANGELOG and an empty GitHub
+      # release body with NO error (it happened on v0.119.0);
+      # scripts/guard-empty-release-notes.cjs now fails the release instead, and
+      # this rule stops the major PR from re-opening. Lift it when a stable
+      # release-notes-generator major ships on writer 9, and migrate the preset's
+      # types config in release.config.mjs at the same time.
+      - dependency-name: conventional-changelog-conventionalcommits
         update-types:
           - version-update:semver-major
 

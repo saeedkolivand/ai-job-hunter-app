@@ -136,6 +136,6 @@ Every ADR carries a `Status` field documenting its lifecycle: `Accepted | Supers
 
 **Agent system:** interactive explainer at `apps/landing/public/agent-system.html` documents the agent fleet, pairing structure, and command routing.
 
-> Maintained **only** by `project-steward`. Per-domain knowledge docs may exceed ~150 lines (e.g., scraping-domain.md, extension-domain.md). After code/doc changes: `graphify update .`.
+> Maintained **only** by `project-steward`. Per-domain knowledge docs may exceed ~150 lines. After code/doc changes: `graphify update .`.
 >
-> **Open decision:** the ~150-line target is aspirational, not enforced. `extension-domain.md` sits right at it; `scraping-domain.md` is roughly 500 lines and needs a split-or-retire call (split by sub-domain, or retire the historical PR-program narrative that source now documents better than prose). Deferred deliberately — restructuring it mid-batch would churn every inbound pointer at once. Note the target is about lines, not bytes: both files carry very wide table rows.
+> **Open decision:** the ~150-line target is aspirational, not enforced, and the pages furthest over it still need a split-or-retire call (split by sub-domain, or retire the historical PR-program narrative that source now documents better than prose). Deferred deliberately: restructuring mid-batch would churn every inbound pointer at once. Measure a page before citing it; no size claim is recorded here, because it would be stale by the next edit.
