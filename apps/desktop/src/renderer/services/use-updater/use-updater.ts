@@ -20,7 +20,12 @@ export type UpdateStatus =
   | { state: 'not-available' }
   | { state: 'downloading'; percent: number; downloaded?: number; total?: number }
   | { state: 'downloaded'; version: string }
-  | { state: 'error'; message: string };
+  | { state: 'error'; message: string }
+  // Microsoft Store (MSIX) install: the shell pushes this once after launch
+  // and on every check, and never contacts GitHub. Terminal — no download or
+  // install can follow it, so the banner stays hidden and the settings panel
+  // says where updates come from instead of offering to fetch one.
+  | { state: 'managed'; by: 'store' };
 
 interface UpdaterSnapshot {
   status: UpdateStatus;

@@ -2,6 +2,7 @@ pub mod accent_watcher;
 pub mod chrome;
 pub mod config;
 pub mod linux_appimage;
+pub mod msix;
 pub mod process;
 pub mod windows_console;
 

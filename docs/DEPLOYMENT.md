@@ -264,37 +264,53 @@ Generate a JWT issuer + secret on the AMO **Manage API Keys** page with the acco
 
 ---
 
-## Microsoft Store (deferred)
+## Microsoft Store (MSIX)
 
-Not implemented, and not started — recorded here so it can be picked up without re-researching. **All of this is a snapshot taken 2026-09-07; re-verify with Microsoft before acting on it.**
+A second **flavour** of the Windows build, not a second build: the MSIX wraps the very same `ajh-tauri.exe` the NSIS installer ships. Tauri has no MSIX bundle target, so the packaging is ours — manifest template in [`apps/desktop/src-tauri/windows/msix/AppxManifest.xml`](../apps/desktop/src-tauri/windows/msix/AppxManifest.xml) (commented element by element), packer in [`apps/desktop/scripts/pack-msix.mjs`](../apps/desktop/scripts/pack-msix.mjs), wired into the Windows leg of `release.yml` (the "Pack the Microsoft Store MSIX" step).
 
-**Partner Center already has an "AI Job Hunter" EXE/MSI app in draft** (Availability, Properties and Age ratings are done; Store listing is not started; one x64 EXE package is attached). Two corrections that package needs before anything else:
+**The one runtime difference is where updates come from.** `platform::msix::is_packaged()` detects package identity at runtime — no build flag, one binary — and [`src/updater/mod.rs`](../apps/desktop/src-tauri/src/updater/mod.rs) hands updating to the Store when it is set: no check, no background poll, and the settings panel says so instead of offering a download. Running the GitHub updater on a packaged install would install a **second, unmanaged copy** beside the Store one.
 
-1. The **Package URL must be the canonical versioned GitHub release URL** (`https://github.com/saeedkolivand/ai-job-hunter-app/releases/download/v<version>/<x64 setup .exe>`), not the temporary signed `release-assets.githubusercontent.com` target currently entered — that one expires.
-2. Untick **"installer runs silent without switches"** and give `/S` as the installer parameter. NSIS shows UI otherwise, which fails certification.
+Everything else is deliberately identical. The manifest disables registry and file-system write virtualization (which is what the restricted `unvirtualizedResources` capability buys), so the HKCU native-messaging registration, the launch-at-login entry, and the app data directory are the same real locations a non-Store install uses — a user can switch flavours and keep their data. It also declares the `ajh://` protocol and an `ajh-tauri.exe` execution alias, replacing the two things a packaged app may not do for itself: the runtime deep-link registration and the NSIS PATH hook.
 
-Then run the page's **Run validation**.
+> **WebView2:** the MSIX cannot run the Evergreen bootstrapper the NSIS installer uses. Windows 11 has the runtime built in; a Windows 10 machine without it must install WebView2 from Microsoft first.
 
-### Blockers
+### Package identity (repository variables)
 
-**1. Code signing.** The Store does not re-sign EXE/MSI submissions: the installer and its PE files must already be **Authenticode-signed with a certificate chaining to the Microsoft Trusted Root Program** (self-signed is rejected). The release workflow has no Authenticode signing today — only the updater's minisign key (see [Updater signing keys](#updater-signing-keys)), which is a different mechanism and does not satisfy this. Since June 2023 signing keys must live on an HSM, so CI signing needs a cloud-signing provider:
+Identity is assigned by Partner Center, so it is **not committed**. The packer requires three environment variables, supplied in CI as repository variables (Settings ▸ Secrets and variables ▸ Actions ▸ Variables) and read from Partner Center ▸ **Product management ▸ Product identity**:
 
-- **Azure Trusted Signing** — its individual tier currently onboards US/Canada residents only.
-- **Certum Open Source code signing** (~$50, cloud HSM via SimplySign; needs ID verification plus proof the project is open-source/non-commercial) or a standard **OV cloud certificate** (~$116+/yr) are the realistic routes from Germany.
+| Variable                      | Partner Center field                    |
+| ----------------------------- | --------------------------------------- |
+| `MSIX_IDENTITY_NAME`          | Package/Identity/Name                   |
+| `MSIX_PUBLISHER`              | Package/Identity/Publisher              |
+| `MSIX_PUBLISHER_DISPLAY_NAME` | Package/Properties/PublisherDisplayName |
 
-Tauri's hook for this is `bundle.windows.signCommand`.
+The workflow step is skipped while `MSIX_IDENTITY_NAME` is unset, so the pipeline is unaffected until the listing exists.
 
-**2. CI credentials.** The `msstore` CLI (via the `microsoft/microsoft-store-apppublisher` setup action — the older `microsoft/store-submission` action is archived) needs **Tenant ID, Client ID, Client Secret, Seller ID**. Getting them requires, in order: associate an **Entra tenant** with the Partner Center account (there is none today — Account settings → Tenants is empty; "Create Microsoft Entra ID" there is free), register an app in it, and add that app under **User management** with the **Manager** role. Store automation only supports **free** products and can only **update an app that is already live**, so the _first_ submission has to be manual. Each release after that is `msstore submission update <PartnerCenterId> <package json with the new versioned URL>` followed by `msstore submission publish`.
+### Local test loop
 
-### Store requirements to design against
+1. `pnpm --filter @ajh/desktop package` (or any `tauri build`) so the exe exists.
+2. Set the three variables and run `node apps/desktop/scripts/pack-msix.mjs`. It needs `makeappx.exe` from the Windows SDK (override with `MAKEAPPX=`), stages the payload under `src-tauri/target/msix/staging/`, and writes the `.msix` next to it.
+3. Enable **Developer Mode**, then register the staged layout directly — faster than installing, and it exercises the manifest: `Add-AppxPackage -Register <staging>\AppxManifest.xml`.
+4. `Get-AppxPackage *AIJobHunter*` to confirm, `Remove-AppxPackage <full-name>` to clean up.
 
-An HTTPS **versioned URL that never changes after submission**, an **offline standalone installer**, and **silent install** (a UAC prompt is allowed). Whether Partner Center accepts GitHub's 302 redirect on release download URLs is **untested** — the page's validation will say. The fallback is hosting installers on the R2 CDN behind the landing domain.
+Registering the staged app is the only way to see the packaged-identity code path locally: `platform::msix` returns `false` for every normally-launched build.
+
+### First submission (manual)
+
+The `.msix` is **unsigned on purpose** — the Store signs it during submission — which is why it is a workflow **artifact** (`msix-store-package`, on the `build-installers` run) and never a GitHub Release asset.
+
+1. Download the `msix-store-package` artifact from the release run and unzip it.
+2. Partner Center ▸ your product ▸ **Packages** ▸ upload the `.msix`.
+3. **Submission options** asks for a justification for the restricted capability. State what it is actually for: the app registers a browser **native-messaging host under HKCU** and a **launch-at-login Run entry** that browsers and Windows must read from the real hive rather than a virtualized copy, and it shares its data directory with the non-Store install so users can move between them without losing data.
+4. Submit. Certification for a full-trust desktop app is manual and can take a few days.
+
+Automating this with the `msstore` CLI is a follow-up: it needs an Entra tenant plus an app registration, which do not exist yet.
 
 ---
 
 ## Auto-Update
 
-The app checks for updates on launch via Tauri's updater plugin. The update manifest is published to GitHub Releases automatically.
+The app checks for updates on launch via Tauri's updater plugin. The update manifest is published to GitHub Releases automatically. **Not on a Microsoft Store install** — that flavour never reaches any of this; see § Microsoft Store (MSIX).
 
 ### How it works
 

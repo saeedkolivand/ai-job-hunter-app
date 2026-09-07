@@ -28,7 +28,15 @@ export interface ChangelogResult {
  *  still arrives via the `updater:status` event stream. */
 export type UpdateCheckResult =
   | { available: true; version: string; downloaded?: boolean; downloading?: boolean }
-  | { available: false }
+  | {
+      available: false;
+      /** Present (as `'store'`) only on a **Microsoft Store (MSIX)** install:
+       *  the Store delivers updates for that flavour, so the shell answers
+       *  without ever contacting GitHub — no check, no background poll, and
+       *  `download`/`install` refuse. Absent on every other install, where
+       *  `available: false` keeps its plain "you are up to date" meaning. */
+      managedBy?: 'store';
+    }
   | { error: string };
 
 export interface UpdaterContract {

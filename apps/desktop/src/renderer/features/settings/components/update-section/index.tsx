@@ -6,6 +6,7 @@ import {
   History,
   Loader2,
   Sparkles,
+  Store,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -116,7 +117,15 @@ export function UpdateSection() {
         ) : null}
       </div>
 
-      {/* Status messages */}
+      {/* Status messages. `managed` (Microsoft Store build) renders no action
+          control at all — the chain above ends at `null` for it — so this line
+          is the whole story: the Store updates the app, this panel cannot. */}
+      {status.state === 'managed' && (
+        <div className="mt-3 flex items-center gap-2 text-xs text-foreground/50">
+          <Store size={12} />
+          {t('settings.update.managedByStore')}
+        </div>
+      )}
       {(status.state === 'not-available' || noRelease) && (
         <div className="mt-3 flex items-center gap-2 text-xs text-emerald-400/70">
           <CheckCircle2 size={12} />

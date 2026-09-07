@@ -267,3 +267,45 @@ fn test_changelog_response_real_bundled_file() {
         .unwrap()
         .contains(&format!("releases/tag/v{first_version}")));
 }
+
+// ── Microsoft Store flavour ───────────────────────────────────────────────────
+
+#[test]
+fn test_store_managed_only_when_packaged() {
+    assert!(
+        store_managed(false).is_none(),
+        "an NSIS/MSI install must keep checking GitHub"
+    );
+    assert!(
+        store_managed(true).is_some(),
+        "a Store install must never check GitHub"
+    );
+}
+
+/// Anchored on the literal wire bytes, not a round-trip: this exact JSON is
+/// what `UpdateCheckResult` in `packages/shared/src/ipc/contracts/updater.ts`
+/// declares, and a renamed/reordered field would be a silent contract break
+/// that a serialize→deserialize test could not see.
+#[test]
+fn test_store_managed_serializes_to_the_contract_shape() {
+    let json = serde_json::to_string(&store_managed(true).unwrap()).unwrap();
+    assert_eq!(json, r#"{"available":false,"managedBy":"store"}"#);
+}
+
+/// The pushed shape the renderer's `managed` status variant matches on.
+#[test]
+fn test_managed_status_serializes_to_the_contract_shape() {
+    let json = serde_json::to_string(&managed_status()).unwrap();
+    assert_eq!(json, r#"{"by":"store","state":"managed"}"#);
+}
+
+/// A Store build's download/install refusal is an `error` reply — the shape the
+/// renderer already renders — not a silent no-op that would look like success.
+#[test]
+fn test_store_managed_refusal_is_an_error_reply() {
+    let refusal = store_managed_refusal();
+    assert!(refusal
+        .get("error")
+        .and_then(|e| e.as_str())
+        .is_some_and(|m| m.contains("Store")));
+}

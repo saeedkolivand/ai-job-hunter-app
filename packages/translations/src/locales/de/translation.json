@@ -1192,6 +1192,7 @@
       "checkNow": "Nach Updates suchen",
       "checking": "Prüfe…",
       "upToDate": "Sie sind auf dem neuesten Stand",
+      "managedByStore": "Updates werden über den Microsoft Store bereitgestellt.",
       "download": "{{version}} herunterladen",
       "install": "Neu starten & installieren",
       "error": "Prüfung fehlgeschlagen",
