@@ -116,10 +116,19 @@ const APPDIR_ENV: &str = "APPDIR";
 /// the caller decides how to report it (the pointer file is skipped; the
 /// command returns `null`).
 pub fn agent_cli_exe_path() -> Option<PathBuf> {
-    let running = std::env::current_exe().ok();
-    crate::platform::msix::alias_exe_path()
-        .or_else(|| launched_appimage(running.as_deref()))
-        .or(running)
+    use crate::platform::msix::PublishedExe;
+    match crate::platform::msix::published_exe_path() {
+        PublishedExe::Alias(alias) => Some(alias),
+        // A Store build with no usable alias publishes NOTHING. Falling back
+        // to `current_exe()` here would hand out the version-pinned
+        // WindowsApps path — unlaunchable for the user and dead at the next
+        // Store update — which is worse than an absent pointer/`null` card.
+        PublishedExe::Unavailable => None,
+        PublishedExe::Unpackaged => {
+            let running = std::env::current_exe().ok();
+            launched_appimage(running.as_deref()).or(running)
+        }
+    }
 }
 
 /// The `.AppImage` file THIS process was launched from, or `None` when it was
