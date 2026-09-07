@@ -12,6 +12,10 @@
  *     the nine real built artifacts went undetected.
  *   - INVENTING one — scanning unstripped source flags `obj.import(` or the word
  *     inside a comment, which would fail a perfectly good release.
+ *
+ * Two shapes the scanner still invents one for are pinned at the end of the
+ * `containsDynamicImport` block as documented limitations, not as desired
+ * behaviour.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -105,6 +109,21 @@ describe('containsDynamicImport', () => {
     ['one after a regex holding quotes', 'const re = /[\'"]/;\nimport("./y.js");'],
   ])('catches %s', (_label, src) => {
     expect(containsDynamicImport(src)).toBe(true);
+  });
+
+  // Documented limitations, pinned so a future fix flips them deliberately: the
+  // scanner's two bounds (blank a template whole, end a regex at the newline)
+  // each have a shape that gets scanned as code and therefore FALSE-alarms.
+  // Both block a release rather than ship a broken one, and neither shape occurs
+  // in the injected sources. See the bounds comment in classic-script-check.mjs.
+  it('flags a nested template literal (documented limitation)', () => {
+    // The outer backtick pairs with the INNER one, so `import("x")` is left as code.
+    expect(containsDynamicImport('const s = `a${`import("x")`}b`;')).toBe(true);
+  });
+
+  it('flags a regex in statement position after `)` (documented limitation)', () => {
+    // `)` reads as an operand, so the slash is division and the body is code.
+    expect(containsDynamicImport('if (x) /import (w+)/.test(s);')).toBe(true);
   });
 });
 

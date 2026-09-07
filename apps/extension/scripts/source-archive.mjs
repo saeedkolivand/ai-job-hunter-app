@@ -21,7 +21,11 @@
 // submitting, so the versions printed here are the ones proven to reproduce.
 //
 // Run: pnpm -F @ajh/extension package:source
-//      node apps/extension/scripts/source-archive.mjs --ref v1.2.3 --out out.zip
+//      node apps/extension/scripts/source-archive.mjs --out out.zip
+//
+// `--ref` defaults to HEAD, and `refMismatch` below refuses any ref resolving to
+// a different commit (for the reason documented there) — so passing one is only
+// ever another spelling of the commit already checked out.
 
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';

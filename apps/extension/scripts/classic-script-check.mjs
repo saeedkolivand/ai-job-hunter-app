@@ -22,11 +22,27 @@ import { Script } from 'node:vm';
  * the next apostrophe. A scanner cannot desynchronise that way, because it only
  * ever leaves a literal through that literal's own terminator.
  *
- * Two deliberate bounds, both of which can only cause a MISS, never a false
- * alarm, and neither of which the `Script` compile below depends on:
+ * Two deliberate bounds, neither of which the `Script` compile below depends on:
  *   - a template literal is blanked whole, `${...}` expressions included;
  *   - a regex literal is terminated at a newline (it cannot span one), so a
  *     misread division operator can affect at most the rest of that line.
+ *
+ * The second bound is only worth anything because the injected entries are built
+ * UNMINIFIED (`minify: false` in `vite.config.mts`; 130-842 lines each). On a
+ * minified one-liner "the rest of that line" is the rest of the file, and the
+ * bound says nothing.
+ *
+ * Neither bound is free: two shapes are flagged that should not be. Both fail in
+ * the release-BLOCKING direction rather than the silent-miss one, and both are
+ * pinned as tests so a future fix flips them consciously:
+ *   - a NESTED template (a `${...}` that itself holds a template) pairs the
+ *     outer backtick with the INNER opening backtick, so the inner template's
+ *     text is left to be scanned as code;
+ *   - a regex in statement position after `)` — `if (x) /import (w+)/.test(s);`
+ *     — reads the `)` as an operand, so the slash is division and the regex body
+ *     is scanned as code.
+ * Neither shape appears in the injected sources today, and a build that grew one
+ * would fail loudly instead of shipping.
  */
 export function stripCommentsAndLiterals(src) {
   const out = src.split('');
@@ -148,6 +164,9 @@ function startsRegexLiteral(prevChar, prevWord) {
  * A dynamic `import(` that is a real keyword: not `obj.import(`, not
  * `someimport(`, and not text inside a comment or string (those are blanked
  * before this runs).
+ *
+ * The dot has to be the character IMMEDIATELY before the keyword, so `obj. import(`
+ * — with a space — is flagged. Harmless: prettier never emits that spacing.
  */
 export const DYNAMIC_IMPORT_RE = /(^|[^\w$.])import\s*\(/;
 
