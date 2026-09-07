@@ -197,6 +197,25 @@ describe('path privacy in printed output', () => {
     expect(scrubbed).not.toContain('First Last');
     expect(scrubbed).toContain('<outside repo>');
   });
+
+  // The long-path spelling of a share: stripping only `\\?\` used to leave
+  // `UNC\fileserver\…`, a RELATIVE path that printed as a repo-relative one.
+  it('scrubs the \\\\?\\UNC\\ long-path form of a share', () => {
+    const scrubbed = scrubPaths(
+      'Using "\\\\?\\UNC\\fileserver\\builds\\Users\\First Last\\out\\AppxManifest.xml".'
+    );
+    expect(scrubbed).not.toContain('fileserver');
+    expect(scrubbed).not.toContain('First Last');
+    expect(scrubbed).not.toContain('UNC');
+    expect(scrubbed).toContain('<outside repo>');
+  });
+
+  // These tests also run on the POSIX CI leg, where Node's `path` would glue a
+  // drive path under cwd; `rel` must judge Windows-form input by Windows rules.
+  it('never reports a drive path as repo-relative, on any host', () => {
+    expect(rel('C:\\Users\\somebody\\x\\y.txt')).toBe('<outside repo>');
+    expect(rel('\\\\?\\D:\\build\\out.msix')).toBe('<outside repo>');
+  });
 });
 
 describe('findMakeappx', () => {

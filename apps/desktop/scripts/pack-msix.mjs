@@ -157,16 +157,28 @@ export function findMakeappx(env = process.env) {
  * pasted output are public (AGENTS.md § Path privacy).
  */
 export function rel(target) {
-  const abs = path.resolve(String(target).replace(/^\\\\\?\\/, ''));
-  const relative = path.relative(REPO_ROOT, abs);
-  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+  // `\\?\UNC\server\share\…` is the long-path spelling of `\\server\share\…`.
+  // Stripping only `\\?\` would leave `UNC\server\…`, which resolves as a
+  // RELATIVE path and prints as a plausible repo-relative one — so fold the UNC
+  // form first, and treat any share as outside the checkout.
+  const raw = String(target)
+    .replace(/^\\\\\?\\UNC\\/i, '\\\\')
+    .replace(/^\\\\\?\\/, '');
+  if (raw.startsWith('\\\\')) return '<outside repo>';
+  // Windows-form input is judged with Windows path rules even on the POSIX CI
+  // leg that runs these tests, where `path.resolve('C:\\x')` would glue the
+  // drive path under cwd and report it as inside the repo.
+  const p = /^[A-Za-z]:[\\/]/.test(raw) ? path.win32 : path;
+  const abs = p.resolve(raw);
+  const relative = p.relative(REPO_ROOT, abs);
+  if (!relative || relative.startsWith('..') || p.isAbsolute(relative)) {
     // Not even the basename: outside the repo the last segment is as likely to
     // be a person's name (`…\Users\First Last`) as a filename, and nothing
     // downstream needs it — the repo-relative case above carries every path a
     // reader can act on.
     return '<outside repo>';
   }
-  return relative.split(path.sep).join('/');
+  return relative.split(p.sep).join('/');
 }
 
 /**
@@ -264,7 +276,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try {
     packMsix();
   } catch (error) {
-    console.error(`pack-msix: ${error.message}`);
+    // `fs` errors (missing manifest, locked staging dir) carry the absolute
+    // path in their message; scrub before it reaches a public log.
+    console.error(`pack-msix: ${scrubPaths(error.message)}`);
     process.exitCode = 1;
   }
 }
