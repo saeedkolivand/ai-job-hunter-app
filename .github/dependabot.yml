@@ -62,6 +62,19 @@ updates:
         update-types:
           - version-update:semver-major
 
+      # conventional-changelog-conventionalcommits v10 renders through
+      # conventional-changelog-writer 9, but @semantic-release/release-notes-generator
+      # (the 14.x that semantic-release 25 ships) still drives writer 8. A v10
+      # preset therefore yields a header-only CHANGELOG and an empty GitHub
+      # release body with NO error (it happened on v0.119.0);
+      # scripts/guard-empty-release-notes.cjs now fails the release instead, and
+      # this rule stops the major PR from re-opening. Lift it when a stable
+      # release-notes-generator major ships on writer 9, and migrate the preset's
+      # types config in release.config.mjs at the same time.
+      - dependency-name: conventional-changelog-conventionalcommits
+        update-types:
+          - version-update:semver-major
+
     commit-message:
       prefix: chore
 
