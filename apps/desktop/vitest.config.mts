@@ -25,7 +25,10 @@ export default defineConfig({
     name: 'renderer',
     globals: true,
     environment: 'jsdom',
-    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    // `scripts/` holds the app's own packaging scripts (plain node ESM, e.g.
+    // pack-msix.mjs) — their tests run in this project rather than a second
+    // one; jsdom is irrelevant to them but harmless.
+    include: ['src/**/*.{test,spec}.{ts,tsx}', 'scripts/**/*.{test,spec}.mjs'],
     globalSetup: [resolve(here, 'vitest.global-setup.ts')],
     setupFiles: [resolve(here, 'vitest.setup.ts')],
     passWithNoTests: true,

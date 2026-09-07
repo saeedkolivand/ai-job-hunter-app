@@ -382,7 +382,13 @@ export default tseslint.config(
 
   // ── Config / build scripts — relax all restrictions ────────────────────────
   {
-    files: ['*.config.*', 'scripts/**', 'apps/landing/scripts/**', '**/*.config.ts'],
+    files: [
+      '*.config.*',
+      'scripts/**',
+      'apps/landing/scripts/**',
+      'apps/desktop/scripts/**',
+      '**/*.config.ts',
+    ],
     rules: {
       'no-console': 'off',
       'no-undef': 'off',
