@@ -3,9 +3,10 @@
 //! deliberately absent; see [`super::tool_result`]).
 //!
 //! R8 LOC-cap split (`docs/architecture-rules.md`), the same move `agent_read` made for
-//! `found_jobs`: this is a PROSE unit — three text constants plus the two fns that assemble them —
-//! so nothing about the protocol travelled with it. Every frame, tool, gate and dispatch decision
-//! stays in `mcp.rs`, which reads this back through one re-export.
+//! `found_jobs`: this is a PROSE unit — three text constants, the hand-written skip list, and the
+//! two fns that assemble them — so nothing about the protocol travelled with it. Every frame,
+//! tool, gate and dispatch decision stays in `mcp.rs`, which reads this back through one
+//! re-export.
 
 use super::*;
 

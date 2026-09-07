@@ -803,9 +803,11 @@ fn classify_tool_call(params: &Value, server: &Server) -> ToolCall {
         .get("arguments")
         .cloned()
         .unwrap_or_else(|| json!({}));
-    if !arguments.is_object() {
+    // Bound ONCE here: a non-object `arguments` is a protocol error before anything reads it, so
+    // the key-set gate below — the only reader — needs no second, unreachable `as_object()` arm.
+    let Some(given) = arguments.as_object() else {
         return ToolCall::Local(Err((-32602, "Invalid params")));
-    }
+    };
     let Some(tool) = server
         .tools
         .iter()
@@ -823,21 +825,19 @@ fn classify_tool_call(params: &Value, server: &Server) -> ToolCall {
     let declared: Vec<&str> = tool["inputSchema"]["properties"]
         .as_object()
         .map_or_else(Vec::new, |p| p.keys().map(String::as_str).collect());
-    if let Some(given) = arguments.as_object() {
-        if given
-            .keys()
-            .any(|k| !is_reserved_argument_key(k) && !declared.contains(&k.as_str()))
-        {
-            let detail = if declared.is_empty() {
-                "unknown argument (this tool accepts none)".to_string()
-            } else {
-                format!(
-                    "unknown argument (this tool accepts: {})",
-                    declared.join(", ")
-                )
-            };
-            return ToolCall::Local(Ok(tool_result(usage_error_value(&detail), 2)));
-        }
+    if given
+        .keys()
+        .any(|k| !is_reserved_argument_key(k) && !declared.contains(&k.as_str()))
+    {
+        let detail = if declared.is_empty() {
+            "unknown argument (this tool accepts none)".to_string()
+        } else {
+            format!(
+                "unknown argument (this tool accepts: {})",
+                declared.join(", ")
+            )
+        };
+        return ToolCall::Local(Ok(tool_result(usage_error_value(&detail), 2)));
     }
 
     if name == TOOL_COMMANDS {

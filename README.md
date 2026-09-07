@@ -397,7 +397,7 @@ command = 'ajh-tauri'
 args = ["agent", "mcp"]
 ```
 
-If `ajh-tauri` is not on your `PATH`, set `command` to the `exePath` from `~/.ajh-agent/agent.json` — keep it single-quoted, because a TOML literal string has no escape sequences and a Windows path is full of backslashes (in a double-quoted basic string they read as invalid escapes and the whole file stops parsing). The Settings → Developer card emits the correctly-quoted form for you (`tomlString` in `apps/desktop/src/renderer/features/settings/lib/agent-cli-snippets.ts`). The same `--allow-reversible` / `--allow-irreversible` flags go in `args`.
+If `ajh-tauri` is not on your `PATH`, set `command` to the `exePath` from `~/.ajh-agent/agent.json` — keep it single-quoted, because a TOML literal string has no escape sequences and a Windows path is full of backslashes (in a double-quoted basic string they read as invalid escapes and the whole file stops parsing) — unless the path contains an apostrophe, in which case copy the Settings card's output verbatim (it falls back to an escaped basic string). The Settings → Developer card emits the correctly-quoted form for you (`tomlString` in `apps/desktop/src/renderer/features/settings/lib/agent-cli-snippets.ts`). The same `--allow-reversible` / `--allow-irreversible` flags go in `args`.
 
 </details>
 

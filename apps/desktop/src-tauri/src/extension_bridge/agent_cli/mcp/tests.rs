@@ -1225,14 +1225,17 @@ fn tool_description(list: &[Value], tool: &str) -> String {
 /// enforced 25/50, and an AI client has no other source for those bounds before its first call.
 /// Anchored to the CONSTANTS, never to today's numbers: a test retyping 25/50 would be the same
 /// hand-typed copy that drifted. The stale literal is asserted absent so the old text cannot
-/// creep back in beside a correct one.
+/// creep back in beside a correct one. Each bound is asserted as the WHOLE derived phrase rather
+/// than two independent `contains` calls: separate calls still pass with the default and the cap
+/// transposed, which is exactly the drift this test exists to catch.
 #[test]
 fn both_limit_descriptions_are_derived_from_the_constants_the_server_enforces() {
     let list = tools(Tier::Read);
     let found = property_description(&list, TOOL_FOUND_JOBS, "limit");
     assert!(
-        found.contains(&DEFAULT_FOUND_JOBS_LIMIT.to_string())
-            && found.contains(&MAX_FOUND_JOBS_LIMIT.to_string()),
+        found.contains(&format!(
+            "default {DEFAULT_FOUND_JOBS_LIMIT}, server cap {MAX_FOUND_JOBS_LIMIT}"
+        )),
         "found-jobs' limit must advertise the enforced default/cap: {found}"
     );
     assert!(
@@ -1241,8 +1244,9 @@ fn both_limit_descriptions_are_derived_from_the_constants_the_server_enforces() 
     );
     let best = property_description(&list, TOOL_BEST_MATCHES, "limit");
     assert!(
-        best.contains(&DEFAULT_BEST_MATCHES_LIMIT.to_string())
-            && best.contains(&MAX_BEST_MATCHES_LIMIT.to_string()),
+        best.contains(&format!(
+            "default {DEFAULT_BEST_MATCHES_LIMIT}, server cap {MAX_BEST_MATCHES_LIMIT}"
+        )),
         "best-matches' limit must advertise the enforced default/cap: {best}"
     );
 }
@@ -1272,7 +1276,7 @@ fn the_automations_description_distinguishes_both_totals() {
         "both totals must be named where a client reads them: {description}"
     );
     assert!(
-        description.contains("last run"),
+        description.contains("`totalFound` is the last run's"),
         "`totalFound` must be qualified as last-run-only: {description}"
     );
 }
