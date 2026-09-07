@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788814669243,
+  "lastUpdate": 1788823212680,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "a0230890dfbfe85f8444fe1a9554cc734ea19d59",
-          "message": "fix(jobs): post-756 review findings and ai review sticky restyle (#758)\n\n* docs: broaden adr-029 dash-tail risk note and log review fast-follows\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(scraping): dedupe split request keys before the count cap\n\nclamp_split_request trimmed/blank-filtered/byte-capped other_keys but did not\nde-duplicate before .take(MAX_OTHER_KEYS), so a repeated key wasted one of the\n32 slots (the insert is idempotent anyway). De-dup first-seen order preserved\nvia a HashSet seen-check before the cap; self-pairs equal to the clamped\nmember_key are already dropped. Extended the clamp tests with a 33-entry,\n2-duplicate case → 31 distinct pairs.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(jobs): guard agency list edits pre-load and cap the zod schema\n\nPost-#756 AI-review-gate findings:\n\n- AgencyCompaniesPreferences add()/remove() early-return when useJobPreferences\n  is still undefined (pre-load) — otherwise a quick add builds the next list from\n  an empty [] and replaces the user's saved agency list with just that one entry\n  (single-column setter, but still column data loss). Mirrors the sibling-panel\n  guards in 92e5302b, with a regression test asserting no mutate fires pre-load.\n- JobPreferencesSchema.extraAgencyCompanies gains .max(500) to mirror the Rust\n  MAX_EXTRA_AGENCY_COMPANIES cap (same pattern as otherKeys' .max(32)); IPC\n  codegen unchanged (gen:ipc --check green).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(scraping): pin split-request dedup collapse and full cap capacity\n\nThe Stop review-gate asked for two explicit cases on clamp_split_request:\n- duplicate other_keys collapse to ONE entry, first-seen order preserved;\n- de-dup runs BEFORE the count cap, so repeats never steal slots — >32 distinct\n  keys with one key hammered still yields the FULL 32 distinct keys, not fewer.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* ci: restyle ai review sticky comment into severity sections\n\nReplace the cramped one-table sticky body with a claude-review-style\nlayout — bold verdict line, expanded Critical/High/Medium sections with\nper-finding anchors, and a collapsed Low details block. Presentation\nonly: validateFindings/blockingFindings/exit-code logic (ADR-0008) is\nunchanged.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-          "timestamp": "2026-07-21T07:04:28+02:00",
-          "tree_id": "ebfe5327a600f3ab123e1d3b9c5739f18e4f4952",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/a0230890dfbfe85f8444fe1a9554cc734ea19d59"
-        },
-        "date": 1784610910889,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2119936,
-            "range": "± 46834",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2558016,
-            "range": "± 27490",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 287045,
-            "range": "± 6853",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 168808,
             "range": "± 5765",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "552362a96c903b2d185450a04ecb982dc6b26d68",
+          "message": "fix: mcp contract, validation, fencing and the numbers a client reads (#1150)\n\n* docs: quote the mcp install path in the readme and point at the generator that already does\n\nThe Claude Code examples double-quote the exe path and the Codex example\nuses a TOML literal string, each with a one-clause warning that names the\nSettings card's snippet generator; the agent-cli page gains pointers for\nthe derived error-sentinel list and the generic input's parameter keys.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* fix(agent-cli): fence an application answer's question by shape, leave a job's own result bare\n\nAn ApplicationAnswer's question is third-party form text and is now\nfenced when it sits beside an answer field, without re-fencing the app's\nown InterviewQuestion that shares the key name (#1139). A JobRecord's\nresult is exempt from name-keyed fencing so a generation read through\njobs_get returns the model's answer bare; job_complete documents that a\nkind carrying third-party text there must fence it itself (#1142).\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* fix(agent-cli): decode job url escapes, bind found-jobs cursors, expose the traversable total\n\nA percent-encoded variant of a cached URL now resolves: unreserved RFC\n3986 escapes are decoded on both sides of the identity compare, upstream\nof the scheme guard, without touching the persisted key (#1128). A\nfound-jobs cursor carries the autopilot it was issued for and a cursor\nfrom another autopilot or a bare offset is refused (#1130). automations\ngains foundJobsTotal beside the last-run totalFound, both documented\n(#1132). The page-size and best-matches limit constants become reachable\nfrom the MCP layer so tool descriptions can derive them (#1129).\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* docs: the found-jobs cursor is an opaque token bound to its autopilot\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* docs: keep the found-jobs page-size and field-list pointers\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* fix(mcp): enforce the advertised schemas, derive the numbers a client reads, name every sentinel\n\nThe argument key set is checked against each tool's own schema and an\nunknown key is a usage refusal instead of a silent drop (#1134); limit\nand confirm treat an explicit null as absent and a non-string confirm\nreaches the ceremony as its JSON text (#1137, #1140); both limit\ndescriptions derive from the constants the server enforces (#1129); the\ninstructions append the error sentinels the prose does not already name\nand say how a generic input is keyed (#1143, #1144); the cursor is\ndescribed as an opaque per-autopilot token and automations names both\ntotals. Every tool carries a human title, the tool order is pinned as\nprefix-stable across tiers, and call-irreversible says a long run can\noutlast the call. The instructions moved to mcp/instructions.rs under\nthe file-size cap.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* docs: the instructions builder moved to mcp/instructions.rs\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* fix(mcp): tolerate reserved keys, hand-list explained sentinels, guard job_complete producers\n\nReview fixes: the argument key-set gate ignores protocol-reserved\nunderscore keys; the sentinel table is filtered by a hand-written list\nof names the prose already explains, so connection_lost gets its row and\na future sentinel cannot vanish behind a substring; the found-jobs\ncursor refusal distinguishes a malformed cursor from one issued for\nanother autopilot; the job_complete producers are pinned by a literal\nlist in the architecture tests and the exemption warning states the\nprecise truth; the job lookup documents its deliberate leniency and the\ntool tells a caller to reuse the url the app returned.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* test(mcp): assert the derived limit phrases whole, tidy the key-set gate and two doc pointers\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n* fix(agent-cli): fence board-derived summary strings by shape, detect spaced job_complete calls\n\nA scrape summary's error, skipped and truncated fields and a board\nhealth entry's lastError are board-derived text; they are now fenced by\nshape on the agent read path, including inside a job record's result,\nwhile a generation's own text stays bare and the UI keeps reading them\nunfenced. The producer guard in the architecture tests tolerates\nwhitespace between job_complete and its parenthesis.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5.1 <noreply@anthropic.com>",
+          "timestamp": "2026-09-08T00:56:32+02:00",
+          "tree_id": "ea5ef0df08171cf3d72b2915cd7b773ba4c1631b",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/552362a96c903b2d185450a04ecb982dc6b26d68"
+        },
+        "date": 1788823211859,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2320717,
+            "range": "± 47831",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2793644,
+            "range": "± 28541",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 314471,
+            "range": "± 6846",
             "unit": "ns/iter"
           }
         ]
