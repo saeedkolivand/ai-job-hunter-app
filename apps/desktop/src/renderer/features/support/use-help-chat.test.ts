@@ -55,6 +55,24 @@ import { useHelpChat } from './use-help-chat';
 const HIT = { id: 'exportDoc', score: 0.9 };
 /** `trackJob` is a `support.faq.applicationsQuestions.*` entry. */
 const APPLICATIONS_HIT = { id: 'trackJob', score: 0.9 };
+/** `setUpAutopilot` is a `support.faq.autopilotQuestions.*` entry. */
+const AUTOPILOT_HIT = { id: 'setUpAutopilot', score: 0.9 };
+
+/**
+ * Two autopilots as the backend returns them: user-typed names, and the rest of
+ * the record — including the résumé text the glance must never carry.
+ */
+const AUTOPILOTS = [
+  {
+    _id: 'ap1',
+    name: 'Berlin React roles',
+    status: 'active',
+    runStatus: 'completed',
+    totalFound: 12,
+    resumeText: 'SECRET resume text',
+  },
+  { _id: 'ap2', name: 'Remote Rust', status: 'paused', totalFound: 0 },
+];
 
 function client(overrides: Record<string, (...args: never[]) => unknown> = {}) {
   return createMockClient({
@@ -77,7 +95,7 @@ function client(overrides: Record<string, (...args: never[]) => unknown> = {}) {
       .mockResolvedValue([
         { id: 'a1', title: 'Senior Engineer', company: 'Acme', status: 'applied', updatedAt: 2 },
       ]),
-    'autopilot.list': vi.fn().mockResolvedValue([{ id: 'ap1' }, { id: 'ap2' }]),
+    'autopilot.list': vi.fn().mockResolvedValue(AUTOPILOTS),
     ...overrides,
   });
 }
@@ -229,6 +247,88 @@ describe('useHelpChat', () => {
     });
 
     expect(generateArg().dataGlance ?? '').toContain('Senior Engineer — Acme (applied)');
+  });
+
+  it('sends the sidebar’s own page names, translated, as the app-pages list', async () => {
+    const { result } = render();
+    await act(async () => {
+      await result.current.send('how do i export a pdf');
+    });
+
+    const appPages = generateArg().appPages ?? [];
+    // Shipped `nav.*` COPY, not the keys: an answer that names a page has to
+    // name it the way the sidebar does, or the user cannot find it.
+    expect(appPages.map((section) => section.section)).toEqual(['Workspace', 'Automation', '']);
+    expect(appPages[0]?.pages).toContain('Dashboard');
+    expect(appPages[1]?.pages).toEqual(['Autopilot', 'Best Matches', 'Monitoring']);
+    // The pinned group ships no heading and no `nav.sections.*` key names it,
+    // so it travels with an empty section name — its PAGES are the part the
+    // answer needs, and Settings is where a great many of them end.
+    expect(appPages[2]?.pages).toEqual(['Help & Support', 'Settings']);
+  });
+
+  it('withholds the autopilot NAMES unless the question retrieved an autopilot entry', async () => {
+    const { result } = render();
+    await act(async () => {
+      await result.current.send('how do i export a pdf');
+    });
+
+    const glance = generateArg().dataGlance ?? '';
+    // The count is always safe; the user-typed names are not, and an export
+    // question is not answered any better for having them.
+    expect(glance).toContain('Autopilots configured: 2');
+    expect(glance).not.toContain('Berlin React roles');
+    expect(glance).not.toContain('Remote Rust');
+  });
+
+  it('includes the autopilot names when an autopilot entry was retrieved, and nothing else off the record', async () => {
+    const { result } = render('llama3:70b', {
+      'help.search': vi.fn().mockResolvedValue({
+        results: [AUTOPILOT_HIT],
+        mode: 'hybrid',
+        arms: { lexical: 'ran', dense: 'ran' },
+      }),
+    });
+    await act(async () => {
+      await result.current.send('how do i set up an autopilot');
+    });
+
+    const glance = generateArg().dataGlance ?? '';
+    expect(glance).toContain('Berlin React roles — active, completed (12 found)');
+    // No run yet → no run status, rather than an invented one.
+    expect(glance).toContain('Remote Rust — paused (0 found)');
+    // Four fields travel, so the résumé text on the same record does not.
+    expect(glance).not.toContain('SECRET resume text');
+  });
+
+  it('claims nothing about autopilots when that source could not be read', async () => {
+    const { result } = render('llama3:70b', {
+      'help.search': vi.fn().mockResolvedValue({
+        results: [AUTOPILOT_HIT],
+        mode: 'hybrid',
+        arms: { lexical: 'ran', dense: 'ran' },
+      }),
+      'autopilot.list': vi.fn().mockRejectedValue(new Error('database is locked')),
+    });
+    await act(async () => {
+      await result.current.send('how do i set up an autopilot');
+    });
+
+    // The answer still lands — the glance is a garnish on a corpus answer.
+    expect(result.current.error).toBeNull();
+    expect(result.current.turns[1]?.role).toBe('assistant');
+
+    const glance = generateArg().dataGlance ?? '';
+    // The glance says NOTHING about autopilots — no count and no names. An
+    // unreadable list must omit its lines rather than tell the model this user
+    // has none, which the answer would then state as fact. (`null` and `[]`
+    // render the same names-wise; the missing COUNT line is what distinguishes
+    // an unread source from an empty one here.)
+    expect(glance).not.toContain('Autopilots configured');
+    expect(glance).not.toContain('Autopilots:');
+    expect(glance).not.toContain('Berlin React roles');
+    // The sources that DID answer are unaffected.
+    expect(glance).toContain('Documents imported: 3');
   });
 
   it('passes the PRIOR turns as history, never the question being asked', async () => {

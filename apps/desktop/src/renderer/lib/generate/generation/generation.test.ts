@@ -2507,6 +2507,29 @@ describe('generateHelpAnswer', () => {
     expect(userOf(client)).toContain('## How do I export a PDF?');
   });
 
+  it('threads the sidebar page list into the prompt as trusted app copy', async () => {
+    const client = register();
+    const p = generateHelpAnswer({
+      question: 'where do i change my ai provider',
+      entries: [{ title: 'How do I export a PDF?', body: 'Open the document and click Export.' }],
+      appPages: [{ section: 'Workspace', pages: ['Dashboard', 'Jobs'] }],
+      // `llama3` is the counts-only SMALL profile — the page list is shipped
+      // `nav.*` copy carrying nothing user-typed, so it survives the thin
+      // budget the glance's name lists do not.
+      model: 'llama3',
+    });
+    await flushUntilStreaming();
+    emit('Try Settings.');
+    done();
+    await p;
+
+    const user = userOf(client);
+    expect(user).toContain('### APP PAGES (the sidebar) ###');
+    expect(user).toContain('- Workspace: Dashboard, Jobs');
+    // Trusted copy: no fence, no untrusted-content note around it.
+    expect(user).not.toContain('<app_pages>');
+  });
+
   it('never calls the pipeline for a blank question', async () => {
     const client = register();
     await expect(
