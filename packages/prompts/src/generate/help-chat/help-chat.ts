@@ -7,16 +7,22 @@
  *
  * 1. **The retrieved help entries are trusted app copy.** They are the shipped
  *    `support.faq.*` translation strings, so they are rendered as plain `##`
- *    markdown sections rather than fenced as untrusted input. Everything that
- *    is NOT app copy — the data glance (job titles and company names are
- *    scraped text), the chat history, and the question itself — is fenced with
+ *    markdown sections rather than fenced as untrusted input — and so is the
+ *    optional sidebar page list, which is the shipped `nav.*` strings.
+ *    Everything that is NOT app copy — the data glance (job titles, company
+ *    names and autopilot names are user-typed or scraped text), the chat
+ *    history, and the question itself — is fenced with
  *    {@link neutralizeFenceTag} and carries an untrusted-content note, the same
  *    treatment {@link JOB_AD_UNTRUSTED_NOTE} gives a scraped ad.
  *
  * 2. **Not covering the question is a valid answer.** The corpus is finite and
  *    the retrieval that picked these entries is lexical-first, so "the help
  *    doesn't cover this" is a frequent, CORRECT outcome. The system prompt
- *    makes saying so cheaper than inventing a plausible-sounding button.
+ *    makes saying so cheaper than inventing a plausible-sounding button — but
+ *    an abstention is a dead end for the user, so it has to be actionable
+ *    (name the page, point at the search box) and it must not fire on wording:
+ *    a question asking how to "create" what an entry calls "setting up" is
+ *    covered, and the bridging rule says so explicitly.
  *
  * Zero deps, pure string building, provider-aware sizing via
  * {@link resolveProfile} — the caller passes the same `PromptTarget` it passes
@@ -100,6 +106,19 @@ export interface HelpDataGlanceInput {
   recentApplications: ReadonlyArray<{ title: string; company: string; status: string }> | null;
   /** How many autopilots are configured. */
   autopilotCount: number | null;
+  /**
+   * The user's own autopilots. At most 10 are rendered, and only off the
+   * counts-only profile: the names are user-typed, so they belong to the same
+   * trust class as the recent-application list and travel inside the same
+   * fenced block. `[]` is the renderer saying "this question is not about
+   * autopilots"; `null` is "could not be read" — see this input's doc.
+   */
+  autopilots: ReadonlyArray<{
+    name: string;
+    status: string;
+    runStatus?: string;
+    totalFound: number;
+  }> | null;
   target?: PromptTarget;
 }
 
@@ -132,6 +151,7 @@ export function buildHelpDataGlance(input: HelpDataGlanceInput): string {
     applicationsByStatus,
     recentApplications,
     autopilotCount,
+    autopilots,
     target,
   } = input;
   const { glanceChars, countsOnly } = resolveHelpChatSizing(target);
@@ -160,6 +180,17 @@ export function buildHelpDataGlance(input: HelpDataGlanceInput): string {
     }
   }
 
+  // Same shape and same reason as the list above: user-typed names, so they are
+  // sent only when the question is about autopilots (the renderer passes `[]`
+  // otherwise) and never on the counts-only profile.
+  if (!countsOnly && autopilots?.length) {
+    lines.push('Autopilots:');
+    for (const autopilot of autopilots.slice(0, 10)) {
+      const run = autopilot.runStatus ? `, ${autopilot.runStatus}` : '';
+      lines.push(`- ${autopilot.name} — ${autopilot.status}${run} (${autopilot.totalFound} found)`);
+    }
+  }
+
   return lines.join('\n').slice(0, glanceChars);
 }
 
@@ -168,6 +199,13 @@ export function buildHelpDataGlance(input: HelpDataGlanceInput): string {
  * cheapest wrong answer for this surface is a confident, invented UI element:
  * a user who is told to click a button that does not exist is worse off than
  * one who was told the help doesn't cover it.
+ *
+ * Rule 2 is the counterweight, and it is not decoration: with three separate
+ * "say you don't know" instructions and none saying the user's verb may differ
+ * from an entry's, "how can I create an autopilot" was refused against a
+ * rank-1 entry titled "How do I set up an Autopilot?". Rule 3 then makes the
+ * refusal itself actionable, and rule 4 says a page taken from the APP PAGES
+ * list is not an invented one.
  */
 export function buildHelpChatSystemPrompt(language?: string): string {
   const safe = safeLanguage(language);
@@ -178,11 +216,18 @@ export function buildHelpChatSystemPrompt(language?: string): string {
 
 ABSOLUTE RULES (never break these):
 1. Answer ONLY from the help entries provided below and the user's data glance. They are your entire knowledge of this app.
-2. If they do not cover the question, SAY SO plainly in one sentence and point the user at the Help & Support page's search box to look for a related topic. Do not pad the answer out with guesses.
-3. NEVER invent a button, menu item, setting, tab, page, keyboard shortcut or feature. If a step is not spelled out in the help entries, you do not know it. Naming a control that does not exist is the single worst thing you can do here.
-4. Never claim anything about the user's own data beyond what the data glance states.
-5. ${languageRule}
-6. Be concise - a short direct answer, then the steps if there are any. Plain markdown only: short paragraphs, hyphen bullets, **bold** for a named control. No headings, no preamble, no closing pleasantries.`;
+2. Those entries were RETRIEVED for this question, best first. The user's wording will often differ from an entry's title - "create", "set up", "make", "add" and "start" all name the same task - so answer from an entry that covers the question by MEANING, not by matching words. A different verb for the same thing is a match, not a gap.
+3. If they do not cover the question, say so plainly in one sentence; then, only if one page in the APP PAGES list clearly fits, name it as where that feature most likely lives - without describing any control inside it - and point the user at the Help & Support page's search box to look for a related topic. Do not pad the answer out with guesses.
+4. NEVER invent a button, menu item, setting, tab, page, keyboard shortcut or feature. If a step is not spelled out in the help entries, you do not know it. A page you name from the APP PAGES list is not invented; anything you say about what is inside it would be. Naming a control that does not exist is the single worst thing you can do here.
+5. Never claim anything about the user's own data beyond what the data glance states.
+6. ${languageRule}
+7. Be concise - a short direct answer, then the steps if there are any. Plain markdown only: short paragraphs, hyphen bullets, **bold** for a named control. No headings, no preamble, no closing pleasantries.`;
+}
+
+/** One sidebar section and the page labels under it, in sidebar order. */
+export interface HelpChatAppSection {
+  section: string;
+  pages: ReadonlyArray<string>;
 }
 
 export interface HelpChatPromptInput {
@@ -190,6 +235,13 @@ export interface HelpChatPromptInput {
   question: string;
   /** The retrieved help entries, best first. */
   entries: ReadonlyArray<HelpChatEntry>;
+  /**
+   * The app's sidebar: already-translated shipped copy from the `nav.*` keys,
+   * which the renderer builds. It is what the abstention rule (system rule 3)
+   * names a page from, so an uncovered question ends somewhere instead of at
+   * "I don't know". Uncapped — it is ~15 short labels.
+   */
+  appPages?: ReadonlyArray<HelpChatAppSection>;
   /** Optional glance from {@link buildHelpDataGlance}. */
   dataGlance?: string;
   /** Prior turns of this session, oldest first — the tail is what survives. */
@@ -261,7 +313,7 @@ const QUESTION_UNTRUSTED_NOTE =
  * the last thing an injected string said.
  */
 export function buildHelpChatPrompt(input: HelpChatPromptInput): string {
-  const { question, entries, dataGlance, history, target, language } = input;
+  const { question, entries, appPages, dataGlance, history, target, language } = input;
   const { maxEntries, entryChars, glanceChars, historyTurns } = resolveHelpChatSizing(target);
 
   const blocks: string[] = [];
@@ -276,6 +328,19 @@ export function buildHelpChatPrompt(input: HelpChatPromptInput): string {
           .join('\n\n')}`
       : `### HELP ENTRIES ###\n\nNo help entry matched this question.`
   );
+
+  // The sidebar labels are the app's OWN shipped copy (the `nav.*` translation
+  // strings) — the same trust class as the entries above, so they are rendered
+  // plain and deliberately NOT put through `fenced()`. Kept on every profile,
+  // counts-only included: it carries no scraped or user-typed text at all.
+  const sections = (appPages ?? []).filter((section) => section.pages.length > 0);
+  if (sections.length) {
+    blocks.push(
+      `### APP PAGES (the sidebar) ###\n\n${sections
+        .map((section) => `- ${section.section}: ${section.pages.join(', ')}`)
+        .join('\n')}`
+    );
+  }
 
   const glance = dataGlance?.trim();
   if (glance) blocks.push(fenced('app_data', glance, glanceChars, GLANCE_UNTRUSTED_NOTE));
@@ -315,5 +380,5 @@ export function buildHelpChatPrompt(input: HelpChatPromptInput): string {
   return `${blocks.join('\n\n')}
 
 ### TASK ###
-Answer the question in <user_question> using ONLY the help entries above and the data glance.${languageNote} If they do not cover it, say so in one sentence and point the user at the search box on this Help & Support page. Never name a button, setting or feature that the help entries do not mention. Output ONLY the answer:`;
+Answer the question in <user_question> using ONLY the help entries above and the data glance.${languageNote} The entries were retrieved FOR this question and the user's wording will often differ from their titles ("create", "set up", "make", "add" and "start" name the same task), so answer from an entry that covers it by MEANING rather than by matching words. If they genuinely do not cover it, say so in one sentence, name the APP PAGES page where the feature most likely lives if one clearly fits (nothing about what is inside it), and point the user at the search box on this Help & Support page. Never name a button, setting or feature that the help entries do not mention. Output ONLY the answer:`;
 }
