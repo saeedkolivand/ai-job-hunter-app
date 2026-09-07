@@ -432,6 +432,38 @@ const DE_CASES: &[Case] = &[
         expected: "privacyQuestions.exportImport",
         why: "must beat `whatLeaves`, which is the other entry about the user's Daten",
     },
+    // ── The six entries added on 2026-09-07, one German phrasing each, so the
+    // German bundle's growth is measured and not assumed from the English rows. ──
+    Case {
+        query: "Lebenslauf aus LinkedIn importieren",
+        expected: "documentsQuestions.importFromLinkedin",
+        why: "must beat importFormats (the upload sibling) and the LinkedIn scraping entries",
+    },
+    Case {
+        query: "Sprache der App ändern",
+        expected: "generalQuestions.changeLanguage",
+        why: "\"Sprache\" also appears in the builder's output-language copy; the interface entry has to win",
+    },
+    Case {
+        query: "auf Updates prüfen",
+        expected: "generalQuestions.checkForUpdates",
+        why: "\"Updates\" is rare in the corpus — close to a lookup, kept for reachability",
+    },
+    Case {
+        query: "Gehaltsvorstellung für Anschreiben und Antworten",
+        expected: "applicationsQuestions.applicantDetails",
+        why: "\"Anschreiben\" and \"Antworten\" are all over the corpus; the compound \"Gehaltsvorstellung\" has to carry it past the per-application Vergütung note",
+    },
+    Case {
+        query: "GitHub-Projekte in den Lebenslauf einfügen",
+        expected: "gettingStartedQuestions.githubProjects",
+        why: "\"GitHub\" also sits in the contact-header entry; the builder import has to win on \"Projekte\"",
+    },
+    Case {
+        query: "Name oder E-Mail im Lebenslauf ändern",
+        expected: "documentsQuestions.contactHeader",
+        why: "\"Lebenslauf\" is everywhere; only this entry owns the header fields",
+    },
 ];
 
 /// The German narrow-limit floor, measured the same way [`TOP_2_FLOOR`] is
@@ -439,7 +471,7 @@ const DE_CASES: &[Case] = &[
 /// to make a change pass. Its own number rather than a shared one — the two
 /// corpora rank differently and a single floor would let one language's
 /// regression hide behind the other's promotion.
-const DE_TOP_2_FLOOR: usize = 14;
+const DE_TOP_2_FLOOR: usize = 20;
 
 #[test]
 fn the_help_corpus_maps_to_one_entry_per_faq_leaf() {
@@ -649,7 +681,7 @@ fn hand_written_user_phrasings_reach_their_entry_in_the_lexical_top_3() {
 fn german_hand_written_user_phrasings_reach_their_entry_in_the_lexical_top_3() {
     let rows = measure_de();
     let (hits, narrow_hits) = report("de", &rows, DE_TOP_2_FLOOR);
-    assert_table(&rows, hits, narrow_hits, 14, DE_TOP_2_FLOOR);
+    assert_table(&rows, hits, narrow_hits, 20, DE_TOP_2_FLOOR);
 }
 
 /// The honesty guard on the tables above: a query that matches exactly ONE of
