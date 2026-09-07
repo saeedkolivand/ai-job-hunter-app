@@ -16,7 +16,7 @@ Automating it introduces its own problem: the job that submits to AMO holds a cr
 
 ## Decision
 
-**Every release dispatch submits the extension to both stores automatically**, from two independent jobs in `.github/workflows/release.yml` (`publish-chrome`, `publish-firefox`) that consume the zips `package-extension` already built, handed over as a workflow artifact rather than rebuilt or re-downloaded — so what reaches a store cannot diverge from what is attached to the GitHub Release. Three properties are part of the decision, not incidental to it:
+**Every installer-build dispatch submits the extension to both stores automatically** — the same `workflow_dispatch` (`action: build-installers`) that builds the installers — from two independent jobs in `.github/workflows/release.yml` (`publish-chrome`, `publish-firefox`) that consume the zips `package-extension` already built, handed over as a workflow artifact rather than rebuilt or re-downloaded, so what reaches a store cannot diverge in CONTENT from what is attached to the GitHub Release. Chrome receives that zip byte-for-byte; `web-ext` re-zips the directory for AMO, so the submitted xpi is file-for-file identical rather than byte-identical, and byte-identity is claimed only where it holds. Three properties are part of the decision, not incidental to it:
 
 1. **The terminal state is "submitted for review", never "live".** Approval is a human step at Google/Mozilla that lands hours to days later; neither job waits for it, and neither is a `needs:` of anything else, so one store failing blocks neither the other store nor the rest of the release fan-out.
 2. **AMO submission is gated on reproducibility.** `apps/extension/scripts/source-archive.mjs` builds the reviewable archive as `git archive` of the release tag plus a generated build README whose tool versions are read from the toolchain that produced it; `publish-firefox` then unpacks that archive, runs the README's own build commands and diffs the result against the shipped package — failing **before** anything is uploaded when they differ.
@@ -27,7 +27,7 @@ Automating it introduces its own problem: the job that submits to AMO holds a cr
 1. **Keep submitting by hand.** Rejected: it is the release step easiest to skip, and the AMO source archive is the artifact most likely to be built wrong by hand — exactly the case where a mistake is a rejection rather than a retry.
 2. **`npx web-ext@<version>` instead of a committed lockfile.** Rejected: that pins only the entry package. Every transitive dependency re-resolves at run time, without integrity hashes, inside the job holding the AMO credential.
 3. **`web-ext` as a normal devDependency of `@ajh/extension`.** Rejected: it would add a once-per-release tool's whole tree to every `pnpm install --frozen-lockfile` in the monorepo — every CI job, every contributor clone, and the audit surface — for something that runs once per release. Rationale and the bump procedure live in `apps/extension/tools/amo/README.md`.
-4. **Re-download the published release asset in the publish jobs.** Rejected: it opens a way for the submitted bytes to differ from the released ones, which is the one property this design exists to keep.
+4. **Re-download the published release asset in the publish jobs.** Rejected: it opens a way for the submitted contents to differ from the released ones, which is the one property this design exists to keep.
 5. **Submit the source archive without proving it rebuilds the package.** Rejected: AMO performs that rebuild regardless. The gate does not add a check, it just moves an existing one into CI, where failing costs a red job instead of a delisting.
 6. **One combined publish job.** Rejected: a rejection or outage at one store would stop the other from shipping, and a single job status could not say which store failed.
 
@@ -37,7 +37,7 @@ Automating it introduces its own problem: the job that submits to AMO holds a cr
 
 - **The stores track the release automatically.** Submission stops being a step a human can forget between a release and the next one.
 - **The archive AMO receives is provably the one that produces the shipped package**, checked the same way the reviewer will check it.
-- **No store credential is in scope while third-party code is fetched or executed.** Credential presence is also checked in a dedicated first step per job, so a misconfiguration surfaces by name rather than as an opaque API error.
+- **No store credential is in scope while third-party code is fetched or installed.** Not while it is _executed_: the submission step necessarily runs the tool's whole dependency tree with the store key in its environment, which is an accepted residual risk stated in full in `apps/extension/tools/amo/README.md`, not something this design removes. Credential presence is also checked in a dedicated first step per job, so a misconfiguration surfaces by name rather than as an opaque API error.
 
 ### Tradeoffs
 

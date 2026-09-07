@@ -231,7 +231,7 @@ Before submitting, `publish-firefox` unpacks the source archive it just built, r
 
 Both submission CLIs are lockfile-pinned, and neither is **installed** in a step that carries a store credential: the Chrome one is a devDependency of `@ajh/extension`, and `web-ext` lives in its own isolated npm project at `apps/extension/tools/amo/`, pinned by a lockfile outside the pnpm workspace and tracked by its own Dependabot entry.
 
-Running either CLI does execute third-party code with the matching store credential in scope — that is unavoidable without a first-party uploader, and the AMO key can publish a signed version of every add-on on the account. What the setup bounds is the exposure: one step each, a tree pinned by integrity hash, and lifecycle scripts disabled on install. `apps/extension/tools/amo/README.md` states the residual risk in full, along with which advisories are accepted and how to bump the pin.
+Be plain about the boundary: **running either CLI executes its whole third-party dependency tree with the matching store credential in that step's environment.** `web-ext sign` is the sharper case — the AMO key it carries can publish a Mozilla-signed version of every add-on on the account. Nothing here removes that exposure and nothing can, short of a first-party uploader; it is an **accepted residual risk**. What the setup bounds is its shape: one credential-carrying step per store, a tree pinned by integrity hash so it cannot change under us between releases, and lifecycle scripts disabled at install. `apps/extension/tools/amo/README.md` is the full statement, along with which advisories are accepted and how to bump the pin.
 
 ### Repository secrets
 
@@ -268,45 +268,30 @@ Generate a JWT issuer + secret on the AMO **Manage API Keys** page with the acco
 
 ## Microsoft Store (MSIX)
 
-A second **flavour** of the Windows build, not a second build: the MSIX wraps the very same `ajh-tauri.exe` the NSIS installer ships. Tauri has no MSIX bundle target, so the packaging is ours — manifest template in [`apps/desktop/src-tauri/windows/msix/AppxManifest.xml`](../apps/desktop/src-tauri/windows/msix/AppxManifest.xml) (commented element by element), packer in [`apps/desktop/scripts/pack-msix.mjs`](../apps/desktop/scripts/pack-msix.mjs), wired into the Windows leg of `release.yml` (the "Pack the Microsoft Store MSIX" step).
+A second **flavour** of the Windows build, not a second build: the MSIX wraps the very same `ajh-tauri.exe` the NSIS installer ships. Tauri has no MSIX bundle target, so the packaging is ours — manifest template in [`apps/desktop/src-tauri/windows/msix/AppxManifest.xml`](../apps/desktop/src-tauri/windows/msix/AppxManifest.xml) (commented element by element: every capability and extension carries its own WHY), packer in [`apps/desktop/scripts/pack-msix.mjs`](../apps/desktop/scripts/pack-msix.mjs) (its header comment documents the inputs, the staging layout and the output naming), wired into the Windows leg of `release.yml` by the MSIX pack + upload steps. Why the flavour exists at all, and what was rejected on the way: [ADR-049](knowledge/decision-records/adr-049-microsoft-store-msix-flavour.md).
 
-`platform::msix::is_packaged()` decides at runtime — no build flag, one binary. It needs package identity **and** the running exe to sit inside the package install root, because Windows hands package identity down to child processes: without the second half, an NSIS-installed copy launched by the packaged one would call itself a Store build. An unreadable probe counts as packaged, which is the safe direction (see the doc comment on `decide`).
+Which container is running is a **runtime** question, not a build flag — one binary, two containers. `platform::msix` owns that decision and the closed set of behaviours that follow from it; the module's own doc comment is that list, with the reasoning at each symbol. In outline: the Store owns updating (a packaged build never checks and never polls — `updater::…`), the manifest owns protocol registration and launch-at-login (the runtime equivalents are skipped in `lib.rs` / `commands::system`), and the path this build publishes about itself comes from `platform::msix::published_exe_path` rather than `current_exe()` — consumed by `extension_bridge::register` for the browser native-messaging host and by `platform::config::agent_cli_exe_path` for the agent-CLI pointer.
 
-Four behaviours branch on it, and only these four:
+That last one has a third answer worth knowing operationally. `current_exe()` inside a package is a `…\WindowsApps\` path a normal user cannot execute from, whose name carries the package **version**, so anything that RECORDS it dangles after the next Store update; the execution-alias shim is the stable substitute. **When no usable shim exists** — a user can switch an execution alias off in Settings ▸ Apps ▸ App execution aliases — the packaged build publishes **nothing**: the native-messaging registration and the agent-CLI pointer are **skipped**, not written with `current_exe()` and not deleted (existing manifests may belong to a working non-Store install on the same machine). Symptom: on that install the extension's native-messaging path and `ajh-tauri agent` discovery stop working until the alias is re-enabled, and `platform::msix` logs a warning saying so.
 
-| Behaviour             | Unpackaged                        | Store build                                                     |
-| --------------------- | --------------------------------- | --------------------------------------------------------------- |
-| Updates               | GitHub updater (`src/updater/`)   | The Store. No check, no poll; the settings panel says so        |
-| `ajh://` registration | Written at runtime by the plugin  | The manifest's `windows.protocol` extension (`lib.rs` skips it) |
-| Published exe path    | `current_exe()`                   | The execution-alias shim (`platform::msix::alias_exe_path`)     |
-| Launch at login       | HKCU `Run` key (autostart plugin) | The manifest's `StartupTask` (`commands/system`)                |
-
-The last two exist because `current_exe()` inside a package is `…\WindowsApps\<PackageFullName>\ajh-tauri.exe`: a directory a normal user cannot execute from, whose name carries the package version. Anything that RECORDS that path — the browser native-messaging host, the agent-CLI pointer, a `Run` entry — would dangle after the next Store update. The alias path does not.
-
-Everything else is deliberately identical. The manifest disables registry and file-system write virtualization (which is what the restricted `unvirtualizedResources` capability buys), so the native-messaging registration under HKCU and the app data directory are the same real locations a non-Store install uses — a user can switch flavours and keep their data. Note the corollary: those real writes also mean the app must NOT re-register things the manifest already owns, which is why the deep-link call is skipped above. For the same "the Store owns updating" reason the updater plugin's ACL entry is not in `capabilities/default.json`; the renderer never used it, and it was the last path from the webview to the installer.
+Everything else is deliberately identical. The manifest disables registry and file-system write virtualization — what the restricted capability it declares buys — so the native-messaging registration under HKCU and the app data directory are the same real locations a non-Store install uses, and a user can switch flavours and keep their data. The corollary of those real writes is that the packaged build must NOT re-register what the manifest already owns, which is what the skips above are for.
 
 > **WebView2 is a certification risk, not just a note.** The MSIX cannot run the Evergreen bootstrapper the NSIS installer uses. Windows 11 has the runtime built in, but a clean Windows 10 (19041) machine without it launches the app into a dead webview — which is exactly what a certification tester on a fresh VM would see. Say so in the Partner Center **tester notes**.
 
 ### Package identity (repository variables)
 
-Identity is assigned by Partner Center, so it is **not committed**. The packer requires three environment variables, supplied in CI as repository variables (Settings ▸ Secrets and variables ▸ Actions ▸ Variables) and read from Partner Center ▸ **Product management ▸ Product identity**:
+Identity is assigned by Partner Center, so it is **not committed**. It reaches the packer as environment variables — read from Partner Center ▸ **Product management ▸ Product identity**, supplied in CI as repository variables (Settings ▸ Secrets and variables ▸ Actions ▸ Variables). The names, which Partner Center field each one carries and the validation applied to them are `IDENTITY_VARS` / `readIdentity` in `apps/desktop/scripts/pack-msix.mjs`; a missing or malformed one is a named error, not a silent bad package.
 
-| Variable                      | Partner Center field                    |
-| ----------------------------- | --------------------------------------- |
-| `MSIX_IDENTITY_NAME`          | Package/Identity/Name                   |
-| `MSIX_PUBLISHER`              | Package/Identity/Publisher              |
-| `MSIX_PUBLISHER_DISPLAY_NAME` | Package/Properties/PublisherDisplayName |
-
-The workflow step is skipped while `MSIX_IDENTITY_NAME` is unset, so the pipeline is unaffected until the listing exists.
+The MSIX steps in `release.yml` are gated on **all** of the identity variables being set, so the pipeline is unaffected until the listing exists — a partial set means "no MSIX this release", never "no release".
 
 ### Local test loop
 
 1. `pnpm --filter @ajh/desktop package` (or any `tauri build`) so the exe exists.
-2. Set the three variables and run `node apps/desktop/scripts/pack-msix.mjs`. It needs `makeappx.exe` from the Windows SDK (override with `MAKEAPPX=`), stages the payload under `src-tauri/target/msix/staging/`, and writes the `.msix` next to it.
+2. Set the identity variables and run `node apps/desktop/scripts/pack-msix.mjs`. It needs `makeappx.exe` from the Windows SDK; its header comment lists the env overrides (SDK discovery, the staged executable, the output root) and it prints where it staged and wrote.
 3. Enable **Developer Mode**, then register the staged layout directly — faster than installing, and it exercises the manifest: `Add-AppxPackage -Register <staging>\AppxManifest.xml`.
-4. `Get-AppxPackage *AIJobHunter*` to confirm, `Remove-AppxPackage <full-name>` to clean up.
+4. `Get-AppxPackage *<identity name>*` to confirm, `Remove-AppxPackage <full-name>` to clean up.
 
-Registering the staged app is the only way to see the packaged-identity code path locally: `platform::msix` returns `false` for every normally-launched build.
+Registering the staged app is the only way to see the packaged-identity code path locally: `platform::msix::is_packaged()` answers "not packaged" for every normally-launched build.
 
 **Verify these three while it is registered — they are the parts nothing in CI can prove** (they need a real registered package, so treat them as unverified until someone runs them):
 
@@ -316,9 +301,9 @@ Registering the staged app is the only way to see the packaged-identity code pat
 
 ### First submission (manual)
 
-The `.msix` is **unsigned on purpose** — the Store signs it during submission — which is why it is a workflow **artifact** (`msix-store-package`, on the `build-installers` run) and never a GitHub Release asset.
+The `.msix` is **unsigned on purpose** — the Store signs it during submission — which is why it is a workflow **artifact** of the `build-installers` run and never a GitHub Release asset.
 
-1. Download the `msix-store-package` artifact from the release run and unzip it.
+1. Download the MSIX artifact from that run (the upload step in `release.yml` names it) and unzip it.
 2. Partner Center ▸ your product ▸ **Packages** ▸ upload the `.msix`.
 3. **Submission options** asks for a justification for the restricted capability. State what it is actually for: the app registers a browser **native-messaging host under HKCU** that browsers must read from the real hive rather than a virtualized copy, and it shares its data directory with the non-Store install so users can move between them without losing data.
 4. Fill the **tester notes** with the WebView2 prerequisite above, plus a pointer that the browser-extension features need the companion extension installed.

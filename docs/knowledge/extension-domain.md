@@ -172,7 +172,7 @@ A separate shared component, `apps/extension/src/job-tools/job-tools.ts` (`mount
 
 Chrome Web Store + Firefox AMO: MV3, no remote code, least-privilege permissions, single-purpose, honest metadata, privacy/data disclosure. Full pre-submission checklist in `.claude/skills/extension-standards/SKILL.md`.
 
-**Submission is automated, approval is not.** Every release dispatch runs `publish-chrome` + `publish-firefox` in `.github/workflows/release.yml` after `package-extension`; the AMO source archive comes from `apps/extension/scripts/source-archive.mjs` and is gated on rebuilding the shipped package byte-for-byte before anything is uploaded. A green job means _submitted for review_. Credentials, secret names and failure modes: `docs/DEPLOYMENT.md` § "Browser extension store publishing".
+**Submission is automated, approval is not.** The `publish-chrome` + `publish-firefox` jobs in `.github/workflows/release.yml` run on a `workflow_dispatch` with `action: build-installers`, after `package-extension`; a green job means _submitted for review_, never live. Why it works that way: [ADR-048](decision-records/adr-048-automated-extension-store-submission.md). How to operate it — credentials, secret names, the AMO source-archive gate, failure modes: `docs/DEPLOYMENT.md` § "Browser extension store publishing".
 
 ## Agent system
 
