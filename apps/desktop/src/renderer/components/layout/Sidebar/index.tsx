@@ -29,7 +29,7 @@ import { useContactProfile } from '@/services';
 import { useAppVersion } from '@/services/use-system';
 import { useToggleSidebar, useUserName } from '@/store/preferences-store';
 
-import { type NavTourId, SIDEBAR_NAV, type SidebarPage } from './nav';
+import { HEADED_SECTIONS, type NavTourId, PINNED_SECTION, type SidebarPage } from './nav';
 
 /**
  * The icon each page renders with — the presentational half of `./nav`, kept
@@ -51,9 +51,6 @@ const NAV_ICONS: Record<NavTourId, LucideIcon> = {
   support: HelpCircle,
   settings: Settings,
 };
-
-/** The footer group: the one section that ships without a heading. */
-const PINNED_PAGES = SIDEBAR_NAV.find((section) => section.labelKey === null)?.pages ?? [];
 
 // ponytail: query the page's scroll regions by their Tailwind class instead
 // of wiring a ref registry through every route — one nav action doesn't need that.
@@ -132,22 +129,20 @@ export function Sidebar() {
         </Button>
       </div>
       <nav className="flex flex-col gap-4">
-        {SIDEBAR_NAV.map((section) =>
-          // The pinned group has no heading — it is rendered by the footer nav
-          // below, out of the same list.
-          section.labelKey === null ? null : (
-            <div key={section.labelKey}>
-              <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                {t(section.labelKey)}
-              </div>
-              <div className="flex flex-col gap-1">{section.pages.map(renderNavItem)}</div>
+        {/* The pinned group is deliberately absent here — it has no heading and
+            is rendered by the footer nav below. */}
+        {HEADED_SECTIONS.map((section) => (
+          <div key={section.labelKey}>
+            <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              {t(section.labelKey)}
             </div>
-          )
-        )}
+            <div className="flex flex-col gap-1">{section.pages.map(renderNavItem)}</div>
+          </div>
+        ))}
       </nav>
 
       <nav className="mt-auto flex flex-col gap-1 border-t border-foreground/[0.06] pb-3 pt-3">
-        {PINNED_PAGES.map(renderNavItem)}
+        {PINNED_SECTION.pages.map(renderNavItem)}
       </nav>
 
       <div className="space-y-2 px-3 pb-3">

@@ -2793,7 +2793,7 @@
         },
         "checkForUpdates": {
           "q": "How do I check for updates, and which version am I on?",
-          "a": "Open Settings → General and scroll to \"Updates\". \"Current version\" shows what is installed. Press \"Check for updates\" — it reads \"Checking…\" while it runs, then either \"You are up to date\" or a download button naming the new version. Once that download finishes, \"Restart & install\" applies it. \"View changelog\" expands what changed since your version and \"Hide changelog\" folds it away again. On the Microsoft Store build the card reads \"Updates are delivered through the Microsoft Store.\" instead, and there is nothing to press."
+          "a": "Open Settings → General and scroll to \"Updates\". \"Current version\" shows what is installed. Press \"Check for updates\" — it reads \"Checking…\" while it runs, then either \"You are up to date\" or a download button naming the new version. Once that download finishes, \"Restart & install\" applies it. \"View changelog\" expands what changed since your version and \"Hide changelog\" folds it away again. On the Microsoft Store build the card reads \"Updates are delivered through the Microsoft Store.\" instead, and there is no check or install button — only the changelog."
         }
       },
       "connectivityQuestions": {
@@ -2887,7 +2887,7 @@
         },
         "contactHeader": {
           "q": "How do I fix the name, email and links on my résumé header?",
-          "a": "Open Settings → Contact Profile. It holds \"Full name\", \"Email\", \"Phone\", \"Location\", \"LinkedIn\", \"GitHub\", \"Website\" and \"Other links\", plus an optional \"Photo\" that the photo templates use and that never leaves your device. Every résumé and cover letter the app generates builds its header from these fields, not from the file you imported, so one correction here fixes every future export at once. Importing a résumé fills the fields in as a starting point and asks about anything that disagrees with what you had saved. Changes save as you type."
+          "a": "Open Settings → Contact Profile. It holds \"Full name\", \"Email\", \"Phone\", \"Location\", \"LinkedIn\", \"GitHub\", \"Website\" and \"Other links\", plus an optional \"Photo\" that the photo templates use and that never leaves your device. Every résumé and cover letter the app generates builds its header from these fields, not from the file you imported, so one correction here fixes every future export at once. Importing a résumé fills the fields in as a starting point and asks about anything that disagrees with what you had saved. Changes save when you move off a field."
         }
       },
       "aiGenerate": "AI Generate",
@@ -2945,7 +2945,7 @@
         },
         "applicantDetails": {
           "q": "Where do I set my salary expectation so cover letters and answers use it?",
-          "a": "Open Settings → Contact Profile and find \"Applicant details\". Fill in \"Salary expectation\", \"Earliest start date\", \"Notice period\" and \"Remote / hybrid preference\" — all optional, and changes save as you type. Cover letters state them wherever the market expects them (Germany asks for a salary figure and a start date), and the browser extension uses them when an application form asks. Left blank, the app answers non-committally and never invents a number or date. This is separate from \"Compensation\" on an application's \"Overview\" tab, which is only a note about that one job."
+          "a": "Open Settings → Contact Profile and find \"Applicant details\". Fill in \"Salary expectation\", \"Earliest start date\", \"Notice period\" and \"Remote / hybrid preference\" — all optional, and changes save as you type. Cover letters state them wherever the market expects them (Germany asks for a salary figure and a start date), and the browser extension uses your salary expectation when an application form asks for one. Left blank, the app answers non-committally and never invents a number or date. This is separate from \"Compensation\" on an application's \"Overview\" tab, which is only a note about that one job."
         }
       },
       "autopilot": "Autopilot",

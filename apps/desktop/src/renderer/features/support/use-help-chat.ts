@@ -25,9 +25,9 @@ interface CorpusEntry extends HelpChatEntry {
 
 /**
  * The section whose entries are about the user's tracked applications
- * (`support.faq.applicationsQuestions.*`). Only a question that retrieved one
- * of those is answered any better by knowing WHICH jobs the user applied to —
- * see the glance below.
+ * (`support.faq.applicationsQuestions.*`). Only a question whose TOP-ranked
+ * hit is one of those is answered any better by knowing WHICH jobs the user
+ * applied to — see the glance below.
  */
 const APPLICATIONS_SECTION = 'applications';
 
@@ -35,9 +35,9 @@ const APPLICATIONS_SECTION = 'applications';
  * The section whose entries are about the user's autopilots
  * (`support.faq.autopilotQuestions.*`), gating the autopilot NAMES for exactly
  * the reason {@link APPLICATIONS_SECTION} gates the job titles: they are
- * user-typed text, and only a question that retrieved an autopilot entry is
- * answered any better for having them. Mirrored from the `Section.id` in
- * `support-data`, like the one above.
+ * user-typed text, and only a question whose TOP-ranked hit is an autopilot
+ * entry is answered any better for having them. Mirrored from the `Section.id`
+ * in `support-data`, like the one above.
  */
 const AUTOPILOT_SECTION = 'autopilot';
 
@@ -384,11 +384,18 @@ export function useHelpChat({ model, canUse }: Params) {
       // The recent-application list is the only part of the glance carrying the
       // user's job titles and company names, and the only part that leaves the
       // machine as prose. Counts answer "have I tracked anything at all"; the
-      // NAMES only help a question that retrieved an applications entry, so
+      // NAMES only help a question the applications entries actually answer, so
       // that is the only question that pays to send them to the provider.
-      const aboutApplications = used.some((entry) => entry.section === APPLICATIONS_SECTION);
+      //
+      // Gated on the TOP-RANKED entry, never on `some`: retrieval returns the
+      // best few and the answer is written from the first, so a SECONDARY hit —
+      // the maybe the ranker kept — would widen the disclosure without
+      // improving the answer. Observed live: a LinkedIn-import question whose
+      // rank-2 hit was an autopilot entry shipped the user's autopilot names to
+      // the provider. One question, one topic, one list.
+      const aboutApplications = used[0]?.section === APPLICATIONS_SECTION;
       // Same gate, same reason, for the autopilot names — see AUTOPILOT_SECTION.
-      const aboutAutopilots = used.some((entry) => entry.section === AUTOPILOT_SECTION);
+      const aboutAutopilots = used[0]?.section === AUTOPILOT_SECTION;
 
       // Everything uncancellable is behind us; from here a Stop really stops
       // the work, so it may release the Ask button immediately.
@@ -489,10 +496,15 @@ function countByStatus(applications: ReadonlyArray<{ status?: string }>): Record
 }
 
 /**
- * The user's autopilots for the glance, with the three states the prompt reads
- * kept apart: `null` = the list could not be read (the glance omits the line
- * rather than claiming zero), `[]` = readable but this question is not about
- * autopilots, otherwise the names.
+ * The user's first 10 autopilots for the glance, with the three states the
+ * prompt reads kept apart: `null` = the list could not be read (the glance
+ * omits the line rather than claiming zero), `[]` = readable but this question
+ * is not about autopilots, otherwise the names.
+ *
+ * Capped at 10 like {@link recentApplications} — the glance renders at most 10
+ * under a bare `Autopilots:` heading, so sending more only hands the provider
+ * user-typed names it then drops. No sort: the backend's own order is the one
+ * the list page shows, and there is no `updatedAt` here to rank by.
  *
  * The mapping is an explicit PICK, like `recentApplications` below: an
  * autopilot record also carries the user's résumé text, cover letter and found
@@ -510,7 +522,7 @@ function glanceAutopilots(
 ): Array<{ name: string; status: string; runStatus?: string; totalFound: number }> | null {
   if (!autopilots) return null;
   if (!aboutAutopilots) return [];
-  return autopilots.map((autopilot) => ({
+  return autopilots.slice(0, 10).map((autopilot) => ({
     name: autopilot.name,
     status: autopilot.status,
     runStatus: autopilot.runStatus,

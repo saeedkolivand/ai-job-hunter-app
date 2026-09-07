@@ -8,6 +8,26 @@ vi.mock('@/lib/generate', () => ({
 }));
 
 /**
+ * What the hook HANDED `buildHelpDataGlance`, recorded without changing what it
+ * builds. The rendered glance cannot answer "how much did the hook disclose":
+ * the prompt renders at most 10 autopilots itself, so a hook that passed 500
+ * would produce a byte-identical string. This is the boundary where the
+ * disclosure actually happens, so this is where it is measured.
+ */
+const glanceRecorder = vi.hoisted(() => ({ inputs: [] as unknown[] }));
+
+vi.mock('@ajh/prompts/generate', async (importOriginal) => {
+  const actual = await importOriginal<typeof PromptsGenerate>();
+  return {
+    ...actual,
+    buildHelpDataGlance: (input: Parameters<typeof actual.buildHelpDataGlance>[0]) => {
+      glanceRecorder.inputs.push(input);
+      return actual.buildHelpDataGlance(input);
+    },
+  };
+});
+
+/**
  * Opt-in for ONE test: hand the hook the real, mutable i18n instance.
  *
  * react-i18next v17 does not return the instance from `useTranslation()` — it
@@ -44,6 +64,7 @@ vi.mock('@ajh/translations', async (importOriginal) => {
   };
 });
 
+import type * as PromptsGenerate from '@ajh/prompts/generate';
 import i18n from '@ajh/translations';
 
 import { generateHelpAnswer } from '@/lib/generate';
@@ -133,6 +154,15 @@ const searchArg = (mock: ReturnType<typeof client>) =>
 const generateArg = () =>
   vi.mocked(generateHelpAnswer).mock.calls[0]?.[0] as Parameters<typeof generateHelpAnswer>[0];
 
+/** The one field these tests read back off {@link glanceRecorder}. */
+interface RecordedGlanceInput {
+  autopilots?: ReadonlyArray<{ name: string }> | null;
+}
+
+/** The autopilot list as the hook passed it, before the prompt renders it. */
+const glanceAutopilotsSent = () =>
+  (glanceRecorder.inputs.at(-1) as RecordedGlanceInput | undefined)?.autopilots ?? null;
+
 /** The four reads that make up the data glance. */
 const dataReads = (mock: ReturnType<typeof client>) =>
   [
@@ -144,6 +174,7 @@ const dataReads = (mock: ReturnType<typeof client>) =>
 
 describe('useHelpChat', () => {
   beforeEach(() => {
+    glanceRecorder.inputs.length = 0;
     vi.mocked(generateHelpAnswer).mockClear();
     vi.mocked(generateHelpAnswer).mockResolvedValue('Open the document and click Export.');
   });
@@ -249,6 +280,28 @@ describe('useHelpChat', () => {
     expect(generateArg().dataGlance ?? '').toContain('Senior Engineer — Acme (applied)');
   });
 
+  it('withholds the recent-application names when an applications entry is only a SECONDARY hit', async () => {
+    const { result } = render('llama3:70b', {
+      'help.search': vi.fn().mockResolvedValue({
+        // An export question, with the applications entry as the rank-2 maybe
+        // the ranker kept behind it.
+        results: [HIT, APPLICATIONS_HIT],
+        mode: 'hybrid',
+        arms: { lexical: 'ran', dense: 'ran' },
+      }),
+    });
+    await act(async () => {
+      await result.current.send('how do i export a pdf');
+    });
+
+    const glance = generateArg().dataGlance ?? '';
+    // The answer is written from the TOP entry, so a secondary hit must not
+    // widen what leaves the machine — the counts still travel.
+    expect(glance).toContain('Applications tracked: 1');
+    expect(glance).not.toContain('Senior Engineer');
+    expect(glance).not.toContain('Acme');
+  });
+
   it('sends the sidebar’s own page names, translated, as the app-pages list', async () => {
     const { result } = render();
     await act(async () => {
@@ -299,6 +352,58 @@ describe('useHelpChat', () => {
     expect(glance).toContain('Remote Rust — paused (0 found)');
     // Four fields travel, so the résumé text on the same record does not.
     expect(glance).not.toContain('SECRET resume text');
+  });
+
+  it('withholds the autopilot names when an autopilot entry is only a SECONDARY hit', async () => {
+    const { result } = render('llama3:70b', {
+      'help.search': vi.fn().mockResolvedValue({
+        // The shape observed live: a LinkedIn-import question whose rank-2 hit
+        // was `setUpAutopilot`. Gating on "any retrieved entry" sent the user's
+        // autopilot names to the provider for a question the top entry answers.
+        results: [HIT, AUTOPILOT_HIT],
+        mode: 'hybrid',
+        arms: { lexical: 'ran', dense: 'ran' },
+      }),
+    });
+    await act(async () => {
+      await result.current.send('how do i import my linkedin profile');
+    });
+
+    const glance = generateArg().dataGlance ?? '';
+    expect(glance).toContain('Autopilots configured: 2');
+    expect(glance).not.toContain('Berlin React roles');
+    expect(glance).not.toContain('Remote Rust');
+  });
+
+  it('sends at most the 10 autopilot names the glance renders', async () => {
+    const { result } = render('llama3:70b', {
+      'help.search': vi.fn().mockResolvedValue({
+        results: [AUTOPILOT_HIT],
+        mode: 'hybrid',
+        arms: { lexical: 'ran', dense: 'ran' },
+      }),
+      'autopilot.list': vi.fn().mockResolvedValue(
+        Array.from({ length: 12 }, (_, index) => ({
+          _id: `ap${index}`,
+          name: `Autopilot number ${index + 1}`,
+          status: 'active',
+          totalFound: 0,
+        }))
+      ),
+    });
+    await act(async () => {
+      await result.current.send('how do i set up an autopilot');
+    });
+
+    // The COUNT covers all 12 — that line is a number, not user-typed text.
+    expect(generateArg().dataGlance ?? '').toContain('Autopilots configured: 12');
+    // The NAMES stop where the prompt's `Autopilots:` list does. Asserted on
+    // what the hook PASSED, not on the rendered glance: the prompt slices to 10
+    // as well, so the string is identical either way and would prove nothing.
+    const sent = glanceAutopilotsSent() ?? [];
+    expect(sent.map((autopilot) => autopilot.name)).toEqual(
+      Array.from({ length: 10 }, (_, index) => `Autopilot number ${index + 1}`)
+    );
   });
 
   it('claims nothing about autopilots when that source could not be read', async () => {

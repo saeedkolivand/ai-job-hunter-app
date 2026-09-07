@@ -2797,7 +2797,7 @@
         },
         "checkForUpdates": {
           "q": "Wie prüfe ich auf Updates, und welche Version habe ich installiert?",
-          "a": "Öffnen Sie Einstellungen → Allgemein und scrollen Sie zu \"Updates\". \"Aktuelle Version\" zeigt die installierte Version. Klicken Sie auf \"Nach Updates suchen\" — während der Prüfung steht dort \"Prüfe…\", danach entweder \"Sie sind auf dem neuesten Stand\" oder eine Schaltfläche zum Herunterladen der neuen Version. Ist der Download fertig, wendet \"Neu starten & installieren\" das Update an. \"Änderungsprotokoll anzeigen\" zeigt, was sich seit Ihrer Version geändert hat, \"Änderungsprotokoll ausblenden\" klappt es wieder zu. Bei der Microsoft-Store-Version steht dort stattdessen \"Updates werden über den Microsoft Store bereitgestellt.\" und es gibt nichts zu klicken."
+          "a": "Öffnen Sie Einstellungen → Allgemein und scrollen Sie zu \"Updates\". \"Aktuelle Version\" zeigt die installierte Version. Klicken Sie auf \"Nach Updates suchen\" — während der Prüfung steht dort \"Prüfe…\", danach entweder \"Sie sind auf dem neuesten Stand\" oder eine Schaltfläche zum Herunterladen der neuen Version. Ist der Download fertig, wendet \"Neu starten & installieren\" das Update an. \"Änderungsprotokoll anzeigen\" zeigt, was sich seit Ihrer Version geändert hat, \"Änderungsprotokoll ausblenden\" klappt es wieder zu. Bei der Microsoft-Store-Version steht dort stattdessen \"Updates werden über den Microsoft Store bereitgestellt.\" und es gibt keine Schaltfläche zum Prüfen oder Installieren — nur das Änderungsprotokoll."
         }
       },
       "connectivityQuestions": {
@@ -2891,7 +2891,7 @@
         },
         "contactHeader": {
           "q": "Wie korrigiere ich Name, E-Mail und Links in meiner Lebenslauf-Kopfzeile?",
-          "a": "Öffnen Sie Einstellungen → Kontaktprofil. Dort stehen \"Vollständiger Name\", \"E-Mail\", \"Telefon\", \"Standort\", \"LinkedIn\", \"GitHub\", \"Website\" und \"Weitere Links\", dazu optional ein \"Foto\", das die Foto-Vorlagen verwenden und das Ihr Gerät nie verlässt. Jeder Lebenslauf und jedes Anschreiben, das die App erzeugt, baut die Kopfzeile aus diesen Feldern auf, nicht aus der importierten Datei — eine Korrektur hier wirkt also auf jeden künftigen Export. Beim Import eines Lebenslaufs werden die Felder als Ausgangspunkt vorbelegt, und Abweichungen zu bereits gespeicherten Werten werden nachgefragt. Änderungen werden beim Tippen gespeichert."
+          "a": "Öffnen Sie Einstellungen → Kontaktprofil. Dort stehen \"Vollständiger Name\", \"E-Mail\", \"Telefon\", \"Standort\", \"LinkedIn\", \"GitHub\", \"Website\" und \"Weitere Links\", dazu optional ein \"Foto\", das die Foto-Vorlagen verwenden und das Ihr Gerät nie verlässt. Jeder Lebenslauf und jedes Anschreiben, das die App erzeugt, baut die Kopfzeile aus diesen Feldern auf, nicht aus der importierten Datei — eine Korrektur hier wirkt also auf jeden künftigen Export. Beim Import eines Lebenslaufs werden die Felder als Ausgangspunkt vorbelegt, und Abweichungen zu bereits gespeicherten Werten werden nachgefragt. Änderungen werden gespeichert, sobald Sie das Feld verlassen."
         }
       },
       "aiGenerate": "KI-Generierung",
@@ -2949,7 +2949,7 @@
         },
         "applicantDetails": {
           "q": "Wo trage ich meine Gehaltsvorstellung ein, damit Anschreiben und Antworten sie nutzen?",
-          "a": "Öffnen Sie Einstellungen → Kontaktprofil und suchen Sie \"Bewerberangaben\". Tragen Sie \"Gehaltsvorstellung\", \"Frühester Eintrittstermin\", \"Kündigungsfrist\" und \"Remote- / Hybrid-Präferenz\" ein — alles optional, Änderungen werden beim Tippen gespeichert. Anschreiben nennen sie überall dort, wo der Markt sie erwartet (Deutschland fragt nach Gehaltsvorstellung und Eintrittstermin), und die Browser-Erweiterung nutzt sie, wenn ein Bewerbungsformular danach fragt. Bleiben die Felder leer, antwortet die App unverbindlich und erfindet nie eine Zahl oder ein Datum. Das ist unabhängig von \"Vergütung\" im Tab \"Übersicht\" einer Bewerbung, das nur eine Notiz zu diesem einen Job ist."
+          "a": "Öffnen Sie Einstellungen → Kontaktprofil und suchen Sie \"Bewerberangaben\". Tragen Sie \"Gehaltsvorstellung\", \"Frühester Eintrittstermin\", \"Kündigungsfrist\" und \"Remote- / Hybrid-Präferenz\" ein — alles optional, Änderungen werden beim Tippen gespeichert. Anschreiben nennen sie überall dort, wo der Markt sie erwartet (Deutschland fragt nach Gehaltsvorstellung und Eintrittstermin), und die Browser-Erweiterung nutzt Ihre Gehaltsvorstellung, wenn ein Bewerbungsformular danach fragt. Bleiben die Felder leer, antwortet die App unverbindlich und erfindet nie eine Zahl oder ein Datum. Das ist unabhängig von \"Vergütung\" im Tab \"Übersicht\" einer Bewerbung, das nur eine Notiz zu diesem einen Job ist."
         }
       },
       "autopilot": "Autopilot",
