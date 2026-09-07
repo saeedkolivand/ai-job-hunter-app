@@ -235,7 +235,7 @@ Be plain about the boundary: **running either CLI executes its whole third-party
 
 ### Repository secrets
 
-Six, all required; each job checks its own set first and fails naming the missing one, so a misconfiguration never surfaces as an opaque 401. The Chrome **item id** is deliberately not a secret — it is public, and is an `env` constant in the job.
+All required; each job's first step (`🔐 Check … credentials` in `release.yml`, which owns the authoritative list) checks its own set and fails naming the missing one, so a misconfiguration never surfaces as an opaque 401. The Chrome **item id** is deliberately not a secret — it is public, and is an `env` constant in the job.
 
 | Secret                                                    | Where it comes from                      |
 | --------------------------------------------------------- | ---------------------------------------- |
@@ -276,7 +276,7 @@ That last one has a third answer worth knowing operationally. `current_exe()` in
 
 Everything else is deliberately identical. The manifest disables registry and file-system write virtualization — what the restricted capability it declares buys — so the native-messaging registration under HKCU and the app data directory are the same real locations a non-Store install uses, and a user can switch flavours and keep their data. The corollary of those real writes is that the packaged build must NOT re-register what the manifest already owns, which is what the skips above are for.
 
-> **WebView2 is a certification risk, not just a note.** The MSIX cannot run the Evergreen bootstrapper the NSIS installer uses. Windows 11 has the runtime built in, but a clean Windows 10 (19041) machine without it launches the app into a dead webview — which is exactly what a certification tester on a fresh VM would see. Say so in the Partner Center **tester notes**.
+> **WebView2 is a certification risk, not just a note.** The MSIX cannot run the Evergreen bootstrapper the NSIS installer uses. Windows 11 has the runtime built in, but a clean Windows 10 at the manifest's `MinVersion` floor (`TargetDeviceFamily` in `AppxManifest.xml`) without it launches the app into a dead webview — which is exactly what a certification tester on a fresh VM would see. Say so in the Partner Center **tester notes**.
 
 ### Package identity (repository variables)
 

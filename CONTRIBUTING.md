@@ -304,7 +304,7 @@ This project is under the [Apache License 2.0](LICENSE) (SPDX: `Apache-2.0`), ef
 
 Apache-2.0 replaced the PolyForm Noncommercial 1.0.0 license the project carried from 2026-06-14, because the free code-signing programmes for open-source projects require an OSI-approved license and PolyForm Noncommercial is not one. Rationale and history live in `docs/knowledge/decision-records/`; `LICENSE` is authoritative and this summary is not.
 
-One carve-out: the four vendored ATS company datasets under `apps/desktop/src-tauri/ats-slugs/` are third-party data under CC BY-NC 4.0, not Apache-2.0. Read that directory's README before redistributing them commercially.
+One carve-out: the vendored ATS company datasets under `apps/desktop/src-tauri/ats-slugs/` are third-party data under CC BY-NC 4.0, not Apache-2.0. Read that directory's README before redistributing them commercially.
 
 ### What happens to your contribution
 

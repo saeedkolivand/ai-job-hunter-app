@@ -5,19 +5,21 @@
 
 ## Why it is not a normal devDependency
 
-`web-ext` is ~330 packages / ~78 MB (`addons-linter` plus a second, deprecated
-copy of eslint). Putting it in `apps/extension/package.json` would add all of
-that to **every** `pnpm install --frozen-lockfile` in the monorepo — every CI
-job, every contributor clone, and the weekly audit surface — for a tool that
-runs once per release.
+`web-ext` drags in a large tree — `addons-linter` plus a second, deprecated copy
+of eslint; `package-lock.json` here is the exact list and its size. Putting it in
+`apps/extension/package.json` would add all of that to **every**
+`pnpm install --frozen-lockfile` in the monorepo — every CI job, every
+contributor clone, and the weekly audit surface — for a tool that runs once per
+release.
 
 ## Why it is not `npx web-ext@<version>` either
 
-`npx --yes web-ext@10.6.0` pins only the entry package: every transitive
-dependency re-resolves at run time with no integrity hashes, in the job that
-holds `WEB_EXT_API_SECRET` — a credential that can publish a Mozilla-signed
-version of every add-on on the account. A committed `package-lock.json` pins all
-329 transitive packages by version **and** integrity hash.
+`npx --yes web-ext@<version>` (the pin lives in `package.json` here) pins only
+the entry package: every transitive dependency re-resolves at run time with no
+integrity hashes, in the job that holds `WEB_EXT_API_SECRET` — a credential that
+can publish a Mozilla-signed version of every add-on on the account. A committed
+`package-lock.json` pins **every** transitive package by version **and**
+integrity hash.
 
 ## Why it is not a pnpm workspace member
 
@@ -41,8 +43,8 @@ a credential in scope:
 
 Be clear about the boundary: step 2 **executes this entire dependency tree with
 the AMO credential in its environment**. Running web-ext at all means running its
-~330 packages, and that key can publish a Mozilla-signed version of every add-on
-on the account. The split does not remove that exposure — nothing can, short of a
+whole dependency tree, and that key can publish a Mozilla-signed version of every
+add-on on the account. The split does not remove that exposure — nothing can, short of a
 first-party uploader, and there isn't one.
 
 What it does buy is that the exposure is bounded and the code is not a moving

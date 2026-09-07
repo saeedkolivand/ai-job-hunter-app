@@ -264,9 +264,9 @@ On release, the **Release workflow** (`action: build-installers`) runs three ext
 
 - `package-extension` — builds both distributions, zips them with `manifest.json` at the zip root (`scripts/package.mjs`), and attaches them to the GitHub Release
 - `publish-chrome` — uploads that chrome zip to the Web Store listing and submits it for review
-- `publish-firefox` — builds the AMO source archive, proves it rebuilds the shipped package byte-for-byte, then submits the new version to AMO
+- `publish-firefox` — builds the AMO source archive, proves it rebuilds the shipped package's contents byte-for-byte, then submits the new version to AMO
 
-A green publish job means **submitted for review**, not live. Credential setup, the six repository secrets and the known failure modes are in [`docs/DEPLOYMENT.md`](../../docs/DEPLOYMENT.md) § "Browser extension store publishing".
+A green publish job means **submitted for review**, not live. Credential setup, the repository secrets and the known failure modes are in [`docs/DEPLOYMENT.md`](../../docs/DEPLOYMENT.md) § "Browser extension store publishing".
 
 Release frequency: the extension version tracks the app version — `scripts/sync-tauri-version.cjs` bumps `apps/extension/package.json` in the release commit, so every app release ships an extension version to both stores.
 

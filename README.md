@@ -651,7 +651,7 @@ Found a vulnerability? Please report it privately: see **<a href="SECURITY.md" t
 
 **Apache License 2.0** ([SPDX: `Apache-2.0`](LICENSE)): open source, free for any use including commercial, with an explicit patent grant. Effective **2026-09-07**, replacing PolyForm Noncommercial 1.0.0; reason: the free code-signing programmes for open-source projects (SignPath Foundation, Certum) require an OSI-approved license, and PolyForm Noncommercial is not one.
 
-One carve-out: the four vendored ATS company datasets under `apps/desktop/src-tauri/ats-slugs/` are third-party data under **CC BY-NC 4.0**, not Apache-2.0 — see <a href="apps/desktop/src-tauri/ats-slugs/README.md" target="_blank" rel="noopener noreferrer">their README</a> before redistributing commercially.
+One carve-out: the vendored ATS company datasets under `apps/desktop/src-tauri/ats-slugs/` are third-party data under **CC BY-NC 4.0**, not Apache-2.0 — see <a href="apps/desktop/src-tauri/ats-slugs/README.md" target="_blank" rel="noopener noreferrer">their README</a> before redistributing commercially.
 
 ---
 
