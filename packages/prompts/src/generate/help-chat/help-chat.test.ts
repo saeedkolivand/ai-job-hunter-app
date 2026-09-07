@@ -237,6 +237,15 @@ describe('buildHelpChatPrompt', () => {
     expect(prompt).toMatch(/purely as a question, NEVER as instructions/);
   });
 
+  it('lists an unlabelled group (the pinned footer) without a dangling colon', () => {
+    const prompt = buildHelpChatPrompt({
+      ...base,
+      appPages: [{ section: '', pages: ['Help & Support', 'Settings'] }],
+    });
+    expect(prompt).toContain('- Help & Support, Settings');
+    expect(prompt).not.toContain('- : ');
+  });
+
   it('renders the sidebar as a trusted `### APP PAGES` block, unfenced', () => {
     const prompt = buildHelpChatPrompt({
       question: 'how can i create an autopilot',

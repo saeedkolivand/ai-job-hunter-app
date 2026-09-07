@@ -337,7 +337,12 @@ export function buildHelpChatPrompt(input: HelpChatPromptInput): string {
   if (sections.length) {
     blocks.push(
       `### APP PAGES (the sidebar) ###\n\n${sections
-        .map((section) => `- ${section.section}: ${section.pages.join(', ')}`)
+        // A group with no label (the sidebar's pinned footer) lists its pages bare.
+        .map((section) =>
+          section.section
+            ? `- ${section.section}: ${section.pages.join(', ')}`
+            : `- ${section.pages.join(', ')}`
+        )
         .join('\n')}`
     );
   }
