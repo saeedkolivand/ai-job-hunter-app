@@ -63,7 +63,7 @@ The `seen` table (`uid PK, matched_app_id, ts`) deduplicates per-mailbox:
 
 **Subject regex families** (the ONLY gate for a candidate): one EN family and one DE family, both in `email_watch/parser.rs`. The patterns themselves live there; copying them here would fork the fingerprint.
 
-Each regex requires an **explicit trailing-boundary alternation** (`$`/punctuation/continuation words in each language) outside the capture group to prevent greedy/lazy captures from swallowing trailing sentence continuations (e.g., "Acme Corp was received" mistakenly captures "Acme Corp was received" instead of "Acme Corp").
+The boundary rules that stop a capture from swallowing the rest of a subject line are part of those patterns, per language, and live with them in `email_watch/parser.rs`; restating the mechanics here would fork the fingerprint exactly as copying the patterns would.
 
 **Domain hints** (Boost-only, never gate): a verified-sender list plus a folklore list of ATS domains, both in `email_watch/matcher.rs`. A hint nudges the match score by `DOMAIN_HINT_BOOST` but never gates a candidate; a mismatch cannot be rescued by a domain hint.
 

@@ -55,7 +55,7 @@ pub enum AppError {
 }
 ```
 
-The variant's code string is `"RATE_LIMITED"` and it is marked retriable (both in `error.rs`, on the variant), so the renderer can catch it, display a user-facing message, and retry after a delay.
+The wire code the renderer matches on, and whether the variant counts as retriable, are both decided by the error mapping in `error.rs` (the `code()` arm and the retriable predicate for `AppError::RateLimited`); read them there. The contract this page depends on is only that the variant is classified retriable, so the renderer can surface a user-facing message and retry after a delay.
 
 ## Usage
 

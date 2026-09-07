@@ -47,13 +47,13 @@ const methods = useForm({
 **Live editing:**
 
 ```typescript
-// Debounced watcher (delay is a local const in BuilderWizard.tsx): watch form changes and sync to Zustand
+// Debounced watcher (SYNC_DEBOUNCE_MS is a local const in BuilderWizard.tsx): watch form changes and sync to Zustand
 methods.watch((values) => {
   const timer = setTimeout(() => {
     // Merge form values with initial answers, sync to slice
     const merged = { ...formRef.current, ...methods.getValues() };
     setResumeBuilder({ answers: merged });
-  }, debounceMs);
+  }, SYNC_DEBOUNCE_MS);
   return () => clearTimeout(timer);
 });
 ```
