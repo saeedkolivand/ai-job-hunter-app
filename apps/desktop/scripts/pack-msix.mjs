@@ -102,10 +102,17 @@ export function readIdentity(env = process.env) {
   };
 }
 
-/** Numeric comparison of SDK directory names (`10.0.26100.0`), newest first. */
+/**
+ * Numeric comparison of SDK directory names (`10.0.26100.0`), newest first.
+ *
+ * A segment that is not a plain number counts as 0 rather than `NaN`: a real
+ * SDK install can contain a directory like `10.0.26100.0-preview`, and `NaN`
+ * would make the comparator return `NaN`, which leaves the sort order
+ * implementation-defined — i.e. the packer could silently pick an ancient SDK.
+ */
 export function compareSdkVersions(a, b) {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
+  const pa = a.split('.').map((segment) => Number.parseInt(segment, 10) || 0);
+  const pb = b.split('.').map((segment) => Number.parseInt(segment, 10) || 0);
   for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
     const diff = (pb[i] ?? 0) - (pa[i] ?? 0);
     if (diff !== 0) return diff;
