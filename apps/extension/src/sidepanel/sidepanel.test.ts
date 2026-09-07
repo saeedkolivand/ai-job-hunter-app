@@ -60,6 +60,18 @@ document.body.innerHTML =
   '<div id="job-tools-host"></div><div id="answer-tools-host"></div>' +
   '<div id="connection-pill-host"></div><div id="connection-views-host"></div>';
 
+// `sidepanel.ts` has no exports: everything under test — the `tabs.onActivated`
+// listener, the `mountJobTools`/`mountConnectionStatus` calls and the deps they
+// were handed — is recorded on these mocks by the import BELOW, once, before any
+// test body runs. Vitest 5 turned `clearMocks` on by default (a
+// `vi.clearAllMocks()` before every test), which wipes exactly that history —
+// the migration guide names module-load recording as the most affected pattern
+// (https://vitest.dev/guide/migration#clearmocks-is-enabled-by-default). Opt
+// this file out; the runner restores the config after the file, so no other test
+// file is affected, and the tests below still clear per-test history explicitly
+// where they depend on it (`mockClear()`).
+vi.setConfig({ clearMocks: false });
+
 const { subscribeAnswerState } = await import('../lib/answer-state');
 const { mountJobTools } = await import('../job-tools/job-tools');
 const { mountConnectionStatus } = await import('../connection-status/connection-status');
