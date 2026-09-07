@@ -87,6 +87,18 @@ Over-filtering is the failure mode, and it fails silently, so it is pinned rathe
 
 A drop list can also never turn hits into a miss by narrowing too far: when the filtered expression matches no ROW at all, `retrieval::lexical::LexicalIndex` runs the unfiltered one once. That is the RESULT-set half of the fallback, which the token-list half cannot see — a question whose only surviving token appears nowhere sanitises to a non-empty match that returns nothing while the arm still reports that it ran. `tests/help_retrieval.rs` carries the case that measures it.
 
+## Amendment — 2026-09-07
+
+§7 wrote the prompt's trust boundary as an ENUMERATION — one trusted block, everything else fenced. The trusted class has since grown, so it is restated here as the CONDITION it always was.
+
+**(a) Trust is decided by provenance, not by a list.** Anything sourced from the app's own shipped translation strings is trusted and rendered UNFENCED: the `support.faq.*` entries §1 already covered, plus the sidebar's `nav.*` page labels, which `buildHelpChatPrompt` renders as a second plain block from what the renderer's `buildAppPages` builds off `SIDEBAR_NAV` (`components/layout/Sidebar/nav.ts` — one declaration, read by the sidebar itself as well, so the model can never be shown a drifted second copy). Everything a user or a job board can write still goes through `fenced()` with its untrusted-content note, per [ADR-010](adr-010-untrusted-input-fencing.md): the question, the data glance and the history. Both trusted blocks are also run through the same `defuse` helper as the fenced ones. That is belt-and-braces, NOT the trust decision — the unfenced block is; the argument (this builder is public `@ajh/prompts` surface, so "shipped copy" is an assumption about every future caller rather than a property of the signature) lives on `defuse` and at the page-list call site.
+
+**(b) An abstention may name a page from that list.** Naming a page is not inventing one: the sidebar proves the PAGE exists, never that the feature asked about lives behind it — so the clause says only that, carries nothing about what is inside the page, and still sends the user to the Help & Support page's search box. Every mention of the list in the task text is derived from the block that was actually rendered, so a prompt built without page data never invites the model to name one. The permitted-sources clause is stated in more than one place (the system rules in `buildHelpChatSystemPrompt` and the task text in `buildHelpChatPrompt`); a source added to one and not the others is a source the model is told to ignore.
+
+**(c) The glance may carry the user's autopilots**, under the same gate shape as its recent-application list: user-typed text, so `buildHelpDataGlance` renders the names only when the TOP-ranked hit is in that section (the section constants and `glanceAutopilots` in `use-help-chat.ts`), never on the counts-only profile, and capped where the hook hands them over rather than only where the prompt renders them. The counts travel unconditionally; the names do not.
+
+**(d) The grounding rules bridge paraphrases.** A live run on 2026-09-06 refused questions whose answering entry HAD been retrieved: retrieval measured correct, and the refusal came from the rule text, which invited matching the user's words against an entry's title. The rules now require a match by MEANING while keeping a different ACTION on the same object a gap; the wording is in `buildHelpChatSystemPrompt` and the task text of `buildHelpChatPrompt`, and the phrasings behind it are pinned as eval cases in `apps/desktop/src-tauri/tests/help_retrieval.rs`, which also pins the entry count and the per-language floors so the corpus cannot grow or shrink unnoticed.
+
 ## References
 
 - Corpus: `packages/translations/src/locales/{en,de}/translation.json` (support keys)
@@ -97,5 +109,6 @@ A drop list can also never turn hits into a miss by narrowing too far: when the 
 - Renderer generation: `apps/desktop/src/renderer/lib/generate/generation/generation.ts`
 - Renderer hook: `apps/desktop/src/renderer/features/support/use-help-chat.ts`
 - Component: `apps/desktop/src/renderer/features/support/components/HelpChat/index.tsx`
+- Sidebar page list (the APP PAGES source): `apps/desktop/src/renderer/components/layout/Sidebar/nav.ts`
 - Prompts: `packages/prompts/src/generate/help-chat/`
 - Prior decisions: [ADR-039](adr-039-hybrid-postings-search-lexical-dense-rerank.md) (retrieval module), [ADR-041](adr-041-searchable-help-page-over-compiled-in-entries.md) (searchable page), [ADR-010](adr-010-untrusted-input-fencing.md) (fencing), [ADR-033](adr-033-no-model-written-agent-memory.md) (no persistence)

@@ -1,6 +1,6 @@
 # Development Setup — AI Job Hunter
 
-Last updated: 2026-08-11
+Last updated: 2026-09-07
 
 This guide gets you from zero to a running dev environment.
 
@@ -203,8 +203,8 @@ function MyPage() {
 }
 ```
 
-3. Add navigation link in `components/layout/Sidebar.tsx`
-4. Add i18n key in `public/locales/en/translation.json`
+3. Add the page to `components/layout/Sidebar/nav.ts` (the sidebar's page list as data — the help chat reads it too) and give its `tourId` an icon in the `NAV_ICONS` map in `components/layout/Sidebar/index.tsx`; a missing icon is a type error
+4. Add the page's `nav.*` i18n key under `packages/translations/src/locales/` — every locale there, not just `en`
 
 ---
 
