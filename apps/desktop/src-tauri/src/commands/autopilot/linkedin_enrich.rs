@@ -6,9 +6,46 @@
 //! command, and drives the fetch loop; see that module's doc and
 //! `docs/architecture-rules.md` R2/R7 for why the split sits here.
 
+use std::collections::HashSet;
+use std::sync::LazyLock;
+
+use parking_lot::Mutex;
 use tauri::AppHandle;
 
 use crate::autopilot_helpers::linkedin_enrich::{classify_resolution, EnrichOutcome};
+use crate::scraping::linkedin::rate_limiter::RateLimiter;
+
+/// Process-global set of LinkedIn URLs currently being enriched by an
+/// in-flight [`enrich_linkedin_descriptions`] pass. Keyed on URL alone, not
+/// autopilot id: `select_linkedin_enrichment_targets` already dedupes by URL,
+/// and the same LinkedIn posting URL is the same fetch target regardless of
+/// which autopilot record surfaced it — a manual re-run, or a scheduler tick
+/// landing while an earlier pass is still in flight, must not fetch the SAME
+/// still-blank URL twice concurrently (wasted rate-limiter budget + duplicate
+/// writes on a board this codebase already treats as soft-block-sensitive).
+/// Mirrors `commands::autopilot::RUNS_IN_FLIGHT`'s shape: a per-process,
+/// non-persisted dedup set that resets on restart — no in-flight enrichment
+/// survives a restart anyway, so there is nothing to reconcile on launch.
+static ENRICHING: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// Claim the subset of `urls` not already being enriched by a concurrent
+/// pass, atomically inserting them into the shared in-flight set (one lock
+/// acquisition) so a racing caller sees the claim immediately. Pure/sync —
+/// unit-testable without an `AppHandle` or network.
+fn claim_unclaimed(urls: Vec<String>) -> Vec<String> {
+    let mut inflight = ENRICHING.lock();
+    urls.into_iter()
+        .filter(|url| inflight.insert(url.clone()))
+        .collect()
+}
+
+/// Release `url` from the in-flight set. Called once per URL right after its
+/// own fetch+write-back finishes — success OR failure, always — so a later
+/// pass can retry a posting still blank after a failed attempt instead of
+/// being stuck skipping it forever.
+fn release_claim(url: &str) {
+    ENRICHING.lock().remove(url);
+}
 
 /// Best-effort background pass: resolve each `url` via the shared single-URL
 /// resolver, paced through LinkedIn's own process-wide rate limiter, and write
@@ -27,61 +64,25 @@ use crate::autopilot_helpers::linkedin_enrich::{classify_resolution, EnrichOutco
 /// improvement layered on a scrape that already succeeded, and must never be
 /// mistaken for a reason to retry aggressively (LinkedIn-hostile traffic
 /// pattern) or to fail the run.
+///
+/// `urls` is first narrowed to [`claim_unclaimed`]'s result — a URL already
+/// being enriched by a still-running pass (same autopilot re-run, or a
+/// scheduler tick overlapping a manual one) is silently dropped here rather
+/// than fetched a second time; it stays selectable by
+/// `select_linkedin_enrichment_targets` on the NEXT run once this pass
+/// releases it.
 pub(super) async fn enrich_linkedin_descriptions(app: AppHandle, urls: Vec<String>) {
+    let urls = claim_unclaimed(urls);
     if urls.is_empty() {
         return;
     }
     let limiter = crate::scraping::linkedin::rate_limiter::linkedin_rate_limiter();
     let mut enriched = 0usize;
     for url in &urls {
-        limiter.wait_for_slot().await;
-        let result = crate::scraping::scrape_url::resolve(url).await;
-        // Count the attempt against the shared budget regardless of outcome —
-        // the request already reached LinkedIn's servers (or was denied one),
-        // so a string of failures must still be paced, not retried in a burst.
-        limiter.record_request().await;
-
-        if let Err(ref e) = result {
-            log::info!(
-                "[autopilot] LinkedIn description enrichment failed for one posting: {}",
-                crate::observability::sanitize_reason(&e.to_string())
-            );
+        if enrich_one(&app, limiter, url).await {
+            enriched += 1;
         }
-        let EnrichOutcome::Description(description) = classify_resolution(result) else {
-            continue;
-        };
-
-        // `scrape_update_description` does synchronous file I/O (both stores
-        // it patches persist to disk) — never call it inline on this async
-        // task; `spawn_blocking` matches every other sync/blocking call this
-        // crate makes from async code (e.g. `autopilot_best_matches`).
-        let app_for_write = app.clone();
-        let url_for_write = url.clone();
-        let joined = tauri::async_runtime::spawn_blocking(move || {
-            crate::commands::scrape::scrape_update_description(
-                app_for_write,
-                crate::commands::scrape::ScrapeUpdateDescriptionRequest {
-                    url: url_for_write,
-                    description,
-                },
-            )
-        })
-        .await;
-        match joined {
-            Ok(Ok(true)) => enriched += 1,
-            Ok(Ok(false)) => {
-                // The row moved/was dismissed between discovery and this fetch —
-                // not an error, just nothing left to enrich.
-            }
-            Ok(Err(e)) => log::info!(
-                "[autopilot] LinkedIn description write-back failed for one posting: {}",
-                crate::observability::sanitize_reason(&e.to_string())
-            ),
-            Err(e) => log::info!(
-                "[autopilot] LinkedIn description write-back task failed for one posting: {}",
-                crate::observability::sanitize_reason(&e.to_string())
-            ),
-        }
+        release_claim(url);
     }
     if enriched > 0 {
         log::info!(
@@ -90,3 +91,69 @@ pub(super) async fn enrich_linkedin_descriptions(app: AppHandle, urls: Vec<Strin
         );
     }
 }
+
+/// Fetch + (if usable) write back a single URL's description. Returns
+/// whether the write-back actually updated a stored row — split out of
+/// [`enrich_linkedin_descriptions`] so every exit path (skip, fetch error,
+/// write-back error, success) funnels through one `return`, guaranteeing the
+/// caller's [`release_claim`] always runs exactly once per URL.
+async fn enrich_one(app: &AppHandle, limiter: &'static RateLimiter, url: &str) -> bool {
+    limiter.wait_for_slot().await;
+    let result = crate::scraping::scrape_url::resolve(url).await;
+    // Count the attempt against the shared budget regardless of outcome —
+    // the request already reached LinkedIn's servers (or was denied one), so
+    // a string of failures must still be paced, not retried in a burst.
+    limiter.record_request().await;
+
+    if let Err(ref e) = result {
+        log::info!(
+            "[autopilot] LinkedIn description enrichment failed for one posting: {}",
+            crate::observability::sanitize_reason(&e.to_string())
+        );
+    }
+    let EnrichOutcome::Description(description) = classify_resolution(result) else {
+        return false;
+    };
+
+    // `scrape_update_description` does synchronous file I/O (both stores it
+    // patches persist to disk) — never call it inline on this async task;
+    // `spawn_blocking` matches every other sync/blocking call this crate
+    // makes from async code (e.g. `autopilot_best_matches`).
+    let app_for_write = app.clone();
+    let url_for_write = url.to_string();
+    let joined = tauri::async_runtime::spawn_blocking(move || {
+        crate::commands::scrape::scrape_update_description(
+            app_for_write,
+            crate::commands::scrape::ScrapeUpdateDescriptionRequest {
+                url: url_for_write,
+                description,
+            },
+        )
+    })
+    .await;
+    match joined {
+        Ok(Ok(true)) => true,
+        Ok(Ok(false)) => {
+            // The row moved/was dismissed between discovery and this fetch —
+            // not an error, just nothing left to enrich.
+            false
+        }
+        Ok(Err(e)) => {
+            log::info!(
+                "[autopilot] LinkedIn description write-back failed for one posting: {}",
+                crate::observability::sanitize_reason(&e.to_string())
+            );
+            false
+        }
+        Err(e) => {
+            log::info!(
+                "[autopilot] LinkedIn description write-back task failed for one posting: {}",
+                crate::observability::sanitize_reason(&e.to_string())
+            );
+            false
+        }
+    }
+}
+
+#[cfg(test)]
+mod test;
