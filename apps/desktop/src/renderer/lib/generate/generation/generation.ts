@@ -43,6 +43,7 @@ import {
   type GenerationMode,
   getBodyLinkMap,
   getLinkMap,
+  hasRenderablePages,
   type HelpChatAppSection,
   type HelpChatEntry,
   type HelpChatTurn,
@@ -1185,7 +1186,13 @@ export async function generateHelpAnswer(params: {
   // keeps an arbitrary string out of the interpolated instruction.
   const lang = language ? OUTPUT_LANGUAGES.find((l) => l.code === language) : undefined;
 
-  const system = buildHelpChatSystemPrompt(lang?.englishName);
+  // The system prompt's APP PAGES clauses (rules 1, 3 and 4) and the user
+  // prompt's APP PAGES block are the same decision, so it is made ONCE here,
+  // off the same input. Without it the rules named a list the user prompt had
+  // not rendered - an instruction to name a page out of nothing, which is the
+  // invention rule 4 exists to forbid.
+  const hasAppPages = hasRenderablePages(appPages);
+  const system = buildHelpChatSystemPrompt(lang?.englishName, { hasAppPages });
   const user = buildHelpChatPrompt({
     question,
     entries,

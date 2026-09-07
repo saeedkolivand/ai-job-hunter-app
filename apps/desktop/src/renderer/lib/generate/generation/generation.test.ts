@@ -2461,6 +2461,25 @@ describe('generateHelpAnswer', () => {
     return client;
   };
 
+  /** One help answer through the REAL prompt builders, varying only `appPages`.
+   *  `streamHandler` is reset per run so a second call in one test waits for its
+   *  own subscription instead of emitting into the previous client's. */
+  const runWithPages = async (appPages?: Parameters<typeof generateHelpAnswer>[0]['appPages']) => {
+    streamHandler = null;
+    const client = register();
+    const p = generateHelpAnswer({
+      question: 'where do i change my ai provider',
+      entries: [{ title: 'How do I export a PDF?', body: 'Open the document and click Export.' }],
+      appPages,
+      model: 'llama3',
+    });
+    await flushUntilStreaming();
+    emit('Try Settings.');
+    done();
+    await p;
+    return systemOf(client);
+  };
+
   it('resolves an allowlisted locale code to its English language name', async () => {
     const client = await run('es');
     expect(systemOf(client)).toContain('Answer entirely in Spanish.');
@@ -2528,6 +2547,25 @@ describe('generateHelpAnswer', () => {
     expect(user).toContain('- Workspace: Dashboard, Jobs');
     // Trusted copy: no fence, no untrusted-content note around it.
     expect(user).not.toContain('<app_pages>');
+  });
+
+  it("derives the system prompt's APP PAGES clauses from `appPages`", async () => {
+    // The two prompts come from two builders off ONE input, and the system
+    // prompt has no `appPages` of its own - so this derivation is the only thing
+    // stopping its rules 1, 3 and 4 from naming an APP PAGES list on a turn
+    // whose user prompt rendered none. Naming a page out of a list that was
+    // never sent is the invention rule 4 exists to forbid.
+    expect(await runWithPages([{ section: 'Workspace', pages: ['Dashboard'] }])).toContain(
+      'APP PAGES'
+    );
+
+    // The three ways the caller ends up with no rendered block.
+    expect(await runWithPages()).not.toContain('APP PAGES');
+    expect(await runWithPages([])).not.toContain('APP PAGES');
+    expect(await runWithPages([{ section: 'Empty', pages: [] }])).not.toContain('APP PAGES');
+
+    // The abstention still lands somewhere without the list.
+    expect(await runWithPages()).toMatch(/Help & Support page's search box/);
   });
 
   it('never calls the pipeline for a blank question', async () => {

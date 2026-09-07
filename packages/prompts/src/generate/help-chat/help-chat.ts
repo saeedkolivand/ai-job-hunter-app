@@ -212,6 +212,13 @@ export function buildHelpDataGlance(input: HelpDataGlanceInput): string {
  * as a permitted source: a rule 1 that forbids it and a rule 3 that requires it
  * are a contradiction the model resolves whichever way it likes.
  *
+ * Every one of those APP PAGES clauses is conditional on `hasAppPages`, which
+ * is {@link hasRenderablePages} over the SAME `appPages` the user prompt
+ * renders its block from - so the two halves name the list together or neither
+ * of them names it. The default is `false` on purpose: an omitted flag must not
+ * leave rule 3 sending the model to a list this prompt pair never sent, and
+ * rule 4 exempting it from the never-invent-a-page rule when it gets there.
+ *
  * Both counterweights are bounded on purpose. Rule 2 bridges a different VERB
  * for the same task, never a different ACTION on it: an entry on creating an
  * autopilot does not cover deleting one, and treating it as coverage is how the
@@ -219,18 +226,31 @@ export function buildHelpDataGlance(input: HelpDataGlanceInput): string {
  * app has this, that page is where to look") because the sidebar proves the PAGE
  * exists, never that the feature the user asked about lives behind it.
  */
-export function buildHelpChatSystemPrompt(language?: string): string {
+export function buildHelpChatSystemPrompt(
+  language?: string,
+  options?: { hasAppPages?: boolean }
+): string {
   const safe = safeLanguage(language);
   const languageRule = safe
     ? `Answer entirely in ${safe}.`
     : `Answer entirely in the language the user asked their question in.`;
+  // The same three clauses `buildHelpChatPrompt` derives for its TASK block,
+  // off the same predicate - see that call site.
+  const hasPages = options?.hasAppPages ?? false;
+  const pagesSource = hasPages ? ', the APP PAGES list' : '';
+  const pagesFallback = hasPages
+    ? ' then, only if one page in the APP PAGES list clearly fits, add one clause and no more - if the app has this, that page is where to look - without describing any control inside it, and'
+    : '';
+  const pagesException = hasPages
+    ? ' A page you name from the APP PAGES list is not invented; anything you say about what is inside it would be.'
+    : '';
   return `You are the in-app help assistant for AI Job Hunter, a local-first desktop job-hunting app. You help the user do things IN the app.
 
 ABSOLUTE RULES (never break these):
-1. Answer ONLY from the help entries provided below, the APP PAGES list and the user's data glance. They are your entire knowledge of this app.
+1. Answer ONLY from the help entries provided below${pagesSource} and the user's data glance. They are your entire knowledge of this app.
 2. Those entries were RETRIEVED for this question, best first. The user's wording will often differ from an entry's title - "create", "set up", "make" and "add" all name the same task - so answer from an entry that covers the question by MEANING, not by matching words. A different verb for the same thing is a match, not a gap. A different ACTION on the same object — starting, running, deleting or exporting what an entry only explains how to create — is still a gap.
-3. If they do not cover the question, say so plainly in one sentence; then, only if one page in the APP PAGES list clearly fits, add one clause and no more - if the app has this, that page is where to look - without describing any control inside it, and point the user at the Help & Support page's search box to look for a related topic. Do not pad the answer out with guesses.
-4. NEVER invent a button, menu item, setting, tab, page, keyboard shortcut or feature. If a step is not spelled out in the help entries, you do not know it. A page you name from the APP PAGES list is not invented; anything you say about what is inside it would be. Naming a control that does not exist is the single worst thing you can do here.
+3. If they do not cover the question, say so plainly in one sentence;${pagesFallback} point the user at the Help & Support page's search box to look for a related topic. Do not pad the answer out with guesses.
+4. NEVER invent a button, menu item, setting, tab, page, keyboard shortcut or feature. If a step is not spelled out in the help entries, you do not know it.${pagesException} Naming a control that does not exist is the single worst thing you can do here.
 5. Never claim anything about the user's own data beyond what the data glance states.
 6. ${languageRule}
 7. Be concise - a short direct answer, then the steps if there are any. Plain markdown only: short paragraphs, hyphen bullets, **bold** for a named control. No headings, no preamble, no closing pleasantries.`;
@@ -240,6 +260,20 @@ ABSOLUTE RULES (never break these):
 export interface HelpChatAppSection {
   section: string;
   pages: ReadonlyArray<string>;
+}
+
+/**
+ * Is there an APP PAGES block to render at all? The condition BOTH halves of
+ * this prompt pair derive their APP PAGES clauses from, so it is computed one
+ * way: {@link buildHelpChatPrompt} renders or drops the block from it, and
+ * {@link buildHelpChatSystemPrompt} names or drops the list in rules 1, 3 and 4
+ * from the same answer. Two copies of the test is exactly how the system prompt
+ * came to authorise naming a page from a list the user prompt had not sent.
+ *
+ * A section carrying no pages renders nothing, so it does not count.
+ */
+export function hasRenderablePages(appPages?: ReadonlyArray<HelpChatAppSection>): boolean {
+  return (appPages ?? []).some((section) => section.pages.length > 0);
 }
 
 export interface HelpChatPromptInput {
@@ -375,7 +409,8 @@ export function buildHelpChatPrompt(input: HelpChatPromptInput): string {
   // here would otherwise be handing it a section marker for free. It is a no-op
   // on the real labels - no `nav.*` string contains a `#` or a `<`.
   const sections = (appPages ?? []).filter((section) => section.pages.length > 0);
-  if (sections.length) {
+  const hasPages = hasRenderablePages(appPages);
+  if (hasPages) {
     blocks.push(
       `### APP PAGES (the sidebar) ###\n\n${sections
         // A group with no label (the sidebar's pinned footer) lists its pages bare.
@@ -415,15 +450,17 @@ export function buildHelpChatPrompt(input: HelpChatPromptInput): string {
     blocks.push(fenced('conversation_history', transcript, glanceChars, HISTORY_UNTRUSTED_NOTE));
   }
 
-  // Every APP PAGES mention in the TASK block and the question note is derived from the block that was
-  // actually rendered. With no sections there is no list in this prompt to pick
-  // a page out of, so naming one would be an instruction to invent it - the
-  // exact failure the never-invent-a-page rule exists to prevent.
-  const pagesSource = sections.length ? ', the APP PAGES list' : '';
-  const pagesFallback = sections.length
+  // Every APP PAGES mention in the TASK block and the question note is derived
+  // from the block that was actually rendered. With no sections there is no list
+  // in this prompt to pick a page out of, so naming one would be an instruction
+  // to invent it - the exact failure the never-invent-a-page rule exists to
+  // prevent. The system prompt derives its own three clauses from the same
+  // predicate; pass `hasRenderablePages(appPages)` to it as `hasAppPages`.
+  const pagesSource = hasPages ? ', the APP PAGES list' : '';
+  const pagesFallback = hasPages
     ? ' if one page in the APP PAGES list clearly fits, add one clause and no more - if the app has this, that page is where to look (nothing about what is inside it) - and then'
     : '';
-  const pagesException = sections.length
+  const pagesException = hasPages
     ? ' A page named from the APP PAGES list is the one exception.'
     : '';
 

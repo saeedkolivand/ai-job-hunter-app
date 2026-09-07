@@ -5,6 +5,7 @@ import {
   buildHelpChatPrompt,
   buildHelpChatSystemPrompt,
   buildHelpDataGlance,
+  hasRenderablePages,
   type HelpChatAppSection,
   type HelpChatEntry,
   type HelpChatTurn,
@@ -41,7 +42,7 @@ const APP_PAGES: HelpChatAppSection[] = [
 
 describe('buildHelpChatSystemPrompt', () => {
   it('states the grounding rules: corpus-only, admit a gap, invent no UI', () => {
-    const sys = buildHelpChatSystemPrompt();
+    const sys = buildHelpChatSystemPrompt(undefined, { hasAppPages: true });
 
     // Answers come from the supplied material and nothing else - and the page
     // list is part of that material, so the ONLY-clause has to name it. Left
@@ -81,7 +82,7 @@ describe('buildHelpChatSystemPrompt', () => {
   it('makes the abstention actionable: name a page, then the search box', () => {
     // An abstention is a dead end unless it points somewhere, and rule 4's
     // "never invent a page" has to be reconciled with rule 3 naming one.
-    const sys = buildHelpChatSystemPrompt();
+    const sys = buildHelpChatSystemPrompt(undefined, { hasAppPages: true });
 
     expect(sys).toMatch(/only if one page in the APP PAGES list clearly fits/);
     // Conditional on purpose: the sidebar proves the PAGE exists, never that the
@@ -91,6 +92,35 @@ describe('buildHelpChatSystemPrompt', () => {
     expect(sys).toMatch(/without describing any control inside it/);
     expect(sys).toMatch(/Help & Support page's search box/);
     expect(sys).toMatch(/A page you name from the APP PAGES list is not invented/);
+  });
+
+  it('names no APP PAGES list when the caller rendered no page block', () => {
+    // The clauses in rules 1, 3 and 4 used to be unconditional while the user
+    // prompt derived every one of ITS mentions from the block it actually
+    // rendered. On a turn with no sidebar the pair then disagreed: nothing to
+    // pick a page from, and three rules saying to pick one - which is the
+    // invention rule 4 exists to forbid, licensed by rule 4 itself.
+    //
+    // Omitted is the same as false on purpose: a caller that forgets the flag
+    // gets the safe prompt, not a phantom list.
+    for (const sys of [
+      buildHelpChatSystemPrompt(),
+      buildHelpChatSystemPrompt('German'),
+      buildHelpChatSystemPrompt(undefined, { hasAppPages: false }),
+      buildHelpChatSystemPrompt(undefined, {}),
+    ]) {
+      expect(sys).not.toContain('APP PAGES');
+    }
+
+    // What must SURVIVE the drop: the abstention still lands somewhere the user
+    // can act on, and the never-invent rule keeps its teeth.
+    const sys = buildHelpChatSystemPrompt();
+    expect(sys).toMatch(/do not cover the question/i);
+    expect(sys).toMatch(/Help & Support page's search box/);
+    expect(sys).toMatch(/NEVER invent a button/);
+    expect(sys).toContain(
+      "Answer ONLY from the help entries provided below and the user's data glance."
+    );
   });
 
   it('pins the answer language when one is supplied', () => {
@@ -307,14 +337,26 @@ describe('buildHelpChatPrompt', () => {
     // Not just the block: the TASK line used to tell the model to name a page
     // "from the APP PAGES list" whether or not a list had been rendered, and on
     // a prompt carrying no list that is an instruction to invent one.
+    //
+    // BOTH prompts are checked here, off the ONE predicate they share: the
+    // system prompt named the list in rules 1, 3 and 4 unconditionally, so an
+    // empty `appPages` still authorised the model to pick a page out of a list
+    // this pair never sent.
     const base = { question: 'q', entries: ENTRIES, target: LARGE } as const;
+    const pair = (appPages?: HelpChatAppSection[]) => [
+      buildHelpChatPrompt({ ...base, appPages }),
+      buildHelpChatSystemPrompt(undefined, { hasAppPages: hasRenderablePages(appPages) }),
+    ];
 
-    expect(buildHelpChatPrompt(base)).not.toContain('APP PAGES');
-    expect(buildHelpChatPrompt({ ...base, appPages: [] })).not.toContain('APP PAGES');
+    for (const prompt of pair()) expect(prompt).not.toContain('APP PAGES');
+    for (const prompt of pair([])) expect(prompt).not.toContain('APP PAGES');
     // A section with no pages would render a dangling `- Section: ` line.
-    expect(
-      buildHelpChatPrompt({ ...base, appPages: [{ section: 'Empty', pages: [] }] })
-    ).not.toContain('APP PAGES');
+    for (const prompt of pair([{ section: 'Empty', pages: [] }])) {
+      expect(prompt).not.toContain('APP PAGES');
+    }
+    // Anchored against the opposite case: a predicate stuck at `false` would
+    // pass every assertion above, and both prompts would silently lose the list.
+    for (const prompt of pair(APP_PAGES)) expect(prompt).toContain('APP PAGES');
   });
 
   it('defuses a forged marker in a page label too, without fencing the block', () => {
