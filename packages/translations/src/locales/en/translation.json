@@ -2786,6 +2786,14 @@
         "resetEverything": {
           "q": "I want to reset everything and start fresh",
           "a": "To clear only part of it, open Settings → Privacy → \"Your data\": \"Clear Interaction History\" → \"Clear\" deletes every applied, viewed and bookmarked record, and \"Sign Out All Accounts\" → \"Sign Out\" wipes all board browser sessions. For a full factory reset use Settings → Privacy → \"Danger Zone\" → \"Reset App\" → \"Reset\", then confirm with \"Reset Everything\": it signs you out of all accounts, deletes cached data and job history, resets preferences, disconnects any paired browser and returns you to the welcome screen."
+        },
+        "changeLanguage": {
+          "q": "How do I change the app's display language?",
+          "a": "Open Settings → General and find the \"Language\" section. Pick \"English\" or \"Deutsch\" — the interface switches straight away, no restart, and the choice is remembered the next time you open the app. It changes the app's own interface only. The language your documents come out in is a separate setting: \"Output language\" on the last step of the Resume Builder, \"Review & build\". Changing one never changes the other, so you can run the app in English and still build a German résumé."
+        },
+        "checkForUpdates": {
+          "q": "How do I check for updates, and which version am I on?",
+          "a": "Open Settings → General and scroll to \"Updates\". \"Current version\" shows what is installed. Press \"Check for updates\" — it reads \"Checking…\" while it runs, then either \"You are up to date\" or a download button naming the new version. Once that download finishes, \"Restart & install\" applies it. \"View changelog\" expands what changed since your version and \"Hide changelog\" folds it away again. On the Microsoft Store build the card reads \"Updates are delivered through the Microsoft Store.\" instead, and there is nothing to press."
         }
       },
       "connectivityQuestions": {
@@ -2811,6 +2819,10 @@
         "replayWizard": {
           "q": "How do I see the intro wizard and the tour again?",
           "a": "Go to Settings → General → \"Intro Wizard\" and press \"Replay wizard\". The first-run wizard reopens full-screen at \"Welcome to AI Job Hunter\" and walks through every step again — résumé upload, AI setup, the browser check, aggregated search keys, the browser extension, indexing, crash reports and appearance — ending at \"Make it your own\". Steps you have already completed can simply be confirmed again. After the last step the spotlight tour runs once more over the sidebar items; \"Skip tour\" ends it early and \"Start job hunting\" closes it."
+        },
+        "githubProjects": {
+          "q": "Can I pull my GitHub projects into a résumé I am building?",
+          "a": "Yes. In the Resume Builder open the \"More sections\" step — the sixth of seven — and click \"Import from GitHub\" under \"Projects\". The \"Import GitHub Projects\" dialog wants a \"GitHub username or profile URL\", already filled in from your Contact Profile when you saved a GitHub link there; press \"Fetch repos\". Every repo it finds starts ticked, so untick the ones you do not want, or press \"Deselect all\" and choose individually. The button at the bottom names how many are selected — press it and AI writes one bullet per repo and appends them to \"Projects\". \"Cancel\" adds nothing."
         }
       },
       "findingJobs": "Finding Jobs",
@@ -2868,6 +2880,14 @@
         "multipleResumes": {
           "q": "Can I keep more than one résumé, and which one gets used?",
           "a": "Yes. Settings → Resume → \"Resume Management\" keeps every file you upload, and each card carries \"Set as default\" plus \"Default\" and \"Indexed\" badges. The default is the one the Jobs page scores a posting against and the one the browser extension's \"Check fit\" uses, so switch it whenever you change track. Documents the app generates are kept separately, on the Documents page: the \"Résumés\" and \"Cover Letters\" tabs, while \"Activity\" is the log of jobs you viewed, bookmarked, applied to or dismissed."
+        },
+        "importFromLinkedin": {
+          "q": "Can I import my résumé straight from my LinkedIn profile?",
+          "a": "Yes. Open Settings → Resume → \"Resume Management\" and click \"Import from LinkedIn\" below the upload area. Paste your public profile URL — a linkedin.com/in/… link — into the field that appears and press \"Import\"; any other link is refused with \"Only LinkedIn profile URLs are supported right now\". The fetch is anonymous, so no login is needed. \"Profile imported\" confirms it and the résumé joins the list on that same panel, titled with the name on the profile, or \"LinkedIn Profile\" when none was found. Press \"Set as default\" on its card to have the app score and tailor with it."
+        },
+        "contactHeader": {
+          "q": "How do I fix the name, email and links on my résumé header?",
+          "a": "Open Settings → Contact Profile. It holds \"Full name\", \"Email\", \"Phone\", \"Location\", \"LinkedIn\", \"GitHub\", \"Website\" and \"Other links\", plus an optional \"Photo\" that the photo templates use and that never leaves your device. Every résumé and cover letter the app generates builds its header from these fields, not from the file you imported, so one correction here fixes every future export at once. Importing a résumé fills the fields in as a starting point and asks about anything that disagrees with what you had saved. Changes save as you type."
         }
       },
       "aiGenerate": "AI Generate",
@@ -2922,6 +2942,10 @@
         "referral": {
           "q": "How do I ask someone for a referral?",
           "a": "Open the application, go to the \"Documents\" tab and press \"Ask for a referral\". Fill in \"Person's name\" plus the optional \"Their role (optional)\", \"LinkedIn URL (optional)\" and \"Notes (optional)\", and pick how you will reach out under \"How will you reach out?\": \"Email\", \"LinkedIn message\" or \"Connection note\". \"Draft message\" writes it for you and \"Improve with AI\" reworks it with \"Warmer\", \"Shorter\", \"More specific\" or \"Fix grammar\". \"Save\" keeps the contact, with a status of \"Draft\", \"Sent\" or \"Replied\"."
+        },
+        "applicantDetails": {
+          "q": "Where do I set my salary expectation so cover letters and answers use it?",
+          "a": "Open Settings → Contact Profile and find \"Applicant details\". Fill in \"Salary expectation\", \"Earliest start date\", \"Notice period\" and \"Remote / hybrid preference\" — all optional, and changes save as you type. Cover letters state them wherever the market expects them (Germany asks for a salary figure and a start date), and autopilot uses them when an application form asks. Left blank, the app answers non-committally and never invents a number or date. This is separate from \"Compensation\" on an application's \"Overview\" tab, which is only a note about that one job."
         }
       },
       "autopilot": "Autopilot",

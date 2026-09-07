@@ -2790,6 +2790,14 @@
         "resetEverything": {
           "q": "Ich möchte alles zurücksetzen und neu beginnen",
           "a": "Um nur einen Teil zu löschen, öffnen Sie Einstellungen → Datenschutz → \"Ihre Daten\": \"Interaktionsverlauf löschen\" → \"Löschen\" entfernt jeden beworbenen, angesehenen und gespeicherten Eintrag, und \"Alle Konten abmelden\" → \"Abmelden\" löscht alle Browser-Sitzungen der Boards. Für ein vollständiges Zurücksetzen auf Werkseinstellungen verwenden Sie Einstellungen → Datenschutz → \"Gefahrenzone\" → \"App zurücksetzen\" → \"Zurücksetzen\" und bestätigen Sie mit \"Alles zurücksetzen\": Damit werden Sie von allen Konten abgemeldet, zwischengespeicherte Daten und der Job-Verlauf werden gelöscht, alle Einstellungen zurückgesetzt, ein gekoppelter Browser getrennt, und Sie werden zum Willkommensbildschirm weitergeleitet."
+        },
+        "changeLanguage": {
+          "q": "Wie ändere ich die Anzeigesprache der App?",
+          "a": "Öffnen Sie Einstellungen → Allgemein und suchen Sie den Bereich \"Sprache\". Wählen Sie \"English\" oder \"Deutsch\" — die Oberfläche wechselt sofort, ohne Neustart, und die Wahl bleibt beim nächsten Start erhalten. Das betrifft nur die Oberfläche der App. Die Sprache Ihrer Dokumente ist eine eigene Einstellung: \"Ausgabesprache\" im letzten Schritt des Lebenslauf-Builders, \"Prüfen & erstellen\". Die eine ändert die andere nie, Sie können die App also auf Englisch betreiben und trotzdem einen deutschen Lebenslauf erstellen."
+        },
+        "checkForUpdates": {
+          "q": "Wie prüfe ich auf Updates, und welche Version habe ich installiert?",
+          "a": "Öffnen Sie Einstellungen → Allgemein und scrollen Sie zu \"Updates\". \"Aktuelle Version\" zeigt die installierte Version. Klicken Sie auf \"Nach Updates suchen\" — während der Prüfung steht dort \"Prüfe…\", danach entweder \"Sie sind auf dem neuesten Stand\" oder eine Schaltfläche zum Herunterladen der neuen Version. Ist der Download fertig, wendet \"Neu starten & installieren\" das Update an. \"Änderungsprotokoll anzeigen\" zeigt, was sich seit Ihrer Version geändert hat, \"Änderungsprotokoll ausblenden\" klappt es wieder zu. Bei der Microsoft-Store-Version steht dort stattdessen \"Updates werden über den Microsoft Store bereitgestellt.\" und es gibt nichts zu klicken."
         }
       },
       "connectivityQuestions": {
@@ -2815,6 +2823,10 @@
         "replayWizard": {
           "q": "Wie sehe ich den Einführungsassistenten und die Tour erneut?",
           "a": "Gehen Sie zu Einstellungen → Allgemein → \"Einführungsassistent\" und klicken Sie auf \"Assistent erneut abspielen\". Der Assistent des ersten Starts öffnet sich wieder im Vollbild bei \"Willkommen bei AI Job Hunter\" und durchläuft alle Schritte erneut — Lebenslauf-Upload, KI-Einrichtung, Browser-Prüfung, Schlüssel für die aggregierte Suche, Browser-Erweiterung, Indexierung, Absturzberichte und Erscheinungsbild — und endet bei \"Machen Sie es zu Ihrem\". Bereits erledigte Schritte bestätigen Sie einfach erneut. Nach dem letzten Schritt läuft die Spotlight-Tour noch einmal über die Einträge der Seitenleiste; \"Tour überspringen\" beendet sie vorzeitig und \"Job-Jagd starten\" schließt sie."
+        },
+        "githubProjects": {
+          "q": "Kann ich meine GitHub-Projekte in einen Lebenslauf einfügen, den ich gerade erstelle?",
+          "a": "Ja. Öffnen Sie im Lebenslauf-Builder den Schritt \"Weitere Abschnitte\" — den sechsten von sieben — und klicken Sie unter \"Projekte\" auf \"Von GitHub importieren\". Der Dialog \"GitHub-Projekte importieren\" erwartet einen \"GitHub-Benutzername oder Profil-URL\"; er ist aus Ihrem Kontaktprofil vorbelegt, wenn dort ein GitHub-Link steht. Klicken Sie auf \"Repos abrufen\". Alle gefundenen Repos sind zunächst ausgewählt — entfernen Sie die Haken bei den unerwünschten oder klicken Sie auf \"Alle abwählen\" und wählen einzeln aus. Die Schaltfläche unten nennt die Anzahl der Ausgewählten; ein Klick darauf lässt die KI je einen Bullet schreiben und hängt sie an \"Projekte\" an. \"Abbrechen\" fügt nichts hinzu."
         }
       },
       "findingJobs": "Jobs finden",
@@ -2872,6 +2884,14 @@
         "multipleResumes": {
           "q": "Kann ich mehrere Lebensläufe behalten, und welcher wird verwendet?",
           "a": "Ja. Einstellungen → Lebenslauf → \"Lebenslaufverwaltung\" behält jede Datei, die Sie hochladen, und jede Karte trägt \"Als Standard setzen\" sowie die Badges \"Standard\" und \"Indiziert\". Der Standard ist derjenige, gegen den die Seite Jobs eine Stellenanzeige bewertet, und derjenige, den \"Check fit\" in der Browser-Erweiterung verwendet — wechseln Sie ihn also, wenn Sie die Richtung ändern. Von der App erzeugte Dokumente werden separat auf der Seite Dokumente aufbewahrt: in den Tabs \"Lebensläufe\" und \"Anschreiben\", während \"Aktivität\" das Protokoll der Jobs ist, die Sie angesehen, gespeichert oder verworfen haben oder auf die Sie sich beworben haben."
+        },
+        "importFromLinkedin": {
+          "q": "Kann ich meinen Lebenslauf direkt aus meinem LinkedIn-Profil importieren?",
+          "a": "Ja. Öffnen Sie Einstellungen → Lebenslauf → \"Lebenslaufverwaltung\" und klicken Sie unter dem Ablagebereich auf \"Von LinkedIn importieren\". Fügen Sie Ihre öffentliche Profil-URL — einen linkedin.com/in/…-Link — in das Feld ein und klicken Sie auf \"Importieren\"; jeder andere Link wird mit \"Derzeit werden nur LinkedIn-Profil-URLs unterstützt\" abgelehnt. Der Abruf erfolgt anonym, eine Anmeldung ist nicht nötig. \"Profil importiert\" bestätigt, und der Lebenslauf erscheint in derselben Liste — betitelt mit dem Namen aus dem Profil oder als \"LinkedIn-Profil\", wenn keiner gefunden wurde. Klicken Sie dort auf \"Als Standard setzen\", damit die App damit bewertet und zuschneidet."
+        },
+        "contactHeader": {
+          "q": "Wie korrigiere ich Name, E-Mail und Links in meiner Lebenslauf-Kopfzeile?",
+          "a": "Öffnen Sie Einstellungen → Kontaktprofil. Dort stehen \"Vollständiger Name\", \"E-Mail\", \"Telefon\", \"Standort\", \"LinkedIn\", \"GitHub\", \"Website\" und \"Weitere Links\", dazu optional ein \"Foto\", das die Foto-Vorlagen verwenden und das Ihr Gerät nie verlässt. Jeder Lebenslauf und jedes Anschreiben, das die App erzeugt, baut die Kopfzeile aus diesen Feldern auf, nicht aus der importierten Datei — eine Korrektur hier wirkt also auf jeden künftigen Export. Beim Import eines Lebenslaufs werden die Felder als Ausgangspunkt vorbelegt, und Abweichungen zu bereits gespeicherten Werten werden nachgefragt. Änderungen werden beim Tippen gespeichert."
         }
       },
       "aiGenerate": "KI-Generierung",
@@ -2926,6 +2946,10 @@
         "referral": {
           "q": "Wie bitte ich jemanden um eine Empfehlung?",
           "a": "Öffnen Sie die Bewerbung, gehen Sie zum Tab \"Dokumente\" und klicken Sie auf \"Um eine Empfehlung bitten\". Füllen Sie \"Name der Person\" aus, dazu optional \"Ihre Rolle (optional)\", \"LinkedIn-URL (optional)\" und \"Notizen (optional)\", und wählen Sie unter \"Wie nehmen Sie Kontakt auf?\", wie Sie sich melden: \"E-Mail\", \"LinkedIn-Nachricht\" oder \"Kontaktanfrage-Notiz\". \"Nachricht entwerfen\" schreibt sie für Sie, und \"Mit KI verbessern\" überarbeitet sie mit \"Wärmer\", \"Kürzer\", \"Spezifischer\" oder \"Grammatik korrigieren\". \"Speichern\" behält den Kontakt, mit dem Status \"Entwurf\", \"Gesendet\" oder \"Beantwortet\"."
+        },
+        "applicantDetails": {
+          "q": "Wo trage ich meine Gehaltsvorstellung ein, damit Anschreiben und Antworten sie nutzen?",
+          "a": "Öffnen Sie Einstellungen → Kontaktprofil und suchen Sie \"Bewerberangaben\". Tragen Sie \"Gehaltsvorstellung\", \"Frühester Eintrittstermin\", \"Kündigungsfrist\" und \"Remote- / Hybrid-Präferenz\" ein — alles optional, Änderungen werden beim Tippen gespeichert. Anschreiben nennen sie überall dort, wo der Markt sie erwartet (Deutschland fragt nach Gehaltsvorstellung und Eintrittstermin), und der Autopilot nutzt sie, wenn ein Bewerbungsformular danach fragt. Bleiben die Felder leer, antwortet die App unverbindlich und erfindet nie eine Zahl oder ein Datum. Das ist unabhängig von \"Vergütung\" im Tab \"Übersicht\" einer Bewerbung, das nur eine Notiz zu diesem einen Job ist."
         }
       },
       "autopilot": "Autopilot",
