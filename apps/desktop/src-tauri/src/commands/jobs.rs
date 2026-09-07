@@ -110,6 +110,41 @@ pub fn job_progress(app: &AppHandle, id: &str, p: f64) {
 }
 
 /// Mark a job completed and emit `job.completed` (the result rides as `data`).
+///
+/// **`result` is EXEMPT from the agent layer's prompt-injection fencing.**
+/// `extension_bridge::agent_call`'s response walk detects a `JobRecord` by
+/// shape (its `JOB_RECORD_ANCHOR_FIELDS`) and skips this value's whole
+/// subtree for the name-keyed walk, so a generated draft read back through
+/// `jobs_get`/`jobs_list` reaches an MCP/CLI caller as the app's own answer
+/// instead of wrapped in `<job_posting>` markup.
+///
+/// **What the call sites actually complete with, precisely** (the set is
+/// pinned by `job_complete_producers_match_a_hand_written_list` in
+/// `tests/architecture.rs`, so a ninth producer has to edit that list and
+/// read this warning): mostly counts, ids and status. Two are not.
+///
+/// - `scrape_boards` completes with `scraping::engine::BoardScrapeSummary`
+///   rows whose `error`/`skipped`/`truncated` strings are written by the
+///   REMOTE board (as is the `health.lastError` the board-health fold copies
+///   forward from `error`), and whose keys are on no
+///   `extension_bridge::agent_call::FENCE_FIELD_NAMES` row. They are fenced
+///   on the agent READ path by that module's `SCRAPE_SUMMARY_ANCHOR_FIELDS`/
+///   `BOARD_HEALTH_ANCHOR_FIELDS` shape rules, which reach inside this
+///   exemption — NOT here, because the renderer's per-board chip strip
+///   (`BoardSummaryChips`) displays the same strings and matches `skipped`
+///   against a controlled vocabulary, so a fence baked into the stored
+///   result would show up as markup on screen.
+/// - The two streaming completions (`ai_provider::stream::finish`,
+///   `ai_provider::cli_agent::emit_done`) carry EVERY AI generation this app
+///   makes, research briefs included, which ADR-038 §5 already leaves
+///   unfenced — ACCEPTED, not overlooked.
+///
+/// So: a job kind that puts new THIRD-PARTY text in `result` — a scraped
+/// posting, an uploaded document's text, an ATS question label — must fence
+/// it ITSELF (`crate::prompt_fence::fenced("job_posting", …, JOB_CAP)`),
+/// because nothing downstream will. The one exception is the case above: if
+/// the RENDERER also reads the value, fence it on the agent read path with a
+/// shape rule instead, or the markup lands in the UI.
 pub fn job_complete(app: &AppHandle, id: &str, result: Value) {
     app.state::<Mutex<JobTracker>>()
         .lock()

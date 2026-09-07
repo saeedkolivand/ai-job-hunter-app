@@ -8,14 +8,17 @@
 //! cursor is read.
 //!
 //! **The clamp and the byte budget are the shared primitives; the cursor
-//! parse is shared today but is not a guarantee.** Each surface owns its own
-//! cursor VOCABULARY — its error type, its refusal wording — and stays free to
-//! layer a richer, issuer-scoped cursor on top of (or instead of)
-//! [`parse_offset_cursor`] without disturbing the other. What must never be
-//! re-decided per copy is the RULE this parse encodes: an unreadable cursor
-//! refuses, it never silently resets to page 1 — the `{"cursor": 100}`
-//! collapse-to-page-1 defect ([`parse_offset_cursor`]'s own doc) was fixed
-//! once, in one of two hand-typed copies, and the other kept it alive.
+//! parse is NOT.** Each surface owns its own cursor VOCABULARY — its error
+//! type, its refusal wording, its grammar — and that freedom was exercised
+//! immediately: `found-jobs` replaced its plain offset with an issuer-scoped
+//! `<autopilotId>:<offset>` cursor (issue #1130) and its own two refusal
+//! texts, so [`parse_offset_cursor`] now serves the generic dispatch tier
+//! alone. What must never be re-decided per surface is the RULE this parse
+//! encodes, and which `found-jobs` re-implements rather than drops: an
+//! unreadable cursor refuses, it never silently resets to page 1 — the
+//! `{"cursor": 100}` collapse-to-page-1 defect ([`parse_offset_cursor`]'s own
+//! doc) was fixed once, in one of two hand-typed copies, and the other kept
+//! it alive.
 //!
 //! Nothing here knows about any resource, envelope, or error type: the
 //! per-surface constants (default/max limit, byte budget) and the mapping
@@ -29,9 +32,10 @@
 use serde_json::Value;
 
 /// A caller-supplied `cursor` that isn't a plain non-negative integer. A
-/// FIXED string that never echoes the offending value — both callers render
-/// it into a reply an LLM reads, and neither has any use for the bad value
-/// being repeated back at it.
+/// FIXED string that never echoes the offending value — it is rendered into a
+/// reply an LLM reads, which has no use for the bad value being repeated back
+/// at it. The same discipline `found-jobs` keeps for its own two refusal
+/// texts, which are separate constants precisely because its grammar is.
 pub(super) const INVALID_CURSOR_MESSAGE: &str = "cursor must be a non-negative integer offset";
 
 /// Parse `payload`'s `cursor` — absent (or explicit `null`) means "start at
@@ -48,11 +52,10 @@ pub(super) const INVALID_CURSOR_MESSAGE: &str = "cursor must be a non-negative i
 /// Returns `None` for a rejected cursor rather than a `Result` carrying a
 /// message: a `Result<_, &'static str>` is a stringly error that this crate's
 /// own R6 check (`Result<_, String>` outside `error.rs`, a TEXTUAL arch test)
-/// cannot see, and it forces one surface's wording onto every caller. Each
-/// caller attaches its own instead — `found-jobs` maps the rejection onto
-/// `AppError::Validation(INVALID_CURSOR_MESSAGE)`, the generic dispatch tier
-/// onto its own `Refusal::InvalidCursor` (whose `detail` is that same
-/// constant), so the wire wording is unchanged either way. `Some(0)` for an
+/// cannot see, and it forces one surface's wording onto every caller. The
+/// caller attaches its own instead — the generic dispatch tier maps the
+/// rejection onto `Refusal::InvalidCursor`, whose `detail` is
+/// [`INVALID_CURSOR_MESSAGE`]. `Some(0)` for an
 /// absent cursor is a real value and not a fallback for a bad one; the two
 /// cases stay distinguishable, which is the whole contract above.
 pub(super) fn parse_offset_cursor(payload: &Value) -> Option<usize> {

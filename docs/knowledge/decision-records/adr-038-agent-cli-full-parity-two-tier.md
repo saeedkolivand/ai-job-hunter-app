@@ -117,8 +117,11 @@ The page size is an audited constant beside the generic tier in `agent_call.rs`,
 on the constant itself; the size ceiling is the bridge's own `MAX_FRAME_BYTES`, reused rather than
 copied. That placement is the control: each value is reviewable in one place, and a row that starts
 paging is a change to a line rather than to scattered call sites. The offset/limit/byte-budget
-primitives themselves are one module (`extension_bridge/paging.rs`), shared with the curated
-`found-jobs` resource so a cursor is parsed the same way on both surfaces.
+primitives themselves are one module (`extension_bridge/paging.rs`). The limit clamp and the byte
+budget are shared with the curated `found-jobs` resource; the cursor GRAMMAR is not, and deliberately
+so — that module owns the rule (an unreadable cursor refuses, it never silently resets to page 1),
+while each surface keeps its own vocabulary, which is what let `found-jobs` scope its cursor to the
+autopilot that issued it without this tier changing at all.
 
 **Rejected — teach the shared commands optional `limit`/`cursor` and an encoding flag.** That would keep
 the agent layer a pure pass-through, but those commands are the ones the renderer calls through

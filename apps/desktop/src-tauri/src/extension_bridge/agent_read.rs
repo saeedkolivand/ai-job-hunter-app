@@ -54,7 +54,14 @@ use crate::error::{AppError, AppResult};
 // #1115) is large enough (allowlist struct + pagination + its own tests)
 // that inlining it here pushed this module over the hard cap; see that
 // file's own doc for why it can still reach every private item here.
-mod found_jobs;
+//
+// `pub(super)` (issue #1129) purely so `agent_cli::mcp` can DERIVE the
+// `found-jobs` tool schema's advertised limits from
+// `found_jobs::{DEFAULT,MAX}_FOUND_JOBS_LIMIT` (both
+// `pub(in crate::extension_bridge)`) instead of retyping them — a
+// hand-typed copy is what drifted to 50/100 against the enforced 25/50.
+// Everything else in there stays private to this module.
+pub(super) mod found_jobs;
 
 // ── Resource table (schema's single source of truth) ───────────────────────
 
@@ -71,7 +78,13 @@ const RES_FOUND_JOBS: &str = "found-jobs";
 /// The `schema_lists_every_known_resource`/`dispatch_rejects_an_unknown_resource`
 /// tests below pin the one drift this convention alone can't prevent — a new
 /// arm added with its own fresh literal instead of reusing a constant here.
-const RESOURCES: &[(&str, &str)] = &[
+///
+/// `pub(super)` for the bridge's own tests only (MEDIUM fix, review round 4):
+/// `agent_cli`'s `both_automations_descriptions_name_both_totals` reads the
+/// `automations` row here against its own `VERB_TABLE` row, because the
+/// `totalFound`/`foundJobsTotal` distinction is written on BOTH surfaces and
+/// nothing tied them together.
+pub(super) const RESOURCES: &[(&str, &str)] = &[
     (
         RES_BEST_MATCHES,
         "Strongest jobs across every autopilot. Optional `limit` (default 20, max 50).",
@@ -81,13 +94,18 @@ const RESOURCES: &[(&str, &str)] = &[
         RES_PROFILE,
         "Contact-profile fields for autofill — same consent gate as `profile.get`.",
     ),
-    (RES_AUTOMATIONS, "Every autopilot and its status."),
+    (
+        RES_AUTOMATIONS,
+        "Every autopilot and its status. `totalFound` is the LAST run's kept count; \
+         `foundJobsTotal` is the whole stored list `found-jobs` pages through.",
+    ),
     (RES_SCHEMA, "This resource list."),
     (
         RES_FOUND_JOBS,
         "Paginated traversal of ONE autopilot's complete found-jobs list (issue #1115). \
          `autopilotId` required, optional `limit`/`cursor` — repeat with the returned \
-         `nextCursor` until it is `null`.",
+         `nextCursor` until it is `null`. A `nextCursor` is opaque and only valid for \
+         the autopilot that returned it.",
     ),
 ];
 
@@ -294,13 +312,22 @@ const JOB_NOT_FOUND_MESSAGE: &str = "no job found for this url";
 /// normalized url matches, then project it. Mirrors
 /// `applied_check::resolve_applied_check`'s pure/impure split — directly
 /// unit-testable with hand-built `Autopilot` records, no `AppHandle`.
+///
+/// Both sides of the compare run through
+/// [`decode_unreserved`](crate::applications::decode_unreserved) first (issue
+/// #1128): a STORED url can carry the percent-encoded spelling just as easily
+/// as a caller-supplied one, so decoding only the caller's half would fix the
+/// reported direction and leave the mirror image broken. `normalized_url` is
+/// pre-decoded by [`job_resource`]; this is the stored half.
 fn resolve_job(records: &[crate::autopilot::Autopilot], normalized_url: &str) -> AppResult<Value> {
     let found = records
         .iter()
         .find_map(|ap| {
-            ap.found_jobs
-                .iter()
-                .find(|j| crate::applications::normalize_job_url(&j.url) == normalized_url)
+            ap.found_jobs.iter().find(|j| {
+                crate::applications::normalize_job_url(&crate::applications::decode_unreserved(
+                    &j.url,
+                )) == normalized_url
+            })
         })
         .ok_or_else(|| AppError::Validation(JOB_NOT_FOUND_MESSAGE.to_string()))?;
     let mut value = project_value::<_, AgentJob>(found)
@@ -344,7 +371,18 @@ struct AgentAutomation {
     name: String,
     status: crate::autopilot::AutopilotStatus,
     target: AgentAutomationTarget,
+    /// Jobs the MOST RECENT run kept after filtering — `AutopilotStore::record_run`
+    /// OVERWRITES `Autopilot::total_found` on every run, so this is a per-run
+    /// figure, never a cumulative one, and it can be far smaller than the stored
+    /// list (issue #1132). Any surface describing this resource points HERE for
+    /// the meaning of the two counts rather than restating it.
     total_found: u32,
+    /// The traversable count: how many jobs this autopilot has stored across
+    /// every run, i.e. exactly how many `found-jobs` will page through
+    /// (`found_jobs::resolve_found_jobs`' own `total` — the same
+    /// `found_jobs.len()` expression, so the two surfaces agree by construction).
+    /// This is the number a caller asking "how many jobs did this find?" wants.
+    found_jobs_total: u32,
     total_applied: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     run_status: Option<crate::autopilot::RunStatus>,
@@ -368,15 +406,15 @@ struct AgentAutomationTarget {
 /// premise is false" — security review). `project_value` round-trips the
 /// WHOLE source through JSON first; for `Autopilot` that means serializing
 /// `found_jobs` (every entry's full description) and
-/// `resume_text`/`cover_letter` just to discard the result and keep ten
-/// small fields. **Measured** (debug build, 50 autopilots × 1000 found jobs
+/// `resume_text`/`cover_letter` just to discard the result and keep a
+/// handful of small fields. **Measured** (debug build, 50 autopilots × 1000 found jobs
 /// each — an extreme but reachable scale, since `found_jobs` is never
 /// truncated, see `commands/autopilot.rs`'s own doc): the round trip cost
 /// ~320ms against ~1ms for this direct construction; the store's own
 /// `list()` clone (shared with `job`, not owned by this module) adds another
 /// ~50ms at that scale. Both are trivial against the 1-req/sec refill this
 /// bucket already enforces, so no third bucket is warranted — but the round
-/// trip was pure waste for a resource that already knows exactly which ten
+/// trip was pure waste for a resource that already knows exactly which
 /// fields it wants, so it's removed. `job`'s own `project_value` call stays
 /// unchanged: it projects ONE already-found `FoundJob`, never the whole
 /// store, so it was never the expensive half.
@@ -391,6 +429,7 @@ fn project_automation(ap: &crate::autopilot::Autopilot) -> AgentAutomation {
             location: ap.target.location.clone(),
         },
         total_found: ap.total_found,
+        found_jobs_total: ap.found_jobs.len() as u32,
         total_applied: ap.total_applied,
         run_status: ap.run_status.clone(),
         last_run_at: ap.last_run_at,
@@ -469,8 +508,13 @@ struct AgentBestMatch {
 /// Server-side default/cap for `best-matches`' `limit` — applied BEFORE
 /// serialization (never trust an unbounded client-supplied number), well
 /// under `MAX_FRAME_BYTES` even at the max.
-const DEFAULT_BEST_MATCHES_LIMIT: usize = 20;
-const MAX_BEST_MATCHES_LIMIT: usize = 50;
+///
+/// `pub(super)` (issue #1129) for the same reason `found_jobs`' pair is
+/// `pub(in crate::extension_bridge)`: `agent_cli::mcp` derives the
+/// `best-matches` tool schema's advertised default/cap from THESE numbers
+/// rather than a hand-typed copy that can silently drift out of sync.
+pub(super) const DEFAULT_BEST_MATCHES_LIMIT: usize = 20;
+pub(super) const MAX_BEST_MATCHES_LIMIT: usize = 50;
 
 fn clamp_best_matches_limit(payload: &Value) -> usize {
     payload
@@ -552,6 +596,39 @@ fn list_autopilots(app: &AppHandle) -> AppResult<Vec<crate::autopilot::Autopilot
         .ok_or_else(|| AppError::Config("autopilot store unavailable".to_string()))
 }
 
+/// The CALLER side of `job`'s identity pipeline, extracted from
+/// [`job_resource`] so it is unit-testable without an `AppHandle` — the
+/// counterpart to [`resolve_job`]'s stored side, and the only place the two
+/// halves can be compared for symmetry (issue #1128). Empty means "not a
+/// usable http(s) url", exactly as `normalize_job_url` reports it.
+///
+/// Same canonicalize-then-normalize pipeline `applied.check`/`answers.save`
+/// use, plus an unreserved-only decode FIRST, so the canonicalizer reads the
+/// real path: a `%2D`-spelled LinkedIn slug is byte-different but
+/// semantically identical (RFC 3986 §6.2.2.2), and neither
+/// `canonical_job_url` nor `normalize_job_url` decodes anything. The scheme
+/// guard still runs AFTER the decode, inside `normalize_job_url`, so
+/// `%6Aavascript:…` is caught rather than smuggled past a raw-byte check.
+///
+/// That decode makes this READ deliberately more lenient than the WRITES
+/// (MEDIUM fix, security review round 4 — this doc used to claim the lookup
+/// "resolves to the exact identity an import would", which it does not).
+/// `answers.save`, `answer_assist` and `applied.check` all key on the
+/// UNDECODED spelling, and widening them is out of scope here: their keys are
+/// already-stored identities, so decoding at the write boundary would split
+/// existing rows off from their own history. The consequence is a caller-side
+/// rule, stated on the `job` verb's own `--help`/tool description
+/// (`agent_cli::VERB_TABLE`): reuse the `url` this resource RETURNS rather
+/// than a re-encoded spelling of your own, and every surface agrees on which
+/// posting you mean. Both HALVES of this lookup decode (see [`resolve_job`]
+/// for the stored side) — the leniency is symmetric within the read, never a
+/// one-sided rewrite.
+fn job_lookup_key(raw_url: &str) -> String {
+    let decoded = crate::applications::decode_unreserved(raw_url);
+    let canonical = crate::scraping::scrape_url::canonical_job_url(&decoded);
+    crate::applications::normalize_job_url(canonical.as_deref().unwrap_or(&decoded))
+}
+
 fn job_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
     let raw_url = payload
         .get("url")
@@ -561,11 +638,7 @@ fn job_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
     if raw_url.is_empty() {
         return Err(AppError::Validation("url is required".to_string()));
     }
-    // Same canonicalize-then-normalize pipeline `applied.check`/`answers.save`
-    // use, so a lookup here resolves to the exact identity an import would.
-    let canonical = crate::scraping::scrape_url::canonical_job_url(raw_url);
-    let effective = canonical.as_deref().unwrap_or(raw_url);
-    let normalized = crate::applications::normalize_job_url(effective);
+    let normalized = job_lookup_key(raw_url);
     if normalized.is_empty() {
         return Err(AppError::Validation(
             "url is not a valid http(s) URL".to_string(),
@@ -918,6 +991,39 @@ mod tests {
         );
     }
 
+    /// The issue #1128 repro, both directions. The caller's url goes through
+    /// the REAL caller-side pipeline ([`job_lookup_key`]) and the stored url
+    /// through [`resolve_job`]'s own compare, so this fails if EITHER half
+    /// stops decoding — a one-sided fix would leave the mirror image broken.
+    #[test]
+    fn resolve_job_matches_a_percent_encoded_variant_of_the_same_url() {
+        let plain = "https://de.linkedin.com/jobs/view/ai-software-engineer-at-hyra-4464018189";
+        let encoded =
+            "https://de.linkedin.com/jobs/view/ai%2Dsoftware%2Dengineer%2Dat%2Dhyra%2D4464018189";
+
+        for (stored, looked_up) in [(plain, encoded), (encoded, plain)] {
+            let records = vec![Autopilot {
+                found_jobs: vec![FoundJob {
+                    url: stored.to_string(),
+                    ..full_found_job()
+                }],
+                ..blank_autopilot("ap-1")
+            }];
+            let out = resolve_job(&records, &job_lookup_key(looked_up))
+                .unwrap_or_else(|e| panic!("stored {stored} must match {looked_up}: {e}"));
+            assert!(out["title"].as_str().unwrap().contains("Backend Engineer"));
+        }
+    }
+
+    /// The scheme guard must still see what a browser would: the decode runs
+    /// BEFORE `normalize_job_url`, so `%6A` becoming `j` turns this into the
+    /// `javascript:` url the guard rejects, rather than a scheme-less string
+    /// that slips past a raw-byte check.
+    #[test]
+    fn job_lookup_key_still_refuses_a_percent_encoded_javascript_scheme() {
+        assert_eq!(job_lookup_key("%6Aavascript:alert(1)"), "");
+    }
+
     #[test]
     fn resolve_job_refuses_with_fixed_sentinel_when_absent() {
         let err = resolve_job(&[], "https://nowhere.example.com/x").unwrap_err();
@@ -981,6 +1087,7 @@ mod tests {
             keys,
             vec![
                 "createdAt",
+                "foundJobsTotal",
                 "id",
                 "lastRunAt",
                 "name",
@@ -996,6 +1103,35 @@ mod tests {
         let mut target_keys: Vec<String> = target.keys().cloned().collect();
         target_keys.sort();
         assert_eq!(target_keys, vec!["boards", "location", "query"]);
+    }
+
+    /// Issue #1132 — `totalFound` is the LAST run's kept count (an
+    /// `AutopilotStore::record_run` overwrite), so a caller reading it as "how
+    /// many jobs does this automation have" is off by however many earlier runs
+    /// found. `foundJobsTotal` is the traversable count, anchored HERE to
+    /// `found-jobs`' own `total` rather than to a hand-typed N, so the two
+    /// surfaces cannot drift apart while both still passing.
+    #[test]
+    fn automations_found_jobs_total_matches_found_jobs_own_total() {
+        let records = vec![Autopilot {
+            found_jobs: (0..7).map(|_| full_found_job()).collect(),
+            total_found: 2, // the last run kept 2 — deliberately NOT 7
+            ..blank_autopilot("ap-1")
+        }];
+        let row = &resolve_automations(&records)["automations"][0];
+        let paged = found_jobs::resolve_found_jobs(&records, "ap-1", 0, 1).expect("pages");
+        assert_eq!(
+            row["foundJobsTotal"], paged["total"],
+            "foundJobsTotal must be exactly what found-jobs will page through"
+        );
+        assert_eq!(
+            row["totalFound"], 2,
+            "totalFound must keep its last-run meaning, unchanged by the new field"
+        );
+        assert_ne!(
+            row["foundJobsTotal"], row["totalFound"],
+            "the fixture must actually distinguish the two counts"
+        );
     }
 
     #[test]
