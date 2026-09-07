@@ -117,8 +117,9 @@ export function Finale() {
         ok fine, take the app →
       </a>
       <a className="src-link" href={GITHUB_REPO}>
-        view the source — it's Apache-2.0 now: read it, fork it, ship it. yes, that includes selling
-        my misery back to me. go ahead.
+        view the source — the code is Apache-2.0 now: read it, fork it, ship it. yes, that includes
+        selling my misery back to me. go ahead. (a few vendored datasets stay non-commercial — see
+        the LICENSE notes.)
       </a>
       <a className="src-link" href="/creature">
         ▶ THE CREATURE — a hand-drawn doodle about the tiny recruiter you accidentally summon. it
