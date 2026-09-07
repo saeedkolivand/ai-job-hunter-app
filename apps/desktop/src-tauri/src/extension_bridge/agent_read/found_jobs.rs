@@ -109,11 +109,37 @@ const MAX_FOUND_JOBS_LIMIT: usize = 50;
 ///
 /// Target: half of `agent_cli::mcp::MCP_RESULT_MAX_BYTES` (256 KiB = 262,144
 /// B), leaving real margin for the MCP `content[]`/`isError` wrapper this
-/// payload rides inside on the MCP transport (this resource's own `Value`
-/// carries `jobs`/`nextCursor`/`total`/`autopilotId`/`autopilotName` too,
-/// not just the `jobs` array [`trim_to_byte_budget`] measures) and for
-/// anything this comment's math didn't anticipate.
+/// payload rides inside on the MCP transport — [`trim_to_byte_budget`]'s
+/// `base_cost` parameter (see [`resolve_found_jobs`]'s call site) accounts
+/// for the REST of this resource's own envelope
+/// (`nextCursor`/`total`/`autopilotId`/`autopilotName`), so this budget is
+/// the FULL response, not merely the `jobs` array — and this margin still
+/// covers the MCP wrapper plus anything this comment's math didn't
+/// anticipate.
 const PAGE_BYTE_BUDGET: usize = 150_000;
+
+/// Cap on `autopilotName` before it enters the response envelope
+/// (CodeRabbit finding, PR #1117 review — an autopilot's name is
+/// user-typed and unbounded, and until this fix it was echoed into the
+/// envelope with NO cap and NOT counted toward [`PAGE_BYTE_BUDGET`] at
+/// all: the guarantee was "the jobs array fits," not "the whole response
+/// fits"). 200 chars is generous for the short single-line name the
+/// CreationWizard collects, while making the cap a CONCRETE bound rather
+/// than "trust the UI never lets this grow" — a migrated/imported record
+/// could still carry something longer.
+const AUTOPILOT_NAME_FENCE_CAP: usize = 200;
+
+/// Fence `name` the same way every other display field on this resource
+/// already is — same primitive, same `"job_posting"` tag as
+/// [`fence_found_jobs_description`]/`agent_read::fence_posting_display_fields`,
+/// even though an autopilot name is the CALLER'S OWN data rather than
+/// scraped text: the primitive is exactly "cap length and neutralize any
+/// embedded fence syntax," which is what this field needs regardless of
+/// provenance, and one shared convention ("every text field on this
+/// resource is fenced") is simpler than a per-field exception.
+fn fence_autopilot_name(name: &str) -> String {
+    crate::prompt_fence::fenced("job_posting", name, AUTOPILOT_NAME_FENCE_CAP)
+}
 
 fn clamp_found_jobs_limit(payload: &Value) -> usize {
     payload
@@ -125,27 +151,41 @@ fn clamp_found_jobs_limit(payload: &Value) -> usize {
         .min(MAX_FOUND_JOBS_LIMIT)
 }
 
-/// Drop rows from the end of `candidates` until the serialized `jobs` array
-/// fits [`PAGE_BYTE_BUDGET`] — the real transport-size guarantee (see that
-/// constant's own doc). Walks forward summing each row's OWN serialized
-/// length (plus a one-byte array separator per row after the first) rather
-/// than re-serializing the whole growing array on every step, so this is
-/// O(n) `to_string` calls total, not O(n²) — cheap even at
-/// [`MAX_FOUND_JOBS_LIMIT`]'s scale. Always keeps at least one row when
-/// `candidates` is non-empty (forward-progress guarantee: a page cannot
-/// hang the traversal by returning zero rows and a `nextCursor` that never
-/// advances) — in practice unreachable at today's field caps, since even
-/// title+company+location all pinned to `crate::prompt_fence::JOB_CAP` plus
-/// a full [`FOUND_JOBS_DESCRIPTION_PREVIEW_CAP`] description serializes to
-/// well under [`PAGE_BYTE_BUDGET`] for a single row.
-fn trim_to_byte_budget(candidates: Vec<Value>) -> Vec<Value> {
+/// Drop rows from the end of `candidates` until `base_cost` PLUS the
+/// serialized `jobs` array fits [`PAGE_BYTE_BUDGET`] — the real
+/// transport-size guarantee is now the FULL response envelope, not just the
+/// `jobs` array (CodeRabbit finding, PR #1117 review round 3: the array-only
+/// version left `nextCursor`/`total`/`autopilotId`/`autopilotName` entirely
+/// uncounted, and `autopilotName` in particular is unbounded user text).
+/// `base_cost` is the caller-measured byte size of every OTHER envelope
+/// field combined (see [`resolve_found_jobs`]'s own call site for how it's
+/// derived) — passed in rather than measured here so this function stays a
+/// pure, generically-reusable "fit N pre-serialized rows into a byte
+/// budget" primitive, not coupled to this one envelope's shape.
+///
+/// Walks forward summing each row's OWN serialized length (plus a one-byte
+/// array separator per row after the first) rather than re-serializing the
+/// whole growing array on every step, so this is O(n) `to_string` calls
+/// total, not O(n²) — cheap even at [`MAX_FOUND_JOBS_LIMIT`]'s scale.
+/// Always keeps at least one row when `candidates` is non-empty
+/// (forward-progress guarantee: a page cannot hang the traversal by
+/// returning zero rows and a `nextCursor` that never advances) — in
+/// practice unreachable at today's field caps for the `jobs` array alone
+/// (even title+company+location all pinned to `crate::prompt_fence::JOB_CAP`
+/// plus a full [`FOUND_JOBS_DESCRIPTION_PREVIEW_CAP`] description serializes
+/// to well under [`PAGE_BYTE_BUDGET`] for a single row), though a
+/// pathological `base_cost` could still force it — the guarantee is "at
+/// least one row survives," not "the result is provably under budget no
+/// matter how large `base_cost` is.
+fn trim_to_byte_budget(candidates: Vec<Value>, base_cost: usize) -> Vec<Value> {
+    let budget_for_rows = PAGE_BYTE_BUDGET.saturating_sub(base_cost);
     let mut cumulative = 2; // the array's own "[" + "]"
     let mut kept = 0;
     for (i, row) in candidates.iter().enumerate() {
         let row_len = serde_json::to_string(row).map_or(usize::MAX, |s| s.len());
         let separator = usize::from(i > 0); // a comma between rows
         let next = cumulative + separator + row_len;
-        if next > PAGE_BYTE_BUDGET && kept > 0 {
+        if next > budget_for_rows && kept > 0 {
             break;
         }
         cumulative = next;
@@ -232,7 +272,32 @@ pub(super) fn resolve_found_jobs(
             value
         })
         .collect();
-    let page = trim_to_byte_budget(candidates);
+
+    let autopilot_name = fence_autopilot_name(&autopilot.name);
+
+    // `base_cost` = every envelope byte OTHER than the `jobs` array itself,
+    // measured (not assumed) against the REAL fenced `autopilotName` and
+    // `autopilotId` this response will actually carry — the fix for the gap
+    // `trim_to_byte_budget`'s own doc names (CodeRabbit, PR #1117 review
+    // round 3). `nextCursor` isn't known yet (it depends on how many rows
+    // survive trimming, decided just below), so it's measured here as a
+    // digit-string the length of `total` — an upper bound, since a real
+    // offset can never exceed `total`, so this can only OVER-count and thus
+    // only trim MORE aggressively than strictly required, never less (the
+    // safe direction for a byte budget). `"jobs": []` isolates the fixed
+    // cost from the row-dependent cost `trim_to_byte_budget` accumulates.
+    let base_envelope = json!({
+        "jobs": [],
+        "nextCursor": total.to_string(),
+        "total": total,
+        "autopilotId": autopilot.id,
+        "autopilotName": autopilot_name,
+    });
+    let base_cost = serde_json::to_string(&base_envelope)
+        .map_or(usize::MAX, |s| s.len())
+        .saturating_sub(2); // the placeholder `[]`'s own two bytes
+
+    let page = trim_to_byte_budget(candidates, base_cost);
 
     let returned = page.len();
     let next_offset = offset + returned;
@@ -247,7 +312,7 @@ pub(super) fn resolve_found_jobs(
         "nextCursor": next_cursor,
         "total": total,
         "autopilotId": autopilot.id,
-        "autopilotName": autopilot.name,
+        "autopilotName": autopilot_name,
     }))
 }
 
@@ -355,7 +420,15 @@ mod tests {
             &["score", "level", "flags"],
         );
         assert_eq!(out["autopilotId"], "ap-1");
-        assert_eq!(out["autopilotName"], "autopilot-ap-1");
+        // `autopilotName` is now fenced too (CodeRabbit fix, PR #1117 review round 3) — see
+        // the dedicated `found_jobs_fences_an_oversized_autopilot_name` test for the cap
+        // itself; this assertion only checks the real name survived the wrapper.
+        let autopilot_name = out["autopilotName"].as_str().unwrap();
+        assert!(
+            autopilot_name.starts_with("<job_posting>\n")
+                && autopilot_name.contains("autopilot-ap-1"),
+            "autopilotName must be fenced like every other display field: {autopilot_name}"
+        );
         assert_eq!(out["total"], 1);
     }
 
@@ -706,7 +779,7 @@ mod tests {
     #[test]
     fn trim_to_byte_budget_keeps_everything_when_already_under_budget() {
         let small: Vec<Value> = (0..5).map(|i| json!({ "i": i })).collect();
-        let trimmed = trim_to_byte_budget(small.clone());
+        let trimmed = trim_to_byte_budget(small.clone(), 0);
         assert_eq!(trimmed, small);
     }
 
@@ -718,7 +791,7 @@ mod tests {
         let row = json!({ "s": "a".repeat(1000) });
         let row_len = serde_json::to_string(&row).unwrap().len();
         let candidates: Vec<Value> = (0..500).map(|_| row.clone()).collect();
-        let trimmed = trim_to_byte_budget(candidates);
+        let trimmed = trim_to_byte_budget(candidates, 0);
         assert!(
             !trimmed.is_empty() && trimmed.len() < 500,
             "must actually trim"
@@ -741,7 +814,70 @@ mod tests {
         // A single row far larger than the whole budget must still come back —
         // forward-progress guarantee (see `trim_to_byte_budget`'s own doc).
         let huge_row = json!({ "s": "a".repeat(PAGE_BYTE_BUDGET * 2) });
-        let trimmed = trim_to_byte_budget(vec![huge_row.clone(), huge_row]);
+        let trimmed = trim_to_byte_budget(vec![huge_row.clone(), huge_row], 0);
         assert_eq!(trimmed.len(), 1, "must keep exactly one row, never zero");
+    }
+
+    /// CodeRabbit fix, PR #1117 review round 3 — proves `base_cost` actually
+    /// takes room away from the rows, rather than being a dead parameter: the
+    /// SAME candidates, with a larger `base_cost`, must keep fewer rows.
+    #[test]
+    fn trim_to_byte_budget_a_larger_base_cost_leaves_less_room_for_rows() {
+        let row = json!({ "s": "a".repeat(1000) });
+        let candidates: Vec<Value> = (0..200).map(|_| row.clone()).collect();
+        let kept_with_no_base = trim_to_byte_budget(candidates.clone(), 0).len();
+        let kept_with_big_base = trim_to_byte_budget(candidates, 50_000).len();
+        assert!(
+            kept_with_big_base < kept_with_no_base,
+            "a non-zero base_cost must leave strictly less room for rows: {kept_with_big_base} \
+             vs {kept_with_no_base}"
+        );
+    }
+
+    /// CodeRabbit fix, PR #1117 review round 3 — `autopilotName` is
+    /// user-typed and was previously echoed unbounded; it must now be
+    /// fenced/capped exactly like every other display field on this
+    /// resource.
+    #[test]
+    fn found_jobs_fences_an_oversized_autopilot_name() {
+        let huge_name = "x".repeat(AUTOPILOT_NAME_FENCE_CAP * 3);
+        let records = vec![Autopilot {
+            name: huge_name,
+            ..autopilot_with_jobs("ap-1", vec![full_found_job()])
+        }];
+        let out = resolve_found_jobs(&records, "ap-1", 0, 20).expect("found");
+        let name = out["autopilotName"].as_str().unwrap();
+        assert!(
+            name.starts_with("<job_posting>\n") && name.ends_with("\n</job_posting>"),
+            "autopilotName must be fenced: {name}"
+        );
+        let wrapper_len = "<job_posting>\n".len() + "\n</job_posting>".len();
+        assert_eq!(
+            name.chars().count(),
+            AUTOPILOT_NAME_FENCE_CAP + wrapper_len,
+            "an uncapped autopilotName must be truncated to exactly the cap plus the fence wrapper"
+        );
+    }
+
+    /// The end-to-end guard: a maxed-out `autopilotName` on top of an
+    /// already worst-permitted `jobs` page must still leave the FULL
+    /// envelope (not merely the `jobs` array) under the MCP transport cap —
+    /// this is the exact gap review round 3 found: the name was neither
+    /// fenced nor counted toward the byte budget at all.
+    #[test]
+    fn found_jobs_full_envelope_stays_under_cap_even_with_a_maxed_out_autopilot_name() {
+        const MCP_RESULT_MAX_BYTES: usize = 256 * 1024;
+        let total_jobs = MAX_FOUND_JOBS_LIMIT * 2;
+        let jobs: Vec<FoundJob> = (0..total_jobs).map(worst_permitted_job).collect();
+        let mut ap = autopilot_with_jobs("ap-1", jobs);
+        ap.name = "z".repeat(AUTOPILOT_NAME_FENCE_CAP * 5);
+        let records = vec![ap];
+        let out = resolve_found_jobs(&records, "ap-1", 0, MAX_FOUND_JOBS_LIMIT).unwrap();
+        let bytes = out.to_string().len();
+        assert!(
+            bytes < MCP_RESULT_MAX_BYTES,
+            "the FULL envelope, including a maxed-out autopilotName, must stay under the MCP \
+             cap, was {bytes} bytes"
+        );
     }
 }
