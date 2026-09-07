@@ -1,0 +1,10 @@
+{
+  "name": "@ajh/amo-submit-tool",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Isolated, lockfile-pinned web-ext for the release workflow's Firefox AMO submission. Deliberately NOT a pnpm workspace member — see README.md.",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "web-ext": "10.6.0"
+  }
+}

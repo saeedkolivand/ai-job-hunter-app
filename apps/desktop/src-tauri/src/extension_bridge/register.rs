@@ -146,20 +146,41 @@ fn write_agent_pointer(data_dir: &Path) {
 /// Register the native-messaging host for Firefox + Chrome. Best-effort and
 /// idempotent — safe to call on every launch.
 pub fn register_native_host(data_dir: &Path) {
-    let exe = match std::env::current_exe() {
-        Ok(p) => p,
-        Err(e) => {
-            log::warn!("[native_host] current_exe() failed (non-fatal): {e}");
-            return;
-        }
+    // A Store (MSIX) build is the one case where `current_exe()` is the WRONG
+    // thing to record: it points inside `…\WindowsApps\<PackageFullName>\`,
+    // which a normal user — and therefore the browser process that has to spawn
+    // this host — cannot execute from, and whose name carries the package
+    // VERSION, so the manifest would dangle after the next Store update. The
+    // execution-alias shim is the stable, launchable path; `published_exe_path()`
+    // answers `Unpackaged` on every other build, where `current_exe()` stays
+    // correct, and `Unavailable` when the shim is missing, in which case nothing
+    // is published at all.
+    let exe = match crate::platform::msix::published_exe_path() {
+        crate::platform::msix::PublishedExe::Alias(alias) => alias,
+        // A packaged build with no usable alias (the user can switch one off
+        // in Settings ▸ Apps ▸ App execution aliases) has NO path worth
+        // publishing, so the whole registration is skipped — including the
+        // pointer below. Writing `current_exe()` instead would register a host
+        // the browser cannot launch. Deliberately not DELETING the existing
+        // manifests either: they are shared with a non-Store install on the
+        // same machine, which may still own a working one.
+        crate::platform::msix::PublishedExe::Unavailable => return,
+        crate::platform::msix::PublishedExe::Unpackaged => match std::env::current_exe() {
+            Ok(p) => p,
+            Err(e) => {
+                log::warn!("[native_host] current_exe() failed (non-fatal): {e}");
+                return;
+            }
+        },
     };
     // The pointer publishes the path a HUMAN types to reach the agent CLI,
     // which inside an AppImage is NOT `exe`. It resolves that itself (one
     // resolver, `platform::config::agent_cli_exe_path`, shared with the
     // Settings card behind `commands::system::system_agent_cli_info`, so the
     // file and the UI can never disagree) — see its doc for why the choice is
-    // not made here. The browser manifests below deliberately keep `exe`: a
-    // native-messaging host is launched by the browser, not typed.
+    // not made here. The browser manifests below take `exe`, which differs from
+    // that resolver only on Linux/AppImage: a native-messaging host is launched
+    // by the browser, not typed.
     write_agent_pointer(data_dir);
     let firefox_json = manifest_json(&exe, true);
     let chrome_json = manifest_json(&exe, false);

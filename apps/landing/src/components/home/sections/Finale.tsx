@@ -117,8 +117,9 @@ export function Finale() {
         ok fine, take the app →
       </a>
       <a className="src-link" href={GITHUB_REPO}>
-        view the source — it's PolyForm Noncommercial: read it, fork it, learn from it. just don't
-        sell my misery back to me.
+        view the source — the code is Apache-2.0 now: read it, fork it, ship it. yes, that includes
+        selling my misery back to me. go ahead. (a few vendored datasets stay non-commercial — see
+        the README's licence note.)
       </a>
       <a className="src-link" href="/creature">
         ▶ THE CREATURE — a hand-drawn doodle about the tiny recruiter you accidentally summon. it

@@ -19,7 +19,6 @@
     "core:app:allow-app-show",
     "opener:default",
     "dialog:default",
-    "updater:default",
     "clipboard-manager:default",
     "log:default",
     "sentry:default",

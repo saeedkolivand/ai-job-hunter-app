@@ -260,27 +260,33 @@ The extension has its own CI path, path-filtered to only run when extension file
 turbo run typecheck test build --filter=@ajh/extension
 ```
 
-On release, the **Release workflow** includes a manual `package-extension` job (`workflow_dispatch`) that:
+On release, the **Release workflow** (`action: build-installers`) runs three extension jobs — `package-extension` first, then the two publish jobs **in parallel**, each depending only on it. That is deliberate: one store failing must not block the other.
 
-- Builds both Chrome and Firefox distributions
-- Packages them as zips with source-build reproducibility info
-- Uploads artifacts for store submission (when the extension is published)
+- `package-extension` — builds both distributions, zips them with `manifest.json` at the zip root (`scripts/package.mjs`), and attaches them to the GitHub Release
+- `publish-chrome` — uploads that chrome zip to the Web Store listing and submits it for review
+- `publish-firefox` — builds the AMO source archive, proves it rebuilds the shipped package's contents byte-for-byte, then submits the new version to AMO
 
-Release frequency: the extension version tracks the app version via `pnpm sync:version` (Chrome is published to the Web Store; Firefox is published on AMO).
+A green publish job means **submitted for review**, not live. Credential setup, the repository secrets and the known failure modes are in [`docs/DEPLOYMENT.md`](../../docs/DEPLOYMENT.md) § "Browser extension store publishing".
+
+Release frequency: the extension version tracks the app version — `scripts/sync-tauri-version.cjs` bumps `apps/extension/package.json` in the release commit, so every app release ships an extension version to both stores.
 
 ---
 
 ## Firefox AMO Source Build
 
-AMO requires reviewable source for a bundled add-on. To reproduce the submitted
-`dist/firefox` artifact from this repo:
+AMO requires reviewable source for a bundled add-on, and its reviewers rebuild
+from that source and byte-diff the result against the uploaded package. The
+archive is produced by `scripts/source-archive.mjs`
+(`pnpm -F @ajh/extension package:source`): `git archive` of the release commit —
+provably the whole tracked tree, lockfile included — plus a generated
+`SOURCE_BUILD_README.md` at the archive root that carries the OS/Node/pnpm
+versions the release actually ran on and the exact commands that reproduce
+`dist/firefox`. Those versions are read from the live toolchain rather than
+written down, so they cannot drift; read that file for the current build steps.
 
-```bash
-pnpm install --frozen-lockfile
-pnpm -F @ajh/shared build
-pnpm -F @ajh/extension build:firefox
-# artifact: apps/extension/dist/firefox
-```
+The release workflow's `publish-firefox` job runs those very commands against the
+archive and fails before submitting if the rebuild is not byte-identical — see
+[`docs/DEPLOYMENT.md`](../../docs/DEPLOYMENT.md) § "Browser extension store publishing".
 
 The build is deterministic: it bundles only this repo's source plus the pinned
 dependencies in `package.json`; the manifest is generated from `src/manifest.ts`

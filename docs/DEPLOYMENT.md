@@ -1,6 +1,6 @@
 # Deployment — AI Job Hunter
 
-Last updated: 2026-08-16
+Last updated: 2026-09-07
 
 AI Job Hunter is distributed as a native desktop installer built by [Tauri][tauri]. There is no server to deploy — the entire app runs on the end user's machine.
 
@@ -214,9 +214,110 @@ Additional advisory layers:
 
 ---
 
+## Browser extension store publishing
+
+The MV3 extension is already listed on both stores, so every release **submits a new version to an existing listing** — never creates one. Two jobs in `release.yml` do it automatically after `package-extension`, on the same `action: build-installers` dispatch:
+
+| Job               | Store            | What it submits                                                                                                 |
+| ----------------- | ---------------- | --------------------------------------------------------------------------------------------------------------- |
+| `publish-chrome`  | Chrome Web Store | The chrome zip `package-extension` built, uploaded **and** published (= submitted for review)                   |
+| `publish-firefox` | Firefox AMO      | The firefox zip, plus the mandatory reviewable **source archive** (`apps/extension/scripts/source-archive.mjs`) |
+
+Both consume the zips as a workflow artifact from `package-extension`, so what reaches a store is built from the same files as what is attached to the GitHub Release, never a rebuild. (Chrome gets that zip verbatim; `web-ext` re-zips the directory for AMO, so the submitted xpi is file-for-file rather than byte-for-byte identical.) They are independent of each other and nothing else `needs:` them — one store failing blocks neither the other store nor the rest of the release fan-out.
+
+**A green job means "submitted for review", never "live".** Approval is a human step at Google/Mozilla that lands hours to days later; the jobs deliberately do not wait for it.
+
+Before submitting, `publish-firefox` unpacks the source archive it just built, runs the archive's own documented build commands and byte-compares the result against the shipped package. AMO reviewers do exactly this and pull add-ons that fail it, so a mismatch fails the job **before** anything is uploaded. If it ever goes red, fix the non-determinism in the build (a leaked absolute path or timestamp is the usual cause) — do not loosen the comparison.
+
+Both submission CLIs are lockfile-pinned, and neither is **installed** in a step that carries a store credential: the Chrome one is a devDependency of `@ajh/extension`, and `web-ext` lives in its own isolated npm project at `apps/extension/tools/amo/`, pinned by a lockfile outside the pnpm workspace and tracked by its own Dependabot entry.
+
+Be plain about the boundary: **running either CLI executes its whole third-party dependency tree with the matching store credential in that step's environment.** `web-ext sign` is the sharper case — the AMO key it carries can publish a Mozilla-signed version of every add-on on the account. Nothing here removes that exposure and nothing can, short of a first-party uploader; it is an **accepted residual risk**. What the setup bounds is its shape: one credential-carrying step per store, a tree pinned by integrity hash so it cannot change under us between releases, and lifecycle scripts disabled at install. `apps/extension/tools/amo/README.md` is the full statement, along with which advisories are accepted and how to bump the pin.
+
+### Repository secrets
+
+All required; each job's first step (`🔐 Check … credentials` in `release.yml`, which owns the authoritative list) checks its own set and fails naming the missing one, so a misconfiguration never surfaces as an opaque 401. The Chrome **item id** is deliberately not a secret — it is public, and is an `env` constant in the job.
+
+| Secret                                                    | Where it comes from                      |
+| --------------------------------------------------------- | ---------------------------------------- |
+| `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN` | One-time OAuth setup, below              |
+| `CWS_PUBLISHER_ID`                                        | Chrome Developer Dashboard → **Account** |
+| `AMO_JWT_ISSUER`, `AMO_JWT_SECRET`                        | AMO → **Manage API Keys**                |
+
+#### One-time Chrome Web Store credential setup
+
+1. Create (or reuse) a Google Cloud project and **enable the Chrome Web Store API** on it.
+2. Add an **OAuth client** of type **Desktop app**.
+3. Run `npx chrome-webstore-upload-keys` **signed in as the Google account that owns the listing** (2-step verification must be on) and paste the client id/secret; it returns the refresh token.
+4. The OAuth **consent screen must not be left in "Testing"** — a testing-mode refresh token dies after **7 days**. Set it to Internal, or External + Production.
+5. Copy the **Publisher ID** from the Developer Dashboard's Account page (the v2 API addresses items as `publishers/<id>/items/<item id>`; the extension id alone is not enough).
+
+#### One-time AMO credential setup
+
+Generate a JWT issuer + secret on the AMO **Manage API Keys** page with the account that owns the add-on. The secret is shown once.
+
+### Known failure modes
+
+- **An open manual draft blocks Chrome.** The API refuses to act while an unsubmitted draft edit is pending in the dashboard. Submit or discard it, then re-run.
+- **The version must increase.** Chrome rejects an upload whose manifest version is not higher than the published one. The extension version is bumped for every app release by `scripts/sync-tauri-version.cjs`, so this only bites when re-running a release for an already-submitted tag.
+- **A Chrome refresh token expires after 6 months unused** (and after 7 days if the consent screen was left in Testing). Symptom: `invalid_grant`. Re-run the key generator.
+- **An AMO source-archive mismatch is a rejection**, and a repeat offence gets the add-on taken down. The reproducibility gate exists to catch it in CI instead.
+- **Missing secrets fail the job by design.** Until all six exist, every release run shows two red jobs and no submission happens. Nothing else in the release is affected.
+- **Both jobs run the tag's own code**, so re-running `build-installers` against a tag cut _before_ store publishing existed fails them (the publish tooling is not in that tag's lockfile or scripts). Expected; ignore it, or dispatch only for tags from this feature onward.
+
+---
+
+## Microsoft Store (MSIX)
+
+A second **flavour** of the Windows build, not a second build: the MSIX wraps the very same `ajh-tauri.exe` the NSIS installer ships. Tauri has no MSIX bundle target, so the packaging is ours — manifest template in [`apps/desktop/src-tauri/windows/msix/AppxManifest.xml`](../apps/desktop/src-tauri/windows/msix/AppxManifest.xml) (commented element by element: every capability and extension carries its own WHY), packer in [`apps/desktop/scripts/pack-msix.mjs`](../apps/desktop/scripts/pack-msix.mjs) (its header comment documents the inputs, the staging layout and the output naming), wired into the Windows leg of `release.yml` by the MSIX pack + upload steps. Why the flavour exists at all, and what was rejected on the way: [ADR-049](knowledge/decision-records/adr-049-microsoft-store-msix-flavour.md).
+
+Which container is running is a **runtime** question, not a build flag — one binary, two containers. `platform::msix` owns that decision and the closed set of behaviours that follow from it; the module's own doc comment is that list, with the reasoning at each symbol. In outline: the Store owns updating (a packaged build never checks and never polls — `updater::…`), the manifest owns protocol registration and launch-at-login (the runtime equivalents are skipped in `lib.rs` / `commands::system`), and the path this build publishes about itself comes from `platform::msix::published_exe_path` rather than `current_exe()` — consumed by `extension_bridge::register` for the browser native-messaging host and by `platform::config::agent_cli_exe_path` for the agent-CLI pointer.
+
+That last one has a third answer worth knowing operationally. `current_exe()` inside a package is a `…\WindowsApps\` path a normal user cannot execute from, whose name carries the package **version**, so anything that RECORDS it dangles after the next Store update; the execution-alias shim is the stable substitute. **When no usable shim exists** — a user can switch an execution alias off in Settings ▸ Apps ▸ App execution aliases — the packaged build publishes **nothing**: the native-messaging registration and the agent-CLI pointer are **skipped**, not written with `current_exe()` and not deleted (existing manifests may belong to a working non-Store install on the same machine). Symptom: on that install the extension's native-messaging path and `ajh-tauri agent` discovery stop working until the alias is re-enabled, and `platform::msix` logs a warning saying so.
+
+Everything else is deliberately identical. The manifest disables registry and file-system write virtualization — what the restricted capability it declares buys — so the native-messaging registration under HKCU and the app data directory are the same real locations a non-Store install uses, and a user can switch flavours and keep their data. The corollary of those real writes is that the packaged build must NOT re-register what the manifest already owns, which is what the skips above are for.
+
+> **WebView2 is a certification risk, not just a note.** The MSIX cannot run the Evergreen bootstrapper the NSIS installer uses. Windows 11 has the runtime built in, but a clean Windows 10 at the manifest's `MinVersion` floor (`TargetDeviceFamily` in `AppxManifest.xml`) without it launches the app into a dead webview — which is exactly what a certification tester on a fresh VM would see. Say so in the Partner Center **tester notes**.
+
+### Package identity (repository variables)
+
+Identity is assigned by Partner Center, so it is **not committed**. It reaches the packer as environment variables — read from Partner Center ▸ **Product management ▸ Product identity**, supplied in CI as repository variables (Settings ▸ Secrets and variables ▸ Actions ▸ Variables). The names, which Partner Center field each one carries and the validation applied to them are `IDENTITY_VARS` / `readIdentity` in `apps/desktop/scripts/pack-msix.mjs`; a missing or malformed one is a named error, not a silent bad package.
+
+The MSIX steps in `release.yml` are gated on **all** of the identity variables being set, so the pipeline is unaffected until the listing exists — a partial set means "no MSIX this release", never "no release".
+
+### Local test loop
+
+1. `pnpm --filter @ajh/desktop package` (or any `tauri build`) so the exe exists.
+2. Set the identity variables and run `node apps/desktop/scripts/pack-msix.mjs`. It needs `makeappx.exe` from the Windows SDK; its header comment lists the env overrides (SDK discovery, the staged executable, the output root) and it prints where it staged and wrote.
+3. Enable **Developer Mode**, then register the staged layout directly — faster than installing, and it exercises the manifest: `Add-AppxPackage -Register <staging>\AppxManifest.xml`.
+4. `Get-AppxPackage *<identity name>*` to confirm, `Remove-AppxPackage <full-name>` to clean up.
+
+Registering the staged app is the only way to see the packaged-identity code path locally: `platform::msix::is_packaged()` answers "not packaged" for every normally-launched build.
+
+**Verify these three while it is registered — they are the parts nothing in CI can prove** (they need a real registered package, so treat them as unverified until someone runs them):
+
+1. **Native messaging.** Launch the registered app, then open the browser extension and let it connect. It reaches the app through the manifest written from the alias path; if that path were wrong the browser would fail to spawn the host.
+2. **The CLI alias.** From a plain shell, `cd` into an empty scratch directory and run `ajh-tauri agent --help`, then a real verb. Two things are under test: that the alias resolves at all, and that the shim preserves the console and the working directory — anything the CLI writes relative to `.` must land in that scratch directory, not somewhere under the package.
+3. **Launch at login.** Toggle it in Settings, then check **Settings ▸ Apps ▸ Startup** shows the app; toggle it off there and confirm the app's own toggle reports the refusal instead of silently flipping back on.
+
+### First submission (manual)
+
+The `.msix` is **unsigned on purpose** — the Store signs it during submission — which is why it is a workflow **artifact** of the `build-installers` run and never a GitHub Release asset.
+
+1. Download the MSIX artifact from that run (the upload step in `release.yml` names it) and unzip it.
+2. Partner Center ▸ your product ▸ **Packages** ▸ upload the `.msix`.
+3. **Submission options** asks for a justification for the restricted capability. State what it is actually for: the app registers a browser **native-messaging host under HKCU** that browsers must read from the real hive rather than a virtualized copy, and it shares its data directory with the non-Store install so users can move between them without losing data.
+4. Fill the **tester notes** with the WebView2 prerequisite above, plus a pointer that the browser-extension features need the companion extension installed.
+5. Submit. Certification for a full-trust desktop app is manual and can take a few days.
+
+Automating this with the `msstore` CLI is a follow-up: it needs an Entra tenant plus an app registration, which do not exist yet.
+
+> **Uninstall leaves per-user traces.** Removing the package removes the app, its `StartupTask` and its execution alias — but not the files and keys the app itself wrote outside the package: the browser native-messaging host manifests (JSON + their HKCU entries) and the agent-CLI pointer file. That is the direct consequence of disabling write virtualization, and it is the same behaviour the NSIS build has. They are inert once the app is gone (they name a path that no longer resolves) and are overwritten on the next launch of either flavour.
+
+---
+
 ## Auto-Update
 
-The app checks for updates on launch via Tauri's updater plugin. The update manifest is published to GitHub Releases automatically.
+The app checks for updates on launch via Tauri's updater plugin. The update manifest is published to GitHub Releases automatically. **Not on a Microsoft Store install** — that flavour never reaches any of this; see § Microsoft Store (MSIX).
 
 ### How it works
 

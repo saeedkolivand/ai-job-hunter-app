@@ -9,8 +9,10 @@ edition = "2024"
 rust-version = "1.95"
 description = "AI Job Hunter — Tauri desktop shell"
 authors = ["Saeed Kolivand"]
-# Application crate — never published to a registry. Marks it private so
-# cargo-deny does not require a license field (see deny.toml [licenses].private).
+license = "Apache-2.0"
+# Application crate — never published to a registry. cargo-deny skips our own
+# crate either way (see deny.toml [licenses].private); the field above is here
+# so the manifest states the repo's license rather than leaving it unknown.
 publish = false
 
 [features]
@@ -331,7 +333,11 @@ windows-native-keyring-store = "1"
 # Win32_System_Console (issue #1084 PR 1): `platform::windows_console` probes
 # GetStdHandle/AttachConsole so `ajh-tauri agent …` has a working stdout under
 # the release build's `windows_subsystem = "windows"`.
-windows = { version = "0.62.2", features = ["Win32_Security_Cryptography", "Win32_Foundation", "UI_ViewManagement", "Win32_System_Registry", "Win32_System_Console"] }
+# Win32_Storage_Packaging_Appx + ApplicationModel: `platform::msix` tells the
+# Microsoft Store (MSIX) flavour apart from the NSIS/MSI one at runtime (same
+# exe, different container) via GetCurrentPackage{FullName,Path,FamilyName},
+# and drives the packaged app's StartupTask (WinRT) for launch-at-login.
+windows = { version = "0.62.2", features = ["ApplicationModel", "Win32_Storage_Packaging_Appx", "Win32_Security_Cryptography", "Win32_Foundation", "UI_ViewManagement", "Win32_System_Registry", "Win32_System_Console"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "1", features = ["keychain"] }

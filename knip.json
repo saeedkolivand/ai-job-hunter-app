@@ -9,6 +9,7 @@
   ],
   "ignoreBinaries": ["claude"],
   "ignoreDependencies": [
+    "chrome-webstore-upload-cli",
     "semantic-release",
     "@semantic-release/exec",
     "@semantic-release/github",

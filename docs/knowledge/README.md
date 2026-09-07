@@ -1,6 +1,6 @@
 # Knowledge base (`docs/knowledge/`)
 
-Last updated: 2026-09-05
+Last updated: 2026-09-07
 
 A **thin, pointer-style** index for AI agents (and humans). It describes _shape and contracts_ and points at the **owning source symbol**; it deliberately does **not** copy drift-prone literals (scoring weights, template/board counts) — those live in code.
 
@@ -68,7 +68,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-020](decision-records/adr-020-unified-autopilot-scoring-kernel.md)                      | Unified autopilot scoring via keyword-coverage kernel; metric relabel                                                                                                                                 |
 | [ADR-021](decision-records/adr-021-windows-installer-currentuser-scope.md)                   | Windows installer pinned to currentUser scope; one-time migration for users                                                                                                                           |
 | [ADR-022](decision-records/adr-022-atomic-store-transactions-and-centralized-db.md)          | Atomic store transactions + centralized `db::open` (WAL + busy_timeout)                                                                                                                               |
-| [ADR-023](decision-records/adr-023-polyform-noncommercial-licensing.md)                      | PolyForm Noncommercial 1.0.0 licensing                                                                                                                                                                |
+| [ADR-023](decision-records/adr-023-polyform-noncommercial-licensing.md)                      | PolyForm Noncommercial 1.0.0 licensing (superseded by ADR-047)                                                                                                                                        |
 | [ADR-024](decision-records/adr-024-consolidated-release-commit.md)                           | Consolidated atomic release commit                                                                                                                                                                    |
 | [ADR-025](decision-records/adr-025-agent-fleet-author-critic-pairing.md)                     | Agent fleet — paired author/critic per domain                                                                                                                                                         |
 | [ADR-026](decision-records/adr-026-retire-anti-bot-boards.md)                                | Retire self-scraping anti-bot boards; cover via aggregator; keep single-job import                                                                                                                    |
@@ -92,6 +92,9 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-044](decision-records/adr-044-extension-answer-tools-side-panel-and-popup.md)           | Extension Answer tools in a side panel (`chrome.sidePanel` / `sidebar_action`) AND the popup, as two views of one per-tab+origin state; page access stays user-gestured; in-page card deferred        |
 | [ADR-045](decision-records/adr-045-job-tools-panel-parity-and-trust-gate.md)                 | Job-tools panel parity (Import/Check-fit/Fill/Save-answers) via a shared component + a stricter per-tab trust gate reusing `AnswerState.pageChanged`; both context-menu gestures now re-arm it        |
 | [ADR-046](decision-records/adr-046-connection-status-panel-parity-and-live-push.md)          | Connection-status panel parity via a shared component, mounted by both surfaces, live-pushed                                                                                                          |
+| [ADR-047](decision-records/adr-047-relicense-to-apache-2-0.md)                               | Relicense to Apache-2.0 (supersedes ADR-023) so the OSS code-signing programmes apply; vendored CC BY-NC 4.0 ATS datasets are a documented carve-out                                                  |
+| [ADR-048](decision-records/adr-048-automated-extension-store-submission.md)                  | Extension store submission is automated and terminal at "submitted", gated on a source archive that provably rebuilds the shipped package; the AMO tool is pinned outside the pnpm workspace          |
+| [ADR-049](decision-records/adr-049-microsoft-store-msix-flavour.md)                          | Microsoft Store MSIX as a runtime-detected flavour of the same binary (no build variant), updates handed to the Store, write virtualization disabled on purpose                                       |
 
 ### The `NNNN-` series (closed)
 

@@ -27,7 +27,7 @@
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><img alt="Downloads" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/saeedkolivand/ai-job-hunter-app/badges/downloads.json"></a>
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/saeedkolivand/ai-job-hunter-app/ci-pipeline.yml?label=CI"></a>
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/saeedkolivand/ai-job-hunter-app"></a>
-  <a href="LICENSE"><img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-orange.svg"></a>
+  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
 </p>
 
 <p align="center">
@@ -630,8 +630,6 @@ This project is built by a guy who is, himself, still unemployed, a cry for help
 
 <a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener noreferrer">GitHub Sponsors</a> · <a href="https://ko-fi.com/saeedkolivand" target="_blank" rel="noopener noreferrer">Ko-fi</a> · <a href="https://paypal.me/saeedkolivand" target="_blank" rel="noopener noreferrer">PayPal</a>
 
-Donations don't conflict with the PolyForm Noncommercial license. The license restricts commercial repackaging and resale by others; voluntary gifts to the maintainer are not commercial use.
-
 ---
 
 ## ⚖️ Responsible Use
@@ -639,7 +637,7 @@ Donations don't conflict with the PolyForm Noncommercial license. The license re
 - **Respect each site's Terms of Service.** Some job boards allow only manual access or their official APIs; automated collection (or signing in with your own account to scrape) may breach their terms and can get your account suspended. You choose which boards to enable and accept that responsibility.
 - **Not affiliated.** AI Job Hunter is an independent project, not affiliated with, endorsed by, or sponsored by LinkedIn, Indeed, Glassdoor, Xing, StepStone, or any other job board or company named in this repository. Product names and trademarks belong to their respective owners.
 - **Your data stays yours.** Processing is local-first and single-user; the project maintainers do not receive, store, or process your data. Bring-your-own-key means AI prompts go only to the provider you configure.
-- **No warranty.** Provided "as is" under the PolyForm Noncommercial License 1.0.0, without warranty of any kind and without liability for how it is used. This is not legal advice.
+- **No warranty.** Provided "as is" under the Apache License 2.0, without warranty of any kind and without liability for how it is used. This is not legal advice.
 
 ---
 
@@ -651,7 +649,9 @@ Found a vulnerability? Please report it privately: see **<a href="SECURITY.md" t
 
 ## License
 
-**PolyForm Noncommercial License 1.0.0** ([SPDX: `PolyForm-Noncommercial-1.0.0`](LICENSE)): **source-available, not open source**. Free for noncommercial use; commercial repackaging and resale prohibited. Effective **2026-06-14**; reason: protect the codebase and author from commercial repackaging without consent. For a commercial license, contact [contact@aijobhunter.app](mailto:contact@aijobhunter.app).
+**Apache License 2.0** ([SPDX: `Apache-2.0`](LICENSE)): open source, free for any use including commercial, with an explicit patent grant. Effective **2026-09-07**, replacing PolyForm Noncommercial 1.0.0; reason: the free code-signing programmes for open-source projects (SignPath Foundation, Certum) require an OSI-approved license, and PolyForm Noncommercial is not one.
+
+One carve-out: the vendored ATS company datasets under `apps/desktop/src-tauri/ats-slugs/` are third-party data under **CC BY-NC 4.0**, not Apache-2.0 — see <a href="apps/desktop/src-tauri/ats-slugs/README.md" target="_blank" rel="noopener noreferrer">their README</a> before redistributing commercially.
 
 ---
 

@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX manifest TEMPLATE for the Microsoft Store flavour of the desktop app.
+
+  The double-braced placeholders below are filled by
+  apps/desktop/scripts/pack-msix.mjs, which
+  reads the version from apps/desktop/src-tauri/tauri.conf.json and the three
+  identity values from the environment (GitHub repository variables in the
+  release workflow). They are NOT committed: identity is assigned by Partner
+  Center, so this file has to be publishable before the Store listing exists.
+
+  The package wraps the SAME ajh-tauri.exe the NSIS installer ships — it is a
+  container, not a build variant. `platform::msix::is_packaged()` tells the two
+  apart at runtime; the only behaviour that differs is updating (see
+  apps/desktop/src-tauri/src/updater/mod.rs).
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  IgnorableNamespaces="uap uap5 uap10 rescap desktop desktop6">
+
+  <Identity
+    Name="{{IDENTITY_NAME}}"
+    Publisher="{{PUBLISHER}}"
+    Version="{{VERSION}}"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>AI Job Hunter</DisplayName>
+    <PublisherDisplayName>{{PUBLISHER_DISPLAY_NAME}}</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+
+    <!-- Windows verifies the package contents against the signature at install
+         time and on every launch. Cheap here (nothing in the package is
+         patched at runtime) and it is what the Store expects of a full-trust
+         desktop package. -->
+    <uap10:PackageIntegrity>
+      <uap10:Content Enforcement="on" />
+    </uap10:PackageIntegrity>
+
+    <!-- The two elements that make a Store install indistinguishable from an
+         NSIS install to the rest of the app. Without them Windows silently
+         redirects HKCU writes and %APPDATA% writes into the package's private
+         store, which would break three things that MUST be real and shared:
+           - the browser native-messaging host registration under HKCU
+             (apps/desktop/src-tauri/src/extension_bridge/register.rs) — Chrome
+             and Firefox read the real hive, not ours;
+           - the launch-at-login Run key written by `auto-launch`;
+           - the app data directory (platform::config::data_dir), so a user who
+             switches between the Store and non-Store build keeps one database.
+         Both require the `unvirtualizedResources` restricted capability below
+         and Windows 10 2004 (10.0.19041), which is why that is the floor. -->
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <!-- A packaged classic (Win32) app: Windows launches the exe directly at
+         medium integrity, exactly as a normal desktop process, instead of
+         hosting it as a UWP app. Anything else would put the WebView2 host,
+         the local WebSocket bridge and the scraping browser under an app
+         container they were never written for. -->
+    <Application
+      Id="AIJobHunter"
+      Executable="ajh-tauri.exe"
+      EntryPoint="Windows.FullTrustApplication"
+      uap10:TrustLevel="mediumIL"
+      uap10:RuntimeBehavior="packagedClassicApp">
+
+      <uap:VisualElements
+        DisplayName="AI Job Hunter"
+        Description="Local-first AI job hunting assistant"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+
+      <Extensions>
+        <!-- `ajh://` deep links. The unpackaged build registers this scheme at
+             runtime (tauri-plugin-deep-link's `register_all()`, configured in
+             apps/desktop/src-tauri/tauri.conf.json under
+             plugins.deep-link.desktop.schemes). A packaged app may not write
+             its own protocol registration — the manifest is the registration,
+             so this element is what keeps `ajh://` links working from the Store
+             build. -->
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="ajh">
+            <uap:DisplayName>AI Job Hunter</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+
+        <!-- `ajh-tauri agent …` from any shell. The NSIS build gets this by
+             appending its install directory to the per-user PATH
+             (apps/desktop/src-tauri/windows/hooks.nsh); an MSIX cannot edit
+             PATH, and an execution alias is the supported equivalent — Windows
+             puts a shim of this name on PATH for the user. Same name as the
+             exe so every doc, pointer file and copy-paste command in
+             docs/knowledge/agent-cli.md stays correct on both flavours. -->
+        <uap5:Extension
+          Category="windows.appExecutionAlias"
+          Executable="ajh-tauri.exe"
+          EntryPoint="Windows.FullTrustApplication">
+          <uap5:AppExecutionAlias>
+            <uap5:ExecutionAlias Alias="ajh-tauri.exe" />
+          </uap5:AppExecutionAlias>
+        </uap5:Extension>
+
+        <!-- Launch at login. The unpackaged build writes an HKCU `Run` entry
+             (tauri-plugin-autostart); that entry embeds the exe path, which for
+             a packaged app is version-pinned and therefore dead after the next
+             Store update — while the settings toggle would still read "on".
+             A StartupTask is the packaged equivalent and survives updates.
+             `Enabled="false"` because launch-at-login is opt-in: the app asks
+             for it via StartupTask.RequestEnableAsync() when the user turns the
+             toggle on (`platform::msix`, whose STARTUP_TASK_ID must match this
+             TaskId), and Windows — not us — has the final say. -->
+        <desktop:Extension
+          Category="windows.startupTask"
+          Executable="ajh-tauri.exe"
+          EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask
+            TaskId="AjhLaunchAtLogin"
+            Enabled="false"
+            DisplayName="AI Job Hunter" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- Full trust: the app runs local browser automation, a local WebSocket
+         bridge and SQLite — none of it expressible as UWP capabilities. -->
+    <rescap:Capability Name="runFullTrust" />
+    <!-- Restricted (needs a written justification in the Partner Center
+         submission — see docs/DEPLOYMENT.md): required by the two
+         `desktop6:*WriteVirtualization` elements above. -->
+    <rescap:Capability Name="unvirtualizedResources" />
+  </Capabilities>
+</Package>
