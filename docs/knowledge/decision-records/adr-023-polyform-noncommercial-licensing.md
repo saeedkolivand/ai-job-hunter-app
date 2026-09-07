@@ -1,8 +1,10 @@
 # ADR-023: PolyForm Noncommercial 1.0.0 licensing
 
-Last updated: 2026-06-14
+Last updated: 2026-09-07
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-047](adr-047-relicense-to-apache-2-0.md) (2026-09-07)
+
+> **Superseded (2026-09-07):** the repo is Apache-2.0 as of [ADR-047](adr-047-relicense-to-apache-2-0.md), so nothing below describes the project's current license. This is the historical record of the MIT → PolyForm change, and of the anti-repackaging protection that was later traded away for an OSI-approved license.
 
 ## Context
 
