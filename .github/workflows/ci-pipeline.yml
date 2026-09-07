@@ -63,6 +63,12 @@ jobs:
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
+          # web-ext (apps/extension/tools/amo, pinned by its own lockfile) pulls
+          # image-size in through addons-linter. The two DoS advisories live in
+          # image parsers that `web-ext sign` never invokes, and the only fix npm
+          # offers is a web-ext downgrade off the AMO submission API. Accepted in
+          # apps/extension/tools/amo/README.md; Dependabot ignores the package too.
+          allow-ghsas: GHSA-w3rx-r6r6-pgpr, GHSA-5p2g-fcmc-qvqq
 
   # ──────────────────────────────────────────────────────────────────────
   # Detect which areas changed so the heavy jobs can skip on unrelated PRs.
