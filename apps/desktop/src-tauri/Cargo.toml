@@ -331,7 +331,11 @@ windows-native-keyring-store = "1"
 # Win32_System_Console (issue #1084 PR 1): `platform::windows_console` probes
 # GetStdHandle/AttachConsole so `ajh-tauri agent …` has a working stdout under
 # the release build's `windows_subsystem = "windows"`.
-windows = { version = "0.62.2", features = ["Win32_Security_Cryptography", "Win32_Foundation", "UI_ViewManagement", "Win32_System_Registry", "Win32_System_Console"] }
+# ApplicationModel: `platform::msix` calls Package::Current() to tell the
+# Microsoft Store (MSIX) flavour of the app apart from the NSIS/MSI one at
+# runtime — same exe, different container, and only the Store one must keep
+# its hands off the GitHub updater.
+windows = { version = "0.62.2", features = ["ApplicationModel", "Win32_Security_Cryptography", "Win32_Foundation", "UI_ViewManagement", "Win32_System_Registry", "Win32_System_Console"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
