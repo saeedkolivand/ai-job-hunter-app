@@ -352,6 +352,38 @@ jobs:
           node scripts/verify-updater-key.cjs
           echo "::endgroup::"
 
+      # ── Microsoft Store (MSIX) ────────────────────────────────────────────
+      # Wraps the SAME ajh-tauri.exe the NSIS installer ships (Tauri has no
+      # MSIX target), so it runs after the build and before the renaming steps
+      # below — those only touch bundle/ artifacts, not target/msix/.
+      #
+      # The package is UNSIGNED by design: the Microsoft Store signs it during
+      # submission, so it must never be attached to the GitHub Release. It is a
+      # build ARTIFACT, downloaded by hand for the (currently manual) Partner
+      # Center submission and, later, by an `msstore` publishing job. Skipped
+      # entirely until the MSIX_* repository variables exist — Partner Center
+      # assigns those values, so this ships before the listing does.
+      # See docs/DEPLOYMENT.md § Microsoft Store (MSIX).
+      - name: 📦 Pack the Microsoft Store MSIX
+        if: success() && matrix.platform == 'windows-latest' && vars.MSIX_IDENTITY_NAME != ''
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          echo "::group::Packing the Microsoft Store MSIX"
+          node apps/desktop/scripts/pack-msix.mjs
+          echo "::endgroup::"
+
+      - name: ⬆️ Upload the MSIX artifact
+        if: success() && matrix.platform == 'windows-latest' && vars.MSIX_IDENTITY_NAME != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: msix-store-package
+          path: apps/desktop/src-tauri/target/msix/*.msix
+          if-no-files-found: error
+          retention-days: 90
+
       - name: 🏷️ Normalize Artifact Names
         if: success()
         run: |
