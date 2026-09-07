@@ -10,7 +10,7 @@ import { CHROME_EXT, FIREFOX_EXT, GITHUB_REPO, SPONSOR } from '@/lib/site-links'
 export function SiteFooter({
   current,
 }: {
-  current?: 'download' | 'privacy' | 'accessibility' | 'how-it-works';
+  current?: 'download' | 'privacy' | 'terms' | 'accessibility' | 'how-it-works';
 }) {
   return (
     <footer>
@@ -23,6 +23,8 @@ export function SiteFooter({
         {current === 'download' ? 'download' : <a href="/download">download</a>}
         {' · '}
         {current === 'privacy' ? 'privacy' : <a href="/privacy">privacy</a>}
+        {' · '}
+        {current === 'terms' ? 'terms' : <a href="/terms">terms</a>}
         {' · '}
         {current === 'accessibility' ? 'accessibility' : <a href="/accessibility">accessibility</a>}
         {' · '}

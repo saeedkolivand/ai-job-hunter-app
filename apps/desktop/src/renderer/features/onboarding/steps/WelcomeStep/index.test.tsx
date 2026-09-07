@@ -41,6 +41,17 @@ vi.mock('@ajh/translations', () => ({
   default: { on: vi.fn(), changeLanguage: vi.fn(), language: 'en' },
 }));
 
+// ── service barrel stub ───────────────────────────────────────────────────────
+// The terms notice renders `@/components/ui/ExternalLink`, which reaches for
+// `useOpenExternal` (and through it AppClientProvider). Stubbed the way
+// ExternalLink's own test stubs it, so the step still renders without a
+// provider tree AND the opener call stays observable.
+const mockOpenExternal = vi.fn();
+
+vi.mock('@/services', () => ({
+  useOpenExternal: () => ({ mutate: mockOpenExternal }),
+}));
+
 // ── component + store (real store — no mock) ──────────────────────────────────
 
 import { usePreferencesStore } from '@/store/preferences-store';
@@ -55,6 +66,7 @@ function renderStep() {
 
 beforeEach(() => {
   usePreferencesStore.getState().resetPreferences();
+  mockOpenExternal.mockClear();
 });
 
 describe('WelcomeStep — clicking Continue persists the name', () => {
@@ -129,6 +141,48 @@ describe('WelcomeStep — Enter while typing in the name input takes the identic
 
     expect(usePreferencesStore.getState().userName).toBe('Grace Hopper');
     expect(onNext).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('WelcomeStep — terms notice', () => {
+  it('renders the notice and opens the published terms in the system browser, without advancing', async () => {
+    const user = userEvent.setup();
+    const { onNext } = renderStep();
+
+    expect(screen.getByText(/onboarding\.welcome\.termsNoticePrefix/)).toBeInTheDocument();
+
+    // A real anchor, so it is reachable and activatable by keyboard; the click
+    // is intercepted (ExternalLink) and routed to the opener IPC instead of
+    // navigating the webview.
+    const link = screen.getByRole('link', { name: 'onboarding.welcome.termsNoticeLink' });
+    expect(link).toHaveAttribute('href', 'https://aijobhunter.app/terms');
+
+    await user.click(link);
+
+    expect(mockOpenExternal).toHaveBeenCalledTimes(1);
+    expect(mockOpenExternal).toHaveBeenCalledWith('https://aijobhunter.app/terms');
+    // Reading the terms is not "continue": the notice must never double as a
+    // step advance, and it must not gate one either.
+    expect(onNext).not.toHaveBeenCalled();
+  });
+
+  it('does not advance the wizard when Enter fires with the terms link focused', async () => {
+    const user = userEvent.setup();
+    const { onNext } = renderStep();
+
+    // A typed name makes canAdvance true, so the ONLY thing standing between
+    // this Enter and onNext is the wrapper's anchor exemption
+    // (activeElementHandlesOwnActivation) — the property this test pins.
+    // The listener lives on `window`, so a keyboard event, not a click.
+    await user.type(screen.getByPlaceholderText('onboarding.welcome.namePlaceholder'), 'Grace');
+    screen.getByRole('link', { name: 'onboarding.welcome.termsNoticeLink' }).focus();
+    await user.keyboard('{Enter}');
+
+    expect(onNext).not.toHaveBeenCalled();
+    // And Enter is not merely swallowed: keyboard activation opens the terms,
+    // the same way a click does (user-event synthesises the anchor's click).
+    expect(mockOpenExternal).toHaveBeenCalledTimes(1);
+    expect(mockOpenExternal).toHaveBeenCalledWith('https://aijobhunter.app/terms');
   });
 });
 

@@ -4,11 +4,16 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, FloatingIcon, Input } from '@ajh/ui';
 
+import { ExternalLink } from '@/components/ui/ExternalLink';
 import { LOCALES } from '@/constants/locales';
 import i18n from '@/i18n';
 import { usePreferencesStore } from '@/store/preferences-store';
 
 import { OnboardingStepWrapper } from '../../components/OnboardingStepWrapper';
+
+// The published terms — opened in the system browser, never the app webview.
+// Notice only: nothing gates "Get started" on it (owner decision, 2026-09-07).
+const TERMS_URL = 'https://aijobhunter.app/terms';
 
 interface Props {
   onNext: () => void;
@@ -131,6 +136,24 @@ export function WelcomeStep({ onNext, direction, stepIndex, totalSteps }: Props)
         {t('onboarding.welcome.next')}
         <ArrowRight size={15} />
       </Button>
+
+      {/* Terms notice. Split across three keys rather than interpolated because
+          the link sits mid-sentence in German ("…den Nutzungsbedingungen zu.")
+          and at the end in English — same prefix/link/suffix shape settings'
+          AggregatorKeysSettings uses. A real <a> (ExternalLink), not a Button:
+          OnboardingStepWrapper's global Enter shortcut steps aside for a
+          focused anchor, so keyboard activation opens the terms instead of
+          advancing the wizard. */}
+      <p className="mt-4 text-center text-xs text-foreground/40">
+        {t('onboarding.welcome.termsNoticePrefix')}{' '}
+        <ExternalLink
+          href={TERMS_URL}
+          className="text-brand-soft underline underline-offset-2 hover:text-brand-soft/80"
+        >
+          {t('onboarding.welcome.termsNoticeLink')}
+        </ExternalLink>
+        {t('onboarding.welcome.termsNoticeSuffix')}
+      </p>
     </OnboardingStepWrapper>
   );
 }

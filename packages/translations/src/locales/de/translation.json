@@ -3033,7 +3033,10 @@
       "subtitle": "Ihr lokaler, KI-nativer Job-Jagd-Assistent. Lassen Sie uns einrichten.",
       "nameLabel": "Wie ist Ihr Name?",
       "namePlaceholder": "Geben Sie Ihren Namen ein",
-      "next": "Loslegen"
+      "next": "Loslegen",
+      "termsNoticePrefix": "Wenn Sie fortfahren, stimmen Sie den",
+      "termsNoticeLink": "Nutzungsbedingungen",
+      "termsNoticeSuffix": " zu."
     },
     "prefs": {
       "languageLabel": "Sprache"
