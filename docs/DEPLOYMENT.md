@@ -216,7 +216,7 @@ Additional advisory layers:
 
 ## Browser extension store publishing
 
-The MV3 extension is already listed on both stores, so every release **submits a new version to an existing listing** — never creates one. Two jobs in `release.yml` do it automatically after `package-extension`, on the same `action: build-installers` dispatch:
+The MV3 extension is already listed on both stores, so every release **submits a new version to an existing listing** — never creates one. Two jobs in `release.yml` do it automatically after `package-extension`, on the same `action: build-installers` dispatch (and one at a time via `action: publish-chrome` / `publish-firefox` with the tag's version, for when a single store's submission failed):
 
 | Job               | Store            | What it submits                                                                                                 |
 | ----------------- | ---------------- | --------------------------------------------------------------------------------------------------------------- |
@@ -258,7 +258,7 @@ Generate a JWT issuer + secret on the AMO **Manage API Keys** page with the acco
 ### Known failure modes
 
 - **An open manual draft blocks Chrome.** The API refuses to act while an unsubmitted draft edit is pending in the dashboard. Submit or discard it, then re-run.
-- **The version must increase.** Chrome rejects an upload whose manifest version is not higher than the published one. The extension version is bumped for every app release by `scripts/sync-tauri-version.cjs`, so this only bites when re-running a release for an already-submitted tag.
+- **The version must increase.** Chrome rejects an upload whose manifest version is not higher than the published one. The extension version is bumped for every app release by `scripts/sync-tauri-version.cjs`, so this only bites when re-running a release for an already-submitted tag — which is why a failed single store is re-run with its own `publish-*` action rather than the whole `build-installers`.
 - **A Chrome refresh token expires after 6 months unused** (and after 7 days if the consent screen was left in Testing). Symptom: `invalid_grant`. Re-run the key generator.
 - **An AMO source-archive mismatch is a rejection**, and a repeat offence gets the add-on taken down. The reproducibility gate exists to catch it in CI instead.
 - **Missing secrets fail the job by design.** Until all six exist, every release run shows two red jobs and no submission happens. Nothing else in the release is affected.
