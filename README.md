@@ -34,7 +34,7 @@
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey"></a>
   <a href="https://aijobhunter.app"><img alt="Live site" src="https://img.shields.io/badge/Live-site-e24b4a"></a>
   <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll"><img alt="Chrome Web Store" src="https://img.shields.io/badge/Chrome%20Web%20Store-available-e24b4a?logo=googlechrome&logoColor=white"></a>
-  <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/"><img alt="Firefox Add-ons" src="https://img.shields.io/badge/Firefox%20Add--ons-available-e24b4a?logo=firefoxbrowser&logoColor=white"></a>
+  <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter/"><img alt="Firefox Add-ons" src="https://img.shields.io/badge/Firefox%20Add--ons-available-e24b4a?logo=firefoxbrowser&logoColor=white"></a>
   <a href="SECURITY.md"><img alt="Security policy" src="https://img.shields.io/badge/security-policy-2ea44f"></a>
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/saeedkolivand/ai-job-hunter-app?style=flat&color=f5b301"></a>
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/pulls"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
@@ -134,7 +134,7 @@ Your résumés, generations, applications, and tracked job data live in a local 
 <details>
 <summary><strong>🌐 Browser extension (save jobs one-click)</strong></summary>
 
-- **Now on the Chrome Web Store and Firefox Add-ons**: <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll" target="_blank" rel="noopener noreferrer">Install for Chrome</a> · <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/" target="_blank" rel="noopener noreferrer">Install for Firefox</a>.
+- **Now on the Chrome Web Store and Firefox Add-ons**: <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll" target="_blank" rel="noopener noreferrer">Install for Chrome</a> · <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter/" target="_blank" rel="noopener noreferrer">Install for Firefox</a>.
 - MV3 extension for **Chrome & Firefox**: while browsing any job board, click the extension button to import the job into your saved applications.
 - **One-click import**: click **"Import this job"** on any board page; the extension automatically captures the rendered DOM when possible (bypassing bot-walls on logged-in boards like LinkedIn/Indeed) and falls back to URL-only on restricted pages.
 - **Assisted autofill** (opt-in, default off): fill empty contact fields on any application with your saved profile; enabled only in Settings → Accounts → Browser extension.

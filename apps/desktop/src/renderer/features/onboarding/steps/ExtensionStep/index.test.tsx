@@ -55,7 +55,7 @@ import { ExtensionStep } from './index';
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 const CHROME_URL = 'https://chromewebstore.google.com/detail/oaoekkgkhmgdfnpmfkpphgiikliaicll';
-const FIREFOX_URL = 'https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/';
+const FIREFOX_URL = 'https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter/';
 
 function renderStep(overrides: Partial<Parameters<typeof ExtensionStep>[0]> = {}) {
   const onNext = vi.fn();

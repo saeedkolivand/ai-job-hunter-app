@@ -85,7 +85,7 @@ const EXPECTED_HREFS = [
   '/privacy',
   '/storybook/',
   '/world',
-  'https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter-job-importer/',
+  'https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter/',
   'https://apify.com/privacy-policy',
   'https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll',
   'https://github.com/saeedkolivand/ai-job-hunter-app',
