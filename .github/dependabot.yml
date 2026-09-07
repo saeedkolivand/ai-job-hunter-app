@@ -24,9 +24,24 @@ updates:
     # packages/*, build tooling), because they share the root lockfile and
     # cannot be split per-directory (see the note at the top of this entry).
     groups:
+      # vitest and its @vitest/* companions peer-pin each other to the EXACT
+      # same version (@vitest/browser-playwright 5.0.0 peers `vitest: 5.0.0`),
+      # so a lone major bump of one of them breaks every vitest project at
+      # startup (#1124 took the root `pnpm test` down with a missing export).
+      # Bump the family in one PR, all update types, and keep it out of the
+      # catch-all below — a lockstep group silently absorbed by a catch-all
+      # stops being a lockstep group (same reasoning as typst in the cargo entry).
+      vitest:
+        patterns:
+          - vitest
+          - '@vitest/*'
+
       javascript:
         patterns:
           - '*'
+        exclude-patterns:
+          - vitest
+          - '@vitest/*'
         update-types:
           - minor
           - patch
