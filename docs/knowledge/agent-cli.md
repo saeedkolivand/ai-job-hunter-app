@@ -1,6 +1,6 @@
 # Agent CLI (`ajh-tauri agent <verb>`)
 
-Last updated: 2026-09-07
+Last updated: 2026-09-08
 
 A headless CLI mode of the shipped `ajh-tauri` binary, invoked alongside the running desktop app. Enables external programs (shell scripts, LLM agents, CI pipelines) to query job data, profile fields, and trigger commands without a GUI. The same binary, no separate install.
 
@@ -57,6 +57,7 @@ The `exePath` it publishes is resolved by `platform::config::agent_cli_exe_path`
 - **Frame-cap refusal**: a generic-tier reply too large for the bridge's own WS frame ceiling (`MAX_FRAME_BYTES` in `extension_bridge/mod.rs`) is refused as `result_too_large` rather than written and dropped — a deterministic refusal instead of the `connection_lost` an over-cap frame used to produce, which reads as transient and invites a retry that can never succeed. The dispatcher measures against that same constant instead of defining a second one; the refusal variant and its sentinel live in `agent_call.rs`, with the reasoning on the variant. The MCP mode's own result cap is a separate, smaller constant one hop further out (MCP section below).
 - **Paging on the generic tier**: a list command that takes no argument able to narrow its result returns one page — `limit`/`cursor` in, an `items`/`total`/`nextCursor` envelope out — bounded by an audited page-size constant beside the generic tier in `agent_call.rs`. Which rows page, and why that size, live on the constant; a caller discovers it per row from the `commands` tool's returns note, never from a list on this page. The cursor/limit/byte-budget primitives are shared with the curated `found-jobs` resource (`extension_bridge/paging.rs`), so a cursor is parsed identically on both.
 - **Binary payloads**: where a command's value is bytes rather than JSON text, the agent layer base64-encodes it and states so in an explicit encoding marker on the reply, so a caller decodes on the marker rather than on a guess. The marker's key and the rows it applies to are named beside the same constants in `agent_call.rs`.
+- **Partial preference writes**: an agent-tier `job_preferences_set` merges its body over the stored row rather than replacing it — a key the body omits keeps the stored value, a key present as JSON `null` clears it. The rule, and why it is load-bearing, live on `commands::job_preferences::set_job_preferences`.
 - **Timeout discipline**: Per-step budgets (handshake, query) + an outer invocation deadline prevent hung/squatting ports from stalling the entire call.
 - **Privacy**: The `error` field of a generic-tier reply is a fixed sentinel from a closed set (the curated tier's throttle refusal is the one prose exception, and predates the MCP mode); neither paths nor pairing tokens appear in any reply. A `detail` field may carry human-readable context. That guarantee covers the _envelope_ only: the `data` of a successful reply is the command's real output and can carry personal data (see the MCP section).
 

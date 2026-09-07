@@ -94,16 +94,24 @@ agent layer may reshape the envelope — for these two enumerated reasons and no
   without being parsed, so the caller saw `connection_lost`: a transport sentinel standing in for a size
   refusal, indistinguishable from a dropped socket and inviting a retry that can never succeed. The
   dispatcher now measures the serialized reply against that same cap — reusing the bridge's constant
-  rather than defining a second ceiling — and substitutes a deterministic `result_too_large` refusal
-  that fits. Same sentinel as [ADR-040](adr-040-mcp-server-as-agent-cli-mode.md) §10, which caps the MCP
+  rather than defining a second ceiling — and substitutes a deterministic `result_too_large` refusal.
+  That substitute fits by construction, not by being merely smaller than what it replaced: it is
+  assembled only from bounded material — a fixed sentinel, a detail whose one variable is the measured
+  size, and identifiers clamped before they are echoed back, since they arrive from the caller and
+  nothing else would bound them (`enforce_frame_cap` and the clamp beside it in `agent_call.rs`).
+  Same sentinel as [ADR-040](adr-040-mcp-server-as-agent-cli-mode.md) §10, which caps the MCP
   tool result one hop further out against its own, smaller constant; adopting that one here would newly
   refuse payloads a plain `agent call` caller receives today, so the two stay separate.
 - **Rows and bytes no command argument can narrow.** Where no parameter bounds a command's result — the
   whole-table list commands — the generic tier pages it behind `limit`/`cursor` and returns an
   `items`/`total`/`nextCursor` envelope: the paging discipline the curated `found-jobs` resource
   introduced (#1115), under a generic row key because the generic tier has no per-resource name to use.
-  Where the value is a byte array JSON cannot carry, the agent layer base64-encodes it and marks the
-  encoding explicitly on the reply, so a caller never has to infer it from the bytes.
+  Where the value is raw bytes, JSON _can_ carry them — as an array of numbers — but only at several
+  times their own size in decimal digits and separators, enough for an ordinary export to overrun the
+  MCP result cap with no argument available to narrow it. So the agent layer base64-encodes those
+  bytes and marks the encoding explicitly on the reply, and a caller decodes on the marker instead of
+  inferring it from the bytes (`base64_byte_fields` in `agent_call.rs`; its audited `(command, field)`
+  pairs carry the measurement that sized the choice).
 
 The page size is an audited constant beside the generic tier in `agent_call.rs`, carrying its derivation
 on the constant itself; the size ceiling is the bridge's own `MAX_FRAME_BYTES`, reused rather than
