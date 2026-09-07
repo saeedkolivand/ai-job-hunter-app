@@ -206,6 +206,50 @@ fn rejects_dangerous_url_schemes_to_empty() {
     assert_eq!(normalize_job_url("JavaScript:alert(1)"), "");
 }
 
+/// [`decode_unreserved`] sits BESIDE the normalizer and must never be able to
+/// restructure a url: decoding a RESERVED escape (a `%2F` becoming a path
+/// separator, a `%3A` a scheme colon) is the one thing RFC 3986 §6.2.2.2
+/// excludes from syntax-based normalization, and the reason `urlencoding::decode`
+/// is unusable here. Mutation-checked during authoring by decoding `%2F` and
+/// watching this fail.
+#[test]
+fn decode_unreserved_never_decodes_a_reserved_escape() {
+    let reserved = "https://x.example%2Fcom/a%3Ab?q=1%3F2%233&p=100%25";
+    assert_eq!(
+        decode_unreserved(reserved),
+        reserved,
+        "every reserved escape must survive byte-for-byte"
+    );
+    // …while an unreserved one in the same string still decodes.
+    assert_eq!(decode_unreserved("%41%2D%5F%7E%2E"), "A-_~.");
+    assert_eq!(decode_unreserved("%41%2F%7E"), "A%2F~");
+}
+
+/// A `%` that isn't a complete escape is data, not a parse error — it is copied
+/// through, never consumed, and never panics on a truncated tail.
+#[test]
+fn decode_unreserved_leaves_a_malformed_escape_untouched() {
+    for input in ["%", "%2", "%ZZ", "100%", "%%41", "a%g1b"] {
+        let expected = if input == "%%41" { "%A" } else { input };
+        assert_eq!(
+            decode_unreserved(input),
+            expected,
+            "malformed escape mishandled: {input}"
+        );
+    }
+}
+
+/// The decode is a READER's leniency: a url that goes through the normalizer is
+/// stored exactly as it is today, percent-escapes intact, so the persisted dedup
+/// key and its byte-identical TS mirror keep their current meaning.
+#[test]
+fn normalize_job_url_still_does_no_percent_decoding() {
+    assert_eq!(
+        normalize_job_url("https://example.com/jobs/a%2Db"),
+        "https://example.com/jobs/a%2db"
+    );
+}
+
 #[test]
 fn embedded_control_characters_cannot_smuggle_a_scheme_past_the_guard() {
     // HTML and the WHATWG URL parser REMOVE embedded tab/CR/LF before parsing, so

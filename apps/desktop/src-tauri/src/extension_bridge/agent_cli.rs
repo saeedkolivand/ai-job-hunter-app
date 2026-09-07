@@ -177,10 +177,10 @@ enum Verb {
     /// enumerate this: the first two are unbounded (every real autopilot
     /// exceeds the MCP bridge's own result cap) and the third is a
     /// cross-autopilot top-N ranking, not a per-autopilot full traversal.
-    /// `cursor` is a plain decimal offset into the stored `found_jobs`
-    /// order (see `agent_read::resolve_found_jobs`'s doc for why an offset
-    /// is sufficient — that order is stable outside a `record_run`/dedup
-    /// split).
+    /// `cursor` is opaque to this client — it is passed through verbatim in
+    /// both directions and never parsed here; its shape, and the fact that a
+    /// cursor is only valid for the autopilot that issued it (issue #1130),
+    /// live on `agent_read::found_jobs::parse_found_jobs_cursor`.
     FoundJobs {
         autopilot_id: String,
         limit: Option<u64>,

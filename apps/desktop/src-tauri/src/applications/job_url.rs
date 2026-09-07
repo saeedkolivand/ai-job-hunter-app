@@ -123,6 +123,56 @@ pub fn normalize_job_url(url: &str) -> String {
     out
 }
 
+/// RFC 3986 §2.3 unreserved-only percent-decode, for lookup-time URL
+/// *comparison* (issue #1128). Decodes ONLY the escapes that are defined to be
+/// equivalent to their literal character — `ALPHA` / `DIGIT` / `-` / `.` / `_` /
+/// `~` (so `%41`→`A`, `%2D`→`-`) — and copies every RESERVED escape (`%2F`,
+/// `%3A`, `%3F`, `%23`, `%25`, …) and every malformed one (`%2`, `%ZZ`, a `%`
+/// at the end) through byte-for-byte. Decoding a reserved escape would
+/// *restructure* the URL (a `%2F` becoming a path separator), which is exactly
+/// what RFC 3986 §6.2.2.2 excludes from syntax-based normalization — and why
+/// `urlencoding::decode` (which decodes everything) is not used here.
+///
+/// Co-located with [`normalize_job_url`] but deliberately NOT called by it:
+/// this is a reader's leniency, not a rewrite of the identity contract. Never
+/// call it before persisting a value through [`normalize_job_url`] — the stored
+/// dedup key, and its byte-identical TS mirror (`canonical-job-key.ts`, "does
+/// no percent-decoding"), must keep meaning exactly what they mean today.
+pub(crate) fn decode_unreserved(s: &str) -> String {
+    fn unreserved_byte(hi: u8, lo: u8) -> Option<u8> {
+        let hi = char::from(hi).to_digit(16)?;
+        let lo = char::from(lo).to_digit(16)?;
+        let byte = (hi * 16 + lo) as u8;
+        (byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~')).then_some(byte)
+    }
+
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(at) = rest.find('%') {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + 1..];
+        let bytes = after.as_bytes();
+        match bytes
+            .first()
+            .zip(bytes.get(1))
+            .and_then(|(&hi, &lo)| unreserved_byte(hi, lo))
+        {
+            // Both escape digits are ASCII, so `after[2..]` is always on a char boundary.
+            Some(byte) => {
+                out.push(char::from(byte));
+                rest = &after[2..];
+            }
+            // Reserved or malformed — the `%` and whatever follows stay verbatim.
+            None => {
+                out.push('%');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Per-host allowlist of *identifying* query params that must survive normalization
 /// (every other query param — utm_*, ref, tracking — is dropped, and hosts absent
 /// here drop the entire query, so a host whose id lives in the QUERY collapses to
