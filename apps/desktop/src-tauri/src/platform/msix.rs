@@ -81,28 +81,91 @@ enum Identity {
 ///   `ajh-tauri.exe` spawned by the packaged one would inherit it and wrongly
 ///   report "Store build". Requiring the running exe to live inside the package
 ///   install root is what tells the two apart.
-fn decide(identity: &Identity, exe: Option<&Path>) -> bool {
+fn decide(identity: &Identity, exe: Option<&Path>, alias_dir: Option<&Path>) -> bool {
     match identity {
         Identity::Absent => false,
         Identity::Unknown => true,
-        // Identity, but the OS would not name its install root — nothing to
-        // compare against, so fall back to the safe direction.
+        // Identity, but the OS would not name its install root (or the path it
+        // named could not be canonicalized) — nothing to compare against, so
+        // fall back to the safe direction.
         Identity::Present(None) => true,
         Identity::Present(Some(root)) => match exe {
-            Some(exe) => exe.starts_with(root),
+            // The alias directory counts as "inside the package": a process
+            // launched through the execution-alias shim belongs to this
+            // package as much as one launched from the install root.
+            Some(exe) => same_root(exe, root) || alias_dir.is_some_and(|dir| same_root(exe, dir)),
             None => true,
         },
     }
+}
+
+/// Is `exe` inside `root`? Both are expected to be canonical already (see
+/// [`is_packaged`]); this half is pure so every shape below is unit-tested on
+/// every host.
+///
+/// **Not `Path::starts_with`.** On Windows that folds case only in the drive
+/// prefix and compares every other component byte-for-byte, so
+/// `C:\PROGRAM FILES\WINDOWSAPPS\…` inside `C:\Program Files\WindowsApps\…`
+/// answers `false` — and a false "not packaged" is the dangerous direction:
+/// it re-arms the GitHub updater on a Store install.
+///
+/// Segment-wise rather than `Path::components()`, and case-folded:
+/// `components()` on a non-Windows host does not treat `\` as a separator or
+/// recognise the `\\?\` prefix, so the tests would compare one opaque blob
+/// instead of segments and this decision would go untested on the CI legs that
+/// run it. Segment-wise is also what makes a sibling directory that merely
+/// shares a prefix string (`…\WindowsApps2\…`) a non-match.
+fn same_root(exe: &Path, root: &Path) -> bool {
+    let root = segments(root);
+    let exe = segments(exe);
+    // An empty root would otherwise match everything. Unreachable —
+    // `probe_identity` discards a package path with no segments — but the
+    // consequence of being wrong here is "every process is packaged".
+    !root.is_empty() && exe.len() > root.len() && exe[..root.len()] == root[..]
+}
+
+/// Path segments for comparison: the `\\?\` verbatim prefix removed, both
+/// separators honoured, empty segments (trailing/doubled separators) dropped,
+/// each segment lowercased.
+fn segments(path: &Path) -> Vec<String> {
+    path.to_string_lossy()
+        .trim_start_matches(r"\\?\")
+        .split(['\\', '/'])
+        .filter(|segment| !segment.is_empty())
+        .map(str::to_lowercase)
+        .collect()
 }
 
 /// `true` when this process runs with MSIX package identity (Store build).
 ///
 /// Cached: identity is fixed for the lifetime of a process, so the OS probe
 /// happens at most once — which also means the `Unknown` warning below is
-/// logged at most once.
+/// logged at most once, and the handful of `canonicalize` calls happen once.
+///
+/// Both paths go through [`std::fs::canonicalize`] before they are compared:
+/// it resolves an 8.3 short name (`C:\PROGRA~1\…`) to its long form and puts
+/// both sides in the same `\\?\` shape, neither of which a string comparison
+/// can do. A canonicalize FAILURE is missing evidence, and missing evidence
+/// means packaged — the same safe direction as [`Identity::Unknown`] — which
+/// is exactly what dropping it to `None` achieves here: every `None` arm of
+/// [`decide`] answers `true`.
 pub fn is_packaged() -> bool {
     static PACKAGED: OnceLock<bool> = OnceLock::new();
-    *PACKAGED.get_or_init(|| decide(&probe_identity(), std::env::current_exe().ok().as_deref()))
+    *PACKAGED.get_or_init(|| {
+        let identity = match probe_identity() {
+            Identity::Present(Some(root)) => Identity::Present(canonical(&root)),
+            other => other,
+        };
+        let exe = std::env::current_exe().ok().and_then(|p| canonical(&p));
+        let alias = alias_dir().and_then(|p| canonical(&p));
+        decide(&identity, exe.as_deref(), alias.as_deref())
+    })
+}
+
+/// `fs::canonicalize`, failure flattened to `None` (see [`is_packaged`] for
+/// why that is the safe direction).
+fn canonical(path: &Path) -> Option<PathBuf> {
+    std::fs::canonicalize(path).ok()
 }
 
 /// `GetCurrentPackageFullName` is the plain Win32 identity probe: it needs no
@@ -120,7 +183,15 @@ fn probe_identity() -> Identity {
     if rc == APPMODEL_ERROR_NO_PACKAGE {
         Identity::Absent
     } else if rc == ERROR_SUCCESS || rc == ERROR_INSUFFICIENT_BUFFER {
-        Identity::Present(current_package_string(GetCurrentPackagePath).map(PathBuf::from))
+        // A path with no segments (empty, or nothing but separators) is
+        // discarded rather than passed on: `same_root` would answer `false` for
+        // it, which is the unsafe direction, whereas `Present(None)` is the
+        // safe one.
+        Identity::Present(
+            current_package_string(GetCurrentPackagePath)
+                .map(PathBuf::from)
+                .filter(|path| !segments(path).is_empty()),
+        )
     } else {
         // Neither "packaged" nor the documented "no package" — treated as
         // packaged (see `decide`). Logged so the case is diagnosable rather
@@ -168,15 +239,26 @@ fn current_package_string(
 
 // ── The path a packaged build publishes for itself ───────────────────────────
 
-/// `%LOCALAPPDATA%\Microsoft\WindowsApps\<PackageFamilyName>\<alias>` — where
-/// Windows puts the execution-alias shim for a package. Pure, so the layout is
-/// tested on every host.
-fn alias_path(local_app_data: &Path, family: &str) -> PathBuf {
+/// `%LOCALAPPDATA%\Microsoft\WindowsApps\<PackageFamilyName>` — where Windows
+/// puts this package's execution-alias shims. Pure, so the layout is tested on
+/// every host.
+fn alias_directory(local_app_data: &Path, family: &str) -> PathBuf {
     local_app_data
         .join("Microsoft")
         .join("WindowsApps")
         .join(family)
-        .join(ALIAS_EXE_NAME)
+}
+
+/// The alias directory for THIS process's package, or `None` when there is no
+/// package identity (or no `%LOCALAPPDATA%`).
+///
+/// Deliberately does not consult [`is_packaged`]: it is one of that decision's
+/// own inputs, so asking would recurse. It only needs identity, which
+/// [`decide`] has already established by the time this matters.
+fn alias_dir() -> Option<PathBuf> {
+    let family = package_family_name()?;
+    let local = std::env::var_os("LOCALAPPDATA")?;
+    Some(alias_directory(Path::new(&local), &family))
 }
 
 /// The path this exe should PUBLISH to other programs on a Store install, or
@@ -188,9 +270,7 @@ pub fn alias_exe_path() -> Option<PathBuf> {
     if !is_packaged() {
         return None;
     }
-    let family = package_family_name()?;
-    let local = std::env::var_os("LOCALAPPDATA")?;
-    let path = alias_path(Path::new(&local), &family);
+    let path = alias_dir()?.join(ALIAS_EXE_NAME);
     if !path.is_file() {
         // Unverified end-to-end (needs a registered package — see
         // docs/DEPLOYMENT.md). If the assumption is ever wrong, this line in a
@@ -245,6 +325,11 @@ fn enable_outcome(state: i32) -> AppResult<bool> {
         startup_state::DISABLED_BY_POLICY => Err(AppError::Message(
             "Launch at login is blocked by a system policy on this device.".into(),
         )),
+        // Spelled out rather than folded into the catch-all: it is the one
+        // remaining "we asked, Windows said no, but not for a reason we can
+        // explain" case, and naming it keeps the whole `StartupTaskState`
+        // domain visible in one place.
+        startup_state::DISABLED => Ok(false),
         other => Ok(startup_state_is_enabled(other)),
     }
 }
@@ -272,9 +357,13 @@ pub fn set_startup_task(enabled: bool) -> Option<AppResult<bool>> {
 }
 
 /// `join()` is `windows-future`'s blocking accessor (it was `get()` before
-/// 0.3). Blocking is right here: both callers are synchronous Tauri commands
-/// that already blocked on a registry read, and the task lookup is a local
-/// OS call.
+/// 0.3): it waits on the operation with no timeout and no message pump.
+///
+/// That is why both callers are `#[tauri::command(async)]` — a plain
+/// `#[tauri::command]` runs its body inline on the UI thread (see
+/// `commands/resume.rs` for the traced call path), so an unbounded wait there
+/// freezes the window. `(async)` moves the same synchronous body onto a Tokio
+/// worker, where blocking is merely slow.
 #[cfg(windows)]
 fn startup_task() -> windows::core::Result<windows::ApplicationModel::StartupTask> {
     windows::ApplicationModel::StartupTask::GetAsync(&windows::core::HSTRING::from(
@@ -321,34 +410,41 @@ fn apply_startup_task(_enabled: bool) -> AppResult<bool> {
 mod tests {
     use super::*;
 
-    fn root(p: &str) -> PathBuf {
-        PathBuf::from(p)
+    fn root(p: impl AsRef<str>) -> PathBuf {
+        PathBuf::from(p.as_ref())
     }
 
-    #[test]
-    fn no_identity_is_unpackaged() {
-        assert!(!decide(
-            &Identity::Absent,
-            Some(&root("/anywhere/ajh-tauri.exe"))
-        ));
-    }
+    /// The package install root in its canonical (`\\?\`, long-name) shape,
+    /// which is what `is_packaged` actually compares.
+    const INSTALL: &str = r"\\?\C:\Program Files\WindowsApps\Publisher.App_1.2.3.0_x64__abc";
 
-    /// The safe direction: an unreadable probe must not hand a packaged build
-    /// back to the GitHub updater.
+    /// Every (identity × exe-known) combination `decide` can be handed, so no
+    /// arm is left to be argued about in review. The `None` exe column is the
+    /// "we could not canonicalize / `current_exe()` failed" case, and every
+    /// cell in it must answer the same way its identity does with no exe to
+    /// check — packaged, unless identity is positively absent.
     #[test]
-    fn unknown_probe_counts_as_packaged() {
-        assert!(decide(
-            &Identity::Unknown,
-            Some(&root("/anywhere/ajh-tauri.exe"))
-        ));
-        assert!(decide(&Identity::Present(None), None));
+    fn the_whole_truth_table_is_pinned() {
+        let exe = root(r"\\?\C:\Users\tester\AppData\Local\AI Job Hunter\ajh-tauri.exe");
+        let inside = root(INSTALL).join("ajh-tauri.exe");
+        let present = Identity::Present(Some(root(INSTALL)));
+
+        assert!(!decide(&Identity::Absent, Some(&exe), None));
+        assert!(!decide(&Identity::Absent, None, None));
+        assert!(decide(&Identity::Unknown, Some(&exe), None));
+        assert!(decide(&Identity::Unknown, None, None));
+        assert!(decide(&Identity::Present(None), Some(&exe), None));
+        assert!(decide(&Identity::Present(None), None, None));
+        assert!(decide(&present, Some(&inside), None));
+        assert!(!decide(&present, Some(&exe), None));
+        assert!(decide(&present, None, None));
     }
 
     #[test]
     fn identity_plus_exe_inside_the_package_is_packaged() {
-        let install = root("C:/Program Files/WindowsApps/Publisher.App_1.2.3.0_x64__abc");
+        let install = root(INSTALL);
         let exe = install.join("ajh-tauri.exe");
-        assert!(decide(&Identity::Present(Some(install)), Some(&exe)));
+        assert!(decide(&Identity::Present(Some(install)), Some(&exe), None));
     }
 
     /// The inherited-identity case: an NSIS-installed exe spawned by the
@@ -356,9 +452,105 @@ mod tests {
     /// and must keep the normal updater.
     #[test]
     fn identity_inherited_by_a_child_outside_the_package_is_not_packaged() {
-        let install = root("C:/Program Files/WindowsApps/Publisher.App_1.2.3.0_x64__abc");
-        let exe = root("C:/Users/tester/AppData/Local/AI Job Hunter/ajh-tauri.exe");
-        assert!(!decide(&Identity::Present(Some(install)), Some(&exe)));
+        let exe = root(r"\\?\C:\Users\tester\AppData\Local\AI Job Hunter\ajh-tauri.exe");
+        assert!(!decide(
+            &Identity::Present(Some(root(INSTALL))),
+            Some(&exe),
+            None
+        ));
+    }
+
+    /// A process launched through the execution-alias shim belongs to the
+    /// package too. `current_exe()` is expected to resolve the shim (an
+    /// `APPEXECLINK` reparse point) back to the real WindowsApps path — and if
+    /// it cannot, `canonicalize` fails and the exe arrives as `None`, which is
+    /// already packaged. This arm makes the third possibility — the alias path
+    /// surviving canonicalization as itself — land on the same answer.
+    #[test]
+    fn an_exe_under_the_alias_directory_is_packaged() {
+        let alias = root(r"\\?\C:\Users\t\AppData\Local\Microsoft\WindowsApps\Publisher.App_abc");
+        let exe = alias.join("ajh-tauri.exe");
+        assert!(decide(
+            &Identity::Present(Some(root(INSTALL))),
+            Some(&exe),
+            Some(&alias)
+        ));
+        // …but only for THIS package's alias directory.
+        let other = root(r"\\?\C:\Users\t\AppData\Local\Microsoft\WindowsApps\Someone.Else_xyz");
+        assert!(!decide(
+            &Identity::Present(Some(root(INSTALL))),
+            Some(&other.join("ajh-tauri.exe")),
+            Some(&alias)
+        ));
+    }
+
+    /// `Path::starts_with` answers `false` for every one of these on Windows
+    /// (it folds case only in the drive prefix), and a false "not packaged"
+    /// re-arms the GitHub updater on a Store install.
+    #[test]
+    fn root_matching_survives_case_separators_and_the_verbatim_prefix() {
+        let long = r"C:\Program Files\WindowsApps\Publisher.App_1.2.3.0_x64__abc";
+        let exe_upper =
+            root(r"C:\PROGRAM FILES\WINDOWSAPPS\PUBLISHER.APP_1.2.3.0_X64__ABC\AJH-TAURI.EXE");
+
+        // Mixed case, either side.
+        assert!(same_root(&exe_upper, &root(long)));
+        assert!(same_root(
+            &root(format!(r"{long}\ajh-tauri.exe")),
+            &root(long.to_uppercase())
+        ));
+        // Trailing separator on the root.
+        assert!(same_root(
+            &root(format!(r"{long}\ajh-tauri.exe")),
+            &root(format!(r"{long}\"))
+        ));
+        // Verbatim prefix on one side only, in either direction.
+        assert!(same_root(
+            &root(format!(r"\\?\{long}\ajh-tauri.exe")),
+            &root(long)
+        ));
+        assert!(same_root(
+            &root(format!(r"{long}\ajh-tauri.exe")),
+            &root(format!(r"\\?\{long}"))
+        ));
+        // Forward slashes (as `current_exe` never produces, but a hand-built
+        // path might).
+        assert!(same_root(
+            &root(long.replace('\\', "/") + "/ajh-tauri.exe"),
+            &root(long)
+        ));
+    }
+
+    /// A sibling directory that merely shares a prefix STRING is not inside the
+    /// package — the reason this compares segments rather than characters.
+    #[test]
+    fn a_sibling_directory_sharing_a_prefix_is_not_inside_the_package() {
+        let root_dir = root(r"C:\Program Files\WindowsApps");
+        assert!(!same_root(
+            &root(r"C:\Program Files\WindowsApps2\Evil.App\ajh-tauri.exe"),
+            &root_dir
+        ));
+        // The exe itself is never the root, and an empty root matches nothing.
+        assert!(!same_root(&root_dir.clone(), &root_dir));
+        assert!(!same_root(&root(r"C:\anything\ajh-tauri.exe"), &root("")));
+    }
+
+    /// 8.3 short names are what `fs::canonicalize` is for: `same_root` is pure
+    /// and cannot resolve `PROGRA~1` (asserted here so the division of labour
+    /// stays explicit), while the canonical pair it is actually given matches.
+    #[test]
+    fn short_names_are_resolved_before_comparison_not_by_it() {
+        let long = r"C:\Program Files\WindowsApps\Publisher.App_1.2.3.0_x64__abc";
+        let short = r"C:\PROGRA~1\WINDOW~1\PUBLIS~1";
+        assert!(!same_root(
+            &root(format!(r"{short}\ajh-tauri.exe")),
+            &root(long)
+        ));
+        // Both sides as `fs::canonicalize` would return them.
+        assert!(same_root(
+            &root(format!(r"\\?\{long}\ajh-tauri.exe")),
+            &root(format!(r"\\?\{long}"))
+        ));
     }
 
     /// The test binary is a plain unpackaged exe, so the whole probe must say
@@ -375,9 +567,10 @@ mod tests {
     }
 
     #[test]
-    fn alias_path_is_the_family_scoped_shim() {
+    fn alias_directory_is_family_scoped() {
         assert_eq!(
-            alias_path(Path::new("C:/Users/t/AppData/Local"), "Publisher.App_abcdefg"),
+            alias_directory(Path::new("C:/Users/t/AppData/Local"), "Publisher.App_abcdefg")
+                .join(ALIAS_EXE_NAME),
             root("C:/Users/t/AppData/Local/Microsoft/WindowsApps/Publisher.App_abcdefg/ajh-tauri.exe")
         );
     }
