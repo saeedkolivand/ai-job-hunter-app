@@ -20,10 +20,10 @@ Exit codes distinguish four outcomes (see `ajh-tauri agent --help` for the full 
 
 - **0** — Success; `{"ok":true,...}` returned
 - **1** — App refused the command (rate-limited, validation error, autofill off, etc.); error details in JSON on stdout
-- **2** — Round trip failed (app not running, bad CLI usage, connection error) or protocol issue
+- **2** — No result was delivered: the round trip failed (app not running, bad CLI usage, connection error, protocol issue) or the app refused/discarded the reply. The `error` field names which; a `result_too_large` refusal means the command itself may already have run
 - **4** — `call` verb only: an `Effect::Irreversible` command needs `--confirm '<value>'`; reply's `detail` field names which **other read command** to call first for the proof value (ADR-038 §4)
 
-The `error` field in exit-code-2 replies carries a fixed sentinel (not a path, URL, or echoed input). A `detail` field may also be present with additional context (e.g., the specific validation error). Full sentinel list in `ajh-tauri agent --help`.
+The `error` field in exit-code-2 replies carries a fixed sentinel (not a path, URL, or echoed input). A `detail` field may also be present with additional context (e.g., the specific validation error). `--help` lists the sentinels the CLI synthesizes for itself; the app-side refusal names that reach the same field are the variants of `Refusal` in `agent_call.rs`.
 
 ## Binary locations
 
