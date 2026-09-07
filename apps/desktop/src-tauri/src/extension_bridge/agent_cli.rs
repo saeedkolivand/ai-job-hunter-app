@@ -310,7 +310,12 @@ const VERB_TABLE: &[VerbHelp] = &[
     VerbHelp {
         name: "automations",
         args: "",
-        returns: "every autopilot and its status",
+        // Issue #1132 — both totals are named HERE, the one string `--help` prints AND the
+        // `automations` MCP tool's own description is derived from, so the distinction can't
+        // exist on one surface only: `totalFound` is the LAST run's kept count, while
+        // `foundJobsTotal` is the whole stored list and equals `found-jobs`' own `total`.
+        returns: "every autopilot and its status (`totalFound` is the last run's kept count; \
+                  `foundJobsTotal` is the whole stored list `found-jobs` pages through)",
     },
     VerbHelp {
         name: "schema",
