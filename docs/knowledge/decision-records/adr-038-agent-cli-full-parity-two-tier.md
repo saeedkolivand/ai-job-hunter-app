@@ -82,3 +82,39 @@ curated tier**. `agent call` returns records raw, including `resume_text` and `c
 consumer that is by design an LLM context. This was put to the owner with the consequence stated and
 chosen deliberately. It is recorded here rather than left implicit, because a promise that quietly
 became false is worse than one that was openly narrowed.
+
+## Amendment — 2026-09-07
+
+§2 and §3 say the generic tier hands the record back as the command produced it. That still holds for
+**content**: no projection, no redaction, no renaming — `agent call` returns the command's own value.
+It does not extend to **transport**. Two replies cannot survive the trip intact, and for those the
+agent layer may reshape the envelope — for these two enumerated reasons and no others:
+
+- **A reply too large to cross the bridge.** A frame over `extension_bridge::MAX_FRAME_BYTES` is closed
+  without being parsed, so the caller saw `connection_lost`: a transport sentinel standing in for a size
+  refusal, indistinguishable from a dropped socket and inviting a retry that can never succeed. The
+  dispatcher now measures the serialized reply against that same cap — reusing the bridge's constant
+  rather than defining a second ceiling — and substitutes a deterministic `result_too_large` refusal
+  that fits. Same sentinel as [ADR-040](adr-040-mcp-server-as-agent-cli-mode.md) §10, which caps the MCP
+  tool result one hop further out against its own, smaller constant; adopting that one here would newly
+  refuse payloads a plain `agent call` caller receives today, so the two stay separate.
+- **Rows and bytes no command argument can narrow.** Where no parameter bounds a command's result — the
+  whole-table list commands — the generic tier pages it behind `limit`/`cursor` and returns an
+  `items`/`total`/`nextCursor` envelope: the paging discipline the curated `found-jobs` resource
+  introduced (#1115), under a generic row key because the generic tier has no per-resource name to use.
+  Where the value is a byte array JSON cannot carry, the agent layer base64-encodes it and marks the
+  encoding explicitly on the reply, so a caller never has to infer it from the bytes.
+
+The page size is an audited constant beside the generic tier in `agent_call.rs`, carrying its derivation
+on the constant itself; the size ceiling is the bridge's own `MAX_FRAME_BYTES`, reused rather than
+copied. That placement is the control: each value is reviewable in one place, and a row that starts
+paging is a change to a line rather than to scattered call sites. The offset/limit/byte-budget
+primitives themselves are one module (`extension_bridge/paging.rs`), shared with the curated
+`found-jobs` resource so a cursor is parsed the same way on both surfaces.
+
+**Rejected — teach the shared commands optional `limit`/`cursor` and an encoding flag.** That would keep
+the agent layer a pure pass-through, but those commands are the ones the renderer calls through
+`AppClient`, so the wire shape a UI screen already consumes would move to serve a caller that is not the
+UI. Confining the reshape to the agent layer cannot regress the renderer at all. Same reasoning as §5,
+which keeps the generic tier's own `dispatched` vocabulary inside the dispatcher rather than teaching
+every command a new one.

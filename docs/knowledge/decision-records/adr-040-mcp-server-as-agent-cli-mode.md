@@ -74,6 +74,8 @@ Three architectural points framed the decision:
 
 - **Tool results carry PII to the client**: Results leave the machine and land in the MCP client's cloud provider and persisted transcript. The `profile` tool returns contact info; `documents_get_text` returns the full résumé; `applications_list` and similar return application records. The server carries no redaction (per ADR-038 §3, the generic tier is raw). This is an explicit consequence of MCP design, not a new risk.
 
+- **`result_too_large` is no longer only this server's cap**: since [ADR-038](adr-038-agent-cli-full-parity-two-tier.md)'s 2026-09-07 amendment the app side refuses a reply too large for the bridge frame with the same sentinel, so a caller can meet it without the payload ever reaching §10's byte check.
+
 ### What was verified, and how
 
 - **Against the real binary over stdio** (scripted sessions, app stopped and app running): a supported `protocolVersion` is echoed and an unsupported one gets `2025-11-25`; `server/discover` → `-32601`; `ping`; notifications produce no frame; a hidden tool → `-32602`; every refusal class arrives as an `isError` result carrying the CLI exit code; throttle refusals across consecutive calls with no retry; byte identity between `agent profile` stdout and the `profile` tool's text block; zero bytes on stderr.
