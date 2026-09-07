@@ -1,6 +1,6 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-09-04
+Last updated: 2026-09-07
 
 Describes the job-scraping subsystem: the board registry (`SCRAPERS` in `apps/desktop/src-tauri/src/scraping/boards/mod.rs`), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
@@ -8,7 +8,7 @@ Describes the job-scraping subsystem: the board registry (`SCRAPERS` in `apps/de
 
 - **`Scraper` trait** — `apps/desktop/src-tauri/src/scraping/types/mod.rs` (bounds: `Send + Sync`). Every board implements it.
 - **`SCRAPERS`** — registry in `scraping/boards/mod.rs` of all enabled scrapers (built at compile time, no runtime plugin system).
-- **`BOARD_IDS`** — const array in `packages/shared/src/schemas/index.ts`; lists all scrapeable boards (24 total, `aggregator` counted once among them). `AGGREGATOR_BOARD_ID = 'aggregator'` is the stable catalog id for the Adzuna/JSearch provider.
+- **`BOARD_IDS`** — const array in `packages/shared/src/schemas/index.ts`; lists all scrapeable boards (`aggregator` counted once among them). Read the count off that array, never off a page: the copy that used to sit here was already one board behind. `AGGREGATOR_BOARD_ID` is the stable catalog id for the Adzuna/JSearch provider.
 - **Catalog** — `ScraperEngine::catalog()` (Rust) → `boards.catalog()` IPC → `useBoardsCatalog()` hook. Exposes per-board metadata:
   - `id` (slug)
   - `name`, `icon` (UI)
@@ -52,12 +52,12 @@ Four more company-scoped boards, endpoint-reconnaissance-ported from `santifer/c
 **The Muse** (`themuse`, `apps/desktop/src-tauri/src/scraping/boards/themuse/mod.rs`) — `requires_company()` stays `false` (default): it's a **keyword aggregator**, not a company-scoped ATS board. Same career-ops reconnaissance provenance and unverified-endpoint caveat as PR 1.
 
 - The Muse's public API (`www.themuse.com/api/public/jobs?page={n}`) has no free-text keyword param — only `category`/`level`/`location`/`company`/`page`. The scraper browses the feed and filters client-side (title+company substring for `query`, location substring for `location`), the same convention as Remotive/RemoteOK/Arbeitnow.
-- Pagination: response includes `page_count`; the scraper reads it from page 0 and iterates up to `min(input.pages, page_count, 5)` — 5-page cap matches Arbeitnow's `input.pages.clamp(1, 5)`, not career-ops's 100-page crawl. A paginated board that fails on page N>0 after collecting items keeps its partial harvest and signals truncation (e.g., arbeitnow page 2 429'd after 20 postings collected → `count: 20, error: None, skipped: None, truncated: Some("page 2 of 5 failed: HTTP 429")`). Source: `scraping/boards/{themuse,arbeitnow,arbeitsagentur}/mod.rs` (report truncation via `ScrapeContext.report_truncation()`), `scraping/engine/mod.rs` (`BoardScrapeSummary.truncated` field).
+- Pagination: response includes `page_count`; the scraper reads it from page 0 and iterates up to the smaller of the requested pages, the reported page count, and its own page cap (the same clamp Arbeitnow uses; read it in each board's module, deliberately far below career-ops's 100-page crawl). A paginated board that fails on page N>0 after collecting items keeps its partial harvest and signals truncation via a `truncated` note naming the failed page. Source: `scraping/boards/{themuse,arbeitnow,arbeitsagentur}/mod.rs` (report truncation via `ScrapeContext.report_truncation()`), `scraping/engine/mod.rs` (`BoardScrapeSummary.truncated` field).
 - No stable job id in the response, so the (validated `^https?://`) posting URL doubles as the id — same precedent as Breezy/Pinpoint.
 
 ### PR 3 (2026-07-02): Workable (company-scoped, live-verified) + Comeet (credentialed)
 
-Two more boards, bringing the registry to 23 (Jobicy later added in #700, bringing it to 24). Neither is career-ops-ported — see `docs/SCRAPING_ENDPOINTS.md` for full endpoint detail.
+Two more boards in the registry (Jobicy followed in #700). Neither is career-ops-ported — see `docs/SCRAPING_ENDPOINTS.md` for full endpoint detail.
 
 - **Workable** (`workable`, `apps/desktop/src-tauri/src/scraping/boards/workable/mod.rs` — company-scoped, `requires_company()=true`). Endpoint `apply.workable.com/api/v1/widget/accounts/{slug}?details=true` is **live-verified** (real request against slug `careers-at-sleek`, 55 jobs), not reconnaissance-ported. Company display name comes from the response's top-level `name` (falls back to the slug); job URL is host-locked to `apply.workable.com`; job id is namespaced `workable:{slug}:{shortcode}` since a bare shortcode is only unique within one tenant. Each job row is deserialized independently (`rows_to_jobs`), mirroring Rippling's per-row resilience idiom, so one malformed row can't zero out a whole company's results.
 - **Comeet** (`comeet`, `apps/desktop/src-tauri/src/scraping/boards/comeet/mod.rs` — credentialed, single-company, `requires_company()` stays `false` since the "company" is a fixed per-user credential rather than a per-search input). Endpoint `www.comeet.co/careers-api/2.0/company/{uid}/positions?token={token}` is confirmed live (400 without real credentials) but its **response shape is unconfirmed** — built from the career-ops (MIT) field spec, needs live-verification with a real company UID + token via the Settings UI. Clones the Apify LinkedIn provider's credential pattern: company UID + API token read via `credentials::read_credential("ai:comeet-company-uid" / "ai:comeet-api-token")` at scrape time (slots in `packages/shared/src/provider-slots.ts`); absent credentials → keyless-empty (`Ok(vec![])`), never an error; job URL is host-locked to `comeet.co`; client-side query/location filtering reuses the shared `boards::common::matches_filters` helper (originally The Muse-local, extracted to `common.rs` once Comeet needed the identical filter). `auth()` is explicitly `Guest` (credentials aren't surfaced through the board-login connect flow) — same explicit-override precedent as the Aggregator board.
@@ -65,17 +65,17 @@ Two more boards, bringing the registry to 23 (Jobicy later added in #700, bringi
 
 ## ATS seed table (PR #620, wired in PR #621)
 
-**Purpose:** Curated, live-verified (2026-07-11) static table of 59 companies → (ats, slug) mappings. Wired into engine routing (PR #621): when a company-scoped ATS board is selected with an empty `companies` list, the engine auto-populates it from `ats_seed::by_ats(scraper.id())`. Reachable by both autopilot (which passes no companies) and manual search. User-provided companies take priority; if supplied, the seed is ignored. Unseeded boards still skip when no companies are provided. Catalog surface exposes `seededCompanies` (curated company names per board), and a shared `SeededCompaniesNote` disclosure component renders in both the autopilot wizard and manual jobs picker.
+**Purpose:** Curated, live-verified (2026-07-11) static table of company → (ats, slug) mappings. Wired into engine routing (PR #621): when a company-scoped ATS board is selected with an empty `companies` list, the engine auto-populates it from `ats_seed::by_ats(scraper.id())`. Reachable by both autopilot (which passes no companies) and manual search. User-provided companies take priority; if supplied, the seed is ignored. Unseeded boards still skip when no companies are provided. Catalog surface exposes `seededCompanies` (curated company names per board), and a shared `SeededCompaniesNote` disclosure component renders in both the autopilot wizard and manual jobs picker.
 
 **Shape and quirks:**
 
 - **Module:** `apps/desktop/src-tauri/src/scraping/boards/ats_seed.rs` — struct `AtsSeedEntry` with fields: `company`, `ats` (matches `Scraper::id()`), `slug`, `tld` (Personio only), `dach` (DACH market flag).
-- **Entries:** 59 total; 23 DACH-flagged (Germany/Austria/Switzerland market). Organized per ATS: 27 Greenhouse, 4 Lever, 9 Ashby, 4 SmartRecruiters, 5 Recruitee, 7 Personio, 3 Workable.
+- **Entries:** organized per ATS, a subset DACH-flagged (Germany/Austria/Switzerland market). Totals and the per-ATS split are the table itself; count them there, never here.
 - **Personio TLD quirk:** Each entry has `tld: Some("de")` or `Some("com")` (one TLD per company) or `None` for all other ATS boards. Personio's URL pattern requires the TLD: `https://{slug}.jobs.personio.{tld}/xml`.
 - **Ashby casing:** Slug casing is exact and preserved verbatim (e.g., `Linear`, `Perplexity`); must match the registered board.
 - **Lever and SmartRecruiters churn:** Slugs churn fastest (companies migrate off or go dormant); re-verify live before trusting future updates to this table.
-- **Accessor functions:** `all()` → all 59 entries in source order; `by_ats(board_id)` → entries for one ATS board (e.g., `"greenhouse"`).
-- **Test coverage:** Compile-time truth table (`apps/desktop/src-tauri/src/scraping/boards/ats_seed/test.rs`) verifies table integrity: non-empty, every `ats` value matches a registered `Scraper::id()`, Personio entries have exactly one TLD, DACH count ≥ 20 (currently 23), no duplicate ats-slug pairs, etc.
+- **Accessor functions:** `all()` → every entry in source order; `by_ats(board_id)` → entries for one ATS board (e.g., `"greenhouse"`).
+- **Test coverage:** Compile-time truth table (`apps/desktop/src-tauri/src/scraping/boards/ats_seed/test.rs`) verifies table integrity: non-empty, every `ats` value matches a registered `Scraper::id()`, Personio entries have exactly one TLD, a floor on the DACH count, no duplicate ats-slug pairs, etc.
 
 ## Retired boards (Glassdoor, Indeed, Xing, StepStone, Workday)
 
@@ -90,8 +90,8 @@ These five boards were retired as direct scrapers (ADR-026, 2026-06-21). Their R
 **Keys and configuration:**
 
 - Adzuna, JSearch, Jooble, and Apify API keys are stored in the OS keyring and never logged (encrypted at rest, decrypted only in Rust).
-- Settings → Jobs exposes UI to enter/remove credentials (seven `AggregatorKeyField` controls: two for Adzuna's app-id/app-key, one each for JSearch/Jooble/Apify token, plus Comeet company UID and API token).
-- Keys are read on-demand via `credentials::read_credential` (module at `apps/desktop/src-tauri/src/credentials/mod.rs`) into the respective slots: `ai:adzuna-app-id`, `ai:adzuna-app-key`, `ai:jsearch-key`, `ai:jooble-key`, `ai:apify-token`, `ai:comeet-company-uid`, `ai:comeet-api-token`.
+- Settings → Jobs exposes one `AggregatorKeyField` control per credential (Adzuna takes two; the rendered set is `AggregatorKeysSettings`).
+- Keys are read on-demand via `credentials::read_credential` (module at `apps/desktop/src-tauri/src/credentials/mod.rs`) into their keyring slots; the slot-id roster is `PROVIDER_SLOTS` in `packages/shared/src/provider-slots.ts`, codegen'd into `ipc_contracts/provider_slots.rs`.
 - **Path-embedded-key redaction (PR #618):** Jooble embeds its API key in the URL path (`POST https://jooble.org/api/{key}`), unlike Adzuna/JSearch which use query params. New `FetchOptions.redact_path` boolean + `safe_log_url(url, redact_path)` in `apps/desktop/src-tauri/src/scraping/http/mod.rs` redact the entire path when `true`, keeping logs safe. Providers using path-embedded keys must pass `redact_path: true` in their `FetchOptions`.
 
 **Provider details, endpoints, and fallback logic:** see `apps/desktop/src-tauri/src/scraping/boards/aggregator/providers.rs` (AdzunaProvider, JSearchProvider, JoobleProvider, ApifyLinkedInProvider, and JobProvider trait) and `adzuna.rs` (primary tier).
@@ -112,10 +112,10 @@ Adzuna's API is country-scoped with a fixed market allowlist; see `ADZUNA_SUPPOR
 
 Location input policy is now visible via per-board summary notes. When a search input lacks explicit country but specifies a city/region, the aggregator may broaden to country-level results or guess a market (fallback when Adzuna is sparse).
 
-- **Floor guard:** `ADZUNA_BROADEN_FLOOR = 3` at `aggregator/mod.rs:52`. Broaden is triggered only when Adzuna returns fewer than 3 results for a location query AND `!country_guessed` (i.e. the user didn't supply a country). Guessed-market fallback to JSearch happens only when guessed Adzuna also returns `< 3` results.
+- **Floor guard:** `ADZUNA_BROADEN_FLOOR` in `aggregator/mod.rs`. Broaden is triggered only when Adzuna returns fewer results than that floor for a location query AND `!country_guessed` (i.e. the user didn't supply a country). Guessed-market fallback to JSearch happens only when the guessed-market Adzuna call is also below the floor.
 - **Note tokens:** `BoardScrapeSummary.note: Option<String>` records the location policy decision as a machine token:
-  - `broadened:<cc>` — Adzuna results exist but sparse (`< 3`); broadened from city to country-level (e.g., "few local results in Berlin — showing Germany-wide").
-  - `guessed-market:<cc>` — No explicit country provided; market was guessed and Adzuna returned >= 3 results (authoritative guess). Never emitted for sub-floor guesses that fall through to JSearch global fallback.
+  - `broadened:<cc>` — Adzuna results exist but are below the floor; broadened from city to country-level (e.g., "few local results in Berlin — showing Germany-wide").
+  - `guessed-market:<cc>` — No explicit country provided; market was guessed and Adzuna cleared the floor (authoritative guess). Never emitted for sub-floor guesses that fall through to JSearch global fallback.
   - Only one note per run; guessed and broadened are mutually exclusive (guessed when `country_guessed=true`, broadened when `country_guessed=false`).
 - **Frontend rendering:** Chips mapped via `BoardSummaryChips.tsx` `ChipTone 'note'` (informational blue); locale-keyed labels `jobs.boardSummary.note.{broadened, guessed}` with country name via `Intl.DisplayNames({type:'region'})` for user-friendly labels (en + de).
 - **Wizard visibility:** Autopilot wizard shows inline "Country: <Name>" when `countryCode` is set, cleared on manual location edit (user may re-pick via the location-input autocompleter).
@@ -196,23 +196,20 @@ Location input is now canonical: resolved once from user-supplied city/region/co
 **Board supports_location() flag:**
 
 - **Trait method:** `Scraper::supports_location()` — returns true ONLY for boards with server-side location consumption.
-- **Truthful catalog:** Only **3 boards** read location server-side:
-  - **Aggregator** (Adzuna `where` param + country-scoped market routing; JSearch fallback)
-  - **LinkedIn** (`geoId` typeahead + `distance` radius)
-  - **Arbeitsagentur** (`wo` param)
-- **20 non-supporting boards:** Remote feeds (remotive/remoteok/wwr), regional feeds (berlinstartupjobs/germantechjobs), ycombinator/arbeitnow, themuse+comeet, all 11 company-slug ATS (greenhouse/lever/ashby/smartrecruiters/personio/recruitee/pinpoint/rippling/breezy/bamboohr/workable).
+- **Truthful catalog:** only the boards whose upstream API takes a location parameter return `true` (today: the aggregator's Adzuna `where` + market routing, LinkedIn's `geoId`/`distance`, and Arbeitsagentur's `wo`). Which boards override the flag is the `supports_location()` impls in `scraping/boards/`; the split is code, not a list here.
+- **Non-supporting boards:** everything else: remote feeds, regional feeds, keyword aggregators, and every company-slug ATS. They get the central filter below.
 - **IPC contract:** `BoardCatalogEntry.supportsLocation?` boolean flag in `packages/shared/src/ipc/contracts/boards.ts` (flows to renderer picker).
 
 **Central conservative filter:**
 
 - **Module:** `apps/desktop/src-tauri/src/scraping/engine/location_filter.rs` — pure function `location_mismatch(posting, &LocationSpec) -> bool`.
-- **Policy:** DROP a posting iff it has a concrete, non-remote location whose diacritic-folded form (ü/ö/ä→u/o/a variants) shares NO substring token (len≥3) with any folded-expanded requested needle (raw city/region tokens + curated exonym pairs like Munich/München). KEEP always: `extra.remote==true`; remote text marker (remote/wfh/etc.); empty/unknown location; no usable requested token (country-code-only is inert); diacritic spelling variant; curated exonym pair. **Known limitation:** exonym pairs outside the small curated table (`EXONYM_PAIRS`: Munich/München, Cologne/Köln, Nuremberg/Nürnberg) still drop — this is documented and tested, not silently "fixed" by folding alone.
+- **Policy:** DROP a posting iff it has a concrete, non-remote location whose diacritic-folded form (ü/ö/ä→u/o/a variants) shares no substring token above the module's minimum token length with any folded-expanded requested needle (raw city/region tokens + curated exonym pairs). KEEP always: `extra.remote==true`; remote text marker (remote/wfh/etc.); empty/unknown location; no usable requested token (country-code-only is inert); diacritic spelling variant; curated exonym pair. **Known limitation:** exonym pairs outside the small curated `EXONYM_PAIRS` table still drop; read the table in `location_filter.rs` for what is covered. this is documented and tested, not silently "fixed" by folding alone.
 - **Wiring:** Applied ONLY to `supports_location()==false` boards ONLY when a location was requested. Threaded into the per-item streaming cap counting (not downstream, so cap counts POST-filter matches) + applied once post-hoc to final Vec for consistency across manual-cache, autopilot-found-jobs, and per-board `count` signals.
 - **Drop tracking:** `location-filtered:<n>` note token records the count (never raw location text — PII). Emitted UNCONDITIONALLY on every `supports_location()==false` board when location requested, even if n=0 (preserves honesty that location was NOT honored, whether or not anything was dropped this run).
 
 **Frontend picker surface:**
 
-- **LocationFilterNote component:** `apps/desktop/src/renderer/components/scrape/LocationFilterNote.tsx` — renders when selected boards include non-supporting ones + location is set. Lists by name the non-supporting boards in the selection (absent flag reads as unsupported per contract). Scoped to SELECTED boards (not all 20, to avoid noise).
+- **LocationFilterNote component:** `apps/desktop/src/renderer/components/scrape/LocationFilterNote.tsx` — renders when selected boards include non-supporting ones + location is set. Lists by name the non-supporting boards in the selection (absent flag reads as unsupported per contract). Scoped to SELECTED boards, not every non-supporting board, to avoid noise.
 - **Chip rendering:** `BoardSummaryChips.tsx` extends note token mapping with `location-filtered:<n>` handling — `n>0` shows pluralized "N off-location result(s) hidden", `n===0` shows plain "location filtered locally" marker.
 - **I18n keys:** `jobs.locationFilterHint` (label row), `jobs.boardSummary.note.locationFiltered_one` / `_other` (count/marker), en+de parity verified by real `@ajh/translations` import test.
 
@@ -240,8 +237,9 @@ computed.
   re-exports; see the function's own signature for its current parameters).
   All helpers `pub(crate)` for fixture testing.
 - **Shape:** `TrustAssessment { score: u8, level: TrustLevel, flags: Vec<TrustFlag> }`.
-  `score` starts at 100 and is only ever decreased, clamped `0..=100`.
-  `level`: `>=90 High`, `>=60 Medium`, else `Low`. The renderer `TrustBadge` only displays for `'medium'` or `'low'`; `'high'` renders no badge (no badge = trusted, noise-free).
+  `score` starts at its ceiling and is only ever decreased, clamped to the `u8` percentage range;
+  `level` is derived from it by two cut points in `finish()` (read them there together with the
+  penalties). The renderer `TrustBadge` only displays for `'medium'` or `'low'`; `'high'` renders no badge (no badge = trusted, noise-free).
 - **Flags** — each decrements `score` by a penalty amount (see the `TrustFlag`
   enum, `SUSPICIOUS_DOMAINS`, `ATS_ALLOWLIST`, and `finish()` in
   `apps/desktop/src-tauri/src/scraping/trust/mod.rs` for the current variant
@@ -252,7 +250,7 @@ computed.
     constant).
   - `CompanyDomainMismatch` — `company` is non-empty, the host isn't on the
     ATS allowlist, and the host doesn't plausibly name the company (normalized
-    slug or a ≥3-char word match).
+    slug or a word match above the helper's minimum length).
   - `ImplausibleCompany` — the company name itself looks fake/placeholder.
   - `DescriptionUnavailable` — the posting's description has no usable
     scoring text, via the same `description_is_blank` predicate
@@ -260,12 +258,12 @@ computed.
     enum's own doc comment for the exact predicate.
 - **ATS allowlist** — never raises `CompanyDomainMismatch`. See `ATS_ALLOWLIST`
   constant in `apps/desktop/src-tauri/src/scraping/trust/mod.rs`; includes the
-  standard ATS platforms (Greenhouse, Lever, etc.) plus our 24 `SCRAPERS` boards
+  standard ATS platforms (Greenhouse, Lever, etc.) plus the `SCRAPERS` boards
   where `JobPosting.url` is systematically the BOARD's own domain rather than the
   employer's, plus the Adzuna aggregator — which returns `redirect_url`s in
-  **two** distinct host shapes (the API host, `api.adzuna.com`, and a
-  per-market website host, `is_adzuna_market_host` in the same file, covering
-  every `ADZUNA_SUPPORTED_COUNTRIES` market in both its single-label-TLD and
+  **two** distinct host shapes (the API host and a per-market website host,
+  `is_adzuna_market_host` in the same file, covering every
+  `ADZUNA_SUPPORTED_COUNTRIES` market in both its single-label-TLD and
   compound-ccTLD forms), not the single constant host previously assumed here
   (issue #1107).
 - **`company_matches_host` is an unanchored substring heuristic**, not
@@ -276,7 +274,7 @@ computed.
   it if a future flow ever gates behavior on `level`.
 - **Wiring — three call sites** (every other `JobPosting`/`FoundJob`
   construction site is untouched; `JobPosting.trust` is NOT a dedicated
-  struct field, to avoid touching all ~23 board literals — it's attached into
+  struct field, to avoid touching every board's construction literal — it's attached into
   the existing `#[serde(flatten)] extra: HashMap<String, Value>` channel, the
   same one salary/remote-status metadata already uses):
   - `ScraperEngine::run_one`'s streaming wrapper
@@ -309,7 +307,7 @@ computed.
 Results now persist across navigation thanks to React Query + backend cache:
 
 - **Backend:** `PostingsCache` in Rust is the source of truth (populated as streamed results arrive)
-- **Frontend:** Throttled `invalidatePostings()` on `job.stream` event (~1 ms throttle; eager on first item of new search)
+- **Frontend:** Throttled `invalidatePostings()` on `job.stream` event (throttle window in the postings service hook; eager on first item of new search)
 - **Hydration:** React Query re-fetches cache on component remount → results reappear
 
 ## Cross-source dedup (PR E, 2026-07-10)
@@ -342,7 +340,7 @@ This renderer pass reconciles manual-scrape live streams (which are not engine-d
 
 **Shared fixtures:**
 
-The 5 Rust truth-table test cases (same URL across boards, url-less title+company, near-miss distinct, U+0001-unforgeable, empty/whitespace/dangerous-scheme fallback) are copied verbatim into the TS test as a drift guard — if either side's algorithm diverges, one of these tests fails.
+The Rust truth-table test cases (same URL across boards, url-less title+company, near-miss distinct, U+0001-unforgeable, empty/whitespace/dangerous-scheme fallback) are copied verbatim into the TS test as a drift guard — if either side's algorithm diverges, one of these tests fails.
 
 **Source pointers:**
 
@@ -369,7 +367,7 @@ Beyond exact canonical_job_key matching, a fuzzy clustering layer recomputed at 
 
 1. **Cluster split undo (merge-back)** — pair-tombstone delete + recompute; preserves user UX for correction.
 2. **Ingest-time embeddings** — populate posting vectors at scrape time, making the cosine path primary and reducing dependence on the trigram heuristic.
-3. **Agency-list growth** — expand built-in six + token list; add user-extensible company matching for recruitment agencies beyond the static bootstrap.
+3. **Agency-list growth** — expand the built-in `AGENCY_COMPANIES` + `AGENCY_TOKENS` bootstrap; add user-extensible company matching for recruitment agencies beyond it.
 4. **LinkedIn card shape extraction** — extract a pure `parse_job_cards(html)` seam from LinkedIn `search_guest` so acceptance fixtures can use real card shape (currently uses GermanTechJobs feed parser).
 5. **Batch-level deferrals** — active slug prober, extension-side ATS fingerprinting, community slug directory, cross-user analytics (shared with other deferred post-launch batch work).
 6. **Split-view selection re-point** — when a selected live-streamed row becomes non-canonical at completion, `JobsResults` falls back to top-of-list instead of the row's cluster canonical; `absorbedInto` doesn't cover cluster collapses. Narrow UX gap: re-point via clusterId.
@@ -383,18 +381,18 @@ Per-board scrape outcomes are now visible via a shared `BoardSummaryChips` compo
 - **Header strip** (Jobs page) — persistent chip strip rendered in the pinned header when results are present, survives the auto-closing scrape form. Gated on `!scraping && filteredJobs.length > 0`. Cleared on new scrape start, `job.failed`, or clear-postings.
 - **Empty state** (Jobs page) — same strip rendered below the zero-results message to explain per-board why nothing was found. Only owner of the zero-results explanation surface; header strip is never shown alongside it (mutual exclusivity).
 - **Autopilot card** — renders persisted `lastRunSummaries` as chips when run is finished (`!running`). Needs-configuration variant (when `runStatus==='failed'` AND every summary skipped with none errored) renders a neutral `autopilot.badge.needsConfig` badge + HoverPopover hint, not a red failure state.
-- **Chip rendering** — `BoardSummaryChips.tsx` (component + pure `sanitizeReason` sanitizer). Sanitizer redacts UNC paths, IPv4/IPv6, URLs, emails, credential patterns; caps input @1000 chars, output @200 chars. Chip detail display is further capped @60 chars (wraps with `whitespace-normal break-words`). Chip order by severity: error (red) > skipped (neutral) > truncated (amber) > note (blue, informational) > success (green). All-success all-green collapse when multiple boards and all succeeded. **Location notes** (`broadened:<cc>` / `guessed-market:<cc>`, added in PR D) are rendered with tone 'note' and i18n labels mapping the machine token to a user-friendly country-aware message. Source: `apps/desktop/src/renderer/components/scrape/BoardSummaryChips.tsx`.
+- **Chip rendering** — `BoardSummaryChips.tsx` (component + pure `sanitizeReason` sanitizer). Sanitizer redacts UNC paths, IPv4/IPv6, URLs, emails, credential patterns, and caps both its input and its output; the chip detail is capped again at render time (wraps with `whitespace-normal break-words`). All three caps are consts in that component. Chip order by severity: error (red) > skipped (neutral) > truncated (amber) > note (blue, informational) > success (green). All-success all-green collapse when multiple boards and all succeeded. **Location notes** (`broadened:<cc>` / `guessed-market:<cc>`, added in PR D) are rendered with tone 'note' and i18n labels mapping the machine token to a user-friendly country-aware message. Source: `apps/desktop/src/renderer/components/scrape/BoardSummaryChips.tsx`.
 - **I18n keys** — `jobs.boardSummary.{label, count_one, count_other, partial, allOk_one, allOk_other, skip.{needsLogin, needsCompany, needsKeys, other}, note.{broadened, guessed}}` + `autopilot.badge.{needsConfig, needsConfigHint, completedWithErrorsHint}` + `autopilot.wizard.target.countryResolved` (en + de).
 - **Whole-scrape failures** — persisted as `lastFailureNote` (sanitized, same redactor) on `JobsPage`; rendered as a small `role="status"` line in header + forwarded to `JobsResults` empty state (never triple-explained when `missingAdzunaKeys` is the root cause).
 - **Skip-toast folding** — the three sticky notification warnings (needs-login / needs-company / needs-keys) were removed; their signal is now persistent in the chip strip (still actionable via `BoardConnectChip` in the scrape form for login boards).
 
 ## Full-description resolution on detail-pane open
 
-**Aggregator short snippets → full descriptions:** Adzuna search API returns snippets (~200–500 chars). Detail pane auto-fetches on open when aggregator source + description < 700 chars, following the redirect chain and re-dispatching named-board handlers on the final URL. If the resolved text is meaningfully longer, it replaces the snippet; otherwise the snippet floor is kept. Redirect following is IP-guarded per-hop (closes DNS-rebinding TOCTOU); 429/login-wall/error returns Ok(None) and the snippet is retained.
+**Aggregator short snippets → full descriptions:** the Adzuna search API returns truncated snippets. The detail pane auto-fetches on open when the source is the aggregator and the description is under its snippet floor, following the redirect chain and re-dispatching named-board handlers on the final URL. If the resolved text is meaningfully longer, it replaces the snippet; otherwise the snippet floor is kept. Redirect following is IP-guarded per-hop (closes DNS-rebinding TOCTOU); 429/login-wall/error returns Ok(None) and the snippet is retained.
 
 - **Resolver:** `apps/desktop/src-tauri/src/commands/scrape.rs: scrape_resolve_url(app, url)` — public command invoked by detail pane
 - **Re-dispatch:** `apps/desktop/src-tauri/src/scraping/scrape_url/mod.rs: resolve()` — follows redirect and re-dispatches handlers per final URL
-- **Pane gate:** `apps/desktop/src/renderer/features/jobs/components/JobDetailPane/index.tsx` — on-open resolve if (isAggregatorSource && descLength < 700); keep-longer merge logic
+- **Pane gate:** `apps/desktop/src/renderer/features/jobs/components/JobDetailPane/index.tsx` — on-open resolve when the source is the aggregator and the description is under that file's snippet floor; keep-longer merge logic
 - **Description mutation & re-score:** Backend command `scrape_update_description` (`ScrapeUpdateDescriptionRequest`, `commands/scrape.rs`) addresses the posting by `url` (not a board-synthetic id — see the request struct's own doc), and writes the resolved text to BOTH the live `PostingsCache` and every matching `FoundJob` row across every persisted autopilot (`AutopilotStore::update_found_job_descriptions`), so a correction reaches postings surfaced via the Agent/MCP read resources too, not only the session-lifetime cache. The frontend's `MatchScoresProvider` holds a reactive `requested` set; when the description is updated, the per-job match score is re-computed on-demand via `useJobMatchScore` (single-job scoring, not batch). Not a generated IPC contract — the request type is hand-declared on both sides (`commands/scrape.rs` / `tauri-client/namespaces/scrape/scrape.ts`).
 
 ## Source pointers
@@ -431,7 +429,7 @@ Board fetch errors are now representable end-to-end, distinguishing between "boa
 - **`fetch_json` signature** — `apps/desktop/src-tauri/src/scraping/http/mod.rs`. Returns `AppResult<T>` (was `AppResult<Option<T>>`). Non-2xx responses → `Err(AppError::Provider("HTTP <status>"))` (preserves status code). Serde drift → `Err(AppError::Parse("response body did not match the expected schema"))` (serde details logged, never returned). 2xx-valid → `Ok(T)`. Empty payloads return `Ok(empty)` not `Ok(None)`.
 - **`fetch_text` boards** — germantechjobs, wwr, berlinstartupjobs now propagate non-200 as errors instead of silent-empty.
 - **Board error outcome** — All boards propagate fetch errors via `search()` → `Err`, which surfaces in `BoardScrapeSummary.error: Option<String>` (engine records it). Boards with multi-company fanout (lever, recruitee, smartrecruiters, etc.) track `successful_fetches` and `first_fetch_error`; when `successful_fetches == 0`, the error propagates (all-fail → board error, not `Ok(empty)`). Pagination boards (themuse, arbeitnow, arbeitsagentur) distinguish page-0 failure (error) from later-page failure (keep partial harvest).
-- **Shared decision functions** — `apps/desktop/src-tauri/src/scraping/boards/common.rs` exports two pure fns: `ats_all_fetches_failed(board_id, successful_fetches, first_fetch_error) -> Option<String>` (returns error message only when all companies failed) and `should_propagate_page_error(collected_so_far: usize) -> bool` (propagate if nothing collected yet, else keep partial harvest). Wired into 10 ATS boards + 3 paginated boards; no production URL embedded (testable without wiremock).
+- **Shared decision functions** — `apps/desktop/src-tauri/src/scraping/boards/common.rs` exports two pure fns: `ats_all_fetches_failed(board_id, successful_fetches, first_fetch_error) -> Option<String>` (returns error message only when all companies failed) and `should_propagate_page_error(collected_so_far: usize) -> bool` (propagate if nothing collected yet, else keep partial harvest). Wired into the fan-out ATS boards and the paginated ones (callers of each fn are the list); no production URL embedded (testable without wiremock).
 - **Frontend:** Service hook `apps/desktop/src/renderer/services/use-boards/use-boards.ts` (scrape mutations)
 - **Settings UI:** `apps/desktop/src/renderer/features/settings/components/preferences/AggregatorKeysSettings/index.tsx`
 - **Detail pane:**
@@ -456,11 +454,11 @@ Live verification of never-verified recon-ported boards and hardening against si
 
 **LinkedIn soft-block detection:**
 
-A 200 page-0 response with zero job cards is never genuine empty (verified: nonsense-keyword query still returns 10 padded cards). Chosen discriminator: `page0_is_soft_block(card_count)==card_count==0`. Returns board Err (`"LinkedIn returned no job cards — may be rate-limiting/require login/changed layout; results unavailable"`). Also: added country-biased cached `select_geo_id` (in-process cache keyed `(query, country)`, successes only) + `country_aliases` map for ambiguous names (e.g. `"be"→"Belgium"`).
+A 200 page-0 response with zero job cards is never genuine empty (verified 2026-07-11: a nonsense-keyword query still returned padded cards). Chosen discriminator: `page0_is_soft_block(card_count)==card_count==0`. Returns a board `Err` whose sentinel text lives with the predicate. Also: added country-biased cached `select_geo_id` (in-process cache keyed `(query, country)`, successes only) + `country_aliases` map for ambiguous names.
 
 **Rejected-slug surfacing (ATS boards):**
 
-New `ats_finish_search(signal, out, board_id, successful_fetches, rejected_slugs, first_fetch_error)` in `boards/common.rs` centralizes "cancellation wins, else delegate to `ats_board_failure`"; wired into 7 ATS boards (bamboohr, breezy, pinpoint, rippling, workable, recruitee, personio). All-rejected → distinct error: `"all N company slug(s) invalid for {board} — check the company names in the jobs search form"`. Partial-reject (some fetched, some invalid) → log-only (chip mapping deferred).
+New `ats_finish_search(signal, out, board_id, successful_fetches, rejected_slugs, first_fetch_error)` in `boards/common.rs` centralizes "cancellation wins, else delegate to `ats_board_failure`"; wired into the slug-validating ATS boards (its callers are the list). All-rejected → the distinct error built by `ats_all_slugs_invalid_message`. Partial-reject (some fetched, some invalid) → log-only (chip mapping deferred).
 
 **Source pointers:**
 
@@ -474,12 +472,12 @@ New `ats_finish_search(signal, out, board_id, successful_fetches, rejected_slugs
 
 When a board achieves partial success (some companies reached, some invalid slugs; some rows parsed, some dropped), fixed note tokens surface the partial outcome:
 
-- **`slugs-invalid:<n>`** — `<n>` = count of company slugs rejected by SSRF/DNS-label validator. Emitted ONLY when `successful_fetches > 0` (at least one company reached) and some slugs were invalid. All-invalid case is the error instead (`ats_finish_search` Err). All 7 ATS slug-validating boards: bamboohr, breezy, pinpoint, rippling, workable, recruitee, personio.
-- **`rows-dropped:<n>`** — `<n>` = total rows dropped by per-row deserialize across successful companies (partial parse failure, not fetch failure). Breezy, rippling, workable only (the 3 ATS boards with per-row parsing; bamboohr, pinpoint, recruitee deserialize atomically and pass `rows_dropped=0`).
+- **`slugs-invalid:<n>`** — `<n>` = count of company slugs rejected by SSRF/DNS-label validator. Emitted ONLY when `successful_fetches > 0` (at least one company reached) and some slugs were invalid. All-invalid case is the error instead (`ats_finish_search` Err). Emitted by the ATS boards that validate slugs before fetching (`ats_partial_note`'s callers).
+- **`rows-dropped:<n>`** — `<n>` = total rows dropped by per-row deserialize across successful companies (partial parse failure, not fetch failure). Only the ATS boards that parse row-by-row; the ones that deserialize a company's payload atomically pass `rows_dropped=0`.
 - **`companies-failed:<n>`** (2026-07-27, PR #884) — `<n>` = per-company fetches that failed (404 on a rotted slug, 403, 429, or a body over the byte cap) on the ATS boards that fetch one company at a time **without** a pre-fetch slug validator (Ashby, Lever), while at least one sibling company succeeded. Emitted only when `successful_fetches > 0`; an all-fail run stays an `Err`, never a note. Company **names** are deliberately not in the token (it crosses IPC into a chip) — the per-company detail stays in each board's `log::warn!`. Source: `ats_failed_fetches_note` in `apps/desktop/src-tauri/src/scraping/boards/common.rs`. Unlike `ats_partial_note`, its callers do **not** gate emission on cancellation: the engine cancels as soon as the central item cap fills, which is exactly when failures have accumulated; the count stays honest because a fetch that failed _because of_ cancellation is never counted.
 - **Token emission** — via `ctx.report_note` (PR D side-channel), gated on `!ctx.signal.is_cancelled()` **except for `companies-failed`**, whose Ashby/Lever emitters deliberately have no cancel gate (see the carve-out above). At most ONE token per board per run; `slugs-invalid` wins when both apply (precedence order below).
 - **Frontend rendering** — `BoardSummaryChips.tsx` maps both tokens: numeric gate `n > 0` (strict; these tokens only emitted for n>0), tone `processing` (informational blue). No precedence change within the chip severity order (error > skipped > truncated > note > success); both are `note` tone.
-- **I18n keys** — `jobs.boardSummary.note.slugsInvalid` (en "{{count}} company name(s) invalid", de "{{count}} Firmenname(n) ungültig") and `jobs.boardSummary.note.rowsDropped` (en "{{count}} row(s) unreadable — board format may have changed", de "{{count}} Zeile(n) unlesbar — Board-Format evtl. geändert"). Pluralized via i18next `_one`/`_other`. `companies-failed` adds `jobs.boardSummary.note.companiesFailed` (same `_one`/`_other` shape, same `processing`/note tone) — see `BoardSummaryChips.tsx` for the mapping and `BoardSummaryChips.i18n.test.ts` for the both-locale resolution pin.
+- **I18n keys** — one key per token under `jobs.boardSummary.note.*` (`slugsInvalid`, `rowsDropped`, `companiesFailed`), each pluralized via i18next `_one`/`_other` in en + de. The wording lives in `packages/translations`; see `BoardSummaryChips.tsx` for the token→key mapping and `BoardSummaryChips.i18n.test.ts` for the both-locale resolution pin.
 
 **Note precedence table (all note types):**
 
@@ -506,7 +504,7 @@ Prior to 2026-08-22, `BoardScrapeSummary.note` was a single `Option<String>` slo
 2. **LinkedIn geoId via fetch_json** — routing LinkedIn's geographic typeahead through `fetch_json` (for UA-override + size-cap + rate-limit parity) requires teaching `fetch_text` to let a caller UA header OVERRIDE the default. Security LOW; deferred pending concrete use case.
 3. **LinkedIn soft-block telemetry** — verify the 200-zero-cards soft-block detector against real LinkedIn changes; currently unverified post-launch (unlike the verified 200-zero-cards claim in the code comments).
 4. **Per-posting truncation signal** — forwarding a per-posting `truncated` flag from scrapers (for JSearch vs Adzuna distinction in Autopilot) enables smarter provisional-score derivation; currently the flag keys on `source=="aggregator"` (conservative, flags JSearch as provisional). Deferred to avoid a schema change in Scope A.
-5. **Thundering-herd jitter** — add random jitter to `RETRY_BACKOFF` and daily-schedule retry delays to prevent multiple Autopilots retry-firing in lock-step; currently both retry at exactly `12min` / `00:00 UTC`. Low priority (most users have 1 Autopilot).
+5. **Thundering-herd jitter** — add random jitter to `RETRY_BACKOFF` and daily-schedule retry delays to prevent multiple Autopilots retry-firing in lock-step; today both fire at a fixed offset (see `autopilot_scheduler.rs`). Low priority (most users have 1 Autopilot).
 
 ## Extension-import canonical-URL seam
 
@@ -561,7 +559,7 @@ Company-scoped ATS boards require hand-typed slugs that users cannot know in adv
 
 **`BoardSearchInput::work_types`** — an absent or empty set means no filter ("any"). `BoardSearchInput::work_type_spec()` resolves that degenerate case and dedupes, and is the ONLY reader; it mirrors `location_spec()`. The Zod `.max()` on the wire schema is a typecheck-time guard only — that schema is never parsed at runtime, so the Rust dedupe is the sole runtime bound.
 
-**`Scraper::supports_work_type()`** — boolean flag, `default false`. Only **SmartRecruiters** returns `true` in v1 (validates the `locationType` param and partitions exactly: 3+36+328=367). LinkedIn's guest endpoint is facet-stripped for anonymous callers (measured: `f_WT=1` and `f_WT=2` overlapped 30/49 urns; a filter that lies). Freehire's facet is real but 72% undeclared—pushing the filter upstream discards most of the board.
+**`Scraper::supports_work_type()`** — boolean flag, `default false`; the boards that override it are the ones whose upstream API has a real, honest facet (in v1, SmartRecruiters: its `locationType` param partitioned the corpus exactly when measured). LinkedIn's guest endpoint is facet-stripped for anonymous callers (measured: `f_WT=1` and `f_WT=2` overlapped 30/49 urns; a filter that lies). Freehire's facet is real but 72% undeclared—pushing the filter upstream discards most of the board.
 
 **Classifier:** `scraping/engine/work_type_filter.rs` — pure functions `work_type_verdict(posting) -> WorkTypeVerdict` and `work_type_mismatch(posting, wanted) -> bool`. Reads ONLY `extra.workType` (declared by the board at parse time); no text inference. Tests: normalized spellings (`on-site`, `onsite`, `OnSite`, `ONSITE`, `on_site`), unknown-never-drops invariant.
 
@@ -576,7 +574,7 @@ under `apps/desktop/src-tauri/src/scraping/boards/`.
 
 **UI surfaces:**
 
-- **Manual search** — three-button multi-select in ScrapeFilters (role="group", aria-pressed, plain tab stops — roving tabindex is reserved for the ~26-item board picker). Empty set = no filter, surfaced as "any" microcopy.
+- **Manual search** — one button per work type, multi-select, in ScrapeFilters (role="group", aria-pressed, plain tab stops — roving tabindex is reserved for the much longer board picker). Empty set = no filter, surfaced as "any" microcopy.
 - **Autopilot wizard** — multi-select restored in StepTarget (deleted as dead in #614); replaced scalar "any" sentinel with empty array.
 - **Jobs page view filter** — three CheckableTag chips in JobsCommandBar (control-only, no chip duplicate per existing hideAgency precedent). Filters via `matchesWorkTypeFilter` predicate without re-scraping.
 - **Picker hint** — LocationFilterNote generalized to FilterCapabilityNote; WorkTypeFilterNote renders when selected boards include non-supporting ones + work type is set.
@@ -599,6 +597,6 @@ under `apps/desktop/src-tauri/src/scraping/boards/`.
 
 ## See also
 
-- `docs/SCRAPING_ENDPOINTS.md` — verified external endpoint reconnaissance (24 active boards, `aggregator` counted once among them; retired boards noted)
+- `docs/SCRAPING_ENDPOINTS.md` — verified external endpoint reconnaissance (one row per active board, `aggregator` counted once among them; retired boards noted)
 - `docs/knowledge/domain-model.md` — brief mention of `Scraper` trait + catalog
 - `docs/ARCHITECTURE.md` — high-level diagram of scraping + IPC boundary

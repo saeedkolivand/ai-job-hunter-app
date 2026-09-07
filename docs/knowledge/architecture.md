@@ -1,6 +1,6 @@
 # Architecture (map + boundaries + feature ownership)
 
-Last updated: 2026-08-15
+Last updated: 2026-09-07
 
 Canonical: [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md), [`docs/architecture-rules.md`](../architecture-rules.md) (the L0–L3 rules, tested by `cargo test --test architecture`), [`docs/PATTERNS.md`](../PATTERNS.md). Query graphify (MCP `query_graph`, else `graphify explain "<module>"`) for a scoped view.
 
@@ -32,7 +32,7 @@ L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints.
 - **Resume/export** — `export/` (pdf/, docx/, typst_engine/, model_docx/, templates/, parser/, links/, types.rs), `model/`, `theme/`, `locale/`, `contact_profile/`, `validate/`.
 - **Job match / ATS** — `commands/match_resume.rs`, `cover_letter/`, `commands/ai.rs` (cover-letter generation), `recommend/`, `validate/`.
 - **Automation** — `scraping/` (boards/, engine/, http/, linkedin/, board_login/, trust/, rate_limiter/, scrape_url/, types/), `autopilot/` + `autopilot_scheduler`, `email_watch/` + `email_watch_scheduler.rs`. _(No auto-apply engine: the app is an apply **assistant** — autopilot finds → ranks → notifies; the user tailors & submits.)_ See ADR-0013 for email-confirmation watching.
-- **AI** — `commands/ai_provider/` (ollama, openai, anthropic, gemini, ollama_cloud, cli_agent), `commands/ai.rs`, `documents/` (embeddings), `ai_generations/`, `ai_config/`, `extraction/`, `recommend/`. See ADR-0012 for backend-owned provider/model/base_url resolution.
+- **AI** — `commands/ai_provider/` (one adapter per provider behind a shared interface; the provider roster is that directory plus `ProviderId`), `commands/ai.rs`, `documents/` (embeddings), `ai_generations/`, `ai_config/`, `extraction/`, `recommend/`. See ADR-0012 for backend-owned provider/model/base_url resolution.
 - **Notifications** — `notifications/` (persistent store + action registry), `tray/` (system tray + menu). See `notification-center.md`.
 - **Platform/data** — `platform/` (`config.rs` `data_dir()`), `net/` (`http.rs` `shared()`), `error.rs`, `observability.rs` (`Span`), `db.rs`, `data_store.rs`, `credentials/`, `updater/`, `pipeline/`, `jobs/`, `postings/`, `job_preferences/`, `profile_import/`, `applications/`, `salary_research/`, `referrals/`, `spend/`, `limits/`, `deeplink/`, `events/`, `extension_bridge/`.
 
@@ -42,7 +42,7 @@ L0 platform/net/error → L1 domain → L2 services/commands → L3 entrypoints.
 
 ## Feature ownership (frontend ↔ domain ↔ agent)
 
-Renderer (`apps/desktop/src/renderer/features/`): 12 features each owning a route + service hooks (`renderer/services/`, [TanStack Query][tanstack-query]), [Zustand][zustand] stores, state machines (`lib/machines/`). Directories: ai-generate, analyze (job match UI), applications, autopilot, dashboard, documents (export + tailoring), jobs (search/monitoring), monitoring, onboarding, resume-builder, settings, support.
+Renderer (`apps/desktop/src/renderer/features/`): one directory per feature, each owning a route + service hooks (`renderer/services/`, [TanStack Query][tanstack-query]), [Zustand][zustand] stores, state machines (`lib/machines/`). The feature roster is that directory listing (and the generated `routeTree.gen.ts`), not a list here, which goes stale the first time a feature lands.
 
 | Area                                 | Owner agent                                        | Key paths                                                                                 |
 | ------------------------------------ | -------------------------------------------------- | ----------------------------------------------------------------------------------------- |

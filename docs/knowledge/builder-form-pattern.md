@@ -1,6 +1,6 @@
 # Resume Builder form pattern
 
-Last updated: 2026-07-16
+Last updated: 2026-09-07
 
 The Resume Builder uses **react-hook-form (RHF)** as the editing layer with a **one-way debounced sync to Zustand** as the persistence + generation boundary. This pattern avoids tight coupling between form state and the generation source.
 
@@ -23,7 +23,7 @@ resumeBuilder store (Zustand) → persistence + generation source
 ## Key components
 
 - **BuilderWizard** (`features/resume-builder/components/BuilderWizard/`): RHF form root with `useForm()` + `FormProvider`. Binds all wizard steps via `Controller`.
-- **Wizard steps** (`features/resume-builder/components/wizard-steps/`): `StepContact`, `StepExperience`, `StepEducation`, `StepSkills`, `StepExtras`, `StepSummary`, `StepReview`. Each step uses `Controller` to bind `@ajh/ui` controls + `useFieldArray` for repeatable sections.
+- **Wizard steps** (`features/resume-builder/components/wizard-steps/`): one component per step, ordered by the step list `BuilderWizard` renders (that directory and that list are the roster). Each step uses `Controller` to bind `@ajh/ui` controls + `useFieldArray` for repeatable sections.
 - **FieldArrayList**: Wraps `useFieldArray().fields` + `remove()` for repeatable sections (replaced `RepeatableList`).
 - **ContactProfileForm** (isolated): Own `useForm` instance; persist-on-blur pattern preserved; `extraLinks` via `useFieldArray`; photo kept local.
 - **Schema** (`lib/schema.ts`): Zod validator for the entire wizard form; `zodResolver(builderSchema)` hydrates the form.
@@ -47,13 +47,13 @@ const methods = useForm({
 **Live editing:**
 
 ```typescript
-// Debounced watcher (SYNC_DEBOUNCE_MS = 350): watch form changes and sync to Zustand
+// Debounced watcher (delay is a local const in BuilderWizard.tsx): watch form changes and sync to Zustand
 methods.watch((values) => {
   const timer = setTimeout(() => {
     // Merge form values with initial answers, sync to slice
     const merged = { ...formRef.current, ...methods.getValues() };
     setResumeBuilder({ answers: merged });
-  }, SYNC_DEBOUNCE_MS);
+  }, debounceMs);
   return () => clearTimeout(timer);
 });
 ```

@@ -1,6 +1,6 @@
 # Persistence Layer — State Ownership, SQLite, Transactions, Atomicity
 
-Last updated: 2026-08-18
+Last updated: 2026-09-07
 
 Canonical sources:
 
@@ -81,11 +81,11 @@ If the process dies mid-run, `status = running` outlives the run. Reading an
 unreconciled record is reading a lie, so any store that records in-flight status
 owes a sweep when it opens. Today they disagree, and the gaps are known:
 
-| Record             | Sweep at open                                                                                                                                                                                             |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `jobs.db`          | Yes — in-flight statuses → `failed` / "Interrupted by app restart". Bounded by a 24 h `created_at` cutoff, so an older row stays `running` forever, invisibly: the same cutoff excludes it from the load. |
-| `autopilots.json`  | Yes, unbounded — `mark_interrupted_runs` flips `InProgress` → `Interrupted` and returns the ids so the scheduler can retry.                                                                               |
-| `pipeline_runs.db` | **None.** `PipelineRunStore::open` runs migrations and a URL normalizer, nothing else.                                                                                                                    |
+| Record             | Sweep at open                                                                                                                                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `jobs.db`          | Yes — in-flight statuses → `failed` / "Interrupted by app restart". Bounded by a `created_at` cutoff (the window is in `jobs/mod.rs`), so an older row stays `running` forever, invisibly: the same cutoff excludes it from the load. |
+| `autopilots.json`  | Yes, unbounded — `mark_interrupted_runs` flips `InProgress` → `Interrupted` and returns the ids so the scheduler can retry.                                                                                                           |
+| `pipeline_runs.db` | **None.** `PipelineRunStore::open` runs migrations and a URL normalizer, nothing else.                                                                                                                                                |
 
 The last one is user-visible, not cosmetic. `runs_for_job` orders by `started_at DESC`,
 so a killed run stays the newest run for that posting, and `ensure_latest_run` keys
@@ -143,21 +143,12 @@ This document is not the only thing holding the rule up:
 
 ## Central Connection Setup
 
-Every SQLite store must open its connection via **`db::open(path)`** (never `Connection::open()` directly); the JSON-file stores named above do not use it at all. This ensures:
-
-```rust
-pub fn open(path: &Path) -> AppResult<Connection> {
-    let conn = Connection::open(path)?;
-    conn.set_busy_timeout(Duration::from_secs(5))?;  // 5s timeout for lock contention
-    conn.pragma_update(None, "journal_mode", "WAL")?; // Write-Ahead Logging
-    Ok(conn)
-}
-```
+Every SQLite store must open its connection via **`db::open(path)`** (never `Connection::open()` directly); the JSON-file stores named above do not use it at all. It sets a busy timeout and switches the journal to WAL; the duration and the pragma list are that one function, `apps/desktop/src-tauri/src/db.rs`.
 
 **Benefits:**
 
 - **WAL mode**: Readers don't block writers; writes are durable immediately; reads are fast.
-- **5-second busy timeout**: Prevents "database is locked" errors during concurrent access.
+- **Busy timeout**: Prevents "database is locked" errors during concurrent access.
 - **Single policy point**: Updating these settings applies app-wide without per-store changes.
 
 ## Atomic Transactions
@@ -238,7 +229,7 @@ The `commands/data.rs` module orchestrates **full backup/restore** across all st
 ```rust
 pub async fn data_export(app: AppHandle) -> Value {
     // Exports all DataStore impls + inline sections (autopilot interactions)
-    // Returns untyped JSON with BUNDLE_VERSION=1
+    // Returns untyped JSON stamped with BUNDLE_VERSION (see commands/data.rs)
 }
 
 pub async fn data_import(app: AppHandle, bundle: Value) -> Value {

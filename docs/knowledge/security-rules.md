@@ -1,13 +1,13 @@
 # Security rules (the security authority's knowledge)
 
-Last updated: 2026-08-17
+Last updated: 2026-09-07
 
 For `tauri-security-reviewer` (cross-cutting authority). Security/data findings round **UP**. Anchors below are real repo locations.
 
 ## Desktop / [Tauri][tauri]
 
 - **Capabilities** — `apps/desktop/src-tauri/capabilities/default.json`: least privilege. A new IPC command exposed without (or with over-broad) capability is HIGH.
-- **CSP** — `apps/desktop/src-tauri/tauri.conf.json`: keep the policy tight; local AI egress is limited to Ollama on loopback, the extension bridge to the loopback WebSocket range (`extension_bridge/mod.rs` `PORT_RANGE`), and opt-in company-logo enrichment to the two Clearbit hosts. The hosts and ports themselves are owned by `tauri.conf.json` and enumerated in `apps/desktop/src-tauri/tests/egress.rs`'s `EGRESS` const, which fails CI on drift — not restated here. Any further widening is HIGH/CRITICAL.
+- **CSP** — `apps/desktop/src-tauri/tauri.conf.json`: keep the policy tight; local AI egress is limited to Ollama on loopback, the extension bridge to the loopback WebSocket range (`extension_bridge/mod.rs` `PORT_RANGE`), and opt-in company-logo enrichment to the Clearbit hosts. The hosts and ports themselves are owned by `tauri.conf.json` and enumerated in `apps/desktop/src-tauri/tests/egress.rs`'s `EGRESS` const, which fails CI on drift — not restated here. Any further widening is HIGH/CRITICAL.
 - **Updater** — `updater/` + the signing key + `latest.json` integrity. A broken/unsigned update path is CRITICAL.
 
 ## Application / secrets
@@ -21,7 +21,7 @@ For `tauri-security-reviewer` (cross-cutting authority). Security/data findings 
 ## Extension bridge
 
 - **Auth model** — mutual HMAC-SHA256 challenge-response handshake; session tokens never on wire; pairing token in first hello only. See `apps/desktop/src-tauri/src/extension_bridge/mod.rs` (advance_auth/advance_authenticated flow), [ADR-0010](decision-records/0010-bridge-hmac-handshake.md).
-- **Port range** — bounded WebSocket listen: `127.0.0.1:47615-47620`. Out-of-range connections rejected.
+- **Port range** — bounded WebSocket listen on loopback only; the range is `PORT_RANGE` in `apps/desktop/src-tauri/src/extension_bridge/mod.rs` (also enumerated in the CSP and in `tests/egress.rs`). Out-of-range connections rejected.
 - **Consent gates** — assisted autofill rides the user opt-in (two-gate confirmation); imports gated to desktop online state. See [ADR-0009](decision-records/0009-assisted-autofill.md).
 
 ## Email confirmation watching

@@ -1,6 +1,6 @@
 # Resume domain (resume + ATS + export)
 
-Last updated: 2026-08-17
+Last updated: 2026-09-07
 
 Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `job-match-expert` (ATS scoring). Canonical: [`docs/EXPORT_TEMPLATES.md`](../EXPORT_TEMPLATES.md). Source is authoritative for literals (template count, scoring weights).
 
@@ -9,14 +9,14 @@ Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `j
 **GenerationDepth** = `'fast' | 'quality' | 'max'`.
 
 - **Fast (shipped)** — today's one-shot TS path (generateResume); streams delta-shaped output. Runs deterministic validators after generation (factual, alignment, consistency, voice, ats). No repair loop. Auto-report (zero cost, deterministic). Core-rule enforcement: prompt discipline only (pre-Phase 3).
-- **Quality (Phase 3, shipped)** — 4-call Rust pipeline (analyze_job, match_evidence, strategy, draft) + deterministic validators + ≤2 repair rounds (Criticals only, failing sections only). Each call fences prior-stage artifacts as untrusted (ADR-010). Evidence grounding: Rust drops non-verbatim quotes + overwrites status from keywords kernel. Company roster locked: model seeded from source, never re-dates/drops roles. Validation: 0 provider calls; every Critical is a deterministic comparison against source (model never emits Critical). Terminal fabrications → per-bullet review panel (user keep/remove decides; nothing silently removed). Core-rule enforcement: mechanical, structural (ADR-032). The Projects section is code-owned at quality depth too — a deterministic zero-call normalization (`pipeline::resume::projects`) re-renders matched entries from source seeds after draft/repair/regenerate, never deletes unmatched entries, and whole-bails (ledger-visible) when the source parse looks mis-grouped.
+- **Quality (Phase 3, shipped)** — the staged Rust pipeline (`QUALITY_STAGES` in `pipeline/resume/mod.rs` owns the stage list and order) + deterministic validators + a bounded repair loop (`Budget::max_repair_attempts`; Criticals only, failing sections only). Each call fences prior-stage artifacts as untrusted (ADR-010). Evidence grounding: Rust drops non-verbatim quotes + overwrites status from keywords kernel. Company roster locked: model seeded from source, never re-dates/drops roles. Validation: 0 provider calls; every Critical is a deterministic comparison against source (model never emits Critical). Terminal fabrications → per-bullet review panel (user keep/remove decides; nothing silently removed). Core-rule enforcement: mechanical, structural (ADR-032). The Projects section is code-owned at quality depth too — a deterministic zero-call normalization (`pipeline::resume::projects`) re-renders matched entries from source seeds after draft/repair/regenerate, never deletes unmatched entries, and whole-bails (ledger-visible) when the source parse looks mis-grouped.
 - **Max (Phase 4, shipped)** — section-wise JSON generation over a roster seeded from the source, assembled into a document, then validate → repair → judge (the judge runs LAST, is Warning-only, and is skippable). What the user gets that quality does not: the résumé builds section by section in front of them, and one employment entry can be regenerated afterwards without re-running anything. What protects them: identity fields are seeded and never model-authored; a repair round that LOSES content (a dropped employer, a dropped source link) is reverted even when it reduced the critical count; and a draft that lost the source's whole employment section is refused rather than saved over the previous document. Roster caps, stage names, section ceilings and the section-key grammar live in `pipeline::resume` (`MAX_STAGES`, `Budget::RESUME_MAX`, `SectionKey`, `strategy::MAX_COMPANY_PLANS`) — pointers, not copies, because the copies drift.
 
 Settings + per-run override; UI self-describes (tooltips per option + info popover explaining cost/time/what-runs).
 
 **Quality report** — deterministic content validators (factual, alignment, consistency, voice, ats, letter checks); persisted to `ai_generations.quality_report` (JSON wrapper: per-document ContentReport + per-bullet verdicts). Staleness detected via source-text-hash. Verdicts round-trip across user edits; resolved = intent matches document (keep → settled; remove → settled when evidence absent). Merged on re-check while preserving previous verdicts and fabrications (renderer's `mergeRecheckedReport` carries extra keys across merge).
 
-**Run store** (`pipeline_runs.db`) — immutable history per run (status, stopped reason, metrics, stage trail). Separate from `ai_generations` (which holds live aggregate document + report). Per-job retention: newest 3 runs. Lifecycle: queued → running → completed|needsReview|failed|cancelled. IPC contracts: run/get/listForJob/regenerateSection/resolveFabrication.
+**Run store** (`pipeline_runs.db`) — immutable history per run (status, stopped reason, metrics, stage trail). Separate from `ai_generations` (which holds live aggregate document + report). Per-job retention is capped by `RETENTION_RUNS_PER_JOB` (`pipeline/runs/mod.rs`). Lifecycle: queued → running → a terminal status (roster in `pipeline/runs/`). IPC contracts: run/get/listForJob/regenerateSection/resolveFabrication.
 
 ## Résumé structure
 
@@ -42,9 +42,9 @@ Two **tiers** — `TemplateTier { Ats, Design }` (`export/templates/mod.rs`), me
 
 1. **ATS-safe formatting** (owner: `resume-export-expert`) — the _output_ document parses cleanly: no multi-column traps for parsers, standard section headings, embedded/text fonts, no text-in-image. Linearization + the `validate/` gate enforce this.
 2. **ATS scoring / matching** (owner: `job-match-expert`) — `documents/keywords.rs` (shared keyword module) + `commands/match_resume.rs`. Split pipeline:
-   - `keywords_normalized()` — tokenizes, lowercases, applies synonym-normalization (e.g., `js`→`javascript`, `k8s`→`kubernetes`, `c++`→`cpp`), filters: drops strings ≤3 chars unless in `SHORT_TECH_TERMS` allowlist (go, sql, aws, gcp, css, git, api, vue, ios, tdd, bdd, ci, cd, ml, ai, ui, ux, qa, rx, etl, sap, erp, crm, k8s, r, cpp), drops stopwords. **No stemming.** Synonym lookup runs on raw tokens (before trimming) so `c-plus-plus` → `cpp` survives. Cached per-document in `keywords_json` column (migration 4).
-   - `apply_stemmer()` — Snowball stemming per language detected at match time (German/French/Spanish/Italian/Portuguese/Dutch via whatlang; fallback English). Stemming skipped for `SHORT_TECH_TERMS` to prevent corruption (aws → aw).
-   - `keyword_coverage()` returns resume vs job keyword overlap %; a **weighted blend of semantic similarity + keyword coverage** (read source for exact ratio — never trust a copied number). Corrupt/absent cache → `parse_resume_keywords` returns None → live extraction fallback from resume.text (never an empty set / zero score). Scoring is on-demand per opened job via MatchScoresProvider + useJobMatchScore (React Query, 10-min cache) — the old batch/FIFO auto-scorer is gone. Gaps → recommendations (`recommend/`). Cover letters: `cover_letter/`.
+   - `keywords_normalized()` — tokenizes, lowercases, applies synonym-normalization (the alias table lives beside it in `documents/keywords.rs`), then drops short tokens unless they are in the `SHORT_TECH_TERMS` allowlist and drops stopwords. The length bar and the allowlist members are both on that const; read them there, since a copied allowlist is a silent lie the day one is added. **No stemming.** Synonym lookup runs on raw tokens (before trimming) so a punctuated spelling still resolves to its alias. Cached per-document in the `keywords_json` column.
+   - `apply_stemmer()` — Snowball stemming for whichever language `whatlang` detects at match time (fallback English; the supported set is the stemmer match in `keywords.rs`). Stemming skipped for `SHORT_TECH_TERMS` to prevent corruption (aws → aw).
+   - `keyword_coverage()` returns resume vs job keyword overlap %; a **weighted blend of semantic similarity + keyword coverage** (read source for exact ratio — never trust a copied number). Corrupt/absent cache → `parse_resume_keywords` returns None → live extraction fallback from resume.text (never an empty set / zero score). Scoring is on-demand per opened job via MatchScoresProvider + useJobMatchScore (React Query; the cache lifetime is that hook's own `staleTime`) — the old batch/FIFO auto-scorer is gone. Gaps → recommendations (`recommend/`). Cover letters: `cover_letter/`.
 
 ## Export contract & pipeline
 
@@ -58,7 +58,7 @@ Two **tiers** — `TemplateTier { Ats, Design }` (`export/templates/mod.rs`), me
 
 `render_letter_pdf` in `typst_engine/engine.rs`. Market conventions (date placement, recipient block, sign-off) come from `locale/letter.rs` (`LetterConventions`). **Cover letters inherit the resume template's visual style** (accent/fonts/sizes) via `style_from_template` (imported as `letter_style_from_template`, returns `LetterStyle`) in `typst_engine/letter.rs`. `parse_cover_letter` produces a `LetterModel` serialised to JSON — no user content concatenated into Typst markup.
 
-**Letter layouts** (`LetterLayout { Classic, Refined, Banded, Navy, Sidebar, Monogram }`, wire `letterLayoutId` in `export/types.rs`) select the letter **arrangement** — orthogonal to the résumé template. `letter_source` dispatches one `.typ` file per `LetterLayout` variant (those two symbols own the roster). Layout owns composition; palette/fonts inherit via `LetterStyle`; market conventions (`data.opts`) own semantics — **layouts gate structural elements on `data.opts`, never on the layout id**. Decorated layouts (Banded's band, Sidebar's rail, Monogram's initials device) drop their decoration under `ats_mode` while preserving core letterhead and body. DOCX approximates each layout (Banded's angled band → flat accent-tinted shading; PDF small-caps → uppercase). Caveat: bundled Source Serif 4 lacks `smcp`, so PDF small-caps are visually inert pending a font swap. See [`docs/EXPORT_TEMPLATES.md` § Letter layouts](../EXPORT_TEMPLATES.md#letter-layouts).
+**Letter layouts** (`LetterLayout`, wire `letterLayoutId` in `export/types.rs`; that enum is the roster) select the letter **arrangement** — orthogonal to the résumé template. `letter_source` dispatches one `.typ` file per `LetterLayout` variant (those two symbols own the roster). Layout owns composition; palette/fonts inherit via `LetterStyle`; market conventions (`data.opts`) own semantics — **layouts gate structural elements on `data.opts`, never on the layout id**. Decorated layouts (Banded's band, Sidebar's rail, Monogram's initials device) drop their decoration under `ats_mode` while preserving core letterhead and body. DOCX approximates each layout (Banded's angled band → flat accent-tinted shading; PDF small-caps → uppercase). Caveat: bundled Source Serif 4 lacks `smcp`, so PDF small-caps are visually inert pending a font swap. See [`docs/EXPORT_TEMPLATES.md` § Letter layouts](../EXPORT_TEMPLATES.md#letter-layouts).
 
 **Template previews** (for the AI-Generate template picker) are **two separate pipelines**, each with its own generator, asset dir, and consumer module — don't cite one for the other. Both are per-template SVG (vector, no raster), owned by `export/typst_engine/`, and rendered by `#[ignore]`d offline tests in `typst_engine/test.rs`:
 
@@ -67,11 +67,11 @@ Two **tiers** — `TemplateTier { Ats, Design }` (`export/templates/mod.rs`), me
 | **Résumé**       | `generate_templates_showcase_banner` | `template-previews/<id>.svg`            | `template-previews.ts` → `TEMPLATE_PREVIEWS`             |
 | **Cover letter** | `generate_cover_template_previews`   | `cover-template-previews/<id>.svg`      | `cover-template-previews.ts` → `COVER_TEMPLATE_PREVIEWS` |
 
-Each consumer is a Vite `import.meta.glob` over its own dir, so an id with no committed SVG degrades to a caption-only card. `generate_templates_showcase_banner` also composes the marketing banner. Preview assets are current for all sixteen templates (the generators run on the dev host; last regenerated 2026-08-10 with the jake/awesome render fixes). See [`docs/EXPORT_TEMPLATES.md` § Cover-letter template previews](../EXPORT_TEMPLATES.md#cover-letter-template-previews-ai-generate-ui).
+Each consumer is a Vite `import.meta.glob` over its own dir, so an id with no committed SVG degrades to a caption-only card. `generate_templates_showcase_banner` also composes the marketing banner. Preview assets are current for every `TemplateId` (the generators run on the dev host; last regenerated 2026-08-10 with the jake/awesome render fixes). See [`docs/EXPORT_TEMPLATES.md` § Cover-letter template previews](../EXPORT_TEMPLATES.md#cover-letter-template-previews-ai-generate-ui).
 
 ## Candidate photo
 
-`ContactProfile.photo` — **`data:` URI only** (file paths rejected at `typst_engine/photo.rs: resolve_photo`). Client pipeline: `apps/desktop/src/renderer/lib/photo.ts` (crop/scale/EXIF-strip → JPEG data URL). Used by the photo templates (`Portrait`, `Lebenslauf`, `Aria`, `Saffron`); design-tier templates drop the photo under ATS mode.
+`ContactProfile.photo` — **`data:` URI only** (file paths rejected at `typst_engine/photo.rs: resolve_photo`). Client pipeline: `apps/desktop/src/renderer/lib/photo.ts` (crop/scale/EXIF-strip → JPEG data URL). Used by the photo-bearing templates (which ones is `theme::` template metadata, not a list here); design-tier templates drop the photo under ATS mode.
 
 ## CJK deferred
 
@@ -79,9 +79,9 @@ CJK (zh/ja/ko) renders as tofu — no CJK font bundle yet. `isCjkLanguage` in `p
 
 ## Accessibility
 
-PDF exports carry a **baseline tag tree** (typst-pdf 0.15 tags by default), enabling
-screen-reader navigation and text extraction. PDF/UA-1 validation (certified accessible
-format) is a future goal; currently blocked on four templates with link-bearing contact
+PDF exports carry a **baseline tag tree** (the `typst-pdf` version pinned in `Cargo.toml` tags by
+default), enabling screen-reader navigation and text extraction. PDF/UA-1 validation (certified
+accessible format) is a future goal; currently blocked on the templates with link-bearing contact
 blocks in page backgrounds — see [`docs/EXPORT_TEMPLATES.md` § Accessibility](../EXPORT_TEMPLATES.md#accessibility--tagged-pdf).
 
 ## Review heuristics

@@ -13,7 +13,7 @@
 
 **Setup:**
 
-- Tauri `lib.rs` registers via `notifications::manage(app, &mut reset_registry, &data_dir)` (line ~725)
-- Capabilities: `notification:allow-notify`, `notification:allow-show`, `notification:allow-request-permission`, `notification:allow-check-permissions`, `notification:allow-is-permission-granted`, `notification:allow-permission-state`, `notification:allow-register-listener`
+- Tauri `lib.rs` registers via `notifications::manage(app, &mut reset_registry, &data_dir)` in `setup`
+- Capabilities: the `notification:` permissions granted in `apps/desktop/src-tauri/capabilities/default.json` (that file is the allowlist; a new one has to be added there or the call is denied at runtime)
 
 **Integration:** sources call `push_and_notify(app, NewNotification { kind, title, body, route }, OsBanner)` to create and broadcast; renderer refetches inbox on `notifications:changed` event; toast appears on `notifications:toast` event when focused; OS banner appears per policy; deep-link from banner/tray goes to `notifications_clicked` → inbox open

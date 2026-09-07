@@ -42,11 +42,10 @@ Where each platform's truth lives — read the source, it moves with packaging:
 A program can locate the app's binary and data directory via the pointer file:
 
 ```json
-~/.ajh-agent/agent.json
-{ "exePath": "/path/to/ajh-tauri", "dataDir": "/path/to/app-data" }
+{ "exePath": "…/ajh-tauri", "dataDir": "…/app-data" }
 ```
 
-Its location is owned by `platform::config::agent_pointer_path`; `extension_bridge::register` writes it on every launch (idempotent). This is the supported mechanism for automated discovery.
+Its location (directory and filename both) is owned by `platform::config::agent_pointer_path`; `extension_bridge::register` writes it on every launch (idempotent). This is the supported mechanism for automated discovery: resolve the path through that function rather than hardcoding one.
 
 The `exePath` it publishes is resolved by `platform::config::agent_cli_exe_path` (see [ADR-037](decision-records/adr-037-agent-cli-as-binary-mode-thin-client.md)'s amendment for the AppImage case). For a human rather than a program, the same value is shown in the app at **Settings → Developer**, together with ready-to-copy Claude Code and Codex registration commands that already carry the path and the chosen access tier. That card is backed by `commands::system::system_agent_cli_info`, which is renderer-only: it is classified `NotExposed` in `extension_bridge/agent_cli/policy.rs`, so the agent tier cannot call it and an agent discovers the path through the pointer file instead. Card, command and pointer file all read the one resolver, so they cannot disagree.
 
