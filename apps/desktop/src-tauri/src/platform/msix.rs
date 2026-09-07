@@ -38,6 +38,13 @@ pub fn is_packaged() -> bool {
 /// Store" guide). Any other failure is treated the same way — unpackaged — so
 /// an unexpected WinRT error can only ever leave the normal GitHub updater
 /// enabled, never disable updates for a user who has no Store to update from.
+///
+/// Callable from any thread, including a tokio worker that never initialized
+/// COM: `windows-core`'s factory cache retries `RoGetActivationFactory` behind
+/// `CoIncrementMTAUsage` on `CO_E_NOTINITIALIZED` (see its `factory_cache.rs`),
+/// so the activation is apartment-agnostic. Worth knowing, because the failure
+/// it rules out is the bad one — a packaged app reporting "unpackaged" and
+/// re-enabling the GitHub updater.
 #[cfg(windows)]
 fn detect() -> bool {
     windows::ApplicationModel::Package::Current().is_ok()
