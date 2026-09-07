@@ -473,6 +473,12 @@ fn commands_value(arguments: &Value, tier: Tier) -> Value {
             }
             let mut row =
                 json!({ "namespace": namespace, "command": command, "effect": effect_name });
+            // A paged row's reply is an ENVELOPE, not the bare array its name suggests
+            // (issue #1136). Both the list and the note come from `agent_call`, so this
+            // row cannot drift from the behaviour `dispatch_direct` actually applies.
+            if agent_call::PAGINATED_LIST_COMMANDS.contains(&command) {
+                row["returns"] = json!(agent_call::PAGINATED_LIST_NOTE);
+            }
             let gate_open = match entry.effect {
                 Effect::Reversible => tier.allows_reversible(),
                 Effect::Irreversible(_) => tier.allows_irreversible(),
@@ -672,7 +678,9 @@ const MCP_RESULT_MAX_BYTES: usize = 256 * 1024;
 fn oversized_result(bytes: usize) -> Value {
     json!({
         "dispatched": false,
-        "error": "result_too_large",
+        // The app-side frame cap refuses with this SAME sentinel (issue #1135) — one
+        // definition of the string, in `agent_call`, never a second hand-typed copy here.
+        "error": agent_call::ERR_RESULT_TOO_LARGE,
         "bytes": bytes,
         "detail": format!(
             "payload exceeds the server's result cap ({bytes} B); narrow the query, or ask \

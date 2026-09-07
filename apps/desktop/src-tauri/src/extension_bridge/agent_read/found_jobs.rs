@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use tauri::AppHandle;
 
 use crate::error::{AppError, AppResult};
+use crate::extension_bridge::paging;
 
 use super::{fence_posting_display_fields, list_autopilots, project_value, AgentTrust};
 
@@ -141,65 +142,28 @@ fn fence_autopilot_name(name: &str) -> String {
     crate::prompt_fence::fenced("job_posting", name, AUTOPILOT_NAME_FENCE_CAP)
 }
 
+/// This resource's own default/max applied to the shared clamp — the numbers
+/// are resource-specific (sized against THIS row shape), the clamping rule is
+/// not (`extension_bridge::paging`).
 fn clamp_found_jobs_limit(payload: &Value) -> usize {
-    payload
-        .get("limit")
-        .and_then(Value::as_u64)
-        .map(|n| n as usize)
-        .filter(|&n| n > 0)
-        .unwrap_or(DEFAULT_FOUND_JOBS_LIMIT)
-        .min(MAX_FOUND_JOBS_LIMIT)
+    paging::clamp_limit(payload, DEFAULT_FOUND_JOBS_LIMIT, MAX_FOUND_JOBS_LIMIT)
 }
 
-/// Drop rows from the end of `candidates` until `base_cost` PLUS the
-/// serialized `jobs` array fits [`PAGE_BYTE_BUDGET`] — the real
-/// transport-size guarantee is now the FULL response envelope, not just the
-/// `jobs` array (CodeRabbit finding, PR #1117 review round 3: the array-only
-/// version left `nextCursor`/`total`/`autopilotId`/`autopilotName` entirely
-/// uncounted, and `autopilotName` in particular is unbounded user text).
-/// `base_cost` is the caller-measured byte size of every OTHER envelope
-/// field combined (see [`resolve_found_jobs`]'s own call site for how it's
-/// derived) — passed in rather than measured here so this function stays a
-/// pure, generically-reusable "fit N pre-serialized rows into a byte
-/// budget" primitive, not coupled to this one envelope's shape.
-///
-/// Walks forward summing each row's OWN serialized length (plus a one-byte
-/// array separator per row after the first) rather than re-serializing the
-/// whole growing array on every step, so this is O(n) `to_string` calls
-/// total, not O(n²) — cheap even at [`MAX_FOUND_JOBS_LIMIT`]'s scale.
-/// Always keeps at least one row when `candidates` is non-empty
-/// (forward-progress guarantee: a page cannot hang the traversal by
-/// returning zero rows and a `nextCursor` that never advances) — in
-/// practice unreachable at today's field caps for the `jobs` array alone
-/// (even title+company+location all pinned to `crate::prompt_fence::JOB_CAP`
-/// plus a full [`FOUND_JOBS_DESCRIPTION_PREVIEW_CAP`] description serializes
-/// to well under [`PAGE_BYTE_BUDGET`] for a single row), though a
-/// pathological `base_cost` could still force it — the guarantee is "at
-/// least one row survives," not "the result is provably under budget no
-/// matter how large `base_cost` is.
+/// This resource's own [`PAGE_BYTE_BUDGET`] applied to the shared trim
+/// (`extension_bridge::paging::trim_to_byte_budget`, which carries the full
+/// rationale and the forward-progress guarantee). In practice this rarely
+/// fires at today's field caps for the `jobs` array alone — even
+/// title+company+location all pinned to `crate::prompt_fence::JOB_CAP` plus a
+/// full [`FOUND_JOBS_DESCRIPTION_PREVIEW_CAP`] description serializes to well
+/// under [`PAGE_BYTE_BUDGET`] for a single row — though a pathological
+/// `base_cost` could still force it.
 fn trim_to_byte_budget(candidates: Vec<Value>, base_cost: usize) -> Vec<Value> {
-    let budget_for_rows = PAGE_BYTE_BUDGET.saturating_sub(base_cost);
-    let mut cumulative = 2; // the array's own "[" + "]"
-    let mut kept = 0;
-    for (i, row) in candidates.iter().enumerate() {
-        let row_len = serde_json::to_string(row).map_or(usize::MAX, |s| s.len());
-        let separator = usize::from(i > 0); // a comma between rows
-        let next = cumulative + separator + row_len;
-        if next > budget_for_rows && kept > 0 {
-            break;
-        }
-        cumulative = next;
-        kept = i + 1;
-    }
-    candidates.into_iter().take(kept).collect()
+    paging::trim_to_byte_budget(candidates, base_cost, PAGE_BYTE_BUDGET)
 }
 
 /// Fixed sentinel — mirrors `agent_read::JOB_NOT_FOUND_MESSAGE`'s "never
 /// echo the caller's own id" discipline.
 const AUTOPILOT_NOT_FOUND_MESSAGE: &str = "no autopilot found for this id";
-
-/// A caller-supplied `cursor` that isn't a plain non-negative integer.
-const INVALID_CURSOR_MESSAGE: &str = "cursor must be a non-negative integer offset";
 
 /// Fence `description` at [`FOUND_JOBS_DESCRIPTION_PREVIEW_CAP`] — the
 /// `found-jobs` twin of `agent_read::fence_description`, which uses the
@@ -316,24 +280,11 @@ pub(super) fn resolve_found_jobs(
     }))
 }
 
-/// Parse `payload`'s `cursor` — absent (or explicit `null`) means "start at
-/// 0"; anything else that doesn't parse as a plain non-negative integer is a
-/// caller error (never silently reset to page 1, which would look like
-/// forward progress while actually restarting the traversal). Matches on
-/// the `Value` variant directly (HIGH fix, pre-PR review round 2) rather
-/// than `.and_then(Value::as_str)`: that combinator returns `None` for a
-/// JSON NUMBER cursor too, not just for an absent one, so `{"cursor": 100}`
-/// used to collapse silently to `Ok(0)` instead of being read as offset 100
-/// or rejected — exactly the failure mode this function's own contract
-/// promises never happens.
+/// The shared cursor parse (`extension_bridge::paging::parse_offset_cursor`,
+/// which carries the full rationale) mapped onto THIS surface's error type —
+/// the rule is shared, the vocabulary is not.
 fn parse_found_jobs_cursor(payload: &Value) -> AppResult<usize> {
-    match payload.get("cursor") {
-        None | Some(Value::Null) => Ok(0),
-        Some(Value::String(raw)) => raw
-            .parse::<usize>()
-            .map_err(|_| AppError::Validation(INVALID_CURSOR_MESSAGE.to_string())),
-        Some(_) => Err(AppError::Validation(INVALID_CURSOR_MESSAGE.to_string())),
-    }
+    paging::parse_offset_cursor(payload).map_err(|m| AppError::Validation(m.to_string()))
 }
 
 /// `pub(super)` — dispatched from `agent_read::handle_agent_query`.
@@ -595,7 +546,7 @@ mod tests {
     #[test]
     fn found_jobs_rejects_a_non_numeric_cursor_rather_than_silently_resetting() {
         let err = parse_found_jobs_cursor(&json!({ "cursor": "not-a-number" })).unwrap_err();
-        assert_eq!(err.to_string(), INVALID_CURSOR_MESSAGE);
+        assert_eq!(err.to_string(), paging::INVALID_CURSOR_MESSAGE);
     }
 
     /// HIGH fix, pre-PR review round 2 — `{"cursor": 100}` (a JSON NUMBER,
@@ -606,7 +557,7 @@ mod tests {
     #[test]
     fn found_jobs_rejects_a_numeric_cursor_rather_than_silently_resetting() {
         let err = parse_found_jobs_cursor(&json!({ "cursor": 100 })).unwrap_err();
-        assert_eq!(err.to_string(), INVALID_CURSOR_MESSAGE);
+        assert_eq!(err.to_string(), paging::INVALID_CURSOR_MESSAGE);
     }
 
     #[test]

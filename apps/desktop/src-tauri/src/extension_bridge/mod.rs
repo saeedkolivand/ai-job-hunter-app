@@ -104,6 +104,10 @@ mod match_live;
 /// Wire `type` constants (the TS-mirrored protocol table) — see its module doc.
 pub mod msg;
 pub mod native_host;
+/// Offset/limit/byte-budget paging primitives shared by `agent_read`'s
+/// `found-jobs` resource and `agent_call`'s generic dispatch tier — see its
+/// module doc for why they live here rather than in either caller.
+mod paging;
 mod persist;
 pub mod register;
 /// The `token.revoked` wire surface + its no-oracle gate — see its module doc.

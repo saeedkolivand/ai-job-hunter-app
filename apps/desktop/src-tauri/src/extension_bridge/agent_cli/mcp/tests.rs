@@ -1596,6 +1596,43 @@ fn a_locally_refused_oversized_namespace_never_gets_echoed_back_in_full() {
     assert_eq!(parsed["error"], "result_too_large");
 }
 
+/// Issue #1138, measured against the REAL cap rather than a copy of it: a
+/// realistic one-page-résumé PDF (180 KB of file bytes — the repro's own
+/// export was 259,841 B of JSON at 99.1% of the cap, so its raw payload was
+/// around this size) serialized as a `number[]` blows [`MCP_RESULT_MAX_BYTES`],
+/// and the same bytes base64'd fit comfortably under it.
+///
+/// Both sides are asserted, so this cannot pass for the wrong reason: if the
+/// "before" ever stopped exceeding the cap, the premise this fix rests on
+/// would be gone and the test says so instead of quietly still passing.
+/// Anchored here, beside the constant, precisely so that lowering the cap
+/// re-runs this arithmetic rather than silently invalidating it.
+#[test]
+fn base64_takes_a_realistic_pdf_export_from_over_the_result_cap_to_under_it() {
+    let pdf_bytes: Vec<u8> = (0..180_000u32).map(|i| (i % 251) as u8).collect();
+    let mut payload = json!({
+        "data": pdf_bytes,
+        "mimeType": "application/pdf",
+        "filename": "resume.pdf",
+    });
+
+    let before = serde_json::to_string(&payload).unwrap().len();
+    assert!(
+        before > MCP_RESULT_MAX_BYTES,
+        "premise: the number[] encoding must exceed the cap for this fix to be needed \
+         ({before} B vs {MCP_RESULT_MAX_BYTES})"
+    );
+
+    agent_call::base64_byte_fields("documents_export_document", &mut payload);
+
+    let after = serde_json::to_string(&payload).unwrap().len();
+    assert!(
+        after < MCP_RESULT_MAX_BYTES,
+        "the base64 payload must fit the cap ({after} B vs {MCP_RESULT_MAX_BYTES})"
+    );
+    assert_eq!(payload["dataEncoding"], "base64");
+}
+
 // ── commands (local, no bridge) ──────────────────────────────────────────
 
 #[test]
@@ -1609,6 +1646,26 @@ fn commands_filters_by_effect_and_never_touches_the_bridge() {
         assert_eq!(row["effect"], "read");
         assert_eq!(row["tool"], TOOL_CALL_READ);
     }
+}
+
+/// Issue #1136's discoverability half: a caller must be able to LEARN that
+/// these two rows answer with an envelope and take `limit`/`cursor`, rather
+/// than discovering it by receiving a shape it did not expect. Asserted in
+/// both directions — the note appears on exactly the paged rows and on no
+/// others — so a `returns` key leaking onto every row fails here too.
+#[test]
+fn commands_marks_the_paged_rows_and_only_those() {
+    let all = commands_value(&json!({}), Tier::Irreversible);
+    let mut noted: Vec<&str> = Vec::new();
+    for row in all["commands"].as_array().unwrap() {
+        let Some(returns) = row["returns"].as_str() else {
+            continue;
+        };
+        assert_eq!(returns, agent_call::PAGINATED_LIST_NOTE);
+        noted.push(row["command"].as_str().unwrap());
+    }
+    noted.sort_unstable();
+    assert_eq!(noted, vec!["ai_generations_list", "applications_list"]);
 }
 
 #[test]

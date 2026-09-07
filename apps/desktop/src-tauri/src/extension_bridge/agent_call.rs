@@ -145,6 +145,40 @@ pub(super) enum Refusal {
     /// wrong-value mismatch so a caller can tell "you guessed wrong" apart
     /// from "the thing you're trying to act on isn't there".
     ProofUnavailable,
+    /// The command RAN, but its reply is larger than the bridge's own
+    /// [`super::MAX_FRAME_BYTES`] frame cap and was discarded (issue #1135).
+    /// Carries the MEASURED byte count, never an estimate.
+    ///
+    /// Why this variant exists at all: `max_message_size` in tungstenite
+    /// 0.30 (what `tokio-tungstenite = "0.30"` resolves to) is checked on the
+    /// READ path only — `WebSocketContext`'s `check_max_size` runs while
+    /// reassembling an INCOMING message, and nothing checks an outgoing one.
+    /// So the app happily wrote an over-cap frame, the CLI's own read loop
+    /// collapsed the resulting `Error::Capacity(MessageTooLong)` into "this
+    /// port gave us nothing usable" (`agent_cli::next_json` returns `None` on
+    /// every transport error alike), and the caller got a content-free
+    /// `connection_lost` — a sentinel whose own `--help` text and the MCP
+    /// server's `instructions` both group with TRANSIENT failures, so a
+    /// client burned its one permitted retry on a call that can never
+    /// succeed. Refusing HERE, at the one place that has both the reply and
+    /// its length, turns a deterministic failure into a deterministic,
+    /// self-describing refusal.
+    ///
+    /// Deliberately checked against [`super::MAX_FRAME_BYTES`] and not
+    /// against the MCP server's own much smaller `MCP_RESULT_MAX_BYTES`: the
+    /// two caps sit on different transports and the smaller one already
+    /// refuses (with this same `result_too_large` sentinel) one hop further
+    /// out. Adopting it here would newly refuse payloads that reach a plain
+    /// `agent call` caller perfectly well today.
+    ResultTooLarge(usize),
+    /// A caller-supplied `cursor` on one of [`PAGINATED_LIST_COMMANDS`] that
+    /// isn't a plain non-negative integer offset. The detail is the FIXED
+    /// [`super::paging::INVALID_CURSOR_MESSAGE`] and NEVER the offending
+    /// value — same never-echo-the-caller's-own-token discipline as
+    /// [`Refusal::ConfirmationMismatch`]; a cursor arrives from an untrusted
+    /// tool call and reaching an LLM's context verbatim is exactly the echo
+    /// this surface avoids everywhere else.
+    InvalidCursor,
 }
 
 /// `pub(super)` — the MCP server's `call-*` tools refuse locally with this
@@ -166,6 +200,13 @@ const ERR_INVOKE_ERROR: &str = "invoke_error";
 pub(super) const ERR_CONFIRMATION_REQUIRED: &str = "confirmation_required";
 const ERR_CONFIRMATION_MISMATCH: &str = "confirmation_mismatch";
 const ERR_PROOF_UNAVAILABLE: &str = "proof_unavailable";
+/// `pub(super)` — the MCP server's own, much smaller result cap
+/// (`agent_cli::mcp::oversized_result`) refuses with this SAME sentinel one
+/// hop further out. One cause, one name, ONE definition of the string: two
+/// hand-typed copies of a sentinel is the drift this module's own
+/// [`ERR_CONFIRMATION_REQUIRED`] doc already argues against.
+pub(super) const ERR_RESULT_TOO_LARGE: &str = "result_too_large";
+const ERR_INVALID_CURSOR: &str = "invalid_cursor";
 
 /// Fixed sentinel — mirrors `agent_read::CLI_ONLY_MESSAGE` for the identical
 /// gate, applied to the generic tier's own wire type.
@@ -183,6 +224,8 @@ impl Refusal {
             Refusal::ConfirmationRequired(_) => ERR_CONFIRMATION_REQUIRED,
             Refusal::ConfirmationMismatch => ERR_CONFIRMATION_MISMATCH,
             Refusal::ProofUnavailable => ERR_PROOF_UNAVAILABLE,
+            Refusal::ResultTooLarge(_) => ERR_RESULT_TOO_LARGE,
+            Refusal::InvalidCursor => ERR_INVALID_CURSOR,
         }
     }
 
@@ -237,6 +280,24 @@ impl Refusal {
                  not exist, or the read it depends on failed"
                     .to_string()
             }
+            // Mirrors `agent_cli::mcp::oversized_result`'s wording MINUS its
+            // "narrow the query" advice, which presupposes a caller-adjustable
+            // parameter this tier's over-cap commands do not have (issue #1136
+            // gave `applications_list`/`ai_generations_list` one; the rest,
+            // `autopilot_list` above all, still have none). Says outright that
+            // the command RAN: `dispatched` is `false` on this reply because
+            // no result was delivered, and a caller that read that as "nothing
+            // happened" would retry a mutation that already took effect.
+            Refusal::ResultTooLarge(bytes) => format!(
+                "the command RAN, but its reply ({bytes} B) exceeds the bridge's own frame cap \
+                 and was discarded rather than truncated — dispatched:false here means no \
+                 result was delivered, NOT that nothing happened, so do not re-run a mutating \
+                 command on this refusal. Retrying is futile: the outcome is deterministic for \
+                 this data. Ask the user to run it outside this session, or use a bounded \
+                 alternative if this command has one (the MCP `commands` tool marks the paged \
+                 ones)."
+            ),
+            Refusal::InvalidCursor => super::paging::INVALID_CURSOR_MESSAGE.to_string(),
         }
     }
 }
@@ -585,6 +646,226 @@ fn fence_all_string_leaves(value: &mut Value) {
     }
 }
 
+// ── Agent-layer response reshaping (paging + byte encoding) ──────────────
+//
+// Two audited consts in the SAME hand-audited style as `FENCE_FIELD_NAMES`
+// above, applied at the SAME chokepoint (`dispatch_direct`), for the same
+// reason that const exists: the shared `commands/**` bodies are the
+// RENDERER's wire shape and must stay byte-for-byte identical, so anything
+// only an agent needs is done here, on the way out, and nowhere else.
+
+/// Commands whose reply is an unbounded, growth-only, already-newest-first
+/// ARRAY that NO command argument can narrow — both take `(app: AppHandle)`
+/// and nothing else, and both back a `SELECT … ORDER BY … DESC` with no
+/// `LIMIT` (issue #1136: 1.7 MB of `ai_generations` and 440 KB of
+/// `applications` on an ordinary account, i.e. permanently over the MCP
+/// server's 256 KiB result cap with no parameter a caller could add to
+/// succeed). Paged HERE rather than in `commands/**`, whose wire shape the
+/// renderer's own service hooks depend on — the shared command bodies are
+/// deliberately untouched by this fix.
+///
+/// Audited by hand, one row at a time, against the command's real signature
+/// and its real query (mirrors `policy`'s own per-row audit discipline):
+/// - `applications_list` → `applications::ApplicationStore::list`
+/// - `ai_generations_list` → `ai_generations::AiGenerationStore::list`
+///
+/// Adding a row here CHANGES that command's reply shape for every generic-tier
+/// caller (a bare array becomes [`paginate_list_reply`]'s envelope), so it is
+/// an audited list and not a heuristic like "any command whose reply is a big
+/// array" — a shape-sniffing rule would silently reshape a future command
+/// whose array is bounded by construction, and reshape it differently as the
+/// user's data grew. `pub(super)` — `agent_cli::mcp`'s `commands` tool marks
+/// these rows so a caller can DISCOVER the paging instead of inferring it
+/// from a surprise envelope, never a second hand-typed name list.
+pub(super) const PAGINATED_LIST_COMMANDS: &[&str] = &["applications_list", "ai_generations_list"];
+
+/// What the `commands` tool prints on a [`PAGINATED_LIST_COMMANDS`] row.
+/// Lives HERE, next to the behaviour it describes, so the description cannot
+/// drift from the list it describes (`agent-cli-standards`: nothing
+/// hand-maintained that can drift). Deliberately names no default/cap number
+/// — those live on [`DEFAULT_LIST_PAGE_LIMIT`]/[`MAX_LIST_PAGE_LIMIT`] and a
+/// copy here would be a second source of truth for them.
+pub(super) const PAGINATED_LIST_NOTE: &str =
+    "returns a paged envelope {items,total,nextCursor} instead of a bare array (the raw list is \
+     unbounded and exceeds the result cap). Pass input.limit (clamped server-side) and \
+     input.cursor (a prior reply's nextCursor, verbatim; omit for the first page); repeat until \
+     nextCursor is null. `total` is the FULL row count, unaffected by paging — it is what an \
+     Effect::Irreversible row whose proof is this list's length wants.";
+
+/// Server-side default/cap for a [`PAGINATED_LIST_COMMANDS`] `limit` — a
+/// CEILING on rows per page, never the transport-size guarantee. That
+/// guarantee is [`LIST_PAGE_BYTE_BUDGET`], enforced by
+/// `paging::trim_to_byte_budget` against the REAL serialized bytes, because a
+/// row count cannot bound bytes here either: one `AiGenerationRecord` carries
+/// a full résumé, a cover letter AND the whole scraped job ad, while an
+/// `Application` row is a fraction of that, so no single count can be right
+/// for both. The count is only the cheap first cut — for `ai_generations` the
+/// budget will usually cut a page well below the default, and for the much
+/// smaller `applications` rows the default is comfortably inside it.
+const DEFAULT_LIST_PAGE_LIMIT: usize = 20;
+const MAX_LIST_PAGE_LIMIT: usize = 100;
+
+/// The REAL per-response bound for a paged list reply. Same 150,000 B as
+/// `agent_read::found_jobs::PAGE_BYTE_BUDGET` and for the same reason: this
+/// payload rides inside the MCP server's `content[]`/`isError` wrapper under
+/// its 256 KiB `MCP_RESULT_MAX_BYTES` cap, so half of that leaves real margin
+/// for the wrapper. Measured AFTER [`fence_scraped_fields`] has run, on the
+/// bytes actually about to go on the wire — fencing expands every scraped
+/// field it touches, so a budget checked before it would be measuring a
+/// payload that no longer exists by the time it ships.
+const LIST_PAGE_BYTE_BUDGET: usize = 150_000;
+
+/// `(command, field)` pairs whose value is a RAW BYTE ARRAY that `serde_json`
+/// renders as ~3.2–4× its own size in decimal digits and commas (issue
+/// #1138: an ordinary one-page résumé exported to PDF came back at 259,841 B,
+/// 99.1% of the MCP result cap, and a two-page one exceeded it — with no
+/// `limit`/`cursor` to narrow and no other exposed export path). Re-encoded
+/// base64 (~1.33×) HERE, never on the struct: `ExportResult.data` is the
+/// RENDERER's own wire shape (`data: number[]`, consumed by the export
+/// service hooks through `AppClient`), and `#[serde(with = …)]` on that field
+/// would change it for them too.
+///
+/// Audited by hand against the struct each pair actually serializes from:
+/// - `documents_export_document` → `export::types::ExportResult.data:
+///   Vec<u8>` (camelCase-renamed struct; `data` is already its wire key).
+///
+/// `documents_render_preview_images` is the other payload the MCP cap's own
+/// comment names, and it is deliberately NOT here: `PreviewResult.pages` is
+/// `Vec<String>` of SVG source, already text, and base64ing it would make it
+/// bigger and unreadable.
+const BASE64_BYTE_FIELDS: &[(&str, &str)] = &[("documents_export_document", "data")];
+
+/// Suffix appended to a [`BASE64_BYTE_FIELDS`] field name to form the sibling
+/// key that DECLARES the encoding (`data` → `dataEncoding`). Derived from the
+/// field name rather than listed per pair so a second entry cannot forget it.
+const ENCODING_KEY_SUFFIX: &str = "Encoding";
+const BASE64_ENCODING: &str = "base64";
+
+/// Re-encode every [`BASE64_BYTE_FIELDS`] array-of-bytes on `command`'s reply
+/// as a base64 STRING, and add the sibling `<field>Encoding: "base64"` key
+/// that says so. A payload that describes its own encoding survives a caller
+/// that never read the server `instructions` or the tool description — the
+/// reason this is a wire key and not documentation.
+///
+/// Top-level only, and by exact `(command, field)` pair — the opposite of
+/// [`fence_named_fields_recursive`]'s unconditional recursive walk, on
+/// purpose: fencing is a SAFETY property that must cover a field wherever it
+/// appears, while this is a lossy-looking representation change that must
+/// only ever hit the one field whose type was audited. A recursive
+/// "any array of small integers is bytes" rule would eventually rewrite a
+/// legitimate array of scores or ids into gibberish.
+///
+/// A non-array value (or a `data` that is not entirely bytes) is left exactly
+/// as it was and gets NO marker key — the marker is only ever added on a
+/// value this actually re-encoded, so the two can never disagree.
+///
+/// `pub(super)` for ONE reason: the test that proves this actually solves
+/// #1138 has to compare against `agent_cli::mcp::MCP_RESULT_MAX_BYTES`, the
+/// cap it exists to get under, and that constant is private to the `mcp`
+/// module — so the test lives THERE, beside the cap, rather than here beside
+/// a hand-copied literal of it that could silently drift (same
+/// cross-module-test reasoning as [`gate`]'s own `pub(super)`).
+pub(super) fn base64_byte_fields(command: &str, data: &mut Value) {
+    use base64::Engine;
+    let Some(map) = data.as_object_mut() else {
+        return;
+    };
+    for (cmd, field) in BASE64_BYTE_FIELDS {
+        if *cmd != command {
+            continue;
+        }
+        let Some(Value::Array(items)) = map.get(*field) else {
+            continue;
+        };
+        let bytes: Option<Vec<u8>> = items
+            .iter()
+            .map(|v| v.as_u64().and_then(|n| u8::try_from(n).ok()))
+            .collect();
+        let Some(bytes) = bytes else { continue };
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        map.insert((*field).to_string(), json!(encoded));
+        map.insert(
+            format!("{field}{ENCODING_KEY_SUFFIX}"),
+            json!(BASE64_ENCODING),
+        );
+    }
+}
+
+/// Take the agent-layer paging arguments OFF `input` for a
+/// [`PAGINATED_LIST_COMMANDS`] target, returning `(offset, limit)`; `None`
+/// for every other command, whose `input` is left untouched.
+///
+/// `limit`/`cursor` are REMOVED rather than read in place because they belong
+/// to this layer, not to the command: neither of these two commands declares
+/// any argument at all, and a future one that declared its own `limit` must
+/// not receive the paging layer's copy of it. Clamping vs refusing follows
+/// `found-jobs` exactly (shared primitives, `extension_bridge::paging`): a
+/// junk `limit` clamps to the default (never to "unbounded"), while a junk
+/// `cursor` REFUSES — silently resetting a cursor to 0 looks like forward
+/// progress while actually restarting the traversal, which is how a paging
+/// loop turns into an infinite one.
+fn take_list_page_args(
+    command: &str,
+    input: &mut Value,
+) -> Result<Option<(usize, usize)>, Refusal> {
+    if !PAGINATED_LIST_COMMANDS.contains(&command) {
+        return Ok(None);
+    }
+    let offset = super::paging::parse_offset_cursor(input).map_err(|_| Refusal::InvalidCursor)?;
+    let limit = super::paging::clamp_limit(input, DEFAULT_LIST_PAGE_LIMIT, MAX_LIST_PAGE_LIMIT);
+    if let Some(map) = input.as_object_mut() {
+        map.remove("limit");
+        map.remove("cursor");
+    }
+    Ok(Some((offset, limit)))
+}
+
+/// Slice an already-fenced array reply into one page and wrap it in the
+/// `{items,total,nextCursor}` envelope. Pure — the whole of #1136's logic is
+/// unit-testable without an `AppHandle`, the same pure/impure split
+/// [`classify_response`] and `confirm_and_run` use.
+///
+/// Runs AFTER [`fence_scraped_fields`], which is left unconditional over the
+/// WHOLE reply: fencing is the security property, and narrowing what it walks
+/// to "only the rows we are about to return" would make its coverage depend
+/// on a paging decision. The cost is unchanged from before this fix — that
+/// full-array walk already happened on every one of these calls.
+///
+/// A non-array reply is returned verbatim (no envelope), so a command that
+/// ever stopped returning an array degrades to today's behaviour instead of
+/// producing `{items: <not an array>}`.
+///
+/// `total` is the FULL row count, not the page's — it is what tells a caller
+/// the traversal is still moving, and it is the value an `Effect::Irreversible`
+/// row whose `ProofSource::Count` reads this list is really after. The proof
+/// ceremony itself is unaffected either way: `proof::resolve` dispatches
+/// through [`invoke_command`] directly, never through [`dispatch_direct`], so
+/// it still resolves against the complete, unpaged array.
+fn paginate_list_reply(data: Value, offset: usize, limit: usize) -> Value {
+    let Value::Array(rows) = data else {
+        return data;
+    };
+    let total = rows.len();
+    let candidates: Vec<Value> = rows.into_iter().skip(offset).take(limit).collect();
+
+    // `base_cost` = every envelope byte OTHER than the `items` array itself,
+    // measured rather than assumed (same derivation as
+    // `agent_read::found_jobs::resolve_found_jobs`'s own call site).
+    // `nextCursor` isn't known yet — it depends on how many rows survive the
+    // trim just below — so it is measured as a digit string the length of
+    // `total`, an upper bound (a real offset can never exceed `total`), which
+    // can only over-count and so only ever trim MORE than strictly required.
+    let base_envelope = json!({ "items": [], "total": total, "nextCursor": total.to_string() });
+    let base_cost = serde_json::to_string(&base_envelope)
+        .map_or(usize::MAX, |s| s.len())
+        .saturating_sub(2); // the placeholder `[]`'s own two bytes
+
+    let page = super::paging::trim_to_byte_budget(candidates, base_cost, LIST_PAGE_BYTE_BUDGET);
+    let next_offset = offset + page.len();
+    let next_cursor = (next_offset < total).then(|| next_offset.to_string());
+    json!({ "items": page, "total": total, "nextCursor": next_cursor })
+}
+
 // ── Dispatch ─────────────────────────────────────────────────────────────
 
 /// What `Webview::on_message`'s callback handed back, translated into
@@ -722,18 +1003,26 @@ fn unfence_named_fields_recursive(value: &mut Value) {
     }
 }
 
-/// Invoke a command for real: strip any fence wrapper the caller echoed back
-/// into `input` ([`unfence_named_fields_recursive`]), dispatch, then fence
-/// any scraped text in the response ([`fence_scraped_fields`]). Called
-/// directly for a `Read`/`Reversible` row, and again at
-/// [`dispatch_irreversible_confirmed`]'s tail for a confirmed
+/// Invoke a command for real: take this layer's own paging arguments off
+/// `input` ([`take_list_page_args`]), strip any fence wrapper the caller
+/// echoed back into it ([`unfence_named_fields_recursive`]), dispatch, then
+/// fence any scraped text in the response ([`fence_scraped_fields`]), page it
+/// ([`paginate_list_reply`]) and re-encode any raw byte field
+/// ([`base64_byte_fields`]). Called directly for a `Read`/`Reversible` row,
+/// and again at [`dispatch_irreversible_confirmed`]'s tail for a confirmed
 /// `Irreversible` one — the ONE real-invocation chokepoint every dispatched
-/// row funnels through, never a second copy of either fence/unfence step.
+/// row funnels through, never a second copy of any of those steps.
+///
+/// The two response reshapes go LAST, after fencing, and in this order: the
+/// paging trim's byte budget must measure the fenced bytes that will really
+/// ship (fencing expands what it touches), and base64 must see the raw
+/// `Vec<u8>` array rather than something a later step rewrote.
 async fn dispatch_direct(
     app: &AppHandle,
     command: &str,
     mut input: Value,
 ) -> Result<Value, Refusal> {
+    let page_args = take_list_page_args(command, &mut input)?;
     unfence_named_fields_recursive(&mut input);
     let outcome = invoke_command(app, command, input)
         .await
@@ -748,6 +1037,10 @@ async fn dispatch_direct(
         InvokeOutcome::CommandErr(v) => return Err(Refusal::InvokeError(invoke_error_detail(&v))),
     };
     fence_scraped_fields(&mut data);
+    if let Some((offset, limit)) = page_args {
+        data = paginate_list_reply(data, offset, limit);
+    }
+    base64_byte_fields(command, &mut data);
     Ok(data)
 }
 
@@ -858,6 +1151,40 @@ async fn dispatch(
     }
 }
 
+/// Substitute a [`Refusal::ResultTooLarge`] reply for any `reply` the bridge
+/// could not actually deliver — over [`super::MAX_FRAME_BYTES`], the cap both
+/// ends of this socket configure (issue #1135; see that variant's own doc for
+/// why an outgoing frame is otherwise unchecked and what the caller saw
+/// instead). Pure, and returns the RECOMPUTED `dispatched` alongside the
+/// reply so the observability span records what actually went on the wire
+/// rather than what dispatch alone decided — measuring the built reply is the
+/// only way to know, so this cannot live any earlier.
+///
+/// Note the asymmetry it deliberately preserves: `dispatched` on the wire
+/// becomes `false` (no result was delivered, and every consumer — including
+/// `agent_cli::exit_code_for_reply`'s exit-2 mapping — reads it that way),
+/// while the refusal's own `detail` states plainly that the command RAN. The
+/// substituted reply is always far smaller than the original, so this can
+/// never itself exceed the cap.
+fn enforce_frame_cap(
+    req_id: &str,
+    namespace: &str,
+    command: &str,
+    reply: String,
+    dispatched: bool,
+) -> (String, bool) {
+    if reply.len() <= super::MAX_FRAME_BYTES {
+        return (reply, dispatched);
+    }
+    let refused = call_result_reply(
+        req_id,
+        namespace,
+        command,
+        Err(Refusal::ResultTooLarge(reply.len())),
+    );
+    (refused, false)
+}
+
 /// Answer an authenticated, throttle-admitted, origin-checked `agent.call`.
 /// Never panics — [`dispatch`] degrades to a [`Refusal`] on every failure
 /// path (unknown command, wrong effect, or the dispatch itself erroring).
@@ -880,6 +1207,7 @@ pub(super) async fn handle_agent_call(app: &AppHandle, req_id: &str, payload: &V
     let outcome = dispatch(app, &namespace, &command, input, confirm).await;
     let dispatched = outcome.is_ok();
     let reply = call_result_reply(req_id, &namespace, &command, outcome);
+    let (reply, dispatched) = enforce_frame_cap(req_id, &namespace, &command, reply, dispatched);
     span.end_with(&format!("dispatched={dispatched}"), dispatched);
     reply
 }

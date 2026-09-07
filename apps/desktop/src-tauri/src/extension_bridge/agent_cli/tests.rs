@@ -377,6 +377,12 @@ fn exit_code_for_reply_reports_4_for_confirmation_required_and_2_for_every_other
         "confirmation_mismatch",
         "proof_unavailable",
         "unknown_command",
+        // Issue #1135's new app-side refusal: the reply that used to arrive
+        // as a content-free `connection_lost` (exit 2 via a synthesized
+        // client error) now arrives as a real, self-describing app refusal —
+        // and must land on the SAME exit code, so a caller's existing
+        // "exit 2 = the call did not produce a result" branch keeps working.
+        agent_call::ERR_RESULT_TOO_LARGE,
     ] {
         assert_eq!(
             exit_code_for_reply(

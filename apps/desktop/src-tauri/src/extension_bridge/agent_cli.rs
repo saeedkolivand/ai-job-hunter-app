@@ -331,7 +331,9 @@ const VERB_TABLE: &[VerbHelp] = &[
                   directly; an Irreversible command needs --confirm '<value>' (a proof read \
                   from ANOTHER command, named but never disclosed by a --confirm-less call — \
                   exit 4); NotExposed always refuses (see `agent schema`, the MCP `commands` \
-                  tool, or policy.rs for the full table)",
+                  tool, or policy.rs for the full table). A few unbounded list commands answer \
+                  with a paged {items,total,nextCursor} envelope and take --input \
+                  '{\"limit\":N,\"cursor\":\"...\"}'; the `commands` tool marks which and how",
     },
 ];
 
