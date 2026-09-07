@@ -99,8 +99,9 @@ export function AutoIndexStep({ onBack, onNext, direction, stepIndex, totalSteps
 
       {/* Same Back/Continue pair every other step renders. The wrapper supplies
           only the Enter/Escape shortcuts, so without these a mouse-only user is
-          stranded on the step (#1118) — and Enter does nothing at all while the
-          switch has focus, since a focused control owns its own activation. */}
+          stranded on the step (#1118) — and while the switch has focus, Enter
+          toggles the switch instead of advancing, since a focused control owns
+          its own activation. */}
       <motion.div
         initial={{ y: 10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
