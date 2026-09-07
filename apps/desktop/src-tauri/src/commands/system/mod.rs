@@ -255,16 +255,32 @@ pub async fn system_set_performance_mode(
 
 /// Whether the app is registered to launch at login. Off by default; a read
 /// error (e.g. the OS autostart entry is missing) reports `false`.
+///
+/// A Microsoft Store build answers from its manifest-declared `StartupTask`
+/// instead of the `Run` key — `Some(..)` there, `None` everywhere else. The
+/// plugin's key would point at a version-pinned WindowsApps path that stops
+/// working at the next Store update while this command still reported `true`.
 #[tauri::command]
 pub fn system_get_launch_at_login(app: AppHandle) -> bool {
+    if let Some(enabled) = crate::platform::msix::startup_task_enabled() {
+        return enabled;
+    }
     use tauri_plugin_autostart::ManagerExt;
     app.autolaunch().is_enabled().unwrap_or(false)
 }
 
 /// Enable or disable launch-at-login. Returns the resulting state so the UI
 /// reflects what the OS actually applied rather than the requested value.
+///
+/// The Store build drives its `StartupTask` (see
+/// [`system_get_launch_at_login`]); unlike a `Run` key, Windows can REFUSE to
+/// enable it (the user turned it off in Settings ▸ Apps ▸ Startup, or policy
+/// blocks it), which surfaces here as an error rather than a silent "off".
 #[tauri::command]
 pub fn system_set_launch_at_login(app: AppHandle, enabled: bool) -> AppResult<bool> {
+    if let Some(applied) = crate::platform::msix::set_startup_task(enabled) {
+        return applied;
+    }
     use tauri_plugin_autostart::ManagerExt;
     let manager = app.autolaunch();
     if enabled {

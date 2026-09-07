@@ -103,12 +103,23 @@ const APPDIR_ENV: &str = "APPDIR";
 /// in both the pointer file and the Settings snippet. [`launched_appimage`]
 /// is the predicate that actually identifies the case.
 ///
+/// **A Microsoft Store (MSIX) install has the same problem for a different
+/// reason** and is checked first: there `current_exe()` is inside
+/// `…\WindowsApps\<PackageFullName>\`, a directory a normal user cannot
+/// execute from and whose name changes with every Store update.
+/// [`crate::platform::msix::alias_exe_path`] returns the stable execution-alias
+/// shim, and `None` on every other build, so the AppImage and plain cases below
+/// are untouched. The two cases cannot both apply (one is Windows-only, the
+/// other Linux-only), so the order between them is documentation, not logic.
+///
 /// `None` when `current_exe()` fails (the AppImage branch needs it too) —
 /// the caller decides how to report it (the pointer file is skipped; the
 /// command returns `null`).
 pub fn agent_cli_exe_path() -> Option<PathBuf> {
     let running = std::env::current_exe().ok();
-    launched_appimage(running.as_deref()).or(running)
+    crate::platform::msix::alias_exe_path()
+        .or_else(|| launched_appimage(running.as_deref()))
+        .or(running)
 }
 
 /// The `.AppImage` file THIS process was launched from, or `None` when it was

@@ -8,6 +8,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import i18n from '@ajh/translations';
 
@@ -24,13 +25,14 @@ afterEach(() => {
   resetUpdaterStatusForTests();
 });
 
-function setup() {
+function setup(changelog: unknown = { releases: [] }) {
   let handler: ((s: unknown) => void) | null = null;
   const client = createMockClient({
     'updater.onStatus': vi.fn((h: (s: unknown) => void) => {
       handler = h;
       return () => {};
     }),
+    'updater.changelog': vi.fn().mockResolvedValue(changelog),
     'system.getVersion': vi.fn().mockResolvedValue('0.1.0'),
   });
   const Wrapper = withProviders(client);
@@ -57,13 +59,41 @@ describe('UpdateSection', () => {
     const { emit } = setup();
     emit({ state: 'managed', by: 'store' });
 
-    expect(screen.getByText(i18n.t(MANAGED_KEY))).toBeInTheDocument();
+    // A live region, because this line replaces the control the user activated.
+    expect(screen.getByRole('status')).toHaveTextContent(i18n.t(MANAGED_KEY));
     // Nothing in this panel may offer a GitHub update path on a packaged
     // install — the shell refuses it, so an offer would only ever dead-end.
     expect(screen.queryByText(i18n.t('settings.update.checkNow'))).not.toBeInTheDocument();
-    expect(
-      screen.queryByText(i18n.t('settings.update.downloadFromGitHub'))
-    ).not.toBeInTheDocument();
     expect(screen.queryByText(i18n.t('settings.update.upToDate'))).not.toBeInTheDocument();
+  });
+
+  // The changelog is collapsed by default, so its GitHub fallback is only
+  // reachable after expanding — which is exactly why the pair below asserts
+  // BOTH directions: an unconditional button passes the "absent" half only
+  // because nothing rendered it yet.
+  describe('the changelog fallback when release history fails to load', () => {
+    it('offers the GitHub download on a normal install', async () => {
+      const user = userEvent.setup();
+      const { emit } = setup({ error: 'boom' });
+      emit({ state: 'not-available' });
+
+      await user.click(screen.getByText(i18n.t('settings.update.viewChangelog')));
+
+      expect(await screen.findByText(i18n.t('settings.update.changelogError'))).toBeInTheDocument();
+      expect(screen.getByText(i18n.t('settings.update.downloadFromGitHub'))).toBeInTheDocument();
+    });
+
+    it('does not offer it on a Store build', async () => {
+      const user = userEvent.setup();
+      const { emit } = setup({ error: 'boom' });
+      emit({ state: 'managed', by: 'store' });
+
+      await user.click(screen.getByText(i18n.t('settings.update.viewChangelog')));
+
+      expect(await screen.findByText(i18n.t('settings.update.changelogError'))).toBeInTheDocument();
+      expect(
+        screen.queryByText(i18n.t('settings.update.downloadFromGitHub'))
+      ).not.toBeInTheDocument();
+    });
   });
 });

@@ -225,7 +225,7 @@ const SUBSCRIBERS = {
   },
   'features/settings/components/update-section/index.tsx': {
     mount: 'route-scoped',
-    hash: 'b7d969e9251c',
+    hash: 'e40e74d85eba',
     note:
       'The THIRD `useUpdater` instance, alongside the always-mounted banner and menu — but ' +
       'the three no longer disagree. `useUpdater` keeps status AND the download-progress ' +
@@ -246,7 +246,9 @@ const SUBSCRIBERS = {
       '(`updater::setup_auto_check`) — almost certainly before this route is ever visited. The ' +
       'always-mounted banner is what receives it and records it into the shared snapshot, so a ' +
       'panel mounted minutes later still renders "updates come from the Store" rather than a ' +
-      'live "Check now" for an update path the shell would refuse.',
+      'live "Check now" for an update path the shell would refuse. That line is a `role="status"` ' +
+      'live region, because arriving in the `managed` state REMOVES the control the user just ' +
+      'activated.',
   },
   'features/monitoring/hooks/useActivityFeed.ts': {
     mount: 'route-scoped',

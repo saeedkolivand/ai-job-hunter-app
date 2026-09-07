@@ -268,11 +268,22 @@ Generate a JWT issuer + secret on the AMO **Manage API Keys** page with the acco
 
 A second **flavour** of the Windows build, not a second build: the MSIX wraps the very same `ajh-tauri.exe` the NSIS installer ships. Tauri has no MSIX bundle target, so the packaging is ours — manifest template in [`apps/desktop/src-tauri/windows/msix/AppxManifest.xml`](../apps/desktop/src-tauri/windows/msix/AppxManifest.xml) (commented element by element), packer in [`apps/desktop/scripts/pack-msix.mjs`](../apps/desktop/scripts/pack-msix.mjs), wired into the Windows leg of `release.yml` (the "Pack the Microsoft Store MSIX" step).
 
-**The one runtime difference is where updates come from.** `platform::msix::is_packaged()` detects package identity at runtime — no build flag, one binary — and [`src/updater/mod.rs`](../apps/desktop/src-tauri/src/updater/mod.rs) hands updating to the Store when it is set: no check, no background poll, and the settings panel says so instead of offering a download. Running the GitHub updater on a packaged install would install a **second, unmanaged copy** beside the Store one.
+`platform::msix::is_packaged()` decides at runtime — no build flag, one binary. It needs package identity **and** the running exe to sit inside the package install root, because Windows hands package identity down to child processes: without the second half, an NSIS-installed copy launched by the packaged one would call itself a Store build. An unreadable probe counts as packaged, which is the safe direction (see the doc comment on `decide`).
 
-Everything else is deliberately identical. The manifest disables registry and file-system write virtualization (which is what the restricted `unvirtualizedResources` capability buys), so the HKCU native-messaging registration, the launch-at-login entry, and the app data directory are the same real locations a non-Store install uses — a user can switch flavours and keep their data. It also declares the `ajh://` protocol and an `ajh-tauri.exe` execution alias, replacing the two things a packaged app may not do for itself: the runtime deep-link registration and the NSIS PATH hook.
+Four behaviours branch on it, and only these four:
 
-> **WebView2:** the MSIX cannot run the Evergreen bootstrapper the NSIS installer uses. Windows 11 has the runtime built in; a Windows 10 machine without it must install WebView2 from Microsoft first.
+| Behaviour             | Unpackaged                        | Store build                                                     |
+| --------------------- | --------------------------------- | --------------------------------------------------------------- |
+| Updates               | GitHub updater (`src/updater/`)   | The Store. No check, no poll; the settings panel says so        |
+| `ajh://` registration | Written at runtime by the plugin  | The manifest's `windows.protocol` extension (`lib.rs` skips it) |
+| Published exe path    | `current_exe()`                   | The execution-alias shim (`platform::msix::alias_exe_path`)     |
+| Launch at login       | HKCU `Run` key (autostart plugin) | The manifest's `StartupTask` (`commands/system`)                |
+
+The last two exist because `current_exe()` inside a package is `…\WindowsApps\<PackageFullName>\ajh-tauri.exe`: a directory a normal user cannot execute from, whose name carries the package version. Anything that RECORDS that path — the browser native-messaging host, the agent-CLI pointer, a `Run` entry — would dangle after the next Store update. The alias path does not.
+
+Everything else is deliberately identical. The manifest disables registry and file-system write virtualization (which is what the restricted `unvirtualizedResources` capability buys), so the native-messaging registration under HKCU and the app data directory are the same real locations a non-Store install uses — a user can switch flavours and keep their data. Note the corollary: those real writes also mean the app must NOT re-register things the manifest already owns, which is why the deep-link call is skipped above. For the same "the Store owns updating" reason the updater plugin's ACL entry is not in `capabilities/default.json`; the renderer never used it, and it was the last path from the webview to the installer.
+
+> **WebView2 is a certification risk, not just a note.** The MSIX cannot run the Evergreen bootstrapper the NSIS installer uses. Windows 11 has the runtime built in, but a clean Windows 10 (19041) machine without it launches the app into a dead webview — which is exactly what a certification tester on a fresh VM would see. Say so in the Partner Center **tester notes**.
 
 ### Package identity (repository variables)
 
@@ -295,16 +306,25 @@ The workflow step is skipped while `MSIX_IDENTITY_NAME` is unset, so the pipelin
 
 Registering the staged app is the only way to see the packaged-identity code path locally: `platform::msix` returns `false` for every normally-launched build.
 
+**Verify these three while it is registered — they are the parts nothing in CI can prove** (they need a real registered package, so treat them as unverified until someone runs them):
+
+1. **Native messaging.** Launch the registered app, then open the browser extension and let it connect. It reaches the app through the manifest written from the alias path; if that path were wrong the browser would fail to spawn the host.
+2. **The CLI alias.** From a plain shell, `cd` into an empty scratch directory and run `ajh-tauri agent --help`, then a real verb. Two things are under test: that the alias resolves at all, and that the shim preserves the console and the working directory — anything the CLI writes relative to `.` must land in that scratch directory, not somewhere under the package.
+3. **Launch at login.** Toggle it in Settings, then check **Settings ▸ Apps ▸ Startup** shows the app; toggle it off there and confirm the app's own toggle reports the refusal instead of silently flipping back on.
+
 ### First submission (manual)
 
 The `.msix` is **unsigned on purpose** — the Store signs it during submission — which is why it is a workflow **artifact** (`msix-store-package`, on the `build-installers` run) and never a GitHub Release asset.
 
 1. Download the `msix-store-package` artifact from the release run and unzip it.
 2. Partner Center ▸ your product ▸ **Packages** ▸ upload the `.msix`.
-3. **Submission options** asks for a justification for the restricted capability. State what it is actually for: the app registers a browser **native-messaging host under HKCU** and a **launch-at-login Run entry** that browsers and Windows must read from the real hive rather than a virtualized copy, and it shares its data directory with the non-Store install so users can move between them without losing data.
-4. Submit. Certification for a full-trust desktop app is manual and can take a few days.
+3. **Submission options** asks for a justification for the restricted capability. State what it is actually for: the app registers a browser **native-messaging host under HKCU** that browsers must read from the real hive rather than a virtualized copy, and it shares its data directory with the non-Store install so users can move between them without losing data.
+4. Fill the **tester notes** with the WebView2 prerequisite above, plus a pointer that the browser-extension features need the companion extension installed.
+5. Submit. Certification for a full-trust desktop app is manual and can take a few days.
 
 Automating this with the `msstore` CLI is a follow-up: it needs an Entra tenant plus an app registration, which do not exist yet.
+
+> **Uninstall leaves per-user traces.** Removing the package removes the app, its `StartupTask` and its execution alias — but not the files and keys the app itself wrote outside the package: the browser native-messaging host manifests (JSON + their HKCU entries) and the agent-CLI pointer file. That is the direct consequence of disabling write virtualization, and it is the same behaviour the NSIS build has. They are inert once the app is gone (they name a path that no longer resolves) and are overwritten on the next launch of either flavour.
 
 ---
 

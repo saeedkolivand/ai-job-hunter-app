@@ -671,7 +671,20 @@ pub fn run() {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 // Register the scheme at runtime (no-op once the installer has;
                 // required for Linux + `pnpm dev`). Best-effort.
-                let _ = app.deep_link().register_all();
+                //
+                // NEVER on a Microsoft Store build. There the manifest's
+                // `windows.protocol` extension IS the registration, and because
+                // the package disables registry write virtualization this call's
+                // `HKCU\Software\Classes\ajh` write would be REAL: it would
+                // shadow the package activation with a command line pinned to
+                // the current version's WindowsApps path — a directory the user
+                // cannot execute from, and one that changes with every Store
+                // update — and it would outlive an uninstall. `on_open_url`
+                // below is untouched; that is how the packaged activation
+                // arrives.
+                if !crate::platform::msix::is_packaged() {
+                    let _ = app.deep_link().register_all();
+                }
                 let dl_handle = handle.clone();
                 app.deep_link().on_open_url(move |event| {
                     let urls: Vec<String> = event.urls().iter().map(|u| u.to_string()).collect();
@@ -1002,7 +1015,10 @@ pub fn run() {
                 );
             }
 
-            // Schedule background update checks (10 s after launch, then every 4 h).
+            // Schedule background update checks (10 s after launch, then every
+            // 4 h) — on an NSIS/MSI install. A Store build announces once that
+            // the Store owns updates and never polls or checks; see
+            // `updater::setup_auto_check`.
             updater::setup_auto_check(handle);
 
             // Start autopilot schedule runner (checks every minute).
