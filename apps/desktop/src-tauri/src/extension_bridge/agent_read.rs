@@ -317,6 +317,12 @@ struct AgentJob {
     posted_at: Option<i64>,
     found_at: u64,
     is_new: bool,
+    /// NOT a plain passthrough of the stored `FoundJob::applied` (issue
+    /// #1166/#1169) — that field's own doc says the stored value is ALWAYS
+    /// `false`. [`resolve_job`] overwrites this with a value derived off
+    /// `commands::autopilot::applied_job_urls`, the same set
+    /// `found_jobs::project_found_job_row` and `best_matches::mark_applied`
+    /// derive theirs from.
     applied: bool,
     is_agency: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -361,10 +367,23 @@ const JOB_NOT_FOUND_DETAIL: &str =
 /// as a caller-supplied one, so decoding only the caller's half would fix the
 /// reported direction and leave the mirror image broken. `normalized_url` is
 /// pre-decoded by [`job_resource`]; this is the stored half.
+///
+/// `applied_urls` is [`crate::commands::autopilot::applied_job_urls`]'s
+/// output (issue #1166/#1169, HIGH — before this fix `AgentJob::applied` was
+/// a plain passthrough of `FoundJob::applied`, whose own doc says the stored
+/// value is ALWAYS `false` and only the read path ever fills it in; the two
+/// read paths that DO fill it in — `commands::autopilot::enrich_applied` and
+/// `found_jobs::project_found_job_row` — never ran on this one, so `job`
+/// reported every posting as not-applied even after a real application
+/// existed, the exact duplicate-application hazard this surface exists to
+/// prevent). Derived here the SAME way `project_found_job_row` derives it,
+/// off the SAME set, so `job` and `found-jobs` agree by construction on one
+/// url.
 fn resolve_job(
     records: &[crate::autopilot::Autopilot],
     caller_identity: Option<(&'static str, String)>,
     normalized_url: &str,
+    applied_urls: &std::collections::HashSet<String>,
 ) -> AppResult<Value> {
     let found = records
         .iter()
@@ -383,6 +402,8 @@ fn resolve_job(
         .ok_or_else(|| AppError::Validation(JOB_NOT_FOUND_MESSAGE.to_string()))?;
     let mut value = project_value::<_, AgentJob>(found)
         .ok_or_else(|| AppError::Message("failed to project job".to_string()))?;
+    let is_applied = applied_urls.contains(&crate::applications::normalize_job_url(&found.url));
+    value["applied"] = json!(is_applied);
     fence_description(&mut value);
     fence_posting_display_fields(&mut value);
     Ok(value)
@@ -397,7 +418,8 @@ fn resolve_job(
 /// surface it reaches. `title`/`company`/`location` share this provenance —
 /// the follow-up this doc once deferred landed as
 /// [`fence_posting_display_fields`], called separately by both this fn's own
-/// caller ([`resolve_job`]) and [`fence_best_match_fields`].
+/// caller ([`resolve_job`]) and [`resolve_best_matches`] (one row at a time,
+/// per [`fence_posting_display_fields`]'s own doc).
 fn fence_description(value: &mut Value) {
     let Some(desc) = value.get("description").and_then(Value::as_str) else {
         return;
@@ -672,6 +694,15 @@ fn parse_best_matches_cursor(payload: &Value, issuer: &str) -> AppResult<usize> 
 /// not a bare offset — `query` here is already the SAME normalized value
 /// [`best_matches_resource`] fingerprinted to parse the incoming `offset`,
 /// so both halves of the format always agree.
+///
+/// [`trim_best_matches_page_to_budget`]s the fenced page before returning it
+/// (issue #1165, HIGH — the sibling `found-jobs` resource added this exact
+/// guard for the exact same reason: a row-count `limit` alone cannot bound a
+/// page's byte size, since a legitimate, non-adversarial posting's
+/// `title`/`company`/`location` can each independently reach
+/// `crate::prompt_fence::JOB_CAP` = 8,000 chars). Each row is fenced (per
+/// [`fence_posting_display_fields`]) BEFORE trimming, not after, so the
+/// bytes the budget measures are the exact bytes that leave the process.
 fn resolve_best_matches(rows: &[Value], offset: usize, limit: usize, query: Option<&str>) -> Value {
     let mut matches: Vec<AgentBestMatch> = rows
         .iter()
@@ -682,27 +713,36 @@ fn resolve_best_matches(rows: &[Value], offset: usize, limit: usize, query: Opti
             .retain(|m| m.title.to_lowercase().contains(q) || m.company.to_lowercase().contains(q));
     }
     let total = matches.len();
-    let page: Vec<AgentBestMatch> = matches.into_iter().skip(offset).take(limit).collect();
+    let cursor_issuer = best_matches_cursor_issuer(query);
+    let page_values: Vec<Value> = matches
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .filter_map(|m| serde_json::to_value(m).ok())
+        .map(|mut row| {
+            fence_posting_display_fields(&mut row);
+            row
+        })
+        .collect();
+    let base_cost = best_matches_base_envelope_cost(&cursor_issuer, total);
+    let page = trim_best_matches_page_to_budget(page_values, base_cost);
     let returned = page.len();
     let next_offset = offset + returned;
-    let cursor_issuer = best_matches_cursor_issuer(query);
     let next_cursor = if next_offset < total {
         Some(format!("{cursor_issuer}:{next_offset}"))
     } else {
         None
     };
-    let mut value = json!({
+    json!({
         "matches": page,
         "total": total,
         "returned": returned,
         "nextCursor": next_cursor,
-    });
-    fence_best_match_fields(&mut value);
-    value
+    })
 }
 
 /// Fence `title`/`company`/`location` on ONE object — shared by
-/// [`fence_best_match_fields`] (one call per `best-matches` row) and
+/// [`resolve_best_matches`] (one call per `best-matches` row) and
 /// [`resolve_job`] (one call on the single job object), so the identical
 /// primitive/tag/cap can never drift between the two curated-tier surfaces
 /// that both carry these fields (MUST FIX — pre-PR gate: `resolve_job` used
@@ -720,18 +760,44 @@ fn fence_posting_display_fields(value: &mut Value) {
     }
 }
 
-/// Fence `title`/`company`/`location` on every `best-matches` row (MEDIUM
-/// fix, MCP security critique — the MCP server is the first surface where a
-/// model reads these fields with NO surrounding prompt at all, while also
-/// holding `call-reversible` dispatch in the same session). Delegates to
-/// [`fence_posting_display_fields`] per row.
-fn fence_best_match_fields(value: &mut Value) {
-    let Some(matches) = value.get_mut("matches").and_then(Value::as_array_mut) else {
-        return;
-    };
-    for row in matches {
-        fence_posting_display_fields(row);
-    }
+/// The REAL per-response safety net for `best-matches` (issue #1165) —
+/// mirrors `found_jobs::PAGE_BYTE_BUDGET`'s own target one resource over:
+/// half of `agent_cli::mcp::MCP_RESULT_MAX_BYTES` (256 KiB), leaving real
+/// margin for the MCP `content[]`/`isError` wrapper this payload rides
+/// inside on the MCP transport.
+const BEST_MATCHES_PAGE_BYTE_BUDGET: usize = 150_000;
+
+/// This resource's own [`BEST_MATCHES_PAGE_BYTE_BUDGET`] applied to the
+/// shared trim (`extension_bridge::paging::trim_to_byte_budget`, which
+/// carries the full rationale and the forward-progress guarantee). Named
+/// differently from the primitive it wraps for the same reason
+/// `found_jobs::trim_page_to_budget` is.
+fn trim_best_matches_page_to_budget(candidates: Vec<Value>, base_cost: usize) -> Vec<Value> {
+    crate::extension_bridge::paging::trim_to_byte_budget(
+        candidates,
+        base_cost,
+        BEST_MATCHES_PAGE_BYTE_BUDGET,
+    )
+}
+
+/// Every envelope byte OTHER than `matches` itself — mirrors
+/// `found_jobs::base_envelope_cost`'s own reasoning one resource over.
+/// `nextCursor` isn't known until after trimming, so it's measured in the
+/// SAME `<issuer>:<offset>` shape a real cursor has, with `total` standing in
+/// for both the offset and `returned` — a real offset/returned count can
+/// never exceed `total`, so this can only ever OVER-count and thus only trim
+/// MORE aggressively than strictly required, never less (the safe direction
+/// for a byte budget).
+fn best_matches_base_envelope_cost(cursor_issuer: &str, total: usize) -> usize {
+    let base_envelope = json!({
+        "matches": [],
+        "total": total,
+        "returned": total,
+        "nextCursor": format!("{cursor_issuer}:{total}"),
+    });
+    serde_json::to_string(&base_envelope)
+        .map_or(usize::MAX, |s| s.len())
+        .saturating_sub(2)
 }
 
 /// The payload-only half of `best-matches`' argument parsing — `query`
@@ -836,7 +902,8 @@ fn job_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
     }
     let caller_identity = job_caller_identity(raw_url);
     let records = list_autopilots(app)?;
-    resolve_job(&records, caller_identity, &normalized)
+    let applied_urls = crate::commands::autopilot::applied_job_urls(app);
+    resolve_job(&records, caller_identity, &normalized, &applied_urls)
 }
 
 fn automations_resource(app: &AppHandle) -> AppResult<Value> {

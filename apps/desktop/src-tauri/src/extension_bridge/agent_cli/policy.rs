@@ -1,6 +1,6 @@
 //! ADR-038 §1 — the command policy table: every `#[tauri::command]` site
 //! registered in `tauri::generate_handler!` (`lib.rs`, row count pinned by
-//! `tests::policy_table_has_exactly_167_rows`, never restated here),
+//! `tests::policy_table_row_count_is_pinned`, never restated here),
 //! classified by [`Effect`]. Phase 1 (this table) shipped with
 //! nothing dispatching through it; Phase 2 (`super::super::agent_call`) reads
 //! it to drive `agent call <ns>:<command>` — [`Effect::Read`] AND

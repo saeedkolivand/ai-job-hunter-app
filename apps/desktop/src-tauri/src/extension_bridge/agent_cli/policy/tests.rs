@@ -68,8 +68,13 @@ fn registered_command_paths() -> Vec<&'static str> {
 /// the table it guards covers additions only (this repo's own standing
 /// lesson: `feedback_a_guard_driven_off_its_own_data_cannot_catch_a_deletion`)
 /// — this fails independently of either source's own content.
+// Named without the count itself (issue #1170, MEDIUM — a prior name
+// baked in "167", and two module docs elsewhere cited that name AS the
+// authoritative row count, so both silently restated a stale number the
+// moment this row grew to 168): the count lives ONLY in the `assert_eq!`
+// below, never in a name or a doc pointer to this test.
 #[test]
-fn policy_table_has_exactly_167_rows() {
+fn policy_table_row_count_is_pinned() {
     // 167 + 1 (round 5, `B1-r1-ACLI-R5-1`): `updater::updater_status`, the
     // read-only counterpart added when `updater_check` was reverted from
     // `Read` back to `Reversible`.
@@ -164,7 +169,7 @@ fn extension_bridge_regenerate_token_reason_explains_why_connected_is_vacuous_to
 /// `budget: None` when `semanticScoringEnabled: true` — the SAME
 /// uncapped-spend shape that forced `ai_embed` `NotExposed` before ITS
 /// gate landed. Hand-written (not looped, mirroring
-/// `policy_table_has_exactly_167_rows`'s own discipline): a revert of
+/// `policy_table_row_count_is_pinned`'s own discipline): a revert of
 /// either row back to `Reversible` (freely dispatchable, no confirm, no
 /// cap) would not be caught by any OTHER test in this file — the
 /// Irreversible-row count is untouched by a `Reversible` change, and
@@ -247,7 +252,7 @@ fn every_proof_source_read_command_is_a_read_row() {
     }
     // Hand-written literal (not derived from POLICY itself — the same
     // "pair a loop with a literal" discipline as
-    // `policy_table_has_exactly_167_rows`): 34 Irreversible rows
+    // `policy_table_row_count_is_pinned`): 34 Irreversible rows
     // (`extension_bridge_regenerate_token` moved to `NotExposed` —
     // security review round 1; `ai_embed` moved NotExposed → Irreversible
     // once its `charge_provider_daily` gate landed, and
@@ -427,7 +432,7 @@ fn mark_all_read_proof_comment_calls_the_count_a_superset_not_exact() {
 }
 
 /// Round 5 (`B1-r1-ACLI-R5-3`): direct pin for both rows issue #1164 reclassified — the aggregate
-/// row count (`policy_table_has_exactly_167_rows`) and the Irreversible tally
+/// row count (`policy_table_row_count_is_pinned`) and the Irreversible tally
 /// (`every_proof_source_read_command_is_a_read_row`'s trailing `checked == 35`) are BOTH blind to
 /// a revert of one row paired with an unrelated +1/-1 elsewhere in the table: `checked` stays 35
 /// either way. `notifications_mark_read` had no direct pin anywhere (it appeared in this file only

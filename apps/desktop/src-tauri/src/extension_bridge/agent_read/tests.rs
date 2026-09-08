@@ -164,11 +164,56 @@ fn resolve_job_finds_by_normalized_url_across_autopilots() {
     }];
     let normalized =
         crate::applications::normalize_job_url("https://boards.example.com/jobs/42?utm_source=x");
-    let out = resolve_job(&records, None, &normalized).expect("found");
+    let out = resolve_job(
+        &records,
+        None,
+        &normalized,
+        &std::collections::HashSet::new(),
+    )
+    .expect("found");
     // `title` is now fenced too (`fence_posting_display_fields`) — this test is about the
     // URL-matching lookup, not fencing (see the dedicated fencing test below), so it only
     // checks the real content survived, not the exact wrapper.
     assert!(out["title"].as_str().unwrap().contains("Backend Engineer"));
+}
+
+/// Issue #1166/#1169 (HIGH) — `job`'s `applied` must be DERIVED off
+/// `applied_urls`, never a plain passthrough of the stored `FoundJob::applied`
+/// (which is always `false` on the stored record — see that field's own
+/// doc). This fails against the pre-fix `resolve_job`, which ignored the
+/// `applied_urls` set entirely and echoed the stored (always-`false`) bit.
+#[test]
+fn resolve_job_derives_applied_from_the_applied_urls_set_not_the_stored_bit() {
+    let stored_url = "https://boards.example.com/jobs/42";
+    let records = vec![Autopilot {
+        found_jobs: vec![FoundJob {
+            url: stored_url.to_string(),
+            applied: false, // the stored bit — deliberately the OPPOSITE of the derived answer
+            ..full_found_job()
+        }],
+        ..blank_autopilot("ap-1")
+    }];
+    let normalized = crate::applications::normalize_job_url(stored_url);
+    let mut applied_urls = std::collections::HashSet::new();
+    applied_urls.insert(crate::applications::normalize_job_url(stored_url));
+
+    let applied_out = resolve_job(&records, None, &normalized, &applied_urls).expect("found");
+    assert_eq!(
+        applied_out["applied"], true,
+        "a url present in applied_urls must read as applied, even though the stored bit is false"
+    );
+
+    let not_applied_out = resolve_job(
+        &records,
+        None,
+        &normalized,
+        &std::collections::HashSet::new(),
+    )
+    .expect("found");
+    assert_eq!(
+        not_applied_out["applied"], false,
+        "a url absent from applied_urls must read as not applied"
+    );
 }
 
 #[test]
@@ -183,7 +228,13 @@ fn resolve_job_fences_the_description_as_untrusted_data() {
         ..blank_autopilot("ap-1")
     }];
     let normalized = crate::applications::normalize_job_url("https://boards.example.com/jobs/42");
-    let out = resolve_job(&records, None, &normalized).expect("found");
+    let out = resolve_job(
+        &records,
+        None,
+        &normalized,
+        &std::collections::HashSet::new(),
+    )
+    .expect("found");
     let desc = out["description"]
         .as_str()
         .expect("description is a string");
@@ -212,7 +263,13 @@ fn resolve_job_fences_title_company_location_as_untrusted_data() {
         ..blank_autopilot("ap-1")
     }];
     let normalized = crate::applications::normalize_job_url("https://boards.example.com/jobs/42");
-    let out = resolve_job(&records, None, &normalized).expect("found");
+    let out = resolve_job(
+        &records,
+        None,
+        &normalized,
+        &std::collections::HashSet::new(),
+    )
+    .expect("found");
     for field in ["title", "company", "location"] {
         let value = out[field].as_str().expect("still a string");
         assert!(
@@ -237,7 +294,13 @@ fn resolve_job_caps_an_oversized_description() {
         ..blank_autopilot("ap-1")
     }];
     let normalized = crate::applications::normalize_job_url("https://boards.example.com/jobs/42");
-    let out = resolve_job(&records, None, &normalized).expect("found");
+    let out = resolve_job(
+        &records,
+        None,
+        &normalized,
+        &std::collections::HashSet::new(),
+    )
+    .expect("found");
     let desc = out["description"].as_str().unwrap();
     // `fenced`'s cap bounds the INPUT, not the output byte-for-byte (see
     // its own doc) — assert it is nowhere near the uncapped 3x length,
@@ -271,6 +334,7 @@ fn resolve_job_matches_a_percent_encoded_variant_of_the_same_url() {
             &records,
             job_caller_identity(looked_up),
             &job_lookup_key(looked_up),
+            &std::collections::HashSet::new(),
         )
         .unwrap_or_else(|e| panic!("stored {stored} must match {looked_up}: {e}"));
         assert!(out["title"].as_str().unwrap().contains("Backend Engineer"));
@@ -308,6 +372,7 @@ fn resolve_job_matches_every_linkedin_url_variant_by_identity() {
             &records,
             job_caller_identity(caller_url),
             &job_lookup_key(caller_url),
+            &std::collections::HashSet::new(),
         )
         .unwrap_or_else(|e| panic!("{caller_url} must resolve to the stored posting: {e}"));
         assert!(
@@ -331,6 +396,7 @@ fn resolve_job_does_not_match_a_different_linkedin_id() {
         &records,
         job_caller_identity(caller_url),
         &job_lookup_key(caller_url),
+        &std::collections::HashSet::new(),
     )
     .unwrap_err();
     assert_eq!(err.to_string(), JOB_NOT_FOUND_MESSAGE);
@@ -358,6 +424,7 @@ fn resolve_job_matches_a_non_identity_board_by_normalized_string_only() {
         &records,
         job_caller_identity(caller_url),
         &job_lookup_key(caller_url),
+        &std::collections::HashSet::new(),
     )
     .expect("must still match by normalized string alone");
     assert!(out["title"].as_str().unwrap().contains("Backend Engineer"));
@@ -402,7 +469,13 @@ fn job_lookup_key_still_refuses_a_percent_encoded_javascript_scheme() {
 
 #[test]
 fn resolve_job_refuses_with_fixed_sentinel_when_absent() {
-    let err = resolve_job(&[], None, "https://nowhere.example.com/x").unwrap_err();
+    let err = resolve_job(
+        &[],
+        None,
+        "https://nowhere.example.com/x",
+        &std::collections::HashSet::new(),
+    )
+    .unwrap_err();
     assert_eq!(err.to_string(), JOB_NOT_FOUND_MESSAGE);
 }
 
@@ -908,6 +981,69 @@ fn best_matches_query_filter_matches_title_or_company_case_insensitively() {
         out["matches"][0]["url"], "https://boards.example.com/jobs/2",
         "the surviving row must be the COMPANY match, proving `query` checks company too, \
          not only title"
+    );
+}
+
+/// A row at the REAL permitted worst case: `title`/`company`/`location`
+/// each pinned to `crate::prompt_fence::JOB_CAP` (8,000 chars), in
+/// multi-byte CJK text (stresses the char-vs-byte distinction — a
+/// char-counted cap is NOT a byte cap). Mirrors
+/// `found_jobs::tests::worst_permitted_job`'s own reasoning one resource
+/// over — this is legitimate, non-adversarial content a board could
+/// genuinely return, not an adversarial payload.
+fn worst_permitted_best_match_row(n: usize) -> Value {
+    let cjk_field = |cap: usize| "中".repeat(cap);
+    let mut row = full_best_match_row_json();
+    row["title"] = json!(cjk_field(crate::prompt_fence::JOB_CAP));
+    row["company"] = json!(cjk_field(crate::prompt_fence::JOB_CAP));
+    row["location"] = json!(cjk_field(crate::prompt_fence::JOB_CAP));
+    row["url"] = json!(format!("https://boards.example.com/jobs/{n}"));
+    row
+}
+
+/// Issue #1165 (HIGH) — a row-count `limit` alone cannot bound a page's byte
+/// size: raising `MAX_BEST_MATCHES_LIMIT` to 100 without a byte-budget trim
+/// let a max-limit page of worst-permitted rows reach ~7 MB, well past both
+/// `agent_cli::mcp::MCP_RESULT_MAX_BYTES` (256 KiB) and, eventually,
+/// `extension_bridge::mod::MAX_FRAME_BYTES`. Mirrors
+/// `found_jobs::tests::found_jobs_trims_an_oversized_page_and_keeps_the_cursor_correct`
+/// one resource over: this fails against the pre-fix `resolve_best_matches`,
+/// which built `page` and returned it unconditionally.
+#[test]
+fn best_matches_trims_an_oversized_page_and_keeps_the_cursor_correct() {
+    const MCP_RESULT_MAX_BYTES: usize = 256 * 1024;
+    let total_rows = MAX_BEST_MATCHES_LIMIT * 2;
+    let rows: Vec<Value> = (0..total_rows)
+        .map(worst_permitted_best_match_row)
+        .collect();
+
+    let page1 = resolve_best_matches(&rows, 0, MAX_BEST_MATCHES_LIMIT, None);
+    let kept = page1["matches"].as_array().unwrap().len();
+    assert!(
+        kept < MAX_BEST_MATCHES_LIMIT,
+        "worst-permitted content must actually trigger trimming, kept {kept} of \
+         {MAX_BEST_MATCHES_LIMIT} requested"
+    );
+    assert!(kept > 0, "at least one row must always come back");
+    let bytes = page1.to_string().len();
+    assert!(
+        bytes < MCP_RESULT_MAX_BYTES,
+        "a trimmed page must stay under the MCP cap, was {bytes} bytes"
+    );
+    let issuer = best_matches_cursor_issuer(None);
+    assert_eq!(
+        page1["nextCursor"].as_str().unwrap(),
+        format!("{issuer}:{kept}"),
+        "nextCursor must reflect rows ACTUALLY kept, not the requested limit"
+    );
+
+    // The next page must start exactly at `kept` — no row skipped, none repeated.
+    let page2 = resolve_best_matches(&rows, kept, MAX_BEST_MATCHES_LIMIT, None);
+    let first_url_page2 = page2["matches"][0]["url"].as_str().unwrap();
+    assert_eq!(
+        first_url_page2,
+        format!("https://boards.example.com/jobs/{kept}"),
+        "the row immediately after the trimmed page must be next, not skipped or repeated"
     );
 }
 

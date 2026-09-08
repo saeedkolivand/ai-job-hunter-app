@@ -1373,7 +1373,7 @@ pub fn run(args: &[String]) -> i32 {
 }
 
 // ADR-038 §1 — the command policy table (row count pinned by
-// `policy::tests::policy_table_has_exactly_167_rows`, never restated here)
+// `policy::tests::policy_table_row_count_is_pinned`, never restated here)
 // + its exactness test against `generate_handler!`. Data only in this
 // phase: nothing here dispatches yet (§2's generic `agent call
 // <ns>:<command>` tier is later).
