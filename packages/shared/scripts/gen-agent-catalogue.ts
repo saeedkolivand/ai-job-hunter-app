@@ -353,7 +353,7 @@ function collectScalarTypeAliasNames(): Set<string> {
 
 // ── Parsing the tauri-client invoke() call sites ───────────────────────────────────────────────
 
-interface CatalogueArg {
+export interface CatalogueArg {
   name: string;
   required: boolean;
   /** `undefined` — not a wrapper key (no resolvable type at all): the arg is a scalar.
@@ -365,7 +365,7 @@ interface CatalogueArg {
   fields: string[] | null | undefined;
 }
 
-interface CatalogueEntry {
+export interface CatalogueEntry {
   command: string;
   description: string;
   args: CatalogueArg[];
@@ -585,8 +585,9 @@ function fieldsKey(fields: string[] | null | undefined): string {
 
 /** `true` when two `invoke()` call sites for the SAME command declared the identical arg
  *  contract — name, required-ness, and nested-field shape, order-independent (a param object's
- *  property order is not semantically load-bearing). */
-function argsEqual(a: CatalogueArg[], b: CatalogueArg[]): boolean {
+ *  property order is not semantically load-bearing). Exported for `gen-agent-catalogue.test.ts`
+ *  (issue #1183 F2). */
+export function argsEqual(a: CatalogueArg[], b: CatalogueArg[]): boolean {
   if (a.length !== b.length) return false;
   const byName = new Map(a.map((arg) => [arg.name, arg]));
   return b.every((arg) => {
@@ -599,11 +600,69 @@ function argsEqual(a: CatalogueArg[], b: CatalogueArg[]): boolean {
   });
 }
 
+/** Merge one parsed `invoke()` call site into the accumulated `entries` map — the ONE place a
+ *  command reached from more than one namespace (e.g. `boards.disconnect` AND
+ *  `linkedin.disconnect` both call `boards_logout`) gets reconciled. Exported for
+ *  `gen-agent-catalogue.test.ts` (issue #1183 F2).
+ *
+ *  Two DIFFERENT checks, deliberately keyed differently:
+ *
+ *  - **Args** (`argsEqual`) are keyed on the bare `command` — the shape actually ENFORCED at
+ *    dispatch (`check_input`) is a single contract regardless of which namespace's TSDoc
+ *    described it, so two namespaces publishing genuinely different argument shapes for the same
+ *    dispatched command IS a real bug (A1-r1-AC-5/SEC-3 MEDIUM) and still `fail()`s.
+ *  - **Descriptions** are keyed on `(namespace, command)`, not the bare command (issue #1183 F2
+ *    fix). `LinkedinContract` and `BoardsContract` legitimately want their OWN wording for the
+ *    same underlying `boards_logout`/`boards_connect_status` etc. — a bare-command key forced
+ *    `linkedin.ts`'s TSDoc to be genericized to `boards.ts`'s wording to satisfy this same check,
+ *    degrading `docs/API.md`'s LinkedIn-specific documentation for no safety reason: the catalogue
+ *    only ever ENFORCES one arg shape per command (above), never one description, so which
+ *    description wins is cosmetic. Keying on `(namespace, command)` still catches the case this
+ *    guard actually exists for — the SAME namespace declaring two conflicting descriptions for one
+ *    command (a real authoring mistake, not a deliberate per-namespace wording choice) — while
+ *    letting two DIFFERENT namespaces disagree freely. First-namespace-wins (by the sorted
+ *    `readdirSync` walk) decides which description is PUBLISHED when they legitimately differ;
+ *    that pick is arbitrary but harmless, since nothing downstream validates against it. */
+export function mergeCatalogueEntry(
+  entries: Map<string, CatalogueEntry>,
+  descByNamespaceCommand: Map<string, string>,
+  namespace: string,
+  command: string,
+  description: string,
+  args: CatalogueArg[]
+): void {
+  const nsCommandKey = `${namespace} ${command}`;
+  const priorNsDescription = descByNamespaceCommand.get(nsCommandKey);
+  if (priorNsDescription !== undefined && priorNsDescription !== description) {
+    fail(
+      `command "${command}" is invoked more than once from the "${namespace}" namespace with ` +
+        `DIFFERING TSDoc descriptions ("${priorNsDescription}" vs "${description}") — make the ` +
+        `two call sites' TSDoc comments agree.`
+    );
+  }
+  descByNamespaceCommand.set(nsCommandKey, description);
+
+  const existing = entries.get(command);
+  if (existing) {
+    if (!argsEqual(existing.args, args)) {
+      fail(
+        `command "${command}" is invoked from more than one namespace with DIFFERING argument ` +
+          `shapes — the published catalogue contract would depend on directory read order. Make ` +
+          `the two call sites' argument shapes agree, or route the second call site through the ` +
+          `first's own contract member.`
+      );
+    }
+    return;
+  }
+  entries.set(command, { command, description, args });
+}
+
 function processNamespaceFile(
   file: string,
   descCtx: DescCtx,
   fieldSources: FieldSources,
   entries: Map<string, CatalogueEntry>,
+  descByNamespaceCommand: Map<string, string>,
   uncatalogued: Uncatalogued[]
 ) {
   const namespace = file.split('/').slice(-2, -1)[0] ?? '';
@@ -633,31 +692,14 @@ function processNamespaceFile(
       const parsed = parseInvokeCall(call, sf, fieldSources, uncatalogued);
       if (!parsed) continue;
       const description = describe(descCtx, namespace, methodName);
-      const existing = entries.get(parsed.command);
-      if (existing) {
-        // A command invoked from more than one namespace (e.g. `boards.disconnect` AND
-        // `linkedin.disconnect` both call `boards_logout`) — first-call-site-wins used to decide
-        // the winner off `readdirSync` iteration ORDER (SECURITY/MEDIUM, CLI review round 1: two
-        // genuinely different TSDocs meant the published description was an incidental
-        // filesystem detail, not a deliberate choice). Silent when the two call sites AGREE
-        // (the common, harmless case — same command reached two ways with identical docs);
-        // `fail()`s only when they disagree, forcing a deliberate pick. Args are compared too
-        // (A1-r1-AC-5/SEC-3 MEDIUM): the description twin of this hazard was already guarded, but
-        // `parsed.args` — the shape actually ENFORCED at dispatch, via `check_input` — was silently
-        // kept from whichever call site iteration reached first, so a future divergent second call
-        // site would publish and enforce a contract derived from an arbitrary read-order pick.
-        if (existing.description !== description || !argsEqual(existing.args, parsed.args)) {
-          fail(
-            `command "${parsed.command}" is invoked from more than one namespace with DIFFERING ` +
-              `TSDoc descriptions or argument shapes ("${existing.description}" vs "${description}") ` +
-              `— the published catalogue contract would depend on directory read order. Make the ` +
-              `two call sites' TSDoc comments and argument shapes agree, or route the second call ` +
-              `site through the first's own contract member.`
-          );
-        }
-        continue;
-      }
-      entries.set(parsed.command, { command: parsed.command, description, args: parsed.args });
+      mergeCatalogueEntry(
+        entries,
+        descByNamespaceCommand,
+        namespace,
+        parsed.command,
+        description,
+        parsed.args
+      );
     }
   }
 }
@@ -723,10 +765,15 @@ function renderEntryLines(entry: CatalogueEntry): string[] {
  *  past the LOC cap despite looking "even" by entry count. This is pure DATA (a `CatalogueEntry`/
  *  `CatalogueArg` struct literal), not logic that could be reorganized to fit this crate's own R8
  *  hard LOC cap (`docs/architecture-rules.md`) another way: rustfmt's own default `struct_lit_width`
- *  (18, far below any entry rendered here) forces one field per line regardless of how short the
- *  whole literal is, so a single ~160-command file cannot fit under the cap at all. Mirrors
- *  `ipc_contracts`' own per-domain file split (`gen-ipc-rust.ts`'s `MODULES`), sized by LINE BUDGET
- *  instead of by domain since this table has no natural per-domain boundary of its own. */
+ *  (18) is far below any `CatalogueEntry`'s own body length (`command`+`description`+`args` alone
+ *  clear it), so every entry is forced one field per line no matter how short its own fields are —
+ *  a single ~160-command file cannot fit under the cap at all. `struct_lit_width` does NOT govern
+ *  a nested `CatalogueArg` the same way (short ones stay one line inside `args: &[...]`); those
+ *  wrap instead when the rendered LINE exceeds `max_width` — the pre-rustfmt line count this
+ *  function packs on can undercount that case, which is why the caller re-verifies the REAL
+ *  rustfmt line count per shard (issue #1183 O1). Mirrors `ipc_contracts`' own per-domain file
+ *  split (`gen-ipc-rust.ts`'s `MODULES`), sized by LINE BUDGET instead of by domain since this
+ *  table has no natural per-domain boundary of its own. */
 function shardEntries(entries: CatalogueEntry[]): CatalogueEntry[][] {
   const shards: CatalogueEntry[][] = [];
   let current: CatalogueEntry[] = [];
@@ -786,12 +833,13 @@ function renderAggregator(
     '//',
     "// Sharded rather than one big const array — this crate's own R8 hard LOC cap",
     "// (docs/architecture-rules.md) has no exception for generated DATA, and rustfmt's own default",
-    '// `struct_lit_width` forces one field per line regardless of how short the whole literal is,',
-    "// so this file's size scales with the command count with no upper bound this generator",
-    '// controls. A `LazyLock<Vec<_>>` — never a `const` array-concat, which Rust cannot express',
-    '// across separately-compiled const items without an allocation — is transparent to every call',
-    '// site: `Deref<Target = Vec<CatalogueEntry>>` -> `Deref<Target = [CatalogueEntry]>` means',
-    '// `CATALOGUE.iter()`/`.find(...)` read exactly as they would against a plain slice.',
+    '// `struct_lit_width` (18) forces every CatalogueEntry one field per line regardless of how',
+    "// short its own fields are, so this file's size scales with the command count with no upper",
+    '// bound this generator controls. A `LazyLock<Vec<_>>` — never a `const` array-concat, which',
+    '// Rust cannot express across separately-compiled const items without an allocation — is',
+    '// transparent to every call site: `Deref<Target = Vec<CatalogueEntry>>` ->',
+    '// `Deref<Target = [CatalogueEntry]>` means `CATALOGUE.iter()`/`.find(...)` read exactly as',
+    '// they would against a plain slice.',
     '',
     'use std::sync::LazyLock;',
     '',
@@ -912,11 +960,12 @@ export async function main() {
   const fieldSources: FieldSources = { zodAliases, zodSchemas, interfaceFields, scalarTypeAliases };
 
   const entries = new Map<string, CatalogueEntry>();
+  const descByNamespaceCommand = new Map<string, string>();
   const uncatalogued: Uncatalogued[] = [];
 
   // `.sort()` both listings — `readdirSync` order is filesystem-dependent (POSIX scandir order on
   // Linux CI, NTFS index order locally), and this loop's first-call-site-wins duplicate handling
-  // (`processNamespaceFile`) means an unsorted walk would let THAT incidental order decide which
+  // (`mergeCatalogueEntry`) means an unsorted walk would let THAT incidental order decide which
   // namespace wins a duplicate command's description (SECURITY/MEDIUM, CLI review round 1).
   const nsDir = abs(TAURI_CLIENT_DIR);
   for (const dirName of readdirSync(nsDir).sort()) {
@@ -929,6 +978,7 @@ export async function main() {
         descCtx,
         fieldSources,
         entries,
+        descByNamespaceCommand,
         uncatalogued
       );
     }
@@ -950,10 +1000,28 @@ export async function main() {
   ];
   shards.forEach((shard, i) => {
     const shardNumber = i + 1;
-    outputs.push([
-      join(SHARD_DIR, shardFileName(shardNumber)),
-      formatWithRustfmt(renderShardFile(shardNumber, shards.length, shard)),
-    ]);
+    const formatted = formatWithRustfmt(renderShardFile(shardNumber, shards.length, shard));
+    // Issue #1183 O1: `shardEntries` packs on the PRE-rustfmt, entries-ONLY line count
+    // (`renderEntryLines`'s own JS rendering, excluding the fixed header/`use`/footer
+    // boilerplate `renderShardFile` wraps it in) — real rustfmt output can still exceed that
+    // estimate for an entry rustfmt wraps FURTHER (a long `fields: Some(&[...])` slice literal on
+    // one `CatalogueArg` line, past `max_width`). Re-derive the same entries-only count directly
+    // from the REAL formatted lines strictly between the `ENTRIES` declaration and its closing
+    // `];` (never a separate empty-shard baseline — rustfmt COLLAPSES `&[\n];` to `&[];` for a
+    // genuinely empty array, which would silently overcount the header/footer by one line) so
+    // this comparison is apples-to-apples with `SHARD_LINE_BUDGET`.
+    const formattedLines = formatted.split('\n');
+    const declLine = formattedLines.findIndex((l) => l.includes('const ENTRIES'));
+    const closeLine = formattedLines.lastIndexOf('];');
+    const entryLineCount = closeLine - declLine - 1;
+    if (entryLineCount > SHARD_LINE_BUDGET) {
+      fail(
+        `shard_${shardNumber}.rs's entries render to ${entryLineCount} lines after rustfmt, over ` +
+          `SHARD_LINE_BUDGET (${SHARD_LINE_BUDGET}) — rustfmt wrapped an entry further than the ` +
+          `pre-format estimate; lower SHARD_LINE_BUDGET or shrink the offending entry's rendering.`
+      );
+    }
+    outputs.push([join(SHARD_DIR, shardFileName(shardNumber)), formatted]);
   });
 
   // Shard files left over from a run that produced MORE shards than this one (the catalogue

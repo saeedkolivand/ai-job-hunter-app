@@ -5,7 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { ts } from '../../../scripts/gen-api-docs.mjs';
-import { collectContractInterfaceFields } from './gen-agent-catalogue';
+import {
+  type CatalogueArg,
+  type CatalogueEntry,
+  collectContractInterfaceFields,
+  mergeCatalogueEntry,
+} from './gen-agent-catalogue';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -41,6 +46,89 @@ describe('collectContractInterfaceFields', () => {
       ['b.ts', sourceFile('b.ts', 'export interface Foo { a: string; c: boolean; }')],
     ]);
     expect(() => collectContractInterfaceFields(sources)).toThrow(/Foo/);
+  });
+});
+
+// Issue #1183 F2: the duplicate-call-site guard used to key BOTH the description-equality check
+// AND the args-equality check on the bare command name, which forced two namespaces sharing a
+// dispatched command (`boards.disconnect`/`linkedin.disconnect` -> `boards_logout`) to publish
+// byte-identical TSDoc wording or fail codegen — `linkedin.ts`'s own wording was genericized to
+// `boards.ts`'s to satisfy this, degrading `docs/API.md`. The fix keys description-equality on
+// `(namespace, command)` instead, while args-equality stays keyed on the bare command (the shape
+// `check_input` actually enforces at dispatch really is single-valued).
+describe('mergeCatalogueEntry (issue #1183 F2)', () => {
+  const arg = (name: string): CatalogueArg => ({ name, required: true, fields: undefined });
+
+  it('does not fail when two namespaces share a command with different descriptions but equal args', () => {
+    const entries = new Map<string, CatalogueEntry>();
+    const descByNamespaceCommand = new Map<string, string>();
+    expect(() => {
+      mergeCatalogueEntry(
+        entries,
+        descByNamespaceCommand,
+        'boards',
+        'boards_logout',
+        'Disconnect a board.',
+        [arg('boardId')]
+      );
+      mergeCatalogueEntry(
+        entries,
+        descByNamespaceCommand,
+        'linkedin',
+        'boards_logout',
+        'Disconnect and clear LinkedIn session.',
+        [arg('boardId')]
+      );
+    }).not.toThrow();
+    // First-namespace-wins: the published description is the FIRST call site's, not the second's
+    // — cosmetic only, since nothing downstream validates against it (see the fn's own doc).
+    expect(entries.get('boards_logout')?.description).toBe('Disconnect a board.');
+  });
+
+  it('still fails when two namespaces share a command with DIFFERING argument shapes', () => {
+    const entries = new Map<string, CatalogueEntry>();
+    const descByNamespaceCommand = new Map<string, string>();
+    mergeCatalogueEntry(
+      entries,
+      descByNamespaceCommand,
+      'boards',
+      'boards_logout',
+      'Disconnect a board.',
+      [arg('boardId')]
+    );
+    expect(() =>
+      mergeCatalogueEntry(
+        entries,
+        descByNamespaceCommand,
+        'linkedin',
+        'boards_logout',
+        'Disconnect a board.',
+        [arg('boardId'), arg('extra')]
+      )
+    ).toThrow(/DIFFERING argument/);
+  });
+
+  it('still fails when the SAME namespace declares two conflicting descriptions for one command', () => {
+    const entries = new Map<string, CatalogueEntry>();
+    const descByNamespaceCommand = new Map<string, string>();
+    mergeCatalogueEntry(
+      entries,
+      descByNamespaceCommand,
+      'boards',
+      'boards_logout',
+      'Disconnect a board.',
+      [arg('boardId')]
+    );
+    expect(() =>
+      mergeCatalogueEntry(
+        entries,
+        descByNamespaceCommand,
+        'boards',
+        'boards_logout',
+        'Something else entirely.',
+        [arg('boardId')]
+      )
+    ).toThrow(/DIFFERING TSDoc descriptions/);
   });
 });
 

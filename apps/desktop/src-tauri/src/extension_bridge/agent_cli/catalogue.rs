@@ -9,12 +9,13 @@
 //
 // Sharded rather than one big const array — this crate's own R8 hard LOC cap
 // (docs/architecture-rules.md) has no exception for generated DATA, and rustfmt's own default
-// `struct_lit_width` forces one field per line regardless of how short the whole literal is,
-// so this file's size scales with the command count with no upper bound this generator
-// controls. A `LazyLock<Vec<_>>` — never a `const` array-concat, which Rust cannot express
-// across separately-compiled const items without an allocation — is transparent to every call
-// site: `Deref<Target = Vec<CatalogueEntry>>` -> `Deref<Target = [CatalogueEntry]>` means
-// `CATALOGUE.iter()`/`.find(...)` read exactly as they would against a plain slice.
+// `struct_lit_width` (18) forces every CatalogueEntry one field per line regardless of how
+// short its own fields are, so this file's size scales with the command count with no upper
+// bound this generator controls. A `LazyLock<Vec<_>>` — never a `const` array-concat, which
+// Rust cannot express across separately-compiled const items without an allocation — is
+// transparent to every call site: `Deref<Target = Vec<CatalogueEntry>>` ->
+// `Deref<Target = [CatalogueEntry]>` means `CATALOGUE.iter()`/`.find(...)` read exactly as
+// they would against a plain slice.
 
 use std::sync::LazyLock;
 

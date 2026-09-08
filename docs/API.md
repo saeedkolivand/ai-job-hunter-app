@@ -3079,7 +3079,7 @@ Contract: `LinkedinContract` in `packages/shared/src/ipc/contracts/linkedin.ts`
 connect(): Promise<{ connected: boolean; accountEmail?: string }>;
 ```
 
-Connect to a board by launching a browser for manual login.
+Connect to LinkedIn by launching a browser for manual login.
 
 #### `linkedin.disconnect`
 
@@ -3087,7 +3087,7 @@ Connect to a board by launching a browser for manual login.
 disconnect(): Promise<void>;
 ```
 
-Disconnect a board (closes context only; does not delete profile).
+Disconnect and clear LinkedIn session.
 
 #### `linkedin.getStatus`
 
@@ -3095,7 +3095,7 @@ Disconnect a board (closes context only; does not delete profile).
 getStatus(): Promise<{ connected: boolean; accountEmail?: string; lastConnected?: number }>;
 ```
 
-Get current connection status for a board.
+Get current LinkedIn session status.
 
 #### `linkedin.importProfileFromUrl`
 
@@ -3113,8 +3113,7 @@ Fetch a LinkedIn profile URL and return extracted resume text.
 importCookies(): Promise<CookieImportResult>;
 ```
 
-Try to import session cookies from the user's installed Chromium browsers
-(Chrome, Edge, Brave), so the user can skip the in-app re-login.
+Import an existing LinkedIn session from the installed browser's cookie store.
 
 ### Channels — `linkedin`
 
