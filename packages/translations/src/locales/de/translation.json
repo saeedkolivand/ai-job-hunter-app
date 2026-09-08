@@ -615,7 +615,7 @@
           }
         },
         "transcriptNote": "Alles, was der Agent liest – Lebenslauftext, Ihr Kontaktprofil, Bewerbungsdatensätze – landet im eigenen Transkript des KI-Clients.",
-        "stayOpenNote": "Lassen Sie diese App geöffnet, solange ein Agent verbunden ist; CLI und MCP-Server laufen in ihr und stoppen, sobald sie geschlossen wird.",
+        "stayOpenNote": "Lassen Sie diese App geöffnet, solange ein Agent verbunden ist; Agentenaufrufe erreichen die laufende App und schlagen fehl, während sie geschlossen ist.",
         "claudeLabel": "Claude Code",
         "copyClaude": "Befehl kopieren",
         "codexLabel": "Codex (~/.codex/config.toml)",

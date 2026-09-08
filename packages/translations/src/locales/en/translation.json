@@ -615,7 +615,7 @@
           }
         },
         "transcriptNote": "Everything the agent reads — resume text, your contact profile, application records — is written into the AI client's own transcript.",
-        "stayOpenNote": "Keep this app open while an agent is connected; the CLI and MCP server run inside it and stop as soon as it closes.",
+        "stayOpenNote": "Keep this app open while an agent is connected; agent calls reach the running app, and fail while it is closed.",
         "claudeLabel": "Claude Code",
         "copyClaude": "Copy command",
         "codexLabel": "Codex (~/.codex/config.toml)",
