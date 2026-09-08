@@ -332,6 +332,13 @@ fn paging_keys_are_not_exempt_on_a_non_paginated_command() {
     let err = check_input("ai_active_config", &json!({ "limit": 5 })).unwrap_err();
     let detail = err.detail();
     assert!(detail.contains("limit"), "{detail}");
+    // A1-r1-AC-2 MEDIUM: a zero-arg command used to leave a dangling, content-free
+    // `declared keys: ` tail — this must say what WOULD have worked instead.
+    assert!(
+        detail.contains("this command declares no arguments"),
+        "{detail}"
+    );
+    assert!(!detail.trim_end().ends_with("declared keys:"), "{detail}");
 }
 
 // ── uncatalogued commands keep today's behaviour ────────────────────────────────────────────────

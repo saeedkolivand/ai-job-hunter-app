@@ -29,13 +29,20 @@ fn entry_for(command: &str) -> Option<&'static [CatalogueArg]> {
         .map(|entry| entry.args)
 }
 
-/// Comma-joined declared key names, for a refusal detail that tells the caller what WOULD have
-/// worked rather than only what didn't.
+/// Trailing clause naming what WOULD have worked, for a refusal detail — never a dangling
+/// `declared keys: ` with nothing after it (A1-r1-AC-2 MEDIUM): 58 of 162 catalogued commands
+/// declare zero arguments, and the empty join used to leave that exact content-free tail on every
+/// one of them.
 fn declared_keys(args: &[CatalogueArg]) -> String {
-    args.iter()
+    if args.is_empty() {
+        return "this command declares no arguments".to_string();
+    }
+    let names = args
+        .iter()
         .map(|arg| arg.name)
         .collect::<Vec<_>>()
-        .join(", ")
+        .join(", ");
+    format!("declared keys: {names}")
 }
 
 fn invalid_input(message: String) -> Refusal {
@@ -82,7 +89,7 @@ pub(super) fn check_input(command: &str, input: &Value) -> Result<(), Refusal> {
         }
         if !args.iter().any(|arg| arg.name == key) {
             return Err(invalid_input(format!(
-                "unknown key `{}` for {command} — declared keys: {}",
+                "unknown key `{}` for {command} — {}",
                 fenced_key(key),
                 declared_keys(args)
             )));
@@ -92,7 +99,7 @@ pub(super) fn check_input(command: &str, input: &Value) -> Result<(), Refusal> {
     for arg in args {
         if arg.required && !given.contains_key(arg.name) {
             return Err(invalid_input(format!(
-                "missing required key `{}` for {command} — declared keys: {}",
+                "missing required key `{}` for {command} — {}",
                 arg.name,
                 declared_keys(args)
             )));

@@ -517,10 +517,15 @@ fn uncatalogued_matches_the_hand_written_list() {
 /// dropping out of `schemas/index.ts`) as unresolved would leave every other test green while
 /// quietly widening the set of commands a nested-key typo can sail past `agent_call::validate`
 /// on. `(command, arg name)` pairs, pinned the same way [`EXPECTED_UNCATALOGUED`] is.
+///
+/// `ai_clear_stage_override`/`ai_set_stage_override`'s `stage` used to be pinned HERE
+/// (A1-r1-AC-3 MEDIUM): `PipelineStage` is a scalar string-union alias
+/// (`packages/shared/src/events/pipeline.ts`), not an object wrapper, so the generator's OWN
+/// unresolved-named-type fallback was publishing it as `"fields": null` — the exact "this takes a
+/// nested object" signal that field means. `gen-agent-catalogue.ts`'s `collectScalarTypeAliasNames`
+/// now proves that shape and emits `fields: None` for both rows instead.
 const EXPECTED_UNRESOLVED_WRAPPER_ARGS: &[(&str, &str)] = &[
-    ("ai_clear_stage_override", "stage"),
     ("ai_set_provider_settings", "req"),
-    ("ai_set_stage_override", "stage"),
     ("autopilot_update", "req"),
     // The five below (A1-r1-AC-1 MEDIUM) used to fall through `findParamBinding` to
     // `fields: undefined` (a plain scalar) instead of this unresolved-wrapper shape: their `req`/

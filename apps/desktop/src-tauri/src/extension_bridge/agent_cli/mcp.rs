@@ -520,10 +520,11 @@ fn local_call_refusal(tool_name: &str, verb: &Verb) -> Option<Value> {
             "detail": format!("this command is classified for `{right_tool}`, not `{tool_name}` — call it there instead"),
         }));
     }
-    // Catalogue validation (A1-r1-SEC-1 HIGH), same contract `agent_call::plan` enforces
-    // app-side — checked locally so a mis-keyed body never depends on a possibly stale PEER app
+    // Catalogue validation (A1-r1-SEC-1 HIGH, widened for A1-r1-AC-1 MEDIUM to also cover an
+    // empty required wrapper), same contract `agent_call::plan` enforces app-side — checked
+    // locally so a mis-keyed or empty-wrapper body never depends on a possibly stale PEER app
     // process to catch it.
-    if let Some(detail) = agent_call::invalid_input_detail(command, input) {
+    if let Some(detail) = agent_call::invalid_input_detail(command, entry.effect, input) {
         return Some(json!({
             "dispatched": false,
             "namespace": namespace,

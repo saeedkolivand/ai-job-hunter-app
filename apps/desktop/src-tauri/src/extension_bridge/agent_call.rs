@@ -50,7 +50,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::error::{AppError, AppResult};
 
-use super::agent_cli::policy::{PolicyEntry, ProofSource, POLICY};
+use super::agent_cli::policy::{Effect, PolicyEntry, ProofSource, POLICY};
 
 mod proof;
 // The agent layer's own payload reshaping — the outbound fence/page/base64
@@ -158,20 +158,32 @@ pub(super) fn proof_kind_for(source: ProofSource) -> &'static str {
     proof::proof_kind(source)
 }
 
-/// Re-export of [`validate::check_input`] for MCP's `local_call_refusal` (A1-r1-SEC-1 HIGH): that
-/// fn used to refuse only `unknown_command`/`not_exposed`/`wrong_tool` locally and forward every
-/// other body straight to the PEER app process for catalogue validation — a SEPARATE, possibly
-/// OLDER process (e.g. an updater-staged newer exe still paired with it), so relying on its gate
-/// left a mis-keyed `call-*` body dispatching silently on an older running app even though this
-/// server's own `initialize` instructions promise `invalid_input` is refused before dispatch. Same
-/// class this file already fixed as HIGH for `Effect::NotExposed`. Returns the detail string
-/// (never the full [`Refusal`], to keep `validate`'s enum-construction private to this module).
-pub(super) fn invalid_input_detail(command: &str, input: &Value) -> Option<String> {
-    match validate::check_input(command, input) {
-        Ok(()) => None,
-        Err(Refusal::InvalidInput(detail)) => Some(detail),
-        Err(_) => None, // check_input's only Err variant is InvalidInput
+/// Re-export of [`validate::check_input`] + [`validate::check_no_empty_required_wrapper`] for
+/// MCP's `local_call_refusal` (A1-r1-SEC-1 HIGH, widened for A1-r1-AC-1/SEC-2-round-2 MEDIUM):
+/// `local_call_refusal` used to refuse only `unknown_command`/`not_exposed`/`wrong_tool` locally
+/// and forward every other body straight to the PEER app process for catalogue validation — a
+/// SEPARATE, possibly OLDER process (e.g. an updater-staged newer exe still paired with it), so
+/// relying on its gate left a mis-keyed `call-*` body dispatching silently on an older running app
+/// even though this server's own `initialize` instructions promise `invalid_input` is refused
+/// before dispatch. Mirroring only `check_input` and not its sibling left the OTHER half of that
+/// same gap open: an empty required wrapper (`{"req":{}}`, issue #1158's headline symptom) still
+/// depended on the peer app to refuse it. Both checks run here, in [`dispatch_plan::plan`]'s own
+/// order, so the local mirror matches the app-side gate exactly rather than half of it. Returns
+/// the detail string (never the full [`Refusal`], to keep `validate`'s enum-construction private
+/// to this module).
+pub(super) fn invalid_input_detail(command: &str, effect: Effect, input: &Value) -> Option<String> {
+    fn detail_of(result: Result<(), Refusal>) -> Option<String> {
+        match result {
+            Ok(()) => None,
+            Err(Refusal::InvalidInput(detail)) => Some(detail),
+            Err(_) => None, // both checked fns' only Err variant is InvalidInput
+        }
     }
+    detail_of(validate::check_input(command, input)).or_else(|| {
+        detail_of(validate::check_no_empty_required_wrapper(
+            command, effect, input,
+        ))
+    })
 }
 
 // ── Refusals — distinct sentinel + detail per cause, one reply builder ─────
@@ -1263,6 +1275,18 @@ fn confirm_and_run<T>(
 /// value FRESH via [`proof::resolve`] and only then run the real command.
 /// A thin wrapper over [`confirm_and_run`] — the only thing that needs the
 /// `AppHandle` is the resolve and the dispatch themselves.
+///
+/// ponytail: the resolved proof (`source`) is derived from the TARGET record alone (e.g.
+/// `applications_delete` → `application.title`) and never from `input`, so it proves "you read
+/// this record", never "you chose this SCOPE" — `applications_delete`'s `keepDocuments: false`
+/// cascade (deletes every generated resume/cover letter + the run trail) is authorised by the
+/// same proof string as `keepDocuments: true` (A1-r1-SEC-2 MEDIUM, deferred: binding the proof to
+/// a destructive-branch flag is a wire-format change to the confirm ceremony itself — `proof::hint`,
+/// the MCP `CONFIRMATION_NOTE`, and ADR-038 §4 all assume one proof string per record, not per
+/// (record, flag) pair). Ceiling: today's ceremony proves READ only. Upgrade path: extend
+/// `ProofSource::Lookup` with an optional scope-binding suffix keyed off a caller-input field (e.g.
+/// `<title>|keepDocuments=false` on the cascade branch), thread it through `proof::extract`/`hint`,
+/// and record the new confirm shape in ADR-038 §4 — tracked on issue #1160, not implemented here.
 async fn dispatch_irreversible_confirmed(
     app: &AppHandle,
     command: &str,

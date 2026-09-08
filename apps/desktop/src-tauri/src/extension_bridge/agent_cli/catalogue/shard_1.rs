@@ -14,7 +14,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         command: "ai_clear_stage_override",
         description: "Return ONE stage to the active provider.",
         args: &[
-            CatalogueArg { name: "stage", required: true, fields: Some(&[]) },
+            CatalogueArg { name: "stage", required: true, fields: None },
         ],
     },
     CatalogueEntry {
@@ -202,7 +202,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         command: "ai_set_stage_override",
         description: "Point ONE stage at a provider + model. Returns the fresh override map, or `{ error }` when server-side validation rejects the stage name, the provider, the model (cross-family check) or the context window (512–131072).",
         args: &[
-            CatalogueArg { name: "stage", required: true, fields: Some(&[]) },
+            CatalogueArg { name: "stage", required: true, fields: None },
             CatalogueArg { name: "provider", required: true, fields: None },
             CatalogueArg { name: "model", required: false, fields: None },
             CatalogueArg { name: "contextWindow", required: false, fields: None },

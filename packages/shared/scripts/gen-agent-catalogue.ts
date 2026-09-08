@@ -212,6 +212,7 @@ interface FieldSources {
   zodAliases: Map<string, string>;
   zodSchemas: Record<string, unknown>;
   interfaceFields: Map<string, string[]>;
+  scalarTypeAliases: Set<string>;
 }
 
 /** Nested field names for a wrapper key typed as `typeName`, or `undefined` when this generator
@@ -226,6 +227,105 @@ function resolveNestedFields(sources: FieldSources, typeName: string): string[] 
     }
   }
   return sources.interfaceFields.get(typeName);
+}
+
+// ── Scalar type aliases — A1-r1-AC-3 MEDIUM ────────────────────────────────────────────────────
+//
+// A wrapper key's named type can resolve to neither of the two sources above (e.g. `PipelineStage`,
+// declared in `events/pipeline.ts` as `(typeof PIPELINE_STAGES)[number]`) while still genuinely
+// being a SCALAR, not an object — `resolveNestedFields` returning `undefined` for it used to be
+// read by `parseInvokeCall` as "a wrapper type was named but its shape is unresolved" (`fields:
+// null`), publishing a plain string param as an object on the wire. This is a narrow THIRD lookup
+// for exactly that one question ("is this declaration provably a scalar?"), never a general
+// nested-field resolver — a positive answer here still yields `fields: undefined` (no nested
+// fields to check), never a new resolved `Some([...])`; a negative or unknown answer keeps the
+// existing conservative `null` default (a genuine unresolved object, e.g. `ResumePipelineRunRequest`
+// — an `Omit<...> & ...` intersection — or `PerformanceBackendConfig` — an interface declared
+// outside `ipc/contracts/*.ts` — must NOT flip to `undefined`, or the nested-shape signal is lost
+// the other way).
+
+/** Every non-test `.ts` file under `dir`, recursively. */
+function listTsFiles(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      listTsFiles(full, out);
+    } else if (entry.endsWith('.ts') && !entry.endsWith('.test.ts')) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+/** `true` for a string/number/boolean literal type, or its matching keyword — the atomic member
+ *  shape both a scalar union and a `[...] as const` array element must have. */
+function isScalarLiteralOrKeyword(type: ts.TypeNode): boolean {
+  return (
+    type.kind === ts.SyntaxKind.StringKeyword ||
+    type.kind === ts.SyntaxKind.NumberKeyword ||
+    type.kind === ts.SyntaxKind.BooleanKeyword ||
+    (ts.isLiteralTypeNode(type) &&
+      (ts.isStringLiteral(type.literal) ||
+        ts.isNumericLiteral(type.literal) ||
+        type.literal.kind === ts.SyntaxKind.TrueKeyword ||
+        type.literal.kind === ts.SyntaxKind.FalseKeyword))
+  );
+}
+
+/** `true` for a same-file `const`'s initializer (an `as const` array literal unwrapped) holding
+ *  only string/number literal elements — the `PIPELINE_STAGES = [...] as const` shape a
+ *  `(typeof X)[number]` alias indexes into. */
+function isScalarConstArray(init: ts.Expression): boolean {
+  const unwrapped = ts.isAsExpression(init) ? init.expression : init;
+  return (
+    ts.isArrayLiteralExpression(unwrapped) &&
+    unwrapped.elements.every((el) => ts.isStringLiteral(el) || ts.isNumericLiteral(el))
+  );
+}
+
+/** Strips a `TypeNode`'s wrapping parentheses — `(typeof X)[number]` parses `typeof X` as a
+ *  `ParenthesizedTypeNode`, not a bare `TypeQueryNode`. */
+function unwrapParens(type: ts.TypeNode): ts.TypeNode {
+  return ts.isParenthesizedTypeNode(type) ? unwrapParens(type.type) : type;
+}
+
+/** `true` when `type` provably denotes a SCALAR shape: a keyword, a union of literals/keywords, or
+ *  `(typeof CONST)[number]` over a same-file `const` array of literals. Anything else (an object
+ *  type, an intersection, a generic, a reference this fn does not walk into) returns `false` —
+ *  unproven, never guessed. */
+function isScalarTypeNode(sf: ts.SourceFile, type: ts.TypeNode): boolean {
+  if (isScalarLiteralOrKeyword(type)) return true;
+  if (ts.isUnionTypeNode(type)) return type.types.every((t) => isScalarLiteralOrKeyword(t));
+  if (!ts.isIndexedAccessTypeNode(type) || type.indexType.kind !== ts.SyntaxKind.NumberKeyword) {
+    return false;
+  }
+  const objectType = unwrapParens(type.objectType);
+  if (!ts.isTypeQueryNode(objectType) || !ts.isIdentifier(objectType.exprName)) return false;
+  const constName = objectType.exprName.text;
+  for (const stmt of sf.statements) {
+    if (!ts.isVariableStatement(stmt)) continue;
+    const decl = stmt.declarationList.declarations.find(
+      (d) => ts.isIdentifier(d.name) && d.name.text === constName
+    );
+    if (decl?.initializer) return isScalarConstArray(decl.initializer);
+  }
+  return false;
+}
+
+/** Every EXPORTED type alias name across `packages/shared/src` (recursive, tests excluded) whose
+ *  own declaration is a [`isScalarTypeNode`] shape — computed once in `main`, before any namespace
+ *  file is parsed. */
+function collectScalarTypeAliasNames(): Set<string> {
+  const names = new Set<string>();
+  for (const file of listTsFiles(abs('packages/shared/src'))) {
+    const text = readFileSync(file, 'utf8');
+    const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+    for (const stmt of sf.statements) {
+      if (!ts.isTypeAliasDeclaration(stmt) || !isExported(stmt)) continue;
+      if (isScalarTypeNode(sf, stmt.type)) names.add(stmt.name.text);
+    }
+  }
+  return names;
 }
 
 // ── Parsing the tauri-client invoke() call sites ───────────────────────────────────────────────
@@ -413,12 +513,24 @@ function parseInvokeCall(
     // it is always sent, so the documented heuristic's default (required) is exactly right.
     const binding = valueName && fn ? findParamBinding(fn, valueName) : undefined;
     const required = !binding?.questionOrDefault;
-    // `?? null`, not `?? undefined`: a wrapper type WAS identified (`binding.typeName` is set)
-    // but its fields could not be resolved — distinct from "not a wrapper at all" (see
-    // `CatalogueArg.fields`'s own doc).
-    const fields = binding?.typeName
-      ? (resolveNestedFields(sources, binding.typeName) ?? null)
-      : undefined;
+    // A1-r1-AC-3 MEDIUM: `UNRESOLVED_WRAPPER_TYPE` (a syntactic shape `findParamBinding` already
+    // positively identified as an object wrapper — rest-destructure, `unknown`, an inline type
+    // literal, an indexed-access type AT THE PARAM SITE) always falls back to `null` ("known
+    // wrapper, unresolved"). A plain NAMED type reference that fails `resolveNestedFields` is
+    // ambiguous — it could be a genuine unresolved object (`ResumePipelineRunRequest`, an
+    // `Omit<...> & ...` intersection; `PerformanceBackendConfig`, an interface declared outside
+    // `ipc/contracts/*.ts`) or a scalar declared elsewhere (`PipelineStage`, a string-union alias
+    // in `events/pipeline.ts`) — collapsing both into `null` used to publish the scalar case as an
+    // object wrapper on the wire. `scalarTypeAliases` (a narrow, PROVEN-scalar lookup — see its own
+    // doc) disambiguates the second case only; anything not proven scalar keeps the conservative
+    // `null` default.
+    const fields =
+      binding?.typeName === UNRESOLVED_WRAPPER_TYPE
+        ? null
+        : binding?.typeName
+          ? (resolveNestedFields(sources, binding.typeName) ??
+            (sources.scalarTypeAliases.has(binding.typeName) ? undefined : null))
+          : undefined;
     args.push({ name: key, required, fields });
   }
   return { command, args };
@@ -773,7 +885,8 @@ async function main() {
 
   const contractSources = parseContractFiles();
   const interfaceFields = collectContractInterfaceFields(contractSources);
-  const fieldSources: FieldSources = { zodAliases, zodSchemas, interfaceFields };
+  const scalarTypeAliases = collectScalarTypeAliasNames();
+  const fieldSources: FieldSources = { zodAliases, zodSchemas, interfaceFields, scalarTypeAliases };
 
   const entries = new Map<string, CatalogueEntry>();
   const uncatalogued: Uncatalogued[] = [];

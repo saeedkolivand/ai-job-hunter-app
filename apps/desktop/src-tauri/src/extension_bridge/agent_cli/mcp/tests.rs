@@ -1898,6 +1898,31 @@ fn call_irreversible_accepts_a_correctly_keyed_body() {
     assert!(local_call_refusal(TOOL_CALL_IRREVERSIBLE, &verb).is_none());
 }
 
+/// A1-r1-AC-1 MEDIUM: `local_call_refusal` used to mirror `check_input` only, so issue #1158
+/// member 3's exact shape (`{"req":{}}`, the empty write) still passed the local gate and
+/// dispatched — reachable through `check_input`'s membership-only walk since `req` is a KNOWN key
+/// with nothing unknown inside it. `applications_save_from_posting` is a real Reversible row whose
+/// required `req` wrapper is fully resolved; an empty object for it must refuse locally, on the
+/// right tool, with no dispatch — never depend on a possibly-stale peer app to catch it.
+#[test]
+fn call_reversible_refuses_an_empty_required_wrapper_locally_without_dispatching() {
+    let verb = Verb::Call {
+        namespace: "applications".to_string(),
+        command: "applications_save_from_posting".to_string(),
+        input: json!({ "req": {} }),
+        confirm: None,
+    };
+    let refusal = local_call_refusal(TOOL_CALL_REVERSIBLE, &verb)
+        .expect("must refuse — empty required wrapper");
+    assert_eq!(refusal["dispatched"], false);
+    assert_eq!(refusal["error"], agent_call::ERR_INVALID_INPUT);
+    let detail = refusal["detail"].as_str().unwrap();
+    assert!(
+        detail.contains("req") && detail.contains("empty"),
+        "{detail}"
+    );
+}
+
 // ── confirm is passed through verbatim on call-irreversible only ────────
 
 #[test]
