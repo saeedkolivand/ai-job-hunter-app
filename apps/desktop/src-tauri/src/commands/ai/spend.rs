@@ -186,6 +186,65 @@ mod test {
     }
 
     #[test]
+    fn spend_summary_value_passes_through_provider_thinking_and_window_untouched() {
+        // The test above only pins `today`/`windowTotals`. `spend_summary_value`
+        // also has to forward `perProvider`/`thinkingByModel`/`window` verbatim
+        // and stamp the `thinkingByModelWindow: "allTime"` discriminator the
+        // renderer switches on (`AiSpendSummary.thinkingByModelWindow`,
+        // mock-client.test.ts's "fully-populated AiSpendSummary shape" test
+        // pins the same keys against the TS mock) — none of that is covered
+        // above, so dropping any one of those four `json!` keys stays green
+        // there while failing here.
+        let per_provider = vec![json!({"provider": "openai", "inputTokens": 1})];
+        let thinking_by_model = vec![json!({"model": "o3-mini"})];
+        let window = json!({"days": 7, "from": 1, "to": 2});
+
+        let out = spend_summary_value(
+            SpendTotals::default(),
+            SpendTotals::default(),
+            per_provider,
+            thinking_by_model,
+            window,
+        );
+
+        assert_eq!(out["perProvider"][0]["provider"], "openai");
+        assert_eq!(out["thinkingByModel"][0]["model"], "o3-mini");
+        assert_eq!(out["window"]["days"], 7);
+        assert_eq!(out["thinkingByModelWindow"], "allTime");
+    }
+
+    #[test]
+    fn spend_summary_from_store_maps_thinking_by_model_fields_by_name() {
+        // The `thinkingByModel` JSON mapping (provider/model/calls/
+        // thinkingTokens/outputTokens) moved here verbatim from the old
+        // inline `ai_spend_summary` body (issue #1161) but was never
+        // JSON-shape tested before the move either — this pins the wire
+        // field names a renderer reads by string key (`AiSpendModelThinking`),
+        // so a rename/typo is silent to the type system but fails here.
+        use crate::spend::{SpendRecord, SpendStore};
+
+        let dir = TempDir::new().unwrap();
+        let store = SpendStore::open(&dir.path().to_path_buf()).unwrap();
+        store.record(SpendRecord {
+            provider: "openai".to_string(),
+            model: "o3-mini".to_string(),
+            input_tokens: 100,
+            output_tokens: 50,
+            thinking_tokens: Some(900),
+            run_id: None,
+            base_url: None,
+        });
+
+        let out = spend_summary_from_store(&store, 1);
+        let row = &out["thinkingByModel"][0];
+        assert_eq!(row["provider"], "openai");
+        assert_eq!(row["model"], "o3-mini");
+        assert_eq!(row["calls"], 1);
+        assert_eq!(row["thinkingTokens"], 900);
+        assert_eq!(row["outputTokens"], 50);
+    }
+
+    #[test]
     fn ai_spend_summary_call_site_keeps_today_and_window_totals_distinct() {
         // Regression for C1-r2-RBA-2: the tautology above only checks that
         // `spend_summary_value` labels its two inputs correctly — it never calls
