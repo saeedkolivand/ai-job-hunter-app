@@ -2325,9 +2325,180 @@ fn commands_names_the_proof_source_for_an_irreversible_row() {
         .expect("ai_set_provider_key is a real Irreversible row");
     assert_eq!(row["proofFrom"], "ai:ai_has_provider_key");
     assert_eq!(row["proofInput"], "provider");
+    assert_eq!(row["proofField"], "has");
     assert!(
         row.get("proofInputValue").is_none(),
         "a FromCaller value is the caller's own input and must never be echoed: {row}"
+    );
+}
+
+// ── issue #1163/#1158/#1160: description, args, proofField, namespace filter ────────────────────
+
+/// The issue's own worked example: `applications_delete`'s proof is
+/// `application.title` — a multi-segment `Lookup` path, joined with `.`.
+#[test]
+fn commands_names_the_full_dotted_proof_field_for_a_multi_segment_lookup_path() {
+    let out = commands_value(&json!({ "effect": "irreversible" }), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "applications_delete")
+        .expect("applications_delete is a real Irreversible row");
+    assert_eq!(row["proofField"], "application.title");
+}
+
+/// A `Count`-sourced row has no single field to name — the proof is a
+/// DERIVED number, not a field on the read response — so `proofField` must
+/// be absent rather than a fabricated empty string.
+#[test]
+fn commands_carries_no_proof_field_for_a_count_sourced_row() {
+    let out = commands_value(&json!({ "effect": "irreversible" }), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "privacy_reset_app")
+        .expect("privacy_reset_app is a real Count-sourced Irreversible row");
+    assert!(
+        row.get("proofField").is_none(),
+        "a Count proof names no single field: {row}"
+    );
+}
+
+/// A catalogued row carries its description and its declared args — pulled from the SAME
+/// generated table `agent_call`'s dispatch-time validation reads, never a second copy.
+#[test]
+fn commands_carries_description_and_args_for_a_catalogued_row() {
+    let out = commands_value(&json!({}), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "applications_delete")
+        .expect("applications_delete is a real, catalogued row");
+    let args = row["args"].as_array().expect("declared args, not null");
+    let names: Vec<&str> = args.iter().map(|a| a["name"].as_str().unwrap()).collect();
+    assert!(
+        names.contains(&"id") && names.contains(&"keepDocuments"),
+        "{names:?}"
+    );
+    let keep_documents = args
+        .iter()
+        .find(|a| a["name"] == "keepDocuments")
+        .expect("keepDocuments must be visible — the whole point of issue #1160");
+    assert_eq!(
+        keep_documents["required"], true,
+        "keepDocuments is a required flag, not an optional one"
+    );
+}
+
+/// A command absent from the generated catalogue (zero renderer `invoke()` references —
+/// `policy.rs`'s own module doc) carries `args: null`, distinguishable from "this command
+/// genuinely takes no arguments" (an empty array).
+#[test]
+fn commands_carries_a_null_args_for_an_uncatalogued_row() {
+    let out = commands_value(&json!({}), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "boards_list")
+        .expect("boards_list is a real POLICY row with zero renderer references");
+    assert!(row["args"].is_null(), "{row}");
+}
+
+#[test]
+fn commands_can_be_filtered_by_namespace() {
+    let out = commands_value(&json!({ "namespace": "jobs" }), Tier::Irreversible);
+    let rows = out["commands"].as_array().unwrap();
+    assert!(!rows.is_empty());
+    for row in rows {
+        assert_eq!(row["namespace"], "jobs", "{row}");
+    }
+}
+
+#[test]
+fn commands_namespace_and_effect_filters_compose() {
+    let out = commands_value(
+        &json!({ "namespace": "applications", "effect": "irreversible" }),
+        Tier::Irreversible,
+    );
+    let rows = out["commands"].as_array().unwrap();
+    assert!(!rows.is_empty());
+    for row in rows {
+        assert_eq!(row["namespace"], "applications", "{row}");
+        assert_eq!(row["effect"], "irreversible", "{row}");
+    }
+}
+
+/// Same failure shape `effect` already guards against (issue #1134's own lesson, reapplied to
+/// #1163's new filter): a typo'd namespace must be a usage error, never a silent empty success.
+#[test]
+fn commands_with_an_unknown_namespace_value_is_a_usage_error_not_a_silent_empty_success() {
+    let server = Server::new(true, true);
+    let mut dispatch = stub_ok;
+    let outcome = tool_call_result(
+        &json!({ "name": "commands", "arguments": { "namespace": "totally-not-a-real-namespace" } }),
+        &server,
+        &mut dispatch,
+    )
+    .unwrap();
+    assert_eq!(outcome["isError"], true);
+    let text = outcome["content"][0]["text"].as_str().unwrap();
+    let parsed: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(parsed["error"], "usage");
+}
+
+/// A REAL namespace passes the same gate straight through.
+#[test]
+fn commands_with_a_real_namespace_value_dispatches_locally() {
+    let server = Server::new(true, true);
+    let mut dispatch = stub_ok;
+    let outcome = tool_call_result(
+        &json!({ "name": "commands", "arguments": { "namespace": "jobs" } }),
+        &server,
+        &mut dispatch,
+    )
+    .unwrap();
+    assert_eq!(outcome["isError"], false);
+}
+
+/// Issue #1163's own ask: a real command name typed under the wrong namespace must name the
+/// right one in `unknown_command`'s local refusal — `jobs_list` is real, `wrongns` is not its
+/// namespace.
+#[test]
+fn unknown_command_local_refusal_names_the_right_namespace_for_a_real_command_typed_wrong() {
+    let verb = Verb::Call {
+        namespace: "wrongns".to_string(),
+        command: "jobs_list".to_string(),
+        input: json!({}),
+        confirm: None,
+    };
+    let refusal = local_call_refusal(TOOL_CALL_READ, &verb).expect("must refuse");
+    assert_eq!(refusal["error"], agent_call::ERR_UNKNOWN_COMMAND);
+    assert!(
+        refusal["detail"].as_str().unwrap().contains("jobs"),
+        "{refusal}"
+    );
+}
+
+/// The mirror case: a genuinely fictional command name must not fabricate a suggestion.
+#[test]
+fn unknown_command_local_refusal_names_no_namespace_for_a_command_that_does_not_exist() {
+    let verb = Verb::Call {
+        namespace: "nope".to_string(),
+        command: "delete_everything".to_string(),
+        input: json!({}),
+        confirm: None,
+    };
+    let refusal = local_call_refusal(TOOL_CALL_READ, &verb).expect("must refuse");
+    assert!(
+        !refusal["detail"]
+            .as_str()
+            .unwrap()
+            .contains("registered under namespace"),
+        "{refusal}"
     );
 }
 

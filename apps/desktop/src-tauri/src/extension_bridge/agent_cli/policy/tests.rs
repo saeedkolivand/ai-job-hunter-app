@@ -418,3 +418,68 @@ fn no_proof_source_points_at_an_irreversible_command() {
         }
     }
 }
+
+// ── generated catalogue coverage (issues #1163, #1158, #1160) ────────────
+
+/// A POLICY row with ZERO renderer `invoke()` references at all — this module's own doc names
+/// exactly four such rows; two (`extract_resume`, `support_get_system_info`) are `NotExposed` and
+/// so outside this coverage test's scope, and `dialog_open_files` (also `NotExposed`) has a real
+/// call site the generator itself records in `catalogue::UNCATALOGUED`. These two are the ONLY
+/// Read/Reversible/Irreversible rows the generator has no signal for at all — hand-written, never
+/// derived from `catalogue::UNCATALOGUED` (this repo's own standing lesson: a guard driven off its
+/// own generated data cannot catch the generator silently dropping a row it used to emit).
+const ALLOWLISTED_UNCATALOGUED: &[&str] = &["boards_list", "privacy_clear_data"];
+
+/// Every dispatchable (`Read`/`Reversible`/`Irreversible`) POLICY row is reachable through
+/// `agent_call::validate`'s dispatch-time key checking (issues #1163, #1158, #1160): either the
+/// generated `catalogue::CATALOGUE` has an entry for it, the generator itself flagged it in
+/// `catalogue::UNCATALOGUED` (a real call site it could not parse with confidence), or it is on
+/// this file's own hand-written [`ALLOWLISTED_UNCATALOGUED`] (zero call site at all). A command
+/// landing in none of the three is silently UNVALIDATED input with nobody accounting for why.
+#[test]
+fn every_dispatchable_row_is_catalogued_or_explicitly_accounted_for() {
+    let mut uncovered = Vec::new();
+    for entry in POLICY {
+        if matches!(entry.effect, Effect::NotExposed(_)) {
+            continue;
+        }
+        let command = entry.path.rsplit("::").next().unwrap_or(entry.path);
+        let catalogued = super::super::catalogue::CATALOGUE
+            .iter()
+            .any(|e| e.command == command);
+        let accounted_for = catalogued
+            || super::super::catalogue::UNCATALOGUED.contains(&command)
+            || ALLOWLISTED_UNCATALOGUED.contains(&command);
+        if !accounted_for {
+            uncovered.push(entry.path);
+        }
+    }
+    assert!(
+        uncovered.is_empty(),
+        "these Read/Reversible/Irreversible POLICY rows are absent from CATALOGUE, \
+         catalogue::UNCATALOGUED, AND this test's own ALLOWLISTED_UNCATALOGUED — a caller can \
+         send them any input with none of it checked: {uncovered:?}"
+    );
+}
+
+/// Allowlists are debt, not absolution (`docs/architecture-rules.md`'s own framing for R2/R7's
+/// exception lists): each entry here must still be a real POLICY row, and must still be genuinely
+/// absent from the generated catalogue — a future `invoke()` call site added for either command
+/// makes the generator catalogue it, and this test then fails until the stale entry is removed.
+#[test]
+fn allowlisted_uncatalogued_entries_are_still_real_and_still_uncatalogued() {
+    for command in ALLOWLISTED_UNCATALOGUED {
+        assert!(
+            POLICY
+                .iter()
+                .any(|e| e.path.rsplit("::").next() == Some(*command)),
+            "{command} is not a real POLICY row — remove it from ALLOWLISTED_UNCATALOGUED"
+        );
+        assert!(
+            !super::super::catalogue::CATALOGUE
+                .iter()
+                .any(|e| e.command == *command),
+            "{command} is now catalogued — remove it from ALLOWLISTED_UNCATALOGUED"
+        );
+    }
+}

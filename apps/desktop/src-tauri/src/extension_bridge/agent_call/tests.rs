@@ -47,6 +47,53 @@ fn find_policy_refuses_a_command_that_does_not_exist_at_all() {
     assert!(find_policy("jobs", "delete_everything").is_none());
 }
 
+// ── namespace_suggestion / unknown_command_detail (issue #1163) ──────────
+
+/// The exact repro shape a caller hits: the real command name typed under
+/// the wrong namespace — `namespace_suggestion` must name `jobs`, the ONE
+/// real namespace `jobs_list` is registered under, never a guess among
+/// several.
+#[test]
+fn namespace_suggestion_names_the_one_real_namespace_for_a_real_command_typed_wrong() {
+    assert_eq!(namespace_suggestion("jobs_list"), Some("jobs"));
+}
+
+#[test]
+fn namespace_suggestion_is_none_for_a_command_name_that_does_not_exist_at_all() {
+    // Not just the wrong namespace — the COMMAND itself is fictional, so
+    // there is nothing real to suggest.
+    assert_eq!(namespace_suggestion("delete_everything"), None);
+}
+
+#[test]
+fn unknown_command_detail_names_the_suggested_namespace_when_one_exists() {
+    let detail = unknown_command_detail(Some("jobs"));
+    assert!(detail.contains('`') && detail.contains("jobs"), "{detail}");
+}
+
+#[test]
+fn unknown_command_detail_falls_back_to_the_generic_wording_with_no_suggestion() {
+    let detail = unknown_command_detail(None);
+    assert!(!detail.contains("registered under namespace"), "{detail}");
+    assert!(
+        detail.contains("agent schema") || detail.contains("commands"),
+        "{detail}"
+    );
+}
+
+/// End-to-end (of the pure parts): `dispatch`'s own `Refusal::UnknownCommand`
+/// construction calls `namespace_suggestion` with the CALLER's bare command
+/// name — mirrored here via `find_policy`'s failure path, the same
+/// derivation `dispatch` uses, so this fails if that call site is ever
+/// dropped or reordered.
+#[test]
+fn a_real_command_under_the_wrong_namespace_produces_a_refusal_naming_the_right_one() {
+    assert!(find_policy("wrongns", "jobs_list").is_none());
+    let refusal = Refusal::UnknownCommand(namespace_suggestion("jobs_list"));
+    assert_eq!(refusal.sentinel(), "unknown_command");
+    assert!(refusal.detail().contains("jobs"));
+}
+
 /// Pulls the REAL `extension_bridge_status` row and drives it through the
 /// real production [`gate`] — not a hand-typed `Effect::NotExposed`
 /// literal — so a future revert of that row back to `Read` fails HERE,
@@ -189,6 +236,21 @@ fn refusal_detail_for_invoke_error_fences_the_underlying_value() {
 }
 
 #[test]
+fn refusal_detail_for_invalid_input_is_exactly_the_message_it_was_built_with() {
+    let refusal = Refusal::InvalidInput(
+        "missing required key `keepDocuments` for \
+        applications_delete — declared keys: id, keepDocuments"
+            .to_string(),
+    );
+    assert_eq!(
+        refusal.detail(),
+        "missing required key `keepDocuments` for applications_delete — declared keys: id, \
+         keepDocuments"
+    );
+    assert_eq!(refusal.sentinel(), "invalid_input");
+}
+
+#[test]
 fn refusal_detail_for_proof_unavailable_never_contains_a_hint_or_value() {
     let detail = Refusal::ProofUnavailable.detail();
     assert!(
@@ -203,7 +265,8 @@ fn every_refusal_variant_has_a_distinct_sentinel() {
     // caller could not tell the causes apart — the exact defect
     // `agent_cli`'s own module doc says has been fixed twice already.
     let sentinels = [
-        Refusal::UnknownCommand.sentinel(),
+        Refusal::UnknownCommand(None).sentinel(),
+        Refusal::InvalidInput(String::new()).sentinel(),
         Refusal::NotExposed("x").sentinel(),
         Refusal::OriginRefused.sentinel(),
         Refusal::RateLimited.sentinel(),
@@ -437,7 +500,7 @@ fn call_result_reply_on_success_carries_dispatched_true_and_the_data_verbatim() 
 
 #[test]
 fn call_result_reply_on_refusal_carries_dispatched_false_and_no_data_key() {
-    let text = call_result_reply("req-2", "jobs", "bogus", Err(Refusal::UnknownCommand));
+    let text = call_result_reply("req-2", "jobs", "bogus", Err(Refusal::UnknownCommand(None)));
     let v: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["payload"]["dispatched"], false);
     assert_eq!(v["payload"]["error"], "unknown_command");
