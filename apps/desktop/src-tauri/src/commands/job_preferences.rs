@@ -183,8 +183,10 @@ pub async fn job_preferences_set_extra_agency_companies(
 /// `JobPreferencesStore::set_salary_expectation`, which touches ONLY that
 /// column. Callers (`ApplicantDetailsSection`'s onChange, the boot-time sync
 /// hook) that don't have a freshly-read `location`/`tech_stack`/`country_code`
-/// on hand must use this, never `job_preferences_set` with a partial payload —
-/// that full-row command would silently NULL every other field.
+/// on hand are safe either way now that `set_job_preferences` merges: a body
+/// that omits a key KEEPS the stored value, one carrying an explicit `null`
+/// CLEARS it. These single-column setters remain the explicit way to touch one
+/// column — no full-row body, so no stale-payload question to reason about.
 #[tauri::command]
 pub async fn job_preferences_set_salary_expectation(
     app: AppHandle,

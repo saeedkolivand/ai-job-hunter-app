@@ -1,9 +1,9 @@
 //! `agent_read`'s own tests — moved out of the module body under the R8 LOC
 //! cap (`docs/architecture-rules.md`), which counts a file's whole line count
-//! and so charged 660 lines of `#[cfg(test)]` against the one module in this
-//! tree that still carried them inline. A `tests.rs` is excluded from that
-//! count by name, and every sibling here (`agent_call`, `agent_cli`,
-//! `agent_cli::mcp`) already used the file form. A pure move: same module
+//! and so charged 660 lines of `#[cfg(test)]` against `agent_read`'s own
+//! total. A `tests.rs` is excluded from that count by name, and the modules
+//! that split before it (`agent_call`, `agent_cli`, `agent_cli::mcp`) already
+//! used the file form. A pure move: same module
 //! path, so `found_jobs::tests`' `super::super::tests::{…}` fixtures and every
 //! `pub(super)` helper below resolve exactly as before.
 

@@ -11,8 +11,11 @@
 //! made for `found_jobs` and `agent_cli::mcp` for `instructions`: this is the
 //! RESHAPING unit, so nothing about policy, refusal vocabulary, dispatch or
 //! the frame-size ceiling travelled with it — those stay in `agent_call.rs`,
-//! which imports the three items it calls; `agent_cli::mcp` and `agent_read`
-//! name the three they read through this module's own path, the same shape
+//! which names in one `use` the three items it calls. That naming runs ONE
+//! way: this module reaches back with a blanket `use super::*` rather than an
+//! item list, so nothing here records which parent items it leans on.
+//! `agent_cli::mcp` and `agent_read` reach the few items they read through
+//! this module's own path, the same shape
 //! `agent_read::found_jobs` uses. The audited consts
 //! here are in the SAME hand-audited style as `super::FENCE_FIELD_NAMES`, for
 //! the same reason that const exists: the shared `commands/**` bodies are the
@@ -51,9 +54,10 @@ use super::*;
 /// an audited list and not a heuristic like "any command whose reply is a big
 /// array" — a shape-sniffing rule would silently reshape a future command
 /// whose array is bounded by construction, and reshape it differently as the
-/// user's data grew. `pub(super)` — `agent_cli::mcp`'s `commands` tool marks
-/// these rows so a caller can DISCOVER the paging instead of inferring it
-/// from a surprise envelope, never a second hand-typed name list.
+/// user's data grew. Visible to the whole `extension_bridge` tree —
+/// `agent_cli::mcp`'s `commands` tool marks these rows so a caller can
+/// DISCOVER the paging instead of inferring it from a surprise envelope,
+/// never a second hand-typed name list.
 pub(in crate::extension_bridge) const PAGINATED_LIST_COMMANDS: &[&str] =
     &["applications_list", "ai_generations_list"];
 
@@ -159,8 +163,9 @@ pub(super) const BASE64_ENCODING: &str = "base64";
 /// as it was and gets NO marker key — the marker is only ever added on a
 /// value this actually re-encoded, so the two can never disagree.
 ///
-/// `pub(super)` for ONE reason: the test that proves this actually solves
-/// #1138 has to compare against `agent_cli::mcp::MCP_RESULT_MAX_BYTES`, the
+/// Visible to the whole `extension_bridge` tree for ONE reason: the test that
+/// proves this actually solves #1138 has to compare against
+/// `agent_cli::mcp::MCP_RESULT_MAX_BYTES`, the
 /// cap it exists to get under, and that constant is private to the `mcp`
 /// module — so the test lives THERE, beside the cap, rather than here beside
 /// a hand-copied literal of it that could silently drift (same

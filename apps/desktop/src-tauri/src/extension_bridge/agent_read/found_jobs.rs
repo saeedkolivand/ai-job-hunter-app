@@ -179,9 +179,9 @@ fn trim_page_to_budget(candidates: Vec<Value>, base_cost: usize) -> Vec<Value> {
 
 /// Every envelope byte OTHER than the `jobs` array itself, measured (not
 /// assumed) against the REAL fenced `autopilotName` and `autopilotId` a
-/// response will carry — the fix for the gap [`trim_to_byte_budget`]'s own doc
-/// names (CodeRabbit, PR #1117 review round 3), and the `base_cost` that
-/// function subtracts from [`PAGE_BYTE_BUDGET`].
+/// response will carry — the fix for the gap the shared trim primitive's own
+/// doc names (CodeRabbit, PR #1117 review round 3), and the `base_cost`
+/// [`trim_page_to_budget`] subtracts from [`PAGE_BYTE_BUDGET`].
 ///
 /// `nextCursor` isn't known when this runs (it depends on how many rows survive
 /// trimming), so it is measured in the SAME `<autopilotId>:<offset>` shape a
@@ -191,7 +191,7 @@ fn trim_page_to_budget(candidates: Vec<Value>, base_cost: usize) -> Vec<Value> {
 /// offset can never exceed `total`, so the estimate can only ever OVER-count and
 /// thus only trim MORE aggressively than strictly required, never less (the safe
 /// direction for a byte budget). `"jobs": []` isolates the fixed cost from the
-/// row-dependent cost [`trim_to_byte_budget`] accumulates; its own two bytes are
+/// row-dependent cost [`trim_page_to_budget`] accumulates; its own two bytes are
 /// subtracted back off because that function counts them itself.
 ///
 /// Split out of [`resolve_found_jobs`] so the over-count guarantee is

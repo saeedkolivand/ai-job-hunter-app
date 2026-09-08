@@ -150,7 +150,7 @@ pub const PROTOCOL_VERSION: u64 = 2;
 /// — while still blocking a memory-exhaustion frame.
 ///
 /// TWO consumers, not one. Besides bounding what this server will READ, it is
-/// also the ceiling [`agent_call::enforce_frame_cap`] measures an OUTGOING
+/// also the ceiling `agent_call::enforce_frame_cap` measures an OUTGOING
 /// `agent.call` reply against (issue #1135). That second use exists because
 /// tungstenite 0.30 checks `max_message_size` on the READ path only —
 /// `WebSocketContext::check_max_size` runs while reassembling an INCOMING

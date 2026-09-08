@@ -11,7 +11,7 @@
 
 use super::*;
 
-pub(super) fn schema_object(properties: Value, required: &[&str]) -> Value {
+fn schema_object(properties: Value, required: &[&str]) -> Value {
     let mut schema =
         json!({ "type": "object", "properties": properties, "additionalProperties": false });
     if !required.is_empty() {

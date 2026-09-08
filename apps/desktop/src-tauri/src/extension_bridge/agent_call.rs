@@ -178,8 +178,9 @@ pub(super) enum Refusal {
     /// out. Adopting it here would newly refuse payloads that reach a plain
     /// `agent call` caller perfectly well today.
     ResultTooLarge(usize),
-    /// A caller-supplied `cursor` on one of [`PAGINATED_LIST_COMMANDS`] that
-    /// isn't a plain non-negative integer offset. The detail is the FIXED
+    /// A caller-supplied `cursor` on one of
+    /// [`reshape::PAGINATED_LIST_COMMANDS`] that isn't a plain non-negative
+    /// integer offset. The detail is the FIXED
     /// [`super::paging::INVALID_CURSOR_MESSAGE`] and NEVER the offending
     /// value — same never-echo-the-caller's-own-token discipline as
     /// [`Refusal::ConfirmationMismatch`]; a cursor arrives from an untrusted
@@ -1114,9 +1115,9 @@ fn invoke_error_detail(v: &Value) -> String {
 /// `input` ([`take_list_page_args`]), strip any fence wrapper the caller
 /// echoed back into it ([`unfence_named_fields_recursive`]), dispatch, then
 /// fence any scraped text in the response ([`fence_scraped_fields`]), page it
-/// ([`paginate_list_reply`]) and re-encode any raw byte field
-/// ([`base64_byte_fields`]). Called directly for a `Read`/`Reversible` row,
-/// and again at [`dispatch_irreversible_confirmed`]'s tail for a confirmed
+/// ([`reshape::paginate_list_reply`]) and re-encode any raw byte field
+/// ([`reshape::base64_byte_fields`]). Called directly for a `Read`/`Reversible`
+/// row, and again at [`dispatch_irreversible_confirmed`]'s tail for a confirmed
 /// `Irreversible` one — the ONE real-invocation chokepoint every dispatched
 /// row funnels through, never a second copy of any of those steps.
 ///
