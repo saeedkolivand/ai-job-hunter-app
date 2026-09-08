@@ -621,7 +621,7 @@
         "codexLabel": "Codex (~/.codex/config.toml)",
         "copyCodex": "Konfiguration kopieren",
         "genericLabel": "Beliebiger MCP-Client (JSON)",
-        "genericHint": "Fügen Sie dies in die MCP-Konfigurationsdatei Ihres Clients ein; falls dort bereits ein mcpServers-Block existiert, fügen Sie nur den inneren Eintrag hinzu. Claude Desktop, Cursor, Windsurf, VS Code, Gemini CLI, LM Studio, Jan und die meisten anderen lesen dieses Format. Die Schreibstufe steckt im Flag in args.",
+        "genericHint": "Fügen Sie dies in die MCP-Konfigurationsdatei Ihres Clients ein; falls dort bereits ein mcpServers-Block existiert, fügen Sie nur den inneren Eintrag hinzu. Claude Desktop, Cursor, Windsurf, Gemini CLI, LM Studio, Jan und die meisten anderen lesen dieses Format. Die Schreibstufe steckt im Flag in args.",
         "copyGeneric": "JSON kopieren"
       }
     },
