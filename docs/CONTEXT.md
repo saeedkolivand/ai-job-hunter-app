@@ -579,8 +579,8 @@ surface derived from Channels silently cannot do things the UI can.
 _Avoid_: treating the Channel list as "the API" — it is one renderer-side view of it
 
 **Resource**:
-A hand-written, allowlist-**projected** read surface of the agent CLI (`best-matches`, `job`,
-`profile`, `automations`, `schema`). A Resource never returns a raw record: its response type
+A hand-written, allowlist-**projected** read surface of the agent CLI (`best-matches`, `found-jobs`,
+`job`, `profile`, `automations`, `schema`). A Resource never returns a raw record: its response type
 cannot express the forbidden fields, nested types included. The curated tier.
 _Avoid_: "endpoint" / using Resource for anything that mutates
 
