@@ -259,13 +259,13 @@ export interface RuntimeHealth {
    * a cloud provider entirely unrelated to whether Ollama is reachable). See
    * {@link RuntimeHealth.activeProvider} for what generation actually uses.
    */
-  ai: { ready: boolean; model?: string; memoryMB?: number; scope?: 'localOllama' };
+  ai: { ready: boolean; model?: string; memoryMB?: number; scope: 'localOllama' };
   /**
    * The app's actually-configured generation provider/model — the same
    * lookup `ai.getActiveConfig` uses, so the two can never disagree. Both
    * fields are `null` when unseeded or when the config store is unavailable.
    */
-  activeProvider?: { provider: string | null; model: string | null };
+  activeProvider: { provider: string | null; model: string | null };
   /**
    * CLI-agent availability, keyed by provider id (e.g. `'claude-code'`).
    * `detected` = the agent's binary is installed; `version` is its reported

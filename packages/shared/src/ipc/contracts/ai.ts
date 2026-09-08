@@ -496,8 +496,9 @@ export interface AiSpendModelThinking {
   outputTokens: number;
 }
 
-/** The requested/resolved AI-spend window (issue #1161) — what `today` and
- *  `perProvider` cover. `from`/`to` are epoch-ms boundaries. */
+/** The requested/resolved AI-spend window (issue #1161) — what `windowTotals`
+ *  and `perProvider` cover. `today` is ALWAYS calendar-day, never this window.
+ *  `from`/`to` are epoch-ms boundaries. */
 export interface AiSpendWindow {
   days: number;
   from: number;

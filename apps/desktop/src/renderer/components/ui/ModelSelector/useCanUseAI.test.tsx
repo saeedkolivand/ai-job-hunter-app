@@ -18,7 +18,8 @@ import { renderHookWithClient } from '@/test-support';
 import { useCanUseAI } from './index';
 
 const readyHealth = (overrides: Partial<RuntimeHealth> = {}): RuntimeHealth => ({
-  ai: { ready: true, model: 'llama3.2' },
+  ai: { ready: true, model: 'llama3.2', scope: 'localOllama' },
+  activeProvider: { provider: 'ollama', model: 'llama3.2' },
   cliAgents: { 'claude-code': { detected: true } },
   data: { ready: true, sqlite: true, vector: true },
   workers: { active: 0, idle: 0, max: 4 },
@@ -37,7 +38,7 @@ describe('useCanUseAI — local-server (Ollama)', () => {
           providers: { ollama: { model: 'llama3.2' } },
         }),
       },
-      system: { health: async () => readyHealth({ ai: { ready: false } }) },
+      system: { health: async () => readyHealth({ ai: { ready: false, scope: 'localOllama' } }) },
     });
     const { result } = renderHookWithClient(() => useCanUseAI(), { client });
     await waitFor(() => expect(result.current).toEqual({ canUse: false, reason: 'startOllama' }));
@@ -62,7 +63,7 @@ describe('useCanUseAI — local-server (Ollama)', () => {
       ai: { activeConfig: async () => ({ activeProvider: 'ollama', providers: {} }) },
       // Daemon reported not-ready too — proves selectModel wins first, not a
       // side effect of the health probe being skipped/absent.
-      system: { health: async () => readyHealth({ ai: { ready: false } }) },
+      system: { health: async () => readyHealth({ ai: { ready: false, scope: 'localOllama' } }) },
     });
     const { result } = renderHookWithClient(() => useCanUseAI(), { client });
     await waitFor(() => expect(result.current).toEqual({ canUse: false, reason: 'selectModel' }));
