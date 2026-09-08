@@ -55,6 +55,8 @@ function renderCard(agentCliInfo = vi.fn().mockResolvedValue({ exePath: EXE })) 
 
 const claudeSnippet = () => screen.getByTestId(TEST_IDS.settings.agentCliClaudeSnippet).textContent;
 const codexSnippet = () => screen.getByTestId(TEST_IDS.settings.agentCliCodexSnippet).textContent;
+const genericSnippet = () =>
+  screen.getByTestId(TEST_IDS.settings.agentCliGenericSnippet).textContent;
 
 const writeText = () => vi.mocked(navigator.clipboard.writeText);
 
@@ -67,7 +69,7 @@ beforeEach(() => {
 });
 
 describe('AgentCliSection', () => {
-  it('renders the resolved path and both registration snippets', async () => {
+  it('renders the resolved path and all three registration snippets', async () => {
     renderCard();
 
     // The card's own id — what an e2e selector anchors on.
@@ -79,6 +81,13 @@ describe('AgentCliSection', () => {
     expect(codexSnippet()).toBe(
       `[mcp_servers.ai-job-hunter]\ncommand = '${EXE}'\nargs = ["agent", "mcp"]`
     );
+    expect(genericSnippet()).toBe(
+      JSON.stringify(
+        { mcpServers: { 'ai-job-hunter': { command: EXE, args: ['agent', 'mcp'] } } },
+        null,
+        2
+      )
+    );
   });
 
   it('shows a skeleton, not an empty command, while the path is still being read', () => {
@@ -88,6 +97,7 @@ describe('AgentCliSection', () => {
     expect(screen.queryByTestId(TEST_IDS.settings.agentCliPath)).toBeNull();
     expect(screen.queryByTestId(TEST_IDS.settings.agentCliClaudeSnippet)).toBeNull();
     expect(screen.queryByTestId(TEST_IDS.settings.agentCliCodexSnippet)).toBeNull();
+    expect(screen.queryByTestId(TEST_IDS.settings.agentCliGenericSnippet)).toBeNull();
   });
 
   it('says where to find the path when the shell could not resolve it, and shows no snippets', async () => {
@@ -98,10 +108,11 @@ describe('AgentCliSection', () => {
     // register a server that never starts.
     expect(screen.queryByTestId(TEST_IDS.settings.agentCliClaudeSnippet)).toBeNull();
     expect(screen.queryByTestId(TEST_IDS.settings.agentCliCodexSnippet)).toBeNull();
+    expect(screen.queryByTestId(TEST_IDS.settings.agentCliGenericSnippet)).toBeNull();
     expect(screen.queryByTestId(TEST_IDS.settings.agentCliCopyPath)).toBeNull();
   });
 
-  it('copies the path, the Claude command and the Codex block VERBATIM', async () => {
+  it('copies the path, the Claude command, the Codex block and the generic JSON VERBATIM', async () => {
     renderCard();
     await waitFor(() =>
       expect(screen.getByTestId(TEST_IDS.settings.agentCliPath)).toHaveValue(EXE)
@@ -114,6 +125,9 @@ describe('AgentCliSection', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy command' }));
     await waitFor(() => expect(writeText()).toHaveBeenCalledWith(claudeSnippet()));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy JSON' }));
+    await waitFor(() => expect(writeText()).toHaveBeenCalledWith(genericSnippet()));
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy config' }));
     await waitFor(() => expect(writeText()).toHaveBeenCalledWith(codexSnippet()));

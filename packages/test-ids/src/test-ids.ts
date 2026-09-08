@@ -90,6 +90,7 @@ export const TEST_IDS = {
     agentCliTier: 'agent-cli-tier',
     agentCliClaudeSnippet: 'agent-cli-claude-snippet',
     agentCliCodexSnippet: 'agent-cli-codex-snippet',
+    agentCliGenericSnippet: 'agent-cli-generic-snippet',
     aboutTab: 'about-tab',
   },
 

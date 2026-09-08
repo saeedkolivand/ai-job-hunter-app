@@ -617,7 +617,10 @@
         "claudeLabel": "Claude Code",
         "copyClaude": "Befehl kopieren",
         "codexLabel": "Codex (~/.codex/config.toml)",
-        "copyCodex": "Konfiguration kopieren"
+        "copyCodex": "Konfiguration kopieren",
+        "genericLabel": "Beliebiger MCP-Client (JSON)",
+        "genericHint": "Fügen Sie dies in den mcpServers-Abschnitt der MCP-Konfiguration Ihres Clients ein — Claude Desktop, Cursor, Windsurf, VS Code, Gemini CLI, LM Studio, Jan und die meisten anderen lesen dieses Format. Die Schreibstufe steckt im Flag in args.",
+        "copyGeneric": "JSON kopieren"
       }
     },
     "about": {
