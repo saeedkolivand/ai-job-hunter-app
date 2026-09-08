@@ -322,6 +322,17 @@ pub(super) fn unfence_named_fields_recursive(value: &mut Value) {
                     }
                 }
             }
+            // The mirror of the outbound `text` block's own origin split (issue #1157): `text`
+            // is no longer on `FENCE_FIELD_NAMES`, so the loop above never reaches it, but the
+            // outbound side can wrap it under EITHER `job_posting` (a non-`DocumentRecord`/
+            // `resume_extract_text` producer) or `user_document` (the user's own file) --
+            // `strip_fence_wrapper` is a no-op on a value that isn't its own exact wrapper shape,
+            // so trying both is safe and never mangles a clean value.
+            if let Some(s) = map.get("text").and_then(Value::as_str) {
+                let stripped = crate::prompt_fence::strip_fence_wrapper("job_posting", s);
+                let stripped = crate::prompt_fence::strip_fence_wrapper("user_document", &stripped);
+                map.insert("text".to_string(), json!(stripped));
+            }
             // The mirror of `fence_named_fields_recursive`'s shape guard:
             // an `ApplicationAnswer`'s `question` goes out fenced, so a
             // caller echoing that record back into a write (`answers_save`)
@@ -350,6 +361,29 @@ pub(super) fn unfence_named_fields_recursive(value: &mut Value) {
             }
         }
         _ => {}
+    }
+}
+
+/// Commands whose reply is the user's OWN document text as a BARE value, not wrapped in a
+/// `text` field on an object -- `fence_named_fields_recursive`'s name-keyed walk (`agent_call/
+/// fence.rs`) can only fence a NAMED field, so a command whose whole reply IS the string (no
+/// wrapping object at all) needs its own small, audited list here instead (issue #1157).
+/// `documents_get_text` returns `AppResult<String>` -- a bare JSON string on success, an object
+/// on `Err` (never a string), so this list is command-name keyed rather than shape-keyed the way
+/// `fence.rs`'s object shapes are.
+const USER_DOCUMENT_BARE_TEXT_COMMANDS: &[&str] = &["documents_get_text"];
+
+/// Fence `data` under the `user_document` tag when `command` is on
+/// [`USER_DOCUMENT_BARE_TEXT_COMMANDS`] and the reply really is a bare string (the success
+/// case); a no-op otherwise (an `Err` reply, or any other command). Called from [`reshape_reply`]
+/// right after [`fence_scraped_fields`] -- that walk only ever fences a NAMED field inside an
+/// object/array, so it cannot reach a top-level string on its own.
+fn fence_user_document_bare_text(command: &str, data: &mut Value) {
+    if !USER_DOCUMENT_BARE_TEXT_COMMANDS.contains(&command) {
+        return;
+    }
+    if let Value::String(s) = data {
+        *s = crate::prompt_fence::fenced("user_document", s, crate::prompt_fence::RESUME_CAP);
     }
 }
 
@@ -383,6 +417,7 @@ pub(super) fn reshape_reply(
     page_args: Option<(usize, usize)>,
 ) -> Value {
     fence_scraped_fields(&mut data);
+    fence_user_document_bare_text(command, &mut data);
     if let Some((offset, limit)) = page_args {
         data = paginate_list_reply(data, offset, limit);
     }

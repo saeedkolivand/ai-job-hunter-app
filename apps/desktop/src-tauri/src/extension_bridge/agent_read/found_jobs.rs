@@ -139,18 +139,16 @@ const PAGE_BYTE_BUDGET: usize = 150_000;
 /// CreationWizard collects, while making the cap a CONCRETE bound rather
 /// than "trust the UI never lets this grow" — a migrated/imported record
 /// could still carry something longer.
-const AUTOPILOT_NAME_FENCE_CAP: usize = 200;
+const AUTOPILOT_NAME_CAP: usize = 200;
 
-/// Fence `name` the same way every other display field on this resource
-/// already is — same primitive, same `"job_posting"` tag as
-/// [`fence_found_jobs_description`]/`agent_read::fence_posting_display_fields`,
-/// even though an autopilot name is the CALLER'S OWN data rather than
-/// scraped text: the primitive is exactly "cap length and neutralize any
-/// embedded fence syntax," which is what this field needs regardless of
-/// provenance, and one shared convention ("every text field on this
-/// resource is fenced") is simpler than a per-field exception.
-fn fence_autopilot_name(name: &str) -> String {
-    crate::prompt_fence::fenced("job_posting", name, AUTOPILOT_NAME_FENCE_CAP)
+/// Cap `name` to [`AUTOPILOT_NAME_CAP`] chars, char-boundary safe (issue #1157 — an autopilot
+/// name is the CALLER'S OWN first-party data, never board-scraped text, so it no longer goes
+/// through [`crate::prompt_fence::fenced`]'s `job_posting` wrapper the way a scraped display
+/// field does; only the SIZE guard this resource's own [`PAGE_BYTE_BUDGET`] accounting needs
+/// survives). `.chars().take(n)` rather than a byte slice — `str`-slicing at an arbitrary byte
+/// offset can land mid-codepoint and panic, and this crate is `panic = "abort"` in release.
+fn cap_autopilot_name(name: &str) -> String {
+    name.chars().take(AUTOPILOT_NAME_CAP).collect()
 }
 
 /// This resource's own default/max applied to the shared clamp — the numbers
@@ -308,7 +306,7 @@ pub(super) fn resolve_found_jobs(
         })
         .collect();
 
-    let autopilot_name = fence_autopilot_name(&autopilot.name);
+    let autopilot_name = cap_autopilot_name(&autopilot.name);
 
     let base_cost = base_envelope_cost(&autopilot.id, &autopilot_name, total);
 
@@ -471,15 +469,11 @@ mod tests {
             &["score", "level", "flags"],
         );
         assert_eq!(out["autopilotId"], "ap-1");
-        // `autopilotName` is now fenced too (CodeRabbit fix, PR #1117 review round 3) — see
-        // the dedicated `found_jobs_fences_an_oversized_autopilot_name` test for the cap
-        // itself; this assertion only checks the real name survived the wrapper.
-        let autopilot_name = out["autopilotName"].as_str().unwrap();
-        assert!(
-            autopilot_name.starts_with("<job_posting>\n")
-                && autopilot_name.contains("autopilot-ap-1"),
-            "autopilotName must be fenced like every other display field: {autopilot_name}"
-        );
+        // `autopilotName` is CAPPED but no longer FENCED (issue #1157 -- it is the caller's
+        // own first-party data, not board-scraped text) -- see
+        // `found_jobs_caps_an_oversized_autopilot_name` for the cap itself; this assertion only
+        // checks the real name is returned VERBATIM, with no wrapper of any kind.
+        assert_eq!(out["autopilotName"], "autopilot-ap-1");
         assert_eq!(out["total"], 1);
     }
 
@@ -958,13 +952,13 @@ mod tests {
         );
     }
 
-    /// CodeRabbit fix, PR #1117 review round 3 — `autopilotName` is
-    /// user-typed and was previously echoed unbounded; it must now be
-    /// fenced/capped exactly like every other display field on this
-    /// resource.
+    /// Issue #1157 -- `autopilotName` is capped (this resource's own byte-budget accounting
+    /// still needs a bound) but no longer FENCED: it is the caller's own first-party data, not
+    /// board-scraped text, so it must come back verbatim -- truncated, never wrapped in
+    /// `<job_posting>`/any other fence tag.
     #[test]
-    fn found_jobs_fences_an_oversized_autopilot_name() {
-        let huge_name = "x".repeat(AUTOPILOT_NAME_FENCE_CAP * 3);
+    fn found_jobs_caps_an_oversized_autopilot_name() {
+        let huge_name = "x".repeat(AUTOPILOT_NAME_CAP * 3);
         let records = vec![Autopilot {
             name: huge_name,
             ..autopilot_with_jobs("ap-1", vec![full_found_job()])
@@ -972,14 +966,17 @@ mod tests {
         let out = resolve_found_jobs(&records, "ap-1", 0, 20).expect("found");
         let name = out["autopilotName"].as_str().unwrap();
         assert!(
-            name.starts_with("<job_posting>\n") && name.ends_with("\n</job_posting>"),
-            "autopilotName must be fenced: {name}"
+            !name.contains("<job_posting>") && !name.contains("<user_document>"),
+            "autopilotName must never be wrapped in a fence tag: {name}"
         );
-        let wrapper_len = "<job_posting>\n".len() + "\n</job_posting>".len();
         assert_eq!(
             name.chars().count(),
-            AUTOPILOT_NAME_FENCE_CAP + wrapper_len,
-            "an uncapped autopilotName must be truncated to exactly the cap plus the fence wrapper"
+            AUTOPILOT_NAME_CAP,
+            "an uncapped autopilotName must be truncated to exactly the cap, with no wrapper"
+        );
+        assert!(
+            "x".repeat(AUTOPILOT_NAME_CAP * 3).starts_with(name),
+            "the capped name must be an exact prefix of the real one"
         );
     }
 
@@ -994,7 +991,7 @@ mod tests {
         let total_jobs = MAX_FOUND_JOBS_LIMIT * 2;
         let jobs: Vec<FoundJob> = (0..total_jobs).map(worst_permitted_job).collect();
         let mut ap = autopilot_with_jobs("ap-1", jobs);
-        ap.name = "z".repeat(AUTOPILOT_NAME_FENCE_CAP * 5);
+        ap.name = "z".repeat(AUTOPILOT_NAME_CAP * 5);
         let records = vec![ap];
         let out = resolve_found_jobs(&records, "ap-1", 0, MAX_FOUND_JOBS_LIMIT).unwrap();
         let bytes = out.to_string().len();

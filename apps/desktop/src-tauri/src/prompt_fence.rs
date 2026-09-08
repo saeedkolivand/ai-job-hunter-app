@@ -104,6 +104,14 @@ static FENCE_TAG_PATTERNS: std::sync::LazyLock<
     [
         "candidate_resume",
         "job_posting",
+        // Issue #1157 - the user's OWN document text (documents_list.text,
+        // documents_get_text, resume_extract_text), fenced distinctly from
+        // job_posting: still framed as DATA (this repo treats a user's own
+        // uploaded resume as untrusted too - real resumes do carry prompt
+        // injections), but never labelled third-party-scraped when it is
+        // first-party. See agent_call.rs::fence_named_fields_recursive for
+        // the shape rules that choose this tag over job_posting.
+        "user_document",
         "company_research",
         "question",
         "web_search_notes",

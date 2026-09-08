@@ -666,6 +666,7 @@ fn every_registered_fence_tag_is_load_bearing() {
 const EXPECTED_FENCE_TAGS: &[&str] = &[
     "candidate_resume",
     "job_posting",
+    "user_document",
     "company_research",
     "question",
     "web_search_notes",

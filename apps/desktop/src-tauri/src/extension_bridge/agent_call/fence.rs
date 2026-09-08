@@ -87,6 +87,33 @@ use serde_json::{json, Value};
 /// why a flat `question` entry HERE would have silently re-fenced
 /// `InterviewQuestion.question`, which shares the exact wire key on the same
 /// command's response and is this app's own AI output.
+///
+/// Issue #1157 round (fence by ORIGIN, not by field name alone): the flat name walk over-fenced
+/// every carrier of `title`/`body`/`text`, not only the third-party ones -- `documents::
+/// DocumentRecord.title` (a user's own file title), `notifications::AppNotification.title`
+/// (mostly first-party, but see below), and a résumé's own `documents::DocumentRecord.text`
+/// were all wrapped as though a job board had written them. Fixed by SHAPE, not by pulling the
+/// name off this list (a flat removal would have UN-fenced the still-third-party carriers of the
+/// same name): [`DOCUMENT_RECORD_ANCHOR_FIELDS`] exempts `title` for a `DocumentRecord`-shaped
+/// object; [`CHANGELOG_ENTRY_ANCHOR_FIELDS`] exempts `body` for `updater::updater_changelog`'s
+/// own first-party release notes; `text` is removed from this flat list entirely and handled by
+/// its own origin-aware block in [`fence_named_fields_recursive`], which fences it under the
+/// DISTINCT `user_document` tag for a `DocumentRecord`/`resume_extract_text`-shaped object (see
+/// [`RESUME_EXTRACT_TEXT_ANCHOR_FIELD`]) and keeps the ORIGINAL `job_posting` default everywhere
+/// else (`commands::profile_import::profile_import_from_url`'s response also carries a bare
+/// `text` key, but it is resume text rendered from a THIRD-PARTY imported profile page, not the
+/// user's own file, so it stays fenced as `job_posting`).
+///
+/// `notifications::AppNotification.title`/`.body` stay on this flat list DELIBERATELY, not an
+/// oversight: unlike `documents_list`'s title, a notification's copy is genuinely MIXED --
+/// `tray::on_new_jobs`'s own `title`/`body` are first-party (an autopilot's own name plus a
+/// count), but `extension_bridge::status_update`/`extension_bridge::import_flow` build their
+/// `title` from `display_name`, which IS a scraped job title on the `applied`/`import.result`
+/// paths, and `reminder_scheduler::follow_up_body`/`commands::resume_pipeline::notify`'s bodies
+/// embed a job's own `title`/`company` too. One field name, two origins depending on which
+/// producer wrote it, with no shape this dispatch surface can tell apart (every `NewNotification`
+/// serializes the exact same three keys regardless of which caller built it) -- so this stays
+/// fenced by default, the safe direction, rather than risk unfencing the scraped half.
 pub(super) const FENCE_FIELD_NAMES: &[&str] = &[
     // `scraping::types::JobPosting.description` (scrape_resolve_url,
     // scrape_list_postings) AND `autopilot::FoundJob.description`
@@ -101,6 +128,8 @@ pub(super) const FENCE_FIELD_NAMES: &[&str] = &[
     "jobDescription",
     // `JobPosting.title`/`FoundJob.title` — board-derived, third-party
     // authored, and NOT covered by the array-of-strings handling below.
+    // Exempted for a `DOCUMENT_RECORD_ANCHOR_FIELDS`-shaped object (issue
+    // #1157) -- see this const's own doc addendum above.
     "title",
     // `JobPosting.company`/`FoundJob.company` — same reasoning as `title`.
     "company",
@@ -118,12 +147,15 @@ pub(super) const FENCE_FIELD_NAMES: &[&str] = &[
     // `AiGenerationRecord.top_requirements: Vec<String>` — an ARRAY, fenced
     // element-by-element via the array handling below.
     "topRequirements",
-    // `documents::DocumentRecord.text` (`documents_list`,
-    // `documents_get_text`) — the user's uploaded résumé/cover-letter text;
-    // see this const's own doc for why this repo treats it as untrusted.
-    "text",
     // `notifications::AppNotification.body` (`notifications_list`) — can
-    // echo a scraped job title/company inside app-generated copy.
+    // echo a scraped job title/company inside app-generated copy; exempted
+    // for a `CHANGELOG_ENTRY_ANCHOR_FIELDS`-shaped object (issue #1157,
+    // `updater::updater_changelog`'s own first-party release notes).
+    // `text` is deliberately NOT on this list any more (issue #1157) --
+    // `documents::DocumentRecord.text`/`resume_extract_text`'s reply are
+    // fenced under the DISTINCT `user_document` tag by their own
+    // origin-aware block in `fence_named_fields_recursive`, not by a flat
+    // name entry here; see this const's own doc addendum above.
     "body",
     // `discovered::DiscoveredCompany.display_name` (`discovery_search_
     // companies`) — board-harvested from a posting's own apply-redirect URL.
@@ -153,6 +185,31 @@ pub(super) const JOB_POSTING_SAFE_FIELDS: &[&str] = &[
     "capturedAt",
     "postedAt",
 ];
+
+/// `documents::DocumentRecord`'s own always-present, distinctively-named field pair (`isDefault`,
+/// `indexed`) -- used to detect a `DocumentRecord`-shaped object (`documents_list`) so its
+/// `title` (the user's own, first-party file title) can be exempted from the default
+/// `job_posting` fence, and its `text` fenced under `user_document` instead (issue #1157).
+/// Verified distinctive on this dispatch surface: no other struct reachable through the generic
+/// tier serializes both `isDefault` and `indexed` together.
+pub(super) const DOCUMENT_RECORD_ANCHOR_FIELDS: [&str; 2] = ["isDefault", "indexed"];
+
+/// `commands::match_resume::resume_extract_text`'s own response shape (`{"text","confidence"}`)
+/// -- `confidence` is this dispatch surface's ONLY producer of that wire key (verified), so its
+/// presence alongside a `text` string is enough to detect the shape without a command-name
+/// special case, the same convention every other anchor pair on this file uses.
+pub(super) const RESUME_EXTRACT_TEXT_ANCHOR_FIELD: &str = "confidence";
+
+/// `updater::updater_changelog`'s own response shape (`{"version","name","body","publishedAt",
+/// "url","prerelease"}` per release) -- `publishedAt`/`prerelease` are this dispatch surface's
+/// only producers of that pair (verified: `scraping::boards::ashby`'s own `publishedAt` field is
+/// `Deserialize`-only, parsing the board's OWN API response, and never reaches this surface's
+/// wire). `body` here is the repo's own bundled `CHANGELOG.md` prose -- first-party release
+/// notes, never board-scraped or user-authored -- so it is exempted from the default `body`
+/// fence (issue #1157); every OTHER `body` carrier (`notifications::AppNotification.body` above
+/// all) stays fenced by default, since that field really is mixed -- see `FENCE_FIELD_NAMES`'s
+/// own doc addendum.
+pub(super) const CHANGELOG_ENTRY_ANCHOR_FIELDS: [&str; 2] = ["publishedAt", "prerelease"];
 
 /// `ai_generations::ApplicationAnswer`'s own always-present sibling key —
 /// used to detect an `ApplicationAnswer`-shaped object (`{id, question,
@@ -387,7 +444,30 @@ pub(super) fn fence_scraped_fields(data: &mut Value) {
 pub(super) fn fence_named_fields_recursive(value: &mut Value) {
     match value {
         Value::Object(map) => {
+            // Issue #1157 -- origin shape checks, computed up front (read-only) so the loop
+            // below and the dedicated `text` block after it can both use them without
+            // re-deriving or risking the two disagreeing. See `DOCUMENT_RECORD_ANCHOR_FIELDS`/
+            // `RESUME_EXTRACT_TEXT_ANCHOR_FIELD`/`CHANGELOG_ENTRY_ANCHOR_FIELDS`'s own docs.
+            let document_record_shaped = DOCUMENT_RECORD_ANCHOR_FIELDS
+                .iter()
+                .all(|f| map.contains_key(*f));
+            let user_document_shaped =
+                document_record_shaped || map.contains_key(RESUME_EXTRACT_TEXT_ANCHOR_FIELD);
+            let changelog_entry_shaped = CHANGELOG_ENTRY_ANCHOR_FIELDS
+                .iter()
+                .all(|f| map.contains_key(*f));
+
             for field in FENCE_FIELD_NAMES {
+                // `title` on a `DocumentRecord`-shaped object is the user's own first-party
+                // file title, not a board-scraped job title -- skip the default fence.
+                if *field == "title" && document_record_shaped {
+                    continue;
+                }
+                // `body` on a changelog-entry-shaped object is this repo's own first-party
+                // release notes -- skip the default fence.
+                if *field == "body" && changelog_entry_shaped {
+                    continue;
+                }
                 if let Some(s) = map.get(*field).and_then(Value::as_str) {
                     let fenced =
                         crate::prompt_fence::fenced("job_posting", s, crate::prompt_fence::JOB_CAP);
@@ -405,6 +485,22 @@ pub(super) fn fence_named_fields_recursive(value: &mut Value) {
                         }
                     }
                 }
+            }
+            // `text` (issue #1157) -- origin-aware, never a flat `FENCE_FIELD_NAMES` entry: the
+            // user's OWN document text (`documents::DocumentRecord.text`/`resume_extract_text`'s
+            // reply) is fenced under the DISTINCT `user_document` tag; every other producer on
+            // this surface (`commands::profile_import::profile_import_from_url`'s response also
+            // carries a bare `text` key, but it is resume text rendered from a THIRD-PARTY
+            // imported profile page, not the user's own file) keeps the ORIGINAL `job_posting`
+            // default -- a shape miss must stay fenced, never fall open.
+            if let Some(s) = map.get("text").and_then(Value::as_str) {
+                let (tag, cap) = if user_document_shaped {
+                    ("user_document", crate::prompt_fence::RESUME_CAP)
+                } else {
+                    ("job_posting", crate::prompt_fence::JOB_CAP)
+                };
+                let fenced = crate::prompt_fence::fenced(tag, s, cap);
+                map.insert("text".to_string(), json!(fenced));
             }
             let job_posting_shaped = JOB_POSTING_ANCHOR_FIELDS
                 .iter()
@@ -430,6 +526,12 @@ pub(super) fn fence_named_fields_recursive(value: &mut Value) {
                     .filter(|(k, v)| {
                         !v.is_null()
                             && !FENCE_FIELD_NAMES.contains(&k.as_str())
+                            // `text` is no longer on `FENCE_FIELD_NAMES` (issue #1157 -- it is
+                            // fenced by its own origin-aware block above this shape check,
+                            // unconditionally); excluded here too so a `JobPosting`'s own `text`
+                            // key (if a board ever added one to its `extra`) is never fenced
+                            // TWICE under two different tags.
+                            && *k != "text"
                             && !JOB_POSTING_SAFE_FIELDS.contains(&k.as_str())
                     })
                     .map(|(k, _)| k.clone())

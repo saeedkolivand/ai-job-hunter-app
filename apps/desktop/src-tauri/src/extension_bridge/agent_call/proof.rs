@@ -257,6 +257,119 @@ pub(super) fn hint(source: ProofSource) -> String {
     format!("read {target} and pass {field} as --confirm")
 }
 
+// ── Grace window for a proof value disclosed via `confirmation_required` (issue #1162) ──────
+//
+// Ten `Irreversible` rows prove against `ai_spend_summary`'s `today.inputTokens`, which advances
+// under ORDINARY background AI activity (another job's spend) between the moment a caller reads
+// it and the moment it presents that same value back as `--confirm`. A caller that did everything
+// right — read the field, pasted it back — could see a `confirmation_mismatch` purely because the
+// counter moved underneath it. The fix: remember the value that was CURRENT at the moment a
+// `confirmation_required` refusal was issued for a command, and accept a presented value that
+// still matches that snapshot for a short window after — never a value the caller invented, only
+// one this process itself already disclosed the shape of (never the string) via that same refusal.
+
+/// How long a snapshot taken at `confirmation_required` time stays acceptable on the retry, even
+/// if the CURRENT value has since moved. ~120s: generous enough to cover "read the proof, then
+/// paste it back" against ordinary agent/network latency, short enough that a snapshot never
+/// becomes a standing, stale credential an attacker could bank on.
+const PROOF_SNAPSHOT_TTL: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Bound on how many distinct commands' snapshots this process remembers at once. This map lives
+/// for the whole app process's lifetime (never per-connection, per `agent-cli-standards`), so it
+/// must not grow with traffic — [`POLICY`]'s own `Irreversible` row count is comfortably under
+/// this, and the oldest entry is evicted to make room for a new command once full.
+const PROOF_SNAPSHOT_CAP: usize = 64;
+
+/// One remembered proof value, snapshotted the moment a `confirmation_required` refusal was
+/// issued for its command. `at` is [`std::time::Instant`] — monotonic, immune to a system clock
+/// adjustment moving backward and reviving an expired snapshot.
+struct ProofSnapshot {
+    value: String,
+    at: std::time::Instant,
+}
+
+/// Keyed by the bare command name — already globally unique on this dispatch surface
+/// ([`super::find_policy`]'s own doc: `generate_handler!` requires unique command names), so no
+/// need to key on `(namespace, command)`. A `Mutex`, not a `RwLock`: every access here either
+/// reads-then-conditionally-writes ([`remember`]) or reads-only-but-cheaply ([`accepted`]), so the
+/// simpler primitive costs nothing measurable at this call rate.
+static PROOF_SNAPSHOTS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, ProofSnapshot>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// Record `value` as `command`'s current proof snapshot — called from [`super::dispatch`] right
+/// after it issues a `confirmation_required` refusal for `command`, BEFORE the caller could have
+/// read this value any other way, so a snapshot can never be primed by anything the caller
+/// controls. Evicts the single OLDEST entry when the map is already at [`PROOF_SNAPSHOT_CAP`] and
+/// `command` is a new key — bounded, never unbounded growth over a long-running app process. A
+/// thin wrapper over [`remember_at`] with the clock read for real; split so a test can drive the
+/// pure core against a manufactured `now` rather than actually sleeping past [`PROOF_SNAPSHOT_TTL`].
+pub(super) fn remember(command: &str, value: String) {
+    remember_at(command, value, std::time::Instant::now());
+}
+
+fn remember_at(command: &str, value: String, now: std::time::Instant) {
+    let mut map = PROOF_SNAPSHOTS.lock().unwrap_or_else(|e| e.into_inner());
+    if !map.contains_key(command) && map.len() >= PROOF_SNAPSHOT_CAP {
+        if let Some(oldest_key) = map.iter().min_by_key(|(_, s)| s.at).map(|(k, _)| k.clone()) {
+            map.remove(&oldest_key);
+        }
+    }
+    map.insert(command.to_string(), ProofSnapshot { value, at: now });
+}
+
+/// Why a presented `--confirm` value was refused, when it does not exactly equal the FRESH,
+/// just-resolved proof — the two causes get DIFFERENT detail text (issue #1162): [`Mismatch`] is
+/// an ordinary wrong guess (or one that never matched anything this process ever disclosed);
+/// [`Expired`] is a value that matches a real, remembered snapshot whose grace window has already
+/// closed, which tells the caller HOW to recover (re-read) rather than leaving it to guess why a
+/// value it definitely read once no longer works.
+///
+/// [`Mismatch`]: SnapshotOutcome::Mismatch
+/// [`Expired`]: SnapshotOutcome::Expired
+pub(super) enum SnapshotOutcome {
+    Mismatch,
+    Expired,
+}
+
+/// Whether `presented` is acceptable for `command`, given the FRESH `current` value
+/// [`super::confirm_and_run`]'s caller just resolved. An exact match on `current` always succeeds
+/// (the ordinary, no-drift case, checked first so the common path never touches the snapshot map
+/// at all); otherwise `presented` may still match a snapshot [`remember`] recorded for this SAME
+/// command, provided it has not yet crossed [`PROOF_SNAPSHOT_TTL`]. Never discloses `current` or
+/// the snapshot's own value to the caller — only a yes/no (as [`Result::Err`]'s two shapes) — the
+/// same secrecy [`hint`] and every `Refusal::ConfirmationMismatch` detail already hold. A thin
+/// wrapper over [`accepted_at`] for the same testability reason [`remember`] wraps [`remember_at`].
+pub(super) fn accepted(
+    command: &str,
+    current: &str,
+    presented: &str,
+) -> Result<(), SnapshotOutcome> {
+    accepted_at(command, current, presented, std::time::Instant::now())
+}
+
+fn accepted_at(
+    command: &str,
+    current: &str,
+    presented: &str,
+    now: std::time::Instant,
+) -> Result<(), SnapshotOutcome> {
+    if presented == current {
+        return Ok(());
+    }
+    let map = PROOF_SNAPSHOTS.lock().unwrap_or_else(|e| e.into_inner());
+    match map.get(command) {
+        Some(snap)
+            if snap.value == presented
+                && now.saturating_duration_since(snap.at) <= PROOF_SNAPSHOT_TTL =>
+        {
+            Ok(())
+        }
+        Some(snap) if snap.value == presented => Err(SnapshotOutcome::Expired),
+        _ => Err(SnapshotOutcome::Mismatch),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -1010,5 +1123,93 @@ mod tests {
                 "hint leaked something numeric: {text}"
             );
         }
+    }
+
+    // ── accepted_at / remember_at — the grace window (issue #1162) ──────────
+
+    /// The ordinary, no-drift path never even looks at the snapshot map: an exact match on the
+    /// FRESH `current` value succeeds with nothing remembered for `command` at all.
+    #[test]
+    fn accepted_matches_the_fresh_current_value_with_no_snapshot_recorded() {
+        assert!(accepted_at("grace_cmd_fresh", "4200", "4200", std::time::Instant::now()).is_ok());
+    }
+
+    /// A value that matches neither the current value nor anything ever remembered for this
+    /// command is the ORDINARY mismatch — never `Expired` (there is nothing to have expired).
+    #[test]
+    fn accepted_refuses_a_value_matching_nothing_as_an_ordinary_mismatch() {
+        let outcome = accepted_at(
+            "grace_cmd_never_remembered",
+            "4200",
+            "9999",
+            std::time::Instant::now(),
+        );
+        assert!(matches!(outcome, Err(SnapshotOutcome::Mismatch)));
+    }
+
+    /// The headline #1162 case: the value disclosed at `confirmation_required` time (4200) is
+    /// snapshotted, the CURRENT value has since moved (background AI spend bumped it to 4300),
+    /// and the caller presents the OLDER value back within the grace window — must be accepted.
+    #[test]
+    fn accepted_accepts_a_remembered_snapshot_still_inside_the_ttl_even_though_current_moved() {
+        let t0 = std::time::Instant::now();
+        remember_at("grace_cmd_within_ttl", "4200".to_string(), t0);
+        let outcome = accepted_at(
+            "grace_cmd_within_ttl",
+            "4300", // the CURRENT value moved since disclosure
+            "4200", // the caller presents the value it actually read
+            t0 + std::time::Duration::from_secs(30),
+        );
+        assert!(
+            outcome.is_ok(),
+            "a snapshot still inside the TTL must be accepted even though the live value moved"
+        );
+    }
+
+    /// The same remembered value, presented AFTER the TTL has closed, must refuse — distinctly,
+    /// as `Expired` rather than the generic `Mismatch`, so the caller learns to re-read rather
+    /// than assume it simply guessed wrong.
+    #[test]
+    fn accepted_refuses_as_expired_once_the_snapshots_ttl_has_closed() {
+        let t0 = std::time::Instant::now();
+        remember_at("grace_cmd_expired", "4200".to_string(), t0);
+        let outcome = accepted_at(
+            "grace_cmd_expired",
+            "4300",
+            "4200",
+            t0 + PROOF_SNAPSHOT_TTL + std::time::Duration::from_secs(1),
+        );
+        assert!(matches!(outcome, Err(SnapshotOutcome::Expired)));
+    }
+
+    /// A value that is simply WRONG — never the current value, never anything remembered for
+    /// this command — must still refuse as the generic `Mismatch`, snapshot or no snapshot. A
+    /// grace window must never turn into "any old guess eventually works".
+    #[test]
+    fn accepted_still_refuses_a_wrong_value_as_a_mismatch_even_with_a_snapshot_recorded() {
+        let t0 = std::time::Instant::now();
+        remember_at("grace_cmd_wrong_guess", "4200".to_string(), t0);
+        let outcome = accepted_at(
+            "grace_cmd_wrong_guess",
+            "4300",
+            "totally-invented-guess",
+            t0 + std::time::Duration::from_secs(5),
+        );
+        assert!(matches!(outcome, Err(SnapshotOutcome::Mismatch)));
+    }
+
+    /// A snapshot recorded for a DIFFERENT command must never satisfy this one's ceremony — the
+    /// map is keyed per command precisely so one row's disclosed value can't authorise another's.
+    #[test]
+    fn accepted_never_lets_a_snapshot_from_a_different_command_satisfy_this_one() {
+        let t0 = std::time::Instant::now();
+        remember_at("grace_cmd_other_command", "4200".to_string(), t0);
+        let outcome = accepted_at(
+            "grace_cmd_this_command",
+            "4300",
+            "4200",
+            t0 + std::time::Duration::from_secs(5),
+        );
+        assert!(matches!(outcome, Err(SnapshotOutcome::Mismatch)));
     }
 }

@@ -239,11 +239,17 @@ pub(super) enum Refusal {
     /// here (all exit 2). Names WHICH read surface + field the proof comes
     /// from and NEVER the value itself (ADR-038 §4).
     ConfirmationRequired(String),
-    /// A `confirm` value that did not match the freshly-resolved proof. The
-    /// detail is a FIXED string, never the hint and never the expected
-    /// value — a mismatch must not leak anything a caller couldn't already
-    /// have gotten from the `ConfirmationRequired` refusal alone.
-    ConfirmationMismatch,
+    /// A `confirm` value that did not match. `moved: true` (issue #1162) is the narrower case:
+    /// `presented` matches a value THIS process itself disclosed the shape of via an earlier
+    /// `confirmation_required` refusal for the SAME command, but the live proof has since moved
+    /// (ordinary background AI activity against a spend-based proof) and the remembered
+    /// snapshot's grace window has already closed — see `proof::accepted`/`SnapshotOutcome`. Same
+    /// sentinel either way (never a stronger signal to probe with); the detail differs so a
+    /// caller that did everything right is told to re-read rather than "you guessed wrong". The
+    /// detail is otherwise a FIXED string, never the hint and never the expected value — a
+    /// mismatch must not leak anything a caller couldn't already have gotten from the
+    /// `ConfirmationRequired` refusal alone.
+    ConfirmationMismatch { moved: bool },
     /// The proof value itself could not be resolved (the read it depends on
     /// failed, or the targeted record doesn't exist) — distinct from a
     /// wrong-value mismatch so a caller can tell "you guessed wrong" apart
@@ -332,7 +338,7 @@ impl Refusal {
             Refusal::DispatchFailed(_) => ERR_DISPATCH_FAILED,
             Refusal::InvokeError(_) => ERR_INVOKE_ERROR,
             Refusal::ConfirmationRequired(_) => ERR_CONFIRMATION_REQUIRED,
-            Refusal::ConfirmationMismatch => ERR_CONFIRMATION_MISMATCH,
+            Refusal::ConfirmationMismatch { .. } => ERR_CONFIRMATION_MISMATCH,
             Refusal::ProofUnavailable => ERR_PROOF_UNAVAILABLE,
             Refusal::ResultTooLarge(_) => ERR_RESULT_TOO_LARGE,
             Refusal::InvalidCursor => ERR_INVALID_CURSOR,
@@ -345,16 +351,18 @@ impl Refusal {
     /// it is also the one place that guarantee could be broken, hence the
     /// dedicated tests in `agent_call::tests`.
     ///
-    /// MEDIUM fix (security review round 4): [`Refusal::InvokeError`]'s
-    /// `detail` used to render unfenced — [`dispatch_direct`]'s SUCCESS
-    /// payload runs through [`fence_scraped_fields`], but a command's error
-    /// value never did, so a dispatchable command whose `AppError` embeds
-    /// third-party/remote text (a scrape/HTTP/provider failure that echoes
-    /// part of a caller-chosen host's own response) reached the caller
-    /// verbatim through this ONE surviving unfenced channel — the same class
-    /// of gap `ai_test_provider_key`'s CRITICAL finding closed on the
-    /// success side. Fenced the SAME way as every other untrusted string
-    /// this file emits, not a second primitive.
+    /// [`Refusal::InvokeError`]'s `detail` is DELIBERATELY UNFENCED again (issue #1157,
+    /// reversing security review round 4's fix, owner decision -- flagged for
+    /// `tauri-security-reviewer`): most of the time this is the app's OWN Tauri
+    /// argument-validation sentence (a missing/mistyped arg, an ACL denial, an unregistered
+    /// command) -- the single most actionable line an agent gets anywhere on this surface, and
+    /// wrapping it as `<job_posting>` markup made a first-party diagnostic read as though a job
+    /// board had written it. Capped at [`crate::prompt_fence::JOB_CAP`] chars (no wrapper, no
+    /// boundary-neutralization) rather than left unbounded. RESIDUAL RISK this change
+    /// deliberately accepts: round 4's own finding still holds structurally -- a dispatchable
+    /// command whose `AppError` embeds third-party/remote text (a scrape/HTTP/provider failure
+    /// echoing part of a caller-chosen host's own response) now reaches the caller verbatim
+    /// through this channel again.
     fn detail(&self) -> String {
         match self {
             Refusal::UnknownCommand(suggestion) => unknown_command_detail(*suggestion),
@@ -364,22 +372,31 @@ impl Refusal {
             Refusal::RateLimited { .. } => super::agent_read::THROTTLED_MESSAGE.to_string(),
             Refusal::DispatchFailed(detail) => detail.clone(),
             Refusal::InvokeError(detail) => {
-                let fenced = crate::prompt_fence::fenced(
-                    "job_posting",
-                    detail,
-                    crate::prompt_fence::JOB_CAP,
-                );
+                // Capped, never fenced -- see this variant's own `detail()` doc above.
+                let capped: String = detail.chars().take(crate::prompt_fence::JOB_CAP).collect();
                 format!(
                     "the command either ran and returned an error, or Tauri rejected the call \
                      before the body ran (missing/invalid args, an ACL denial, or an unregistered \
-                     command) — these are wire-indistinguishable; underlying value: {fenced}"
+                     command) — these are wire-indistinguishable; underlying value: {capped}"
                 )
             }
             Refusal::ConfirmationRequired(hint) => hint.clone(),
-            Refusal::ConfirmationMismatch => {
+            Refusal::ConfirmationMismatch { moved: false } => {
                 "the confirm value did not match — it is never disclosed by this refusal; \
                  re-read the source named in a fresh confirmation_required refusal for this \
                  same command"
+                    .to_string()
+            }
+            // Issue #1162 -- `presented` matched a value THIS command legitimately disclosed
+            // the shape of earlier (a `confirmation_required` refusal), but the live proof has
+            // moved since (background AI activity against a spend-based proof) and that
+            // snapshot's grace window has closed. Same sentinel as an ordinary wrong guess
+            // (never a stronger signal to probe with); the detail differs so a caller that did
+            // everything right is told to re-read rather than "you guessed wrong" -- see
+            // `proof::accepted`/`SnapshotOutcome::Expired`.
+            Refusal::ConfirmationMismatch { moved: true } => {
+                "the proof moved since it was disclosed (background AI activity) -- re-read it \
+                 from a fresh confirmation_required refusal"
                     .to_string()
             }
             Refusal::ProofUnavailable => {
@@ -721,22 +738,32 @@ async fn dispatch_direct(
 /// directly testable (the crate has no Tauri mock, so nothing taking a
 /// concrete `&AppHandle` can be).
 ///
-/// `run` is called at most ONCE and ONLY on an exact match — never before
-/// the comparison, which is the property the tests mutation-check: a
+/// `run` is called at most ONCE and ONLY on an accepted `confirm` — never
+/// before the comparison, which is the property the tests mutation-check: a
 /// version that ran first and compared after would dispatch an
 /// irreversible command on a wrong `confirm`. It returns whatever the
 /// caller's own run step produces (the async wrapper returns the UNAWAITED
 /// future, so this core stays sync and pure).
+///
+/// The comparison itself is [`proof::accepted`] (issue #1162), not a bare `==`: an exact match on
+/// the FRESH `resolved` value is still the ordinary case, but `confirm` may also match a snapshot
+/// [`super::dispatch`] recorded when it issued this SAME command's last `confirmation_required`
+/// refusal, provided that snapshot's grace window hasn't closed — see that fn's own doc for why a
+/// spend-based proof can legitimately move between disclosure and confirm.
 fn confirm_and_run<T>(
+    command: &str,
     resolved: Option<String>,
     confirm: &str,
     run: impl FnOnce() -> T,
 ) -> Result<T, Refusal> {
     let expected = resolved.ok_or(Refusal::ProofUnavailable)?;
-    if confirm != expected {
-        return Err(Refusal::ConfirmationMismatch);
+    match proof::accepted(command, &expected, confirm) {
+        Ok(()) => Ok(run()),
+        Err(proof::SnapshotOutcome::Mismatch) => {
+            Err(Refusal::ConfirmationMismatch { moved: false })
+        }
+        Err(proof::SnapshotOutcome::Expired) => Err(Refusal::ConfirmationMismatch { moved: true }),
     }
-    Ok(run())
 }
 
 /// Dispatch an `Irreversible` row whose `confirm` is already known to be
@@ -766,7 +793,10 @@ async fn dispatch_irreversible_confirmed(
     confirm: &str,
 ) -> Result<Value, Refusal> {
     let resolved = proof::resolve(app, source, &input).await;
-    confirm_and_run(resolved, confirm, || dispatch_direct(app, command, input))?.await
+    confirm_and_run(command, resolved, confirm, || {
+        dispatch_direct(app, command, input)
+    })?
+    .await
 }
 
 async fn dispatch(
@@ -778,11 +808,27 @@ async fn dispatch(
 ) -> Result<Value, Refusal> {
     let entry = find_policy(namespace, command)
         .ok_or_else(|| Refusal::UnknownCommand(namespace_suggestion(command)))?;
-    match plan(entry, command, &input, confirm)? {
-        Dispatch::Direct => dispatch_direct(app, command, input).await,
-        Dispatch::Confirmed { source, confirm } => {
+    match plan(entry, command, &input, confirm) {
+        Ok(Dispatch::Direct) => dispatch_direct(app, command, input).await,
+        Ok(Dispatch::Confirmed { source, confirm }) => {
             dispatch_irreversible_confirmed(app, command, input, source, confirm).await
         }
+        // Issue #1162 — snapshot the CURRENT proof value right NOW, at the moment this
+        // `confirmation_required` refusal is issued: this is the earliest point a grace window
+        // can start, and doing it here (rather than lazily on the retry) means a caller that
+        // reads the disclosed field and pastes it straight back is comparing against a value
+        // this process itself resolved, never one it could have influenced. Best-effort — a
+        // `None` (the target record doesn't exist yet, or its own read failed) changes nothing
+        // about the refusal the caller already gets; it just means no snapshot lands.
+        Err(Refusal::ConfirmationRequired(hint)) => {
+            if let Effect::Irreversible(source) = entry.effect {
+                if let Some(value) = proof::resolve(app, source, &input).await {
+                    proof::remember(command, value);
+                }
+            }
+            Err(Refusal::ConfirmationRequired(hint))
+        }
+        Err(other) => Err(other),
     }
 }
 
