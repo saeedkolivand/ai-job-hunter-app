@@ -29,6 +29,8 @@
     "test:coverage": "vitest run --coverage",
     "gen:ipc": "pnpm --filter @ajh/shared gen:ipc",
     "gen:ipc:check": "pnpm --filter @ajh/shared gen:ipc:check",
+    "gen:agent-catalogue": "pnpm --filter @ajh/shared gen:agent-catalogue",
+    "gen:agent-catalogue:check": "pnpm --filter @ajh/shared gen:agent-catalogue:check",
     "gen:prompts": "pnpm --filter @ajh/prompts gen:prompts",
     "gen:prompts:check": "pnpm --filter @ajh/prompts gen:prompts:check",
     "gen:api": "node scripts/gen-api-docs.mjs",

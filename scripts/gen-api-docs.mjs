@@ -21,39 +21,53 @@
 
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import prettier from 'prettier';
 import ts from 'typescript';
+// Re-exported for `gen-agent-catalogue.ts`: that generator lives under
+// `packages/shared/scripts/`, whose OWN nearest `typescript` devDependency is
+// pinned to the (incompatible — no classic Compiler API, only the new
+// `unstable/ast` surface) v7 line the rest of that package typechecks with.
+// Node/tsx resolve a bare `import ts from 'typescript'` by the IMPORTING
+// FILE's own location, so re-exporting the instance THIS file already
+// resolved (this file lives at the repo root, where the classic-API v6 line
+// is pinned) hands every caller the working module, never a second resolution
+// that could land on the wrong version.
+export { ts };
 
 // Anchored to this file, never to `process.cwd()`: run from anywhere but the
 // repo root, a cwd-relative generator reads no contracts and writes its output
 // outside the repo.
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 // Repo-relative by design: these strings are printed into the page too.
-const CONTRACT_DIR = 'packages/shared/src/ipc/contracts';
-const INDEX_FILE = join(CONTRACT_DIR, 'index.ts');
+export const CONTRACT_DIR = 'packages/shared/src/ipc/contracts';
+export const INDEX_FILE = join(CONTRACT_DIR, 'index.ts');
 const OUT_FILE = 'docs/API.md';
 
 /** Absolute path for a repo-relative one — filesystem access only. */
-function abs(p) {
+export function abs(p) {
   return resolve(REPO_ROOT, p);
 }
 
 /** Repo-relative, forward-slashed path (path privacy: never absolute). */
-function repoPath(p) {
+export function repoPath(p) {
   return relative(REPO_ROOT, abs(p)).split('\\').join('/');
 }
 
-function fail(message) {
+export function fail(message) {
   throw new Error(`gen:api — ${message}`);
 }
 
 // ── Parsing ───────────────────────────────────────────────────────────────
 
-/** @returns {Map<string, ts.SourceFile>} keyed by repo-relative file path. */
-function parseContractFiles() {
+/**
+ * @returns {Map<string, ts.SourceFile>} keyed by repo-relative file path.
+ * Exported for `gen-agent-catalogue.ts` — the agent-CLI catalogue generator
+ * reads the SAME contract TSDoc this page does, never a second parse.
+ */
+export function parseContractFiles() {
   const dir = abs(CONTRACT_DIR);
   const files = readdirSync(dir)
     .filter((f) => f.endsWith('.ts'))
@@ -76,7 +90,7 @@ function parseContractFiles() {
  * property, so the author's own markdown (lists, bold, fenced spans) survives
  * byte-for-byte instead of being re-serialized.
  */
-function docOf(node, sf) {
+export function docOf(node, sf) {
   const ranges = ts.getLeadingCommentRanges(sf.text, node.getFullStart()) ?? [];
   const block = ranges.filter((r) => sf.text.slice(r.pos, r.pos + 3) === '/**').pop();
   if (!block) return '';
@@ -113,7 +127,7 @@ function declarationText(node, sf) {
   return sf.text.slice(node.getStart(sf, /* includeJsDocComment */ true), node.getEnd());
 }
 
-function isExported(node) {
+export function isExported(node) {
   return (node.modifiers ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
 }
 
@@ -139,7 +153,7 @@ function addUnique(map, name, entry, kind) {
 }
 
 /** Every exported interface / type alias in the contract files, by name. */
-function collectDeclarations(sources) {
+export function collectDeclarations(sources) {
   const decls = new Map();
   for (const [file, sf] of sources) {
     for (const stmt of sf.statements) {
@@ -171,7 +185,7 @@ function collectConsts(sources) {
 }
 
 /** `namespace -> contract interface name`, read from `IpcContract` in index.ts. */
-function namespaceMap(sf) {
+export function namespaceMap(sf) {
   const iface = sf.statements.find(
     (s) => ts.isInterfaceDeclaration(s) && s.name.text === 'IpcContract'
   );
@@ -303,7 +317,7 @@ function anchor(heading) {
 }
 
 /** First sentence of a doc block, collapsed onto one line for a table cell. */
-function summarize(doc) {
+export function summarize(doc) {
   if (!doc) return '';
   const firstPara = doc
     .split(/\n\s*\n/)[0]
@@ -547,14 +561,20 @@ async function main() {
   );
 }
 
-try {
-  await main();
-} catch (error) {
-  // Path privacy: print the message alone. Node's default handler prints a
-  // stack trace full of absolute paths, and a filesystem error carries one in
-  // its message, so the repo root is stripped out of both.
-  const message = error instanceof Error ? error.message : String(error);
-  const roots = [REPO_ROOT, REPO_ROOT.split('\\').join('/')];
-  console.error(roots.reduce((text, root) => text.split(root).join('.'), message));
-  process.exitCode = 1;
+// Guarded (rather than a bare top-level `await main()`) so `gen-agent-catalogue.ts` can `import`
+// this module's parsing helpers — reuse, not a copy — without ALSO regenerating docs/API.md as a
+// side effect of that import; only a direct `node scripts/gen-api-docs.mjs` run reaches this.
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) {
+  try {
+    await main();
+  } catch (error) {
+    // Path privacy: print the message alone. Node's default handler prints a
+    // stack trace full of absolute paths, and a filesystem error carries one in
+    // its message, so the repo root is stripped out of both.
+    const message = error instanceof Error ? error.message : String(error);
+    const roots = [REPO_ROOT, REPO_ROOT.split('\\').join('/')];
+    console.error(roots.reduce((text, root) => text.split(root).join('.'), message));
+    process.exitCode = 1;
+  }
 }

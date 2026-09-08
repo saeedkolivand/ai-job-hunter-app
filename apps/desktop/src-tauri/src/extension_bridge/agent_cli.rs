@@ -1184,6 +1184,15 @@ pub fn run(args: &[String]) -> i32 {
 // dispatches yet (§2's generic `agent call <ns>:<command>` tier is later).
 pub(crate) mod policy;
 
+// @generated — the declared input contract for every dispatchable command
+// (issues #1163, #1158, #1160): a one-line description, top-level argument
+// keys, required-ness, and nested field names for a wrapper key. Emitted by
+// `pnpm gen:agent-catalogue` from the tauri-client `invoke()` call sites +
+// the IPC contract TSDoc — never hand-edited, wired the same way
+// `ipc_contracts` is. Read by `agent_call`'s dispatch-time key validation and
+// by the MCP `commands` tool.
+pub(crate) mod catalogue;
+
 // The MCP (Model Context Protocol) stdio server mode — `agent mcp`.
 mod mcp;
 

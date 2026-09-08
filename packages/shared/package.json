@@ -45,7 +45,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "gen:ipc": "tsx scripts/gen-ipc-rust.ts",
-    "gen:ipc:check": "tsx scripts/gen-ipc-rust.ts --check"
+    "gen:ipc:check": "tsx scripts/gen-ipc-rust.ts --check",
+    "gen:agent-catalogue": "tsx scripts/gen-agent-catalogue.ts",
+    "gen:agent-catalogue:check": "tsx scripts/gen-agent-catalogue.ts --check"
   },
   "dependencies": {
     "franc": "^6.2.0",

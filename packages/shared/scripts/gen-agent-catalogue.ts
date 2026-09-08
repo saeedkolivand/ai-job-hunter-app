@@ -1,0 +1,669 @@
+/**
+ * Agent-CLI command catalogue — the declared input contract every dispatchable command carries on
+ * the generic `agent call`/MCP `call-*` tier (issues #1163, #1158, #1160).
+ *
+ * Two sources of truth, both already authoritative for something else, so this generator invents
+ * no new one:
+ *   - `apps/desktop/src/tauri-client/namespaces/**\/*.ts` — the `invoke('<cmd>', { ... })` call
+ *     sites ARE the wire shape the app actually receives (shorthand/explicit top-level keys,
+ *     required-ness read off the calling function's own parameter type).
+ *   - `packages/shared/src/ipc/contracts/*.ts` — the TSDoc on the matching contract member (one
+ *     sentence, via the SAME `summarize`/`docOf` `gen-api-docs.mjs` already uses for `docs/API.md`,
+ *     imported rather than copied), plus, for a wrapper key typed as a generated Zod request
+ *     schema or a plain contract interface, that type's own field names.
+ *
+ * Emits `apps/desktop/src-tauri/src/extension_bridge/agent_cli/catalogue.rs` (the aggregator —
+ * struct defs, the `CATALOGUE`/`UNCATALOGUED` consts) plus its sibling `catalogue/shard_*.rs`
+ * files (the actual entry data, split to stay under this crate's R8 hard LOC cap — see
+ * `renderAggregator`'s own doc). Read by `agent_call.rs`'s dispatch-time key validation and by the
+ * MCP `commands` tool (`args`/`description`). A construct this generator does not understand (a
+ * computed key, a spread, a non-literal command name, a non-object second argument) is listed in
+ * `UNCATALOGUED` rather than guessed at — ponytail: no attempt to resolve a dynamic key or a
+ * renamed variable's shape.
+ *
+ * Run `pnpm gen:agent-catalogue` to regenerate, or `pnpm gen:agent-catalogue --check` to fail when
+ * the committed output is stale (used in CI, same shape as `gen:ipc:check`).
+ */
+import { execFileSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { z } from 'zod';
+
+// Reused, never copied — the exact TSDoc-extraction/summary logic `docs/API.md` is built from.
+// `ts` ITSELF is reused from here too, not imported bare (`import ts from 'typescript'`):
+// this file lives under `packages/shared/scripts/`, whose nearest `typescript` devDependency is
+// pinned to v7 (no classic Compiler API — see `gen-api-docs.mjs`'s own re-export comment), while
+// `gen-api-docs.mjs` lives at the repo root, where the classic-API v6 line is pinned. Node/tsx
+// resolve a bare specifier by the IMPORTING FILE's own location, so a second `import ts from
+// 'typescript'` here would silently resolve the WRONG, incompatible package.
+import {
+  abs,
+  docOf,
+  fail as apiFail,
+  INDEX_FILE,
+  isExported,
+  namespaceMap,
+  parseContractFiles,
+  repoPath,
+  summarize,
+  ts,
+} from '../../../scripts/gen-api-docs.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(HERE, '../../..');
+const TAURI_CLIENT_DIR = 'apps/desktop/src/tauri-client/namespaces';
+const SCHEMAS_INDEX = 'packages/shared/src/schemas/index.ts';
+const OUT_FILE = 'apps/desktop/src-tauri/src/extension_bridge/agent_cli/catalogue.rs';
+// Sharded (see `renderShardFile`'s own doc for why): the aggregator's sibling `catalogue/`
+// directory, matching this repo's `foo.rs` + `foo/*.rs` submodule-file convention.
+const SHARD_DIR = 'apps/desktop/src-tauri/src/extension_bridge/agent_cli/catalogue';
+/** Rendered LOC per shard this generator targets — see `shardEntries`'s own doc. Comfortably
+ *  under `docs/architecture-rules.md`'s R8 hard cap (1400) even as the catalogue grows. */
+const SHARD_LINE_BUDGET = 500;
+
+function fail(message: string): never {
+  apiFail(`gen:agent-catalogue — ${message}`);
+  throw new Error('unreachable'); // apiFail always throws; satisfies TS's `never` inference.
+}
+
+// ── Contract descriptions (namespace + method -> first TSDoc sentence) ────────────────────────
+
+interface DescCtx {
+  namespaces: Map<string, string>;
+  decls: Map<string, { file: string; sf: ts.SourceFile; node: ts.Node }>;
+}
+
+function collectContractDescriptions(): DescCtx {
+  const sources = parseContractFiles();
+  const indexSf = sources.get(repoPath(INDEX_FILE));
+  if (!indexSf) fail(`${repoPath(INDEX_FILE)} not found`);
+  const namespaces = namespaceMap(indexSf);
+  const decls = new Map<string, { file: string; sf: ts.SourceFile; node: ts.Node }>();
+  for (const [file, sf] of sources) {
+    if (file === repoPath(INDEX_FILE)) continue;
+    for (const stmt of sf.statements) {
+      if (
+        (ts.isInterfaceDeclaration(stmt) || ts.isTypeAliasDeclaration(stmt)) &&
+        isExported(stmt)
+      ) {
+        decls.set(stmt.name.text, { file, sf, node: stmt });
+      }
+    }
+  }
+  return { namespaces, decls };
+}
+
+/** First TSDoc sentence for `<namespace>.<method>`, or `''` when there is none to find. */
+function describe(ctx: DescCtx, namespace: string, method: string): string {
+  const contractName = ctx.namespaces.get(namespace);
+  if (!contractName) return '';
+  const contract = ctx.decls.get(contractName);
+  if (!contract || !ts.isInterfaceDeclaration(contract.node)) return '';
+  const member = contract.node.members.find((m) => m.name?.getText(contract.sf) === method);
+  if (!member) return '';
+  return summarize(docOf(member, contract.sf));
+}
+
+// ── Nested field names for a wrapper key's type ────────────────────────────────────────────────
+
+/** `TypeName -> SchemaConstName`, read from every `export type X = z.infer<typeof Y>;` in
+ *  `packages/shared/src/schemas/index.ts` — the one naming convention every generated Zod request
+ *  type in this repo follows (verified: 25/25 `z.infer` type aliases there match it). */
+function collectZodTypeAliases(sf: ts.SourceFile): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const stmt of sf.statements) {
+    if (!ts.isTypeAliasDeclaration(stmt) || !isExported(stmt)) continue;
+    const t = stmt.type;
+    if (!ts.isTypeReferenceNode(t) || t.typeName.getText(sf) !== 'z.infer') continue;
+    const arg = t.typeArguments?.[0];
+    if (!arg || !ts.isTypeQueryNode(arg)) continue;
+    map.set(stmt.name.text, arg.exprName.getText(sf));
+  }
+  return map;
+}
+
+/** Flat top-level member names of every exported interface declared directly in an
+ *  `ipc/contracts/*.ts` file (never Zod-derived) — the second convention a wrapper key's type can
+ *  follow, e.g. `BaseExportRequest`/`TemplateRecommendSignals`. */
+function collectContractInterfaceFields(
+  sources: Map<string, ts.SourceFile>
+): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const [, sf] of sources) {
+    for (const stmt of sf.statements) {
+      if (!ts.isInterfaceDeclaration(stmt) || !isExported(stmt)) continue;
+      const fields = stmt.members.filter(ts.isPropertySignature).map((m) => m.name.getText(sf));
+      map.set(stmt.name.text, fields);
+    }
+  }
+  return map;
+}
+
+interface FieldSources {
+  zodAliases: Map<string, string>;
+  zodSchemas: Record<string, unknown>;
+  interfaceFields: Map<string, string[]>;
+}
+
+/** Nested field names for a wrapper key typed as `typeName`, or `undefined` when this generator
+ *  cannot resolve that type's shape (not an error — see the module doc: only a top-level construct
+ *  it cannot parse at all is fatal). */
+function resolveNestedFields(sources: FieldSources, typeName: string): string[] | undefined {
+  const schemaName = sources.zodAliases.get(typeName);
+  if (schemaName) {
+    const schema = sources.zodSchemas[schemaName];
+    if (schema instanceof z.ZodObject) {
+      return Object.keys(schema.shape);
+    }
+  }
+  return sources.interfaceFields.get(typeName);
+}
+
+// ── Parsing the tauri-client invoke() call sites ───────────────────────────────────────────────
+
+interface CatalogueArg {
+  name: string;
+  required: boolean;
+  fields: string[] | undefined;
+}
+
+interface CatalogueEntry {
+  command: string;
+  description: string;
+  args: CatalogueArg[];
+}
+
+/** Every parameter of `fn` (both a plain identifier and a destructured `{ ... }` one) that could
+ *  bind `name`, paired with what its OWN type annotation says about it. */
+function findParamBinding(
+  fn: ts.FunctionLikeDeclarationBase,
+  name: string
+): { questionOrDefault: boolean; typeName: string | undefined } | undefined {
+  for (const param of fn.parameters) {
+    if (ts.isIdentifier(param.name) && param.name.text === name) {
+      const typeName =
+        param.type && ts.isTypeReferenceNode(param.type) && param.type.typeArguments === undefined
+          ? param.type.typeName.getText()
+          : undefined;
+      return {
+        questionOrDefault: Boolean(param.questionToken) || Boolean(param.initializer),
+        typeName,
+      };
+    }
+    if (ts.isObjectBindingPattern(param.name)) {
+      const el = param.name.elements.find(
+        (e) => ts.isIdentifier(e.name) && e.name.text === name && !e.dotDotDotToken
+      );
+      if (!el) continue;
+      const propName = (el.propertyName ?? el.name) as ts.Identifier;
+      if (el.initializer) {
+        return { questionOrDefault: true, typeName: undefined };
+      }
+      if (param.type && ts.isTypeLiteralNode(param.type)) {
+        const member = param.type.members.find(
+          (m) => ts.isPropertySignature(m) && m.name.getText() === propName.text
+        ) as ts.PropertySignature | undefined;
+        const memberType = member?.type;
+        const typeName =
+          memberType && ts.isTypeReferenceNode(memberType) && memberType.typeArguments === undefined
+            ? memberType.typeName.getText()
+            : undefined;
+        return { questionOrDefault: Boolean(member?.questionToken), typeName };
+      }
+      // A destructured parameter with no inline `{ ... }` type literal (e.g. a named type
+      // reference) — this generator does not resolve a member's own optionality through it;
+      // the documented heuristic below defaults such a key to required.
+      return { questionOrDefault: false, typeName: undefined };
+    }
+  }
+  return undefined;
+}
+
+/** The nearest enclosing function-like node — the property's own value is one in every real
+ *  call site this repo has (an arrow function), but the walk is generic rather than assuming it. */
+function enclosingFunction(node: ts.Node): ts.FunctionLikeDeclarationBase | undefined {
+  let cur: ts.Node | undefined = node;
+  while (cur) {
+    if (ts.isArrowFunction(cur) || ts.isFunctionExpression(cur) || ts.isFunctionDeclaration(cur)) {
+      return cur;
+    }
+    cur = cur.parent;
+  }
+  return undefined;
+}
+
+type Uncatalogued = { command: string; reason: string };
+
+/** Parse one `invoke(...)` call's arguments into catalogue args, or record it as uncatalogued.
+ *  `null` return means "recorded as uncatalogued; nothing to add to the entry map". */
+function parseInvokeCall(
+  call: ts.CallExpression,
+  sf: ts.SourceFile,
+  sources: FieldSources,
+  uncatalogued: Uncatalogued[]
+): { command: string; args: CatalogueArg[] } | null {
+  const cmdArg = call.arguments[0];
+  if (!cmdArg || !ts.isStringLiteral(cmdArg)) {
+    // No command name to even file this under — nothing informative to record.
+    return null;
+  }
+  const command = cmdArg.text;
+  const argsArg = call.arguments[1];
+  if (!argsArg) return { command, args: [] };
+
+  if (!ts.isObjectLiteralExpression(argsArg)) {
+    uncatalogued.push({ command, reason: 'second invoke() argument is not an object literal' });
+    return null;
+  }
+
+  const fn = enclosingFunction(call);
+  const args: CatalogueArg[] = [];
+  for (const prop of argsArg.properties) {
+    if (ts.isSpreadAssignment(prop)) {
+      uncatalogued.push({ command, reason: 'spread in the invoke() args object' });
+      return null;
+    }
+    if (!prop.name || ts.isComputedPropertyName(prop.name)) {
+      uncatalogued.push({ command, reason: 'computed key in the invoke() args object' });
+      return null;
+    }
+    const key = prop.name.getText(sf);
+
+    let valueName: string | undefined;
+    if (ts.isShorthandPropertyAssignment(prop)) {
+      valueName = prop.name.text;
+    } else if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.initializer)) {
+      valueName = prop.initializer.text;
+    }
+    // A literal/expression value (e.g. `boardId: 'linkedin'`) has no parameter to look up —
+    // it is always sent, so the documented heuristic's default (required) is exactly right.
+    const binding = valueName && fn ? findParamBinding(fn, valueName) : undefined;
+    const required = !binding?.questionOrDefault;
+    const fields = binding?.typeName ? resolveNestedFields(sources, binding.typeName) : undefined;
+    args.push({ name: key, required, fields });
+  }
+  return { command, args };
+}
+
+/** Every `invoke(...)` call anywhere in `node`'s subtree — regardless of type-argument shape, so
+ *  `invoke<Foo>('x', ...)` and a multi-line generic are both found (the reason this walks the real
+ *  AST rather than a regex). */
+function findInvokeCalls(node: ts.Node): ts.CallExpression[] {
+  const found: ts.CallExpression[] = [];
+  const visit = (n: ts.Node) => {
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'invoke') {
+      found.push(n);
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(node);
+  return found;
+}
+
+function processNamespaceFile(
+  file: string,
+  descCtx: DescCtx,
+  fieldSources: FieldSources,
+  entries: Map<string, CatalogueEntry>,
+  uncatalogued: Uncatalogued[]
+) {
+  const namespace = file.split('/').slice(-2, -1)[0] ?? '';
+  const text = readFileSync(abs(file), 'utf8');
+  const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+
+  const mainConst = sf.statements.find(
+    (s): s is ts.VariableStatement =>
+      ts.isVariableStatement(s) &&
+      isExported(s) &&
+      s.declarationList.declarations.some(
+        (d) => d.initializer && ts.isObjectLiteralExpression(d.initializer)
+      )
+  );
+  if (!mainConst) return;
+  const decl = mainConst.declarationList.declarations.find(
+    (d) => d.initializer && ts.isObjectLiteralExpression(d.initializer)
+  );
+  const obj = decl?.initializer as ts.ObjectLiteralExpression | undefined;
+  if (!obj) return;
+
+  for (const method of obj.properties) {
+    if (!method.name || ts.isComputedPropertyName(method.name)) continue;
+    const methodName = method.name.getText(sf);
+    const calls = findInvokeCalls(method);
+    for (const call of calls) {
+      const parsed = parseInvokeCall(call, sf, fieldSources, uncatalogued);
+      if (!parsed || entries.has(parsed.command)) continue;
+      entries.set(parsed.command, {
+        command: parsed.command,
+        description: describe(descCtx, namespace, methodName),
+        args: parsed.args,
+      });
+    }
+  }
+}
+
+// ── Rust emission ───────────────────────────────────────────────────────────────────────────────
+
+function rustStr(s: string): string {
+  const escaped = s
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
+  return `"${escaped}"`;
+}
+
+function rustStrSlice(items: string[]): string {
+  return items.length === 0 ? '&[]' : `&[${items.map(rustStr).join(', ')}]`;
+}
+
+/** One `CatalogueEntry` struct literal's own Rust lines — used both to RENDER a shard file and to
+ *  MEASURE how many lines an entry costs while packing shards (`shardEntries`), so the two can
+ *  never disagree about an entry's size. */
+function renderEntryLines(entry: CatalogueEntry): string[] {
+  const lines: string[] = ['    CatalogueEntry {'];
+  lines.push(`        command: ${rustStr(entry.command)},`);
+  lines.push(`        description: ${rustStr(entry.description)},`);
+  if (entry.args.length === 0) {
+    lines.push('        args: &[],');
+  } else {
+    lines.push('        args: &[');
+    for (const arg of entry.args) {
+      lines.push(
+        `            CatalogueArg { name: ${rustStr(arg.name)}, required: ${arg.required}, fields: ${rustStrSlice(arg.fields ?? [])} },`
+      );
+    }
+    lines.push('        ],');
+  }
+  lines.push('    },');
+  return lines;
+}
+
+/** Greedily pack `entries` (already sorted) into shards, each capped at [`SHARD_LINE_BUDGET`]
+ *  rendered lines — never a fixed shard COUNT, which would need bumping by hand as the catalogue
+ *  grows, and never a fixed entries-per-shard count, which a few arg-heavy commands could blow
+ *  past the LOC cap despite looking "even" by entry count. This is pure DATA (a `CatalogueEntry`/
+ *  `CatalogueArg` struct literal), not logic that could be reorganized to fit this crate's own R8
+ *  hard LOC cap (`docs/architecture-rules.md`) another way: rustfmt's own default `struct_lit_width`
+ *  (18, far below any entry rendered here) forces one field per line regardless of how short the
+ *  whole literal is, so a single ~160-command file cannot fit under the cap at all. Mirrors
+ *  `ipc_contracts`' own per-domain file split (`gen-ipc-rust.ts`'s `MODULES`), sized by LINE BUDGET
+ *  instead of by domain since this table has no natural per-domain boundary of its own. */
+function shardEntries(entries: CatalogueEntry[]): CatalogueEntry[][] {
+  const shards: CatalogueEntry[][] = [];
+  let current: CatalogueEntry[] = [];
+  let currentLines = 0;
+  for (const entry of entries) {
+    const entryLineCount = renderEntryLines(entry).length;
+    if (current.length > 0 && currentLines + entryLineCount > SHARD_LINE_BUDGET) {
+      shards.push(current);
+      current = [];
+      currentLines = 0;
+    }
+    current.push(entry);
+    currentLines += entryLineCount;
+  }
+  if (current.length > 0) shards.push(current);
+  return shards;
+}
+
+function shardFileName(shardNumber: number): string {
+  return `shard_${shardNumber}.rs`;
+}
+
+function renderShardFile(
+  shardNumber: number,
+  shardCount: number,
+  entries: CatalogueEntry[]
+): string {
+  const lines: string[] = [
+    '// @generated by `pnpm gen:agent-catalogue` — DO NOT EDIT BY HAND.',
+    `// Shard ${shardNumber} of ${shardCount} of the sharded command catalogue — see`,
+    "// `../catalogue.rs`'s own doc for why this table is split at all.",
+    '',
+    'use super::{CatalogueArg, CatalogueEntry};',
+    '',
+    'pub(super) const ENTRIES: &[CatalogueEntry] = &[',
+  ];
+  for (const entry of entries) lines.push(...renderEntryLines(entry));
+  lines.push('];');
+  lines.push('');
+  return lines.join('\n');
+}
+
+function renderAggregator(
+  shardCount: number,
+  totalEntries: number,
+  uncataloguedNames: string[]
+): string {
+  const lines: string[] = [
+    '// @generated by `pnpm gen:agent-catalogue` — DO NOT EDIT BY HAND.',
+    '// Source of truth: apps/desktop/src/tauri-client/namespaces/**/*.ts (argument shape)',
+    '//   + packages/shared/src/ipc/contracts/*.ts (description).',
+    '// Generator: packages/shared/scripts/gen-agent-catalogue.ts. Run `pnpm gen:agent-catalogue`.',
+    '// CI runs `pnpm gen:agent-catalogue:check` to catch drift.',
+    '//',
+    `// ${totalEntries} commands catalogued across ${shardCount} shard file(s) (catalogue/shard_*.rs),`,
+    `// ${uncataloguedNames.length} uncatalogued (see UNCATALOGUED below).`,
+    '//',
+    "// Sharded rather than one big const array — this crate's own R8 hard LOC cap",
+    "// (docs/architecture-rules.md) has no exception for generated DATA, and rustfmt's own default",
+    '// `struct_lit_width` forces one field per line regardless of how short the whole literal is,',
+    "// so this file's size scales with the command count with no upper bound this generator",
+    '// controls. A `LazyLock<Vec<_>>` — never a `const` array-concat, which Rust cannot express',
+    '// across separately-compiled const items without an allocation — is transparent to every call',
+    '// site: `Deref<Target = Vec<CatalogueEntry>>` -> `Deref<Target = [CatalogueEntry]>` means',
+    '// `CATALOGUE.iter()`/`.find(...)` read exactly as they would against a plain slice.',
+    '',
+    'use std::sync::LazyLock;',
+    '',
+  ];
+  for (let n = 1; n <= shardCount; n++) lines.push(`mod shard_${n};`);
+  lines.push('');
+  lines.push(
+    '/// One declared argument of a [`CatalogueEntry`] — a top-level `--input`/`input` key exactly',
+    '/// as the tauri-client sends it, whether it is required, and — for a wrapper key typed as a',
+    "/// generated request struct or a plain contract interface — that type's own field names, so a",
+    '/// nested unknown field is catchable too.',
+    '#[derive(Clone, Copy)]',
+    'pub(crate) struct CatalogueArg {',
+    "    pub(crate) name: &'static str,",
+    '    pub(crate) required: bool,',
+    "    pub(crate) fields: &'static [&'static str],",
+    '}',
+    ''
+  );
+  lines.push(
+    "/// One dispatchable command's declared input contract (issues #1163, #1158, #1160).",
+    '#[derive(Clone, Copy)]',
+    'pub(crate) struct CatalogueEntry {',
+    "    pub(crate) command: &'static str,",
+    "    pub(crate) description: &'static str,",
+    "    pub(crate) args: &'static [CatalogueArg],",
+    '}',
+    ''
+  );
+  lines.push(
+    "/// The full catalogue, assembled from every shard's own `ENTRIES` at first access — see this",
+    "/// file's own header comment for why a `LazyLock<Vec<_>>` and not a plain `const` slice.",
+    'pub(crate) static CATALOGUE: LazyLock<Vec<CatalogueEntry>> = LazyLock::new(|| {',
+    `    let mut entries = Vec::with_capacity(${totalEntries});`
+  );
+  for (let n = 1; n <= shardCount; n++) {
+    lines.push(`    entries.extend_from_slice(shard_${n}::ENTRIES);`);
+  }
+  lines.push('    entries', '});', '');
+  lines.push(
+    '/// Commands with at least one `invoke()` call this generator could not parse with confidence'
+  );
+  lines.push(
+    '/// (a computed key, a spread, a non-literal command name, or a non-object second argument) —'
+  );
+  lines.push(
+    '/// listed rather than silently dropped. A command with NO `invoke()` call at all (zero'
+  );
+  lines.push(
+    "/// renderer references — see `policy.rs`'s own module doc) is absent from here too; the"
+  );
+  lines.push(
+    '/// coverage test pairs both arrays with a hand-written allowlist for exactly that case.'
+  );
+  lines.push(
+    '// Read only from `#[cfg(test)]` code today (the coverage test above) — a plain, non-test',
+    '// `cargo check --lib` sees no reader at all, so this stays legitimately unused OUTSIDE tests',
+    "// (never a silenced real finding — the RUST equivalent of `policy.rs`'s own module-level",
+    '// allow).'
+  );
+  lines.push('#[allow(dead_code)]');
+  lines.push('pub(crate) const UNCATALOGUED: &[&str] = &[');
+  for (const name of uncataloguedNames) lines.push(`    ${rustStr(name)},`);
+  lines.push('];');
+  lines.push('');
+  return lines.join('\n');
+}
+
+/** Shells out to the REAL `rustfmt` — deliberately not a hand-rolled approximation of its
+ *  wrapping heuristics the way `gen-ipc-rust.ts`'s array emitter is (that file's own doc walks
+ *  through why: verified-against-one-version heuristics for a handful of primitive-array shapes).
+ *  This generator's struct-literal nesting (`CatalogueEntry` containing a `CatalogueArg` slice)
+ *  is a shape rustfmt's own struct-literal/array heuristics interact on, and getting that
+ *  interaction wrong silently would mean a correctly-run `gen:agent-catalogue` still failing its
+ *  own `--check` after `cargo fmt --all` — worse than the one extra process spawn this costs.
+ *  `pnpm gen:agent-catalogue:check` (CI) installs the `rustfmt` component before calling this;
+ *  local dev already has it via the pinned toolchain. */
+function formatWithRustfmt(source: string): string {
+  return execFileSync('rustfmt', ['--edition', '2024', '--emit', 'stdout'], {
+    input: source,
+    encoding: 'utf8',
+  });
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────────────────────
+
+async function main() {
+  const descCtx = collectContractDescriptions();
+
+  const schemasSf = ts.createSourceFile(
+    SCHEMAS_INDEX,
+    readFileSync(abs(SCHEMAS_INDEX), 'utf8'),
+    ts.ScriptTarget.Latest,
+    true
+  );
+  const zodAliases = collectZodTypeAliases(schemasSf);
+  const zodSchemas = (await import('../src/schemas/index.js')) as unknown as Record<
+    string,
+    unknown
+  >;
+
+  const contractSources = parseContractFiles();
+  const interfaceFields = collectContractInterfaceFields(contractSources);
+  const fieldSources: FieldSources = { zodAliases, zodSchemas, interfaceFields };
+
+  const entries = new Map<string, CatalogueEntry>();
+  const uncatalogued: Uncatalogued[] = [];
+
+  const nsDir = abs(TAURI_CLIENT_DIR);
+  for (const dirName of readdirSync(nsDir)) {
+    const dirPath = join(nsDir, dirName);
+    if (!statSync(dirPath).isDirectory()) continue;
+    for (const f of readdirSync(dirPath)) {
+      if (f === 'index.ts' || f.endsWith('.test.ts') || !f.endsWith('.ts')) continue;
+      processNamespaceFile(
+        repoPath(join(dirPath, f)),
+        descCtx,
+        fieldSources,
+        entries,
+        uncatalogued
+      );
+    }
+  }
+
+  const uncataloguedNames = [...new Set(uncatalogued.map((u) => u.command))].sort();
+  for (const cmd of uncataloguedNames) entries.delete(cmd);
+
+  const sortedEntries = [...entries.values()].sort((a, b) => a.command.localeCompare(b.command));
+  const shards = shardEntries(sortedEntries);
+
+  // `(repo-relative path, formatted content)` for the aggregator AND every shard — one list, so
+  // the write/check loops below can never drift from what was actually rendered.
+  const outputs: [string, string][] = [
+    [
+      OUT_FILE,
+      formatWithRustfmt(renderAggregator(shards.length, sortedEntries.length, uncataloguedNames)),
+    ],
+  ];
+  shards.forEach((shard, i) => {
+    const shardNumber = i + 1;
+    outputs.push([
+      join(SHARD_DIR, shardFileName(shardNumber)),
+      formatWithRustfmt(renderShardFile(shardNumber, shards.length, shard)),
+    ]);
+  });
+
+  // Shard files left over from a run that produced MORE shards than this one (the catalogue
+  // shrank) — deleted rather than left as stale, since a `mod shard_N;` that no longer exists in
+  // the aggregator would otherwise leave an orphaned, unreferenced file behind forever.
+  const shardDirAbs = abs(SHARD_DIR);
+  const currentShardFileNames = new Set(outputs.map(([p]) => basename(p)));
+  const staleShardFiles = existsSync(shardDirAbs)
+    ? readdirSync(shardDirAbs).filter(
+        (f) => f.startsWith('shard_') && f.endsWith('.rs') && !currentShardFileNames.has(f)
+      )
+    : [];
+
+  const check = process.argv.includes('--check');
+  if (check) {
+    let stale = staleShardFiles.length > 0;
+    for (const [relPath, formatted] of outputs) {
+      const target = join(REPO_ROOT, relPath);
+      let current = '';
+      try {
+        current = readFileSync(target, 'utf8');
+      } catch {
+        // file doesn't exist yet — current stays ''
+      }
+      if (current !== formatted) stale = true;
+    }
+    if (stale) {
+      console.error(`✗ stale: ${OUT_FILE} (or its shards) — run \`pnpm gen:agent-catalogue\``);
+      process.exit(1);
+    }
+    console.log(
+      `✓ ${OUT_FILE} + ${shards.length} shard(s) are up to date (${sortedEntries.length} commands catalogued)`
+    );
+    return;
+  }
+
+  mkdirSync(shardDirAbs, { recursive: true });
+  for (const staleFile of staleShardFiles) unlinkSync(join(shardDirAbs, staleFile));
+  for (const [relPath, formatted] of outputs) {
+    writeFileSync(join(REPO_ROOT, relPath), formatted);
+  }
+  console.log(
+    `✓ wrote ${OUT_FILE} + ${shards.length} shard(s) — ${sortedEntries.length} commands catalogued, ` +
+      `${uncataloguedNames.length} uncatalogued`
+  );
+  if (uncatalogued.length > 0) {
+    for (const u of uncatalogued) console.log(`  uncatalogued: ${u.command} — ${u.reason}`);
+  }
+}
+
+try {
+  await main();
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  const roots = [REPO_ROOT, REPO_ROOT.split('\\').join('/')];
+  console.error(roots.reduce((text, root) => text.split(root).join('.'), message));
+  process.exitCode = 1;
+}
