@@ -307,26 +307,55 @@ struct AgentJob {
 /// content (wire-error discipline, matches every other verb in this bridge).
 const JOB_NOT_FOUND_MESSAGE: &str = "no job found for this url";
 
+/// Fixed detail attached to [`JOB_NOT_FOUND_MESSAGE`] (issue #1166) — names
+/// where a caller that still misses can read the url the app actually
+/// stored, rather than being left at a dead end.
+const JOB_NOT_FOUND_DETAIL: &str =
+    "the stored url for a posting can be read from the `best-matches` or `found-jobs` resource";
+
 /// Pure core of the `job` resource: find the first `FoundJob` across every
 /// (non-filtered — every status, not just active) autopilot record whose
-/// normalized url matches, then project it. Mirrors
-/// `applied_check::resolve_applied_check`'s pure/impure split — directly
-/// unit-testable with hand-built `Autopilot` records, no `AppHandle`.
+/// identity matches, then project it. Mirrors `applied_check::
+/// resolve_applied_check`'s pure/impure split — directly unit-testable with
+/// hand-built `Autopilot` records, no `AppHandle`.
 ///
-/// Both sides of the compare run through
+/// Two independent compares, either one wins (issue #1166):
+///
+/// 1. **Identity** — `caller_identity` (already extracted from the raw
+///    caller url by [`job_resource`] via
+///    [`crate::scraping::scrape_url::job_identity`]) against the SAME
+///    extraction run on each stored url. This is what makes
+///    `de.linkedin.com/jobs/view/<id>`, `www.linkedin.com/jobs/view/<id>`,
+///    the numeric-only and slugged `/jobs/view/` forms, and the
+///    `currentJobId=<id>` query form all resolve to one posting — none of
+///    that is a byte-for-byte url difference the string compare below could
+///    ever bridge.
+/// 2. **Normalized string** — the pre-#1166 fallback, unchanged, for boards
+///    with no stable id space.
+///
+/// Both sides of BOTH compares run through
 /// [`decode_unreserved`](crate::applications::decode_unreserved) first (issue
 /// #1128): a STORED url can carry the percent-encoded spelling just as easily
 /// as a caller-supplied one, so decoding only the caller's half would fix the
 /// reported direction and leave the mirror image broken. `normalized_url` is
 /// pre-decoded by [`job_resource`]; this is the stored half.
-fn resolve_job(records: &[crate::autopilot::Autopilot], normalized_url: &str) -> AppResult<Value> {
+fn resolve_job(
+    records: &[crate::autopilot::Autopilot],
+    caller_identity: Option<(&'static str, String)>,
+    normalized_url: &str,
+) -> AppResult<Value> {
     let found = records
         .iter()
         .find_map(|ap| {
             ap.found_jobs.iter().find(|j| {
-                crate::applications::normalize_job_url(&crate::applications::decode_unreserved(
-                    &j.url,
-                )) == normalized_url
+                let decoded = crate::applications::decode_unreserved(&j.url);
+                if let Some(caller) = &caller_identity {
+                    if crate::scraping::scrape_url::job_identity(&decoded).as_ref() == Some(caller)
+                    {
+                        return true;
+                    }
+                }
+                crate::applications::normalize_job_url(&decoded) == normalized_url
             })
         })
         .ok_or_else(|| AppError::Validation(JOB_NOT_FOUND_MESSAGE.to_string()))?;
@@ -632,6 +661,17 @@ fn job_lookup_key(raw_url: &str) -> String {
     crate::applications::normalize_job_url(canonical.as_deref().unwrap_or(&decoded))
 }
 
+/// The CALLER side of [`resolve_job`]'s identity compare (issue #1166) — the
+/// identity counterpart to [`job_lookup_key`]'s normalized-string caller key,
+/// run over the SAME unreserved-decoded input so a percent-escaped LinkedIn
+/// slug still extracts the same id [`resolve_job`]'s stored-side extraction
+/// computes. `None` for a board with no stable id space (or an unparseable
+/// url) — [`resolve_job`] falls back to the normalized-string compare then.
+fn job_caller_identity(raw_url: &str) -> Option<(&'static str, String)> {
+    let decoded = crate::applications::decode_unreserved(raw_url);
+    crate::scraping::scrape_url::job_identity(&decoded)
+}
+
 fn job_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
     let raw_url = payload
         .get("url")
@@ -647,8 +687,9 @@ fn job_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
             "url is not a valid http(s) URL".to_string(),
         ));
     }
+    let caller_identity = job_caller_identity(raw_url);
     let records = list_autopilots(app)?;
-    resolve_job(&records, &normalized)
+    resolve_job(&records, caller_identity, &normalized)
 }
 
 fn automations_resource(app: &AppHandle) -> AppResult<Value> {
@@ -677,14 +718,35 @@ pub(super) fn resource_name(payload: &Value) -> &str {
         .unwrap_or("")
 }
 
+/// `(resource, fixed error sentinel) -> fixed detail`, for the handful of
+/// refusals whose caller needs a next step rather than a bare sentinel
+/// (issue #1166). Both sides of the match are compile-time constants, so
+/// this can never echo caller-supplied content into `detail`.
+fn error_detail(resource: &str, error: &str) -> Option<&'static str> {
+    match (resource, error) {
+        (RES_JOB, JOB_NOT_FOUND_MESSAGE) => Some(JOB_NOT_FOUND_DETAIL),
+        _ => None,
+    }
+}
+
 fn agent_result_reply(req_id: &str, resource: &str, outcome: AppResult<Value>) -> String {
     let payload = match outcome {
         Ok(data) => json!({ "ok": true, "resource": resource, "data": data }),
         // Wire-error discipline: `AppError`'s `Display` here is always a fixed
         // sentinel or an echo of the CALLER'S OWN `resource`/`url` input
         // (never path/PII content) — mirrors `advance_authenticated`'s
-        // "unknown message type" reply.
-        Err(e) => json!({ "ok": false, "resource": resource, "error": e.to_string() }),
+        // "unknown message type" reply. `detail` (issue #1166) is looked up
+        // off the SAME fixed sentinel — never dynamic content either — and
+        // omitted entirely when there is none, same shape as every other
+        // resource's success-only payload.
+        Err(e) => {
+            let error = e.to_string();
+            let mut payload = json!({ "ok": false, "resource": resource, "error": error });
+            if let Some(detail) = error_detail(resource, &error) {
+                payload["detail"] = json!(detail);
+            }
+            payload
+        }
     };
     json!({
         "type": super::msg::AGENT_RESULT,
