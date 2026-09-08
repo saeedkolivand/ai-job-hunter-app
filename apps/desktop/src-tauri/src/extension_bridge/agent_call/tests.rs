@@ -1656,6 +1656,37 @@ fn throttled_reply_carries_a_positive_retry_after_and_the_rate_limited_sentinel(
     assert_eq!(parsed["payload"]["command"], "autopilot_best_matches");
 }
 
+/// [A2-r2-AC-r2-1] `retryAfterMs` must be ABSENT (not present-as-`null`) on every
+/// non-throttle refusal — `call_result_reply` used to always insert the key,
+/// disagreeing with `agent_read::sentinel_refusal_reply`'s `extra` merge
+/// (`json!({})` for `bounded_result_reply`, i.e. no key at all). A client
+/// keying on `'retryAfterMs' in payload` must see the SAME presence/absence
+/// split on both tiers, or it waits 0 ms on a refusal that was never a
+/// throttle.
+#[test]
+fn a_non_throttle_refusal_never_carries_a_retry_after_key() {
+    let reply = origin_refused_reply(
+        "req-1",
+        &json!({ "namespace": "jobs", "command": "jobs_list" }),
+    );
+    let parsed: Value = serde_json::from_str(&reply).unwrap();
+    let payload = parsed["payload"].as_object().expect("payload is an object");
+    assert!(
+        !payload.contains_key("retryAfterMs"),
+        "a non-throttle refusal must omit `retryAfterMs` entirely, not set it to null: {payload:?}"
+    );
+
+    // The throttle refusal is the ONE case that carries the key, and it must
+    // be a real number, never null.
+    let throttled = throttled_reply(
+        "req-2",
+        &json!({ "namespace": "jobs", "command": "jobs_list" }),
+        1_000,
+    );
+    let parsed: Value = serde_json::from_str(&throttled).unwrap();
+    assert!(parsed["payload"]["retryAfterMs"].is_u64());
+}
+
 /// `&value[..REFUSAL_IDENT_CAP]` panics when the cap lands mid-codepoint, and
 /// release is `panic = "abort"` — inside a frame handler that is a silent
 /// process death, so the boundary walk is load-bearing, not tidiness. 256 is

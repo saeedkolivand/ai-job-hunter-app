@@ -237,7 +237,7 @@ use instructions::build_instructions;
 // input schema — lives in its own file for the same R8 reason; see
 // `mcp/schemas.rs`. Only the four items the protocol half calls are imported.
 mod schemas;
-use schemas::{proof_from, tool_for, tools, unavailable_reason};
+use schemas::{proof_from, tier_exposes, tool_for, tools, unavailable_reason};
 
 fn initialize_result(params: &Value, instructions: &str) -> Value {
     let requested = params.get("protocolVersion").and_then(Value::as_str);
@@ -321,11 +321,7 @@ fn commands_value(arguments: &Value, tier: Tier) -> Value {
             if agent_call::reshape::PAGINATED_LIST_COMMANDS.contains(&command) {
                 row["returns"] = json!(agent_call::reshape::PAGINATED_LIST_NOTE);
             }
-            let gate_open = match entry.effect {
-                Effect::Reversible => tier.allows_reversible(),
-                Effect::Irreversible(_) => tier.allows_irreversible(),
-                _ => true,
-            };
+            let gate_open = tier_exposes(tier, &entry.effect);
             match tool_for(&entry.effect) {
                 Some(tool) if gate_open => row["tool"] = json!(tool),
                 Some(_) => row["unavailable"] = json!(unavailable_reason(&entry.effect)),
@@ -516,13 +512,10 @@ fn local_call_refusal(tool_name: &str, verb: &Verb, tier: Tier) -> Option<Value>
     // this path runs under `panic = "abort"`, where a panic is a silent server death.
     let right_tool = tool_for(&entry.effect)?;
     if right_tool != tool_name {
-        // Same gate `commands_value` already applies per row (issue #1154) — reused here so the
-        // two can never disagree about which effects this Tier exposes.
-        let gate_open = match entry.effect {
-            Effect::Reversible => tier.allows_reversible(),
-            Effect::Irreversible(_) => tier.allows_irreversible(),
-            _ => true,
-        };
+        // [`tier_exposes`] — the SAME fn `commands_value` calls per row (issue #1154), not a
+        // second hand-typed copy, so the two can never disagree about which effects this Tier
+        // exposes.
+        let gate_open = tier_exposes(tier, &entry.effect);
         if !gate_open {
             return Some(json!({
                 "dispatched": false,

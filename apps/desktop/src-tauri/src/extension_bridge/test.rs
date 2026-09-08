@@ -600,11 +600,20 @@ fn bridge_state_agent_retry_after_ms_reads_the_same_bucket_try_acquire_agent_dre
         !s.try_acquire_agent("best-matches"),
         "burst exhausted — the wait must now be positive"
     );
-    assert_eq!(
-        s.agent_retry_after_ms("best-matches"),
-        (agent_read::AGENT_BEST_MATCHES_REFILL_SECS * 1000.0) as u64,
-        "must read the best-matches bucket's OWN (tighter) refill rate through the wiring, \
-         not a hardcoded/zero placeholder"
+    // [A2-r2-AC-r2-3] A RANGE, not `assert_eq!` — this value is `ceil(full_wait - elapsed)`
+    // against a real `Instant::now()` (no injected clock on `BridgeState`, unlike
+    // `agent_read`'s own bucket tests), so even a single scheduler preemption between the two
+    // `try_acquire_agent` calls above shaves whole milliseconds off it. The lower bound is still
+    // impossible for a hardcoded 0/1 ms placeholder, or the cheap bucket's unrelated 1000 ms
+    // refill, to satisfy — only the best-matches bucket's OWN (tighter) refill rate can land
+    // here.
+    let full_wait_ms = (agent_read::AGENT_BEST_MATCHES_REFILL_SECS * 1000.0) as u64;
+    let wait = s.agent_retry_after_ms("best-matches");
+    assert!(
+        wait > full_wait_ms.saturating_sub(1_000) && wait <= full_wait_ms,
+        "must read the best-matches bucket's OWN (tighter) refill rate through the wiring \
+         (expected in ({}, {full_wait_ms}], got {wait})",
+        full_wait_ms.saturating_sub(1_000)
     );
 }
 

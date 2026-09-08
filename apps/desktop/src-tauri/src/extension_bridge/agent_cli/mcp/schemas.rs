@@ -77,6 +77,21 @@ pub(super) fn tool_for(effect: &Effect) -> Option<&'static str> {
     }
 }
 
+/// Whether this server's [`Tier`] exposes an [`Effect`]'s own tool at all — `Read` and
+/// `NotExposed` are never gated (`NotExposed` has no tool to gate; a caller reaching this fn with
+/// it gets `true`, but nothing ever routes it here). Used by BOTH `commands_value` and
+/// `local_call_refusal` (issue #1154 A2-r2-AC-r2-2) — those two used to carry independent,
+/// hand-typed copies of this match with a comment claiming reuse that wasn't real; a future edit
+/// to one could put `commands` and the refusal back into disagreement about which effects a Tier
+/// exposes.
+pub(super) fn tier_exposes(tier: Tier, effect: &Effect) -> bool {
+    match effect {
+        Effect::Reversible => tier.allows_reversible(),
+        Effect::Irreversible(_) => tier.allows_irreversible(),
+        _ => true,
+    }
+}
+
 /// `commands`' `"unavailable"` text for a row whose tool exists but this server's [`Tier`] doesn't
 /// expose it. Only reached where [`tool_for`] returned `Some` and that gate is closed — `Read` is
 /// never gated and `NotExposed` never reaches here.

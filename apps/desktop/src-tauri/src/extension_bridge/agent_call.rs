@@ -426,17 +426,26 @@ fn call_result_reply(
             "command": command,
             "data": data,
         }),
-        Err(refusal) => json!({
-            "dispatched": false,
-            "namespace": namespace,
-            "command": command,
-            "error": refusal.sentinel(),
-            "detail": refusal.detail(),
-            "retryAfterMs": match &refusal {
-                Refusal::RateLimited { retry_after_ms } => Some(*retry_after_ms),
-                _ => None,
-            },
-        }),
+        Err(refusal) => {
+            let mut payload = json!({
+                "dispatched": false,
+                "namespace": namespace,
+                "command": command,
+                "error": refusal.sentinel(),
+                "detail": refusal.detail(),
+            });
+            // `retryAfterMs` present ONLY on the throttle refusal (issue
+            // #1155) — matching `agent_read::sentinel_refusal_reply`'s
+            // `extra` merge, which likewise omits the key entirely for
+            // every other refusal. A client keying on presence
+            // (`if ('retryAfterMs' in p) wait(...)`) must see the SAME
+            // presence/absence split on both tiers; an always-present
+            // `null` would make it wait 0 ms on a non-throttle refusal.
+            if let Refusal::RateLimited { retry_after_ms } = &refusal {
+                payload["retryAfterMs"] = json!(retry_after_ms);
+            }
+            payload
+        }
     };
     json!({
         "type": super::msg::AGENT_CALL_RESULT,

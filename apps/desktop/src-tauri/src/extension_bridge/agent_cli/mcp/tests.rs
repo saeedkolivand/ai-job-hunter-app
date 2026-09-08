@@ -1831,6 +1831,70 @@ fn every_policy_row_is_routed_to_exactly_one_call_tool_or_refused_everywhere_if_
     }
 }
 
+/// [A2-r2-AC-r2-2] The tier gate exercised across EVERY POLICY row at `Tier::Read` and
+/// `Tier::Reversible` too — the prior test only ran it at `Tier::Irreversible`, where the gate is
+/// always open by construction, so a divergence between `commands_value`'s gate and
+/// `local_call_refusal`'s gate could never show up there. Both now call the ONE shared
+/// [`tier_exposes`] (issue #1154), so this pins that `commands`' `"tool"`/`"unavailable"` split
+/// and the refusal's `tier_not_enabled`/`wrong_tool` split agree for every row, at every tier.
+#[test]
+fn the_tier_gate_agrees_between_commands_and_local_call_refusal_at_every_tier() {
+    for tier in [Tier::Read, Tier::Reversible, Tier::Irreversible] {
+        let commands = commands_value(&json!({}), tier);
+        let rows = commands["commands"].as_array().unwrap();
+        for entry in POLICY {
+            if let Effect::NotExposed(_) = entry.effect {
+                continue;
+            }
+            let (namespace, command) = agent_call::split_path(entry.path);
+            let right_tool = tool_for(&entry.effect).unwrap();
+            let gate_open = tier_exposes(tier, &entry.effect);
+
+            // `commands`' own row for this entry.
+            let row = rows
+                .iter()
+                .find(|r| r["namespace"] == namespace && r["command"] == command)
+                .unwrap_or_else(|| panic!("{}: missing from `commands` at {tier:?}", entry.path));
+            assert_eq!(
+                row.get("tool").is_some(),
+                gate_open,
+                "{}: `commands`' `tool` presence disagrees with tier_exposes at {tier:?}",
+                entry.path
+            );
+            assert_eq!(
+                row.get("unavailable").is_some(),
+                !gate_open,
+                "{}: `commands`' `unavailable` presence disagrees with tier_exposes at {tier:?}",
+                entry.path
+            );
+
+            // `local_call_refusal` called on a WRONG tool for this row.
+            let wrong_tool = [TOOL_CALL_READ, TOOL_CALL_REVERSIBLE, TOOL_CALL_IRREVERSIBLE]
+                .into_iter()
+                .find(|t| *t != right_tool)
+                .unwrap();
+            let verb = Verb::Call {
+                namespace: namespace.to_string(),
+                command: command.to_string(),
+                input: json!({}),
+                confirm: None,
+            };
+            let refusal = local_call_refusal(wrong_tool, &verb, tier)
+                .unwrap_or_else(|| panic!("{}: must refuse on the wrong tool", entry.path));
+            let expected_error = if gate_open {
+                "wrong_tool"
+            } else {
+                "tier_not_enabled"
+            };
+            assert_eq!(
+                refusal["error"], expected_error,
+                "{}: local_call_refusal disagrees with tier_exposes at {tier:?}",
+                entry.path
+            );
+        }
+    }
+}
+
 #[test]
 fn extension_bridge_status_the_token_row_refuses_locally_on_every_call_tool() {
     // The HIGH-1 row: it returns the plaintext pairing token verbatim. A cross-version peer (an
