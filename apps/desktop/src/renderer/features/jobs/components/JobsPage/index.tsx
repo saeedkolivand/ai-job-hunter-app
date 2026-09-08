@@ -95,7 +95,13 @@ export function JobsPage() {
     const form = useSessionStore.getState().jobs.scrapeForm;
     if (form.location) return;
     setJobs({
-      scrapeForm: { ...form, location: jobPrefs.location ?? '', countryCode: jobPrefs.countryCode },
+      scrapeForm: {
+        ...form,
+        location: jobPrefs.location ?? '',
+        // `?? undefined`: nullish on the wire (an explicit `null` clears it),
+        // optional-only on the scrape form.
+        countryCode: jobPrefs.countryCode ?? undefined,
+      },
     });
   }, [jobPrefs?.location, jobPrefs?.countryCode, setJobs]);
 

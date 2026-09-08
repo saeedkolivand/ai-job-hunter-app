@@ -53,10 +53,12 @@ export function JobLocationPreferences() {
     (loc) => loc.toLowerCase().includes(inputValue.toLowerCase()) && inputValue.length > 0
   );
 
+  // Guard the pre-load window: `jobPrefs` is undefined until the query resolves,
+  // so there is no loaded row to edit yet. The write itself merges over the
+  // stored row (omitted key = keep, explicit `null` = clear), so an omitted
+  // column is no longer at risk — but a handler firing off a blank row would
+  // still save an edit the user cannot see.
   const handleAddLocation = (loc: string) => {
-    // Guard the pre-load window: `jobPrefs` is undefined until the query
-    // resolves, and a full-row `{...undefined, location}` write would NULL every
-    // other column (techStack, countryCode, salaryExpectation, extraAgencyCompanies).
     if (!jobPrefs) return;
     setJobPreferences.mutate({
       ...jobPrefs,
@@ -71,9 +73,15 @@ export function JobLocationPreferences() {
 
   const handleRemoveLocation = () => {
     if (!jobPrefs) return;
+    // Explicit `null`, never `undefined`: the setter merges over the stored row
+    // and `JSON.stringify` drops undefined keys, so `location: undefined` reaches
+    // the backend as "location omitted" — i.e. keep it — and the remove silently
+    // no-ops. `countryCode` describes the location, so it clears with it (a
+    // leftover country would keep steering scrapes at a market the user removed).
     setJobPreferences.mutate({
       ...jobPrefs,
-      location: undefined,
+      location: null,
+      countryCode: null,
     });
   };
 
@@ -110,6 +118,7 @@ export function JobLocationPreferences() {
           <span className="flex-1 text-sm text-foreground">{jobPrefs.location}</span>
           <Button
             variant="ghost"
+            aria-label={t('settings.location.remove')}
             onClick={handleRemoveLocation}
             className="h-8 w-8 p-0 !bg-transparent hover:bg-foreground/[0.06]"
           >

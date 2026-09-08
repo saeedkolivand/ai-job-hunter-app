@@ -989,16 +989,25 @@ export const TechStackItemSchema = z.object({
   category: z.string().min(1),
 });
 
+// Payload of both `jobPreferences.get` and `jobPreferences.set`. The setter
+// MERGES over the stored row: an OMITTED key keeps its stored value, a key sent
+// as explicit `null` CLEARS that column. So `null` is the only way a caller can
+// clear a field — `undefined` is not a wire value (`JSON.stringify` drops the
+// key, which the merge reads as "leave it alone"), which is why the fields the
+// renderer clears are `.nullish()` rather than `.optional()`. Reads never carry
+// `null`: the Rust struct skips serializing its unset fields.
 export const JobPreferencesSchema = z.object({
-  location: z.string().optional(),
+  location: z.string().nullish(),
   // ISO 3166-1 alpha-2, captured alongside `location` from a picked geocode
   // suggestion (mirrors AutopilotTargetSchema.countryCode) — lets a seeded
   // location carry its real country instead of a scraper having to guess one.
+  // Cleared together with `location`: it describes that location and must never
+  // outlive it.
   countryCode: z
     .string()
     .trim()
     .regex(/^[A-Za-z]{2}$/)
-    .optional(),
+    .nullish(),
   techStack: z.array(TechStackItemSchema).optional(),
   // Backend-readable copy of the renderer's own `applicant.salaryExpectation`
   // (Task #30) — free text, no client-side length cap; the Rust store clamps

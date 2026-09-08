@@ -969,7 +969,8 @@
       "title": "Bevorzugter Standort",
       "description": "Legen Sie Ihren bevorzugten Job-Standort fest, um Suchergebnisse und Empfehlungen zu personalisieren.",
       "searchPlaceholder": "Standort suchen...",
-      "recent": "Kürzlich"
+      "recent": "Kürzlich",
+      "remove": "Standort entfernen"
     },
     "techStack": {
       "title": "Tech-Stack",
