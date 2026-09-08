@@ -8,6 +8,7 @@ fn job(board: Option<&str>, description: Option<&str>, url: &str) -> FoundJob {
         url: url.to_string(),
         location: None,
         board: board.map(str::to_string),
+        board_remote: false,
         description: description.map(str::to_string),
         salary_min: None,
         salary_max: None,

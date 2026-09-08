@@ -897,6 +897,11 @@ pub(crate) fn build_found_job(p: &JobPosting, resume: &str, found_at: u64) -> Fo
                 Some(s.to_string())
             }
         },
+        board_remote: p
+            .extra
+            .get("remote")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
         description: p.description.clone(),
         salary_min: p.extra.get("salaryMin").and_then(|v| v.as_f64()),
         salary_max: p.extra.get("salaryMax").and_then(|v| v.as_f64()),

@@ -430,6 +430,7 @@ mod tests {
             url: url.into(),
             location: None,
             board: None,
+            board_remote: false,
             description: None,
             salary_min: None,
             salary_max: None,

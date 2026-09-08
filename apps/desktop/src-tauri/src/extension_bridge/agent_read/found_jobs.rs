@@ -270,8 +270,13 @@ fn fence_found_jobs_description(value: &mut Value) {
 /// is the app's OWN, already-established one — never a fresh matcher invented
 /// for this surface:
 /// - `remote` reuses the exact scrape-time
+///   [`location_verdict`](crate::scraping::engine::location_filter::location_verdict)
+///   two-branch check: `job.board_remote` (the board's own per-posting
+///   classification) OR the
 ///   [`REMOTE_MARKERS`](crate::scraping::engine::location_filter::REMOTE_MARKERS)
-///   list a posting's `location` text is checked against everywhere else.
+///   list against `location` text — `location` text alone under-counts an
+///   all-remote board that stores no location, or a jurisdiction string
+///   ("USA Only") with no marker word (round-3 fix, H1).
 /// - `country` is a case-insensitive substring match against `location` —
 ///   the SAME predicate the Jobs page's own free-text filter applies to a
 ///   posting's location (`(p.location ?? '').toLowerCase().includes(q)` in
@@ -414,7 +419,14 @@ fn passes_filters(job: &FoundJob, filters: &FoundJobsFilters, is_applied: bool) 
             }
         }
         if let Some(want_remote) = filters.remote {
-            let is_remote = REMOTE_MARKERS.iter().any(|m| loc.contains(m));
+            // Mirrors `location_verdict`'s own two-branch remote check
+            // (`board_remote` short-circuits first, THEN the marker scan) —
+            // a `location` string alone under-counts an all-remote board
+            // that stores no location (`location: None`) or a jurisdiction
+            // string with no marker word ("USA Only"). Round-3 fix (H1):
+            // `job.board_remote` used to be missing from this OR entirely,
+            // so `--remote true` silently dropped those postings.
+            let is_remote = job.board_remote || REMOTE_MARKERS.iter().any(|m| loc.contains(m));
             if is_remote != want_remote {
                 return false;
             }

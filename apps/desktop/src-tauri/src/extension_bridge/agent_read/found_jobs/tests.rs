@@ -655,6 +655,64 @@ fn found_jobs_remote_filter_reuses_the_scrape_time_marker_list() {
     assert_eq!(out["jobs"][0]["url"], "https://boards.example.com/jobs/2");
 }
 
+/// Round-3 fix (H1): an all-remote board (WeWorkRemotely/RemoteOK/Remotive/
+/// Jobicy) stores `location: None` or a jurisdiction string with no marker
+/// word ("USA Only" from Remotive's `candidate_required_location`) — the
+/// board's OWN `board_remote` classification (`JobPosting.extra["remote"]`,
+/// persisted at `build_found_job` time) must count as remote even when
+/// `location` text alone gives no signal, mirroring `location_verdict`'s
+/// `board_remote` short-circuit. Before the fix this OR was missing
+/// entirely, so `--remote true` silently dropped these rows and
+/// `--remote false` returned them as on-site.
+#[test]
+fn found_jobs_remote_filter_also_trusts_the_boards_own_remote_flag() {
+    let no_location = FoundJob {
+        location: None,
+        board_remote: true,
+        ..numbered_job(1)
+    };
+    let jurisdiction_only = FoundJob {
+        location: Some("USA Only".to_string()),
+        board_remote: true,
+        ..numbered_job(2)
+    };
+    let onsite = FoundJob {
+        location: Some("Berlin, Germany".to_string()),
+        board_remote: false,
+        ..numbered_job(3)
+    };
+    let records = vec![autopilot_with_jobs(
+        "ap-1",
+        vec![
+            no_location.clone(),
+            jurisdiction_only.clone(),
+            onsite.clone(),
+        ],
+    )];
+    let remote_only = FoundJobsFilters::from_payload(&json!({ "remote": true })).unwrap();
+    let out =
+        resolve_found_jobs(&records, Some("ap-1"), &remote_only, &no_applied(), 0, 20).unwrap();
+    assert_eq!(out["total"], 2);
+    let urls: Vec<&str> = out["jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|j| j["url"].as_str().unwrap())
+        .collect();
+    assert!(urls.contains(&"https://boards.example.com/jobs/1"));
+    assert!(urls.contains(&"https://boards.example.com/jobs/2"));
+
+    let records = vec![autopilot_with_jobs(
+        "ap-1",
+        vec![no_location, jurisdiction_only, onsite],
+    )];
+    let onsite_only = FoundJobsFilters::from_payload(&json!({ "remote": false })).unwrap();
+    let out =
+        resolve_found_jobs(&records, Some("ap-1"), &onsite_only, &no_applied(), 0, 20).unwrap();
+    assert_eq!(out["total"], 1);
+    assert_eq!(out["jobs"][0]["url"], "https://boards.example.com/jobs/3");
+}
+
 #[test]
 fn found_jobs_applied_filter_matches_the_derived_applied_set() {
     let applied_job = numbered_job(1);
@@ -891,6 +949,7 @@ fn richest_realistic_job(n: usize) -> FoundJob {
         ),
         location: Some("Berlin, Germany (Hybrid — 3 days onsite per week)".to_string()),
         board: Some("adzuna".to_string()),
+        board_remote: false,
         description: Some("x".repeat(FOUND_JOBS_DESCRIPTION_PREVIEW_CAP)),
         salary_min: Some(65_000.0),
         salary_max: Some(95_000.0),

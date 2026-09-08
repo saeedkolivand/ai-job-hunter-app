@@ -79,6 +79,7 @@ pub(super) fn full_found_job() -> FoundJob {
         url: "https://boards.example.com/jobs/42".into(),
         location: Some("Berlin".into()),
         board: Some("adzuna".into()),
+        board_remote: false,
         description: Some("Full posting text.".into()),
         salary_min: Some(60_000.0),
         salary_max: Some(80_000.0),
