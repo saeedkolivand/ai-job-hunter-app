@@ -20,11 +20,12 @@ import {
   type AgentCliTier,
   buildClaudeCodeSnippet,
   buildCodexSnippet,
+  buildGenericMcpSnippet,
 } from '@/features/settings/lib/agent-cli-snippets';
 import { useAgentCliInfo } from '@/services';
 
 /**
- * The card's four group labels (path, tier, and the two snippets) share one
+ * The card's five group labels (path, tier, and the three snippets) share one
  * step so the groups read as peers. A distinct weight rather than a distinct
  * size: the card is dense, and four different type sizes inside one card is
  * what made the groups hard to tell apart from the body copy under them.
@@ -53,6 +54,7 @@ export function AgentCliSection() {
   const exePath = data?.exePath ?? null;
   const claudeSnippet = buildClaudeCodeSnippet(exePath, tier);
   const codexSnippet = buildCodexSnippet(exePath, tier);
+  const genericSnippet = buildGenericMcpSnippet(exePath, tier);
 
   const handleCopy = async (value: string) => {
     try {
@@ -202,6 +204,17 @@ export function AgentCliSection() {
           testId={TEST_IDS.settings.agentCliCodexSnippet}
           onCopy={handleCopy}
         />
+
+        {/* Any other MCP client — a mcpServers JSON block rather than a
+            command, since these clients read a config file, not a CLI. */}
+        <SnippetBlock
+          label={t('settings.developer.agentCli.genericLabel')}
+          hint={t('settings.developer.agentCli.genericHint')}
+          copyLabel={t('settings.developer.agentCli.copyGeneric')}
+          snippet={genericSnippet}
+          testId={TEST_IDS.settings.agentCliGenericSnippet}
+          onCopy={handleCopy}
+        />
       </div>
     </SettingsSection>
   );
@@ -209,6 +222,8 @@ export function AgentCliSection() {
 
 interface SnippetBlockProps {
   label: string;
+  /** Optional sentence under the label — only the generic block needs one. */
+  hint?: string;
   copyLabel: string;
   /** `null` when the binary path is unknown — the block renders nothing. */
   snippet: string | null;
@@ -228,7 +243,7 @@ interface SnippetBlockProps {
  * `break-all` because the overflowing token is a filesystem path with no spaces
  * to break at.
  */
-function SnippetBlock({ label, copyLabel, snippet, testId, onCopy }: SnippetBlockProps) {
+function SnippetBlock({ label, hint, copyLabel, snippet, testId, onCopy }: SnippetBlockProps) {
   if (!snippet) return null;
   const labelId = `${testId}-label`;
   return (
@@ -242,6 +257,7 @@ function SnippetBlock({ label, copyLabel, snippet, testId, onCopy }: SnippetBloc
           {copyLabel}
         </Button>
       </div>
+      {hint ? <p className="text-[11px] leading-snug text-foreground/70">{hint}</p> : null}
       {/* `role="group"` is what makes `aria-labelledby` count: a bare `<pre>`
           has no role, and a name on a roleless element is not exposed — the
           block would be announced as an unlabelled run of text. */}

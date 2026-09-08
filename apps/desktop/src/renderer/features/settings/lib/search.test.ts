@@ -118,6 +118,17 @@ describe('matchEntries', () => {
     expect(hit?.anchor).toBe('ai-provider');
   });
 
+  it.each(['cursor', 'claude desktop', 'windsurf', 'mcpservers', 'json'])(
+    'matches on the generic-MCP-client keyword %j — developer-agent-cli entry is in results',
+    (query) => {
+      // The agent CLI card also offers a generic mcpServers JSON snippet for
+      // any MCP client, not just Claude Code and Codex — the card must be
+      // findable by the client names and shape it now documents.
+      const results = matchEntries(query, tFn, SECTION_LABEL_KEYS);
+      expect(results.map((r) => r.id)).toContain('developer-agent-cli');
+    }
+  );
+
   it('matches on the localized section label — developer-tools entry is in results for "developer" query', () => {
     // 'Developer' is the en label for the developer section
     const results = matchEntries('developer', tFn, SECTION_LABEL_KEYS);

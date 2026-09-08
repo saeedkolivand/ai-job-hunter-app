@@ -12,6 +12,10 @@
  * the same three commands, with the placeholder path substituted for the real
  * one. Nothing here names a release version or claims anything about `PATH`:
  * a full-path command works either way.
+ *
+ * Claude Code and Codex each take a COMMAND (their own CLI parses it); every
+ * other MCP client reads a `mcpServers` JSON block instead, which is why
+ * {@link buildGenericMcpSnippet} exists alongside the two command builders.
  */
 
 /** Which write tier the generated registration asks the MCP server for. */
@@ -145,4 +149,31 @@ export function buildCodexSnippet(exePath: string | null, tier: AgentCliTier): s
 function tomlString(value: string): string {
   if (!value.includes("'")) return `'${value}'`;
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+/**
+ * The generic `mcpServers` JSON block for one tier, or `null` when the path is
+ * unknown — the shape Claude Desktop, Cursor, Windsurf, VS Code, Gemini CLI,
+ * LM Studio, Jan and most other MCP clients read verbatim from their own
+ * config file. Same server name and args as {@link buildClaudeCodeSnippet}
+ * (reused, not re-derived), so the two never drift apart.
+ *
+ * `JSON.stringify` does the escaping — a Windows path with backslashes and
+ * spaces is just a JSON string, and round-trips through `JSON.parse` to the
+ * exact path with no hand-written quoting rules to get wrong.
+ */
+export function buildGenericMcpSnippet(exePath: string | null, tier: AgentCliTier): string | null {
+  if (!exePath) return null;
+  return JSON.stringify(
+    {
+      mcpServers: {
+        [CLAUDE_SERVER_NAME[tier]]: {
+          command: exePath,
+          args: mcpArgs(tier),
+        },
+      },
+    },
+    null,
+    2
+  );
 }
