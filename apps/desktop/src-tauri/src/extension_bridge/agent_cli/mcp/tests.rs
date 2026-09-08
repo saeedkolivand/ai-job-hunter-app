@@ -904,11 +904,13 @@ fn instructions_name_connection_lost_alongside_rate_limited_in_the_no_retry_sent
 }
 
 /// Issue #1170 — INSTRUCTIONS now points a caller at the résumé/document reads before it judges
-/// fit. Every `ns:cmd`-shaped token the prose cites must be a REAL `POLICY` row: a stale rename on
-/// either side would otherwise tell a calling model to dispatch a command that no longer exists.
-/// The one hand-written skip is `ns:cmd` itself — the earlier "a detail that says `agent call
-/// ns:cmd`" sentence uses it as a PLACEHOLDER, not a real pair (same "skip list, not a substring
-/// match" discipline [`EXPLAINED_IN_PROSE`] already uses above).
+/// fit. Every `ns:cmd`-shaped token the prose cites must be a REAL `POLICY` row AND an
+/// `Effect::Read` row: the sentence tells a caller to reach it through `call-read`, so a row that
+/// was ever anything else earns that caller a `wrong_tool` refusal (issue #1164 — the earlier
+/// version of this test checked existence only, which a `git mv`-style rename would catch but a
+/// reclassification would not). The one hand-written skip is `ns:cmd` itself — the earlier "a
+/// detail that says `agent call ns:cmd`" sentence uses it as a PLACEHOLDER, not a real pair (same
+/// "skip list, not a substring match" discipline [`EXPLAINED_IN_PROSE`] already uses above).
 #[test]
 fn instructions_ns_cmd_pairs_are_real_policy_rows() {
     const SKIP: &[&str] = &["ns:cmd"];
@@ -923,16 +925,21 @@ fn instructions_ns_cmd_pairs_are_real_policy_rows() {
             continue;
         }
         checked += 1;
+        let entry = POLICY
+            .iter()
+            .find(|e| agent_call::split_path(e.path) == (ns, cmd))
+            .unwrap_or_else(|| {
+                panic!("INSTRUCTIONS names `{word}`, which is not a real POLICY row")
+            });
         assert!(
-            POLICY
-                .iter()
-                .any(|e| agent_call::split_path(e.path) == (ns, cmd)),
-            "INSTRUCTIONS names `{word}`, which is not a real POLICY row"
+            matches!(entry.effect, Effect::Read),
+            "INSTRUCTIONS tells a caller to reach `{word}` via call-read, but its POLICY row is \
+             not Effect::Read"
         );
     }
     assert_eq!(
-        checked, 3,
-        "expected exactly the 3 résumé/document ns:cmd pairs issue #1170 added: {INSTRUCTIONS}"
+        checked, 2,
+        "expected exactly the 2 résumé/document ns:cmd pairs issue #1170 named: {INSTRUCTIONS}"
     );
 }
 
@@ -1246,11 +1253,16 @@ fn profile_tool_description_names_a_real_document_read() {
         description.contains("Contact fields only"),
         "must say the profile tool holds contact fields only: {description}"
     );
+    let entry = POLICY
+        .iter()
+        .find(|e| agent_call::split_path(e.path) == ("documents", "documents_list"))
+        .unwrap_or_else(|| {
+            panic!("profile's description names documents:documents_list, which is not a real POLICY row")
+        });
     assert!(
-        POLICY
-            .iter()
-            .any(|e| agent_call::split_path(e.path) == ("documents", "documents_list")),
-        "profile's description names documents:documents_list, which is not a real POLICY row"
+        matches!(entry.effect, Effect::Read),
+        "profile's description tells a caller to reach documents:documents_list via call-read, \
+         but its POLICY row is not Effect::Read"
     );
 }
 
