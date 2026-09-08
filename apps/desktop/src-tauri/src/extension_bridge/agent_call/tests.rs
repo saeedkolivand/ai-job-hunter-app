@@ -1670,6 +1670,23 @@ fn reshape_reply_marks_a_truncated_documents_get_text_scalar_reply() {
     assert!(!out_short.as_str().unwrap().contains("TRUNCATED"));
 }
 
+/// Round-3 fix (M1): `SCALAR_FENCE_COMMANDS` widened to include
+/// `ai_research_answer` alongside `documents_get_text`, but the marker's
+/// own doc/text used to claim scope over "the two document call sites"
+/// only, i.e. it lied about what `ai_research_answer` gets. Pins that the
+/// SAME marker fires here too, and that its wording no longer promises
+/// "the whole document" for a reply that isn't one.
+#[test]
+fn reshape_reply_marks_a_truncated_ai_research_answer_scalar_reply() {
+    let long_text = "x".repeat(crate::prompt_fence::JOB_CAP + 500);
+    let out = reshape_reply("ai_research_answer", json!(long_text), None);
+    assert!(out.as_str().unwrap().contains(TRUNCATION_MARKER));
+    assert!(!TRUNCATION_MARKER.contains("document"));
+
+    let out_short = reshape_reply("ai_research_answer", json!("short"), None);
+    assert!(!out_short.as_str().unwrap().contains("TRUNCATED"));
+}
+
 // ── Bounded refusals (security review: the frame-cap fallback could itself
 // exceed the cap) ──
 

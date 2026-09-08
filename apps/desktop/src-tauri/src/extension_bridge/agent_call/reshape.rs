@@ -443,21 +443,23 @@ fn fence_scalar_reply(command: &str, data: &mut Value) {
     }
 }
 
-/// Trailing marker reserved INSIDE the fence cap when a document's real text
-/// is longer than [`crate::prompt_fence::JOB_CAP`] (`B1-r3-ACLI-R7-5`): the
+/// Trailing marker reserved INSIDE the fence cap when a reply's real text is
+/// longer than [`crate::prompt_fence::JOB_CAP`] (`B1-r3-ACLI-R7-5`): the
 /// prose deliberately never states the cap NUMBER (a moving implementation
 /// detail, not a promise), so without a wire signal a caller has no way to
-/// tell "this résumé came back complete" from "this is a prefix" — the app's
-/// own "how well do I fit this job" question answered from a silently
-/// truncated résumé. Scoped to the two document call sites only
-/// ([`fence_scalar_reply`]'s `documents_get_text` arm and
-/// [`mark_truncated_document_text`]'s `documents_list` rows below) — NOT a
-/// change to [`crate::prompt_fence::fenced`] itself, which every OTHER
-/// scraped-text surface (job descriptions, autopilot names, …) also calls,
-/// where a caller already knows it is reading third-party board text, not
-/// "my own résumé".
+/// tell "this came back complete" from "this is a prefix" — the app's own
+/// "how well do I fit this job" question answered from a silently truncated
+/// résumé, or a research answer silently missing its second half. Scoped to
+/// every command on [`fence_scalar_reply`]'s own [`SCALAR_FENCE_COMMANDS`]
+/// list (round-3 fix, M1 — this doc used to name only the `documents_get_text`
+/// arm, which stopped being true the moment `ai_research_answer` joined that
+/// list) plus [`mark_truncated_document_text`]'s `documents_list` rows below
+/// — NOT a change to [`crate::prompt_fence::fenced`] itself, which every
+/// OTHER scraped-text surface (job descriptions, autopilot names, …) also
+/// calls, where a caller already knows it is reading third-party board text,
+/// not first-party output.
 pub(super) const TRUNCATION_MARKER: &str =
-    "\n[TRUNCATED — longer than the fence cap; this is a prefix, not the whole document]";
+    "\n[TRUNCATED — longer than the fence cap; this is a prefix, not the whole reply]";
 
 /// Truncates `body` to `cap` chars the same way [`crate::prompt_fence::fenced`]
 /// itself will, but reserves room for [`TRUNCATION_MARKER`] and appends it —
