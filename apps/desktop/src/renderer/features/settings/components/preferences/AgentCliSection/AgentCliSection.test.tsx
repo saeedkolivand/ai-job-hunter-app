@@ -148,7 +148,7 @@ describe('AgentCliSection', () => {
     expect(screen.queryByText('Copied to the clipboard.')).toBeNull();
   });
 
-  it('switching the tier rewrites BOTH snippets and the tier description', async () => {
+  it('switching the tier rewrites all three snippets and the tier description', async () => {
     renderCard();
     await waitFor(() =>
       expect(screen.getByTestId(TEST_IDS.settings.agentCliPath)).toHaveValue(EXE)
@@ -158,14 +158,17 @@ describe('AgentCliSection', () => {
     fireEvent.click(tier.getByRole('radio', { name: 'Irreversible' }));
 
     // Claude gets a distinct SERVER NAME per tier; Codex keeps one table name
-    // and moves the flag into args. Both change — a card that only rewrote one
-    // would hand out a mismatched pair.
+    // and moves the flag into args; the generic mcpServers JSON reuses the
+    // Claude server name. All three change — a card that only rewrote some of
+    // them would hand out a mismatched set.
     expect(claudeSnippet()).toBe(
       `claude mcp add --scope user ai-job-hunter-unrestricted -- "${EXE}" agent mcp --allow-irreversible`
     );
     expect(codexSnippet()).toBe(
       `[mcp_servers.ai-job-hunter]\ncommand = '${EXE}'\nargs = ["agent", "mcp", "--allow-irreversible"]`
     );
+    expect(genericSnippet()).toContain('ai-job-hunter-unrestricted');
+    expect(genericSnippet()).toContain('--allow-irreversible');
     expect(screen.getByText(/spend AI budget and delete data/i)).toBeInTheDocument();
 
     fireEvent.click(tier.getByRole('radio', { name: 'Reversible' }));
@@ -173,6 +176,8 @@ describe('AgentCliSection', () => {
       `claude mcp add --scope user ai-job-hunter-write -- "${EXE}" agent mcp --allow-reversible`
     );
     expect(codexSnippet()).toContain('"--allow-reversible"');
+    expect(genericSnippet()).toContain('ai-job-hunter-write');
+    expect(genericSnippet()).toContain('--allow-reversible');
   });
 
   it('links to Help & Support in-app rather than out to a browser', async () => {

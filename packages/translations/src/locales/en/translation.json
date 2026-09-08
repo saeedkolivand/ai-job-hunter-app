@@ -619,7 +619,7 @@
         "codexLabel": "Codex (~/.codex/config.toml)",
         "copyCodex": "Copy config",
         "genericLabel": "Any MCP client (JSON)",
-        "genericHint": "Paste this into the mcpServers section of your client's MCP config — Claude Desktop, Cursor, Windsurf, VS Code, Gemini CLI, LM Studio, Jan and most others read this shape. The write tier is the flag in args.",
+        "genericHint": "Paste this into your client's MCP config file; if it already has an mcpServers block, add just the inner entry. Claude Desktop, Cursor, Windsurf, VS Code, Gemini CLI, LM Studio, Jan and most others read this shape. The write tier is the flag in args.",
         "copyGeneric": "Copy JSON"
       }
     },
@@ -2993,7 +2993,7 @@
       "agentCliQuestions": {
         "headlessMode": {
           "q": "Can I use the app from a terminal or from Claude Code or Codex?",
-          "a": "Yes. The desktop binary doubles as a command-line client: run it with agent as the very first argument, for example agent --help, and it prints the available verbs instead of opening the app window. Any other first argument just launches the normal desktop window. Claude Code and Codex can attach to that same binary as an MCP server; it is read-only by default and only opens write tiers if you register it with one of the write flags. Settings → Developer → “Agent & MCP access” shows the path to this binary with Copy buttons for the Claude Code registration command and for the Codex config snippet, and the tier picker there rewrites both — read-only unless you pick a write tier before copying. You run the Claude Code command in a terminal, not inside Claude Code; the project README's CLI agent section covers the same ground. Most calls reach the running app, so keep AI Job Hunter open."
+          "a": "Yes. The desktop binary doubles as a command-line client: run it with agent as the very first argument, for example agent --help, and it prints the available verbs instead of opening the app window. Any other first argument just launches the normal desktop window. Claude Code and Codex can attach to that same binary as an MCP server; it is read-only by default and only opens write tiers if you register it with one of the write flags. Settings → Developer → “Agent & MCP access” shows the path to this binary with Copy buttons for the Claude Code registration command, the Codex config snippet, and a generic mcpServers JSON block for any other MCP client, and the tier picker there rewrites all three — read-only unless you pick a write tier before copying. You run the Claude Code command in a terminal, not inside Claude Code; the project README's CLI agent section covers the same ground. Most calls reach the running app, so keep AI Job Hunter open."
         }
       },
       "privacy": "Privacy & Data",
