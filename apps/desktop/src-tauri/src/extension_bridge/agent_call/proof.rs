@@ -820,6 +820,39 @@ mod tests {
                         )
                     });
 
+            // B2-r3-ACLI-R9-1 (MEDIUM, review round 9): the two asserts above only
+            // pin the CURRENT two-step composition `extract_from_fenced_response`
+            // hand-rolls (`reshape_pre_fence` + `fence_reply`). A future step
+            // appended to `reshape_reply` that touches a live proof leaf field
+            // would silently drift the two apart while both prior asserts stayed
+            // green. Compare against the FULL `reshape::reshape_reply` (the exact
+            // composition `dispatch_direct` runs, paging/base64 included) instead
+            // of re-deriving the same two steps a third time, so any future step
+            // is caught by construction rather than by a reviewer noticing again.
+            let expected_full_reshape = extract(
+                source,
+                &caller_input,
+                &super::super::reshape::reshape_reply(
+                    source.read_command(),
+                    raw_response.clone(),
+                    None,
+                ),
+            )
+            .unwrap_or_else(|| {
+                panic!(
+                    "{}: fixture failed to resolve a proof value from the full reshape_reply \
+                     composition",
+                    entry.path
+                )
+            });
+            assert_eq!(
+                expected_fenced, expected_full_reshape,
+                "{}: proof path diverged from the full reshape_reply composition — a future \
+                 reshape step this proof path does not mirror would silently make its confirm \
+                 ceremony permanently unsatisfiable",
+                entry.path
+            );
+
             match leaf_field_name(source) {
                 Some(name) if super::super::FENCE_FIELD_NAMES.contains(&name) => {
                     assert_eq!(
