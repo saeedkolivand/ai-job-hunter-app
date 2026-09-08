@@ -569,6 +569,16 @@ pub(super) fn fence_named_fields_recursive(value: &mut Value) {
                     }
                 }
             }
+            // TR-02 fix (test-author round): keys the `extra` catch-all below already fenced
+            // leaf-by-leaf, so the trailing name-keyed recursion further down must skip them --
+            // otherwise an Array/Object-valued `extra` key whose OWN inner key is also on
+            // [`FENCE_FIELD_NAMES`] (e.g. `"salaryDetail": { "description": … }`) gets its leaf
+            // fenced twice: once here via `fence_all_string_leaves`, and again when the trailing
+            // `fence_named_fields_recursive(v)` walk reaches the same subtree and matches
+            // `description` by name. `unfence_named_fields_recursive` only strips ONE layer, so a
+            // double-wrap would leave a `<job_posting>` wrapper behind after unfencing.
+            let mut extra_fenced_keys: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
             if job_posting_shaped {
                 // ADVISORY fix (security review round 4): used to filter on
                 // `v.is_string()` alone, so a board-chosen `extra` key whose
@@ -614,6 +624,7 @@ pub(super) fn fence_named_fields_recursive(value: &mut Value) {
                             _ => {}
                         }
                     }
+                    extra_fenced_keys.insert(key);
                 }
             }
             // Shape-guarded, never a name entry — see
@@ -657,6 +668,12 @@ pub(super) fn fence_named_fields_recursive(value: &mut Value) {
                 .iter()
                 .all(|f| map.contains_key(*f));
             for (key, v) in map.iter_mut() {
+                if extra_fenced_keys.contains(key.as_str()) {
+                    // Already fenced leaf-by-leaf by the `extra` catch-all above -- see TR-02
+                    // fix note there. Re-walking here would double-wrap any inner key that also
+                    // happens to be on [`FENCE_FIELD_NAMES`].
+                    continue;
+                }
                 if job_record_shaped && key.as_str() == JOB_RECORD_RESULT_FIELD {
                     // The exemption is wholesale for the NAME-keyed walk, and
                     // stays that way — but `scrape_boards` completes with
