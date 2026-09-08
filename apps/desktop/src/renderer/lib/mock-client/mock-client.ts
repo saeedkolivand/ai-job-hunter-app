@@ -129,9 +129,12 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       setStageOverride: async () => ({}),
       clearStageOverride: async () => ({}),
       spendSummary: async () => ({
+        window: { days: 1, from: 0, to: 0 },
         today: { inputTokens: 0, outputTokens: 0, estCostUsd: 0 },
+        windowTotals: { inputTokens: 0, outputTokens: 0, estCostUsd: 0 },
         perProvider: [],
         thinkingByModel: [],
+        thinkingByModelWindow: 'allTime',
       }),
     },
 

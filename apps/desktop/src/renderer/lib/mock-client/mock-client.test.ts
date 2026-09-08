@@ -58,6 +58,18 @@ describe('createMockClient', () => {
     expect(seen).toHaveLength(1);
   });
 
+  // Regression (#1156 review D1-r1-FE-1): the contract's `window`,
+  // `windowTotals`, `thinkingByModelWindow` are non-optional — the real
+  // backend always sends them — so this stub must keep matching that shape
+  // rather than drifting back to an older, partial payload.
+  it('resolves a fully-populated AiSpendSummary shape from ai.spendSummary', async () => {
+    const client = createMockClient();
+    const summary = await client.ai.spendSummary();
+    expect(summary.window).toEqual({ days: 1, from: 0, to: 0 });
+    expect(summary.windowTotals).toEqual({ inputTokens: 0, outputTokens: 0, estCostUsd: 0 });
+    expect(summary.thinkingByModelWindow).toBe('allTime');
+  });
+
   it('shallow-merges namespace overrides', async () => {
     const client = createMockClient({
       system: { getVersion: async () => '9.9.9' },

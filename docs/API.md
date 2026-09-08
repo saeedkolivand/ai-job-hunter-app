@@ -737,9 +737,7 @@ export interface AiSpendWindow {
  *  provider, plus the all-history per-model reasoning overhead where it was
  *  actually measured. */
 export interface AiSpendSummary {
-  /** Optional only for source compatibility with an older mock/stub — the
-   *  real backend always sends it. */
-  window?: AiSpendWindow;
+  window: AiSpendWindow;
   today: { inputTokens: number; outputTokens: number; estCostUsd: number };
   /**
    * Same totals as {@link today}, under an honest name — {@link today} keeps
@@ -747,18 +745,16 @@ export interface AiSpendSummary {
    * policy's proof source) but is window-scoped, not calendar-day scoped,
    * whenever `days > 1` was requested. Read this field instead of `today`
    * for any `days > 1` call, so a multi-day total is never misread as
-   * today's spend. Optional for the same source-compatibility reason as
-   * {@link window}.
+   * today's spend.
    */
-  windowTotals?: { inputTokens: number; outputTokens: number; estCostUsd: number };
+  windowTotals: { inputTokens: number; outputTokens: number; estCostUsd: number };
   perProvider: AiSpendProviderTotals[];
   /** Empty until a provider that reports the split has been used — see
    *  {@link AiSpendModelThinking}. */
   thinkingByModel: AiSpendModelThinking[];
   /** `thinkingByModel` is ALWAYS all-history, regardless of {@link window} —
-   *  "how does this model behave" does not reset at a window boundary.
-   *  Optional for the same reason as {@link window}. */
-  thinkingByModelWindow?: 'allTime';
+   *  "how does this model behave" does not reset at a window boundary. */
+  thinkingByModelWindow: 'allTime';
 }
 ```
 
