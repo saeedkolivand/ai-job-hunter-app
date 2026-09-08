@@ -20,14 +20,17 @@ pub(super) const INSTRUCTIONS: &str = "These tools talk to the running AI Job Hu
     passed back to call-irreversible VERBATIM, including any fence wrapper and its embedded \
     newlines; a wrong value is confirmation_mismatch and the expected value is never disclosed. \
     A call-* refusal named wrong_tool means retry on the OTHER tool its own \"detail\" names, \
-    never the one just called; result_too_large means this server's own output cap was hit — \
-    narrow the request rather than repeating it verbatim. A server_busy refusal is the one \
-    result worth repeating: this server runs ONE call at a time and its queue was full, so wait \
-    for an outstanding call's reply and then send that one call again. A shutting_down result \
-    means this server's input closed and its shutdown deadline expired before the call was \
-    answered: \"dispatched\": false means it never reached the app and is safe to send again to a \
-    new server, while \"dispatched\": true means it was already in flight and may have taken \
-    effect, so re-read the affected resource before repeating it. Do not retry a \
+    never the one just called; result_too_large means an output cap was hit — this server's \
+    own, or the app's own frame cap, which refuses with the SAME sentinel one hop in — so \
+    narrow the request rather than repeating it verbatim, and treat it like shutting_down's \
+    \"dispatched\": true case: the command may ALREADY HAVE RUN and only its reply was \
+    discarded, so never re-send a mutating call on this refusal. A server_busy refusal is the \
+    one result worth repeating: this server runs ONE call at a time and its queue was full, \
+    so wait for an outstanding call's reply and then send that one call again. A shutting_down \
+    result means this server's input closed and its shutdown deadline expired before the call \
+    was answered: \"dispatched\": false means it never reached the app and is safe to send \
+    again to a new server, while \"dispatched\": true means it was already in flight and may \
+    have taken effect, so re-read the affected resource before repeating it. Do not retry a \
     rate_limited, connection_lost, or \"Too many requests\" result in a loop either. A refusal's \
     own \"detail\" text is written for the plain CLI, not for these tools: a detail that says \
     `agent call ns:cmd` means call-read (or call-reversible, if enabled) with `namespace`/`command` set to \

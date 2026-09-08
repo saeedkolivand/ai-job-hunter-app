@@ -104,6 +104,10 @@ mod match_live;
 /// Wire `type` constants (the TS-mirrored protocol table) — see its module doc.
 pub mod msg;
 pub mod native_host;
+/// Offset/limit/byte-budget paging primitives shared by `agent_read`'s
+/// `found-jobs` resource and `agent_call`'s generic dispatch tier — see its
+/// module doc for why they live here rather than in either caller.
+mod paging;
 mod persist;
 pub mod register;
 /// The `token.revoked` wire surface + its no-oracle gate — see its module doc.
@@ -144,6 +148,19 @@ pub const PROTOCOL_VERSION: u64 = 2;
 /// few MB, so 8 MB matches the scraper's per-response cap
 /// ([`crate::scraping::http`]) — a full-page DOM capture isn't silently dropped
 /// — while still blocking a memory-exhaustion frame.
+///
+/// TWO consumers, not one. Besides bounding what this server will READ, it is
+/// also the ceiling `agent_call::enforce_frame_cap` measures an OUTGOING
+/// `agent.call` reply against (issue #1135). That second use exists because
+/// tungstenite 0.30 checks `max_message_size` on the READ path only —
+/// `WebSocketContext::check_max_size` runs while reassembling an INCOMING
+/// message and nothing checks an outgoing one — while the CLI's own reader
+/// configures this SAME constant (`agent_cli.rs`). So an over-cap reply is
+/// written happily here and then dropped by the peer as a transport error the
+/// CLI can only report as a content-free `connection_lost`. Raising or
+/// lowering this therefore moves BOTH the accepted-request size and the
+/// point at which a legitimate reply starts being refused as
+/// `result_too_large`.
 pub const MAX_FRAME_BYTES: usize = 8 * 1024 * 1024;
 
 /// First port tried, then the rest of the inclusive range until one binds.
@@ -909,6 +926,12 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                 );
                 None
             }
+            // `throttled_reply` (like `agent_call::origin_refused_reply`)
+            // echoes the caller's own `reqId`/`namespace`/`command`, and this
+            // reply goes STRAIGHT to the socket without passing through
+            // `agent_call::enforce_frame_cap` — so those identifiers are
+            // clamped inside `agent_call::refusal_reply`, which is the only
+            // thing bounding this frame. See `REFUSAL_IDENT_CAP`.
             FrameDecision::AgentCall { req_id, payload } => {
                 Some(agent_call::throttled_reply(&req_id, &payload))
             }

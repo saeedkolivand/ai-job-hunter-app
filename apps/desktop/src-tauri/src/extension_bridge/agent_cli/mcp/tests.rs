@@ -2148,6 +2148,43 @@ fn a_locally_refused_oversized_namespace_never_gets_echoed_back_in_full() {
     assert_eq!(parsed["error"], "result_too_large");
 }
 
+/// Issue #1138, measured against the REAL cap rather than a copy of it: a
+/// realistic one-page-résumé PDF (180 KB of file bytes — the repro's own
+/// export was 259,841 B of JSON at 99.1% of the cap, so its raw payload was
+/// around this size) serialized as a `number[]` blows [`MCP_RESULT_MAX_BYTES`],
+/// and the same bytes base64'd fit comfortably under it.
+///
+/// Both sides are asserted, so this cannot pass for the wrong reason: if the
+/// "before" ever stopped exceeding the cap, the premise this fix rests on
+/// would be gone and the test says so instead of quietly still passing.
+/// Anchored here, beside the constant, precisely so that lowering the cap
+/// re-runs this arithmetic rather than silently invalidating it.
+#[test]
+fn base64_takes_a_realistic_pdf_export_from_over_the_result_cap_to_under_it() {
+    let pdf_bytes: Vec<u8> = (0..180_000u32).map(|i| (i % 251) as u8).collect();
+    let mut payload = json!({
+        "data": pdf_bytes,
+        "mimeType": "application/pdf",
+        "filename": "resume.pdf",
+    });
+
+    let before = serde_json::to_string(&payload).unwrap().len();
+    assert!(
+        before > MCP_RESULT_MAX_BYTES,
+        "premise: the number[] encoding must exceed the cap for this fix to be needed \
+         ({before} B vs {MCP_RESULT_MAX_BYTES})"
+    );
+
+    agent_call::reshape::base64_byte_fields("documents_export_document", &mut payload);
+
+    let after = serde_json::to_string(&payload).unwrap().len();
+    assert!(
+        after < MCP_RESULT_MAX_BYTES,
+        "the base64 payload must fit the cap ({after} B vs {MCP_RESULT_MAX_BYTES})"
+    );
+    assert_eq!(payload["dataEncoding"], "base64");
+}
+
 // ── commands (local, no bridge) ──────────────────────────────────────────
 
 #[test]
@@ -2161,6 +2198,26 @@ fn commands_filters_by_effect_and_never_touches_the_bridge() {
         assert_eq!(row["effect"], "read");
         assert_eq!(row["tool"], TOOL_CALL_READ);
     }
+}
+
+/// Issue #1136's discoverability half: a caller must be able to LEARN that
+/// these two rows answer with an envelope and take `limit`/`cursor`, rather
+/// than discovering it by receiving a shape it did not expect. Asserted in
+/// both directions — the note appears on exactly the paged rows and on no
+/// others — so a `returns` key leaking onto every row fails here too.
+#[test]
+fn commands_marks_the_paged_rows_and_only_those() {
+    let all = commands_value(&json!({}), Tier::Irreversible);
+    let mut noted: Vec<&str> = Vec::new();
+    for row in all["commands"].as_array().unwrap() {
+        let Some(returns) = row["returns"].as_str() else {
+            continue;
+        };
+        assert_eq!(returns, agent_call::reshape::PAGINATED_LIST_NOTE);
+        noted.push(row["command"].as_str().unwrap());
+    }
+    noted.sort_unstable();
+    assert_eq!(noted, vec!["ai_generations_list", "applications_list"]);
 }
 
 #[test]
@@ -2308,4 +2365,68 @@ fn mcp_source_never_prints_or_pretty_prints() {
         1,
         "mcp.rs must call stdout() exactly once — see emit()'s own doc"
     );
+}
+
+// ── result_too_large is not a "just narrow it and retry" refusal ──
+
+/// The sentinel is SHARED with the app-side frame cap
+/// (`agent_call::Refusal::ResultTooLarge`), whose own detail says outright
+/// that the command RAN. Both strings a client can see for this cause must
+/// therefore carry the same warning: `dispatched:false` here means no result
+/// was delivered, NOT that nothing happened, and re-sending a mutating call on
+/// it would repeat a mutation that already took effect.
+#[test]
+fn both_result_too_large_texts_warn_that_the_command_may_already_have_run() {
+    assert!(
+        INSTRUCTIONS.contains("result_too_large"),
+        "the instructions must still name the sentinel"
+    );
+    assert!(
+        INSTRUCTIONS.contains("ALREADY HAVE RUN"),
+        "INSTRUCTIONS must warn that the call may have taken effect: {INSTRUCTIONS}"
+    );
+    assert!(
+        INSTRUCTIONS.contains("never re-send a mutating call"),
+        "INSTRUCTIONS must say what NOT to do: {INSTRUCTIONS}"
+    );
+
+    let detail = oversized_result(999_999)["detail"]
+        .as_str()
+        .expect("detail is a string")
+        .to_string();
+    assert!(
+        detail.contains("may already have run"),
+        "the refusal itself must carry the warning, not only the instructions: {detail}"
+    );
+    assert!(
+        detail.contains("do not re-send a mutating call"),
+        "{detail}"
+    );
+}
+
+/// The generic `input` schema is the only place a caller learns that `limit`
+/// and `cursor` on a paged row are the PAGING LAYER's arguments —
+/// `agent_call::take_list_page_args` strips them before dispatch, so a caller
+/// that expects the target command to see them is wrong about the contract.
+#[test]
+fn the_generic_input_schema_says_limit_and_cursor_belong_to_the_paging_layer() {
+    let tool = tools(Tier::Read)
+        .into_iter()
+        .find(|t| t["name"] == TOOL_CALL_READ)
+        .expect("call-read is always present");
+    let description = tool["inputSchema"]["properties"]["input"]["description"]
+        .as_str()
+        .expect("the input property carries a description")
+        .to_string();
+    for clause in [
+        "limit",
+        "cursor",
+        "paging layer",
+        "stripped before dispatch",
+    ] {
+        assert!(
+            description.contains(clause),
+            "the input description must state `{clause}`: {description}"
+        );
+    }
 }

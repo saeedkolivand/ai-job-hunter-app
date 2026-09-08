@@ -170,8 +170,8 @@ describe('TechStackPreferences — empty / whitespace input', () => {
 
 describe('TechStackPreferences — pre-load guard (CodeRabbit #756)', () => {
   it('does not call the full-row mutate before job preferences have loaded', async () => {
-    // A `{...undefined, techStack}` write would NULL every other column
-    // (location, countryCode, salaryExpectation, extraAgencyCompanies).
+    // `techStack` falls back to `[]` before the query resolves, so a write from
+    // here would save that empty list over the user's stored stack.
     mockJobPrefs = undefined;
     const user = userEvent.setup();
     renderComponent();

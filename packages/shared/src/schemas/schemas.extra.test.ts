@@ -463,6 +463,20 @@ describe('JobPreferencesSchema', () => {
     const parsed = JobPreferencesSchema.parse({ location: 'Berlin' });
     expect(parsed.salaryExpectation).toBeUndefined();
   });
+
+  // `jobPreferences.set` merges over the stored row: an omitted key keeps its
+  // value, an explicit `null` clears the column. The clearable fields must
+  // therefore accept `null` and preserve it — coercing it to `undefined` here
+  // would strip the key on the way to the backend and turn a clear into a no-op.
+  it('accepts and preserves null for the clearable location/countryCode fields', () => {
+    const parsed = JobPreferencesSchema.parse({ location: null, countryCode: null });
+    expect(parsed.location).toBeNull();
+    expect(parsed.countryCode).toBeNull();
+  });
+
+  it('still rejects a malformed countryCode when it is not null', () => {
+    expect(() => JobPreferencesSchema.parse({ location: null, countryCode: 'deu' })).toThrow();
+  });
 });
 
 describe('ApplicationUpdateSchema — jobDescription byte-level refine', () => {

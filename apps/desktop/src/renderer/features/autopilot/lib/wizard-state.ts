@@ -67,7 +67,9 @@ export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
     // Seeded alongside `location` (autopilot aggregator zero-jobs fix) so a
     // saved preferred location keeps its real country instead of the
     // aggregator having to guess one at scrape time.
-    countryCode: jobPrefs?.countryCode,
+    // `?? undefined`: the preference is nullish on the wire (an explicit `null`
+    // is how the settings UI clears it), the form field is optional-only.
+    countryCode: jobPrefs?.countryCode ?? undefined,
     // No job-preference field seeds work type; default to the empty "any" set.
     workTypes: [],
     // Matches the backend's AutopilotTargetSchema.pages default.

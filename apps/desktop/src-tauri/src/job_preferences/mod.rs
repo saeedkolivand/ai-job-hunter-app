@@ -23,12 +23,26 @@ pub struct JobPreferences {
     /// ISO 3166-1 alpha-2, captured alongside `location` from a picked geocode
     /// suggestion (mirrors `AutopilotTarget::country_code`) — lets a location
     /// seeded from here carry its real country instead of a scraper (the
-    /// aggregator board) having to guess one. `#[serde(rename)]` on just this
-    /// field (not `rename_all` on the whole struct) so the pre-existing
-    /// `tech_stack` wire name is left untouched.
+    /// aggregator board) having to guess one. Every multi-word field here
+    /// carries its OWN `#[serde(rename)]` to the camelCase name
+    /// `JobPreferencesSchema` declares, rather than one `rename_all` on the
+    /// struct, so each wire name — and `tech_stack`'s back-compat `alias`
+    /// below — stays readable at the field it belongs to.
     #[serde(skip_serializing_if = "Option::is_none", rename = "countryCode")]
     pub country_code: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// The user's tech stack. Wire name `techStack` (#1149): the renderer's
+    /// `JobPreferencesSchema` and every UI reader/writer have always used the
+    /// camelCase spelling, so the old snake_case wire name made
+    /// `job_preferences_get` return a field the UI could not see — and made
+    /// the UI's `{...prefs, location}` save omit it, which the full-row
+    /// `UPDATE` in [`set`](Self::set) then NULLed. `alias = "tech_stack"`
+    /// keeps older callers (an agent/MCP body, a backup exported before this
+    /// rename) deserializing unchanged.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "techStack",
+        alias = "tech_stack"
+    )]
     pub tech_stack: Option<Vec<TechStackItem>>,
     /// User-supplied salary expectation (free text, e.g. "€75,000" or "80k
     /// DOE") — the backend-readable copy of the renderer's

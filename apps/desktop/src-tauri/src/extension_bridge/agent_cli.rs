@@ -35,9 +35,13 @@
 //! - `1` — `agent.result` replied `{"ok":false,...}` (a server-side refusal:
 //!   rate-limited, validation, not-found, autofill off, …) — the payload
 //!   (including the fixed-sentinel `error` text) is still on stdout.
-//! - `2` — the round trip never completed: bad CLI usage, the app is not
-//!   running, or the connection failed for a reason that says nothing about
-//!   whether the pairing token itself is valid. A synthesized
+//! - `2` — no result was delivered: bad CLI usage, the app is not running,
+//!   the connection failed for a reason that says nothing about whether the
+//!   pairing token itself is valid, or the app itself refused/discarded the
+//!   reply (any generic-tier `dispatched:false` — including
+//!   [`agent_call::Refusal::ResultTooLarge`], where the command itself may
+//!   ALREADY have run, and [`agent_call::Refusal::InvalidCursor`]). When the
+//!   round trip never completed, a synthesized
 //!   `{"ok":false,"resource":…,"error":<fixed sentinel>}` is printed instead
 //!   of the (nonexistent) server payload. Never a raw absolute path or an
 //!   echoed I/O error string — only fixed sentinels, so this CLI's own stdout
@@ -346,7 +350,9 @@ const VERB_TABLE: &[VerbHelp] = &[
                   directly; an Irreversible command needs --confirm '<value>' (a proof read \
                   from ANOTHER command, named but never disclosed by a --confirm-less call — \
                   exit 4); NotExposed always refuses (see `agent schema`, the MCP `commands` \
-                  tool, or policy.rs for the full table)",
+                  tool, or policy.rs for the full table). A few unbounded list commands answer \
+                  with a paged {items,total,nextCursor} envelope and take --input \
+                  '{\"limit\":N,\"cursor\":\"...\"}'; the `commands` tool marks which and how",
     },
 ];
 
@@ -1058,15 +1064,27 @@ fn help_text() -> String {
          \x20 0   Success — the reply is printed as JSON on stdout.\n\
          \x20 1   The app replied with a refusal (rate-limited, validation, not found, autofill off, ...) \
            — still printed as JSON on stdout.\n\
-         \x20 2   The round trip never completed, or usage was invalid — see \"error\" below.\n\
+         \x20 2   No result was delivered — the round trip failed, the usage was invalid, or the \
+           app refused/discarded the reply; \"error\" names which, and result_too_large means the \
+           command itself may already have run.\n\
          \x20 4   `call` only: an Effect::Irreversible command needs --confirm '<value>' — the \
            reply's \"detail\" names which OTHER read command/resource to read the proof from, \
            and never the value itself (ADR-038 §4).\n\n\
-         ERROR SENTINELS (the \"error\" field on an exit-2 reply):\n",
+         ERROR SENTINELS this CLI synthesizes itself (the \"error\" field when no reply arrived):\n",
     );
     for (sentinel, meaning) in ERROR_SENTINELS {
         out.push_str(&format!("  {sentinel:<26}{meaning}\n"));
     }
+    // The app's OWN refusal names also land in `error` on an exit-2 reply and
+    // are deliberately NOT added to the table above: that table is derived
+    // from `ERROR_SENTINELS`, this CLI's client-side set, and hand-typing the
+    // app-side names here is exactly the second copy that drifts. One
+    // sentence + a pointer to where they're defined instead.
+    out.push_str(
+        "\n\x20\x20App-side refusal names (result_too_large, invalid_cursor, ...) reach that same \
+         \"error\" field from the app and are not listed above — they are the variants of \
+         agent_call::Refusal.\n",
+    );
     out
 }
 

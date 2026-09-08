@@ -969,7 +969,8 @@
       "title": "Preferred Location",
       "description": "Set your preferred job location to personalize search results and recommendations.",
       "searchPlaceholder": "Search for a location...",
-      "recent": "Recent"
+      "recent": "Recent",
+      "remove": "Remove location"
     },
     "techStack": {
       "title": "Tech Stack",

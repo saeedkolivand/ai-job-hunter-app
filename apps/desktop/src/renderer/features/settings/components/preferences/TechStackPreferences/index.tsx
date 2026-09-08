@@ -35,9 +35,11 @@ export function TechStackPreferences() {
       !techStack.some((item: { name: string }) => item.name === tech.name)
   );
 
-  // Guard the pre-load window: `jobPrefs` is undefined until the query resolves,
-  // and a full-row `{...undefined, techStack}` write would NULL every other
-  // column (location, countryCode, salaryExpectation, extraAgencyCompanies).
+  // Guard the pre-load window: `techStack` falls back to `[]` until the query
+  // resolves, so a write from here would send that empty list as the whole
+  // column and drop the user's saved stack. Only this derived array is at risk —
+  // the write merges over the stored row (omitted key = keep, explicit `null` =
+  // clear), so the columns these handlers never name are left alone.
   const handleAddTech = (name: string, category: string) => {
     if (!jobPrefs) return;
     setJobPreferences.mutate({

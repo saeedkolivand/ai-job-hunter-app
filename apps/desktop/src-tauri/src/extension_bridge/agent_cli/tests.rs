@@ -377,6 +377,12 @@ fn exit_code_for_reply_reports_4_for_confirmation_required_and_2_for_every_other
         "confirmation_mismatch",
         "proof_unavailable",
         "unknown_command",
+        // Issue #1135's new app-side refusal: the reply that used to arrive
+        // as a content-free `connection_lost` (exit 2 via a synthesized
+        // client error) now arrives as a real, self-describing app refusal —
+        // and must land on the SAME exit code, so a caller's existing
+        // "exit 2 = the call did not produce a result" branch keeps working.
+        agent_call::ERR_RESULT_TOO_LARGE,
     ] {
         assert_eq!(
             exit_code_for_reply(
@@ -457,6 +463,41 @@ fn help_text_lists_every_error_sentinel_this_cli_can_emit() {
             "help text is missing sentinel `{sentinel}`: {text}"
         );
     }
+}
+
+/// The exit-2 entry has to stay true for the app-side refusals that ALSO
+/// exit 2 (issue #1135). It used to say the round trip never completed or
+/// the usage was invalid — both false for a `result_too_large`, which is
+/// raised after the command RAN, so an agent reading it would conclude a
+/// mutating call was safe to re-send. Pins the two claims that make it
+/// honest, plus the pointer that keeps the app-side names OUT of this CLI's
+/// own [`ERROR_SENTINELS`] table (a second hand-typed copy is the drift the
+/// table exists to prevent).
+#[test]
+fn help_texts_exit_2_entry_covers_an_app_side_refusal_and_warns_the_command_may_have_run() {
+    let text = help_text();
+    let exit_2 = text
+        .lines()
+        .find(|l| l.trim_start().starts_with("2   "))
+        .expect("the EXIT CODES block has a `2` row");
+    assert!(
+        exit_2.contains("refused") && exit_2.contains("may already have run"),
+        "the exit-2 row must cover an app-side refusal AND warn the command may have run: {exit_2:?}"
+    );
+    assert!(
+        exit_2.contains(agent_call::ERR_RESULT_TOO_LARGE),
+        "the exit-2 row must name the refusal that warning is about: {exit_2:?}"
+    );
+    assert!(
+        !ERROR_SENTINELS
+            .iter()
+            .any(|(sentinel, _)| *sentinel == agent_call::ERR_RESULT_TOO_LARGE),
+        "an app-side refusal name must never be added to this CLI's own sentinel table"
+    );
+    assert!(
+        text.contains("agent_call::Refusal"),
+        "help must point at where the app-side refusal names are defined: {text}"
+    );
 }
 
 /// Issue #1132's two-totals distinction is written on TWO surfaces — this
