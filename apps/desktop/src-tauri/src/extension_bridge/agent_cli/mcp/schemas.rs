@@ -172,7 +172,7 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
                     "cursor": { "type": "string", "description": "an opaque token from a prior page's nextCursor, valid only for the SAME autopilotId scope AND filter arguments that issued it (present or omitted); omit to start at the first page" },
                     "minScore": { "type": "number", "description": "only rows scored at least this value; unscored rows are excluded when set" },
                     "country": { "type": "string", "description": "case-insensitive substring match against the row's location" },
-                    "remote": { "type": "boolean", "description": "true keeps only rows whose location reads as remote; false keeps only the rest" },
+                    "remote": { "type": "boolean", "description": "true keeps only rows determined remote (board flag, registry or location text); false keeps only rows determined NOT remote; a row with no location and no remote signal is undecided and matches neither" },
                     "applied": { "type": "boolean", "description": "filter to rows already applied to (true) or not (false)" },
                     "query": { "type": "string", "description": "case-insensitive substring filter over title or company" },
                     "includeDescription": { "type": "boolean", "description": "include the full (fenced, capped) posting description on each row; rows are compact without it" },
