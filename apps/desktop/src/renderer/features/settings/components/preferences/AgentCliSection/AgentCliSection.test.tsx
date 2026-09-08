@@ -153,12 +153,17 @@ describe('AgentCliSection', () => {
       `[mcp_servers.ai-job-hunter]\ncommand = '${EXE}'\nargs = ["agent", "mcp", "--allow-irreversible"]`
     );
     expect(screen.getByText(/spend AI budget and delete data/i)).toBeInTheDocument();
+    // The transcript note claims to hold at EVERY tier, not just the default
+    // read-only one — re-assert it here, after switching off read, so a
+    // regression that gated it on `tier === 'read'` fails this suite.
+    expect(screen.getByText(/is written into the ai client's own transcript/i)).toBeInTheDocument();
 
     fireEvent.click(tier.getByRole('radio', { name: 'Reversible' }));
     expect(claudeSnippet()).toBe(
       `claude mcp add --scope user ai-job-hunter-write -- "${EXE}" agent mcp --allow-reversible`
     );
     expect(codexSnippet()).toContain('"--allow-reversible"');
+    expect(screen.getByText(/is written into the ai client's own transcript/i)).toBeInTheDocument();
   });
 
   it('links to Help & Support in-app rather than out to a browser', async () => {
