@@ -158,9 +158,12 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
         json!({
             "name": TOOL_COMMANDS,
             "title": "Commands",
-            "description": "Enumerate every command this server can dispatch through call-read/call-reversible/call-irreversible, grouped by Effect class. Local — no bridge call, works even with the app closed. A row this server wasn't launched to expose is still listed, marked \"unavailable\" with the flag that would expose it, never silently dropped.",
+            "description": "Enumerate every command this server can dispatch through call-read/call-reversible/call-irreversible, grouped by Effect class. Local — no bridge call, works even with the app closed. Each row carries a one-line description (when the source has one) and args: either null (this command's input contract is not catalogued — nothing here validates its keys) or a list of {name, required, fields?} — fields lists a wrapper key's own nested field names when those resolved. An Irreversible row also carries proofField: the field name a confirm ceremony will require, answerable without dispatching anything. Filter with effect and/or namespace (an exact match on the row's own namespace, never partial). A row this server wasn't launched to expose is still listed, marked \"unavailable\" with the flag that would expose it, never silently dropped.",
             "inputSchema": schema_object(
-                json!({ "effect": { "type": "string", "enum": EFFECT_FILTER_VALUES, "description": "filter to one effect class" } }),
+                json!({
+                    "effect": { "type": "string", "enum": EFFECT_FILTER_VALUES, "description": "filter to one effect class" },
+                    "namespace": { "type": "string", "description": "filter to one namespace, e.g. \"jobs\" — an exact match on the row's own namespace, never a partial one" },
+                }),
                 &[],
             ),
             "annotations": read_only_annotations(),

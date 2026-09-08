@@ -167,6 +167,26 @@ pub(super) async fn resolve(
     extract_from_fenced_response(source, caller_input, response)
 }
 
+/// The proof value's own field NAME/PATH (never the value) — `commands`' `proofField` row (issue
+/// #1160): "what would deleting this require?" answerable without dispatching. Joined with `.` for
+/// a multi-segment `Scalar`/`Lookup` path (e.g. `"application.title"`) — the full path a caller
+/// would read a response at, unlike [`hint`]'s own per-variant match, which only needs the LAST
+/// segment (to check membership in `super::FENCE_FIELD_NAMES`). `None` for `Count`/`MatchCount`
+/// (the proof is a DERIVED number, not a field on the read response — nothing to name) and for a
+/// `Scalar`/`Lookup` with an EMPTY path (the proof is the bare response value itself, e.g.
+/// `system_get_version`'s — same "its own response value" case [`hint`] spells out in prose).
+/// `pub(super)` — re-exported by [`super::proof_field_for`] for `agent_cli::mcp` (this module
+/// itself stays private to `agent_call`; see that fn's own doc for why).
+pub(super) fn proof_field(source: ProofSource) -> Option<String> {
+    match source {
+        ProofSource::Scalar { path, .. } | ProofSource::Lookup { path, .. } => {
+            (!path.is_empty()).then(|| path.join("."))
+        }
+        ProofSource::ListMatch { value_field, .. } => Some(value_field.to_string()),
+        ProofSource::Count { .. } | ProofSource::MatchCount { .. } => None,
+    }
+}
+
 /// The `ConfirmationRequired` refusal's own detail text — names WHICH read
 /// surface and field the proof comes from, NEVER the value (ADR-038 §4's
 /// entire point). The namespace prefix is derived from [`POLICY`] itself via

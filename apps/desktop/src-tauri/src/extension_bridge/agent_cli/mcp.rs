@@ -151,6 +151,7 @@ use std::sync::Arc;
 use std::thread;
 
 use super::agent_call;
+use super::catalogue::{CatalogueEntry, CATALOGUE};
 use super::policy::{Effect, LookupInput, ProofSource, POLICY};
 use super::*;
 // The ENFORCING constants (issue #1129): both `limit` descriptions are `format!`ed from these,
@@ -251,23 +252,55 @@ fn initialize_result(params: &Value, instructions: &str) -> Value {
 
 // ── `commands` (local — no bridge call) ────────────────────────────────
 
+/// `command`'s row in the generated [`CATALOGUE`], or `None` when it is absent (an `invoke()` call
+/// the generator could not parse with confidence, or one with no call site at all — its own module
+/// doc). `commands` marks that absence with `args: null` (issue #1163) rather than an empty list,
+/// which would otherwise be indistinguishable from "this command genuinely takes no arguments".
+fn catalogue_lookup(command: &str) -> Option<&'static CatalogueEntry> {
+    CATALOGUE.iter().find(|entry| entry.command == command)
+}
+
 fn commands_value(arguments: &Value, tier: Tier) -> Value {
-    let filter = arguments.get("effect").and_then(Value::as_str);
+    let effect_filter = arguments.get("effect").and_then(Value::as_str);
+    let namespace_filter = arguments.get("namespace").and_then(Value::as_str);
     let rows: Vec<Value> = POLICY
         .iter()
         .filter_map(|entry| {
             let (namespace, command) = agent_call::split_path(entry.path);
+            if namespace_filter.is_some_and(|n| n != namespace) {
+                return None;
+            }
             let effect_name = match entry.effect {
                 Effect::Read => "read",
                 Effect::Reversible => "reversible",
                 Effect::Irreversible(_) => "irreversible",
                 Effect::NotExposed(_) => "not_exposed",
             };
-            if filter.is_some_and(|f| f != effect_name) {
+            if effect_filter.is_some_and(|f| f != effect_name) {
                 return None;
             }
             let mut row =
                 json!({ "namespace": namespace, "command": command, "effect": effect_name });
+            match catalogue_lookup(command) {
+                Some(catalogued) => {
+                    if !catalogued.description.is_empty() {
+                        row["description"] = json!(catalogued.description);
+                    }
+                    row["args"] = json!(catalogued
+                        .args
+                        .iter()
+                        .map(|arg| {
+                            let mut value = json!({ "name": arg.name, "required": arg.required });
+                            if !arg.fields.is_empty() {
+                                value["fields"] = json!(arg.fields);
+                            }
+                            value
+                        })
+                        .collect::<Vec<_>>());
+                }
+                // `args: null`, never an absent key or an empty array — see this fn's own doc.
+                None => row["args"] = Value::Null,
+            }
             // A paged row's reply is an ENVELOPE, not the bare array its name suggests
             // (issue #1136). Both the list and the note come from `agent_call`, so this
             // row cannot drift from the behaviour `dispatch_direct` actually applies.
@@ -288,6 +321,12 @@ fn commands_value(arguments: &Value, tier: Tier) -> Value {
                 Effect::Irreversible(source) => {
                     if let Some(pf) = proof_from(source) {
                         row["proofFrom"] = json!(pf);
+                    }
+                    // The field a confirm ceremony will require (issue #1160: "what would
+                    // deleting this require?" answerable without dispatching) — derived, never
+                    // hand-typed, the same as `proofFrom`/`hint`'s own `field` clause.
+                    if let Some(field) = agent_call::proof_field_for(source) {
+                        row["proofField"] = json!(field);
                     }
                     if let ProofSource::Lookup { key, input, .. } = source {
                         row["proofInput"] = json!(key);
@@ -421,13 +460,15 @@ fn local_call_refusal(tool_name: &str, verb: &Verb) -> Option<Value> {
         .iter()
         .find(|e| agent_call::split_path(e.path) == (namespace.as_str(), command.as_str()));
     let Some(entry) = entry else {
+        // Same suggestion `agent_call::dispatch`'s own `UnknownCommand` refusal names — never a
+        // second hand-typed scan of `POLICY` (issue #1163).
+        let suggestion = agent_call::namespace_suggestion(command);
         return Some(json!({
             "dispatched": false,
             "namespace": namespace,
             "command": command,
             "error": agent_call::ERR_UNKNOWN_COMMAND,
-            "detail": "no policy row matches this namespace/command in this server's own \
-                       table — call `commands` to enumerate real targets",
+            "detail": agent_call::unknown_command_detail(suggestion),
         }));
     };
     if let Effect::NotExposed(reason) = entry.effect {
@@ -677,6 +718,24 @@ fn classify_tool_call(params: &Value, server: &Server) -> ToolCall {
                     usage_error_value(
                         "effect must be one of read, reversible, irreversible, not_exposed",
                     ),
+                    2,
+                )));
+            }
+        }
+        // Same reasoning as `effect` just above, for the SAME failure shape (issue #1163's
+        // `namespace` filter): a typo'd namespace would otherwise match zero rows and answer
+        // `{"commands":[]}` isError:false exit 0 — a refusal disguised as an empty success.
+        // `namespace` has no small enum to advertise in the schema (unlike `effect`), so it is
+        // checked against POLICY's own real namespace set rather than a hand-typed list.
+        if let Some(namespace_value) = arguments.get("namespace") {
+            let valid = namespace_value.as_str().is_some_and(|s| {
+                POLICY
+                    .iter()
+                    .any(|entry| agent_call::split_path(entry.path).0 == s)
+            });
+            if !valid {
+                return ToolCall::Local(Ok(tool_result(
+                    usage_error_value("namespace does not match any real command's namespace"),
                     2,
                 )));
             }

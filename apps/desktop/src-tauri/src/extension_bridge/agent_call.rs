@@ -60,6 +60,10 @@ mod proof;
 // read through it, the same shape `agent_read` uses for `found_jobs`.
 pub(in crate::extension_bridge) mod reshape;
 use reshape::{reshape_reply, take_list_page_args, unfence_named_fields_recursive};
+// Dispatch-time input-key validation against the generated
+// `agent_cli::catalogue` (issues #1163, #1158, #1160) — its own file under
+// the same R8 LOC-cap reasoning as `proof`/`reshape` above.
+mod validate;
 
 // ── `<namespace>:<command>` ⇄ policy row (derived, never hand-typed twice) ─
 
@@ -98,6 +102,49 @@ fn find_policy(namespace: &str, command: &str) -> Option<&'static PolicyEntry> {
         .find(|entry| split_path(entry.path) == (namespace, command))
 }
 
+/// The real namespace for `command`, when EXACTLY ONE [`POLICY`] row's own bare command name
+/// matches it — never a fuzzy match on a mistyped COMMAND name (issue #1163's `unknown_command`
+/// naming request is scoped to "the bare command name matches exactly one row": this is an EXACT
+/// string match on the trailing segment, the same equality [`find_policy`] itself uses, not a
+/// distance/prefix heuristic). `None` when zero rows match (the command name itself is wrong, not
+/// just its namespace) or — defensively, since `generate_handler!` requires globally-unique
+/// command names, so this can't happen for a real row — more than one does; guessing between two
+/// would be exactly the "typo to a destructive neighbour" path this surface never takes.
+/// `pub(super)` — the MCP server's own LOCAL `unknown_command` refusal
+/// ([`super::agent_cli::mcp::local_call_refusal`]) needs the identical suggestion, never a second
+/// hand-typed scan of [`POLICY`].
+pub(super) fn namespace_suggestion(command: &str) -> Option<&'static str> {
+    let mut matches = POLICY
+        .iter()
+        .filter(|entry| split_path(entry.path).1 == command)
+        .map(|entry| split_path(entry.path).0);
+    let first = matches.next()?;
+    matches.next().is_none().then_some(first)
+}
+
+/// [`Refusal::UnknownCommand`]'s own detail text — built from [`namespace_suggestion`]'s output,
+/// `pub(super)` so [`super::agent_cli::mcp::local_call_refusal`] can build the IDENTICAL wording
+/// for its own local (never-dispatched, no round trip) refusal rather than a second hand-typed
+/// copy that could drift.
+pub(super) fn unknown_command_detail(suggestion: Option<&str>) -> String {
+    match suggestion {
+        Some(namespace) => format!(
+            "no policy row matches this <namespace>:<command> — this command name IS real, but \
+             registered under namespace `{namespace}`; run `agent schema` or the MCP `commands` \
+             tool to enumerate targets, or see policy.rs for the full table"
+        ),
+        None => "no policy row matches this <namespace>:<command> — run `agent schema` or the \
+                  MCP `commands` tool to enumerate targets, or see policy.rs for the full table"
+            .to_string(),
+    }
+}
+
+/// Re-export of [`proof::proof_field`] for `commands`' `proofField` row (issue #1160), without
+/// widening `proof`'s own module privacy — one definition, reused, never duplicated.
+pub(super) fn proof_field_for(source: ProofSource) -> Option<String> {
+    proof::proof_field(source)
+}
+
 // ── Refusals — distinct sentinel + detail per cause, one reply builder ─────
 
 /// Every reason dispatch never reached (or never completed)
@@ -110,8 +157,18 @@ fn find_policy(namespace: &str, command: &str) -> Option<&'static PolicyEntry> {
 /// requires every type in a `pub(super)` fn's signature to be at least as
 /// visible, regardless of whether a caller actually names a variant.
 pub(super) enum Refusal {
-    /// No policy row matches this `(namespace, command)` pair at all.
-    UnknownCommand,
+    /// No policy row matches this `(namespace, command)` pair at all. Carries
+    /// [`namespace_suggestion`]'s own output — the real namespace, when the bare command name
+    /// itself is real and unambiguous — so the refusal can name it without a second lookup.
+    UnknownCommand(Option<&'static str>),
+    /// The caller's `input` failed the generated catalogue's declared contract (issues #1163,
+    /// #1158, #1160): an unknown top-level or nested key, or a missing required top-level key.
+    /// Checked in [`dispatch`] BEFORE [`gate`] — the #1160 ordering fix: a missing required key on
+    /// an `Irreversible` row must refuse HERE, never surface as `ConfirmationRequired` and then die
+    /// on the underlying command's own deserializer after an approved confirm. A command absent
+    /// from the generated catalogue is unchecked (see `validate`'s own doc) — never constructed for
+    /// one, so this variant existing at all is proof the target command IS catalogued.
+    InvalidInput(String),
     /// [`Effect::NotExposed`] — deliberately unreachable; carries that row's
     /// own stored reason.
     NotExposed(&'static str),
@@ -194,6 +251,10 @@ pub(super) enum Refusal {
 /// copy doesn't know, rather than a second hand-typed literal (same
 /// reasoning as [`ERR_CONFIRMATION_REQUIRED`]'s own doc).
 pub(super) const ERR_UNKNOWN_COMMAND: &str = "unknown_command";
+/// [`Refusal::InvalidInput`]'s sentinel — an app-side-only refusal (every MCP `call-*` tool
+/// forwards to the real app rather than validating locally, unlike [`ERR_UNKNOWN_COMMAND`]/
+/// [`ERR_NOT_EXPOSED`]), so this stays private rather than `pub(super)`.
+const ERR_INVALID_INPUT: &str = "invalid_input";
 /// `pub(super)` — the MCP server refuses a `NotExposed` row LOCALLY with this
 /// SAME sentinel (so the token-row fix does not depend on the peer app's build;
 /// see `agent_cli::mcp::local_call_refusal`), never a second hand-typed copy.
@@ -223,7 +284,8 @@ const CLI_ONLY_MESSAGE: &str = "agent.call is only available to the ajh-tauri ag
 impl Refusal {
     fn sentinel(&self) -> &'static str {
         match self {
-            Refusal::UnknownCommand => ERR_UNKNOWN_COMMAND,
+            Refusal::UnknownCommand(_) => ERR_UNKNOWN_COMMAND,
+            Refusal::InvalidInput(_) => ERR_INVALID_INPUT,
             Refusal::NotExposed(_) => ERR_NOT_EXPOSED,
             Refusal::OriginRefused => ERR_CLI_ONLY,
             Refusal::RateLimited => ERR_RATE_LIMITED,
@@ -255,11 +317,8 @@ impl Refusal {
     /// this file emits, not a second primitive.
     fn detail(&self) -> String {
         match self {
-            Refusal::UnknownCommand => {
-                "no policy row matches this <namespace>:<command> — run `agent schema` or the \
-                 MCP `commands` tool to enumerate targets, or see policy.rs for the full table"
-                    .to_string()
-            }
+            Refusal::UnknownCommand(suggestion) => unknown_command_detail(*suggestion),
+            Refusal::InvalidInput(detail) => detail.clone(),
             Refusal::NotExposed(reason) => format!("not exposed to any CLI tier: {reason}"),
             Refusal::OriginRefused => CLI_ONLY_MESSAGE.to_string(),
             Refusal::RateLimited => super::agent_read::THROTTLED_MESSAGE.to_string(),
@@ -1244,7 +1303,12 @@ async fn dispatch(
     input: Value,
     confirm: Option<&str>,
 ) -> Result<Value, Refusal> {
-    let entry = find_policy(namespace, command).ok_or(Refusal::UnknownCommand)?;
+    let entry = find_policy(namespace, command)
+        .ok_or_else(|| Refusal::UnknownCommand(namespace_suggestion(command)))?;
+    // Catalogue validation runs BEFORE `gate` (issue #1160's ordering fix): a missing required
+    // key on an `Irreversible` row must refuse HERE, never surface as `ConfirmationRequired` and
+    // then die on the underlying command's own deserializer after an approved confirm.
+    validate::check_input(command, &input)?;
     match gate(entry.effect, confirm)? {
         Dispatch::Direct => dispatch_direct(app, command, input).await,
         Dispatch::Confirmed { source, confirm } => {

@@ -38,7 +38,12 @@ pub(super) const INSTRUCTIONS: &str = "These tools talk to the running AI Job Hu
     call-irreversible only. A call-* `input` is keyed by the target command's OWN parameter \
     names, and many write commands take ONE object parameter — so the body usually nests under \
     that name (e.g. {\"req\": {…}}). An invoke_error naming a missing key is the recovery \
-    signal: re-send the same body wrapped under that key before treating the command as broken.";
+    signal: re-send the same body wrapped under that key before treating the command as broken. \
+    Call `commands` (optionally filtered by namespace) before guessing a call-* body: a catalogued \
+    row's own `args` names its declared keys, required-ness, and — for a wrapper key — its nested \
+    field names, and a call whose `input` carries an unrecognised or missing key refuses with \
+    invalid_input naming the offending/missing key rather than dispatching. `args: null` on a row \
+    means its input contract isn't catalogued, so no key is validated for it.";
 
 /// Appended to [`INSTRUCTIONS`] when the reversible tier is enabled — worded by TIER, never by
 /// the literal flag typed (LOW fix, review round 3 — `--allow-irreversible` alone implies this
