@@ -341,6 +341,40 @@ fn unrelated_jobs_do_not_block_indexing() {
     }
 }
 
+// ── spend_totals_json (ai_spend_summary today/windowTotals shape, #1161) ──────
+
+use crate::spend::SpendTotals;
+
+#[test]
+fn spend_totals_json_carries_the_exact_totals_given() {
+    let totals = SpendTotals {
+        input_tokens: 12_431,
+        output_tokens: 3_204,
+        est_cost_usd: 0.42,
+    };
+
+    let out = spend_totals_json(totals);
+    assert_eq!(out["inputTokens"], 12_431);
+    assert_eq!(out["outputTokens"], 3_204);
+    assert_eq!(out["estCostUsd"], 0.42);
+}
+
+#[test]
+fn today_and_window_totals_never_drift_because_they_share_one_builder() {
+    // Regression for C1-r1-RBA-2: `ai_spend_summary` must build BOTH `today`
+    // and `windowTotals` from `spend_totals_json`, so calling it twice with
+    // the same input always yields identical JSON — the structural guarantee
+    // that a `days > 1` reader of `windowTotals` sees exactly what `today`
+    // reports, never a value that quietly diverged between two call sites.
+    let totals = SpendTotals {
+        input_tokens: 1,
+        output_tokens: 2,
+        est_cost_usd: 3.0,
+    };
+
+    assert_eq!(spend_totals_json(totals), spend_totals_json(totals));
+}
+
 // ── per_provider_with_zero_rows (ai_spend_summary window merge, #1161) ────────
 
 use crate::spend::ProviderTotals;

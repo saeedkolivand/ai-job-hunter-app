@@ -93,12 +93,68 @@ describe('SpendSettings — loaded with data', () => {
     expect(screen.getByText('settings.spend.freeLocal')).toBeInTheDocument();
     expect(screen.queryByText('~$0.00')).not.toBeInTheDocument();
   });
+
+  it('does not render a zero row with a `reason` as "local — free" (#1161)', () => {
+    // A provider with real (paid) history but no activity in this window is a
+    // zero row carrying `reason`, not a local/free provider — it must be
+    // dropped from the list entirely rather than mislabeled.
+    mockUseSpendSummary.mockReturnValue({
+      data: {
+        today: { inputTokens: 500, outputTokens: 100, estCostUsd: 0.31 },
+        perProvider: [
+          { provider: 'openai', inputTokens: 500, outputTokens: 100, estCostUsd: 0.31 },
+          {
+            provider: 'anthropic',
+            inputTokens: 0,
+            outputTokens: 0,
+            estCostUsd: 0,
+            reason: 'no spend in window',
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    render(<SpendSettings />);
+
+    expect(screen.getByText('OpenAI')).toBeInTheDocument();
+    expect(screen.queryByText('Anthropic')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.spend.freeLocal')).not.toBeInTheDocument();
+  });
 });
 
 describe('SpendSettings — empty', () => {
   it('shows EmptyState when there is no spend today', () => {
     mockUseSpendSummary.mockReturnValue({
       data: { today: { inputTokens: 0, outputTokens: 0, estCostUsd: 0 }, perProvider: [] },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    render(<SpendSettings />);
+
+    expect(screen.getByText('settings.spend.emptyTitle')).toBeInTheDocument();
+  });
+
+  it('shows EmptyState when `perProvider` only has reason rows (#1161)', () => {
+    // Every entry is a zero row with a reason (no real activity anywhere) —
+    // the empty state must still fire, not an empty-looking list.
+    mockUseSpendSummary.mockReturnValue({
+      data: {
+        today: { inputTokens: 0, outputTokens: 0, estCostUsd: 0 },
+        perProvider: [
+          {
+            provider: 'openai',
+            inputTokens: 0,
+            outputTokens: 0,
+            estCostUsd: 0,
+            reason: 'no spend in window',
+          },
+        ],
+      },
       isLoading: false,
       isError: false,
       refetch: vi.fn(),

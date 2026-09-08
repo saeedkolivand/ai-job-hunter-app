@@ -345,6 +345,10 @@ export interface AiContract {
    * behavior. The resolved window is echoed back as {@link AiSpendSummary.window}.
    * `perProvider` lists every provider that ever recorded a call, not just
    * ones active in this window — see {@link AiSpendProviderTotals.reason}.
+   *
+   * For `days > 1`, prefer {@link AiSpendSummary.windowTotals} over `today` —
+   * `today` keeps its name/shape for existing readers but is window-scoped,
+   * not calendar-day scoped, whenever a wider window was requested.
    */
   spendSummary(days?: number): Promise<AiSpendSummary>;
 }
@@ -507,6 +511,16 @@ export interface AiSpendSummary {
    *  real backend always sends it. */
   window?: AiSpendWindow;
   today: { inputTokens: number; outputTokens: number; estCostUsd: number };
+  /**
+   * Same totals as {@link today}, under an honest name — {@link today} keeps
+   * its pre-#1161 shape/name for existing readers (e.g. the agent-cli
+   * policy's proof source) but is window-scoped, not calendar-day scoped,
+   * whenever `days > 1` was requested. Read this field instead of `today`
+   * for any `days > 1` call, so a multi-day total is never misread as
+   * today's spend. Optional for the same source-compatibility reason as
+   * {@link window}.
+   */
+  windowTotals?: { inputTokens: number; outputTokens: number; estCostUsd: number };
   perProvider: AiSpendProviderTotals[];
   /** Empty until a provider that reports the split has been used — see
    *  {@link AiSpendModelThinking}. */

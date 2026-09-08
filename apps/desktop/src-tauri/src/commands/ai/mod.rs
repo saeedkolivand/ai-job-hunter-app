@@ -927,8 +927,10 @@ pub fn ai_spend_summary(app: AppHandle, days: Option<u32>) -> Value {
     });
 
     let Some(store) = app.try_state::<crate::spend::SpendStore>() else {
+        let zero = spend_totals_json(crate::spend::SpendTotals::default());
         return json!({
-            "today": { "inputTokens": 0, "outputTokens": 0, "estCostUsd": 0.0 },
+            "today": zero.clone(),
+            "windowTotals": zero,
             "perProvider": [],
             "thinkingByModel": [],
             "window": window_json,
@@ -962,16 +964,34 @@ pub fn ai_spend_summary(app: AppHandle, days: Option<u32>) -> Value {
             })
         })
         .collect();
+    // NOTE: `today` is window-scoped (== `window_start`), not calendar-day —
+    // kept under its pre-#1161 name/shape for existing readers (e.g. the
+    // agent-cli policy's `["today", "inputTokens"]` proof, which only ever
+    // calls with `days` unset). A `days > 1` caller should read
+    // `windowTotals` instead, which carries the SAME value under a name that
+    // doesn't misattribute a multi-day total to "today" (issue #1161).
+    let today_json = spend_totals_json(today);
     json!({
-        "today": {
-            "inputTokens": today.input_tokens,
-            "outputTokens": today.output_tokens,
-            "estCostUsd": today.est_cost_usd,
-        },
+        "today": today_json.clone(),
+        "windowTotals": today_json,
         "perProvider": per_provider,
         "thinkingByModel": thinking_by_model,
         "window": window_json,
         "thinkingByModelWindow": "allTime",
+    })
+}
+
+/// The `{inputTokens, outputTokens, estCostUsd}` shape shared by `today` and
+/// `windowTotals` in [`ai_spend_summary`] — one function so both keys are
+/// structurally guaranteed to carry the SAME totals (issue #1161's
+/// C1-r1-RBA-2: `windowTotals` must never drift from `today`), and unit
+/// testable without a live `AppHandle` (this crate has no mock harness for
+/// one).
+fn spend_totals_json(t: crate::spend::SpendTotals) -> Value {
+    json!({
+        "inputTokens": t.input_tokens,
+        "outputTokens": t.output_tokens,
+        "estCostUsd": t.est_cost_usd,
     })
 }
 
