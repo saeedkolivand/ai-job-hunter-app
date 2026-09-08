@@ -309,15 +309,27 @@ pub(super) fn unfence_named_fields_recursive(value: &mut Value) {
     match value {
         Value::Object(map) => {
             for field in FENCE_FIELD_NAMES {
+                // Mirrors the outbound `title`/`body` origin split (issue #1157/#1162): a
+                // notification-shaped row fences those two fields under `app_notification`
+                // rather than `job_posting` (see `fence.rs`'s `notification_shaped`), so the
+                // inbound strip must try both tags. `strip_fence_wrapper` is a no-op on a
+                // wrapper for the other tag, so trying both is safe on every other field too.
                 if let Some(s) = map.get(*field).and_then(Value::as_str) {
                     let stripped = crate::prompt_fence::strip_fence_wrapper("job_posting", s);
+                    let stripped =
+                        crate::prompt_fence::strip_fence_wrapper("app_notification", &stripped);
                     map.insert((*field).to_string(), json!(stripped));
                     continue;
                 }
                 if let Some(Value::Array(items)) = map.get_mut(*field) {
                     for item in items.iter_mut() {
                         if let Value::String(s) = item {
-                            *s = crate::prompt_fence::strip_fence_wrapper("job_posting", s);
+                            let stripped =
+                                crate::prompt_fence::strip_fence_wrapper("job_posting", s);
+                            *s = crate::prompt_fence::strip_fence_wrapper(
+                                "app_notification",
+                                &stripped,
+                            );
                         }
                     }
                 }
@@ -397,6 +409,23 @@ pub(super) fn fence_user_document_bare_text(command: &str, data: &mut Value) {
         *s = crate::prompt_fence::fenced("user_document", s, usize::MAX);
     }
 }
+
+/// Every fence tag THIS dispatch surface (`agent_call::fence` + this module)
+/// can pass to [`crate::prompt_fence::fenced`] — hand-audited the same way
+/// [`super::fence::FENCE_FIELD_NAMES`] is, and for the same reason:
+/// `prompt_fence::EXPECTED_FENCE_TAGS` pins REGISTRATION crate-wide (most of
+/// its entries — `resume_strategy`, `humanize_findings`, … — this surface
+/// never emits), so it can't stand in as this surface's own coverage list
+/// (A3-r3-AC-3). `mcp::instructions`'s own test asserts `INSTRUCTIONS`
+/// documents every tag named here; update THIS list, not just the call
+/// site, the moment a new `fenced(...)`/`strip_fence_wrapper(...)` literal
+/// tag is added anywhere in `fence.rs` or this module.
+///
+/// `#[cfg(test)]` — read only by `mcp::tests`'s coverage assertion, the same
+/// reason `agent_call.rs`'s own `dispatch_plan::gate` re-export is gated.
+#[cfg(test)]
+pub(in crate::extension_bridge) const EMITTED_FENCE_TAGS: [&str; 3] =
+    ["job_posting", "user_document", "app_notification"];
 
 /// Every reshape a dispatched reply gets before it goes on the wire, in the
 /// ONE order they are allowed to run in. Pure — no `AppHandle`, no I/O — so

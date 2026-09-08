@@ -914,6 +914,25 @@ fn instructions_no_longer_claims_title_is_always_third_party_scraped_text_by_nam
     );
 }
 
+/// A3-r3-AC-3: `prompt_fence::EXPECTED_FENCE_TAGS` pins REGISTRATION only, across every tag in
+/// the crate -- most entries this dispatch surface never emits -- so it can't serve as
+/// `INSTRUCTIONS`'s own coverage source. `agent_call::reshape::EMITTED_FENCE_TAGS` is that
+/// source instead: the surface's own hand-audited list of every tag literal `agent_call::fence`
+/// and `agent_call::reshape` actually pass to `prompt_fence::fenced`. Deleting the
+/// `<user_document>`/`<app_notification>` sentence from `INSTRUCTIONS` -- nothing else in this
+/// file would have caught that -- reddens this test.
+#[test]
+fn instructions_documents_every_fence_tag_this_surface_emits() {
+    for tag in agent_call::reshape::EMITTED_FENCE_TAGS {
+        let wrapper = format!("<{tag}>...</{tag}>");
+        assert!(
+            INSTRUCTIONS.contains(&wrapper),
+            "INSTRUCTIONS never explains fence tag `{tag}` (expected `{wrapper}` somewhere): \
+             {INSTRUCTIONS}"
+        );
+    }
+}
+
 #[test]
 fn instructions_name_connection_lost_alongside_rate_limited_in_the_no_retry_sentence() {
     // item 18 — a payload too large for the bridge frame surfaces as connection_lost, which

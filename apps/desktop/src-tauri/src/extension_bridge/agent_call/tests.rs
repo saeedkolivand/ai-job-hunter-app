@@ -1639,6 +1639,45 @@ fn unfence_named_fields_recursive_reaches_nested_objects_and_array_elements() {
     assert_eq!(input["requirements"][1].as_str().unwrap(), "SQL");
 }
 
+/// #1162 regression: the round-3 AC-7 fix taught the OUTBOUND walk to fence a
+/// notification's `title`/`body` under the distinct `app_notification` tag, but
+/// left the inbound mirror stripping only `job_posting` for those same two field
+/// names — a caller echoing a notification title straight back into a write
+/// persisted the literal `<app_notification>…</app_notification>` markup. Round-trips
+/// a notification-shaped row through `fence_scraped_fields` then
+/// `unfence_named_fields_recursive` and asserts the echo comes back bare.
+#[test]
+fn unfence_named_fields_recursive_strips_an_app_notification_wrapper_a_caller_echoed_back() {
+    let mut data = json!({
+        "id": "n-1",
+        "kind": "application.follow_up",
+        "title": "Staff Engineer follow-up",
+        "body": "Your application to Acme Corp is due.",
+        "createdAt": 0,
+        "read": false,
+    });
+    fence_scraped_fields(&mut data);
+    let title = data["title"].as_str().unwrap();
+    let body = data["body"].as_str().unwrap();
+    assert!(
+        title.starts_with("<app_notification>\n"),
+        "precondition: a notification's title must be fenced under app_notification: {title}"
+    );
+
+    // A caller echoes the fenced title/body straight back into a write's `--input`.
+    let mut echoed = json!({ "title": title, "body": body });
+    unfence_named_fields_recursive(&mut echoed);
+    assert_eq!(
+        echoed["title"].as_str().unwrap(),
+        "Staff Engineer follow-up",
+        "an app_notification wrapper must be stripped, not persisted verbatim"
+    );
+    assert_eq!(
+        echoed["body"].as_str().unwrap(),
+        "Your application to Acme Corp is due."
+    );
+}
+
 // ── Frame-cap refusal (issue #1135) ──────────────────────────────────────
 
 /// Builds a reply string just past [`super::super::MAX_FRAME_BYTES`] and
