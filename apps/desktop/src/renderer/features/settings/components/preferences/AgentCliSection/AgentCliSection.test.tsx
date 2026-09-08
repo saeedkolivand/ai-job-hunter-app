@@ -88,6 +88,12 @@ describe('AgentCliSection', () => {
         2
       )
     );
+    // The generic block's hint is the only sentence telling the user the
+    // snippet above is already the whole `mcpServers` wrapper, not a section
+    // to nest inside one — a round-2 finding on this exact wording. Nothing
+    // else in this suite renders `hint`, so a dropped prop or a reworded
+    // string is invisible without this assertion.
+    expect(screen.getByText(/add just the inner entry/i)).toBeInTheDocument();
   });
 
   it('shows a skeleton, not an empty command, while the path is still being read', () => {
