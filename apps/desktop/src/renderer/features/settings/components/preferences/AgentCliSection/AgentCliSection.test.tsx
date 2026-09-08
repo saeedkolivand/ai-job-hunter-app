@@ -269,11 +269,13 @@ describe('AgentCliSection', () => {
     );
     // The CLI/MCP server is a separate process the AI client spawns (ADR-037,
     // ADR-040 §11); it keeps answering `commands` even while the app is
-    // closed, so the note must say calls fail while closed, never that the
-    // server itself "runs inside" the app or "stops as soon as it closes".
+    // closed, so the note must hedge with "most" (matching the in-app FAQ,
+    // en/translation.json's supportFaq entry) rather than claim ALL calls
+    // fail while closed, and never that the server "runs inside" the app or
+    // "stops as soon as it closes".
     const stayOpenNote = screen.getByText(/keep this app open while an agent is connected/i);
     expect(stayOpenNote).toBeInTheDocument();
-    expect(stayOpenNote.textContent).toMatch(/fail while it is closed/i);
+    expect(stayOpenNote.textContent).toMatch(/most agent calls .*fail while it is closed/i);
     expect(stayOpenNote.textContent).not.toMatch(/run inside it/i);
     expect(stayOpenNote.textContent).not.toMatch(/stop as soon as it closes/i);
     expect(screen.getByText(/is written into the ai client's own transcript/i)).toBeInTheDocument();
