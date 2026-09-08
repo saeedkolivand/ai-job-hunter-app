@@ -174,7 +174,7 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
         json!({
             "name": TOOL_CALL_READ,
             "title": "Call (read)",
-            "description": "Dispatch a Read-effect command by namespace/command — no state change. Refuses any target this server does not classify Read.",
+            "description": "Dispatch a Read-effect command by namespace/command — no persisted state change (a Read row may still emit a UI event or touch in-memory-only state; see `updater:updater_check`). Refuses any target this server does not classify Read.",
             "inputSchema": call_target_schema(json!({}), &[]),
             "annotations": {
                 "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true,

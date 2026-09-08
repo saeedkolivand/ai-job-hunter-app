@@ -938,8 +938,11 @@ fn instructions_ns_cmd_pairs_are_real_policy_rows() {
         );
     }
     assert_eq!(
-        checked, 2,
-        "expected exactly the 2 résumé/document ns:cmd pairs issue #1170 named: {INSTRUCTIONS}"
+        checked, 1,
+        "expected exactly the 1 résumé/document ns:cmd pair issue #1170 named — \
+         documents:documents_get_text was dropped (issue #1171): its `id` param does not match \
+         documents_list's `_id` rows, and documents_list already carries the full text: \
+         {INSTRUCTIONS}"
     );
 }
 
@@ -1253,16 +1256,36 @@ fn profile_tool_description_names_a_real_document_read() {
         description.contains("Contact fields only"),
         "must say the profile tool holds contact fields only: {description}"
     );
-    let entry = POLICY
-        .iter()
-        .find(|e| agent_call::split_path(e.path) == ("documents", "documents_list"))
-        .unwrap_or_else(|| {
-            panic!("profile's description names documents:documents_list, which is not a real POLICY row")
-        });
-    assert!(
-        matches!(entry.effect, Effect::Read),
-        "profile's description tells a caller to reach documents:documents_list via call-read, \
-         but its POLICY row is not Effect::Read"
+    // Every `ns:cmd`-shaped token is pulled OUT of the description text itself (same
+    // discipline as `instructions_ns_cmd_pairs_are_real_policy_rows` below) — a hand-picked
+    // pair list would keep passing after a rename inside the string, which is exactly how the
+    // round-1 fix missed `documents_get_text` (issue #1164 round 2).
+    let is_ident = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_lowercase() || c == '_');
+    let mut checked = 0usize;
+    for word in description.split_whitespace() {
+        let word = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != ':' && c != '_');
+        let Some((ns, cmd)) = word.split_once(':') else {
+            continue;
+        };
+        if !is_ident(ns) || !is_ident(cmd) {
+            continue;
+        }
+        checked += 1;
+        let entry = POLICY
+            .iter()
+            .find(|e| agent_call::split_path(e.path) == (ns, cmd))
+            .unwrap_or_else(|| {
+                panic!("profile's description names {word}, which is not a real POLICY row")
+            });
+        assert!(
+            matches!(entry.effect, Effect::Read),
+            "profile's description tells a caller to reach {word} via call-read, but its \
+             POLICY row is not Effect::Read"
+        );
+    }
+    assert_eq!(
+        checked, 2,
+        "expected exactly the 2 ns:cmd pairs the profile description names: {description}"
     );
 }
 
@@ -2496,4 +2519,25 @@ fn the_generic_input_schema_says_limit_and_cursor_belong_to_the_paging_layer() {
             "the input description must state `{clause}`: {description}"
         );
     }
+}
+
+/// Issue #1164 round 2 (`B1-r2-B2-r2-ACLI-4`): `updater:updater_check` is `Effect::Read` (issue
+/// #1165) while still writing `UpdaterState` and emitting a renderer event — a Read row CAN have
+/// a non-persisted side effect. `call-read`'s own description must not overclaim "no state
+/// change" (false for that row) alongside `readOnlyHint: true`; it must say "no PERSISTED state
+/// change" instead, matching what the policy comment on `updater_check` actually proves.
+#[test]
+fn call_read_description_claims_no_persisted_state_change_not_no_state_change_at_all() {
+    let description = tool_description(&tools(Tier::Read), TOOL_CALL_READ);
+    assert!(
+        description.contains("no persisted state change"),
+        "call-read's description must say \"no persisted state change\", the claim its Read \
+         rows actually keep: {description}"
+    );
+    assert!(
+        !description.contains("— no state change.") && !description.contains("— no state change,"),
+        "call-read's description must not overclaim a bare \"no state change\" — \
+         updater:updater_check is Read and still writes UpdaterState + emits an event: \
+         {description}"
+    );
 }

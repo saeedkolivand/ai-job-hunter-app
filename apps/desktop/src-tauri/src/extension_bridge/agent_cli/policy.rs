@@ -1040,8 +1040,10 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     // Same no-inverse argument as `notifications_mark_read` above, applied
     // to every notification at once — no selector, so this is the
     // selector-less shape `notifications_clear_all` already uses: the proof
-    // is the exact count about to be flipped, read via `notifications_list`
-    // itself (issue #1164).
+    // is the TOTAL notification count, read via `notifications_list`
+    // itself — a superset of the blast radius, since `mark_all_read` only
+    // flips the unread subset and no Read row exposes that narrower count
+    // (issue #1164).
     PolicyEntry {
         path: "commands::notifications::notifications_mark_all_read",
         effect: Effect::Irreversible(ProofSource::Count {
@@ -1261,22 +1263,19 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     // no undo path. `UpdaterState.pending_version` otherwise lives only in
     // memory behind `updater_download`, which stays `Reversible`, so it is
     // not eligible as a proof source. `updater_check` is now `Read` (issue
-    // #1165) and its own reply DOES carry `version` — but re-pointing this
-    // ceremony's proof at it is a separate change to an already-reviewed
-    // Irreversible row, out of scope here (follow-up). `system_get_version`
-    // is the Read row this ceremony actually uses, but it names the
-    // CURRENTLY RUNNING version, not the one about to be installed — one of
-    // the WEAKEST rows in this table, flagged prominently. Also vacuous by
-    // the same compile-time-constant reasoning `support_export_diagnostics`
-    // was reclassified for (security review round 3) — kept Irreversible
-    // DELIBERATELY: the real safety boundary here is `updater_download`'s
-    // minisign signature check, not this ceremony, and the command has no
-    // separate caller-chosen target for a stronger proof to bind to.
+    // #1165) and its own reply carries the PENDING version at `version` —
+    // the one about to be installed, not the currently running one — so the
+    // proof below reads it there (issue #1171), replacing the former
+    // `system_get_version` proof, which named the wrong version and was
+    // vacuous besides. The real safety boundary here is still
+    // `updater_download`'s minisign signature check, not this ceremony;
+    // this proof only confirms the caller is targeting the version that
+    // will actually be installed.
     PolicyEntry {
         path: "updater::updater_install",
         effect: Effect::Irreversible(ProofSource::Scalar {
-            read_command: "system_get_version",
-            path: &[],
+            read_command: "updater_check",
+            path: &["version"],
         }),
     },
     PolicyEntry { path: "updater::updater_changelog", effect: Effect::Read },

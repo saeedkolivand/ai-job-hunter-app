@@ -12,8 +12,11 @@
 //! retrieval math, the embedding, the spend charge and the vector cache. The
 //! entry text is app copy, but the REQUEST is still renderer-supplied input
 //! crossing an IPC boundary, so every Zod cap is re-checked here — a Tauri
-//! command is reachable directly by the agent CLI or a crafted extension
-//! message, which never see the schema.
+//! command is reachable IN PRINCIPLE from the agent CLI or a crafted
+//! extension message, neither of which ever sees the schema. `help_search`
+//! itself is currently `NotExposed` on the agent-CLI policy table (issue
+//! #1169), so these caps are defence in depth against a future
+//! reclassification, not today's only guard.
 //!
 //! **Degrade, never silently claim more than ran.** The dense arm is gated on
 //! the SAME `semantic_scoring` preference that gates hybrid postings search,
@@ -48,10 +51,12 @@
 //! fire.
 //!
 //! Which of the two a caller gets is a property of its REQUEST, not of who
-//! it is. The renderer mints an id for every question; an agent-CLI or
-//! extension-bridge caller gets exactly what its own body asked for — send a
-//! `help-` id and `jobs_cancel` reaches this search like any other, omit it
-//! and nothing can. There is no renderer-only path here.
+//! it is — this stays true even though `help_search` is currently
+//! `NotExposed` on the agent-CLI policy table (issue #1169). If it is ever
+//! reclassified, an agent-CLI or extension-bridge caller would get exactly
+//! what its own body asked for — send a `help-` id and `jobs_cancel` reaches
+//! this search like any other, omit it and nothing can. There is no
+//! renderer-only path in this code.
 //!
 //! A cancel makes the dense arm stop SOONER, not instantly: the token is
 //! raced against each individual embed (so a cancel does not wait out the
@@ -100,8 +105,10 @@ const ENTRIES_MAX: usize = 200;
 /// [`ArmStatus::Unavailable`] (see [`run_dense_arm`]).
 ///
 /// The request, not the shipped corpus, decides how many entries arrive
-/// (a `help_search` is reachable from the agent CLI and the extension bridge
-/// with a hand-written body), so without this an entry-cap-sized call could
+/// (`help_search` is reachable IN PRINCIPLE from the agent CLI and the
+/// extension bridge with a hand-written body — currently `NotExposed` on
+/// the agent-CLI policy table, issue #1169), so without this an
+/// entry-cap-sized call could
 /// charge 200 embeds AND write 200 permanent `help_vectors` rows — per call,
 /// repeatable. 64 is comfortably above the ~51 entries the app ships, so no
 /// real question is ever degraded by it, and comfortably below the entry cap.
@@ -254,9 +261,11 @@ pub async fn help_search(app: AppHandle, req: HelpSearchRequest) -> AppResult<He
 /// that run's own token.
 ///
 /// Re-checked here even though `HelpSearchRequestSchema` already constrains
-/// it: the agent CLI and a crafted extension message reach this command
-/// directly and never see the Zod schema. `None` is valid — the id is
-/// optional, and omitting it means "not cancellable".
+/// it: an agent CLI or a crafted extension message could reach this command
+/// directly and never see the Zod schema (`help_search` is currently
+/// `NotExposed` on the agent-CLI policy table, issue #1169, so this is
+/// defence in depth against a future reclassification). `None` is valid —
+/// the id is optional, and omitting it means "not cancellable".
 fn validate_query_id(query_id: Option<&str>) -> AppResult<()> {
     let Some(id) = query_id else {
         return Ok(());

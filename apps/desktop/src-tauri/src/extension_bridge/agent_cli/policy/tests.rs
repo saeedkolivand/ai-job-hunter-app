@@ -391,6 +391,107 @@ fn extension_bridge_status_stays_not_exposed_so_the_pairing_token_never_reaches_
     );
 }
 
+/// Issue #1164 round 2 (`B1-r2-B2-r2-ACLI-2`): `notifications_list` returns EVERY notification,
+/// read and unread, while `notifications_mark_all_read` only flips the unread subset — so the
+/// `ProofSource::Count` comment above that row must call the count a superset of the blast
+/// radius, never claim it is "exact". Pinned against the source text rather than behaviour
+/// because the defect was the COMMENT lying about what the count proves, not the `ProofSource`
+/// shape itself (round 1 sanctioned keeping `Count` here).
+#[test]
+fn mark_all_read_proof_comment_calls_the_count_a_superset_not_exact() {
+    const POLICY_RS: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/extension_bridge/agent_cli/policy.rs"
+    ));
+    let row = POLICY_RS
+        .find("notifications_mark_all_read")
+        .expect("notifications_mark_all_read row present in policy.rs");
+    let comment = &POLICY_RS[..row];
+    let comment_start = comment
+        .rfind("// Same no-inverse argument")
+        .expect("notifications_mark_all_read's leading comment block present in policy.rs");
+    let comment = &comment[comment_start..];
+    assert!(
+        comment.contains("superset"),
+        "the comment must call the notifications_list count a superset of what actually \
+         flips: {comment}"
+    );
+    assert!(
+        !comment.contains("exact count about to be flipped"),
+        "the comment must not claim the total count is the exact count about to flip — only \
+         the unread subset flips: {comment}"
+    );
+}
+
+/// Issue #1164 round 2 (`B1-r2-B2-r2-ACLI-5`): `updater_install`'s proof must read the PENDING
+/// version off `updater_check` (`Effect::Read` since issue #1165, and the version actually about
+/// to be installed) rather than `system_get_version` (the CURRENTLY RUNNING version — a vacuous
+/// proof, since it never changes as a result of confirming). A regression here would silently
+/// reintroduce the untracked "out of scope here (follow-up)" deferral round 2 flagged.
+#[test]
+fn updater_install_proof_reads_the_pending_version_off_updater_check() {
+    let entry = POLICY
+        .iter()
+        .find(|e| e.path == "updater::updater_install")
+        .expect("updater::updater_install is a real POLICY row");
+    let Effect::Irreversible(ProofSource::Scalar { read_command, path }) = entry.effect else {
+        panic!(
+            "updater_install must stay Irreversible(ProofSource::Scalar), got {:?}",
+            entry.effect
+        );
+    };
+    assert_eq!(
+        read_command, "updater_check",
+        "updater_install's proof must read updater_check, not system_get_version's vacuous \
+         running-version echo"
+    );
+    assert_eq!(
+        path,
+        &["version"],
+        "updater_install's proof must walk to updater_check's `version` field"
+    );
+}
+
+/// Issue #1164 round 2 (`B1-r2-B2-r2-ACLI-6`): `commands::help::help_search` is `NotExposed`
+/// (issue #1169), but its own module doc claimed unqualified reachability from the agent CLI /
+/// extension bridge in four spans — falsifying the RATIONALE those spans give for re-checking
+/// every Zod cap in Rust. Every span that mentions the agent CLI or extension bridge reaching
+/// `help_search` must also name its current `NotExposed` status (issue #1169), so a future
+/// reclassification of the POLICY row is the only thing that can make the doc true again without
+/// a human re-reading it.
+#[test]
+fn help_module_doc_reachability_claims_stay_paired_with_its_not_exposed_status() {
+    const HELP_RS: &str =
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/commands/help.rs"));
+    let lines: Vec<&str> = HELP_RS.lines().collect();
+    let mut checked = 0usize;
+    for (n, line) in lines.iter().enumerate() {
+        if !(line.contains("agent CLI") || line.contains("agent-CLI")) {
+            continue; // not a span naming the agent CLI at all
+        }
+        // A window of comment lines around the mention, so "reach"/"NotExposed"/"#1169" can
+        // be on a neighbouring line within the same prose block, not literally the same line.
+        let start = n.saturating_sub(6);
+        let end = (n + 6).min(lines.len());
+        let window = lines[start..end].join("\n");
+        if !window.contains("reach") {
+            continue; // an "agent CLI" mention unrelated to reachability
+        }
+        checked += 1;
+        assert!(
+            window.contains("NotExposed") && window.contains("#1169"),
+            "a reachability claim at help.rs line {} must name help_search's current \
+             NotExposed status (issue #1169): {window}",
+            n + 1
+        );
+    }
+    assert!(
+        checked >= 4,
+        "expected at least the 4 reachability spans issue #1164 round 2 flagged, found \
+         {checked}"
+    );
+}
+
 /// Mutation-style guard: an `Irreversible` row whose `ProofSource`
 /// pointed at ITSELF, or at ANY OTHER `Irreversible` row, would make the
 /// ceremony circular — satisfiable only by first satisfying another
