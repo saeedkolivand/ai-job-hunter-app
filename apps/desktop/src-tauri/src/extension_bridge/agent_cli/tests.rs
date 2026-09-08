@@ -16,7 +16,11 @@ fn s(v: &[&str]) -> Vec<String> {
 fn parses_best_matches_with_no_flags() {
     assert_eq!(
         parse_verb(&s(&["best-matches"])).unwrap(),
-        Verb::BestMatches { limit: None }
+        Verb::BestMatches {
+            limit: None,
+            cursor: None,
+            query: None,
+        }
     );
 }
 
@@ -24,7 +28,30 @@ fn parses_best_matches_with_no_flags() {
 fn parses_best_matches_with_limit() {
     assert_eq!(
         parse_verb(&s(&["best-matches", "--limit", "5"])).unwrap(),
-        Verb::BestMatches { limit: Some(5) }
+        Verb::BestMatches {
+            limit: Some(5),
+            cursor: None,
+            query: None,
+        }
+    );
+}
+
+#[test]
+fn parses_best_matches_with_cursor_and_query() {
+    assert_eq!(
+        parse_verb(&s(&[
+            "best-matches",
+            "--cursor",
+            "20",
+            "--query",
+            "engineer"
+        ]))
+        .unwrap(),
+        Verb::BestMatches {
+            limit: None,
+            cursor: Some("20".to_string()),
+            query: Some("engineer".to_string()),
+        }
     );
 }
 
@@ -53,15 +80,70 @@ fn rejects_job_without_a_url() {
     assert!(parse_verb(&s(&["job"])).is_err());
 }
 
+/// A fully-defaulted `Verb::FoundJobs` — every field named explicitly (Rust's
+/// struct-update `..base` syntax does not exist for enum variants), so a NEW
+/// field added later is a compile error at every one of these call sites
+/// instead of a silent `None`/`false` default nobody notices.
+#[allow(clippy::too_many_arguments)]
+fn found_jobs(
+    autopilot_id: Option<&str>,
+    limit: Option<u64>,
+    cursor: Option<&str>,
+    min_score: Option<f64>,
+    country: Option<&str>,
+    remote: Option<bool>,
+    applied: Option<bool>,
+    query: Option<&str>,
+    include_description: bool,
+) -> Verb {
+    Verb::FoundJobs {
+        autopilot_id: autopilot_id.map(str::to_string),
+        limit,
+        cursor: cursor.map(str::to_string),
+        min_score,
+        country: country.map(str::to_string),
+        remote,
+        applied,
+        query: query.map(str::to_string),
+        include_description,
+    }
+}
+
 #[test]
 fn parses_found_jobs_with_just_an_autopilot_id() {
     assert_eq!(
         parse_verb(&s(&["found-jobs", "ap-1"])).unwrap(),
-        Verb::FoundJobs {
-            autopilot_id: "ap-1".to_string(),
-            limit: None,
-            cursor: None,
-        }
+        found_jobs(
+            Some("ap-1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false
+        )
+    );
+}
+
+#[test]
+fn parses_found_jobs_with_no_autopilot_id_spans_every_autopilot() {
+    // Issue #1168 — a bare `found-jobs` (no positional argument at all) is
+    // now a VALID call, not a usage error: it means "every autopilot".
+    assert_eq!(
+        parse_verb(&s(&["found-jobs"])).unwrap(),
+        found_jobs(None, None, None, None, None, None, None, None, false)
+    );
+}
+
+#[test]
+fn parses_found_jobs_with_flags_only_does_not_swallow_a_flag_as_the_autopilot_id() {
+    // The first token is a `--flag`, so it must NOT be misread as a
+    // positional `autopilotId` — flag parsing has to start at index 0.
+    assert_eq!(
+        parse_verb(&s(&["found-jobs", "--limit", "10"])).unwrap(),
+        found_jobs(None, Some(10), None, None, None, None, None, None, false)
     );
 }
 
@@ -77,17 +159,62 @@ fn parses_found_jobs_with_limit_and_cursor() {
             "100"
         ]))
         .unwrap(),
-        Verb::FoundJobs {
-            autopilot_id: "ap-1".to_string(),
-            limit: Some(50),
-            cursor: Some("100".to_string()),
-        }
+        found_jobs(
+            Some("ap-1"),
+            Some(50),
+            Some("100"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            false
+        )
     );
 }
 
 #[test]
-fn rejects_found_jobs_without_an_autopilot_id() {
-    assert!(parse_verb(&s(&["found-jobs"])).is_err());
+fn parses_found_jobs_with_every_new_filter_flag() {
+    assert_eq!(
+        parse_verb(&s(&[
+            "found-jobs",
+            "ap-1",
+            "--min-score",
+            "70",
+            "--country",
+            "Germany",
+            "--remote",
+            "true",
+            "--applied",
+            "false",
+            "--query",
+            "engineer",
+            "--include-description",
+        ]))
+        .unwrap(),
+        found_jobs(
+            Some("ap-1"),
+            None,
+            None,
+            Some(70.0),
+            Some("Germany"),
+            Some(true),
+            Some(false),
+            Some("engineer"),
+            true
+        )
+    );
+}
+
+#[test]
+fn rejects_found_jobs_a_non_bool_remote_or_applied_value() {
+    assert!(parse_verb(&s(&["found-jobs", "ap-1", "--remote", "maybe"])).is_err());
+    assert!(parse_verb(&s(&["found-jobs", "ap-1", "--applied", "yes"])).is_err());
+}
+
+#[test]
+fn rejects_found_jobs_a_non_numeric_min_score() {
+    assert!(parse_verb(&s(&["found-jobs", "ap-1", "--min-score", "abc"])).is_err());
 }
 
 #[test]
@@ -611,10 +738,40 @@ fn payload_carries_the_wire_resource_name() {
         .payload()["url"],
         "https://x.example.com"
     );
-    let with_limit = Verb::BestMatches { limit: Some(7) }.payload();
+    let with_limit = Verb::BestMatches {
+        limit: Some(7),
+        cursor: None,
+        query: None,
+    }
+    .payload();
     assert_eq!(with_limit["limit"], 7);
-    let without_limit = Verb::BestMatches { limit: None }.payload();
+    let without_limit = Verb::BestMatches {
+        limit: None,
+        cursor: None,
+        query: None,
+    }
+    .payload();
     assert!(without_limit.get("limit").is_none());
+
+    let found_jobs_scoped = found_jobs(
+        Some("ap-1"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        false,
+    )
+    .payload();
+    assert_eq!(found_jobs_scoped["autopilotId"], "ap-1");
+    let found_jobs_spanning =
+        found_jobs(None, None, None, None, None, None, None, None, false).payload();
+    assert!(
+        found_jobs_spanning.get("autopilotId").is_none(),
+        "an omitted autopilotId must be absent from the payload, not null"
+    );
 }
 
 // ── pairing-failure classification (pure) ───────────────────────────────

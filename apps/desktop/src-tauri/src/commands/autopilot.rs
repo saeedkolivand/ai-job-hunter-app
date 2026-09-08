@@ -72,7 +72,10 @@ impl Drop for RunGuard {
 /// `autopilot_best_matches` both need, expressed once instead of twice.
 /// Best-effort: a missing store yields an empty set (nothing reads as
 /// applied), never a failure.
-fn applied_job_urls(app: &AppHandle) -> HashSet<String> {
+// `pub(crate)` (issue #1167) — `agent_read::found_jobs` reuses this EXACT set (never a second
+// hand-typed `ApplicationStore` read) so its `applied` filter/row-flag agrees with what
+// `enrich_applied`/`mark_applied` already compute for `autopilot_list`/`best-matches`.
+pub(crate) fn applied_job_urls(app: &AppHandle) -> HashSet<String> {
     app.try_state::<crate::applications::ApplicationStore>()
         .map(|s| s.applied_job_urls())
         .unwrap_or_default()

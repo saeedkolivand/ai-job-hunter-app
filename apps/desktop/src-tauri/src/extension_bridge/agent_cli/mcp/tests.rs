@@ -1567,6 +1567,71 @@ fn the_found_jobs_cursor_is_advertised_as_an_opaque_per_autopilot_token() {
     );
 }
 
+/// Issues #1167/#1168 — every new `found-jobs` server-side filter/flag must be
+/// advertised on the schema a client reads BEFORE its first call, not
+/// discoverable only by trial and error. `autopilotId` moved from required to
+/// optional (issue #1168) at the same time, pinned here too so the two never
+/// drift apart again the way the round-2 review found the limit numbers did.
+#[test]
+fn the_found_jobs_schema_advertises_every_filter_and_no_longer_requires_autopilot_id() {
+    let list = tools(Tier::Read);
+    for field in [
+        "minScore",
+        "country",
+        "remote",
+        "applied",
+        "query",
+        "includeDescription",
+    ] {
+        let description = property_description(&list, TOOL_FOUND_JOBS, field);
+        assert!(
+            !description.is_empty(),
+            "found-jobs must advertise a `{field}` property"
+        );
+    }
+    let tool = list
+        .iter()
+        .find(|t| t["name"] == TOOL_FOUND_JOBS)
+        .expect("found-jobs listed");
+    let required = tool["inputSchema"]["required"].as_array();
+    assert!(
+        required.is_none_or(|r| r.is_empty()),
+        "autopilotId must no longer be required (issue #1168): {:?}",
+        tool["inputSchema"]
+    );
+}
+
+/// Issue #1146 P11 — `best-matches` gained the same `cursor`/`query` args
+/// `found-jobs` already advertised; a client has no other source for either
+/// before its first call.
+#[test]
+fn the_best_matches_schema_advertises_cursor_and_query() {
+    let list = tools(Tier::Read);
+    for field in ["cursor", "query"] {
+        let description = property_description(&list, TOOL_BEST_MATCHES, field);
+        assert!(
+            !description.is_empty(),
+            "best-matches must advertise a `{field}` property"
+        );
+    }
+}
+
+/// Issue #1168 — `job` matches by posting `url` ONLY; a caller trying to look
+/// a posting up by title/company needs to be pointed at `found-jobs`' own
+/// `query` filter instead of guessing.
+#[test]
+fn the_job_tool_description_says_url_only_and_points_at_found_jobs_query() {
+    let description = tool_description(&tools(Tier::Read), TOOL_JOB);
+    assert!(
+        description.to_lowercase().contains("url only"),
+        "job's description must say it matches by url only: {description}"
+    );
+    assert!(
+        description.contains("found-jobs"),
+        "job's description must point a title/company lookup at found-jobs: {description}"
+    );
+}
+
 /// Issue #1132 — `totalFound` is the LAST run's kept count and diverged from the traversable
 /// total by up to ~24x on real data, with nothing on the surface saying so.
 #[test]
@@ -2195,17 +2260,60 @@ fn a_confirm_argument_sent_to_call_read_is_silently_ignored() {
 // ── found-jobs tool_argv mapping (MEDIUM fix, review round 2 — this new arm had no
 // coverage at all) ───────────────────────────────────────────────────────────────
 
+/// Every field named explicitly (Rust's struct-update `..base` syntax does not
+/// exist for enum variants) — mirrors `agent_cli::tests`' own `found_jobs`
+/// helper, which this file cannot reuse (a sibling test module, not a
+/// descendant).
+#[allow(clippy::too_many_arguments)]
+fn found_jobs(
+    autopilot_id: Option<&str>,
+    limit: Option<u64>,
+    cursor: Option<&str>,
+    min_score: Option<f64>,
+    country: Option<&str>,
+    remote: Option<bool>,
+    applied: Option<bool>,
+    query: Option<&str>,
+    include_description: bool,
+) -> Verb {
+    Verb::FoundJobs {
+        autopilot_id: autopilot_id.map(str::to_string),
+        limit,
+        cursor: cursor.map(str::to_string),
+        min_score,
+        country: country.map(str::to_string),
+        remote,
+        applied,
+        query: query.map(str::to_string),
+        include_description,
+    }
+}
+
+fn best_matches(limit: Option<u64>, cursor: Option<&str>, query: Option<&str>) -> Verb {
+    Verb::BestMatches {
+        limit,
+        cursor: cursor.map(str::to_string),
+        query: query.map(str::to_string),
+    }
+}
+
 #[test]
 fn found_jobs_tool_argv_maps_autopilot_id_limit_and_cursor() {
     let arguments = json!({ "autopilotId": "ap-1", "limit": 10, "cursor": "20" });
     let argv = tool_argv(TOOL_FOUND_JOBS, &arguments);
     assert_eq!(
         parse_verb(&argv).unwrap(),
-        Verb::FoundJobs {
-            autopilot_id: "ap-1".to_string(),
-            limit: Some(10),
-            cursor: Some("20".to_string()),
-        }
+        found_jobs(
+            Some("ap-1"),
+            Some(10),
+            Some("20"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            false
+        )
     );
 }
 
@@ -2214,11 +2322,56 @@ fn found_jobs_tool_argv_omits_optional_flags_when_absent() {
     let argv = tool_argv(TOOL_FOUND_JOBS, &json!({ "autopilotId": "ap-1" }));
     assert_eq!(
         parse_verb(&argv).unwrap(),
-        Verb::FoundJobs {
-            autopilot_id: "ap-1".to_string(),
-            limit: None,
-            cursor: None,
-        }
+        found_jobs(
+            Some("ap-1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false
+        )
+    );
+}
+
+/// Issue #1168 — an entirely absent `autopilotId` argument must still round-trip as a
+/// VALID spanning traversal, not a usage error.
+#[test]
+fn found_jobs_tool_argv_omits_autopilot_id_entirely_when_absent() {
+    let argv = tool_argv(TOOL_FOUND_JOBS, &json!({}));
+    assert_eq!(
+        parse_verb(&argv).unwrap(),
+        found_jobs(None, None, None, None, None, None, None, None, false)
+    );
+}
+
+#[test]
+fn found_jobs_tool_argv_maps_every_new_filter() {
+    let arguments = json!({
+        "autopilotId": "ap-1",
+        "minScore": 70,
+        "country": "Germany",
+        "remote": true,
+        "applied": false,
+        "query": "engineer",
+        "includeDescription": true,
+    });
+    let argv = tool_argv(TOOL_FOUND_JOBS, &arguments);
+    assert_eq!(
+        parse_verb(&argv).unwrap(),
+        found_jobs(
+            Some("ap-1"),
+            None,
+            None,
+            Some(70.0),
+            Some("Germany"),
+            Some(true),
+            Some(false),
+            Some("engineer"),
+            true
+        )
     );
 }
 
@@ -2231,11 +2384,17 @@ fn found_jobs_tool_argv_forwards_a_numeric_cursor_rather_than_dropping_it() {
     let argv = tool_argv(TOOL_FOUND_JOBS, &arguments);
     assert_eq!(
         parse_verb(&argv).unwrap(),
-        Verb::FoundJobs {
-            autopilot_id: "ap-1".to_string(),
-            limit: None,
-            cursor: Some("100".to_string()),
-        }
+        found_jobs(
+            Some("ap-1"),
+            None,
+            Some("100"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            false
+        )
     );
 }
 
@@ -2245,11 +2404,17 @@ fn found_jobs_tool_argv_treats_an_explicit_null_cursor_as_absent() {
     let argv = tool_argv(TOOL_FOUND_JOBS, &arguments);
     assert_eq!(
         parse_verb(&argv).unwrap(),
-        Verb::FoundJobs {
-            autopilot_id: "ap-1".to_string(),
-            limit: None,
-            cursor: None,
-        }
+        found_jobs(
+            Some("ap-1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false
+        )
     );
 }
 
@@ -2265,15 +2430,21 @@ fn an_explicit_null_limit_reads_as_absent_on_both_tools_that_take_one() {
             &json!({ "autopilotId": "ap-1", "limit": null })
         ))
         .unwrap(),
-        Verb::FoundJobs {
-            autopilot_id: "ap-1".to_string(),
-            limit: None,
-            cursor: None,
-        }
+        found_jobs(
+            Some("ap-1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false
+        )
     );
     assert_eq!(
         parse_verb(&tool_argv(TOOL_BEST_MATCHES, &json!({ "limit": null }))).unwrap(),
-        Verb::BestMatches { limit: None }
+        best_matches(None, None, None)
     );
 }
 
@@ -2283,7 +2454,7 @@ fn an_explicit_null_limit_reads_as_absent_on_both_tools_that_take_one() {
 fn a_numeric_limit_still_reaches_parse_verb_on_both_tools() {
     assert_eq!(
         parse_verb(&tool_argv(TOOL_BEST_MATCHES, &json!({ "limit": 7 }))).unwrap(),
-        Verb::BestMatches { limit: Some(7) }
+        best_matches(Some(7), None, None)
     );
     assert_eq!(
         parse_verb(&tool_argv(
@@ -2291,11 +2462,17 @@ fn a_numeric_limit_still_reaches_parse_verb_on_both_tools() {
             &json!({ "autopilotId": "ap-1", "limit": 7 })
         ))
         .unwrap(),
-        Verb::FoundJobs {
-            autopilot_id: "ap-1".to_string(),
-            limit: Some(7),
-            cursor: None,
-        }
+        found_jobs(
+            Some("ap-1"),
+            Some(7),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false
+        )
     );
 }
 

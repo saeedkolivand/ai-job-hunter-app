@@ -9,7 +9,8 @@
 //! ## Three launch tiers over the [`Effect`] boundary
 //! Six curated, `readOnlyHint:true`, names/base descriptions derived from [`super::VERB_TABLE`]
 //! (never a second hand-typed copy): `best-matches`, `job`, `profile`, `automations`,
-//! `found-jobs` (issue #1115 — paginated per-autopilot found-jobs traversal), and a LOCAL
+//! `found-jobs` (issue #1115 — paginated, filtered found-jobs traversal, one autopilot or every
+//! one; issues #1167/#1168), and a LOCAL
 //! `commands` (no bridge call — works with the app closed) enumerating [`POLICY`] by `effect`.
 //! Three generic dispatch tools sit over that SAME table: `call-read` (always present),
 //! `call-reversible` (`--allow-reversible`), and `call-irreversible` (`--allow-irreversible`,
@@ -331,14 +332,22 @@ fn value_as_arg(v: &Value) -> String {
 /// own `None | Some(Value::Null)` arm; a strict schema unions optionals with `null`).
 fn tool_argv(name: &str, arguments: &Value) -> Vec<String> {
     match name {
-        TOOL_BEST_MATCHES => match arguments.get("limit").filter(|v| !v.is_null()) {
-            Some(v) => vec![
-                "best-matches".to_string(),
-                "--limit".to_string(),
-                value_as_arg(v),
-            ],
-            None => vec!["best-matches".to_string()],
-        },
+        TOOL_BEST_MATCHES => {
+            let mut argv = vec!["best-matches".to_string()];
+            if let Some(limit) = arguments.get("limit").filter(|v| !v.is_null()) {
+                argv.push("--limit".to_string());
+                argv.push(value_as_arg(limit));
+            }
+            if let Some(cursor) = arguments.get("cursor").filter(|v| !v.is_null()) {
+                argv.push("--cursor".to_string());
+                argv.push(value_as_arg(cursor));
+            }
+            if let Some(query) = arguments.get("query").filter(|v| !v.is_null()) {
+                argv.push("--query".to_string());
+                argv.push(value_as_arg(query));
+            }
+            argv
+        }
         TOOL_JOB => vec![
             "job".to_string(),
             arguments
@@ -349,15 +358,22 @@ fn tool_argv(name: &str, arguments: &Value) -> Vec<String> {
         ],
         TOOL_PROFILE => vec!["profile".to_string()],
         TOOL_AUTOMATIONS => vec!["automations".to_string()],
+        // Issue #1168 — `autopilotId` is now OPTIONAL (omitted spans every
+        // autopilot). Forwarded as the SAME bare leading positional as
+        // before when present, simply omitted when absent — `parse_found_jobs`
+        // only reads the first token as `autopilotId` when it does not look
+        // like a flag, so an omitted id here correctly falls through to
+        // "start flag parsing at index 0".
         TOOL_FOUND_JOBS => {
-            let mut argv = vec![
-                "found-jobs".to_string(),
-                arguments
-                    .get("autopilotId")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-            ];
+            let mut argv = vec!["found-jobs".to_string()];
+            if let Some(id) = arguments
+                .get("autopilotId")
+                .filter(|v| !v.is_null())
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+            {
+                argv.push(id.to_string());
+            }
             if let Some(limit) = arguments.get("limit").filter(|v| !v.is_null()) {
                 argv.push("--limit".to_string());
                 argv.push(value_as_arg(limit));
@@ -365,6 +381,29 @@ fn tool_argv(name: &str, arguments: &Value) -> Vec<String> {
             if let Some(cursor) = arguments.get("cursor").filter(|v| !v.is_null()) {
                 argv.push("--cursor".to_string());
                 argv.push(value_as_arg(cursor));
+            }
+            if let Some(min_score) = arguments.get("minScore").filter(|v| !v.is_null()) {
+                argv.push("--min-score".to_string());
+                argv.push(value_as_arg(min_score));
+            }
+            if let Some(country) = arguments.get("country").filter(|v| !v.is_null()) {
+                argv.push("--country".to_string());
+                argv.push(value_as_arg(country));
+            }
+            if let Some(remote) = arguments.get("remote").filter(|v| !v.is_null()) {
+                argv.push("--remote".to_string());
+                argv.push(value_as_arg(remote));
+            }
+            if let Some(applied) = arguments.get("applied").filter(|v| !v.is_null()) {
+                argv.push("--applied".to_string());
+                argv.push(value_as_arg(applied));
+            }
+            if let Some(query) = arguments.get("query").filter(|v| !v.is_null()) {
+                argv.push("--query".to_string());
+                argv.push(value_as_arg(query));
+            }
+            if arguments.get("includeDescription").and_then(Value::as_bool) == Some(true) {
+                argv.push("--include-description".to_string());
             }
             argv
         }

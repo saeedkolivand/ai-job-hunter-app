@@ -25,9 +25,9 @@ use crate::scraping::trust::{TrustAssessment, TrustLevel};
 /// require mutating a sibling domain's type). `AgentTrust`'s own explicit
 /// field set is what makes it pass now.
 ///
-/// `pub(super)` — reused verbatim by `found_jobs::tests` (a sibling
-/// module, not a descendant of this one) so that module's fixtures never
-/// drift from these.
+/// `pub(super)` for `job`/`best-matches`'s own nested-object descent below
+/// (issue #1167's compact `found-jobs` row no longer carries a nested
+/// `trust` object, so `found_jobs::tests` no longer needs this helper).
 pub(super) fn assert_object_keys(value: &Value, path: &str, expected: &[&str]) {
     let obj = value
         .as_object()
@@ -494,7 +494,16 @@ fn automations_found_jobs_total_matches_found_jobs_own_total() {
         ..blank_autopilot("ap-1")
     }];
     let row = &resolve_automations(&records)["automations"][0];
-    let paged = found_jobs::resolve_found_jobs(&records, "ap-1", 0, 1).expect("pages");
+    let no_filters = found_jobs::FoundJobsFilters::from_payload(&json!({}));
+    let paged = found_jobs::resolve_found_jobs(
+        &records,
+        Some("ap-1"),
+        &no_filters,
+        &std::collections::HashSet::new(),
+        0,
+        1,
+    )
+    .expect("pages");
     assert_eq!(
         row["foundJobsTotal"], paged["total"],
         "foundJobsTotal must be exactly what found-jobs will page through"
@@ -574,7 +583,7 @@ fn full_best_match_row_json() -> Value {
 
 #[test]
 fn best_match_projection_has_exact_keys() {
-    let out = resolve_best_matches(&[full_best_match_row_json()], 1, 20);
+    let out = resolve_best_matches(&[full_best_match_row_json()], 0, 20, None);
     let row = &out["matches"][0];
     let mut keys: Vec<String> = row.as_object().unwrap().keys().cloned().collect();
     keys.sort();
@@ -625,7 +634,7 @@ fn best_match_projection_has_exact_keys() {
 
 #[test]
 fn best_match_projection_never_carries_forbidden_keys() {
-    let out = resolve_best_matches(&[full_best_match_row_json()], 1, 20);
+    let out = resolve_best_matches(&[full_best_match_row_json()], 0, 20, None);
     let text = out.to_string();
     for forbidden in [
         "assistantNotes",
@@ -639,7 +648,7 @@ fn best_match_projection_never_carries_forbidden_keys() {
 #[test]
 fn best_match_limit_is_honored_and_capped_server_side() {
     let rows: Vec<Value> = (0..5).map(|_| full_best_match_row_json()).collect();
-    let out = resolve_best_matches(&rows, 5, 2);
+    let out = resolve_best_matches(&rows, 0, 2, None);
     assert_eq!(out["matches"].as_array().unwrap().len(), 2);
     assert_eq!(out["returned"], 2);
     assert_eq!(out["total"], 5, "total is the pre-limit qualifying count");
@@ -661,7 +670,7 @@ fn best_match_title_company_location_are_fenced_as_untrusted_data() {
         "applied": false,
         "isAgency": false,
     });
-    let out = resolve_best_matches(&[malicious], 1, 20);
+    let out = resolve_best_matches(&[malicious], 0, 20, None);
     let row = &out["matches"][0];
     for field in ["title", "company", "location"] {
         let value = row[field].as_str().expect("still a string");
@@ -689,6 +698,62 @@ fn best_matches_limit_defaults_when_absent() {
         clamp_best_matches_limit(&payload),
         DEFAULT_BEST_MATCHES_LIMIT
     );
+}
+
+/// Regression for the hand-rolled clamp this now-shared one replaced: a
+/// `limit: 0` used to read as `Some(0)` off `Value::as_u64` and slip past
+/// `.unwrap_or`, returning 0 rows per page forever — a page whose
+/// `nextCursor` never advances hangs any paging loop. `0` must fall back to
+/// the default, same as an absent limit.
+#[test]
+fn best_matches_limit_zero_falls_back_to_the_default_not_to_zero() {
+    let payload = json!({ "resource": "best-matches", "limit": 0 });
+    assert_eq!(
+        clamp_best_matches_limit(&payload),
+        DEFAULT_BEST_MATCHES_LIMIT
+    );
+}
+
+/// Issue #1146 P11 — `best-matches` gained the same `cursor`/`nextCursor`
+/// paging `found-jobs` already had. Walks every row via `resolve_best_matches`
+/// directly (no `AppHandle` needed, same pure/impure split as `found-jobs`),
+/// proving the traversal covers every row exactly once and terminates with a
+/// `null` cursor rather than looping forever.
+#[test]
+fn best_matches_cursor_walks_every_row_exactly_once_then_terminates_with_null() {
+    let rows: Vec<Value> = (0..25)
+        .map(|i| {
+            let mut row = full_best_match_row_json();
+            row["url"] = json!(format!("https://boards.example.com/jobs/{i}"));
+            row
+        })
+        .collect();
+
+    let page_size = 10;
+    let mut seen: Vec<String> = Vec::new();
+    let mut cursor: Option<usize> = Some(0);
+    loop {
+        let offset = cursor.expect("loop only continues while Some");
+        let out = resolve_best_matches(&rows, offset, page_size, None);
+        for row in out["matches"].as_array().unwrap() {
+            seen.push(row["url"].as_str().unwrap().to_string());
+        }
+        cursor = out["nextCursor"].as_str().map(|c| c.parse().unwrap());
+        if cursor.is_none() {
+            break;
+        }
+        assert!(seen.len() <= rows.len(), "must terminate at the true end");
+    }
+
+    assert_eq!(
+        seen.len(),
+        rows.len(),
+        "every row must be seen exactly once"
+    );
+    let mut unique = seen.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(unique.len(), rows.len(), "no row must repeat across pages");
 }
 
 // ── throttle ─────────────────────────────────────────────────────────────
@@ -757,12 +822,21 @@ fn best_matches_bucket_refills_slowly() {
 fn no_resource_output_ever_carries_a_forbidden_key() {
     let job = project_value::<_, AgentJob>(&full_found_job()).unwrap();
     let automations = resolve_automations(&[blank_autopilot("ap-1")]);
-    let best_matches = resolve_best_matches(&[full_best_match_row_json()], 1, 20);
+    let best_matches = resolve_best_matches(&[full_best_match_row_json()], 0, 20, None);
     let found_jobs_records = vec![Autopilot {
         found_jobs: vec![full_found_job()],
         ..blank_autopilot("ap-1")
     }];
-    let found_jobs = found_jobs::resolve_found_jobs(&found_jobs_records, "ap-1", 0, 20).unwrap();
+    let no_filters = found_jobs::FoundJobsFilters::from_payload(&json!({}));
+    let found_jobs = found_jobs::resolve_found_jobs(
+        &found_jobs_records,
+        Some("ap-1"),
+        &no_filters,
+        &std::collections::HashSet::new(),
+        0,
+        20,
+    )
+    .unwrap();
     for value in [job, automations, best_matches, found_jobs] {
         let text = value.to_string();
         for forbidden in [

@@ -1,11 +1,14 @@
 //! `agent.query` → `agent.result` — the read-only agent/CLI surface (issue
 //! #1084, PR 1). Six resources, one dispatch table ([`RESOURCES`]):
-//! `best-matches` (optional `limit`), `job` (`url` required), `profile`,
-//! `automations`, `schema`, `found-jobs` (issue #1115 — `autopilotId`
-//! required, optional `limit`/`cursor`). `url` is the CROSS-RESOURCE KEY for
-//! `job` — not an id (a `best-matches` row's own `key` is a cluster id,
-//! never echoed here); `found-jobs` instead keys off `autopilotId` since it
-//! must survive across autopilots that legitimately share a posting.
+//! `best-matches` (optional `limit`/`cursor`/`query`, issue #1146 P11),
+//! `job` (`url` required), `profile`, `automations`, `schema`, `found-jobs`
+//! (issue #1115 — optional `autopilotId`/`limit`/`cursor` plus the
+//! `minScore`/`country`/`remote`/`applied`/`query` filters, issues
+//! #1167/#1168). `url` is the CROSS-RESOURCE KEY for `job` — not an id (a
+//! `best-matches` row's own `key` is a cluster id, never echoed here);
+//! `found-jobs` instead keys its cursor off `autopilotId` (or a fixed
+//! all-autopilots sentinel when omitted) since it must survive across
+//! autopilots that legitimately share a posting.
 //!
 //! ## Allowlist projections, absent by construction
 //! Every payload below is built by [`project`]: round-trip the SOURCE value
@@ -87,9 +90,15 @@ const RES_FOUND_JOBS: &str = "found-jobs";
 pub(super) const RESOURCES: &[(&str, &str)] = &[
     (
         RES_BEST_MATCHES,
-        "Strongest jobs across every autopilot. Optional `limit` (default 20, max 50).",
+        "Strongest jobs across every autopilot, ranked. Optional `limit` (default 20, max 50), \
+         `cursor` (repeat with the returned `nextCursor` until it is `null` to reach every row \
+         past the first page), and `query` (case-insensitive substring over title or company).",
     ),
-    (RES_JOB, "Full detail for one posting. `url` required."),
+    (
+        RES_JOB,
+        "Full detail for one posting, matched by its posting `url` ONLY — never by title or \
+         company (use `found-jobs`' own `query` filter for that). `url` required.",
+    ),
     (
         RES_PROFILE,
         "Contact-profile fields for autofill — same consent gate as `profile.get`.",
@@ -102,10 +111,16 @@ pub(super) const RESOURCES: &[(&str, &str)] = &[
     (RES_SCHEMA, "This resource list."),
     (
         RES_FOUND_JOBS,
-        "Paginated traversal of ONE autopilot's complete found-jobs list (issue #1115). \
-         `autopilotId` required, optional `limit`/`cursor` — repeat with the returned \
-         `nextCursor` until it is `null`. A `nextCursor` is opaque and only valid for \
-         the autopilot that returned it.",
+        "Paginated traversal of the stored found-jobs list (issue #1115). Every reply carries \
+         `total` — the filtered row count THIS call matches, so a count never requires a full \
+         traversal. `autopilotId` is optional (issue #1168): given, scopes to one autopilot; \
+         omitted, spans every autopilot (deduped by posting identity) — the one call that \
+         answers \"is this role already in my list?\" (`found-jobs {query: \"…\"}`). Optional \
+         `limit`/`cursor` — repeat with the returned `nextCursor` until it is `null`; a cursor \
+         is opaque and only valid for the same `autopilotId` scope that issued it. Optional \
+         server-side filters `minScore`, `country` (substring match against location), `remote` \
+         (bool), `applied` (bool) and `query` (substring over title/company). Rows are compact \
+         (no `description`) unless `includeDescription: true` is set.",
     ),
 ];
 
@@ -548,27 +563,61 @@ struct AgentBestMatch {
 pub(super) const DEFAULT_BEST_MATCHES_LIMIT: usize = 20;
 pub(super) const MAX_BEST_MATCHES_LIMIT: usize = 50;
 
+/// Issue #1167/#1146 P11 — reuses `extension_bridge::paging::clamp_limit`, the
+/// same shared primitive `found_jobs` uses, rather than a hand-rolled copy: the
+/// hand-rolled version this replaced let `limit: 0` through as `0` instead of
+/// falling back to [`DEFAULT_BEST_MATCHES_LIMIT`] (`Value::as_u64` reads `0` as
+/// `Some(0)`, so `.unwrap_or` never fired) — a zero-row page whose `nextCursor`
+/// never advances, hanging any paging loop built on it forever.
 fn clamp_best_matches_limit(payload: &Value) -> usize {
-    payload
-        .get("limit")
-        .and_then(Value::as_u64)
-        .map(|n| n as usize)
-        .unwrap_or(DEFAULT_BEST_MATCHES_LIMIT)
-        .min(MAX_BEST_MATCHES_LIMIT)
+    crate::extension_bridge::paging::clamp_limit(
+        payload,
+        DEFAULT_BEST_MATCHES_LIMIT,
+        MAX_BEST_MATCHES_LIMIT,
+    )
 }
 
-/// Pure core of `best-matches`: project + `limit`-truncate an already-computed
-/// row set. Directly unit-testable with hand-built `Value` rows, no
-/// `AppHandle` — the impure half ([`best_matches_resource`]) only resolves
-/// `commands::autopilot::autopilot_best_matches`'s output and `limit`.
-fn resolve_best_matches(rows: &[Value], total: u64, limit: usize) -> Value {
-    let matches: Vec<AgentBestMatch> = rows
+/// Pure core of `best-matches`: project, optionally `query`-filter, then
+/// `offset`/`limit`-page an already-computed row set (issue #1146 P11 — the
+/// same cursor `found-jobs` already has, reusing `extension_bridge::paging`'s
+/// clamp/cursor primitives at the call site). Directly unit-testable with
+/// hand-built `Value` rows, no `AppHandle` — the impure half
+/// ([`best_matches_resource`]) only resolves
+/// `commands::autopilot::autopilot_best_matches`'s output.
+///
+/// `total` here is the count of rows THIS call's `query` actually matches —
+/// never the command's own pre-cap qualifying count
+/// (`commands::autopilot::best_matches::BestMatchesOutcome::total`, which
+/// this fn never receives): `rows` itself is already capped at
+/// `BEST_MATCHES_CAP` upstream, so a caller paging this cursor to `null`
+/// only ever reaches what `rows` actually holds — reporting the pre-cap
+/// number here would promise a page count this traversal cannot deliver.
+/// Raising that upstream cap is a job-matching-domain change, out of scope
+/// here.
+fn resolve_best_matches(rows: &[Value], offset: usize, limit: usize, query: Option<&str>) -> Value {
+    let mut matches: Vec<AgentBestMatch> = rows
         .iter()
         .filter_map(|row| serde_json::from_value(row.clone()).ok())
-        .take(limit)
         .collect();
-    let returned = matches.len();
-    let mut value = json!({ "matches": matches, "total": total, "returned": returned });
+    if let Some(q) = query {
+        matches
+            .retain(|m| m.title.to_lowercase().contains(q) || m.company.to_lowercase().contains(q));
+    }
+    let total = matches.len();
+    let page: Vec<AgentBestMatch> = matches.into_iter().skip(offset).take(limit).collect();
+    let returned = page.len();
+    let next_offset = offset + returned;
+    let next_cursor = if next_offset < total {
+        Some(next_offset.to_string())
+    } else {
+        None
+    };
+    let mut value = json!({
+        "matches": page,
+        "total": total,
+        "returned": returned,
+        "nextCursor": next_cursor,
+    });
     fence_best_match_fields(&mut value);
     value
 }
@@ -608,14 +657,25 @@ fn fence_best_match_fields(value: &mut Value) {
 
 async fn best_matches_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
     let limit = clamp_best_matches_limit(payload);
+    let offset =
+        crate::extension_bridge::paging::parse_offset_cursor(payload).ok_or_else(|| {
+            AppError::Validation(
+                crate::extension_bridge::paging::INVALID_CURSOR_MESSAGE.to_string(),
+            )
+        })?;
+    let query = payload
+        .get("query")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_lowercase);
     let raw = crate::commands::autopilot::autopilot_best_matches(app.clone()).await;
-    let total = raw.get("total").and_then(Value::as_u64).unwrap_or(0);
     let rows = raw
         .get("matches")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    Ok(resolve_best_matches(&rows, total, limit))
+    Ok(resolve_best_matches(&rows, offset, limit, query.as_deref()))
 }
 
 /// Shared `AutopilotStore` read for the `job`/`automations` resources —
