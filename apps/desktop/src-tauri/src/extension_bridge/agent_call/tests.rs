@@ -1885,6 +1885,27 @@ fn reshape_reply_fences_documents_get_text_bare_string_reply() {
     );
 }
 
+/// Security review round 9 (`SEC-1`): `ai_research_answer` returns
+/// `-> String` too — the active provider's own web search notes, the most
+/// injection-prone reply on the whole surface — and was missing from
+/// `SCALAR_FENCE_COMMANDS` even though `documents_get_text` right above it
+/// was already fenced for the identical bare-string reason.
+#[test]
+fn reshape_reply_fences_ai_research_answer_bare_string_reply() {
+    let notes = "s".repeat(crate::prompt_fence::JOB_CAP + 5_000);
+    let out = reshape_reply("ai_research_answer", json!(notes), None);
+    let fenced = out.as_str().expect("still a bare string reply");
+    assert!(
+        fenced.starts_with("<job_posting>"),
+        "ai_research_answer's bare string reply must be fenced: {fenced:.80}"
+    );
+    assert!(
+        fenced.len() < notes.len(),
+        "ai_research_answer's reply must be capped at prompt_fence::JOB_CAP like every other \
+         fenced document text"
+    );
+}
+
 /// A command NOT on `SCALAR_FENCE_COMMANDS` whose reply happens to be a bare string (e.g.
 /// `system_get_version`) must NOT be fenced — that value is this app's own version, never
 /// user-authored text.

@@ -405,17 +405,25 @@ pub(super) fn unfence_named_fields_recursive(value: &mut Value) {
     }
 }
 
-/// Commands whose reply is a BARE JSON string carrying the same untrusted
-/// document text [`super::FENCE_FIELD_NAMES`]'s `"text"` entry fences when it
-/// arrives wrapped in an object (`documents_list`'s rows). `documents_get_text`
-/// declares `-> AppResult<String>`, so its reply is a scalar at the ROOT of
-/// the tree — [`fence_named_fields_recursive`]'s name-keyed walk only fences a
-/// STRING VALUE reached under a named key, so a root with no key at all falls
-/// through its `_ => {}` arm untouched (issue #1170's follow-up,
-/// `B1-r1-ACLI-R5-7`). `system_get_version` also returns a bare string, but
-/// that value is this app's OWN version, never user-authored text, so this
-/// list is scoped to the one command whose scalar reply is untrusted.
-const SCALAR_FENCE_COMMANDS: &[&str] = &["documents_get_text"];
+/// Commands whose reply is a BARE JSON string carrying untrusted text —
+/// [`fence_named_fields_recursive`]'s name-keyed walk only fences a STRING
+/// VALUE reached under a named key, so a bare-string reply falls through its
+/// `_ => {}` arm untouched no matter how untrusted the text is (issue
+/// #1170's follow-up, `B1-r1-ACLI-R5-7`).
+///
+/// Every dispatchable command returning `String`/`AppResult<String>`,
+/// audited (security review round 9, `SEC-1`, after the prior version of
+/// this list and comment named only one and claimed — wrongly —
+/// completeness): `documents_get_text` (scraped/uploaded document text,
+/// listed above), `ai_research_answer` (the active provider's own web
+/// search results — third-party text, and the most injection-prone reply on
+/// this surface, listed below). `contact_profile_header_line` returns a
+/// bare string too, but it is rendered by this app FROM the user's own
+/// profile fields, never third-party content the user did not type
+/// themselves, so it stays off this list on the same reasoning as
+/// `system_get_version`/`system_get_protocol_version` (this app's own
+/// values, not user- or third-party-authored text).
+const SCALAR_FENCE_COMMANDS: &[&str] = &["documents_get_text", "ai_research_answer"];
 
 /// Fences `data` in place when `command` is on [`SCALAR_FENCE_COMMANDS`] and
 /// the reply is actually a bare string — a rename to an object reply (nothing
