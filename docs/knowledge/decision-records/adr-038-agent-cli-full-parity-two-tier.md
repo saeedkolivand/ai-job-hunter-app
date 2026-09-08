@@ -129,3 +129,30 @@ the agent layer a pure pass-through, but those commands are the ones the rendere
 UI. Confining the reshape to the agent layer cannot regress the renderer at all. Same reasoning as §5,
 which keeps the generic tier's own `dispatched` vocabulary inside the dispatcher rather than teaching
 every command a new one.
+
+## Amendment — 2026-09-08
+
+§4's ceremony ("a caller reads the proof, then presents that exact value") assumed the proof value is
+stable between the two calls. It is not for one `ProofSource::Scalar` row family: `ai_spend_summary`'s
+`today.inputTokens` backs several `Irreversible` commands and moves under ordinary background AI
+activity, so an honest caller could read a value, present it moments later, and be refused for a drift
+it didn't cause (issue #1162).
+
+Fix, deliberately narrow to that one read command (security review round A3-r1 flagged the general case
+as a CRITICAL cross-target bypass risk): a short-TTL, per-process snapshot of the value disclosed by the
+`confirmation_required` refusal is remembered and accepted as an alternative to the fresh value, then
+**consumed** on acceptance so one disclosure cannot authorize more than one dispatch. Every other
+`Irreversible` row keeps the original §4 behavior — exact match against the live value only, no
+snapshot, no window — because those proofs are bound to a caller-chosen target (a document id, a run
+id…) and a shared snapshot would let a value disclosed for one target authorize a different one. The
+eligibility gate, the snapshot lifetime, and the consume-on-accept rule live on
+`extension_bridge::agent_call::proof::{grace_window_key, accepted_at, PROOF_SNAPSHOT_TTL}` — read there
+for the current read-command name and TTL rather than restating them here.
+
+The same round also taught the fencing boundary (§3) an origin split it didn't have before: the generic
+tier no longer wraps every long text field under one `job_posting` tag by provenance-blind field name.
+User-authored text (a résumé/cover-letter body) and a notification's title/body (genuinely mixed —
+several producers interpolate scraped job text into it) each get their own tag, chosen by shape rather
+than field name so a forged sibling key can't borrow an exemption. The current tag set and which shape
+routes to which tag are `extension_bridge::agent_call::reshape::EMITTED_FENCE_TAGS` and the fencing walk
+in `extension_bridge/agent_call/fence.rs`; the MCP `instructions` document each tag documented there.
