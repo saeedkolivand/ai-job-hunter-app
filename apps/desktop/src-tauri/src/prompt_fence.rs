@@ -112,6 +112,13 @@ static FENCE_TAG_PATTERNS: std::sync::LazyLock<
         // first-party. See agent_call.rs::fence_named_fields_recursive for
         // the shape rules that choose this tag over job_posting.
         "user_document",
+        // Issue #1157/#1162 AC-7 -- `notifications::AppNotification.title`/`.body`
+        // (`agent_call::fence::fence_named_fields_recursive`'s `NOTIFICATION_ANCHOR_FIELDS`
+        // shape check). Distinct from `job_posting`: a notification's copy is genuinely MIXED
+        // provenance (first-party in the common case, but can echo a scraped job title), so it
+        // must stay fenced as untrusted data without asserting third-party board authorship the
+        // way `job_posting` does.
+        "app_notification",
         "company_research",
         "question",
         "web_search_notes",

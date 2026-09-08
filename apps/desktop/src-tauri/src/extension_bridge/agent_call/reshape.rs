@@ -388,7 +388,13 @@ pub(super) fn fence_user_document_bare_text(command: &str, data: &mut Value) {
         return;
     }
     if let Value::String(s) = data {
-        *s = crate::prompt_fence::fenced("user_document", s, crate::prompt_fence::RESUME_CAP);
+        // `usize::MAX`, not `RESUME_CAP` (issue #1157/#1162 AC-1) -- `RESUME_CAP` exists to bound
+        // a blob composed INTO a prompt; this is the whole reply to a command whose entire job is
+        // "give me my document back", and truncating it here is silent content redaction with
+        // nothing on the wire saying so (documents_list.text already carries the JOB_CAP bound as
+        // a list row). `enforce_frame_cap` (agent_call.rs) still bounds the reply -- a document
+        // that genuinely doesn't fit is refused with `result_too_large`, never cut.
+        *s = crate::prompt_fence::fenced("user_document", s, usize::MAX);
     }
 }
 

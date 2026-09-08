@@ -667,6 +667,8 @@ const EXPECTED_FENCE_TAGS: &[&str] = &[
     "candidate_resume",
     "job_posting",
     "user_document",
+    // Issue #1157/#1162 AC-7 — `notifications::AppNotification.title`/`.body`.
+    "app_notification",
     "company_research",
     "question",
     "web_search_notes",

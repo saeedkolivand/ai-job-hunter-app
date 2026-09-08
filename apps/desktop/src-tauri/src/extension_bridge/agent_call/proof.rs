@@ -285,8 +285,9 @@ pub(super) fn hint(source: ProofSource) -> String {
 /// snapshot is exactly as precise as one per irreversible command name, and lets
 /// [`refresh_from_read`] update it from a single place regardless of which of the ten commands the
 /// caller is about to confirm.
-const GRACE_WINDOW_READ_COMMAND: &str = "ai_spend_summary";
-const GRACE_WINDOW_PATH: &[&str] = &["today", "inputTokens"];
+// `pub(super)` (A3-r2-AC-6) -- `agent_call::tests`' POLICY-scanning regression test names both.
+pub(super) const GRACE_WINDOW_READ_COMMAND: &str = "ai_spend_summary";
+pub(super) const GRACE_WINDOW_PATH: &[&str] = &["today", "inputTokens"];
 
 /// How long a snapshot stays acceptable even after the CURRENT value has moved. ~120s: generous
 /// enough for "read the proof, paste it back", short enough not to become a standing credential.
@@ -372,6 +373,12 @@ fn accepted_at(
     now: std::time::Instant,
 ) -> Result<(), SnapshotOutcome> {
     if presented == current {
+        // A3-r2-AC-3 HIGH -- consume any snapshot for `key` here too, or it survives to
+        // authorise a second dispatch once the live counter moves back onto the disclosed value.
+        if let Some(key) = key {
+            let mut map = PROOF_SNAPSHOTS.lock().unwrap_or_else(|e| e.into_inner());
+            map.remove(key);
+        }
         return Ok(());
     }
     let Some(key) = key else {
@@ -393,6 +400,12 @@ fn accepted_at(
     }
     outcome
 }
+
+/// A3-r2-AC-4: serializes every test touching [`PROOF_SNAPSHOTS`] under the literal
+/// [`GRACE_WINDOW_READ_COMMAND`] key -- the one key that isn't test-choosable, so two tests on
+/// the real grace-window path race on the shared map without this lock.
+#[cfg(test)]
+pub(super) static GRACE_WINDOW_KEY_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(test)]
 mod tests {
@@ -1343,6 +1356,10 @@ mod tests {
     /// just saw — the double-drift case a single t0-only snapshot cannot cover.
     #[test]
     fn refresh_from_read_updates_the_snapshot_from_a_direct_ai_spend_summary_read() {
+        // A3-r2-AC-4: see `GRACE_WINDOW_KEY_TEST_LOCK`'s own doc.
+        let _guard = GRACE_WINDOW_KEY_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let response = json!({ "today": { "inputTokens": 4321 } });
         refresh_from_read("ai_spend_summary", &response);
         let outcome = accepted_at(

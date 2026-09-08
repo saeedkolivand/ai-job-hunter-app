@@ -211,6 +211,21 @@ pub(super) const RESUME_EXTRACT_TEXT_ANCHOR_FIELD: &str = "confidence";
 /// own doc addendum.
 pub(super) const CHANGELOG_ENTRY_ANCHOR_FIELDS: [&str; 2] = ["publishedAt", "prerelease"];
 
+/// `notifications::AppNotification`'s own always-present pair (`read: bool` is this dispatch
+/// surface's ONLY producer of that wire key, verified; paired with `createdAt` for the same
+/// two-field discipline every other anchor on this file uses) -- used to detect a
+/// `notifications_list` row so its `title`/`body` are fenced under the DISTINCT
+/// `crate::prompt_fence`-registered `app_notification` tag instead of `job_posting`
+/// (A3-r2-AC-7 MEDIUM). This is deliberately NOT an exemption the way
+/// `DOCUMENT_RECORD_ANCHOR_FIELDS`/`CHANGELOG_ENTRY_ANCHOR_FIELDS` are -- `FENCE_FIELD_NAMES`'s
+/// own doc addendum already explains why a notification's copy is genuinely MIXED provenance
+/// (`tray::on_new_jobs`'s own first-party name+count vs. `extension_bridge::status_update`'s
+/// `display_name`, a real scraped job title, riding the exact same wire key) -- so it must stay
+/// fenced as untrusted DATA either way. The only thing that changes is the LABEL: `job_posting`
+/// asserts third-party board authorship the way #1157's own remedy for a mixed-provenance field
+/// says not to claim for a first-party-in-the-common-case string.
+pub(super) const NOTIFICATION_ANCHOR_FIELDS: [&str; 2] = ["createdAt", "read"];
+
 /// `ai_generations::ApplicationAnswer`'s own always-present sibling key —
 /// used to detect an `ApplicationAnswer`-shaped object (`{id, question,
 /// answer}`, reachable through `applications_list`/`applications_get`/
@@ -464,11 +479,26 @@ pub(super) fn fence_named_fields_recursive(value: &mut Value) {
                 && DOCUMENT_RECORD_ANCHOR_FIELDS
                     .iter()
                     .all(|f| map.contains_key(*f));
-            let user_document_shaped =
-                document_record_shaped || map.contains_key(RESUME_EXTRACT_TEXT_ANCHOR_FIELD);
+            // AC-2 fix (round 2 security review): ANDed with `!job_posting_shaped`, same as
+            // `document_record_shaped` just above -- without it, a real `JobPosting` whose
+            // board-controlled `extra` (`#[serde(flatten)]`) happens to carry a `confidence` key
+            // satisfied this disjunct on its own, relabelling board-authored `text` from
+            // `<job_posting>` to `<user_document>` (a tag the server instructions define as
+            // first-party). `document_record_shaped` already excludes `job_posting_shaped`, so
+            // the AND only changes the second disjunct's behavior.
+            let user_document_shaped = !job_posting_shaped
+                && (document_record_shaped || map.contains_key(RESUME_EXTRACT_TEXT_ANCHOR_FIELD));
             let changelog_entry_shaped = CHANGELOG_ENTRY_ANCHOR_FIELDS
                 .iter()
                 .all(|f| map.contains_key(*f));
+            // A3-r2-AC-7 -- ANDed with `!job_posting_shaped`, same discipline as every other
+            // shape flag above (a real `JobPosting`'s `extra` forging `createdAt`+`read` is no
+            // more plausible than forging the others, but the AND is free and keeps the
+            // invariant uniform).
+            let notification_shaped = !job_posting_shaped
+                && NOTIFICATION_ANCHOR_FIELDS
+                    .iter()
+                    .all(|f| map.contains_key(*f));
 
             for field in FENCE_FIELD_NAMES {
                 // `title` on a `DocumentRecord`-shaped object is the user's own first-party
@@ -483,20 +513,24 @@ pub(super) fn fence_named_fields_recursive(value: &mut Value) {
                 if *field == "body" && changelog_entry_shaped {
                     continue;
                 }
+                // A3-r2-AC-7: `title`/`body` on a notification-shaped object stay FENCED (mixed
+                // provenance, never skipped the way the two exemptions above are), just under
+                // the distinct `app_notification` tag rather than `job_posting`'s
+                // third-party-board-authorship claim.
+                let tag = if (*field == "title" || *field == "body") && notification_shaped {
+                    "app_notification"
+                } else {
+                    "job_posting"
+                };
                 if let Some(s) = map.get(*field).and_then(Value::as_str) {
-                    let fenced =
-                        crate::prompt_fence::fenced("job_posting", s, crate::prompt_fence::JOB_CAP);
+                    let fenced = crate::prompt_fence::fenced(tag, s, crate::prompt_fence::JOB_CAP);
                     map.insert((*field).to_string(), json!(fenced));
                     continue;
                 }
                 if let Some(Value::Array(items)) = map.get_mut(*field) {
                     for item in items.iter_mut() {
                         if let Value::String(s) = item {
-                            *s = crate::prompt_fence::fenced(
-                                "job_posting",
-                                s,
-                                crate::prompt_fence::JOB_CAP,
-                            );
+                            *s = crate::prompt_fence::fenced(tag, s, crate::prompt_fence::JOB_CAP);
                         }
                     }
                 }
