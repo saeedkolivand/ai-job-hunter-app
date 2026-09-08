@@ -488,9 +488,17 @@ pub(super) fn fence_named_fields_recursive(value: &mut Value) {
             // the AND only changes the second disjunct's behavior.
             let user_document_shaped = !job_posting_shaped
                 && (document_record_shaped || map.contains_key(RESUME_EXTRACT_TEXT_ANCHOR_FIELD));
-            let changelog_entry_shaped = CHANGELOG_ENTRY_ANCHOR_FIELDS
-                .iter()
-                .all(|f| map.contains_key(*f));
+            // Issue #1183 F1 -- ANDed with `!job_posting_shaped`, same discipline as every
+            // other shape flag above. Without this, a board-controlled `JobPosting.extra`
+            // (`#[serde(flatten)]`) forging `publishedAt`+`prerelease` made this disjunct true
+            // on its own, so the loop below skipped fencing `body` as the changelog exemption,
+            // AND the `extra` catch-all still excludes `body` (it's a `FENCE_FIELD_NAMES` key),
+            // AND the trailing recursion ignores string leaves -- board-authored `body` text
+            // reached the agent completely unfenced.
+            let changelog_entry_shaped = !job_posting_shaped
+                && CHANGELOG_ENTRY_ANCHOR_FIELDS
+                    .iter()
+                    .all(|f| map.contains_key(*f));
             // A3-r2-AC-7 -- ANDed with `!job_posting_shaped`, same discipline as every other
             // shape flag above (a real `JobPosting`'s `extra` forging `createdAt`+`read` is no
             // more plausible than forging the others, but the AND is free and keeps the

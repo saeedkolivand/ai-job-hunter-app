@@ -543,7 +543,21 @@ fn every_irreversible_proof_agrees_with_what_a_caller_reads_through_fencing() {
                 value_field,
                 read_command,
             } => {
-                let mut record = serde_json::Map::new();
+                // Issue #1183 O2: start from a wire-realistic base fixture per `read_command`,
+                // same discipline as `a_document_record`'s own doc (a hand-typed bare-minimum
+                // literal is what let the `_id`-vs-`id` mismatch ship undetected). A
+                // `documents_list` row is `DocumentRecord`-shaped (`isDefault`+`indexed` always
+                // present, id serialized as `_id`) -- the exact anchor `document_record_shaped`
+                // (fence.rs) keys off to exempt `title` from the default fence and tag `text`
+                // `user_document`.
+                let mut record = if read_command == "documents_list" {
+                    a_document_record("target-id", MARKER)
+                        .as_object()
+                        .cloned()
+                        .expect("a_document_record always returns a JSON object")
+                } else {
+                    serde_json::Map::new()
+                };
                 record.insert(match_field.to_string(), json!("target-id"));
                 record.insert(value_field.to_string(), json!(MARKER));
                 // A3-r3-AC-2: match the REAL wire shape, not a bare-minimum one -- a

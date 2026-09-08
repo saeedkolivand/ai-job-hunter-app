@@ -400,13 +400,23 @@ pub(super) fn fence_user_document_bare_text(command: &str, data: &mut Value) {
         return;
     }
     if let Value::String(s) = data {
-        // `usize::MAX`, not `RESUME_CAP` (issue #1157/#1162 AC-1) -- `RESUME_CAP` exists to bound
-        // a blob composed INTO a prompt; this is the whole reply to a command whose entire job is
-        // "give me my document back", and truncating it here is silent content redaction with
-        // nothing on the wire saying so (documents_list.text already carries the JOB_CAP bound as
-        // a list row). `enforce_frame_cap` (agent_call.rs) still bounds the reply -- a document
-        // that genuinely doesn't fit is refused with `result_too_large`, never cut.
-        *s = crate::prompt_fence::fenced("user_document", s, usize::MAX);
+        // `super::super::MAX_FRAME_BYTES`, not `RESUME_CAP` (issue #1157/#1162 AC-1) --
+        // `RESUME_CAP` exists to bound a blob composed INTO a prompt; this is the whole reply to
+        // a command whose entire job is "give me my document back", and truncating it here is
+        // silent content redaction with nothing on the wire saying so (documents_list.text
+        // already carries the JOB_CAP bound as a list row).
+        //
+        // Not `usize::MAX` either (issue #1183 F6): `fenced`'s cap only bounds how many chars it
+        // hands to `neutralize_transcript_boundaries` (~35 patterns), and `usize::MAX` made that
+        // pass scan the WHOLE reply -- however large -- before `enforce_frame_cap` (agent_call.rs)
+        // ever got a chance to reject it. Capping at `MAX_FRAME_BYTES` chars keeps the fix's own
+        // guarantee: every document whose BYTE length fits under `MAX_FRAME_BYTES` has at most
+        // that many chars too (a char is never less than a byte), so it passes through this cap
+        // completely untouched. A document that doesn't fit gets truncated here only to bound the
+        // neutralize pass -- the fence-tag/JSON-envelope overhead this adds still pushes the final
+        // reply's BYTE length past `MAX_FRAME_BYTES`, so `enforce_frame_cap` refuses it with
+        // `result_too_large` exactly as before, never a silently truncated document on the wire.
+        *s = crate::prompt_fence::fenced("user_document", s, super::super::MAX_FRAME_BYTES);
     }
 }
 

@@ -57,10 +57,16 @@ fn invalid_input(message: String) -> Refusal {
 /// third-party text back in the server's OWN voice, outside any fence,
 /// laundering exactly what [`Refusal::InvokeError`]'s fencing exists to
 /// prevent, and (b) is large enough to blow the reply past
-/// [`super::enforce_frame_cap`]. Same primitive `InvokeError` already uses,
-/// not a second one.
+/// [`super::enforce_frame_cap`]. Same primitive `InvokeError` already uses.
+///
+/// Tagged `command_error` (issue #1183 F5), not `job_posting`: the offending key is the
+/// CALLER's own input, never third-party board-authored text, so `job_posting`'s
+/// "scraped from a job board" claim was the wrong provenance label for this content class —
+/// `command_error` is what `Refusal::InvokeError` (`agent_call.rs`) already uses for exactly
+/// this kind of app-generated error text, and it is already registered in
+/// [`crate::prompt_fence::EXPECTED_FENCE_TAGS`] and documented in `mcp::instructions::INSTRUCTIONS`.
 fn fenced_key(key: &str) -> String {
-    crate::prompt_fence::fenced("job_posting", key, crate::prompt_fence::JOB_CAP)
+    crate::prompt_fence::fenced("command_error", key, crate::prompt_fence::JOB_CAP)
 }
 
 /// Validate `input`'s top-level keys (and, for a wrapper key whose type the generator could
