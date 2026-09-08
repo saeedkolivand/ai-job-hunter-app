@@ -405,6 +405,40 @@ mod tests {
         assert_eq!(extract(source, &json!({}), &response), None);
     }
 
+    /// T5 hardening (round-3 review): the policy test pins `updater_install`'s
+    /// `ProofSource::Scalar { path: &["version"], .. }` as a LITERAL, and
+    /// `updater::test` pins `status_reply`'s shape as a SEPARATE literal —
+    /// nothing ever fed a real `status_reply` output through `extract` using
+    /// the ACTUAL `updater::updater_install` POLICY row, so renaming
+    /// `status_reply`'s `version` key would leave both tests green while
+    /// making this confirm ceremony permanently unsatisfiable. This pulls the
+    /// real row out of `POLICY` (never a re-typed path) and feeds it a real
+    /// `UpdaterState`/`status_reply` fixture (never a hand-built response).
+    #[test]
+    fn extract_scalar_reads_updater_installs_real_pending_version_off_status_reply() {
+        let entry = POLICY
+            .iter()
+            .find(|e| e.path == "updater::updater_install")
+            .expect("updater::updater_install is a real POLICY row");
+        let Effect::Irreversible(source) = entry.effect else {
+            panic!(
+                "updater_install must be Irreversible, got {:?}",
+                entry.effect
+            );
+        };
+
+        let state = crate::updater::UpdaterState {
+            pending_version: Some("2.5.0".to_string()),
+            ..crate::updater::UpdaterState::default()
+        };
+        let response = crate::updater::status_reply(&state, false);
+
+        assert_eq!(
+            extract(source, &json!({}), &response),
+            Some("2.5.0".to_string())
+        );
+    }
+
     #[test]
     fn extract_lookup_walks_a_nested_field() {
         let source = ProofSource::Lookup {

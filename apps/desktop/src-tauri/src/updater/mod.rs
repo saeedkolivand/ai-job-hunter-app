@@ -123,7 +123,11 @@ const STARTUP_STATUS_DELAY: tokio::time::Duration = tokio::time::Duration::from_
 /// Otherwise, `state.checked` distinguishes "checked, none available" from
 /// "never checked" / "last check failed" — both of the latter used to be
 /// the identical, unfalsifiable `{"available": false}`.
-fn status_reply(state: &UpdaterState, packaged: bool) -> Value {
+// `pub(crate)` (T5 hardening) — `agent_call::proof`'s
+// `extract_scalar_reads_updater_installs_real_pending_version_off_status_reply`
+// feeds a real reply through this to cross-check `updater_install`'s POLICY
+// proof source, so the two can never drift apart silently.
+pub(crate) fn status_reply(state: &UpdaterState, packaged: bool) -> Value {
     if let Some(managed) = store_managed(packaged) {
         return managed;
     }

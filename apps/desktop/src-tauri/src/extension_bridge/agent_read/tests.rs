@@ -995,12 +995,22 @@ fn no_resource_output_ever_carries_a_forbidden_key() {
     for value in [job, automations, best_matches, found_jobs] {
         let text = value.to_string();
         for forbidden in [
+            // Key names.
             "resumeText",
             "coverLetter",
             "assistantNotes",
             "assistantProvider",
             "assistantModel",
             "assistantBaseUrl",
+            // T3 hardening — the distinctive VALUES the fixtures above carry
+            // for those keys, so a projection regression that leaks the same
+            // content under a differently-named key (e.g. `notes`, `body`,
+            // `sourceText`) cannot pass this sweep just by renaming the key.
+            "SECRET RESUME TEXT",
+            "SECRET COVER LETTER",
+            "secret AI note",
+            "gpt-secret",
+            "internal.example.local",
         ] {
             assert!(!text.contains(forbidden), "leaked {forbidden} in {text}");
         }

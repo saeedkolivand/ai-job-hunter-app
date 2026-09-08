@@ -662,20 +662,25 @@ fn every_advertised_found_jobs_and_best_matches_flag_round_trips_with_the_parser
             }
         }
 
+        // T4 hardening: this must FAIL, not merely permit failure — a
+        // vacuous `if let Err(e) = ...` with no `else` would pass even if
+        // `parse_verb` stopped rejecting an unknown flag entirely, and no
+        // other test in this file covers that direction.
         let mut bogus = s(&[verb]);
         bogus.extend(minimal.iter().map(|s| s.to_string()));
         bogus.push("--definitely-not-a-real-flag".to_string());
-        if let Err(e) = parse_verb(&bogus) {
-            let msg = e.to_string();
-            if msg.starts_with("unknown argument") {
-                for flag in flags_named_in(&msg) {
-                    assert!(
-                        documented.contains(&flag),
-                        "verb `{verb}`'s unknown-argument message lists `{flag}` but \
-                         VERB_TABLE's args string doesn't document it: {msg}"
-                    );
-                }
-            }
+        let err = parse_verb(&bogus).expect_err("an undocumented flag must be refused");
+        let msg = err.to_string();
+        assert!(
+            msg.starts_with("unknown argument"),
+            "verb `{verb}` refused `--definitely-not-a-real-flag` for the wrong reason: {msg}"
+        );
+        for flag in flags_named_in(&msg) {
+            assert!(
+                documented.contains(&flag),
+                "verb `{verb}`'s unknown-argument message lists `{flag}` but \
+                 VERB_TABLE's args string doesn't document it: {msg}"
+            );
         }
     }
 }

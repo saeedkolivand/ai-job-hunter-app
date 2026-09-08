@@ -372,6 +372,16 @@ fn all_four_checked_true_writes_are_still_present() {
         "expected both re-locked writes — `updater_check`'s and `silent_check`'s \
          `Ok(None)` arms — got {relocked_writes}"
     );
+    // T2 hardening: the two counts above are position-independent — they
+    // cannot tell WHICH match arm a write sits in, so moving `silent_check`'s
+    // `Ok(None)` write into its `Err(_)` arm would leave both counts
+    // unchanged. Pin the swallow arm directly: a failed background probe
+    // must never be marked `checked`.
+    assert!(
+        MOD_RS.contains("Err(_) => {}"),
+        "silent_check's failed-probe arm must stay a no-op — a `checked` \
+         write here would claim a fresh answer after a failed check"
+    );
 }
 
 // ── Microsoft Store flavour ───────────────────────────────────────────────────

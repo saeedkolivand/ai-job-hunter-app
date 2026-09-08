@@ -546,30 +546,45 @@ fn found_jobs_all_autopilots_cursor_is_rejected_when_replayed_scoped() {
     assert_eq!(err.to_string(), WRONG_AUTOPILOT_CURSOR_MESSAGE);
 }
 
-/// B3-r1-F4 regression pin (round 3, B3-r3-F6) — every OTHER cursor test in
-/// this file computes its expected issuer via `issuer()`/`no_filters()`
-/// (self-referential against `found_jobs_cursor_issuer`) or passes a bare id
-/// string that mismatches with or without the fingerprint either way, so
-/// none of them can catch a regression that drops the `|{fp}` half of the
-/// issuer. This one drives two DIFFERENT filter sets, same scope, by hand:
-/// a cursor issued under `minScore: 70` must be rejected when replayed
-/// against the issuer for `minScore: 90` — if `found_jobs_cursor_issuer`
-/// ever stopped folding filters in, both issuers would collapse to the same
-/// `"ap-1"` and this would wrongly succeed.
+/// B3-r1-F4 regression pin (round 3, B3-r3-F6; T1 hardening) — every OTHER
+/// cursor test in this file computes its expected issuer via
+/// `issuer()`/`no_filters()` (self-referential against
+/// `found_jobs_cursor_issuer`) or passes a bare id string that mismatches
+/// with or without the fingerprint either way, so none of them can catch a
+/// regression that drops one of the FIVE parts `found_jobs_cursor_issuer`
+/// folds into its fingerprint (`min_score`, `country`, `remote`, `applied`,
+/// `query`). This drives two DIFFERENT filter sets, same scope, by hand,
+/// once per part: a cursor issued under one value of that part must be
+/// rejected when replayed against the issuer for the other value — if
+/// `found_jobs_cursor_issuer` ever stopped folding a given part in, that
+/// one case would wrongly succeed while the other four stayed green.
 #[test]
 fn found_jobs_cursor_issued_under_one_filter_set_is_rejected_under_another() {
-    let issuer_at_70 = found_jobs_cursor_issuer(
-        Some("ap-1"),
-        &FoundJobsFilters::from_payload(&json!({ "minScore": 70 })).unwrap(),
-    );
-    let cursor = format!("{issuer_at_70}:5");
+    let cases: [(Value, Value); 5] = [
+        (json!({ "minScore": 70 }), json!({ "minScore": 90 })),
+        (json!({ "country": "de" }), json!({ "country": "fr" })),
+        (json!({ "remote": true }), json!({ "remote": false })),
+        (json!({ "applied": true }), json!({ "applied": false })),
+        (json!({ "query": "a" }), json!({ "query": "b" })),
+    ];
+    for (payload_a, payload_b) in cases {
+        let issuer_a = found_jobs_cursor_issuer(
+            Some("ap-1"),
+            &FoundJobsFilters::from_payload(&payload_a).unwrap(),
+        );
+        let cursor = format!("{issuer_a}:5");
 
-    let issuer_at_90 = found_jobs_cursor_issuer(
-        Some("ap-1"),
-        &FoundJobsFilters::from_payload(&json!({ "minScore": 90 })).unwrap(),
-    );
-    let err = parse_found_jobs_cursor(&json!({ "cursor": cursor }), &issuer_at_90).unwrap_err();
-    assert_eq!(err.to_string(), WRONG_AUTOPILOT_CURSOR_MESSAGE);
+        let issuer_b = found_jobs_cursor_issuer(
+            Some("ap-1"),
+            &FoundJobsFilters::from_payload(&payload_b).unwrap(),
+        );
+        let err = parse_found_jobs_cursor(&json!({ "cursor": cursor }), &issuer_b).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            WRONG_AUTOPILOT_CURSOR_MESSAGE,
+            "cursor issued under {payload_a} must be rejected when replayed under {payload_b}"
+        );
+    }
 }
 
 // ── issue #1167: server-side filters ───────────────────────────────────
