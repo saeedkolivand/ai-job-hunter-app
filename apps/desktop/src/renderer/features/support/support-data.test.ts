@@ -167,7 +167,18 @@ describe('support corpus / translations parity', () => {
     // render the English string silently via `fallbackLng: 'en'` with no
     // gate to catch it.
     const KEY = 'settings.developer.agentCli.stayOpenNote';
-    expect(unresolved([KEY, 'settings.developer.agentCli.transcriptNote'])).toEqual([]);
+    expect(
+      unresolved([
+        KEY,
+        'settings.developer.agentCli.transcriptNote',
+        // The generic MCP block (added later, same card): its hint is the
+        // only sentence saying the copied snippet is already the whole
+        // `mcpServers` wrapper, not a section to nest inside one.
+        'settings.developer.agentCli.genericLabel',
+        'settings.developer.agentCli.genericHint',
+        'settings.developer.agentCli.copyGeneric',
+      ])
+    ).toEqual([]);
     const HEDGE_BY_LOCALE = {
       en: /most agent calls .*fail while it is closed/i,
       de: /die meisten Agentenaufrufe .*schlagen fehl, während sie geschlossen ist/i,
