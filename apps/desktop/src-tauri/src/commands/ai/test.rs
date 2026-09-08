@@ -340,3 +340,68 @@ fn unrelated_jobs_do_not_block_indexing() {
         assert!(!is_active_embed_job(kind, &JobStatus::Running), "{kind}");
     }
 }
+
+// ── per_provider_with_zero_rows (ai_spend_summary window merge, #1161) ────────
+
+use crate::spend::ProviderTotals;
+
+fn totals(provider: &str, input: u64, output: u64, cost: f64) -> ProviderTotals {
+    ProviderTotals {
+        provider: provider.to_string(),
+        input_tokens: input,
+        output_tokens: output,
+        est_cost_usd: cost,
+    }
+}
+
+#[test]
+fn a_provider_active_in_the_window_reports_its_windowed_totals_with_no_reason() {
+    let all_time = vec![totals("openai", 10_000, 5_000, 1.5)];
+    let windowed = vec![totals("openai", 10_000, 5_000, 1.5)];
+
+    let out = per_provider_with_zero_rows(all_time, windowed);
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0]["provider"], "openai");
+    assert_eq!(out[0]["inputTokens"], 10_000);
+    assert!(
+        out[0].get("reason").is_none(),
+        "an active row must not carry a reason"
+    );
+}
+
+#[test]
+fn a_provider_absent_from_the_window_becomes_a_zero_row_with_a_reason() {
+    // Historically active (all_time), but nothing in THIS window.
+    let all_time = vec![totals("anthropic", 20_000, 8_000, 2.0)];
+    let windowed = vec![]; // nothing in the window
+
+    let out = per_provider_with_zero_rows(all_time, windowed);
+    assert_eq!(out.len(), 1, "the provider must still appear");
+    assert_eq!(out[0]["provider"], "anthropic");
+    assert_eq!(out[0]["inputTokens"], 0);
+    assert_eq!(out[0]["outputTokens"], 0);
+    assert_eq!(out[0]["estCostUsd"], 0.0);
+    assert_eq!(out[0]["reason"], "no spend in window");
+}
+
+#[test]
+fn a_free_provider_absent_from_the_window_is_labelled_local() {
+    let all_time = vec![totals("ollama", 50_000, 20_000, 0.0)];
+    let out = per_provider_with_zero_rows(all_time, vec![]);
+    assert_eq!(out[0]["reason"], "local — always $0");
+}
+
+#[test]
+fn every_all_time_provider_survives_the_merge_even_with_an_empty_window() {
+    let all_time = vec![
+        totals("openai", 1, 1, 0.01),
+        totals("anthropic", 2, 2, 0.02),
+        totals("ollama", 3, 3, 0.0),
+    ];
+    let out = per_provider_with_zero_rows(all_time, vec![]);
+    assert_eq!(
+        out.len(),
+        3,
+        "no provider must be dropped by an empty window"
+    );
+}

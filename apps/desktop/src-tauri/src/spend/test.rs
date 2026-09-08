@@ -716,3 +716,126 @@ fn thinking_tokens_survive_export_import_and_a_legacy_bundle_still_imports() {
         .expect("a pre-column bundle still restores");
     assert_eq!(restored.list()[0].thinking_tokens, None);
 }
+
+// ── Window scoping (issue #1161) ─────────────────────────────────────────────
+
+/// Directly inserts a row `days_ago` days in the past — `record()` always
+/// stamps `now_ms()`, so a window test that needs a call OUTSIDE today has to
+/// write the row itself, same idiom as `documents::test`'s TTL-eviction tests.
+fn insert_backdated(store: &SpendStore, days_ago: u64, provider: &str, model: &str, tokens: u32) {
+    let ts = now_ms().saturating_sub(days_ago * 86_400_000);
+    let cost = estimate_cost(model, tokens, tokens);
+    let conn = store.conn.lock();
+    conn.execute(
+        "INSERT INTO ai_spend
+         (id, created_at, provider, model, input_tokens, output_tokens, thinking_tokens,
+          est_cost_usd, run_id)
+         VALUES (?1,?2,?3,?4,?5,?6,NULL,?7,NULL)",
+        params![
+            format!("spend-test-{}", uuid::Uuid::new_v4()),
+            ts_to_db(ts),
+            provider,
+            model,
+            tokens,
+            tokens,
+            cost,
+        ],
+    )
+    .unwrap();
+}
+
+#[test]
+fn window_start_ms_of_one_day_is_exactly_today_start() {
+    assert_eq!(window_start_ms(1), today_start_ms());
+    assert_eq!(window_start_ms(0), today_start_ms(), "0 days means 1 day");
+}
+
+#[test]
+fn window_start_ms_of_seven_days_reaches_six_full_days_back() {
+    assert_eq!(
+        window_start_ms(7),
+        today_start_ms() - 6 * 86_400_000,
+        "day 1 of the window is today itself, so 7 days reaches back 6 more"
+    );
+}
+
+#[test]
+fn totals_since_and_by_provider_since_only_count_rows_inside_the_window() {
+    let dir = TempDir::new().unwrap();
+    let store = SpendStore::open(&dir.path().to_path_buf()).unwrap();
+
+    // Today: counts in every window.
+    store.record(rec("openai", "gpt-4o-mini", 1_000, 1_000));
+    // 3 days ago: inside a 7-day window, outside a 1-day window.
+    insert_backdated(&store, 3, "anthropic", "claude-sonnet-5", 2_000);
+    // 30 days ago: outside both windows below.
+    insert_backdated(&store, 30, "gemini", "gemini-2.5-flash", 5_000);
+
+    let one_day = store.totals_since(window_start_ms(1));
+    assert_eq!(one_day.input_tokens, 1_000, "only today's row counts");
+
+    let seven_day = store.totals_since(window_start_ms(7));
+    assert_eq!(
+        seven_day.input_tokens, 3_000,
+        "today's + the 3-day-old row count; the 30-day-old row does not"
+    );
+
+    let by_provider_7d = store.by_provider_since(window_start_ms(7));
+    assert_eq!(by_provider_7d.len(), 2, "only openai and anthropic appear");
+    assert!(by_provider_7d.iter().any(|p| p.provider == "openai"));
+    assert!(by_provider_7d.iter().any(|p| p.provider == "anthropic"));
+    assert!(!by_provider_7d.iter().any(|p| p.provider == "gemini"));
+
+    // since_ms = 0 (all-time) picks up every provider ever recorded.
+    let all_time = store.by_provider_since(0);
+    assert_eq!(all_time.len(), 3);
+}
+
+#[test]
+fn zero_row_reason_labels_a_free_provider_as_local_regardless_of_all_time_cost() {
+    let hist = ProviderTotals {
+        provider: "ollama".to_string(),
+        input_tokens: 10_000,
+        output_tokens: 5_000,
+        est_cost_usd: 0.0,
+    };
+    assert_eq!(zero_row_reason(&hist), "local — always $0");
+}
+
+#[test]
+fn zero_row_reason_labels_a_never_billed_paid_provider_as_not_priced() {
+    // A non-free provider (e.g. openai-compatible always pointed at a local
+    // server) that moved real tokens but never actually cost anything.
+    let hist = ProviderTotals {
+        provider: "openai-compatible".to_string(),
+        input_tokens: 8_000,
+        output_tokens: 4_000,
+        est_cost_usd: 0.0,
+    };
+    assert_eq!(zero_row_reason(&hist), "not priced");
+}
+
+#[test]
+fn zero_row_reason_labels_a_genuinely_quiet_paid_provider_as_no_spend_in_window() {
+    let hist = ProviderTotals {
+        provider: "openai".to_string(),
+        input_tokens: 100_000,
+        output_tokens: 50_000,
+        est_cost_usd: 1.23,
+    };
+    assert_eq!(zero_row_reason(&hist), "no spend in window");
+}
+
+#[test]
+fn zero_row_reason_never_used_at_all_is_no_spend_in_window() {
+    // A provider row that (in principle) has zero tokens and zero cost
+    // all-time must not be misread as "not priced" — that reason is reserved
+    // for a provider that moved REAL tokens without ever costing anything.
+    let hist = ProviderTotals {
+        provider: "openai".to_string(),
+        input_tokens: 0,
+        output_tokens: 0,
+        est_cost_usd: 0.0,
+    };
+    assert_eq!(zero_row_reason(&hist), "no spend in window");
+}

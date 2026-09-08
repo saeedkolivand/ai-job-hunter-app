@@ -894,7 +894,7 @@ pub async fn ai_embedding_status(app: AppHandle) -> Value {
 
 // ── AI-spend visibility ──────────────────────────────────────────────────────
 
-/// Read-only AI-spend summary: today's REAL per-provider token totals — as
+/// Read-only AI-spend summary: `today`'s REAL per-provider token totals — as
 /// reported by each provider's own response, never estimated (see
 /// `commands::ai_provider::stream` / `pipeline::Completer::complete`, the two
 /// chokepoints that record them) — plus an ESTIMATED USD cost from a static
@@ -903,28 +903,46 @@ pub async fn ai_embedding_status(app: AppHandle) -> Value {
 /// no billing API to query. Local (Ollama) and CLI-agent calls always cost
 /// $0. A missing store (failed to open at startup) degrades to all-zero
 /// rather than erroring.
+///
+/// `days` (issue #1161) scopes `today` and `perProvider` to the last N UTC
+/// days ending today; `1` (the default, and pre-#1161 behavior) means "since
+/// midnight today". Clamped to [`crate::spend::SPEND_WINDOW_MAX_DAYS`]. The
+/// resolved window is reported back as `window` so a caller never has to
+/// re-derive what it asked for. `perProvider` lists every provider that has
+/// EVER recorded a call, not just ones active in this window — a provider
+/// with no activity here still gets a zero row, with a short `reason`
+/// (`crate::spend::zero_row_reason`). `thinkingByModel` stays all-history
+/// (`thinkingByModelWindow: "allTime"`) — it answers "how does this model
+/// behave", not "what did this window cost".
 #[tauri::command]
-pub fn ai_spend_summary(app: AppHandle) -> Value {
+pub fn ai_spend_summary(app: AppHandle, days: Option<u32>) -> Value {
+    let days = days
+        .unwrap_or(1)
+        .clamp(1, crate::spend::SPEND_WINDOW_MAX_DAYS);
+    let window_start = crate::spend::window_start_ms(days);
+    let window_json = json!({
+        "days": days,
+        "from": window_start,
+        "to": crate::db::now_ms(),
+    });
+
     let Some(store) = app.try_state::<crate::spend::SpendStore>() else {
         return json!({
             "today": { "inputTokens": 0, "outputTokens": 0, "estCostUsd": 0.0 },
             "perProvider": [],
             "thinkingByModel": [],
+            "window": window_json,
+            "thinkingByModelWindow": "allTime",
         });
     };
-    let today = store.today_totals();
-    let per_provider: Vec<Value> = store
-        .by_provider_today()
-        .into_iter()
-        .map(|p| {
-            json!({
-                "provider": p.provider,
-                "inputTokens": p.input_tokens,
-                "outputTokens": p.output_tokens,
-                "estCostUsd": p.est_cost_usd,
-            })
-        })
-        .collect();
+    let today = store.totals_since(window_start);
+    // Every provider that has EVER recorded a call (since_ms = 0), so a
+    // provider with no activity in THIS window still appears — as a zero row
+    // with a reason — rather than silently vanishing from the list.
+    let per_provider = per_provider_with_zero_rows(
+        store.by_provider_since(0),
+        store.by_provider_since(window_start),
+    );
     // Observed reasoning overhead per model, over all history — the honest
     // input to "which model should run which stage". EMPTY until a provider
     // that reports a distinct thinking count has actually been used (OpenAI's
@@ -952,7 +970,45 @@ pub fn ai_spend_summary(app: AppHandle) -> Value {
         },
         "perProvider": per_provider,
         "thinkingByModel": thinking_by_model,
+        "window": window_json,
+        "thinkingByModelWindow": "allTime",
     })
+}
+
+/// `ai_spend_summary`'s `perProvider` merge: every provider in `all_time`
+/// (the full ledger vocabulary) shows its `windowed` totals when present,
+/// else a zero row with [`crate::spend::zero_row_reason`]. Pulled out as a
+/// pure function so the merge is unit-testable without a live `AppHandle`
+/// (this crate has no mock harness for one).
+fn per_provider_with_zero_rows(
+    all_time: Vec<crate::spend::ProviderTotals>,
+    windowed: Vec<crate::spend::ProviderTotals>,
+) -> Vec<Value> {
+    let windowed_by_provider: std::collections::HashMap<String, crate::spend::ProviderTotals> =
+        windowed
+            .into_iter()
+            .map(|p| (p.provider.clone(), p))
+            .collect();
+    all_time
+        .into_iter()
+        .map(
+            |hist| match windowed_by_provider.get(hist.provider.as_str()) {
+                Some(p) => json!({
+                    "provider": p.provider,
+                    "inputTokens": p.input_tokens,
+                    "outputTokens": p.output_tokens,
+                    "estCostUsd": p.est_cost_usd,
+                }),
+                None => json!({
+                    "provider": hist.provider,
+                    "inputTokens": 0,
+                    "outputTokens": 0,
+                    "estCostUsd": 0.0,
+                    "reason": crate::spend::zero_row_reason(&hist),
+                }),
+            },
+        )
+        .collect()
 }
 
 /// Scrub-then-validate `base_url` before it can reach persistence — the exact
