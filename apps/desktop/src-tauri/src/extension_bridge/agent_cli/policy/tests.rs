@@ -431,6 +431,19 @@ fn no_proof_source_points_at_an_irreversible_command() {
 /// own generated data cannot catch the generator silently dropping a row it used to emit).
 const ALLOWLISTED_UNCATALOGUED: &[&str] = &["boards_list", "privacy_clear_data"];
 
+/// Issue #1183 F4 — the ONE row of [`ALLOWLISTED_UNCATALOGUED`] whose `POLICY` `Effect` is
+/// [`Effect::Irreversible`] (`privacy_clear_data`: disconnects every board and unconditionally
+/// wipes the postings + interactions cache, per that row's own comment). This module's doc frames
+/// every `ALLOWLISTED_UNCATALOGUED` entry purely as "zero renderer references", which is true but
+/// incomplete for this one: it is also the single dispatchable row `agent_call::validate`'s
+/// generated-catalogue key checking cannot reach at all (no `CatalogueArg` list to validate
+/// against). Hand-written and checked by `allowlisted_uncatalogued_irreversible_entries_are_
+/// exactly_the_irreversible_ones` below so a FUTURE destructive command added to
+/// `ALLOWLISTED_UNCATALOGUED` — or `privacy_clear_data` being downgraded off `Irreversible` — must
+/// be a deliberate, reviewed edit to this list, never a silent side effect of editing `POLICY` or
+/// the allowlist alone.
+const ALLOWLISTED_UNCATALOGUED_IRREVERSIBLE: &[&str] = &["privacy_clear_data"];
+
 /// Every dispatchable (`Read`/`Reversible`/`Irreversible`) POLICY row is reachable through
 /// `agent_call::validate`'s dispatch-time key checking (issues #1163, #1158, #1160): either the
 /// generated `catalogue::CATALOGUE` has an entry for it, the generator itself flagged it in
@@ -481,6 +494,41 @@ fn allowlisted_uncatalogued_entries_are_still_real_and_still_uncatalogued() {
                 .iter()
                 .any(|e| e.command == *command),
             "{command} is now catalogued — remove it from ALLOWLISTED_UNCATALOGUED"
+        );
+    }
+}
+
+/// Issue #1183 F4: every [`ALLOWLISTED_UNCATALOGUED`] row whose `POLICY` `Effect` is
+/// [`Effect::Irreversible`] must appear in [`ALLOWLISTED_UNCATALOGUED_IRREVERSIBLE`], AND every
+/// entry of that second list must actually be `Irreversible` — both directions, so the list can
+/// neither miss a real destructive uncatalogued row nor carry a stale one. Mutating either list
+/// alone, or reclassifying `privacy_clear_data`'s `POLICY` effect, fails this test.
+#[test]
+fn allowlisted_uncatalogued_irreversible_entries_are_exactly_the_irreversible_ones() {
+    for command in ALLOWLISTED_UNCATALOGUED {
+        let entry = POLICY
+            .iter()
+            .find(|e| e.path.rsplit("::").next() == Some(*command))
+            .expect("pinned by allowlisted_uncatalogued_entries_are_still_real_and_still_uncatalogued above");
+        let is_irreversible = matches!(entry.effect, Effect::Irreversible(_));
+        assert_eq!(
+            is_irreversible,
+            ALLOWLISTED_UNCATALOGUED_IRREVERSIBLE.contains(command),
+            "{command} is {}Irreversible in POLICY but {}listed in \
+             ALLOWLISTED_UNCATALOGUED_IRREVERSIBLE — keep the two in sync",
+            if is_irreversible { "" } else { "NOT " },
+            if ALLOWLISTED_UNCATALOGUED_IRREVERSIBLE.contains(command) {
+                ""
+            } else {
+                "not "
+            }
+        );
+    }
+    for command in ALLOWLISTED_UNCATALOGUED_IRREVERSIBLE {
+        assert!(
+            ALLOWLISTED_UNCATALOGUED.contains(command),
+            "{command} is in ALLOWLISTED_UNCATALOGUED_IRREVERSIBLE but not in \
+             ALLOWLISTED_UNCATALOGUED itself"
         );
     }
 }
