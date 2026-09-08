@@ -751,6 +751,22 @@ fn classify_tool_call(params: &Value, server: &Server) -> ToolCall {
                 )));
             }
         }
+        // Round 2 fix (B3-r2-F4) — `tool_argv`'s `includeDescription` arm used to read this
+        // value with `.and_then(Value::as_bool)`, the exact silent-drop combinator this fn's own
+        // doc says every optional argument avoids: a non-bool (`"true"`, `1`) vanished as
+        // "absent" rather than reaching `parse_verb`, so the resource-level refusal for the
+        // identical value one hop further in (`found_jobs::bool_filter`, via
+        // `FoundJobsFilters::from_payload`) could never fire — the caller got compact rows with
+        // no error and no signal that `description` was silently dropped. Checked HERE, before
+        // argv is built, mirroring the `autopilotId` guard above on the SAME tool.
+        if let Some(v) = arguments.get("includeDescription").filter(|v| !v.is_null()) {
+            if v.as_bool().is_none() {
+                return ToolCall::Local(Ok(tool_result(
+                    usage_error_value("includeDescription must be a boolean"),
+                    2,
+                )));
+            }
+        }
     }
 
     let argv = tool_argv(name, &arguments);

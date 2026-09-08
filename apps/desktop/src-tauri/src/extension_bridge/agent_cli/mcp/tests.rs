@@ -1567,6 +1567,27 @@ fn the_found_jobs_cursor_is_advertised_as_an_opaque_per_autopilot_token() {
     );
 }
 
+/// Round 2 fix (B3-r2-F5) — `best-matches`' `query` filters the already-capped, ranked
+/// candidate list this tool computes (`BEST_MATCHES_CAP`, `commands::autopilot::best_matches`),
+/// not the full stored corpus: a posting outside that cap reads `total: 0`/`matches: []`, a
+/// confident false negative for issue #1168's headline question ("is this role already in my
+/// list?"). Both the `query` property AND the tool's own base description (`VERB_TABLE`) must
+/// steer a caller toward `found-jobs`' own `query`, which spans everything.
+#[test]
+fn best_matches_query_advertises_it_is_scoped_to_the_capped_ranked_list_not_the_full_corpus() {
+    let list = tools(Tier::Read);
+    let query = property_description(&list, TOOL_BEST_MATCHES, "query");
+    assert!(
+        query.contains("found-jobs") && query.contains("NOT"),
+        "query's own description must name the scope and point at found-jobs: {query}"
+    );
+    let base = tool_description(&list, TOOL_BEST_MATCHES);
+    assert!(
+        base.contains("found-jobs"),
+        "the tool's base description must point a caller at found-jobs for a full-corpus search: {base}"
+    );
+}
+
 /// Issues #1167/#1168 — every new `found-jobs` server-side filter/flag must be
 /// advertised on the schema a client reads BEFORE its first call, not
 /// discoverable only by trial and error. `autopilotId` moved from required to
@@ -2050,6 +2071,54 @@ fn found_jobs_with_an_absent_autopilot_id_still_reaches_the_bridge() {
         ),
         ToolCall::Bridge(_)
     ));
+}
+
+/// Round 2 fix (B3-r2-F4) — `tool_argv` used to read `includeDescription` with
+/// `.and_then(Value::as_bool)`, so a non-bool value vanished as "absent" instead of reaching
+/// `parse_verb`/the resource's own refusal: the caller got compact rows back with no error and
+/// no signal that `description` was silently dropped. Must be a usage error, never routed to the
+/// bridge at all — mirrors `found_jobs_with_a_blank_autopilot_id_is_a_usage_error_not_a_silent_widen`
+/// on the sibling field.
+#[test]
+fn found_jobs_with_a_non_bool_include_description_is_a_usage_error_not_a_silent_drop() {
+    let server = Server::new(false, false);
+    for bad in [json!("true"), json!(1), json!("")] {
+        let ToolCall::Local(Ok(result)) = classify_tool_call(
+            &json!({ "name": TOOL_FOUND_JOBS, "arguments": { "includeDescription": bad } }),
+            &server,
+        ) else {
+            panic!("a non-bool includeDescription must never reach the bridge");
+        };
+        assert_eq!(result["isError"], true);
+        let text = result["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.contains("includeDescription"),
+            "the refusal must name the offending field: {text}"
+        );
+    }
+}
+
+/// The safe direction, unchanged: a real boolean (or an omitted key) still reaches the bridge.
+#[test]
+fn found_jobs_with_a_bool_or_absent_include_description_still_reaches_the_bridge() {
+    let server = Server::new(false, false);
+    for arguments in [
+        json!({}),
+        json!({ "includeDescription": true }),
+        json!({ "includeDescription": false }),
+        json!({ "includeDescription": null }),
+    ] {
+        assert!(
+            matches!(
+                classify_tool_call(
+                    &json!({ "name": TOOL_FOUND_JOBS, "arguments": arguments }),
+                    &server,
+                ),
+                ToolCall::Bridge(_)
+            ),
+            "must still reach the bridge for {arguments}"
+        );
+    }
 }
 
 /// MEDIUM fix, review round 4 — the #1134 gate refused MCP's own reserved `_`-prefixed keys,

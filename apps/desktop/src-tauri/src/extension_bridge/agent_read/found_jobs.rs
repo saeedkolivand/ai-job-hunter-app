@@ -304,12 +304,14 @@ pub(super) struct FoundJobsFilters {
 /// not readable as its declared shape (B3-r1-F3 — a wrong-typed value, e.g.
 /// `{"minScore": "70"}` off the raw `agent.query` payload path, used to
 /// vanish silently through `.and_then(Value::as_*)` returning `None` for a
-/// mismatch exactly like it does for "absent"). The caller got an
-/// UNFILTERED page back with a `total` it read as filtered. Refusing here
-/// instead means the filter this call asked for either applies or the call
-/// fails loudly — never a third, silent option. Names the KEY, not the
-/// caller's value (never echoed) — the key is this resource's own static
-/// schema, not caller data.
+/// mismatch exactly like it does for "absent") — and, for the two string
+/// filters, also PRESENT-but-blank (B3-r2-F2, see
+/// [`trimmed_lowercase_filter`]'s own doc). The caller got an UNFILTERED
+/// page back with a `total` it read as filtered. Refusing here instead means
+/// the filter this call asked for either applies or the call fails loudly —
+/// never a third, silent option. Names the KEY, not the caller's value
+/// (never echoed) — the key is this resource's own static schema, not
+/// caller data.
 fn unreadable_filter_message(key: &str) -> AppError {
     AppError::Validation(format!(
         "{key} was present but not usable as its declared type — remove it or fix its value"
@@ -317,17 +319,30 @@ fn unreadable_filter_message(key: &str) -> AppError {
 }
 
 /// `payload.get(key)`, refusing anything present that is neither absent/
-/// `null` nor a JSON string — a blank/whitespace-only string still reads as
-/// "filter not set" (`None`), same as before: this is an ADDITIVE filter,
-/// not a selector, so an empty value narrowing nothing is the safe direction
-/// (contrast `found_jobs_resource`'s `autopilotId`, a SELECTOR, where empty
-/// must refuse — see `parse_autopilot_id_arg`).
-fn trimmed_lowercase_filter(payload: &Value, key: &str) -> AppResult<Option<String>> {
+/// `null` nor a non-blank JSON string. A PRESENT-but-blank/whitespace-only
+/// string now refuses too (round 2 fix, B3-r2-F2 — it used to read as
+/// "filter not set", silently widening the call to the entire corpus with a
+/// `total` the caller reads as the filtered count; the canonical repro is a
+/// shell caller forwarding an unset variable, e.g. `--query "$ROLE"` with
+/// `ROLE` empty). There is no legitimate caller that types an explicitly
+/// empty filter, so this now mirrors `parse_autopilot_id_arg`'s blank-must-
+/// refuse rule even though `query`/`country` are additive filters, not
+/// selectors — only the OMITTED key still means "no filter".
+///
+/// `pub(super)` (round 2 fix, B3-r2-F1) so `agent_read::best_matches_resource`
+/// reuses this SAME fallible parse for its own `query` argument rather than
+/// the bare `.and_then(Value::as_str)` combinator that let a wrong-typed or
+/// blank `query` collapse silently to "absent" on that resource too.
+pub(super) fn trimmed_lowercase_filter(payload: &Value, key: &str) -> AppResult<Option<String>> {
     match payload.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(s)) => {
             let trimmed = s.trim();
-            Ok((!trimmed.is_empty()).then(|| trimmed.to_lowercase()))
+            if trimmed.is_empty() {
+                Err(unreadable_filter_message(key))
+            } else {
+                Ok(Some(trimmed.to_lowercase()))
+            }
         }
         Some(_) => Err(unreadable_filter_message(key)),
     }
@@ -528,13 +543,24 @@ fn found_jobs_cursor_issuer(autopilot_id: Option<&str>, filters: &FoundJobsFilte
 /// [`trim_page_to_budget`] the result before returning it.
 ///
 /// `offset` is a plain index into the candidate list THIS CALL'S filters
-/// produce — stable across calls only as long as neither the underlying
-/// stored order nor the filter arguments change between them, exactly the
-/// same caveat `agent_read::found_jobs`'s pre-#1167 doc already carried for
-/// the unfiltered case (a `record_run` merge prepends new jobs and shifts
-/// every existing index forward; `total` moving between calls is the
-/// caller-visible signal, and the documented recovery is the same: restart
-/// from `cursor: null`).
+/// produce — stable across calls only as long as NONE of three inputs
+/// change between them: the underlying stored order, the filter arguments,
+/// and (round 2 fix, B3-r2-F6) `applied_urls` — a fresh, live re-derivation
+/// on every call (see [`found_jobs_resource`]'s
+/// `commands::autopilot::applied_job_urls(app)`), not a stored bit. That
+/// third input breaks the guarantee the ORIGINAL, pre-#1167 doc here made:
+/// back when the only drift source was a `record_run` merge PREPENDING new
+/// jobs, a stale offset could only ever produce a DUPLICATE (nothing is
+/// ever removed from a stored `found_jobs` list), never a skip. `applied`
+/// (and, on the spanning path, cross-autopilot dedup) can REMOVE a row from
+/// the middle of the candidate list mid-traversal — a job applied to
+/// between two calls drops out under `applied: false`, shifting every LATER
+/// index down by one, so the next page at the stale offset silently skips
+/// exactly one row instead of repeating it. `total` moving between calls
+/// (in EITHER direction, not just growing) is the caller-visible signal;
+/// the recovery is unchanged — restart from `cursor: null` — but a
+/// SHRINKING `total` is the one that can hide a missed row rather than
+/// merely repeat one.
 ///
 /// Directly unit-testable with hand-built `Autopilot` records, no
 /// `AppHandle` — same pure/impure split as `agent_read::resolve_job`/

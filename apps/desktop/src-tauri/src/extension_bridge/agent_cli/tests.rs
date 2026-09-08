@@ -671,6 +671,34 @@ fn both_automations_descriptions_name_both_totals() {
     }
 }
 
+/// Round 2 fix (B3-r2-F3): `found-jobs`' cursor is bound to BOTH the
+/// `autopilotId` scope AND the active filter arguments
+/// (`found_jobs::found_jobs_cursor_issuer`) — the MCP schema
+/// (`mcp::schemas`) already said so, but this table (`--help`) and
+/// `agent_read::RESOURCES` (`agent schema`) only mentioned the id, so a
+/// caller following either one had no way to know a cursor replayed under
+/// changed filters would refuse. Same drift-guard shape as
+/// `both_automations_descriptions_name_both_totals`, one hop over.
+#[test]
+fn found_jobs_cursor_binding_is_named_on_both_surfaces() {
+    let cli = VERB_TABLE
+        .iter()
+        .find(|v| v.name == "found-jobs")
+        .expect("the found-jobs verb")
+        .returns;
+    let (_, schema) = super::super::agent_read::RESOURCES
+        .iter()
+        .find(|(name, _)| *name == "found-jobs")
+        .expect("the found-jobs resource");
+    for (surface, text) in [("--help", cli), ("agent schema", schema)] {
+        assert!(
+            text.contains("autopilotId") && text.contains("filter"),
+            "{surface}'s found-jobs description must name both the autopilotId scope and the \
+             filter-argument binding: {text}"
+        );
+    }
+}
+
 #[test]
 fn is_help_request_recognizes_help_h_and_bare_help_verb() {
     assert!(is_help_request(&s(&["--help"])));

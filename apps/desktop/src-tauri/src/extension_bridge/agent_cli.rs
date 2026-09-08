@@ -362,8 +362,10 @@ const VERB_TABLE: &[VerbHelp] = &[
         args: "[--limit <n>] [--cursor <c>] [--query <q>]",
         returns: "the strongest jobs across every autopilot (default 20, max 50 per page); \
                   repeat with the returned `nextCursor` to reach every ranked row; `--query` \
-                  filters to a title/company substring, and the cursor is only valid for the \
-                  SAME `--query` (present or omitted) that issued it",
+                  filters to a title/company substring over the already-capped, ranked \
+                  candidate list this call computes (NOT the full stored corpus — use \
+                  `found-jobs --query` to search every stored posting), and the cursor is only \
+                  valid for the SAME `--query` (present or omitted) that issued it",
     },
     VerbHelp {
         name: "job",
@@ -411,8 +413,10 @@ const VERB_TABLE: &[VerbHelp] = &[
                   `<autopilotId>` is optional: given, scopes to one autopilot; omitted, spans \
                   every autopilot (deduped by posting identity). Rows are compact (no \
                   description) unless --include-description is set. Repeat with the returned \
-                  cursor until it comes back null to traverse the whole (filtered) list; default/ \
-                  max limit are documented on `agent_read::found_jobs::resolve_found_jobs`",
+                  cursor until it comes back null to traverse the whole (filtered) list — the \
+                  cursor is only valid for the SAME autopilotId scope AND the same filter \
+                  arguments that issued it; default/max limit are documented on \
+                  `agent_read::found_jobs::resolve_found_jobs`",
     },
     VerbHelp {
         name: "call",

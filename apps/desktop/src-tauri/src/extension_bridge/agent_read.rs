@@ -92,7 +92,10 @@ pub(super) const RESOURCES: &[(&str, &str)] = &[
         RES_BEST_MATCHES,
         "Strongest jobs across every autopilot, ranked. Optional `limit` (default 20, max 50), \
          `cursor` (repeat with the returned `nextCursor` until it is `null` to reach every row \
-         past the first page), and `query` (case-insensitive substring over title or company).",
+         past the first page), and `query` (case-insensitive substring over title or company). \
+         `query` filters the already-capped, ranked top-N candidate list this tool computes \
+         (NOT the full stored corpus) — a posting outside that cap reads as absent even when it \
+         is still in storage; use `found-jobs`' own `query` to search every stored posting.",
     ),
     (
         RES_JOB,
@@ -117,7 +120,8 @@ pub(super) const RESOURCES: &[(&str, &str)] = &[
          omitted, spans every autopilot (deduped by posting identity) — the one call that \
          answers \"is this role already in my list?\" (`found-jobs {query: \"…\"}`). Optional \
          `limit`/`cursor` — repeat with the returned `nextCursor` until it is `null`; a cursor \
-         is opaque and only valid for the same `autopilotId` scope that issued it. Optional \
+         is opaque and only valid for the same `autopilotId` scope AND the same filter \
+         arguments that issued it. Optional \
          server-side filters `minScore`, `country` (substring match against location), `remote` \
          (bool), `applied` (bool) and `query` (substring over title/company). Rows are compact \
          (no `description`) unless `includeDescription: true` is set.",
@@ -719,12 +723,15 @@ fn fence_best_match_fields(value: &mut Value) {
 
 async fn best_matches_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
     let limit = clamp_best_matches_limit(payload);
-    let query = payload
-        .get("query")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_lowercase);
+    // Round 2 fix (B3-r2-F1) — used to read `query` with
+    // `.and_then(Value::as_str)`, the exact silent-drop combinator
+    // `found_jobs::trimmed_lowercase_filter` was hardened away from for the
+    // identical key one resource over: a non-string (or, since B3-r2-F2,
+    // present-but-blank) `query` collapsed to `None` here — indistinguishable
+    // from omitted — and the caller got the unfiltered ranked list back with
+    // a `total` it read as the filtered count. Reuses that SAME fallible
+    // parse rather than a second copy, so the two can't drift apart again.
+    let query = found_jobs::trimmed_lowercase_filter(payload, "query")?;
     let cursor_issuer = best_matches_cursor_issuer(query.as_deref());
     let offset = parse_best_matches_cursor(payload, &cursor_issuer)?;
     let raw = crate::commands::autopilot::autopilot_best_matches(app.clone()).await;

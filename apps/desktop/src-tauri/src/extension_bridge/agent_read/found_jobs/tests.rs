@@ -669,6 +669,77 @@ fn found_jobs_total_reflects_filtered_count_not_the_whole_store_unaffected_by_pa
     );
 }
 
+/// Round 2 fix (B3-r2-F6): unlike a `record_run` merge (which only ever
+/// PREPENDS, so a stale offset can at worst re-return a row), `applied` is
+/// re-derived fresh on every call and can REMOVE a row from the middle of
+/// the candidate list between two pages of the SAME traversal — shifting
+/// every later index down by one and making a stale absolute offset skip
+/// exactly one row that still passes every filter and was never returned.
+/// Demonstrates the exact mechanism the doc on [`resolve_found_jobs`] now
+/// names: job 0 is returned on page 1, then becomes applied (excluded by
+/// this call's `applied: false` filter) before page 2 is fetched at the
+/// stale offset — job 2 is silently skipped, never appearing in either page.
+#[test]
+fn found_jobs_applied_narrowing_between_pages_skips_a_row_never_merely_repeats_one() {
+    let jobs: Vec<FoundJob> = (0..4).map(numbered_job).collect();
+    let records = vec![autopilot_with_jobs("ap-1", jobs)];
+    let filters = FoundJobsFilters::from_payload(&json!({ "applied": false })).unwrap();
+
+    let page1 = resolve_found_jobs(&records, Some("ap-1"), &filters, &no_applied(), 0, 2).unwrap();
+    assert_eq!(page1["total"], 4);
+    let returned_page1: Vec<String> = page1["jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|j| j["url"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        returned_page1,
+        vec![
+            "https://boards.example.com/jobs/0",
+            "https://boards.example.com/jobs/1",
+        ]
+    );
+    let next_cursor = page1["nextCursor"].as_str().unwrap().to_string();
+    let stale_offset: usize = next_cursor.rsplit_once(':').unwrap().1.parse().unwrap();
+    assert_eq!(stale_offset, 2);
+
+    // Job 0 (already returned, BEFORE the stale offset) becomes applied
+    // between the two calls — the mid-traversal narrowing this test pins.
+    let mut applied_urls = HashSet::new();
+    applied_urls.insert(crate::applications::normalize_job_url(
+        &records[0].found_jobs[0].url,
+    ));
+
+    let page2 = resolve_found_jobs(
+        &records,
+        Some("ap-1"),
+        &filters,
+        &applied_urls,
+        stale_offset,
+        2,
+    )
+    .unwrap();
+    let returned_page2: Vec<String> = page2["jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|j| j["url"].as_str().unwrap().to_string())
+        .collect();
+
+    // Job 2 still passes every filter (it was never applied) and was never
+    // returned on page 1 — yet it is absent from page 2 too, because the
+    // stale offset now points one row too far into the shrunk list.
+    assert!(
+        !returned_page1
+            .iter()
+            .chain(returned_page2.iter())
+            .any(|url| url == "https://boards.example.com/jobs/2"),
+        "job 2 must have been silently skipped by the stale offset, pinning the doc's caveat: \
+         page1={returned_page1:?} page2={returned_page2:?}"
+    );
+}
+
 // ── B3-r1-F3: a present filter that fails to materialise must refuse,
 // never silently drop and return the UNFILTERED page ──────────────────
 
@@ -716,15 +787,26 @@ fn found_jobs_filters_from_payload_rejects_a_wrong_typed_present_filter() {
     }
 }
 
-/// The safe direction, unchanged: a BLANK string filter (as opposed to a
-/// wrong-typed one) still reads as "not set" — these are additive filters,
-/// not selectors, so narrowing nothing is the direction that can't widen a
-/// selector the way `parse_autopilot_id_arg`'s own guard exists to prevent.
+/// Round 2 fix (B3-r2-F2): a PRESENT-but-blank/whitespace-only `query`/
+/// `country` now refuses, the same as a wrong-typed one — it used to read as
+/// "not set" and silently widen the call to the entire corpus with a
+/// `total` the caller reads as filtered. The canonical repro is a shell
+/// caller forwarding an unset variable straight through
+/// (`agent found-jobs --query "$ROLE"` with `ROLE` empty). An OMITTED key
+/// still means "no filter" — every other test in this file that calls
+/// `no_filters()` (an empty payload) exercises that direction.
 #[test]
-fn found_jobs_filters_from_payload_treats_a_blank_string_filter_as_unset() {
-    let filters = FoundJobsFilters::from_payload(&json!({ "country": "  ", "query": "" })).unwrap();
-    assert_eq!(filters.country, None);
-    assert_eq!(filters.query, None);
+fn found_jobs_filters_from_payload_rejects_a_blank_string_filter() {
+    for (payload, key) in [
+        (json!({ "country": "  " }), "country"),
+        (json!({ "query": "" }), "query"),
+    ] {
+        let err = FoundJobsFilters::from_payload(&payload).unwrap_err();
+        assert!(
+            err.to_string().contains(key),
+            "refusal for {payload} must name {key}: {err}"
+        );
+    }
 }
 
 // ── worst-case payload / trimming (issue #1167's compact-row shape) ───

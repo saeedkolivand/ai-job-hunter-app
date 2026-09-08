@@ -130,7 +130,7 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
                 json!({
                     "limit": { "type": "integer", "minimum": 0, "description": format!("rows to return (default {DEFAULT_BEST_MATCHES_LIMIT}, server cap {MAX_BEST_MATCHES_LIMIT})") },
                     "cursor": { "type": "string", "description": "an opaque token from a prior page's nextCursor, valid only for the SAME `query` (present or omitted) that issued it; omit to start at the first page" },
-                    "query": { "type": "string", "description": "case-insensitive substring filter over title or company" },
+                    "query": { "type": "string", "description": "case-insensitive substring filter over title or company, applied to the already-capped ranked candidate list this tool computes — NOT the full stored corpus; use the found-jobs tool's own query to search every stored posting" },
                 }),
                 &[],
             ),

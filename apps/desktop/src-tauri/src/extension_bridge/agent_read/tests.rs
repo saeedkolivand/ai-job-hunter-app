@@ -799,6 +799,32 @@ fn best_matches_rejects_a_bare_numeric_offset_cursor() {
     assert_eq!(err.to_string(), BEST_MATCHES_MALFORMED_CURSOR_MESSAGE);
 }
 
+/// `best-matches`' `query` must go through the SAME hardened parse
+/// `found-jobs` uses for its own `query`/`country` (round 2 fix, B3-r2-F1/
+/// B3-r2-F2) — a wrong-typed or present-but-blank value refuses rather than
+/// silently reading as "absent" and handing back the unfiltered ranked list
+/// with a `total` the caller reads as filtered. `best_matches_resource`
+/// itself needs an `AppHandle` to reach `autopilot_best_matches`, so this
+/// pins the exact fallible parse it now delegates to (mirrors
+/// `found_jobs::found_jobs_filters_from_payload_rejects_a_wrong_typed_present_filter`/
+/// `..._rejects_a_blank_string_filter`, one resource over).
+#[test]
+fn best_matches_query_filter_refuses_a_wrong_typed_or_blank_value() {
+    for bad in [json!(true), json!(5), json!(""), json!("   ")] {
+        let err =
+            found_jobs::trimmed_lowercase_filter(&json!({ "query": bad }), "query").unwrap_err();
+        assert!(
+            err.to_string().contains("query"),
+            "refusal must name the key: {err}"
+        );
+    }
+    assert_eq!(
+        found_jobs::trimmed_lowercase_filter(&json!({}), "query").unwrap(),
+        None,
+        "an OMITTED query must still mean no filter"
+    );
+}
+
 // ── throttle ─────────────────────────────────────────────────────────────
 
 #[test]
