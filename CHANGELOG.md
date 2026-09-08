@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.150.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.149.0...v0.150.0) (2026-09-08)
+
+### ✨ Features
+
+* help chat bridges paraphrases, names the page on a miss and answers six more questions ([#1145](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1145)) ([9440d7e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9440d7edd2ceb00c9813906a40afd52e6d791f98))
+
+### 🐛 Bug Fixes
+
+* mcp contract, validation, fencing and the numbers a client reads ([#1150](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1150)) ([552362a](https://github.com/saeedkolivand/ai-job-hunter-app/commit/552362a96c903b2d185450a04ecb982dc6b26d68)), closes [#1139](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1139) [#1142](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1142) [#1128](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1128) [#1130](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1130) [#1132](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1132) [#1129](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1129) [#1134](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1134) [#1137](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1137) [#1140](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1140) [#1129](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1129) [#1143](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1143) [#1144](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1144)
+* mcp result caps, paging, base64 exports and safe preference writes ([#1152](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1152)) ([ec1a517](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ec1a517b151e9fcc3748c0abc2be31e079199503)), closes [#1133](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1133) [#1135](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1135) [#1136](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1136) [#1138](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1138)
+* **prefs:** merge and write under one lock, and clear the country with its location ([#1153](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1153)) ([8abc6a1](https://github.com/saeedkolivand/ai-job-hunter-app/commit/8abc6a1022d67af90e3b138f018b3511d0ff042c))
+* vitest lockstep pin, firefox add-on links and a conventionalcommits dependabot ignore ([#1126](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1126)) ([eb1d85b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/eb1d85b1108abd04739e38f0517a3d87b03b3828)), closes [#1124](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1124)
+
 ## [0.149.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.148.0...v0.149.0) (2026-09-07)
 
 ### ✨ Features
