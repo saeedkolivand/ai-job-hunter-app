@@ -1,0 +1,331 @@
+//! AI-spend visibility (issue #1161) — the pure/`AppHandle`-free half of
+//! `ai_spend_summary` (the `#[tauri::command]` itself stays in `mod.rs`, same
+//! as every other command in this module — only its helpers move), split out
+//! purely for R8 (the 1400-LOC hard cap). Same shape as
+//! `commands::match_resume`'s `constraints` split.
+
+use serde_json::{json, Value};
+
+/// The real body of [`super::ai_spend_summary`] once a
+/// [`crate::spend::SpendStore`] is in hand — pulled out of the
+/// `#[tauri::command]` fn (which needs a live `AppHandle` this crate has no
+/// mock harness for) so the call site itself is unit-testable against a real
+/// on-disk store, not just hand-built [`crate::spend::SpendTotals`] literals
+/// fed straight to [`spend_summary_value`] (issue #1161's C1-r2-RBA-2: that
+/// shape-only test cannot catch a call site that collapses `today` and
+/// `windowTotals` back onto the same query).
+pub(super) fn spend_summary_from_store(store: &crate::spend::SpendStore, days: u32) -> Value {
+    let window_start = crate::spend::window_start_ms(days);
+    let window_json = json!({
+        "days": days,
+        "from": window_start,
+        "to": crate::db::now_ms(),
+    });
+    let today = store.today_totals();
+    let window_totals = store.totals_since(window_start);
+    // Every provider that has EVER recorded a call (since_ms = 0), so a
+    // provider with no activity in THIS window still appears — as a zero row
+    // with a reason — rather than silently vanishing from the list.
+    let per_provider = per_provider_with_zero_rows(
+        store.by_provider_since(0),
+        store.by_provider_since(window_start),
+    );
+    // Observed reasoning overhead per model, over all history — the honest
+    // input to "which model should run which stage". EMPTY until a provider
+    // that reports a distinct thinking count has actually been used (OpenAI's
+    // reasoning models, Gemini's thinking models); Anthropic and Ollama fold
+    // thinking into their output count and so contribute nothing here rather
+    // than a zero that would read as "this model does not reason".
+    let thinking_by_model: Vec<Value> = store
+        .thinking_by_model()
+        .into_iter()
+        .map(|m| {
+            json!({
+                "provider": m.provider,
+                "model": m.model,
+                "calls": m.calls,
+                "thinkingTokens": m.thinking_tokens,
+                "outputTokens": m.output_tokens,
+            })
+        })
+        .collect();
+    spend_summary_value(
+        today,
+        window_totals,
+        per_provider,
+        thinking_by_model,
+        window_json,
+    )
+}
+
+/// Resolves `ai_spend_summary`'s `days` argument (issue #1161): unset means
+/// "today only" (`1`, the pre-#1161 default), and the result is clamped to
+/// [`crate::spend::SPEND_WINDOW_MAX_DAYS`] so an unbounded value can never
+/// force a full-table scan or report a `window.days` the store didn't
+/// actually query for.
+pub(super) fn resolve_window_days(days: Option<u32>) -> u32 {
+    days.unwrap_or(1)
+        .clamp(1, crate::spend::SPEND_WINDOW_MAX_DAYS)
+}
+
+/// Assembles the [`super::ai_spend_summary`] payload — pulled out of the
+/// `#[tauri::command]` fn so it is unit testable without a live `AppHandle`
+/// (this crate has no mock harness for one). `today` and `window_totals` are
+/// two DIFFERENT [`crate::spend::SpendTotals`] values (`today_totals()` vs
+/// `totals_since(window_start)`, issue #1161's C1-r1-RBA-1) — they only carry
+/// the same number when `days == 1`, where the two windows coincide.
+pub(super) fn spend_summary_value(
+    today: crate::spend::SpendTotals,
+    window_totals: crate::spend::SpendTotals,
+    per_provider: Vec<Value>,
+    thinking_by_model: Vec<Value>,
+    window_json: Value,
+) -> Value {
+    json!({
+        "today": spend_totals_json(today),
+        "windowTotals": spend_totals_json(window_totals),
+        "perProvider": per_provider,
+        "thinkingByModel": thinking_by_model,
+        "window": window_json,
+        "thinkingByModelWindow": "allTime",
+    })
+}
+
+/// The `{inputTokens, outputTokens, estCostUsd}` shape used for both `today`
+/// and `windowTotals` in [`spend_summary_value`].
+fn spend_totals_json(t: crate::spend::SpendTotals) -> Value {
+    json!({
+        "inputTokens": t.input_tokens,
+        "outputTokens": t.output_tokens,
+        "estCostUsd": t.est_cost_usd,
+    })
+}
+
+/// `ai_spend_summary`'s `perProvider` merge: every provider in `all_time`
+/// (the full ledger vocabulary) shows its `windowed` totals when present,
+/// else a zero row with [`crate::spend::zero_row_reason`]. Pulled out as a
+/// pure function so the merge is unit-testable without a live `AppHandle`
+/// (this crate has no mock harness for one).
+fn per_provider_with_zero_rows(
+    all_time: Vec<crate::spend::ProviderTotals>,
+    windowed: Vec<crate::spend::ProviderTotals>,
+) -> Vec<Value> {
+    let windowed_by_provider: std::collections::HashMap<String, crate::spend::ProviderTotals> =
+        windowed
+            .into_iter()
+            .map(|p| (p.provider.clone(), p))
+            .collect();
+    all_time
+        .into_iter()
+        .map(
+            |hist| match windowed_by_provider.get(hist.provider.as_str()) {
+                Some(p) => json!({
+                    "provider": p.provider,
+                    "inputTokens": p.input_tokens,
+                    "outputTokens": p.output_tokens,
+                    "estCostUsd": p.est_cost_usd,
+                }),
+                None => json!({
+                    "provider": hist.provider,
+                    "inputTokens": 0,
+                    "outputTokens": 0,
+                    "estCostUsd": 0.0,
+                    "reason": crate::spend::zero_row_reason(&hist),
+                }),
+            },
+        )
+        .collect()
+}
+
+#[cfg(test)]
+mod test {
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::spend::{ProviderTotals, SpendTotals};
+
+    // ── spend_totals_json (ai_spend_summary today/windowTotals shape, #1161) ──
+
+    #[test]
+    fn spend_totals_json_carries_the_exact_totals_given() {
+        let totals = SpendTotals {
+            input_tokens: 12_431,
+            output_tokens: 3_204,
+            est_cost_usd: 0.42,
+        };
+
+        let out = spend_totals_json(totals);
+        assert_eq!(out["inputTokens"], 12_431);
+        assert_eq!(out["outputTokens"], 3_204);
+        assert_eq!(out["estCostUsd"], 0.42);
+    }
+
+    #[test]
+    fn spend_summary_value_labels_today_and_window_totals_from_their_own_input() {
+        // Covers `spend_summary_value`'s payload SHAPING only (it just labels
+        // whatever two `SpendTotals` it's handed) — it does NOT exercise the
+        // call site that decides what those two values ARE. That's
+        // `ai_spend_summary_call_site_keeps_today_and_window_totals_distinct`
+        // below (issue #1161's C1-r2-RBA-2): this test alone would stay green
+        // even if the call site collapsed both to `totals_since(window_start)`.
+        let today = SpendTotals {
+            input_tokens: 100,
+            output_tokens: 50,
+            est_cost_usd: 0.10,
+        };
+        let window_totals = SpendTotals {
+            input_tokens: 9_000,
+            output_tokens: 4_000,
+            est_cost_usd: 12.0,
+        };
+
+        let out = spend_summary_value(today, window_totals, vec![], vec![], json!({}));
+        assert_eq!(out["today"]["inputTokens"], 100);
+        assert_eq!(out["windowTotals"]["inputTokens"], 9_000);
+        assert_ne!(out["today"], out["windowTotals"]);
+    }
+
+    #[test]
+    fn ai_spend_summary_call_site_keeps_today_and_window_totals_distinct() {
+        // Regression for C1-r2-RBA-2: the tautology above only checks that
+        // `spend_summary_value` labels its two inputs correctly — it never calls
+        // the actual `ai_spend_summary` call site, so reverting mod.rs back to
+        // `today = store.totals_since(window_start)` (C1-r1-RBA-1's original
+        // defect) would leave the whole suite green. This drives the real call
+        // site (`spend_summary_from_store`) against a real on-disk `SpendStore`
+        // seeded with a row outside "today" AND a row inside "today", so a
+        // collapse back onto one query fails on EITHER side (C1-r3-RBA-3): a
+        // `today` that is always zero (e.g. a call site that never queries it)
+        // would fail the second assertion below just as loudly as a `today`
+        // that wrongly includes the 5-day-old row.
+        use crate::data_store::DataStore;
+        use crate::spend::SpendStore;
+
+        let dir = TempDir::new().unwrap();
+        let store = SpendStore::open(&dir.path().to_path_buf()).unwrap();
+
+        let five_days_ago = crate::db::now_ms() - 5 * 86_400_000;
+        let today_ms = crate::db::now_ms();
+        store
+            .import(&serde_json::json!([
+                {
+                    "id": "spend-c1-r2-rba-2-old",
+                    "createdAt": five_days_ago,
+                    "provider": "openai",
+                    "model": "gpt-test",
+                    "inputTokens": 500,
+                    "outputTokens": 200,
+                    "estCostUsd": 3.0,
+                },
+                {
+                    "id": "spend-c1-r3-rba-3-today",
+                    "createdAt": today_ms,
+                    "provider": "openai",
+                    "model": "gpt-test",
+                    "inputTokens": 70,
+                    "outputTokens": 30,
+                    "estCostUsd": 0.5,
+                },
+            ]))
+            .unwrap();
+
+        let out = spend_summary_from_store(&store, 7);
+        assert_eq!(
+            out["today"]["inputTokens"], 70,
+            "today's row must be counted, and the 5-day-old row must not be"
+        );
+        assert_eq!(
+            out["windowTotals"]["inputTokens"], 570,
+            "the 7-day window must include both rows"
+        );
+        assert_ne!(out["today"], out["windowTotals"]);
+    }
+
+    #[test]
+    fn resolve_window_days_defaults_to_one_and_clamps_to_the_max() {
+        assert_eq!(resolve_window_days(None), 1, "unset means today only");
+        assert_eq!(
+            resolve_window_days(Some(0)),
+            1,
+            "zero-day window is not valid"
+        );
+        assert_eq!(
+            resolve_window_days(Some(7)),
+            7,
+            "in-range values pass through"
+        );
+        assert_eq!(
+            resolve_window_days(Some(500)),
+            crate::spend::SPEND_WINDOW_MAX_DAYS,
+            "an oversized request must clamp, not report an unbounded window"
+        );
+        assert_eq!(
+            resolve_window_days(Some(u32::MAX)),
+            crate::spend::SPEND_WINDOW_MAX_DAYS,
+            "u32::MAX must clamp too, never resolve to an all-time window"
+        );
+    }
+
+    // ── per_provider_with_zero_rows (ai_spend_summary window merge, #1161) ──
+
+    fn totals(provider: &str, input: u64, output: u64, cost: f64) -> ProviderTotals {
+        ProviderTotals {
+            provider: provider.to_string(),
+            input_tokens: input,
+            output_tokens: output,
+            est_cost_usd: cost,
+        }
+    }
+
+    #[test]
+    fn a_provider_active_in_the_window_reports_its_windowed_totals_with_no_reason() {
+        let all_time = vec![totals("openai", 10_000, 5_000, 1.5)];
+        let windowed = vec![totals("openai", 10_000, 5_000, 1.5)];
+
+        let out = per_provider_with_zero_rows(all_time, windowed);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0]["provider"], "openai");
+        assert_eq!(out[0]["inputTokens"], 10_000);
+        assert!(
+            out[0].get("reason").is_none(),
+            "an active row must not carry a reason"
+        );
+    }
+
+    #[test]
+    fn a_provider_absent_from_the_window_becomes_a_zero_row_with_a_reason() {
+        // Historically active (all_time), but nothing in THIS window.
+        let all_time = vec![totals("anthropic", 20_000, 8_000, 2.0)];
+        let windowed = vec![]; // nothing in the window
+
+        let out = per_provider_with_zero_rows(all_time, windowed);
+        assert_eq!(out.len(), 1, "the provider must still appear");
+        assert_eq!(out[0]["provider"], "anthropic");
+        assert_eq!(out[0]["inputTokens"], 0);
+        assert_eq!(out[0]["outputTokens"], 0);
+        assert_eq!(out[0]["estCostUsd"], 0.0);
+        assert_eq!(out[0]["reason"], "no spend in window");
+    }
+
+    #[test]
+    fn a_free_provider_absent_from_the_window_is_labelled_local() {
+        let all_time = vec![totals("ollama", 50_000, 20_000, 0.0)];
+        let out = per_provider_with_zero_rows(all_time, vec![]);
+        assert_eq!(out[0]["reason"], "local — always $0");
+    }
+
+    #[test]
+    fn every_all_time_provider_survives_the_merge_even_with_an_empty_window() {
+        let all_time = vec![
+            totals("openai", 1, 1, 0.01),
+            totals("anthropic", 2, 2, 0.02),
+            totals("ollama", 3, 3, 0.0),
+        ];
+        let out = per_provider_with_zero_rows(all_time, vec![]);
+        assert_eq!(
+            out.len(),
+            3,
+            "no provider must be dropped by an empty window"
+        );
+    }
+}
