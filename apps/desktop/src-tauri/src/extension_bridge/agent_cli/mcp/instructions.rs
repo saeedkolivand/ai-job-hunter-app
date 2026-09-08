@@ -45,9 +45,11 @@ pub(super) const INSTRUCTIONS: &str = "These tools talk to the running AI Job Hu
     row's `_id` value>} (the row's key is `_id`, but documents_get_text's own parameter is \
     named `id`) returns the SAME text by id, fenced and capped at the SAME limit — neither call \
     can return more of a document than that one cap; an `id` that matches no stored document \
-    returns an EMPTY fenced block (`<job_posting>\\n\\n</job_posting>`), not an error — that \
-    means \"no such document\", never \"this document has no text\" — rather than guessing from \
-    the profile tool's contact fields alone.";
+    returns the SAME EMPTY fenced block (`<job_posting>\\n\\n</job_posting>`) as a document \
+    that resolved but has no extracted text — not an error either way, and the two are NOT \
+    distinguishable from this reply alone; cross-check the `_id` against documents:documents_\
+    list's own rows to tell them apart — rather than guessing from the profile tool's contact \
+    fields alone.";
 
 /// Appended to [`INSTRUCTIONS`] when the reversible tier is enabled — worded by TIER, never by
 /// the literal flag typed (LOW fix, review round 3 — `--allow-irreversible` alone implies this

@@ -1066,6 +1066,37 @@ fn documents_text_prose_never_claims_full_past_the_fence_cap() {
     );
 }
 
+/// `B2-r1-ACLI-R8-2` (MEDIUM, review round 8): `documents_get_text` returns the IDENTICAL empty
+/// string for both an unresolved `id` and a stored document whose own extracted text is itself
+/// empty (`commands/documents.rs`'s `store.get(&id).map(|doc| doc.text).unwrap_or_default()`
+/// falls through to `""` either way) — so neither surface may claim the empty fenced block means
+/// ONLY "no such document"; both must say the two causes are not distinguishable from the reply
+/// alone and point the caller at `documents:documents_list` to tell them apart.
+#[test]
+fn documents_text_prose_never_claims_empty_means_only_no_such_document() {
+    let list = tools(Tier::Read);
+    let profile_description = list.iter().find(|t| t["name"] == TOOL_PROFILE).unwrap()
+        ["description"]
+        .as_str()
+        .unwrap();
+    for (prose, label) in [
+        (INSTRUCTIONS, "INSTRUCTIONS"),
+        (profile_description, "profile's description"),
+    ] {
+        assert!(
+            !prose.contains("means \"no such document\", never \"this document has no text\""),
+            "{label} must never claim the empty fenced block means ONLY \"no such document\" — \
+             documents_get_text returns the identical empty string when a real document's own \
+             extracted text is empty too: {prose}"
+        );
+        assert!(
+            prose.contains("cross-check") && prose.contains("documents:documents_list"),
+            "{label} must tell the caller how to tell the two empty-reply causes apart via \
+             documents:documents_list: {prose}"
+        );
+    }
+}
+
 /// Regression for `B1-r3-ACLI-R7-2`: reproduces the review's mutation run B directly — two
 /// `documents:<cmd>` tokens close together, where `documents_list`'s own cap disclosure sits in
 /// the ~100-char gap before `documents_get_text`'s token but `documents_get_text` never discloses

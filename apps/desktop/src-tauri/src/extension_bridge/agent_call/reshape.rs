@@ -503,20 +503,44 @@ pub(super) fn fence_reply(command: &str, data: &mut Value) {
     fence_scraped_fields(data);
 }
 
+/// Step 0 of [`reshape_reply`] ("drop dead fields, then reserve the
+/// truncation marker"), factored out for the SAME reason [`fence_reply`] was
+/// (MEDIUM fix, review round 8 — `B2-r1-ACLI-R8-1`): `proof::extract_from_
+/// fenced_response` must run the identical pre-fence transform a real
+/// dispatch runs, not a hand-rolled subset that stops at fencing. Before this
+/// fn existed, [`reshape_reply`] ran [`drop_dead_fields`]/
+/// [`mark_truncated_document_text`] inline and the proof path skipped both —
+/// latent only because both `documents_list`-backed `ListMatch` proofs read
+/// `name` (untouched by either step) and both `autopilot_get`-backed
+/// `Lookup` proofs read `name` (`totalApplied` is the only field
+/// `drop_dead_fields` touches on that command) — a future proof row reading
+/// `text` or `totalApplied` would make its confirm ceremony permanently
+/// unsatisfiable the moment either list grows, exactly like the fencing gap
+/// this mirrors.
+pub(super) fn reshape_pre_fence(command: &str, data: &mut Value) {
+    drop_dead_fields(command, data);
+    if command == "documents_list" {
+        mark_truncated_document_text(data);
+    }
+}
+
 /// Every reshape a dispatched reply gets before it goes on the wire, in the
 /// ONE order they are allowed to run in. Pure — no `AppHandle`, no I/O — so
 /// the ordering itself is testable, which is the reason it is a fn at all
 /// (as three statements inline, nothing failed when they were reordered).
 ///
 /// 0. **Drop dead fields, then reserve the truncation marker.**
-///    [`drop_dead_fields`] removes a [`DROP_FIELDS`] key before anything else
+///    [`reshape_pre_fence`] removes a [`DROP_FIELDS`] key before anything else
 ///    looks at the payload — it carries no scraped text to fence, no byte
 ///    array to re-encode, and dropping it first means the later steps'
 ///    byte-budget math (paging) never accounts for a key about to disappear
-///    anyway. [`mark_truncated_document_text`] runs next, on `documents_list`
-///    only, and must run BEFORE fencing — it needs the ORIGINAL text length
-///    to decide whether [`TRUNCATION_MARKER`] applies, which fencing's own
-///    truncation would otherwise have already destroyed.
+///    anyway. It then reserves [`TRUNCATION_MARKER`] room on `documents_list`
+///    only, and this must run BEFORE fencing — it needs the ORIGINAL text
+///    length to decide whether the marker applies, which fencing's own
+///    truncation would otherwise have already destroyed. This is the SAME fn
+///    [`super::proof::extract_from_fenced_response`] calls, so the
+///    confirm-proof path and the read path can never run a different
+///    pre-fence transform.
 /// 1. **Fence first.** [`fence_reply`] ([`fence_scraped_fields`] plus
 ///    [`fence_scalar_reply`] for the one bare-string reply it structurally
 ///    cannot reach) is the security property and is unconditional over the
@@ -544,10 +568,7 @@ pub(super) fn reshape_reply(
     mut data: Value,
     page_args: Option<(usize, usize)>,
 ) -> Value {
-    drop_dead_fields(command, &mut data);
-    if command == "documents_list" {
-        mark_truncated_document_text(&mut data);
-    }
+    reshape_pre_fence(command, &mut data);
     fence_reply(command, &mut data);
     if let Some((offset, limit)) = page_args {
         data = paginate_list_reply(data, offset, limit);

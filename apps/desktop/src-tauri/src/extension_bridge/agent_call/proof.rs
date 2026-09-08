@@ -133,20 +133,27 @@ pub(super) fn extract(
 /// checked against are now the exact same transform of the exact same read,
 /// never two different views of one record.
 ///
-/// Calls [`super::reshape::fence_reply`] — the SAME composition
-/// [`super::reshape::reshape_reply`] runs, not a hand-rolled subset (MEDIUM
-/// fix, review round 6 — `B1-r2-ACLI-R6-4`). This used to call
-/// `fence_scraped_fields` alone, one step short of what a real dispatch
-/// does: any FUTURE bare-string command added to `reshape`'s
-/// `SCALAR_FENCE_COMMANDS` that was also a `ProofSource::read_command` would
-/// have recreated the exact bug this fn's own doc above already describes,
-/// silently.
+/// Calls [`super::reshape::reshape_pre_fence`] then
+/// [`super::reshape::fence_reply`] — the SAME composition
+/// [`super::reshape::reshape_reply`] runs up to (but not including) paging/
+/// base64, not a hand-rolled subset (MEDIUM fix, review round 6 —
+/// `B1-r2-ACLI-R6-4`; extended review round 8 — `B2-r1-ACLI-R8-1`, when
+/// `reshape_reply` grew a pre-fence step this fn did not mirror). This used
+/// to call `fence_scraped_fields` alone, one step short of what a real
+/// dispatch does: any FUTURE bare-string command added to `reshape`'s
+/// `SCALAR_FENCE_COMMANDS`, or any FUTURE proof reading a field
+/// `reshape_pre_fence` touches (`documents_list`'s `text`,
+/// `autopilot_get`/`autopilot_list`'s `totalApplied`), that was also a
+/// `ProofSource::read_command` would have recreated the exact bug this fn's
+/// own doc above already describes, silently.
 fn extract_from_fenced_response(
     source: ProofSource,
     caller_input: &Value,
     mut response: Value,
 ) -> Option<String> {
-    super::reshape::fence_reply(source.read_command(), &mut response);
+    let command = source.read_command();
+    super::reshape::reshape_pre_fence(command, &mut response);
+    super::reshape::fence_reply(command, &mut response);
     extract(source, caller_input, &response)
 }
 
@@ -893,6 +900,57 @@ mod tests {
             via_proof.starts_with("<job_posting>"),
             "premise: the fixture must actually exercise scalar fencing, or this test proves \
              nothing: {via_proof:.40}"
+        );
+    }
+
+    /// `B2-r1-ACLI-R8-1` (MEDIUM, review round 8): pins the FULL pre-fence
+    /// composition, not just the fencing step above — `reshape_reply` grew
+    /// `drop_dead_fields`/`mark_truncated_document_text` as steps BEFORE
+    /// fencing, and `extract_from_fenced_response` had to grow the matching
+    /// `reshape::reshape_pre_fence` call or silently go back to being a
+    /// hand-rolled subset. No real `POLICY` row proves against
+    /// `documents_list`'s `text` field today (both real `ListMatch` rows use
+    /// `name`), which is exactly why this was latent — this fixture is
+    /// synthetic, targeting the field `mark_truncated_document_text` actually
+    /// touches, for the same reason `scalar_fenced_command_proof_matches_
+    /// reshape_reply_fencing` above is synthetic for `documents_get_text`.
+    /// Mutation check: reverting `extract_from_fenced_response` to skip
+    /// `reshape_pre_fence` makes this fail — the proof value comes back
+    /// un-truncated (no marker) while `reshape_reply`'s real reply carries
+    /// one — while every other test in this module stays green.
+    #[test]
+    fn list_match_documents_list_text_proof_matches_reshape_reply_composition() {
+        let source = ProofSource::ListMatch {
+            read_command: "documents_list",
+            id_field: &["id"],
+            match_field: "_id",
+            value_field: "text",
+        };
+        let long_text: String = "A".repeat(crate::prompt_fence::JOB_CAP + 500);
+        let mut record = a_document_record("doc-1", "Resume A");
+        record["text"] = json!(long_text);
+        let response = json!([record]);
+
+        let via_proof =
+            extract_from_fenced_response(source, &json!({ "id": "doc-1" }), response.clone())
+                .expect("fixture must resolve a proof value");
+
+        let via_reshape = super::super::reshape::reshape_reply("documents_list", response, None);
+        let via_reshape_text = via_reshape[0]["text"]
+            .as_str()
+            .expect("still a string field")
+            .to_string();
+
+        assert_eq!(
+            via_proof, via_reshape_text,
+            "a confirm proof over documents_list's text field must be checked against EXACTLY \
+             the value a caller reads through dispatch_direct/reshape_reply — including the \
+             pre-fence truncation marker, not a hand-rolled subset that skips it"
+        );
+        assert!(
+            via_proof.contains(super::super::reshape::TRUNCATION_MARKER),
+            "premise: the fixture must actually exercise the truncation-marker pre-fence step, \
+             or this test proves nothing: {via_proof:.80}"
         );
     }
 
