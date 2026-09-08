@@ -892,9 +892,16 @@ pub async fn ai_embedding_status(app: AppHandle) -> Value {
     })
 }
 
-// ── AI-spend visibility ──────────────────────────────────────────────────────
+// ── AI-spend visibility (issue #1161) ─────────────────────────────────────
+// The pure/`AppHandle`-free helpers below live in `spend.rs`, split out
+// purely for R8 (the 1400-LOC hard cap) — same shape as
+// `commands::match_resume`'s `constraints` split. The `#[tauri::command]`
+// itself stays here, like every other command in this module, so it's
+// reachable at `commands::ai::ai_spend_summary` — the exact path
+// `tauri::generate_handler!` and the agent-cli policy registry name it by.
+mod spend;
 
-/// Read-only AI-spend summary: today's REAL per-provider token totals — as
+/// Read-only AI-spend summary: `today`'s REAL per-provider token totals — as
 /// reported by each provider's own response, never estimated (see
 /// `commands::ai_provider::stream` / `pipeline::Completer::complete`, the two
 /// chokepoints that record them) — plus an ESTIMATED USD cost from a static
@@ -903,56 +910,28 @@ pub async fn ai_embedding_status(app: AppHandle) -> Value {
 /// no billing API to query. Local (Ollama) and CLI-agent calls always cost
 /// $0. A missing store (failed to open at startup) degrades to all-zero
 /// rather than erroring.
+///
+/// `days` (issue #1161) scopes `windowTotals` and `perProvider` to the last N
+/// UTC days ending today; `1` (the default, and pre-#1161 behavior) makes the
+/// window "since midnight today", the same span `today` always covers.
+/// `today` is ALWAYS calendar-day — a `days > 1` caller must read its
+/// multi-day total from `windowTotals`, never from `today` (issue #1161's
+/// C1-r1-RBA-1: an aggregate is labelled with the period it actually covers).
+/// Clamped to [`crate::spend::SPEND_WINDOW_MAX_DAYS`]. The
+/// resolved window is reported back as `window` so a caller never has to
+/// re-derive what it asked for. `perProvider` lists every provider that has
+/// EVER recorded a call, not just ones active in this window — a provider
+/// with no activity here still gets a zero row, with a short `reason`
+/// (`crate::spend::zero_row_reason`). `thinkingByModel` stays all-history
+/// (`thinkingByModelWindow: "allTime"`) — it answers "how does this model
+/// behave", not "what did this window cost".
 #[tauri::command]
-pub fn ai_spend_summary(app: AppHandle) -> Value {
+pub fn ai_spend_summary(app: AppHandle, days: Option<u32>) -> Value {
+    let days = spend::resolve_window_days(days);
     let Some(store) = app.try_state::<crate::spend::SpendStore>() else {
-        return json!({
-            "today": { "inputTokens": 0, "outputTokens": 0, "estCostUsd": 0.0 },
-            "perProvider": [],
-            "thinkingByModel": [],
-        });
+        return spend::zero_summary(days);
     };
-    let today = store.today_totals();
-    let per_provider: Vec<Value> = store
-        .by_provider_today()
-        .into_iter()
-        .map(|p| {
-            json!({
-                "provider": p.provider,
-                "inputTokens": p.input_tokens,
-                "outputTokens": p.output_tokens,
-                "estCostUsd": p.est_cost_usd,
-            })
-        })
-        .collect();
-    // Observed reasoning overhead per model, over all history — the honest
-    // input to "which model should run which stage". EMPTY until a provider
-    // that reports a distinct thinking count has actually been used (OpenAI's
-    // reasoning models, Gemini's thinking models); Anthropic and Ollama fold
-    // thinking into their output count and so contribute nothing here rather
-    // than a zero that would read as "this model does not reason".
-    let thinking_by_model: Vec<Value> = store
-        .thinking_by_model()
-        .into_iter()
-        .map(|m| {
-            json!({
-                "provider": m.provider,
-                "model": m.model,
-                "calls": m.calls,
-                "thinkingTokens": m.thinking_tokens,
-                "outputTokens": m.output_tokens,
-            })
-        })
-        .collect();
-    json!({
-        "today": {
-            "inputTokens": today.input_tokens,
-            "outputTokens": today.output_tokens,
-            "estCostUsd": today.est_cost_usd,
-        },
-        "perProvider": per_provider,
-        "thinkingByModel": thinking_by_model,
-    })
+    spend::spend_summary_from_store(&store, days)
 }
 
 /// Scrub-then-validate `base_url` before it can reach persistence — the exact

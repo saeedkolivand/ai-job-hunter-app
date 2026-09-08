@@ -333,14 +333,25 @@ export interface AiContract {
   indexStaleDocuments(): Promise<{ jobId: string | null }>;
 
   /**
-   * Read-only AI-spend summary: today's REAL per-provider token totals — as
+   * Read-only AI-spend summary: `today`'s REAL per-provider token totals — as
    * reported by each provider's own response, never estimated — plus an
    * ESTIMATED USD cost from a static list-price rate table. The dollar
    * figure is a best-effort ballpark (BYO-key users have no billing API to
    * query), not a billing-accurate source. Local (Ollama) and CLI-agent
    * calls always cost $0.
+   *
+   * `days` scopes {@link AiSpendSummary.windowTotals}/`perProvider` to the
+   * last N UTC days ending today; omitted (or `1`) means "since midnight
+   * today". The resolved window is echoed back as
+   * {@link AiSpendSummary.window}. `perProvider` lists every provider that
+   * ever recorded a call, not just ones active in this window — see
+   * {@link AiSpendProviderTotals.reason}.
+   *
+   * {@link AiSpendSummary.today} is ALWAYS calendar-day, regardless of
+   * `days` — read {@link AiSpendSummary.windowTotals} for the requested
+   * window's total, never `today`, whenever `days > 1` was requested.
    */
-  spendSummary(): Promise<AiSpendSummary>;
+  spendSummary(days?: number): Promise<AiSpendSummary>;
 }
 
 export interface EmbeddingConfig {
@@ -440,13 +451,23 @@ export interface EmbeddingStatus {
   indexing: boolean;
 }
 
-/** One provider's real token totals + estimated cost, since the start of the
- *  current UTC day. */
+/** One provider's real token totals + estimated cost, over the requested
+ *  {@link AiSpendSummary.window}. */
 export interface AiSpendProviderTotals {
   provider: string;
   inputTokens: number;
   outputTokens: number;
   estCostUsd: number;
+  /**
+   * Present only on a "zero row": a provider that has recorded a call at
+   * SOME point (so it belongs in the list) but had no activity in this
+   * window. One of `'local — always $0'` (Ollama/CLI-agent — always free,
+   * window or not), `'not priced'` (real tokens recorded at some point, but
+   * never actually billed — e.g. an `openai-compatible` gateway that has
+   * always pointed at a local server), or `'no spend in window'` (a
+   * genuinely paid provider, just quiet right now).
+   */
+  reason?: 'local — always $0' | 'not priced' | 'no spend in window';
 }
 
 /**
@@ -475,14 +496,38 @@ export interface AiSpendModelThinking {
   outputTokens: number;
 }
 
-/** Today's real AI-spend totals, overall and per provider, plus the all-history
- *  per-model reasoning overhead where it was actually measured. */
+/** The requested/resolved AI-spend window (issue #1161) — what `windowTotals`
+ *  and `perProvider` cover. `today` is ALWAYS calendar-day, never this window.
+ *  `from`/`to` are epoch-ms boundaries. */
+export interface AiSpendWindow {
+  days: number;
+  from: number;
+  to: number;
+}
+
+/** Real AI-spend totals over {@link AiSpendSummary.window}, overall and per
+ *  provider, plus the all-history per-model reasoning overhead where it was
+ *  actually measured. */
 export interface AiSpendSummary {
+  window: AiSpendWindow;
+  /** ALWAYS calendar-day (since midnight UTC today), regardless of the
+   *  requested `days` — e.g. the agent-cli policy's proof source. For a
+   *  `days > 1` window's total, read {@link windowTotals} instead. */
   today: { inputTokens: number; outputTokens: number; estCostUsd: number };
+  /**
+   * Real totals over the requested {@link window} — "since midnight today"
+   * when `days` is `1` (the same span {@link today} covers), or the full
+   * N-day span otherwise. Read this instead of `today` for any `days > 1`
+   * call, so a multi-day total is never misread as today's spend.
+   */
+  windowTotals: { inputTokens: number; outputTokens: number; estCostUsd: number };
   perProvider: AiSpendProviderTotals[];
   /** Empty until a provider that reports the split has been used — see
    *  {@link AiSpendModelThinking}. */
   thinkingByModel: AiSpendModelThinking[];
+  /** `thinkingByModel` is ALWAYS all-history, regardless of {@link window} —
+   *  "how does this model behave" does not reset at a window boundary. */
+  thinkingByModelWindow: 'allTime';
 }
 
 export const AI_CHANNELS = {

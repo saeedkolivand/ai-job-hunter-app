@@ -145,6 +145,7 @@ export {
   type AiSpendModelThinking,
   type AiSpendProviderTotals,
   type AiSpendSummary,
+  type AiSpendWindow,
   type AiStageOverride,
   type EmbeddingConfig,
   type EmbeddingSpaceInfo,
