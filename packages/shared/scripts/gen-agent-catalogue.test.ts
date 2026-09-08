@@ -65,4 +65,16 @@ describe('CI drift-gate entry point (A1-r3-AC-3)', () => {
     expect(pkg.scripts['gen:agent-catalogue']).toContain('gen-agent-catalogue.cli.ts');
     expect(pkg.scripts['gen:agent-catalogue:check']).toContain('gen-agent-catalogue.cli.ts');
   });
+
+  // TR-01 MEDIUM: this is the one flag the whole CI drift gate depends on — the generator only
+  // refuses to write (exit 1) a stale catalogue when invoked with `--check` (gen-agent-catalogue.ts
+  // `const check = process.argv.includes('--check')`). Dropping it from the `:check` script turns
+  // CI into a silent no-op that exits 0 and rewrites the catalogue instead of failing on drift.
+  it('passes --check to the :check script only, never to the plain generator script', () => {
+    const pkg = JSON.parse(readFileSync(resolve(HERE, '../package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts['gen:agent-catalogue:check']).toContain('--check');
+    expect(pkg.scripts['gen:agent-catalogue']).not.toContain('--check');
+  });
 });
