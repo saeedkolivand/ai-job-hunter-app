@@ -1762,9 +1762,19 @@ fn every_policy_row_is_routed_to_exactly_one_call_tool_or_refused_everywhere_if_
             input: json!({}),
             confirm: None,
         };
+        // ROUTING only, never validation: an `invalid_input` refusal (A1-r1-SEC-1 HIGH added
+        // this local check) means the row's declared args reject a bare `{}` — orthogonal to
+        // which TOOL it is classified for, and this test's probe never builds a real body. Counts
+        // as "accepted" here so a row requiring args is not mistaken for one refused on every
+        // tool (`invalid_input` refuses identically on all three, same as a routing accept would
+        // look from this test's own PoV) — `local_call_refusal`'s own dedicated
+        // `invalid_input`-refusal tests cover that check directly.
         let accepted_by: Vec<&str> = [TOOL_CALL_READ, TOOL_CALL_REVERSIBLE, TOOL_CALL_IRREVERSIBLE]
             .into_iter()
-            .filter(|tool| local_call_refusal(tool, &verb).is_none())
+            .filter(|tool| match local_call_refusal(tool, &verb) {
+                None => true,
+                Some(refusal) => refusal["error"] == agent_call::ERR_INVALID_INPUT,
+            })
             .collect();
         match entry.effect {
             Effect::NotExposed(_) => assert_eq!(
@@ -1849,6 +1859,43 @@ fn call_read_accepts_a_real_read_row() {
         confirm: None,
     };
     assert!(local_call_refusal(TOOL_CALL_READ, &verb).is_none());
+}
+
+/// A1-r1-SEC-1 HIGH: `local_call_refusal` must catch a mis-keyed body itself, never rely on a
+/// possibly stale PEER app process to be the only thing catching it (the same class this file
+/// already fixed for `Effect::NotExposed`). `documents_remove` is a real Irreversible row whose
+/// declared key is `id`; a caller who sends the wrong one must refuse `invalid_input` locally,
+/// with no dispatch.
+#[test]
+fn call_irreversible_refuses_a_mis_keyed_body_locally_without_dispatching() {
+    let verb = Verb::Call {
+        namespace: "documents".to_string(),
+        command: "documents_remove".to_string(),
+        input: json!({ "documentId": "doc-1" }),
+        confirm: None,
+    };
+    let refusal =
+        local_call_refusal(TOOL_CALL_IRREVERSIBLE, &verb).expect("must refuse — unknown key");
+    assert_eq!(refusal["dispatched"], false);
+    assert_eq!(refusal["error"], agent_call::ERR_INVALID_INPUT);
+    let detail = refusal["detail"].as_str().unwrap();
+    assert!(
+        detail.contains("documentId") && detail.contains("id"),
+        "{detail}"
+    );
+}
+
+/// A correctly-keyed body on the right tool passes this local check — proves the new catalogue
+/// check does not over-refuse a legitimate call.
+#[test]
+fn call_irreversible_accepts_a_correctly_keyed_body() {
+    let verb = Verb::Call {
+        namespace: "documents".to_string(),
+        command: "documents_remove".to_string(),
+        input: json!({ "id": "doc-1" }),
+        confirm: None,
+    };
+    assert!(local_call_refusal(TOOL_CALL_IRREVERSIBLE, &verb).is_none());
 }
 
 // ── confirm is passed through verbatim on call-irreversible only ────────
@@ -2098,7 +2145,14 @@ fn a_dispatched_payload_over_the_byte_cap_refuses_and_never_truncates() {
     let outcome = tool_call_result(
         &json!({
             "name": "call-read",
-            "arguments": { "namespace": "commands", "command": "documents_export_document" },
+            // `request` is a real declared required key (A1-r1-SEC-1 HIGH added local catalogue
+            // validation): an empty `{}` body here would refuse `invalid_input` before ever
+            // reaching the (mocked) oversized dispatch this test means to exercise.
+            "arguments": {
+                "namespace": "commands",
+                "command": "documents_export_document",
+                "input": { "request": {} },
+            },
         }),
         &server,
         &mut dispatch,
@@ -2326,6 +2380,7 @@ fn commands_names_the_proof_source_for_an_irreversible_row() {
     assert_eq!(row["proofFrom"], "ai:ai_has_provider_key");
     assert_eq!(row["proofInput"], "provider");
     assert_eq!(row["proofField"], "has");
+    assert_eq!(row["proofKind"], "field");
     assert!(
         row.get("proofInputValue").is_none(),
         "a FromCaller value is the caller's own input and must never be echoed: {row}"
@@ -2350,7 +2405,9 @@ fn commands_names_the_full_dotted_proof_field_for_a_multi_segment_lookup_path() 
 
 /// A `Count`-sourced row has no single field to name — the proof is a
 /// DERIVED number, not a field on the read response — so `proofField` must
-/// be absent rather than a fabricated empty string.
+/// be absent rather than a fabricated empty string. `proofKind: "count"`
+/// (CLI review round 2 — MEDIUM) tells the caller what to pass instead:
+/// the array length / `total`, without dispatching the row to find out.
 #[test]
 fn commands_carries_no_proof_field_for_a_count_sourced_row() {
     let out = commands_value(&json!({ "effect": "irreversible" }), Tier::Irreversible);
@@ -2364,6 +2421,40 @@ fn commands_carries_no_proof_field_for_a_count_sourced_row() {
         row.get("proofField").is_none(),
         "a Count proof names no single field: {row}"
     );
+    assert_eq!(row["proofKind"], "count");
+}
+
+/// A `MatchCount`-sourced row is the same "no single field" shape as `Count`, but the number
+/// means something different (how many of the TARGETED ids exist) — still `proofKind: "count"`,
+/// since the caller-facing action ("pass a count") is identical.
+#[test]
+fn commands_carries_count_kind_for_a_match_count_sourced_row() {
+    let out = commands_value(&json!({ "effect": "irreversible" }), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "ai_generations_remove_bulk")
+        .expect("ai_generations_remove_bulk is a real MatchCount-sourced Irreversible row");
+    assert!(row.get("proofField").is_none());
+    assert_eq!(row["proofKind"], "count");
+}
+
+/// A `Scalar`/`Lookup` with an EMPTY path names no field either — the proof IS the whole response
+/// value — but that is a DIFFERENT reason than `Count`'s (CLI review round 2 — MEDIUM: both used
+/// to collapse to an absent `proofField` with nothing telling them apart). `proofKind:
+/// "response_value"` distinguishes it: pass the whole response, not a count.
+#[test]
+fn commands_carries_response_value_kind_for_an_empty_path_scalar_row() {
+    let out = commands_value(&json!({ "effect": "irreversible" }), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "system_open_external")
+        .expect("system_open_external is a real empty-path-Scalar Irreversible row");
+    assert!(row.get("proofField").is_none());
+    assert_eq!(row["proofKind"], "response_value");
 }
 
 /// A catalogued row carries its description and its declared args — pulled from the SAME
@@ -2445,6 +2536,31 @@ fn a_catalogued_description_never_leaves_a_backtick_or_paren_unbalanced() {
     }
 }
 
+/// Upper bound on a single catalogued description's length (MEDIUM — CLI review round 2,
+/// issue #1163: "a one-line description"). `catalogueSummarize`'s short-sentence fallback used to
+/// publish the ENTIRE first paragraph — up to 1096 chars of renderer/Settings implementation
+/// detail for `ai_model_capabilities` — measured 416 as the longest row after the fix that pulls
+/// in only the next sentence instead. Lower this constant (never raise it) if the generator gets
+/// better at trimming; raising it silently re-permits a paragraph dump.
+const MAX_CATALOGUE_DESCRIPTION_LENGTH: usize = 500;
+
+#[test]
+fn a_catalogued_description_never_grows_into_a_paragraph() {
+    let out = commands_value(&json!({}), Tier::Irreversible);
+    for row in out["commands"].as_array().unwrap() {
+        let Some(description) = row["description"].as_str() else {
+            continue;
+        };
+        assert!(
+            description.len() <= MAX_CATALOGUE_DESCRIPTION_LENGTH,
+            "{}: description is {} chars (cap {MAX_CATALOGUE_DESCRIPTION_LENGTH}), not a one-line \
+             description: {description:?}",
+            row["command"],
+            description.len()
+        );
+    }
+}
+
 /// #1160's own target row must not silently lose its description again — `applications_delete`
 /// was one of the 64 no-TSDoc rows a CLI review round flagged (MEDIUM), and it is the exact
 /// command whose `keepDocuments: false` cascade a caller needs explained.
@@ -2458,9 +2574,19 @@ fn applications_delete_carries_a_non_empty_description() {
         .find(|r| r["command"] == "applications_delete")
         .expect("applications_delete is a real, catalogued row");
     let description = row["description"].as_str().unwrap_or("");
+    // Both branches, not just the identifier (CLI review round 2 — MEDIUM): a description that
+    // only says the flag is irrelevant ("always irreversible, regardless of `keepDocuments`")
+    // satisfied a substring check on "keepDocuments" while explaining nothing a caller could
+    // choose the flag on.
     assert!(
-        description.contains("keepDocuments") || description.to_lowercase().contains("document"),
-        "must explain what keepDocuments controls: {description:?}"
+        description.to_lowercase().contains("false")
+            && description.to_lowercase().contains("also deletes"),
+        "must explain what keepDocuments: false does: {description:?}"
+    );
+    assert!(
+        description.to_lowercase().contains("true")
+            && description.to_lowercase().contains("detach"),
+        "must explain what keepDocuments: true does: {description:?}"
     );
 }
 

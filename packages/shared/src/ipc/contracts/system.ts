@@ -23,6 +23,7 @@ export interface SystemContract {
    */
   accentColor(): Promise<{ supported: boolean; color: string | null }>;
 
+  /** Open `url` in the OS default handler (browser/app) — outside this app's own sandbox. */
   openExternal(url: string): Promise<void>;
 
   setPerformanceMode(config: PerformanceBackendConfig): Promise<void>;

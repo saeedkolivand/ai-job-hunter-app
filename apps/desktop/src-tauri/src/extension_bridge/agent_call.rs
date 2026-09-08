@@ -50,7 +50,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::error::{AppError, AppResult};
 
-use super::agent_cli::policy::{Effect, PolicyEntry, ProofSource, POLICY};
+use super::agent_cli::policy::{PolicyEntry, ProofSource, POLICY};
 
 mod proof;
 // The agent layer's own payload reshaping — the outbound fence/page/base64
@@ -64,6 +64,15 @@ use reshape::{reshape_reply, take_list_page_args, unfence_named_fields_recursive
 // `agent_cli::catalogue` (issues #1163, #1158, #1160) — its own file under
 // the same R8 LOC-cap reasoning as `proof`/`reshape` above.
 mod validate;
+// The pure `gate`/`plan` ordering decision — same R8 LOC-cap reasoning again. Re-exported here so
+// every existing `agent_call::gate` / `super::gate` call site is unchanged.
+mod dispatch_plan;
+pub(super) use dispatch_plan::{plan, Dispatch};
+// `gate` itself has no non-test caller left in THIS module (production code reaches it only
+// through `plan`, inside `dispatch_plan.rs`) — every other caller is a `#[cfg(test)]` module
+// (`agent_call::tests`, `extension_bridge::test`), so this re-export is test-only too.
+#[cfg(test)]
+pub(super) use dispatch_plan::gate;
 
 // ── `<namespace>:<command>` ⇄ policy row (derived, never hand-typed twice) ─
 
@@ -139,10 +148,30 @@ pub(super) fn unknown_command_detail(suggestion: Option<&str>) -> String {
     }
 }
 
-/// Re-export of [`proof::proof_field`] for `commands`' `proofField` row (issue #1160), without
-/// widening `proof`'s own module privacy — one definition, reused, never duplicated.
+/// Re-exports of [`proof::proof_field`]/[`proof::proof_kind`] for `commands`' `proofField`/
+/// `proofKind` rows (issues #1160, #1160 round 2), without widening `proof`'s own module privacy.
 pub(super) fn proof_field_for(source: ProofSource) -> Option<String> {
     proof::proof_field(source)
+}
+
+pub(super) fn proof_kind_for(source: ProofSource) -> &'static str {
+    proof::proof_kind(source)
+}
+
+/// Re-export of [`validate::check_input`] for MCP's `local_call_refusal` (A1-r1-SEC-1 HIGH): that
+/// fn used to refuse only `unknown_command`/`not_exposed`/`wrong_tool` locally and forward every
+/// other body straight to the PEER app process for catalogue validation — a SEPARATE, possibly
+/// OLDER process (e.g. an updater-staged newer exe still paired with it), so relying on its gate
+/// left a mis-keyed `call-*` body dispatching silently on an older running app even though this
+/// server's own `initialize` instructions promise `invalid_input` is refused before dispatch. Same
+/// class this file already fixed as HIGH for `Effect::NotExposed`. Returns the detail string
+/// (never the full [`Refusal`], to keep `validate`'s enum-construction private to this module).
+pub(super) fn invalid_input_detail(command: &str, input: &Value) -> Option<String> {
+    match validate::check_input(command, input) {
+        Ok(()) => None,
+        Err(Refusal::InvalidInput(detail)) => Some(detail),
+        Err(_) => None, // check_input's only Err variant is InvalidInput
+    }
 }
 
 // ── Refusals — distinct sentinel + detail per cause, one reply builder ─────
@@ -163,14 +192,13 @@ pub(super) enum Refusal {
     UnknownCommand(Option<&'static str>),
     /// The caller's `input` failed the generated catalogue's declared contract (issues #1163,
     /// #1158, #1160): an unknown top-level or nested key, or a missing required top-level key.
-    /// Checked in [`dispatch`] BEFORE [`gate`] — the #1160 ordering fix: a missing required key on
-    /// an `Irreversible` row must refuse HERE, never surface as `ConfirmationRequired` and then die
-    /// on the underlying command's own deserializer after an approved confirm. A command absent
-    /// from the generated catalogue is unchecked (see `validate`'s own doc) — never constructed for
-    /// one, so this variant existing at all is proof the target command IS catalogued.
+    /// Checked in [`plan`], AFTER [`Refusal::NotExposed`] but BEFORE [`gate`]'s confirm ceremony
+    /// (see [`plan`]'s own doc for the ordering rationale). A command absent from the generated
+    /// catalogue is unchecked (see `validate`'s own doc) — never constructed for one.
     InvalidInput(String),
-    /// [`Effect::NotExposed`] — deliberately unreachable; carries that row's
-    /// own stored reason.
+    /// [`Effect::NotExposed`] — refused in [`plan`] BEFORE catalogue validation runs (CLI review
+    /// round 2 — MEDIUM: 14/23 `NotExposed` rows carry declared args, so a bad key used to surface
+    /// `InvalidInput` — a lesser cause masking the definitive one). Carries the row's own reason.
     NotExposed(&'static str),
     /// `agent.call` arrived over a connection whose handshake `Origin`
     /// wasn't the CLI's — same class as `msg::AGENT_QUERY`'s origin gate.
@@ -251,10 +279,10 @@ pub(super) enum Refusal {
 /// copy doesn't know, rather than a second hand-typed literal (same
 /// reasoning as [`ERR_CONFIRMATION_REQUIRED`]'s own doc).
 pub(super) const ERR_UNKNOWN_COMMAND: &str = "unknown_command";
-/// [`Refusal::InvalidInput`]'s sentinel — an app-side-only refusal (every MCP `call-*` tool
-/// forwards to the real app rather than validating locally, unlike [`ERR_UNKNOWN_COMMAND`]/
-/// [`ERR_NOT_EXPOSED`]), so this stays private rather than `pub(super)`.
-const ERR_INVALID_INPUT: &str = "invalid_input";
+/// [`Refusal::InvalidInput`]'s sentinel. `pub(super)` (A1-r1-SEC-1 HIGH) — the MCP server's
+/// `local_call_refusal` now runs [`invalid_input_detail`] locally too, refusing with this SAME
+/// sentinel rather than trusting the peer app's own dispatch-time check.
+pub(super) const ERR_INVALID_INPUT: &str = "invalid_input";
 /// `pub(super)` — the MCP server refuses a `NotExposed` row LOCALLY with this
 /// SAME sentinel (so the token-row fix does not depend on the peer app's build;
 /// see `agent_cli::mcp::local_call_refusal`), never a second hand-typed copy.
@@ -1246,56 +1274,6 @@ async fn dispatch_irreversible_confirmed(
     confirm_and_run(resolved, confirm, || dispatch_direct(app, command, input))?.await
 }
 
-/// What [`gate`] clears `dispatch` to do for one `(effect, confirm)` pair —
-/// carries whatever the cleared branch needs, so nothing downstream
-/// re-derives a fact `gate` already established. `Confirmed`'s `confirm` is
-/// a plain `&str`, not an `Option` — reaching that variant at all is already
-/// proof one was supplied, so there is nothing left to unwrap.
-pub(super) enum Dispatch<'a> {
-    /// `Read`/`Reversible` — invoke directly, no ceremony.
-    Direct,
-    /// `Irreversible`, `confirm` already known to be present. Carries the
-    /// row's own [`ProofSource`] alongside it so `dispatch` never re-matches
-    /// `entry.effect` a second time to recover it.
-    Confirmed {
-        source: ProofSource,
-        confirm: &'a str,
-    },
-}
-
-/// Pure gate: does `effect` permit `dispatch` to ATTEMPT a real command
-/// invocation at all, given whether a `confirm` value was supplied — never
-/// mind whether that attempt then succeeds. Replaces a former
-/// boolean-returning `dispatchable`: a `bool` only told the caller "yes",
-/// forcing `dispatch` to re-match `entry.effect` a second time to recover
-/// the `ProofSource` AND `.expect()` a `confirm` this fn had already proved
-/// `Some` — an `expect` on an externally reachable `agent.call` path, safe
-/// only because of a separate call to this same gate rather than because
-/// the type ruled out the `None` case. Returning [`Dispatch`] instead means
-/// the confirmed branch carries its `&str` and `ProofSource` BY
-/// CONSTRUCTION, so there is nothing left downstream to re-derive or
-/// unwrap — a future refactor that changed this gate's logic could no
-/// longer silently leave a stale, now-unsound `expect` behind it.
-///
-/// `dispatch` below calls this as its own FIRST decision (never a
-/// parallel/shadow copy of the same logic), so `extension_bridge::test`'s
-/// exhaustive walk over every real `POLICY` row
-/// (`agent_call_gate_matches_every_policy_rows_declared_effect`) proves
-/// something about THIS production routing, not a second implementation
-/// that could silently drift from it. `pub(super)` — reachable from
-/// `extension_bridge::test`, a sibling of this module, for exactly that
-/// test; [`Dispatch`] shares that visibility for the same reason.
-pub(super) fn gate(effect: Effect, confirm: Option<&str>) -> Result<Dispatch<'_>, Refusal> {
-    match effect {
-        Effect::NotExposed(reason) => Err(Refusal::NotExposed(reason)),
-        Effect::Read | Effect::Reversible => Ok(Dispatch::Direct),
-        Effect::Irreversible(source) => match confirm {
-            Some(confirm) => Ok(Dispatch::Confirmed { source, confirm }),
-            None => Err(Refusal::ConfirmationRequired(proof::hint(source))),
-        },
-    }
-}
-
 async fn dispatch(
     app: &AppHandle,
     namespace: &str,
@@ -1305,11 +1283,7 @@ async fn dispatch(
 ) -> Result<Value, Refusal> {
     let entry = find_policy(namespace, command)
         .ok_or_else(|| Refusal::UnknownCommand(namespace_suggestion(command)))?;
-    // Catalogue validation runs BEFORE `gate` (issue #1160's ordering fix): a missing required
-    // key on an `Irreversible` row must refuse HERE, never surface as `ConfirmationRequired` and
-    // then die on the underlying command's own deserializer after an approved confirm.
-    validate::check_input(command, &input)?;
-    match gate(entry.effect, confirm)? {
+    match plan(entry, command, &input, confirm)? {
         Dispatch::Direct => dispatch_direct(app, command, input).await,
         Dispatch::Confirmed { source, confirm } => {
             dispatch_irreversible_confirmed(app, command, input, source, confirm).await

@@ -1,4 +1,8 @@
 use super::*;
+// `Effect` moved out of `agent_call.rs`'s own `use` when `gate`/`plan` split into
+// `dispatch_plan.rs` (R8 LOC cap) — no non-test caller needs it there any more, but plenty of
+// tests below still name `Effect::*` variants directly.
+use super::super::agent_cli::policy::Effect;
 // The reshaping half moved to `agent_call/reshape.rs` under the R8 LOC
 // cap; its consts and pure fns are `pub(super)` there, so this one glob
 // keeps every test below naming them exactly as it did in-module.

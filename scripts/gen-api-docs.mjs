@@ -21,7 +21,7 @@
 
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix, relative, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 import prettier from 'prettier';
 import ts from 'typescript';
@@ -507,7 +507,7 @@ function renderIndex(rows) {
 
 // ── Main ──────────────────────────────────────────────────────────────────
 
-async function main() {
+export async function main() {
   const sources = parseContractFiles();
   const indexSf = sources.get(repoPath(INDEX_FILE));
   if (!indexSf) fail(`${repoPath(INDEX_FILE)} not found`);
@@ -561,20 +561,13 @@ async function main() {
   );
 }
 
-// Guarded (rather than a bare top-level `await main()`) so `gen-agent-catalogue.ts` can `import`
-// this module's parsing helpers — reuse, not a copy — without ALSO regenerating docs/API.md as a
-// side effect of that import; only a direct `node scripts/gen-api-docs.mjs` run reaches this.
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-if (isMain) {
-  try {
-    await main();
-  } catch (error) {
-    // Path privacy: print the message alone. Node's default handler prints a
-    // stack trace full of absolute paths, and a filesystem error carries one in
-    // its message, so the repo root is stripped out of both.
-    const message = error instanceof Error ? error.message : String(error);
-    const roots = [REPO_ROOT, REPO_ROOT.split('\\').join('/')];
-    console.error(roots.reduce((text, root) => text.split(root).join('.'), message));
-    process.exitCode = 1;
-  }
-}
+// `main` is exported, never self-invoked here, so `gen-agent-catalogue.ts` (and anything else) can
+// `import` this module's parsing helpers — reuse, not a copy — without ALSO regenerating
+// docs/API.md as a side effect of that import. Direct invocation runs through the tiny
+// `gen-api-docs.cli.mjs` wrapper instead (A1-r1-AC-3 MEDIUM): the former guard here compared
+// `import.meta.url` against `pathToFileURL(process.argv[1]).href` and silently did nothing if that
+// ever failed to match (a symlinked/shimmed invocation, or a Windows drive-letter/short-path
+// mismatch) — `pnpm gen:api:check` would then pass against a STALE `docs/API.md` with nothing
+// distinguishing "unchanged because up to date" from "unchanged because main() never ran". A
+// separate entry point has no such comparison to get wrong: it either runs or the process fails to
+// even start.

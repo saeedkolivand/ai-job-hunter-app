@@ -228,6 +228,7 @@ export interface DocumentsContract {
   /** Suggest a template + locale from the generation metadata signals. */
   recommendTemplate(req: TemplateRecommendSignals): Promise<TemplateRecommendation>;
 
+  /** Permanently delete this document (résumé/cover-letter/etc.) from the store — no undo. */
   remove(id: string): Promise<void>;
 
   setDefault(id: string): Promise<void>;

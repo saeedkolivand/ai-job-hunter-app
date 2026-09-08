@@ -123,28 +123,41 @@ function hasUnbalancedParen(text: string): boolean {
   return (text.match(/\(/g)?.length ?? 0) > (text.match(/\)/g)?.length ?? 0);
 }
 
+/** Matches one `.`-terminated sentence at the START of its input, sentence text in group 1. */
+const SENTENCE_RE = /^(.*?\.)(\s|$)/;
+
 /** One-line command description. Deliberately NOT `gen-api-docs.mjs`'s `summarize` (this generator
  *  reuses that file's `docOf`/parsing, never its summary): that function cuts on the first `.` OR
  *  `:`, correct for a `docs/API.md` table cell sitting next to the full doc, but wrong here, where
  *  the cut result IS the whole description — a colon-terminated fragment like "Factory reset:", a
  *  cut landing mid-abbreviation inside a parenthetical ("(e.g."), or a cut landing inside a
- *  backtick span otherwise reaches an LLM with no other source of truth. Cuts on `.` only, falling
- *  back to the full collapsed first paragraph when that result is too short to be informative or
- *  leaves a backtick span or a parenthetical open. */
+ *  backtick span otherwise reaches an LLM with no other source of truth. Cuts on `.` only. A short
+ *  or unbalanced first sentence pulls in the NEXT sentence rather than falling back to the whole
+ *  first paragraph (CLI review round 2 — MEDIUM: a 21-char but complete first sentence like "Run
+ *  an autopilot now." used to publish a 275-char paragraph, and a 38-char one a 1096-char
+ *  implementation-detail dump). Only a paragraph with no sentence boundary at all — the cut regex
+ *  never matches — falls back to the full paragraph, since there is nothing shorter to extend. */
 function catalogueSummarize(doc: string): string {
   if (!doc) return '';
   const firstPara = doc
     .split(/\n\s*\n/)[0]
     .replace(/\s*\n\s*/g, ' ')
     .trim();
-  const sentence = /^(.*?\.)(\s|$)/.exec(firstPara);
-  const cut = (sentence ? sentence[1] : firstPara).trim();
-  if (
-    cut.length < MIN_CATALOGUE_DESCRIPTION_LENGTH ||
-    hasUnbalancedBacktick(cut) ||
-    hasUnbalancedParen(cut)
+  const firstMatch = SENTENCE_RE.exec(firstPara);
+  if (!firstMatch) return firstPara;
+
+  let cut = firstMatch[1].trim();
+  let rest = firstPara.slice(firstMatch[0].length);
+  while (
+    (cut.length < MIN_CATALOGUE_DESCRIPTION_LENGTH ||
+      hasUnbalancedBacktick(cut) ||
+      hasUnbalancedParen(cut)) &&
+    rest.length > 0
   ) {
-    return firstPara;
+    const nextMatch = SENTENCE_RE.exec(rest);
+    if (!nextMatch) return firstPara; // no further sentence boundary — nothing shorter to use
+    cut = `${cut} ${nextMatch[1].trim()}`;
+    rest = rest.slice(nextMatch[0].length);
   }
   return cut;
 }
@@ -252,11 +265,28 @@ function isOptionalUnion(type: ts.TypeNode | undefined): boolean {
   );
 }
 
-/** Sentinel `typeName` for a rest-destructured binding (`{ id, ...data }`) — never a real
- *  declared type name (angle brackets can't appear in a TS identifier), so `resolveNestedFields`
- *  naturally fails to look it up and the caller's `?? null` marks the arg a KNOWN, unresolved
- *  wrapper rather than an untyped scalar. See `findParamBinding`'s own doc. */
-const UNRESOLVED_REST_TYPE = '<rest>';
+/** Sentinel `typeName` for a binding this generator knows IS an object wrapper but cannot resolve
+ *  the field names of — never a real declared type name (angle brackets can't appear in a TS
+ *  identifier), so `resolveNestedFields` naturally fails to look it up and the caller's `?? null`
+ *  marks the arg a KNOWN, unresolved wrapper rather than an untyped scalar. Covers a
+ *  rest-destructured binding (`{ id, ...data }`) AND a plain identifier param typed `unknown`, an
+ *  inline object type literal, or an indexed-access type (`Parameters<Fn>[0]`) — none of those are
+ *  a `TypeReferenceNode` this generator can look a name up for, but all four are genuinely a
+ *  wrapper, not a scalar (A1-r1-AC-1 MEDIUM: these used to fall through to `fields: undefined`,
+ *  publishing a real object wrapper on the wire as a plain scalar with no `fields` key at all — the
+ *  exact "unknown nested shape" signal `fields: null` exists to carry). See `findParamBinding`'s
+ *  own doc. */
+const UNRESOLVED_WRAPPER_TYPE = '<unresolved-wrapper>';
+
+/** `true` for a type-annotation shape this generator knows is an object wrapper but does not (yet)
+ *  resolve field names for — see [`UNRESOLVED_WRAPPER_TYPE`]'s own doc. */
+function isUnresolvableWrapperType(type: ts.TypeNode): boolean {
+  return (
+    type.kind === ts.SyntaxKind.UnknownKeyword ||
+    ts.isTypeLiteralNode(type) ||
+    ts.isIndexedAccessTypeNode(type)
+  );
+}
 
 /** Every parameter of `fn` (both a plain identifier and a destructured `{ ... }` one) that could
  *  bind `name`, paired with what its OWN type annotation says about it. */
@@ -269,7 +299,9 @@ function findParamBinding(
       const typeName =
         param.type && ts.isTypeReferenceNode(param.type) && param.type.typeArguments === undefined
           ? param.type.typeName.getText()
-          : undefined;
+          : param.type && isUnresolvableWrapperType(param.type)
+            ? UNRESOLVED_WRAPPER_TYPE
+            : undefined;
       return {
         questionOrDefault:
           Boolean(param.questionToken) || Boolean(param.initializer) || isOptionalUnion(param.type),
@@ -290,7 +322,7 @@ function findParamBinding(
           (e) => e.dotDotDotToken && ts.isIdentifier(e.name) && e.name.text === name
         );
         if (restEl) {
-          return { questionOrDefault: false, typeName: UNRESOLVED_REST_TYPE };
+          return { questionOrDefault: false, typeName: UNRESOLVED_WRAPPER_TYPE };
         }
         continue;
       }
@@ -407,6 +439,31 @@ function findInvokeCalls(node: ts.Node): ts.CallExpression[] {
   return found;
 }
 
+/** Canonical string for a [`CatalogueArg.fields`] value that keeps `undefined` (scalar) and `null`
+ *  (unresolved wrapper) distinguishable — see that field's own doc. Used only for the two-call-site
+ *  equality check below, never rendered. */
+function fieldsKey(fields: string[] | null | undefined): string {
+  if (fields === undefined) return 'scalar';
+  if (fields === null) return 'unresolved-wrapper';
+  return JSON.stringify(fields);
+}
+
+/** `true` when two `invoke()` call sites for the SAME command declared the identical arg
+ *  contract — name, required-ness, and nested-field shape, order-independent (a param object's
+ *  property order is not semantically load-bearing). */
+function argsEqual(a: CatalogueArg[], b: CatalogueArg[]): boolean {
+  if (a.length !== b.length) return false;
+  const byName = new Map(a.map((arg) => [arg.name, arg]));
+  return b.every((arg) => {
+    const other = byName.get(arg.name);
+    return (
+      !!other &&
+      other.required === arg.required &&
+      fieldsKey(other.fields) === fieldsKey(arg.fields)
+    );
+  });
+}
+
 function processNamespaceFile(
   file: string,
   descCtx: DescCtx,
@@ -449,13 +506,18 @@ function processNamespaceFile(
         // genuinely different TSDocs meant the published description was an incidental
         // filesystem detail, not a deliberate choice). Silent when the two call sites AGREE
         // (the common, harmless case — same command reached two ways with identical docs);
-        // `fail()`s only when they disagree, forcing a deliberate pick.
-        if (existing.description !== description) {
+        // `fail()`s only when they disagree, forcing a deliberate pick. Args are compared too
+        // (A1-r1-AC-5/SEC-3 MEDIUM): the description twin of this hazard was already guarded, but
+        // `parsed.args` — the shape actually ENFORCED at dispatch, via `check_input` — was silently
+        // kept from whichever call site iteration reached first, so a future divergent second call
+        // site would publish and enforce a contract derived from an arbitrary read-order pick.
+        if (existing.description !== description || !argsEqual(existing.args, parsed.args)) {
           fail(
             `command "${parsed.command}" is invoked from more than one namespace with DIFFERING ` +
-              `TSDoc descriptions ("${existing.description}" vs "${description}") — the published ` +
-              `catalogue description would depend on directory read order. Make the two TSDoc ` +
-              `comments agree, or route the second call site through the first's own contract member.`
+              `TSDoc descriptions or argument shapes ("${existing.description}" vs "${description}") ` +
+              `— the published catalogue contract would depend on directory read order. Make the ` +
+              `two call sites' TSDoc comments and argument shapes agree, or route the second call ` +
+              `site through the first's own contract member.`
           );
         }
         continue;

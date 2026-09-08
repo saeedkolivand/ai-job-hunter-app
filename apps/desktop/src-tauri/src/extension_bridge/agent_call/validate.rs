@@ -16,6 +16,7 @@
 use serde_json::{Map, Value};
 
 use super::super::agent_cli::catalogue::{CatalogueArg, CATALOGUE};
+use super::super::agent_cli::policy::Effect;
 use super::reshape::PAGINATED_LIST_COMMANDS;
 use super::Refusal;
 
@@ -115,6 +116,58 @@ pub(super) fn check_input(command: &str, input: &Value) -> Result<(), Refusal> {
                     fields.join(", ")
                 )));
             }
+        }
+    }
+
+    Ok(())
+}
+
+/// A required wrapper key whose value is an empty object `{}` — refused on a mutating row
+/// (A1-r1-SEC-2 MEDIUM). [`CatalogueArg::fields`] carries no per-nested-field required marker (the
+/// underlying Zod schema knows it; threading it through is a larger follow-up than this fix), so
+/// this cannot tell "every field inside is legitimately optional" from "the caller sent nothing at
+/// all" — but on a `Reversible`/`Irreversible` row, an empty required wrapper reaching an all-
+/// `Option` request struct is almost always the #1158 symptom (an empty
+/// `applications_save_from_posting` row answering `success: true`), never a deliberate no-op, so
+/// this refuses it outright rather than letting `check_input`'s membership-only walk wave it
+/// through. Never applied to a `Read` row (a filter-shaped wrapper, e.g.
+/// `scrape_list_interactions`'s `filter`, can legitimately be sent empty to mean "no filter") or an
+/// uncatalogued command (nothing here to check — see this module's own doc). Deliberately a
+/// SEPARATE fn from [`check_input`], not folded into its loop: the two are independent refusal
+/// reasons a mutation test can target one at a time, and every existing `check_input` call site
+/// keeps its two-argument shape.
+pub(super) fn check_no_empty_required_wrapper(
+    command: &str,
+    effect: Effect,
+    input: &Value,
+) -> Result<(), Refusal> {
+    if matches!(effect, Effect::Read | Effect::NotExposed(_)) {
+        return Ok(());
+    }
+    let Some(args) = entry_for(command) else {
+        return Ok(());
+    };
+    let empty = Map::new();
+    let given = input.as_object().unwrap_or(&empty);
+
+    for arg in args {
+        if !arg.required {
+            continue;
+        }
+        let Some(fields) = arg.fields.filter(|f| !f.is_empty()) else {
+            continue;
+        };
+        let Some(nested) = given.get(arg.name).and_then(Value::as_object) else {
+            continue;
+        };
+        if nested.is_empty() {
+            return Err(invalid_input(format!(
+                "empty object `{{}}` for required key `{}` on {command} — declared keys under \
+                 `{}`: {}",
+                arg.name,
+                arg.name,
+                fields.join(", ")
+            )));
         }
     }
 

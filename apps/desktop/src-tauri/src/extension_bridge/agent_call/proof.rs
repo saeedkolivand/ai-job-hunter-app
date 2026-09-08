@@ -187,6 +187,25 @@ pub(super) fn proof_field(source: ProofSource) -> Option<String> {
     }
 }
 
+/// What [`proof_field`]'s `None` means for THIS `source` — the discriminator CLI review round 2
+/// (MEDIUM) asked for: an absent `proofField` used to conflate two unrelated causes (`Count`/
+/// `MatchCount`, where the proof is a DERIVED NUMBER with no field to name at all, and a `Scalar`/
+/// `Lookup` with an empty path, where the proof IS the response value, just unnamed) into one
+/// "nothing to go on" shape — exactly the `CatalogueArg::fields` null-vs-omitted collapse this
+/// same table already went out of its way to avoid. Always returns a value (never `None` itself)
+/// so `commands` can carry it on EVERY `Irreversible` row, not only the 26 with a named field.
+pub(super) fn proof_kind(source: ProofSource) -> &'static str {
+    match source {
+        ProofSource::Scalar { path, .. } | ProofSource::Lookup { path, .. } if path.is_empty() => {
+            "response_value"
+        }
+        ProofSource::Scalar { .. } | ProofSource::Lookup { .. } | ProofSource::ListMatch { .. } => {
+            "field"
+        }
+        ProofSource::Count { .. } | ProofSource::MatchCount { .. } => "count",
+    }
+}
+
 /// The `ConfirmationRequired` refusal's own detail text — names WHICH read
 /// surface and field the proof comes from, NEVER the value (ADR-038 §4's
 /// entire point). The namespace prefix is derived from [`POLICY`] itself via

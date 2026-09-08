@@ -11,7 +11,9 @@ export interface NotificationsContract {
   list(): Promise<AppNotification[]>;
   markRead(id: string): Promise<void>;
   markAllRead(): Promise<void>;
+  /** Permanently delete one notification from the inbox by id. */
   remove(id: string): Promise<void>;
+  /** Permanently delete every notification in the inbox — no selector, no undo. */
   clearAll(): Promise<void>;
   /** Invokes `notifications_clicked` — focuses the window and opens the inbox. */
   clicked(): Promise<void>;

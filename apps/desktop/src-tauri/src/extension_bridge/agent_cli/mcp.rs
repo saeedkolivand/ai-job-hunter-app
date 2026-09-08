@@ -342,6 +342,13 @@ fn commands_value(arguments: &Value, tier: Tier) -> Value {
                     if let Some(field) = agent_call::proof_field_for(source) {
                         row["proofField"] = json!(field);
                     }
+                    // What an ABSENT `proofField` means for this row (CLI review round 2 —
+                    // MEDIUM): `"count"` — pass the array length / `total`; `"response_value"` —
+                    // pass the whole response value; `"field"` — a field IS named above. Carried
+                    // on every Irreversible row, not just the ones with a named field, so a
+                    // caller never has to dispatch the destructive command just to discover which
+                    // shape its own refusal would have described.
+                    row["proofKind"] = json!(agent_call::proof_kind_for(source));
                     if let ProofSource::Lookup { key, input, .. } = source {
                         row["proofInput"] = json!(key);
                         // A `Literal` input's VALUE (e.g. `privacy_sign_out_all`'s `boardId` =
@@ -460,12 +467,18 @@ fn tool_argv(name: &str, arguments: &Value) -> Vec<String> {
 
 /// Local effect-class routing for `call-*`: refuse a target the bundled [`POLICY`] copy does not
 /// know at all (never forward it), refuse a KNOWN target on the wrong tool naming the right one,
-/// and (MUST FIX — security review round 2) refuse a [`Effect::NotExposed`] target on EVERY tool,
-/// naming its own stored reason — never forwarded to let a possibly-stale peer's own gate be the
-/// only thing catching it (see the module doc). Never touches the wire.
+/// refuse a [`Effect::NotExposed`] target on EVERY tool naming its own stored reason (MUST FIX —
+/// security review round 2), and (A1-r1-SEC-1 HIGH) refuse a body that fails the bundled
+/// catalogue's own declared contract with `invalid_input` — none of these forwarded, so a possibly
+/// stale PEER app process (e.g. an updater-staged newer exe still paired with an older running
+/// app) is never the only thing catching them, matching what [`instructions::INSTRUCTIONS`]
+/// promises the model before any call runs. Never touches the wire.
 fn local_call_refusal(tool_name: &str, verb: &Verb) -> Option<Value> {
     let Verb::Call {
-        namespace, command, ..
+        namespace,
+        command,
+        input,
+        ..
     } = verb
     else {
         return None;
@@ -498,17 +511,28 @@ fn local_call_refusal(tool_name: &str, verb: &Verb) -> Option<Value> {
     // invariant ever breaks, forward to the app (which refuses on its own) rather than panic:
     // this path runs under `panic = "abort"`, where a panic is a silent server death.
     let right_tool = tool_for(&entry.effect)?;
-    if right_tool == tool_name {
-        None
-    } else {
-        Some(json!({
+    if right_tool != tool_name {
+        return Some(json!({
             "dispatched": false,
             "namespace": namespace,
             "command": command,
             "error": "wrong_tool",
             "detail": format!("this command is classified for `{right_tool}`, not `{tool_name}` — call it there instead"),
-        }))
+        }));
     }
+    // Catalogue validation (A1-r1-SEC-1 HIGH), same contract `agent_call::plan` enforces
+    // app-side — checked locally so a mis-keyed body never depends on a possibly stale PEER app
+    // process to catch it.
+    if let Some(detail) = agent_call::invalid_input_detail(command, input) {
+        return Some(json!({
+            "dispatched": false,
+            "namespace": namespace,
+            "command": command,
+            "error": agent_call::ERR_INVALID_INPUT,
+            "detail": detail,
+        }));
+    }
+    None
 }
 
 const CONFIRMATION_NOTE: &str = "This command is Effect::Irreversible and was called with no \

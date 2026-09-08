@@ -14,7 +14,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "documents_remove",
-        description: "",
+        description: "Permanently delete this document (résumé/cover-letter/etc.) from the store — no undo.",
         args: &[
             CatalogueArg { name: "id", required: true, fields: None },
         ],
@@ -132,7 +132,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "github_import_repos",
-        description: "Fetch a user's public repos. `input` is a bare username or a `github.com/<user>` URL. Resolves to the repo list (the `{ repos }` envelope is unwrapped in the client layer); rejects on validation / rate-limit / not-found errors.",
+        description: "Fetch a user's public repos. `input` is a bare username or a `github.com/<user>` URL.",
         args: &[
             CatalogueArg { name: "input", required: true, fields: None },
         ],
@@ -153,7 +153,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         command: "job_preferences_set",
         description: "Writes the preference row with MERGE semantics: a key the body OMITS keeps its stored value, a key sent as explicit `null` CLEARS that column.",
         args: &[
-            CatalogueArg { name: "prefs", required: true, fields: None },
+            CatalogueArg { name: "prefs", required: true, fields: Some(&[]) },
         ],
     },
     CatalogueEntry {
@@ -212,7 +212,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "match_resume_text",
-        description: "Score one résumé against arbitrary job-ad TEXT — for a caller with a `jobDesc: string` in hand but no `PostingsCache` id (e.g. the Score tab in `JobAdView`, whose `TailorFlow` parent receives an `Application` / `AutopilotFoundJob`, neither of which carries one). Routes through the SAME shared kernel `resume()` does, over the SAME pre-processed text (the Rust command strips markdown before scoring, exactly as `resume()` does for a cached posting) — not a second scorer. `semanticScoringEnabled` mirrors `resume()`'s field of the same name (an omitted flag defaults to keyword-only, matching the app-wide `semanticScoring` preference), so `scoreSource` can be `'combined'` here too once the caller opts in. One axis still legitimately diverges from `resume()`: this call never has a title or requirements to compose in, only the description `JobAdView` holds. Content-addressed on the pre-processed job text (plus the semantic flag), so repeated opens of the same posting under the same preference reuse that cached score.",
+        description: "Score one résumé against arbitrary job-ad TEXT — for a caller with a `jobDesc: string` in hand but no `PostingsCache` id (e.g. the Score tab in `JobAdView`, whose `TailorFlow` parent receives an `Application` / `AutopilotFoundJob`, neither of which carries one).",
         args: &[
             CatalogueArg { name: "req", required: true, fields: Some(&["resumeId", "jobText", "semanticScoringEnabled"]) },
         ],
@@ -224,7 +224,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "notifications_clear_all",
-        description: "",
+        description: "Permanently delete every notification in the inbox — no selector, no undo.",
         args: &[],
     },
     CatalogueEntry {
@@ -251,7 +251,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "notifications_remove",
-        description: "",
+        description: "Permanently delete one notification from the inbox by id.",
         args: &[
             CatalogueArg { name: "id", required: true, fields: None },
         ],
@@ -299,7 +299,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "referrals_remove",
-        description: "",
+        description: "Permanently delete one referral contact by id — the drafts on it go with it.",
         args: &[
             CatalogueArg { name: "id", required: true, fields: None },
         ],
@@ -376,7 +376,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "scrape_clear_postings",
-        description: "",
+        description: "Permanently wipe the entire cached postings list — no selector, no undo; interaction history is unaffected.",
         args: &[],
     },
     CatalogueEntry {
@@ -390,7 +390,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         command: "scrape_list_interactions",
         description: "",
         args: &[
-            CatalogueArg { name: "filter", required: false, fields: None },
+            CatalogueArg { name: "filter", required: false, fields: Some(&[]) },
         ],
     },
     CatalogueEntry {
@@ -402,14 +402,14 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         command: "scrape_persist_job",
         description: "",
         args: &[
-            CatalogueArg { name: "req", required: true, fields: None },
+            CatalogueArg { name: "req", required: true, fields: Some(&[]) },
         ],
     },
     CatalogueEntry {
         command: "scrape_remove_interaction",
         description: "Delete a persisted interaction — the real \"undo\" for `persistJob`, e.g.",
         args: &[
-            CatalogueArg { name: "req", required: true, fields: None },
+            CatalogueArg { name: "req", required: true, fields: Some(&[]) },
         ],
     },
     CatalogueEntry {
@@ -423,7 +423,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         command: "scrape_update_description",
         description: "Write a freshly-resolved full description back into every store that can carry a copy of this posting, addressed by `url` (not a board-synthetic posting id — no reader outside the live cache can supply that): the live postings cache AND every matching found-job row persisted by an autopilot, so the match scorer reads the full text instead of the truncated aggregator snippet wherever the posting was surfaced from.",
         args: &[
-            CatalogueArg { name: "req", required: true, fields: None },
+            CatalogueArg { name: "req", required: true, fields: Some(&[]) },
         ],
     },
     CatalogueEntry {
@@ -442,7 +442,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "system_accent_color",
-        description: "Best-effort OS accent color. `supported` is true only where we can read it (Windows, macOS); elsewhere `color` is null and the renderer keeps the Default accent. Used by the 'System' accent source in Appearance settings.",
+        description: "Best-effort OS accent color. `supported` is true only where we can read it (Windows, macOS); elsewhere `color` is null and the renderer keeps the Default accent.",
         args: &[],
     },
     CatalogueEntry {
@@ -497,7 +497,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "system_open_external",
-        description: "",
+        description: "Open `url` in the OS default handler (browser/app) — outside this app's own sandbox.",
         args: &[
             CatalogueArg { name: "url", required: true, fields: None },
         ],

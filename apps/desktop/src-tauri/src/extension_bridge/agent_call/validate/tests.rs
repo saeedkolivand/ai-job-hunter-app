@@ -56,6 +56,67 @@ fn a_wrong_wrapper_guess_is_refused_as_an_unknown_top_level_key() {
     );
 }
 
+// ── empty required wrapper on a mutation (A1-r1-SEC-2 MEDIUM) ──────────────────────────────────
+
+/// Issue #1158's `{"req":{}}` shape: every key the wrapper declares is ABSENT, so a caller who
+/// sends an empty object still passes `check_input`'s membership-only walk (nothing to refuse —
+/// there are no unknown/missing TOP-LEVEL keys) and used to reach an all-`Option` request struct
+/// as a silent no-op `success: true`. `check_no_empty_required_wrapper` closes this specific shape
+/// on a real `Reversible` row.
+#[test]
+fn an_empty_required_wrapper_is_refused_on_a_reversible_row() {
+    let err = check_no_empty_required_wrapper(
+        "applications_save_from_posting",
+        Effect::Reversible,
+        &json!({ "req": {} }),
+    )
+    .unwrap_err();
+    let detail = err.detail();
+    assert!(detail.contains("req"), "{detail}");
+    assert!(
+        detail.contains("applications_save_from_posting"),
+        "{detail}"
+    );
+}
+
+/// A NON-empty wrapper (even one missing some optional fields) is untouched by this check —
+/// `check_input`'s own required/unknown-key logic covers that shape; this fn only ever refuses the
+/// wholly-empty case.
+#[test]
+fn a_non_empty_wrapper_is_not_refused_by_the_empty_wrapper_check() {
+    assert!(check_no_empty_required_wrapper(
+        "applications_save_from_posting",
+        Effect::Reversible,
+        &json!({ "req": { "jobUrl": "https://example.com/job/1" } }),
+    )
+    .is_ok());
+}
+
+/// Never applied to a `Read` row — an empty filter-shaped wrapper legitimately means "no filter"
+/// there (e.g. `scrape_list_interactions`'s `filter`), not a botched write.
+#[test]
+fn an_empty_wrapper_is_never_refused_on_a_read_row() {
+    assert!(check_no_empty_required_wrapper(
+        "applications_save_from_posting",
+        Effect::Read,
+        &json!({ "req": {} }),
+    )
+    .is_ok());
+}
+
+/// An uncatalogued command is untouched, same as `check_input`'s own documented gap — nothing here
+/// can validate a shape it was never told.
+#[test]
+fn an_uncatalogued_command_is_never_checked_for_an_empty_wrapper() {
+    assert!(!has_command("dialog_open_files"));
+    assert!(check_no_empty_required_wrapper(
+        "dialog_open_files",
+        Effect::Reversible,
+        &json!({ "req": {} }),
+    )
+    .is_ok());
+}
+
 // ── a caller-supplied key is fenced and capped (HIGH — security review round 1) ────────────────
 
 /// A hostile key could try to forge its way out of the fence `Refusal::InvokeError` already
@@ -167,14 +228,17 @@ fn every_recognised_nested_field_on_a_resolved_wrapper_passes() {
     .is_ok());
 }
 
-/// `job_preferences_set`'s `prefs` parameter is typed `unknown` on the tauri-client itself — not
-/// a named type this generator could even attempt to resolve — so `fields` is `None` (scalar,
-/// same as any other untyped arg), and this layer must not invent a nested check it has no data
-/// for: any object shape under `prefs` is accepted here (the command's own body still validates
-/// it). `resume_pipeline_run`'s `req` covers the OTHER unresolved shape (`Some(&[])` — a named
-/// wrapper type this generator recognised but could not resolve the fields of) two tests below.
+/// `job_preferences_set`'s `prefs` parameter is typed `unknown` on the tauri-client itself. Before
+/// A1-r1-AC-1 (MEDIUM), an `unknown`-typed identifier param fell all the way through to `fields:
+/// None` (a plain SCALAR — the exact "unknown nested shape" published as a scalar with no
+/// `fields` key at all, even though `prefs` genuinely IS an object wrapper) — this test used to pin
+/// that as a documented fixture assumption. `findParamBinding` now recognises `unknown` (alongside
+/// an inline type literal and `Parameters<Fn>[0]`) as a KNOWN, unresolved wrapper, so `fields` is
+/// `Some(&[])`, the SAME shape `resume_pipeline_run`'s `req` covers below — this layer must still
+/// not invent a nested check it has no field names for: any object shape under `prefs` is accepted
+/// here (the command's own body still validates it).
 #[test]
-fn a_wrapper_with_unresolved_nested_fields_skips_the_nested_check_entirely() {
+fn an_unknown_typed_wrapper_is_recognised_but_skips_the_nested_check() {
     let entry = CATALOGUE
         .iter()
         .find(|e| e.command == "job_preferences_set")
@@ -185,10 +249,11 @@ fn a_wrapper_with_unresolved_nested_fields_skips_the_nested_check_entirely() {
         .find(|a| a.name == "prefs")
         .expect("job_preferences_set declares a prefs wrapper");
     assert!(
-        prefs_arg.fields.is_none(),
-        "fixture assumption: prefs is typed `unknown` on the tauri-client, so this generator has \
-         no type name to resolve at all — if that ever changes, this test (and its OWN \
-         reasoning) needs updating, not deleting"
+        prefs_arg.fields.is_some_and(|f| f.is_empty()),
+        "fixture assumption: prefs is typed `unknown` on the tauri-client — A1-r1-AC-1 fixed this \
+         to a KNOWN, unresolved wrapper (`Some(&[])`), never `None` (a plain scalar) or a \
+         resolved field list; if that ever changes, this test (and its OWN reasoning) needs \
+         updating, not deleting"
     );
 
     assert!(check_input(
@@ -281,14 +346,17 @@ fn an_uncatalogued_command_is_never_validated() {
     .is_ok());
 }
 
-// ── #1160 ordering: caught before gate would ask to confirm ────────────────────────────────────
+// ── #1160/#1160-r2 ordering: driven through the real `plan`, not proved by inference ────────────
 
-/// The #1160 ordering fix, proved directly rather than only trusted from reading `dispatch`'s own
-/// source: for the SAME real `Irreversible` row and the SAME missing-required-key input, `gate`
-/// alone (unaware of the catalogue) would ask for a `--confirm` proof — `check_input` must refuse
-/// FIRST, so `dispatch` never reaches that ceremony for an input that could never have completed
-/// the underlying command anyway (a missing `keepDocuments` used to surface as `invoke_error`
-/// AFTER an approved confirm; see this row's own entry in `catalogue.rs`).
+/// The #1160 ordering fix, proved by calling the REAL decision fn `dispatch` calls (`plan`), not
+/// by calling `check_input`/`gate` separately and inferring what their order must be (CLI review
+/// round 2 — MEDIUM: that inference-based version stayed green even if `dispatch`'s own two lines
+/// were swapped, since it never drove `dispatch`'s actual code path). For the SAME real
+/// `Irreversible` row and the SAME missing-required-key input, `gate` alone (unaware of the
+/// catalogue) would ask for a `--confirm` proof — `plan` must refuse on the missing key FIRST, so
+/// a caller is never asked to prove a delete it could never have completed anyway (a missing
+/// `keepDocuments` used to surface as `invoke_error` AFTER an approved confirm; see this row's own
+/// entry in `catalogue.rs`). A mutation swapping `plan`'s two checks fails this test.
 #[test]
 fn a_missing_required_key_on_a_real_irreversible_row_is_caught_before_gate_would_ask_to_confirm() {
     let entry = POLICY
@@ -302,16 +370,71 @@ fn a_missing_required_key_on_a_real_irreversible_row_is_caught_before_gate_would
 
     let missing_keep_documents = json!({ "id": "app-1" });
 
-    // What `check_input` decides — the SAME call `dispatch` makes first.
-    let validation_err = check_input("applications_delete", &missing_keep_documents).unwrap_err();
-    assert!(validation_err.detail().contains("keepDocuments"));
+    // The REAL decision `dispatch` makes — not `check_input`/`gate` called separately.
+    let decision = super::super::plan(entry, "applications_delete", &missing_keep_documents, None);
+    match decision {
+        Err(Refusal::InvalidInput(detail)) => assert!(detail.contains("keepDocuments")),
+        Ok(_) => panic!("expected InvalidInput naming keepDocuments, got Ok"),
+        Err(other) => panic!(
+            "expected InvalidInput naming keepDocuments, got {:?}",
+            other.detail()
+        ),
+    }
+}
 
-    // What `gate` ALONE — unaware of the catalogue — would have decided for this exact call with
-    // no `--confirm` supplied: a DIFFERENT refusal (`confirmation_required`). Proves the ordering
-    // is observable, not just a code-order comment: skipping `check_input` would ask the caller
-    // to prove a delete it could never actually complete.
-    let gated = super::super::gate(entry.effect, None);
-    assert!(matches!(gated, Err(Refusal::ConfirmationRequired(_))));
+/// #1160 round-2 (MEDIUM): a `NotExposed` row must refuse with its OWN cause even when the
+/// caller's `input` also fails catalogue validation — the lesser cause (bad arguments) must never
+/// mask the definitive one (this command can never be dispatched at all). `ai_test_provider_key`
+/// is a real `NotExposed` row that carries declared args (`provider`, `baseUrl`), so an unknown
+/// key on it is exactly the case CLI review round 2 found reaching `InvalidInput` instead.
+#[test]
+fn a_not_exposed_row_refuses_with_its_own_cause_even_with_invalid_input() {
+    let entry = POLICY
+        .iter()
+        .find(|e| e.path == "commands::ai::ai_test_provider_key")
+        .expect("ai_test_provider_key is a real POLICY row");
+    assert!(
+        matches!(entry.effect, Effect::NotExposed(_)),
+        "fixture assumption: ai_test_provider_key must still be NotExposed"
+    );
+
+    let bogus_input = json!({ "bogus": 1 });
+    let decision = super::super::plan(entry, "ai_test_provider_key", &bogus_input, None);
+    match decision {
+        Err(Refusal::NotExposed(_)) => {}
+        Ok(_) => panic!("expected NotExposed even though `input` also fails validation, got Ok"),
+        Err(other) => panic!(
+            "expected NotExposed even though `input` also fails validation, got {:?}",
+            other.detail()
+        ),
+    }
+}
+
+/// A1-r1-SEC-2 MEDIUM, driven through the REAL `plan` `dispatch` calls (not the isolated fn):
+/// `applications_save_from_posting`'s `{"req":{}}` shape passes `check_input` (every top-level key
+/// is present, nothing unknown) but must still refuse — an empty wrapper on a Reversible row is
+/// never a dispatchable no-op.
+#[test]
+fn an_empty_required_wrapper_on_a_real_reversible_row_is_refused_by_plan() {
+    let entry = POLICY
+        .iter()
+        .find(|e| e.path == "commands::applications::applications_save_from_posting")
+        .expect("applications_save_from_posting is a real POLICY row");
+    assert!(
+        matches!(entry.effect, Effect::Reversible),
+        "fixture assumption: applications_save_from_posting must still be Reversible"
+    );
+
+    let empty_req = json!({ "req": {} });
+    let decision = super::super::plan(entry, "applications_save_from_posting", &empty_req, None);
+    match decision {
+        Err(Refusal::InvalidInput(detail)) => assert!(detail.contains("req")),
+        Ok(_) => panic!("expected InvalidInput for an empty required wrapper, got Ok"),
+        Err(other) => panic!(
+            "expected InvalidInput for an empty required wrapper, got {:?}",
+            other.detail()
+        ),
+    }
 }
 
 #[test]

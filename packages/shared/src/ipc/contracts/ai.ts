@@ -218,6 +218,7 @@ export interface AiContract {
    */
   researchAnswer(req: { question: string; role?: string; company?: string }): Promise<string>;
 
+  /** Download a local Ollama model by name — multi-GB, consuming disk and bandwidth. */
   pullModel(model: string): Promise<{ jobId: string }>;
 
   unloadModel(model: string): Promise<void>;

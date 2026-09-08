@@ -519,9 +519,20 @@ fn uncatalogued_matches_the_hand_written_list() {
 /// on. `(command, arg name)` pairs, pinned the same way [`EXPECTED_UNCATALOGUED`] is.
 const EXPECTED_UNRESOLVED_WRAPPER_ARGS: &[(&str, &str)] = &[
     ("ai_clear_stage_override", "stage"),
+    ("ai_set_provider_settings", "req"),
     ("ai_set_stage_override", "stage"),
     ("autopilot_update", "req"),
+    // The five below (A1-r1-AC-1 MEDIUM) used to fall through `findParamBinding` to
+    // `fields: undefined` (a plain scalar) instead of this unresolved-wrapper shape: their `req`/
+    // `prefs`/`filter` params are typed `unknown`, an inline object type literal, or
+    // `Parameters<Fn>[0]` — none of those are a `TypeReferenceNode` the generator can look a name
+    // up for, but every one IS a genuine object wrapper, not a scalar.
+    ("job_preferences_set", "prefs"),
     ("resume_pipeline_run", "req"),
+    ("scrape_list_interactions", "filter"),
+    ("scrape_persist_job", "req"),
+    ("scrape_remove_interaction", "req"),
+    ("scrape_update_description", "req"),
     ("system_set_performance_mode", "config"),
 ];
 
@@ -547,6 +558,73 @@ fn unresolved_wrapper_args_match_the_hand_written_list() {
     );
 }
 
+/// Hand-written pin for every catalogued arg with a RESOLVED, non-empty nested-field list
+/// (`fields: Some(&["…"])`) — the sibling [`EXPECTED_UNRESOLVED_WRAPPER_ARGS`] only pinned the
+/// empty class (A1-r1-AC-2 MEDIUM): nothing caught a generator regression that downgraded one of
+/// THESE 32 rows to `fields: None` (a plain scalar — nested-key validation silently disabled for
+/// that command) or to `fields: Some(&[])` (mis-labelled unresolved on the wire) — only
+/// `applications_save_from_posting` had its own dedicated fixture assertion
+/// (`validate/tests.rs`'s `resolved_fields` panic). Same shrink-only discipline as
+/// [`EXPECTED_UNRESOLVED_WRAPPER_ARGS`]: a command dropping OUT of this list (its wrapper stopped
+/// resolving) fails here; add a NEW resolved wrapper here deliberately, never let one through
+/// silently.
+const EXPECTED_RESOLVED_WRAPPER_ARGS: &[(&str, &str)] = &[
+    ("ai_embed", "req"),
+    ("ai_generate", "req"),
+    ("ai_generations_save", "req"),
+    ("ai_generations_update", "req"),
+    ("ai_seed_active_config", "config"),
+    ("applications_save_from_posting", "req"),
+    ("applications_track", "req"),
+    ("applications_update", "req"),
+    ("autopilot_create", "req"),
+    ("contact_profile_set", "profile"),
+    ("dedup_mark_not_duplicate", "req"),
+    ("discovery_search_companies", "req"),
+    ("discovery_set_starred", "req"),
+    ("documents_export_and_save", "request"),
+    ("documents_export_document", "request"),
+    ("documents_import", "req"),
+    ("documents_recommend_template", "req"),
+    ("documents_render_preview_images", "request"),
+    ("generate_pipeline", "req"),
+    ("help_search", "req"),
+    ("match_resume", "req"),
+    ("match_resume_text", "req"),
+    ("privacy_set_crash_reporting", "settings"),
+    ("referrals_upsert", "req"),
+    ("resume_extract_text", "req"),
+    ("resume_pipeline_regenerate_section", "req"),
+    ("resume_pipeline_resolve_fabrication", "req"),
+    ("resume_trim_suggestions", "req"),
+    ("resume_validate_content", "req"),
+    ("scrape_boards", "req"),
+    ("scrape_hybrid_search", "req"),
+    ("scrape_url", "req"),
+];
+
+#[test]
+fn resolved_wrapper_args_match_the_hand_written_list() {
+    let mut actual: Vec<(&str, &str)> = Vec::new();
+    for entry in super::super::catalogue::CATALOGUE.iter() {
+        for arg in entry.args {
+            if arg.fields.is_some_and(|f| !f.is_empty()) {
+                actual.push((entry.command, arg.name));
+            }
+        }
+    }
+    actual.sort_unstable();
+    let mut expected = EXPECTED_RESOLVED_WRAPPER_ARGS.to_vec();
+    expected.sort_unstable();
+    assert_eq!(
+        actual, expected,
+        "the set of catalogued args with a RESOLVED nested-field list drifted from this test's \
+         own hand-written list — if one DROPPED OUT, a generator regression silently disabled \
+         nested-key validation for that command (or mis-labelled it `fields: Some(&[])` on the \
+         wire); if a NEW one legitimately resolved, add it here deliberately"
+    );
+}
+
 /// Upper bound on catalogued rows with an empty `description` (MEDIUM — CLI review round 1,
 /// issue #1163's own headline ask: "every command row should carry a one-line description").
 /// 58 of 162 carried none at the time this guard was added, including `applications_delete` —
@@ -555,7 +633,7 @@ fn unresolved_wrapper_args_match_the_hand_written_list() {
 /// growing — a newly added command shipping with no TSDoc on its contract member, silently
 /// leaving the agent-CLI surface with less self-description than it had before. Lower this
 /// constant (never raise it) as descriptions are backfilled.
-const MAX_NO_DESCRIPTION_ROWS: usize = 58;
+const MAX_NO_DESCRIPTION_ROWS: usize = 48;
 
 #[test]
 fn catalogued_no_description_count_does_not_regress() {
@@ -569,5 +647,49 @@ fn catalogued_no_description_count_does_not_regress() {
          {MAX_NO_DESCRIPTION_ROWS}) — a new command shipped with no TSDoc on its IPC contract \
          member; add one. If this failed after backfilling docs elsewhere and the count is now \
          LOWER, lower MAX_NO_DESCRIPTION_ROWS to match (never raise it)."
+    );
+}
+
+/// Hand-written allowlist of `Effect::Irreversible` commands that STILL carry no catalogue
+/// description (CLI review round 2 — MEDIUM: [`MAX_NO_DESCRIPTION_ROWS`] above is tier-blind, so
+/// it could not stop a NEW destructive command shipping with no TSDoc as long as some unrelated
+/// read command gained one elsewhere). Every name here is app-data-wipe/bulk-delete territory —
+/// exactly where a caller needs the description most. Mirrors
+/// `EXPECTED_UNRESOLVED_WRAPPER_ARGS`'s own "shrink only" discipline: remove an entry the moment
+/// its TSDoc is backfilled; a PR that adds a NEW `Irreversible` row here without also adding a
+/// description is the regression this guards against.
+/// A1-r1-AC-6 MEDIUM backfilled TSDoc on 10 of the original 11 rows here (the smallest remaining
+/// gap on #1163's stated Expected) — `privacy_clear_data` is the one deliberate holdout: it has
+/// ZERO renderer call sites (see its own `POLICY` entry's doc), so there is no `invoke()` call
+/// site for the generator to attach a description to, and inventing an unused TS contract member
+/// just to carry TSDoc would be dead code. Reclassifying it `NotExposed` to sidestep this was
+/// considered and rejected — that would gate a working destructive verb away, which this repo's
+/// own rule set forbids regardless of review pressure.
+const EXPECTED_IRREVERSIBLE_NO_DESCRIPTION: &[&str] = &["privacy_clear_data"];
+
+#[test]
+fn every_irreversible_row_without_a_description_is_on_the_hand_written_list() {
+    let mut actual: Vec<&str> = POLICY
+        .iter()
+        .filter_map(|entry| {
+            if !matches!(entry.effect, Effect::Irreversible(_)) {
+                return None;
+            }
+            let (_, command) = crate::extension_bridge::agent_call::split_path(entry.path);
+            let has_description = super::super::catalogue::CATALOGUE
+                .iter()
+                .any(|e| e.command == command && !e.description.is_empty());
+            (!has_description).then_some(command)
+        })
+        .collect();
+    actual.sort_unstable();
+    let mut expected = EXPECTED_IRREVERSIBLE_NO_DESCRIPTION.to_vec();
+    expected.sort_unstable();
+    assert_eq!(
+        actual, expected,
+        "the set of Irreversible commands with no catalogue description drifted from this \
+         test's own hand-written list — if a NEW Irreversible command legitimately has no \
+         description yet, add TSDoc to its IPC contract member instead of adding it here; if \
+         one DROPPED OUT (now described), remove it from EXPECTED_IRREVERSIBLE_NO_DESCRIPTION"
     );
 }

@@ -43,14 +43,14 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "ai_generations_remove",
-        description: "",
+        description: "Permanently delete one saved generation row by id — no confirmation short of this call.",
         args: &[
             CatalogueArg { name: "id", required: true, fields: None },
         ],
     },
     CatalogueEntry {
         command: "ai_generations_remove_bulk",
-        description: "",
+        description: "Permanently delete every generation row whose id is in `ids` — same no-confirmation delete as `remove`, batched.",
         args: &[
             CatalogueArg { name: "ids", required: true, fields: None },
         ],
@@ -115,7 +115,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "ai_model_capabilities",
-        description: "Capability probe for a provider/model. Network-free, but NOT static: it reads stored credentials to answer `supportsWebSearch` — whether it can attempt a web-grounded company/role search, whether it accepts a reasoning-effort value, and (when it does) exactly which levels this MODEL accepts. Reads the Rust `ModelCapabilities` matrix + `AiProvider::effort_levels` (the same values the backend gates `research*` and each adapter's own effort field on), so the renderer never mirrors the per-provider/per-model vocabulary and a new provider or model needs zero TS change — some providers' accepted level SET genuinely varies by model tier (Gemini), not just by provider, which is why this is a per-model lookup rather than a static per-provider list. Drives the capability-driven default of the tailoring \"search company\" toggle, and the Settings → AI effort picker (which renders exactly the `effortLevels` this returns). Unknown/ unresolvable providers degrade to `supportsWebSearch: false`, `supportsReasoning: false`, `effortLevels: []`. `baseUrl` is forwarded for OpenAI-compatible servers.",
+        description: "Capability probe for a provider/model. Network-free, but NOT static: it reads stored credentials to answer `supportsWebSearch` — whether it can attempt a web-grounded company/role search, whether it accepts a reasoning-effort value, and (when it does) exactly which levels this MODEL accepts.",
         args: &[
             CatalogueArg { name: "provider", required: true, fields: None },
             CatalogueArg { name: "model", required: false, fields: None },
@@ -124,7 +124,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "ai_pull_model",
-        description: "",
+        description: "Download a local Ollama model by name — multi-GB, consuming disk and bandwidth.",
         args: &[
             CatalogueArg { name: "model", required: true, fields: None },
         ],
@@ -195,7 +195,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         command: "ai_set_provider_settings",
         description: "Edit a (possibly non-active) provider's model/base_url/context window without flipping the active provider (the \"edit\" half).",
         args: &[
-            CatalogueArg { name: "req", required: true, fields: None },
+            CatalogueArg { name: "req", required: true, fields: Some(&[]) },
         ],
     },
     CatalogueEntry {
@@ -243,7 +243,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "applications_delete",
-        description: "Delete the Application and its status history — always irreversible, regardless of `keepDocuments`.",
+        description: "Delete the Application and its status history — always irreversible; `keepDocuments: false` ALSO deletes every résumé/cover-letter generation produced for it, while `keepDocuments: true` instead detaches those generations, which survive as orphaned documents outside this Application.",
         args: &[
             CatalogueArg { name: "id", required: true, fields: None },
             CatalogueArg { name: "keepDocuments", required: true, fields: None },
@@ -332,7 +332,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "autopilot_remove",
-        description: "",
+        description: "Permanently delete this autopilot and stop its scheduled runs — the found-jobs history it built goes with it.",
         args: &[
             CatalogueArg { name: "autopilotId", required: true, fields: None },
         ],
@@ -346,7 +346,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "autopilot_run",
-        description: "Run an autopilot now. The backend command *resolves* (does not reject) with an `{ error }` payload on a scrape failure or unknown id, so callers MUST inspect `error` — a resolved value is not proof of success. `jobId` is present on every non-error outcome (success / cancel).",
+        description: "Run an autopilot now. The backend command *resolves* (does not reject) with an `{ error }` payload on a scrape failure or unknown id, so callers MUST inspect `error` — a resolved value is not proof of success.",
         args: &[
             CatalogueArg { name: "autopilotId", required: true, fields: None },
         ],
