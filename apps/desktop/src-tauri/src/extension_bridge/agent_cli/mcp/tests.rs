@@ -933,6 +933,18 @@ fn instructions_documents_every_fence_tag_this_surface_emits() {
     }
 }
 
+/// SEC-1 fix (issue #1157): `Refusal::InvokeError`'s `command_error` tag is emitted directly by
+/// `agent_call.rs`'s own `detail()` (a refusal builder, not the `fence.rs`/`reshape.rs` reply-
+/// reshaping pipeline `EMITTED_FENCE_TAGS` scans), so it cannot ride the derived assertion above —
+/// hand-written the same way `EMITTED_FENCE_TAGS` itself is, per that const's own doc.
+#[test]
+fn instructions_documents_the_command_error_tag() {
+    assert!(
+        INSTRUCTIONS.contains("<command_error>...</command_error>"),
+        "INSTRUCTIONS never explains fence tag `command_error`: {INSTRUCTIONS}"
+    );
+}
+
 #[test]
 fn instructions_name_connection_lost_alongside_rate_limited_in_the_no_retry_sentence() {
     // item 18 — a payload too large for the bridge frame surfaces as connection_lost, which

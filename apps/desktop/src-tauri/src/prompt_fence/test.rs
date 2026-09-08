@@ -696,4 +696,6 @@ const EXPECTED_FENCE_TAGS: &[&str] = &[
     "market_conventions",
     "letter_date",
     "posting_candidate",
+    // SEC-1 fix (issue #1157) — `extension_bridge::agent_call::Refusal::InvokeError`'s detail.
+    "command_error",
 ];

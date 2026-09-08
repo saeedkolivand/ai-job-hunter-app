@@ -351,20 +351,24 @@ impl Refusal {
     /// it is also the one place that guarantee could be broken, hence the
     /// dedicated tests in `agent_call::tests`.
     ///
-    /// [`Refusal::InvokeError`]'s `detail` is DELIBERATELY UNLABELLED (issue #1157, owner
-    /// decision -- flagged for `tauri-security-reviewer`): most of the time this is the app's OWN
-    /// Tauri argument-validation sentence (a missing/mistyped arg, an ACL denial, an unregistered
-    /// command) -- the single most actionable line an agent gets anywhere on this surface, and
-    /// wrapping it as `<job_posting>` markup made a first-party diagnostic read as though a job
-    /// board had written it. Capped at [`crate::prompt_fence::JOB_CAP`] chars and run through
-    /// [`crate::prompt_fence::neutralize_transcript_boundaries`] (security review round A3-r1,
-    /// AC-2/SEC-3 HIGH: unlabelling must not also drop the boundary defence) -- the SAME two
-    /// causes are wire-indistinguishable (`agent_call.rs`'s own module doc), and the command-error
-    /// cause CAN embed third-party/remote text (a scrape/HTTP/provider failure echoing part of a
-    /// caller-chosen host's own response, e.g. `ai_pull_model`'s Ollama body or a provider's raw
-    /// error message) -- so this string still gets the same forged-`</job_posting>`-tag defence
-    /// every other untrusted string on this surface gets, just without the `<job_posting>` label
-    /// and cap-truncation-into-a-wrapper that made a first-party sentence unreadable.
+    /// [`Refusal::InvokeError`]'s `detail` carries the explanatory prose UNLABELLED but fences
+    /// ONLY the underlying value under the distinct `<command_error>` tag (SEC-1 fix, issue
+    /// #1157): most of the time the value is the app's OWN Tauri argument-validation sentence (a
+    /// missing/mistyped arg, an ACL denial, an unregistered command) -- the single most actionable
+    /// line an agent gets anywhere on this surface, and wrapping it as `<job_posting>` markup once
+    /// made a first-party diagnostic read as though a job board had written it (round 4's mistake)
+    /// -- but the SAME two causes are wire-indistinguishable (`agent_call.rs`'s own module doc),
+    /// and the command-error cause CAN embed third-party/remote text (a scrape/HTTP/provider
+    /// failure echoing part of a caller-chosen host's own response, e.g. `ai_pull_model`'s Ollama
+    /// body or a provider's raw error message). An earlier revision left the value entirely
+    /// unfenced to avoid the `job_posting` mislabel, which also dropped the "treat as data" label
+    /// from a field that can carry attacker-influenced prose on a surface whose caller holds
+    /// destructive tools (round A3-r1 SEC-1 HIGH). `<command_error>` -- registered in
+    /// `crate::prompt_fence`'s fence-tag registry and capped at [`crate::prompt_fence::JOB_CAP`]
+    /// chars -- is the same mixed-provenance remedy `agent_call::fence`'s `app_notification` tag
+    /// already gives notification copy: framed as DATA, never asserted third-party, and still
+    /// covered by [`crate::prompt_fence::neutralize_transcript_boundaries`]'s forged-boundary
+    /// defence (round A3-r1 AC-2/SEC-3 HIGH) either way.
     fn detail(&self) -> String {
         match self {
             Refusal::UnknownCommand(suggestion) => unknown_command_detail(*suggestion),
@@ -374,14 +378,18 @@ impl Refusal {
             Refusal::RateLimited { .. } => super::agent_read::THROTTLED_MESSAGE.to_string(),
             Refusal::DispatchFailed(detail) => detail.clone(),
             Refusal::InvokeError(detail) => {
-                // Capped and defused, never fenced/labelled -- see this variant's own `detail()`
-                // doc above.
-                let capped: String = detail.chars().take(crate::prompt_fence::JOB_CAP).collect();
-                let capped = crate::prompt_fence::neutralize_transcript_boundaries(&capped);
+                // The explanatory prose stays unlabelled; only the underlying value is fenced,
+                // under the distinct `command_error` tag -- see this variant's own `detail()` doc
+                // above (SEC-1 fix, issue #1157).
+                let fenced = crate::prompt_fence::fenced(
+                    "command_error",
+                    detail,
+                    crate::prompt_fence::JOB_CAP,
+                );
                 format!(
                     "the command either ran and returned an error, or Tauri rejected the call \
                      before the body ran (missing/invalid args, an ACL denial, or an unregistered \
-                     command) — these are wire-indistinguishable; underlying value: {capped}"
+                     command) — these are wire-indistinguishable; underlying value: {fenced}"
                 )
             }
             Refusal::ConfirmationRequired(hint) => hint.clone(),
