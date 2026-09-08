@@ -921,17 +921,33 @@ pub async fn ai_embedding_status(app: AppHandle) -> Value {
 #[tauri::command]
 pub fn ai_spend_summary(app: AppHandle, days: Option<u32>) -> Value {
     let days = resolve_window_days(days);
+    let Some(store) = app.try_state::<crate::spend::SpendStore>() else {
+        let window_start = crate::spend::window_start_ms(days);
+        let window_json = json!({
+            "days": days,
+            "from": window_start,
+            "to": crate::db::now_ms(),
+        });
+        let zero = crate::spend::SpendTotals::default();
+        return spend_summary_value(zero, zero, vec![], vec![], window_json);
+    };
+    spend_summary_from_store(&store, days)
+}
+
+/// The real body of [`ai_spend_summary`] once a [`crate::spend::SpendStore`]
+/// is in hand — pulled out of the `#[tauri::command]` fn (which needs a live
+/// `AppHandle` this crate has no mock harness for) so the call site itself is
+/// unit-testable against a real on-disk store, not just hand-built
+/// [`crate::spend::SpendTotals`] literals fed straight to [`spend_summary_value`]
+/// (issue #1161's C1-r2-RBA-2: that shape-only test cannot catch a call site
+/// that collapses `today` and `windowTotals` back onto the same query).
+fn spend_summary_from_store(store: &crate::spend::SpendStore, days: u32) -> Value {
     let window_start = crate::spend::window_start_ms(days);
     let window_json = json!({
         "days": days,
         "from": window_start,
         "to": crate::db::now_ms(),
     });
-
-    let Some(store) = app.try_state::<crate::spend::SpendStore>() else {
-        let zero = crate::spend::SpendTotals::default();
-        return spend_summary_value(zero, zero, vec![], vec![], window_json);
-    };
     let today = store.today_totals();
     let window_totals = store.totals_since(window_start);
     // Every provider that has EVER recorded a call (since_ms = 0), so a

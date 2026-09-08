@@ -361,12 +361,12 @@ fn spend_totals_json_carries_the_exact_totals_given() {
 
 #[test]
 fn spend_summary_value_labels_today_and_window_totals_from_their_own_input() {
-    // Regression for C1-r1-RBA-1: `today` must be calendar-day (a distinct
-    // `SpendTotals`, not the multi-day window total under another name) —
-    // this drives `spend_summary_value` directly with DIFFERENT `today` and
-    // `window_totals` inputs, so a future call site that collapses them back
-    // onto one value (e.g. `spend_summary_value(window_totals, window_totals, ..)`)
-    // fails here.
+    // Covers `spend_summary_value`'s payload SHAPING only (it just labels
+    // whatever two `SpendTotals` it's handed) — it does NOT exercise the
+    // call site that decides what those two values ARE. That's
+    // `ai_spend_summary_call_site_keeps_today_and_window_totals_distinct`
+    // below (issue #1161's C1-r2-RBA-2): this test alone would stay green
+    // even if the call site collapsed both to `totals_since(window_start)`.
     let today = SpendTotals {
         input_tokens: 100,
         output_tokens: 50,
@@ -381,6 +381,47 @@ fn spend_summary_value_labels_today_and_window_totals_from_their_own_input() {
     let out = spend_summary_value(today, window_totals, vec![], vec![], json!({}));
     assert_eq!(out["today"]["inputTokens"], 100);
     assert_eq!(out["windowTotals"]["inputTokens"], 9_000);
+    assert_ne!(out["today"], out["windowTotals"]);
+}
+
+#[test]
+fn ai_spend_summary_call_site_keeps_today_and_window_totals_distinct() {
+    // Regression for C1-r2-RBA-2: the tautology above only checks that
+    // `spend_summary_value` labels its two inputs correctly — it never calls
+    // the actual `ai_spend_summary` call site, so reverting mod.rs back to
+    // `today = store.totals_since(window_start)` (C1-r1-RBA-1's original
+    // defect) would leave the whole suite green. This drives the real call
+    // site (`spend_summary_from_store`) against a real on-disk `SpendStore`
+    // seeded with a row outside "today" but inside a 7-day window, so a
+    // collapse back onto one query fails here.
+    use crate::data_store::DataStore;
+    use crate::spend::SpendStore;
+
+    let dir = TempDir::new().unwrap();
+    let store = SpendStore::open(&dir.path().to_path_buf()).unwrap();
+
+    let five_days_ago = crate::db::now_ms() - 5 * 86_400_000;
+    store
+        .import(&serde_json::json!([{
+            "id": "spend-c1-r2-rba-2",
+            "createdAt": five_days_ago,
+            "provider": "openai",
+            "model": "gpt-test",
+            "inputTokens": 500,
+            "outputTokens": 200,
+            "estCostUsd": 3.0,
+        }]))
+        .unwrap();
+
+    let out = spend_summary_from_store(&store, 7);
+    assert_eq!(
+        out["today"]["inputTokens"], 0,
+        "a 5-day-old row must not count as today's spend"
+    );
+    assert_eq!(
+        out["windowTotals"]["inputTokens"], 500,
+        "the same row must count inside a 7-day window"
+    );
     assert_ne!(out["today"], out["windowTotals"]);
 }
 

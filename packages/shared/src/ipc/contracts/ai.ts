@@ -340,15 +340,16 @@ export interface AiContract {
    * query), not a billing-accurate source. Local (Ollama) and CLI-agent
    * calls always cost $0.
    *
-   * `days` scopes `today`/`perProvider` to the last N UTC days ending today;
-   * omitted (or `1`) means "since midnight today" — the pre-existing
-   * behavior. The resolved window is echoed back as {@link AiSpendSummary.window}.
-   * `perProvider` lists every provider that ever recorded a call, not just
-   * ones active in this window — see {@link AiSpendProviderTotals.reason}.
+   * `days` scopes {@link AiSpendSummary.windowTotals}/`perProvider` to the
+   * last N UTC days ending today; omitted (or `1`) means "since midnight
+   * today". The resolved window is echoed back as
+   * {@link AiSpendSummary.window}. `perProvider` lists every provider that
+   * ever recorded a call, not just ones active in this window — see
+   * {@link AiSpendProviderTotals.reason}.
    *
-   * For `days > 1`, prefer {@link AiSpendSummary.windowTotals} over `today` —
-   * `today` keeps its name/shape for existing readers but is window-scoped,
-   * not calendar-day scoped, whenever a wider window was requested.
+   * {@link AiSpendSummary.today} is ALWAYS calendar-day, regardless of
+   * `days` — read {@link AiSpendSummary.windowTotals} for the requested
+   * window's total, never `today`, whenever `days > 1` was requested.
    */
   spendSummary(days?: number): Promise<AiSpendSummary>;
 }
@@ -508,14 +509,15 @@ export interface AiSpendWindow {
  *  actually measured. */
 export interface AiSpendSummary {
   window: AiSpendWindow;
+  /** ALWAYS calendar-day (since midnight UTC today), regardless of the
+   *  requested `days` — e.g. the agent-cli policy's proof source. For a
+   *  `days > 1` window's total, read {@link windowTotals} instead. */
   today: { inputTokens: number; outputTokens: number; estCostUsd: number };
   /**
-   * Same totals as {@link today}, under an honest name — {@link today} keeps
-   * its pre-#1161 shape/name for existing readers (e.g. the agent-cli
-   * policy's proof source) but is window-scoped, not calendar-day scoped,
-   * whenever `days > 1` was requested. Read this field instead of `today`
-   * for any `days > 1` call, so a multi-day total is never misread as
-   * today's spend.
+   * Real totals over the requested {@link window} — "since midnight today"
+   * when `days` is `1` (the same span {@link today} covers), or the full
+   * N-day span otherwise. Read this instead of `today` for any `days > 1`
+   * call, so a multi-day total is never misread as today's spend.
    */
   windowTotals: { inputTokens: number; outputTokens: number; estCostUsd: number };
   perProvider: AiSpendProviderTotals[];
