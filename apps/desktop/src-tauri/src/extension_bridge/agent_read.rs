@@ -90,12 +90,15 @@ const RES_FOUND_JOBS: &str = "found-jobs";
 pub(super) const RESOURCES: &[(&str, &str)] = &[
     (
         RES_BEST_MATCHES,
-        "Strongest jobs across every autopilot, ranked. Optional `limit` (default 20, max 50), \
+        "Strongest jobs across every autopilot, ranked. Optional `limit` (default 20, max 100), \
          `cursor` (repeat with the returned `nextCursor` until it is `null` to reach every row \
-         past the first page), and `query` (case-insensitive substring over title or company). \
-         `query` filters the already-capped, ranked top-N candidate list this tool computes \
-         (NOT the full stored corpus) — a posting outside that cap reads as absent even when it \
-         is still in storage; use `found-jobs`' own `query` to search every stored posting.",
+         past the first page; a cursor is opaque and only valid for the same `query` — present \
+         or omitted — that issued it), and `query` (case-insensitive substring over title or \
+         company). `query` filters the already-capped, ranked top-N candidate list this tool \
+         computes (NOT the full stored corpus) — a posting outside that cap reads as absent even \
+         when it is still in storage; use `found-jobs`' own `query` to search every stored \
+         posting. `total` is the size of this capped ranked list, not the number of qualifying \
+         postings in storage — use `found-jobs` for a true corpus count.",
     ),
     (
         RES_JOB,
@@ -564,8 +567,18 @@ struct AgentBestMatch {
 /// `pub(in crate::extension_bridge)`: `agent_cli::mcp` derives the
 /// `best-matches` tool schema's advertised default/cap from THESE numbers
 /// rather than a hand-typed copy that can silently drift out of sync.
+///
+/// `MAX_BEST_MATCHES_LIMIT` equals
+/// `commands::autopilot::best_matches::BEST_MATCHES_CAP` (round 3 fix,
+/// B3-r3-F2 — it used to be half that cap, so a full traversal took 2–5
+/// calls, each one re-running the command's own real clustering pass with
+/// no cache; the 30s-refill throttle bucket sized for exactly one call per
+/// traversal turned that into 30–120s of forced stalls). Equal to the cap
+/// means one max-limit page always reaches the whole reachable set in a
+/// SINGLE call — see
+/// `agent_read::tests::max_best_matches_limit_covers_the_full_capped_row_set_in_one_page`.
 pub(super) const DEFAULT_BEST_MATCHES_LIMIT: usize = 20;
-pub(super) const MAX_BEST_MATCHES_LIMIT: usize = 50;
+pub(super) const MAX_BEST_MATCHES_LIMIT: usize = 100;
 
 /// Issue #1167/#1146 P11 — reuses `extension_bridge::paging::clamp_limit`, the
 /// same shared primitive `found_jobs` uses, rather than a hand-rolled copy: the
@@ -721,19 +734,28 @@ fn fence_best_match_fields(value: &mut Value) {
     }
 }
 
-async fn best_matches_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
-    let limit = clamp_best_matches_limit(payload);
-    // Round 2 fix (B3-r2-F1) — used to read `query` with
-    // `.and_then(Value::as_str)`, the exact silent-drop combinator
-    // `found_jobs::trimmed_lowercase_filter` was hardened away from for the
-    // identical key one resource over: a non-string (or, since B3-r2-F2,
-    // present-but-blank) `query` collapsed to `None` here — indistinguishable
-    // from omitted — and the caller got the unfiltered ranked list back with
-    // a `total` it read as the filtered count. Reuses that SAME fallible
-    // parse rather than a second copy, so the two can't drift apart again.
+/// The payload-only half of `best-matches`' argument parsing — `query`
+/// (round 2 fix, B3-r2-F1 — MUST go through `found_jobs::trimmed_lowercase_filter`,
+/// never a raw `.and_then(Value::as_str)`, which silently read a non-string
+/// or present-but-blank `query` as absent and handed back the unfiltered
+/// ranked list with a `total` the caller read as filtered) plus the cursor
+/// offset it feeds. No `AppHandle` needed — unlike [`best_matches_resource`]
+/// itself, which only adds the `commands::autopilot::autopilot_best_matches`
+/// call this can't reach — so THIS delegation is directly unit-testable
+/// (round 3 fix, B3-r3-F7: the previous guard tested
+/// `found_jobs::trimmed_lowercase_filter` directly, which pinned nothing
+/// about `best_matches_resource` actually calling it — reverting the call
+/// site back to the old combinator left that guard green).
+fn parse_best_matches_args(payload: &Value) -> AppResult<(Option<String>, usize)> {
     let query = found_jobs::trimmed_lowercase_filter(payload, "query")?;
     let cursor_issuer = best_matches_cursor_issuer(query.as_deref());
     let offset = parse_best_matches_cursor(payload, &cursor_issuer)?;
+    Ok((query, offset))
+}
+
+async fn best_matches_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
+    let limit = clamp_best_matches_limit(payload);
+    let (query, offset) = parse_best_matches_args(payload)?;
     let raw = crate::commands::autopilot::autopilot_best_matches(app.clone()).await;
     let rows = raw
         .get("matches")

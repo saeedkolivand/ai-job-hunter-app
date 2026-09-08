@@ -546,6 +546,32 @@ fn found_jobs_all_autopilots_cursor_is_rejected_when_replayed_scoped() {
     assert_eq!(err.to_string(), WRONG_AUTOPILOT_CURSOR_MESSAGE);
 }
 
+/// B3-r1-F4 regression pin (round 3, B3-r3-F6) — every OTHER cursor test in
+/// this file computes its expected issuer via `issuer()`/`no_filters()`
+/// (self-referential against `found_jobs_cursor_issuer`) or passes a bare id
+/// string that mismatches with or without the fingerprint either way, so
+/// none of them can catch a regression that drops the `|{fp}` half of the
+/// issuer. This one drives two DIFFERENT filter sets, same scope, by hand:
+/// a cursor issued under `minScore: 70` must be rejected when replayed
+/// against the issuer for `minScore: 90` — if `found_jobs_cursor_issuer`
+/// ever stopped folding filters in, both issuers would collapse to the same
+/// `"ap-1"` and this would wrongly succeed.
+#[test]
+fn found_jobs_cursor_issued_under_one_filter_set_is_rejected_under_another() {
+    let issuer_at_70 = found_jobs_cursor_issuer(
+        Some("ap-1"),
+        &FoundJobsFilters::from_payload(&json!({ "minScore": 70 })).unwrap(),
+    );
+    let cursor = format!("{issuer_at_70}:5");
+
+    let issuer_at_90 = found_jobs_cursor_issuer(
+        Some("ap-1"),
+        &FoundJobsFilters::from_payload(&json!({ "minScore": 90 })).unwrap(),
+    );
+    let err = parse_found_jobs_cursor(&json!({ "cursor": cursor }), &issuer_at_90).unwrap_err();
+    assert_eq!(err.to_string(), WRONG_AUTOPILOT_CURSOR_MESSAGE);
+}
+
 // ── issue #1167: server-side filters ───────────────────────────────────
 
 #[test]
@@ -629,6 +655,32 @@ fn found_jobs_applied_filter_matches_the_derived_applied_set() {
     assert_eq!(out["total"], 1);
     assert_eq!(out["jobs"][0]["url"], "https://boards.example.com/jobs/1");
     assert_eq!(out["jobs"][0]["applied"], true);
+}
+
+/// B3-r3-F1 — `applied_job_urls(app)` returns an EMPTY set both when the
+/// user has applied to nothing AND when `ApplicationStore` failed to open
+/// (a non-fatal boot path), so the `applied` filter must be refused, not
+/// silently answered, when the store is unavailable — otherwise `applied:
+/// true` would read as "you have applied to nothing" (`total: 0`) and
+/// `applied: false` would silently return postings already applied to.
+#[test]
+fn applied_filter_refuses_rather_than_answering_wrong_when_the_store_is_unavailable() {
+    let filters = FoundJobsFilters::from_payload(&json!({ "applied": true })).unwrap();
+    let err = check_applied_filter_available(false, &filters).unwrap_err();
+    assert_eq!(err.to_string(), APPLIED_FILTER_UNAVAILABLE_MESSAGE);
+
+    let filters = FoundJobsFilters::from_payload(&json!({ "applied": false })).unwrap();
+    let err = check_applied_filter_available(false, &filters).unwrap_err();
+    assert_eq!(err.to_string(), APPLIED_FILTER_UNAVAILABLE_MESSAGE);
+}
+
+/// The store being unavailable must never block a call that never asked for
+/// the `applied` filter — this is a targeted refusal, not a blanket outage.
+#[test]
+fn applied_filter_availability_is_a_no_op_when_the_filter_is_not_requested() {
+    assert!(check_applied_filter_available(false, &no_filters()).is_ok());
+    let filters = FoundJobsFilters::from_payload(&json!({ "applied": true })).unwrap();
+    assert!(check_applied_filter_available(true, &filters).is_ok());
 }
 
 #[test]

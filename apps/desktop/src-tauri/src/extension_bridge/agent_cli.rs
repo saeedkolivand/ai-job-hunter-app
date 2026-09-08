@@ -360,12 +360,14 @@ const VERB_TABLE: &[VerbHelp] = &[
     VerbHelp {
         name: "best-matches",
         args: "[--limit <n>] [--cursor <c>] [--query <q>]",
-        returns: "the strongest jobs across every autopilot (default 20, max 50 per page); \
+        returns: "the strongest jobs across every autopilot (default 20, max 100 per page); \
                   repeat with the returned `nextCursor` to reach every ranked row; `--query` \
                   filters to a title/company substring over the already-capped, ranked \
                   candidate list this call computes (NOT the full stored corpus — use \
                   `found-jobs --query` to search every stored posting), and the cursor is only \
-                  valid for the SAME `--query` (present or omitted) that issued it",
+                  valid for the SAME `--query` (present or omitted) that issued it; `total` is \
+                  the size of this capped ranked list, not the number of qualifying postings in \
+                  storage — use `found-jobs` for a true corpus count",
     },
     VerbHelp {
         name: "job",
@@ -536,6 +538,22 @@ fn parse_bool_flag(flag: &str, raw: &str) -> AppResult<bool> {
         .map_err(|_| AppError::Validation(format!("{flag} must be `true` or `false`")))
 }
 
+/// A present-but-empty `<autopilotId>` positional (the canonical unset-shell-
+/// variable shape, `agent found-jobs "$AP_ID"` with `AP_ID` unset) must
+/// refuse with the SAME blank-selector message
+/// `found_jobs::parse_autopilot_id_arg`/`mcp::classify_tool_call` give the
+/// identical mistake one hop further in (round 3 fix, B3-r3-F9) — before
+/// this fix, an empty first token fell to `(None, 0)` below, `omitted`, so
+/// the flag-parsing loop started AT that same empty token and hit the
+/// catch-all "unknown argument" arm, steering a caller toward dropping the
+/// positional entirely (the exact spanning-scope mistake `agent-cli-standards`
+/// says an empty selector must never fall into). A whitespace-only id (`" "`)
+/// is left to the existing downstream refusal — it survives this positional
+/// check (not empty) and is caught by `parse_autopilot_id_arg`'s own trim.
+const BLANK_FOUND_JOBS_AUTOPILOT_ID_MESSAGE: &str =
+    "autopilotId must be a non-empty id, not blank or flag-shaped — omit the positional \
+     entirely to span every autopilot";
+
 /// Parse `found-jobs`' own args: `[<autopilotId>] [--limit <n>] [--cursor <c>]
 /// [--min-score <n>] [--country <s>] [--remote <bool>] [--applied <bool>]
 /// [--query <q>] [--include-description]`. `autopilotId` is now OPTIONAL
@@ -546,7 +564,12 @@ fn parse_bool_flag(flag: &str, raw: &str) -> AppResult<bool> {
 /// [`parse_best_matches`]'s own comment).
 fn parse_found_jobs(rest: &[String]) -> AppResult<Verb> {
     let (autopilot_id, mut i) = match rest.first() {
-        Some(s) if !s.is_empty() && !s.starts_with("--") => (Some(s.clone()), 1),
+        Some(s) if s.is_empty() => {
+            return Err(AppError::Validation(
+                BLANK_FOUND_JOBS_AUTOPILOT_ID_MESSAGE.to_string(),
+            ))
+        }
+        Some(s) if !s.starts_with("--") => (Some(s.clone()), 1),
         _ => (None, 0),
     };
 

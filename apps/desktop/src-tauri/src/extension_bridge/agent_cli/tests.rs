@@ -217,6 +217,28 @@ fn rejects_found_jobs_a_non_numeric_min_score() {
     assert!(parse_verb(&s(&["found-jobs", "ap-1", "--min-score", "abc"])).is_err());
 }
 
+/// Round 3 fix (B3-r3-F9) — the canonical unset-shell-variable repro
+/// (`agent found-jobs "$AP_ID"` with `AP_ID` unset) is an EMPTY positional,
+/// which must refuse as a blank selector, not fall through to the flag loop
+/// and report "unknown argument" against the empty token itself.
+#[test]
+fn rejects_found_jobs_an_empty_positional_as_a_blank_selector_not_an_unknown_argument() {
+    let err = parse_verb(&s(&["found-jobs", ""])).unwrap_err();
+    assert_eq!(err.to_string(), BLANK_FOUND_JOBS_AUTOPILOT_ID_MESSAGE);
+}
+
+/// A whitespace-only id is a DIFFERENT mistake shape (not empty) — this
+/// positional check must not swallow it; it is still refused, just by the
+/// downstream `parse_autopilot_id_arg` trim once the payload is built, not
+/// here.
+#[test]
+fn a_whitespace_only_found_jobs_positional_is_not_caught_by_the_empty_check() {
+    assert_eq!(
+        parse_verb(&s(&["found-jobs", " "])).unwrap(),
+        found_jobs(Some(" "), None, None, None, None, None, None, None, false)
+    );
+}
+
 /// B3-r1-F3 — `"1e400"`/`"inf"`/`"nan"` all parse as valid `f64` values
 /// (`f64::INFINITY`/`f64::NAN`), so `.parse::<f64>()` alone accepted them;
 /// `serde_json::json!` then serializes a non-finite `f64` as `null`, and the
@@ -579,6 +601,85 @@ fn every_verb_in_the_table_is_parseable_with_its_minimal_args() {
     }
 }
 
+/// Every `--flag` token in `text`, in the exact form `parse_verb`'s `match`
+/// arms key on (`--min-score`, never `--min-score <n>`) — scans for `--`
+/// then stops at the first character that isn't alphanumeric or `-`.
+fn flags_named_in(text: &str) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    let mut rest = text;
+    while let Some(pos) = rest.find("--") {
+        let candidate = &rest[pos..];
+        let end = candidate
+            .char_indices()
+            .skip(2)
+            .find(|&(_, c)| !(c.is_ascii_alphanumeric() || c == '-'))
+            .map(|(idx, _)| idx)
+            .unwrap_or(candidate.len());
+        out.insert(candidate[..end].to_string());
+        rest = &candidate[end.max(1)..];
+    }
+    out
+}
+
+/// Round 3 fix (B3-r3-F10) — `found-jobs`' flag list is now hand-maintained
+/// in five places (`VerbHelp.args`, `parse_found_jobs`'s match arms, its
+/// unknown-argument message, the MCP `inputSchema`, and `tool_argv`) with no
+/// test tying any two together; `every_verb_in_the_table_is_parseable_with_its_minimal_args`
+/// only ever parses the verb's MINIMAL args, never touching a single flag.
+/// Closes the loop between the two surfaces this file can see without an
+/// `AppHandle`: `VerbHelp.args` (what `--help` advertises) and each verb's
+/// own `parse_*` function (what it actually accepts), both directions —
+/// FORWARD: every flag `args` documents must be recognized (a benign dummy
+/// value may still fail ITS OWN type check, but never the catch-all "unknown
+/// argument"); REVERSE: triggering the catch-all with a definitely-bogus
+/// flag must list ONLY flags `args` already documents, so a flag added to a
+/// `match` arm without updating `args` shows up here, not just silently in
+/// production.
+#[test]
+fn every_advertised_found_jobs_and_best_matches_flag_round_trips_with_the_parser() {
+    let cases: &[(&str, &[&str])] = &[("best-matches", &[]), ("found-jobs", &["ap-1"])];
+    for &(verb, minimal) in cases {
+        let help = VERB_TABLE.iter().find(|v| v.name == verb).unwrap();
+        let documented = flags_named_in(help.args);
+        assert!(
+            !documented.is_empty(),
+            "verb `{verb}` has no documented flags to check"
+        );
+
+        for flag in &documented {
+            let mut args = s(&[verb]);
+            args.extend(minimal.iter().map(|s| s.to_string()));
+            args.push(flag.clone());
+            if flag.as_str() != "--include-description" {
+                args.push("true".to_string());
+            }
+            if let Err(e) = parse_verb(&args) {
+                assert!(
+                    !e.to_string().starts_with("unknown argument"),
+                    "verb `{verb}` documents `{flag}` in VERB_TABLE but the parser doesn't \
+                     recognize it: {e}"
+                );
+            }
+        }
+
+        let mut bogus = s(&[verb]);
+        bogus.extend(minimal.iter().map(|s| s.to_string()));
+        bogus.push("--definitely-not-a-real-flag".to_string());
+        if let Err(e) = parse_verb(&bogus) {
+            let msg = e.to_string();
+            if msg.starts_with("unknown argument") {
+                for flag in flags_named_in(&msg) {
+                    assert!(
+                        documented.contains(&flag),
+                        "verb `{verb}`'s unknown-argument message lists `{flag}` but \
+                         VERB_TABLE's args string doesn't document it: {msg}"
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// Every parseable verb must appear in the help text — the SECOND half
 /// of the owner's anti-drift requirement (together with the test above,
 /// this pins BOTH directions: help ⊆ parseable AND parseable ⊆ help).
@@ -679,6 +780,12 @@ fn both_automations_descriptions_name_both_totals() {
 /// caller following either one had no way to know a cursor replayed under
 /// changed filters would refuse. Same drift-guard shape as
 /// `both_automations_descriptions_name_both_totals`, one hop over.
+///
+/// Asserts `text.contains("filter argument")`, not the bare word `"filter"`
+/// (round 3 fix, B3-r3-F3 — both pre-fix strings already said "the filtered
+/// row count"/"server-side filters", so the original `contains("filter")`
+/// predicate was already true on the UNFIXED wording and passed on a revert;
+/// `"filter argument"` only appears once the binding is actually stated).
 #[test]
 fn found_jobs_cursor_binding_is_named_on_both_surfaces() {
     let cli = VERB_TABLE
@@ -692,9 +799,33 @@ fn found_jobs_cursor_binding_is_named_on_both_surfaces() {
         .expect("the found-jobs resource");
     for (surface, text) in [("--help", cli), ("agent schema", schema)] {
         assert!(
-            text.contains("autopilotId") && text.contains("filter"),
+            text.contains("autopilotId") && text.contains("filter argument"),
             "{surface}'s found-jobs description must name both the autopilotId scope and the \
              filter-argument binding: {text}"
+        );
+    }
+}
+
+/// Round 3 fix (B3-r3-F4): `best-matches`' cursor is bound to `query` on the
+/// `--help`/MCP-tool text (already stated) but NOT on `agent schema`'s own
+/// `RES_BEST_MATCHES` row — the identical drift class
+/// `found_jobs_cursor_binding_is_named_on_both_surfaces` catches one
+/// resource over, now closed on its sibling.
+#[test]
+fn best_matches_cursor_binding_is_named_on_both_surfaces() {
+    let cli = VERB_TABLE
+        .iter()
+        .find(|v| v.name == "best-matches")
+        .expect("the best-matches verb")
+        .returns;
+    let (_, schema) = super::super::agent_read::RESOURCES
+        .iter()
+        .find(|(name, _)| *name == "best-matches")
+        .expect("the best-matches resource");
+    for (surface, text) in [("--help", cli), ("agent schema", schema)] {
+        assert!(
+            text.contains("query") && text.contains("cursor") && text.contains("issued it"),
+            "{surface}'s best-matches description must name the cursor/query binding: {text}"
         );
     }
 }

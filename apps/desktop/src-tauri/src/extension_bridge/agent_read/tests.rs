@@ -714,6 +714,44 @@ fn best_matches_limit_zero_falls_back_to_the_default_not_to_zero() {
     );
 }
 
+/// B3-r3-F2 — `MAX_BEST_MATCHES_LIMIT` must reach the full row set
+/// `commands::autopilot::best_matches::BEST_MATCHES_CAP` (100) allows
+/// through, in ONE page: that command's clustering pass is real CPU work
+/// (its own doc — 3.03s at 2000 found-jobs, 12.3s at 4000), and the
+/// 30s-refill throttle bucket is sized for exactly one call per traversal.
+/// Before this fix `MAX_BEST_MATCHES_LIMIT` was half the cap, so a max-limit
+/// page never reached the end in one call — this fails against that value
+/// (both on the length assertion and on `nextCursor` staying non-null).
+#[test]
+fn max_best_matches_limit_covers_the_full_capped_row_set_in_one_page() {
+    // Mirrors `commands::autopilot::best_matches::BEST_MATCHES_CAP` — that
+    // const is private to a sibling module this file doesn't own, so this is
+    // a literal pin, not an import; the two must be kept in sync by hand.
+    const BEST_MATCHES_CAP: usize = 100;
+    assert_eq!(
+        MAX_BEST_MATCHES_LIMIT, BEST_MATCHES_CAP,
+        "a max-limit page must cover the whole capped row set in one call"
+    );
+
+    let rows: Vec<Value> = (0..BEST_MATCHES_CAP)
+        .map(|i| {
+            let mut row = full_best_match_row_json();
+            row["url"] = json!(format!("https://boards.example.com/jobs/{i}"));
+            row
+        })
+        .collect();
+    let out = resolve_best_matches(&rows, 0, MAX_BEST_MATCHES_LIMIT, None);
+    assert_eq!(
+        out["matches"].as_array().unwrap().len(),
+        BEST_MATCHES_CAP,
+        "every row of the capped set must fit in one max-limit page"
+    );
+    assert!(
+        out["nextCursor"].is_null(),
+        "a single max-limit page must reach the true end, not need a second call"
+    );
+}
+
 /// Issue #1146 P11 — `best-matches` gained the same `cursor`/`nextCursor`
 /// paging `found-jobs` already had. Walks every row via `resolve_best_matches`
 /// directly (no `AppHandle` needed, same pure/impure split as `found-jobs`),
@@ -803,26 +841,26 @@ fn best_matches_rejects_a_bare_numeric_offset_cursor() {
 /// `found-jobs` uses for its own `query`/`country` (round 2 fix, B3-r2-F1/
 /// B3-r2-F2) — a wrong-typed or present-but-blank value refuses rather than
 /// silently reading as "absent" and handing back the unfiltered ranked list
-/// with a `total` the caller reads as filtered. `best_matches_resource`
-/// itself needs an `AppHandle` to reach `autopilot_best_matches`, so this
-/// pins the exact fallible parse it now delegates to (mirrors
-/// `found_jobs::found_jobs_filters_from_payload_rejects_a_wrong_typed_present_filter`/
-/// `..._rejects_a_blank_string_filter`, one resource over).
+/// with a `total` the caller reads as filtered. Drives [`parse_best_matches_args`]
+/// itself, not `found_jobs::trimmed_lowercase_filter` directly (round 3 fix,
+/// B3-r3-F7 — the previous version of this test called the shared helper
+/// directly, pinning nothing about `best_matches_resource`'s ACTUAL call
+/// site; reverting that call site to the old `.and_then(Value::as_str)`
+/// combinator left the whole suite green). `parse_best_matches_args` needs
+/// no `AppHandle` — only [`best_matches_resource`] adds the
+/// `autopilot_best_matches` call this can't reach.
 #[test]
 fn best_matches_query_filter_refuses_a_wrong_typed_or_blank_value() {
     for bad in [json!(true), json!(5), json!(""), json!("   ")] {
-        let err =
-            found_jobs::trimmed_lowercase_filter(&json!({ "query": bad }), "query").unwrap_err();
+        let err = parse_best_matches_args(&json!({ "query": bad })).unwrap_err();
         assert!(
             err.to_string().contains("query"),
             "refusal must name the key: {err}"
         );
     }
-    assert_eq!(
-        found_jobs::trimmed_lowercase_filter(&json!({}), "query").unwrap(),
-        None,
-        "an OMITTED query must still mean no filter"
-    );
+    let (query, offset) = parse_best_matches_args(&json!({})).unwrap();
+    assert_eq!(query, None, "an OMITTED query must still mean no filter");
+    assert_eq!(offset, 0, "no cursor means start at the first page");
 }
 
 // ── throttle ─────────────────────────────────────────────────────────────

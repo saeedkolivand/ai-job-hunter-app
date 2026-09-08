@@ -49,7 +49,7 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::autopilot::{Autopilot, FoundJob};
 use crate::error::{AppError, AppResult};
@@ -708,10 +708,48 @@ fn parse_autopilot_id_arg(payload: &Value) -> AppResult<Option<String>> {
     }
 }
 
+/// `commands::autopilot::applied_job_urls`'s own doc: a missing
+/// `ApplicationStore` (an explicitly NON-FATAL boot path — `lib.rs`'s setup
+/// leaves it unmanaged rather than failing) yields an EMPTY set, the same
+/// shape as "the user has applied to nothing". That collapse is harmless for
+/// `enrich_applied`'s cosmetic badge, but the `applied` filter this fn adds
+/// (issue #1167) cannot tell the two apart: `applied: true` would silently
+/// answer `total: 0` for every autopilot, and `applied: false` would
+/// silently return the WHOLE corpus, including postings already applied to
+/// — the unsafe direction for a filter issue #1168 exists specifically to
+/// prevent a duplicate application. Refuse instead, but ONLY when the
+/// `applied` filter is actually requested — the row-level `applied` badge
+/// (always emitted) keeps `enrich_applied`'s existing best-effort semantics,
+/// out of scope here. `store_present` is a plain `bool`, not an `AppHandle`
+/// — this crate has no `tauri::test` mock-app harness (see
+/// `commands::autopilot::tests::every_record_mutation_goes_through_mutate_record`'s
+/// own doc) — so the refusal itself stays unit-testable without one.
+const APPLIED_FILTER_UNAVAILABLE_MESSAGE: &str =
+    "the applications store is unavailable, so the `applied` filter cannot be answered — omit \
+     `applied` to read the corpus without that filter";
+
+fn check_applied_filter_available(
+    store_present: bool,
+    filters: &FoundJobsFilters,
+) -> AppResult<()> {
+    if filters.applied.is_some() && !store_present {
+        Err(AppError::Validation(
+            APPLIED_FILTER_UNAVAILABLE_MESSAGE.to_string(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 /// `pub(super)` — dispatched from `agent_read::handle_agent_query`.
 pub(super) fn found_jobs_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
     let autopilot_id = parse_autopilot_id_arg(payload)?;
     let filters = FoundJobsFilters::from_payload(payload)?;
+    check_applied_filter_available(
+        app.try_state::<crate::applications::ApplicationStore>()
+            .is_some(),
+        &filters,
+    )?;
     let cursor_issuer = found_jobs_cursor_issuer(autopilot_id.as_deref(), &filters);
     let offset = parse_found_jobs_cursor(payload, &cursor_issuer)?;
     let limit = clamp_found_jobs_limit(payload);
