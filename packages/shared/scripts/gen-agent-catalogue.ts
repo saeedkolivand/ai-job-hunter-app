@@ -191,10 +191,20 @@ function collectZodTypeAliases(sf: ts.SourceFile): Map<string, string> {
   return map;
 }
 
+/** Order-independent equality of two field-name lists — a property's declaration order is not
+ *  semantically load-bearing (same convention as `argsEqual`'s own `fieldsKey` comparison). */
+function sameFieldSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const setA = new Set(a);
+  return b.every((f) => setA.has(f));
+}
+
 /** Flat top-level member names of every exported interface declared directly in an
  *  `ipc/contracts/*.ts` file (never Zod-derived) — the second convention a wrapper key's type can
- *  follow, e.g. `BaseExportRequest`/`TemplateRecommendSignals`. */
-function collectContractInterfaceFields(
+ *  follow, e.g. `BaseExportRequest`/`TemplateRecommendSignals`. Exported for
+ *  `gen-agent-catalogue.test.ts` (the duplicate-name guard, A1-r2-AC-3 MEDIUM) — main() itself
+ *  never runs on import, see the guard at the bottom of this file. */
+export function collectContractInterfaceFields(
   sources: Map<string, ts.SourceFile>
 ): Map<string, string[]> {
   const map = new Map<string, string[]>();
@@ -202,6 +212,19 @@ function collectContractInterfaceFields(
     for (const stmt of sf.statements) {
       if (!ts.isInterfaceDeclaration(stmt) || !isExported(stmt)) continue;
       const fields = stmt.members.filter(ts.isPropertySignature).map((m) => m.name.getText(sf));
+      // Two exported interfaces sharing a name across different `ipc/contracts/*.ts` files (A1-r2-
+      // AC-3 MEDIUM) — last-wins used to make the nested-key contract dispatch ENFORCES depend on
+      // `readdirSync` order, the exact hazard the sibling multi-call-site guard already `fail()`s
+      // on for descriptions/args. Silent when the two declarations AGREE (same fields, order-
+      // independent); `fail()`s only on a genuine divergence.
+      const existing = map.get(stmt.name.text);
+      if (existing && !sameFieldSet(existing, fields)) {
+        fail(
+          `interface "${stmt.name.text}" is exported from more than one ipc/contracts/*.ts file ` +
+            `with DIFFERING member lists — the nested-key contract dispatch enforces would depend ` +
+            `on directory read order. Rename one of the two interfaces or make their members agree.`
+        );
+      }
       map.set(stmt.name.text, fields);
     }
   }
@@ -981,11 +1004,17 @@ async function main() {
   }
 }
 
-try {
-  await main();
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  const roots = [REPO_ROOT, REPO_ROOT.split('\\').join('/')];
-  console.error(roots.reduce((text, root) => text.split(root).join('.'), message));
-  process.exitCode = 1;
+// Only run when executed directly (`tsx scripts/gen-agent-catalogue.ts`), never when a test
+// imports this module for its pure helpers (e.g. `collectContractInterfaceFields`) — same guard
+// `check-agent-system.mjs` uses, so importing this file for a unit test can never also regenerate
+// (and overwrite) the real `catalogue.rs`/shard files as a side effect of running the test suite.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    await main();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const roots = [REPO_ROOT, REPO_ROOT.split('\\').join('/')];
+    console.error(roots.reduce((text, root) => text.split(root).join('.'), message));
+    process.exitCode = 1;
+  }
 }

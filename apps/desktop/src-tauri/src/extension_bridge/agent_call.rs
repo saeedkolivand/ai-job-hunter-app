@@ -1286,7 +1286,8 @@ fn confirm_and_run<T>(
 /// (record, flag) pair). Ceiling: today's ceremony proves READ only. Upgrade path: extend
 /// `ProofSource::Lookup` with an optional scope-binding suffix keyed off a caller-input field (e.g.
 /// `<title>|keepDocuments=false` on the cascade branch), thread it through `proof::extract`/`hint`,
-/// and record the new confirm shape in ADR-038 §4 — tracked on issue #1160, not implemented here.
+/// and record the new confirm shape in ADR-038 §4 — tracked on issue #1160 (deferral + upgrade
+/// path recorded in a comment there, A1-r2-SEC-1 MEDIUM), not implemented here.
 async fn dispatch_irreversible_confirmed(
     app: &AppHandle,
     command: &str,

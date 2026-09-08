@@ -130,19 +130,31 @@ pub(super) fn check_input(command: &str, input: &Value) -> Result<(), Refusal> {
 }
 
 /// A required wrapper key whose value is an empty object `{}` — refused on a mutating row
-/// (A1-r1-SEC-2 MEDIUM). [`CatalogueArg::fields`] carries no per-nested-field required marker (the
-/// underlying Zod schema knows it; threading it through is a larger follow-up than this fix), so
-/// this cannot tell "every field inside is legitimately optional" from "the caller sent nothing at
-/// all" — but on a `Reversible`/`Irreversible` row, an empty required wrapper reaching an all-
-/// `Option` request struct is almost always the #1158 symptom (an empty
-/// `applications_save_from_posting` row answering `success: true`), never a deliberate no-op, so
-/// this refuses it outright rather than letting `check_input`'s membership-only walk wave it
-/// through. Never applied to a `Read` row (a filter-shaped wrapper, e.g.
-/// `scrape_list_interactions`'s `filter`, can legitimately be sent empty to mean "no filter") or an
-/// uncatalogued command (nothing here to check — see this module's own doc). Deliberately a
-/// SEPARATE fn from [`check_input`], not folded into its loop: the two are independent refusal
-/// reasons a mutation test can target one at a time, and every existing `check_input` call site
-/// keeps its two-argument shape.
+/// (A1-r1-SEC-2 MEDIUM, A1-r2-AC-1 HIGH). [`CatalogueArg::fields`] carries no per-nested-field
+/// required marker (the underlying Zod schema knows it; threading it through is a larger
+/// follow-up than this fix), so this cannot tell "every field inside is legitimately optional"
+/// from "the caller sent nothing at all" — but on a `Reversible`/`Irreversible` row, an empty
+/// required wrapper reaching an all-`Option` request struct is almost always the #1158 symptom
+/// (an empty `applications_save_from_posting` row answering `success: true`), never a deliberate
+/// no-op, so this refuses it outright rather than letting `check_input`'s membership-only walk
+/// wave it through.
+///
+/// This check is deliberately keyed on `arg.fields.is_some()` alone, NOT `.filter(|f|
+/// !f.is_empty())` — unlike [`check_input`]'s nested-membership walk, which genuinely has nothing
+/// to check an unknown key against when the wrapper's shape is unresolved. An empty `{}` is empty
+/// regardless of whether the generator could resolve the type's field names: `Some(&[])` (e.g.
+/// `autopilot_update`'s `req`) is exactly `#1158`'s shape and the round-2 gap this closes — the
+/// old filter treated "shape unresolved" as license to skip the emptiness check entirely, so
+/// `{"autopilotId":"ap-1","req":{}}` dispatched and only bumped `updatedAt`. When `fields` is the
+/// unresolved `Some(&[])`, the refusal detail omits the field list (there is none to name) rather
+/// than printing a content-free `declared keys under \`req\`: ` tail.
+///
+/// Never applied to a `Read` row (a filter-shaped wrapper, e.g. `scrape_list_interactions`'s
+/// `filter`, can legitimately be sent empty to mean "no filter") or an uncatalogued command
+/// (nothing here to check — see this module's own doc). Deliberately a SEPARATE fn from
+/// [`check_input`], not folded into its loop: the two are independent refusal reasons a mutation
+/// test can target one at a time, and every existing `check_input` call site keeps its
+/// two-argument shape.
 pub(super) fn check_no_empty_required_wrapper(
     command: &str,
     effect: Effect,
@@ -161,19 +173,21 @@ pub(super) fn check_no_empty_required_wrapper(
         if !arg.required {
             continue;
         }
-        let Some(fields) = arg.fields.filter(|f| !f.is_empty()) else {
+        let Some(fields) = arg.fields else {
             continue;
         };
         let Some(nested) = given.get(arg.name).and_then(Value::as_object) else {
             continue;
         };
         if nested.is_empty() {
+            let declared = if fields.is_empty() {
+                "this wrapper's nested shape is not resolved by the generator".to_string()
+            } else {
+                format!("declared keys under `{}`: {}", arg.name, fields.join(", "))
+            };
             return Err(invalid_input(format!(
-                "empty object `{{}}` for required key `{}` on {command} — declared keys under \
-                 `{}`: {}",
+                "empty object `{{}}` for required key `{}` on {command} — {declared}",
                 arg.name,
-                arg.name,
-                fields.join(", ")
             )));
         }
     }

@@ -2482,6 +2482,28 @@ fn commands_carries_response_value_kind_for_an_empty_path_scalar_row() {
     assert_eq!(row["proofKind"], "response_value");
 }
 
+/// A1-r2-AC-2 MEDIUM: the `commands` tool's OWN description is the one surface a model reads
+/// before ever calling the tool, so it must name every key an Irreversible row can actually
+/// emit — `proofKind` (present on all ~34 rows) AND `proofField` (present on only the subset
+/// whose `proofKind` is "field"), never state `proofField` as if it were unconditional.
+#[test]
+fn the_commands_description_names_proof_kind_and_qualifies_proof_field() {
+    let description = tool_description(&tools(Tier::Irreversible), TOOL_COMMANDS);
+    assert!(
+        description.contains("proofKind"),
+        "must name proofKind, the field present on EVERY Irreversible row: {description}"
+    );
+    assert!(
+        description.contains("proofField"),
+        "must still name proofField: {description}"
+    );
+    assert!(
+        description.contains("only when proofKind"),
+        "must qualify proofField as conditional on proofKind, not state it unconditionally: \
+         {description}"
+    );
+}
+
 /// A catalogued row carries its description and its declared args — pulled from the SAME
 /// generated table `agent_call`'s dispatch-time validation reads, never a second copy.
 #[test]

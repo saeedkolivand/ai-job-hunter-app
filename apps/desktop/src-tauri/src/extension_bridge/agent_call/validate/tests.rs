@@ -104,6 +104,44 @@ fn an_empty_wrapper_is_never_refused_on_a_read_row() {
     .is_ok());
 }
 
+/// A1-r2-AC-1 HIGH: the round-2 regression this fix closes. `autopilot_update`'s `req` wrapper is
+/// a KNOWN type the generator could not resolve the field names of (`Some(&[])`, same shape as
+/// `job_preferences_set`'s `prefs`) — the old `.filter(|f| !f.is_empty())` treated that
+/// unresolved-but-known shape as "nothing to check", so `{"autopilotId":"ap-1","req":{}}` used to
+/// pass this gate and dispatch, merging nothing and only bumping `updatedAt` (issue #1158's
+/// headline symptom). An empty `{}` must refuse regardless of whether the wrapper's field names
+/// resolved.
+#[test]
+fn an_empty_wrapper_with_an_unresolved_field_list_is_still_refused_on_a_reversible_row() {
+    let entry = CATALOGUE
+        .iter()
+        .find(|e| e.command == "autopilot_update")
+        .expect("real catalogue row");
+    let req_arg = entry
+        .args
+        .iter()
+        .find(|a| a.name == "req")
+        .expect("autopilot_update declares a req wrapper");
+    assert_eq!(
+        req_arg.fields,
+        Some(&[][..]),
+        "fixture assumption: req's TYPE is recognised but its fields are not resolvable — if \
+         that ever changes, this test needs updating, not deleting"
+    );
+
+    let err = check_no_empty_required_wrapper(
+        "autopilot_update",
+        Effect::Reversible,
+        &json!({ "autopilotId": "ap-1", "req": {} }),
+    )
+    .unwrap_err();
+    let detail = err.detail();
+    assert!(detail.contains("req"), "{detail}");
+    assert!(detail.contains("autopilot_update"), "{detail}");
+    // No dangling `declared keys under \`req\`: ` tail when the shape never resolved.
+    assert!(!detail.trim_end().ends_with("under `req`:"), "{detail}");
+}
+
 /// An uncatalogued command is untouched, same as `check_input`'s own documented gap — nothing here
 /// can validate a shape it was never told.
 #[test]
