@@ -40,8 +40,9 @@ pub(super) const INSTRUCTIONS: &str = "These tools talk to the running AI Job Hu
     that name (e.g. {\"req\": {…}}). An invoke_error naming a missing key is the recovery \
     signal: re-send the same body wrapped under that key before treating the command as broken. \
     Before judging how well the user fits a posting, read their own résumé and other documents \
-    first — call-read with documents:documents_list, whose rows already carry the full `text` — \
-    rather than guessing from the profile tool's contact fields alone.";
+    first — call-read with documents:documents_list, whose rows carry the document `text`, \
+    fenced and capped at the fence limit — rather than guessing from the profile tool's contact \
+    fields alone.";
 
 /// Appended to [`INSTRUCTIONS`] when the reversible tier is enabled — worded by TIER, never by
 /// the literal flag typed (LOW fix, review round 3 — `--allow-irreversible` alone implies this

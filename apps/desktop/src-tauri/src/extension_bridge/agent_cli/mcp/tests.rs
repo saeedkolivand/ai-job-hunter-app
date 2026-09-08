@@ -941,8 +941,42 @@ fn instructions_ns_cmd_pairs_are_real_policy_rows() {
         checked, 1,
         "expected exactly the 1 résumé/document ns:cmd pair issue #1170 named — \
          documents:documents_get_text was dropped (issue #1171): its `id` param does not match \
-         documents_list's `_id` rows, and documents_list already carries the full text: \
-         {INSTRUCTIONS}"
+         documents_list's `_id` rows, and documents_list's `text` is fenced and capped, never \
+         claimed as \"full\" (issue #1170 round-4 review): {INSTRUCTIONS}"
+    );
+}
+
+/// Issue #1170 round-4 review (`B1-r1-ACLI-R4-2`): every generic-tier reply pipes `text` through
+/// `agent_call::fence_scraped_fields`, which fences it with `prompt_fence::JOB_CAP` — so a document
+/// longer than the cap comes back silently truncated, with no truncation marker on the wire. The
+/// old prose promised documents_list rows "already carry the full `text`" on BOTH surfaces below;
+/// neither may claim "full" again. The last assertion proves the claim really would be false: text
+/// well over the cap comes back shorter than it went in.
+#[test]
+fn documents_text_prose_never_claims_full_past_the_fence_cap() {
+    assert!(
+        !INSTRUCTIONS.contains("carry the full"),
+        "INSTRUCTIONS must not claim documents_list rows carry FULL text — they are fenced and \
+         capped at prompt_fence::JOB_CAP: {INSTRUCTIONS}"
+    );
+    let list = tools(Tier::Read);
+    let profile_description = list.iter().find(|t| t["name"] == TOOL_PROFILE).unwrap()
+        ["description"]
+        .as_str()
+        .unwrap();
+    assert!(
+        !profile_description.contains("full text"),
+        "profile's description must not claim documents_list rows carry FULL text: \
+         {profile_description}"
+    );
+
+    let over_cap = "x".repeat(crate::prompt_fence::JOB_CAP + 500);
+    let fenced =
+        crate::prompt_fence::fenced("job_posting", &over_cap, crate::prompt_fence::JOB_CAP);
+    assert!(
+        fenced.len() < over_cap.len(),
+        "premise: fencing must actually truncate text past the cap, or the prose fix above has \
+         nothing to be honest about"
     );
 }
 

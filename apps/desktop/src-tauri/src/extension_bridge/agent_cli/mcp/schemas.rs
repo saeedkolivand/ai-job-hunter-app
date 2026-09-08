@@ -144,8 +144,8 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
             TOOL_PROFILE,
             "My Profile",
             "Contact fields only (name, email, phone, location, links) — for the résumé/document \
-             text itself, read documents:documents_list via call-read (rows already carry the \
-             full text).",
+             text itself, read documents:documents_list via call-read (rows carry the document \
+             text, fenced and capped at the fence limit).",
             no_args.clone(),
         ),
         curated_tool(TOOL_AUTOMATIONS, "Automations", "", no_args),
