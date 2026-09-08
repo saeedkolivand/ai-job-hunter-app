@@ -43,7 +43,10 @@ pub(super) const INSTRUCTIONS: &str = "These tools talk to the running AI Job Hu
     row's own `args` names its declared keys, required-ness, and — for a wrapper key — its nested \
     field names, and a call whose `input` carries an unrecognised or missing key refuses with \
     invalid_input naming the offending/missing key rather than dispatching. `args: null` on a row \
-    means its input contract isn't catalogued, so no key is validated for it.";
+    means its input contract isn't catalogued, so no key is validated for it; a wrapper arg whose \
+    OWN `fields` is `null` (the generator could not resolve that wrapper's shape) is still checked \
+    for presence, but nothing inside it is validated — an unrecognised key nested under that \
+    wrapper reaches the app uninspected.";
 
 /// Appended to [`INSTRUCTIONS`] when the reversible tier is enabled — worded by TIER, never by
 /// the literal flag typed (LOW fix, review round 3 — `--allow-irreversible` alone implies this
