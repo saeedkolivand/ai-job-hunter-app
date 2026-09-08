@@ -1,5 +1,293 @@
 [
   {
+    "sha": "511e0b3b78792f8724bf21ad5ee66ee83234d3fa",
+    "commit": {
+      "message": "chore: sync landing download version to v0.150.0",
+      "author": {
+        "date": "2026-09-08T01:45:58Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "ac27761505c7472125910c8b4450c3cead936e18",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.150.0 [skip ci]",
+      "author": {
+        "date": "2026-09-08T01:45:23Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "5f3211f97a57112a3999d0493279025eacb4523a",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-08T01:21:02Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "641f34e1ef292288ce0dd74587740cef44713e52",
+    "commit": {
+      "message": "chore(release): 0.150.0 [skip ci]",
+      "author": {
+        "date": "2026-09-08T01:05:04Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "8abc6a1022d67af90e3b138f018b3511d0ff042c",
+    "commit": {
+      "message": "fix(prefs): merge and write under one lock, and clear the country with its location (#1153)",
+      "author": {
+        "date": "2026-09-08T01:02:39Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "ec1a517b151e9fcc3748c0abc2be31e079199503",
+    "commit": {
+      "message": "fix: mcp result caps, paging, base64 exports and safe preference writes (#1152)",
+      "author": {
+        "date": "2026-09-08T00:56:24Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "18bf6c68d0a0bfc12842775707858957a961d719",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-07T23:20:12Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "552362a96c903b2d185450a04ecb982dc6b26d68",
+    "commit": {
+      "message": "fix: mcp contract, validation, fencing and the numbers a client reads (#1150)",
+      "author": {
+        "date": "2026-09-07T22:56:32Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "ac5895359c0f8260a92ce3b4a04e7b638a4d9965",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-07T20:57:49Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "9440d7edd2ceb00c9813906a40afd52e6d791f98",
+    "commit": {
+      "message": "feat: help chat bridges paraphrases, names the page on a miss and answers six more questions (#1145)",
+      "author": {
+        "date": "2026-09-07T20:36:22Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "56a7c60b4559b687113e58f7dee143dd4dc8030d",
+    "commit": {
+      "message": "test: keep import-time mock history under vitest 5 (#1148)",
+      "author": {
+        "date": "2026-09-07T20:31:02Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "a6272003b4c51ecd3f3b3705588729fe110e5c3d",
+    "commit": {
+      "message": "chore: bump the vitest group with 3 updates (#1127)",
+      "author": {
+        "date": "2026-09-07T18:50:36Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "eb1d85b1108abd04739e38f0517a3d87b03b3828",
+    "commit": {
+      "message": "fix: vitest lockstep pin, firefox add-on links and a conventionalcommits dependabot ignore (#1126)",
+      "author": {
+        "date": "2026-09-07T14:51:12Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "804a011be90ba3da9fa1e60589d1946117138a67",
+    "commit": {
+      "message": "chore: sync landing download version to v0.149.0",
+      "author": {
+        "date": "2026-09-07T12:42:58Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "02d8e5a5f0fa36275a7e91b45b9d78638b153e1a",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.149.0 [skip ci]",
+      "author": {
+        "date": "2026-09-07T12:42:27Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "b8b10bd888f3494d6140408ce66f5ae475c9dc8b",
+    "commit": {
+      "message": "ci: fix the chrome web store zip path and add per-store re-publish dispatches (#1125)",
+      "author": {
+        "date": "2026-09-07T12:13:32Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "9ad9884872223e65c1a3de3f46a99c695502a54f",
+    "commit": {
+      "message": "chore(release): 0.149.0 [skip ci]",
+      "author": {
+        "date": "2026-09-07T11:58:11Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "1c97e3ddb3b9494edfbea7ec79078d112fd28796",
+    "commit": {
+      "message": "chore: bump @vitest/browser-playwright from 4.1.11 to 5.0.0 (#1124)",
+      "author": {
+        "date": "2026-09-07T11:54:55Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "7afbd9c71e3c6cd07bffadc3a1f5a98d32c928fe",
+    "commit": {
+      "message": "chore: bump the javascript group with 26 updates (#1123)",
+      "author": {
+        "date": "2026-09-07T11:51:24Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "97e10bddca3923acc093aa077861c2b3753ee2fa",
+    "commit": {
+      "message": "feat: add the terms of use page and link it from onboarding (#1120)",
+      "author": {
+        "date": "2026-09-07T11:51:01Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "b896c029a7ea785b9037851603fb9d331a073850",
+    "commit": {
+      "message": "chore: bump actions/download-artifact from 7.0.0 to 8.0.1 (#1122)",
+      "author": {
+        "date": "2026-09-07T11:35:50Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "81abc9a4b774ae8d3d760f78c88237b052f19336",
+    "commit": {
+      "message": "chore: bump the ci-actions group with 4 updates (#1121)",
+      "author": {
+        "date": "2026-09-07T11:35:27Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "94400be3a7b6c2dddb101a441230e0471f1953c4",
+    "commit": {
+      "message": "feat: apache-2.0 relicense, extension store auto-submission and a microsoft store msix flavour (#1119)",
+      "author": {
+        "date": "2026-09-07T11:24:25Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "8e8c8fa5920696f2cb232a853a50d8f028fccf4e",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-07T08:15:50Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "bcb6b303065e3ce442ea8626818cef7d126c7fc1",
     "commit": {
       "message": "chore: update export benchmark data [skip ci]",
@@ -905,294 +1193,6 @@
       "message": "chore: update export benchmark data [skip ci]",
       "author": {
         "date": "2026-08-27T22:28:03Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "94f1c77aab445ff794b762acf8445a9514bb2d8f",
-    "commit": {
-      "message": "chore(release): 0.144.0 [skip ci]",
-      "author": {
-        "date": "2026-08-27T22:06:12Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "9bfb174a8d3daa84004183988c0463f46cb0f669",
-    "commit": {
-      "message": "feat(autopilot): surface the strongest jobs across every autopilot in one place (#1083)",
-      "author": {
-        "date": "2026-08-27T22:04:31Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "eea7ab9e6ad03e82f280eda72e2f4f1eaa8ad765",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-08-27T14:10:14Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "ff2447d4952d01e45845372d1da42e546a5b3b0c",
-    "commit": {
-      "message": "chore: bump the javascript group with 31 updates (#1082)",
-      "author": {
-        "date": "2026-08-26T16:47:00Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "dfc23216f5e1c740768be4d6115a879eb6572cb4",
-    "commit": {
-      "message": "chore: bump the ci-actions group with 2 updates (#1081)",
-      "author": {
-        "date": "2026-08-26T16:18:58Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "518ff1e7c27c4536c7aa5631bc1838301f5aebbc",
-    "commit": {
-      "message": "chore: bump the desktop-rust group (#1080)",
-      "author": {
-        "date": "2026-08-26T16:18:17Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "ce66548dd446fd903ac9a321bda1925cf6221d06",
-    "commit": {
-      "message": "chore: bump the codeql-action group with 3 updates (#1079)",
-      "author": {
-        "date": "2026-08-26T16:17:47Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "db5b54a089aee335325e60a1269cf016b2aee326",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-08-26T04:02:02Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "6bad7c720b0f8747171aef6b96866d8adfc0249e",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-08-25T03:58:08Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "77ed42a82a46733466588ed1729fb91af87ee066",
-    "commit": {
-      "message": "chore: sync landing download version to v0.143.1",
-      "author": {
-        "date": "2026-08-24T21:41:43Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "06c68b009d4a1f9a6da67a37b143ef87dccc6cc3",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.143.1 [skip ci]",
-      "author": {
-        "date": "2026-08-24T21:41:15Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "cb25a98b61424d695be64e0c18ea369d6b374344",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-08-24T20:26:10Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "7ad92df05ed6c290bb83b24328511c7342f54864",
-    "commit": {
-      "message": "chore(release): 0.143.1 [skip ci]",
-      "author": {
-        "date": "2026-08-24T20:04:19Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "f2f28361247a3e57d5ff49d04909bd085e6043c8",
-    "commit": {
-      "message": "fix(pipeline): stop a cover-letter-only run from generating a résumé (#1078)",
-      "author": {
-        "date": "2026-08-24T20:02:31Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "e14b3b24392ed5794cefd4270d898cf6dbde84cc",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-08-24T04:04:04Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "93379df501f3d6fb321b4df90dc770d5e0a9d2d1",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-08-23T03:59:12Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "fd3daf9f87daa25b85c5d97847ae5a0bcf7bd85d",
-    "commit": {
-      "message": "chore: sync landing download version to v0.143.0",
-      "author": {
-        "date": "2026-08-22T23:22:02Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "427c658137e52b658563f65362929fa528a8c28f",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.143.0 [skip ci]",
-      "author": {
-        "date": "2026-08-22T23:21:32Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "be581e785ab373754b37c58375596c4d70c28aa2",
-    "commit": {
-      "message": "build(extension): name the manifest import's file extension (#1077)",
-      "author": {
-        "date": "2026-08-22T22:48:36Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "dc196dc671514d9093b778dfff3228aafa9c7839",
-    "commit": {
-      "message": "chore(release): 0.143.0 [skip ci]",
-      "author": {
-        "date": "2026-08-22T22:41:17Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "6c6019cf665c992b23aebef497741b739d0404bb",
-    "commit": {
-      "message": "feat: filter jobs by remote, hybrid and on-site (#1076)",
-      "author": {
-        "date": "2026-08-22T22:40:28Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "cb46e57726adb25e042af887674e71f7190719ac",
-    "commit": {
-      "message": "chore: sync landing download version to v0.142.1",
-      "author": {
-        "date": "2026-08-22T15:33:07Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "78ad24b90ead8659f002e3d9c9e463d24c864904",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.142.1 [skip ci]",
-      "author": {
-        "date": "2026-08-22T15:32:39Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "835950361a2642deddf17809c300340cbd2e5032",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-08-22T15:22:25Z"
       }
     },
     "author": {
