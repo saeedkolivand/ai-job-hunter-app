@@ -969,67 +969,85 @@ fn instructions_ns_cmd_pairs_are_real_policy_rows() {
 /// case-insensitively; (b) bans the STANDALONE word "full" anywhere, not just inside one
 /// hand-picked phrase like "carry the full" — "FULL, uncapped text" fails on both grounds now;
 /// (c) walks every literal `documents:<cmd>` token found IN the string and requires "capped" to
-/// appear near THAT occurrence, so a cap disclosure written only near documents_list's mention
-/// can no longer cover documents_get_text's by being merely present somewhere in a long
-/// paragraph.
-#[test]
-fn documents_text_prose_never_claims_full_past_the_fence_cap() {
-    // Byte-safe window bounds — `prose` is human prose with non-ASCII chars (e.g. "résumé"), so
-    // an arbitrary `idx - 120` can land mid-character; walk to the nearest valid boundary rather
-    // than panicking on a sliced-through multi-byte char.
-    fn floor_char_boundary(s: &str, index: usize) -> usize {
-        let mut i = index.min(s.len());
-        while i > 0 && !s.is_char_boundary(i) {
-            i -= 1;
-        }
-        i
+/// appear near THAT occurrence.
+///
+/// Round 7 (`B1-r3-ACLI-R7-2`): (c) used the same wide, backward-reaching `window` as (a)/(b), so
+/// two `documents:<cmd>` tokens sitting close together (as they do in the real prose) let ONE
+/// command's cap disclosure satisfy the OTHER's requirement — the exact failure (c) claims to
+/// prevent. The cap check now uses a forward-only span from this token to the NEXT `documents:`
+/// occurrence (or the end of the string), so a disclosure written only near a neighbouring
+/// command's mention can no longer cover this one. `window` (backward+forward) stays for the
+/// full/uncapped bans, which round 6 needs to catch banned words sitting BEFORE the token.
+// Byte-safe window bounds — `prose` is human prose with non-ASCII chars (e.g. "résumé"), so an
+// arbitrary `idx - 120` can land mid-character; walk to the nearest valid boundary rather than
+// panicking on a sliced-through multi-byte char. Module-level (not nested in the test below) so
+// `documents_text_prose_per_token_cap_disclosure_is_required` can reuse them against synthetic
+// prose without duplicating the window logic.
+fn floor_char_boundary(s: &str, index: usize) -> usize {
+    let mut i = index.min(s.len());
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
     }
-    fn ceil_char_boundary(s: &str, index: usize) -> usize {
-        let mut i = index.min(s.len());
-        while i < s.len() && !s.is_char_boundary(i) {
-            i += 1;
-        }
-        i
+    i
+}
+fn ceil_char_boundary(s: &str, index: usize) -> usize {
+    let mut i = index.min(s.len());
+    while i < s.len() && !s.is_char_boundary(i) {
+        i += 1;
     }
+    i
+}
 
-    fn assert_document_read_prose_is_honest(prose: &str, label: &str) {
-        let mut found_any = false;
-        for cmd in ["documents_list", "documents_get_text"] {
-            let token = format!("documents:{cmd}");
-            let Some(idx) = prose.find(&token) else {
-                continue;
-            };
-            found_any = true;
-            // A window AROUND the token, not just after it — the round-6 defect's banned words
-            // sat BEFORE the token ("for a document's FULL, uncapped text, call-read
-            // documents:documents_get_text …"), so an after-only window would have missed it.
-            let start = floor_char_boundary(prose, idx.saturating_sub(120));
-            let end = ceil_char_boundary(prose, idx + token.len() + 250);
-            let window = &prose[start..end];
-            assert!(
-                window.contains("capped"),
-                "{label}'s mention of `{token}` must disclose a cap near ITS OWN occurrence, \
-                 not rely on a disclosure written only near a different command's mention: \
-                 …{window}…"
-            );
-            assert!(
-                !window.to_ascii_lowercase().contains("uncapped"),
-                "{label}'s mention of `{token}` must never claim it is uncapped: …{window}…"
-            );
-            assert!(
-                !window
-                    .split(|c: char| !c.is_ascii_alphabetic())
-                    .any(|word| word.eq_ignore_ascii_case("full")),
-                "{label}'s mention of `{token}` must never claim it returns the FULL text: \
-                 …{window}…"
-            );
-        }
+fn assert_document_read_prose_is_honest(prose: &str, label: &str) {
+    let mut found_any = false;
+    for cmd in ["documents_list", "documents_get_text"] {
+        let token = format!("documents:{cmd}");
+        let Some(idx) = prose.find(&token) else {
+            continue;
+        };
+        found_any = true;
+        // A window AROUND the token, not just after it — the round-6 defect's banned words
+        // sat BEFORE the token ("for a document's FULL, uncapped text, call-read
+        // documents:documents_get_text …"), so an after-only window would have missed it.
+        let start = floor_char_boundary(prose, idx.saturating_sub(120));
+        let end = ceil_char_boundary(prose, idx + token.len() + 250);
+        let window = &prose[start..end];
+
+        // Forward-only, and bounded by the NEXT `documents:` token — so a cap disclosure
+        // sitting near a different command's mention (before this token, or past the next
+        // one) can never satisfy this command's own requirement.
+        let next_token_start = prose[idx + token.len()..]
+            .find("documents:")
+            .map(|p| idx + token.len() + p)
+            .unwrap_or(prose.len());
+        let cap_end = ceil_char_boundary(prose, (idx + token.len() + 250).min(next_token_start));
+        let cap_window = &prose[idx..cap_end];
         assert!(
-            found_any,
-            "{label} must name at least one documents:<cmd> read: {prose}"
+            cap_window.contains("capped"),
+            "{label}'s mention of `{token}` must disclose a cap near ITS OWN occurrence, \
+             not rely on a disclosure written only near a different command's mention: \
+             …{cap_window}…"
+        );
+        assert!(
+            !window.to_ascii_lowercase().contains("uncapped"),
+            "{label}'s mention of `{token}` must never claim it is uncapped: …{window}…"
+        );
+        assert!(
+            !window
+                .split(|c: char| !c.is_ascii_alphabetic())
+                .any(|word| word.eq_ignore_ascii_case("full")),
+            "{label}'s mention of `{token}` must never claim it returns the FULL text: \
+             …{window}…"
         );
     }
+    assert!(
+        found_any,
+        "{label} must name at least one documents:<cmd> read: {prose}"
+    );
+}
 
+#[test]
+fn documents_text_prose_never_claims_full_past_the_fence_cap() {
     assert_document_read_prose_is_honest(INSTRUCTIONS, "INSTRUCTIONS");
     let list = tools(Tier::Read);
     let profile_description = list.iter().find(|t| t["name"] == TOOL_PROFILE).unwrap()
@@ -1046,6 +1064,30 @@ fn documents_text_prose_never_claims_full_past_the_fence_cap() {
         "premise: fencing must actually truncate text past the cap, or the prose fix above has \
          nothing to be honest about"
     );
+}
+
+/// Regression for `B1-r3-ACLI-R7-2`: reproduces the review's mutation run B directly — two
+/// `documents:<cmd>` tokens close together, where `documents_list`'s own cap disclosure sits in
+/// the ~100-char gap before `documents_get_text`'s token but `documents_get_text` never discloses
+/// its own cap. The old backward-reaching window let list's disclosure satisfy get_text's
+/// requirement; the fix must reject that and only accept a disclosure near get_text's own token.
+#[test]
+fn documents_text_prose_per_token_cap_disclosure_is_required() {
+    let borrowed_disclosure = "read documents:documents_list (fenced and capped at the fence \
+        limit); documents:documents_get_text returns that same document text by id ";
+    let result = std::panic::catch_unwind(|| {
+        assert_document_read_prose_is_honest(borrowed_disclosure, "synthetic");
+    });
+    assert!(
+        result.is_err(),
+        "documents_get_text's own missing cap disclosure must fail even though \
+         documents_list's disclosure sits nearby"
+    );
+
+    let own_disclosure = "read documents:documents_list (fenced and capped at the fence limit); \
+        documents:documents_get_text returns that same document text by id, fenced and capped \
+        at the same limit";
+    assert_document_read_prose_is_honest(own_disclosure, "synthetic");
 }
 
 /// Every `"error":` STRING LITERAL mcp.rs's own source writes directly — never `agent_call`'s

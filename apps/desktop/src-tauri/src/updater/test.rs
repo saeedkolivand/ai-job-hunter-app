@@ -344,6 +344,36 @@ fn test_changelog_response_real_bundled_file() {
         .contains(&format!("releases/tag/v{first_version}")));
 }
 
+// ── The `checked` producer side (`B1-r3-ACLI-R7-1`) ─────────────────────────
+
+/// Every `status_reply` test above is pure — it reads `UpdaterState.checked`,
+/// never sets it — so deleting all four production writes (`updater_check`'s
+/// two `Ok(...)` arms, `silent_check`'s two mirrors) left the whole suite
+/// green while `updater_status` would answer "never checked" forever on a
+/// build that checks every 4 h. This crate has no `tauri::test` mock-app
+/// harness (see the doc comments on [`download_in_progress_or_done`] and
+/// [`store_managed`]), so the producer side is pinned at the SOURCE rather
+/// than by driving the async commands: deleting any of the four writes fails
+/// this test even though every `status_reply` test above stays green.
+#[test]
+fn all_four_checked_true_writes_are_still_present() {
+    const MOD_RS: &str = include_str!("mod.rs");
+    let guard_writes = MOD_RS.matches("guard.checked = true;").count();
+    assert_eq!(
+        guard_writes, 2,
+        "expected both in-scope-guard writes — `updater_check`'s and `silent_check`'s \
+         `Ok(Some(update))` arms — got {guard_writes}"
+    );
+    let relocked_writes = MOD_RS
+        .matches("app.state::<Mutex<UpdaterState>>().lock().checked = true")
+        .count();
+    assert_eq!(
+        relocked_writes, 2,
+        "expected both re-locked writes — `updater_check`'s and `silent_check`'s \
+         `Ok(None)` arms — got {relocked_writes}"
+    );
+}
+
 // ── Microsoft Store flavour ───────────────────────────────────────────────────
 
 #[test]

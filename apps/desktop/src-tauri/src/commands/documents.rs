@@ -146,6 +146,12 @@ pub async fn documents_set_default(app: AppHandle, id: String) -> Value {
 /// empty string when the document is missing (the renderer treats "no text" and
 /// "no document" the same — it only ever seeds a generator with this), so this
 /// never errors on a missing row. `AppResult` is the typed-command convention.
+///
+/// The agent-cli surface reaches this same reply through `documents:documents_get_text`
+/// and cannot see "missing" vs "empty" any other way — `agent_cli::mcp::instructions`'s
+/// `INSTRUCTIONS` and the `profile` tool description (`B1-r3-ACLI-R7-4`) both spell out
+/// that an empty fenced block there means the id did not resolve, not "this document has
+/// no text"; this fn's own behaviour is unchanged so the renderer keeps its contract.
 #[tauri::command]
 pub async fn documents_get_text(app: AppHandle, id: String) -> AppResult<String> {
     let store = app.state::<crate::documents::DocumentStore>();

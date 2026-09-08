@@ -279,6 +279,56 @@ pub(super) fn paginate_list_reply(data: Value, offset: usize, limit: usize) -> V
     json!({ "items": page, "total": total, "nextCursor": next_cursor })
 }
 
+/// `(command, field)` pairs whose reply carries a field this codebase never
+/// gives a real value — the wire-shape twin of [`BASE64_BYTE_FIELDS`] above,
+/// but subtracting a key instead of re-encoding one. Scoped to the agent-cli
+/// surface only: the renderer's own `commands::autopilot::autopilot_list`/
+/// `autopilot_get` wire shape (consumed via `AppClient`) is untouched, so
+/// only this generic-tier reply drops it.
+///
+/// Audited by hand against the struct each pair actually serializes from:
+/// - `autopilot_list`/`autopilot_get` → `autopilot::Autopilot.total_applied`
+///   (issue #1171's residual, `B1-r3-ACLI-R7-3`): the `automations` resource
+///   already drops this field from its own curated projection
+///   ([`crate::extension_bridge::agent_read::AgentAutomation`]'s doc
+///   comment), but these two commands are dispatched RAW — no projection
+///   layer — and return the source struct's `totalApplied: 0` verbatim,
+///   contradicting `best-matches`'s real `applied: true` on the very jobs it
+///   never actually counted. The struct field itself stays —
+///   `docs/ARCHITECTURE_STATUS.md`'s "Drop dead totalApplied counter" row
+///   already tracks removing it everywhere, including the shared TS type
+///   this reshape layer must not touch.
+pub(super) const DROP_FIELDS: &[(&str, &str)] = &[
+    ("autopilot_list", "totalApplied"),
+    ("autopilot_get", "totalApplied"),
+];
+
+/// Removes every [`DROP_FIELDS`] key from `command`'s reply — from a single
+/// top-level object (`autopilot_get`) or from every element of a top-level
+/// array (`autopilot_list`). A `null`/non-object/non-array reply (e.g.
+/// `autopilot_get` on an unknown id) is left untouched — there is no field to
+/// drop.
+pub(super) fn drop_dead_fields(command: &str, data: &mut Value) {
+    for (cmd, field) in DROP_FIELDS {
+        if *cmd != command {
+            continue;
+        }
+        match data {
+            Value::Object(map) => {
+                map.remove(*field);
+            }
+            Value::Array(items) => {
+                for item in items.iter_mut() {
+                    if let Value::Object(map) = item {
+                        map.remove(*field);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Reverses [`fence_named_fields_recursive`]'s wrapper on every INCOMING
 /// `--input` value under a [`FENCE_FIELD_NAMES`] key, before ANY dispatched
 /// command's real body ever sees it (security review round 4 — the
@@ -375,11 +425,63 @@ const SCALAR_FENCE_COMMANDS: &[&str] = &["documents_get_text"];
 fn fence_scalar_reply(command: &str, data: &mut Value) {
     if let Value::String(s) = data {
         if SCALAR_FENCE_COMMANDS.contains(&command) {
+            let marked = reserve_truncation_marker(s, crate::prompt_fence::JOB_CAP);
             *data = json!(crate::prompt_fence::fenced(
                 "job_posting",
-                s,
+                &marked,
                 crate::prompt_fence::JOB_CAP
             ));
+        }
+    }
+}
+
+/// Trailing marker reserved INSIDE the fence cap when a document's real text
+/// is longer than [`crate::prompt_fence::JOB_CAP`] (`B1-r3-ACLI-R7-5`): the
+/// prose deliberately never states the cap NUMBER (a moving implementation
+/// detail, not a promise), so without a wire signal a caller has no way to
+/// tell "this résumé came back complete" from "this is a prefix" — the app's
+/// own "how well do I fit this job" question answered from a silently
+/// truncated résumé. Scoped to the two document call sites only
+/// ([`fence_scalar_reply`]'s `documents_get_text` arm and
+/// [`mark_truncated_document_text`]'s `documents_list` rows below) — NOT a
+/// change to [`crate::prompt_fence::fenced`] itself, which every OTHER
+/// scraped-text surface (job descriptions, autopilot names, …) also calls,
+/// where a caller already knows it is reading third-party board text, not
+/// "my own résumé".
+pub(super) const TRUNCATION_MARKER: &str =
+    "\n[TRUNCATED — longer than the fence cap; this is a prefix, not the whole document]";
+
+/// Truncates `body` to `cap` chars the same way [`crate::prompt_fence::fenced`]
+/// itself will, but reserves room for [`TRUNCATION_MARKER`] and appends it —
+/// so the marker always survives inside the cap rather than being cut off by
+/// `fenced`'s own truncation. A `body` already within `cap` chars is
+/// returned unchanged, and `fenced` then wraps it as a no-op truncation, so
+/// the marker never appears on a document that was never cut.
+pub(super) fn reserve_truncation_marker(body: &str, cap: usize) -> String {
+    if body.chars().count() <= cap {
+        return body.to_string();
+    }
+    let budget = cap.saturating_sub(TRUNCATION_MARKER.chars().count());
+    let truncated: String = body.chars().take(budget).collect();
+    format!("{truncated}{TRUNCATION_MARKER}")
+}
+
+/// Pre-fence step for `documents_list`: reserves [`TRUNCATION_MARKER`] room in
+/// every row's `text` field BEFORE the generic [`fence_scraped_fields`] walk
+/// truncates it at the cap — that walk is keyed by FIELD NAME, not command
+/// (security review round 2's deliberate design; see `FENCE_FIELD_NAMES`'s
+/// own doc), so this runs ahead of it rather than teaching the shared,
+/// security-critical walk one command's own truncation-disclosure policy.
+pub(super) fn mark_truncated_document_text(data: &mut Value) {
+    let Value::Array(rows) = data else { return };
+    for row in rows.iter_mut() {
+        let Value::Object(map) = row else { continue };
+        let Some(text) = map.get("text").and_then(Value::as_str) else {
+            continue;
+        };
+        let marked = reserve_truncation_marker(text, crate::prompt_fence::JOB_CAP);
+        if marked != text {
+            map.insert("text".to_string(), json!(marked));
         }
     }
 }
@@ -406,6 +508,15 @@ pub(super) fn fence_reply(command: &str, data: &mut Value) {
 /// the ordering itself is testable, which is the reason it is a fn at all
 /// (as three statements inline, nothing failed when they were reordered).
 ///
+/// 0. **Drop dead fields, then reserve the truncation marker.**
+///    [`drop_dead_fields`] removes a [`DROP_FIELDS`] key before anything else
+///    looks at the payload — it carries no scraped text to fence, no byte
+///    array to re-encode, and dropping it first means the later steps'
+///    byte-budget math (paging) never accounts for a key about to disappear
+///    anyway. [`mark_truncated_document_text`] runs next, on `documents_list`
+///    only, and must run BEFORE fencing — it needs the ORIGINAL text length
+///    to decide whether [`TRUNCATION_MARKER`] applies, which fencing's own
+///    truncation would otherwise have already destroyed.
 /// 1. **Fence first.** [`fence_reply`] ([`fence_scraped_fields`] plus
 ///    [`fence_scalar_reply`] for the one bare-string reply it structurally
 ///    cannot reach) is the security property and is unconditional over the
@@ -433,6 +544,10 @@ pub(super) fn reshape_reply(
     mut data: Value,
     page_args: Option<(usize, usize)>,
 ) -> Value {
+    drop_dead_fields(command, &mut data);
+    if command == "documents_list" {
+        mark_truncated_document_text(&mut data);
+    }
     fence_reply(command, &mut data);
     if let Some((offset, limit)) = page_args {
         data = paginate_list_reply(data, offset, limit);

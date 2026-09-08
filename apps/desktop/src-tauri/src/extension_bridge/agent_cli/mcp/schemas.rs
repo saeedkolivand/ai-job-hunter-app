@@ -149,7 +149,9 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
              {\"id\": <that row's `_id` value>} (the row's key is `_id`, but \
              documents_get_text's own parameter is named `id`) returns the same text by id, \
              fenced and capped at the same limit — neither call returns more of a document than \
-             that one cap.",
+             that one cap; an `id` that matches no stored document returns an EMPTY fenced block \
+             (`<job_posting>\\n\\n</job_posting>`), not an error — \"no such document\", never \
+             \"this document has no text\".",
             no_args.clone(),
         ),
         curated_tool(TOOL_AUTOMATIONS, "Automations", "", no_args),
