@@ -417,7 +417,7 @@ Most other MCP clients (Claude Desktop, Cursor, Windsurf, VS Code, Gemini CLI, L
 }
 ```
 
-The same tier flags as above go at the end of `args` — `--allow-reversible` (server name `ai-job-hunter-write`) or `--allow-irreversible` (server name `ai-job-hunter-unrestricted`). The Settings → Developer card copies this block with your real path already filled in.
+The same tier flags as above go at the end of `args` — `--allow-reversible` (server name `ai-job-hunter-write`) or `--allow-irreversible` (server name `ai-job-hunter-unrestricted`). The Settings → Developer card copies this block with your real path already filled in — on Windows the backslashes must be doubled (`C:\\Users\\…`) — or just copy the block from the Settings card, which does it for you.
 
 </details>
 
