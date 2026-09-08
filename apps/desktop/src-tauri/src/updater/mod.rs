@@ -44,6 +44,15 @@ pub struct UpdaterState {
     /// running" without polling the update plugin — the single re-entrancy
     /// flag both commands share.
     pub downloading: bool,
+    /// Set once a network check (`updater_check` or the automatic
+    /// `silent_check`) has actually COMPLETED — on either a found update or
+    /// a confirmed "none available", never on an error, which leaves this
+    /// untouched rather than claiming a fresh answer it doesn't have.
+    /// [`status_reply`] reads this so a read-only caller can tell "checked,
+    /// genuinely current" apart from "no check has ever run" / "the last
+    /// one failed" — both of which stayed the exact same `{"available":
+    /// false}` before this field existed (`B1-r2-ACLI-R6-2`).
+    pub checked: bool,
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -105,10 +114,22 @@ const STARTUP_STATUS_DELAY: tokio::time::Duration = tokio::time::Duration::from_
 /// it is testable without a live `AppHandle` (this crate has no
 /// `tauri::test` mock-app harness, same reason
 /// [`download_in_progress_or_done`] and [`store_managed`] are split out).
-fn status_reply(state: &UpdaterState) -> Value {
+///
+/// A packaged (Store) build is reported via [`store_managed`] BEFORE
+/// `pending_version` is even consulted — that state field never gets set on
+/// such a build (`setup_auto_check` returns before the first `silent_check`
+/// runs), so without this branch a Store build reported the same bare
+/// `{"available": false}` as "genuinely current" (`B1-r2-ACLI-R6-2`).
+/// Otherwise, `state.checked` distinguishes "checked, none available" from
+/// "never checked" / "last check failed" — both of the latter used to be
+/// the identical, unfalsifiable `{"available": false}`.
+fn status_reply(state: &UpdaterState, packaged: bool) -> Value {
+    if let Some(managed) = store_managed(packaged) {
+        return managed;
+    }
     match &state.pending_version {
         Some(version) => json!({ "available": true, "version": version }),
-        None => json!({ "available": false }),
+        None => json!({ "available": false, "checked": state.checked }),
     }
 }
 
@@ -123,7 +144,7 @@ fn status_reply(state: &UpdaterState) -> Value {
 #[tauri::command]
 pub fn updater_status(app: AppHandle) -> Value {
     let state = app.state::<Mutex<UpdaterState>>();
-    status_reply(&state.lock())
+    status_reply(&state.lock(), crate::platform::msix::is_packaged())
 }
 
 /// Check for an available update.
@@ -185,6 +206,7 @@ pub async fn updater_check(app: AppHandle) -> Value {
                 guard.pending_version = Some(version.clone());
                 guard.pending_update = Some(Arc::new(update));
                 guard.downloaded_bytes = None;
+                guard.checked = true;
             }
             emit_status(
                 &app,
@@ -193,6 +215,7 @@ pub async fn updater_check(app: AppHandle) -> Value {
             json!({ "available": true, "version": version })
         }
         Ok(None) => {
+            app.state::<Mutex<UpdaterState>>().lock().checked = true;
             emit_status(&app, json!({ "state": "not-available" }));
             json!({ "available": false })
         }
@@ -491,8 +514,9 @@ pub fn setup_auto_check(app: &AppHandle) {
 }
 
 async fn silent_check(app: &AppHandle) {
-    if let Ok(updater) = app.updater() {
-        if let Ok(Some(update)) = updater.check().await {
+    let Ok(updater) = app.updater() else { return };
+    match updater.check().await {
+        Ok(Some(update)) => {
             let version = update.version.clone();
             let notes = update.body.clone();
             {
@@ -501,12 +525,22 @@ async fn silent_check(app: &AppHandle) {
                 guard.pending_version = Some(version.clone());
                 guard.pending_update = Some(Arc::new(update));
                 guard.downloaded_bytes = None;
+                guard.checked = true;
             }
             emit_status(
                 app,
                 json!({ "state": "available", "version": version, "releaseNotes": notes }),
             );
         }
+        // A confirmed "nothing newer" still counts as a completed check for
+        // `status_reply` — before this arm, a silent check that found
+        // nothing left `checked` exactly as unset as one that never ran at
+        // all, the same collapse `updater_check`'s own `Ok(None)` arm fixes.
+        Ok(None) => app.state::<Mutex<UpdaterState>>().lock().checked = true,
+        // Swallowed on purpose (this check is silent) — but never marked
+        // `checked`, so a caller reading `updater_status` after a failed
+        // background probe sees "unknown", not a confident "current".
+        Err(_) => {}
     }
 }
 

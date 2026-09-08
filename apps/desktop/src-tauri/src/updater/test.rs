@@ -6,6 +6,7 @@ fn test_updater_state_default() {
     assert!(state.pending_version.is_none());
     assert!(state.pending_update.is_none());
     assert!(state.downloaded_bytes.is_none());
+    assert!(!state.checked);
 }
 
 #[test]
@@ -156,10 +157,47 @@ fn test_download_in_progress_or_done_false_after_bytes_taken() {
 // `B1-r1-ACLI-R5-1`) — no network, no `UpdaterState` write, no event ────────
 
 #[test]
-fn test_status_reply_not_available_when_nothing_pending() {
+fn test_status_reply_unknown_when_nothing_pending_and_never_checked() {
     assert_eq!(
-        status_reply(&UpdaterState::default()),
-        json!({ "available": false })
+        status_reply(&UpdaterState::default(), false),
+        json!({ "available": false, "checked": false })
+    );
+}
+
+/// `B1-r2-ACLI-R6-2` — the sole regression this whole field exists to fix:
+/// a caller must be able to tell "checked, genuinely current" apart from
+/// "no check has ever run" / "the last one failed". Both used to be the
+/// exact same `{"available": false}`.
+#[test]
+fn test_status_reply_checked_and_current_differs_from_never_checked() {
+    let checked = UpdaterState {
+        checked: true,
+        ..UpdaterState::default()
+    };
+    let never_checked = UpdaterState::default();
+    assert_eq!(
+        status_reply(&checked, false),
+        json!({ "available": false, "checked": true })
+    );
+    assert_ne!(
+        status_reply(&checked, false),
+        status_reply(&never_checked, false)
+    );
+}
+
+/// A Store (MSIX) build never runs a network check at all — `checked` stays
+/// `false` forever on that flavour, so without consulting `packaged` first
+/// this reply would be indistinguishable from "never checked" on a build
+/// that will NEVER check, rather than the store's own `managedBy` marker.
+#[test]
+fn test_status_reply_store_managed_wins_over_checked_state() {
+    let state = UpdaterState {
+        checked: true,
+        ..UpdaterState::default()
+    };
+    assert_eq!(
+        status_reply(&state, true),
+        json!({ "available": false, "managedBy": "store" })
     );
 }
 
@@ -170,7 +208,7 @@ fn test_status_reply_available_with_the_pending_version_once_checked() {
         ..UpdaterState::default()
     };
     assert_eq!(
-        status_reply(&state),
+        status_reply(&state, false),
         json!({ "available": true, "version": "2.5.0" })
     );
 }
@@ -185,7 +223,7 @@ fn test_status_reply_reads_pending_version_not_downloaded_bytes() {
         ..UpdaterState::default()
     };
     assert_eq!(
-        status_reply(&state),
+        status_reply(&state, false),
         json!({ "available": true, "version": "3.0.0" })
     );
 }
