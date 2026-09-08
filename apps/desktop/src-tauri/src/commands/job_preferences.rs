@@ -30,6 +30,9 @@ const LEGACY_WIRE_NAMES: &[(&str, &str)] = &[("tech_stack", "techStack")];
 /// [`JobPreferences`](crate::job_preferences::JobPreferences) field is
 /// `skip_serializing_if = "Option::is_none"`, so an unset column contributes no
 /// key and behaves exactly as it does today.
+///
+/// One pair of fields is coupled rather than independent — see the
+/// `location`/`countryCode` rule at the end of the body.
 fn merge_over_stored(
     stored: &crate::job_preferences::JobPreferences,
     mut incoming: serde_json::Map<String, Value>,
@@ -56,6 +59,19 @@ fn merge_over_stored(
         } else {
             merged.remove(*canonical);
         }
+    }
+    // `countryCode` is not an independent field: it is captured with `location`
+    // from ONE picked geocode suggestion and is meaningless without it. So a
+    // body that CLEARS the location clears the country with it — otherwise the
+    // orphaned code keeps steering scrapes (the aggregator board seeds its
+    // country from this row) for a location the user has removed. Narrow on
+    // purpose: only an explicit `location: null` triggers it, and only when the
+    // body does not address `countryCode` itself — a caller that sends both
+    // (the renderer's clear sends two nulls; a geocode pick sends a new
+    // location AND its country) keeps exactly what it sent, and setting the
+    // location to a new string never touches a stored country.
+    if incoming.get("location").is_some_and(Value::is_null) {
+        incoming.entry("countryCode").or_insert(Value::Null);
     }
     merged.extend(incoming);
     merged
@@ -132,10 +148,23 @@ fn parse_job_preferences(
 ///   the agent CLI policy table, so no confirmation step stands between a
 ///   caller and a wipe.
 ///
-/// Read-modify-write on the store's single settings row: the read and the write
-/// take the connection lock separately, so two concurrent `set`s can interleave
-/// (last writer wins per column). That is the pre-existing shape of every
-/// setter here and is unreachable in practice — one desktop user, one row.
+/// `location` and `countryCode` clear TOGETHER: a body whose `location` is an
+/// explicit `null` and that does not name `countryCode` clears the country too
+/// (see [`merge_over_stored`]). They come from one geocode pick, so a country
+/// left behind by a cleared location would keep steering scrapes. This is the
+/// rule `JobPreferencesContract.set` (packages/shared) points at.
+///
+/// Read-merge-write on the store's single settings row runs as ONE critical
+/// section — [`JobPreferencesStore::update`](crate::job_preferences::JobPreferencesStore::update)
+/// holds the connection lock across the read, the merge and the write. Taking
+/// the lock twice (`get()` … `set()`) would let two concurrent partial updates
+/// merge from the same snapshot, so the later write erases the earlier one's
+/// field — reachable from the agent/MCP tier, where several partial bodies can
+/// be in flight at once. Nothing is `.await`ed inside, so no lock is ever held
+/// across a yield point.
+///
+/// [`parse_job_preferences`] stays pure and runs INSIDE that critical section:
+/// it must not touch the store (the mutex is not reentrant).
 ///
 /// The `{"error": …}` reply exists for the agent/MCP tier. The renderer cannot
 /// produce it: its `set()` is typed to the shared `JobPreferences` contract, so
@@ -145,11 +174,7 @@ fn parse_job_preferences(
 /// object, so a renderer `onError`/`.catch` would never run. That is tolerable
 /// here only because the renderer has no reachable path to the error branch.
 fn set_job_preferences(store: &crate::job_preferences::JobPreferencesStore, prefs: Value) -> Value {
-    let job_prefs = match parse_job_preferences(&store.get(), prefs) {
-        Ok(job_prefs) => job_prefs,
-        Err(e) => return json!({ "error": e.to_string() }),
-    };
-    match store.set(&job_prefs) {
+    match store.update(|stored| parse_job_preferences(stored, prefs)) {
         Ok(()) => json!({ "success": true }),
         Err(e) => json!({ "error": e.to_string() }),
     }
@@ -394,6 +419,69 @@ mod test {
         assert_eq!(after.country_code.as_deref(), Some("DE"));
         assert_eq!(after.salary_expectation.as_deref(), Some("€75,000"));
         assert_eq!(after.extra_agency_companies, Some(vec!["Hays".to_string()]));
+    }
+
+    /// The one coupled pair: `countryCode` is captured with `location` from a
+    /// single geocode pick, so clearing the location must clear the country
+    /// with it. A body that names only `location: null` used to leave the
+    /// stored `DE` behind — and the aggregator board seeds its country from
+    /// this row, so that orphan kept steering scrapes to a country the user
+    /// had just removed. Delete the `countryCode` insertion in
+    /// `merge_over_stored` and this fails.
+    #[test]
+    fn clearing_the_location_clears_the_country_code_with_it() {
+        let (_dir, store) = store_with_saved_preferences();
+
+        let reply = set_job_preferences(&store, json!({ "location": null }));
+
+        assert_eq!(reply, json!({ "success": true }));
+        let after = store.get();
+        assert_eq!(after.location, None);
+        assert_eq!(
+            after.country_code, None,
+            "a country left behind by a cleared location keeps steering scrapes"
+        );
+        assert_eq!(
+            after.tech_stack.as_ref().map(|ts| ts[0].name.as_str()),
+            Some("Rust"),
+            "…and only that pair clears: the unnamed columns still survive"
+        );
+        assert_eq!(after.salary_expectation.as_deref(), Some("€75,000"));
+        assert_eq!(after.extra_agency_companies, Some(vec!["Hays".to_string()]));
+    }
+
+    /// The renderer's real clear sends BOTH nulls, so the same pair must land
+    /// through the explicit shape too — the insertion above must not turn a
+    /// caller-supplied key into a duplicate or otherwise disturb the merge.
+    #[test]
+    fn an_explicit_location_and_country_pair_of_nulls_clears_both() {
+        let (_dir, store) = store_with_saved_preferences();
+
+        let reply = set_job_preferences(&store, json!({ "location": null, "countryCode": null }));
+
+        assert_eq!(reply, json!({ "success": true }));
+        let after = store.get();
+        assert_eq!(after.location, None);
+        assert_eq!(after.country_code, None);
+        assert_eq!(after.salary_expectation.as_deref(), Some("€75,000"));
+    }
+
+    /// The other direction — the geocode pick: a body SETTING the location to a
+    /// new string carries its own country, and both must be written. The
+    /// clearing rule is scoped to an explicit `location: null`, so it can never
+    /// fire here; a broader "location present → clear the country" would write
+    /// a location with no country at all.
+    #[test]
+    fn a_new_location_writes_the_country_code_sent_with_it() {
+        let (_dir, store) = store_with_saved_preferences();
+
+        let reply =
+            set_job_preferences(&store, json!({ "location": "Lisbon", "countryCode": "PT" }));
+
+        assert_eq!(reply, json!({ "success": true }));
+        let after = store.get();
+        assert_eq!(after.location.as_deref(), Some("Lisbon"));
+        assert_eq!(after.country_code.as_deref(), Some("PT"));
     }
 
     /// The renderer's own shape — a full-row spread — must still overwrite

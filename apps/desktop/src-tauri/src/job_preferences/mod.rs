@@ -226,6 +226,14 @@ impl JobPreferencesStore {
 
     pub fn get(&self) -> JobPreferences {
         let conn = self.conn.lock();
+        Self::read_row(&conn)
+    }
+
+    /// The row read behind [`get`](Self::get), taking the connection instead of
+    /// the lock so [`update`](Self::update) can reuse it while already holding
+    /// it (`parking_lot::Mutex` is NOT reentrant — calling `get()` from inside
+    /// the critical section would deadlock).
+    fn read_row(conn: &Connection) -> JobPreferences {
         conn.query_row(
             "SELECT location, tech_stack, country_code, salary_expectation, extra_agency_companies
              FROM job_preferences WHERE id = 1",
@@ -308,6 +316,38 @@ impl JobPreferencesStore {
 
     pub fn set(&self, prefs: &JobPreferences) -> AppResult<()> {
         let conn = self.conn.lock();
+        Self::write_row(&conn, prefs)
+    }
+
+    /// Read-merge-write of the settings row **under one lock acquisition** — the
+    /// atomic form of `get()` … merge … `set()`, which is what
+    /// `commands::job_preferences::set_job_preferences` needs now that a body
+    /// merges over the stored row rather than replacing it. Done with two
+    /// acquisitions, two concurrent partial updates both merge from the same
+    /// snapshot and the later write erases the earlier one's field (the agent /
+    /// MCP tier can drive several partial `job_preferences_set` calls at once,
+    /// and each of them re-writes every column via [`set`](Self::set)'s
+    /// full-row `UPDATE`).
+    ///
+    /// `merge` runs **while the connection mutex is held**, so it must be pure
+    /// and cheap: it must not call back into this store (`parking_lot::Mutex`
+    /// is not reentrant — that deadlocks), must not block, and must not be
+    /// `.await`ed inside (the async command calls this synchronously). It gets
+    /// the stored row and returns the row to write; returning `Err` writes
+    /// NOTHING, so a refused body leaves every saved column intact.
+    pub fn update(
+        &self,
+        merge: impl FnOnce(&JobPreferences) -> AppResult<JobPreferences>,
+    ) -> AppResult<()> {
+        let conn = self.conn.lock();
+        let merged = merge(&Self::read_row(&conn))?;
+        Self::write_row(&conn, &merged)
+    }
+
+    /// The full-row write behind [`set`](Self::set) — same lock-free shape (and
+    /// same reason) as [`read_row`](Self::read_row), so [`update`](Self::update)
+    /// can pair the two inside one critical section.
+    fn write_row(conn: &Connection, prefs: &JobPreferences) -> AppResult<()> {
         let tech_stack_json = prefs
             .tech_stack
             .as_ref()
