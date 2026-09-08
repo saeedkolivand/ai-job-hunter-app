@@ -376,14 +376,70 @@ const JOB_NOT_FOUND_DETAIL: &str =
 /// `found_jobs::project_found_job_row` — never ran on this one, so `job`
 /// reported every posting as not-applied even after a real application
 /// existed, the exact duplicate-application hazard this surface exists to
-/// prevent). Derived here the SAME way `project_found_job_row` derives it,
-/// off the SAME set, so `job` and `found-jobs` agree by construction on one
-/// url.
+/// prevent). Derived here through [`job_is_applied`], the SAME identity-aware
+/// helper `found_jobs::candidate_jobs` derives its own `applied` from (round-4
+/// fix T4 — before this, the two surfaces disagreed the moment an
+/// application was recorded under a different host/path spelling than the
+/// one currently stored on the found job), off the SAME set, so `job` and
+/// `found-jobs` agree by construction on one url.
+///
+/// Assumes the applications store is present; see
+/// [`resolve_job_for_store`] for the store-unavailable path (round-4 fix T3).
+/// `job_resource` calls [`resolve_job_for_store`] directly (it always knows
+/// whether the store is present) — this default-store wrapper exists only so
+/// the many existing store-present tests keep their original call shape.
+#[cfg(test)]
 fn resolve_job(
     records: &[crate::autopilot::Autopilot],
     caller_identity: Option<(&'static str, String)>,
     normalized_url: &str,
     applied_urls: &std::collections::HashSet<String>,
+) -> AppResult<Value> {
+    resolve_job_for_store(records, caller_identity, normalized_url, applied_urls, true)
+}
+
+/// Whether `job_url` (a `FoundJob`'s own RAW, never-normalized url) counts as
+/// applied against `applied_urls` (`commands::autopilot::applied_job_urls`'s
+/// already-normalized set) — round-4 fix T4. Byte-comparing two normalized
+/// strings misses a LinkedIn regional host (`de.linkedin.com` vs a stored
+/// `linkedin.com`) or a slugged `/jobs/view/` path against a bare numeric
+/// one, the SAME identity gap #1166 closed for `resolve_job`'s own posting
+/// lookup. Tries [`crate::scraping::scrape_url::job_identity`] first (a board
+/// with a stable id space folds every host/path variant onto one id) and
+/// falls back to the plain normalized-string compare for a board with none.
+/// Shared by [`resolve_job_for_store`] and `found_jobs::candidate_jobs` so
+/// the two surfaces can never disagree about the same job.
+pub(super) fn job_is_applied(
+    job_url: &str,
+    applied_urls: &std::collections::HashSet<String>,
+) -> bool {
+    let decoded = crate::applications::decode_unreserved(job_url);
+    if applied_urls.contains(&crate::applications::normalize_job_url(&decoded)) {
+        return true;
+    }
+    let Some(identity) = crate::scraping::scrape_url::job_identity(&decoded) else {
+        return false;
+    };
+    applied_urls.iter().any(|stored| {
+        let stored_decoded = crate::applications::decode_unreserved(stored);
+        crate::scraping::scrape_url::job_identity(&stored_decoded).as_ref() == Some(&identity)
+    })
+}
+
+/// [`resolve_job`] plus the store-unavailable path (round-4 fix T3): when
+/// `store_present` is `false`, the caller's `applied_urls` is unconditionally
+/// empty (`applied_job_urls`'s own doc — a missing store collapses to "the
+/// user has applied to nothing"), so reporting `applied: false` from it would
+/// be a confident, WRONG answer for the unsafe direction — an autonomous
+/// caller could re-apply to a job it already applied to. Omitting the key
+/// (absent ≠ false) plus a `appliedUnavailable: true` marker lets a caller
+/// tell "definitely not applied" from "cannot tell right now" apart.
+fn resolve_job_for_store(
+    records: &[crate::autopilot::Autopilot],
+    caller_identity: Option<(&'static str, String)>,
+    normalized_url: &str,
+    applied_urls: &std::collections::HashSet<String>,
+    store_present: bool,
 ) -> AppResult<Value> {
     let found = records
         .iter()
@@ -402,8 +458,13 @@ fn resolve_job(
         .ok_or_else(|| AppError::Validation(JOB_NOT_FOUND_MESSAGE.to_string()))?;
     let mut value = project_value::<_, AgentJob>(found)
         .ok_or_else(|| AppError::Message("failed to project job".to_string()))?;
-    let is_applied = applied_urls.contains(&crate::applications::normalize_job_url(&found.url));
-    value["applied"] = json!(is_applied);
+    if store_present {
+        let is_applied = job_is_applied(&found.url, applied_urls);
+        value["applied"] = json!(is_applied);
+    } else if let Value::Object(map) = &mut value {
+        map.remove("applied");
+        map.insert("appliedUnavailable".to_string(), json!(true));
+    }
     fence_description(&mut value);
     fence_posting_display_fields(&mut value);
     Ok(value)
@@ -902,8 +963,17 @@ fn job_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
     }
     let caller_identity = job_caller_identity(raw_url);
     let records = list_autopilots(app)?;
+    let store_present = app
+        .try_state::<crate::applications::ApplicationStore>()
+        .is_some();
     let applied_urls = crate::commands::autopilot::applied_job_urls(app);
-    resolve_job(&records, caller_identity, &normalized, &applied_urls)
+    resolve_job_for_store(
+        &records,
+        caller_identity,
+        &normalized,
+        &applied_urls,
+        store_present,
+    )
 }
 
 fn automations_resource(app: &AppHandle) -> AppResult<Value> {

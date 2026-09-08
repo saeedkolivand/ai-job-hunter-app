@@ -269,14 +269,19 @@ fn fence_found_jobs_description(value: &mut Value) {
 /// Server-side filters for `found-jobs` (issue #1167). Every predicate here
 /// is the app's OWN, already-established one — never a fresh matcher invented
 /// for this surface:
-/// - `remote` reuses the exact scrape-time
-///   [`location_verdict`](crate::scraping::engine::location_filter::location_verdict)
-///   two-branch check: `job.board_remote` (the board's own per-posting
-///   classification) OR the
+/// - `remote` is THREE-valued, matching
+///   [`remote_determination`]'s truth table, not a plain boolean read of
+///   `location` text: `job.board_remote` (the board's own per-posting
+///   classification), [`crate::scraping::boards::is_all_remote_board`] (the
+///   board's REGISTRY-level "every posting is remote" declaration —
+///   retroactive for a `FoundJob` persisted before `board_remote` existed,
+///   round-4 fix T1), or a
 ///   [`REMOTE_MARKERS`](crate::scraping::engine::location_filter::REMOTE_MARKERS)
-///   list against `location` text — `location` text alone under-counts an
-///   all-remote board that stores no location, or a jurisdiction string
-///   ("USA Only") with no marker word (round-3 fix, H1).
+///   hit in `location` text all decide `true`; a non-empty `location` with
+///   none of those decides `false`; an empty/absent `location` with none of
+///   those is UNDECIDED and matches neither `remote: true` nor
+///   `remote: false` (round-4 fix T2 — the old two-valued read reported an
+///   unknown row as a confident `false`).
 /// - `country` is a case-insensitive substring match against `location` —
 ///   the SAME predicate the Jobs page's own free-text filter applies to a
 ///   posting's location (`(p.location ?? '').toLowerCase().includes(q)` in
@@ -400,6 +405,35 @@ impl FoundJobsFilters {
     }
 }
 
+/// THREE-valued remote determination for `job` (round-4 fix T1/T2— advisory
+/// findings on PR #1182). `Some(true)`: `job.board_remote` (the board's own
+/// per-posting classification, set at scrape time — see `build_found_job`),
+/// [`crate::scraping::boards::is_all_remote_board`] (the board's
+/// REGISTRY-level "every posting is remote" declaration, checked against the
+/// stored `board` id — retroactive, so a `FoundJob` persisted before
+/// `board_remote` existed, or scraped from a board that only started
+/// setting the flag later, still resolves correctly), or a
+/// [`REMOTE_MARKERS`] hit in `location` text. `Some(false)`: a non-empty
+/// `location` with none of the above — a real place, stated. `None`
+/// ("undecided"): an empty/absent `location` with none of the above —
+/// genuinely unknown, not a negative. [`passes_filters`]'s `remote` filter
+/// matches NEITHER `true` nor `false` for `None`, so an unknown row is
+/// excluded from both directions rather than silently counted as "not
+/// remote".
+fn remote_determination(job: &FoundJob) -> Option<bool> {
+    let loc = job.location.as_deref().unwrap_or("").trim().to_lowercase();
+    if job.board_remote
+        || crate::scraping::boards::is_all_remote_board(job.board.as_deref().unwrap_or(""))
+        || REMOTE_MARKERS.iter().any(|m| loc.contains(m))
+    {
+        return Some(true);
+    }
+    if loc.is_empty() {
+        return None;
+    }
+    Some(false)
+}
+
 /// True when `job` survives every filter set in `filters`. `is_applied` is
 /// passed in (precomputed once per job by [`candidate_jobs`]) rather than
 /// recomputed here, so the SAME derivation backs both this filter and the
@@ -419,16 +453,13 @@ fn passes_filters(job: &FoundJob, filters: &FoundJobsFilters, is_applied: bool) 
             }
         }
         if let Some(want_remote) = filters.remote {
-            // Mirrors `location_verdict`'s own two-branch remote check
-            // (`board_remote` short-circuits first, THEN the marker scan) —
-            // a `location` string alone under-counts an all-remote board
-            // that stores no location (`location: None`) or a jurisdiction
-            // string with no marker word ("USA Only"). Round-3 fix (H1):
-            // `job.board_remote` used to be missing from this OR entirely,
-            // so `--remote true` silently dropped those postings.
-            let is_remote = job.board_remote || REMOTE_MARKERS.iter().any(|m| loc.contains(m));
-            if is_remote != want_remote {
-                return false;
+            // THREE-valued (round-4 fix T2) — an UNDECIDED row (see
+            // `remote_determination`'s own doc) matches neither `true` nor
+            // `false`, so it is excluded from both, never miscounted as a
+            // confident negative the way the old two-valued read did.
+            match remote_determination(job) {
+                Some(actual) if actual == want_remote => {}
+                _ => return false,
             }
         }
     }
@@ -485,8 +516,7 @@ fn candidate_jobs<'a>(
             // this was silently under-reporting `total` on the very filter
             // this resource exists to serve). The first PASSING occurrence
             // in store order now wins the dedup, not merely the first one.
-            let is_applied =
-                applied_urls.contains(&crate::applications::normalize_job_url(&job.url));
+            let is_applied = super::job_is_applied(&job.url, applied_urls);
             if !passes_filters(job, filters, is_applied) {
                 continue;
             }
@@ -506,13 +536,34 @@ fn candidate_jobs<'a>(
 /// fields that round trip can't carry (see that struct's own doc) —
 /// `applied` (precomputed), `autopilotId`/`autopilotName` (the PARENT
 /// record's, fenced), and `description` (only when `include_description`).
+///
+/// `is_applied` is `None` when the applications store is unavailable
+/// (round-4 fix T3) — the row OMITS the `applied` key entirely rather than
+/// shipping a confident `false` derived from what `applied_job_urls`'s own
+/// doc says is an empty-by-construction set in that case (absent ≠ false;
+/// the unsafe direction for an autonomous caller deciding whether to
+/// re-apply). [`resolve_found_jobs_for_store`]'s envelope carries the
+/// matching `appliedUnavailable: true` marker.
+///
+/// INFALLIBLE, never `Option<Value>` (round-4 fix T5 — the prior fallible
+/// signature fed a `filter_map` that silently dropped a "failure" while
+/// still counting it in `total`, and a page whose every candidate failed
+/// would return `returned == 0` with `nextCursor` equal to the cursor just
+/// sent, a non-terminating traversal for a client that keeps retrying it).
+/// [`FoundJobSlice`]'s required fields (`title`/`company`/`url`/
+/// `scoreProvisional`/`foundAt`/`isAgency`) are a same-typed subset of
+/// `FoundJob`'s own required fields, so there is no `FoundJob` value for
+/// which this projection can actually fail — recovering from an
+/// unreachable failure only hid a class of bug behind untestable dead code;
+/// removing the `Option` removes the class instead.
 fn project_found_job_row(
     job: &FoundJob,
     autopilot: &Autopilot,
     include_description: bool,
-    is_applied: bool,
-) -> Option<Value> {
-    let mut value = project_value::<_, FoundJobSlice>(job)?;
+    is_applied: Option<bool>,
+) -> Value {
+    let mut value = project_value::<_, FoundJobSlice>(job)
+        .expect("FoundJobSlice is a same-typed subset of FoundJob and cannot fail to project");
     if include_description {
         if let Some(desc) = &job.description {
             value["description"] = json!(desc);
@@ -520,10 +571,12 @@ fn project_found_job_row(
         }
     }
     fence_posting_display_fields(&mut value);
-    value["applied"] = json!(is_applied);
+    if let Some(applied) = is_applied {
+        value["applied"] = json!(applied);
+    }
     value["autopilotId"] = json!(autopilot.id);
     value["autopilotName"] = json!(fence_autopilot_name(&autopilot.name));
-    Some(value)
+    value
 }
 
 /// Fold `autopilot_id`'s scope (or [`ALL_AUTOPILOTS_CURSOR_ISSUER`] spanning
@@ -579,6 +632,13 @@ fn found_jobs_cursor_issuer(autopilot_id: Option<&str>, filters: &FoundJobsFilte
 /// `agent_read::resolve_best_matches`. `pub(super)` because `agent_read`'s
 /// own `no_resource_output_ever_carries_a_forbidden_key` test calls this
 /// directly to sweep every resource's output in one place.
+///
+/// Assumes the applications store is present; see
+/// [`resolve_found_jobs_for_store`] for the store-unavailable path (round-4
+/// fix T3) — `found_jobs_resource` calls that directly (it always knows
+/// whether the store is present), so this wrapper exists only so the many
+/// existing store-present tests keep their original call shape.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(super) fn resolve_found_jobs(
     records: &[Autopilot],
@@ -587,6 +647,31 @@ pub(super) fn resolve_found_jobs(
     applied_urls: &HashSet<String>,
     offset: usize,
     limit: usize,
+) -> AppResult<Value> {
+    resolve_found_jobs_for_store(
+        records,
+        autopilot_id,
+        filters,
+        applied_urls,
+        offset,
+        limit,
+        true,
+    )
+}
+
+/// [`resolve_found_jobs`] plus the store-unavailable path (round-4 fix T3):
+/// when `store_present` is `false`, every row OMITS its `applied` key (see
+/// [`project_found_job_row`]'s own doc) and the envelope carries
+/// `appliedUnavailable: true`.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn resolve_found_jobs_for_store(
+    records: &[Autopilot],
+    autopilot_id: Option<&str>,
+    filters: &FoundJobsFilters,
+    applied_urls: &HashSet<String>,
+    offset: usize,
+    limit: usize,
+    store_present: bool,
 ) -> AppResult<Value> {
     let scoped: Vec<&Autopilot> = match autopilot_id {
         Some(id) => {
@@ -602,12 +687,22 @@ pub(super) fn resolve_found_jobs(
     let candidates = candidate_jobs(&scoped, filters, applied_urls, autopilot_id.is_none());
     let total = candidates.len();
 
+    // `project_found_job_row` is INFALLIBLE (round-4 fix T5 — see its own
+    // doc), so `.map` here always yields exactly one row per candidate in
+    // this window; the only way `page` (below, post-`trim_page_to_budget`)
+    // can be shorter than this window is byte-budget trimming, which is
+    // meant to be retried next page.
     let page_values: Vec<Value> = candidates
         .iter()
         .skip(offset)
         .take(limit)
-        .filter_map(|(ap, job, is_applied)| {
-            project_found_job_row(job, ap, filters.include_description, *is_applied)
+        .map(|(ap, job, is_applied)| {
+            project_found_job_row(
+                job,
+                ap,
+                filters.include_description,
+                store_present.then_some(*is_applied),
+            )
         })
         .collect();
 
@@ -644,6 +739,9 @@ pub(super) fn resolve_found_jobs(
     if let (Some(ap), Some(name)) = (single, autopilot_name_fenced) {
         envelope["autopilotId"] = json!(ap.id);
         envelope["autopilotName"] = json!(name);
+    }
+    if !store_present {
+        envelope["appliedUnavailable"] = json!(true);
     }
     Ok(envelope)
 }
@@ -731,8 +829,10 @@ fn parse_autopilot_id_arg(payload: &Value) -> AppResult<Option<String>> {
 /// — the unsafe direction for a filter issue #1168 exists specifically to
 /// prevent a duplicate application. Refuse instead, but ONLY when the
 /// `applied` filter is actually requested — the row-level `applied` badge
-/// (always emitted) keeps `enrich_applied`'s existing best-effort semantics,
-/// out of scope here. `store_present` is a plain `bool`, not an `AppHandle`
+/// is a separate concern, handled by [`resolve_found_jobs_for_store`]
+/// omitting the key entirely (plus `appliedUnavailable: true` on the
+/// envelope) rather than emitting a confident `false` (round-4 fix T3).
+/// `store_present` is a plain `bool`, not an `AppHandle`
 /// — this crate has no `tauri::test` mock-app harness (see
 /// `commands::autopilot::tests::every_record_mutation_goes_through_mutate_record`'s
 /// own doc) — so the refusal itself stays unit-testable without one.
@@ -757,23 +857,23 @@ fn check_applied_filter_available(
 pub(super) fn found_jobs_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
     let autopilot_id = parse_autopilot_id_arg(payload)?;
     let filters = FoundJobsFilters::from_payload(payload)?;
-    check_applied_filter_available(
-        app.try_state::<crate::applications::ApplicationStore>()
-            .is_some(),
-        &filters,
-    )?;
+    let store_present = app
+        .try_state::<crate::applications::ApplicationStore>()
+        .is_some();
+    check_applied_filter_available(store_present, &filters)?;
     let cursor_issuer = found_jobs_cursor_issuer(autopilot_id.as_deref(), &filters);
     let offset = parse_found_jobs_cursor(payload, &cursor_issuer)?;
     let limit = clamp_found_jobs_limit(payload);
     let records = list_autopilots(app)?;
     let applied_urls = crate::commands::autopilot::applied_job_urls(app);
-    resolve_found_jobs(
+    resolve_found_jobs_for_store(
         &records,
         autopilot_id.as_deref(),
         &filters,
         &applied_urls,
         offset,
         limit,
+        store_present,
     )
 }
 
