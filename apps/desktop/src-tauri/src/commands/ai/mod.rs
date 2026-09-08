@@ -929,14 +929,7 @@ mod spend;
 pub fn ai_spend_summary(app: AppHandle, days: Option<u32>) -> Value {
     let days = spend::resolve_window_days(days);
     let Some(store) = app.try_state::<crate::spend::SpendStore>() else {
-        let window_start = crate::spend::window_start_ms(days);
-        let window_json = json!({
-            "days": days,
-            "from": window_start,
-            "to": crate::db::now_ms(),
-        });
-        let zero = crate::spend::SpendTotals::default();
-        return spend::spend_summary_value(zero, zero, vec![], vec![], window_json);
+        return spend::zero_summary(days);
     };
     spend::spend_summary_from_store(&store, days)
 }

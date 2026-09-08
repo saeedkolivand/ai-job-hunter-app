@@ -16,11 +16,7 @@ use serde_json::{json, Value};
 /// `windowTotals` back onto the same query).
 pub(super) fn spend_summary_from_store(store: &crate::spend::SpendStore, days: u32) -> Value {
     let window_start = crate::spend::window_start_ms(days);
-    let window_json = json!({
-        "days": days,
-        "from": window_start,
-        "to": crate::db::now_ms(),
-    });
+    let window_json = window_json(days);
     let today = store.today_totals();
     let window_totals = store.totals_since(window_start);
     // Every provider that has EVER recorded a call (since_ms = 0), so a
@@ -56,6 +52,29 @@ pub(super) fn spend_summary_from_store(store: &crate::spend::SpendStore, days: u
         thinking_by_model,
         window_json,
     )
+}
+
+/// Builds the `window` payload key (`{days, from, to}`) shared by
+/// [`spend_summary_from_store`] and [`zero_summary`] (issue #1159 T2) — a
+/// single construction so the real path and the store-unavailable
+/// degradation path can't silently drift apart.
+fn window_json(days: u32) -> Value {
+    json!({
+        "days": days,
+        "from": crate::spend::window_start_ms(days),
+        "to": crate::db::now_ms(),
+    })
+}
+
+/// The degraded [`super::ai_spend_summary`] payload for when no
+/// [`crate::spend::SpendStore`] is available in app state (failed to open at
+/// startup) — all-zero totals and empty lists, but a real `window` built
+/// from the SAME [`window_json`] the live path uses (issue #1159 T2: this
+/// branch used to hand-rebuild that JSON inline, with nothing pinning the
+/// two constructions together).
+pub(super) fn zero_summary(days: u32) -> Value {
+    let zero = crate::spend::SpendTotals::default();
+    spend_summary_value(zero, zero, vec![], vec![], window_json(days))
 }
 
 /// Resolves `ai_spend_summary`'s `days` argument (issue #1161): unset means
@@ -106,35 +125,46 @@ fn spend_totals_json(t: crate::spend::SpendTotals) -> Value {
 /// else a zero row with [`crate::spend::zero_row_reason`]. Pulled out as a
 /// pure function so the merge is unit-testable without a live `AppHandle`
 /// (this crate has no mock harness for one).
+///
+/// Row order (issue #1159 T4): active providers come first, in `windowed`'s
+/// own order — `SpendStore::by_provider_since`'s "highest estimated cost
+/// first", scoped to the REQUESTED window — followed by the quiet/zero-row
+/// providers in `all_time` order. Before this, the merge iterated `all_time`
+/// (ordered by ALL-HISTORY cost) and substituted windowed values in place,
+/// so a provider that dominated last month could outrank this window's
+/// actual top spender in the Settings list.
 fn per_provider_with_zero_rows(
     all_time: Vec<crate::spend::ProviderTotals>,
     windowed: Vec<crate::spend::ProviderTotals>,
 ) -> Vec<Value> {
-    let windowed_by_provider: std::collections::HashMap<String, crate::spend::ProviderTotals> =
-        windowed
-            .into_iter()
-            .map(|p| (p.provider.clone(), p))
-            .collect();
-    all_time
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut out: Vec<Value> = windowed
         .into_iter()
-        .map(
-            |hist| match windowed_by_provider.get(hist.provider.as_str()) {
-                Some(p) => json!({
-                    "provider": p.provider,
-                    "inputTokens": p.input_tokens,
-                    "outputTokens": p.output_tokens,
-                    "estCostUsd": p.est_cost_usd,
-                }),
-                None => json!({
+        .map(|p| {
+            seen.insert(p.provider.clone());
+            json!({
+                "provider": p.provider,
+                "inputTokens": p.input_tokens,
+                "outputTokens": p.output_tokens,
+                "estCostUsd": p.est_cost_usd,
+            })
+        })
+        .collect();
+    out.extend(
+        all_time
+            .into_iter()
+            .filter(|hist| !seen.contains(&hist.provider))
+            .map(|hist| {
+                json!({
                     "provider": hist.provider,
                     "inputTokens": 0,
                     "outputTokens": 0,
                     "estCostUsd": 0.0,
                     "reason": crate::spend::zero_row_reason(&hist),
-                }),
-            },
-        )
-        .collect()
+                })
+            }),
+    );
+    out
 }
 
 #[cfg(test)]
@@ -301,6 +331,88 @@ mod test {
     }
 
     #[test]
+    fn ai_spend_summary_call_site_keeps_a_quiet_provider_in_per_provider() {
+        // Regression for #1159 T1: the four `per_provider_with_zero_rows`
+        // tests below feed hand-built `Vec<ProviderTotals>` literals, so they
+        // can never see which `since_ms` the REAL call site asks the store
+        // for — mutating `spend_summary_from_store`'s
+        // `store.by_provider_since(0)` back to `store.by_provider_since(window_start)`
+        // (the pre-#1161 defect, where a quiet provider silently vanishes
+        // instead of getting a zero row) left the whole suite green before
+        // this test existed. This drives the real call site against a real
+        // on-disk `SpendStore` seeded with a provider active only 30 days ago
+        // (outside a 7-day window) plus a different provider active today.
+        use crate::data_store::DataStore;
+        use crate::spend::SpendStore;
+
+        let dir = TempDir::new().unwrap();
+        let store = SpendStore::open(&dir.path().to_path_buf()).unwrap();
+
+        let thirty_days_ago = crate::db::now_ms() - 30 * 86_400_000;
+        let today_ms = crate::db::now_ms();
+        store
+            .import(&serde_json::json!([
+                {
+                    "id": "spend-t1-quiet-provider",
+                    "createdAt": thirty_days_ago,
+                    "provider": "anthropic",
+                    "model": "claude-test",
+                    "inputTokens": 400,
+                    "outputTokens": 150,
+                    "estCostUsd": 2.5,
+                },
+                {
+                    "id": "spend-t1-active-provider",
+                    "createdAt": today_ms,
+                    "provider": "openai",
+                    "model": "gpt-test",
+                    "inputTokens": 70,
+                    "outputTokens": 30,
+                    "estCostUsd": 0.5,
+                },
+            ]))
+            .unwrap();
+
+        let out = spend_summary_from_store(&store, 7);
+        let per_provider = out["perProvider"].as_array().unwrap();
+        assert_eq!(
+            per_provider.len(),
+            2,
+            "a provider quiet in the window must still be listed, not dropped"
+        );
+        let anthropic_row = per_provider
+            .iter()
+            .find(|row| row["provider"] == "anthropic")
+            .expect("the 30-day-old provider must still appear");
+        assert_eq!(anthropic_row["inputTokens"], 0);
+        assert_eq!(anthropic_row["reason"], "no spend in window");
+        let openai_row = per_provider
+            .iter()
+            .find(|row| row["provider"] == "openai")
+            .expect("the active-today provider must appear");
+        assert_eq!(openai_row["inputTokens"], 70);
+        assert!(openai_row.get("reason").is_none());
+    }
+
+    #[test]
+    fn zero_summary_reuses_the_same_window_json_as_the_live_path() {
+        // #1159 T2: the store-unavailable branch used to hand-rebuild
+        // `window_json` inline in mod.rs instead of reusing `window_json`
+        // here, so the two constructions could silently drift apart. Pin
+        // `zero_summary`'s six top-level keys and its `window` shape.
+        let out = zero_summary(7);
+        assert_eq!(out["today"]["inputTokens"], 0);
+        assert_eq!(out["today"]["outputTokens"], 0);
+        assert_eq!(out["today"]["estCostUsd"], 0.0);
+        assert_eq!(out["windowTotals"]["inputTokens"], 0);
+        assert_eq!(out["perProvider"].as_array().unwrap().len(), 0);
+        assert_eq!(out["thinkingByModel"].as_array().unwrap().len(), 0);
+        assert_eq!(out["window"]["days"], 7);
+        assert!(out["window"]["from"].as_u64().unwrap() <= out["window"]["to"].as_u64().unwrap());
+        assert_eq!(out["thinkingByModelWindow"], "allTime");
+    }
+
+    #[test]
     fn resolve_window_days_defaults_to_one_and_clamps_to_the_max() {
         assert_eq!(resolve_window_days(None), 1, "unset means today only");
         assert_eq!(
@@ -371,6 +483,37 @@ mod test {
         let all_time = vec![totals("ollama", 50_000, 20_000, 0.0)];
         let out = per_provider_with_zero_rows(all_time, vec![]);
         assert_eq!(out[0]["reason"], "local — always $0");
+    }
+
+    #[test]
+    fn the_merge_orders_active_rows_by_windowed_cost_not_all_time_cost() {
+        // #1159 T4: "openai" dominates ALL-TIME cost but is quiet THIS
+        // window; "anthropic" is the reverse (small all-time, top spender
+        // this window). The emitted order must follow `windowed` (this
+        // window's actual ranking), not `all_time` — a provider that
+        // dominated last month must not outrank this window's real top
+        // spender in the Settings list.
+        let all_time = vec![
+            totals("openai", 100_000, 50_000, 500.0), // all-time #1, but...
+            totals("anthropic", 5_000, 2_000, 10.0),  // all-time #2
+        ];
+        let windowed = vec![
+            totals("anthropic", 5_000, 2_000, 10.0), // ...this window's #1
+                                                     // "openai" absent: quiet this window
+        ];
+
+        let out = per_provider_with_zero_rows(all_time, windowed);
+        assert_eq!(out.len(), 2);
+        assert_eq!(
+            out[0]["provider"], "anthropic",
+            "this window's top spender must lead, even though openai dominates all-time"
+        );
+        assert!(
+            out[0].get("reason").is_none(),
+            "the active row must not carry a reason"
+        );
+        assert_eq!(out[1]["provider"], "openai");
+        assert_eq!(out[1]["reason"], "no spend in window");
     }
 
     #[test]
