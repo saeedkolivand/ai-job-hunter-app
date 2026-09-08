@@ -863,6 +863,54 @@ fn best_matches_query_filter_refuses_a_wrong_typed_or_blank_value() {
     assert_eq!(offset, 0, "no cursor means start at the first page");
 }
 
+/// The `query` filter itself must actually narrow the row set — every test
+/// above this one only exercises cursor issuance/refusal or the argument
+/// PARSE, never whether `resolve_best_matches`' own `retain` actually drops
+/// a non-matching row or matches by EITHER `title` or `company` (mirrors
+/// `found_jobs::tests::found_jobs_query_filter_matches_title_or_company_case_insensitively`,
+/// one resource over — this same predicate, hand-rolled here as
+/// `resolve_best_matches`' own `.retain(...)` rather than reused from
+/// `found_jobs`). Mutation check: deleting the `if let Some(q) = query {
+/// matches.retain(...) }` block in `resolve_best_matches` makes this fail —
+/// `total`/`returned` would read 3 instead of 1, and the `miss`/`by_title`
+/// rows would leak into `matches`.
+#[test]
+fn best_matches_query_filter_matches_title_or_company_case_insensitively() {
+    let mut by_title = full_best_match_row_json();
+    by_title["title"] = json!("Senior Backend Engineer");
+    by_title["company"] = json!("Acme");
+    by_title["url"] = json!("https://boards.example.com/jobs/1");
+
+    let mut by_company = full_best_match_row_json();
+    by_company["title"] = json!("Frontend Developer");
+    by_company["company"] = json!("Roboto Widgets");
+    by_company["url"] = json!("https://boards.example.com/jobs/2");
+
+    let mut miss = full_best_match_row_json();
+    miss["title"] = json!("Sales Associate");
+    miss["company"] = json!("Nope Inc");
+    miss["url"] = json!("https://boards.example.com/jobs/3");
+
+    // `resolve_best_matches` receives an already-lowercased `query` (the
+    // real call site normalizes it via `parse_best_matches_args` →
+    // `found_jobs::trimmed_lowercase_filter` before this fn ever runs), so
+    // the fixture passes the lowercase form directly while the SOURCE row
+    // keeps mixed case — proving the match itself, not the caller's
+    // normalization, is what makes this case-insensitive.
+    let rows = vec![by_title, by_company, miss];
+    let out = resolve_best_matches(&rows, 0, 20, Some("roboto"));
+    assert_eq!(
+        out["total"], 1,
+        "the query must exclude the two non-matching rows, not just narrow the page"
+    );
+    assert_eq!(out["returned"], 1);
+    assert_eq!(
+        out["matches"][0]["url"], "https://boards.example.com/jobs/2",
+        "the surviving row must be the COMPANY match, proving `query` checks company too, \
+         not only title"
+    );
+}
+
 // ── throttle ─────────────────────────────────────────────────────────────
 
 #[test]
