@@ -1238,14 +1238,21 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry { path: "export::commands::documents_render_preview_images", effect: Effect::Read },
 
     // updater/mod.rs
-    // A pure network probe of the release feed (`updater.check().await`) —
-    // nothing persisted, no paid egress. It DOES write `UpdaterState`
-    // (pending version/bytes), but that write is an in-memory re-entrancy
-    // cache consumed only by the next call of this SAME check→download→
-    // install flow — never observable through any other command, gone on
-    // restart — and a returning caller with a download already in flight or
-    // done gets that already-known state echoed back rather than a
-    // re-fetch. Reclassified from `Reversible` (issue #1165).
+    // A network probe of the release feed (`updater.check().await`) —
+    // nothing persisted to disk, no paid egress. It DOES write
+    // `UpdaterState` (`pending_version`/`pending_update`/clears
+    // `downloaded_bytes`), and that write IS observable through another
+    // command: it is exactly what `updater_download` reads to decide which
+    // artifact to transfer, so this row selects the install target for the
+    // rest of the check→download→install flow, not just for its own next
+    // call. It also emits `updater:status` to the renderer (`checking`,
+    // then `available`/`not-available`/`error`), which changes what the
+    // user sees. Still `Read`: it does not persist anything to disk, has no
+    // side effect independent of that flow, and is idempotent — a returning
+    // caller with a download already in flight or done gets that
+    // already-known state echoed back rather than a re-fetch, and the
+    // in-memory state is gone on restart. Reclassified from `Reversible`
+    // (issue #1165).
     PolicyEntry { path: "updater::updater_check", effect: Effect::Read },
     // Downloads the update artifact into memory/state — not yet applied, nothing destroyed.
     PolicyEntry { path: "updater::updater_download", effect: Effect::Reversible },
