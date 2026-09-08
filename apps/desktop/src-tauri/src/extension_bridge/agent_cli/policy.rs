@@ -627,6 +627,11 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     },
 
     // commands/contact_profile.rs
+    // The generic tier's reply for this row is projected to a photo-less
+    // allowlist before it ever reaches an agent (issue #1180) — the raw
+    // command still returns the whole `ContactProfile`, `photo` included, to
+    // the renderer's own `invoke()`; see
+    // `agent_call::reshape::project_contact_profile_get`.
     PolicyEntry { path: "commands::contact_profile::contact_profile_get", effect: Effect::Read },
     PolicyEntry { path: "commands::contact_profile::contact_profile_set", effect: Effect::Reversible },
     PolicyEntry { path: "commands::contact_profile::contact_profile_header_line", effect: Effect::Read },

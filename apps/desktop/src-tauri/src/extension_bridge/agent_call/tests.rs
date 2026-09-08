@@ -1660,6 +1660,69 @@ fn reshape_reply_base64_encodes_last_and_the_two_reshape_lists_stay_disjoint() {
     assert_eq!(out, json!({ "id": "j-1" }));
 }
 
+// ── contact_profile_get projection (issue #1180) ───────────────────────────
+
+/// A reply built from a store holding a `photo` has NO `photo` key after
+/// `reshape_reply`, and every allowlisted field (plus an unrelated future key
+/// the allowlist has never heard of) is dropped the same way — the guarantee
+/// is "nothing but the named set survives", not "photo specifically is
+/// blocked". Every field `CONTACT_PROFILE_AGENT_FIELDS` names is present on
+/// the input too, so the second assertion proves the projection is not
+/// simply emptying the object.
+#[test]
+fn reshape_reply_projects_contact_profile_get_to_the_photoless_allowlist() {
+    use crate::extension_bridge::autofill_profile::CONTACT_PROFILE_AGENT_FIELDS;
+
+    let raw = json!({
+        "fullName": "Saeed Kolivand",
+        "email": "saeed@example.com",
+        "phone": "+31 6 12",
+        "location": { "default": "Amsterdam", "byLang": {} },
+        "linkedin": "https://linkedin.com/in/saeed",
+        "github": "https://github.com/saeed",
+        "website": "https://saeed.dev",
+        "extraLinks": [{ "label": "Portfolio", "url": "https://saeed.dev/p" }],
+        "photo": "data:image/png;base64,AAAA",
+        "someFutureLocalOnlyField": "must not survive either",
+    });
+
+    let out = reshape_reply("contact_profile_get", raw, None);
+    let out_map = out.as_object().expect("still an object");
+
+    assert!(
+        !out_map.contains_key("photo"),
+        "photo must never cross this wire"
+    );
+    assert!(!out_map.contains_key("someFutureLocalOnlyField"));
+    for field in CONTACT_PROFILE_AGENT_FIELDS {
+        assert!(
+            out_map.contains_key(*field),
+            "`{field}` must survive the projection"
+        );
+    }
+    assert_eq!(out_map.len(), CONTACT_PROFILE_AGENT_FIELDS.len());
+}
+
+/// The gate is by command name, not by shape: another command whose reply
+/// happens to carry a `photo`-named key is left untouched.
+#[test]
+fn reshape_reply_leaves_a_photo_key_alone_on_any_other_command() {
+    let out = reshape_reply(
+        "jobs_list",
+        json!({ "id": "j-1", "photo": "keep-me" }),
+        None,
+    );
+    assert_eq!(out, json!({ "id": "j-1", "photo": "keep-me" }));
+}
+
+/// A non-object `contact_profile_get` reply (never real in production, but
+/// the projection must degrade rather than panic) is returned verbatim.
+#[test]
+fn reshape_reply_projection_is_a_noop_on_a_non_object_reply() {
+    let out = reshape_reply("contact_profile_get", json!("not an object"), None);
+    assert_eq!(out, json!("not an object"));
+}
+
 /// The discovery note is the ONLY thing the consumer ever reads about paging,
 /// so the two operational facts a traversal needs — pace, and what an offset
 /// cursor cannot promise — have to be in it, not merely in this module's docs.

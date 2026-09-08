@@ -140,7 +140,13 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
                 &["url"],
             ),
         ),
-        curated_tool(TOOL_PROFILE, "My Profile", "", no_args.clone()),
+        curated_tool(
+            TOOL_PROFILE,
+            "My Profile",
+            "The generic call-read row for contact_profile_get is projected to this identical \
+             photo-less field set, never the raw stored profile (issue #1180).",
+            no_args.clone(),
+        ),
         curated_tool(TOOL_AUTOMATIONS, "Automations", "", no_args),
         curated_tool(
             TOOL_FOUND_JOBS,

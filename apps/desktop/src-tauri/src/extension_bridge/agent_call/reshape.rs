@@ -196,6 +196,33 @@ pub(in crate::extension_bridge) fn base64_byte_fields(command: &str, data: &mut 
     }
 }
 
+/// The one command whose raw reply is projected to a photo-less allowlist
+/// before an agent ever sees it (issue #1180). `contact_profile_get`'s real
+/// body (`commands::contact_profile::contact_profile_get`) returns the whole
+/// `ContactProfile`, including `photo` — a `data:image/…;base64,…` URI
+/// `contact_profile::mod.rs` documents as local-only and never sent over the
+/// network. The dedicated `profile` resource (`autofill_profile::AutofillProfile`)
+/// already resolves through that exact photo-less shape; this makes the
+/// generic tier's `call-read contact_profile_get` match it instead of being
+/// the one path that still hands a local-only field to whatever reads an
+/// agent reply.
+const CONTACT_PROFILE_GET_COMMAND: &str = "contact_profile_get";
+
+/// Drop every top-level key of [`CONTACT_PROFILE_GET_COMMAND`]'s reply that is
+/// not in [`super::super::autofill_profile::CONTACT_PROFILE_AGENT_FIELDS`] — a
+/// no-op for every other command, and for a non-object reply.
+pub(super) fn project_contact_profile_get(command: &str, data: &mut Value) {
+    if command != CONTACT_PROFILE_GET_COMMAND {
+        return;
+    }
+    let Some(map) = data.as_object_mut() else {
+        return;
+    };
+    map.retain(|k, _| {
+        super::super::autofill_profile::CONTACT_PROFILE_AGENT_FIELDS.contains(&k.as_str())
+    });
+}
+
 /// Take the agent-layer paging arguments OFF `input` for a
 /// [`PAGINATED_LIST_COMMANDS`] target, returning `(offset, limit)`; `None`
 /// for every other command, whose `input` is left untouched.
@@ -355,30 +382,37 @@ pub(super) fn unfence_named_fields_recursive(value: &mut Value) {
 /// the ordering itself is testable, which is the reason it is a fn at all
 /// (as three statements inline, nothing failed when they were reordered).
 ///
-/// 1. **Fence first.** [`fence_scraped_fields`] is the security property and
-///    is unconditional over the WHOLE reply; narrowing it to "only the rows
-///    we are about to return" would make its coverage depend on a paging
-///    decision.
-/// 2. **Then page.** [`paginate_list_reply`]'s byte budget must measure the
+/// 1. **Project first.** [`project_contact_profile_get`] is the other
+///    unconditional-over-the-whole-reply safety property (privacy, not
+///    injection) — it only ever touches its own one command, so its position
+///    relative to the other three steps cannot change any of their output;
+///    placed first as the same class of "runs no matter what else happens"
+///    step [`fence_scraped_fields`] is.
+/// 2. **Then fence.** [`fence_scraped_fields`] is the injection-safety
+///    property and is unconditional over the WHOLE reply; narrowing it to
+///    "only the rows we are about to return" would make its coverage depend
+///    on a paging decision.
+/// 3. **Then page.** [`paginate_list_reply`]'s byte budget must measure the
 ///    FENCED bytes that will really ship: fencing rewrites every field it
 ///    touches (`crate::prompt_fence::JOB_CAP` truncates a long one, the
 ///    wrapper adds to a short one), so a budget applied first would be
 ///    measuring a payload that no longer exists by the time it ships. This is
-///    the step the test mutation-checks: reorder 1 and 2 and the page's row
+///    the step the test mutation-checks: reorder 2 and 3 and the page's row
 ///    count changes.
-/// 3. **Then base64.** [`base64_byte_fields`] must see the raw `Vec<u8>`
+/// 4. **Then base64.** [`base64_byte_fields`] must see the raw `Vec<u8>`
 ///    array rather than something a later step rewrote, and it writes a
 ///    TOP-LEVEL key — after paging, "top level" means the paged envelope. No
 ///    command is in both [`PAGINATED_LIST_COMMANDS`] and
-///    [`BASE64_BYTE_FIELDS`] today, so no payload can currently observe 2-vs-3
-///    ordering; that disjointness is itself asserted in the tests, so the day
-///    it stops holding, the guard fires instead of the ordering silently
-///    starting to matter unnoticed.
+///    [`BASE64_BYTE_FIELDS`] today, so no payload can currently observe
+///    3-vs-4 ordering; that disjointness is itself asserted in the tests, so
+///    the day it stops holding, the guard fires instead of the ordering
+///    silently starting to matter unnoticed.
 pub(super) fn reshape_reply(
     command: &str,
     mut data: Value,
     page_args: Option<(usize, usize)>,
 ) -> Value {
+    project_contact_profile_get(command, &mut data);
     fence_scraped_fields(&mut data);
     if let Some((offset, limit)) = page_args {
         data = paginate_list_reply(data, offset, limit);

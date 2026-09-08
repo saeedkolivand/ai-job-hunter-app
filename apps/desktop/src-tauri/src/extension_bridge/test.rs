@@ -1090,6 +1090,31 @@ fn resolve_profile_projection_has_exact_keys_and_no_forbidden_fields() {
     );
 }
 
+/// `CONTACT_PROFILE_AGENT_FIELDS` (issue #1180) drives the generic tier's
+/// `contact_profile_get` allowlist (`agent_call::reshape::project_contact_profile_get`)
+/// — pinned here against a HAND-WRITTEN literal, not derived from
+/// `AutofillProfile`'s own serialization, for the same reason the exact-keys
+/// test above is hand-written: a check derived from the very struct it is
+/// meant to catch drifting proves nothing.
+#[test]
+fn contact_profile_agent_fields_matches_the_autofill_profile_wire_shape() {
+    let mut fields: Vec<&str> = super::autofill_profile::CONTACT_PROFILE_AGENT_FIELDS.to_vec();
+    fields.sort_unstable();
+    assert_eq!(
+        fields,
+        vec![
+            "email",
+            "extraLinks",
+            "fullName",
+            "github",
+            "linkedin",
+            "location",
+            "phone",
+            "website",
+        ]
+    );
+}
+
 #[test]
 fn resolve_profile_errors_when_store_missing() {
     // opt-in on but no profile available (store not managed) → a Config error, not a panic.

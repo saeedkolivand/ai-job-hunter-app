@@ -51,6 +51,26 @@ pub(super) struct AutofillProfile {
 /// use for an unbounded list, and this bounds the reply size.
 pub(super) const MAX_EXTRA_LINKS: usize = 10;
 
+/// Wire field names [`AutofillProfile`] serializes to (its own
+/// `#[serde(rename_all = "camelCase")]` keys). The generic agent tier's
+/// `contact_profile_get` projection
+/// ([`crate::extension_bridge::agent_call::reshape::project_contact_profile_get`],
+/// issue #1180) reads this SAME list to drop `photo` — and any other field
+/// this struct does not carry — from that command's raw reply, rather than
+/// retyping the set: the dedicated `profile` resource and the generic
+/// `call-read contact_profile_get` row are meant to be the identical
+/// photo-less projection, and a second hand-typed list is how that drifts.
+pub(super) const CONTACT_PROFILE_AGENT_FIELDS: &[&str] = &[
+    "fullName",
+    "email",
+    "phone",
+    "location",
+    "linkedin",
+    "github",
+    "website",
+    "extraLinks",
+];
+
 /// Filter + cap the stored extra links for the wire: drop an entry with an empty
 /// label, drop a url that (after trimming) is empty or not `http(s)`, then keep
 /// at most [`MAX_EXTRA_LINKS`] of what remains, in order. `photo` is never
