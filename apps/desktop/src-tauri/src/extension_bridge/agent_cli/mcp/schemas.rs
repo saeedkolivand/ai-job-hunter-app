@@ -140,7 +140,13 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
                 &["url"],
             ),
         ),
-        curated_tool(TOOL_PROFILE, "My Profile", "", no_args.clone()),
+        curated_tool(
+            TOOL_PROFILE,
+            "My Profile",
+            "Contact fields only (name, email, phone, location, links) — for the résumé/document \
+             text itself, read documents:documents_list / documents:documents_get_text via call-read.",
+            no_args.clone(),
+        ),
         curated_tool(TOOL_AUTOMATIONS, "Automations", "", no_args),
         curated_tool(
             TOOL_FOUND_JOBS,

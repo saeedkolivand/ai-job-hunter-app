@@ -691,12 +691,24 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
         path: "commands::hybrid_search::scrape_hybrid_search",
         effect: Effect::Irreversible(ProofSource::Scalar { read_command: "ai_spend_summary", path: &["today", "inputTokens"] }),
     },
-    // commands/help.rs — the dense arm embeds the question + every uncached help entry, each round-trip charging
-    // charge_provider_daily (`ai_embed`'s trigger). Not `Read`: `Read` also promises the data cost nothing to produce.
-    // Same WEAK spend-total fallback as `scrape_hybrid_search` above, vacuous on an unspent day for exactly the
-    // same reason (the counter reads as the string for zero, which a caller can supply unread) — flagged, not
-    // dressed up as strict.
-    PolicyEntry { path: "commands::help::help_search", effect: Effect::Irreversible(ProofSource::Scalar { read_command: "ai_spend_summary", path: &["today", "inputTokens"] }) },
+    // commands/help.rs — reclassified `Irreversible` → `NotExposed` (issue
+    // #1169): the corpus stays in the renderer's own translation bundles
+    // (ADR-043 — `commands::help::help_search`'s own module doc, "The
+    // corpus stays in the translation bundles"), and `entries` is the
+    // caller's OWN request field, not derived from anything Rust reads. No
+    // command on this dispatcher can supply it — there is no
+    // `help_entries`/`help_corpus` read anywhere in `POLICY` — so an
+    // `agent call`/MCP caller has no way to reach this command with a real
+    // corpus; dispatching it by name would only ever run a search over
+    // whatever text the caller typed into `entries` itself.
+    PolicyEntry {
+        path: "commands::help::help_search",
+        effect: Effect::NotExposed(
+            "the help corpus lives only in the renderer's translation bundles (ADR-043) and \
+             is sent as this command's own `entries` request field; no other command on this \
+             dispatcher can supply it, so a CLI/MCP caller has no real corpus to search",
+        ),
+    },
     // commands/data.rs
     PolicyEntry {
         path: "commands::data::data_export",
@@ -1007,10 +1019,34 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
 
     // commands/notifications.rs
     PolicyEntry { path: "commands::notifications::notifications_list", effect: Effect::Read },
-    PolicyEntry { path: "commands::notifications::notifications_mark_read", effect: Effect::Reversible },
+    // No inverse exists anywhere on this surface: `notifications::mod.rs`
+    // has no "mark unread", `commands::notifications` exposes no such
+    // command, and the renderer only ever filters on `!n.read` — it never
+    // sets `read` back to `false`. Flipping this bit is therefore
+    // permanent from the app's own perspective, same as a delete — the
+    // module doc's rule for `Effect::Irreversible`. Same shape and same
+    // `ProofSource` as `notifications_remove` just below: id-scoped, so the
+    // proof is the target notification's own `title`, read via
+    // `notifications_list`, matched by the SAME id (issue #1164).
+    PolicyEntry {
+        path: "commands::notifications::notifications_mark_read",
+        effect: Effect::Irreversible(ProofSource::ListMatch {
+            read_command: "notifications_list",
+            id_field: &["id"],
+            match_field: "id",
+            value_field: "title",
+        }),
+    },
+    // Same no-inverse argument as `notifications_mark_read` above, applied
+    // to every notification at once — no selector, so this is the
+    // selector-less shape `notifications_clear_all` already uses: the proof
+    // is the exact count about to be flipped, read via `notifications_list`
+    // itself (issue #1164).
     PolicyEntry {
         path: "commands::notifications::notifications_mark_all_read",
-        effect: Effect::Reversible,
+        effect: Effect::Irreversible(ProofSource::Count {
+            read_command: "notifications_list",
+        }),
     },
     // Proof is the target notification's own `title`, read via
     // `notifications_list`, matched by id.
@@ -1202,21 +1238,30 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry { path: "export::commands::documents_render_preview_images", effect: Effect::Read },
 
     // updater/mod.rs
-    // Mutates in-memory `UpdaterState` only (pending version/bytes) — no persisted write.
-    PolicyEntry { path: "updater::updater_check", effect: Effect::Reversible },
+    // A pure network probe of the release feed (`updater.check().await`) —
+    // nothing persisted, no paid egress. It DOES write `UpdaterState`
+    // (pending version/bytes), but that write is an in-memory re-entrancy
+    // cache consumed only by the next call of this SAME check→download→
+    // install flow — never observable through any other command, gone on
+    // restart — and a returning caller with a download already in flight or
+    // done gets that already-known state echoed back rather than a
+    // re-fetch. Reclassified from `Reversible` (issue #1165).
+    PolicyEntry { path: "updater::updater_check", effect: Effect::Read },
     // Downloads the update artifact into memory/state — not yet applied, nothing destroyed.
     PolicyEntry { path: "updater::updater_download", effect: Effect::Reversible },
     // Installs the downloaded update and force-restarts the app
     // (`app.restart()`, never returns) — replaces the running binary with
-    // no undo path. No Read row exposes the PENDING (target) version —
-    // `UpdaterState.pending_version` lives only in memory behind
-    // `updater_check`/`updater_download`, both `Reversible` not `Read`, so
-    // neither is eligible as a proof source. `system_get_version` is the
-    // strongest available Read row, but it names the CURRENTLY RUNNING
-    // version, not the one about to be installed — one of the WEAKEST rows
-    // in this table, flagged prominently. Also vacuous by the same
-    // compile-time-constant reasoning `support_export_diagnostics` was
-    // reclassified for (security review round 3) — kept Irreversible
+    // no undo path. `UpdaterState.pending_version` otherwise lives only in
+    // memory behind `updater_download`, which stays `Reversible`, so it is
+    // not eligible as a proof source. `updater_check` is now `Read` (issue
+    // #1165) and its own reply DOES carry `version` — but re-pointing this
+    // ceremony's proof at it is a separate change to an already-reviewed
+    // Irreversible row, out of scope here (follow-up). `system_get_version`
+    // is the Read row this ceremony actually uses, but it names the
+    // CURRENTLY RUNNING version, not the one about to be installed — one of
+    // the WEAKEST rows in this table, flagged prominently. Also vacuous by
+    // the same compile-time-constant reasoning `support_export_diagnostics`
+    // was reclassified for (security review round 3) — kept Irreversible
     // DELIBERATELY: the real safety boundary here is `updater_download`'s
     // minisign signature check, not this ceremony, and the command has no
     // separate caller-chosen target for a stronger proof to bind to.

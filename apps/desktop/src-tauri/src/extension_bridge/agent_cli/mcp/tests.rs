@@ -903,6 +903,39 @@ fn instructions_name_connection_lost_alongside_rate_limited_in_the_no_retry_sent
     assert!(INSTRUCTIONS.contains("rate_limited"));
 }
 
+/// Issue #1170 — INSTRUCTIONS now points a caller at the résumé/document reads before it judges
+/// fit. Every `ns:cmd`-shaped token the prose cites must be a REAL `POLICY` row: a stale rename on
+/// either side would otherwise tell a calling model to dispatch a command that no longer exists.
+/// The one hand-written skip is `ns:cmd` itself — the earlier "a detail that says `agent call
+/// ns:cmd`" sentence uses it as a PLACEHOLDER, not a real pair (same "skip list, not a substring
+/// match" discipline [`EXPLAINED_IN_PROSE`] already uses above).
+#[test]
+fn instructions_ns_cmd_pairs_are_real_policy_rows() {
+    const SKIP: &[&str] = &["ns:cmd"];
+    let is_ident = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_lowercase() || c == '_');
+    let mut checked = 0usize;
+    for word in INSTRUCTIONS.split_whitespace() {
+        let word = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != ':' && c != '_');
+        let Some((ns, cmd)) = word.split_once(':') else {
+            continue;
+        };
+        if !is_ident(ns) || !is_ident(cmd) || SKIP.contains(&word) {
+            continue;
+        }
+        checked += 1;
+        assert!(
+            POLICY
+                .iter()
+                .any(|e| agent_call::split_path(e.path) == (ns, cmd)),
+            "INSTRUCTIONS names `{word}`, which is not a real POLICY row"
+        );
+    }
+    assert_eq!(
+        checked, 3,
+        "expected exactly the 3 résumé/document ns:cmd pairs issue #1170 added: {INSTRUCTIONS}"
+    );
+}
+
 /// Every `"error":` STRING LITERAL mcp.rs's own source writes directly — never `agent_call`'s
 /// `pub(super)` sentinels (`ERR_UNKNOWN_COMMAND`/`ERR_NOT_EXPOSED`/`ERR_CONFIRMATION_REQUIRED`),
 /// referenced by path there and never respelled here. A test-only fixture (item 24): nothing in
@@ -1197,6 +1230,28 @@ fn every_scraped_text_tool_carries_the_same_untrusted_fields_notice() {
              {description}"
         );
     }
+}
+
+/// Issue #1170 — the `profile` tool must say up front it holds contact fields only, and point at
+/// a REAL `POLICY` read for the résumé/document text itself (a stale rename here would send a
+/// calling model at a command that no longer exists).
+#[test]
+fn profile_tool_description_names_a_real_document_read() {
+    let list = tools(Tier::Read);
+    let description = list.iter().find(|t| t["name"] == TOOL_PROFILE).unwrap()["description"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        description.contains("Contact fields only"),
+        "must say the profile tool holds contact fields only: {description}"
+    );
+    assert!(
+        POLICY
+            .iter()
+            .any(|e| agent_call::split_path(e.path) == ("documents", "documents_list")),
+        "profile's description names documents:documents_list, which is not a real POLICY row"
+    );
 }
 
 // ── Advertised schema text (issues #1129, #1130, #1132, #1144) ──────────

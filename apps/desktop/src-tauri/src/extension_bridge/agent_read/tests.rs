@@ -352,7 +352,6 @@ fn automations_projection_has_exact_keys() {
             "runStatus",
             "status",
             "target",
-            "totalApplied",
             "totalFound",
             "updatedAt",
         ]
@@ -402,6 +401,7 @@ fn automations_projection_never_carries_forbidden_keys() {
         "assistantProvider",
         "assistantModel",
         "assistantBaseUrl",
+        "totalApplied", // issue #1171 — dead on the source struct, never a real applied count
         "SECRET",
         "internal.example.local",
     ] {

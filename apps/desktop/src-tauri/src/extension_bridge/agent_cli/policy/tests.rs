@@ -263,10 +263,16 @@ fn every_proof_source_read_command_is_a_read_row() {
     // definition regardless of nothing being destroyed [+1]; `scrape_
     // hybrid_search` adds ONE new Irreversible row for the same
     // charge_provider_daily reason as `ai_embed`/`autopilot_run` [+1];
-    // `help_search` (this PR) adds ONE more for that same reason — its
-    // dense arm embeds the question plus every uncached help entry [+1];
-    // see each row's own comment).
-    assert_eq!(checked, 34, "expected exactly 34 Irreversible rows");
+    // `help_search` added one for that same reason, then moved Irreversible
+    // → `NotExposed` (issue #1169): the corpus it would embed is the
+    // caller's OWN `entries` field, not anything Rust can read, so no
+    // dispatch here ever has a real corpus to search [-1];
+    // `notifications_mark_read`/`notifications_mark_all_read` moved
+    // Reversible → Irreversible (issue #1164): no "mark unread" exists
+    // anywhere on this surface, so flipping the bit is permanent, same as
+    // `notifications_remove`/`notifications_clear_all` whose ProofSource
+    // shapes they now reuse [+2]; see each row's own comment).
+    assert_eq!(checked, 35, "expected exactly 35 Irreversible rows");
 }
 
 /// Hand-written pin (security review round 3), mirroring

@@ -357,9 +357,14 @@ fn fence_description(value: &mut Value) {
 
 /// `automations` resource's per-row payload — projected off `autopilot::Autopilot`.
 /// Excludes `resumeText`/`coverLetter`/`assistant`/`assistantProvider`/
-/// `assistantModel`/`assistantBaseUrl`/`foundJobs`/`lastRunSummaries` — the
-/// first four forbidden outright, the last two out of scope for a status
-/// listing (`best-matches` and `job` already cover found-jobs detail).
+/// `assistantModel`/`assistantBaseUrl`/`foundJobs`/`lastRunSummaries`/
+/// `totalApplied` — the first four forbidden outright, the next two out of
+/// scope for a status listing (`best-matches` and `job` already cover
+/// found-jobs detail), and `totalApplied` dropped (issue #1171): the field
+/// is dead on the source struct too (`docs/ARCHITECTURE_STATUS.md`'s own
+/// "Drop dead `totalApplied` counter" row) — nothing in this codebase ever
+/// writes it past its zero default, so exposing it here promised a real
+/// applied-count that never existed.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AgentAutomation {
@@ -383,7 +388,6 @@ struct AgentAutomation {
     /// `found_jobs.len()` expression, so the two surfaces agree by construction).
     /// This is the number a caller asking "how many jobs did this find?" wants.
     found_jobs_total: u32,
-    total_applied: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     run_status: Option<crate::autopilot::RunStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -430,7 +434,6 @@ fn project_automation(ap: &crate::autopilot::Autopilot) -> AgentAutomation {
         },
         total_found: ap.total_found,
         found_jobs_total: ap.found_jobs.len() as u32,
-        total_applied: ap.total_applied,
         run_status: ap.run_status.clone(),
         last_run_at: ap.last_run_at,
         created_at: ap.created_at,
