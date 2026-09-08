@@ -614,10 +614,15 @@
             "description": "Darf zusätzlich KI-Budget ausgeben und Daten löschen. Jeder solche Aufruf ist durch einen Lesenachweis-Schritt abgesichert, den der Agent zuvor ausführen muss; die App fragt Sie nicht."
           }
         },
+        "transcriptNote": "Alles, was der Agent liest – Lebenslauftext, Ihr Kontaktprofil, Bewerbungsdatensätze – landet im eigenen Transkript des KI-Clients.",
+        "stayOpenNote": "Lassen Sie diese App geöffnet, solange ein Agent verbunden ist; die meisten Agentenaufrufe erreichen die laufende App und schlagen fehl, während sie geschlossen ist.",
         "claudeLabel": "Claude Code",
         "copyClaude": "Befehl kopieren",
         "codexLabel": "Codex (~/.codex/config.toml)",
-        "copyCodex": "Konfiguration kopieren"
+        "copyCodex": "Konfiguration kopieren",
+        "genericLabel": "Beliebiger MCP-Client (JSON)",
+        "genericHint": "Fügen Sie dies in die MCP-Konfigurationsdatei Ihres Clients ein; falls dort bereits ein mcpServers-Block existiert, fügen Sie nur den inneren Eintrag hinzu. Claude Desktop, Cursor, Windsurf, Gemini CLI, LM Studio, Jan und die meisten anderen lesen dieses Format. Die Schreibstufe steckt im Flag in args.",
+        "copyGeneric": "JSON kopieren"
       }
     },
     "about": {
@@ -2994,7 +2999,7 @@
       "agentCliQuestions": {
         "headlessMode": {
           "q": "Kann ich die App aus einem Terminal oder aus Claude Code oder Codex heraus nutzen?",
-          "a": "Ja. Die Desktop-Binärdatei dient zugleich als Kommandozeilen-Client: Führen Sie sie mit agent als allererstem Argument aus, zum Beispiel agent --help, und sie gibt die verfügbaren Befehle aus, statt das App-Fenster zu öffnen. Jedes andere erste Argument startet einfach das normale Desktop-Fenster. Claude Code und Codex können sich an dieselbe Binärdatei als MCP-Server anbinden; sie ist standardmäßig schreibgeschützt und gibt Schreibstufen nur frei, wenn Sie sie mit einem der Schreib-Flags registrieren. Einstellungen → Entwickler → „Agenten- & MCP-Zugriff“ zeigt den Pfad zu dieser Binärdatei mit Kopieren-Schaltflächen für den Registrierungsbefehl für Claude Code und für den Codex-Konfigurationsausschnitt; die Stufenauswahl dort schreibt beide um — schreibgeschützt, solange Sie vor dem Kopieren keine Schreibstufe wählen. Den Claude-Code-Befehl führen Sie in einem Terminal aus, nicht in Claude Code selbst; der Abschnitt CLI agent in der README des Projekts behandelt dasselbe. Die meisten Aufrufe erreichen die laufende App — halten Sie AI Job Hunter also geöffnet."
+          "a": "Ja. Die Desktop-Binärdatei dient zugleich als Kommandozeilen-Client: Führen Sie sie mit agent als allererstem Argument aus, zum Beispiel agent --help, und sie gibt die verfügbaren Befehle aus, statt das App-Fenster zu öffnen. Jedes andere erste Argument startet einfach das normale Desktop-Fenster. Claude Code und Codex können sich an dieselbe Binärdatei als MCP-Server anbinden; sie ist standardmäßig schreibgeschützt und gibt Schreibstufen nur frei, wenn Sie sie mit einem der Schreib-Flags registrieren. Einstellungen → Entwickler → „Agenten- & MCP-Zugriff“ zeigt den Pfad zu dieser Binärdatei mit Kopieren-Schaltflächen für den Registrierungsbefehl für Claude Code, den Codex-Konfigurationsausschnitt und einen generischen mcpServers-JSON-Block für jeden anderen MCP-Client; die Stufenauswahl dort schreibt alle drei um — schreibgeschützt, solange Sie vor dem Kopieren keine Schreibstufe wählen. Den Claude-Code-Befehl führen Sie in einem Terminal aus, nicht in Claude Code selbst; der Abschnitt CLI agent in der README des Projekts behandelt dasselbe. Die meisten Aufrufe erreichen die laufende App — halten Sie AI Job Hunter also geöffnet."
         }
       },
       "privacy": "Datenschutz & Daten",

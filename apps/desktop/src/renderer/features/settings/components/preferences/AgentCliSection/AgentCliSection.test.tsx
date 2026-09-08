@@ -55,6 +55,8 @@ function renderCard(agentCliInfo = vi.fn().mockResolvedValue({ exePath: EXE })) 
 
 const claudeSnippet = () => screen.getByTestId(TEST_IDS.settings.agentCliClaudeSnippet).textContent;
 const codexSnippet = () => screen.getByTestId(TEST_IDS.settings.agentCliCodexSnippet).textContent;
+const genericSnippet = () =>
+  screen.getByTestId(TEST_IDS.settings.agentCliGenericSnippet).textContent;
 
 const writeText = () => vi.mocked(navigator.clipboard.writeText);
 
@@ -67,7 +69,7 @@ beforeEach(() => {
 });
 
 describe('AgentCliSection', () => {
-  it('renders the resolved path and both registration snippets', async () => {
+  it('renders the resolved path and all three registration snippets', async () => {
     renderCard();
 
     // The card's own id — what an e2e selector anchors on.
@@ -79,6 +81,19 @@ describe('AgentCliSection', () => {
     expect(codexSnippet()).toBe(
       `[mcp_servers.ai-job-hunter]\ncommand = '${EXE}'\nargs = ["agent", "mcp"]`
     );
+    expect(genericSnippet()).toBe(
+      JSON.stringify(
+        { mcpServers: { 'ai-job-hunter': { command: EXE, args: ['agent', 'mcp'] } } },
+        null,
+        2
+      )
+    );
+    // The generic block's hint is the only sentence telling the user the
+    // snippet above is already the whole `mcpServers` wrapper, not a section
+    // to nest inside one — a round-2 finding on this exact wording. Nothing
+    // else in this suite renders `hint`, so a dropped prop or a reworded
+    // string is invisible without this assertion.
+    expect(screen.getByText(/add just the inner entry/i)).toBeInTheDocument();
   });
 
   it('shows a skeleton, not an empty command, while the path is still being read', () => {
@@ -88,6 +103,7 @@ describe('AgentCliSection', () => {
     expect(screen.queryByTestId(TEST_IDS.settings.agentCliPath)).toBeNull();
     expect(screen.queryByTestId(TEST_IDS.settings.agentCliClaudeSnippet)).toBeNull();
     expect(screen.queryByTestId(TEST_IDS.settings.agentCliCodexSnippet)).toBeNull();
+    expect(screen.queryByTestId(TEST_IDS.settings.agentCliGenericSnippet)).toBeNull();
   });
 
   it('says where to find the path when the shell could not resolve it, and shows no snippets', async () => {
@@ -98,10 +114,11 @@ describe('AgentCliSection', () => {
     // register a server that never starts.
     expect(screen.queryByTestId(TEST_IDS.settings.agentCliClaudeSnippet)).toBeNull();
     expect(screen.queryByTestId(TEST_IDS.settings.agentCliCodexSnippet)).toBeNull();
+    expect(screen.queryByTestId(TEST_IDS.settings.agentCliGenericSnippet)).toBeNull();
     expect(screen.queryByTestId(TEST_IDS.settings.agentCliCopyPath)).toBeNull();
   });
 
-  it('copies the path, the Claude command and the Codex block VERBATIM', async () => {
+  it('copies the path, the Claude command, the Codex block and the generic JSON VERBATIM', async () => {
     renderCard();
     await waitFor(() =>
       expect(screen.getByTestId(TEST_IDS.settings.agentCliPath)).toHaveValue(EXE)
@@ -114,6 +131,9 @@ describe('AgentCliSection', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy command' }));
     await waitFor(() => expect(writeText()).toHaveBeenCalledWith(claudeSnippet()));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy JSON' }));
+    await waitFor(() => expect(writeText()).toHaveBeenCalledWith(genericSnippet()));
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy config' }));
     await waitFor(() => expect(writeText()).toHaveBeenCalledWith(codexSnippet()));
@@ -134,7 +154,7 @@ describe('AgentCliSection', () => {
     expect(screen.queryByText('Copied to the clipboard.')).toBeNull();
   });
 
-  it('switching the tier rewrites BOTH snippets and the tier description', async () => {
+  it('switching the tier rewrites all three snippets and the tier description', async () => {
     renderCard();
     await waitFor(() =>
       expect(screen.getByTestId(TEST_IDS.settings.agentCliPath)).toHaveValue(EXE)
@@ -144,21 +164,31 @@ describe('AgentCliSection', () => {
     fireEvent.click(tier.getByRole('radio', { name: 'Irreversible' }));
 
     // Claude gets a distinct SERVER NAME per tier; Codex keeps one table name
-    // and moves the flag into args. Both change — a card that only rewrote one
-    // would hand out a mismatched pair.
+    // and moves the flag into args; the generic mcpServers JSON reuses the
+    // Claude server name. All three change — a card that only rewrote some of
+    // them would hand out a mismatched set.
     expect(claudeSnippet()).toBe(
       `claude mcp add --scope user ai-job-hunter-unrestricted -- "${EXE}" agent mcp --allow-irreversible`
     );
     expect(codexSnippet()).toBe(
       `[mcp_servers.ai-job-hunter]\ncommand = '${EXE}'\nargs = ["agent", "mcp", "--allow-irreversible"]`
     );
+    expect(genericSnippet()).toContain('ai-job-hunter-unrestricted');
+    expect(genericSnippet()).toContain('--allow-irreversible');
     expect(screen.getByText(/spend AI budget and delete data/i)).toBeInTheDocument();
+    // The transcript note claims to hold at EVERY tier, not just the default
+    // read-only one — re-assert it here, after switching off read, so a
+    // regression that gated it on `tier === 'read'` fails this suite.
+    expect(screen.getByText(/is written into the ai client's own transcript/i)).toBeInTheDocument();
 
     fireEvent.click(tier.getByRole('radio', { name: 'Reversible' }));
     expect(claudeSnippet()).toBe(
       `claude mcp add --scope user ai-job-hunter-write -- "${EXE}" agent mcp --allow-reversible`
     );
     expect(codexSnippet()).toContain('"--allow-reversible"');
+    expect(genericSnippet()).toContain('ai-job-hunter-write');
+    expect(genericSnippet()).toContain('--allow-reversible');
+    expect(screen.getByText(/is written into the ai client's own transcript/i)).toBeInTheDocument();
   });
 
   it('links to Help & Support in-app rather than out to a browser', async () => {
@@ -260,6 +290,33 @@ describe('AgentCliSection', () => {
       // it there — so only the role query can tell the two apart.
       expect(screen.getByRole('group', { name })).toBe(block);
     }
+  });
+
+  it('says the app must stay open, and where the read data ends up, only once there is something to copy', async () => {
+    const { unmount } = renderCard();
+    await waitFor(() =>
+      expect(screen.getByTestId(TEST_IDS.settings.agentCliPath)).toHaveValue(EXE)
+    );
+    // The CLI/MCP server is a separate process the AI client spawns (ADR-037,
+    // ADR-040 §11); it keeps answering `commands` even while the app is
+    // closed, so the note must hedge with "most" (matching the in-app FAQ,
+    // en/translation.json's supportFaq entry) rather than claim ALL calls
+    // fail while closed, and never that the server "runs inside" the app or
+    // "stops as soon as it closes".
+    const stayOpenNote = screen.getByText(/keep this app open while an agent is connected/i);
+    expect(stayOpenNote).toBeInTheDocument();
+    expect(stayOpenNote.textContent).toMatch(/most agent calls .*fail while it is closed/i);
+    expect(stayOpenNote.textContent).not.toMatch(/run inside it/i);
+    expect(stayOpenNote.textContent).not.toMatch(/stop as soon as it closes/i);
+    expect(screen.getByText(/is written into the ai client's own transcript/i)).toBeInTheDocument();
+    unmount();
+
+    // With no resolved path there is nothing to copy and nothing to connect —
+    // both notes would be answering a question the card isn't asking yet.
+    renderCard(vi.fn().mockResolvedValue({ exePath: null }));
+    await waitFor(() => expect(screen.getByText(/could not be resolved/i)).toBeInTheDocument());
+    expect(screen.queryByText(/keep this app open while an agent is connected/i)).toBeNull();
+    expect(screen.queryByText(/is written into the ai client's own transcript/i)).toBeNull();
   });
 
   it('lets the path row and the tier control wrap at the narrow settings column', async () => {
