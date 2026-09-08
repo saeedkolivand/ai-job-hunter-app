@@ -384,16 +384,35 @@ fn fence_scalar_reply(command: &str, data: &mut Value) {
     }
 }
 
+/// Step 1 of [`reshape_reply`] ("fence first"), factored out so
+/// `proof::extract_from_fenced_response` can fence a confirm-proof
+/// read the EXACT SAME way [`super::dispatch_direct`] fences every reply a
+/// caller actually reads (MEDIUM fix, review round 6 —
+/// `B1-r2-ACLI-R6-4`). Before this fn existed, the proof path called only
+/// `fence_scraped_fields` directly, one call short of what a real dispatch
+/// does — latent today only because no `ProofSource::read_command` is on
+/// [`SCALAR_FENCE_COMMANDS`], but the two lists were never asserted disjoint
+/// either, so a future row landing on both would have silently reintroduced
+/// the "permanently unsatisfiable confirm" bug security review round 4 fixed
+/// once already (a caller reading a fenced string, `--confirm` checked
+/// against the raw one).
+pub(super) fn fence_reply(command: &str, data: &mut Value) {
+    fence_scalar_reply(command, data);
+    fence_scraped_fields(data);
+}
+
 /// Every reshape a dispatched reply gets before it goes on the wire, in the
 /// ONE order they are allowed to run in. Pure — no `AppHandle`, no I/O — so
 /// the ordering itself is testable, which is the reason it is a fn at all
 /// (as three statements inline, nothing failed when they were reordered).
 ///
-/// 1. **Fence first.** [`fence_scraped_fields`] (plus [`fence_scalar_reply`]
-///    for the one bare-string reply it structurally cannot reach) is the
-///    security property and is unconditional over the WHOLE reply; narrowing
-///    it to "only the rows we are about to return" would make its coverage
-///    depend on a paging decision.
+/// 1. **Fence first.** [`fence_reply`] ([`fence_scraped_fields`] plus
+///    [`fence_scalar_reply`] for the one bare-string reply it structurally
+///    cannot reach) is the security property and is unconditional over the
+///    WHOLE reply; narrowing it to "only the rows we are about to return"
+///    would make its coverage depend on a paging decision. `fence_reply` is
+///    the SAME fn [`super::proof::extract_from_fenced_response`] calls, so
+///    the confirm-proof path and the read path can never fence differently.
 /// 2. **Then page.** [`paginate_list_reply`]'s byte budget must measure the
 ///    FENCED bytes that will really ship: fencing rewrites every field it
 ///    touches (`crate::prompt_fence::JOB_CAP` truncates a long one, the
@@ -414,8 +433,7 @@ pub(super) fn reshape_reply(
     mut data: Value,
     page_args: Option<(usize, usize)>,
 ) -> Value {
-    fence_scalar_reply(command, &mut data);
-    fence_scraped_fields(&mut data);
+    fence_reply(command, &mut data);
     if let Some((offset, limit)) = page_args {
         data = paginate_list_reply(data, offset, limit);
     }
