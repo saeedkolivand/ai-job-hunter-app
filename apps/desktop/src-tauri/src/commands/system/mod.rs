@@ -12,7 +12,19 @@ pub async fn system_health(app: AppHandle) -> Value {
     let scraper_health = engine.health();
 
     // Local (Ollama) availability + running model, via the Ollama provider module.
+    // `scope` labels this block for what it is: a probe of the local daemon, NOT
+    // the app's configured generation provider (that's `activeProvider` below) —
+    // the two can differ any time the user has switched to a cloud provider.
     let (ai_ready, ai_model) = crate::commands::ai_provider::ollama::reachable_model().await;
+
+    // The app's actually-configured provider/model — the SAME lookup
+    // `ai_active_config` uses, so the two commands can never disagree. Degrades
+    // to nulls rather than panicking if the store failed to open at startup (it
+    // is managed non-fatally in lib.rs).
+    let active = app
+        .try_state::<crate::ai_config::AiConfigStore>()
+        .map(|store| store.active_config());
+    let active_provider_json = active_provider_summary(active);
 
     // CLI agents (Claude Code, …): "detected" = their binary is installed. Looped
     // from the registry so new agents appear here automatically.
@@ -29,9 +41,20 @@ pub async fn system_health(app: AppHandle) -> Value {
         "status": "ok",
         "shell": "tauri",
         "scraper": { "mode": scraper_health.mode, "ready": scraper_health.ready, "scrapers": scraper_health.scrapers },
-        "ai": { "ready": ai_ready, "model": ai_model },
+        "ai": { "ready": ai_ready, "model": ai_model, "scope": "localOllama" },
+        "activeProvider": active_provider_json,
         "cliAgents": Value::Object(cli_agents),
         "data": { "ready": true, "sqlite": true, "vector": true }
+    })
+}
+
+/// The `activeProvider` block of `system_health` — pulled out so the
+/// present/absent-store branching is unit-testable without a live
+/// `AppHandle` (this crate has no mock harness for one).
+fn active_provider_summary(active: Option<crate::ai_config::ActiveAiConfig>) -> Value {
+    json!({
+        "provider": active.as_ref().and_then(|c| c.active_provider.clone()),
+        "model": active.as_ref().and_then(|c| c.model.clone()),
     })
 }
 

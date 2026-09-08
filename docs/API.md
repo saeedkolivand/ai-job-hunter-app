@@ -4265,6 +4265,13 @@ Contract: `SystemContract` in `packages/shared/src/ipc/contracts/system.ts`
 health(): Promise<RuntimeHealth>;
 ```
 
+Runtime health snapshot. Two AI-related blocks answer two different
+questions: `ai` is the LOCAL Ollama daemon probe (`scope: 'localOllama'`)
+— reachable + which model is loaded — while `activeProvider` is the
+app's actually-configured generation provider/model (same lookup as
+`ai.getActiveConfig`), which may be a cloud provider unrelated to
+Ollama's reachability. See `RuntimeHealth`.
+
 #### `system.getVersion`
 
 ```ts
