@@ -1179,9 +1179,11 @@ pub fn run(args: &[String]) -> i32 {
     ))
 }
 
-// ADR-038 §1 — the command policy table (167 rows) + its exactness test
-// against `generate_handler!`. Data only in this phase: nothing here
-// dispatches yet (§2's generic `agent call <ns>:<command>` tier is later).
+// ADR-038 §1 — the command policy table (row count pinned by
+// `policy::tests::policy_table_has_exactly_167_rows`, never restated here)
+// + its exactness test against `generate_handler!`. Data only in this
+// phase: nothing here dispatches yet (§2's generic `agent call
+// <ns>:<command>` tier is later).
 pub(crate) mod policy;
 
 // The MCP (Model Context Protocol) stdio server mode — `agent mcp`.

@@ -101,6 +101,31 @@ const STARTUP_STATUS_DELAY: tokio::time::Duration = tokio::time::Duration::from_
 
 // ── Commands ──────────────────────────────────────────────────────────────────
 
+/// The [`updater_status`] reply for a given [`UpdaterState`] — split out so
+/// it is testable without a live `AppHandle` (this crate has no
+/// `tauri::test` mock-app harness, same reason
+/// [`download_in_progress_or_done`] and [`store_managed`] are split out).
+fn status_reply(state: &UpdaterState) -> Value {
+    match &state.pending_version {
+        Some(version) => json!({ "available": true, "version": version }),
+        None => json!({ "available": false }),
+    }
+}
+
+/// The last-known update state — whatever `updater_check` or the automatic
+/// `silent_check` (10s after launch, then every 4h) already found — with no
+/// network call and no `updater:status` emission. Exists so a read-only
+/// caller (the agent-cli `Read` tier) can answer "is an update available"
+/// without triggering `updater_check`'s network probe/event, which selects
+/// the install target the rest of the check→download→install flow acts on
+/// (issue #1165's follow-up: `updater_check` itself stays `Effect::Reversible`
+/// for exactly that reason — see its POLICY row comment).
+#[tauri::command]
+pub fn updater_status(app: AppHandle) -> Value {
+    let state = app.state::<Mutex<UpdaterState>>();
+    status_reply(&state.lock())
+}
+
 /// Check for an available update.
 /// Emits checking → available(version) | not-available | error.
 /// Stores the Update object for use by updater_download.

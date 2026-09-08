@@ -152,6 +152,44 @@ fn test_download_in_progress_or_done_false_after_bytes_taken() {
     assert!(!download_in_progress_or_done(&state));
 }
 
+// ── status_reply: `updater_status`'s read-only reply (round 5,
+// `B1-r1-ACLI-R5-1`) — no network, no `UpdaterState` write, no event ────────
+
+#[test]
+fn test_status_reply_not_available_when_nothing_pending() {
+    assert_eq!(
+        status_reply(&UpdaterState::default()),
+        json!({ "available": false })
+    );
+}
+
+#[test]
+fn test_status_reply_available_with_the_pending_version_once_checked() {
+    let state = UpdaterState {
+        pending_version: Some("2.5.0".to_string()),
+        ..UpdaterState::default()
+    };
+    assert_eq!(
+        status_reply(&state),
+        json!({ "available": true, "version": "2.5.0" })
+    );
+}
+
+#[test]
+fn test_status_reply_reads_pending_version_not_downloaded_bytes() {
+    // A finished download still reports the PENDING version — `updater_install`'s proof source
+    // reads it here, not off `downloaded_bytes`, which carries no version string of its own.
+    let state = UpdaterState {
+        pending_version: Some("3.0.0".to_string()),
+        downloaded_bytes: Some(vec![1, 2, 3]),
+        ..UpdaterState::default()
+    };
+    assert_eq!(
+        status_reply(&state),
+        json!({ "available": true, "version": "3.0.0" })
+    );
+}
+
 // ── Changelog parsing ────────────────────────────────────────────────────────
 
 /// `major.minor.patch` as a tuple for order comparisons in tests only — not a

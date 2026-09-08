@@ -515,7 +515,11 @@ pub(super) fn throttle_key(command: &str) -> &str {
 /// names. `discovered::DiscoveredCompany.display_name` → `displayName`
 /// (`discovery_search_companies`) is board-harvested from a posting's own
 /// apply-redirect URL, same category. `documents::DocumentRecord.text`
-/// (`documents_list`/`documents_get_text`) and
+/// (`documents_list`, whose rows carry it under a `text` key this list DOES
+/// reach — `documents_get_text` returns the SAME text as a BARE string reply
+/// with no key at all, which this name-keyed walk structurally cannot see;
+/// `reshape::SCALAR_FENCE_COMMANDS` is the separate fence for that shape,
+/// issue #1170's follow-up, `B1-r1-ACLI-R5-7`) and
 /// `notifications::AppNotification.body` (`notifications_list`) are the
 /// generic `text`/`body` carriers this round closes — a résumé's own text
 /// is user-uploaded content, not board-scraped, but this repo's own
@@ -580,9 +584,11 @@ const FENCE_FIELD_NAMES: &[&str] = &[
     // `AiGenerationRecord.top_requirements: Vec<String>` — an ARRAY, fenced
     // element-by-element via the array handling below.
     "topRequirements",
-    // `documents::DocumentRecord.text` (`documents_list`,
-    // `documents_get_text`) — the user's uploaded résumé/cover-letter text;
-    // see this const's own doc for why this repo treats it as untrusted.
+    // `documents::DocumentRecord.text` under `documents_list`'s rows — the
+    // user's uploaded résumé/cover-letter text; see this const's own doc for
+    // why this repo treats it as untrusted. `documents_get_text` carries the
+    // SAME text but as a bare string reply, which this key-walk cannot
+    // reach — see `reshape::SCALAR_FENCE_COMMANDS`.
     "text",
     // `notifications::AppNotification.body` (`notifications_list`) — can
     // echo a scraped job title/company inside app-generated copy.

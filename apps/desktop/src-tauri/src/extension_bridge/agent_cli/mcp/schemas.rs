@@ -145,7 +145,9 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
             "My Profile",
             "Contact fields only (name, email, phone, location, links) — for the résumé/document \
              text itself, read documents:documents_list via call-read (rows carry the document \
-             text, fenced and capped at the fence limit).",
+             text, fenced and capped at the fence limit); for a document's full, uncapped text, \
+             call-read documents:documents_get_text with {\"id\": <that row's `_id` value>} (the \
+             row's key is `_id`, but documents_get_text's own parameter is named `id`).",
             no_args.clone(),
         ),
         curated_tool(TOOL_AUTOMATIONS, "Automations", "", no_args),
@@ -175,15 +177,10 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
         json!({
             "name": TOOL_CALL_READ,
             "title": "Call (read)",
-            "description": "Dispatch a Read-effect command by namespace/command — no persisted state change (a Read row may still emit a UI event or touch in-memory-only state; see `updater:updater_check`). Refuses any target this server does not classify Read.",
+            "description": "Dispatch a Read-effect command by namespace/command — no state change. Refuses any target this server does not classify Read.",
             "inputSchema": call_target_schema(json!({}), &[]),
-            // `readOnlyHint: false` (round-3 fix, `B1-r3-ACLI-4`): the hint is a per-TOOL promise,
-            // and this tool dispatches every current AND future `Effect::Read` row — including
-            // `updater:updater_check`, which writes `UpdaterState` and emits a UI event the
-            // description above already admits. A client that auto-approves on `readOnlyHint`
-            // must not be handed that promise for a tool whose own description qualifies it.
             "annotations": {
-                "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true,
+                "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true,
                 "openWorldHint": true,
             },
         }),

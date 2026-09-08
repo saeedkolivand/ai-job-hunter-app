@@ -355,15 +355,45 @@ pub(super) fn unfence_named_fields_recursive(value: &mut Value) {
     }
 }
 
+/// Commands whose reply is a BARE JSON string carrying the same untrusted
+/// document text [`super::FENCE_FIELD_NAMES`]'s `"text"` entry fences when it
+/// arrives wrapped in an object (`documents_list`'s rows). `documents_get_text`
+/// declares `-> AppResult<String>`, so its reply is a scalar at the ROOT of
+/// the tree — [`fence_named_fields_recursive`]'s name-keyed walk only fences a
+/// STRING VALUE reached under a named key, so a root with no key at all falls
+/// through its `_ => {}` arm untouched (issue #1170's follow-up,
+/// `B1-r1-ACLI-R5-7`). `system_get_version` also returns a bare string, but
+/// that value is this app's OWN version, never user-authored text, so this
+/// list is scoped to the one command whose scalar reply is untrusted.
+const SCALAR_FENCE_COMMANDS: &[&str] = &["documents_get_text"];
+
+/// Fences `data` in place when `command` is on [`SCALAR_FENCE_COMMANDS`] and
+/// the reply is actually a bare string — a rename to an object reply (nothing
+/// requires `AppResult<String>` to stay that shape) simply stops matching
+/// here rather than double-fencing, since [`fence_scraped_fields`]'s
+/// name-keyed walk would then cover it instead.
+fn fence_scalar_reply(command: &str, data: &mut Value) {
+    if let Value::String(s) = data {
+        if SCALAR_FENCE_COMMANDS.contains(&command) {
+            *data = json!(crate::prompt_fence::fenced(
+                "job_posting",
+                s,
+                crate::prompt_fence::JOB_CAP
+            ));
+        }
+    }
+}
+
 /// Every reshape a dispatched reply gets before it goes on the wire, in the
 /// ONE order they are allowed to run in. Pure — no `AppHandle`, no I/O — so
 /// the ordering itself is testable, which is the reason it is a fn at all
 /// (as three statements inline, nothing failed when they were reordered).
 ///
-/// 1. **Fence first.** [`fence_scraped_fields`] is the security property and
-///    is unconditional over the WHOLE reply; narrowing it to "only the rows
-///    we are about to return" would make its coverage depend on a paging
-///    decision.
+/// 1. **Fence first.** [`fence_scraped_fields`] (plus [`fence_scalar_reply`]
+///    for the one bare-string reply it structurally cannot reach) is the
+///    security property and is unconditional over the WHOLE reply; narrowing
+///    it to "only the rows we are about to return" would make its coverage
+///    depend on a paging decision.
 /// 2. **Then page.** [`paginate_list_reply`]'s byte budget must measure the
 ///    FENCED bytes that will really ship: fencing rewrites every field it
 ///    touches (`crate::prompt_fence::JOB_CAP` truncates a long one, the
@@ -384,6 +414,7 @@ pub(super) fn reshape_reply(
     mut data: Value,
     page_args: Option<(usize, usize)>,
 ) -> Value {
+    fence_scalar_reply(command, &mut data);
     fence_scraped_fields(&mut data);
     if let Some((offset, limit)) = page_args {
         data = paginate_list_reply(data, offset, limit);

@@ -1,6 +1,7 @@
-//! ADR-038 §1 — the command policy table: every one of the 167
-//! `#[tauri::command]` sites registered in `tauri::generate_handler!`
-//! (`lib.rs`), classified by [`Effect`]. Phase 1 (this table) shipped with
+//! ADR-038 §1 — the command policy table: every `#[tauri::command]` site
+//! registered in `tauri::generate_handler!` (`lib.rs`, row count pinned by
+//! `tests::policy_table_has_exactly_167_rows`, never restated here),
+//! classified by [`Effect`]. Phase 1 (this table) shipped with
 //! nothing dispatching through it; Phase 2 (`super::super::agent_call`) reads
 //! it to drive `agent call <ns>:<command>` — [`Effect::Read`] AND
 //! [`Effect::Reversible`] rows dispatch directly (Phase 4), and
@@ -1240,41 +1241,44 @@ pub(crate) const POLICY: &[PolicyEntry] = &[
     PolicyEntry { path: "export::commands::documents_render_preview_images", effect: Effect::Read },
 
     // updater/mod.rs
-    // A network probe of the release feed (`updater.check().await`) —
-    // nothing persisted to disk, no paid egress. It DOES write
-    // `UpdaterState` (`pending_version`/`pending_update`/clears
+    // A network probe of the release feed (`updater.check().await`). It
+    // writes `UpdaterState` (`pending_version`/`pending_update`/clears
     // `downloaded_bytes`), and that write IS observable through another
     // command: it is exactly what `updater_download` reads to decide which
     // artifact to transfer, so this row selects the install target for the
     // rest of the check→download→install flow, not just for its own next
     // call. It also emits `updater:status` to the renderer (`checking`,
     // then `available`/`not-available`/`error`), which changes what the
-    // user sees. Still `Read`: it does not persist anything to disk, has no
-    // side effect independent of that flow, and is idempotent — a returning
-    // caller with a download already in flight or done gets that
-    // already-known state echoed back rather than a re-fetch, and the
-    // in-memory state is gone on restart. Reclassified from `Reversible`
-    // (issue #1165).
-    PolicyEntry { path: "updater::updater_check", effect: Effect::Read },
+    // user sees. `Reversible`, not `Read` (reverted from a Read
+    // reclassification, issue #1165): `Read`'s "no state change" promise
+    // covers the whole `call-read` TOOL, not one row, so making this row
+    // Read would have forced `readOnlyHint` to `false` for every other
+    // `Read` row on this surface too. `updater::updater_status` below is
+    // the read-only alternative.
+    PolicyEntry { path: "updater::updater_check", effect: Effect::Reversible },
+    // The read-only counterpart of `updater_check` above: reports whatever
+    // `updater_check` or the automatic silent check already found, with no
+    // network call and no `updater:status` emission — genuinely `Read`
+    // (issue #1165's follow-up).
+    PolicyEntry { path: "updater::updater_status", effect: Effect::Read },
     // Downloads the update artifact into memory/state — not yet applied, nothing destroyed.
     PolicyEntry { path: "updater::updater_download", effect: Effect::Reversible },
     // Installs the downloaded update and force-restarts the app
     // (`app.restart()`, never returns) — replaces the running binary with
     // no undo path. `UpdaterState.pending_version` otherwise lives only in
     // memory behind `updater_download`, which stays `Reversible`, so it is
-    // not eligible as a proof source. `updater_check` is now `Read` (issue
-    // #1165) and its own reply carries the PENDING version at `version` —
-    // the one about to be installed, not the currently running one — so the
-    // proof below reads it there (issue #1171), replacing the former
-    // `system_get_version` proof, which named the wrong version and was
-    // vacuous besides. The real safety boundary here is still
-    // `updater_download`'s minisign signature check, not this ceremony;
-    // this proof only confirms the caller is targeting the version that
-    // will actually be installed.
+    // not eligible as a proof source. `updater_status`'s reply carries the
+    // PENDING version at `version` — the one about to be installed, not the
+    // currently running one — so the proof below reads it there (issue
+    // #1171), replacing the former `system_get_version` proof, which named
+    // the wrong version and was vacuous besides. The real safety boundary
+    // here is still `updater_download`'s minisign signature check, not this
+    // ceremony; this proof only confirms the caller is targeting the
+    // version that will actually be installed.
     PolicyEntry {
         path: "updater::updater_install",
         effect: Effect::Irreversible(ProofSource::Scalar {
-            read_command: "updater_check",
+            read_command: "updater_status",
             path: &["version"],
         }),
     },

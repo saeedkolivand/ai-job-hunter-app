@@ -938,11 +938,12 @@ fn instructions_ns_cmd_pairs_are_real_policy_rows() {
         );
     }
     assert_eq!(
-        checked, 1,
-        "expected exactly the 1 résumé/document ns:cmd pair issue #1170 named — \
-         documents:documents_get_text was dropped (issue #1171): its `id` param does not match \
-         documents_list's `_id` rows, and documents_list's `text` is fenced and capped, never \
-         claimed as \"full\" (issue #1170 round-4 review): {INSTRUCTIONS}"
+        checked, 2,
+        "expected exactly the 2 résumé/document ns:cmd pairs (round 5, `B1-r1-ACLI-R5-4`): \
+         documents:documents_list (fenced/capped rows) AND documents:documents_get_text (the \
+         full, uncapped text — its `id` param maps to documents_list's `_id` value, spelled out \
+         in the prose rather than dropping the command entirely; its reply is now fenced too, \
+         `B1-r1-ACLI-R5-7`): {INSTRUCTIONS}"
     );
 }
 
@@ -952,8 +953,19 @@ fn instructions_ns_cmd_pairs_are_real_policy_rows() {
 /// old prose promised documents_list rows "already carry the full `text`" on BOTH surfaces below;
 /// neither may claim "full" again. The last assertion proves the claim really would be false: text
 /// well over the cap comes back shorter than it went in.
+///
+/// Round 5 (`B1-r1-ACLI-R5-5`): the two negative assertions below only deny the EXACT substrings
+/// the round-4 fix happened to write — "rows already carry the complete text", "rows carry the
+/// whole document", or "the entire text" would all satisfy both negatives while overclaiming
+/// exactly the same thing. Assert the POSITIVE clause on both surfaces too, so a rewrite that
+/// drops the caveat (while carefully avoiding the two banned phrases) still fails.
 #[test]
 fn documents_text_prose_never_claims_full_past_the_fence_cap() {
+    assert!(
+        INSTRUCTIONS.contains("fenced and capped"),
+        "INSTRUCTIONS must positively say documents_list rows are fenced and capped, not just \
+         avoid the word \"full\": {INSTRUCTIONS}"
+    );
     assert!(
         !INSTRUCTIONS.contains("carry the full"),
         "INSTRUCTIONS must not claim documents_list rows carry FULL text — they are fenced and \
@@ -964,6 +976,11 @@ fn documents_text_prose_never_claims_full_past_the_fence_cap() {
         ["description"]
         .as_str()
         .unwrap();
+    assert!(
+        profile_description.contains("fenced and capped"),
+        "profile's description must positively say documents_list rows are fenced and capped, \
+         not just avoid the word \"full\": {profile_description}"
+    );
     assert!(
         !profile_description.contains("full text"),
         "profile's description must not claim documents_list rows carry FULL text: \
@@ -1276,13 +1293,14 @@ fn every_scraped_text_tool_carries_the_same_untrusted_fields_notice() {
     }
 }
 
-/// Issue #1170, corrected round 3 (`B1-r3-ACLI-1`): the `profile` tool must say up front it holds
-/// contact fields only, and point at a REAL `POLICY` read for the résumé/document text itself (a
-/// stale rename here would send a calling model at a command that no longer exists). Only
-/// `documents:documents_list` — `documents:documents_get_text` was dropped from this description
-/// too (issue #1171, same as `INSTRUCTIONS`): its `id` param does not match `documents_list`'s
-/// `_id` rows, so a caller following the OLD description landed on `invoke_error` for a missing
-/// `id` key, then a second failure after "wrap it under that key" produced `{"id": {"_id": …}}`.
+/// Issue #1170, round 5 (`B1-r1-ACLI-R5-4`): the `profile` tool must say up front it holds
+/// contact fields only, and point at REAL `POLICY` reads for the résumé/document text itself (a
+/// stale rename here would send a calling model at a command that no longer exists). Both
+/// `documents:documents_list` (fenced/capped rows) AND `documents:documents_get_text` (the full,
+/// uncapped text) are named — the earlier version of this description dropped
+/// `documents_get_text` entirely rather than spelling out that its `id` param maps to
+/// `documents_list`'s `_id` value, leaving an assistant judging fit from a silently truncated
+/// prefix of any résumé over the fence cap with no way to read the rest.
 #[test]
 fn profile_tool_description_names_a_real_document_read() {
     let list = tools(Tier::Read);
@@ -1322,10 +1340,10 @@ fn profile_tool_description_names_a_real_document_read() {
         );
     }
     assert_eq!(
-        checked, 1,
-        "expected exactly the 1 ns:cmd pair the profile description names — \
-         documents:documents_get_text was dropped (issue #1171), matching INSTRUCTIONS: \
-         {description}"
+        checked, 2,
+        "expected exactly the 2 ns:cmd pairs the profile description names (round 5, \
+         `B1-r1-ACLI-R5-4`) — documents:documents_list and documents:documents_get_text, \
+         matching INSTRUCTIONS: {description}"
     );
 }
 
@@ -2564,42 +2582,44 @@ fn the_generic_input_schema_says_limit_and_cursor_belong_to_the_paging_layer() {
     }
 }
 
-/// Issue #1164 round 2 (`B1-r2-B2-r2-ACLI-4`): `updater:updater_check` is `Effect::Read` (issue
-/// #1165) while still writing `UpdaterState` and emitting a renderer event — a Read row CAN have
-/// a non-persisted side effect. `call-read`'s own description must not overclaim "no state
-/// change" (false for that row) alongside `readOnlyHint: true`; it must say "no PERSISTED state
-/// change" instead, matching what the policy comment on `updater_check` actually proves.
+/// Round 5 (`B1-r1-ACLI-R5-1`): `updater:updater_check` writes `UpdaterState` and emits a UI
+/// event, so it must stay `Effect::Reversible`, NOT `Read` — `call-read`'s `readOnlyHint` is a
+/// per-TOOL promise covering every current and future `Read` row, and reclassifying one
+/// side-effecting row into `Read` would force that promise to `false` for all the genuinely
+/// read-only rows too. `updater::updater_status` is the read-only alternative (its own POLICY row
+/// comment).
 #[test]
-fn call_read_description_claims_no_persisted_state_change_not_no_state_change_at_all() {
-    let description = tool_description(&tools(Tier::Read), TOOL_CALL_READ);
-    assert!(
-        description.contains("no persisted state change"),
-        "call-read's description must say \"no persisted state change\", the claim its Read \
-         rows actually keep: {description}"
-    );
-    assert!(
-        !description.contains("— no state change.") && !description.contains("— no state change,"),
-        "call-read's description must not overclaim a bare \"no state change\" — \
-         updater:updater_check is Read and still writes UpdaterState + emits an event: \
-         {description}"
+fn updater_check_is_not_dispatchable_as_read() {
+    let entry = POLICY
+        .iter()
+        .find(|e| e.path == "updater::updater_check")
+        .expect("updater_check has a POLICY row");
+    assert_eq!(
+        entry.effect,
+        Effect::Reversible,
+        "updater_check writes UpdaterState + emits updater:status — it must not be Read, or \
+         call-read's readOnlyHint would have to go false for every Read row"
     );
 }
 
-/// Round 3 (`B1-r3-ACLI-4`): `call-read`'s `readOnlyHint` must be `false`, matching the
-/// description above rather than contradicting it — `updater:updater_check` is `Effect::Read`
-/// (issue #1165) and still writes `UpdaterState` and emits a UI event, so a client that
-/// auto-approves on `readOnlyHint: true` (ADR-040 §4) would silently let an agent fire that probe
-/// and drive the update banner without a prompt.
+/// Companion to the test above: `call-read`'s own annotations must still claim `readOnlyHint:
+/// true` now that no side-effecting row (`updater_check`) is classified `Read` — this is the
+/// promise every genuinely read-only row (63 of them) depends on for auto-approval.
 #[test]
-fn call_read_annotations_do_not_claim_read_only() {
+fn call_read_annotations_claim_read_only() {
     let tool = tools(Tier::Read)
         .into_iter()
         .find(|t| t["name"] == TOOL_CALL_READ)
         .expect("call-read is always present");
     assert_eq!(
         tool["annotations"]["readOnlyHint"],
-        json!(false),
-        "call-read must not claim readOnlyHint: true while it can dispatch \
-         updater:updater_check: {tool}"
+        json!(true),
+        "call-read must claim readOnlyHint: true — every row it can dispatch is genuinely \
+         side-effect-free on the persisted+in-memory axis: {tool}"
+    );
+    let description = tool_description(&tools(Tier::Read), TOOL_CALL_READ);
+    assert!(
+        description.contains("no state change"),
+        "call-read's description must say \"no state change\": {description}"
     );
 }

@@ -79,7 +79,7 @@ fn the_real_extension_bridge_status_row_refuses_through_the_real_gate() {
 /// answers `Ok(Dispatch::Direct)` and `call-read` would ship a user path into
 /// an MCP client's persisted transcript. No other test catches that flip: it
 /// changes no row COUNT (`policy_table_has_exactly_167_rows`, the 34
-/// Irreversible tally, `extension_bridge::test`'s 167-row walk are all blind
+/// Irreversible tally, `extension_bridge::test`'s 168-row walk are all blind
 /// to an `Effect` swap), `not_exposed_rows_carry_a_real_reason` only inspects
 /// rows that ARE already `NotExposed`, and the per-row walk in
 /// `extension_bridge::test` keys its assertions off `entry.effect` itself, so
@@ -1660,6 +1660,37 @@ fn reshape_reply_base64_encodes_last_and_the_two_reshape_lists_stay_disjoint() {
     // envelope, no marker key.
     let out = reshape_reply("jobs_list", json!({ "id": "j-1" }), None);
     assert_eq!(out, json!({ "id": "j-1" }));
+}
+
+/// Round 5 (`B1-r1-ACLI-R5-7`): `documents_get_text` returns `AppResult<String>` — a BARE JSON
+/// string reply, not an object — so `fence_named_fields_recursive`'s name-keyed walk (which only
+/// ever fences a string reached UNDER a key) cannot reach it; its `_ => {}` arm silently passed
+/// the reply through untouched before this fix. This is the same untrusted document text
+/// `documents_list`'s `"text"` field gets fenced+capped, just returned through a different
+/// command shape.
+#[test]
+fn reshape_reply_fences_documents_get_text_bare_string_reply() {
+    let long_text = "s".repeat(crate::prompt_fence::JOB_CAP + 5_000);
+    let out = reshape_reply("documents_get_text", json!(long_text), None);
+    let fenced = out.as_str().expect("still a bare string reply");
+    assert!(
+        fenced.starts_with("<job_posting>"),
+        "documents_get_text's bare string reply must be fenced: {fenced:.80}"
+    );
+    assert!(
+        fenced.len() < long_text.len(),
+        "documents_get_text's reply must be capped at prompt_fence::JOB_CAP like every other \
+         fenced document text"
+    );
+}
+
+/// A command NOT on `SCALAR_FENCE_COMMANDS` whose reply happens to be a bare string (e.g.
+/// `system_get_version`) must NOT be fenced — that value is this app's own version, never
+/// user-authored text.
+#[test]
+fn reshape_reply_does_not_fence_unrelated_bare_string_replies() {
+    let out = reshape_reply("system_get_version", json!("1.2.3"), None);
+    assert_eq!(out, json!("1.2.3"));
 }
 
 /// The discovery note is the ONLY thing the consumer ever reads about paging,

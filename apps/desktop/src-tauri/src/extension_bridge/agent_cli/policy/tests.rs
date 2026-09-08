@@ -70,7 +70,10 @@ fn registered_command_paths() -> Vec<&'static str> {
 /// — this fails independently of either source's own content.
 #[test]
 fn policy_table_has_exactly_167_rows() {
-    assert_eq!(POLICY.len(), 167);
+    // 167 + 1 (round 5, `B1-r1-ACLI-R5-1`): `updater::updater_status`, the
+    // read-only counterpart added when `updater_check` was reverted from
+    // `Read` back to `Reversible`.
+    assert_eq!(POLICY.len(), 168);
 }
 
 /// ADR-038 §1's core invariant: the policy table and `generate_handler!`
@@ -205,7 +208,7 @@ fn extraction_finds_known_paths_at_each_end_of_the_list() {
         "extraction must find the LAST registered command"
     );
     assert!(found.contains(&"commands::privacy::privacy_reset_app"));
-    assert_eq!(found.len(), 167);
+    assert_eq!(found.len(), 168);
 }
 
 /// ADR-038 §4 (Phase 3): every `Irreversible` row's
@@ -423,13 +426,58 @@ fn mark_all_read_proof_comment_calls_the_count_a_superset_not_exact() {
     );
 }
 
-/// Issue #1164 round 2 (`B1-r2-B2-r2-ACLI-5`): `updater_install`'s proof must read the PENDING
-/// version off `updater_check` (`Effect::Read` since issue #1165, and the version actually about
-/// to be installed) rather than `system_get_version` (the CURRENTLY RUNNING version — a vacuous
-/// proof, since it never changes as a result of confirming). A regression here would silently
-/// reintroduce the untracked "out of scope here (follow-up)" deferral round 2 flagged.
+/// Round 5 (`B1-r1-ACLI-R5-3`): direct pin for both rows issue #1164 reclassified — the aggregate
+/// row count (`policy_table_has_exactly_167_rows`) and the Irreversible tally
+/// (`every_proof_source_read_command_is_a_read_row`'s trailing `checked == 35`) are BOTH blind to
+/// a revert of one row paired with an unrelated +1/-1 elsewhere in the table: `checked` stays 35
+/// either way. `notifications_mark_read` had no direct pin anywhere (it appeared in this file only
+/// inside a comment); `notifications_mark_all_read` was pinned only for its comment's WORDING
+/// (`mark_all_read_proof_comment_calls_the_count_a_superset_not_exact` above), never its `Effect`
+/// or `ProofSource` shape. This asserts both rows' actual classification and proof shape directly.
 #[test]
-fn updater_install_proof_reads_the_pending_version_off_updater_check() {
+fn notifications_mark_rows_stay_irreversible_with_their_proof_shapes() {
+    let mark_read = POLICY
+        .iter()
+        .find(|e| e.path == "commands::notifications::notifications_mark_read")
+        .expect("commands::notifications::notifications_mark_read is a real POLICY row");
+    let Effect::Irreversible(ProofSource::ListMatch {
+        read_command,
+        id_field,
+        match_field,
+        value_field,
+    }) = mark_read.effect
+    else {
+        panic!(
+            "notifications_mark_read must be Irreversible(ProofSource::ListMatch), got {:?}",
+            mark_read.effect
+        );
+    };
+    assert_eq!(read_command, "notifications_list");
+    assert_eq!(id_field, &["id"]);
+    assert_eq!(match_field, "id");
+    assert_eq!(value_field, "title");
+
+    let mark_all_read = POLICY
+        .iter()
+        .find(|e| e.path == "commands::notifications::notifications_mark_all_read")
+        .expect("commands::notifications::notifications_mark_all_read is a real POLICY row");
+    let Effect::Irreversible(ProofSource::Count { read_command }) = mark_all_read.effect else {
+        panic!(
+            "notifications_mark_all_read must be Irreversible(ProofSource::Count), got {:?}",
+            mark_all_read.effect
+        );
+    };
+    assert_eq!(read_command, "notifications_list");
+}
+
+/// Round 5 (`B1-r1-ACLI-R5-1`): `updater_install`'s proof must read the PENDING version off
+/// `updater_status` — the read-only counterpart added when `updater_check` was reverted from
+/// `Read` back to `Reversible` (it writes `UpdaterState`/emits an event, so it cannot be the proof
+/// source for another `Irreversible` row: `every_proof_source_read_command_is_a_read_row` requires
+/// the target to be `Effect::Read`) — rather than `system_get_version` (the CURRENTLY RUNNING
+/// version — a vacuous proof, since it never changes as a result of confirming).
+#[test]
+fn updater_install_proof_reads_the_pending_version_off_updater_status() {
     let entry = POLICY
         .iter()
         .find(|e| e.path == "updater::updater_install")
@@ -441,14 +489,44 @@ fn updater_install_proof_reads_the_pending_version_off_updater_check() {
         );
     };
     assert_eq!(
-        read_command, "updater_check",
-        "updater_install's proof must read updater_check, not system_get_version's vacuous \
-         running-version echo"
+        read_command, "updater_status",
+        "updater_install's proof must read updater_status, not system_get_version's vacuous \
+         running-version echo, and not updater_check (Reversible, not a valid Read proof source)"
     );
     assert_eq!(
         path,
         &["version"],
-        "updater_install's proof must walk to updater_check's `version` field"
+        "updater_install's proof must walk to updater_status's `version` field"
+    );
+}
+
+/// Round 5 (`B1-r1-ACLI-R5-1`): `updater_check` must stay `Effect::Reversible` — it writes
+/// `UpdaterState` and emits `updater:status`, and reclassifying it `Read` (issue #1165) forced
+/// `call-read`'s `readOnlyHint` to `false` for every one of this table's 63 other `Read` rows,
+/// since the hint is a per-TOOL promise, not per-row (see `mcp::tests::
+/// call_read_annotations_claim_read_only`). `updater::updater_status` is the read-only
+/// alternative this row's proof now points at.
+#[test]
+fn updater_check_stays_reversible_not_read() {
+    let entry = POLICY
+        .iter()
+        .find(|e| e.path == "updater::updater_check")
+        .expect("updater::updater_check is a real POLICY row");
+    assert_eq!(
+        entry.effect,
+        Effect::Reversible,
+        "updater_check must stay Reversible, not Read — got {:?}",
+        entry.effect
+    );
+    let status = POLICY
+        .iter()
+        .find(|e| e.path == "updater::updater_status")
+        .expect("updater::updater_status is a real POLICY row");
+    assert_eq!(
+        status.effect,
+        Effect::Read,
+        "updater_status must be the genuinely read-only alternative — got {:?}",
+        status.effect
     );
 }
 
