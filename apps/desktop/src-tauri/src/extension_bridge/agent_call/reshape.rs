@@ -22,17 +22,20 @@
 //! RENDERER's wire shape and must stay byte-for-byte identical, so anything
 //! only an agent needs is done here, on the way out, and nowhere else.
 //!
-//! The fencing TABLES and the outbound fence walk itself stay in the parent:
-//! they are a safety property of that chokepoint read from BOTH directions
-//! (`super::fence_scraped_fields` on the way out, the mirror here on the way
-//! in), and a child module sees its parent's private items, so nothing needed
-//! widening for that half.
+//! The fencing TABLES and the outbound fence walk itself are a safety property of that same
+//! chokepoint read from BOTH directions (`super::fence_scraped_fields` on the way out, the
+//! mirror here on the way in) — moved to their own `agent_call/fence.rs` under this SAME R8
+//! reasoning, a sibling this module still reaches as `super::fence_scraped_fields` unchanged
+//! (re-exported at `agent_call.rs`'s top, same as this module's own three items are).
 
 use serde_json::{json, Value};
 
 use crate::extension_bridge::paging;
 
 use super::*;
+// The inbound mirror below reads the SAME fencing tables/shape rules the outbound walk uses —
+// see `agent_call/fence.rs`'s own doc for why this module reaches a sibling this way.
+use super::fence::*;
 
 /// Commands whose reply is an unbounded, growth-only, already-newest-first
 /// ARRAY that NO command argument can narrow — both take `(app: AppHandle)`
@@ -152,7 +155,7 @@ pub(super) const BASE64_ENCODING: &str = "base64";
 /// reason this is a wire key and not documentation.
 ///
 /// Top-level only, and by exact `(command, field)` pair — the opposite of
-/// [`fence_named_fields_recursive`]'s unconditional recursive walk, on
+/// `fence_named_fields_recursive`'s unconditional recursive walk, on
 /// purpose: fencing is a SAFETY property that must cover a field wherever it
 /// appears, while this is a lossy-looking representation change that must
 /// only ever hit the one field whose type was audited. A recursive
@@ -274,8 +277,8 @@ pub(super) fn paginate_list_reply(data: Value, offset: usize, limit: usize) -> V
     json!({ "items": page, "total": total, "nextCursor": next_cursor })
 }
 
-/// Reverses [`fence_named_fields_recursive`]'s wrapper on every INCOMING
-/// `--input` value under a [`FENCE_FIELD_NAMES`] key, before ANY dispatched
+/// Reverses `fence_named_fields_recursive`'s wrapper on every INCOMING
+/// `--input` value under a `FENCE_FIELD_NAMES` key, before ANY dispatched
 /// command's real body ever sees it (security review round 4 — the
 /// centralised fix: `commands::scrape::scrape_persist_job`'s own
 /// `unfence_job_field` was a hand-added per-call-site strip, and every OTHER
@@ -297,7 +300,7 @@ pub(super) fn paginate_list_reply(data: Value, offset: usize, limit: usize) -> V
 /// command is also reachable from the renderer's normal `invoke()`, not
 /// only through this dispatcher) rather than removed.
 ///
-/// Mirrors [`fence_named_fields_recursive`]'s `ApplicationAnswer` shape rule
+/// Mirrors `fence_named_fields_recursive`'s `ApplicationAnswer` shape rule
 /// too (`answers_save` is a real writer of that exact shape), but NOT its
 /// [`JOB_RECORD_ANCHOR_FIELDS`] exemption: nothing is written back into a
 /// job's `result`, and a strip is a no-op on a value that was never fenced,
@@ -319,7 +322,7 @@ pub(super) fn unfence_named_fields_recursive(value: &mut Value) {
                     }
                 }
             }
-            // The mirror of [`fence_named_fields_recursive`]'s shape guard:
+            // The mirror of `fence_named_fields_recursive`'s shape guard:
             // an `ApplicationAnswer`'s `question` goes out fenced, so a
             // caller echoing that record back into a write (`answers_save`)
             // must not persist the markup. Same predicate, same field — see

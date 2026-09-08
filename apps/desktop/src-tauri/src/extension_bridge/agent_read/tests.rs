@@ -659,3 +659,123 @@ fn no_resource_output_ever_carries_a_forbidden_key() {
         }
     }
 }
+
+// ── issue #1155 — retryAfterMs + refused-request identity on the throttle envelope ──
+
+#[test]
+fn token_bucket_retry_after_ms_is_zero_with_a_token_available_and_positive_once_exhausted() {
+    let mut t = AgentQueryThrottle::new();
+    let now = std::time::Instant::now();
+    assert_eq!(
+        t.retry_after_ms(RES_SCHEMA),
+        0,
+        "a fresh bucket has a token ready"
+    );
+    for _ in 0..(AGENT_CHEAP_BURST as usize) {
+        assert!(t.try_acquire_at(RES_SCHEMA, now));
+    }
+    assert!(!t.try_acquire_at(RES_SCHEMA, now));
+    assert!(
+        t.retry_after_ms(RES_SCHEMA) > 0,
+        "an exhausted bucket must report a positive wait"
+    );
+}
+
+#[test]
+fn throttled_reply_carries_the_rate_limited_sentinel_a_positive_retry_after_and_the_refused_url() {
+    let payload = json!({ "resource": RES_JOB, "url": "https://example.com/job/1" });
+    let reply = throttled_reply("req-1", &payload, 1_000);
+    let parsed: Value = serde_json::from_str(&reply).unwrap();
+    let p = &parsed["payload"];
+    assert_eq!(p["ok"], false);
+    assert_eq!(p["resource"], RES_JOB);
+    assert_eq!(
+        p["error"],
+        crate::extension_bridge::agent_call::ERR_RATE_LIMITED
+    );
+    assert_eq!(p["detail"], THROTTLED_MESSAGE);
+    assert_eq!(p["retryAfterMs"], 1_000);
+    assert!(p["retryAfterMs"].as_u64().unwrap() > 0);
+    // The refused request's own identity — the gap issue #1155 reports: three throttled `job`
+    // lookups previously looked identical (only "resource":"job", never which url).
+    assert_eq!(p["url"], "https://example.com/job/1");
+}
+
+#[test]
+fn throttled_reply_echoes_the_found_jobs_autopilot_id_identity() {
+    let payload = json!({ "resource": RES_FOUND_JOBS, "autopilotId": "ap-9" });
+    let reply = throttled_reply("req-2", &payload, 500);
+    let parsed: Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(parsed["payload"]["autopilotId"], "ap-9");
+}
+
+#[test]
+fn throttled_reply_names_no_identity_for_a_resource_that_has_none() {
+    let payload = json!({ "resource": RES_BEST_MATCHES });
+    let reply = throttled_reply("req-3", &payload, 100);
+    let parsed: Value = serde_json::from_str(&reply).unwrap();
+    assert!(parsed["payload"].get("url").is_none());
+    assert!(parsed["payload"].get("autopilotId").is_none());
+}
+
+// ── issue #1151 — bounded refusals + the success-path frame cap ──────────
+
+/// Mirrors `agent_call`'s own `a_refusal_built_from_a_cap_sized_identifier_still_fits_the_frame_cap`
+/// — a `resource` at the incoming frame cap must still fit the OUTGOING one once clamped, and the
+/// clamp (not the last-resort envelope) must be what made it fit.
+#[test]
+fn a_throttled_reply_built_from_a_cap_sized_resource_still_fits_the_frame_cap() {
+    let cap = super::super::MAX_FRAME_BYTES;
+    let huge = "n".repeat(cap);
+    let payload = json!({ "resource": huge.clone() });
+    let reply = throttled_reply(&huge, &payload, 1_000);
+    assert!(
+        reply.len() <= cap,
+        "the refusal is {} B, over the {cap} B cap it exists to enforce",
+        reply.len()
+    );
+    let parsed: Value = serde_json::from_str(&reply).expect("the refusal is valid JSON");
+    let clamped = crate::extension_bridge::agent_call::clamp_ident(&huge).to_string();
+    assert_eq!(
+        parsed["payload"]["resource"], clamped,
+        "the resource must be CLAMPED, not dropped"
+    );
+    assert_eq!(parsed["reqId"], clamped);
+    assert_ne!(
+        parsed["payload"]["detail"],
+        crate::extension_bridge::agent_call::REFUSAL_UNDELIVERABLE_DETAIL,
+        "fitting via the last-resort envelope means the clamp did not do its job"
+    );
+}
+
+/// Issue #1151's own test: an over-cap SUCCESS reply (a resource fn's own data, not a refusal)
+/// must be substituted with a `result_too_large` refusal that itself fits — mirrors
+/// `agent_call::enforce_frame_cap`'s own guard, one wire type over.
+#[test]
+fn bounded_result_reply_refuses_an_oversized_success_payload_with_result_too_large() {
+    let cap = super::super::MAX_FRAME_BYTES;
+    let oversized = json!({ "padding": "x".repeat(cap + 1) });
+    let reply = bounded_result_reply("req-4", RES_JOB, Ok(oversized));
+    assert!(
+        reply.len() <= cap,
+        "the substitute itself must fit: {} B",
+        reply.len()
+    );
+    let parsed: Value = serde_json::from_str(&reply).expect("the substitute is valid JSON");
+    let p = &parsed["payload"];
+    assert_eq!(p["ok"], false);
+    assert_eq!(
+        p["error"],
+        crate::extension_bridge::agent_call::ERR_RESULT_TOO_LARGE
+    );
+    assert!(p["detail"].as_str().unwrap().contains("frame cap"));
+}
+
+/// The other direction: an ordinary under-cap reply must pass through untouched.
+#[test]
+fn bounded_result_reply_passes_an_under_cap_reply_through_untouched() {
+    let reply = bounded_result_reply("req-5", RES_SCHEMA, Ok(schema_value()));
+    let parsed: Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(parsed["payload"]["ok"], true);
+    assert_eq!(parsed["payload"]["resource"], RES_SCHEMA);
+}

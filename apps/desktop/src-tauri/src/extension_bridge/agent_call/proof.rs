@@ -844,7 +844,7 @@ mod tests {
                     });
 
             match leaf_field_name(source) {
-                Some(name) if super::super::FENCE_FIELD_NAMES.contains(&name) => {
+                Some(name) if super::super::fence::FENCE_FIELD_NAMES.contains(&name) => {
                     assert_eq!(
                         expected_fenced,
                         crate::prompt_fence::fenced(

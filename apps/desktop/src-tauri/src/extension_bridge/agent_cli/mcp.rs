@@ -466,14 +466,18 @@ fn tool_argv(name: &str, arguments: &Value) -> Vec<String> {
 }
 
 /// Local effect-class routing for `call-*`: refuse a target the bundled [`POLICY`] copy does not
-/// know at all (never forward it), refuse a KNOWN target on the wrong tool naming the right one,
-/// refuse a [`Effect::NotExposed`] target on EVERY tool naming its own stored reason (MUST FIX —
-/// security review round 2), and (A1-r1-SEC-1 HIGH) refuse a body that fails the bundled
-/// catalogue's own declared contract with `invalid_input` — none of these forwarded, so a possibly
-/// stale PEER app process (e.g. an updater-staged newer exe still paired with an older running
-/// app) is never the only thing catching them, matching what [`instructions::INSTRUCTIONS`]
-/// promises the model before any call runs. Never touches the wire.
-fn local_call_refusal(tool_name: &str, verb: &Verb) -> Option<Value> {
+/// know at all (never forward it), refuse a KNOWN target on the wrong tool naming the right one —
+/// or, when that right tool isn't even REGISTERED on this launch, `tier_not_enabled` naming the
+/// flag to relaunch with instead (issue #1154: `wrong_tool` used to name `call-reversible`/
+/// `call-irreversible` unconditionally, even on a read-only launch where the client's own
+/// `tools/list` never advertised them — a dead end the model could not act on) — refuse a
+/// [`Effect::NotExposed`] target on EVERY tool naming its own stored reason (MUST FIX — security
+/// review round 2), and (A1-r1-SEC-1 HIGH) refuse a body that fails the bundled catalogue's own
+/// declared contract with `invalid_input` — none of these forwarded, so a possibly stale PEER app
+/// process (e.g. an updater-staged newer exe still paired with an older running app) is never the
+/// only thing catching them, matching what [`instructions::INSTRUCTIONS`] promises the model
+/// before any call runs. Never touches the wire.
+fn local_call_refusal(tool_name: &str, verb: &Verb, tier: Tier) -> Option<Value> {
     let Verb::Call {
         namespace,
         command,
@@ -512,6 +516,28 @@ fn local_call_refusal(tool_name: &str, verb: &Verb) -> Option<Value> {
     // this path runs under `panic = "abort"`, where a panic is a silent server death.
     let right_tool = tool_for(&entry.effect)?;
     if right_tool != tool_name {
+        // Same gate `commands_value` already applies per row (issue #1154) — reused here so the
+        // two can never disagree about which effects this Tier exposes.
+        let gate_open = match entry.effect {
+            Effect::Reversible => tier.allows_reversible(),
+            Effect::Irreversible(_) => tier.allows_irreversible(),
+            _ => true,
+        };
+        if !gate_open {
+            return Some(json!({
+                "dispatched": false,
+                "namespace": namespace,
+                "command": command,
+                "error": "tier_not_enabled",
+                "detail": format!(
+                    "this command is classified for `{right_tool}`, but this server was \
+                     launched without it registered ({}) — do not retry on `{right_tool}`, it is \
+                     not in this session's tool list; ask the user to relaunch `ajh-tauri agent \
+                     mcp` with that flag (Settings → Developer)",
+                    unavailable_reason(&entry.effect),
+                ),
+            }));
+        }
         return Some(json!({
             "dispatched": false,
             "namespace": namespace,
@@ -788,7 +814,7 @@ fn classify_tool_call(params: &Value, server: &Server) -> ToolCall {
         Err(e) => return ToolCall::Local(Ok(tool_result(usage_error_value(&e.to_string()), 2))),
     };
 
-    if let Some(refusal) = local_call_refusal(name, &verb) {
+    if let Some(refusal) = local_call_refusal(name, &verb, server.tier) {
         return ToolCall::Local(Ok(tool_result(refusal, 2)));
     }
 

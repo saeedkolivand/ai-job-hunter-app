@@ -20,7 +20,11 @@ pub(super) const INSTRUCTIONS: &str = "These tools talk to the running AI Job Hu
     passed back to call-irreversible VERBATIM, including any fence wrapper and its embedded \
     newlines; a wrong value is confirmation_mismatch and the expected value is never disclosed. \
     A call-* refusal named wrong_tool means retry on the OTHER tool its own \"detail\" names, \
-    never the one just called; result_too_large means an output cap was hit — this server's \
+    never the one just called, but ONLY when that tool is registered on this launch (see \
+    tools/list); a refusal named tier_not_enabled means the right tool is NOT registered here — \
+    its detail names the launch flag the user must relaunch this server with (Settings → \
+    Developer), so do not search this session's tool list for it or retry the call as-is. \
+    result_too_large means an output cap was hit — this server's \
     own, or the app's own frame cap, which refuses with the SAME sentinel one hop in — so \
     narrow the request rather than repeating it verbatim, and treat it like shutting_down's \
     \"dispatched\": true case: the command may ALREADY HAVE RUN and only its reply was \
@@ -68,8 +72,9 @@ const IRREVERSIBLE_NOTICE: &str = " The irreversible tier is enabled: call-irrev
 /// quietly dropping the row.
 ///
 /// Only ERROR_SENTINELS names belong here — the MCP-only sentinels the prose also explains
-/// (`wrong_tool`, `result_too_large`, `server_busy`, `shutting_down`, `rate_limited`) are not
-/// rows of that table at all, so naming them would be inert (asserted below).
+/// (`wrong_tool`, `tier_not_enabled`, `result_too_large`, `server_busy`, `shutting_down`,
+/// `rate_limited`) are not rows of that table at all, so naming them would be inert (asserted
+/// below).
 pub(super) const EXPLAINED_IN_PROSE: &[&str] = &[ERR_APP_NOT_RUNNING, ERR_APP_NOT_LOCATED];
 
 /// The tail of [`build_instructions`]: every [`super::super::ERROR_SENTINELS`] row the base prose

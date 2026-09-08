@@ -273,7 +273,7 @@ fn every_refusal_variant_has_a_distinct_sentinel() {
         Refusal::InvalidInput(String::new()).sentinel(),
         Refusal::NotExposed("x").sentinel(),
         Refusal::OriginRefused.sentinel(),
-        Refusal::RateLimited.sentinel(),
+        Refusal::RateLimited { retry_after_ms: 0 }.sentinel(),
         Refusal::DispatchFailed(String::new()).sentinel(),
         Refusal::InvokeError(String::new()).sentinel(),
         Refusal::ConfirmationRequired(String::new()).sentinel(),
@@ -1557,7 +1557,7 @@ fn a_refusal_built_from_a_cap_sized_identifier_still_fits_the_frame_cap() {
     let payload = json!({ "namespace": huge.clone(), "command": huge.clone() });
 
     let cases = [
-        ("throttled", throttled_reply(&huge, &payload)),
+        ("throttled", throttled_reply(&huge, &payload, 1_500)),
         ("origin_refused", origin_refused_reply(&huge, &payload)),
         (
             "result_too_large",
@@ -1619,6 +1619,7 @@ fn the_identifier_clamp_leaves_every_real_identifier_untouched() {
     let reply = throttled_reply(
         "req-9",
         &json!({ "namespace": "jobs", "command": "jobs_list" }),
+        2_000,
     );
     let parsed: Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(parsed["payload"]["namespace"], "jobs");
@@ -1628,6 +1629,31 @@ fn the_identifier_clamp_leaves_every_real_identifier_untouched() {
         parsed["payload"]["detail"],
         super::super::agent_read::THROTTLED_MESSAGE
     );
+    assert_eq!(parsed["payload"]["retryAfterMs"], 2_000);
+}
+
+/// Issue #1155's own two-part ask for the `call-*` tier: `rate_limited` carries a positive
+/// `retryAfterMs` (never invented — passed straight through from the caller, who reads it off
+/// the shared bucket) and the sentinel/detail split every other refusal on this surface already
+/// uses.
+#[test]
+fn throttled_reply_carries_a_positive_retry_after_and_the_rate_limited_sentinel() {
+    let reply = throttled_reply(
+        "req-throttle",
+        &json!({ "namespace": "autopilot", "command": "autopilot_best_matches" }),
+        30_000,
+    );
+    let parsed: Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(parsed["payload"]["error"], ERR_RATE_LIMITED);
+    assert_eq!(parsed["payload"]["retryAfterMs"], 30_000);
+    assert!(parsed["payload"]["retryAfterMs"].as_u64().unwrap() > 0);
+    assert_eq!(
+        parsed["payload"]["detail"],
+        super::super::agent_read::THROTTLED_MESSAGE
+    );
+    // Identity — the refused command is still named, same as every other refusal here.
+    assert_eq!(parsed["payload"]["namespace"], "autopilot");
+    assert_eq!(parsed["payload"]["command"], "autopilot_best_matches");
 }
 
 /// `&value[..REFUSAL_IDENT_CAP]` panics when the cap lands mid-codepoint, and
