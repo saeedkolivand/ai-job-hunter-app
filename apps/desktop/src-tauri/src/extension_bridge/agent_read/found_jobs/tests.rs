@@ -8,7 +8,15 @@ use crate::scraping::trust::{TrustAssessment, TrustLevel};
 use super::super::tests::{blank_autopilot, full_found_job};
 
 fn no_filters() -> FoundJobsFilters {
-    FoundJobsFilters::from_payload(&json!({}))
+    FoundJobsFilters::from_payload(&json!({})).unwrap()
+}
+
+/// The scope+filters cursor issuer a call with `autopilot_id`/`no_filters()`
+/// actually issues (B3-r1-F4) — computed the SAME way the code under test
+/// does, never a hand-typed literal, so this test file fails the moment the
+/// two halves of the format ever stop agreeing.
+fn issuer(autopilot_id: Option<&str>) -> String {
+    found_jobs_cursor_issuer(autopilot_id, &no_filters())
 }
 
 fn no_applied() -> HashSet<String> {
@@ -41,6 +49,7 @@ fn found_jobs_compact_row_has_exact_keys_by_default() {
             "isAgency",
             "location",
             "score",
+            "scoreProvisional",
             "title",
             "url",
         ],
@@ -62,7 +71,7 @@ fn found_jobs_includes_description_only_when_requested() {
         .expect("found");
     assert!(compact["jobs"][0].get("description").is_none());
 
-    let with_desc = FoundJobsFilters::from_payload(&json!({ "includeDescription": true }));
+    let with_desc = FoundJobsFilters::from_payload(&json!({ "includeDescription": true })).unwrap();
     let full = resolve_found_jobs(&records, Some("ap-1"), &with_desc, &no_applied(), 0, 20)
         .expect("found");
     assert!(full["jobs"][0].get("description").is_some());
@@ -71,7 +80,7 @@ fn found_jobs_includes_description_only_when_requested() {
 #[test]
 fn found_jobs_never_carries_forbidden_keys() {
     let records = vec![autopilot_with_jobs("ap-1", vec![full_found_job()])];
-    let with_desc = FoundJobsFilters::from_payload(&json!({ "includeDescription": true }));
+    let with_desc = FoundJobsFilters::from_payload(&json!({ "includeDescription": true })).unwrap();
     let out = resolve_found_jobs(&records, Some("ap-1"), &with_desc, &no_applied(), 0, 20)
         .expect("found");
     let text = out.to_string();
@@ -97,7 +106,7 @@ fn found_jobs_fences_description_and_display_fields_as_untrusted_data() {
             ..full_found_job()
         }],
     )];
-    let with_desc = FoundJobsFilters::from_payload(&json!({ "includeDescription": true }));
+    let with_desc = FoundJobsFilters::from_payload(&json!({ "includeDescription": true })).unwrap();
     let out = resolve_found_jobs(&records, Some("ap-1"), &with_desc, &no_applied(), 0, 20)
         .expect("found");
     let row = &out["jobs"][0];
@@ -124,7 +133,7 @@ fn found_jobs_description_uses_the_smaller_list_preview_cap() {
             ..full_found_job()
         }],
     )];
-    let with_desc = FoundJobsFilters::from_payload(&json!({ "includeDescription": true }));
+    let with_desc = FoundJobsFilters::from_payload(&json!({ "includeDescription": true })).unwrap();
     let out = resolve_found_jobs(&records, Some("ap-1"), &with_desc, &no_applied(), 0, 20)
         .expect("found");
     let desc = out["jobs"][0]["description"].as_str().unwrap();
@@ -141,6 +150,57 @@ fn found_jobs_refuses_unknown_autopilot_with_fixed_sentinel() {
     let err =
         resolve_found_jobs(&[], Some("nope"), &no_filters(), &no_applied(), 0, 20).unwrap_err();
     assert_eq!(err.to_string(), AUTOPILOT_NOT_FOUND_MESSAGE);
+}
+
+// ── B3-r1-F2: a present-but-unusable autopilotId must error, never widen ──
+
+#[test]
+fn parse_autopilot_id_arg_treats_absent_or_null_as_spanning_every_autopilot() {
+    assert_eq!(parse_autopilot_id_arg(&json!({})).unwrap(), None);
+    assert_eq!(
+        parse_autopilot_id_arg(&json!({ "autopilotId": null })).unwrap(),
+        None
+    );
+}
+
+#[test]
+fn parse_autopilot_id_arg_accepts_a_real_id() {
+    assert_eq!(
+        parse_autopilot_id_arg(&json!({ "autopilotId": "ap-1" })).unwrap(),
+        Some("ap-1".to_string())
+    );
+    // Surrounding whitespace is trimmed, same as every other string filter.
+    assert_eq!(
+        parse_autopilot_id_arg(&json!({ "autopilotId": "  ap-1  " })).unwrap(),
+        Some("ap-1".to_string())
+    );
+}
+
+/// The headline case (B3-r1-F2): a PRESENT-but-blank `autopilotId` used to
+/// collapse silently to the same `None` an OMITTED one produces, widening a
+/// one-autopilot selector into a spanning traversal of every autopilot with
+/// no signal to the caller. Must now be a hard error, never "all".
+#[test]
+fn parse_autopilot_id_arg_rejects_a_blank_or_whitespace_only_value() {
+    for value in [json!(""), json!("   ")] {
+        let err = parse_autopilot_id_arg(&json!({ "autopilotId": value })).unwrap_err();
+        assert_eq!(err.to_string(), BLANK_AUTOPILOT_ID_MESSAGE);
+    }
+}
+
+/// Mirrors `agent_cli::mcp::tool_argv`'s own guard on the same field: a
+/// flag-shaped value must never be forwarded as if it were a real id.
+#[test]
+fn parse_autopilot_id_arg_rejects_a_flag_shaped_value() {
+    let err =
+        parse_autopilot_id_arg(&json!({ "autopilotId": "--include-description" })).unwrap_err();
+    assert_eq!(err.to_string(), BLANK_AUTOPILOT_ID_MESSAGE);
+}
+
+#[test]
+fn parse_autopilot_id_arg_rejects_a_non_string_value() {
+    let err = parse_autopilot_id_arg(&json!({ "autopilotId": 5 })).unwrap_err();
+    assert_eq!(err.to_string(), BLANK_AUTOPILOT_ID_MESSAGE);
 }
 
 #[test]
@@ -178,8 +238,8 @@ fn found_jobs_pagination_covers_every_job_exactly_once_then_terminates() {
         // hand-rolled `parse()` — that round trip is what proves an issued
         // cursor is actually accepted again, rather than only that the
         // digits inside it happen to be right.
-        let offset =
-            parse_found_jobs_cursor(&json!({ "cursor": cursor }), "ap-1").expect("own cursor");
+        let offset = parse_found_jobs_cursor(&json!({ "cursor": cursor }), &issuer(Some("ap-1")))
+            .expect("own cursor");
         let out = resolve_found_jobs(
             &records,
             Some("ap-1"),
@@ -345,7 +405,7 @@ fn found_jobs_cursor_round_trips_an_id_containing_a_colon() {
         .expect("more pages")
         .to_string();
     assert_eq!(
-        parse_found_jobs_cursor(&json!({ "cursor": issued }), "ns:ap:1").unwrap(),
+        parse_found_jobs_cursor(&json!({ "cursor": issued }), &issuer(Some("ns:ap:1"))).unwrap(),
         2
     );
 }
@@ -403,6 +463,42 @@ fn found_jobs_spanning_dedupes_the_same_job_across_autopilots() {
     );
 }
 
+/// B3-r1-F1 (HIGH) — `score` is per-autopilot (the SAME posting scored
+/// against each autopilot's own resume), so dedup must run AFTER filtering:
+/// the FIRST autopilot's copy fails `minScore`, the SECOND's passes. Before
+/// the fix, the dedup slot was consumed by the failing first copy and the
+/// passing second copy was silently dropped, under-reporting `total` on the
+/// exact filter this resource exists to serve.
+#[test]
+fn found_jobs_spanning_dedup_lets_a_later_autopilots_passing_copy_win_over_an_earlier_failing_one()
+{
+    let shared = numbered_job(1);
+    let scored_low_in_ap1 = FoundJob {
+        score: Some(50.0),
+        ..shared.clone()
+    };
+    let scored_high_in_ap2 = FoundJob {
+        score: Some(90.0),
+        ..shared
+    };
+    let records = vec![
+        autopilot_with_jobs("ap-1", vec![scored_low_in_ap1]),
+        autopilot_with_jobs("ap-2", vec![scored_high_in_ap2]),
+    ];
+    let filters = FoundJobsFilters::from_payload(&json!({ "minScore": 70 })).unwrap();
+    let out = resolve_found_jobs(&records, None, &filters, &no_applied(), 0, 20).unwrap();
+    assert_eq!(
+        out["total"], 1,
+        "the passing copy under ap-2 must survive even though ap-1's copy of the same \
+         posting failed minScore first"
+    );
+    assert_eq!(
+        out["jobs"][0]["autopilotId"], "ap-2",
+        "the row returned must be the PASSING copy, not the failing one that happened to be \
+         first in store order"
+    );
+}
+
 #[test]
 fn found_jobs_spanning_cursor_walks_every_autopilot_then_terminates() {
     let records = vec![
@@ -412,9 +508,8 @@ fn found_jobs_spanning_cursor_walks_every_autopilot_then_terminates() {
     let mut seen: Vec<String> = Vec::new();
     let mut cursor: Option<String> = None;
     loop {
-        let offset =
-            parse_found_jobs_cursor(&json!({ "cursor": cursor }), ALL_AUTOPILOTS_CURSOR_ISSUER)
-                .expect("own cursor");
+        let offset = parse_found_jobs_cursor(&json!({ "cursor": cursor }), &issuer(None))
+            .expect("own cursor");
         let out =
             resolve_found_jobs(&records, None, &no_filters(), &no_applied(), offset, 4).unwrap();
         for row in out["jobs"].as_array().unwrap() {
@@ -468,7 +563,7 @@ fn found_jobs_min_score_filter_excludes_lower_and_unscored_rows() {
         ..numbered_job(3)
     };
     let records = vec![autopilot_with_jobs("ap-1", vec![low, high, unscored])];
-    let filters = FoundJobsFilters::from_payload(&json!({ "minScore": 70 }));
+    let filters = FoundJobsFilters::from_payload(&json!({ "minScore": 70 })).unwrap();
     let out = resolve_found_jobs(&records, Some("ap-1"), &filters, &no_applied(), 0, 20).unwrap();
     assert_eq!(out["total"], 1);
     assert_eq!(out["jobs"][0]["url"], "https://boards.example.com/jobs/2");
@@ -485,7 +580,7 @@ fn found_jobs_country_filter_matches_location_case_insensitively() {
         ..numbered_job(2)
     };
     let records = vec![autopilot_with_jobs("ap-1", vec![berlin, paris])];
-    let filters = FoundJobsFilters::from_payload(&json!({ "country": "GERMANY" }));
+    let filters = FoundJobsFilters::from_payload(&json!({ "country": "GERMANY" })).unwrap();
     let out = resolve_found_jobs(&records, Some("ap-1"), &filters, &no_applied(), 0, 20).unwrap();
     assert_eq!(out["total"], 1);
     assert_eq!(out["jobs"][0]["url"], "https://boards.example.com/jobs/1");
@@ -505,14 +600,14 @@ fn found_jobs_remote_filter_reuses_the_scrape_time_marker_list() {
         "ap-1",
         vec![remote.clone(), onsite.clone()],
     )];
-    let remote_only = FoundJobsFilters::from_payload(&json!({ "remote": true }));
+    let remote_only = FoundJobsFilters::from_payload(&json!({ "remote": true })).unwrap();
     let out =
         resolve_found_jobs(&records, Some("ap-1"), &remote_only, &no_applied(), 0, 20).unwrap();
     assert_eq!(out["total"], 1);
     assert_eq!(out["jobs"][0]["url"], "https://boards.example.com/jobs/1");
 
     let records = vec![autopilot_with_jobs("ap-1", vec![remote, onsite])];
-    let onsite_only = FoundJobsFilters::from_payload(&json!({ "remote": false }));
+    let onsite_only = FoundJobsFilters::from_payload(&json!({ "remote": false })).unwrap();
     let out =
         resolve_found_jobs(&records, Some("ap-1"), &onsite_only, &no_applied(), 0, 20).unwrap();
     assert_eq!(out["total"], 1);
@@ -529,7 +624,7 @@ fn found_jobs_applied_filter_matches_the_derived_applied_set() {
     )];
     let mut applied_urls = HashSet::new();
     applied_urls.insert(crate::applications::normalize_job_url(&applied_job.url));
-    let filters = FoundJobsFilters::from_payload(&json!({ "applied": true }));
+    let filters = FoundJobsFilters::from_payload(&json!({ "applied": true })).unwrap();
     let out = resolve_found_jobs(&records, Some("ap-1"), &filters, &applied_urls, 0, 20).unwrap();
     assert_eq!(out["total"], 1);
     assert_eq!(out["jobs"][0]["url"], "https://boards.example.com/jobs/1");
@@ -554,7 +649,7 @@ fn found_jobs_query_filter_matches_title_or_company_case_insensitively() {
         ..numbered_job(3)
     };
     let records = vec![autopilot_with_jobs("ap-1", vec![target, by_company, miss])];
-    let filters = FoundJobsFilters::from_payload(&json!({ "query": "roboto" }));
+    let filters = FoundJobsFilters::from_payload(&json!({ "query": "roboto" })).unwrap();
     let out = resolve_found_jobs(&records, Some("ap-1"), &filters, &no_applied(), 0, 20).unwrap();
     assert_eq!(out["total"], 1);
     assert_eq!(out["jobs"][0]["url"], "https://boards.example.com/jobs/2");
@@ -564,7 +659,7 @@ fn found_jobs_query_filter_matches_title_or_company_case_insensitively() {
 fn found_jobs_total_reflects_filtered_count_not_the_whole_store_unaffected_by_paging() {
     let jobs: Vec<FoundJob> = (0..30).map(numbered_job).collect();
     let records = vec![autopilot_with_jobs("ap-1", jobs)];
-    let filters = FoundJobsFilters::from_payload(&json!({ "minScore": 0 }));
+    let filters = FoundJobsFilters::from_payload(&json!({ "minScore": 0 })).unwrap();
     let page1 = resolve_found_jobs(&records, Some("ap-1"), &filters, &no_applied(), 0, 5).unwrap();
     let page2 = resolve_found_jobs(&records, Some("ap-1"), &filters, &no_applied(), 20, 5).unwrap();
     assert_eq!(page1["total"], 30);
@@ -572,6 +667,64 @@ fn found_jobs_total_reflects_filtered_count_not_the_whole_store_unaffected_by_pa
         page2["total"], 30,
         "total must not shrink because of a later offset"
     );
+}
+
+// ── B3-r1-F3: a present filter that fails to materialise must refuse,
+// never silently drop and return the UNFILTERED page ──────────────────
+
+/// `json!(non_finite_f64)` collapses to JSON `null` — RFC 8259 has no
+/// `Infinity`/`NaN` token, so `serde_json::Value::Number` cannot represent
+/// one BY CONSTRUCTION; there is no well-formed JSON text this fn could ever
+/// read as a present-but-non-finite `minScore`. That is exactly why the
+/// load-bearing half of the B3-r1-F3 fix sits at the CLI's OWN parse
+/// (`agent_cli::parse_found_jobs`'s `--min-score` — see
+/// `agent_cli::tests::rejects_found_jobs_a_non_finite_min_score`), before
+/// `1e400`/`inf`/`nan` are ever handed to `json!` and turned into this same
+/// indistinguishable `null`. This test pins the OTHER, intentional half:
+/// `from_payload` must keep treating an explicit `null` the same as
+/// "absent" — the established convention every other filter/cursor on this
+/// resource already follows — so a caller that legitimately sends
+/// `{"minScore": null}` to mean "no filter" is never refused.
+#[test]
+fn found_jobs_filters_from_payload_treats_a_null_min_score_as_absent() {
+    assert!(
+        json!(f64::INFINITY).is_null(),
+        "pins the serde_json invariant the doc above relies on"
+    );
+    let filters = FoundJobsFilters::from_payload(&json!({ "minScore": null })).unwrap();
+    assert_eq!(filters.min_score, None);
+}
+
+#[test]
+fn found_jobs_filters_from_payload_rejects_a_wrong_typed_present_filter() {
+    for (payload, key) in [
+        (json!({ "minScore": "70" }), "minScore"),
+        (json!({ "remote": "true" }), "remote"),
+        (json!({ "applied": "false" }), "applied"),
+        (json!({ "country": 5 }), "country"),
+        (json!({ "query": true }), "query"),
+        (
+            json!({ "includeDescription": "true" }),
+            "includeDescription",
+        ),
+    ] {
+        let err = FoundJobsFilters::from_payload(&payload).unwrap_err();
+        assert!(
+            err.to_string().contains(key),
+            "refusal for {payload} must name {key}: {err}"
+        );
+    }
+}
+
+/// The safe direction, unchanged: a BLANK string filter (as opposed to a
+/// wrong-typed one) still reads as "not set" — these are additive filters,
+/// not selectors, so narrowing nothing is the direction that can't widen a
+/// selector the way `parse_autopilot_id_arg`'s own guard exists to prevent.
+#[test]
+fn found_jobs_filters_from_payload_treats_a_blank_string_filter_as_unset() {
+    let filters = FoundJobsFilters::from_payload(&json!({ "country": "  ", "query": "" })).unwrap();
+    assert_eq!(filters.country, None);
+    assert_eq!(filters.query, None);
 }
 
 // ── worst-case payload / trimming (issue #1167's compact-row shape) ───
@@ -639,6 +792,31 @@ fn found_jobs_typical_compact_page_rarely_needs_trimming() {
         bytes < MCP_RESULT_MAX_BYTES,
         "an ordinary full page must stay under the MCP cap, was {bytes} bytes"
     );
+
+    // B3-r1-F6 — the assertion above alone cannot fail on the regression
+    // issue #1167 reports: BOTH a compact page and a full-description page
+    // over this same fixture set sit comfortably under a 256 KiB ceiling, so
+    // a description silently back on every default row would still pass it.
+    // Compare against the SAME fixture set with `description` opted in
+    // instead — a compact page must stay a small fraction of that size, a
+    // property a shape regression actually breaks.
+    let with_desc = FoundJobsFilters::from_payload(&json!({ "includeDescription": true })).unwrap();
+    let full = resolve_found_jobs(
+        &records,
+        Some("ap-1"),
+        &with_desc,
+        &no_applied(),
+        0,
+        MAX_FOUND_JOBS_LIMIT,
+    )
+    .unwrap();
+    let full_bytes = full.to_string().len();
+    assert!(
+        bytes * 3 < full_bytes,
+        "a compact page must stay a small fraction of the same page with description opted \
+         in, or the compact shape stopped actually being compact: compact {bytes} vs full \
+         {full_bytes}"
+    );
 }
 
 /// A job at the REAL permitted worst case: title/company/location each
@@ -668,7 +846,7 @@ fn found_jobs_trims_an_oversized_page_and_keeps_the_cursor_correct() {
     let total_jobs = MAX_FOUND_JOBS_LIMIT * 2;
     let jobs: Vec<FoundJob> = (0..total_jobs).map(worst_permitted_job).collect();
     let records = vec![autopilot_with_jobs("ap-1", jobs)];
-    let with_desc = FoundJobsFilters::from_payload(&json!({ "includeDescription": true }));
+    let with_desc = FoundJobsFilters::from_payload(&json!({ "includeDescription": true })).unwrap();
 
     let page1 = resolve_found_jobs(
         &records,
@@ -693,7 +871,7 @@ fn found_jobs_trims_an_oversized_page_and_keeps_the_cursor_correct() {
     );
     assert_eq!(
         page1["nextCursor"].as_str().unwrap(),
-        format!("ap-1:{kept}"),
+        format!("{}:{kept}", issuer(Some("ap-1"))),
         "nextCursor must reflect rows ACTUALLY kept, not the requested limit"
     );
 
@@ -793,7 +971,7 @@ fn found_jobs_full_envelope_stays_under_cap_even_with_a_maxed_out_autopilot_name
     let mut ap = autopilot_with_jobs("ap-1", jobs);
     ap.name = "z".repeat(AUTOPILOT_NAME_FENCE_CAP * 5);
     let records = vec![ap];
-    let with_desc = FoundJobsFilters::from_payload(&json!({ "includeDescription": true }));
+    let with_desc = FoundJobsFilters::from_payload(&json!({ "includeDescription": true })).unwrap();
     let out = resolve_found_jobs(
         &records,
         Some("ap-1"),
@@ -815,7 +993,7 @@ fn found_jobs_full_envelope_stays_under_cap_even_with_a_maxed_out_autopilot_name
     // real `<id>:<offset>` cursor (issue #1130 — a digit-only estimate
     // under a ~45-byte cursor would break this direction silently).
     let charged = base_envelope_cost(
-        "ap-1",
+        &issuer(Some("ap-1")),
         Some(("ap-1", out["autopilotName"].as_str().unwrap())),
         out["total"].as_u64().unwrap() as usize,
     );

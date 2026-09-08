@@ -12,16 +12,17 @@
 //! `agent_read::tests` needed `pub(super)` (see their own doc there).
 //!
 //! ## Compact rows + server-side filters (issue #1167)
-//! A row is compact by default — `title`/`company`/`location`/`score`/`url`/
-//! `foundAt`/`applied`/`isAgency`/`autopilotId`/`autopilotName`, no
-//! `description` — because the previous shape (every optional job field plus
-//! a 2,000-char description preview on every row) put an ordinary page over
-//! what a real MCP client will accept in-band (issue #1167's own measured
-//! payload sizes). `description` is opt-in via `includeDescription: true`,
-//! still fenced at [`FOUND_JOBS_DESCRIPTION_PREVIEW_CAP`]. Five server-side
-//! filters (`minScore`/`country`/`remote`/`applied`/`query`) apply BEFORE
-//! paging, so `total` always means "rows this call's filters actually
-//! match", never the whole unfiltered store.
+//! A row is compact by default — `title`/`company`/`location`/`score`/
+//! `scoreProvisional`/`url`/`foundAt`/`applied`/`isAgency`/`autopilotId`/
+//! `autopilotName`, no `description` — because the previous shape (every
+//! optional job field plus a 2,000-char description preview on every row)
+//! put an ordinary page over what a real MCP client will accept in-band
+//! (issue #1167's own measured payload sizes). `description` is opt-in via
+//! `includeDescription: true`, still fenced at
+//! [`FOUND_JOBS_DESCRIPTION_PREVIEW_CAP`]. Five server-side filters
+//! (`minScore`/`country`/`remote`/`applied`/`query`) apply BEFORE paging, so
+//! `total` always means "rows this call's filters actually match", never the
+//! whole unfiltered store.
 //!
 //! ## Spanning every autopilot (issue #1168)
 //! `autopilotId` is now OPTIONAL. Omitted, the traversal spans every
@@ -29,13 +30,20 @@
 //! order — the one call that answers "is this role already in my list?"
 //! (`found-jobs {query: "…"}`) without a per-autopilot fan-out. Rows sharing
 //! the same [`canonical_job_key`](crate::scraping::boards::common::canonical_job_key)
-//! across two autopilots collapse to the FIRST occurrence in that order —
-//! the identical identity B2 already uses to collapse a run's own duplicates
-//! (`autopilot::merge_found_jobs`'s `merge_key`), reused here rather than a
-//! second notion of "same job". The cursor is `<issuer>:<offset>` exactly as
-//! before (issue #1130); `issuer` is the requested `autopilotId` when given,
-//! or [`ALL_AUTOPILOTS_CURSOR_ISSUER`] when the call spans every autopilot —
-//! either way a cursor is only valid for a later call with the SAME scope.
+//! across two autopilots collapse to the FIRST occurrence in that order
+//! that also PASSES this call's own filters (round 2 fix, B3-r1-F1 — dedup
+//! used to run before filtering, so a posting that failed a filter under the
+//! first autopilot to hold it was dropped even when a later autopilot's copy
+//! of the SAME posting would have passed) — the identical identity B2
+//! already uses to collapse a run's own duplicates (`autopilot::merge_found_jobs`'s
+//! `merge_key`), reused here rather than a second notion of "same job". The
+//! cursor is `<issuer>:<offset>`; `issuer` is now itself
+//! `<autopilotId or __all__>|<filter fingerprint>` — see
+//! [`found_jobs_cursor_issuer`] (round 2 fix, B3-r1-F4 — the plain
+//! `<autopilotId or __all__>` issuer (issue #1130) let a cursor replayed
+//! under DIFFERENT filter arguments page a different filtered list at a
+//! stale offset); either way a cursor is only valid for a later call with
+//! the SAME scope AND the SAME filters.
 
 use std::collections::HashSet;
 
@@ -54,10 +62,11 @@ use super::{fence_posting_display_fields, list_autopilots, project_value};
 /// `found-jobs` resource's per-row COMPACT payload — a SMALLER allowlist than
 /// `agent_read::AgentJob` over the same `autopilot::FoundJob` source.
 /// Deliberately excludes `board`/`salaryMin`/`salaryMax`/`salaryCurrency`/
-/// `scoreProvisional`/`scoreSource`/`postedAt`/`trust`/`clusterMembers` (issue
-/// #1167 — a caller that needs the full detail for ONE job already has `job`,
-/// keyed by this same `url`) on top of everything `AgentJob` already excludes
+/// `scoreSource`/`postedAt`/`trust`/`clusterMembers` (issue #1167 — a caller
+/// that needs the full detail for ONE job already has `job`, keyed by this
+/// same `url`) on top of everything `AgentJob` already excludes
 /// (`assistantNotes`, forbidden; `clusterId`/`clusterCanonical`, internal).
+/// `scoreProvisional` stays IN — see [`FoundJobSlice`]'s own doc for why.
 /// `applied`/`autopilotId`/`autopilotName` are NOT part of this struct's own
 /// serde round trip — [`project_found_job_row`] injects them afterward, since
 /// none of the three is a plain passthrough of the stored `FoundJob` (applied
@@ -66,6 +75,19 @@ use super::{fence_posting_display_fields, list_autopilots, project_value};
 /// PARENT `Autopilot`, not the job). `description` is likewise excluded from
 /// this struct's round trip and injected separately, only when the caller
 /// asked for it — see [`project_found_job_row`].
+///
+/// `score_provisional` (B3-r1-F5) is a REQUIRED passthrough, not excluded
+/// like the rest of `AgentBestMatch`'s trust detail: `found-jobs` is the one
+/// resource that now FILTERS by `score` (`minScore`, issue #1167's headline
+/// case), and a score computed from a title-only or aggregator-snippet blob
+/// is flagged provisional precisely so a caller does not treat it as fully
+/// trusted (`build_found_job`'s own doc — LinkedIn plus TheMuse, Comeet,
+/// Breezy, BambooHR, Pinpoint, and Rippling all produce title-only rows).
+/// Stripping that flag off the one surface that ranks by the number it
+/// qualifies would silence the exact warning a `minScore`-filtered caller
+/// most needs. `score_source` stays excluded — the provisional flag alone is
+/// the actionable "don't trust this" signal; the finer-grained enum is
+/// still available via `job` for a caller that needs it.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FoundJobSlice {
@@ -76,6 +98,7 @@ struct FoundJobSlice {
     location: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     score: Option<f64>,
+    score_provisional: bool,
     found_at: u64,
     is_agency: bool,
 }
@@ -208,16 +231,19 @@ fn base_envelope_cost(cursor_issuer: &str, single: Option<(&str, &str)>, total: 
 const AUTOPILOT_NOT_FOUND_MESSAGE: &str = "no autopilot found for this id";
 
 /// A well-formed `<issuer>:<offset>` cursor issued by a DIFFERENT scope (a
-/// different autopilot, or the all-autopilots traversal vs a scoped one) —
-/// the issue #1130 case, widened for #1168's optional `autopilotId`. Split
-/// from [`MALFORMED_CURSOR_MESSAGE`] because the two have different
-/// recoveries: this one is "you are paging the wrong list", where re-sending
-/// the same cursor with the SAME `autopilotId` (present or omitted) it was
-/// issued under works. Fixed sentinel — the caller's value is never echoed
-/// back, same discipline as [`AUTOPILOT_NOT_FOUND_MESSAGE`].
+/// different autopilot, or the all-autopilots traversal vs a scoped one, or
+/// the SAME autopilot scope under DIFFERENT filter arguments — round 2 fix,
+/// B3-r1-F4, since [`found_jobs_cursor_issuer`] now folds the active filters
+/// into the issuer too) — the issue #1130 case, widened for #1168's optional
+/// `autopilotId` and again for the filter fingerprint. Split from
+/// [`MALFORMED_CURSOR_MESSAGE`] because the two have different recoveries:
+/// this one is "you are paging the wrong list", where re-sending the same
+/// cursor with the SAME `autopilotId` (present or omitted) AND the SAME
+/// filters it was issued under works. Fixed sentinel — the caller's value is
+/// never echoed back, same discipline as [`AUTOPILOT_NOT_FOUND_MESSAGE`].
 const WRONG_AUTOPILOT_CURSOR_MESSAGE: &str =
-    "cursor was issued for a different autopilotId scope — page that same scope with it, or \
-     restart this one from `cursor: null`";
+    "cursor was issued for a different autopilotId scope or filter arguments — page that same \
+     scope and filters with it, or restart this one from `cursor: null`";
 
 /// A `cursor` that isn't a nextCursor SHAPE at all: a legacy bare offset, a
 /// JSON number, or anything else unparseable. The recovery differs from
@@ -262,6 +288,7 @@ fn fence_found_jobs_description(value: &mut Value) {
 // `automations_found_jobs_total_matches_found_jobs_own_total` build a `FoundJobsFilters` to call
 // `resolve_found_jobs` directly (a sibling module, not a descendant of this one, needs the same
 // widening `found_jobs::tests` gets automatically as a child).
+#[derive(Debug)]
 pub(super) struct FoundJobsFilters {
     min_score: Option<f64>,
     /// Lowercased.
@@ -273,27 +300,83 @@ pub(super) struct FoundJobsFilters {
     include_description: bool,
 }
 
-impl FoundJobsFilters {
-    pub(super) fn from_payload(payload: &Value) -> Self {
-        let lowercased_trimmed = |key: &str| {
-            payload
-                .get(key)
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_lowercase)
-        };
-        Self {
-            min_score: payload.get("minScore").and_then(Value::as_f64),
-            country: lowercased_trimmed("country"),
-            remote: payload.get("remote").and_then(Value::as_bool),
-            applied: payload.get("applied").and_then(Value::as_bool),
-            query: lowercased_trimmed("query"),
-            include_description: payload
-                .get("includeDescription")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
+/// One shared refusal for every filter argument below that is PRESENT but
+/// not readable as its declared shape (B3-r1-F3 — a wrong-typed value, e.g.
+/// `{"minScore": "70"}` off the raw `agent.query` payload path, used to
+/// vanish silently through `.and_then(Value::as_*)` returning `None` for a
+/// mismatch exactly like it does for "absent"). The caller got an
+/// UNFILTERED page back with a `total` it read as filtered. Refusing here
+/// instead means the filter this call asked for either applies or the call
+/// fails loudly — never a third, silent option. Names the KEY, not the
+/// caller's value (never echoed) — the key is this resource's own static
+/// schema, not caller data.
+fn unreadable_filter_message(key: &str) -> AppError {
+    AppError::Validation(format!(
+        "{key} was present but not usable as its declared type — remove it or fix its value"
+    ))
+}
+
+/// `payload.get(key)`, refusing anything present that is neither absent/
+/// `null` nor a JSON string — a blank/whitespace-only string still reads as
+/// "filter not set" (`None`), same as before: this is an ADDITIVE filter,
+/// not a selector, so an empty value narrowing nothing is the safe direction
+/// (contrast `found_jobs_resource`'s `autopilotId`, a SELECTOR, where empty
+/// must refuse — see `parse_autopilot_id_arg`).
+fn trimmed_lowercase_filter(payload: &Value, key: &str) -> AppResult<Option<String>> {
+    match payload.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) => {
+            let trimmed = s.trim();
+            Ok((!trimmed.is_empty()).then(|| trimmed.to_lowercase()))
         }
+        Some(_) => Err(unreadable_filter_message(key)),
+    }
+}
+
+/// `payload.get(key)`, refusing anything present that is neither absent/
+/// `null` nor a JSON boolean.
+fn bool_filter(payload: &Value, key: &str) -> AppResult<Option<bool>> {
+    match payload.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Bool(b)) => Ok(Some(*b)),
+        Some(_) => Err(unreadable_filter_message(key)),
+    }
+}
+
+impl FoundJobsFilters {
+    /// Fallible (B3-r1-F3) — a filter key that IS present must either parse
+    /// as its declared shape or refuse the whole call; it can no longer
+    /// silently collapse to "no filter" the way `.and_then(Value::as_*)`
+    /// alone would for a wrong-typed value.
+    ///
+    /// `minScore`'s `is_finite()` guard is defense-in-depth, not the fix for
+    /// the non-finite `--min-score` repro (`1e400`/`inf`/`nan`): RFC 8259
+    /// has no `Infinity`/`NaN` token, so `json!(non_finite_f64)` collapses
+    /// to `null` BEFORE this ever runs, and `None | Some(Value::Null) =>
+    /// None` below already treats that the same as "absent" — the
+    /// established, intentional convention for every filter/cursor here,
+    /// not a bug. The load-bearing half of that fix is upstream, at the
+    /// CLI's own `--min-score` parse (`agent_cli::parse_found_jobs`), which
+    /// refuses the non-finite value before it is ever handed to `json!` —
+    /// see that fn's own doc and
+    /// `found_jobs::tests::found_jobs_filters_from_payload_treats_a_null_min_score_as_absent`.
+    pub(super) fn from_payload(payload: &Value) -> AppResult<Self> {
+        let min_score = match payload.get("minScore") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(
+                v.as_f64()
+                    .filter(|n| n.is_finite())
+                    .ok_or_else(|| unreadable_filter_message("minScore"))?,
+            ),
+        };
+        Ok(Self {
+            min_score,
+            country: trimmed_lowercase_filter(payload, "country")?,
+            remote: bool_filter(payload, "remote")?,
+            applied: bool_filter(payload, "applied")?,
+            query: trimmed_lowercase_filter(payload, "query")?,
+            include_description: bool_filter(payload, "includeDescription")?.unwrap_or(false),
+        })
     }
 }
 
@@ -340,9 +423,13 @@ fn passes_filters(job: &FoundJob, filters: &FoundJobsFilters, is_applied: bool) 
 /// The ordered, filtered candidate list across every autopilot in `scoped` —
 /// ready to be sliced `[offset, offset + limit)`. `dedupe_across_autopilots`
 /// (issue #1168) additionally collapses rows sharing the same
-/// [`canonical_job_key`] to their FIRST occurrence — needed ONLY for a
-/// spanning traversal (`autopilot_id: None`), where the same posting can
-/// legitimately surface in more than one autopilot's own list. Scoped to
+/// [`canonical_job_key`] to their FIRST occurrence THAT ALSO PASSES this
+/// call's filters (round 2 fix, B3-r1-F1 — filtering runs before dedup, not
+/// after, so a copy that fails a filter never consumes the dedup slot a
+/// later, passing copy needed) — needed ONLY for a spanning traversal
+/// (`autopilot_id: None`), where the same posting can legitimately surface
+/// in more than one autopilot's own list, each scored against that
+/// autopilot's own resume. Scoped to
 /// exactly one autopilot, `false`: that list is already deduped at merge
 /// time (`autopilot::merge_found_jobs`), and `automations`' own
 /// `foundJobsTotal` promises `total` here equals that list's plain
@@ -362,16 +449,25 @@ fn candidate_jobs<'a>(
     let mut out = Vec::new();
     for &ap in scoped {
         for job in &ap.found_jobs {
+            // FILTER first, dedup second (B3-r1-F1 — the reverse order let a
+            // posting that failed a filter under the FIRST autopilot holding
+            // it consume the dedup slot and vanish entirely, even when a
+            // LATER autopilot's copy of the same posting would have passed;
+            // `minScore` is per-autopilot-scored — `build_found_job` scores
+            // each autopilot's own copy against ITS OWN `resume_text` — so
+            // this was silently under-reporting `total` on the very filter
+            // this resource exists to serve). The first PASSING occurrence
+            // in store order now wins the dedup, not merely the first one.
+            let is_applied =
+                applied_urls.contains(&crate::applications::normalize_job_url(&job.url));
+            if !passes_filters(job, filters, is_applied) {
+                continue;
+            }
             if dedupe_across_autopilots {
                 let key = canonical_job_key(&job.url, &job.title, &job.company);
                 if !seen.insert(key) {
                     continue;
                 }
-            }
-            let is_applied =
-                applied_urls.contains(&crate::applications::normalize_job_url(&job.url));
-            if !passes_filters(job, filters, is_applied) {
-                continue;
             }
             out.push((ap, job, is_applied));
         }
@@ -401,6 +497,28 @@ fn project_found_job_row(
     value["autopilotId"] = json!(autopilot.id);
     value["autopilotName"] = json!(fence_autopilot_name(&autopilot.name));
     Some(value)
+}
+
+/// Fold `autopilot_id`'s scope (or [`ALL_AUTOPILOTS_CURSOR_ISSUER`] spanning
+/// every autopilot) AND every filter argument that changes WHICH rows a
+/// traversal contains into the cursor's issuer half (round 2 fix, B3-r1-F4).
+/// `include_description` is deliberately excluded — it changes a row's
+/// CONTENT, never which rows survive or their order, so replaying a cursor
+/// under a different `includeDescription` is harmless and must stay valid.
+/// [`paging::fingerprint`] rather than a literal join of the filter values:
+/// `country`/`query` are caller-typed strings that could themselves contain
+/// `:` or `|`, and a fingerprint sidesteps needing to prove they can never
+/// collide with the issuer's own delimiters.
+fn found_jobs_cursor_issuer(autopilot_id: Option<&str>, filters: &FoundJobsFilters) -> String {
+    let scope = autopilot_id.unwrap_or(ALL_AUTOPILOTS_CURSOR_ISSUER);
+    let fp = paging::fingerprint(&[
+        &filters.min_score.map(|n| n.to_string()).unwrap_or_default(),
+        filters.country.as_deref().unwrap_or(""),
+        &filters.remote.map(|b| b.to_string()).unwrap_or_default(),
+        &filters.applied.map(|b| b.to_string()).unwrap_or_default(),
+        filters.query.as_deref().unwrap_or(""),
+    ]);
+    format!("{scope}|{fp}")
 }
 
 /// Pure core of `found-jobs`: resolve the requested scope (one autopilot, or
@@ -455,7 +573,7 @@ pub(super) fn resolve_found_jobs(
         })
         .collect();
 
-    let cursor_issuer = autopilot_id.unwrap_or(ALL_AUTOPILOTS_CURSOR_ISSUER);
+    let cursor_issuer = found_jobs_cursor_issuer(autopilot_id, filters);
     let single = match (autopilot_id, scoped.as_slice()) {
         (Some(_), [ap]) => Some(*ap),
         _ => None,
@@ -463,7 +581,7 @@ pub(super) fn resolve_found_jobs(
     let autopilot_name_fenced = single.map(|ap| fence_autopilot_name(&ap.name));
 
     let base_cost = base_envelope_cost(
-        cursor_issuer,
+        &cursor_issuer,
         single
             .zip(autopilot_name_fenced.as_deref())
             .map(|(ap, name)| (ap.id.as_str(), name)),
@@ -534,20 +652,43 @@ fn parse_found_jobs_cursor(payload: &Value, cursor_issuer: &str) -> AppResult<us
     }
 }
 
+/// A present-but-unusable `autopilotId` (blank/whitespace-only, or shaped
+/// like a CLI flag) must error rather than silently widen the scope to every
+/// autopilot (B3-r1-F2 — `agent-cli-standards`: an empty selector must never
+/// mean "all"; this is a SELECTOR, unlike the additive filters
+/// [`trimmed_lowercase_filter`] covers). Absent (or explicit `null`) is the
+/// deliberate issue #1168 case and stays `None`. The `--`-prefix check
+/// mirrors `agent_cli::mcp::tool_argv`'s own guard on the SAME field (round
+/// 2 fix — that layer forwards this value as a bare CLI positional, where a
+/// flag-shaped id would otherwise be misread as the flag itself rather than
+/// refused); harmless but redundant defense-in-depth here, since this path
+/// never builds argv.
+const BLANK_AUTOPILOT_ID_MESSAGE: &str =
+    "autopilotId must be a non-empty id, not blank or flag-shaped — omit the key entirely to \
+     span every autopilot";
+
+fn parse_autopilot_id_arg(payload: &Value) -> AppResult<Option<String>> {
+    match payload.get("autopilotId") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(raw)) => {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() || trimmed.starts_with("--") {
+                Err(AppError::Validation(BLANK_AUTOPILOT_ID_MESSAGE.to_string()))
+            } else {
+                Ok(Some(trimmed.to_string()))
+            }
+        }
+        Some(_) => Err(AppError::Validation(BLANK_AUTOPILOT_ID_MESSAGE.to_string())),
+    }
+}
+
 /// `pub(super)` — dispatched from `agent_read::handle_agent_query`.
 pub(super) fn found_jobs_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
-    let autopilot_id = payload
-        .get("autopilotId")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
-    let cursor_issuer = autopilot_id
-        .as_deref()
-        .unwrap_or(ALL_AUTOPILOTS_CURSOR_ISSUER);
-    let offset = parse_found_jobs_cursor(payload, cursor_issuer)?;
+    let autopilot_id = parse_autopilot_id_arg(payload)?;
+    let filters = FoundJobsFilters::from_payload(payload)?;
+    let cursor_issuer = found_jobs_cursor_issuer(autopilot_id.as_deref(), &filters);
+    let offset = parse_found_jobs_cursor(payload, &cursor_issuer)?;
     let limit = clamp_found_jobs_limit(payload);
-    let filters = FoundJobsFilters::from_payload(payload);
     let records = list_autopilots(app)?;
     let applied_urls = crate::commands::autopilot::applied_job_urls(app);
     resolve_found_jobs(

@@ -723,6 +723,36 @@ fn classify_tool_call(params: &Value, server: &Server) -> ToolCall {
         return ToolCall::Local(Ok(tool_result(commands_value(&arguments, server.tier), 0)));
     }
 
+    // B3-r1-F2 — a PRESENT-but-blank `autopilotId` used to collapse to the
+    // same argv [`tool_argv`] builds for an OMITTED one (`.filter(|s|
+    // !s.is_empty())` before the push below), silently widening a
+    // one-autopilot selector into a spanning traversal
+    // (`agent-cli-standards`: an empty selector must never mean "all"). A
+    // flag-shaped value (`"--include-description"`) was WORSE: forwarded as
+    // the bare leading positional [`tool_argv`] builds, [`parse_found_jobs`]
+    // reads it as a real flag rather than as an id, since it doesn't look
+    // like one — turning on a filter the caller never asked for. Checked
+    // HERE, before argv is built, rather than inside [`tool_argv`] (which
+    // never validates anything itself, by its own documented contract) —
+    // mirrors `found_jobs::parse_autopilot_id_arg`'s identical guard on the
+    // SAME field one hop further in.
+    if name == TOOL_FOUND_JOBS {
+        if let Some(id) = arguments.get("autopilotId").filter(|v| !v.is_null()) {
+            let usable = id
+                .as_str()
+                .is_some_and(|s| !s.trim().is_empty() && !s.trim().starts_with("--"));
+            if !usable {
+                return ToolCall::Local(Ok(tool_result(
+                    usage_error_value(
+                        "autopilotId must be a non-empty id, not blank or flag-shaped — omit \
+                         the key entirely to span every autopilot",
+                    ),
+                    2,
+                )));
+            }
+        }
+    }
+
     let argv = tool_argv(name, &arguments);
     let verb = match parse_verb(&argv) {
         Ok(v) => v,

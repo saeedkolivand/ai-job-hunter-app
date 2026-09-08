@@ -171,11 +171,14 @@ const INVOCATION_TIMEOUT: Duration = Duration::from_secs(90);
 enum Verb {
     BestMatches {
         limit: Option<u64>,
-        /// Issue #1146 P11 — a plain numeric-offset cursor, the same
-        /// convention `extension_bridge::paging::parse_offset_cursor`
-        /// serves for the generic tier (`best-matches` has no per-list
-        /// issuer ambiguity `found-jobs`' own cursor exists to close, so it
-        /// stays this simple).
+        /// Opaque to this client — passed through verbatim, never parsed
+        /// here. Issue #1146 P11 introduced it as a plain numeric offset;
+        /// round 2 (B3-r1-F4) folded `query`'s fingerprint into an
+        /// `<issuer>:<offset>` grammar instead, once `query` (below) started
+        /// changing which rows a traversal contains — the SAME per-list
+        /// issuer ambiguity `found-jobs`' own cursor exists to close, this
+        /// resource is no longer exempt from. See
+        /// `agent_read::best_matches_cursor_issuer`/`parse_best_matches_cursor`.
         cursor: Option<String>,
         /// Case-insensitive substring over title or company (issue #1168).
         query: Option<String>,
@@ -359,7 +362,8 @@ const VERB_TABLE: &[VerbHelp] = &[
         args: "[--limit <n>] [--cursor <c>] [--query <q>]",
         returns: "the strongest jobs across every autopilot (default 20, max 50 per page); \
                   repeat with the returned `nextCursor` to reach every ranked row; `--query` \
-                  filters to a title/company substring",
+                  filters to a title/company substring, and the cursor is only valid for the \
+                  SAME `--query` (present or omitted) that issued it",
     },
     VerbHelp {
         name: "job",
@@ -572,9 +576,21 @@ fn parse_found_jobs(rest: &[String]) -> AppResult<Verb> {
                 let raw = rest.get(i + 1).ok_or_else(|| {
                     AppError::Validation("--min-score requires a value".to_string())
                 })?;
-                min_score = Some(raw.parse::<f64>().map_err(|_| {
+                let parsed = raw.parse::<f64>().map_err(|_| {
                     AppError::Validation("--min-score must be a number".to_string())
-                })?);
+                })?;
+                // B3-r1-F3 — `f64::parse` accepts `"1e400"`/`"inf"`/`"nan"`
+                // as valid non-finite values; `json!(non_finite)` then
+                // serializes to `null`, which the resource-side filter reads
+                // as "absent" and silently drops. Refused here so the filter
+                // either applies or the call fails, never a third, quiet
+                // option.
+                if !parsed.is_finite() {
+                    return Err(AppError::Validation(
+                        "--min-score must be a finite number".to_string(),
+                    ));
+                }
+                min_score = Some(parsed);
                 i += 2;
             }
             "--country" => {

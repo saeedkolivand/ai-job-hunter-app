@@ -86,6 +86,35 @@ pub(super) fn clamp_limit(payload: &Value, default: usize, max: usize) -> usize 
         .min(max)
 }
 
+/// FNV-1a over `parts`, with a separator byte folded in between each part so
+/// `["ab", "c"]` and `["a", "bc"]` never collide. Deterministic within one
+/// run of the app — all a paging cursor's issuer half needs, since a cursor
+/// is never persisted across a restart — unlike `std::hash::DefaultHasher`,
+/// which the standard library explicitly does NOT guarantee stable even
+/// across two `RandomState`s in the same process. Mirrors
+/// `autopilot_scheduler::jitter_for`'s own reasoning for the same choice.
+///
+/// Shared by every surface that must fold its OWN filter/query arguments
+/// into a paging cursor's issuer half (issue #1168 round 2, B3-r1-F4): a
+/// cursor replayed under DIFFERENT filter arguments must hit the existing
+/// wrong-scope refusal, never silently page a different filtered list at a
+/// stale offset — the exact hazard issue #1130 closed one level up
+/// (`<autopilotId>:<offset>`), reopened the moment `found-jobs` and
+/// `best-matches` gained arguments that change which rows a traversal
+/// contains without changing the cursor's own scope half.
+pub(super) fn fingerprint(parts: &[&str]) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for part in parts {
+        for byte in part.as_bytes() {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        hash ^= 0xff; // separator between parts, so boundaries can't shift
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:x}")
+}
+
 /// Drop rows from the end of `candidates` until `base_cost` PLUS the
 /// serialized array of them fits `budget` — the transport-size guarantee is
 /// the FULL response envelope, not just its row array (CodeRabbit finding,
@@ -196,6 +225,34 @@ mod tests {
                 "must refuse rather than silently restart at 0: {payload}"
             );
         }
+    }
+
+    // ── fingerprint ──────────────────────────────────────────────────
+
+    #[test]
+    fn fingerprint_is_deterministic_and_distinguishes_different_inputs() {
+        assert_eq!(
+            fingerprint(&["ap-1", "70", "germany"]),
+            fingerprint(&["ap-1", "70", "germany"]),
+            "the same parts must always produce the same fingerprint"
+        );
+        assert_ne!(
+            fingerprint(&["ap-1", "70", "germany"]),
+            fingerprint(&["ap-1", "90", "germany"]),
+            "a changed part must change the fingerprint"
+        );
+        // Different part BOUNDARIES, same concatenated bytes — the
+        // separator is what keeps these apart.
+        assert_ne!(
+            fingerprint(&["ab", "c"]),
+            fingerprint(&["a", "bc"]),
+            "part boundaries must matter, not just the concatenated bytes"
+        );
+        assert_ne!(
+            fingerprint(&[""]),
+            fingerprint(&[]),
+            "an empty part must differ from no parts at all"
+        );
     }
 
     // ── trim_to_byte_budget ──────────────────────────────────────────

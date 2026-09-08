@@ -577,6 +577,62 @@ fn clamp_best_matches_limit(payload: &Value) -> usize {
     )
 }
 
+/// A `cursor` that isn't a nextCursor SHAPE at all — mirrors
+/// `found_jobs::MALFORMED_CURSOR_MESSAGE`'s own wording for the identical
+/// case, one hop over.
+const BEST_MATCHES_MALFORMED_CURSOR_MESSAGE: &str =
+    "cursor must be a nextCursor returned by a best-matches page — a bare offset is not one; \
+     restart from `cursor: null`";
+
+/// A well-formed `<issuer>:<offset>` cursor issued under a DIFFERENT `query`
+/// (round 2 fix, B3-r1-F4 — `best-matches`' row set now depends on `query`
+/// too, issue #1168, so a bare offset let a cursor replayed under a
+/// DIFFERENT query silently page a different filtered list at a stale
+/// offset, skipping rows rather than refusing). Mirrors
+/// `found_jobs::WRONG_AUTOPILOT_CURSOR_MESSAGE`'s own split from the
+/// malformed case: this one is "you are paging the wrong list", recoverable
+/// by paging that same query.
+const BEST_MATCHES_WRONG_QUERY_CURSOR_MESSAGE: &str =
+    "cursor was issued for a different `query` — page that same query with it, or restart from \
+     `cursor: null`";
+
+/// Fold `query`'s already-normalized (lowercased/trimmed) value into the
+/// cursor's issuer half — mirrors `found_jobs::found_jobs_cursor_issuer`'s
+/// identical reasoning one resource over. [`crate::extension_bridge::paging::fingerprint`]
+/// rather than the raw query text: `query` is caller-typed and could itself
+/// contain `:`, and a fingerprint sidesteps needing to prove it never
+/// collides with the issuer's own delimiter.
+fn best_matches_cursor_issuer(query: Option<&str>) -> String {
+    crate::extension_bridge::paging::fingerprint(&[query.unwrap_or("")])
+}
+
+/// Parse `payload`'s `cursor` against `issuer` (see
+/// [`best_matches_cursor_issuer`]) — mirrors
+/// `found_jobs::parse_found_jobs_cursor`'s own shape-then-issuer contract
+/// and never-echo discipline, one resource over (round 2 fix, B3-r1-F4:
+/// `best-matches` used to accept a bare numeric offset via
+/// `extension_bridge::paging::parse_offset_cursor`, which carried no
+/// evidence of which `query` produced it).
+fn parse_best_matches_cursor(payload: &Value, issuer: &str) -> AppResult<usize> {
+    let malformed = || AppError::Validation(BEST_MATCHES_MALFORMED_CURSOR_MESSAGE.to_string());
+    match payload.get("cursor") {
+        None | Some(Value::Null) => Ok(0),
+        Some(Value::String(raw)) => {
+            match raw
+                .rsplit_once(':')
+                .and_then(|(iss, off)| Some((iss, off.parse::<usize>().ok()?)))
+            {
+                Some((iss, off)) if iss == issuer => Ok(off),
+                Some(_) => Err(AppError::Validation(
+                    BEST_MATCHES_WRONG_QUERY_CURSOR_MESSAGE.to_string(),
+                )),
+                None => Err(malformed()),
+            }
+        }
+        Some(_) => Err(malformed()),
+    }
+}
+
 /// Pure core of `best-matches`: project, optionally `query`-filter, then
 /// `offset`/`limit`-page an already-computed row set (issue #1146 P11 — the
 /// same cursor `found-jobs` already has, reusing `extension_bridge::paging`'s
@@ -594,6 +650,11 @@ fn clamp_best_matches_limit(payload: &Value) -> usize {
 /// number here would promise a page count this traversal cannot deliver.
 /// Raising that upstream cap is a job-matching-domain change, out of scope
 /// here.
+///
+/// `nextCursor` is `<query fingerprint>:<offset>` (round 2 fix, B3-r1-F4),
+/// not a bare offset — `query` here is already the SAME normalized value
+/// [`best_matches_resource`] fingerprinted to parse the incoming `offset`,
+/// so both halves of the format always agree.
 fn resolve_best_matches(rows: &[Value], offset: usize, limit: usize, query: Option<&str>) -> Value {
     let mut matches: Vec<AgentBestMatch> = rows
         .iter()
@@ -607,8 +668,9 @@ fn resolve_best_matches(rows: &[Value], offset: usize, limit: usize, query: Opti
     let page: Vec<AgentBestMatch> = matches.into_iter().skip(offset).take(limit).collect();
     let returned = page.len();
     let next_offset = offset + returned;
+    let cursor_issuer = best_matches_cursor_issuer(query);
     let next_cursor = if next_offset < total {
-        Some(next_offset.to_string())
+        Some(format!("{cursor_issuer}:{next_offset}"))
     } else {
         None
     };
@@ -657,18 +719,14 @@ fn fence_best_match_fields(value: &mut Value) {
 
 async fn best_matches_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
     let limit = clamp_best_matches_limit(payload);
-    let offset =
-        crate::extension_bridge::paging::parse_offset_cursor(payload).ok_or_else(|| {
-            AppError::Validation(
-                crate::extension_bridge::paging::INVALID_CURSOR_MESSAGE.to_string(),
-            )
-        })?;
     let query = payload
         .get("query")
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_lowercase);
+    let cursor_issuer = best_matches_cursor_issuer(query.as_deref());
+    let offset = parse_best_matches_cursor(payload, &cursor_issuer)?;
     let raw = crate::commands::autopilot::autopilot_best_matches(app.clone()).await;
     let rows = raw
         .get("matches")

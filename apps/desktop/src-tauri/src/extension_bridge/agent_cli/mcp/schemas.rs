@@ -129,7 +129,7 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
             schema_object(
                 json!({
                     "limit": { "type": "integer", "minimum": 0, "description": format!("rows to return (default {DEFAULT_BEST_MATCHES_LIMIT}, server cap {MAX_BEST_MATCHES_LIMIT})") },
-                    "cursor": { "type": "string", "description": "an opaque token from a prior page's nextCursor; omit to start at the first page" },
+                    "cursor": { "type": "string", "description": "an opaque token from a prior page's nextCursor, valid only for the SAME `query` (present or omitted) that issued it; omit to start at the first page" },
                     "query": { "type": "string", "description": "case-insensitive substring filter over title or company" },
                 }),
                 &[],
@@ -169,7 +169,7 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
                 json!({
                     "autopilotId": { "type": "string", "description": "the target autopilot's id (see `automations`); omit to span every autopilot, deduped by posting identity" },
                     "limit": { "type": "integer", "minimum": 1, "description": format!("rows to return (default {DEFAULT_FOUND_JOBS_LIMIT}, server cap {MAX_FOUND_JOBS_LIMIT})") },
-                    "cursor": { "type": "string", "description": "an opaque token from a prior page's nextCursor, valid only for the SAME autopilotId scope that issued it (present or omitted); omit to start at the first page" },
+                    "cursor": { "type": "string", "description": "an opaque token from a prior page's nextCursor, valid only for the SAME autopilotId scope AND filter arguments that issued it (present or omitted); omit to start at the first page" },
                     "minScore": { "type": "number", "description": "only rows scored at least this value; unscored rows are excluded when set" },
                     "country": { "type": "string", "description": "case-insensitive substring match against the row's location" },
                     "remote": { "type": "boolean", "description": "true keeps only rows whose location reads as remote; false keeps only the rest" },

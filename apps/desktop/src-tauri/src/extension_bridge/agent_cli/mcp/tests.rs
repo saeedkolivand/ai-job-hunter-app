@@ -1997,6 +1997,61 @@ fn every_declared_argument_still_reaches_the_bridge_or_its_local_result() {
     assert_eq!(result["isError"], false);
 }
 
+/// B3-r1-F2 — a PRESENT-but-blank `autopilotId` used to collapse silently to
+/// the same argv an OMITTED one produces, widening a one-autopilot selector
+/// into a spanning traversal with no signal to the caller. Must be a usage
+/// error, never routed to the bridge at all.
+#[test]
+fn found_jobs_with_a_blank_autopilot_id_is_a_usage_error_not_a_silent_widen() {
+    let server = Server::new(false, false);
+    for blank in [json!(""), json!("   ")] {
+        let ToolCall::Local(Ok(result)) = classify_tool_call(
+            &json!({ "name": TOOL_FOUND_JOBS, "arguments": { "autopilotId": blank } }),
+            &server,
+        ) else {
+            panic!("a blank autopilotId must never reach the bridge");
+        };
+        assert_eq!(result["isError"], true);
+        let text = result["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.contains("autopilotId"),
+            "the refusal must name the offending field: {text}"
+        );
+    }
+}
+
+/// The smuggling half: a flag-shaped `autopilotId` must be refused rather
+/// than forwarded as a bare CLI positional, where `parse_found_jobs` would
+/// read it as the real flag instead of as an id.
+#[test]
+fn found_jobs_with_a_flag_shaped_autopilot_id_is_a_usage_error_not_a_smuggled_flag() {
+    let server = Server::new(false, false);
+    let ToolCall::Local(Ok(result)) = classify_tool_call(
+        &json!({
+            "name": TOOL_FOUND_JOBS,
+            "arguments": { "autopilotId": "--include-description" },
+        }),
+        &server,
+    ) else {
+        panic!("a flag-shaped autopilotId must never reach the bridge");
+    };
+    assert_eq!(result["isError"], true);
+}
+
+/// The safe direction, unchanged: OMITTING `autopilotId` entirely is still a
+/// valid spanning traversal, never a usage error.
+#[test]
+fn found_jobs_with_an_absent_autopilot_id_still_reaches_the_bridge() {
+    let server = Server::new(false, false);
+    assert!(matches!(
+        classify_tool_call(
+            &json!({ "name": TOOL_FOUND_JOBS, "arguments": {} }),
+            &server,
+        ),
+        ToolCall::Bridge(_)
+    ));
+}
+
 /// MEDIUM fix, review round 4 — the #1134 gate refused MCP's own reserved `_`-prefixed keys,
 /// which no schema declares and any client may attach (`_meta` rides on `tools/list` results in
 /// this very file). Both directions in one test: a reserved key passes, and the typo the gate

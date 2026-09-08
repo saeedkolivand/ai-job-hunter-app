@@ -494,7 +494,7 @@ fn automations_found_jobs_total_matches_found_jobs_own_total() {
         ..blank_autopilot("ap-1")
     }];
     let row = &resolve_automations(&records)["automations"][0];
-    let no_filters = found_jobs::FoundJobsFilters::from_payload(&json!({}));
+    let no_filters = found_jobs::FoundJobsFilters::from_payload(&json!({})).unwrap();
     let paged = found_jobs::resolve_found_jobs(
         &records,
         Some("ap-1"),
@@ -718,7 +718,10 @@ fn best_matches_limit_zero_falls_back_to_the_default_not_to_zero() {
 /// paging `found-jobs` already had. Walks every row via `resolve_best_matches`
 /// directly (no `AppHandle` needed, same pure/impure split as `found-jobs`),
 /// proving the traversal covers every row exactly once and terminates with a
-/// `null` cursor rather than looping forever.
+/// `null` cursor rather than looping forever. The cursor goes back through
+/// the REAL parser (round 2 fix, B3-r1-F4 — `nextCursor` is now
+/// `<query fingerprint>:<offset>`, not a bare offset), not a hand-rolled
+/// `parse()`, so this fails if the two halves of the format ever disagree.
 #[test]
 fn best_matches_cursor_walks_every_row_exactly_once_then_terminates_with_null() {
     let rows: Vec<Value> = (0..25)
@@ -731,16 +734,18 @@ fn best_matches_cursor_walks_every_row_exactly_once_then_terminates_with_null() 
 
     let page_size = 10;
     let mut seen: Vec<String> = Vec::new();
-    let mut cursor: Option<usize> = Some(0);
+    let mut cursor: Option<String> = None;
+    let issuer = best_matches_cursor_issuer(None);
     loop {
-        let offset = cursor.expect("loop only continues while Some");
+        let offset =
+            parse_best_matches_cursor(&json!({ "cursor": cursor }), &issuer).expect("own cursor");
         let out = resolve_best_matches(&rows, offset, page_size, None);
         for row in out["matches"].as_array().unwrap() {
             seen.push(row["url"].as_str().unwrap().to_string());
         }
-        cursor = out["nextCursor"].as_str().map(|c| c.parse().unwrap());
-        if cursor.is_none() {
-            break;
+        match out["nextCursor"].as_str() {
+            Some(next) => cursor = Some(next.to_string()),
+            None => break,
         }
         assert!(seen.len() <= rows.len(), "must terminate at the true end");
     }
@@ -754,6 +759,44 @@ fn best_matches_cursor_walks_every_row_exactly_once_then_terminates_with_null() 
     unique.sort();
     unique.dedup();
     assert_eq!(unique.len(), rows.len(), "no row must repeat across pages");
+}
+
+/// A cursor issued under one `query` replayed under a DIFFERENT one must
+/// refuse rather than silently page the new query's list at the old query's
+/// stale offset — the B3-r1-F4 hazard this fix closes.
+#[test]
+fn best_matches_cursor_issued_under_one_query_is_rejected_under_another() {
+    let rows: Vec<Value> = (0..25)
+        .map(|i| {
+            let mut row = full_best_match_row_json();
+            row["url"] = json!(format!("https://boards.example.com/jobs/{i}"));
+            row
+        })
+        .collect();
+    let issued = resolve_best_matches(&rows, 0, 10, Some("engineer"))["nextCursor"]
+        .as_str()
+        .expect("more pages")
+        .to_string();
+
+    let err = parse_best_matches_cursor(
+        &json!({ "cursor": issued }),
+        &best_matches_cursor_issuer(Some("designer")),
+    )
+    .unwrap_err();
+    assert_eq!(err.to_string(), BEST_MATCHES_WRONG_QUERY_CURSOR_MESSAGE);
+}
+
+/// The pre-round-2 wire shape (a bare numeric offset) is rejected, not
+/// accepted for compatibility — same reasoning as
+/// `found_jobs::found_jobs_rejects_a_bare_numeric_offset_cursor`.
+#[test]
+fn best_matches_rejects_a_bare_numeric_offset_cursor() {
+    let err = parse_best_matches_cursor(
+        &json!({ "cursor": "10" }),
+        &best_matches_cursor_issuer(None),
+    )
+    .unwrap_err();
+    assert_eq!(err.to_string(), BEST_MATCHES_MALFORMED_CURSOR_MESSAGE);
 }
 
 // ── throttle ─────────────────────────────────────────────────────────────
@@ -827,7 +870,7 @@ fn no_resource_output_ever_carries_a_forbidden_key() {
         found_jobs: vec![full_found_job()],
         ..blank_autopilot("ap-1")
     }];
-    let no_filters = found_jobs::FoundJobsFilters::from_payload(&json!({}));
+    let no_filters = found_jobs::FoundJobsFilters::from_payload(&json!({})).unwrap();
     let found_jobs = found_jobs::resolve_found_jobs(
         &found_jobs_records,
         Some("ap-1"),

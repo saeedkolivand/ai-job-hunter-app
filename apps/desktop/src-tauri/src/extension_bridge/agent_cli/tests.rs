@@ -217,6 +217,21 @@ fn rejects_found_jobs_a_non_numeric_min_score() {
     assert!(parse_verb(&s(&["found-jobs", "ap-1", "--min-score", "abc"])).is_err());
 }
 
+/// B3-r1-F3 — `"1e400"`/`"inf"`/`"nan"` all parse as valid `f64` values
+/// (`f64::INFINITY`/`f64::NAN`), so `.parse::<f64>()` alone accepted them;
+/// `serde_json::json!` then serializes a non-finite `f64` as `null`, and the
+/// filter silently vanished on the other end. Must be refused HERE, at
+/// parse, rather than reaching the wire as an inert `null`.
+#[test]
+fn rejects_found_jobs_a_non_finite_min_score() {
+    for bad in ["1e400", "inf", "-inf", "nan"] {
+        assert!(
+            parse_verb(&s(&["found-jobs", "ap-1", "--min-score", bad])).is_err(),
+            "--min-score {bad} must be rejected, not silently accepted as non-finite"
+        );
+    }
+}
+
 #[test]
 fn rejects_found_jobs_non_numeric_limit() {
     assert!(parse_verb(&s(&["found-jobs", "ap-1", "--limit", "abc"])).is_err());
