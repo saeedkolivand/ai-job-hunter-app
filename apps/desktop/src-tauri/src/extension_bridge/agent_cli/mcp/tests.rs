@@ -1837,6 +1837,11 @@ fn every_policy_row_is_routed_to_exactly_one_call_tool_or_refused_everywhere_if_
 /// `local_call_refusal`'s gate could never show up there. Both now call the ONE shared
 /// [`tier_exposes`] (issue #1154), so this pins that `commands`' `"tool"`/`"unavailable"` split
 /// and the refusal's `tier_not_enabled`/`wrong_tool` split agree for every row, at every tier.
+///
+/// [A2-r3-A3-AC-1] `gate_open` below is spelled out by hand rather than calling `tier_exposes`
+/// itself — the function both call sites under test route through — so a break in the shared
+/// gate has an independent expectation to disagree with, instead of a tautology that can only
+/// ever agree with itself.
 #[test]
 fn the_tier_gate_agrees_between_commands_and_local_call_refusal_at_every_tier() {
     for tier in [Tier::Read, Tier::Reversible, Tier::Irreversible] {
@@ -1848,7 +1853,12 @@ fn the_tier_gate_agrees_between_commands_and_local_call_refusal_at_every_tier() 
             }
             let (namespace, command) = agent_call::split_path(entry.path);
             let right_tool = tool_for(&entry.effect).unwrap();
-            let gate_open = tier_exposes(tier, &entry.effect);
+            // Hand-written mirror of `tier_exposes`, not a call to it (see fn doc above).
+            let gate_open = match entry.effect {
+                Effect::Reversible => tier != Tier::Read,
+                Effect::Irreversible(_) => tier == Tier::Irreversible,
+                _ => true,
+            };
 
             // `commands`' own row for this entry.
             let row = rows
