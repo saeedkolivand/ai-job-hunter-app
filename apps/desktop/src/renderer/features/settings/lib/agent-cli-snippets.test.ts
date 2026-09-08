@@ -6,7 +6,12 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { AGENT_CLI_TIERS, buildClaudeCodeSnippet, buildCodexSnippet } from './agent-cli-snippets';
+import {
+  AGENT_CLI_TIERS,
+  buildClaudeCodeSnippet,
+  buildCodexSnippet,
+  buildGenericMcpSnippet,
+} from './agent-cli-snippets';
 
 /** The realistic bad case: an install path with a space in it. */
 const WINDOWS_PATH = 'C:\\Users\\demo\\AppData\\Local\\AI Job Hunter\\ajh-tauri.exe';
@@ -240,6 +245,60 @@ describe('buildCodexSnippet', () => {
 
   it('is null when the path is unknown', () => {
     expect(buildCodexSnippet(null, 'irreversible')).toBeNull();
+  });
+});
+
+describe('buildGenericMcpSnippet', () => {
+  it('round-trips a Windows path with backslashes and a space through JSON.parse', () => {
+    const snippet = buildGenericMcpSnippet(WINDOWS_PATH, 'read');
+    if (snippet === null) throw new Error('expected a snippet');
+    const parsed = JSON.parse(snippet) as { mcpServers: Record<string, { command: string }> };
+    expect(parsed.mcpServers['ai-job-hunter']?.command).toBe(WINDOWS_PATH);
+  });
+
+  it('puts the tier flag in args and names the server per tier, like Claude Code', () => {
+    expect(buildGenericMcpSnippet(MACOS_PATH, 'reversible')).toBe(
+      JSON.stringify(
+        {
+          mcpServers: {
+            'ai-job-hunter-write': {
+              command: MACOS_PATH,
+              args: ['agent', 'mcp', '--allow-reversible'],
+            },
+          },
+        },
+        null,
+        2
+      )
+    );
+    expect(buildGenericMcpSnippet(MACOS_PATH, 'irreversible')).toBe(
+      JSON.stringify(
+        {
+          mcpServers: {
+            'ai-job-hunter-unrestricted': {
+              command: MACOS_PATH,
+              args: ['agent', 'mcp', '--allow-irreversible'],
+            },
+          },
+        },
+        null,
+        2
+      )
+    );
+  });
+
+  it('adds no flag for the read tier, mirroring the CLI builders', () => {
+    expect(buildGenericMcpSnippet(MACOS_PATH, 'read')).toBe(
+      JSON.stringify(
+        { mcpServers: { 'ai-job-hunter': { command: MACOS_PATH, args: ['agent', 'mcp'] } } },
+        null,
+        2
+      )
+    );
+  });
+
+  it('is null when the path is unknown', () => {
+    expect(buildGenericMcpSnippet(null, 'read')).toBeNull();
   });
 });
 
