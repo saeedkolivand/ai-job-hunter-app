@@ -48,6 +48,11 @@ use super::*;
 /// and its real query (mirrors `policy`'s own per-row audit discipline):
 /// - `applications_list` → `applications::ApplicationStore::list`
 /// - `ai_generations_list` → `ai_generations::AiGenerationStore::list`
+/// - `documents_list` → `documents::DocumentStore::list` (round-3 fix,
+///   `B1-r3-ACLI-5`: it takes no argument and returns every document's FULL
+///   `text`, so a caller pointed at it by `INSTRUCTIONS`/the `profile` tool
+///   description had no way to narrow a `result_too_large` refusal — this
+///   is that narrowing path)
 ///
 /// Adding a row here CHANGES that command's reply shape for every generic-tier
 /// caller (a bare array becomes [`paginate_list_reply`]'s envelope), so it is
@@ -59,7 +64,7 @@ use super::*;
 /// DISCOVER the paging instead of inferring it from a surprise envelope,
 /// never a second hand-typed name list.
 pub(in crate::extension_bridge) const PAGINATED_LIST_COMMANDS: &[&str] =
-    &["applications_list", "ai_generations_list"];
+    &["applications_list", "ai_generations_list", "documents_list"];
 
 /// What the `commands` tool prints on a [`PAGINATED_LIST_COMMANDS`] row.
 /// Lives HERE, next to the behaviour it describes, so the description cannot

@@ -452,15 +452,43 @@ fn updater_install_proof_reads_the_pending_version_off_updater_check() {
     );
 }
 
+/// Issue #1169: `commands::help::help_search` must actually BE the `NotExposed` row the doc
+/// guard below and `every_proof_source_read_command_is_a_read_row`'s comment both describe — the
+/// prior version of this file asserted the PROSE said so without ever reading `POLICY` itself
+/// (round-3 finding `B1-r3-ACLI-2`), so reverting the row back to `Irreversible`/`Read` left every
+/// other test in this file green.
+#[test]
+fn help_search_stays_not_exposed() {
+    let entry = POLICY
+        .iter()
+        .find(|e| e.path == "commands::help::help_search")
+        .expect("commands::help::help_search is a real POLICY row");
+    assert!(
+        matches!(entry.effect, Effect::NotExposed(_)),
+        "commands::help::help_search must stay NotExposed (issue #1169) — got {:?}",
+        entry.effect
+    );
+}
+
 /// Issue #1164 round 2 (`B1-r2-B2-r2-ACLI-6`): `commands::help::help_search` is `NotExposed`
 /// (issue #1169), but its own module doc claimed unqualified reachability from the agent CLI /
 /// extension bridge in four spans — falsifying the RATIONALE those spans give for re-checking
 /// every Zod cap in Rust. Every span that mentions the agent CLI or extension bridge reaching
 /// `help_search` must also name its current `NotExposed` status (issue #1169), so a future
 /// reclassification of the POLICY row is the only thing that can make the doc true again without
-/// a human re-reading it.
+/// a human re-reading it — enforced together with `help_search_stays_not_exposed` above, which
+/// pins the ROW itself (round-3 finding `B1-r3-ACLI-2`: this test alone never read `POLICY`).
 #[test]
 fn help_module_doc_reachability_claims_stay_paired_with_its_not_exposed_status() {
+    let entry = POLICY
+        .iter()
+        .find(|e| e.path == "commands::help::help_search")
+        .expect("commands::help::help_search is a real POLICY row");
+    assert!(
+        matches!(entry.effect, Effect::NotExposed(_)),
+        "this doc-reachability guard only makes sense while the row is NotExposed — got {:?}",
+        entry.effect
+    );
     const HELP_RS: &str =
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/commands/help.rs"));
     let lines: Vec<&str> = HELP_RS.lines().collect();

@@ -1242,9 +1242,13 @@ fn every_scraped_text_tool_carries_the_same_untrusted_fields_notice() {
     }
 }
 
-/// Issue #1170 — the `profile` tool must say up front it holds contact fields only, and point at
-/// a REAL `POLICY` read for the résumé/document text itself (a stale rename here would send a
-/// calling model at a command that no longer exists).
+/// Issue #1170, corrected round 3 (`B1-r3-ACLI-1`): the `profile` tool must say up front it holds
+/// contact fields only, and point at a REAL `POLICY` read for the résumé/document text itself (a
+/// stale rename here would send a calling model at a command that no longer exists). Only
+/// `documents:documents_list` — `documents:documents_get_text` was dropped from this description
+/// too (issue #1171, same as `INSTRUCTIONS`): its `id` param does not match `documents_list`'s
+/// `_id` rows, so a caller following the OLD description landed on `invoke_error` for a missing
+/// `id` key, then a second failure after "wrap it under that key" produced `{"id": {"_id": …}}`.
 #[test]
 fn profile_tool_description_names_a_real_document_read() {
     let list = tools(Tier::Read);
@@ -1284,8 +1288,10 @@ fn profile_tool_description_names_a_real_document_read() {
         );
     }
     assert_eq!(
-        checked, 2,
-        "expected exactly the 2 ns:cmd pairs the profile description names: {description}"
+        checked, 1,
+        "expected exactly the 1 ns:cmd pair the profile description names — \
+         documents:documents_get_text was dropped (issue #1171), matching INSTRUCTIONS: \
+         {description}"
     );
 }
 
@@ -2307,7 +2313,10 @@ fn commands_marks_the_paged_rows_and_only_those() {
         noted.push(row["command"].as_str().unwrap());
     }
     noted.sort_unstable();
-    assert_eq!(noted, vec!["ai_generations_list", "applications_list"]);
+    assert_eq!(
+        noted,
+        vec!["ai_generations_list", "applications_list", "documents_list"]
+    );
 }
 
 #[test]
@@ -2539,5 +2548,24 @@ fn call_read_description_claims_no_persisted_state_change_not_no_state_change_at
         "call-read's description must not overclaim a bare \"no state change\" — \
          updater:updater_check is Read and still writes UpdaterState + emits an event: \
          {description}"
+    );
+}
+
+/// Round 3 (`B1-r3-ACLI-4`): `call-read`'s `readOnlyHint` must be `false`, matching the
+/// description above rather than contradicting it — `updater:updater_check` is `Effect::Read`
+/// (issue #1165) and still writes `UpdaterState` and emits a UI event, so a client that
+/// auto-approves on `readOnlyHint: true` (ADR-040 §4) would silently let an agent fire that probe
+/// and drive the update banner without a prompt.
+#[test]
+fn call_read_annotations_do_not_claim_read_only() {
+    let tool = tools(Tier::Read)
+        .into_iter()
+        .find(|t| t["name"] == TOOL_CALL_READ)
+        .expect("call-read is always present");
+    assert_eq!(
+        tool["annotations"]["readOnlyHint"],
+        json!(false),
+        "call-read must not claim readOnlyHint: true while it can dispatch \
+         updater:updater_check: {tool}"
     );
 }

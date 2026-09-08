@@ -144,7 +144,8 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
             TOOL_PROFILE,
             "My Profile",
             "Contact fields only (name, email, phone, location, links) — for the résumé/document \
-             text itself, read documents:documents_list / documents:documents_get_text via call-read.",
+             text itself, read documents:documents_list via call-read (rows already carry the \
+             full text).",
             no_args.clone(),
         ),
         curated_tool(TOOL_AUTOMATIONS, "Automations", "", no_args),
@@ -176,8 +177,13 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
             "title": "Call (read)",
             "description": "Dispatch a Read-effect command by namespace/command — no persisted state change (a Read row may still emit a UI event or touch in-memory-only state; see `updater:updater_check`). Refuses any target this server does not classify Read.",
             "inputSchema": call_target_schema(json!({}), &[]),
+            // `readOnlyHint: false` (round-3 fix, `B1-r3-ACLI-4`): the hint is a per-TOOL promise,
+            // and this tool dispatches every current AND future `Effect::Read` row — including
+            // `updater:updater_check`, which writes `UpdaterState` and emits a UI event the
+            // description above already admits. A client that auto-approves on `readOnlyHint`
+            // must not be handed that promise for a tool whose own description qualifies it.
             "annotations": {
-                "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true,
+                "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true,
                 "openWorldHint": true,
             },
         }),

@@ -1164,11 +1164,13 @@ fn enforce_frame_cap_passes_an_under_cap_reply_through_untouched() {
 /// data can't catch a deletion" lesson). The second half proves each named
 /// row is a REAL, freely-dispatchable `Effect::Read` policy row, so a typo or
 /// a renamed command fails here rather than silently paging nothing.
+/// `documents_list` joined round 3 (`B1-r3-ACLI-5`) as the narrowing path
+/// `INSTRUCTIONS`/the `profile` tool description point a caller at.
 #[test]
-fn the_paginated_list_commands_are_exactly_these_two_real_read_policy_rows() {
+fn the_paginated_list_commands_are_exactly_these_three_real_read_policy_rows() {
     assert_eq!(
         PAGINATED_LIST_COMMANDS,
-        &["applications_list", "ai_generations_list"]
+        &["applications_list", "ai_generations_list", "documents_list"]
     );
     for command in PAGINATED_LIST_COMMANDS {
         let entry = POLICY
