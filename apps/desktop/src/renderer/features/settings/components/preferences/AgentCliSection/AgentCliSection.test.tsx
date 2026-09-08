@@ -170,6 +170,10 @@ describe('AgentCliSection', () => {
     expect(genericSnippet()).toContain('ai-job-hunter-unrestricted');
     expect(genericSnippet()).toContain('--allow-irreversible');
     expect(screen.getByText(/spend AI budget and delete data/i)).toBeInTheDocument();
+    // The transcript note claims to hold at EVERY tier, not just the default
+    // read-only one — re-assert it here, after switching off read, so a
+    // regression that gated it on `tier === 'read'` fails this suite.
+    expect(screen.getByText(/is written into the ai client's own transcript/i)).toBeInTheDocument();
 
     fireEvent.click(tier.getByRole('radio', { name: 'Reversible' }));
     expect(claudeSnippet()).toBe(
@@ -178,6 +182,7 @@ describe('AgentCliSection', () => {
     expect(codexSnippet()).toContain('"--allow-reversible"');
     expect(genericSnippet()).toContain('ai-job-hunter-write');
     expect(genericSnippet()).toContain('--allow-reversible');
+    expect(screen.getByText(/is written into the ai client's own transcript/i)).toBeInTheDocument();
   });
 
   it('links to Help & Support in-app rather than out to a browser', async () => {
@@ -279,6 +284,33 @@ describe('AgentCliSection', () => {
       // it there — so only the role query can tell the two apart.
       expect(screen.getByRole('group', { name })).toBe(block);
     }
+  });
+
+  it('says the app must stay open, and where the read data ends up, only once there is something to copy', async () => {
+    const { unmount } = renderCard();
+    await waitFor(() =>
+      expect(screen.getByTestId(TEST_IDS.settings.agentCliPath)).toHaveValue(EXE)
+    );
+    // The CLI/MCP server is a separate process the AI client spawns (ADR-037,
+    // ADR-040 §11); it keeps answering `commands` even while the app is
+    // closed, so the note must hedge with "most" (matching the in-app FAQ,
+    // en/translation.json's supportFaq entry) rather than claim ALL calls
+    // fail while closed, and never that the server "runs inside" the app or
+    // "stops as soon as it closes".
+    const stayOpenNote = screen.getByText(/keep this app open while an agent is connected/i);
+    expect(stayOpenNote).toBeInTheDocument();
+    expect(stayOpenNote.textContent).toMatch(/most agent calls .*fail while it is closed/i);
+    expect(stayOpenNote.textContent).not.toMatch(/run inside it/i);
+    expect(stayOpenNote.textContent).not.toMatch(/stop as soon as it closes/i);
+    expect(screen.getByText(/is written into the ai client's own transcript/i)).toBeInTheDocument();
+    unmount();
+
+    // With no resolved path there is nothing to copy and nothing to connect —
+    // both notes would be answering a question the card isn't asking yet.
+    renderCard(vi.fn().mockResolvedValue({ exePath: null }));
+    await waitFor(() => expect(screen.getByText(/could not be resolved/i)).toBeInTheDocument());
+    expect(screen.queryByText(/keep this app open while an agent is connected/i)).toBeNull();
+    expect(screen.queryByText(/is written into the ai client's own transcript/i)).toBeNull();
   });
 
   it('lets the path row and the tier control wrap at the narrow settings column', async () => {

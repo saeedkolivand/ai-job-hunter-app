@@ -168,7 +168,23 @@ export function AgentCliSection() {
             <p className="text-[11px] leading-snug text-foreground/70">
               {t(`settings.developer.agentCli.tiers.${tier}.description`)}
             </p>
+            {/* True at every tier, not just read-only: the write tiers still
+                read first, so "reads your data and nothing else" is never the
+                last word on where that data ends up. */}
+            <p className="text-[11px] leading-snug text-foreground/70">
+              {t('settings.developer.agentCli.transcriptNote')}
+            </p>
           </div>
+        ) : null}
+
+        {/* Registering either command below hands a running agent a live
+            connection — the fact that the app has to stay open for it to work
+            belongs right above the two copy actions that create it, not
+            buried in the top description. */}
+        {exePath ? (
+          <p className="text-xs leading-snug text-foreground/70">
+            {t('settings.developer.agentCli.stayOpenNote')}
+          </p>
         ) : null}
 
         {/* Claude Code */}
