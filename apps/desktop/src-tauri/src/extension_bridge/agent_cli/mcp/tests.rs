@@ -1097,6 +1097,35 @@ fn documents_text_prose_never_claims_empty_means_only_no_such_document() {
     }
 }
 
+/// `B2-r2-B2-r2-ACLI-R8-A` (MEDIUM, review round 8 follow-up): the doc comment directly above
+/// `documents_get_text`'s `unwrap_or_default()` in `commands/documents.rs` is a THIRD copy of
+/// the claim guarded above for `INSTRUCTIONS` and the `profile` tool description — it sits right
+/// next to the code that disproves the old wording, so pin its source text too or it can drift
+/// back to claiming the empty reply means ONLY "no such document" with no guard catching it.
+#[test]
+fn documents_get_text_doc_comment_never_claims_empty_means_only_no_such_document() {
+    const SRC: &str = include_str!("../../../commands/documents.rs");
+    let (_, after_set_default) = SRC
+        .split_once("pub async fn documents_set_default")
+        .expect("commands::documents::documents_set_default must still exist");
+    let (doc_comment, _) = after_set_default
+        .split_once("pub async fn documents_get_text")
+        .expect("commands::documents::documents_get_text must still exist");
+    assert!(
+        !doc_comment.contains("did not resolve, not \"this document has"),
+        "commands::documents_get_text's doc comment must never claim the empty reply means ONLY \
+         \"no such document\" — it returns the identical empty string when a real document's own \
+         extracted text is empty too: {doc_comment}"
+    );
+    assert!(
+        doc_comment.contains("NOT distinguishable from this reply alone")
+            && doc_comment.contains("documents:documents_list"),
+        "commands::documents_get_text's doc comment must tell the reader how to tell the two \
+         empty-reply causes apart via documents:documents_list, matching agent_cli::mcp's \
+         INSTRUCTIONS and profile tool description: {doc_comment}"
+    );
+}
+
 /// Regression for `B1-r3-ACLI-R7-2`: reproduces the review's mutation run B directly — two
 /// `documents:<cmd>` tokens close together, where `documents_list`'s own cap disclosure sits in
 /// the ~100-char gap before `documents_get_text`'s token but `documents_get_text` never discloses
