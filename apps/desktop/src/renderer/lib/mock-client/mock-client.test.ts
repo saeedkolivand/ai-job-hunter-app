@@ -70,6 +70,15 @@ describe('createMockClient', () => {
     expect(summary.thinkingByModelWindow).toBe('allTime');
   });
 
+  // Regression: the stub used to discard its `days` argument and answer
+  // `window.days: 1` for every caller, so a multi-day path could not be
+  // exercised against the mock.
+  it('echoes the requested window size from ai.spendSummary', async () => {
+    const client = createMockClient();
+    const summary = await client.ai.spendSummary(7);
+    expect(summary.window.days).toBe(7);
+  });
+
   it('shallow-merges namespace overrides', async () => {
     const client = createMockClient({
       system: { getVersion: async () => '9.9.9' },

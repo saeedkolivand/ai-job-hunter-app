@@ -128,8 +128,9 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       stageOverrides: async () => ({}),
       setStageOverride: async () => ({}),
       clearStageOverride: async () => ({}),
-      spendSummary: async () => ({
-        window: { days: 1, from: 0, to: 0 },
+      // Echo the requested window so a multi-day caller can be exercised against the mock.
+      spendSummary: async (days = 1) => ({
+        window: { days, from: 0, to: 0 },
         today: { inputTokens: 0, outputTokens: 0, estCostUsd: 0 },
         windowTotals: { inputTokens: 0, outputTokens: 0, estCostUsd: 0 },
         perProvider: [],
