@@ -145,6 +145,13 @@ pub(crate) fn status_reply(state: &UpdaterState, packaged: bool) -> Value {
 /// the install target the rest of the check→download→install flow acts on
 /// (issue #1165's follow-up: `updater_check` itself stays `Effect::Reversible`
 /// for exactly that reason — see its POLICY row comment).
+///
+/// Agent-tier only, by design (round-4 advisory T6, PR #1182): registered in
+/// `generate_handler!` so it is reachable from the webview like any other
+/// command, but no `ipc/contracts/` entry, `tauri-client/` binding, or
+/// `services/` hook exists for it (AGENTS.md rule 14) — the renderer has no
+/// caller for a bare-status read with no accompanying network probe/event,
+/// so a webview-side contract half would exist for nobody.
 #[tauri::command]
 pub fn updater_status(app: AppHandle) -> Value {
     let state = app.state::<Mutex<UpdaterState>>();
