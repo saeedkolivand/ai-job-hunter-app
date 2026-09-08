@@ -63,7 +63,7 @@ The `exePath` it publishes is resolved by `platform::config::agent_cli_exe_path`
 
 ## MCP mode (`agent mcp`)
 
-The agent CLI can run as an MCP (Model Context Protocol) stdio server, exposing the same job queries and command dispatch as discoverable tools for LLM agents such as Claude Code and Codex. It is a mode of the binary, not a verb: `mcp` is intercepted before verb parsing, adds no verb-table row, no Tauri command and no policy row, and reuses the CLI's own bridge path (`query()` in `agent_cli.rs`) for every call — same handshake, same throttle, same sentinels.
+The agent CLI can run as an MCP (Model Context Protocol) stdio server, exposing the same job queries and command dispatch as discoverable tools for any MCP client (Claude Code and Codex are the ones the smoke tests drive). The Settings → Developer card now generates a generic `mcpServers` JSON block alongside the Claude Code/Codex commands — see the README's "Any MCP client" registration block and `buildGenericMcpSnippet` in `apps/desktop/src/renderer/features/settings/lib/agent-cli-snippets.ts`. It is a mode of the binary, not a verb: `mcp` is intercepted before verb parsing, adds no verb-table row, no Tauri command and no policy row, and reuses the CLI's own bridge path (`query()` in `agent_cli.rs`) for every call — same handshake, same throttle, same sentinels.
 
 **Shape, and where the exact values live** (`apps/desktop/src-tauri/src/extension_bridge/agent_cli/mcp.rs` for the protocol half, `mcp/schemas.rs` for the tool catalogue and `mcp/instructions.rs` for the startup prose, tests beside them):
 

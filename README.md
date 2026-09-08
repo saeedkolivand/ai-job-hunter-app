@@ -360,7 +360,7 @@ On **Windows**, the NSIS installer adds its per-user install directory to your `
 
 **Requirements:** Bridge-backed calls need the app running; `--help`, MCP startup (`initialize`) and the local `commands` tool do not. The CLI communicates over a local loopback bridge with mutual HMAC-SHA256 authentication (the pairing token is used only as an HMAC key and is never sent on the wire). Run `ajh-tauri agent --help` to see all verbs, exit codes, and error sentinels. For the design rationale see <a href="docs/knowledge/decision-records/adr-037-agent-cli-as-binary-mode-thin-client.md" target="_blank" rel="noopener noreferrer">ADR-037</a> and <a href="docs/knowledge/decision-records/adr-038-agent-cli-full-parity-two-tier.md" target="_blank" rel="noopener noreferrer">ADR-038</a>; for the full policy table, use the MCP `commands` tool or read `apps/desktop/src-tauri/src/extension_bridge/agent_cli/policy.rs` (`agent schema` lists only the five curated resources).
 
-**LLM agents (MCP mode):** The CLI can run as an MCP stdio server for Claude Code and Codex:
+**LLM agents (MCP mode):** The CLI can run as a standard MCP stdio server — any MCP client can run it, not just the two documented below:
 
 <details>
 <summary>Claude Code (recommended)</summary>
@@ -398,6 +398,26 @@ args = ["agent", "mcp"]
 ```
 
 If `ajh-tauri` is not on your `PATH`, set `command` to the `exePath` from `~/.ajh-agent/agent.json` — keep it single-quoted, because a TOML literal string has no escape sequences and a Windows path is full of backslashes (in a double-quoted basic string they read as invalid escapes and the whole file stops parsing) — unless the path contains an apostrophe, in which case copy the Settings card's output verbatim (it falls back to an escaped basic string). The Settings → Developer card emits the correctly-quoted form for you (`tomlString` in `apps/desktop/src/renderer/features/settings/lib/agent-cli-snippets.ts`). The same `--allow-reversible` / `--allow-irreversible` flags go in `args`.
+
+</details>
+
+<details>
+<summary>Any MCP client</summary>
+
+Most other MCP clients (Claude Desktop, Cursor, Windsurf, VS Code, Gemini CLI, LM Studio, Jan, etc.) read a `mcpServers` JSON block from their own config file rather than taking a CLI command:
+
+```json
+{
+  "mcpServers": {
+    "ai-job-hunter": {
+      "command": "/path/to/ajh-tauri",
+      "args": ["agent", "mcp"]
+    }
+  }
+}
+```
+
+The same tier flags as above go at the end of `args` — `--allow-reversible` (server name `ai-job-hunter-write`) or `--allow-irreversible` (server name `ai-job-hunter-unrestricted`). The Settings → Developer card copies this block with your real path already filled in.
 
 </details>
 
