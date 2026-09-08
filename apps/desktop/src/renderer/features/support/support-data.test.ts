@@ -155,6 +155,25 @@ describe('support corpus / translations parity', () => {
     }
   });
 
+  it('hedges the agent-CLI stay-open note in both locales, not just English', () => {
+    // The CLI/MCP server is a separate process that keeps answering while the
+    // app is closed (ADR-037, ADR-040 §11), so this note must say "most" calls
+    // fail, never "all". `AgentCliSection.test.tsx` pins the English wording
+    // through the shipped bundle, but a regression that only dropped the
+    // German hedge ("die meisten") would leave that suite green — this closes
+    // that gap the same way the card-title test above does.
+    const KEY = 'settings.developer.agentCli.stayOpenNote';
+    expect(unresolved([KEY])).toEqual([]);
+    const HEDGE_BY_LOCALE = {
+      en: /most agent calls .*fail while it is closed/i,
+      de: /die meisten Agentenaufrufe .*schlagen fehl, während sie geschlossen ist/i,
+    } as const;
+    for (const [locale, hedge] of Object.entries(HEDGE_BY_LOCALE)) {
+      const note = String(lookup(BUNDLES[locale], KEY));
+      expect(note).toMatch(hedge);
+    }
+  });
+
   it('gives every entry a unique id within its section', () => {
     // The id is the React list key for the accordions, so a duplicate silently
     // drops an entry from the rendered list.
