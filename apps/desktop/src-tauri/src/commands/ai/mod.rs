@@ -904,9 +904,13 @@ pub async fn ai_embedding_status(app: AppHandle) -> Value {
 /// $0. A missing store (failed to open at startup) degrades to all-zero
 /// rather than erroring.
 ///
-/// `days` (issue #1161) scopes `today` and `perProvider` to the last N UTC
-/// days ending today; `1` (the default, and pre-#1161 behavior) means "since
-/// midnight today". Clamped to [`crate::spend::SPEND_WINDOW_MAX_DAYS`]. The
+/// `days` (issue #1161) scopes `windowTotals` and `perProvider` to the last N
+/// UTC days ending today; `1` (the default, and pre-#1161 behavior) makes the
+/// window "since midnight today", the same span `today` always covers.
+/// `today` is ALWAYS calendar-day — a `days > 1` caller must read its
+/// multi-day total from `windowTotals`, never from `today` (issue #1161's
+/// C1-r1-RBA-1: an aggregate is labelled with the period it actually covers).
+/// Clamped to [`crate::spend::SPEND_WINDOW_MAX_DAYS`]. The
 /// resolved window is reported back as `window` so a caller never has to
 /// re-derive what it asked for. `perProvider` lists every provider that has
 /// EVER recorded a call, not just ones active in this window — a provider
@@ -916,9 +920,7 @@ pub async fn ai_embedding_status(app: AppHandle) -> Value {
 /// behave", not "what did this window cost".
 #[tauri::command]
 pub fn ai_spend_summary(app: AppHandle, days: Option<u32>) -> Value {
-    let days = days
-        .unwrap_or(1)
-        .clamp(1, crate::spend::SPEND_WINDOW_MAX_DAYS);
+    let days = resolve_window_days(days);
     let window_start = crate::spend::window_start_ms(days);
     let window_json = json!({
         "days": days,
@@ -927,17 +929,11 @@ pub fn ai_spend_summary(app: AppHandle, days: Option<u32>) -> Value {
     });
 
     let Some(store) = app.try_state::<crate::spend::SpendStore>() else {
-        let zero = spend_totals_json(crate::spend::SpendTotals::default());
-        return json!({
-            "today": zero.clone(),
-            "windowTotals": zero,
-            "perProvider": [],
-            "thinkingByModel": [],
-            "window": window_json,
-            "thinkingByModelWindow": "allTime",
-        });
+        let zero = crate::spend::SpendTotals::default();
+        return spend_summary_value(zero, zero, vec![], vec![], window_json);
     };
-    let today = store.totals_since(window_start);
+    let today = store.today_totals();
+    let window_totals = store.totals_since(window_start);
     // Every provider that has EVER recorded a call (since_ms = 0), so a
     // provider with no activity in THIS window still appears — as a zero row
     // with a reason — rather than silently vanishing from the list.
@@ -964,16 +960,41 @@ pub fn ai_spend_summary(app: AppHandle, days: Option<u32>) -> Value {
             })
         })
         .collect();
-    // NOTE: `today` is window-scoped (== `window_start`), not calendar-day —
-    // kept under its pre-#1161 name/shape for existing readers (e.g. the
-    // agent-cli policy's `["today", "inputTokens"]` proof, which only ever
-    // calls with `days` unset). A `days > 1` caller should read
-    // `windowTotals` instead, which carries the SAME value under a name that
-    // doesn't misattribute a multi-day total to "today" (issue #1161).
-    let today_json = spend_totals_json(today);
+    spend_summary_value(
+        today,
+        window_totals,
+        per_provider,
+        thinking_by_model,
+        window_json,
+    )
+}
+
+/// Resolves `ai_spend_summary`'s `days` argument (issue #1161): unset means
+/// "today only" (`1`, the pre-#1161 default), and the result is clamped to
+/// [`crate::spend::SPEND_WINDOW_MAX_DAYS`] so an unbounded value can never
+/// force a full-table scan or report a `window.days` the store didn't
+/// actually query for.
+fn resolve_window_days(days: Option<u32>) -> u32 {
+    days.unwrap_or(1)
+        .clamp(1, crate::spend::SPEND_WINDOW_MAX_DAYS)
+}
+
+/// Assembles the [`ai_spend_summary`] payload — pulled out of the
+/// `#[tauri::command]` fn so it is unit testable without a live `AppHandle`
+/// (this crate has no mock harness for one). `today` and `window_totals` are
+/// two DIFFERENT [`crate::spend::SpendTotals`] values (`today_totals()` vs
+/// `totals_since(window_start)`, issue #1161's C1-r1-RBA-1) — they only carry
+/// the same number when `days == 1`, where the two windows coincide.
+fn spend_summary_value(
+    today: crate::spend::SpendTotals,
+    window_totals: crate::spend::SpendTotals,
+    per_provider: Vec<Value>,
+    thinking_by_model: Vec<Value>,
+    window_json: Value,
+) -> Value {
     json!({
-        "today": today_json.clone(),
-        "windowTotals": today_json,
+        "today": spend_totals_json(today),
+        "windowTotals": spend_totals_json(window_totals),
         "perProvider": per_provider,
         "thinkingByModel": thinking_by_model,
         "window": window_json,
@@ -981,12 +1002,8 @@ pub fn ai_spend_summary(app: AppHandle, days: Option<u32>) -> Value {
     })
 }
 
-/// The `{inputTokens, outputTokens, estCostUsd}` shape shared by `today` and
-/// `windowTotals` in [`ai_spend_summary`] — one function so both keys are
-/// structurally guaranteed to carry the SAME totals (issue #1161's
-/// C1-r1-RBA-2: `windowTotals` must never drift from `today`), and unit
-/// testable without a live `AppHandle` (this crate has no mock harness for
-/// one).
+/// The `{inputTokens, outputTokens, estCostUsd}` shape used for both `today`
+/// and `windowTotals` in [`spend_summary_value`].
 fn spend_totals_json(t: crate::spend::SpendTotals) -> Value {
     json!({
         "inputTokens": t.input_tokens,

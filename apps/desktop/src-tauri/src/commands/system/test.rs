@@ -63,6 +63,33 @@ fn active_provider_summary_reports_nulls_when_unseeded() {
 }
 
 #[test]
+fn health_value_reports_scope_and_active_provider() {
+    // Regression for issue #1159: `system_health` must emit both the local
+    // Ollama probe's `scope` label AND `activeProvider` — this drives the
+    // extracted assembler directly with a recognizable `activeProvider`
+    // payload, so deleting either key from the `json!` macro fails here
+    // without needing a live `AppHandle`.
+    let scraper_health = crate::scraping::engine::ScraperRuntimeHealth {
+        mode: "hybrid".to_string(),
+        scrapers: vec![],
+        ready: true,
+    };
+    let active = json!({ "provider": "openai", "model": "gpt-5" });
+
+    let out = health_value(
+        scraper_health,
+        true,
+        Some("llama3".to_string()),
+        Map::new(),
+        active,
+    );
+
+    assert_eq!(out["ai"]["scope"], "localOllama");
+    assert_eq!(out["activeProvider"]["provider"], "openai");
+    assert_eq!(out["activeProvider"]["model"], "gpt-5");
+}
+
+#[test]
 fn test_system_check_browser() {
     // Test that the function doesn't panic and returns valid JSON
     let result = system_check_browser();

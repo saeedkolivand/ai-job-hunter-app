@@ -360,19 +360,53 @@ fn spend_totals_json_carries_the_exact_totals_given() {
 }
 
 #[test]
-fn today_and_window_totals_never_drift_because_they_share_one_builder() {
-    // Regression for C1-r1-RBA-2: `ai_spend_summary` must build BOTH `today`
-    // and `windowTotals` from `spend_totals_json`, so calling it twice with
-    // the same input always yields identical JSON — the structural guarantee
-    // that a `days > 1` reader of `windowTotals` sees exactly what `today`
-    // reports, never a value that quietly diverged between two call sites.
-    let totals = SpendTotals {
-        input_tokens: 1,
-        output_tokens: 2,
-        est_cost_usd: 3.0,
+fn spend_summary_value_labels_today_and_window_totals_from_their_own_input() {
+    // Regression for C1-r1-RBA-1: `today` must be calendar-day (a distinct
+    // `SpendTotals`, not the multi-day window total under another name) —
+    // this drives `spend_summary_value` directly with DIFFERENT `today` and
+    // `window_totals` inputs, so a future call site that collapses them back
+    // onto one value (e.g. `spend_summary_value(window_totals, window_totals, ..)`)
+    // fails here.
+    let today = SpendTotals {
+        input_tokens: 100,
+        output_tokens: 50,
+        est_cost_usd: 0.10,
+    };
+    let window_totals = SpendTotals {
+        input_tokens: 9_000,
+        output_tokens: 4_000,
+        est_cost_usd: 12.0,
     };
 
-    assert_eq!(spend_totals_json(totals), spend_totals_json(totals));
+    let out = spend_summary_value(today, window_totals, vec![], vec![], json!({}));
+    assert_eq!(out["today"]["inputTokens"], 100);
+    assert_eq!(out["windowTotals"]["inputTokens"], 9_000);
+    assert_ne!(out["today"], out["windowTotals"]);
+}
+
+#[test]
+fn resolve_window_days_defaults_to_one_and_clamps_to_the_max() {
+    assert_eq!(resolve_window_days(None), 1, "unset means today only");
+    assert_eq!(
+        resolve_window_days(Some(0)),
+        1,
+        "zero-day window is not valid"
+    );
+    assert_eq!(
+        resolve_window_days(Some(7)),
+        7,
+        "in-range values pass through"
+    );
+    assert_eq!(
+        resolve_window_days(Some(500)),
+        crate::spend::SPEND_WINDOW_MAX_DAYS,
+        "an oversized request must clamp, not report an unbounded window"
+    );
+    assert_eq!(
+        resolve_window_days(Some(u32::MAX)),
+        crate::spend::SPEND_WINDOW_MAX_DAYS,
+        "u32::MAX must clamp too, never resolve to an all-time window"
+    );
 }
 
 // ── per_provider_with_zero_rows (ai_spend_summary window merge, #1161) ────────

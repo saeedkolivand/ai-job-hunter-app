@@ -37,15 +37,13 @@ pub async fn system_health(app: AppHandle) -> Value {
         );
     }
 
-    json!({
-        "status": "ok",
-        "shell": "tauri",
-        "scraper": { "mode": scraper_health.mode, "ready": scraper_health.ready, "scrapers": scraper_health.scrapers },
-        "ai": { "ready": ai_ready, "model": ai_model, "scope": "localOllama" },
-        "activeProvider": active_provider_json,
-        "cliAgents": Value::Object(cli_agents),
-        "data": { "ready": true, "sqlite": true, "vector": true }
-    })
+    health_value(
+        scraper_health,
+        ai_ready,
+        ai_model,
+        cli_agents,
+        active_provider_json,
+    )
 }
 
 /// The `activeProvider` block of `system_health` — pulled out so the
@@ -55,6 +53,28 @@ fn active_provider_summary(active: Option<crate::ai_config::ActiveAiConfig>) -> 
     json!({
         "provider": active.as_ref().and_then(|c| c.active_provider.clone()),
         "model": active.as_ref().and_then(|c| c.model.clone()),
+    })
+}
+
+/// Assembles the `system_health` payload — pulled out of the
+/// `#[tauri::command]` fn so `scope` and `activeProvider` (issue #1159) are
+/// unit testable without a live `AppHandle` (this crate has no mock harness
+/// for one).
+fn health_value(
+    scraper_health: crate::scraping::engine::ScraperRuntimeHealth,
+    ai_ready: bool,
+    ai_model: Option<String>,
+    cli_agents: Map<String, Value>,
+    active_provider_json: Value,
+) -> Value {
+    json!({
+        "status": "ok",
+        "shell": "tauri",
+        "scraper": { "mode": scraper_health.mode, "ready": scraper_health.ready, "scrapers": scraper_health.scrapers },
+        "ai": { "ready": ai_ready, "model": ai_model, "scope": "localOllama" },
+        "activeProvider": active_provider_json,
+        "cliAgents": Value::Object(cli_agents),
+        "data": { "ready": true, "sqlite": true, "vector": true }
     })
 }
 
