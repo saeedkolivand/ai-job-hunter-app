@@ -614,6 +614,8 @@
             "description": "Darf zusätzlich KI-Budget ausgeben und Daten löschen. Jeder solche Aufruf ist durch einen Lesenachweis-Schritt abgesichert, den der Agent zuvor ausführen muss; die App fragt Sie nicht."
           }
         },
+        "transcriptNote": "Alles, was der Agent liest – Lebenslauftext, Ihr Kontaktprofil, Bewerbungsdatensätze – landet im eigenen Transkript des KI-Clients.",
+        "stayOpenNote": "Lassen Sie diese App geöffnet, solange ein Agent verbunden ist; CLI und MCP-Server laufen in ihr und stoppen, sobald sie geschlossen wird.",
         "claudeLabel": "Claude Code",
         "copyClaude": "Befehl kopieren",
         "codexLabel": "Codex (~/.codex/config.toml)",

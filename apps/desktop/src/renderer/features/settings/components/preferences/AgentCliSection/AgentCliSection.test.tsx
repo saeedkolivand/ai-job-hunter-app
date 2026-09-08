@@ -262,6 +262,23 @@ describe('AgentCliSection', () => {
     }
   });
 
+  it('says the app must stay open, and where the read data ends up, only once there is something to copy', async () => {
+    const { unmount } = renderCard();
+    await waitFor(() =>
+      expect(screen.getByTestId(TEST_IDS.settings.agentCliPath)).toHaveValue(EXE)
+    );
+    expect(screen.getByText(/keep this app open while an agent is connected/i)).toBeInTheDocument();
+    expect(screen.getByText(/is written into the ai client's own transcript/i)).toBeInTheDocument();
+    unmount();
+
+    // With no resolved path there is nothing to copy and nothing to connect —
+    // both notes would be answering a question the card isn't asking yet.
+    renderCard(vi.fn().mockResolvedValue({ exePath: null }));
+    await waitFor(() => expect(screen.getByText(/could not be resolved/i)).toBeInTheDocument());
+    expect(screen.queryByText(/keep this app open while an agent is connected/i)).toBeNull();
+    expect(screen.queryByText(/is written into the ai client's own transcript/i)).toBeNull();
+  });
+
   it('lets the path row and the tier control wrap at the narrow settings column', async () => {
     renderCard();
     await waitFor(() =>

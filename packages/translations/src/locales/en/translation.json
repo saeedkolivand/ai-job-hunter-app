@@ -614,6 +614,8 @@
             "description": "May also spend AI budget and delete data. Each such call is gated by a proof-of-read step the agent must perform first; the app does not prompt you."
           }
         },
+        "transcriptNote": "Everything the agent reads — resume text, your contact profile, application records — is written into the AI client's own transcript.",
+        "stayOpenNote": "Keep this app open while an agent is connected; the CLI and MCP server run inside it and stop as soon as it closes.",
         "claudeLabel": "Claude Code",
         "copyClaude": "Copy command",
         "codexLabel": "Codex (~/.codex/config.toml)",
