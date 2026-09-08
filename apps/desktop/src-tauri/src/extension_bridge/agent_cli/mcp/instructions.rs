@@ -35,7 +35,9 @@ pub(super) const INSTRUCTIONS: &str = "These tools talk to the running AI Job Hu
     was answered: \"dispatched\": false means it never reached the app and is safe to send \
     again to a new server, while \"dispatched\": true means it was already in flight and may \
     have taken effect, so re-read the affected resource before repeating it. Do not retry a \
-    rate_limited, connection_lost, or \"Too many requests\" result in a loop either. A refusal's \
+    rate_limited, connection_lost, or \"Too many requests\" result in a loop either — a \
+    rate_limited result carries a retryAfterMs field; wait at least that long before re-sending \
+    the same call. A refusal's \
     own \"detail\" text is written for the plain CLI, not for these tools: a detail that says \
     `agent call ns:cmd` means call-read (or call-reversible, if enabled) with `namespace`/`command` set to \
     `ns`/`cmd`; `--confirm '<value>'` means this tool's own `confirm` argument, read on \

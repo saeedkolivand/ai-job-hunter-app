@@ -903,6 +903,18 @@ fn instructions_name_connection_lost_alongside_rate_limited_in_the_no_retry_sent
     assert!(INSTRUCTIONS.contains("rate_limited"));
 }
 
+/// Issue #1155's user-facing half: `rate_limited` gained a `retryAfterMs` wait hint on the wire
+/// (`agent_read::throttled_reply`/`agent_call::throttled_reply`), but the model that reads THIS
+/// prose — never the wire shape directly — never learns the field exists unless it is named here
+/// too. Mutation-checked: reverting `instructions.rs`'s added clause turns this red.
+#[test]
+fn instructions_tell_the_model_rate_limited_carries_a_retry_after_ms_wait_hint() {
+    assert!(
+        INSTRUCTIONS.contains("retryAfterMs"),
+        "the no-retry-loop sentence must also say a rate_limited result carries retryAfterMs"
+    );
+}
+
 /// Every `"error":` STRING LITERAL mcp.rs's own source writes directly — never `agent_call`'s
 /// `pub(super)` sentinels (`ERR_UNKNOWN_COMMAND`/`ERR_NOT_EXPOSED`/`ERR_CONFIRMATION_REQUIRED`),
 /// referenced by path there and never respelled here. A test-only fixture (item 24): nothing in

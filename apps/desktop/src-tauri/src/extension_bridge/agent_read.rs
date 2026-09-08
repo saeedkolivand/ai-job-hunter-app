@@ -182,7 +182,10 @@ const AGENT_CHEAP_REFILL_SECS: f64 = 1.0;
 /// in the matching domain could add a real compute-side cap if that's not
 /// enough — flagged in the PR1 handoff.
 const AGENT_BEST_MATCHES_BURST: f64 = 1.0;
-const AGENT_BEST_MATCHES_REFILL_SECS: f64 = 30.0;
+// `pub(super)` (issue #1155) — `extension_bridge::test`'s
+// `bridge_state_agent_retry_after_ms_reads_the_same_bucket_try_acquire_agent_drew_from` anchors to
+// this value directly, so a `BridgeState`-level test can't be satisfied by any hardcoded constant.
+pub(super) const AGENT_BEST_MATCHES_REFILL_SECS: f64 = 30.0;
 
 /// Token-bucket throttle for `agent.query`, shared across EVERY connection for
 /// this pairing (lives on `BridgeState`, not per-connection) for the same
@@ -882,8 +885,14 @@ pub(super) async fn handle_agent_query(app: &AppHandle, req_id: &str, payload: &
         RES_AUTOMATIONS => automations_resource(app),
         RES_FOUND_JOBS => found_jobs::found_jobs_resource(app, payload),
         RES_SCHEMA => Ok(schema_value()),
+        // `other` is clamped here too (issue #1151, AC-3) — `bounded_result_reply` below only
+        // clamps the envelope's `reqId`/`resource`, not a copy embedded in THIS message, so an
+        // unclamped `other` could still blow the frame cap and get swallowed by the
+        // `result_too_large` fallback, hiding the real cause (an unknown resource) behind the
+        // wrong one (a reply too large).
         other => Err(AppError::Validation(format!(
-            "unknown agent resource '{other}'"
+            "unknown agent resource '{}'",
+            super::agent_call::clamp_ident(other)
         ))),
     };
     bounded_result_reply(req_id, &resource, outcome)
