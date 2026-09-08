@@ -8,38 +8,30 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "system_set_close_to_tray",
         description: "Push the close-to-tray preference to the shell.",
-        args: &[CatalogueArg {
-            name: "enabled",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "enabled", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "system_set_launch_at_login",
         description: "Enable/disable launch-at-login; resolves to the resulting OS state.",
-        args: &[CatalogueArg {
-            name: "enabled",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "enabled", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "system_set_locale",
         description: "",
-        args: &[CatalogueArg {
-            name: "locale",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "locale", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "system_set_performance_mode",
         description: "",
-        args: &[CatalogueArg {
-            name: "config",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "config", required: true, fields: Some(&[]) },
+        ],
     },
     CatalogueEntry {
         command: "updater_changelog",
@@ -48,12 +40,12 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "updater_check",
-        description: "Trigger a check.",
+        description: "Trigger a check. Resolves with the outcome (also emitted on `onStatus`).",
         args: &[],
     },
     CatalogueEntry {
         command: "updater_download",
-        description: "Download the update `check` found.",
+        description: "Download the update `check` found. Resolves either way — the shell reports failure on the `updater:status` stream, not by rejecting. On a Microsoft Store install the shell refuses instead (the Store owns updating); that refusal is defence in depth for a non-renderer caller such as the agent CLI, since this signature discards it and the UI never offers the action once it has seen `managedBy: 'store'`.",
         args: &[],
     },
     CatalogueEntry {

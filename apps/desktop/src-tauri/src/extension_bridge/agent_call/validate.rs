@@ -41,6 +41,20 @@ fn invalid_input(message: String) -> Refusal {
     Refusal::InvalidInput(message)
 }
 
+/// A caller-supplied JSON key, fenced and capped before it enters an
+/// [`invalid_input`] detail (HIGH — security review). `given.keys()` is
+/// attacker-controlled text bounded only by the bridge's own incoming frame
+/// cap (8 MiB) and, unlike every other echoed identifier in this crate,
+/// carried NO fence and NO cap: a caller could get a `detail` that (a) echoes
+/// third-party text back in the server's OWN voice, outside any fence,
+/// laundering exactly what [`Refusal::InvokeError`]'s fencing exists to
+/// prevent, and (b) is large enough to blow the reply past
+/// [`super::enforce_frame_cap`]. Same primitive `InvokeError` already uses,
+/// not a second one.
+fn fenced_key(key: &str) -> String {
+    crate::prompt_fence::fenced("job_posting", key, crate::prompt_fence::JOB_CAP)
+}
+
 /// Validate `input`'s top-level keys (and, for a wrapper key whose type the generator could
 /// resolve, that key's own object one level down) against `command`'s declared input contract.
 /// `Ok(())` for a command absent from the catalogue — see this module's own doc.
@@ -67,7 +81,8 @@ pub(super) fn check_input(command: &str, input: &Value) -> Result<(), Refusal> {
         }
         if !args.iter().any(|arg| arg.name == key) {
             return Err(invalid_input(format!(
-                "unknown key `{key}` for {command} — declared keys: {}",
+                "unknown key `{}` for {command} — declared keys: {}",
+                fenced_key(key),
                 declared_keys(args)
             )));
         }
@@ -81,19 +96,23 @@ pub(super) fn check_input(command: &str, input: &Value) -> Result<(), Refusal> {
                 declared_keys(args)
             )));
         }
-        if arg.fields.is_empty() {
+        // `None` (not a wrapper) or `Some(&[])` (a wrapper this generator could not resolve —
+        // see `CatalogueArg::fields`'s own doc) both mean "nothing to check a nested key
+        // against"; only a genuinely resolved, non-empty field list can refuse one.
+        let Some(fields) = arg.fields.filter(|f| !f.is_empty()) else {
             continue;
-        }
+        };
         let Some(nested) = given.get(arg.name).and_then(Value::as_object) else {
             continue;
         };
         for key in nested.keys() {
-            if !arg.fields.contains(&key.as_str()) {
+            if !fields.contains(&key.as_str()) {
                 return Err(invalid_input(format!(
-                    "unknown key `{}.{key}` for {command} — declared keys under `{}`: {}",
+                    "unknown key `{}.{}` for {command} — declared keys under `{}`: {}",
                     arg.name,
+                    fenced_key(key),
                     arg.name,
-                    arg.fields.join(", ")
+                    fields.join(", ")
                 )));
             }
         }

@@ -1069,6 +1069,11 @@ update(req: ApplicationUpdateRequest): Promise<ApplicationMutationResult>;
 remove(args: { id: string; keepDocuments: boolean }): Promise<ApplicationMutationResult>;
 ```
 
+Delete the Application and its status history — always irreversible, regardless of
+`keepDocuments`. `keepDocuments: false` ALSO deletes every résumé/cover-letter generation
+produced for it; `keepDocuments: true` detaches those generations instead, so they survive
+as orphaned documents outside this Application.
+
 #### `applications.track`
 
 ```ts
@@ -3064,7 +3069,7 @@ Contract: `LinkedinContract` in `packages/shared/src/ipc/contracts/linkedin.ts`
 connect(): Promise<{ connected: boolean; accountEmail?: string }>;
 ```
 
-Connect to LinkedIn by launching a browser for manual login.
+Connect to a board by launching a browser for manual login.
 
 #### `linkedin.disconnect`
 
@@ -3072,7 +3077,7 @@ Connect to LinkedIn by launching a browser for manual login.
 disconnect(): Promise<void>;
 ```
 
-Disconnect and clear LinkedIn session.
+Disconnect a board (closes context only; does not delete profile).
 
 #### `linkedin.getStatus`
 
@@ -3080,7 +3085,7 @@ Disconnect and clear LinkedIn session.
 getStatus(): Promise<{ connected: boolean; accountEmail?: string; lastConnected?: number }>;
 ```
 
-Get current LinkedIn session status.
+Get current connection status for a board.
 
 #### `linkedin.importProfileFromUrl`
 
@@ -3098,7 +3103,8 @@ Fetch a LinkedIn profile URL and return extracted resume text.
 importCookies(): Promise<CookieImportResult>;
 ```
 
-Import an existing LinkedIn session from the installed browser's cookie store.
+Try to import session cookies from the user's installed Chromium browsers
+(Chrome, Edge, Brave), so the user can skip the in-app re-login.
 
 ### Channels — `linkedin`
 

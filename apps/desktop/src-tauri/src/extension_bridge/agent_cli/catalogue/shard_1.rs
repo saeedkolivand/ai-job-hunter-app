@@ -13,20 +13,16 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "ai_clear_stage_override",
         description: "Return ONE stage to the active provider.",
-        args: &[CatalogueArg {
-            name: "stage",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "stage", required: true, fields: Some(&[]) },
+        ],
     },
     CatalogueEntry {
         command: "ai_embed",
         description: "Synchronous embedding — returns the vector, or `{ error }` on any provider/config failure (a context-length overflow, a missing key, an unreachable host, …).",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &["text", "model"],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["text", "model"]) },
+        ],
     },
     CatalogueEntry {
         command: "ai_embedding_status",
@@ -35,25 +31,10 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "ai_generate",
-        description: "Start a generation.",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &[
-                "model",
-                "messages",
-                "locale",
-                "temperature",
-                "topP",
-                "frequencyPenalty",
-                "presencePenalty",
-                "repeatPenalty",
-                "maxTokens",
-                "contextWindow",
-                "effort",
-                "intent",
-            ],
-        }],
+        description: "Start a generation. Returns as soon as the job is queued; the content arrives on `onStream`, keyed by the returned `jobId`.",
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["model", "messages", "locale", "temperature", "topP", "frequencyPenalty", "presencePenalty", "repeatPenalty", "maxTokens", "contextWindow", "effort", "intent"]) },
+        ],
     },
     CatalogueEntry {
         command: "ai_generations_list",
@@ -63,68 +44,37 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "ai_generations_remove",
         description: "",
-        args: &[CatalogueArg {
-            name: "id",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "id", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "ai_generations_remove_bulk",
         description: "",
-        args: &[CatalogueArg {
-            name: "ids",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "ids", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "ai_generations_save",
-        description: "Per-job merge-upsert keyed on `jobUrl` (`merge_application` in `apps/desktop/src-tauri/src/ai_generations/mod.rs`):",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &[
-                "candidateName",
-                "jobTitle",
-                "companyName",
-                "resumeLanguage",
-                "jobAdLanguage",
-                "targetLanguage",
-                "mismatch",
-                "topRequirements",
-                "mode",
-                "resumeText",
-                "coverLetterText",
-                "jobAd",
-                "jobUrl",
-                "board",
-                "applicationAnswers",
-                "companyBrief",
-                "interviewQuestions",
-                "emailSubject",
-                "emailBody",
-                "qualityReport",
-            ],
-        }],
+        description: "Per-job merge-upsert keyed on `jobUrl` (`merge_application` in `apps/desktop/src-tauri/src/ai_generations/mod.rs`): a résumé, a cover letter, application answers and a company brief produced by separate generation actions all land on ONE row when they share a `jobUrl`.",
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["candidateName", "jobTitle", "companyName", "resumeLanguage", "jobAdLanguage", "targetLanguage", "mismatch", "topRequirements", "mode", "resumeText", "coverLetterText", "jobAd", "jobUrl", "board", "applicationAnswers", "companyBrief", "interviewQuestions", "emailSubject", "emailBody", "qualityReport"]) },
+        ],
     },
     CatalogueEntry {
         command: "ai_generations_update",
         description: "",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &["id", "resumeText", "coverLetterText"],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["id", "resumeText", "coverLetterText"]) },
+        ],
     },
     CatalogueEntry {
         command: "ai_has_provider_key",
         description: "Check whether a provider API key is stored (does not return the key).",
-        args: &[CatalogueArg {
-            name: "provider",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "provider", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "ai_index_stale_documents",
@@ -134,11 +84,9 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "ai_inspect_model",
         description: "Inspect a local (Ollama) model's real context window + size via `/api/show`, to suggest safe generation limits.",
-        args: &[CatalogueArg {
-            name: "model",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "model", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "ai_list_models",
@@ -149,83 +97,37 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         command: "ai_list_provider_models",
         description: "Fetch available models from a cloud provider using its stored API key.",
         args: &[
-            CatalogueArg {
-                name: "provider",
-                required: true,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "baseUrl",
-                required: false,
-                fields: &[],
-            },
+            CatalogueArg { name: "provider", required: true, fields: None },
+            CatalogueArg { name: "baseUrl", required: false, fields: None },
         ],
     },
     CatalogueEntry {
         command: "ai_lookup_salary",
         description: "Web-grounded market salary-range lookup for the salary application question.",
         args: &[
-            CatalogueArg {
-                name: "role",
-                required: true,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "company",
-                required: false,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "location",
-                required: false,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "country",
-                required: false,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "currency",
-                required: false,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "effort",
-                required: false,
-                fields: &[],
-            },
+            CatalogueArg { name: "role", required: true, fields: None },
+            CatalogueArg { name: "company", required: false, fields: None },
+            CatalogueArg { name: "location", required: false, fields: None },
+            CatalogueArg { name: "country", required: false, fields: None },
+            CatalogueArg { name: "currency", required: false, fields: None },
+            CatalogueArg { name: "effort", required: false, fields: None },
         ],
     },
     CatalogueEntry {
         command: "ai_model_capabilities",
-        description: "Capability probe for a provider/model.",
+        description: "Capability probe for a provider/model. Network-free, but NOT static: it reads stored credentials to answer `supportsWebSearch` — whether it can attempt a web-grounded company/role search, whether it accepts a reasoning-effort value, and (when it does) exactly which levels this MODEL accepts. Reads the Rust `ModelCapabilities` matrix + `AiProvider::effort_levels` (the same values the backend gates `research*` and each adapter's own effort field on), so the renderer never mirrors the per-provider/per-model vocabulary and a new provider or model needs zero TS change — some providers' accepted level SET genuinely varies by model tier (Gemini), not just by provider, which is why this is a per-model lookup rather than a static per-provider list. Drives the capability-driven default of the tailoring \"search company\" toggle, and the Settings → AI effort picker (which renders exactly the `effortLevels` this returns). Unknown/ unresolvable providers degrade to `supportsWebSearch: false`, `supportsReasoning: false`, `effortLevels: []`. `baseUrl` is forwarded for OpenAI-compatible servers.",
         args: &[
-            CatalogueArg {
-                name: "provider",
-                required: true,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "model",
-                required: false,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "baseUrl",
-                required: false,
-                fields: &[],
-            },
+            CatalogueArg { name: "provider", required: true, fields: None },
+            CatalogueArg { name: "model", required: false, fields: None },
+            CatalogueArg { name: "baseUrl", required: false, fields: None },
         ],
     },
     CatalogueEntry {
         command: "ai_pull_model",
         description: "",
-        args: &[CatalogueArg {
-            name: "model",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "model", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "ai_reembed_all",
@@ -235,152 +137,80 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "ai_remove_provider_key",
         description: "Remove a stored provider API key from the OS keychain.",
-        args: &[CatalogueArg {
-            name: "provider",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "provider", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "ai_research_answer",
         description: "Best-effort, per-question web-search reference notes for an application answer — opt-in sibling of `researchCompany`, scoped to a single question's topic (combines it with the role + company for relevance) rather than a general company brief.",
         args: &[
-            CatalogueArg {
-                name: "question",
-                required: true,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "role",
-                required: false,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "company",
-                required: false,
-                fields: &[],
-            },
+            CatalogueArg { name: "question", required: true, fields: None },
+            CatalogueArg { name: "role", required: false, fields: None },
+            CatalogueArg { name: "company", required: false, fields: None },
         ],
     },
     CatalogueEntry {
         command: "ai_research_company",
         description: "Research the company named in a job ad and return a short factual brief — used by the cover-letter \"fit\" paragraph and company-specific application answers.",
         args: &[
-            CatalogueArg {
-                name: "jobAd",
-                required: true,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "company",
-                required: false,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "role",
-                required: false,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "effort",
-                required: false,
-                fields: &[],
-            },
+            CatalogueArg { name: "jobAd", required: true, fields: None },
+            CatalogueArg { name: "company", required: false, fields: None },
+            CatalogueArg { name: "role", required: false, fields: None },
+            CatalogueArg { name: "effort", required: false, fields: None },
         ],
     },
     CatalogueEntry {
         command: "ai_seed_active_config",
         description: "One-time first-run seed from the renderer's migrated Zustand config.",
-        args: &[CatalogueArg {
-            name: "config",
-            required: true,
-            fields: &["activeProvider", "providers", "stageOverrides"],
-        }],
+        args: &[
+            CatalogueArg { name: "config", required: true, fields: Some(&["activeProvider", "providers", "stageOverrides"]) },
+        ],
     },
     CatalogueEntry {
         command: "ai_set_active_provider",
         description: "Switch the active provider (the \"switch\" half of the switch-vs-edit split).",
-        args: &[CatalogueArg {
-            name: "provider",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "provider", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "ai_set_embedding_config",
         description: "Set the active embedding provider/model.",
         args: &[
-            CatalogueArg {
-                name: "provider",
-                required: true,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "model",
-                required: false,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "baseUrl",
-                required: false,
-                fields: &[],
-            },
+            CatalogueArg { name: "provider", required: true, fields: None },
+            CatalogueArg { name: "model", required: false, fields: None },
+            CatalogueArg { name: "baseUrl", required: false, fields: None },
         ],
     },
     CatalogueEntry {
         command: "ai_set_provider_key",
         description: "Store an API key for a cloud AI provider in the OS keychain.",
         args: &[
-            CatalogueArg {
-                name: "provider",
-                required: true,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "apiKey",
-                required: true,
-                fields: &[],
-            },
+            CatalogueArg { name: "provider", required: true, fields: None },
+            CatalogueArg { name: "apiKey", required: true, fields: None },
         ],
     },
     CatalogueEntry {
         command: "ai_set_provider_settings",
         description: "Edit a (possibly non-active) provider's model/base_url/context window without flipping the active provider (the \"edit\" half).",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "ai_set_stage_override",
-        description: "Point ONE stage at a provider + model.",
+        description: "Point ONE stage at a provider + model. Returns the fresh override map, or `{ error }` when server-side validation rejects the stage name, the provider, the model (cross-family check) or the context window (512–131072).",
         args: &[
-            CatalogueArg {
-                name: "stage",
-                required: true,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "provider",
-                required: true,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "model",
-                required: false,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "contextWindow",
-                required: false,
-                fields: &[],
-            },
+            CatalogueArg { name: "stage", required: true, fields: Some(&[]) },
+            CatalogueArg { name: "provider", required: true, fields: None },
+            CatalogueArg { name: "model", required: false, fields: None },
+            CatalogueArg { name: "contextWindow", required: false, fields: None },
         ],
     },
     CatalogueEntry {
         command: "ai_spend_summary",
-        description: "Read-only AI-spend summary:",
+        description: "Read-only AI-spend summary: today's REAL per-provider token totals — as reported by each provider's own response, never estimated — plus an ESTIMATED USD cost from a static list-price rate table.",
         args: &[],
     },
     CatalogueEntry {
@@ -392,67 +222,39 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         command: "ai_test_provider_key",
         description: "Test whether a stored provider API key is valid by making a lightweight API call.",
         args: &[
-            CatalogueArg {
-                name: "provider",
-                required: true,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "baseUrl",
-                required: false,
-                fields: &[],
-            },
+            CatalogueArg { name: "provider", required: true, fields: None },
+            CatalogueArg { name: "baseUrl", required: false, fields: None },
         ],
     },
     CatalogueEntry {
         command: "ai_unload_model",
         description: "",
-        args: &[CatalogueArg {
-            name: "model",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "model", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "applications_accept_status_event",
         description: "Accept the SPECIFIC email-derived, unconfirmed status-event row `eventId` names — sets its `StatusEvent.confirmed` flag to `true`; the status itself is untouched.",
         args: &[
-            CatalogueArg {
-                name: "id",
-                required: true,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "eventId",
-                required: true,
-                fields: &[],
-            },
+            CatalogueArg { name: "id", required: true, fields: None },
+            CatalogueArg { name: "eventId", required: true, fields: None },
         ],
     },
     CatalogueEntry {
         command: "applications_delete",
-        description: "",
+        description: "Delete the Application and its status history — always irreversible, regardless of `keepDocuments`.",
         args: &[
-            CatalogueArg {
-                name: "id",
-                required: true,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "keepDocuments",
-                required: true,
-                fields: &[],
-            },
+            CatalogueArg { name: "id", required: true, fields: None },
+            CatalogueArg { name: "keepDocuments", required: true, fields: None },
         ],
     },
     CatalogueEntry {
         command: "applications_get",
         description: "",
-        args: &[CatalogueArg {
-            name: "id",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "id", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "applications_list",
@@ -463,96 +265,39 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         command: "applications_reject_status_event",
         description: "Reject the SPECIFIC email-derived, unconfirmed status-event row `eventId` names — reverts the status by compare-and-set (never clobbers a status that moved on, whether by the user's own hand or a later email, in the meantime) and appends a reversal event.",
         args: &[
-            CatalogueArg {
-                name: "id",
-                required: true,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "eventId",
-                required: true,
-                fields: &[],
-            },
+            CatalogueArg { name: "id", required: true, fields: None },
+            CatalogueArg { name: "eventId", required: true, fields: None },
         ],
     },
     CatalogueEntry {
         command: "applications_save_from_posting",
         description: "",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &[
-                "jobUrl",
-                "board",
-                "company",
-                "title",
-                "candidate",
-                "jobDescription",
-                "salaryMin",
-                "salaryMax",
-                "salaryCurrency",
-            ],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["jobUrl", "board", "company", "title", "candidate", "jobDescription", "salaryMin", "salaryMax", "salaryCurrency"]) },
+        ],
     },
     CatalogueEntry {
         command: "applications_set_status",
         description: "Transition the status, optionally recording a free-text `note` — persisted on the appended `status_events` row and returned as `StatusEvent.note` by `get()` (the interaction log).",
         args: &[
-            CatalogueArg {
-                name: "id",
-                required: true,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "status",
-                required: true,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "note",
-                required: false,
-                fields: &[],
-            },
+            CatalogueArg { name: "id", required: true, fields: None },
+            CatalogueArg { name: "status", required: true, fields: None },
+            CatalogueArg { name: "note", required: false, fields: None },
         ],
     },
     CatalogueEntry {
         command: "applications_track",
         description: "",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &[
-                "jobUrl",
-                "board",
-                "company",
-                "title",
-                "candidate",
-                "jobDescription",
-                "salaryMin",
-                "salaryMax",
-                "salaryCurrency",
-            ],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["jobUrl", "board", "company", "title", "candidate", "jobDescription", "salaryMin", "salaryMax", "salaryCurrency"]) },
+        ],
     },
     CatalogueEntry {
         command: "applications_update",
         description: "",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &[
-                "id",
-                "notes",
-                "nextActionAt",
-                "comp",
-                "contactName",
-                "contactEmail",
-                "jobDescription",
-                "jobSummary",
-                "recipientName",
-                "recipientEmail",
-            ],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["id", "notes", "nextActionAt", "comp", "contactName", "contactEmail", "jobDescription", "jobSummary", "recipientName", "recipientEmail"]) },
+        ],
     },
     CatalogueEntry {
         command: "autopilot_best_matches",
@@ -562,33 +307,16 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "autopilot_create",
         description: "",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &[
-                "name",
-                "target",
-                "filter",
-                "schedule",
-                "scheduleHour",
-                "scheduleMinute",
-                "resumeText",
-                "coverLetter",
-                "assistant",
-                "assistantProvider",
-                "assistantModel",
-                "assistantBaseUrl",
-            ],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["name", "target", "filter", "schedule", "scheduleHour", "scheduleMinute", "resumeText", "coverLetter", "assistant", "assistantProvider", "assistantModel", "assistantBaseUrl"]) },
+        ],
     },
     CatalogueEntry {
         command: "autopilot_get",
         description: "",
-        args: &[CatalogueArg {
-            name: "autopilotId",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "autopilotId", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "autopilot_list",
@@ -598,38 +326,30 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "autopilot_pause",
         description: "",
-        args: &[CatalogueArg {
-            name: "autopilotId",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "autopilotId", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "autopilot_remove",
         description: "",
-        args: &[CatalogueArg {
-            name: "autopilotId",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "autopilotId", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "autopilot_resume",
         description: "",
-        args: &[CatalogueArg {
-            name: "autopilotId",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "autopilotId", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "autopilot_run",
-        description: "Run an autopilot now.",
-        args: &[CatalogueArg {
-            name: "autopilotId",
-            required: true,
-            fields: &[],
-        }],
+        description: "Run an autopilot now. The backend command *resolves* (does not reject) with an `{ error }` payload on a scrape failure or unknown id, so callers MUST inspect `error` — a resolved value is not proof of success. `jobId` is present on every non-error outcome (success / cancel).",
+        args: &[
+            CatalogueArg { name: "autopilotId", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "autopilot_take_pending_focus",
@@ -640,16 +360,8 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         command: "autopilot_update",
         description: "",
         args: &[
-            CatalogueArg {
-                name: "autopilotId",
-                required: true,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "req",
-                required: true,
-                fields: &[],
-            },
+            CatalogueArg { name: "autopilotId", required: true, fields: None },
+            CatalogueArg { name: "req", required: true, fields: Some(&[]) },
         ],
     },
     CatalogueEntry {
@@ -660,11 +372,9 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "boards_get_status",
         description: "Get current connection status for a board.",
-        args: &[CatalogueArg {
-            name: "boardId",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "boardId", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "boards_health",
@@ -674,29 +384,23 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "boards_import_cookies",
         description: "Try to import session cookies from the user's installed Chromium browsers (Chrome, Edge, Brave), so the user can skip the in-app re-login.",
-        args: &[CatalogueArg {
-            name: "boardId",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "boardId", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "boards_login_with_browser",
         description: "Connect to a board by launching a browser for manual login.",
-        args: &[CatalogueArg {
-            name: "boardId",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "boardId", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "boards_logout",
         description: "Disconnect a board (closes context only; does not delete profile).",
-        args: &[CatalogueArg {
-            name: "boardId",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "boardId", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "cli_agents_redetect",
@@ -716,30 +420,16 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "contact_profile_header_line",
         description: "The stored profile's header contact line as markdown, localized for `lang` — built by the single shared `ContactProfile::header_markdown` (Rust), never re-implemented here, so the ordering rules can't drift between the two languages.",
-        args: &[CatalogueArg {
-            name: "lang",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "lang", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "contact_profile_set",
         description: "Rejects on failure (unmanaged store, invalid payload, storage error) — there is no in-band `{ error }` shape to inspect.",
-        args: &[CatalogueArg {
-            name: "profile",
-            required: true,
-            fields: &[
-                "fullName",
-                "email",
-                "phone",
-                "location",
-                "linkedin",
-                "github",
-                "website",
-                "extraLinks",
-                "photo",
-            ],
-        }],
+        args: &[
+            CatalogueArg { name: "profile", required: true, fields: Some(&["fullName", "email", "phone", "location", "linkedin", "github", "website", "extraLinks", "photo"]) },
+        ],
     },
     CatalogueEntry {
         command: "credentials_available",
@@ -758,30 +448,24 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "dedup_mark_not_duplicate",
-        description: "Record a \"not a duplicate\" verdict:",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &["memberKey", "otherKeys", "autopilotId"],
-        }],
+        description: "Record a \"not a duplicate\" verdict: `memberKey` is split from each of `otherKeys` (opaque canonical job keys taken from a cluster's members).",
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["memberKey", "otherKeys", "autopilotId"]) },
+        ],
     },
     CatalogueEntry {
         command: "discovery_search_companies",
         description: "Typeahead search over slug + display name (case-insensitive), starred first then by most-seen.",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &["query", "atsKind"],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["query", "atsKind"]) },
+        ],
     },
     CatalogueEntry {
         command: "discovery_set_starred",
         description: "Star / unstar a company (materializing a curated-seed row if it was never organically seen).",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &["atsKind", "slug", "starred"],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["atsKind", "slug", "starred"]) },
+        ],
     },
     CatalogueEntry {
         command: "discovery_watched",
@@ -791,60 +475,30 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "documents_export_and_save",
         description: "",
-        args: &[CatalogueArg {
-            name: "request",
-            required: true,
-            fields: &[
-                "text",
-                "format",
-                "documentType",
-                "templateId",
-                "meta",
-                "atsMode",
-                "locale",
-                "contact",
-                "accent",
-                "letterLayoutId",
-            ],
-        }],
+        args: &[
+            CatalogueArg { name: "request", required: true, fields: Some(&["text", "format", "documentType", "templateId", "meta", "atsMode", "locale", "contact", "accent", "letterLayoutId"]) },
+        ],
     },
     CatalogueEntry {
         command: "documents_export_document",
         description: "",
-        args: &[CatalogueArg {
-            name: "request",
-            required: true,
-            fields: &[
-                "text",
-                "format",
-                "documentType",
-                "templateId",
-                "meta",
-                "atsMode",
-                "locale",
-                "contact",
-                "accent",
-                "letterLayoutId",
-            ],
-        }],
+        args: &[
+            CatalogueArg { name: "request", required: true, fields: Some(&["text", "format", "documentType", "templateId", "meta", "atsMode", "locale", "contact", "accent", "letterLayoutId"]) },
+        ],
     },
     CatalogueEntry {
         command: "documents_get_text",
         description: "Fetch the stored extracted text for one document by id.",
-        args: &[CatalogueArg {
-            name: "id",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "id", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "documents_import",
         description: "",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &["name", "bytes", "title", "locale"],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["name", "bytes", "title", "locale"]) },
+        ],
     },
     CatalogueEntry {
         command: "documents_list",

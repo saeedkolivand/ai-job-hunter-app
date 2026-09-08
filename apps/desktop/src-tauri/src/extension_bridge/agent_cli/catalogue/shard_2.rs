@@ -8,56 +8,30 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "documents_recommend_template",
         description: "Suggest a template + locale from the generation metadata signals.",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &[
-                "jobTitle",
-                "candidateSeniority",
-                "topRequirements",
-                "resumeLanguage",
-                "jobAdLanguage",
-                "targetCountry",
-            ],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["jobTitle", "candidateSeniority", "topRequirements", "resumeLanguage", "jobAdLanguage", "targetCountry"]) },
+        ],
     },
     CatalogueEntry {
         command: "documents_remove",
         description: "",
-        args: &[CatalogueArg {
-            name: "id",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "id", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "documents_render_preview_images",
-        description: "Render the same document to per-page images for the live preview, shown via `<img>` (CSP `img-src 'self' data:",
-        args: &[CatalogueArg {
-            name: "request",
-            required: true,
-            fields: &[
-                "text",
-                "format",
-                "documentType",
-                "templateId",
-                "meta",
-                "atsMode",
-                "locale",
-                "contact",
-                "accent",
-                "letterLayoutId",
-            ],
-        }],
+        description: "Render the same document to per-page images for the live preview, shown via `<img>` (CSP `img-src 'self' data: blob:`) instead of the PDF→iframe path.",
+        args: &[
+            CatalogueArg { name: "request", required: true, fields: Some(&["text", "format", "documentType", "templateId", "meta", "atsMode", "locale", "contact", "accent", "letterLayoutId"]) },
+        ],
     },
     CatalogueEntry {
         command: "documents_set_default",
         description: "",
-        args: &[CatalogueArg {
-            name: "id",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "id", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "email_watch_check_now",
@@ -68,16 +42,8 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         command: "email_watch_connect",
         description: "Validates by a real IMAP LOGIN + SELECT INBOX before persisting.",
         args: &[
-            CatalogueArg {
-                name: "address",
-                required: true,
-                fields: &[],
-            },
-            CatalogueArg {
-                name: "appPassword",
-                required: true,
-                fields: &[],
-            },
+            CatalogueArg { name: "address", required: true, fields: None },
+            CatalogueArg { name: "appPassword", required: true, fields: None },
         ],
     },
     CatalogueEntry {
@@ -88,20 +54,16 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "email_watch_set_auto_write_enabled",
         description: "The v2 auto-write opt-in — see `EmailWatchStatus.autoWriteEnabled`.",
-        args: &[CatalogueArg {
-            name: "enabled",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "enabled", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "email_watch_set_enabled",
         description: "",
-        args: &[CatalogueArg {
-            name: "enabled",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "enabled", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "email_watch_status",
@@ -131,29 +93,23 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "extension_bridge_set_ai_assist_enabled",
         description: "Set + persist the AI-answer-assist opt-in; echoes the stored value.",
-        args: &[CatalogueArg {
-            name: "enabled",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "enabled", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "extension_bridge_set_auto_track_enabled",
         description: "Set + persist the auto-track opt-in; echoes the stored value.",
-        args: &[CatalogueArg {
-            name: "enabled",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "enabled", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "extension_bridge_set_autofill_enabled",
         description: "Set + persist the assisted-autofill opt-in; echoes the stored value.",
-        args: &[CatalogueArg {
-            name: "enabled",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "enabled", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "extension_bridge_status",
@@ -163,51 +119,30 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "generate_pipeline",
         description: "Stream a generation through the backend orchestration pipeline.",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &[
-                "model",
-                "messages",
-                "locale",
-                "temperature",
-                "topP",
-                "frequencyPenalty",
-                "presencePenalty",
-                "repeatPenalty",
-                "maxTokens",
-                "contextWindow",
-                "effort",
-                "intent",
-            ],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["model", "messages", "locale", "temperature", "topP", "frequencyPenalty", "presencePenalty", "repeatPenalty", "maxTokens", "contextWindow", "effort", "intent"]) },
+        ],
     },
     CatalogueEntry {
         command: "geocode_suggest",
         description: "Location autocomplete, filtered to city-level and country-level results only (`to_city_country` in `apps/desktop/src-tauri/src/commands/geocoding.rs`) — a street or a venue is never a job-search location.",
-        args: &[CatalogueArg {
-            name: "query",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "query", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "github_import_repos",
-        description: "Fetch a user's public repos.",
-        args: &[CatalogueArg {
-            name: "input",
-            required: true,
-            fields: &[],
-        }],
+        description: "Fetch a user's public repos. `input` is a bare username or a `github.com/<user>` URL. Resolves to the repo list (the `{ repos }` envelope is unwrapped in the client layer); rejects on validation / rate-limit / not-found errors.",
+        args: &[
+            CatalogueArg { name: "input", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "help_search",
         description: "Rank renderer-supplied help entries against a user question — the retrieval half of the in-app help chat (ADR-043).",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &["queryId", "locale", "query", "entries", "limit"],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["queryId", "locale", "query", "entries", "limit"]) },
+        ],
     },
     CatalogueEntry {
         command: "job_preferences_get",
@@ -216,57 +151,45 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "job_preferences_set",
-        description: "Writes the preference row with MERGE semantics:",
-        args: &[CatalogueArg {
-            name: "prefs",
-            required: true,
-            fields: &[],
-        }],
+        description: "Writes the preference row with MERGE semantics: a key the body OMITS keeps its stored value, a key sent as explicit `null` CLEARS that column.",
+        args: &[
+            CatalogueArg { name: "prefs", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "job_preferences_set_extra_agency_companies",
         description: "Single-column extra-agency-companies write (ADR-029 §i) — like `setSalaryExpectation`, this NEVER touches the other columns, so an agency-list edit can't overwrite the user's saved location/techStack/ countryCode/salaryExpectation with a stale spread (PR #695 pattern).",
-        args: &[CatalogueArg {
-            name: "companies",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "companies", required: false, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "job_preferences_set_salary_expectation",
         description: "Single-column salary-expectation write (review fix, PR #695) — unlike `set()`, this addresses exactly one column, so it can never carry a stale copy of another.",
-        args: &[CatalogueArg {
-            name: "salaryExpectation",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "salaryExpectation", required: false, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "job_preferences_set_semantic_scoring",
         description: "Single-column mirror of the renderer's `semanticScoring` preference (ADR-020 addendum).",
-        args: &[CatalogueArg {
-            name: "enabled",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "enabled", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "jobs_cancel",
         description: "",
-        args: &[CatalogueArg {
-            name: "jobId",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "jobId", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "jobs_get",
         description: "",
-        args: &[CatalogueArg {
-            name: "jobId",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "jobId", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "jobs_list",
@@ -276,29 +199,23 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "jobs_retry",
         description: "",
-        args: &[CatalogueArg {
-            name: "jobId",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "jobId", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "match_resume",
-        description: "Score one résumé against one job.",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &["resumeId", "jobId", "semanticScoringEnabled"],
-        }],
+        description: "Score one résumé against one job. The single scoring path: the jobs list asks for a score per row as that row renders, rather than running one pass over everything (the one-shot `match_resume_batch` command was removed — it had no consumers).",
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["resumeId", "jobId", "semanticScoringEnabled"]) },
+        ],
     },
     CatalogueEntry {
         command: "match_resume_text",
-        description: "Score one résumé against arbitrary job-ad TEXT — for a caller with a `jobDesc:",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &["resumeId", "jobText", "semanticScoringEnabled"],
-        }],
+        description: "Score one résumé against arbitrary job-ad TEXT — for a caller with a `jobDesc: string` in hand but no `PostingsCache` id (e.g. the Score tab in `JobAdView`, whose `TailorFlow` parent receives an `Application` / `AutopilotFoundJob`, neither of which carries one). Routes through the SAME shared kernel `resume()` does, over the SAME pre-processed text (the Rust command strips markdown before scoring, exactly as `resume()` does for a cached posting) — not a second scorer. `semanticScoringEnabled` mirrors `resume()`'s field of the same name (an omitted flag defaults to keyword-only, matching the app-wide `semanticScoring` preference), so `scoreSource` can be `'combined'` here too once the caller opts in. One axis still legitimately diverges from `resume()`: this call never has a title or requirements to compose in, only the description `JobAdView` holds. Content-addressed on the pre-processed job text (plus the semantic flag), so repeated opens of the same posting under the same preference reuse that cached score.",
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["resumeId", "jobText", "semanticScoringEnabled"]) },
+        ],
     },
     CatalogueEntry {
         command: "menu_take_pending",
@@ -328,20 +245,16 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "notifications_mark_read",
         description: "",
-        args: &[CatalogueArg {
-            name: "id",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "id", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "notifications_remove",
         description: "",
-        args: &[CatalogueArg {
-            name: "id",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "id", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "privacy_clear_interactions",
@@ -355,17 +268,15 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "privacy_reset_app",
-        description: "Factory reset:",
+        description: "Factory reset: sign out all boards, clear all cached data.",
         args: &[],
     },
     CatalogueEntry {
         command: "privacy_set_crash_reporting",
         description: "Persist crash-reporting consent.",
-        args: &[CatalogueArg {
-            name: "settings",
-            required: true,
-            fields: &["enabled", "consentShown"],
-        }],
+        args: &[
+            CatalogueArg { name: "settings", required: true, fields: Some(&["enabled", "consentShown"]) },
+        ],
     },
     CatalogueEntry {
         command: "privacy_sign_out_all",
@@ -375,158 +286,93 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "profile_import_from_url",
         description: "Fetch a LinkedIn profile URL and return extracted resume text.",
-        args: &[CatalogueArg {
-            name: "url",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "url", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "referrals_list",
         description: "All referral contacts, optionally filtered to one job's `jobUrl`.",
-        args: &[CatalogueArg {
-            name: "jobUrl",
-            required: false,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "jobUrl", required: false, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "referrals_remove",
         description: "",
-        args: &[CatalogueArg {
-            name: "id",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "id", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "referrals_upsert",
         description: "Create or update a contact; resolves to the stored record.",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &[
-                "id",
-                "jobUrl",
-                "companyName",
-                "personName",
-                "personRole",
-                "linkedinUrl",
-                "emailDraft",
-                "messageDraft",
-                "inviteNoteDraft",
-                "channel",
-                "status",
-                "notes",
-            ],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["id", "jobUrl", "companyName", "personName", "personRole", "linkedinUrl", "emailDraft", "messageDraft", "inviteNoteDraft", "channel", "status", "notes"]) },
+        ],
     },
     CatalogueEntry {
         command: "resume_extract_text",
         description: "Extract plain text from an uploaded resume/job-ad file (pdf, docx, txt, md).",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &["name", "bytes"],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["name", "bytes"]) },
+        ],
     },
     CatalogueEntry {
         command: "resume_pipeline_get",
-        description: "One run with its full stage trail.",
-        args: &[CatalogueArg {
-            name: "runId",
-            required: true,
-            fields: &[],
-        }],
+        description: "One run with its full stage trail. `null` for an unknown id.",
+        args: &[
+            CatalogueArg { name: "runId", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "resume_pipeline_list_for_job",
         description: "The retained runs for one posting, newest first — at most `RETENTION_RUNS_PER_JOB` (3), which is what the backend keeps.",
-        args: &[CatalogueArg {
-            name: "jobUrl",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "jobUrl", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "resume_pipeline_regenerate_section",
         description: "Re-generate ONE section of a finished run and splice it back in, through the same primitive the repair loop uses.",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &["runId", "sectionKey", "note"],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["runId", "sectionKey", "note"]) },
+        ],
     },
     CatalogueEntry {
         command: "resume_pipeline_resolve_fabrication",
         description: "Record the user's Remove/Keep verdict on ONE surviving fabrication finding.",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &["runId", "issueKey", "decision"],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["runId", "issueKey", "decision"]) },
+        ],
     },
     CatalogueEntry {
         command: "resume_pipeline_run",
-        description: "Start one staged run.",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &[],
-        }],
+        description: "Start one staged run. Resolves as soon as the run is admitted (the concurrency wait happens inside the run, so a queued run still returns its ids immediately).",
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&[]) },
+        ],
     },
     CatalogueEntry {
         command: "resume_trim_suggestions",
         description: "",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &["resumeText", "jobText", "locale"],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["resumeText", "jobText", "locale"]) },
+        ],
     },
     CatalogueEntry {
         command: "resume_validate_content",
         description: "Deterministic content-quality checks (factual accuracy, ATS structure, AI-voice tells) on an already-generated résumé/letter against its source résumé and the job ad.",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &[
-                "generated",
-                "source",
-                "jobAd",
-                "topRequirements",
-                "targetLanguage",
-                "docKind",
-            ],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["generated", "source", "jobAd", "topRequirements", "targetLanguage", "docKind"]) },
+        ],
     },
     CatalogueEntry {
         command: "scrape_boards",
         description: "",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &[
-                "boards",
-                "query",
-                "location",
-                "amount",
-                "replace",
-                "dateFilter",
-                "countryCode",
-                "latitude",
-                "longitude",
-                "radiusKm",
-                "jobType",
-                "workTypes",
-                "experienceLevel",
-                "easyApply",
-                "activelyHiring",
-                "verified",
-                "sortBy",
-                "companies",
-            ],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["boards", "query", "location", "amount", "replace", "dateFilter", "countryCode", "latitude", "longitude", "radiusKm", "jobType", "workTypes", "experienceLevel", "easyApply", "activelyHiring", "verified", "sortBy", "companies"]) },
+        ],
     },
     CatalogueEntry {
         command: "scrape_clear_postings",
@@ -536,20 +382,16 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "scrape_hybrid_search",
         description: "Rank the live postings cache (or a caller-supplied eligible subset of it) by lexical + optional dense relevance to a query — see `commands::hybrid_search` (Rust) for the lexical/dense/fusion/rerank pipeline.",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &["queryId", "query", "eligibleIds", "limit"],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["queryId", "query", "eligibleIds", "limit"]) },
+        ],
     },
     CatalogueEntry {
         command: "scrape_list_interactions",
         description: "",
-        args: &[CatalogueArg {
-            name: "filter",
-            required: false,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "filter", required: false, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "scrape_list_postings",
@@ -559,60 +401,48 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "scrape_persist_job",
         description: "",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "scrape_remove_interaction",
         description: "Delete a persisted interaction — the real \"undo\" for `persistJob`, e.g.",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "scrape_resolve_url",
-        description: "Resolve a single posting (incl.",
-        args: &[CatalogueArg {
-            name: "url",
-            required: true,
-            fields: &[],
-        }],
+        description: "Resolve a single posting (incl. full description) from its URL.",
+        args: &[
+            CatalogueArg { name: "url", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "scrape_update_description",
-        description: "Write a freshly-resolved full description back into every store that can carry a copy of this posting, addressed by `url` (not a board-synthetic posting id — no reader outside the live cache can supply that):",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &[],
-        }],
+        description: "Write a freshly-resolved full description back into every store that can carry a copy of this posting, addressed by `url` (not a board-synthetic posting id — no reader outside the live cache can supply that): the live postings cache AND every matching found-job row persisted by an autopilot, so the match scorer reads the full text instead of the truncated aggregator snippet wherever the posting was surfaced from.",
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "scrape_url",
         description: "",
-        args: &[CatalogueArg {
-            name: "req",
-            required: true,
-            fields: &["url"],
-        }],
+        args: &[
+            CatalogueArg { name: "req", required: true, fields: Some(&["url"]) },
+        ],
     },
     CatalogueEntry {
         command: "support_export_diagnostics",
         description: "Build and save a redacted diagnostics zip to the caller-supplied path",
-        args: &[CatalogueArg {
-            name: "dest",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "dest", required: true, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "system_accent_color",
-        description: "Best-effort OS accent color.",
+        description: "Best-effort OS accent color. `supported` is true only where we can read it (Windows, macOS); elsewhere `color` is null and the renderer keeps the Default accent. Used by the 'System' accent source in Appearance settings.",
         args: &[],
     },
     CatalogueEntry {
@@ -668,10 +498,8 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "system_open_external",
         description: "",
-        args: &[CatalogueArg {
-            name: "url",
-            required: true,
-            fields: &[],
-        }],
+        args: &[
+            CatalogueArg { name: "url", required: true, fields: None },
+        ],
     },
 ];

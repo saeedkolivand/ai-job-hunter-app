@@ -150,6 +150,8 @@ use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender, TrySendError};
 use std::sync::Arc;
 use std::thread;
 
+use serde_json::Value;
+
 use super::agent_call;
 use super::catalogue::{CatalogueEntry, CATALOGUE};
 use super::policy::{Effect, LookupInput, ProofSource, POLICY};
@@ -291,8 +293,20 @@ fn commands_value(arguments: &Value, tier: Tier) -> Value {
                         .iter()
                         .map(|arg| {
                             let mut value = json!({ "name": arg.name, "required": arg.required });
-                            if !arg.fields.is_empty() {
-                                value["fields"] = json!(arg.fields);
+                            // `None` (scalar arg) omits the key entirely — unchanged. `Some(&[])`
+                            // (a wrapper type this generator could not resolve — see
+                            // `CatalogueArg::fields`'s own doc) is surfaced as an explicit
+                            // `null`, distinct from omission, so a caller can tell "known to
+                            // take no nested fields" apart from "unknown nested shape" (MEDIUM —
+                            // CLI review).
+                            match arg.fields {
+                                None => {}
+                                Some([]) => {
+                                    value["fields"] = Value::Null;
+                                }
+                                Some(fields) => {
+                                    value["fields"] = json!(fields);
+                                }
                             }
                             value
                         })

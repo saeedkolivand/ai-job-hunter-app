@@ -275,11 +275,14 @@ jobs:
 
       # The generator shells out to the real `rustfmt` (never a hand-rolled
       # approximation of its wrapping heuristics — see gen-agent-catalogue.ts's
-      # own doc) to byte-match `cargo fmt`'s own output; this job otherwise
-      # installs no Rust toolchain at all. `rustup` ships preinstalled on the
-      # hosted ubuntu-latest image, so this only ever adds the one component.
+      # own doc) to byte-match `cargo fmt`'s own output. Must be the SAME
+      # pinned toolchain apps/desktop/src-tauri/rust-toolchain.toml selects —
+      # `rustup component add rustfmt` alone would add it to the runner's
+      # default toolchain instead, which drifts independently of the pin.
       - name: 🦀 Install rustfmt (for agent-catalogue codegen check)
-        run: rustup component add rustfmt
+        uses: dtolnay/rust-toolchain@032958afbdc797a9164d3bc0b56325c1308924a5 # 1.97.1
+        with:
+          components: rustfmt
 
       # apps/desktop/src-tauri/src/extension_bridge/agent_cli/catalogue.rs —
       # the agent-CLI dispatch tier's declared input contract, derived from the

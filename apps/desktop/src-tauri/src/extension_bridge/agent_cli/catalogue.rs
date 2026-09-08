@@ -26,11 +26,19 @@ mod shard_3;
 /// as the tauri-client sends it, whether it is required, and — for a wrapper key typed as a
 /// generated request struct or a plain contract interface — that type's own field names, so a
 /// nested unknown field is catchable too.
+///
+/// `fields` is three-state: `None` — not a wrapper key at all (a scalar arg). `Some(&[])` —
+/// a wrapper TYPE was identified but this generator could not resolve its field names (e.g.
+/// a rest-destructured request object); dispatch-time validation treats this the same as
+/// `None` (nothing to check a nested key against), but the `commands` MCP tool surfaces it
+/// as `"fields": null`, distinct from omitting the key entirely, so a caller can tell
+/// "known to take no nested fields" apart from "unknown nested shape". `Some([...])` —
+/// resolved: that type's own field names.
 #[derive(Clone, Copy)]
 pub(crate) struct CatalogueArg {
     pub(crate) name: &'static str,
     pub(crate) required: bool,
-    pub(crate) fields: &'static [&'static str],
+    pub(crate) fields: Option<&'static [&'static str]>,
 }
 
 /// One dispatchable command's declared input contract (issues #1163, #1158, #1160).

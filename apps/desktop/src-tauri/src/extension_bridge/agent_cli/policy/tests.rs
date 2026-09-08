@@ -483,3 +483,91 @@ fn allowlisted_uncatalogued_entries_are_still_real_and_still_uncatalogued() {
         );
     }
 }
+
+/// Hand-written mirror of `catalogue::UNCATALOGUED` (MEDIUM — CLI review round 1). The coverage
+/// test above pairs `catalogued` with the GENERATED `UNCATALOGUED` array and nothing bounds it —
+/// this repo's own standing lesson (see [`ALLOWLISTED_UNCATALOGUED`]'s doc) applies to
+/// `UNCATALOGUED` itself, not only to the zero-call-site allowlist: a generator regression that
+/// silently reclassified N real commands as uncatalogued would leave
+/// `every_dispatchable_row_is_catalogued_or_explicitly_accounted_for` green while un-validating
+/// all of them, because that test treats `UNCATALOGUED` membership as accounted-for by
+/// construction. Pinned against a literal, exactly like `ALLOWLISTED_UNCATALOGUED` is.
+const EXPECTED_UNCATALOGUED: &[&str] = &["dialog_open_files"];
+
+#[test]
+fn uncatalogued_matches_the_hand_written_list() {
+    assert_eq!(
+        super::super::catalogue::UNCATALOGUED,
+        EXPECTED_UNCATALOGUED,
+        "catalogue::UNCATALOGUED drifted from this test's own hand-written list — if a NEW \
+         command legitimately can't be parsed by the generator (a computed key, a spread, a \
+         non-literal command name, or a non-object invoke() argument), add it here \
+         deliberately; if a command DROPPED OUT of UNCATALOGUED, nothing to do beyond updating \
+         this list. A command that appears here without ever having been added on purpose is \
+         the regression this test exists to catch."
+    );
+}
+
+/// Hand-written mirror of every catalogued arg whose `fields` is `Some(&[])` — a wrapper TYPE
+/// this generator identified but could not resolve the field names of (MEDIUM — CLI review
+/// round 1, issue #1158's "guess the wrapper" gap). `mcp.rs` surfaces these on the wire as
+/// `"fields": null`, distinct from omitting the key, so a caller can at least tell "unknown
+/// nested shape" apart from "no nested shape" — but nothing accounted for the CLASS itself. A
+/// generator regression that silently reclassified a RESOLVED wrapper (e.g. a schema rename
+/// dropping out of `schemas/index.ts`) as unresolved would leave every other test green while
+/// quietly widening the set of commands a nested-key typo can sail past `agent_call::validate`
+/// on. `(command, arg name)` pairs, pinned the same way [`EXPECTED_UNCATALOGUED`] is.
+const EXPECTED_UNRESOLVED_WRAPPER_ARGS: &[(&str, &str)] = &[
+    ("ai_clear_stage_override", "stage"),
+    ("ai_set_stage_override", "stage"),
+    ("autopilot_update", "req"),
+    ("resume_pipeline_run", "req"),
+    ("system_set_performance_mode", "config"),
+];
+
+#[test]
+fn unresolved_wrapper_args_match_the_hand_written_list() {
+    let mut actual: Vec<(&str, &str)> = Vec::new();
+    for entry in super::super::catalogue::CATALOGUE.iter() {
+        for arg in entry.args {
+            if arg.fields.is_some_and(|f| f.is_empty()) {
+                actual.push((entry.command, arg.name));
+            }
+        }
+    }
+    actual.sort_unstable();
+    let mut expected = EXPECTED_UNRESOLVED_WRAPPER_ARGS.to_vec();
+    expected.sort_unstable();
+    assert_eq!(
+        actual, expected,
+        "the set of catalogued args with an unresolved wrapper type (`fields: Some(&[])`, wire \
+         `\"fields\": null`) drifted from this test's own hand-written list — if a NEW command \
+         legitimately can't have its wrapper resolved, add it here deliberately; if one \
+         DROPPED OUT (now resolved), remove it from this list"
+    );
+}
+
+/// Upper bound on catalogued rows with an empty `description` (MEDIUM — CLI review round 1,
+/// issue #1163's own headline ask: "every command row should carry a one-line description").
+/// 58 of 162 carried none at the time this guard was added, including `applications_delete` —
+/// backfilling TSDoc across ~160 IPC contract members is real, ongoing documentation debt this
+/// generator cannot force by itself, so the cap is not zero. What it DOES catch: this count
+/// growing — a newly added command shipping with no TSDoc on its contract member, silently
+/// leaving the agent-CLI surface with less self-description than it had before. Lower this
+/// constant (never raise it) as descriptions are backfilled.
+const MAX_NO_DESCRIPTION_ROWS: usize = 58;
+
+#[test]
+fn catalogued_no_description_count_does_not_regress() {
+    let no_description = super::super::catalogue::CATALOGUE
+        .iter()
+        .filter(|e| e.description.is_empty())
+        .count();
+    assert!(
+        no_description <= MAX_NO_DESCRIPTION_ROWS,
+        "{no_description} catalogued commands have no description (cap \
+         {MAX_NO_DESCRIPTION_ROWS}) — a new command shipped with no TSDoc on its IPC contract \
+         member; add one. If this failed after backfilling docs elsewhere and the count is now \
+         LOWER, lower MAX_NO_DESCRIPTION_ROWS to match (never raise it)."
+    );
+}

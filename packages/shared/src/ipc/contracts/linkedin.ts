@@ -1,13 +1,20 @@
 import type { CookieImportResult } from './boards';
 
 export interface LinkedinContract {
-  /** Connect to LinkedIn by launching a browser for manual login. */
+  // `connect`/`disconnect`/`getStatus`/`importCookies` dispatch the SAME Tauri command as their
+  // `BoardsContract` namesake (`boardId: 'linkedin'` baked in) — the first sentence below is
+  // deliberately IDENTICAL, word for word, to `boards.ts`'s own, not independently written: the
+  // agent-CLI catalogue generator publishes ONE description per command, and a command reached
+  // from two namespaces with two genuinely different TSDocs fails codegen rather than letting
+  // directory read order pick a winner (SECURITY/MEDIUM, CLI review round 1).
+
+  /** Connect to a board by launching a browser for manual login. */
   connect(): Promise<{ connected: boolean; accountEmail?: string }>;
 
-  /** Disconnect and clear LinkedIn session. */
+  /** Disconnect a board (closes context only; does not delete profile). */
   disconnect(): Promise<void>;
 
-  /** Get current LinkedIn session status. */
+  /** Get current connection status for a board. */
   getStatus(): Promise<{ connected: boolean; accountEmail?: string; lastConnected?: number }>;
 
   /** Fetch a LinkedIn profile URL and return extracted resume text. */
@@ -15,7 +22,10 @@ export interface LinkedinContract {
     url: string
   ): Promise<{ text: string; name?: string; platform: string } | { error: string }>;
 
-  /** Import an existing LinkedIn session from the installed browser's cookie store. */
+  /**
+   * Try to import session cookies from the user's installed Chromium browsers
+   * (Chrome, Edge, Brave), so the user can skip the in-app re-login.
+   */
   importCookies(): Promise<CookieImportResult>;
 }
 

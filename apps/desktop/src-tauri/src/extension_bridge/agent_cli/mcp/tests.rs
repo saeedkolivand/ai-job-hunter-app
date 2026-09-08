@@ -2393,6 +2393,123 @@ fn commands_carries_description_and_args_for_a_catalogued_row() {
     );
 }
 
+/// MEDIUM — CLI review round 1: a colon-terminated description like "Factory reset:" (`summarize`
+/// cutting on the FIRST `.` OR `:`, correct for a `docs/API.md` table cell but content-free when
+/// the cut result is the entire text) reaches an LLM with nothing else to go on. The catalogue's
+/// own `catalogueSummarize` cuts on `.` only, falling back to the full first paragraph when that
+/// still leaves something too short or with a dangling backtick/paren.
+#[test]
+fn a_catalogued_description_never_ends_on_a_bare_colon() {
+    let out = commands_value(&json!({}), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "privacy_reset_app")
+        .expect("privacy_reset_app is a real, catalogued row");
+    let description = row["description"].as_str().expect("a description string");
+    assert!(
+        !description.trim_end().ends_with(':'),
+        "must not stop mid-sentence at a colon: {description}"
+    );
+    assert!(
+        description.len() > 20,
+        "too short to be useful: {description}"
+    );
+}
+
+/// A `.`-cut can still land inside a backtick span or an unclosed parenthetical (an abbreviation
+/// like "e.g." inside one) — `match_resume_text`'s own TSDoc has both traps in its first
+/// sentence. The fallback to the full first paragraph must leave both balanced.
+#[test]
+fn a_catalogued_description_never_leaves_a_backtick_or_paren_unbalanced() {
+    let out = commands_value(&json!({}), Tier::Irreversible);
+    for row in out["commands"].as_array().unwrap() {
+        let Some(description) = row["description"].as_str() else {
+            continue;
+        };
+        let backticks = description.matches('`').count();
+        assert_eq!(
+            backticks % 2,
+            0,
+            "{}: unbalanced backticks in {description:?}",
+            row["command"]
+        );
+        let open = description.matches('(').count();
+        let close = description.matches(')').count();
+        assert_eq!(
+            open, close,
+            "{}: unbalanced parens in {description:?}",
+            row["command"]
+        );
+    }
+}
+
+/// #1160's own target row must not silently lose its description again — `applications_delete`
+/// was one of the 64 no-TSDoc rows a CLI review round flagged (MEDIUM), and it is the exact
+/// command whose `keepDocuments: false` cascade a caller needs explained.
+#[test]
+fn applications_delete_carries_a_non_empty_description() {
+    let out = commands_value(&json!({}), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "applications_delete")
+        .expect("applications_delete is a real, catalogued row");
+    let description = row["description"].as_str().unwrap_or("");
+    assert!(
+        description.contains("keepDocuments") || description.to_lowercase().contains("document"),
+        "must explain what keepDocuments controls: {description:?}"
+    );
+}
+
+/// A wrapper arg whose type this generator RECOGNISED but could not resolve the fields of
+/// (issue #1158 member 3, MEDIUM — CLI review round 1) carries an EXPLICIT `"fields": null`, not
+/// an absent key — otherwise it is wire-identical to a plain scalar arg and a caller has no way
+/// to know a nested object might be expected at all.
+#[test]
+fn commands_carries_a_null_fields_for_an_arg_whose_wrapper_type_did_not_resolve() {
+    let out = commands_value(&json!({}), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "resume_pipeline_run")
+        .expect("resume_pipeline_run is a real, catalogued row");
+    let args = row["args"].as_array().expect("declared args, not null");
+    let req = args
+        .iter()
+        .find(|a| a["name"] == "req")
+        .expect("declares a req arg");
+    assert!(
+        req.get("fields").is_some_and(Value::is_null),
+        "must be an explicit null, not an absent key: {req}"
+    );
+}
+
+/// A scalar arg (no wrapper type at all) still omits `fields` entirely — the null-for-unresolved
+/// fix must not turn every arg's `fields` key into a `null`.
+#[test]
+fn commands_omits_fields_entirely_for_a_scalar_arg() {
+    let out = commands_value(&json!({}), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "applications_delete")
+        .expect("applications_delete is a real, catalogued row");
+    let args = row["args"].as_array().expect("declared args, not null");
+    let id_arg = args
+        .iter()
+        .find(|a| a["name"] == "id")
+        .expect("declares an id arg");
+    assert!(
+        id_arg.get("fields").is_none(),
+        "a scalar arg must not carry a fields key at all: {id_arg}"
+    );
+}
+
 /// A command absent from the generated catalogue (zero renderer `invoke()` references —
 /// `policy.rs`'s own module doc) carries `args: null`, distinguishable from "this command
 /// genuinely takes no arguments" (an empty array).

@@ -7,10 +7,13 @@
  *   - `apps/desktop/src/tauri-client/namespaces/**\/*.ts` — the `invoke('<cmd>', { ... })` call
  *     sites ARE the wire shape the app actually receives (shorthand/explicit top-level keys,
  *     required-ness read off the calling function's own parameter type).
- *   - `packages/shared/src/ipc/contracts/*.ts` — the TSDoc on the matching contract member (one
- *     sentence, via the SAME `summarize`/`docOf` `gen-api-docs.mjs` already uses for `docs/API.md`,
- *     imported rather than copied), plus, for a wrapper key typed as a generated Zod request
- *     schema or a plain contract interface, that type's own field names.
+ *   - `packages/shared/src/ipc/contracts/*.ts` — the TSDoc on the matching contract member, read
+ *     via the SAME `docOf` `gen-api-docs.mjs` already uses for `docs/API.md` (imported rather than
+ *     copied) but summarized by this file's OWN `catalogueSummarize`, not that file's `summarize`:
+ *     that one cuts on the first `.` OR `:`, fine for a table cell sitting next to the full doc but
+ *     content-free or backtick-unbalanced when the cut result is the entire description, as it is
+ *     here — plus, for a wrapper key typed as a generated Zod request schema or a plain contract
+ *     interface, that type's own field names.
  *
  * Emits `apps/desktop/src-tauri/src/extension_bridge/agent_cli/catalogue.rs` (the aggregator —
  * struct defs, the `CATALOGUE`/`UNCATALOGUED` consts) plus its sibling `catalogue/shard_*.rs`
@@ -55,7 +58,6 @@ import {
   namespaceMap,
   parseContractFiles,
   repoPath,
-  summarize,
   ts,
 } from '../../../scripts/gen-api-docs.mjs';
 
@@ -103,6 +105,50 @@ function collectContractDescriptions(): DescCtx {
   return { namespaces, decls };
 }
 
+/** Below this length a `.`-cut sentence is more likely an abbreviation ("e.g.") or a mid-sentence
+ *  fragment than a complete description — the full first paragraph is more informative here, where
+ *  (unlike `docs/API.md`'s table cell) the cut result is the entire text an LLM ever sees. */
+const MIN_CATALOGUE_DESCRIPTION_LENGTH = 40;
+
+/** `true` when `text` has an odd number of backticks — a `.`-cut can still land inside a backtick
+ *  span (e.g. a file extension: "see `foo.rs`.") and leave it unbalanced. */
+function hasUnbalancedBacktick(text: string): boolean {
+  return (text.match(/`/g)?.length ?? 0) % 2 === 1;
+}
+
+/** `true` when `text` has more `(` than `)` — a `.`-cut lands mid-abbreviation ("e.g.", "i.e.")
+ *  more often than mid-backtick-span, and an abbreviation inside a parenthetical is this repo's
+ *  own TSDoc style, so this is the more common of the two unbalanced-cut shapes in practice. */
+function hasUnbalancedParen(text: string): boolean {
+  return (text.match(/\(/g)?.length ?? 0) > (text.match(/\)/g)?.length ?? 0);
+}
+
+/** One-line command description. Deliberately NOT `gen-api-docs.mjs`'s `summarize` (this generator
+ *  reuses that file's `docOf`/parsing, never its summary): that function cuts on the first `.` OR
+ *  `:`, correct for a `docs/API.md` table cell sitting next to the full doc, but wrong here, where
+ *  the cut result IS the whole description — a colon-terminated fragment like "Factory reset:", a
+ *  cut landing mid-abbreviation inside a parenthetical ("(e.g."), or a cut landing inside a
+ *  backtick span otherwise reaches an LLM with no other source of truth. Cuts on `.` only, falling
+ *  back to the full collapsed first paragraph when that result is too short to be informative or
+ *  leaves a backtick span or a parenthetical open. */
+function catalogueSummarize(doc: string): string {
+  if (!doc) return '';
+  const firstPara = doc
+    .split(/\n\s*\n/)[0]
+    .replace(/\s*\n\s*/g, ' ')
+    .trim();
+  const sentence = /^(.*?\.)(\s|$)/.exec(firstPara);
+  const cut = (sentence ? sentence[1] : firstPara).trim();
+  if (
+    cut.length < MIN_CATALOGUE_DESCRIPTION_LENGTH ||
+    hasUnbalancedBacktick(cut) ||
+    hasUnbalancedParen(cut)
+  ) {
+    return firstPara;
+  }
+  return cut;
+}
+
 /** First TSDoc sentence for `<namespace>.<method>`, or `''` when there is none to find. */
 function describe(ctx: DescCtx, namespace: string, method: string): string {
   const contractName = ctx.namespaces.get(namespace);
@@ -111,7 +157,7 @@ function describe(ctx: DescCtx, namespace: string, method: string): string {
   if (!contract || !ts.isInterfaceDeclaration(contract.node)) return '';
   const member = contract.node.members.find((m) => m.name?.getText(contract.sf) === method);
   if (!member) return '';
-  return summarize(docOf(member, contract.sf));
+  return catalogueSummarize(docOf(member, contract.sf));
 }
 
 // ── Nested field names for a wrapper key's type ────────────────────────────────────────────────
@@ -174,7 +220,13 @@ function resolveNestedFields(sources: FieldSources, typeName: string): string[] 
 interface CatalogueArg {
   name: string;
   required: boolean;
-  fields: string[] | undefined;
+  /** `undefined` — not a wrapper key (no resolvable type at all): the arg is a scalar.
+   *  `null` — a wrapper TYPE was identified but this generator could not resolve its field
+   *  names (e.g. a rest-destructured request object, `findParamBinding`'s own documented gap).
+   *  `string[]` — resolved: that type's own field names. Rendered as Rust `Option<&[&str]>` so
+   *  the `commands` tool (and dispatch-time validation) can tell "known to take no nested
+   *  fields" apart from "unknown nested shape" instead of collapsing both to an empty slice. */
+  fields: string[] | null | undefined;
 }
 
 interface CatalogueEntry {
@@ -182,6 +234,29 @@ interface CatalogueEntry {
   description: string;
   args: CatalogueArg[];
 }
+
+/** `true` for a union type annotation with an `undefined`/`null` member (`T | undefined`) — this
+ *  repo's other idiom for "optional", alongside `?`/a default, e.g. `job_preferences.ts`'s
+ *  `setSalaryExpectation: (salaryExpectation: string | undefined) => ...`. `JSON.stringify` drops
+ *  an `undefined`-valued property, so the renderer's own clear-a-value call site never sends this
+ *  key at all — treating it as required would refuse that call site's own payload. */
+function isOptionalUnion(type: ts.TypeNode | undefined): boolean {
+  return (
+    !!type &&
+    ts.isUnionTypeNode(type) &&
+    type.types.some(
+      (t) =>
+        (ts.isLiteralTypeNode(t) && t.literal.kind === ts.SyntaxKind.NullKeyword) ||
+        t.kind === ts.SyntaxKind.UndefinedKeyword
+    )
+  );
+}
+
+/** Sentinel `typeName` for a rest-destructured binding (`{ id, ...data }`) — never a real
+ *  declared type name (angle brackets can't appear in a TS identifier), so `resolveNestedFields`
+ *  naturally fails to look it up and the caller's `?? null` marks the arg a KNOWN, unresolved
+ *  wrapper rather than an untyped scalar. See `findParamBinding`'s own doc. */
+const UNRESOLVED_REST_TYPE = '<rest>';
 
 /** Every parameter of `fn` (both a plain identifier and a destructured `{ ... }` one) that could
  *  bind `name`, paired with what its OWN type annotation says about it. */
@@ -196,7 +271,8 @@ function findParamBinding(
           ? param.type.typeName.getText()
           : undefined;
       return {
-        questionOrDefault: Boolean(param.questionToken) || Boolean(param.initializer),
+        questionOrDefault:
+          Boolean(param.questionToken) || Boolean(param.initializer) || isOptionalUnion(param.type),
         typeName,
       };
     }
@@ -204,7 +280,20 @@ function findParamBinding(
       const el = param.name.elements.find(
         (e) => ts.isIdentifier(e.name) && e.name.text === name && !e.dotDotDotToken
       );
-      if (!el) continue;
+      if (!el) {
+        // Does `name` bind the REST element instead (`{ id, ...data }`)? Its shape is "the
+        // param's own type minus the named siblings", which this generator does not compute —
+        // but it IS a wrapper, so the resulting arg should read `fields: null` (unresolved),
+        // not `fields: undefined` (scalar) — issue #1158's "guess the wrapper" gap, CLI review
+        // round 1 (MEDIUM).
+        const restEl = param.name.elements.find(
+          (e) => e.dotDotDotToken && ts.isIdentifier(e.name) && e.name.text === name
+        );
+        if (restEl) {
+          return { questionOrDefault: false, typeName: UNRESOLVED_REST_TYPE };
+        }
+        continue;
+      }
       const propName = (el.propertyName ?? el.name) as ts.Identifier;
       if (el.initializer) {
         return { questionOrDefault: true, typeName: undefined };
@@ -218,7 +307,10 @@ function findParamBinding(
           memberType && ts.isTypeReferenceNode(memberType) && memberType.typeArguments === undefined
             ? memberType.typeName.getText()
             : undefined;
-        return { questionOrDefault: Boolean(member?.questionToken), typeName };
+        return {
+          questionOrDefault: Boolean(member?.questionToken) || isOptionalUnion(memberType),
+          typeName,
+        };
       }
       // A destructured parameter with no inline `{ ... }` type literal (e.g. a named type
       // reference) — this generator does not resolve a member's own optionality through it;
@@ -289,7 +381,12 @@ function parseInvokeCall(
     // it is always sent, so the documented heuristic's default (required) is exactly right.
     const binding = valueName && fn ? findParamBinding(fn, valueName) : undefined;
     const required = !binding?.questionOrDefault;
-    const fields = binding?.typeName ? resolveNestedFields(sources, binding.typeName) : undefined;
+    // `?? null`, not `?? undefined`: a wrapper type WAS identified (`binding.typeName` is set)
+    // but its fields could not be resolved — distinct from "not a wrapper at all" (see
+    // `CatalogueArg.fields`'s own doc).
+    const fields = binding?.typeName
+      ? (resolveNestedFields(sources, binding.typeName) ?? null)
+      : undefined;
     args.push({ name: key, required, fields });
   }
   return { command, args };
@@ -342,12 +439,28 @@ function processNamespaceFile(
     const calls = findInvokeCalls(method);
     for (const call of calls) {
       const parsed = parseInvokeCall(call, sf, fieldSources, uncatalogued);
-      if (!parsed || entries.has(parsed.command)) continue;
-      entries.set(parsed.command, {
-        command: parsed.command,
-        description: describe(descCtx, namespace, methodName),
-        args: parsed.args,
-      });
+      if (!parsed) continue;
+      const description = describe(descCtx, namespace, methodName);
+      const existing = entries.get(parsed.command);
+      if (existing) {
+        // A command invoked from more than one namespace (e.g. `boards.disconnect` AND
+        // `linkedin.disconnect` both call `boards_logout`) — first-call-site-wins used to decide
+        // the winner off `readdirSync` iteration ORDER (SECURITY/MEDIUM, CLI review round 1: two
+        // genuinely different TSDocs meant the published description was an incidental
+        // filesystem detail, not a deliberate choice). Silent when the two call sites AGREE
+        // (the common, harmless case — same command reached two ways with identical docs);
+        // `fail()`s only when they disagree, forcing a deliberate pick.
+        if (existing.description !== description) {
+          fail(
+            `command "${parsed.command}" is invoked from more than one namespace with DIFFERING ` +
+              `TSDoc descriptions ("${existing.description}" vs "${description}") — the published ` +
+              `catalogue description would depend on directory read order. Make the two TSDoc ` +
+              `comments agree, or route the second call site through the first's own contract member.`
+          );
+        }
+        continue;
+      }
+      entries.set(parsed.command, { command: parsed.command, description, args: parsed.args });
     }
   }
 }
@@ -368,6 +481,23 @@ function rustStrSlice(items: string[]): string {
   return items.length === 0 ? '&[]' : `&[${items.map(rustStr).join(', ')}]`;
 }
 
+/** `CatalogueArg.fields`'s Rust rendering — see that field's own TS doc for the three states.
+ *  ponytail: an unresolved wrapper (`null`) and a resolved-but-empty one both render as
+ *  `Some(&[])` — every real Zod/interface wrapper type in this codebase has at least one field
+ *  (verified at generation time; `fail()` below would catch a future zero-field one going
+ *  unnoticed), so this never actually collapses two live cases. Ceiling: if that stops being
+ *  true, split into `Some(&[])` vs a dedicated `unresolved: bool` on `CatalogueArg`. */
+function rustFieldsOption(fields: string[] | null | undefined): string {
+  if (fields === undefined) return 'None';
+  if (fields === null) return 'Some(&[])';
+  if (fields.length === 0) {
+    fail(
+      'a wrapper type resolved to zero fields — the null/empty collapse in rustFieldsOption no longer holds'
+    );
+  }
+  return `Some(${rustStrSlice(fields)})`;
+}
+
 /** One `CatalogueEntry` struct literal's own Rust lines — used both to RENDER a shard file and to
  *  MEASURE how many lines an entry costs while packing shards (`shardEntries`), so the two can
  *  never disagree about an entry's size. */
@@ -381,7 +511,7 @@ function renderEntryLines(entry: CatalogueEntry): string[] {
     lines.push('        args: &[');
     for (const arg of entry.args) {
       lines.push(
-        `            CatalogueArg { name: ${rustStr(arg.name)}, required: ${arg.required}, fields: ${rustStrSlice(arg.fields ?? [])} },`
+        `            CatalogueArg { name: ${rustStr(arg.name)}, required: ${arg.required}, fields: ${rustFieldsOption(arg.fields)} },`
       );
     }
     lines.push('        ],');
@@ -476,11 +606,19 @@ function renderAggregator(
     '/// as the tauri-client sends it, whether it is required, and — for a wrapper key typed as a',
     "/// generated request struct or a plain contract interface — that type's own field names, so a",
     '/// nested unknown field is catchable too.',
+    '///',
+    '/// `fields` is three-state: `None` — not a wrapper key at all (a scalar arg). `Some(&[])` —',
+    '/// a wrapper TYPE was identified but this generator could not resolve its field names (e.g.',
+    '/// a rest-destructured request object); dispatch-time validation treats this the same as',
+    '/// `None` (nothing to check a nested key against), but the `commands` MCP tool surfaces it',
+    '/// as `"fields": null`, distinct from omitting the key entirely, so a caller can tell',
+    '/// "known to take no nested fields" apart from "unknown nested shape". `Some([...])` —',
+    "/// resolved: that type's own field names.",
     '#[derive(Clone, Copy)]',
     'pub(crate) struct CatalogueArg {',
     "    pub(crate) name: &'static str,",
     '    pub(crate) required: bool,',
-    "    pub(crate) fields: &'static [&'static str],",
+    "    pub(crate) fields: Option<&'static [&'static str]>,",
     '}',
     ''
   );
@@ -541,11 +679,16 @@ function renderAggregator(
  *  interaction wrong silently would mean a correctly-run `gen:agent-catalogue` still failing its
  *  own `--check` after `cargo fmt --all` — worse than the one extra process spawn this costs.
  *  `pnpm gen:agent-catalogue:check` (CI) installs the `rustfmt` component before calling this;
- *  local dev already has it via the pinned toolchain. */
+ *  local dev already has it via the pinned toolchain — but only if rustup actually SELECTS that
+ *  pin, which it does off `rust-toolchain.toml`'s directory, not this script's cwd (this file
+ *  runs under `packages/shared` via `pnpm --filter`). `cwd` below points the rustup proxy at
+ *  `apps/desktop/src-tauri`, where that file lives, so this always resolves the SAME rustfmt
+ *  `cargo fmt --check` gates on rather than the machine's/runner's default `stable`. */
 function formatWithRustfmt(source: string): string {
   return execFileSync('rustfmt', ['--edition', '2024', '--emit', 'stdout'], {
     input: source,
     encoding: 'utf8',
+    cwd: abs('apps/desktop/src-tauri'),
   });
 }
 
@@ -573,11 +716,15 @@ async function main() {
   const entries = new Map<string, CatalogueEntry>();
   const uncatalogued: Uncatalogued[] = [];
 
+  // `.sort()` both listings — `readdirSync` order is filesystem-dependent (POSIX scandir order on
+  // Linux CI, NTFS index order locally), and this loop's first-call-site-wins duplicate handling
+  // (`processNamespaceFile`) means an unsorted walk would let THAT incidental order decide which
+  // namespace wins a duplicate command's description (SECURITY/MEDIUM, CLI review round 1).
   const nsDir = abs(TAURI_CLIENT_DIR);
-  for (const dirName of readdirSync(nsDir)) {
+  for (const dirName of readdirSync(nsDir).sort()) {
     const dirPath = join(nsDir, dirName);
     if (!statSync(dirPath).isDirectory()) continue;
-    for (const f of readdirSync(dirPath)) {
+    for (const f of readdirSync(dirPath).sort()) {
       if (f === 'index.ts' || f.endsWith('.test.ts') || !f.endsWith('.ts')) continue;
       processNamespaceFile(
         repoPath(join(dirPath, f)),
