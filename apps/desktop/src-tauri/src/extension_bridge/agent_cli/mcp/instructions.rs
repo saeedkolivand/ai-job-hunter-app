@@ -41,10 +41,11 @@ pub(super) const INSTRUCTIONS: &str = "These tools talk to the running AI Job Hu
     signal: re-send the same body wrapped under that key before treating the command as broken. \
     Before judging how well the user fits a posting, read their own résumé and other documents \
     first — call-read with documents:documents_list, whose rows carry the document `text`, \
-    fenced and capped at the fence limit; for a document's FULL, uncapped text, call-read \
-    documents:documents_get_text with {\"id\": <that row's `_id` value>} (the row's key is \
-    `_id`, but documents_get_text's own parameter is named `id`) — rather than guessing from \
-    the profile tool's contact fields alone.";
+    fenced and capped at the fence limit; documents:documents_get_text with {\"id\": <that \
+    row's `_id` value>} (the row's key is `_id`, but documents_get_text's own parameter is \
+    named `id`) returns the SAME text by id, fenced and capped at the SAME limit — neither call \
+    can return more of a document than that one cap — rather than guessing from the profile \
+    tool's contact fields alone.";
 
 /// Appended to [`INSTRUCTIONS`] when the reversible tier is enabled — worded by TIER, never by
 /// the literal flag typed (LOW fix, review round 3 — `--allow-irreversible` alone implies this

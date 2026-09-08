@@ -941,9 +941,10 @@ fn instructions_ns_cmd_pairs_are_real_policy_rows() {
         checked, 2,
         "expected exactly the 2 résumé/document ns:cmd pairs (round 5, `B1-r1-ACLI-R5-4`): \
          documents:documents_list (fenced/capped rows) AND documents:documents_get_text (the \
-         full, uncapped text — its `id` param maps to documents_list's `_id` value, spelled out \
-         in the prose rather than dropping the command entirely; its reply is now fenced too, \
-         `B1-r1-ACLI-R5-7`): {INSTRUCTIONS}"
+         SAME text by id, fenced and capped at the SAME limit — its `id` param maps to \
+         documents_list's `_id` value, spelled out in the prose rather than dropping the \
+         command entirely; its reply is now fenced too, `B1-r1-ACLI-R5-7`; neither call can \
+         return more of a document than the fence cap, `B1-r2-ACLI-R6-1`): {INSTRUCTIONS}"
     );
 }
 
@@ -959,33 +960,83 @@ fn instructions_ns_cmd_pairs_are_real_policy_rows() {
 /// whole document", or "the entire text" would all satisfy both negatives while overclaiming
 /// exactly the same thing. Assert the POSITIVE clause on both surfaces too, so a rewrite that
 /// drops the caveat (while carefully avoiding the two banned phrases) still fails.
+///
+/// Round 6 (`B1-r2-ACLI-R6-3`): round 5's positive clause was satisfied by EITHER command's
+/// mention — a prose that says "documents_list rows are fenced and capped" once, then separately
+/// claims documents_get_text returns the "FULL, uncapped text", passed both assertions unchanged
+/// (`fenced and capped` was present; `carry the full`/`full text` were never the phrase actually
+/// written). [`assert_document_read_prose_is_honest`] instead: (a) bans "uncapped" anywhere,
+/// case-insensitively; (b) bans the STANDALONE word "full" anywhere, not just inside one
+/// hand-picked phrase like "carry the full" — "FULL, uncapped text" fails on both grounds now;
+/// (c) walks every literal `documents:<cmd>` token found IN the string and requires "capped" to
+/// appear near THAT occurrence, so a cap disclosure written only near documents_list's mention
+/// can no longer cover documents_get_text's by being merely present somewhere in a long
+/// paragraph.
 #[test]
 fn documents_text_prose_never_claims_full_past_the_fence_cap() {
-    assert!(
-        INSTRUCTIONS.contains("fenced and capped"),
-        "INSTRUCTIONS must positively say documents_list rows are fenced and capped, not just \
-         avoid the word \"full\": {INSTRUCTIONS}"
-    );
-    assert!(
-        !INSTRUCTIONS.contains("carry the full"),
-        "INSTRUCTIONS must not claim documents_list rows carry FULL text — they are fenced and \
-         capped at prompt_fence::JOB_CAP: {INSTRUCTIONS}"
-    );
+    // Byte-safe window bounds — `prose` is human prose with non-ASCII chars (e.g. "résumé"), so
+    // an arbitrary `idx - 120` can land mid-character; walk to the nearest valid boundary rather
+    // than panicking on a sliced-through multi-byte char.
+    fn floor_char_boundary(s: &str, index: usize) -> usize {
+        let mut i = index.min(s.len());
+        while i > 0 && !s.is_char_boundary(i) {
+            i -= 1;
+        }
+        i
+    }
+    fn ceil_char_boundary(s: &str, index: usize) -> usize {
+        let mut i = index.min(s.len());
+        while i < s.len() && !s.is_char_boundary(i) {
+            i += 1;
+        }
+        i
+    }
+
+    fn assert_document_read_prose_is_honest(prose: &str, label: &str) {
+        let mut found_any = false;
+        for cmd in ["documents_list", "documents_get_text"] {
+            let token = format!("documents:{cmd}");
+            let Some(idx) = prose.find(&token) else {
+                continue;
+            };
+            found_any = true;
+            // A window AROUND the token, not just after it — the round-6 defect's banned words
+            // sat BEFORE the token ("for a document's FULL, uncapped text, call-read
+            // documents:documents_get_text …"), so an after-only window would have missed it.
+            let start = floor_char_boundary(prose, idx.saturating_sub(120));
+            let end = ceil_char_boundary(prose, idx + token.len() + 250);
+            let window = &prose[start..end];
+            assert!(
+                window.contains("capped"),
+                "{label}'s mention of `{token}` must disclose a cap near ITS OWN occurrence, \
+                 not rely on a disclosure written only near a different command's mention: \
+                 …{window}…"
+            );
+            assert!(
+                !window.to_ascii_lowercase().contains("uncapped"),
+                "{label}'s mention of `{token}` must never claim it is uncapped: …{window}…"
+            );
+            assert!(
+                !window
+                    .split(|c: char| !c.is_ascii_alphabetic())
+                    .any(|word| word.eq_ignore_ascii_case("full")),
+                "{label}'s mention of `{token}` must never claim it returns the FULL text: \
+                 …{window}…"
+            );
+        }
+        assert!(
+            found_any,
+            "{label} must name at least one documents:<cmd> read: {prose}"
+        );
+    }
+
+    assert_document_read_prose_is_honest(INSTRUCTIONS, "INSTRUCTIONS");
     let list = tools(Tier::Read);
     let profile_description = list.iter().find(|t| t["name"] == TOOL_PROFILE).unwrap()
         ["description"]
         .as_str()
         .unwrap();
-    assert!(
-        profile_description.contains("fenced and capped"),
-        "profile's description must positively say documents_list rows are fenced and capped, \
-         not just avoid the word \"full\": {profile_description}"
-    );
-    assert!(
-        !profile_description.contains("full text"),
-        "profile's description must not claim documents_list rows carry FULL text: \
-         {profile_description}"
-    );
+    assert_document_read_prose_is_honest(profile_description, "profile's description");
 
     let over_cap = "x".repeat(crate::prompt_fence::JOB_CAP + 500);
     let fenced =
@@ -1296,11 +1347,11 @@ fn every_scraped_text_tool_carries_the_same_untrusted_fields_notice() {
 /// Issue #1170, round 5 (`B1-r1-ACLI-R5-4`): the `profile` tool must say up front it holds
 /// contact fields only, and point at REAL `POLICY` reads for the résumé/document text itself (a
 /// stale rename here would send a calling model at a command that no longer exists). Both
-/// `documents:documents_list` (fenced/capped rows) AND `documents:documents_get_text` (the full,
-/// uncapped text) are named — the earlier version of this description dropped
-/// `documents_get_text` entirely rather than spelling out that its `id` param maps to
-/// `documents_list`'s `_id` value, leaving an assistant judging fit from a silently truncated
-/// prefix of any résumé over the fence cap with no way to read the rest.
+/// `documents:documents_list` (fenced/capped rows) AND `documents:documents_get_text` (the same
+/// text by id, fenced and capped at the SAME limit — round 6, `B1-r2-ACLI-R6-1`: it does NOT
+/// return more) are named — the earlier version of this description dropped `documents_get_text`
+/// entirely rather than spelling out that its `id` param maps to `documents_list`'s `_id` value,
+/// leaving an assistant with no way to reach a résumé by id at all, only by re-listing.
 #[test]
 fn profile_tool_description_names_a_real_document_read() {
     let list = tools(Tier::Read);

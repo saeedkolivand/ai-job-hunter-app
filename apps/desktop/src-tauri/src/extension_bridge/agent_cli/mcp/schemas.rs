@@ -145,9 +145,11 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
             "My Profile",
             "Contact fields only (name, email, phone, location, links) — for the résumé/document \
              text itself, read documents:documents_list via call-read (rows carry the document \
-             text, fenced and capped at the fence limit); for a document's full, uncapped text, \
-             call-read documents:documents_get_text with {\"id\": <that row's `_id` value>} (the \
-             row's key is `_id`, but documents_get_text's own parameter is named `id`).",
+             text, fenced and capped at the fence limit); documents:documents_get_text with \
+             {\"id\": <that row's `_id` value>} (the row's key is `_id`, but \
+             documents_get_text's own parameter is named `id`) returns the same text by id, \
+             fenced and capped at the same limit — neither call returns more of a document than \
+             that one cap.",
             no_args.clone(),
         ),
         curated_tool(TOOL_AUTOMATIONS, "Automations", "", no_args),
