@@ -62,7 +62,7 @@ import {
 } from '../../../scripts/gen-api-docs.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(HERE, '../../..');
+export const REPO_ROOT = resolve(HERE, '../../..');
 const TAURI_CLIENT_DIR = 'apps/desktop/src/tauri-client/namespaces';
 const SCHEMAS_INDEX = 'packages/shared/src/schemas/index.ts';
 const OUT_FILE = 'apps/desktop/src-tauri/src/extension_bridge/agent_cli/catalogue.rs';
@@ -891,7 +891,7 @@ function formatWithRustfmt(source: string): string {
 
 // ── Main ──────────────────────────────────────────────────────────────────────────────────────
 
-async function main() {
+export async function main() {
   const descCtx = collectContractDescriptions();
 
   const schemasSf = ts.createSourceFile(
@@ -1004,17 +1004,13 @@ async function main() {
   }
 }
 
-// Only run when executed directly (`tsx scripts/gen-agent-catalogue.ts`), never when a test
-// imports this module for its pure helpers (e.g. `collectContractInterfaceFields`) — same guard
-// `check-agent-system.mjs` uses, so importing this file for a unit test can never also regenerate
-// (and overwrite) the real `catalogue.rs`/shard files as a side effect of running the test suite.
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try {
-    await main();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const roots = [REPO_ROOT, REPO_ROOT.split('\\').join('/')];
-    console.error(roots.reduce((text, root) => text.split(root).join('.'), message));
-    process.exitCode = 1;
-  }
-}
+// `main` is exported, never self-invoked here, so a test can `import` this module's pure helpers
+// (e.g. `collectContractInterfaceFields`) without ALSO regenerating (and overwriting) the real
+// `catalogue.rs`/shard files as a side effect of running the test suite. Direct invocation runs
+// through the tiny `gen-agent-catalogue.cli.ts` wrapper instead (A1-r3-AC-3 MEDIUM — the former
+// guard here compared `resolve(process.argv[1])` against `fileURLToPath(import.meta.url)` and
+// silently did NOTHING if that ever stopped matching, which would make `pnpm
+// gen:agent-catalogue:check` pass against a stale catalogue with nothing distinguishing "unchanged
+// because up to date" from "unchanged because main() never ran" — the exact class of gap
+// `gen-api-docs.cli.mjs` was already split out to close). A separate entry point has no such
+// comparison to get wrong: it either runs or the process fails to even start.
