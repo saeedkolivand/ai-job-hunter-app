@@ -153,7 +153,7 @@ function tomlString(value: string): string {
 
 /**
  * The generic `mcpServers` JSON block for one tier, or `null` when the path is
- * unknown — the shape Claude Desktop, Cursor, Windsurf, VS Code, Gemini CLI,
+ * unknown — the shape Claude Desktop, Cursor, Windsurf, Gemini CLI,
  * LM Studio, Jan and most other MCP clients read verbatim from their own
  * config file. Same server name and args as {@link buildClaudeCodeSnippet}
  * (reused, not re-derived), so the two never drift apart.

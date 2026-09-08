@@ -34,7 +34,7 @@ const GROUP_LABEL = 'block text-xs font-semibold text-foreground/80';
 
 /**
  * Developer → the app's own command-line / MCP surface: where the binary is,
- * and the exact commands that register it with Claude Code or Codex.
+ * and the registration snippets for Claude Code, Codex and any other MCP client.
  *
  * The tier choice is LOCAL component state and is deliberately not persisted:
  * it selects which command text to show, and nothing here grants anything. The
@@ -177,9 +177,9 @@ export function AgentCliSection() {
           </div>
         ) : null}
 
-        {/* Registering either command below hands a running agent a live
+        {/* Registering any snippet below hands a running agent a live
             connection — the fact that the app has to stay open for it to work
-            belongs right above the two copy actions that create it, not
+            belongs right above the copy actions that create it, not
             buried in the top description. */}
         {exePath ? (
           <p className="text-xs leading-snug text-foreground/70">

@@ -621,7 +621,7 @@
         "codexLabel": "Codex (~/.codex/config.toml)",
         "copyCodex": "Copy config",
         "genericLabel": "Any MCP client (JSON)",
-        "genericHint": "Paste this into your client's MCP config file; if it already has an mcpServers block, add just the inner entry. Claude Desktop, Cursor, Windsurf, VS Code, Gemini CLI, LM Studio, Jan and most others read this shape. The write tier is the flag in args.",
+        "genericHint": "Paste this into your client's MCP config file; if it already has an mcpServers block, add just the inner entry. Claude Desktop, Cursor, Windsurf, Gemini CLI, LM Studio, Jan and most others read this shape. The write tier is the flag in args.",
         "copyGeneric": "Copy JSON"
       }
     },

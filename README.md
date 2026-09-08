@@ -404,7 +404,7 @@ If `ajh-tauri` is not on your `PATH`, set `command` to the `exePath` from `~/.aj
 <details>
 <summary>Any MCP client</summary>
 
-Most other MCP clients (Claude Desktop, Cursor, Windsurf, VS Code, Gemini CLI, LM Studio, Jan, etc.) read a `mcpServers` JSON block from their own config file rather than taking a CLI command:
+Most other MCP clients (Claude Desktop, Cursor, Windsurf, Gemini CLI, LM Studio, Jan, etc.) read a `mcpServers` JSON block from their own config file rather than taking a CLI command:
 
 ```json
 {
