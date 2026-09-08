@@ -895,6 +895,25 @@ fn instructions_name_both_missing_pointer_and_app_closed_and_map_cli_phrasing_on
     );
 }
 
+/// A3-r1-AC-4 MEDIUM: the by-NAME clause claimed `title`/`company`/`location`/`description` are
+/// ALWAYS third-party scraped text, which is now false for `documents_list`'s `DocumentRecord.
+/// title` (`agent_call::fence`'s own origin-aware exemption) -- fencing is by ORIGIN now, so the
+/// prose must key its claim on the `<job_posting>` tag alone, never on a field name that can be
+/// first-party depending on which command produced it.
+#[test]
+fn instructions_no_longer_claims_title_is_always_third_party_scraped_text_by_name() {
+    assert!(
+        !INSTRUCTIONS.contains("Fields named title"),
+        "the by-name claim must be gone now that documents_list's own title is first-party: \
+         {INSTRUCTIONS}"
+    );
+    assert!(
+        INSTRUCTIONS.contains("<job_posting>...</job_posting> tags"),
+        "the tag-based claim must remain -- fencing is by origin, and the tag IS the marker: \
+         {INSTRUCTIONS}"
+    );
+}
+
 #[test]
 fn instructions_name_connection_lost_alongside_rate_limited_in_the_no_retry_sentence() {
     // item 18 — a payload too large for the bridge frame surfaces as connection_lost, which

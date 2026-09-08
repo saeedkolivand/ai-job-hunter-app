@@ -448,9 +448,22 @@ pub(super) fn fence_named_fields_recursive(value: &mut Value) {
             // below and the dedicated `text` block after it can both use them without
             // re-deriving or risking the two disagreeing. See `DOCUMENT_RECORD_ANCHOR_FIELDS`/
             // `RESUME_EXTRACT_TEXT_ANCHOR_FIELD`/`CHANGELOG_ENTRY_ANCHOR_FIELDS`'s own docs.
-            let document_record_shaped = DOCUMENT_RECORD_ANCHOR_FIELDS
+            //
+            // `job_posting_shaped` is hoisted up here too (security review round A3-r1, AC-3
+            // MEDIUM) rather than computed only later where the `extra`-catch-all needs it: a
+            // board-controlled `JobPosting.extra` map (`#[serde(flatten)]`) could otherwise ALSO
+            // satisfy `document_record_shaped` by forging `isDefault`+`indexed` keys into it, and
+            // nothing before this fix stopped a real `JobPosting` from taking the DocumentRecord
+            // exemption below. ANDing every DocumentRecord-shaped check with `!job_posting_shaped`
+            // makes that impossible: a real `JobPosting` always fails the AND, so its `title`
+            // fences exactly as it always did.
+            let job_posting_shaped = JOB_POSTING_ANCHOR_FIELDS
                 .iter()
                 .all(|f| map.contains_key(*f));
+            let document_record_shaped = !job_posting_shaped
+                && DOCUMENT_RECORD_ANCHOR_FIELDS
+                    .iter()
+                    .all(|f| map.contains_key(*f));
             let user_document_shaped =
                 document_record_shaped || map.contains_key(RESUME_EXTRACT_TEXT_ANCHOR_FIELD);
             let changelog_entry_shaped = CHANGELOG_ENTRY_ANCHOR_FIELDS
@@ -459,7 +472,9 @@ pub(super) fn fence_named_fields_recursive(value: &mut Value) {
 
             for field in FENCE_FIELD_NAMES {
                 // `title` on a `DocumentRecord`-shaped object is the user's own first-party
-                // file title, not a board-scraped job title -- skip the default fence.
+                // file title, not a board-scraped job title -- skip the default fence. Gated on
+                // `document_record_shaped` alone, which already excludes a `JobPosting` (see
+                // above).
                 if *field == "title" && document_record_shaped {
                     continue;
                 }
@@ -502,9 +517,24 @@ pub(super) fn fence_named_fields_recursive(value: &mut Value) {
                 let fenced = crate::prompt_fence::fenced(tag, s, cap);
                 map.insert("text".to_string(), json!(fenced));
             }
-            let job_posting_shaped = JOB_POSTING_ANCHOR_FIELDS
-                .iter()
-                .all(|f| map.contains_key(*f));
+            // `title`/`name` (security review round A3-r1, SEC-4 MEDIUM): a `DocumentRecord`'s
+            // `title` is exempted from the default fence above, and its `name` was never on
+            // [`FENCE_FIELD_NAMES`] at all -- both are agent-WRITABLE (`documents_import`) and
+            // agent-READABLE strings that, unlike every other exempted first-party field on this
+            // surface, had NO cap and NO boundary defence left at all. Neutralize + cap without a
+            // tag (the same treatment `agent_read::found_jobs::cap_autopilot_name` gives an
+            // autopilot's own name): the first-party voice stays unlabelled, but a stored
+            // prompt-injection payload can no longer forge a transcript boundary or grow
+            // unbounded through this channel.
+            if document_record_shaped {
+                for name_field in ["title", "name"] {
+                    if let Some(s) = map.get(name_field).and_then(Value::as_str) {
+                        let capped: String = s.chars().take(crate::prompt_fence::JOB_CAP).collect();
+                        let capped = crate::prompt_fence::neutralize_transcript_boundaries(&capped);
+                        map.insert(name_field.to_string(), json!(capped));
+                    }
+                }
+            }
             if job_posting_shaped {
                 // ADVISORY fix (security review round 4): used to filter on
                 // `v.is_string()` alone, so a board-chosen `extra` key whose

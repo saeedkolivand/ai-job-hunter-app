@@ -351,18 +351,20 @@ impl Refusal {
     /// it is also the one place that guarantee could be broken, hence the
     /// dedicated tests in `agent_call::tests`.
     ///
-    /// [`Refusal::InvokeError`]'s `detail` is DELIBERATELY UNFENCED again (issue #1157,
-    /// reversing security review round 4's fix, owner decision -- flagged for
-    /// `tauri-security-reviewer`): most of the time this is the app's OWN Tauri
-    /// argument-validation sentence (a missing/mistyped arg, an ACL denial, an unregistered
+    /// [`Refusal::InvokeError`]'s `detail` is DELIBERATELY UNLABELLED (issue #1157, owner
+    /// decision -- flagged for `tauri-security-reviewer`): most of the time this is the app's OWN
+    /// Tauri argument-validation sentence (a missing/mistyped arg, an ACL denial, an unregistered
     /// command) -- the single most actionable line an agent gets anywhere on this surface, and
     /// wrapping it as `<job_posting>` markup made a first-party diagnostic read as though a job
-    /// board had written it. Capped at [`crate::prompt_fence::JOB_CAP`] chars (no wrapper, no
-    /// boundary-neutralization) rather than left unbounded. RESIDUAL RISK this change
-    /// deliberately accepts: round 4's own finding still holds structurally -- a dispatchable
-    /// command whose `AppError` embeds third-party/remote text (a scrape/HTTP/provider failure
-    /// echoing part of a caller-chosen host's own response) now reaches the caller verbatim
-    /// through this channel again.
+    /// board had written it. Capped at [`crate::prompt_fence::JOB_CAP`] chars and run through
+    /// [`crate::prompt_fence::neutralize_transcript_boundaries`] (security review round A3-r1,
+    /// AC-2/SEC-3 HIGH: unlabelling must not also drop the boundary defence) -- the SAME two
+    /// causes are wire-indistinguishable (`agent_call.rs`'s own module doc), and the command-error
+    /// cause CAN embed third-party/remote text (a scrape/HTTP/provider failure echoing part of a
+    /// caller-chosen host's own response, e.g. `ai_pull_model`'s Ollama body or a provider's raw
+    /// error message) -- so this string still gets the same forged-`</job_posting>`-tag defence
+    /// every other untrusted string on this surface gets, just without the `<job_posting>` label
+    /// and cap-truncation-into-a-wrapper that made a first-party sentence unreadable.
     fn detail(&self) -> String {
         match self {
             Refusal::UnknownCommand(suggestion) => unknown_command_detail(*suggestion),
@@ -372,8 +374,10 @@ impl Refusal {
             Refusal::RateLimited { .. } => super::agent_read::THROTTLED_MESSAGE.to_string(),
             Refusal::DispatchFailed(detail) => detail.clone(),
             Refusal::InvokeError(detail) => {
-                // Capped, never fenced -- see this variant's own `detail()` doc above.
+                // Capped and defused, never fenced/labelled -- see this variant's own `detail()`
+                // doc above.
                 let capped: String = detail.chars().take(crate::prompt_fence::JOB_CAP).collect();
+                let capped = crate::prompt_fence::neutralize_transcript_boundaries(&capped);
                 format!(
                     "the command either ran and returned an error, or Tauri rejected the call \
                      before the body ran (missing/invalid args, an ACL denial, or an unregistered \
@@ -729,7 +733,13 @@ async fn dispatch_direct(
         // wire-indistinguishable and both refuse rather than dispatch.
         InvokeOutcome::CommandErr(v) => return Err(Refusal::InvokeError(invoke_error_detail(&v))),
     };
-    Ok(reshape_reply(command, data, page_args))
+    let data = reshape_reply(command, data, page_args);
+    // A3-r1-AC-7 — a direct read of the grace window's own read command is exactly the recovery
+    // path a `ConfirmationRequired` refusal's hint sends a caller to; refreshing here closes the
+    // double-drift gap a single confirmation_required-time snapshot can't (see `proof::
+    // refresh_from_read`'s own doc). A no-op for every command but that one.
+    proof::refresh_from_read(command, &data);
+    Ok(data)
 }
 
 /// The whole decision [`dispatch_irreversible_confirmed`] makes, with the
@@ -746,18 +756,20 @@ async fn dispatch_direct(
 /// future, so this core stays sync and pure).
 ///
 /// The comparison itself is [`proof::accepted`] (issue #1162), not a bare `==`: an exact match on
-/// the FRESH `resolved` value is still the ordinary case, but `confirm` may also match a snapshot
-/// [`super::dispatch`] recorded when it issued this SAME command's last `confirmation_required`
-/// refusal, provided that snapshot's grace window hasn't closed — see that fn's own doc for why a
-/// spend-based proof can legitimately move between disclosure and confirm.
+/// the FRESH `resolved` value is still the ordinary case, but for a [`proof::grace_window_key`]-
+/// eligible `source` (today, ONLY `ai_spend_summary`-backed rows — security review round A3-r1,
+/// AC-1/SEC-1 CRITICAL), `confirm` may also match a snapshot [`super::dispatch`]/[`dispatch_direct`]
+/// recorded, provided that snapshot's grace window hasn't closed — see that fn's own doc for why a
+/// spend-based proof can legitimately move between disclosure and confirm. Every other row's
+/// `source` has no grace window at all: only the exact fresh value is ever accepted.
 fn confirm_and_run<T>(
-    command: &str,
+    source: ProofSource,
     resolved: Option<String>,
     confirm: &str,
     run: impl FnOnce() -> T,
 ) -> Result<T, Refusal> {
     let expected = resolved.ok_or(Refusal::ProofUnavailable)?;
-    match proof::accepted(command, &expected, confirm) {
+    match proof::accepted(proof::grace_window_key(source), &expected, confirm) {
         Ok(()) => Ok(run()),
         Err(proof::SnapshotOutcome::Mismatch) => {
             Err(Refusal::ConfirmationMismatch { moved: false })
@@ -793,7 +805,7 @@ async fn dispatch_irreversible_confirmed(
     confirm: &str,
 ) -> Result<Value, Refusal> {
     let resolved = proof::resolve(app, source, &input).await;
-    confirm_and_run(command, resolved, confirm, || {
+    confirm_and_run(source, resolved, confirm, || {
         dispatch_direct(app, command, input)
     })?
     .await
@@ -819,11 +831,16 @@ async fn dispatch(
         // reads the disclosed field and pastes it straight back is comparing against a value
         // this process itself resolved, never one it could have influenced. Best-effort — a
         // `None` (the target record doesn't exist yet, or its own read failed) changes nothing
-        // about the refusal the caller already gets; it just means no snapshot lands.
+        // about the refusal the caller already gets; it just means no snapshot lands. Only for a
+        // [`proof::grace_window_key`]-eligible `source` (security review round A3-r1, AC-1/SEC-1
+        // CRITICAL) — every per-target row never gets a snapshot at all, so it can never be
+        // satisfied by anything but the fresh, just-resolved value.
         Err(Refusal::ConfirmationRequired(hint)) => {
             if let Effect::Irreversible(source) = entry.effect {
-                if let Some(value) = proof::resolve(app, source, &input).await {
-                    proof::remember(command, value);
+                if let Some(key) = proof::grace_window_key(source) {
+                    if let Some(value) = proof::resolve(app, source, &input).await {
+                        proof::remember(key, value);
+                    }
                 }
             }
             Err(Refusal::ConfirmationRequired(hint))

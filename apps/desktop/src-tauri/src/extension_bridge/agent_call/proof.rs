@@ -138,6 +138,13 @@ fn extract_from_fenced_response(
     mut response: Value,
 ) -> Option<String> {
     super::fence_scraped_fields(&mut response);
+    // A3-r1-AC-6: mirror `reshape_reply`'s SECOND fencing step too, not only the first — a
+    // `read_command` whose whole reply is a bare user-document string (e.g. `documents_get_text`)
+    // is fenced by `fence_user_document_bare_text`, never by `fence_scraped_fields` (named-field
+    // only). Without this, a proof bound to such a command would compare the raw value against
+    // the fenced one a caller actually reads. No real `Irreversible` row proves on one today
+    // (verified against every `read_command:` in `policy.rs`) — a latent-bug close, not live.
+    super::reshape::fence_user_document_bare_text(source.read_command(), &mut response);
     extract(source, caller_input, &response)
 }
 
@@ -259,71 +266,81 @@ pub(super) fn hint(source: ProofSource) -> String {
 
 // ── Grace window for a proof value disclosed via `confirmation_required` (issue #1162) ──────
 //
-// Ten `Irreversible` rows prove against `ai_spend_summary`'s `today.inputTokens`, which advances
-// under ORDINARY background AI activity (another job's spend) between the moment a caller reads
-// it and the moment it presents that same value back as `--confirm`. A caller that did everything
-// right — read the field, pasted it back — could see a `confirmation_mismatch` purely because the
-// counter moved underneath it. The fix: remember the value that was CURRENT at the moment a
-// `confirmation_required` refusal was issued for a command, and accept a presented value that
-// still matches that snapshot for a short window after — never a value the caller invented, only
-// one this process itself already disclosed the shape of (never the string) via that same refusal.
+// `ai_spend_summary`'s `today.inputTokens` backs ten `Irreversible` rows and advances under
+// ORDINARY background AI activity between the moment a caller reads it and the moment it presents
+// that same value as `--confirm`. Fix: remember the value CURRENT at `confirmation_required` time
+// and accept a presented value matching that snapshot for a short window after.
+//
+// Deliberately narrow (security review round A3-r1, AC-1/SEC-1 CRITICAL): the window applies ONLY
+// to [`GRACE_WINDOW_READ_COMMAND`]. Every other row's proof is bound to a caller-chosen target (a
+// document id, a run id…) and only an exact match on the FRESH value is ever accepted — no
+// snapshot, no window, so a value disclosed for one target can never authorise a different one.
+// `ai_spend_summary`'s `Scalar` proof is the one shape with NO per-target caller input at all
+// (`build_input` always resolves it with `{}`), so there is no target to confuse in the first
+// place. Widening this to every `Scalar` row (`ai_active_config`/`system_get_version`, neither of
+// which has a background-drift problem to solve) would reopen that risk for no benefit.
 
-/// How long a snapshot taken at `confirmation_required` time stays acceptable on the retry, even
-/// if the CURRENT value has since moved. ~120s: generous enough to cover "read the proof, then
-/// paste it back" against ordinary agent/network latency, short enough that a snapshot never
-/// becomes a standing, stale credential an attacker could bank on.
+/// The ONE read command whose `Irreversible` rows get a grace window. `Scalar`'s `path` is
+/// identical on every real row naming this read command (verified in `policy.rs`), so one shared
+/// snapshot is exactly as precise as one per irreversible command name, and lets
+/// [`refresh_from_read`] update it from a single place regardless of which of the ten commands the
+/// caller is about to confirm.
+const GRACE_WINDOW_READ_COMMAND: &str = "ai_spend_summary";
+const GRACE_WINDOW_PATH: &[&str] = &["today", "inputTokens"];
+
+/// How long a snapshot stays acceptable even after the CURRENT value has moved. ~120s: generous
+/// enough for "read the proof, paste it back", short enough not to become a standing credential.
 const PROOF_SNAPSHOT_TTL: std::time::Duration = std::time::Duration::from_secs(120);
 
-/// Bound on how many distinct commands' snapshots this process remembers at once. This map lives
-/// for the whole app process's lifetime (never per-connection, per `agent-cli-standards`), so it
-/// must not grow with traffic — [`POLICY`]'s own `Irreversible` row count is comfortably under
-/// this, and the oldest entry is evicted to make room for a new command once full.
-const PROOF_SNAPSHOT_CAP: usize = 64;
-
-/// One remembered proof value, snapshotted the moment a `confirmation_required` refusal was
-/// issued for its command. `at` is [`std::time::Instant`] — monotonic, immune to a system clock
-/// adjustment moving backward and reviving an expired snapshot.
+/// One remembered proof value. `at` is [`std::time::Instant`] — monotonic, immune to a clock
+/// adjustment reviving an expired snapshot.
 struct ProofSnapshot {
     value: String,
     at: std::time::Instant,
 }
 
-/// Keyed by the bare command name — already globally unique on this dispatch surface
-/// ([`super::find_policy`]'s own doc: `generate_handler!` requires unique command names), so no
-/// need to key on `(namespace, command)`. A `Mutex`, not a `RwLock`: every access here either
-/// reads-then-conditionally-writes ([`remember`]) or reads-only-but-cheaply ([`accepted`]), so the
-/// simpler primitive costs nothing measurable at this call rate.
+/// Keyed by [`GRACE_WINDOW_READ_COMMAND`] alone (the map holds at most one entry in practice).
 static PROOF_SNAPSHOTS: std::sync::LazyLock<
-    std::sync::Mutex<std::collections::HashMap<String, ProofSnapshot>>,
+    std::sync::Mutex<std::collections::HashMap<&'static str, ProofSnapshot>>,
 > = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
-/// Record `value` as `command`'s current proof snapshot — called from [`super::dispatch`] right
-/// after it issues a `confirmation_required` refusal for `command`, BEFORE the caller could have
-/// read this value any other way, so a snapshot can never be primed by anything the caller
-/// controls. Evicts the single OLDEST entry when the map is already at [`PROOF_SNAPSHOT_CAP`] and
-/// `command` is a new key — bounded, never unbounded growth over a long-running app process. A
-/// thin wrapper over [`remember_at`] with the clock read for real; split so a test can drive the
-/// pure core against a manufactured `now` rather than actually sleeping past [`PROOF_SNAPSHOT_TTL`].
-pub(super) fn remember(command: &str, value: String) {
-    remember_at(command, value, std::time::Instant::now());
+/// Whether `source`'s `Irreversible` row gets a grace window at all — `Some(key)` when it does,
+/// `None` for every other row, which [`accepted_at`] then never consults the snapshot map for.
+pub(super) fn grace_window_key(source: ProofSource) -> Option<&'static str> {
+    (source.read_command() == GRACE_WINDOW_READ_COMMAND).then_some(GRACE_WINDOW_READ_COMMAND)
 }
 
-fn remember_at(command: &str, value: String, now: std::time::Instant) {
+/// Record `value` as the current grace-window snapshot — called right after a
+/// `confirmation_required` refusal for a [`grace_window_key`]-eligible row, BEFORE the caller
+/// could have read this value any other way. Split from [`remember_at`] so a test can drive the
+/// pure core against a manufactured `now`.
+pub(super) fn remember(key: &'static str, value: String) {
+    remember_at(key, value, std::time::Instant::now());
+}
+
+fn remember_at(key: &'static str, value: String, now: std::time::Instant) {
     let mut map = PROOF_SNAPSHOTS.lock().unwrap_or_else(|e| e.into_inner());
-    if !map.contains_key(command) && map.len() >= PROOF_SNAPSHOT_CAP {
-        if let Some(oldest_key) = map.iter().min_by_key(|(_, s)| s.at).map(|(k, _)| k.clone()) {
-            map.remove(&oldest_key);
-        }
-    }
-    map.insert(command.to_string(), ProofSnapshot { value, at: now });
+    map.insert(key, ProofSnapshot { value, at: now });
 }
 
-/// Why a presented `--confirm` value was refused, when it does not exactly equal the FRESH,
-/// just-resolved proof — the two causes get DIFFERENT detail text (issue #1162): [`Mismatch`] is
-/// an ordinary wrong guess (or one that never matched anything this process ever disclosed);
-/// [`Expired`] is a value that matches a real, remembered snapshot whose grace window has already
-/// closed, which tells the caller HOW to recover (re-read) rather than leaving it to guess why a
-/// value it definitely read once no longer works.
+/// Refresh the grace-window snapshot from a response the caller just read DIRECTLY through
+/// [`super::dispatch_direct`] (never one `resolve` fetched on the caller's own behalf). Closes the
+/// double-drift gap security review round A3-r1's AC-7 flagged: the t0 snapshot and the value the
+/// caller actually reads before retrying (t1) can differ if the counter moves in both intervals,
+/// so this keeps the snapshot current with whichever value the caller most recently saw. A no-op
+/// for every other command.
+pub(super) fn refresh_from_read(command: &str, response: &Value) {
+    if command != GRACE_WINDOW_READ_COMMAND {
+        return;
+    }
+    if let Some(value) = walk(response, GRACE_WINDOW_PATH).and_then(stringify) {
+        remember(GRACE_WINDOW_READ_COMMAND, value);
+    }
+}
+
+/// Why a presented `--confirm` value was refused when it isn't the FRESH proof (issue #1162):
+/// [`Mismatch`] is an ordinary wrong guess; [`Expired`] matches a real, remembered snapshot whose
+/// window has closed, telling the caller to re-read rather than "you guessed wrong".
 ///
 /// [`Mismatch`]: SnapshotOutcome::Mismatch
 /// [`Expired`]: SnapshotOutcome::Expired
@@ -332,24 +349,24 @@ pub(super) enum SnapshotOutcome {
     Expired,
 }
 
-/// Whether `presented` is acceptable for `command`, given the FRESH `current` value
-/// [`super::confirm_and_run`]'s caller just resolved. An exact match on `current` always succeeds
-/// (the ordinary, no-drift case, checked first so the common path never touches the snapshot map
-/// at all); otherwise `presented` may still match a snapshot [`remember`] recorded for this SAME
-/// command, provided it has not yet crossed [`PROOF_SNAPSHOT_TTL`]. Never discloses `current` or
-/// the snapshot's own value to the caller — only a yes/no (as [`Result::Err`]'s two shapes) — the
-/// same secrecy [`hint`] and every `Refusal::ConfirmationMismatch` detail already hold. A thin
-/// wrapper over [`accepted_at`] for the same testability reason [`remember`] wraps [`remember_at`].
+/// Whether `presented` is acceptable, given the FRESH `current` value and `key` —
+/// [`grace_window_key`]'s verdict for the row being confirmed. An exact match on `current` always
+/// succeeds first, so this still works for a `None`-key row too. Otherwise only a `Some` key may
+/// match the snapshot [`remember`]/[`refresh_from_read`] last recorded for it within
+/// [`PROOF_SNAPSHOT_TTL`] — `None` refuses immediately, never touching the map (AC-1/SEC-1
+/// CRITICAL: no snapshot can ever authorise a different target's ceremony). A matching snapshot is
+/// consumed on accept (SEC-2 HIGH): one disclosure buys exactly one dispatch. Never discloses
+/// `current` or the snapshot value — only yes/no.
 pub(super) fn accepted(
-    command: &str,
+    key: Option<&'static str>,
     current: &str,
     presented: &str,
 ) -> Result<(), SnapshotOutcome> {
-    accepted_at(command, current, presented, std::time::Instant::now())
+    accepted_at(key, current, presented, std::time::Instant::now())
 }
 
 fn accepted_at(
-    command: &str,
+    key: Option<&'static str>,
     current: &str,
     presented: &str,
     now: std::time::Instant,
@@ -357,8 +374,11 @@ fn accepted_at(
     if presented == current {
         return Ok(());
     }
-    let map = PROOF_SNAPSHOTS.lock().unwrap_or_else(|e| e.into_inner());
-    match map.get(command) {
+    let Some(key) = key else {
+        return Err(SnapshotOutcome::Mismatch);
+    };
+    let mut map = PROOF_SNAPSHOTS.lock().unwrap_or_else(|e| e.into_inner());
+    let outcome = match map.get(key) {
         Some(snap)
             if snap.value == presented
                 && now.saturating_duration_since(snap.at) <= PROOF_SNAPSHOT_TTL =>
@@ -367,7 +387,11 @@ fn accepted_at(
         }
         Some(snap) if snap.value == presented => Err(SnapshotOutcome::Expired),
         _ => Err(SnapshotOutcome::Mismatch),
+    };
+    if outcome.is_ok() {
+        map.remove(key);
     }
+    outcome
 }
 
 #[cfg(test)]
@@ -957,7 +981,15 @@ mod tests {
                     });
 
             match leaf_field_name(source) {
-                Some(name) if super::super::fence::FENCE_FIELD_NAMES.contains(&name) => {
+                // `"text"` is a hand-written literal beside the list lookup, not derived from it
+                // (A3-r1-AC-6 MEDIUM): `text` was removed from `FENCE_FIELD_NAMES` when it became
+                // origin-aware (fenced under `job_posting` OR `user_document` by its own dedicated
+                // block in `fence.rs`), but it is still fenced unconditionally -- a classifier
+                // driven off the list alone would wrongly expect a `text`-leaf proof to survive
+                // fencing unchanged. No real `Irreversible` row proves on `text` today.
+                Some(name)
+                    if super::super::fence::FENCE_FIELD_NAMES.contains(&name) || name == "text" =>
+                {
                     assert_eq!(
                         expected_fenced,
                         crate::prompt_fence::fenced(
@@ -1128,18 +1160,24 @@ mod tests {
     // ── accepted_at / remember_at — the grace window (issue #1162) ──────────
 
     /// The ordinary, no-drift path never even looks at the snapshot map: an exact match on the
-    /// FRESH `current` value succeeds with nothing remembered for `command` at all.
+    /// FRESH `current` value succeeds with nothing remembered for `key` at all.
     #[test]
     fn accepted_matches_the_fresh_current_value_with_no_snapshot_recorded() {
-        assert!(accepted_at("grace_cmd_fresh", "4200", "4200", std::time::Instant::now()).is_ok());
+        assert!(accepted_at(
+            Some("grace_cmd_fresh"),
+            "4200",
+            "4200",
+            std::time::Instant::now()
+        )
+        .is_ok());
     }
 
     /// A value that matches neither the current value nor anything ever remembered for this
-    /// command is the ORDINARY mismatch — never `Expired` (there is nothing to have expired).
+    /// key is the ORDINARY mismatch — never `Expired` (there is nothing to have expired).
     #[test]
     fn accepted_refuses_a_value_matching_nothing_as_an_ordinary_mismatch() {
         let outcome = accepted_at(
-            "grace_cmd_never_remembered",
+            Some("grace_cmd_never_remembered"),
             "4200",
             "9999",
             std::time::Instant::now(),
@@ -1155,7 +1193,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         remember_at("grace_cmd_within_ttl", "4200".to_string(), t0);
         let outcome = accepted_at(
-            "grace_cmd_within_ttl",
+            Some("grace_cmd_within_ttl"),
             "4300", // the CURRENT value moved since disclosure
             "4200", // the caller presents the value it actually read
             t0 + std::time::Duration::from_secs(30),
@@ -1174,7 +1212,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         remember_at("grace_cmd_expired", "4200".to_string(), t0);
         let outcome = accepted_at(
-            "grace_cmd_expired",
+            Some("grace_cmd_expired"),
             "4300",
             "4200",
             t0 + PROOF_SNAPSHOT_TTL + std::time::Duration::from_secs(1),
@@ -1183,14 +1221,14 @@ mod tests {
     }
 
     /// A value that is simply WRONG — never the current value, never anything remembered for
-    /// this command — must still refuse as the generic `Mismatch`, snapshot or no snapshot. A
+    /// this key — must still refuse as the generic `Mismatch`, snapshot or no snapshot. A
     /// grace window must never turn into "any old guess eventually works".
     #[test]
     fn accepted_still_refuses_a_wrong_value_as_a_mismatch_even_with_a_snapshot_recorded() {
         let t0 = std::time::Instant::now();
         remember_at("grace_cmd_wrong_guess", "4200".to_string(), t0);
         let outcome = accepted_at(
-            "grace_cmd_wrong_guess",
+            Some("grace_cmd_wrong_guess"),
             "4300",
             "totally-invented-guess",
             t0 + std::time::Duration::from_secs(5),
@@ -1198,18 +1236,147 @@ mod tests {
         assert!(matches!(outcome, Err(SnapshotOutcome::Mismatch)));
     }
 
-    /// A snapshot recorded for a DIFFERENT command must never satisfy this one's ceremony — the
-    /// map is keyed per command precisely so one row's disclosed value can't authorise another's.
+    /// A snapshot recorded for a DIFFERENT key must never satisfy this one's ceremony — the map
+    /// is keyed precisely so one row's disclosed value can't authorise another's.
     #[test]
-    fn accepted_never_lets_a_snapshot_from_a_different_command_satisfy_this_one() {
+    fn accepted_never_lets_a_snapshot_from_a_different_key_satisfy_this_one() {
         let t0 = std::time::Instant::now();
         remember_at("grace_cmd_other_command", "4200".to_string(), t0);
         let outcome = accepted_at(
-            "grace_cmd_this_command",
+            Some("grace_cmd_this_command"),
             "4300",
             "4200",
             t0 + std::time::Duration::from_secs(5),
         );
         assert!(matches!(outcome, Err(SnapshotOutcome::Mismatch)));
+    }
+
+    /// AC-1/SEC-1 CRITICAL: a `key: None` row must refuse the instant the exact match on
+    /// `current` fails, never even looking at the snapshot map — a value disclosed for a
+    /// completely different target (simulated here by a real snapshot under another key) must
+    /// never authorise it. This is the exact cross-target bypass the finding described.
+    #[test]
+    fn accepted_refuses_immediately_when_the_row_has_no_grace_window_even_if_a_snapshot_exists() {
+        let t0 = std::time::Instant::now();
+        // A real snapshot exists (e.g. `ai_spend_summary`'s own), recorded moments ago.
+        remember_at(
+            "grace_cmd_unrelated_target",
+            "some-proof-value".to_string(),
+            t0,
+        );
+        let outcome = accepted_at(
+            None,
+            "fresh-value-for-this-target",
+            "some-proof-value", // matches the OTHER key's snapshot, not this row's current value
+            t0 + std::time::Duration::from_secs(1),
+        );
+        assert!(
+            matches!(outcome, Err(SnapshotOutcome::Mismatch)),
+            "a row with no grace window must never accept a value disclosed for a different target"
+        );
+    }
+
+    /// SEC-2 HIGH: a snapshot is single-use. The first presentation inside the TTL is accepted
+    /// (and consumes it); a second presentation of the exact same value must refuse.
+    #[test]
+    fn accepted_consumes_the_snapshot_so_a_second_presentation_of_the_same_value_refuses() {
+        let t0 = std::time::Instant::now();
+        remember_at("grace_cmd_single_use", "4200".to_string(), t0);
+        let first = accepted_at(
+            Some("grace_cmd_single_use"),
+            "4300",
+            "4200",
+            t0 + std::time::Duration::from_secs(5),
+        );
+        assert!(
+            first.is_ok(),
+            "the first presentation inside the TTL must be accepted"
+        );
+        let second = accepted_at(
+            Some("grace_cmd_single_use"),
+            "4300",
+            "4200",
+            t0 + std::time::Duration::from_secs(6),
+        );
+        assert!(
+            matches!(second, Err(SnapshotOutcome::Mismatch)),
+            "a consumed snapshot must never authorise a second dispatch"
+        );
+    }
+
+    // ── grace_window_key — which rows get a grace window at all (AC-1/SEC-1) ────────────────
+
+    #[test]
+    fn grace_window_key_is_eligible_only_for_the_ai_spend_summary_read_command() {
+        let eligible = ProofSource::Scalar {
+            read_command: "ai_spend_summary",
+            path: &["today", "inputTokens"],
+        };
+        assert_eq!(grace_window_key(eligible), Some("ai_spend_summary"));
+    }
+
+    /// Every OTHER `Scalar` row (no background-drift problem to solve) must stay ineligible.
+    #[test]
+    fn grace_window_key_is_ineligible_for_a_different_scalar_read_command() {
+        let ineligible = ProofSource::Scalar {
+            read_command: "ai_active_config",
+            path: &["activeProvider"],
+        };
+        assert_eq!(grace_window_key(ineligible), None);
+    }
+
+    /// A per-target row (`ListMatch`) must never be eligible — the finding's exact exploit shape.
+    #[test]
+    fn grace_window_key_is_ineligible_for_a_list_match_source() {
+        let ineligible = ProofSource::ListMatch {
+            read_command: "documents_list",
+            id_field: &["id"],
+            match_field: "_id",
+            value_field: "name",
+        };
+        assert_eq!(grace_window_key(ineligible), None);
+    }
+
+    // ── refresh_from_read — closes the double-drift gap (AC-7) ─────────────────────────────
+
+    /// A direct read of `ai_spend_summary` must refresh the snapshot to whatever value the caller
+    /// just saw — the double-drift case a single t0-only snapshot cannot cover.
+    #[test]
+    fn refresh_from_read_updates_the_snapshot_from_a_direct_ai_spend_summary_read() {
+        let response = json!({ "today": { "inputTokens": 4321 } });
+        refresh_from_read("ai_spend_summary", &response);
+        let outcome = accepted_at(
+            Some("ai_spend_summary"),
+            "9999", // some later, further-moved current value
+            "4321",
+            std::time::Instant::now(),
+        );
+        assert!(
+            outcome.is_ok(),
+            "a value the caller just read directly must be accepted as a fresh snapshot"
+        );
+    }
+
+    /// A direct read of any OTHER command must never touch the grace-window snapshot.
+    #[test]
+    fn refresh_from_read_is_a_noop_for_every_other_command() {
+        const KEY: &str = "grace_cmd_refresh_noop_target";
+        remember_at(
+            KEY,
+            "should-not-move".to_string(),
+            std::time::Instant::now(),
+        );
+        refresh_from_read("documents_list", &json!([{ "id": "doc-1" }]));
+        let outcome = accepted_at(
+            Some(KEY),
+            "fresh",
+            "should-not-move",
+            std::time::Instant::now(),
+        );
+        assert!(
+            outcome.is_ok(),
+            "the snapshot recorded directly via remember_at must be untouched by an unrelated \
+             refresh_from_read call"
+        );
     }
 }

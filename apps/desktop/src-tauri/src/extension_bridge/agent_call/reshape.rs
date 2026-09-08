@@ -378,7 +378,12 @@ const USER_DOCUMENT_BARE_TEXT_COMMANDS: &[&str] = &["documents_get_text"];
 /// case); a no-op otherwise (an `Err` reply, or any other command). Called from [`reshape_reply`]
 /// right after [`fence_scraped_fields`] -- that walk only ever fences a NAMED field inside an
 /// object/array, so it cannot reach a top-level string on its own.
-fn fence_user_document_bare_text(command: &str, data: &mut Value) {
+///
+/// `pub(super)` (A3-r1-AC-6) -- `agent_call::proof::extract_from_fenced_response` calls this SAME
+/// fn (keyed by `ProofSource::read_command()`, the read whose response it is) so a proof's own
+/// value and the value a caller actually reads through this dispatcher stay the exact same
+/// transform of the exact same read, never two different views of one record.
+pub(super) fn fence_user_document_bare_text(command: &str, data: &mut Value) {
     if !USER_DOCUMENT_BARE_TEXT_COMMANDS.contains(&command) {
         return;
     }
