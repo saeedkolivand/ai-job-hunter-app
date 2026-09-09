@@ -1,5 +1,173 @@
 [
   {
+    "sha": "f398fcf5489c3e042ea1c34333b64f408b9a6ef0",
+    "commit": {
+      "message": "docs(adr): record the loopback http transport, resources and prompts (#1186)",
+      "author": {
+        "date": "2026-09-09T06:22:31Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "95799bc8364b4de367a42f74a99074ebb845b1cf",
+    "commit": {
+      "message": "chore(release): 0.151.0 [skip ci]",
+      "author": {
+        "date": "2026-09-09T06:12:30Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "f93dc916c268b04bac48d04558ed64bf133b03f6",
+    "commit": {
+      "message": "feat(agent): photo-safe read tier, mcp polish, loopback http transport, resources and prompts (#1184)",
+      "author": {
+        "date": "2026-09-09T06:06:10Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "c623b2ba04d1043f003fb38cb2e4ecf77f49cd9d",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-09T02:10:39Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "2be376971d60a0859d73af47d6e499d51ab80fe2",
+    "commit": {
+      "message": "fix(agent): generated command catalogue, argument validation and one refusal contract (#1183)",
+      "author": {
+        "date": "2026-09-09T01:46:53Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "aaa457b62b8773bb66aa062761bcc62bae7cb609",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-09T00:25:49Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "7777b9d487cd9e8d90a9d4bf9d6f8d5bd91488c2",
+    "commit": {
+      "message": "fix(agent): honest policy rows, job identity by board id, and a usable found-jobs read (#1182)",
+      "author": {
+        "date": "2026-09-09T00:12:46Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "9b021333a458fdf2c2425fae042b24a4ba49a822",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-08T23:17:40Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "607c995c2121f5bb4a80cf6311fb2db9d290fd5b",
+    "commit": {
+      "message": "fix(commands): label the health model probe and make the spend summary complete (#1178)",
+      "author": {
+        "date": "2026-09-08T22:53:51Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "37e6ef4d0bcdf5ebd27a6e6843e2ed7388aa6f36",
+    "commit": {
+      "message": "test(settings): pin the agent-cli generic mcp hint against silent regression (#1177)",
+      "author": {
+        "date": "2026-09-08T11:39:49Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "18fefdf97390126f6131e4a2cf424274f418a918",
+    "commit": {
+      "message": "docs(settings): drop vs code from the mcpservers roster and refresh two-snippet comments (#1176)",
+      "author": {
+        "date": "2026-09-08T10:58:55Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "66a61de0e2dc5a96dd4ad9189cc3570ac500cc73",
+    "commit": {
+      "message": "ui(settings): offer a generic mcpservers snippet and say any mcp client can connect (#1175)",
+      "author": {
+        "date": "2026-09-08T10:48:13Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "d3b874a563d96444efb24d8f1c9a9518b099bc08",
+    "commit": {
+      "message": "ui(settings): say the app must stay open and repeat the transcript note on the agent card (#1174)",
+      "author": {
+        "date": "2026-09-08T10:07:01Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "0bb3a95eb86ca18b5b4f4b1da0a45ceccc3750b0",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-08T08:03:16Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "511e0b3b78792f8724bf21ad5ee66ee83234d3fa",
     "commit": {
       "message": "chore: sync landing download version to v0.150.0",
@@ -1029,174 +1197,6 @@
     },
     "author": {
       "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "a14195b82f42cd2b814042b198a8a8bed3466051",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.145.0 [skip ci]",
-      "author": {
-        "date": "2026-09-01T03:56:13Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "a165a584f7a0e8d984c9752e69062deef545bbce",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-01T03:20:44Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "2b35e62637be7d57fc92e986a9dd26b6d87e09bc",
-    "commit": {
-      "message": "chore(release): 0.145.0 [skip ci]",
-      "author": {
-        "date": "2026-09-01T03:17:13Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "38b990d0e9491845313946ad7de304e8a492d15c",
-    "commit": {
-      "message": "feat: generic command dispatch for the agent CLI, read effects first (#1087)",
-      "author": {
-        "date": "2026-09-01T03:08:29Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "81cc8dd7245c7f4afd381b10f215c9021b4f8937",
-    "commit": {
-      "message": "docs: record the agent surface decisions and sharpen its vocabulary (#1086)",
-      "author": {
-        "date": "2026-08-31T19:44:08Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "91e429d15b4181c220b6fff99d4ebc82ae672d17",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-08-31T18:54:44Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "93b09cd68ad2e746dfff944378e91096adc0bd67",
-    "commit": {
-      "message": "feat: agent-facing CLI so an AI agent can drive the app (#1085)",
-      "author": {
-        "date": "2026-08-31T18:44:22Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "22758a4790bf6f8e98f8f809072fa333486f1b78",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-08-31T09:42:36Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "056c3e3977cbd5a9b421c6d6766e690e39e07c8e",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-08-30T09:12:31Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "12894efe7690f7fa89785a02a7ab8b9f7897e237",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-08-29T10:01:45Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "0601de02783d724b58feb061599ae25aad7384dc",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-08-28T15:20:05Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "0c46d4af1f591b1e2c81ffd01fdac051ce3af4c6",
-    "commit": {
-      "message": "chore: sync landing download version to v0.144.0",
-      "author": {
-        "date": "2026-08-27T22:44:00Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "e469f717efc996889940e699e1e77bc70d8a16b4",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.144.0 [skip ci]",
-      "author": {
-        "date": "2026-08-27T22:43:40Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "adc5a3da4769c2801d5c8f1f3e421b1fcc2d0116",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-08-27T22:28:03Z"
-      }
-    },
-    "author": {
-      "login": "github"
     }
   }
 ]

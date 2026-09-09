@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "number": 1187,
+    "title": "fix(ai): parse current codex exec events and stop pinning a stale codex model list",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1187",
+    "draft": false,
+    "created_at": "2026-09-09T07:39:48Z",
+    "updated_at": "2026-09-09T08:02:59Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  }
+]
