@@ -243,6 +243,9 @@
       "addUrlToLoad": "Fügen Sie eine Basis-URL hinzu, um die Modelle dieses Anbieters zu laden.",
       "fetchFailed": "Modelle konnten nicht geladen werden: {{message}}",
       "cachedList": "Zeigt die zuletzt gespeicherte Liste – die Live-Aktualisierung ist fehlgeschlagen."
+    },
+    "cli": {
+      "fallbackList": "Zeigt gerade die integrierte Liste, nicht den eigenen Live-Katalog der CLI."
     }
   },
   "shortcuts": {

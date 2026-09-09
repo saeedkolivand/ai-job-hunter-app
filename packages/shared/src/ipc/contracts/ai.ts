@@ -25,6 +25,14 @@ export interface ProviderModelInfo {
   createdAt?: number;
   /** Max input tokens, when the provider's catalogue endpoint reports one. */
   contextLength?: number;
+  /**
+   * `'fallback'` when this entry came from a hardcoded curated list rather than
+   * the provider's own live catalogue — currently only CLI agents whose
+   * installed binary offers no model-enumeration command, or whose enumeration
+   * attempt failed/timed out (see `CliAgentClient::list_models`/`resolve_models`
+   * in the Rust backend). Absent means the entry is live/authoritative.
+   */
+  source?: 'fallback';
 }
 
 export interface AiContract {

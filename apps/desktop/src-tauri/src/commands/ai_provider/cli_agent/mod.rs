@@ -113,8 +113,20 @@ pub trait CliAgentBackend: Send + Sync {
     fn default_binary(&self) -> &'static str;
     /// Env var that overrides the binary path (e.g. `"CLAUDE_CODE_BIN"`).
     fn env_override(&self) -> &'static str;
-    /// Model aliases offered in the UI (e.g. `["sonnet", "opus", "haiku", "fable"]`).
+    /// Model aliases offered in the UI (e.g. `["sonnet", "opus", "haiku", "fable"]`) —
+    /// the LAST-RESORT fallback used only when [`discover_models`](Self::discover_models)
+    /// has no live source or its attempt fails; never the primary source of truth for
+    /// a backend that can enumerate its own models.
     fn models(&self) -> &'static [&'static str];
+
+    /// Live model discovery for a CLI that can enumerate its own catalogue (e.g.
+    /// Codex's `codex debug models`) — `None` (the default) means "no such source",
+    /// so every backend but Codex falls straight through to
+    /// [`models`](Self::models) unchanged. A `Some` with no usable entries counts the
+    /// same as `None`. See [`CliAgentClient::list_models`] for the fallback + labelling.
+    async fn discover_models(&self) -> Option<Vec<Value>> {
+        None
+    }
 
     /// The npm package that provides this agent's binary, for the in-app install
     /// (#22). The one-click install runs `npm install -g <this>` — and that exact
@@ -346,14 +358,14 @@ impl AiProvider for CliAgentClient {
     }
 
     async fn list_models(&self, _app: &AppHandle) -> AppResult<Vec<Value>> {
-        // A local CLI agent exposes no network catalogue to fail against — this
-        // is genuinely infallible, unlike every HTTP-backed provider.
-        Ok(self
-            .backend
-            .models()
-            .iter()
-            .map(|m| json!({ "name": m }))
-            .collect())
+        // Still genuinely infallible (unlike every HTTP-backed provider): a
+        // backend's `discover_models` degrades to `None` on any failure rather
+        // than propagating one, so there is always a list to return — see
+        // `resolve_models`'s doc comment for the fallback + labelling rule.
+        Ok(resolve_models(
+            self.backend.discover_models().await,
+            self.backend.models(),
+        ))
     }
 
     async fn test_key(&self, _app: &AppHandle) -> AppResult<()> {
@@ -777,6 +789,29 @@ async fn run_complete(
     let text = backend.parse_complete(&stdout)?;
     trace.end(output.status.code().map(|c| c as u16), true);
     Ok(text)
+}
+
+// ── Model discovery + fallback ───────────────────────────────────────────────────
+
+/// Choose between a backend's live [`discover_models`](CliAgentBackend::discover_models)
+/// result and its curated [`models`](CliAgentBackend::models) fallback — pure, so it's
+/// covered without spawning a CLI or a mock `AppHandle` (this crate has neither; see
+/// `stream.rs`'s doc comment on `finish`). An empty `Some` (discovery ran but found
+/// nothing usable) counts the same as `None` — either way there's nothing live to show.
+fn resolve_models(discovered: Option<Vec<Value>>, fallback: &[&str]) -> Vec<Value> {
+    match discovered {
+        Some(models) if !models.is_empty() => models,
+        _ => fallback_models(fallback),
+    }
+}
+
+/// The curated alias list, each entry explicitly labelled `source: "fallback"` so a
+/// stale hardcoded list can never masquerade as the CLI's own live catalogue (#1185).
+fn fallback_models(aliases: &[&str]) -> Vec<Value> {
+    aliases
+        .iter()
+        .map(|m| json!({ "name": m, "source": "fallback" }))
+        .collect()
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────
@@ -1249,6 +1284,54 @@ mod tests {
 
         // A real EOF is never misreported as a cancellation.
         assert!(matches!(outcome, ReadOutcome::Eof));
+    }
+
+    #[test]
+    fn resolve_models_prefers_live_discovery_over_the_curated_fallback() {
+        let live = vec![json!({ "name": "gpt-6-astra", "displayName": "GPT-6 Astra" })];
+        let out = resolve_models(Some(live.clone()), &["gpt-5-codex", "o4-mini"]);
+        assert_eq!(out, live);
+    }
+
+    #[test]
+    fn resolve_models_falls_back_and_labels_the_source_when_discovery_is_none() {
+        let out = resolve_models(None, &["gpt-5-codex", "o4-mini"]);
+        assert_eq!(
+            out,
+            vec![
+                json!({ "name": "gpt-5-codex", "source": "fallback" }),
+                json!({ "name": "o4-mini", "source": "fallback" }),
+            ]
+        );
+    }
+
+    /// Discovery running and finding nothing usable is not "the CLI has zero
+    /// models" — it's the same "no live source available" case as `None`.
+    #[test]
+    fn resolve_models_treats_an_empty_discovery_result_as_no_discovery() {
+        let out = resolve_models(Some(Vec::new()), &["gpt-5-codex"]);
+        assert_eq!(
+            out,
+            vec![json!({ "name": "gpt-5-codex", "source": "fallback" })]
+        );
+    }
+
+    /// PR #1187 review: `ProviderModelInfo.source` in the TS contract
+    /// (`packages/shared/src/ipc/contracts/ai.ts`) is `?: 'fallback'` — present
+    /// with that exact value on a curated entry, ABSENT (not `null`) on a live
+    /// one. `.get("source")` pins that field-presence contract directly, rather
+    /// than relying on whole-value equality alone.
+    #[test]
+    fn fallback_entries_carry_source_and_live_entries_omit_the_key_entirely() {
+        let fallback_out = resolve_models(None, &["gpt-5-codex"]);
+        assert_eq!(
+            fallback_out[0].get("source").and_then(Value::as_str),
+            Some("fallback")
+        );
+
+        let live = vec![json!({ "name": "gpt-6-astra" })];
+        let live_out = resolve_models(Some(live), &["gpt-5-codex"]);
+        assert!(live_out[0].get("source").is_none());
     }
 
     #[tokio::test]

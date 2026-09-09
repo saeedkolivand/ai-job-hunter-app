@@ -1,3 +1,4 @@
+import type { ProviderModelInfo } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown } from '@ajh/ui';
 
@@ -11,8 +12,10 @@ interface Props {
   provider: AiProvider;
   /** Whether the agent's CLI binary was detected. */
   connected: boolean;
-  /** Models fetched via the provider (CLI agents return their aliases). */
-  expandedModels: Array<{ name: string }>;
+  /** Models fetched via the provider — live discovery when the CLI offers it
+   *  (e.g. Codex's `codex debug models`), else the curated `source: 'fallback'`
+   *  aliases (see `CliAgentClient::list_models` in the Rust backend). */
+  expandedModels: ProviderModelInfo[];
   providerModel: string;
   onSelect: (model: string) => void;
   onSetActive: () => void;
@@ -25,9 +28,9 @@ interface Props {
 
 /**
  * Config UI for a `cli-agent` provider: a locally-installed headless tool with no
- * API key. Mirrors the cloud config's model dropdown (CLIs have no list endpoint,
- * so options are the agent's known aliases). Agents that support a reasoning effort
- * (Codex) also get an effort dropdown.
+ * API key. Model options come from the provider's live catalogue when the CLI can
+ * enumerate one, else its curated aliases (labelled below when that's the case).
+ * Agents that support a reasoning effort (Codex) also get an effort dropdown.
  */
 export function CliAgentConfig({
   provider,
@@ -45,8 +48,11 @@ export function CliAgentConfig({
 
   const modelOptions =
     expandedModels.length > 0
-      ? expandedModels.map((m) => ({ value: m.name, label: m.name }))
+      ? expandedModels.map((m) => ({ value: m.name, label: m.displayName ?? m.name }))
       : meta.models.map((m) => ({ value: m, label: m }));
+  // Every entry in one `expandedModels` response shares the same source (one
+  // backend call) — the first is representative of the whole list.
+  const usingFallbackList = expandedModels[0]?.source === 'fallback';
 
   // Keep a stored selection that fell out of the curated/live list selectable
   // — otherwise the trigger falls back to the placeholder and reads as a
@@ -80,6 +86,11 @@ export function CliAgentConfig({
               onChange={onSelect}
               placeholder="Select a model…"
             />
+            {usingFallbackList && (
+              <p role="status" aria-live="polite" className="text-[10px] text-foreground/40">
+                {t('models.cli.fallbackList')}
+              </p>
+            )}
           </div>
 
           <EffortPicker provider={provider} model={providerModel} />

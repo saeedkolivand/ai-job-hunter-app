@@ -104,7 +104,10 @@ export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
     description: 'Use your installed Codex CLI — your existing ChatGPT login, no API key.',
     docsUrl: 'https://developers.openai.com/codex/cli',
     color: 'text-green-400',
-    models: ['gpt-5-codex', 'o4-mini'],
+    // Last-resort UI fallback only — the app first asks the installed CLI itself
+    // (`codex debug models`, apps/desktop/src-tauri/.../cli_agent/codex.rs). Kept
+    // in sync with that Rust fallback list; verified live against CLI 0.144.6.
+    models: ['gpt-5.5', 'gpt-5.6-terra', 'gpt-5.6-luna'],
   },
   'gemini-cli': {
     kind: 'cli-agent',
