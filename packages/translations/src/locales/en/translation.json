@@ -243,6 +243,9 @@
       "addUrlToLoad": "Add a base URL to load this provider's models.",
       "fetchFailed": "Couldn't load models: {{message}}",
       "cachedList": "Showing the last saved list — live refresh failed."
+    },
+    "cli": {
+      "fallbackList": "Showing the built-in list — this CLI's live model list isn't available right now."
     }
   },
   "shortcuts": {

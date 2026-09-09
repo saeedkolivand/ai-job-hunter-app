@@ -51,3 +51,30 @@ describe('CliAgentConfig — model dropdown keeps an unlisted stored selection',
     expect(screen.queryByText('Select a model…')).not.toBeInTheDocument();
   });
 });
+
+describe('CliAgentConfig — fallback-list labelling (issue #1185)', () => {
+  it('shows the fallback notice when every discovered model is source: fallback', () => {
+    render(
+      <CliAgentConfig
+        {...baseProps}
+        provider="codex"
+        providerModel="gpt-5.5"
+        expandedModels={[{ name: 'gpt-5.5', source: 'fallback' }]}
+      />
+    );
+    expect(screen.getByText('models.cli.fallbackList')).toBeInTheDocument();
+  });
+
+  it('hides the fallback notice for a live (non-fallback) discovery result', () => {
+    render(
+      <CliAgentConfig
+        {...baseProps}
+        provider="codex"
+        providerModel="gpt-5.6-terra"
+        expandedModels={[{ name: 'gpt-5.6-terra', displayName: 'GPT-5.6-Terra' }]}
+      />
+    );
+    expect(screen.queryByText('models.cli.fallbackList')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /GPT-5\.6-Terra/ })).toBeInTheDocument();
+  });
+});
