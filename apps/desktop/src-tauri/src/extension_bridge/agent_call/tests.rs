@@ -1322,6 +1322,29 @@ fn reshape_reply_never_truncates_a_long_documents_get_text_reply() {
     );
 }
 
+/// F6 regression guard (issue #1183): before this fix, `fence_user_document_bare_text` passed
+/// `usize::MAX` as `prompt_fence::fenced`'s own `cap`, so a document past `MAX_FRAME_BYTES` was
+/// handed to `neutralize_transcript_boundaries` completely unbounded, before `enforce_frame_cap`
+/// (a LATER, separate step -- see the frame-cap tests below) ever got a chance to refuse it.
+/// `fenced`'s cap TRUNCATES ITS INPUT (see that fn's own doc), so mutating `reshape.rs`'s
+/// `super::super::MAX_FRAME_BYTES` argument back to `usize::MAX` makes `z_count` below come back
+/// as the full oversized length instead of the capped one, reddening this test -- the sibling
+/// `reshape_reply_never_truncates_a_long_documents_get_text_reply` test above cannot catch that
+/// mutation because its fixture stays under the cap either way.
+#[test]
+fn fence_user_document_bare_text_caps_the_neutralize_input_at_max_frame_bytes() {
+    let oversized = "z".repeat(crate::extension_bridge::MAX_FRAME_BYTES + 1);
+    let out = reshape_reply("documents_get_text", json!(oversized), None);
+    let text = out.as_str().unwrap();
+    let z_count = text.chars().filter(|&c| c == 'z').count();
+    assert_eq!(
+        z_count,
+        crate::extension_bridge::MAX_FRAME_BYTES,
+        "fenced()'s cap must bound the neutralize pass at MAX_FRAME_BYTES chars, not pass the \
+         whole oversized document through unbounded"
+    );
+}
+
 /// Every OTHER command's bare-string reply is left completely alone -- the bare-text list is
 /// command-name keyed and audited, not "any string reply".
 #[test]

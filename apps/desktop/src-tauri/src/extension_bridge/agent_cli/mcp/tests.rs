@@ -945,6 +945,20 @@ fn instructions_documents_the_command_error_tag() {
     );
 }
 
+/// Issue #1183 F5 (advisory): `agent_call::validate::fenced_key` re-tags an unknown-key refusal's
+/// caller-SUPPLIED key text under `command_error` — the same tag `Refusal::InvokeError` uses for
+/// the app's own error prose — so the "read the key/argument names in it as actionable" claim
+/// must not be read as covering text the caller wrote themselves; only the app's own declared
+/// names are a trustworthy fix suggestion. Deleting this scoping clause is what reddens here.
+#[test]
+fn instructions_scopes_command_error_actionable_names_away_from_the_callers_own_input() {
+    assert!(
+        INSTRUCTIONS.contains("unless the name only echoes")
+            && INSTRUCTIONS.contains("never actionable on its own"),
+        "INSTRUCTIONS must not claim a caller-echoed key name is actionable: {INSTRUCTIONS}"
+    );
+}
+
 #[test]
 fn instructions_name_connection_lost_alongside_rate_limited_in_the_no_retry_sentence() {
     // item 18 — a payload too large for the bridge frame surfaces as connection_lost, which
