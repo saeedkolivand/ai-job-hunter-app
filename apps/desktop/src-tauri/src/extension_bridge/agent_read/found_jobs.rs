@@ -158,8 +158,9 @@ const PAGE_BYTE_BUDGET: usize = 150_000;
 /// (CodeRabbit finding, PR #1117 review — an autopilot's name is user-typed
 /// and unbounded). 200 chars is generous for the short single-line name the
 /// CreationWizard collects, while making the cap a CONCRETE bound rather
-/// than "trust the UI never lets this grow".
-const AUTOPILOT_NAME_FENCE_CAP: usize = 200;
+/// than "trust the UI never lets this grow" — a migrated/imported record
+/// could still carry something longer.
+const AUTOPILOT_NAME_CAP: usize = 200;
 
 /// Sentinel cursor issuer for a traversal spanning EVERY autopilot (issue
 /// #1168 — `autopilotId` is optional). Never a value
@@ -168,16 +169,22 @@ const AUTOPILOT_NAME_FENCE_CAP: usize = 200;
 /// autopilot id and be misread as a scoped cursor.
 const ALL_AUTOPILOTS_CURSOR_ISSUER: &str = "__all__";
 
-/// Fence `name` the same way every other display field on this resource
-/// already is — same primitive, same `"job_posting"` tag as
-/// [`fence_found_jobs_description`]/`agent_read::fence_posting_display_fields`,
-/// even though an autopilot name is the CALLER'S OWN data rather than
-/// scraped text: the primitive is exactly "cap length and neutralize any
-/// embedded fence syntax," which is what this field needs regardless of
-/// provenance, and one shared convention ("every text field on this
-/// resource is fenced") is simpler than a per-field exception.
-fn fence_autopilot_name(name: &str) -> String {
-    crate::prompt_fence::fenced("job_posting", name, AUTOPILOT_NAME_FENCE_CAP)
+/// Cap `name` to [`AUTOPILOT_NAME_CAP`] chars, char-boundary safe, and neutralize any forged
+/// transcript boundary (issue #1157 — an autopilot name is the CALLER'S OWN first-party data,
+/// never board-scraped text, so it no longer goes through [`crate::prompt_fence::fenced`]'s
+/// `job_posting` wrapper the way a scraped display field does — unlike a `job` row's own
+/// `title`/`company`/`location`, which really are third-party board text). `.chars().take(n)`
+/// rather than a byte slice — `str`-slicing at an arbitrary byte offset can land mid-codepoint and
+/// panic, and this crate is `panic = "abort"` in release.
+///
+/// Security review round A3-r1, AC-5 MEDIUM: dropping the `fenced` wrapper also dropped its
+/// boundary defence, not only its label — this resource's `jobs[].description` fields carry real
+/// `<job_posting>` fences in the SAME response, so a name containing `</job_posting>` or
+/// `[tool_result` would have been a forged boundary in that same document. Neutralizing here
+/// restores that half without re-adding the label the issue asked to remove.
+fn cap_autopilot_name(name: &str) -> String {
+    let capped: String = name.chars().take(AUTOPILOT_NAME_CAP).collect();
+    crate::prompt_fence::neutralize_transcript_boundaries(&capped)
 }
 
 /// This resource's own default/max applied to the shared clamp — the numbers
@@ -198,8 +205,8 @@ fn trim_page_to_budget(candidates: Vec<Value>, base_cost: usize) -> Vec<Value> {
 }
 
 /// Every envelope byte OTHER than the `jobs` array itself, measured (not
-/// assumed) against the REAL fenced `autopilotId`/`autopilotName` a scoped
-/// response carries — the fix for the gap the shared trim primitive's own
+/// assumed) against the REAL `autopilotId`/[`cap_autopilot_name`]-capped
+/// `autopilotName` a scoped response carries — the fix for the gap the shared trim primitive's own
 /// doc names (CodeRabbit, PR #1117 review round 3), and the `base_cost`
 /// [`trim_page_to_budget`] subtracts from [`PAGE_BYTE_BUDGET`]. `None` for a
 /// call spanning every autopilot (issue #1168), which carries neither
@@ -595,7 +602,7 @@ fn project_found_job_row(
         value["applied"] = json!(applied);
     }
     value["autopilotId"] = json!(autopilot.id);
-    value["autopilotName"] = json!(fence_autopilot_name(&autopilot.name));
+    value["autopilotName"] = json!(cap_autopilot_name(&autopilot.name));
     value
 }
 
@@ -731,12 +738,12 @@ pub(super) fn resolve_found_jobs_for_store(
         (Some(_), [ap]) => Some(*ap),
         _ => None,
     };
-    let autopilot_name_fenced = single.map(|ap| fence_autopilot_name(&ap.name));
+    let autopilot_name_capped = single.map(|ap| cap_autopilot_name(&ap.name));
 
     let base_cost = base_envelope_cost(
         &cursor_issuer,
         single
-            .zip(autopilot_name_fenced.as_deref())
+            .zip(autopilot_name_capped.as_deref())
             .map(|(ap, name)| (ap.id.as_str(), name)),
         total,
     );
@@ -756,7 +763,7 @@ pub(super) fn resolve_found_jobs_for_store(
         "nextCursor": next_cursor,
         "total": total,
     });
-    if let (Some(ap), Some(name)) = (single, autopilot_name_fenced) {
+    if let (Some(ap), Some(name)) = (single, autopilot_name_capped) {
         envelope["autopilotId"] = json!(ap.id);
         envelope["autopilotName"] = json!(name);
     }

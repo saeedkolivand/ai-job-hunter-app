@@ -177,6 +177,18 @@ impl TokenBucket {
             false
         }
     }
+
+    /// Milliseconds until this bucket would hold one full token, computed from its CURRENT
+    /// fractional `tokens` count (issue #1155) — a pure read, not a second clock advance. Only
+    /// meaningful called right after a failed [`Self::try_acquire_at`] in the SAME tick: that
+    /// call already set `self.tokens`/`self.last` to "now", so there is nothing left to advance.
+    fn retry_after_ms(&self) -> u64 {
+        if self.tokens >= 1.0 {
+            return 0;
+        }
+        let needed_secs = (1.0 - self.tokens) * self.refill_secs;
+        (needed_secs * 1000.0).ceil() as u64
+    }
 }
 
 /// Cheap-read bucket (`job`/`profile`/`automations`/`schema`): burst 10,
@@ -196,7 +208,10 @@ const AGENT_CHEAP_REFILL_SECS: f64 = 1.0;
 /// in the matching domain could add a real compute-side cap if that's not
 /// enough — flagged in the PR1 handoff.
 const AGENT_BEST_MATCHES_BURST: f64 = 1.0;
-const AGENT_BEST_MATCHES_REFILL_SECS: f64 = 30.0;
+// `pub(super)` (issue #1155) — `extension_bridge::test`'s
+// `bridge_state_agent_retry_after_ms_reads_the_same_bucket_try_acquire_agent_drew_from` anchors to
+// this value directly, so a `BridgeState`-level test can't be satisfied by any hardcoded constant.
+pub(super) const AGENT_BEST_MATCHES_REFILL_SECS: f64 = 30.0;
 
 /// Token-bucket throttle for `agent.query`, shared across EVERY connection for
 /// this pairing (lives on `BridgeState`, not per-connection) for the same
@@ -239,6 +254,18 @@ impl AgentQueryThrottle {
 
     pub(super) fn try_acquire(&mut self, resource: &str) -> bool {
         self.try_acquire_at(resource, std::time::Instant::now())
+    }
+
+    /// [`TokenBucket::retry_after_ms`] for whichever bucket `resource` draws from — same routing
+    /// [`Self::try_acquire_at`] uses, so the two can never disagree about which bucket a resource
+    /// belongs to. `pub(super)` (issue #1155) — `BridgeState::agent_retry_after_ms` is the one
+    /// caller, reached right after a failed `try_acquire` for the same resource.
+    pub(super) fn retry_after_ms(&self, resource: &str) -> u64 {
+        if resource == RES_BEST_MATCHES {
+            self.best_matches.retry_after_ms()
+        } else {
+            self.cheap.retry_after_ms()
+        }
     }
 }
 
@@ -1100,16 +1127,134 @@ fn agent_result_reply(req_id: &str, resource: &str, outcome: AppResult<Value>) -
     .to_string()
 }
 
+// ── Bounded refusals (issue #1151 — this tier had no equivalent to
+// `agent_call::refusal_reply`/`enforce_frame_cap`, so a refusal built from a near-cap `resource`/
+// `reqId` could itself exceed the frame cap on the way out, and a legitimately oversized SUCCESS
+// reply — an uncapped `job`/`best-matches` payload — closed the socket with no refusal at all) ──
+
+/// A [`super::agent_call::clamp_ident`]-bounded, sentinel+detail refusal — the shape
+/// `agent_call::refusal_reply` uses, adopted here for the two MACHINE-READABLE refusals this
+/// tier gained from issues #1151/#1155 (`rate_limited`, `result_too_large`). Every OTHER refusal
+/// this tier answers (an unrecognized `resource`, `origin_refused`, a resource fn's own
+/// validation error) keeps its EXISTING shape unchanged — `error` carries the prose directly, no
+/// `detail` — routed through [`bounded_result_reply`] instead, so no existing client parsing
+/// THOSE breaks. `extra` merges additional fields (`retryAfterMs`, an identity arg) onto the
+/// payload; pass `json!({})` for none. Re-measures the built reply and degrades to a minimal
+/// envelope (mirrors `agent_call::REFUSAL_UNDELIVERABLE_DETAIL` verbatim) if it still does not
+/// fit — "measured, not assumed" for the same reason that fn's own doc gives.
+fn sentinel_refusal_reply(
+    req_id: &str,
+    resource: &str,
+    error: &'static str,
+    detail: String,
+    extra: Value,
+) -> String {
+    let mut payload = json!({
+        "ok": false,
+        "resource": super::agent_call::clamp_ident(resource),
+        "error": error,
+        "detail": detail,
+    });
+    if let (Value::Object(base), Value::Object(more)) = (&mut payload, &extra) {
+        for (k, v) in more {
+            base.insert(k.clone(), v.clone());
+        }
+    }
+    let reply = json!({
+        "type": super::msg::AGENT_RESULT,
+        "reqId": super::agent_call::clamp_ident(req_id),
+        "payload": payload,
+    })
+    .to_string();
+    if reply.len() <= super::MAX_FRAME_BYTES {
+        return reply;
+    }
+    json!({
+        "type": super::msg::AGENT_RESULT,
+        "reqId": "",
+        "payload": {
+            "ok": false,
+            "resource": "",
+            "error": error,
+            "detail": super::agent_call::REFUSAL_UNDELIVERABLE_DETAIL,
+        },
+    })
+    .to_string()
+}
+
+/// [`agent_result_reply`], with `resource`/`reqId` pre-clamped and the built reply re-measured
+/// against [`super::MAX_FRAME_BYTES`] (issue #1151) — the SAME two properties
+/// `agent_call::refusal_reply` guarantees, one wire type over, applied to EVERY reply this tier
+/// builds (the success path included, mirroring `agent_call::handle_agent_call`'s single
+/// `enforce_frame_cap` call site): an oversized reply of any kind — a legitimately huge `job`/
+/// `best-matches` payload, or (after clamping, effectively unreachable) a refusal that still
+/// somehow didn't fit — is substituted with a [`sentinel_refusal_reply`] `result_too_large`
+/// refusal rather than closing the socket with nothing (the exact #1135 failure mode this mirrors
+/// from the generic tier).
+fn bounded_result_reply(req_id: &str, resource: &str, outcome: AppResult<Value>) -> String {
+    let reply = agent_result_reply(
+        super::agent_call::clamp_ident(req_id),
+        super::agent_call::clamp_ident(resource),
+        outcome,
+    );
+    if reply.len() <= super::MAX_FRAME_BYTES {
+        return reply;
+    }
+    sentinel_refusal_reply(
+        req_id,
+        resource,
+        super::agent_call::ERR_RESULT_TOO_LARGE,
+        format!(
+            "the reply ({} B) exceeds the bridge's own frame cap and was discarded rather than \
+             truncated — narrow the request (a smaller `limit`, a `found-jobs` page) if this \
+             resource takes one",
+            reply.len()
+        ),
+        json!({}),
+    )
+}
+
 // `pub(super)` — reused verbatim by `agent_call`'s own throttle refusal
 // (Phase 2, ADR-038 §2) so the two tiers report identical wording for the
 // identical shared-bucket cause, never a second hand-typed copy.
 pub(super) const THROTTLED_MESSAGE: &str = "Too many requests — try again shortly.";
 
-pub(super) fn throttled_reply(req_id: &str, resource: &str) -> String {
-    agent_result_reply(
+/// The caller-supplied argument that names WHICH request a throttle refusal belongs to, beyond
+/// `resource` alone (issue #1155 — a throttled `job` lookup used to echo only
+/// `"resource":"job"`, never which of several in-flight urls was refused). `job` keys on `url`,
+/// `found-jobs` on `autopilotId`; every other resource takes no per-request identifier. Clamped
+/// like every other echoed identifier here — caller-supplied, bounded only by the incoming frame.
+fn identity_arg<'a>(resource: &str, payload: &'a Value) -> Option<(&'static str, &'a str)> {
+    let field = match resource {
+        RES_JOB => "url",
+        RES_FOUND_JOBS => "autopilotId",
+        _ => return None,
+    };
+    payload
+        .get(field)
+        .and_then(Value::as_str)
+        .map(|v| (field, super::agent_call::clamp_ident(v)))
+}
+
+/// The read tier's own `rate_limited` refusal (issue #1155) — the SAME sentinel+detail shape,
+/// SAME `retryAfterMs`, as `agent_call::throttled_reply`'s: `retry_after_ms` is computed by the
+/// ONE caller (`mod.rs`) from the shared `AgentQueryThrottle` bucket right after the failed
+/// acquire, never invented here. Adds the refused request's identity — `resource` plus, where the
+/// resource takes one, [`identity_arg`] — so a caller juggling several in-flight lookups can tell
+/// WHICH one was blocked (the gap issue #1155 reports: three throttled `job` lookups previously
+/// looked identical).
+pub(super) fn throttled_reply(req_id: &str, payload: &Value, retry_after_ms: u64) -> String {
+    let resource = resource_name(payload);
+    let mut extra = json!({ "retryAfterMs": retry_after_ms });
+    if let Some((field, value)) = identity_arg(resource, payload) {
+        extra[field] = json!(value);
+    }
+    sentinel_refusal_reply(
         req_id,
         resource,
-        Err(AppError::RateLimited(THROTTLED_MESSAGE.to_string())),
+        super::agent_call::ERR_RATE_LIMITED,
+        THROTTLED_MESSAGE.to_string(),
+        extra,
     )
 }
 
@@ -1122,9 +1267,11 @@ const CLI_ONLY_MESSAGE: &str = "agent.query is only available to the ajh-tauri a
 /// same `agent.result` envelope shape as every other outcome on this
 /// surface, so a caller that DID legitimately reach this (there is none
 /// today; see `msg::AGENT_QUERY`'s doc) parses it identically to any other
-/// refusal.
+/// refusal. Routed through [`bounded_result_reply`] (issue #1151) rather than [`agent_result_reply`]
+/// directly — this path writes straight to the socket (see `mod.rs`'s dispatch match), so nothing
+/// else in this crate bounds what it echoes.
 pub(super) fn origin_refused_reply(req_id: &str, payload: &Value) -> String {
-    agent_result_reply(
+    bounded_result_reply(
         req_id,
         resource_name(payload),
         Err(AppError::Validation(CLI_ONLY_MESSAGE.to_string())),
@@ -1134,7 +1281,10 @@ pub(super) fn origin_refused_reply(req_id: &str, payload: &Value) -> String {
 /// Answer an authenticated, throttle-admitted `agent.query`. Never panics —
 /// every resource fn degrades to `Err` on a missing/unexpected state (see
 /// `list_autopilots`), and this match's fallback arm covers any resource name
-/// [`RESOURCES`] doesn't recognize.
+/// [`RESOURCES`] doesn't recognize. Routed through [`bounded_result_reply`] (issue #1151):
+/// identifiers are clamped and the reply is frame-capped, substituting `result_too_large` for an
+/// oversized SUCCESS payload the same way `agent_call::handle_agent_call` already does for the
+/// generic tier.
 pub(super) async fn handle_agent_query(app: &AppHandle, req_id: &str, payload: &Value) -> String {
     let resource = resource_name(payload).to_string();
     let outcome = match resource.as_str() {
@@ -1144,11 +1294,17 @@ pub(super) async fn handle_agent_query(app: &AppHandle, req_id: &str, payload: &
         RES_AUTOMATIONS => automations_resource(app),
         RES_FOUND_JOBS => found_jobs::found_jobs_resource(app, payload),
         RES_SCHEMA => Ok(schema_value()),
+        // `other` is clamped here too (issue #1151, AC-3) — `bounded_result_reply` below only
+        // clamps the envelope's `reqId`/`resource`, not a copy embedded in THIS message, so an
+        // unclamped `other` could still blow the frame cap and get swallowed by the
+        // `result_too_large` fallback, hiding the real cause (an unknown resource) behind the
+        // wrong one (a reply too large).
         other => Err(AppError::Validation(format!(
-            "unknown agent resource '{other}'"
+            "unknown agent resource '{}'",
+            super::agent_call::clamp_ident(other)
         ))),
     };
-    agent_result_reply(req_id, &resource, outcome)
+    bounded_result_reply(req_id, &resource, outcome)
 }
 
 #[cfg(test)]

@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use super::instructions::{EXPLAINED_IN_PROSE, INSTRUCTIONS};
+use super::results::{oversized_result, MCP_RESULT_MAX_BYTES};
 use super::*;
 
 /// How long a test waits for a signal that a correct [`serve`] always sends — long enough that a
@@ -895,12 +896,88 @@ fn instructions_name_both_missing_pointer_and_app_closed_and_map_cli_phrasing_on
     );
 }
 
+/// A3-r1-AC-4 MEDIUM: the by-NAME clause claimed `title`/`company`/`location`/`description` are
+/// ALWAYS third-party scraped text, which is now false for `documents_list`'s `DocumentRecord.
+/// title` (`agent_call::fence`'s own origin-aware exemption) -- fencing is by ORIGIN now, so the
+/// prose must key its claim on the `<job_posting>` tag alone, never on a field name that can be
+/// first-party depending on which command produced it.
+#[test]
+fn instructions_no_longer_claims_title_is_always_third_party_scraped_text_by_name() {
+    assert!(
+        !INSTRUCTIONS.contains("Fields named title"),
+        "the by-name claim must be gone now that documents_list's own title is first-party: \
+         {INSTRUCTIONS}"
+    );
+    assert!(
+        INSTRUCTIONS.contains("<job_posting>...</job_posting> tags"),
+        "the tag-based claim must remain -- fencing is by origin, and the tag IS the marker: \
+         {INSTRUCTIONS}"
+    );
+}
+
+/// A3-r3-AC-3: `prompt_fence::EXPECTED_FENCE_TAGS` pins REGISTRATION only, across every tag in
+/// the crate -- most entries this dispatch surface never emits -- so it can't serve as
+/// `INSTRUCTIONS`'s own coverage source. `agent_call::reshape::EMITTED_FENCE_TAGS` is that
+/// source instead: the surface's own hand-audited list of every tag literal `agent_call::fence`
+/// and `agent_call::reshape` actually pass to `prompt_fence::fenced`. Deleting the
+/// `<user_document>`/`<app_notification>` sentence from `INSTRUCTIONS` -- nothing else in this
+/// file would have caught that -- reddens this test.
+#[test]
+fn instructions_documents_every_fence_tag_this_surface_emits() {
+    for tag in agent_call::reshape::EMITTED_FENCE_TAGS {
+        let wrapper = format!("<{tag}>...</{tag}>");
+        assert!(
+            INSTRUCTIONS.contains(&wrapper),
+            "INSTRUCTIONS never explains fence tag `{tag}` (expected `{wrapper}` somewhere): \
+             {INSTRUCTIONS}"
+        );
+    }
+}
+
+/// SEC-1 fix (issue #1157): `Refusal::InvokeError`'s `command_error` tag is emitted directly by
+/// `agent_call.rs`'s own `detail()` (a refusal builder, not the `fence.rs`/`reshape.rs` reply-
+/// reshaping pipeline `EMITTED_FENCE_TAGS` scans), so it cannot ride the derived assertion above —
+/// hand-written the same way `EMITTED_FENCE_TAGS` itself is, per that const's own doc.
+#[test]
+fn instructions_documents_the_command_error_tag() {
+    assert!(
+        INSTRUCTIONS.contains("<command_error>...</command_error>"),
+        "INSTRUCTIONS never explains fence tag `command_error`: {INSTRUCTIONS}"
+    );
+}
+
+/// Issue #1183 F5 (advisory): `agent_call::validate::fenced_key` re-tags an unknown-key refusal's
+/// caller-SUPPLIED key text under `command_error` — the same tag `Refusal::InvokeError` uses for
+/// the app's own error prose — so the "read the key/argument names in it as actionable" claim
+/// must not be read as covering text the caller wrote themselves; only the app's own declared
+/// names are a trustworthy fix suggestion. Deleting this scoping clause is what reddens here.
+#[test]
+fn instructions_scopes_command_error_actionable_names_away_from_the_callers_own_input() {
+    assert!(
+        INSTRUCTIONS.contains("unless the name only echoes")
+            && INSTRUCTIONS.contains("never actionable on its own"),
+        "INSTRUCTIONS must not claim a caller-echoed key name is actionable: {INSTRUCTIONS}"
+    );
+}
+
 #[test]
 fn instructions_name_connection_lost_alongside_rate_limited_in_the_no_retry_sentence() {
     // item 18 — a payload too large for the bridge frame surfaces as connection_lost, which
     // reads as transient; naming only rate_limited invited a retry loop.
     assert!(INSTRUCTIONS.contains("connection_lost"));
     assert!(INSTRUCTIONS.contains("rate_limited"));
+}
+
+/// Issue #1155's user-facing half: `rate_limited` gained a `retryAfterMs` wait hint on the wire
+/// (`agent_read::throttled_reply`/`agent_call::throttled_reply`), but the model that reads THIS
+/// prose — never the wire shape directly — never learns the field exists unless it is named here
+/// too. Mutation-checked: reverting `instructions.rs`'s added clause turns this red.
+#[test]
+fn instructions_tell_the_model_rate_limited_carries_a_retry_after_ms_wait_hint() {
+    assert!(
+        INSTRUCTIONS.contains("retryAfterMs"),
+        "the no-retry-loop sentence must also say a rate_limited result carries retryAfterMs"
+    );
 }
 
 /// Issue #1170 — INSTRUCTIONS now points a caller at the résumé/document reads before it judges
@@ -1156,6 +1233,7 @@ fn documents_text_prose_per_token_cap_disclosure_is_required() {
 /// production reads it, only the two tests below.
 const MCP_SENTINELS: &[&str] = &[
     "wrong_tool",
+    "tier_not_enabled",
     "result_too_large",
     "server_busy",
     "shutting_down",
@@ -1698,6 +1776,25 @@ fn the_generic_input_schema_and_the_instructions_both_document_the_wrapper_key()
     assert!(
         INSTRUCTIONS.contains("invoke_error"),
         "a client that reads only `instructions` must learn the same recovery: {INSTRUCTIONS}"
+    );
+}
+
+/// A1-r3-AC-1 HIGH — the invalid_input promise in `INSTRUCTIONS` used to be unconditional
+/// ("a call whose `input` carries an unrecognised … key refuses"), qualified only for `args:
+/// null`, never for a wrapper arg whose `fields` is `null` (the generator could not resolve its
+/// shape). For those rows (e.g. `autopilot_update`'s `req`) a wholly-unrecognised NESTED key is
+/// never validated and reaches the app — this pins BOTH surfaces a client reads so the caveat
+/// cannot silently drop again.
+#[test]
+fn instructions_and_commands_description_qualify_the_null_fields_nested_gap() {
+    assert!(
+        INSTRUCTIONS.contains("fields") && INSTRUCTIONS.contains("nothing inside it is validated"),
+        "must disclose that a null-fields wrapper's nested keys are never checked: {INSTRUCTIONS}"
+    );
+    let description = tool_description(&tools(Tier::Irreversible), TOOL_COMMANDS);
+    assert!(
+        description.contains("nothing inside it is validated"),
+        "the commands tool's own description must carry the same caveat: {description}"
     );
 }
 
@@ -2269,9 +2366,24 @@ fn every_policy_row_is_routed_to_exactly_one_call_tool_or_refused_everywhere_if_
             input: json!({}),
             confirm: None,
         };
+        // ROUTING only, never validation: an `invalid_input` refusal (A1-r1-SEC-1 HIGH added
+        // this local check) means the row's declared args reject a bare `{}` — orthogonal to
+        // which TOOL it is classified for, and this test's probe never builds a real body. Counts
+        // as "accepted" here so a row requiring args is not mistaken for one refused on every
+        // tool (`invalid_input` refuses identically on all three, same as a routing accept would
+        // look from this test's own PoV) — `local_call_refusal`'s own dedicated
+        // `invalid_input`-refusal tests cover that check directly.
+        // `Tier::Irreversible` — every `call-*` tool registered, so a mismatch can only be
+        // `wrong_tool`/`invalid_input`, never `tier_not_enabled` (that gate has its own dedicated
+        // tests below).
         let accepted_by: Vec<&str> = [TOOL_CALL_READ, TOOL_CALL_REVERSIBLE, TOOL_CALL_IRREVERSIBLE]
             .into_iter()
-            .filter(|tool| local_call_refusal(tool, &verb).is_none())
+            .filter(
+                |tool| match local_call_refusal(tool, &verb, Tier::Irreversible) {
+                    None => true,
+                    Some(refusal) => refusal["error"] == agent_call::ERR_INVALID_INPUT,
+                },
+            )
             .collect();
         match entry.effect {
             Effect::NotExposed(_) => assert_eq!(
@@ -2291,6 +2403,80 @@ fn every_policy_row_is_routed_to_exactly_one_call_tool_or_refused_everywhere_if_
     }
 }
 
+/// [A2-r2-AC-r2-2] The tier gate exercised across EVERY POLICY row at `Tier::Read` and
+/// `Tier::Reversible` too — the prior test only ran it at `Tier::Irreversible`, where the gate is
+/// always open by construction, so a divergence between `commands_value`'s gate and
+/// `local_call_refusal`'s gate could never show up there. Both now call the ONE shared
+/// [`tier_exposes`] (issue #1154), so this pins that `commands`' `"tool"`/`"unavailable"` split
+/// and the refusal's `tier_not_enabled`/`wrong_tool` split agree for every row, at every tier.
+///
+/// [A2-r3-A3-AC-1] `gate_open` below is spelled out by hand rather than calling `tier_exposes`
+/// itself — the function both call sites under test route through — so a break in the shared
+/// gate has an independent expectation to disagree with, instead of a tautology that can only
+/// ever agree with itself.
+#[test]
+fn the_tier_gate_agrees_between_commands_and_local_call_refusal_at_every_tier() {
+    for tier in [Tier::Read, Tier::Reversible, Tier::Irreversible] {
+        let commands = commands_value(&json!({}), tier);
+        let rows = commands["commands"].as_array().unwrap();
+        for entry in POLICY {
+            if let Effect::NotExposed(_) = entry.effect {
+                continue;
+            }
+            let (namespace, command) = agent_call::split_path(entry.path);
+            let right_tool = tool_for(&entry.effect).unwrap();
+            // Hand-written mirror of `tier_exposes`, not a call to it (see fn doc above).
+            let gate_open = match entry.effect {
+                Effect::Reversible => tier != Tier::Read,
+                Effect::Irreversible(_) => tier == Tier::Irreversible,
+                _ => true,
+            };
+
+            // `commands`' own row for this entry.
+            let row = rows
+                .iter()
+                .find(|r| r["namespace"] == namespace && r["command"] == command)
+                .unwrap_or_else(|| panic!("{}: missing from `commands` at {tier:?}", entry.path));
+            assert_eq!(
+                row.get("tool").is_some(),
+                gate_open,
+                "{}: `commands`' `tool` presence disagrees with tier_exposes at {tier:?}",
+                entry.path
+            );
+            assert_eq!(
+                row.get("unavailable").is_some(),
+                !gate_open,
+                "{}: `commands`' `unavailable` presence disagrees with tier_exposes at {tier:?}",
+                entry.path
+            );
+
+            // `local_call_refusal` called on a WRONG tool for this row.
+            let wrong_tool = [TOOL_CALL_READ, TOOL_CALL_REVERSIBLE, TOOL_CALL_IRREVERSIBLE]
+                .into_iter()
+                .find(|t| *t != right_tool)
+                .unwrap();
+            let verb = Verb::Call {
+                namespace: namespace.to_string(),
+                command: command.to_string(),
+                input: json!({}),
+                confirm: None,
+            };
+            let refusal = local_call_refusal(wrong_tool, &verb, tier)
+                .unwrap_or_else(|| panic!("{}: must refuse on the wrong tool", entry.path));
+            let expected_error = if gate_open {
+                "wrong_tool"
+            } else {
+                "tier_not_enabled"
+            };
+            assert_eq!(
+                refusal["error"], expected_error,
+                "{}: local_call_refusal disagrees with tier_exposes at {tier:?}",
+                entry.path
+            );
+        }
+    }
+}
+
 #[test]
 fn extension_bridge_status_the_token_row_refuses_locally_on_every_call_tool() {
     // The HIGH-1 row: it returns the plaintext pairing token verbatim. A cross-version peer (an
@@ -2303,7 +2489,8 @@ fn extension_bridge_status_the_token_row_refuses_locally_on_every_call_tool() {
         confirm: None,
     };
     for tool in [TOOL_CALL_READ, TOOL_CALL_REVERSIBLE, TOOL_CALL_IRREVERSIBLE] {
-        let refusal = local_call_refusal(tool, &verb).expect("must refuse locally on every tool");
+        let refusal = local_call_refusal(tool, &verb, Tier::Irreversible)
+            .expect("must refuse locally on every tool");
         assert_eq!(
             refusal["error"],
             crate::extension_bridge::agent_call::ERR_NOT_EXPOSED
@@ -2325,21 +2512,25 @@ fn call_read_refuses_a_namespace_command_the_local_policy_does_not_know() {
         input: json!({}),
         confirm: None,
     };
-    let refusal = local_call_refusal(TOOL_CALL_READ, &verb).expect("must refuse");
+    let refusal =
+        local_call_refusal(TOOL_CALL_READ, &verb, Tier::Irreversible).expect("must refuse");
     assert_eq!(refusal["dispatched"], false);
     assert_eq!(refusal["error"], agent_call::ERR_UNKNOWN_COMMAND);
 }
 
 #[test]
 fn call_read_refuses_a_real_reversible_row_naming_the_right_tool() {
-    // `cli_agents_redetect` is a real Reversible POLICY row.
+    // `cli_agents_redetect` is a real Reversible POLICY row. `Tier::Irreversible` is what makes
+    // this `wrong_tool` rather than `tier_not_enabled` — `call-reversible` IS registered here;
+    // see the `tier_not_enabled` tests below for the launch where it is not.
     let verb = Verb::Call {
         namespace: "cli_agents".to_string(),
         command: "cli_agents_redetect".to_string(),
         input: json!({}),
         confirm: None,
     };
-    let refusal = local_call_refusal(TOOL_CALL_READ, &verb).expect("must refuse — wrong tool");
+    let refusal = local_call_refusal(TOOL_CALL_READ, &verb, Tier::Irreversible)
+        .expect("must refuse — wrong tool");
     assert_eq!(refusal["error"], "wrong_tool");
     assert!(refusal["detail"]
         .as_str()
@@ -2355,7 +2546,113 @@ fn call_read_accepts_a_real_read_row() {
         input: json!({}),
         confirm: None,
     };
-    assert!(local_call_refusal(TOOL_CALL_READ, &verb).is_none());
+    assert!(local_call_refusal(TOOL_CALL_READ, &verb, Tier::Read).is_none());
+}
+
+// ── issue #1154 — `tier_not_enabled` vs `wrong_tool` ─────────────────────
+
+/// The headline defect: at `Tier::Read`, a Reversible row called on `call-read` must NOT name
+/// `call-reversible` as "call it there instead" — that tool is not registered on this launch, so
+/// the refusal must say so and name the flag to relaunch with, never point at a dead end.
+#[test]
+fn tier_not_enabled_at_read_tier_for_a_reversible_row() {
+    let verb = Verb::Call {
+        namespace: "cli_agents".to_string(),
+        command: "cli_agents_redetect".to_string(),
+        input: json!({}),
+        confirm: None,
+    };
+    let refusal = local_call_refusal(TOOL_CALL_READ, &verb, Tier::Read)
+        .expect("must refuse — tier not enabled");
+    assert_eq!(refusal["error"], "tier_not_enabled");
+    let detail = refusal["detail"].as_str().unwrap();
+    assert!(
+        detail.contains("--allow-reversible"),
+        "must name the launch flag: {detail}"
+    );
+    assert!(
+        !detail.contains("call it there instead"),
+        "must not tell the model to retry on a tool it cannot see: {detail}"
+    );
+}
+
+/// The other side: when the right tool IS registered, the SAME mismatch stays `wrong_tool` —
+/// pinned at the most permissive launch so a caller for a Read row via `call-reversible` is told
+/// to retry on `call-read`, never `tier_not_enabled` (every tool exists at `Tier::Irreversible`).
+#[test]
+fn wrong_tool_at_irreversible_tier_for_a_read_row_called_via_call_reversible() {
+    let verb = Verb::Call {
+        namespace: "cli_agents".to_string(),
+        command: "cli_agents_status".to_string(),
+        input: json!({}),
+        confirm: None,
+    };
+    let refusal = local_call_refusal(TOOL_CALL_REVERSIBLE, &verb, Tier::Irreversible)
+        .expect("must refuse — wrong tool");
+    assert_eq!(refusal["error"], "wrong_tool");
+    assert!(refusal["detail"].as_str().unwrap().contains(TOOL_CALL_READ));
+}
+
+/// A1-r1-SEC-1 HIGH: `local_call_refusal` must catch a mis-keyed body itself, never rely on a
+/// possibly stale PEER app process to be the only thing catching it (the same class this file
+/// already fixed for `Effect::NotExposed`). `documents_remove` is a real Irreversible row whose
+/// declared key is `id`; a caller who sends the wrong one must refuse `invalid_input` locally,
+/// with no dispatch.
+#[test]
+fn call_irreversible_refuses_a_mis_keyed_body_locally_without_dispatching() {
+    let verb = Verb::Call {
+        namespace: "documents".to_string(),
+        command: "documents_remove".to_string(),
+        input: json!({ "documentId": "doc-1" }),
+        confirm: None,
+    };
+    let refusal = local_call_refusal(TOOL_CALL_IRREVERSIBLE, &verb, Tier::Irreversible)
+        .expect("must refuse — unknown key");
+    assert_eq!(refusal["dispatched"], false);
+    assert_eq!(refusal["error"], agent_call::ERR_INVALID_INPUT);
+    let detail = refusal["detail"].as_str().unwrap();
+    assert!(
+        detail.contains("documentId") && detail.contains("id"),
+        "{detail}"
+    );
+}
+
+/// A correctly-keyed body on the right tool passes this local check — proves the new catalogue
+/// check does not over-refuse a legitimate call.
+#[test]
+fn call_irreversible_accepts_a_correctly_keyed_body() {
+    let verb = Verb::Call {
+        namespace: "documents".to_string(),
+        command: "documents_remove".to_string(),
+        input: json!({ "id": "doc-1" }),
+        confirm: None,
+    };
+    assert!(local_call_refusal(TOOL_CALL_IRREVERSIBLE, &verb, Tier::Irreversible).is_none());
+}
+
+/// A1-r1-AC-1 MEDIUM: `local_call_refusal` used to mirror `check_input` only, so issue #1158
+/// member 3's exact shape (`{"req":{}}`, the empty write) still passed the local gate and
+/// dispatched — reachable through `check_input`'s membership-only walk since `req` is a KNOWN key
+/// with nothing unknown inside it. `applications_save_from_posting` is a real Reversible row whose
+/// required `req` wrapper is fully resolved; an empty object for it must refuse locally, on the
+/// right tool, with no dispatch — never depend on a possibly-stale peer app to catch it.
+#[test]
+fn call_reversible_refuses_an_empty_required_wrapper_locally_without_dispatching() {
+    let verb = Verb::Call {
+        namespace: "applications".to_string(),
+        command: "applications_save_from_posting".to_string(),
+        input: json!({ "req": {} }),
+        confirm: None,
+    };
+    let refusal = local_call_refusal(TOOL_CALL_REVERSIBLE, &verb, Tier::Irreversible)
+        .expect("must refuse — empty required wrapper");
+    assert_eq!(refusal["dispatched"], false);
+    assert_eq!(refusal["error"], agent_call::ERR_INVALID_INPUT);
+    let detail = refusal["detail"].as_str().unwrap();
+    assert!(
+        detail.contains("req") && detail.contains("empty"),
+        "{detail}"
+    );
 }
 
 // ── confirm is passed through verbatim on call-irreversible only ────────
@@ -2717,7 +3014,14 @@ fn a_dispatched_payload_over_the_byte_cap_refuses_and_never_truncates() {
     let outcome = tool_call_result(
         &json!({
             "name": "call-read",
-            "arguments": { "namespace": "commands", "command": "documents_export_document" },
+            // `request` is a real declared required key (A1-r1-SEC-1 HIGH added local catalogue
+            // validation): an empty `{}` body here would refuse `invalid_input` before ever
+            // reaching the (mocked) oversized dispatch this test means to exercise.
+            "arguments": {
+                "namespace": "commands",
+                "command": "documents_export_document",
+                "input": { "request": {} },
+            },
         }),
         &server,
         &mut dispatch,
@@ -2947,9 +3251,421 @@ fn commands_names_the_proof_source_for_an_irreversible_row() {
         .expect("ai_set_provider_key is a real Irreversible row");
     assert_eq!(row["proofFrom"], "ai:ai_has_provider_key");
     assert_eq!(row["proofInput"], "provider");
+    assert_eq!(row["proofField"], "has");
+    assert_eq!(row["proofKind"], "field");
     assert!(
         row.get("proofInputValue").is_none(),
         "a FromCaller value is the caller's own input and must never be echoed: {row}"
+    );
+}
+
+// ── issue #1163/#1158/#1160: description, args, proofField, namespace filter ────────────────────
+
+/// The issue's own worked example: `applications_delete`'s proof is
+/// `application.title` — a multi-segment `Lookup` path, joined with `.`.
+#[test]
+fn commands_names_the_full_dotted_proof_field_for_a_multi_segment_lookup_path() {
+    let out = commands_value(&json!({ "effect": "irreversible" }), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "applications_delete")
+        .expect("applications_delete is a real Irreversible row");
+    assert_eq!(row["proofField"], "application.title");
+}
+
+/// A `Count`-sourced row has no single field to name — the proof is a
+/// DERIVED number, not a field on the read response — so `proofField` must
+/// be absent rather than a fabricated empty string. `proofKind: "count"`
+/// (CLI review round 2 — MEDIUM) tells the caller what to pass instead:
+/// the array length / `total`, without dispatching the row to find out.
+#[test]
+fn commands_carries_no_proof_field_for_a_count_sourced_row() {
+    let out = commands_value(&json!({ "effect": "irreversible" }), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "privacy_reset_app")
+        .expect("privacy_reset_app is a real Count-sourced Irreversible row");
+    assert!(
+        row.get("proofField").is_none(),
+        "a Count proof names no single field: {row}"
+    );
+    assert_eq!(row["proofKind"], "count");
+}
+
+/// A `MatchCount`-sourced row is the same "no single field" shape as `Count`, but the number
+/// means something different (how many of the TARGETED ids exist) — still `proofKind: "count"`,
+/// since the caller-facing action ("pass a count") is identical.
+#[test]
+fn commands_carries_count_kind_for_a_match_count_sourced_row() {
+    let out = commands_value(&json!({ "effect": "irreversible" }), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "ai_generations_remove_bulk")
+        .expect("ai_generations_remove_bulk is a real MatchCount-sourced Irreversible row");
+    assert!(row.get("proofField").is_none());
+    assert_eq!(row["proofKind"], "count");
+}
+
+/// A `Scalar`/`Lookup` with an EMPTY path names no field either — the proof IS the whole response
+/// value — but that is a DIFFERENT reason than `Count`'s (CLI review round 2 — MEDIUM: both used
+/// to collapse to an absent `proofField` with nothing telling them apart). `proofKind:
+/// "response_value"` distinguishes it: pass the whole response, not a count.
+#[test]
+fn commands_carries_response_value_kind_for_an_empty_path_scalar_row() {
+    let out = commands_value(&json!({ "effect": "irreversible" }), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "system_open_external")
+        .expect("system_open_external is a real empty-path-Scalar Irreversible row");
+    assert!(row.get("proofField").is_none());
+    assert_eq!(row["proofKind"], "response_value");
+}
+
+/// A1-r2-AC-2 MEDIUM: the `commands` tool's OWN description is the one surface a model reads
+/// before ever calling the tool, so it must name every key an Irreversible row can actually
+/// emit — `proofKind` (present on all ~34 rows) AND `proofField` (present on only the subset
+/// whose `proofKind` is "field"), never state `proofField` as if it were unconditional.
+#[test]
+fn the_commands_description_names_proof_kind_and_qualifies_proof_field() {
+    let description = tool_description(&tools(Tier::Irreversible), TOOL_COMMANDS);
+    assert!(
+        description.contains("proofKind"),
+        "must name proofKind, the field present on EVERY Irreversible row: {description}"
+    );
+    assert!(
+        description.contains("proofField"),
+        "must still name proofField: {description}"
+    );
+    assert!(
+        description.contains("only when proofKind"),
+        "must qualify proofField as conditional on proofKind, not state it unconditionally: \
+         {description}"
+    );
+}
+
+/// A1-r3-AC-2 MEDIUM: the description's "only when proofKind is field" promise (asserted above by
+/// substring) is enforced nowhere on the actual payload — `proofField`/`proofKind` come from two
+/// INDEPENDENT `match`es over `ProofSource` (`proof_field`/`proof_kind`), and only 4 hand-picked
+/// rows were ever checked against each other. A `ProofSource` variant added to one match and not
+/// its sibling would make the description a lie with every existing test green. This loops every
+/// Irreversible row `commands` can emit and pins the invariant directly, so it fails the moment the
+/// two matches diverge for ANY row, not just the 4 previously spot-checked.
+#[test]
+fn every_irreversible_row_has_proof_field_iff_its_proof_kind_is_field() {
+    let out = commands_value(&json!({ "effect": "irreversible" }), Tier::Irreversible);
+    let rows = out["commands"].as_array().unwrap();
+    assert!(
+        !rows.is_empty(),
+        "must exercise at least one irreversible row"
+    );
+    for row in rows {
+        let proof_kind = row["proofKind"]
+            .as_str()
+            .unwrap_or_else(|| panic!("every irreversible row must carry proofKind: {row}"));
+        assert_eq!(
+            row.get("proofField").is_some(),
+            proof_kind == "field",
+            "proofField presence must track proofKind == \"field\" for {}: {row}",
+            row["command"]
+        );
+    }
+}
+
+/// A catalogued row carries its description and its declared args — pulled from the SAME
+/// generated table `agent_call`'s dispatch-time validation reads, never a second copy.
+#[test]
+fn commands_carries_description_and_args_for_a_catalogued_row() {
+    let out = commands_value(&json!({}), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "applications_delete")
+        .expect("applications_delete is a real, catalogued row");
+    let args = row["args"].as_array().expect("declared args, not null");
+    let names: Vec<&str> = args.iter().map(|a| a["name"].as_str().unwrap()).collect();
+    assert!(
+        names.contains(&"id") && names.contains(&"keepDocuments"),
+        "{names:?}"
+    );
+    let keep_documents = args
+        .iter()
+        .find(|a| a["name"] == "keepDocuments")
+        .expect("keepDocuments must be visible — the whole point of issue #1160");
+    assert_eq!(
+        keep_documents["required"], true,
+        "keepDocuments is a required flag, not an optional one"
+    );
+}
+
+/// MEDIUM — CLI review round 1: a colon-terminated description like "Factory reset:" (`summarize`
+/// cutting on the FIRST `.` OR `:`, correct for a `docs/API.md` table cell but content-free when
+/// the cut result is the entire text) reaches an LLM with nothing else to go on. The catalogue's
+/// own `catalogueSummarize` cuts on `.` only, falling back to the full first paragraph when that
+/// still leaves something too short or with a dangling backtick/paren.
+#[test]
+fn a_catalogued_description_never_ends_on_a_bare_colon() {
+    let out = commands_value(&json!({}), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "privacy_reset_app")
+        .expect("privacy_reset_app is a real, catalogued row");
+    let description = row["description"].as_str().expect("a description string");
+    assert!(
+        !description.trim_end().ends_with(':'),
+        "must not stop mid-sentence at a colon: {description}"
+    );
+    assert!(
+        description.len() > 20,
+        "too short to be useful: {description}"
+    );
+}
+
+/// A `.`-cut can still land inside a backtick span or an unclosed parenthetical (an abbreviation
+/// like "e.g." inside one) — `match_resume_text`'s own TSDoc has both traps in its first
+/// sentence. The fallback to the full first paragraph must leave both balanced.
+#[test]
+fn a_catalogued_description_never_leaves_a_backtick_or_paren_unbalanced() {
+    let out = commands_value(&json!({}), Tier::Irreversible);
+    for row in out["commands"].as_array().unwrap() {
+        let Some(description) = row["description"].as_str() else {
+            continue;
+        };
+        let backticks = description.matches('`').count();
+        assert_eq!(
+            backticks % 2,
+            0,
+            "{}: unbalanced backticks in {description:?}",
+            row["command"]
+        );
+        let open = description.matches('(').count();
+        let close = description.matches(')').count();
+        assert_eq!(
+            open, close,
+            "{}: unbalanced parens in {description:?}",
+            row["command"]
+        );
+    }
+}
+
+/// Upper bound on a single catalogued description's length (MEDIUM — CLI review round 2,
+/// issue #1163: "a one-line description"). `catalogueSummarize`'s short-sentence fallback used to
+/// publish the ENTIRE first paragraph — up to 1096 chars of renderer/Settings implementation
+/// detail for `ai_model_capabilities` — measured 416 as the longest row after the fix that pulls
+/// in only the next sentence instead. Lower this constant (never raise it) if the generator gets
+/// better at trimming; raising it silently re-permits a paragraph dump.
+const MAX_CATALOGUE_DESCRIPTION_LENGTH: usize = 500;
+
+#[test]
+fn a_catalogued_description_never_grows_into_a_paragraph() {
+    let out = commands_value(&json!({}), Tier::Irreversible);
+    for row in out["commands"].as_array().unwrap() {
+        let Some(description) = row["description"].as_str() else {
+            continue;
+        };
+        assert!(
+            description.len() <= MAX_CATALOGUE_DESCRIPTION_LENGTH,
+            "{}: description is {} chars (cap {MAX_CATALOGUE_DESCRIPTION_LENGTH}), not a one-line \
+             description: {description:?}",
+            row["command"],
+            description.len()
+        );
+    }
+}
+
+/// #1160's own target row must not silently lose its description again — `applications_delete`
+/// was one of the 64 no-TSDoc rows a CLI review round flagged (MEDIUM), and it is the exact
+/// command whose `keepDocuments: false` cascade a caller needs explained.
+#[test]
+fn applications_delete_carries_a_non_empty_description() {
+    let out = commands_value(&json!({}), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "applications_delete")
+        .expect("applications_delete is a real, catalogued row");
+    let description = row["description"].as_str().unwrap_or("");
+    // Both branches, not just the identifier (CLI review round 2 — MEDIUM): a description that
+    // only says the flag is irrelevant ("always irreversible, regardless of `keepDocuments`")
+    // satisfied a substring check on "keepDocuments" while explaining nothing a caller could
+    // choose the flag on.
+    assert!(
+        description.to_lowercase().contains("false")
+            && description.to_lowercase().contains("also deletes"),
+        "must explain what keepDocuments: false does: {description:?}"
+    );
+    assert!(
+        description.to_lowercase().contains("true")
+            && description.to_lowercase().contains("detach"),
+        "must explain what keepDocuments: true does: {description:?}"
+    );
+}
+
+/// A wrapper arg whose type this generator RECOGNISED but could not resolve the fields of
+/// (issue #1158 member 3, MEDIUM — CLI review round 1) carries an EXPLICIT `"fields": null`, not
+/// an absent key — otherwise it is wire-identical to a plain scalar arg and a caller has no way
+/// to know a nested object might be expected at all.
+#[test]
+fn commands_carries_a_null_fields_for_an_arg_whose_wrapper_type_did_not_resolve() {
+    let out = commands_value(&json!({}), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "resume_pipeline_run")
+        .expect("resume_pipeline_run is a real, catalogued row");
+    let args = row["args"].as_array().expect("declared args, not null");
+    let req = args
+        .iter()
+        .find(|a| a["name"] == "req")
+        .expect("declares a req arg");
+    assert!(
+        req.get("fields").is_some_and(Value::is_null),
+        "must be an explicit null, not an absent key: {req}"
+    );
+}
+
+/// A scalar arg (no wrapper type at all) still omits `fields` entirely — the null-for-unresolved
+/// fix must not turn every arg's `fields` key into a `null`.
+#[test]
+fn commands_omits_fields_entirely_for_a_scalar_arg() {
+    let out = commands_value(&json!({}), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "applications_delete")
+        .expect("applications_delete is a real, catalogued row");
+    let args = row["args"].as_array().expect("declared args, not null");
+    let id_arg = args
+        .iter()
+        .find(|a| a["name"] == "id")
+        .expect("declares an id arg");
+    assert!(
+        id_arg.get("fields").is_none(),
+        "a scalar arg must not carry a fields key at all: {id_arg}"
+    );
+}
+
+/// A command absent from the generated catalogue (zero renderer `invoke()` references —
+/// `policy.rs`'s own module doc) carries `args: null`, distinguishable from "this command
+/// genuinely takes no arguments" (an empty array).
+#[test]
+fn commands_carries_a_null_args_for_an_uncatalogued_row() {
+    let out = commands_value(&json!({}), Tier::Irreversible);
+    let row = out["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "boards_list")
+        .expect("boards_list is a real POLICY row with zero renderer references");
+    assert!(row["args"].is_null(), "{row}");
+}
+
+#[test]
+fn commands_can_be_filtered_by_namespace() {
+    let out = commands_value(&json!({ "namespace": "jobs" }), Tier::Irreversible);
+    let rows = out["commands"].as_array().unwrap();
+    assert!(!rows.is_empty());
+    for row in rows {
+        assert_eq!(row["namespace"], "jobs", "{row}");
+    }
+}
+
+#[test]
+fn commands_namespace_and_effect_filters_compose() {
+    let out = commands_value(
+        &json!({ "namespace": "applications", "effect": "irreversible" }),
+        Tier::Irreversible,
+    );
+    let rows = out["commands"].as_array().unwrap();
+    assert!(!rows.is_empty());
+    for row in rows {
+        assert_eq!(row["namespace"], "applications", "{row}");
+        assert_eq!(row["effect"], "irreversible", "{row}");
+    }
+}
+
+/// Same failure shape `effect` already guards against (issue #1134's own lesson, reapplied to
+/// #1163's new filter): a typo'd namespace must be a usage error, never a silent empty success.
+#[test]
+fn commands_with_an_unknown_namespace_value_is_a_usage_error_not_a_silent_empty_success() {
+    let server = Server::new(true, true);
+    let mut dispatch = stub_ok;
+    let outcome = tool_call_result(
+        &json!({ "name": "commands", "arguments": { "namespace": "totally-not-a-real-namespace" } }),
+        &server,
+        &mut dispatch,
+    )
+    .unwrap();
+    assert_eq!(outcome["isError"], true);
+    let text = outcome["content"][0]["text"].as_str().unwrap();
+    let parsed: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(parsed["error"], "usage");
+}
+
+/// A REAL namespace passes the same gate straight through.
+#[test]
+fn commands_with_a_real_namespace_value_dispatches_locally() {
+    let server = Server::new(true, true);
+    let mut dispatch = stub_ok;
+    let outcome = tool_call_result(
+        &json!({ "name": "commands", "arguments": { "namespace": "jobs" } }),
+        &server,
+        &mut dispatch,
+    )
+    .unwrap();
+    assert_eq!(outcome["isError"], false);
+}
+
+/// Issue #1163's own ask: a real command name typed under the wrong namespace must name the
+/// right one in `unknown_command`'s local refusal — `jobs_list` is real, `wrongns` is not its
+/// namespace.
+#[test]
+fn unknown_command_local_refusal_names_the_right_namespace_for_a_real_command_typed_wrong() {
+    let verb = Verb::Call {
+        namespace: "wrongns".to_string(),
+        command: "jobs_list".to_string(),
+        input: json!({}),
+        confirm: None,
+    };
+    let refusal =
+        local_call_refusal(TOOL_CALL_READ, &verb, Tier::Irreversible).expect("must refuse");
+    assert_eq!(refusal["error"], agent_call::ERR_UNKNOWN_COMMAND);
+    assert!(
+        refusal["detail"].as_str().unwrap().contains("jobs"),
+        "{refusal}"
+    );
+}
+
+/// The mirror case: a genuinely fictional command name must not fabricate a suggestion.
+#[test]
+fn unknown_command_local_refusal_names_no_namespace_for_a_command_that_does_not_exist() {
+    let verb = Verb::Call {
+        namespace: "nope".to_string(),
+        command: "delete_everything".to_string(),
+        input: json!({}),
+        confirm: None,
+    };
+    let refusal =
+        local_call_refusal(TOOL_CALL_READ, &verb, Tier::Irreversible).expect("must refuse");
+    assert!(
+        !refusal["detail"]
+            .as_str()
+            .unwrap()
+            .contains("registered under namespace"),
+        "{refusal}"
     );
 }
 

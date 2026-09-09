@@ -131,6 +131,10 @@ export interface ApplicationsContract {
    *  when `eventId` does not resolve to a pending row. */
   rejectStatusEvent(args: { id: string; eventId: number }): Promise<ApplicationMutationResult>;
   update(req: ApplicationUpdateRequest): Promise<ApplicationMutationResult>;
+  /** Delete the Application and its status history — always irreversible; `keepDocuments: false`
+   *  ALSO deletes every résumé/cover-letter generation produced for it, while `keepDocuments:
+   *  true` instead detaches those generations, which survive as orphaned documents outside this
+   *  Application. */
   remove(args: { id: string; keepDocuments: boolean }): Promise<ApplicationMutationResult>;
   track(req: ApplicationTrackRequest): Promise<ApplicationCreateResult>;
   saveFromPosting(req: ApplicationTrackRequest): Promise<ApplicationCreateResult>;

@@ -61,6 +61,7 @@ export interface ReferralsContract {
   list(jobUrl?: string): Promise<ReferralContact[]>;
   /** Create or update a contact; resolves to the stored record. */
   upsert(req: ReferralUpsertRequest): Promise<ReferralContact>;
+  /** Permanently delete one referral contact by id — the drafts on it go with it. */
   remove(id: string): Promise<void>;
 }
 

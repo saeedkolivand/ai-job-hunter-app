@@ -583,6 +583,40 @@ fn agent_query_throttle_survives_reconnect() {
     );
 }
 
+/// Issue #1155 (HIGH review finding A2-r1-AC-2, "Mutation A"): every `AgentQueryThrottle` test in
+/// `agent_read.rs` constructs that struct directly and calls `retry_after_ms` on it, which proves
+/// nothing about `BridgeState::agent_retry_after_ms` — the ONE method the dispatch loop in `mod.rs`
+/// actually calls before building a `rate_limited` reply. Mirrors
+/// `agent_query_throttle_survives_reconnect` above, one method over: goes through
+/// `BridgeState::try_acquire_agent`/`agent_retry_after_ms` against a shared `BridgeState`, not the
+/// bucket directly, so a bug in THAT wiring — not just in the bucket math — would fail this.
+#[test]
+fn bridge_state_agent_retry_after_ms_reads_the_same_bucket_try_acquire_agent_drew_from() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+
+    assert!(s.try_acquire_agent("best-matches"), "burst allowance");
+    assert!(
+        !s.try_acquire_agent("best-matches"),
+        "burst exhausted — the wait must now be positive"
+    );
+    // [A2-r2-AC-r2-3] A RANGE, not `assert_eq!` — this value is `ceil(full_wait - elapsed)`
+    // against a real `Instant::now()` (no injected clock on `BridgeState`, unlike
+    // `agent_read`'s own bucket tests), so even a single scheduler preemption between the two
+    // `try_acquire_agent` calls above shaves whole milliseconds off it. The lower bound is still
+    // impossible for a hardcoded 0/1 ms placeholder, or the cheap bucket's unrelated 1000 ms
+    // refill, to satisfy — only the best-matches bucket's OWN (tighter) refill rate can land
+    // here.
+    let full_wait_ms = (agent_read::AGENT_BEST_MATCHES_REFILL_SECS * 1000.0) as u64;
+    let wait = s.agent_retry_after_ms("best-matches");
+    assert!(
+        wait > full_wait_ms.saturating_sub(1_000) && wait <= full_wait_ms,
+        "must read the best-matches bucket's OWN (tighter) refill rate through the wiring \
+         (expected in ({}, {full_wait_ms}], got {wait})",
+        full_wait_ms.saturating_sub(1_000)
+    );
+}
+
 #[test]
 fn reset_disables_autofill_optin() {
     use crate::data_store::Resettable;
@@ -1296,4 +1330,54 @@ fn spawn_detached_runs_without_an_ambient_tokio_runtime() {
     // `start()` relies on, by handing it a real future. Reaching this line proves
     // the no-runtime spawn path is intact.
     let _ = ran;
+}
+
+// ── retryAfterMs wiring pin (issue #1155, "Mutation A") ─────────────────────
+
+/// Source-text pin for the connection loop's two throttled-reply arms (issue #1155, HIGH review
+/// finding A2-r1-AC-2, "Mutation A": both `FrameDecision::AgentQuery`'s and
+/// `FrameDecision::AgentCall`'s arms hardcoded `retryAfterMs` to a literal `0u64`, discarding
+/// `agent_retry_after_ms`'s result, and the whole suite stayed green). That loop is `start()`'s
+/// own `async fn`, driven by a real socket + `AppHandle` — this crate has no `tauri::test`
+/// mock-app harness (see `spawn_detached_runs_without_an_ambient_tokio_runtime`'s doc above), so
+/// it cannot be called directly the way `bridge_state_agent_retry_after_ms_reads_the_same_bucket…`
+/// above calls the method it wires TO. A literal scan of `mod.rs`'s own source is the fallback
+/// this repo already uses for the identical problem (`tests/architecture.rs`'s
+/// `job_complete_sites_in`): assert both arms still read `retry_after_ms` off
+/// `state.agent_retry_after_ms(..)` AND that the computed value is what actually reaches
+/// `throttled_reply`'s third argument.
+///
+/// TR-04 fix (test-author round): the ORIGINAL needles here only checked that the call
+/// expression `state.agent_retry_after_ms(..)` appears somewhere in the file — never that its
+/// result reaches `throttled_reply`. `let _retry_after_ms = state.agent_retry_after_ms(..); …
+/// throttled_reply(&req_id, &payload, 0)` keeps both old needles green (the call expression is
+/// still textually present) while hardcoding the reply back to the exact regression this test
+/// exists to catch. The needles below now span the whole `let retry_after_ms = …` binding
+/// through to `retry_after_ms,` as `throttled_reply`'s own third positional argument, so a
+/// literal at the call site (or a renamed/unread binding) reddens this.
+#[test]
+fn the_throttled_dispatch_arms_read_retry_after_ms_off_bridge_state_not_a_constant() {
+    let src = include_str!("mod.rs");
+    let agent_query_needle = r#"let retry_after_ms =
+                    state.agent_retry_after_ms(agent_read::resource_name(&payload));
+                Some(agent_read::throttled_reply(
+                    &req_id,
+                    &payload,
+                    retry_after_ms,
+                ))"#;
+    let agent_call_needle = r#"let retry_after_ms = state.agent_retry_after_ms(agent_call::throttle_key(command));
+                Some(agent_call::throttled_reply(
+                    &req_id,
+                    &payload,
+                    retry_after_ms,
+                ))"#;
+    for needle in [agent_query_needle, agent_call_needle] {
+        assert!(
+            src.contains(needle),
+            "mod.rs must still bind `retry_after_ms` from `state.agent_retry_after_ms(..)` and \
+             pass that SAME binding as `throttled_reply`'s third argument — a future edit that \
+             hardcodes the call site (e.g. to a literal `0`) while leaving the computation \
+             dangling unread would otherwise leave every other test green. Expected:\n{needle}"
+        );
+    }
 }
