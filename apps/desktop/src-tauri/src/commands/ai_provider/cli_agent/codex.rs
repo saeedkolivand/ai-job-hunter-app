@@ -207,13 +207,24 @@ impl CliAgentBackend for CodexAgent {
 /// readable. `ty` is already known dotted or `"error"`.
 fn parse_dotted_event(ty: &str, v: &Value) -> Option<CliEvent> {
     match ty {
-        "item.completed" | "item.updated" => {
+        // `item.updated` is deliberately IGNORED, not mapped to the same events as
+        // `item.completed`: it fires repeatedly while an item is still in progress
+        // and there's no confirmed evidence its `item.text` is an incremental
+        // chunk rather than a running snapshot (unlike the token-level SSE deltas
+        // the cloud providers emit). Treating a snapshot as a delta would
+        // re-concatenate the whole message-so-far on every tick, garbling the
+        // streamed output — so only the terminal `item.completed` (always the
+        // full, final text) is surfaced. Message-granularity streaming (one
+        // event per finished item) is exactly what the module doc promises.
+        "item.completed" => {
             let item = v.get("item")?;
             match item.get("type").and_then(|t| t.as_str())? {
                 "agent_message" => text_of(item).map(CliEvent::Delta),
                 // Reasoning items carry `content`/`summary` string arrays, not the
                 // scalar `text`/`message` field every other item type uses.
-                "reasoning" => reasoning_text(item).map(CliEvent::Thinking),
+                "reasoning" => reasoning_text(item)
+                    .or_else(|| text_of(item))
+                    .map(CliEvent::Thinking),
                 "error" => Some(CliEvent::Error(
                     text_of(item).unwrap_or_else(|| "Codex reported an error".to_string()),
                 )),
@@ -276,10 +287,14 @@ fn text_of(m: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Reasoning items in the current dialect carry `content`/`summary` string arrays
-/// (per the app-server v2 `ReasoningThreadItem` schema, which shares its item shapes
-/// with `exec --json`) rather than a scalar text field — join whichever is present
-/// and non-empty.
+/// Reasoning items in the current dialect are believed to carry `content`/`summary`
+/// string arrays (per the app-server v2 `ReasoningThreadItem` schema, which shares
+/// its item shapes with `exec --json`) rather than a scalar text field — join
+/// whichever is present and non-empty. Unverified against a live reasoning-bearing
+/// run (issue #1185 review); the call site falls back to [`text_of`]'s scalar
+/// `message`/`text`/`delta` fields if this returns `None`, so a wrong guess here
+/// degrades to the same lookup every other item type uses instead of silently
+/// dropping the Thinking indicator.
 fn reasoning_text(item: &Value) -> Option<String> {
     ["content", "summary"].iter().find_map(|key| {
         let joined = item
@@ -399,6 +414,31 @@ mod tests {
             CodexAgent.parse_stream_line(line),
             Some(CliEvent::Thinking("weighing options".to_string()))
         );
+    }
+
+    /// Hedge for issue #1185's review: if a real Codex build carries reasoning
+    /// text under a scalar field (`text`/`message`/`delta`) instead of the
+    /// `content`/`summary` string arrays `reasoning_text` expects, the Thinking
+    /// indicator must still surface rather than silently going dark.
+    #[test]
+    fn dotted_item_completed_reasoning_falls_back_to_scalar_text_field() {
+        let line = r#"{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"weighing options"}}"#;
+        assert_eq!(
+            CodexAgent.parse_stream_line(line),
+            Some(CliEvent::Thinking("weighing options".to_string()))
+        );
+    }
+
+    /// `item.updated` fires repeatedly while an item is still in progress and its
+    /// `item.text` is not confirmed to be an incremental chunk rather than a
+    /// running snapshot — mapping it to `Delta` would risk re-concatenating the
+    /// whole message-so-far into `answer` on every tick (issue #1185 review). It
+    /// must be ignored; only the terminal `item.completed` carries the real text.
+    #[test]
+    fn dotted_item_updated_agent_message_is_ignored() {
+        let line =
+            r#"{"type":"item.updated","item":{"id":"item_1","type":"agent_message","text":"pon"}}"#;
+        assert_eq!(CodexAgent.parse_stream_line(line), None);
     }
 
     #[test]
