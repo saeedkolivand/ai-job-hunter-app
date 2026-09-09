@@ -274,6 +274,13 @@ fn commands_value(arguments: &Value, tier: Tier) -> Value {
             if agent_call::reshape::PAGINATED_LIST_COMMANDS.contains(&command) {
                 row["returns"] = json!(agent_call::reshape::PAGINATED_LIST_NOTE);
             }
+            // Same discovery precedent as the paging note just above, for the
+            // OTHER reply reshape a generic-tier caller cannot otherwise learn
+            // about (round-1 review, issue #1180): plain `call-read` never sees
+            // an MCP tool description.
+            if command == agent_call::reshape::CONTACT_PROFILE_GET_COMMAND {
+                row["returns"] = json!(agent_call::reshape::CONTACT_PROFILE_GET_PROJECTION_NOTE);
+            }
             let gate_open = match entry.effect {
                 Effect::Reversible => tier.allows_reversible(),
                 Effect::Irreversible(_) => tier.allows_irreversible(),

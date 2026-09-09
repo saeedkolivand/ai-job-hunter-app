@@ -1357,6 +1357,31 @@ fn tool_titles_match_a_hand_written_literal_list() {
     );
 }
 
+/// Round-1 review, issue #1180 (P-r1-F3): the generic `call-read
+/// contact_profile_get` row and this resource share field NAMES minus
+/// `photo` — never more than that. Overclaiming "identical" reads as "same
+/// values, same consent gate" to an LLM client (and the next reviewer), and
+/// neither is true: this resource trims/collapses/cleans its values and is
+/// opt-in gated, the generic row is neither.
+#[test]
+fn profile_tool_description_never_overclaims_parity_with_the_generic_row() {
+    let list = tools(Tier::Irreversible);
+    let profile = list
+        .iter()
+        .find(|t| t["name"] == TOOL_PROFILE)
+        .expect("profile tool is listed");
+    let description = profile["description"].as_str().unwrap_or_default();
+    assert!(
+        !description.to_ascii_lowercase().contains("identical"),
+        "the generic row differs in value shape, link cleaning and the consent gate: \
+         {description}"
+    );
+    assert!(
+        description.contains("consent gate") && description.contains("does not apply"),
+        "must say the consent gate does NOT extend to the generic row: {description}"
+    );
+}
+
 /// P10 — deterministic ordering is what lets a client's prompt cache survive repeated
 /// `tools/list` calls in a long session. Two properties, both mutation-visible: the order is
 /// STABLE call-to-call, and every lower tier is a strict PREFIX of the next, so enabling a write
@@ -2203,8 +2228,10 @@ fn commands_filters_by_effect_and_never_touches_the_bridge() {
 /// Issue #1136's discoverability half: a caller must be able to LEARN that
 /// these two rows answer with an envelope and take `limit`/`cursor`, rather
 /// than discovering it by receiving a shape it did not expect. Asserted in
-/// both directions — the note appears on exactly the paged rows and on no
-/// others — so a `returns` key leaking onto every row fails here too.
+/// both directions — the PAGINATED_LIST_NOTE appears on exactly the paged
+/// rows and on no others — so a `returns` key leaking onto some unrelated row
+/// fails here too, `contact_profile_get`'s own unrelated note (P-r1-F4)
+/// excepted and pinned separately below.
 #[test]
 fn commands_marks_the_paged_rows_and_only_those() {
     let all = commands_value(&json!({}), Tier::Irreversible);
@@ -2213,11 +2240,41 @@ fn commands_marks_the_paged_rows_and_only_those() {
         let Some(returns) = row["returns"].as_str() else {
             continue;
         };
+        let command = row["command"].as_str().unwrap();
+        // `contact_profile_get` carries its OWN discovery note (P-r1-F4,
+        // issue #1180), pinned by
+        // `commands_marks_the_contact_profile_get_row_with_its_projection_note`
+        // — this test's whole job is the PAGINATED_LIST_COMMANDS set, so it
+        // is excluded by name rather than the assertion below being weakened
+        // to "one of several known notes".
+        if command == "contact_profile_get" {
+            continue;
+        }
         assert_eq!(returns, agent_call::reshape::PAGINATED_LIST_NOTE);
-        noted.push(row["command"].as_str().unwrap());
+        noted.push(command);
     }
     noted.sort_unstable();
     assert_eq!(noted, vec!["ai_generations_list", "applications_list"]);
+}
+
+/// P-r1-F4 (round-1 review, issue #1180): `contact_profile_get`'s reshape is
+/// the OTHER discovery gap the paged-rows test above already guards against
+/// for paging — a plain `call-read` caller (or any `ajh-tauri agent call`
+/// invocation) never sees the MCP tool description that used to carry the
+/// only note about this projection.
+#[test]
+fn commands_marks_the_contact_profile_get_row_with_its_projection_note() {
+    let all = commands_value(&json!({}), Tier::Irreversible);
+    let row = all["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["command"] == "contact_profile_get")
+        .expect("contact_profile_get is a real POLICY row");
+    assert_eq!(
+        row["returns"],
+        agent_call::reshape::CONTACT_PROFILE_GET_PROJECTION_NOTE
+    );
 }
 
 #[test]

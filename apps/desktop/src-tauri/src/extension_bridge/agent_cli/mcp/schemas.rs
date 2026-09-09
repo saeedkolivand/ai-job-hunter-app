@@ -143,8 +143,10 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
         curated_tool(
             TOOL_PROFILE,
             "My Profile",
-            "The generic call-read row for contact_profile_get is projected to this identical \
-             photo-less field set, never the raw stored profile (issue #1180).",
+            "The generic call-read row for contact_profile_get shares this resource's field \
+             names minus photo, not its values: location is the raw {default,byLang} object \
+             (not this collapsed default string), extraLinks is unfiltered and uncapped, and \
+             this resource's consent gate does not apply to that row (issue #1180).",
             no_args.clone(),
         ),
         curated_tool(TOOL_AUTOMATIONS, "Automations", "", no_args),

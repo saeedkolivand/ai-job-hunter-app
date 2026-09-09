@@ -206,7 +206,24 @@ pub(in crate::extension_bridge) fn base64_byte_fields(command: &str, data: &mut 
 /// generic tier's `call-read contact_profile_get` match it instead of being
 /// the one path that still hands a local-only field to whatever reads an
 /// agent reply.
-const CONTACT_PROFILE_GET_COMMAND: &str = "contact_profile_get";
+// `pub(in crate::extension_bridge)`, not `pub(super)`: `agent_cli::mcp`'s
+// `commands` tool (a COUSIN, not a descendant of this module) names this row
+// too, on the same "no second hand-typed command-name string" reasoning
+// `PAGINATED_LIST_COMMANDS` already documents above.
+pub(in crate::extension_bridge) const CONTACT_PROFILE_GET_COMMAND: &str = "contact_profile_get";
+
+/// What the `commands` tool prints on the [`CONTACT_PROFILE_GET_COMMAND`] row
+/// — the SAME discovery precedent [`PAGINATED_LIST_NOTE`] sets, for a caller
+/// this projection actually affects and who cannot read this source: plain
+/// `call-read` (and any `ajh-tauri agent call` invocation) never sees an MCP
+/// tool description at all, so `commands` is the only place such a caller can
+/// learn the reply is projected (round-1 review, issue #1180).
+pub(in crate::extension_bridge) const CONTACT_PROFILE_GET_PROJECTION_NOTE: &str =
+    "returns only {fullName,email,phone,location,linkedin,github,website,extraLinks} — `photo` \
+     is stripped before an agent ever sees it. The surviving fields are the RAW stored shapes \
+     (`location` is {default,byLang}, `extraLinks` is unfiltered and uncapped), not the cleaned, \
+     opt-in-gated strings the `profile` MCP resource projects — the two share field names minus \
+     `photo`, nothing else.";
 
 /// Drop every top-level key of [`CONTACT_PROFILE_GET_COMMAND`]'s reply that is
 /// not in [`super::super::autofill_profile::CONTACT_PROFILE_AGENT_FIELDS`] — a
@@ -221,6 +238,51 @@ pub(super) fn project_contact_profile_get(command: &str, data: &mut Value) {
     map.retain(|k, _| {
         super::super::autofill_profile::CONTACT_PROFILE_AGENT_FIELDS.contains(&k.as_str())
     });
+}
+
+/// The write leg of [`CONTACT_PROFILE_GET_COMMAND`]'s projection (round-1
+/// review, issue #1180, CRITICAL). The generic tier's `contact_profile_get`
+/// reply never carries `photo`, so an agent doing the only edit path this
+/// tier has — read, change one field, write the whole object back — can only
+/// ever send a `contact_profile_set` payload with the key entirely ABSENT,
+/// never an explicit value (it cannot type back what it was never shown).
+/// `contact_profile_set` is a whole-row REPLACE
+/// (`contact_profile::ContactProfileStore::set`), so an absent key silently
+/// and permanently deletes the stored photo — on a row policy declares
+/// [`super::super::agent_cli::policy::Effect::Reversible`].
+/// [`restore_contact_profile_photo`] closes that at the one dispatch
+/// chokepoint, before the write ever reaches the command body.
+pub(super) const CONTACT_PROFILE_SET_COMMAND: &str = "contact_profile_set";
+
+/// Re-inject `stored_photo` into an outgoing [`CONTACT_PROFILE_SET_COMMAND`]
+/// call's `profile.photo` when the caller's payload omits the key entirely —
+/// never when the key is present, including an explicit `null`. That
+/// distinction matters: the renderer's OWN settings form clears a photo by
+/// omitting the key on ITS OWN write path (`ContactProfileForm`, plain
+/// `invoke()`, never through this dispatcher), so an agent that explicitly
+/// sends `"photo": null` is making the same real, deliberate choice and must
+/// not be overridden. Pure — the impure half (reading the CURRENT stored
+/// photo before this write lands) is `dispatch_direct`'s job, the same
+/// "read app state, pass the value in" split this module already uses. A
+/// no-op for every other command, a non-object `input`, or an `input.profile`
+/// that is not an object.
+pub(super) fn restore_contact_profile_photo(
+    command: &str,
+    input: &mut Value,
+    stored_photo: Option<&str>,
+) {
+    if command != CONTACT_PROFILE_SET_COMMAND {
+        return;
+    }
+    let Some(profile) = input.get_mut("profile").and_then(Value::as_object_mut) else {
+        return;
+    };
+    if profile.contains_key("photo") {
+        return;
+    }
+    if let Some(photo) = stored_photo {
+        profile.insert("photo".to_string(), json!(photo));
+    }
 }
 
 /// Take the agent-layer paging arguments OFF `input` for a

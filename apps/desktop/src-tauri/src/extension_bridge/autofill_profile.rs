@@ -58,8 +58,13 @@ pub(super) const MAX_EXTRA_LINKS: usize = 10;
 /// issue #1180) reads this SAME list to drop `photo` — and any other field
 /// this struct does not carry — from that command's raw reply, rather than
 /// retyping the set: the dedicated `profile` resource and the generic
-/// `call-read contact_profile_get` row are meant to be the identical
-/// photo-less projection, and a second hand-typed list is how that drifts.
+/// `call-read contact_profile_get` row are meant to share these field NAMES
+/// minus `photo`, and a second hand-typed list of names is how THAT drifts.
+/// They are NOT the same projection otherwise — this struct's own
+/// [`AutofillProfile::from_contact`] trims values, collapses `location` to a
+/// string, and cleans/caps `extraLinks`, none of which the generic row's raw
+/// stored shapes get; and [`resolve_profile`]'s opt-in gate does not extend
+/// to the generic dispatch path either.
 pub(super) const CONTACT_PROFILE_AGENT_FIELDS: &[&str] = &[
     "fullName",
     "email",

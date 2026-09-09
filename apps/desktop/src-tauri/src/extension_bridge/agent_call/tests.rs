@@ -1671,20 +1671,35 @@ fn reshape_reply_base64_encodes_last_and_the_two_reshape_lists_stay_disjoint() {
 /// simply emptying the object.
 #[test]
 fn reshape_reply_projects_contact_profile_get_to_the_photoless_allowlist() {
+    use crate::contact_profile::{ContactLink, ContactProfile, LocalizedText};
     use crate::extension_bridge::autofill_profile::CONTACT_PROFILE_AGENT_FIELDS;
 
-    let raw = json!({
-        "fullName": "Saeed Kolivand",
-        "email": "saeed@example.com",
-        "phone": "+31 6 12",
-        "location": { "default": "Amsterdam", "byLang": {} },
-        "linkedin": "https://linkedin.com/in/saeed",
-        "github": "https://github.com/saeed",
-        "website": "https://saeed.dev",
-        "extraLinks": [{ "label": "Portfolio", "url": "https://saeed.dev/p" }],
-        "photo": "data:image/png;base64,AAAA",
-        "someFutureLocalOnlyField": "must not survive either",
-    });
+    // Built from the REAL struct (round-1 review, P-r1-F5), not a hand-typed
+    // `json!` literal — a hand-typed input can't catch a field added to the
+    // struct tomorrow, since it would simply never appear in the literal
+    // either. `serde_json::to_value` is the same round trip production takes.
+    let profile = ContactProfile {
+        full_name: Some("Saeed Kolivand".to_string()),
+        email: Some("saeed@example.com".to_string()),
+        phone: Some("+31 6 12".to_string()),
+        location: Some(LocalizedText {
+            default: "Amsterdam".to_string(),
+            by_lang: Default::default(),
+        }),
+        linkedin: Some("https://linkedin.com/in/saeed".to_string()),
+        github: Some("https://github.com/saeed".to_string()),
+        website: Some("https://saeed.dev".to_string()),
+        extra_links: vec![ContactLink {
+            label: "Portfolio".to_string(),
+            url: "https://saeed.dev/p".to_string(),
+        }],
+        photo: Some("data:image/png;base64,AAAA".to_string()),
+    };
+    let mut raw = serde_json::to_value(&profile).expect("ContactProfile serializes");
+    raw.as_object_mut().expect("object").insert(
+        "someFutureLocalOnlyField".to_string(),
+        json!("must not survive either"),
+    );
 
     let out = reshape_reply("contact_profile_get", raw, None);
     let out_map = out.as_object().expect("still an object");
@@ -1701,6 +1716,73 @@ fn reshape_reply_projects_contact_profile_get_to_the_photoless_allowlist() {
         );
     }
     assert_eq!(out_map.len(), CONTACT_PROFILE_AGENT_FIELDS.len());
+
+    // P-r1-F5: the top-level allowlist is not enough — `location` and
+    // `extraLinks` are the source struct's own nested types crossing the
+    // wire VERBATIM. Assert their key sets too, or a field added to either
+    // later passes straight through with nothing here to notice.
+    let location = out_map["location"]
+        .as_object()
+        .expect("location is an object");
+    for key in location.keys() {
+        assert!(
+            ["default", "byLang"].contains(&key.as_str()),
+            "unexpected `location` key `{key}` crossed the wire"
+        );
+    }
+    let extra_links = out_map["extraLinks"]
+        .as_array()
+        .expect("extraLinks is an array");
+    for link in extra_links {
+        let link = link.as_object().expect("extraLinks entry is an object");
+        for key in link.keys() {
+            assert!(
+                ["label", "url"].contains(&key.as_str()),
+                "unexpected extraLinks entry key `{key}` crossed the wire"
+            );
+        }
+    }
+}
+
+// ── contact_profile_set photo restore (round-1 review, issue #1180) ────────
+
+/// The CRITICAL repro (P-r1-F1): an agent read-modify-write that never saw
+/// `photo` (because [`project_contact_profile_get`] already stripped it) must
+/// not delete it on the whole-row-replace write.
+#[test]
+fn restore_contact_profile_photo_reinjects_the_stored_photo_when_the_payload_omits_it() {
+    let mut input = json!({ "profile": { "fullName": "Jane Doe" } });
+    restore_contact_profile_photo(
+        "contact_profile_set",
+        &mut input,
+        Some("data:image/png;base64,AAAA"),
+    );
+    assert_eq!(input["profile"]["photo"], "data:image/png;base64,AAAA");
+}
+
+/// The renderer's own settings form clears a photo by omitting the key on
+/// ITS OWN write path (never through this dispatcher); an agent that sends
+/// an EXPLICIT `"photo": null` is making that same real choice and must not
+/// be overridden.
+#[test]
+fn restore_contact_profile_photo_respects_an_explicit_value_including_null() {
+    let mut input = json!({ "profile": { "photo": null } });
+    restore_contact_profile_photo("contact_profile_set", &mut input, Some("stored"));
+    assert!(input["profile"]["photo"].is_null());
+}
+
+#[test]
+fn restore_contact_profile_photo_is_a_no_op_for_any_other_command() {
+    let mut input = json!({ "profile": { "fullName": "Jane Doe" } });
+    restore_contact_profile_photo("jobs_list", &mut input, Some("stored"));
+    assert!(input["profile"].get("photo").is_none());
+}
+
+#[test]
+fn restore_contact_profile_photo_is_a_no_op_when_nothing_is_stored() {
+    let mut input = json!({ "profile": { "fullName": "Jane Doe" } });
+    restore_contact_profile_photo("contact_profile_set", &mut input, None);
+    assert!(input["profile"].get("photo").is_none());
 }
 
 /// The gate is by command name, not by shape: another command whose reply
