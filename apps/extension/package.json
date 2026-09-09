@@ -17,10 +17,10 @@
   },
   "dependencies": {
     "@ajh/shared": "workspace:*",
-    "@wxt-dev/browser": "^0.2.8"
+    "@wxt-dev/browser": "^0.2.9"
   },
   "devDependencies": {
-    "@types/chrome": "^0.2.8",
+    "@types/chrome": "^0.2.9",
     "chrome-webstore-upload-cli": "4.0.1",
     "cross-env": "^10.1.0",
     "jsdom": "^30.0.1",
