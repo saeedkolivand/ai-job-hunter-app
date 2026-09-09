@@ -2292,6 +2292,7 @@ fn parse_launch_args_accepts_any_subset_of_the_two_flags_in_any_order() {
             help: false,
             allow_reversible: true,
             allow_irreversible: false,
+            http: None,
         }
     );
     assert_eq!(
@@ -2300,9 +2301,32 @@ fn parse_launch_args_accepts_any_subset_of_the_two_flags_in_any_order() {
             help: false,
             allow_reversible: true,
             allow_irreversible: true,
+            http: None,
         },
         "order must not matter"
     );
+}
+
+#[test]
+fn parse_launch_args_http_takes_a_bare_port_and_nothing_else() {
+    assert_eq!(
+        parse_launch_args(&args(&["--http", "8090"])).unwrap().http,
+        Some(8090)
+    );
+    assert_eq!(
+        parse_launch_args(&args(&["--allow-irreversible", "--http", "8090"]))
+            .unwrap()
+            .http,
+        Some(8090)
+    );
+    // No flag-shape lets a caller name a host or address (issue #1173's "refuse at parse
+    // time"): a bare port is the only thing `--http` ever accepts.
+    assert!(parse_launch_args(&args(&["--http", "0.0.0.0:9000"])).is_err());
+    assert!(parse_launch_args(&args(&["--http=9000"])).is_err());
+    assert!(parse_launch_args(&args(&["--http", "not-a-port"])).is_err());
+    assert!(parse_launch_args(&args(&["--http"])).is_err());
+    assert!(parse_launch_args(&args(&["--http", "-1"])).is_err());
+    assert!(parse_launch_args(&args(&["--http", "99999"])).is_err());
 }
 
 #[test]

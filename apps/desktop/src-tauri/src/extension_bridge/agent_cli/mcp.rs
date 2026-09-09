@@ -135,6 +135,20 @@
 //! - **A `tools/call` with a null/absent `id` is dropped before classification**, so it neither
 //!   dispatches nor answers: nothing is listening for the result, exactly as before.
 //!
+//! ## Two transports, one handler (issue #1173, ADR-040 amendment)
+//! `--http <port>` (`mcp::http`) serves the SAME per-request behaviour over Streamable HTTP
+//! instead of stdio — [`handle_message`] is the one function both wires call: [`route_value`]
+//! classifies, [`dispatched_tool_result`] dispatches the bridge-backed outcome, and the tiers,
+//! the per-call [`INVOCATION_TIMEOUT`]-bounded fresh [`super::query`] connection, and
+//! [`results::tool_result`]'s [`results::MCP_RESULT_MAX_BYTES`] cap are unchanged either way —
+//! `Server::new`, `tools()` and `dispatch` are literally the same values [`run`] hands to
+//! whichever wire it picks. What differs is ONLY the framing: HTTP has no stdin/stdout to
+//! protect from a slow dispatch, so it answers one request at a time on its own accept loop
+//! rather than reproducing the three-thread stdio split; there is no SSE stream and no session —
+//! every `POST /mcp` is a single self-contained JSON-RPC request/response, so nothing here needs
+//! the queueing this module's stdio half exists for. See `mcp::http`'s own module doc for the
+//! bind/auth/framing contract.
+//!
 //! ## What this is NOT
 //! Never wrapped in [`super::run_verb_within`]'s whole-invocation [`super::INVOCATION_TIMEOUT`] —
 //! each `tools/call` gets its own budget via the same constant. Never a second validator of
@@ -870,13 +884,24 @@ enum Routed {
     },
 }
 
-/// Route one already-read JSON-RPC line. Pure: parses, classifies, and answers everything the
-/// main thread can answer on its own; never dispatches.
+/// Route one already-read JSON-RPC line: parse, then hand off to [`route_value`]. Pure — never
+/// dispatches. Split from [`route_value`] so the HTTP transport (`mcp::http`), which already
+/// receives a parsed request body rather than a text line, can call the shared classifier
+/// directly without re-serializing its body just to re-parse it here.
 fn route_line(line: &str, server: &Server) -> Routed {
     let parsed: Value = match serde_json::from_str(line) {
         Ok(v) => v,
         Err(_) => return Routed::Reply(rpc_error(Value::Null, -32700, "Parse error")),
     };
+    route_value(parsed, server)
+}
+
+/// The classifier both transports share (issue #1173): given one already-parsed JSON-RPC
+/// message, decide whether it is dropped (a notification, or `id: null`), answerable locally, or
+/// needs the bridge. Identical to what `route_line` did inline before this split — no behaviour
+/// change, only a parse/classify split so a caller that already holds a [`Value`] (the HTTP
+/// transport's request body) skips the string round-trip.
+fn route_value(parsed: Value, server: &Server) -> Routed {
     let Some(obj) = parsed.as_object() else {
         return Routed::Reply(rpc_error(Value::Null, -32600, "Invalid Request"));
     };
@@ -906,6 +931,32 @@ fn route_line(line: &str, server: &Server) -> Routed {
     };
 
     Routed::Reply(reply_frame(id, outcome))
+}
+
+/// The one per-request handler both transports call (issue #1173): classify an already-parsed
+/// JSON-RPC message via [`route_value`] and, for the one outcome that needs the app, dispatch it
+/// and wrap the reply — `None` for a dropped notification, `Some(frame)` for everything else. The
+/// stdio [`serve`] loop does NOT call this directly: its three-thread split (module doc) exists so
+/// a bridge-backed call can be classified without blocking the writer and dispatched without
+/// blocking a `ping` behind it, so it composes the same two calls (`route_value` on the writer
+/// thread, [`dispatched_tool_result`] on the worker) across that boundary instead of in one frame.
+/// The stateless HTTP transport (`mcp::http`) has no writer thread to protect and answers one
+/// request at a time, so it calls this directly and synchronously — same classifier, same tiers,
+/// same throttle (a fresh [`super::query`] bridge round trip per call either way), same result
+/// cap, byte-for-byte the same [`tool_result`]/refusal shapes. Never used by [`route_line`]/
+/// [`route_value`] themselves, which stay pure and dispatch-free.
+fn handle_message(
+    parsed: Value,
+    server: &Server,
+    dispatch: &mut dyn FnMut(&Verb) -> Result<Value, &'static str>,
+) -> Option<Value> {
+    match route_value(parsed, server) {
+        Routed::Drop => None,
+        Routed::Reply(frame) => Some(frame),
+        Routed::Call { id, verb } => {
+            Some(reply_frame(id, Ok(dispatched_tool_result(&verb, dispatch))))
+        }
+    }
 }
 
 /// What the main thread selects over: input from the reader thread, replies from the worker
@@ -1188,27 +1239,41 @@ fn serve(
     0
 }
 
-/// `agent mcp [--allow-reversible] [--allow-irreversible] [--help]` argv — any subset of the two
-/// gating flags, in any order; `--help`/`-h`/`help` anywhere short-circuits everything else.
-/// Anything not in this set is a hard failure (MUST FIX — security review round 2: argv is the
-/// only path to either gate, env vars are never consulted, and this parser must never grow a
+/// `agent mcp [--allow-reversible] [--allow-irreversible] [--http <port>] [--help]` argv — any
+/// subset of the flags, in any order; `--help`/`-h`/`help` anywhere short-circuits everything
+/// else. Anything not in this set is a hard failure (MUST FIX — security review round 2: argv is
+/// the only path to any gate, env vars are never consulted, and this parser must never grow a
 /// fuzzy/prefix match that could nudge a typo into an elevated launch).
+///
+/// `--http` takes exactly one following token, parsed as a bare `u16` — nothing else is a valid
+/// shape for it. This is also the WHOLE non-loopback-bind refusal (issue #1173): there is no flag
+/// that can express a host or address at all, so `--http 0.0.0.0:9000`, `--http=9000`, and a bare
+/// `--http` with nothing after it are all a parse-time `Err(())` here, before a socket is ever
+/// touched — never a runtime validation `http::run` has to perform on a value that already parsed.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct LaunchArgs {
     help: bool,
     allow_reversible: bool,
     allow_irreversible: bool,
+    http: Option<u16>,
 }
 
 fn parse_launch_args(args: &[String]) -> Result<LaunchArgs, ()> {
     let mut parsed = LaunchArgs::default();
-    for arg in args {
-        match arg.as_str() {
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
             "--help" | "-h" | "help" => parsed.help = true,
             "--allow-reversible" => parsed.allow_reversible = true,
             "--allow-irreversible" => parsed.allow_irreversible = true,
+            "--http" => {
+                let port = args.get(i + 1).ok_or(())?.parse::<u16>().map_err(|_| ())?;
+                parsed.http = Some(port);
+                i += 1;
+            }
             _ => return Err(()),
         }
+        i += 1;
     }
     Ok(parsed)
 }
@@ -1223,12 +1288,16 @@ fn mcp_help_text() -> String {
         .map(|t| t["name"].as_str().unwrap_or_default())
         .collect();
     format!(
-        "ajh-tauri agent mcp [--allow-reversible] [--allow-irreversible]\n\n\
-         Run as an MCP (Model Context Protocol) stdio server for Claude Code/Codex; the desktop \
-         app must be running for any tool except `commands`.\n\n\
+        "ajh-tauri agent mcp [--allow-reversible] [--allow-irreversible] [--http <port>]\n\n\
+         Run as an MCP (Model Context Protocol) server for Claude Code/Codex/any client, over \
+         stdio by default; the desktop app must be running for any tool except `commands`.\n\n\
          FLAGS:\n\
          \x20 --allow-reversible     expose call-reversible (mutates state, undoable via the app)\n\
          \x20 --allow-irreversible   expose call-irreversible too (implies --allow-reversible)\n\
+         \x20 --http <port>          serve MCP Streamable HTTP on 127.0.0.1:<port> instead of \
+           stdio (no other bind shape is accepted); prints one \
+           {{\"transport\":\"http\",\"url\":...,\"token\":...}} line to stdout, once, before \
+           serving\n\
          \x20 --help, -h, help       show this help and exit (works even if the app is closed)\n\n\
          Default (no flags): {}.\n",
         default_names.join(", "),
@@ -1257,7 +1326,7 @@ pub(super) fn run(args: &[String]) -> i32 {
         let _ = writeln!(
             std::io::stderr(),
             "unknown argument to `agent mcp` (expected: --allow-reversible, \
-             --allow-irreversible, --help)"
+             --allow-irreversible, --http <port>, --help)"
         );
         return 2;
     };
@@ -1290,6 +1359,12 @@ pub(super) fn run(args: &[String]) -> i32 {
             }
         })
     };
+    // `--http` swaps the WIRE, never the handler: `http::run` shares `server` and `dispatch` with
+    // the stdio path below verbatim — same tiers, same per-call bridge round trip, same
+    // `handle_message` classifier (module doc's "Two transports, one handler" section).
+    if let Some(port) = launch.http {
+        return http::run(port, &server, dispatch);
+    }
     // Never `stdin().lock()`/`out.lock()`: a `StdinLock`/`StdoutLock` is not `Send`, and reading
     // and writing now happen on different threads. `Stdin` itself is `Read` but not `BufRead`,
     // hence the `BufReader`; both handles lock internally per call, so the one-frame-per-line
@@ -1302,6 +1377,12 @@ pub(super) fn run(args: &[String]) -> i32 {
         INVOCATION_TIMEOUT,
     )
 }
+
+// `agent mcp --http <port>` — the Streamable HTTP transport sharing this module's classifier and
+// dispatch (issue #1173). R8 LOC-cap split, the same move `instructions.rs`/`schemas.rs`/
+// `results.rs` already made: this is the WIRE unit for that one transport, so nothing about the
+// stdio loop or the shared per-request handler travelled with it.
+mod http;
 
 #[cfg(test)]
 mod tests;
