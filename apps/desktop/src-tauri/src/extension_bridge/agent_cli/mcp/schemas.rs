@@ -29,6 +29,19 @@ fn read_only_annotations() -> Value {
     })
 }
 
+/// Every tool's `icons` array (2025-11-25 MCP tool schema, roadmap #1146 P1) points at the same
+/// image: the desktop app's own packaged Tauri icon (`apps/desktop/src-tauri/icons/128x128.png`),
+/// served publicly via GitHub's raw-content CDN for the file as tracked on `main` — the same
+/// embeddable-image pattern `README.md` already relies on. One URL in one const, so every tool's
+/// entry is built from it and none can drift; NOT a data URI, which would multiply the ~5 KB
+/// `tools/list` payload by the tool count.
+const TOOL_ICON_URL: &str =
+    "https://raw.githubusercontent.com/saeedkolivand/ai-job-hunter-app/main/apps/desktop/src-tauri/icons/128x128.png";
+
+fn tool_icons() -> Value {
+    json!([{ "src": TOOL_ICON_URL, "mimeType": "image/png", "sizes": ["128x128"] }])
+}
+
 /// One curated tool's `description` = its [`super::VERB_TABLE`] row's own `returns` string,
 /// `extra` joined as a SECOND sentence, never run into one (SHOULD fix — a live `tools/list`
 /// measured a bare-space join reading as one run-on sentence). `title` is the human display name
@@ -51,6 +64,7 @@ fn curated_tool(name: &'static str, title: &'static str, extra: &str, schema: Va
         "description": description,
         "inputSchema": schema,
         "annotations": read_only_annotations(),
+        "icons": tool_icons(),
     })
 }
 
@@ -207,6 +221,7 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
                 &[],
             ),
             "annotations": read_only_annotations(),
+            "icons": tool_icons(),
         }),
         json!({
             "name": TOOL_CALL_READ,
@@ -217,6 +232,7 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
                 "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true,
                 "openWorldHint": true,
             },
+            "icons": tool_icons(),
         }),
     ];
     if tier.allows_reversible() {
@@ -229,6 +245,7 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
                 "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false,
                 "openWorldHint": true,
             },
+            "icons": tool_icons(),
         }));
     }
     if tier.allows_irreversible() {
@@ -245,6 +262,7 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
                 "openWorldHint": true,
             },
             "_meta": { "anthropic/requiresUserInteraction": true },
+            "icons": tool_icons(),
         }));
     }
     list

@@ -1858,6 +1858,30 @@ fn tool_titles_match_a_hand_written_literal_list() {
     );
 }
 
+/// P1 — every tool carries the same `icons` entry (2025-11-25 tool schema), and it is a real
+/// `https://` URL a client can fetch, never a data URI (which would multiply the `tools/list`
+/// payload by the tool count).
+#[test]
+fn every_tool_carries_the_same_https_icon() {
+    let list = tools(Tier::Irreversible);
+    assert!(!list.is_empty());
+    let first = list[0]["icons"].clone();
+    let icons = first.as_array().expect("icons must be an array");
+    assert_eq!(icons.len(), 1);
+    let src = icons[0]["src"].as_str().expect("icon must carry a src");
+    assert!(
+        src.starts_with("https://"),
+        "icon src must be a fetchable https URL, not a data URI: {src}"
+    );
+    for tool in &list {
+        assert_eq!(
+            tool["icons"], first,
+            "{} must carry the identical icons entry",
+            tool["name"]
+        );
+    }
+}
+
 /// P10 — deterministic ordering is what lets a client's prompt cache survive repeated
 /// `tools/list` calls in a long session. Two properties, both mutation-visible: the order is
 /// STABLE call-to-call, and every lower tier is a strict PREFIX of the next, so enabling a write
