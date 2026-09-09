@@ -6,6 +6,11 @@ use super::{CatalogueArg, CatalogueEntry};
 
 pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
+        command: "documents_list",
+        description: "",
+        args: &[],
+    },
+    CatalogueEntry {
         command: "documents_recommend_template",
         description: "Suggest a template + locale from the generation metadata signals.",
         args: &[
@@ -239,12 +244,12 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "notifications_mark_all_read",
-        description: "",
+        description: "Mark every notification in the inbox read — no \"mark unread\" path exists, so this cannot be undone.",
         args: &[],
     },
     CatalogueEntry {
         command: "notifications_mark_read",
-        description: "",
+        description: "Mark one notification read by id — no \"mark unread\" path exists, so this cannot be undone.",
         args: &[
             CatalogueArg { name: "id", required: true, fields: None },
         ],
@@ -487,19 +492,12 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "system_health",
-        description: "",
+        description: "Runtime health snapshot. Two AI-related blocks answer two different questions: `ai` is the LOCAL Ollama daemon probe (`scope: 'localOllama'`) — reachable + which model is loaded — while `activeProvider` is the app's actually-configured generation provider/model (same lookup as `ai.getActiveConfig`), which may be a cloud provider unrelated to Ollama's reachability.",
         args: &[],
     },
     CatalogueEntry {
         command: "system_open_devtools",
         description: "",
         args: &[],
-    },
-    CatalogueEntry {
-        command: "system_open_external",
-        description: "Open `url` in the OS default handler (browser/app) — outside this app's own sandbox.",
-        args: &[
-            CatalogueArg { name: "url", required: true, fields: None },
-        ],
     },
 ];

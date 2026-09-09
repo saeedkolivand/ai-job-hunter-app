@@ -641,13 +641,18 @@ fn no_proof_source_points_at_an_irreversible_command() {
 // ── generated catalogue coverage (issues #1163, #1158, #1160) ────────────
 
 /// A POLICY row with ZERO renderer `invoke()` references at all — this module's own doc names
-/// exactly four such rows; two (`extract_resume`, `support_get_system_info`) are `NotExposed` and
+/// exactly five such rows; two (`extract_resume`, `support_get_system_info`) are `NotExposed` and
 /// so outside this coverage test's scope, and `dialog_open_files` (also `NotExposed`) has a real
-/// call site the generator itself records in `catalogue::UNCATALOGUED`. These two are the ONLY
-/// Read/Reversible/Irreversible rows the generator has no signal for at all — hand-written, never
-/// derived from `catalogue::UNCATALOGUED` (this repo's own standing lesson: a guard driven off its
-/// own generated data cannot catch the generator silently dropping a row it used to emit).
-const ALLOWLISTED_UNCATALOGUED: &[&str] = &["boards_list", "privacy_clear_data"];
+/// call site the generator itself records in `catalogue::UNCATALOGUED`. The remaining three are the
+/// ONLY Read/Reversible/Irreversible rows the generator has no signal for at all — hand-written,
+/// never derived from `catalogue::UNCATALOGUED` (this repo's own standing lesson: a guard driven
+/// off its own generated data cannot catch the generator silently dropping a row it used to emit).
+/// `updater_status` (issue #1165's read-only counterpart to `updater_check`) has no renderer call
+/// site at all — its ONLY consumer today is this agent surface's own `updater_install` confirm
+/// proof, dispatched through `agent_call`'s `Webview::on_message` path, never the renderer's
+/// `AppClient` — so it is uncatalogued by the same "zero renderer references" reasoning as
+/// `boards_list`/`privacy_clear_data`, not an oversight.
+const ALLOWLISTED_UNCATALOGUED: &[&str] = &["boards_list", "privacy_clear_data", "updater_status"];
 
 /// Issue #1183 F4 — the ONE row of [`ALLOWLISTED_UNCATALOGUED`] whose `POLICY` `Effect` is
 /// [`Effect::Irreversible`] (`privacy_clear_data`: disconnects every board and unconditionally

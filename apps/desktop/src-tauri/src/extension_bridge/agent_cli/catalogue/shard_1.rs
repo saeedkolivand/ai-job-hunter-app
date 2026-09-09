@@ -210,8 +210,10 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "ai_spend_summary",
-        description: "Read-only AI-spend summary: today's REAL per-provider token totals — as reported by each provider's own response, never estimated — plus an ESTIMATED USD cost from a static list-price rate table.",
-        args: &[],
+        description: "Read-only AI-spend summary: `today`'s REAL per-provider token totals — as reported by each provider's own response, never estimated — plus an ESTIMATED USD cost from a static list-price rate table.",
+        args: &[
+            CatalogueArg { name: "days", required: false, fields: None },
+        ],
     },
     CatalogueEntry {
         command: "ai_stage_overrides",
@@ -499,10 +501,5 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         args: &[
             CatalogueArg { name: "req", required: true, fields: Some(&["name", "bytes", "title", "locale"]) },
         ],
-    },
-    CatalogueEntry {
-        command: "documents_list",
-        description: "",
-        args: &[],
     },
 ];

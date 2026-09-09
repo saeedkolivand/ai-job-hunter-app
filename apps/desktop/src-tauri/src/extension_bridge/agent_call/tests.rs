@@ -590,9 +590,12 @@ fn every_ai_spend_summary_irreversible_row_proves_on_the_shared_grace_window_pat
         checked += 1;
     }
     // Hand-written literal, not derived from the loop -- catches a row silently REMOVED.
+    // 10 -> 9 (issue #1169): `help_search`'s dense arm proved on `ai_spend_summary` via its own
+    // `charge_provider_daily` read before that row moved `Irreversible` -> `NotExposed`, taking
+    // its grace-window-eligible proof with it.
     assert_eq!(
-        checked, 10,
-        "expected 10 POLICY rows naming ai_spend_summary this way"
+        checked, 9,
+        "expected 9 POLICY rows naming ai_spend_summary this way"
     );
 }
 
@@ -2422,25 +2425,17 @@ fn reshape_reply_marks_a_truncated_documents_list_row_but_not_a_short_one() {
     assert!(short.contains("short"));
 }
 
-/// Same fix, the `documents_get_text` scalar-reply arm — `reshape_reply`'s
-/// `fence_scalar_reply` step must carry the marker inside the fenced body
-/// when the bare string it fences exceeds the cap.
-#[test]
-fn reshape_reply_marks_a_truncated_documents_get_text_scalar_reply() {
-    let long_text = "x".repeat(crate::prompt_fence::JOB_CAP + 500);
-    let out = reshape_reply("documents_get_text", json!(long_text), None);
-    assert!(out.as_str().unwrap().contains("TRUNCATED"));
-
-    let out_short = reshape_reply("documents_get_text", json!("short"), None);
-    assert!(!out_short.as_str().unwrap().contains("TRUNCATED"));
-}
-
 /// Round-3 fix (M1): `SCALAR_FENCE_COMMANDS` widened to include
 /// `ai_research_answer` alongside `documents_get_text`, but the marker's
 /// own doc/text used to claim scope over "the two document call sites"
 /// only, i.e. it lied about what `ai_research_answer` gets. Pins that the
 /// SAME marker fires here too, and that its wording no longer promises
 /// "the whole document" for a reply that isn't one.
+///
+/// `documents_get_text` no longer shares this generic marker path (issue #1157/#1162):
+/// `fence_scalar_reply` special-cases it out to [`fence_user_document_bare_text`], which never
+/// silently truncates — a reply too large is refused whole by `enforce_frame_cap` instead. See
+/// `reshape_reply_never_truncates_a_long_documents_get_text_reply` for that guarantee.
 #[test]
 fn reshape_reply_marks_a_truncated_ai_research_answer_scalar_reply() {
     let long_text = "x".repeat(crate::prompt_fence::JOB_CAP + 500);
@@ -2702,33 +2697,15 @@ fn reshape_reply_base64_encodes_last_and_the_two_reshape_lists_stay_disjoint() {
     assert_eq!(out, json!({ "id": "j-1" }));
 }
 
-/// Round 5 (`B1-r1-ACLI-R5-7`): `documents_get_text` returns `AppResult<String>` — a BARE JSON
-/// string reply, not an object — so `fence_named_fields_recursive`'s name-keyed walk (which only
-/// ever fences a string reached UNDER a key) cannot reach it; its `_ => {}` arm silently passed
-/// the reply through untouched before this fix. This is the same untrusted document text
-/// `documents_list`'s `"text"` field gets fenced+capped, just returned through a different
-/// command shape.
-#[test]
-fn reshape_reply_fences_documents_get_text_bare_string_reply() {
-    let long_text = "s".repeat(crate::prompt_fence::JOB_CAP + 5_000);
-    let out = reshape_reply("documents_get_text", json!(long_text), None);
-    let fenced = out.as_str().expect("still a bare string reply");
-    assert!(
-        fenced.starts_with("<job_posting>"),
-        "documents_get_text's bare string reply must be fenced: {fenced:.80}"
-    );
-    assert!(
-        fenced.len() < long_text.len(),
-        "documents_get_text's reply must be capped at prompt_fence::JOB_CAP like every other \
-         fenced document text"
-    );
-}
-
 /// Security review round 9 (`SEC-1`): `ai_research_answer` returns
 /// `-> String` too — the active provider's own web search notes, the most
 /// injection-prone reply on the whole surface — and was missing from
-/// `SCALAR_FENCE_COMMANDS` even though `documents_get_text` right above it
-/// was already fenced for the identical bare-string reason.
+/// `SCALAR_FENCE_COMMANDS` even though `documents_get_text` was already fenced for the
+/// identical bare-string reason (issue #1157/#1162 later moved `documents_get_text` onto its
+/// own `user_document`-tagged, never-truncated path —
+/// `reshape_reply_fences_documents_get_texts_bare_string_reply_as_user_document` — but
+/// `ai_research_answer` stays on this generic `job_posting`/truncation-marker arm, since it is
+/// genuinely third-party scraped text rather than the user's own document).
 #[test]
 fn reshape_reply_fences_ai_research_answer_bare_string_reply() {
     let notes = "s".repeat(crate::prompt_fence::JOB_CAP + 5_000);

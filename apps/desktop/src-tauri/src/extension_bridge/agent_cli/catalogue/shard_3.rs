@@ -6,6 +6,13 @@ use super::{CatalogueArg, CatalogueEntry};
 
 pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
+        command: "system_open_external",
+        description: "Open `url` in the OS default handler (browser/app) — outside this app's own sandbox.",
+        args: &[
+            CatalogueArg { name: "url", required: true, fields: None },
+        ],
+    },
+    CatalogueEntry {
         command: "system_set_close_to_tray",
         description: "Push the close-to-tray preference to the shell.",
         args: &[

@@ -3359,11 +3359,15 @@ list(): Promise<AppNotification[]>;
 markRead(id: string): Promise<void>;
 ```
 
+Mark one notification read by id — no "mark unread" path exists, so this cannot be undone.
+
 #### `notifications.markAllRead`
 
 ```ts
 markAllRead(): Promise<void>;
 ```
+
+Mark every notification in the inbox read — no "mark unread" path exists, so this cannot be undone.
 
 #### `notifications.remove`
 
