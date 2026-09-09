@@ -421,6 +421,8 @@ The same tier flags as above go at the end of `args` — `--allow-reversible` (s
 
 </details>
 
+**URL-only clients:** `agent mcp --http <port>` runs the same server over MCP Streamable HTTP instead of stdio, for a client that only takes a URL rather than launching a subprocess. It binds `127.0.0.1` only — no flag can name a different host, so there is nothing to configure there — and prints one `{"transport":"http","url":"...","token":"..."}` line to stdout, once, before it starts serving; that token is never written to a file, so a client that loses it has to relaunch the server. Every `POST /mcp` needs `Authorization: Bearer <token>`, and any request carrying an `Origin` header is refused outright (this is for local scripts and agent frameworks, never a browser page's `fetch`). It answers one JSON-RPC request per `POST` — no streaming, no sessions, `GET`/`DELETE` both `405` — and shuts down the same way the stdio mode does, on Ctrl-C or stdin EOF.
+
 **Tool results are sent to the model and stored in the client's transcript.** Queries like `profile` and `documents_get_text` return PII; the model can access job postings, your résumé, and application records. Use these tools only when you ask the agent to retrieve that data.
 
 **Important:** The first argument to the MCP server must be `agent` (e.g., `agent mcp`), or the desktop app launches instead.

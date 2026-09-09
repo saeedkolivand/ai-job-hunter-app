@@ -59,7 +59,10 @@ mod proof;
 // `extension_bridge` for the three items `agent_cli::mcp` and `agent_read`
 // read through it, the same shape `agent_read` uses for `found_jobs`.
 pub(in crate::extension_bridge) mod reshape;
-use reshape::{reshape_reply, take_list_page_args, unfence_named_fields_recursive};
+use reshape::{
+    reshape_reply, restore_local_only_contact_fields, take_list_page_args,
+    unfence_named_fields_recursive, CONTACT_PROFILE_SET_COMMAND,
+};
 // Dispatch-time input-key validation against the generated
 // `agent_cli::catalogue` (issues #1163, #1158, #1160) — its own file under
 // the same R8 LOC-cap reasoning as `proof`/`reshape` above.
@@ -223,6 +226,12 @@ pub(super) enum Refusal {
     /// caller's input, so the carried string is always one of
     /// [`invoke_command`]'s own fixed messages, never an echo of `input`.
     DispatchFailed(String),
+    /// App state this dispatch needed to read (today: [`stored_profile_value`]'s
+    /// pre-write read) failed — a store I/O/parse error, never the target
+    /// command's own dispatch. P-r2-AC-R5-F4: used to fold into
+    /// [`Refusal::DispatchFailed`], whose doc guarantees a fixed,
+    /// framework-only string, making that guarantee false.
+    StateUnreadable(String),
     /// `InvokeResponse::Err` (HIGH fix — security review): the target
     /// command's OWN dispatch produced a Tauri-level error rather than a
     /// success payload — distinct from [`Refusal::DispatchFailed`], which is
@@ -308,6 +317,8 @@ pub(super) const ERR_NOT_EXPOSED: &str = "not_exposed";
 const ERR_CLI_ONLY: &str = "cli_only";
 pub(super) const ERR_RATE_LIMITED: &str = "rate_limited"; // reused by agent_read, issue #1155
 const ERR_DISPATCH_FAILED: &str = "dispatch_failed";
+/// Distinct from [`ERR_DISPATCH_FAILED`] — see [`Refusal::StateUnreadable`].
+const ERR_STATE_UNREADABLE: &str = "state_unreadable";
 const ERR_INVOKE_ERROR: &str = "invoke_error";
 /// `pub(super)` — [`super::agent_cli::exit_code_for_reply`] matches on this
 /// EXACT sentinel to special-case exit 4, never a second hand-typed copy of
@@ -336,6 +347,7 @@ impl Refusal {
             Refusal::OriginRefused => ERR_CLI_ONLY,
             Refusal::RateLimited { .. } => ERR_RATE_LIMITED,
             Refusal::DispatchFailed(_) => ERR_DISPATCH_FAILED,
+            Refusal::StateUnreadable(_) => ERR_STATE_UNREADABLE,
             Refusal::InvokeError(_) => ERR_INVOKE_ERROR,
             Refusal::ConfirmationRequired(_) => ERR_CONFIRMATION_REQUIRED,
             Refusal::ConfirmationMismatch { .. } => ERR_CONFIRMATION_MISMATCH,
@@ -377,6 +389,9 @@ impl Refusal {
             Refusal::OriginRefused => CLI_ONLY_MESSAGE.to_string(),
             Refusal::RateLimited { .. } => super::agent_read::THROTTLED_MESSAGE.to_string(),
             Refusal::DispatchFailed(detail) => detail.clone(),
+            Refusal::StateUnreadable(detail) => {
+                format!("could not read app state this dispatch needed: {detail}")
+            }
             Refusal::InvokeError(detail) => {
                 // The explanatory prose stays unlabelled; only the underlying value is fenced,
                 // under the distinct `command_error` tag -- see this variant's own `detail()` doc
@@ -714,6 +729,33 @@ fn invoke_error_detail(v: &Value) -> String {
         .unwrap_or_else(|| v.to_string())
 }
 
+/// The impure half of the [`CONTACT_PROFILE_SET_COMMAND`] photo-restore:
+/// read the stored profile, or `None` when the store is unmanaged. Factored
+/// out of `dispatch_direct` (round-3 review, P-r3-AC-R3-F1) so it composes
+/// with the pure `restore_local_only_contact_fields` against a REAL
+/// `ContactProfileStore` in a test — this crate has no `tauri::test` mock
+/// app, so a call site taking `&AppHandle` directly can't be exercised at
+/// all; `commands/contact_profile.rs`'s own `_inner`/`Option<&Store>` split
+/// documents the same gap and uses the same shape.
+///
+/// Reads through [`ContactProfileStore::try_get`], not `get` (agent-cli
+/// review, P-r1-AC-R4-F3): `get` degrades a locked/busy read or a corrupt
+/// stored row to `ContactProfile::default()`, which is indistinguishable
+/// from "nothing stored" to `restore_local_only_contact_fields` and would
+/// reproduce the round-1 CRITICAL (a whole-row-replace deleting `photo`)
+/// on every such read. A real read failure refuses the dispatch instead.
+fn stored_profile_value(
+    store: Option<&crate::contact_profile::ContactProfileStore>,
+) -> Result<Option<Value>, Refusal> {
+    let Some(store) = store else {
+        return Ok(None);
+    };
+    let profile = store
+        .try_get()
+        .map_err(|e| Refusal::StateUnreadable(e.to_string()))?;
+    Ok(serde_json::to_value(&profile).ok())
+}
+
 /// Invoke a command for real: take this layer's own paging arguments off
 /// `input` ([`take_list_page_args`]), strip any fence wrapper the caller
 /// echoed back into it ([`unfence_named_fields_recursive`]), dispatch, then
@@ -734,6 +776,23 @@ async fn dispatch_direct(
 ) -> Result<Value, Refusal> {
     let page_args = take_list_page_args(command, &mut input)?;
     unfence_named_fields_recursive(&mut input);
+    // The CRITICAL fix for issue #1180's round-1 review, generalised in
+    // round 2 (P-r2-R2-F2): a `contact_profile_set` whose payload omits a
+    // local-only field (the only shape a `contact_profile_get` caller can
+    // ever produce, since that reply already strips every such field) must
+    // not silently delete it on this whole-row-replace write — for `photo`
+    // today, and for whatever field is added to `ContactProfile` next
+    // without a matching `CONTACT_PROFILE_AGENT_FIELDS` entry. Reads current
+    // app state here via `stored_profile_value` (the impure half) and hands
+    // the whole stored profile to the pure `restore_local_only_contact_fields`,
+    // which does the actual merge.
+    if command == CONTACT_PROFILE_SET_COMMAND {
+        let stored_profile = stored_profile_value(
+            app.try_state::<crate::contact_profile::ContactProfileStore>()
+                .as_deref(),
+        )?;
+        restore_local_only_contact_fields(command, &mut input, stored_profile.as_ref());
+    }
     let outcome = invoke_command(app, command, input)
         .await
         .map_err(|e| Refusal::DispatchFailed(e.to_string()))?;

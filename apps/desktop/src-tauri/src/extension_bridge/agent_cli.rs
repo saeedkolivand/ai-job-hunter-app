@@ -432,7 +432,9 @@ const VERB_TABLE: &[VerbHelp] = &[
                   exit 4); NotExposed always refuses (see `agent schema`, the MCP `commands` \
                   tool, or policy.rs for the full table). A few unbounded list commands answer \
                   with a paged {items,total,nextCursor} envelope and take --input \
-                  '{\"limit\":N,\"cursor\":\"...\"}'; the `commands` tool marks which and how",
+                  '{\"limit\":N,\"cursor\":\"...\"}'; the `commands` tool marks which and how. \
+                  `agent call contact_profile:contact_profile_get` omits `photo`; a `contact_profile_set` \
+                  write missing it restores the field (`autofill_profile::CONTACT_PROFILE_AGENT_FIELDS`)",
     },
 ];
 

@@ -622,7 +622,11 @@
         "copyCodex": "Copy config",
         "genericLabel": "Any MCP client (JSON)",
         "genericHint": "Paste this into your client's MCP config file; if it already has an mcpServers block, add just the inner entry. Claude Desktop, Cursor, Windsurf, Gemini CLI, LM Studio, Jan and most others read this shape. The write tier is the flag in args.",
-        "copyGeneric": "Copy JSON"
+        "copyGeneric": "Copy JSON",
+        "deeplinkLabel": "One-click install link",
+        "deeplinkHint": "Cursor and VS Code each register their own address-like scheme for a one-click MCP install prompt. Paste the copied link into your browser's address bar, or open it from a terminal (open on macOS, xdg-open on Linux, start on Windows), to trigger it for the tier above.",
+        "copyCursorLink": "Copy Cursor install link",
+        "copyVsCodeLink": "Copy VS Code install link"
       }
     },
     "about": {

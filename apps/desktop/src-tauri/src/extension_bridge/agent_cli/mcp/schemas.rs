@@ -9,6 +9,8 @@
 //! re-imports. The tool-name consts stay there too: `tool_argv` and
 //! `classify_tool_call` match on them, so they are protocol, not catalogue.
 
+use std::sync::LazyLock;
+
 use super::*;
 
 fn schema_object(properties: Value, required: &[&str]) -> Value {
@@ -27,6 +29,27 @@ fn read_only_annotations() -> Value {
         "idempotentHint": true,
         "openWorldHint": false,
     })
+}
+
+/// Every tool's `icons` array (2025-11-25 MCP tool schema, roadmap #1146 P1) points at the same
+/// image: the desktop app's own packaged Tauri icon (`apps/desktop/src-tauri/icons/32x32.png`),
+/// embedded as a `data:` URI via [`include_bytes!`]. This is a stdio server (ADR-040), and VS
+/// Code's MCP icon guidance allows only `file:///` or `data:` for stdio — never `https://` on a
+/// foreign domain, which is same-origin-gated to the server's own host for HTTP/SSE transports
+/// only. A `data:` URI also carries no outbound host at all, so it needs no entry in the egress
+/// inventory (`tests/egress.rs`, ADR-0005) for a fetch this app itself never makes. 32x32, not
+/// the packaged 128x128, keeps the payload small: ~2.5 KB base64 per tool.
+static TOOL_ICON_DATA_URI: LazyLock<String> = LazyLock::new(|| {
+    use base64::Engine;
+    let bytes: &[u8] = include_bytes!("../../../../icons/32x32.png");
+    format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    )
+});
+
+fn tool_icons() -> Value {
+    json!([{ "src": TOOL_ICON_DATA_URI.as_str(), "mimeType": "image/png", "sizes": ["32x32"] }])
 }
 
 /// One curated tool's `description` = its [`super::VERB_TABLE`] row's own `returns` string,
@@ -51,6 +74,7 @@ fn curated_tool(name: &'static str, title: &'static str, extra: &str, schema: Va
         "description": description,
         "inputSchema": schema,
         "annotations": read_only_annotations(),
+        "icons": tool_icons(),
     })
 }
 
@@ -159,11 +183,22 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
                 &["url"],
             ),
         ),
+        // P-r3-AC-R3-F4 (round-3 review, issue #1180): this description ships to the model
+        // verbatim, so it must not (a) carry review-process chatter ("issue #1180, round-2
+        // review") into model-facing text, or (b) name the generic `call-read
+        // contact_profile_get` row as an available substitute at exactly the moment this tool's
+        // own consent gate refuses — a disclaimer is not a control, and pointing at an ungated
+        // route is a bypass hint, not a warning. That row's own doc
+        // (`agent_call::reshape::CONTACT_PROFILE_GET_PROJECTION_NOTE`) still carries the full
+        // "shares field names minus `photo`, UNGATED and uncleaned, raw {default,byLang}
+        // location, unfiltered/uncapped extraLinks" comparison for a caller who reads THAT row's
+        // own discovery surfaces (`agent schema`, the `call` verb's `--help`, the `commands`
+        // tool) — this description only needs to say what THIS resource is.
         curated_tool(
             TOOL_PROFILE,
             "My Profile",
             "Contact fields only (name, email, phone, location, links) — for the résumé/document \
-             text itself, read documents:documents_list via call-read (rows carry the document \
+             text itself, read documents:documents_list (rows carry the document \
              text, fenced and capped at the fence limit); documents:documents_get_text with \
              {\"id\": <that row's `_id` value>} (the row's key is `_id`, but \
              documents_get_text's own parameter is named `id`) returns the same text by id, \
@@ -172,7 +207,11 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
              fenced block (`<job_posting>\\n\\n</job_posting>`) as a document that resolved but \
              has no extracted text — not an error either way, and the two are NOT \
              distinguishable from this reply alone; cross-check the `_id` against \
-             documents:documents_list's own rows to tell them apart.",
+             documents:documents_list's own rows to tell them apart. Values are cleaned and \
+             collapsed for display — `location` resolves to a single string, `extraLinks` is \
+             filtered and capped, and `photo` is never included — and this consent gate is \
+             specific to this tool; it does not apply to any other route the app might expose \
+             the same underlying data through.",
             no_args.clone(),
         ),
         curated_tool(TOOL_AUTOMATIONS, "Automations", "", no_args),
@@ -207,6 +246,7 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
                 &[],
             ),
             "annotations": read_only_annotations(),
+            "icons": tool_icons(),
         }),
         json!({
             "name": TOOL_CALL_READ,
@@ -217,6 +257,7 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
                 "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true,
                 "openWorldHint": true,
             },
+            "icons": tool_icons(),
         }),
     ];
     if tier.allows_reversible() {
@@ -229,6 +270,7 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
                 "readOnlyHint": false, "destructiveHint": false, "idempotentHint": false,
                 "openWorldHint": true,
             },
+            "icons": tool_icons(),
         }));
     }
     if tier.allows_irreversible() {
@@ -245,6 +287,7 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
                 "openWorldHint": true,
             },
             "_meta": { "anthropic/requiresUserInteraction": true },
+            "icons": tool_icons(),
         }));
     }
     list

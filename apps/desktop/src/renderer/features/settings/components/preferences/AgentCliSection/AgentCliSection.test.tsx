@@ -69,6 +69,35 @@ beforeEach(() => {
 });
 
 describe('AgentCliSection', () => {
+  it('copies the Cursor and VS Code install links rather than opening them directly', async () => {
+    renderCard();
+    await waitFor(() =>
+      expect(screen.getByTestId(TEST_IDS.settings.agentCliPath)).toHaveValue(EXE)
+    );
+
+    fireEvent.click(screen.getByTestId(TEST_IDS.settings.agentCliCopyCursorLink));
+    await waitFor(() => {
+      const copied = writeText().mock.calls.at(-1)?.[0] as string;
+      expect(copied.startsWith('cursor://anysphere.cursor-deeplink/mcp/install?')).toBe(true);
+    });
+
+    fireEvent.click(screen.getByTestId(TEST_IDS.settings.agentCliCopyVsCodeLink));
+    await waitFor(() => {
+      const copied = writeText().mock.calls.at(-1)?.[0] as string;
+      expect(copied.startsWith('vscode:mcp/install?')).toBe(true);
+    });
+
+    expect(await screen.findAllByText('Copied to the clipboard.')).not.toHaveLength(0);
+  });
+
+  it('hides the Cursor/VS Code links when there is no path — nothing valid to copy', async () => {
+    renderCard(vi.fn().mockResolvedValue({ exePath: null }));
+
+    await waitFor(() => expect(screen.getByText(/could not be resolved/i)).toBeInTheDocument());
+    expect(screen.queryByTestId(TEST_IDS.settings.agentCliCopyCursorLink)).toBeNull();
+    expect(screen.queryByTestId(TEST_IDS.settings.agentCliCopyVsCodeLink)).toBeNull();
+  });
+
   it('renders the resolved path and all three registration snippets', async () => {
     renderCard();
 

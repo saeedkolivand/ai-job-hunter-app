@@ -777,6 +777,42 @@ fn both_automations_descriptions_name_both_totals() {
     }
 }
 
+/// P-r2-R2-F7 (round-2 review, issue #1180), reworded round 3 (P-r3-AC-R3-F2):
+/// plain `agent call` (there is no `call-read` verb — that is the MCP tool
+/// name) never sees an MCP tool description, so the `call` verb's own
+/// `--help` text is one of the only two places such a caller can learn
+/// `contact_profile_get`'s reply is projected — and it must name a form the
+/// CLI dispatcher actually accepts (`parse_call`), not the MCP-only
+/// `call-read`/`commands` surface a plain-CLI caller cannot invoke.
+///
+/// P-r1-AC-R4-F2 (round 4): the two assertions above are literal-vs-literal
+/// — they'd stay green even if `contact_profile`/`contact_profile_get` were
+/// renamed out from under the dispatcher, leaving `--help` naming an
+/// invocation nothing accepts (the same drift class as P-r3-AC-R3-F2, just
+/// re-encoded). This one instead resolves the named pair against the real
+/// policy table, so a rename fails HERE instead of only making the help
+/// text a silent lie.
+#[test]
+fn call_verb_help_names_the_contact_profile_get_projection() {
+    let returns = VERB_TABLE
+        .iter()
+        .find(|v| v.name == "call")
+        .expect("the call verb")
+        .returns;
+    assert!(returns.contains("agent call contact_profile:contact_profile_get"));
+    assert!(returns.contains("photo"));
+    assert!(
+        !returns.contains("call-read contact_profile_get"),
+        "must not name the MCP-only tool form as the CLI invocation"
+    );
+    assert!(
+        policy::POLICY
+            .iter()
+            .any(|e| agent_call::split_path(e.path) == ("contact_profile", "contact_profile_get")),
+        "the pair --help names must actually resolve to a real POLICY row"
+    );
+}
+
 /// Round 2 fix (B3-r2-F3): `found-jobs`' cursor is bound to BOTH the
 /// `autopilotId` scope AND the active filter arguments
 /// (`found_jobs::found_jobs_cursor_issuer`) — the MCP schema
