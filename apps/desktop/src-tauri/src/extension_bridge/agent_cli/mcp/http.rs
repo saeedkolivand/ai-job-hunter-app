@@ -38,14 +38,26 @@
 //!   body answers with one JSON body (`Content-Type: application/json`); a notification body
 //!   (no `id`, or `id: null`, or any `notifications/*` method) answers `202` with an empty body,
 //!   matching [`super::Routed::Drop`] exactly as the stdio wire does.
-//! - **Body cap is a transport-level `413`, not the JSON-RPC `result_too_large` sentinel.** The
-//!   `result_too_large` refusal (`mcp/results.rs`) is for an outbound REPLY that grew too large
-//!   to answer honestly; an inbound body over [`crate::extension_bridge::MAX_FRAME_BYTES`] never
-//!   reaches the JSON-RPC layer at all — checked against the declared `Content-Length` before a
-//!   byte of body is read, so an oversized request costs this server nothing but the headers.
+//! - **Framing is checked before a body is ever read, never silently treated as empty (issue
+//!   #1184).** A `POST` with no `Content-Length` at all answers `411 Length Required` — an absent
+//!   declared length is a transport error, not "an empty body". A `Transfer-Encoding` header of
+//!   any kind answers `501 Not Implemented`: this server never decodes chunked (or any other)
+//!   transfer coding, so treating one as an empty, already-fully-read body would silently drop
+//!   the request's real payload. Only once both are ruled out is the DECLARED `Content-Length`
+//!   checked against [`crate::extension_bridge::MAX_FRAME_BYTES`] for the `413` below — an
+//!   inbound body over that cap never reaches the JSON-RPC layer at all, so an oversized request
+//!   costs this server nothing but the headers. The `result_too_large` sentinel (`mcp/results.rs`)
+//!   is unrelated: that one is for an outbound REPLY that grew too large to answer honestly, never
+//!   for inbound framing.
 //! - **Every response closes the connection** (`Connection: close`): this is a request/response
 //!   transport with no pipelining and no keep-alive reuse to get right, so closing after each
 //!   reply is the simplest correct behaviour rather than an optimization left undone.
+//! - **Every accepted connection carries a read/write deadline** ([`CONNECTION_IO_TIMEOUT`]):
+//!   this loop serves one connection at a time (see [`run`]'s own doc), so a peer that connects
+//!   and never completes a request — or never drains a reply — would otherwise stall every later
+//!   request behind it forever. The gate this would stall is pre-auth, so no token is needed to
+//!   trigger it; loopback-only narrows who can connect, not how long a connection can be held
+//!   open.
 //!
 //! ## Shutdown
 //! Ctrl-C is unhandled here, exactly as in the stdio mode: `SIGINT`'s OS default (process
@@ -59,6 +71,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::thread;
+use std::time::Duration;
 
 use serde_json::Value;
 
@@ -68,7 +81,15 @@ use super::{handle_message, rpc_error, Server, Verb};
 /// answering it. Loopback-only and gated by the same bearer token every real request needs, so
 /// this is a defensive cap on a misbehaving peer, not a security boundary in itself — sized well
 /// above any header set a real MCP client sends and well below anything worth allocating for.
+/// Enforced per LINE, not only on the running total (issue #1184 T2) — see [`read_capped_line`].
 const MAX_HEADER_BYTES: usize = 64 * 1024;
+
+/// Read/write deadline armed on every accepted connection, before [`handle_connection`] ever
+/// touches it (issue #1184 T5): [`run`]'s accept loop serves one connection at a time, so a peer
+/// that never finishes sending its request — or never reads its reply — would otherwise hold this
+/// whole server hostage indefinitely, pre-auth. A few seconds is generous for a same-machine
+/// loopback client and short enough that a hung peer costs this server almost nothing.
+const CONNECTION_IO_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A 32-byte random bearer token, lowercase hex — the same shape and generator
 /// `extension_bridge::persist::new_token` uses for the pairing token (issue #1173: ">= 128 bits
@@ -97,36 +118,74 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
     diff == 0
 }
 
-/// Request line + headers, lower-cased header names — everything [`handle_connection`] needs to
-/// route and gate one request. Bounded by [`MAX_HEADER_BYTES`]; `None` on a malformed request, an
-/// oversized header section, or a connection that closed before headers finished — all answered
-/// the same way (silently dropped): nothing has been read that is safe to reply to yet.
-fn read_request_head(
-    reader: &mut impl BufRead,
-) -> Option<(String, String, HashMap<String, String>)> {
-    let mut total = 0usize;
-    let mut request_line = String::new();
-    if reader.read_line(&mut request_line).ok()? == 0 {
-        return None;
+/// Bounded alternative to [`BufRead::read_line`] (issue #1184 T2): reads one line, through its
+/// trailing `\n` inclusive, off `reader`'s OWN internal buffer via [`BufRead::fill_buf`]/
+/// [`BufRead::consume`] — never a second buffering layer wrapped around it, which would silently
+/// strand bytes belonging to the NEXT line inside a throwaway buffer. Refuses (`Err(true)`) the
+/// instant reading one more byte would exceed `limit`, so an unterminated line cannot grow past
+/// what remains under the caller's cap — unlike `read_line`, whose only check runs AFTER the
+/// (unbounded) line has already been read in full. `Ok(vec![])` on immediate EOF, mirroring
+/// `read_line`'s own `Ok(0)`; `Err(false)` on a genuine I/O error (a hung/reset peer — not a size
+/// problem, so the caller must not answer `431` for it).
+fn read_capped_line(reader: &mut impl BufRead, limit: usize) -> Result<Vec<u8>, bool> {
+    let mut out = Vec::new();
+    loop {
+        let available = reader.fill_buf().map_err(|_| false)?;
+        if available.is_empty() {
+            return Ok(out); // EOF — `out` holds whatever arrived before the peer closed
+        }
+        let newline_at = available.iter().position(|&b| b == b'\n').map(|p| p + 1);
+        let take = newline_at.unwrap_or(available.len());
+        if out.len() + take > limit {
+            return Err(true);
+        }
+        out.extend_from_slice(&available[..take]);
+        reader.consume(take);
+        if newline_at.is_some() {
+            return Ok(out);
+        }
     }
-    total += request_line.len();
+}
+
+/// Lower-cased header name → value, as parsed by [`read_request_head`]. Named rather than left as
+/// an inline `HashMap<String, String>` purely so [`read_request_head`]'s own `Result<_, bool>`
+/// signature never puts `Result<` and a `HashMap<String, String>` on the same source line (R6's
+/// stringly-`Result` scan is a plain per-line text match — see `tests/architecture.rs` — and would
+/// otherwise misread this tuple's UNRELATED `String` fields as a stringly error type; the actual
+/// error here is `bool`).
+type Headers = HashMap<String, String>;
+
+/// Request line + headers, lower-cased header names — everything [`handle_connection`] needs to
+/// route and gate one request. The WHOLE head (request line plus every header line) is bounded by
+/// [`MAX_HEADER_BYTES`], enforced per LINE via [`read_capped_line`] against a single `remaining`
+/// counter (issue #1184 T2) rather than checked only after each line, which let one line with no
+/// `\n` grow without bound before the check ever ran. `Err(true)` once that cap is hit — the
+/// caller answers `431`. `Err(false)` for a malformed request line, a connection that closed
+/// before headers finished, or a genuine read error — nothing has been read that is safe to reply
+/// to, so the caller drops the connection silently for those, exactly as before this fix.
+fn read_request_head(reader: &mut impl BufRead) -> Result<(String, String, Headers), bool> {
+    let mut remaining = MAX_HEADER_BYTES;
+
+    let request_line = read_capped_line(reader, remaining)?;
+    if request_line.is_empty() {
+        return Err(false); // EOF before a byte of the request line arrived
+    }
+    remaining -= request_line.len();
+    let request_line = String::from_utf8_lossy(&request_line);
     let mut parts = request_line.trim_end().splitn(3, ' ');
-    let method = parts.next()?.to_string();
-    let raw_path = parts.next()?.to_string();
-    parts.next()?; // HTTP version — unread past the presence check
+    let method = parts.next().ok_or(false)?.to_string();
+    let raw_path = parts.next().ok_or(false)?.to_string();
+    parts.next().ok_or(false)?; // HTTP version — unread past the presence check
     let path = raw_path.split('?').next().unwrap_or_default().to_string();
 
     let mut headers = HashMap::new();
     loop {
-        if total > MAX_HEADER_BYTES {
-            return None;
+        let line = read_capped_line(reader, remaining)?;
+        if line.is_empty() {
+            return Err(false); // connection closed before the blank line that ends headers
         }
-        let mut line = String::new();
-        let n = reader.read_line(&mut line).ok()?;
-        if n == 0 {
-            return None; // connection closed before the blank line that ends headers
-        }
-        total += n;
+        remaining -= line.len();
+        let line = String::from_utf8_lossy(&line);
         let trimmed = line.trim_end_matches(['\r', '\n']);
         if trimmed.is_empty() {
             break;
@@ -135,7 +194,7 @@ fn read_request_head(
             headers.insert(name.trim().to_ascii_lowercase(), value.trim().to_string());
         }
     }
-    Some((method, path, headers))
+    Ok((method, path, headers))
 }
 
 /// `HTTP/1.1 <code> <reason>` with a bare body (or none) and `Connection: close`. Used for every
@@ -171,17 +230,31 @@ fn write_json(stream: &mut TcpStream, frame: &Value) {
 /// oversized request is refused before this server reads a single body byte), parse it, and run
 /// it through the SAME [`handle_message`] the stdio worker thread calls for a bridge-backed
 /// `tools/call` — the one function this whole module exists to reuse rather than reimplement.
+///
+/// Framing is checked BEFORE any of that (issue #1184 T3): an absent `Content-Length` used to
+/// `unwrap_or(0)` into "read zero bytes", and a `Transfer-Encoding: chunked` body read the same
+/// way since its framing is never decoded — both then reached the JSON-RPC parser as an empty
+/// body, which reported `-32700 Parse error` for what is actually a transport problem, not a
+/// malformed payload. `Transfer-Encoding` is checked first: a request carrying it is unsupported
+/// regardless of what `Content-Length` says.
 fn handle_post(
     stream: &mut TcpStream,
     reader: &mut impl BufRead,
-    headers: &HashMap<String, String>,
+    headers: &Headers,
     server: &Server,
     dispatch: &mut dyn FnMut(&Verb) -> Result<Value, &'static str>,
 ) {
-    let content_length: usize = headers
+    if headers.contains_key("transfer-encoding") {
+        write_status(stream, 501, "Not Implemented", b"");
+        return;
+    }
+    let Some(content_length) = headers
         .get("content-length")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
+        .and_then(|v| v.parse::<usize>().ok())
+    else {
+        write_status(stream, 411, "Length Required", b"");
+        return;
+    };
     if content_length > crate::extension_bridge::MAX_FRAME_BYTES {
         write_status(stream, 413, "Payload Too Large", b"");
         return;
@@ -225,8 +298,17 @@ fn handle_connection(
     let mut reader = BufReader::new(read_half);
     let mut writer = stream;
 
-    let Some((method, path, headers)) = read_request_head(&mut reader) else {
-        return; // malformed / closed before headers finished — nothing safe to answer with yet
+    let (method, path, headers) = match read_request_head(&mut reader) {
+        Ok(head) => head,
+        // The header section itself exceeded MAX_HEADER_BYTES (issue #1184 T2) — the one case
+        // here that IS safe to answer, since the cap fired on a bounded read, not a dead socket.
+        Err(true) => {
+            write_status(&mut writer, 431, "Request Header Fields Too Large", b"");
+            return;
+        }
+        // Malformed request line, a connection closed before headers finished, or a genuine I/O
+        // error — nothing has been read that is safe to reply to yet.
+        Err(false) => return,
     };
 
     // `Origin` refuses BEFORE the token check (module doc): a browser-originated request is
@@ -236,10 +318,14 @@ fn handle_connection(
         return;
     }
 
+    // Scheme compared case-insensitively (RFC 7235 §2.1: `auth-scheme` is a `token`, matched
+    // case-insensitively) — issue #1184 T4 — the credential itself stays an exact,
+    // constant-time comparison.
     let authorized = headers
         .get("authorization")
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .is_some_and(|presented| constant_time_eq(presented, token));
+        .and_then(|v| v.split_once(' '))
+        .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
+        .is_some_and(|(_, presented)| constant_time_eq(presented, token));
     if !authorized {
         write_status(&mut writer, 401, "Unauthorized", b"");
         return;
@@ -255,6 +341,27 @@ fn handle_connection(
         // DELETE would end a session; this server offers neither, so both are a plain 405
         // rather than an empty stream or a no-op success that would misstate the contract.
         _ => write_status(&mut writer, 405, "Method Not Allowed", b""),
+    }
+}
+
+/// Arms [`CONNECTION_IO_TIMEOUT`] on `stream` before handing it to [`handle_connection`] (issue
+/// #1184 T5) — pulled out of [`run`]'s own accept loop, with the deadline as a PARAMETER rather
+/// than reading the module constant directly, so a test can exercise a hung peer without actually
+/// waiting out the production timeout (the same reason `mcp/stdio.rs`'s `serve` takes its own
+/// `drain_budget` as a parameter rather than a constant). Silently drops the connection if either
+/// deadline fails to set (an OS-level failure on a fresh socket, not expected in practice) rather
+/// than serving it with no bound at all.
+fn serve_one_connection(
+    stream: TcpStream,
+    server: &Server,
+    dispatch: &mut dyn FnMut(&Verb) -> Result<Value, &'static str>,
+    token: &str,
+    io_timeout: Duration,
+) {
+    if stream.set_read_timeout(Some(io_timeout)).is_ok()
+        && stream.set_write_timeout(Some(io_timeout)).is_ok()
+    {
+        handle_connection(stream, server, dispatch, token);
     }
 }
 
@@ -307,7 +414,7 @@ pub(super) fn run(
 
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
-        handle_connection(stream, server, &mut dispatch, &token);
+        serve_one_connection(stream, server, &mut dispatch, &token, CONNECTION_IO_TIMEOUT);
     }
     0
 }
