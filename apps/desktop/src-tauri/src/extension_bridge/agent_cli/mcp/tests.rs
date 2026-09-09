@@ -4266,3 +4266,114 @@ fn prompts_list_and_get_answer_without_a_bridge_call() {
         .unwrap();
     assert!(text.contains(TOOL_AUTOMATIONS), "{text}");
 }
+
+/// The `instructions.rs` paragraph added for issue #1146 P4/P5 is the ONLY place a model reading
+/// `initialize`'s prose (never the raw `resources/list`/`prompts/list` catalogues directly) learns
+/// these three resources and three prompts exist at all — pin it so deleting that paragraph turns
+/// this red instead of silently leaving the feature undiscoverable via prose.
+#[test]
+fn instructions_document_the_new_resources_and_prompts() {
+    for uri in [
+        resources::URI_PROFILE,
+        resources::URI_BEST_MATCHES,
+        "ajh://job/{url}",
+    ] {
+        assert!(
+            INSTRUCTIONS.contains(uri),
+            "INSTRUCTIONS never mentions resource {uri}: {INSTRUCTIONS}"
+        );
+    }
+    for prompt in [
+        "review-todays-best-matches",
+        "should-i-apply",
+        "how-is-my-search-going",
+    ] {
+        assert!(
+            INSTRUCTIONS.contains(prompt),
+            "INSTRUCTIONS never mentions prompt {prompt}: {INSTRUCTIONS}"
+        );
+    }
+}
+
+/// [`resources::resource_result`]'s own envelope, direct: exactly one `contents` entry naming the
+/// requested `uri`, and NEITHER of the tool-shaped fields (`content`, `isError`) a `tools/call`
+/// reply carries — the byte-identical-text tests above only pin the shared TEXT, never that the
+/// envelope AROUND it stayed resource-shaped rather than picking up a stray tool field.
+#[test]
+fn resource_result_envelope_carries_no_tool_shaped_fields() {
+    let payload = json!({ "ok": true, "resource": "profile", "data": {} });
+    let result = resources::resource_result(resources::URI_PROFILE, payload);
+    let contents = result["contents"].as_array().expect("a contents array");
+    assert_eq!(contents.len(), 1, "{result}");
+    assert_eq!(contents[0]["uri"], resources::URI_PROFILE);
+    assert_eq!(contents[0]["mimeType"], "application/json");
+    assert!(
+        result.get("isError").is_none(),
+        "a resource reply must never carry the tool-shaped isError field: {result}"
+    );
+    assert!(
+        result.get("content").is_none(),
+        "a resource reply must use `contents`, never the tool-shaped `content`: {result}"
+    );
+}
+
+/// [`results::capped_result_text`] was pulled OUT of [`results::tool_result`] precisely so
+/// [`resources::resource_result`] shares the same [`MCP_RESULT_MAX_BYTES`] cap — an oversized
+/// resource payload must be replaced with the identical `result_too_large` refusal a `tools/call`
+/// reply would carry, never grow a second, unbounded egress path for the same data.
+#[test]
+fn a_resource_reply_over_the_size_cap_is_replaced_with_result_too_large() {
+    let huge = json!({
+        "ok": true, "resource": "profile",
+        "blob": "x".repeat(MCP_RESULT_MAX_BYTES + 10),
+    });
+    let result = resources::resource_result(resources::URI_PROFILE, huge);
+    let text = result["contents"][0]["text"].as_str().unwrap();
+    assert!(
+        text.len() < MCP_RESULT_MAX_BYTES,
+        "the oversized-result refusal itself must fit under the cap: {} bytes",
+        text.len()
+    );
+    let parsed: Value = serde_json::from_str(text).expect("the refusal is itself valid JSON");
+    assert_eq!(parsed["error"], "result_too_large");
+}
+
+/// [`results::dispatch_payload`]'s `Err` branch (a round-trip failure) builds ONE sentinel
+/// wrapper shared by both call sites (issue #1146 P4) — a `resources/read` that hits this branch
+/// must answer with the exact same `{"ok":false,"resource":...,"error":...}` payload the
+/// identically-named tool call gets for the identical failure, only wrapped in `contents` instead
+/// of `content`. Mutation-visible: a resource path that built its own error wrapper instead of
+/// reusing `dispatch_payload` would diverge from the tool's payload here.
+#[test]
+fn resources_read_dispatch_failure_uses_the_same_sentinel_wrapper_a_tool_call_gets() {
+    let input = format!(
+        "{}{}",
+        line(json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": TOOL_PROFILE, "arguments": {} },
+        })),
+        line(json!({
+            "jsonrpc": "2.0", "id": 2, "method": "resources/read",
+            "params": { "uri": resources::URI_PROFILE },
+        })),
+    );
+    let frames = parsed_frames(&run_serve(&input, |_: &Verb| Err("connection_lost")));
+    let tool_payload: Value = serde_json::from_str(
+        frame_with_id(&frames, 1)["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    let resource_payload: Value = serde_json::from_str(
+        frame_with_id(&frames, 2)["result"]["contents"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        tool_payload, resource_payload,
+        "a round-trip failure must produce the identical sentinel wrapper on both paths"
+    );
+    assert_eq!(resource_payload["ok"], false);
+    assert_eq!(resource_payload["error"], "connection_lost");
+}
