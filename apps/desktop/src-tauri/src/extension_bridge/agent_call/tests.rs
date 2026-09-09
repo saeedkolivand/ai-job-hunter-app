@@ -1804,22 +1804,52 @@ fn restore_local_only_contact_fields_restores_any_field_the_allowlist_does_not_n
     assert_eq!(input["profile"]["someFutureLocalOnlyField"], "keep-me");
 }
 
-/// P-r2-R2-F1 (HIGH): the pure fn above is well tested, but nothing pinned
-/// the ONE call site that actually wires it up to real app state — round-2
-/// review mutated `dispatch_direct`'s call to pass `None` instead of the
-/// real stored profile and the whole 5423-test suite stayed green. Source-
-/// guards the exact call text so that mutation can never pass silently
-/// again; a rename or reshuffle of the call site is a deliberate edit that
-/// updates this literal too, not a silent regression.
+/// P-r2-R2-F1 (HIGH), reopened round 3 (P-r3-AC-R3-F1): a source-text guard
+/// on the call site passed under a mutation that made `stored_profile_value`
+/// itself return an empty profile (`.map(|_store| ContactProfile::default())`
+/// at the read, not the call) — the exact round-1 CRITICAL, with the whole
+/// suite green. This composes `stored_profile_value` with
+/// `restore_local_only_contact_fields` exactly as `dispatch_direct` does,
+/// against a REAL `ContactProfileStore` over a `TempDir` (the same
+/// `_inner`/`Option<&Store>` split `commands/contact_profile.rs` already
+/// uses for the same "no `tauri::test` mock app" gap), so a stored photo
+/// must survive a projected `contact_profile_get` → `contact_profile_set`
+/// round trip.
 #[test]
 fn dispatch_direct_wires_the_real_stored_profile_into_restore_local_only_contact_fields() {
-    const SOURCE: &str = include_str!("../agent_call.rs");
-    assert!(
-        SOURCE.contains(
-            "restore_local_only_contact_fields(command, &mut input, stored_profile.as_ref());"
-        ),
-        "dispatch_direct must pass the REAL stored profile, not a hardcoded None"
+    use tempfile::TempDir;
+
+    use crate::contact_profile::{ContactProfile, ContactProfileStore};
+
+    let dir = TempDir::new().expect("tempdir");
+    let store = ContactProfileStore::open(&dir.path().to_path_buf()).expect("open store");
+    store
+        .set(&ContactProfile {
+            full_name: Some("Jane Doe".to_string()),
+            photo: Some("data:image/png;base64,AAAA".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+
+    // What a `contact_profile_get` caller can ever produce, since
+    // `project_contact_profile_get` already stripped `photo` from the read.
+    let mut input = json!({ "profile": { "fullName": "Jane Doe" } });
+    let stored_profile = stored_profile_value(Some(&store));
+    restore_local_only_contact_fields("contact_profile_set", &mut input, stored_profile.as_ref());
+
+    assert_eq!(
+        input["profile"]["photo"], "data:image/png;base64,AAAA",
+        "a projected agent read-modify-write must not delete the stored photo"
     );
+}
+
+/// The other half of [`stored_profile_value`]'s branch: an unmanaged store
+/// degrades to `None`, the same "no state to read" shape
+/// `restore_local_only_contact_fields_is_a_no_op_when_nothing_is_stored`
+/// already covers on the pure side.
+#[test]
+fn stored_profile_value_is_none_when_the_store_is_unmanaged() {
+    assert_eq!(stored_profile_value(None), None);
 }
 
 /// The gate is by command name, not by shape: another command whose reply

@@ -1114,6 +1114,21 @@ fn invoke_error_detail(v: &Value) -> String {
         .unwrap_or_else(|| v.to_string())
 }
 
+/// The impure half of the [`CONTACT_PROFILE_SET_COMMAND`] photo-restore:
+/// read the stored profile, or `None` when the store is unmanaged. Factored
+/// out of `dispatch_direct` (round-3 review, P-r3-AC-R3-F1) so it composes
+/// with the pure `restore_local_only_contact_fields` against a REAL
+/// `ContactProfileStore` in a test — this crate has no `tauri::test` mock
+/// app, so a call site taking `&AppHandle` directly can't be exercised at
+/// all; `commands/contact_profile.rs`'s own `_inner`/`Option<&Store>` split
+/// documents the same gap and uses the same shape.
+fn stored_profile_value(
+    store: Option<&crate::contact_profile::ContactProfileStore>,
+) -> Option<Value> {
+    let profile = store?.get();
+    serde_json::to_value(&profile).ok()
+}
+
 /// Invoke a command for real: take this layer's own paging arguments off
 /// `input` ([`take_list_page_args`]), strip any fence wrapper the caller
 /// echoed back into it ([`unfence_named_fields_recursive`]), dispatch, then
@@ -1141,14 +1156,14 @@ async fn dispatch_direct(
     // not silently delete it on this whole-row-replace write — for `photo`
     // today, and for whatever field is added to `ContactProfile` next
     // without a matching `CONTACT_PROFILE_AGENT_FIELDS` entry. Reads current
-    // app state here (the impure half) and hands the whole stored profile to
-    // the pure `restore_local_only_contact_fields`, which does the actual
-    // merge.
+    // app state here via `stored_profile_value` (the impure half) and hands
+    // the whole stored profile to the pure `restore_local_only_contact_fields`,
+    // which does the actual merge.
     if command == CONTACT_PROFILE_SET_COMMAND {
-        let stored_profile = app
-            .try_state::<crate::contact_profile::ContactProfileStore>()
-            .map(|store| store.get())
-            .and_then(|profile| serde_json::to_value(&profile).ok());
+        let stored_profile = stored_profile_value(
+            app.try_state::<crate::contact_profile::ContactProfileStore>()
+                .as_deref(),
+        );
         restore_local_only_contact_fields(command, &mut input, stored_profile.as_ref());
     }
     let outcome = invoke_command(app, command, input)
