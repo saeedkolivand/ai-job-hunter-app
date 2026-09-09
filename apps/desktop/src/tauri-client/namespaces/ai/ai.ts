@@ -137,5 +137,5 @@ export const ai = {
   }) => invoke('ai_set_embedding_config', { provider, model, baseUrl }),
   reembedAll: () => invoke('ai_reembed_all'),
   indexStaleDocuments: () => invoke('ai_index_stale_documents'),
-  spendSummary: () => invoke('ai_spend_summary'),
+  spendSummary: (days?: number) => invoke('ai_spend_summary', { days }),
 };

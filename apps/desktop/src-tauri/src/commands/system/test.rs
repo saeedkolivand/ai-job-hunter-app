@@ -34,6 +34,62 @@ fn test_gpu_info_empty() {
 }
 
 #[test]
+fn active_provider_summary_reports_the_configured_provider_and_model() {
+    let active = crate::ai_config::ActiveAiConfig {
+        active_provider: Some("openai".to_string()),
+        model: Some("gpt-5".to_string()),
+        ..Default::default()
+    };
+    let out = active_provider_summary(Some(active));
+    assert_eq!(out["provider"], "openai");
+    assert_eq!(out["model"], "gpt-5");
+}
+
+#[test]
+fn active_provider_summary_degrades_to_nulls_when_the_store_is_unavailable() {
+    let out = active_provider_summary(None);
+    assert!(out["provider"].is_null());
+    assert!(out["model"].is_null());
+}
+
+#[test]
+fn active_provider_summary_reports_nulls_when_unseeded() {
+    // A real store that has never had a provider selected reports `None`
+    // for both fields (see `ActiveAiConfig`'s doc comment) — must not be
+    // confused with the store-unavailable case above.
+    let out = active_provider_summary(Some(crate::ai_config::ActiveAiConfig::default()));
+    assert!(out["provider"].is_null());
+    assert!(out["model"].is_null());
+}
+
+#[test]
+fn health_value_reports_scope_and_active_provider() {
+    // Regression for issue #1159: `system_health` must emit both the local
+    // Ollama probe's `scope` label AND `activeProvider` — this drives the
+    // extracted assembler directly with a recognizable `activeProvider`
+    // payload, so deleting either key from the `json!` macro fails here
+    // without needing a live `AppHandle`.
+    let scraper_health = crate::scraping::engine::ScraperRuntimeHealth {
+        mode: "hybrid".to_string(),
+        scrapers: vec![],
+        ready: true,
+    };
+    let active = json!({ "provider": "openai", "model": "gpt-5" });
+
+    let out = health_value(
+        scraper_health,
+        true,
+        Some("llama3".to_string()),
+        Map::new(),
+        active,
+    );
+
+    assert_eq!(out["ai"]["scope"], "localOllama");
+    assert_eq!(out["activeProvider"]["provider"], "openai");
+    assert_eq!(out["activeProvider"]["model"], "gpt-5");
+}
+
+#[test]
 fn test_system_check_browser() {
     // Test that the function doesn't panic and returns valid JSON
     let result = system_check_browser();
