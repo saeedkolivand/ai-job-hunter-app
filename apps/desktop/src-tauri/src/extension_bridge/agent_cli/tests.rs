@@ -529,11 +529,13 @@ fn both_automations_descriptions_name_both_totals() {
     }
 }
 
-/// P-r2-R2-F7 (round-2 review, issue #1180): plain `call-read` (and any
-/// `ajh-tauri agent call` invocation) never sees an MCP tool description, so
-/// the `call` verb's own `--help` text is one of the only two places such a
-/// caller can learn `contact_profile_get`'s reply is projected. Pins that
-/// the clause actually landed, not just the doc comment claiming it did.
+/// P-r2-R2-F7 (round-2 review, issue #1180), reworded round 3 (P-r3-AC-R3-F2):
+/// plain `agent call` (there is no `call-read` verb — that is the MCP tool
+/// name) never sees an MCP tool description, so the `call` verb's own
+/// `--help` text is one of the only two places such a caller can learn
+/// `contact_profile_get`'s reply is projected — and it must name a form the
+/// CLI dispatcher actually accepts (`parse_call`), not the MCP-only
+/// `call-read`/`commands` surface a plain-CLI caller cannot invoke.
 #[test]
 fn call_verb_help_names_the_contact_profile_get_projection() {
     let returns = VERB_TABLE
@@ -541,8 +543,12 @@ fn call_verb_help_names_the_contact_profile_get_projection() {
         .find(|v| v.name == "call")
         .expect("the call verb")
         .returns;
-    assert!(returns.contains("contact_profile_get"));
+    assert!(returns.contains("agent call contact_profile:contact_profile_get"));
     assert!(returns.contains("photo"));
+    assert!(
+        !returns.contains("call-read contact_profile_get"),
+        "must not name the MCP-only tool form as the CLI invocation"
+    );
 }
 
 #[test]

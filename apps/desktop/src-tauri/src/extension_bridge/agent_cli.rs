@@ -353,10 +353,11 @@ const VERB_TABLE: &[VerbHelp] = &[
                   tool, or policy.rs for the full table). A few unbounded list commands answer \
                   with a paged {items,total,nextCursor} envelope and take --input \
                   '{\"limit\":N,\"cursor\":\"...\"}'; the `commands` tool marks which and how. \
-                  `call-read contact_profile_get` drops `photo` (and any other locally-stored \
-                  field the `commands` tool's own note for that row doesn't name) before an \
-                  agent ever sees it; writing a `contact_profile_set` payload back without that \
-                  field preserves the stored value instead of deleting it (issue #1180)",
+                  `agent call contact_profile:contact_profile_get` drops `photo` (and any other \
+                  locally-stored field not named in `autofill_profile::CONTACT_PROFILE_AGENT_FIELDS` \
+                  — see policy.rs) before an agent ever sees it; writing a `contact_profile_set` \
+                  payload back without that field preserves the stored value instead of \
+                  deleting it (issue #1180)",
     },
 ];
 
