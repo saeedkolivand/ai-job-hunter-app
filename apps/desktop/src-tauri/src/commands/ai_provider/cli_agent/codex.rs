@@ -14,14 +14,24 @@
 //! [`PromptDelivery`]). argv holds only the fixed exec flags below.
 
 use async_trait::async_trait;
-use serde_json::Value;
+use serde::Deserialize;
+use serde_json::{json, Value};
 
-use crate::commands::ai_provider::ProviderId;
+use crate::commands::ai_provider::{timeouts, ProviderId};
 use crate::error::{AppError, AppResult};
 
 use super::{CliAgentBackend, CliEvent, CliInvocation, PromptDelivery};
 
-const MODELS: &[&str] = &["gpt-5-codex", "o4-mini"];
+/// LAST-RESORT fallback — used only when [`discover_models`](CodexAgent::discover_models)
+/// (`codex debug models`) is unavailable (CLI not installed) or its attempt
+/// fails/times out/returns nothing. `CliAgentClient::list_models` labels every entry
+/// from this path `source: "fallback"` so it can never be mistaken for the CLI's own
+/// live catalogue (issue #1185 — the CLI's real models drift release to release).
+/// The old `gpt-5-codex`/`o4-mini` pair no longer exists in the CLI's own catalogue
+/// (verified live via `codex debug models` against CLI 0.144.6, 2026-09) — this list
+/// is only ever shown when discovery itself has already failed, so it's a last-known
+/// snapshot, not a promise; keep it updated by the same live check when it goes stale.
+const MODELS: &[&str] = &["gpt-5.5", "gpt-5.6-terra", "gpt-5.6-luna"];
 
 pub struct CodexAgent;
 
@@ -41,6 +51,30 @@ impl CliAgentBackend for CodexAgent {
 
     fn models(&self) -> &'static [&'static str] {
         MODELS
+    }
+
+    /// Live discovery via `codex debug models` — the installed CLI's own model
+    /// catalog as JSON (verified against Codex CLI 0.144.6). Spawned through the
+    /// same [`super::cli_command`] path every other invocation uses (Windows
+    /// `.cmd`-shim handling, augmented `PATH`), bounded by
+    /// [`timeouts::LIST_MODELS_TOTAL`] so a hung CLI can't stall the picker.
+    /// `None` on any failure (not installed, timeout, non-zero exit, unparseable
+    /// output) — the harness then falls back to [`models`](Self::models),
+    /// labelled `source: "fallback"` (see [`super::resolve_models`]).
+    async fn discover_models(&self) -> Option<Vec<Value>> {
+        let binary = self.binary();
+        let args = vec!["debug".to_string(), "models".to_string()];
+        let out = tokio::time::timeout(
+            timeouts::LIST_MODELS_TOTAL,
+            super::cli_command(&binary, &args).output(),
+        )
+        .await
+        .ok()?
+        .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        parse_debug_models(&String::from_utf8_lossy(&out.stdout))
     }
 
     fn install_package(&self) -> &'static str {
@@ -258,6 +292,37 @@ fn reasoning_text(item: &Value) -> Option<String> {
     })
 }
 
+/// One row of `codex debug models`'s raw catalog JSON (`{"models":[…]}`). Only the
+/// fields the picker needs — the real catalog additionally carries a per-model
+/// `base_instructions` prompt block (hundreds of KB combined), deliberately never
+/// deserialized here.
+#[derive(Deserialize)]
+struct DebugModel {
+    slug: String,
+    display_name: String,
+    visibility: String,
+}
+
+/// Parse `codex debug models`'s stdout into `ProviderModelInfo`-shaped entries —
+/// pure, so it's covered by a fixture without spawning the real CLI (this crate has
+/// no `tauri::test` mock-app harness, and hermetic tests must not assume a system
+/// binary is present or absent). Only `visibility: "list"` rows are user-selectable
+/// models — `"hide"` rows (`codex-auto-review`, an internal reserve model, …) are
+/// Codex mechanics, never a model to hand a user prompt to. `None` on anything
+/// unparseable or an empty result, so the caller falls back to the curated list
+/// exactly like a failed spawn would.
+fn parse_debug_models(stdout: &str) -> Option<Vec<Value>> {
+    let parsed: Value = serde_json::from_str(stdout).ok()?;
+    let rows = parsed.get("models")?.as_array()?;
+    let entries: Vec<Value> = rows
+        .iter()
+        .filter_map(|m| serde_json::from_value::<DebugModel>(m.clone()).ok())
+        .filter(|m| m.visibility == "list")
+        .map(|m| json!({ "name": m.slug, "displayName": m.display_name }))
+        .collect();
+    (!entries.is_empty()).then_some(entries)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -421,6 +486,45 @@ mod tests {
                    {\"type\":\"turn.started\"}\n";
         let err = CodexAgent.parse_complete(out).unwrap_err();
         assert!(format!("{err}").contains("no response in output"));
+    }
+
+    // ── `codex debug models` (live discovery) ──────────────────────────────────
+
+    /// Trimmed real shape from `codex debug models` (Codex CLI 0.144.6) — full
+    /// entries also carry a `base_instructions` block, omitted here.
+    const DEBUG_MODELS_JSON: &str = r#"{"models":[
+        {"slug":"gpt-reserve","display_name":"GPT-Reserve","visibility":"hide"},
+        {"slug":"gpt-5.6-terra","display_name":"GPT-5.6-Terra","visibility":"list"},
+        {"slug":"gpt-5.6-luna","display_name":"GPT-5.6-Luna","visibility":"list"},
+        {"slug":"gpt-5.5","display_name":"GPT-5.5","visibility":"list"},
+        {"slug":"codex-auto-review","display_name":"Codex Auto Review","visibility":"hide"}
+    ]}"#;
+
+    #[test]
+    fn parse_debug_models_keeps_only_list_visibility_entries() {
+        let entries = parse_debug_models(DEBUG_MODELS_JSON).unwrap();
+        assert_eq!(
+            entries,
+            vec![
+                json!({ "name": "gpt-5.6-terra", "displayName": "GPT-5.6-Terra" }),
+                json!({ "name": "gpt-5.6-luna", "displayName": "GPT-5.6-Luna" }),
+                json!({ "name": "gpt-5.5", "displayName": "GPT-5.5" }),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_debug_models_none_on_malformed_json() {
+        assert_eq!(parse_debug_models("not json"), None);
+        assert_eq!(parse_debug_models(r#"{"nope":true}"#), None);
+    }
+
+    /// Every real entry happened to be `"hide"` (or the catalog is genuinely
+    /// empty) — `None`, same as a parse failure, so the caller falls back.
+    #[test]
+    fn parse_debug_models_none_when_nothing_is_listable() {
+        let out = r#"{"models":[{"slug":"x","display_name":"X","visibility":"hide"}]}"#;
+        assert_eq!(parse_debug_models(out), None);
     }
 
     #[test]
