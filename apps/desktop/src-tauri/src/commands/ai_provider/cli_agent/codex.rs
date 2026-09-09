@@ -288,20 +288,25 @@ fn text_of(m: &Value) -> Option<String> {
 }
 
 /// Reasoning items in the current dialect are believed to carry `content`/`summary`
-/// string arrays (per the app-server v2 `ReasoningThreadItem` schema, which shares
-/// its item shapes with `exec --json`) rather than a scalar text field — join
-/// whichever is present and non-empty. Unverified against a live reasoning-bearing
-/// run (issue #1185 review); the call site falls back to [`text_of`]'s scalar
-/// `message`/`text`/`delta` fields if this returns `None`, so a wrong guess here
-/// degrades to the same lookup every other item type uses instead of silently
-/// dropping the Thinking indicator.
+/// arrays (per the app-server v2 `ReasoningThreadItem` schema, which shares its item
+/// shapes with `exec --json`) rather than a scalar text field — join whichever is
+/// present and non-empty. Each array element is either a plain string, or an object
+/// shaped `{"type":"reasoning_text","text":"…"}` (confirmed against the CLI's own
+/// `ResponseItem` schema — PR #1187 review); either shape yields its text. The call
+/// site falls back to [`text_of`]'s scalar `message`/`text`/`delta` fields if this
+/// returns `None`, so a wrong guess here degrades to the same lookup every other item
+/// type uses instead of silently dropping the Thinking indicator.
 fn reasoning_text(item: &Value) -> Option<String> {
     ["content", "summary"].iter().find_map(|key| {
         let joined = item
             .get(*key)?
             .as_array()?
             .iter()
-            .filter_map(|v| v.as_str())
+            .filter_map(|v| {
+                v.as_str()
+                    .or_else(|| v.get("text").and_then(|t| t.as_str()))
+                    .or_else(|| v.get("content").and_then(|t| t.as_str()))
+            })
             .collect::<String>();
         (!joined.is_empty()).then_some(joined)
     })
@@ -410,6 +415,20 @@ mod tests {
     #[test]
     fn dotted_item_completed_reasoning_joins_content_becomes_thinking() {
         let line = r#"{"type":"item.completed","item":{"id":"item_0","type":"reasoning","content":["weighing ","options"]}}"#;
+        assert_eq!(
+            CodexAgent.parse_stream_line(line),
+            Some(CliEvent::Thinking("weighing options".to_string()))
+        );
+    }
+
+    /// PR #1187 review: a `content`/`summary` array element can also be an
+    /// object shaped `{"type":"reasoning_text","text":"…"}` (the CLI's own
+    /// `ResponseItem` wire shape), not just a bare string. `reasoning_text` must
+    /// pull `text` out of it rather than silently dropping the entry (which
+    /// would drop the whole Thinking event when it's the only element).
+    #[test]
+    fn dotted_item_completed_reasoning_content_object_entry_becomes_thinking() {
+        let line = r#"{"type":"item.completed","item":{"id":"item_0","type":"reasoning","content":[{"type":"reasoning_text","text":"weighing options"}]}}"#;
         assert_eq!(
             CodexAgent.parse_stream_line(line),
             Some(CliEvent::Thinking("weighing options".to_string()))
