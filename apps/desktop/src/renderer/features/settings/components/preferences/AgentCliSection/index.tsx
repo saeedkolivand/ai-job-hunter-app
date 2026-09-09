@@ -20,7 +20,9 @@ import {
   type AgentCliTier,
   buildClaudeCodeSnippet,
   buildCodexSnippet,
+  buildCursorDeeplink,
   buildGenericMcpSnippet,
+  buildVsCodeDeeplink,
 } from '@/features/settings/lib/agent-cli-snippets';
 import { useAgentCliInfo } from '@/services';
 
@@ -55,6 +57,8 @@ export function AgentCliSection() {
   const claudeSnippet = buildClaudeCodeSnippet(exePath, tier);
   const codexSnippet = buildCodexSnippet(exePath, tier);
   const genericSnippet = buildGenericMcpSnippet(exePath, tier);
+  const cursorDeeplink = buildCursorDeeplink(exePath, tier);
+  const vsCodeDeeplink = buildVsCodeDeeplink(exePath, tier);
 
   const handleCopy = async (value: string) => {
     try {
@@ -215,6 +219,45 @@ export function AgentCliSection() {
           testId={TEST_IDS.settings.agentCliGenericSnippet}
           onCopy={handleCopy}
         />
+
+        {/* Cursor / VS Code one-click install links (roadmap #1146 P2) — COPIED
+            rather than opened directly. `system_open_external` allowlists
+            http(s) only, on purpose: it is the same command `ExternalLink`
+            uses for third-party, board-scraped posting URLs elsewhere in the
+            app, so widening it to admit `cursor:`/`vscode:` would let a
+            hostile posting URL trigger an MCP-install prompt too. Pasting the
+            copied link into the OS Run dialog, or the target app's own
+            address bar, reaches the same install prompt. */}
+        {cursorDeeplink || vsCodeDeeplink ? (
+          <div className="space-y-1.5 border-t border-foreground/10 pt-3">
+            <span className={GROUP_LABEL}>{t('settings.developer.agentCli.deeplinkLabel')}</span>
+            <p className="text-[11px] leading-snug text-foreground/70">
+              {t('settings.developer.agentCli.deeplinkHint')}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {cursorDeeplink ? (
+                <Button
+                  variant="glass"
+                  data-testid={TEST_IDS.settings.agentCliCopyCursorLink}
+                  onClick={() => void handleCopy(cursorDeeplink)}
+                >
+                  <Copy size={11} />
+                  {t('settings.developer.agentCli.copyCursorLink')}
+                </Button>
+              ) : null}
+              {vsCodeDeeplink ? (
+                <Button
+                  variant="glass"
+                  data-testid={TEST_IDS.settings.agentCliCopyVsCodeLink}
+                  onClick={() => void handleCopy(vsCodeDeeplink)}
+                >
+                  <Copy size={11} />
+                  {t('settings.developer.agentCli.copyVsCodeLink')}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
       </div>
     </SettingsSection>
   );

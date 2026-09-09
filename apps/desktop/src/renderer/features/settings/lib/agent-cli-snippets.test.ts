@@ -10,7 +10,9 @@ import {
   AGENT_CLI_TIERS,
   buildClaudeCodeSnippet,
   buildCodexSnippet,
+  buildCursorDeeplink,
   buildGenericMcpSnippet,
+  buildVsCodeDeeplink,
 } from './agent-cli-snippets';
 
 /** The realistic bad case: an install path with a space in it. */
@@ -299,6 +301,70 @@ describe('buildGenericMcpSnippet', () => {
 
   it('is null when the path is unknown', () => {
     expect(buildGenericMcpSnippet(null, 'read')).toBeNull();
+  });
+});
+
+describe('buildCursorDeeplink', () => {
+  it('round-trips a Windows path with spaces through the base64 config param', () => {
+    const link = buildCursorDeeplink(WINDOWS_PATH, 'read');
+    if (link === null) throw new Error('expected a link');
+    const url = new URL(link);
+    expect(url.protocol).toBe('cursor:');
+    expect(url.searchParams.get('name')).toBe('ai-job-hunter');
+    const config = url.searchParams.get('config');
+    if (config === null) throw new Error('expected a config param');
+    const decoded = JSON.parse(atob(config)) as { command: string; args: string[] };
+    expect(decoded).toEqual({ command: WINDOWS_PATH, args: ['agent', 'mcp'] });
+  });
+
+  it('names a distinct server per tier and moves the flag into args, like the generic block', () => {
+    const link = buildCursorDeeplink(MACOS_PATH, 'irreversible');
+    if (link === null) throw new Error('expected a link');
+    const url = new URL(link);
+    expect(url.searchParams.get('name')).toBe('ai-job-hunter-unrestricted');
+    const config = url.searchParams.get('config');
+    if (config === null) throw new Error('expected a config param');
+    const decoded = JSON.parse(atob(config)) as { args: string[] };
+    expect(decoded.args).toEqual(['agent', 'mcp', '--allow-irreversible']);
+  });
+
+  it('is null when the path is unknown', () => {
+    expect(buildCursorDeeplink(null, 'read')).toBeNull();
+  });
+});
+
+describe('buildVsCodeDeeplink', () => {
+  const PREFIX = 'vscode:mcp/install?';
+
+  it('round-trips a Windows path with spaces through the url-encoded JSON', () => {
+    const link = buildVsCodeDeeplink(WINDOWS_PATH, 'read');
+    if (link === null) throw new Error('expected a link');
+    expect(link.startsWith(PREFIX)).toBe(true);
+    const decoded = JSON.parse(decodeURIComponent(link.slice(PREFIX.length))) as {
+      name: string;
+      command: string;
+      args: string[];
+    };
+    expect(decoded).toEqual({
+      name: 'ai-job-hunter',
+      command: WINDOWS_PATH,
+      args: ['agent', 'mcp'],
+    });
+  });
+
+  it('names a distinct server per tier and moves the flag into args', () => {
+    const link = buildVsCodeDeeplink(MACOS_PATH, 'reversible');
+    if (link === null) throw new Error('expected a link');
+    const decoded = JSON.parse(decodeURIComponent(link.slice(PREFIX.length))) as {
+      name: string;
+      args: string[];
+    };
+    expect(decoded.name).toBe('ai-job-hunter-write');
+    expect(decoded.args).toEqual(['agent', 'mcp', '--allow-reversible']);
+  });
+
+  it('is null when the path is unknown', () => {
+    expect(buildVsCodeDeeplink(null, 'irreversible')).toBeNull();
   });
 });
 

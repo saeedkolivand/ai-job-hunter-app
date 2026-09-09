@@ -1911,6 +1911,30 @@ fn profile_tool_description_never_overclaims_parity_with_the_generic_row() {
     );
 }
 
+/// P1 — every tool carries the same `icons` entry (2025-11-25 tool schema), and it is a `data:`
+/// URI, the only icon source a stdio MCP server (ADR-040) can use that every client — including
+/// VS Code, which does not resolve a cross-origin `https://` icon for stdio servers — can render.
+#[test]
+fn every_tool_carries_the_same_data_uri_icon() {
+    let list = tools(Tier::Irreversible);
+    assert!(!list.is_empty());
+    let first = list[0]["icons"].clone();
+    let icons = first.as_array().expect("icons must be an array");
+    assert_eq!(icons.len(), 1);
+    let src = icons[0]["src"].as_str().expect("icon must carry a src");
+    assert!(
+        src.starts_with("data:image/png;base64,"),
+        "icon src must be a data URI a stdio MCP client can render: {src}"
+    );
+    for tool in &list {
+        assert_eq!(
+            tool["icons"], first,
+            "{} must carry the identical icons entry",
+            tool["name"]
+        );
+    }
+}
+
 /// P10 — deterministic ordering is what lets a client's prompt cache survive repeated
 /// `tools/list` calls in a long session. Two properties, both mutation-visible: the order is
 /// STABLE call-to-call, and every lower tier is a strict PREFIX of the next, so enabling a write
