@@ -132,19 +132,35 @@ pub(super) fn extract(
 /// a caller reads through this dispatcher and the value `--confirm` is
 /// checked against are now the exact same transform of the exact same read,
 /// never two different views of one record.
+///
+/// Calls [`super::reshape::reshape_pre_fence`] then
+/// [`super::reshape::fence_reply`] — the SAME composition
+/// [`super::reshape::reshape_reply`] runs up to (but not including) paging/
+/// base64, not a hand-rolled subset (MEDIUM fix, review round 6 —
+/// `B1-r2-ACLI-R6-4`; extended review round 8 — `B2-r1-ACLI-R8-1`, when
+/// `reshape_reply` grew a pre-fence step this fn did not mirror). This used
+/// to call `fence_scraped_fields` alone, one step short of what a real
+/// dispatch does: any FUTURE bare-string command added to `reshape`'s
+/// `SCALAR_FENCE_COMMANDS`, or any FUTURE proof reading a field
+/// `reshape_pre_fence` touches (`documents_list`'s `text`,
+/// `autopilot_get`/`autopilot_list`'s `totalApplied`), that was also a
+/// `ProofSource::read_command` would have recreated the exact bug this fn's
+/// own doc above already describes, silently.
 fn extract_from_fenced_response(
     source: ProofSource,
     caller_input: &Value,
     mut response: Value,
 ) -> Option<String> {
-    super::fence_scraped_fields(&mut response);
-    // A3-r1-AC-6: mirror `reshape_reply`'s SECOND fencing step too, not only the first — a
-    // `read_command` whose whole reply is a bare user-document string (e.g. `documents_get_text`)
-    // is fenced by `fence_user_document_bare_text`, never by `fence_scraped_fields` (named-field
-    // only). Without this, a proof bound to such a command would compare the raw value against
-    // the fenced one a caller actually reads. No real `Irreversible` row proves on one today
-    // (verified against every `read_command:` in `policy.rs`) — a latent-bug close, not live.
-    super::reshape::fence_user_document_bare_text(source.read_command(), &mut response);
+    // A3-r1-AC-6: mirror `reshape_reply`'s pre-fence AND fence steps, not just the second half —
+    // a `read_command` whose whole reply is a bare scalar string (`documents_get_text`,
+    // `ai_research_answer`) is fenced by `fence_reply`'s `fence_scalar_reply` arm, never by
+    // `fence_scraped_fields` (named-field only). Without this, a proof bound to such a command
+    // would compare the raw value against the fenced one a caller actually reads. No real
+    // `Irreversible` row proves on one today (verified against every `read_command:` in
+    // `policy.rs`) — a latent-bug close, not live.
+    let command = source.read_command();
+    super::reshape::reshape_pre_fence(command, &mut response);
+    super::reshape::fence_reply(command, &mut response);
     extract(source, caller_input, &response)
 }
 

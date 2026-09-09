@@ -56,6 +56,17 @@ pub(super) const INSTRUCTIONS: &str = "These tools talk to the running AI Job Hu
     names, and many write commands take ONE object parameter — so the body usually nests under \
     that name (e.g. {\"req\": {…}}). An invoke_error naming a missing key is the recovery \
     signal: re-send the same body wrapped under that key before treating the command as broken. \
+    Before judging how well the user fits a posting, read their own résumé and other documents \
+    first — call-read with documents:documents_list, whose rows carry the document `text`, \
+    fenced and capped at the fence limit; documents:documents_get_text with {\"id\": <that \
+    row's `_id` value>} (the row's key is `_id`, but documents_get_text's own parameter is \
+    named `id`) returns the SAME text by id, fenced and capped at the SAME limit — neither call \
+    can return more of a document than that one cap; an `id` that matches no stored document \
+    returns the SAME EMPTY fenced block (`<job_posting>\\n\\n</job_posting>`) as a document \
+    that resolved but has no extracted text — not an error either way, and the two are NOT \
+    distinguishable from this reply alone; cross-check the `_id` against documents:documents_\
+    list's own rows to tell them apart — rather than guessing from the profile tool's contact \
+    fields alone. \
     Call `commands` (optionally filtered by namespace) before guessing a call-* body: a catalogued \
     row's own `args` names its declared keys, required-ness, and — for a wrapper key — its nested \
     field names, and a call whose `input` carries an unrecognised or missing key refuses with \

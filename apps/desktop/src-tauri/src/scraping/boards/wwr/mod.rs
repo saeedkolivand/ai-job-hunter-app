@@ -17,6 +17,10 @@ impl Scraper for WeWorkRemotelyScraper {
         "We Work Remotely"
     }
 
+    fn is_all_remote(&self) -> bool {
+        true
+    }
+
     fn mode(&self) -> ScraperMode {
         ScraperMode::Http
     }

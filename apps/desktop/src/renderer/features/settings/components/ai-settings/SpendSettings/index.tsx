@@ -19,7 +19,12 @@ export function SpendSettings() {
   const { t } = useTranslation();
   const { data, isLoading, isError, refetch } = useSpendSummary();
 
-  const isEmpty = !isLoading && !isError && (!data || data.perProvider.length === 0);
+  // Drop zero rows the UI has no wording for (issue #1161): `perProvider` now
+  // includes every provider that EVER recorded a call, not just ones active
+  // today, so a `reason` row (e.g. an unused OpenAI key) must not render as
+  // "local — free" — it isn't local, it just had no spend this window.
+  const activeProviders = data?.perProvider.filter((p) => !p.reason) ?? [];
+  const isEmpty = !isLoading && !isError && activeProviders.length === 0;
 
   return (
     <SettingsSection icon={Coins} label={t('settings.spend.heading')}>
@@ -62,7 +67,7 @@ export function SpendSettings() {
             <div className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
               {t('settings.spend.perProviderHeading')}
             </div>
-            {data.perProvider.map((p) => {
+            {activeProviders.map((p) => {
               const label = PROVIDERS[p.provider as AiProvider]?.label ?? p.provider;
               return (
                 <div

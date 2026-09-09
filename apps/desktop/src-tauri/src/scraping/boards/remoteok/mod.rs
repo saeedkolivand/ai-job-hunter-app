@@ -46,6 +46,10 @@ impl Scraper for RemoteOkScraper {
         "RemoteOK"
     }
 
+    fn is_all_remote(&self) -> bool {
+        true
+    }
+
     fn mode(&self) -> ScraperMode {
         ScraperMode::Http
     }

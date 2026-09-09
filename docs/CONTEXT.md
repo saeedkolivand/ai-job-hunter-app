@@ -579,10 +579,12 @@ surface derived from Channels silently cannot do things the UI can.
 _Avoid_: treating the Channel list as "the API" — it is one renderer-side view of it
 
 **Resource**:
-A hand-written, allowlist-**projected** read surface of the agent CLI (`best-matches`, `job`,
-`profile`, `automations`, `schema`). A Resource never returns a raw record: its response type
-cannot express the forbidden fields, nested types included. The curated tier.
-_Avoid_: "endpoint" / using Resource for anything that mutates
+A hand-written, allowlist-**projected** read surface of the agent CLI — the current set is
+`extension_bridge::agent_read::RESOURCES`, the table `--help`/`schema` also derive from. A Resource
+never returns a raw record: its response type cannot express the forbidden fields, nested types
+included. The curated tier.
+_Avoid_: "endpoint" / using Resource for anything that mutates / naming the members here — they
+drift the moment the table does
 
 **Verb**:
 The token a caller types after `ajh-tauri agent`. A Verb resolves either to a Resource (curated

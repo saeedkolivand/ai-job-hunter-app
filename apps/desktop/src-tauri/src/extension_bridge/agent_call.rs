@@ -619,10 +619,15 @@ pub(super) fn throttle_key(command: &str) -> &str {
 // ── Fencing scraped job-posting text (a different axis from the raw-data
 // decision above — ADR-038's own amendment paragraph) — moved to its own
 // file under the R8 LOC cap; see `agent_call/fence.rs`. `fence_scraped_fields`
-// is the one entry point `dispatch_direct` (below) and `reshape.rs`/`proof.rs`
-// (their own `use super::*`) call.
-mod fence;
+// is the one entry point `reshape.rs`/`proof.rs` (their own `use super::*`)
+// call; `dispatch_direct` (below) reaches it only indirectly, through
+// `reshape_reply`/`fence_reply`, so this import is `#[cfg(test)]`-only —
+// `agent_call::tests` (`use super::*`) is the one caller left that exercises
+// it directly, against hand-built fixtures, the same reason `dispatch_plan::gate`
+// just above is re-exported test-only too.
+#[cfg(test)]
 use fence::fence_scraped_fields;
+mod fence;
 
 // ── Dispatch ─────────────────────────────────────────────────────────────
 
@@ -712,7 +717,7 @@ fn invoke_error_detail(v: &Value) -> String {
 /// Invoke a command for real: take this layer's own paging arguments off
 /// `input` ([`take_list_page_args`]), strip any fence wrapper the caller
 /// echoed back into it ([`unfence_named_fields_recursive`]), dispatch, then
-/// fence any scraped text in the response ([`fence_scraped_fields`]), page it
+/// fence any scraped text in the response ([`fence::fence_scraped_fields`]), page it
 /// ([`reshape::paginate_list_reply`]) and re-encode any raw byte field
 /// ([`reshape::base64_byte_fields`]). Called directly for a `Read`/`Reversible`
 /// row, and again at [`dispatch_irreversible_confirmed`]'s tail for a confirmed

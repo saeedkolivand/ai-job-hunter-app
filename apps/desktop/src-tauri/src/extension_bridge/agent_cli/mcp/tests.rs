@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use super::instructions::{EXPLAINED_IN_PROSE, INSTRUCTIONS};
+use super::results::{oversized_result, MCP_RESULT_MAX_BYTES};
 use super::*;
 
 /// How long a test waits for a signal that a correct [`serve`] always sends — long enough that a
@@ -979,6 +980,253 @@ fn instructions_tell_the_model_rate_limited_carries_a_retry_after_ms_wait_hint()
     );
 }
 
+/// Issue #1170 — INSTRUCTIONS now points a caller at the résumé/document reads before it judges
+/// fit. Every `ns:cmd`-shaped token the prose cites must be a REAL `POLICY` row AND an
+/// `Effect::Read` row: the sentence tells a caller to reach it through `call-read`, so a row that
+/// was ever anything else earns that caller a `wrong_tool` refusal (issue #1164 — the earlier
+/// version of this test checked existence only, which a `git mv`-style rename would catch but a
+/// reclassification would not). The one hand-written skip is `ns:cmd` itself — the earlier "a
+/// detail that says `agent call ns:cmd`" sentence uses it as a PLACEHOLDER, not a real pair (same
+/// "skip list, not a substring match" discipline [`EXPLAINED_IN_PROSE`] already uses above).
+#[test]
+fn instructions_ns_cmd_pairs_are_real_policy_rows() {
+    const SKIP: &[&str] = &["ns:cmd"];
+    let is_ident = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_lowercase() || c == '_');
+    let mut checked = 0usize;
+    for word in INSTRUCTIONS.split_whitespace() {
+        let word = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != ':' && c != '_');
+        let Some((ns, cmd)) = word.split_once(':') else {
+            continue;
+        };
+        if !is_ident(ns) || !is_ident(cmd) || SKIP.contains(&word) {
+            continue;
+        }
+        checked += 1;
+        let entry = POLICY
+            .iter()
+            .find(|e| agent_call::split_path(e.path) == (ns, cmd))
+            .unwrap_or_else(|| {
+                panic!("INSTRUCTIONS names `{word}`, which is not a real POLICY row")
+            });
+        assert!(
+            matches!(entry.effect, Effect::Read),
+            "INSTRUCTIONS tells a caller to reach `{word}` via call-read, but its POLICY row is \
+             not Effect::Read"
+        );
+    }
+    assert_eq!(
+        checked, 2,
+        "expected exactly the 2 résumé/document ns:cmd pairs (round 5, `B1-r1-ACLI-R5-4`): \
+         documents:documents_list (fenced/capped rows) AND documents:documents_get_text (the \
+         SAME text by id, fenced and capped at the SAME limit — its `id` param maps to \
+         documents_list's `_id` value, spelled out in the prose rather than dropping the \
+         command entirely; its reply is now fenced too, `B1-r1-ACLI-R5-7`; neither call can \
+         return more of a document than the fence cap, `B1-r2-ACLI-R6-1`): {INSTRUCTIONS}"
+    );
+}
+
+/// Issue #1170 round-4 review (`B1-r1-ACLI-R4-2`): every generic-tier reply pipes `text` through
+/// `agent_call::fence_scraped_fields`, which fences it with `prompt_fence::JOB_CAP` — so a document
+/// longer than the cap comes back silently truncated, with no truncation marker on the wire. The
+/// old prose promised documents_list rows "already carry the full `text`" on BOTH surfaces below;
+/// neither may claim "full" again. The last assertion proves the claim really would be false: text
+/// well over the cap comes back shorter than it went in.
+///
+/// Round 5 (`B1-r1-ACLI-R5-5`): the two negative assertions below only deny the EXACT substrings
+/// the round-4 fix happened to write — "rows already carry the complete text", "rows carry the
+/// whole document", or "the entire text" would all satisfy both negatives while overclaiming
+/// exactly the same thing. Assert the POSITIVE clause on both surfaces too, so a rewrite that
+/// drops the caveat (while carefully avoiding the two banned phrases) still fails.
+///
+/// Round 6 (`B1-r2-ACLI-R6-3`): round 5's positive clause was satisfied by EITHER command's
+/// mention — a prose that says "documents_list rows are fenced and capped" once, then separately
+/// claims documents_get_text returns the "FULL, uncapped text", passed both assertions unchanged
+/// (`fenced and capped` was present; `carry the full`/`full text` were never the phrase actually
+/// written). [`assert_document_read_prose_is_honest`] instead: (a) bans "uncapped" anywhere,
+/// case-insensitively; (b) bans the STANDALONE word "full" anywhere, not just inside one
+/// hand-picked phrase like "carry the full" — "FULL, uncapped text" fails on both grounds now;
+/// (c) walks every literal `documents:<cmd>` token found IN the string and requires "capped" to
+/// appear near THAT occurrence.
+///
+/// Round 7 (`B1-r3-ACLI-R7-2`): (c) used the same wide, backward-reaching `window` as (a)/(b), so
+/// two `documents:<cmd>` tokens sitting close together (as they do in the real prose) let ONE
+/// command's cap disclosure satisfy the OTHER's requirement — the exact failure (c) claims to
+/// prevent. The cap check now uses a forward-only span from this token to the NEXT `documents:`
+/// occurrence (or the end of the string), so a disclosure written only near a neighbouring
+/// command's mention can no longer cover this one. `window` (backward+forward) stays for the
+/// full/uncapped bans, which round 6 needs to catch banned words sitting BEFORE the token.
+// Byte-safe window bounds — `prose` is human prose with non-ASCII chars (e.g. "résumé"), so an
+// arbitrary `idx - 120` can land mid-character; walk to the nearest valid boundary rather than
+// panicking on a sliced-through multi-byte char. Module-level (not nested in the test below) so
+// `documents_text_prose_per_token_cap_disclosure_is_required` can reuse them against synthetic
+// prose without duplicating the window logic.
+fn floor_char_boundary(s: &str, index: usize) -> usize {
+    let mut i = index.min(s.len());
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+fn ceil_char_boundary(s: &str, index: usize) -> usize {
+    let mut i = index.min(s.len());
+    while i < s.len() && !s.is_char_boundary(i) {
+        i += 1;
+    }
+    i
+}
+
+fn assert_document_read_prose_is_honest(prose: &str, label: &str) {
+    let mut found_any = false;
+    for cmd in ["documents_list", "documents_get_text"] {
+        let token = format!("documents:{cmd}");
+        let Some(idx) = prose.find(&token) else {
+            continue;
+        };
+        found_any = true;
+        // A window AROUND the token, not just after it — the round-6 defect's banned words
+        // sat BEFORE the token ("for a document's FULL, uncapped text, call-read
+        // documents:documents_get_text …"), so an after-only window would have missed it.
+        let start = floor_char_boundary(prose, idx.saturating_sub(120));
+        let end = ceil_char_boundary(prose, idx + token.len() + 250);
+        let window = &prose[start..end];
+
+        // Forward-only, and bounded by the NEXT `documents:` token — so a cap disclosure
+        // sitting near a different command's mention (before this token, or past the next
+        // one) can never satisfy this command's own requirement.
+        let next_token_start = prose[idx + token.len()..]
+            .find("documents:")
+            .map(|p| idx + token.len() + p)
+            .unwrap_or(prose.len());
+        let cap_end = ceil_char_boundary(prose, (idx + token.len() + 250).min(next_token_start));
+        let cap_window = &prose[idx..cap_end];
+        assert!(
+            cap_window.contains("capped"),
+            "{label}'s mention of `{token}` must disclose a cap near ITS OWN occurrence, \
+             not rely on a disclosure written only near a different command's mention: \
+             …{cap_window}…"
+        );
+        assert!(
+            !window.to_ascii_lowercase().contains("uncapped"),
+            "{label}'s mention of `{token}` must never claim it is uncapped: …{window}…"
+        );
+        assert!(
+            !window
+                .split(|c: char| !c.is_ascii_alphabetic())
+                .any(|word| word.eq_ignore_ascii_case("full")),
+            "{label}'s mention of `{token}` must never claim it returns the FULL text: \
+             …{window}…"
+        );
+    }
+    assert!(
+        found_any,
+        "{label} must name at least one documents:<cmd> read: {prose}"
+    );
+}
+
+#[test]
+fn documents_text_prose_never_claims_full_past_the_fence_cap() {
+    assert_document_read_prose_is_honest(INSTRUCTIONS, "INSTRUCTIONS");
+    let list = tools(Tier::Read);
+    let profile_description = list.iter().find(|t| t["name"] == TOOL_PROFILE).unwrap()
+        ["description"]
+        .as_str()
+        .unwrap();
+    assert_document_read_prose_is_honest(profile_description, "profile's description");
+
+    let over_cap = "x".repeat(crate::prompt_fence::JOB_CAP + 500);
+    let fenced =
+        crate::prompt_fence::fenced("job_posting", &over_cap, crate::prompt_fence::JOB_CAP);
+    assert!(
+        fenced.len() < over_cap.len(),
+        "premise: fencing must actually truncate text past the cap, or the prose fix above has \
+         nothing to be honest about"
+    );
+}
+
+/// `B2-r1-ACLI-R8-2` (MEDIUM, review round 8): `documents_get_text` returns the IDENTICAL empty
+/// string for both an unresolved `id` and a stored document whose own extracted text is itself
+/// empty (`commands/documents.rs`'s `store.get(&id).map(|doc| doc.text).unwrap_or_default()`
+/// falls through to `""` either way) — so neither surface may claim the empty fenced block means
+/// ONLY "no such document"; both must say the two causes are not distinguishable from the reply
+/// alone and point the caller at `documents:documents_list` to tell them apart.
+#[test]
+fn documents_text_prose_never_claims_empty_means_only_no_such_document() {
+    let list = tools(Tier::Read);
+    let profile_description = list.iter().find(|t| t["name"] == TOOL_PROFILE).unwrap()
+        ["description"]
+        .as_str()
+        .unwrap();
+    for (prose, label) in [
+        (INSTRUCTIONS, "INSTRUCTIONS"),
+        (profile_description, "profile's description"),
+    ] {
+        assert!(
+            !prose.contains("means \"no such document\", never \"this document has no text\""),
+            "{label} must never claim the empty fenced block means ONLY \"no such document\" — \
+             documents_get_text returns the identical empty string when a real document's own \
+             extracted text is empty too: {prose}"
+        );
+        assert!(
+            prose.contains("cross-check") && prose.contains("documents:documents_list"),
+            "{label} must tell the caller how to tell the two empty-reply causes apart via \
+             documents:documents_list: {prose}"
+        );
+    }
+}
+
+/// `B2-r2-B2-r2-ACLI-R8-A` (MEDIUM, review round 8 follow-up): the doc comment directly above
+/// `documents_get_text`'s `unwrap_or_default()` in `commands/documents.rs` is a THIRD copy of
+/// the claim guarded above for `INSTRUCTIONS` and the `profile` tool description — it sits right
+/// next to the code that disproves the old wording, so pin its source text too or it can drift
+/// back to claiming the empty reply means ONLY "no such document" with no guard catching it.
+#[test]
+fn documents_get_text_doc_comment_never_claims_empty_means_only_no_such_document() {
+    const SRC: &str = include_str!("../../../commands/documents.rs");
+    let (_, after_set_default) = SRC
+        .split_once("pub async fn documents_set_default")
+        .expect("commands::documents::documents_set_default must still exist");
+    let (doc_comment, _) = after_set_default
+        .split_once("pub async fn documents_get_text")
+        .expect("commands::documents::documents_get_text must still exist");
+    assert!(
+        !doc_comment.contains("did not resolve, not \"this document has"),
+        "commands::documents_get_text's doc comment must never claim the empty reply means ONLY \
+         \"no such document\" — it returns the identical empty string when a real document's own \
+         extracted text is empty too: {doc_comment}"
+    );
+    assert!(
+        doc_comment.contains("NOT distinguishable from this reply alone")
+            && doc_comment.contains("documents:documents_list"),
+        "commands::documents_get_text's doc comment must tell the reader how to tell the two \
+         empty-reply causes apart via documents:documents_list, matching agent_cli::mcp's \
+         INSTRUCTIONS and profile tool description: {doc_comment}"
+    );
+}
+
+/// Regression for `B1-r3-ACLI-R7-2`: reproduces the review's mutation run B directly — two
+/// `documents:<cmd>` tokens close together, where `documents_list`'s own cap disclosure sits in
+/// the ~100-char gap before `documents_get_text`'s token but `documents_get_text` never discloses
+/// its own cap. The old backward-reaching window let list's disclosure satisfy get_text's
+/// requirement; the fix must reject that and only accept a disclosure near get_text's own token.
+#[test]
+fn documents_text_prose_per_token_cap_disclosure_is_required() {
+    let borrowed_disclosure = "read documents:documents_list (fenced and capped at the fence \
+        limit); documents:documents_get_text returns that same document text by id ";
+    let result = std::panic::catch_unwind(|| {
+        assert_document_read_prose_is_honest(borrowed_disclosure, "synthetic");
+    });
+    assert!(
+        result.is_err(),
+        "documents_get_text's own missing cap disclosure must fail even though \
+         documents_list's disclosure sits nearby"
+    );
+
+    let own_disclosure = "read documents:documents_list (fenced and capped at the fence limit); \
+        documents:documents_get_text returns that same document text by id, fenced and capped \
+        at the same limit";
+    assert_document_read_prose_is_honest(own_disclosure, "synthetic");
+}
+
 /// Every `"error":` STRING LITERAL mcp.rs's own source writes directly — never `agent_call`'s
 /// `pub(super)` sentinels (`ERR_UNKNOWN_COMMAND`/`ERR_NOT_EXPOSED`/`ERR_CONFIRMATION_REQUIRED`),
 /// referenced by path there and never respelled here. A test-only fixture (item 24): nothing in
@@ -1276,6 +1524,60 @@ fn every_scraped_text_tool_carries_the_same_untrusted_fields_notice() {
     }
 }
 
+/// Issue #1170, round 5 (`B1-r1-ACLI-R5-4`): the `profile` tool must say up front it holds
+/// contact fields only, and point at REAL `POLICY` reads for the résumé/document text itself (a
+/// stale rename here would send a calling model at a command that no longer exists). Both
+/// `documents:documents_list` (fenced/capped rows) AND `documents:documents_get_text` (the same
+/// text by id, fenced and capped at the SAME limit — round 6, `B1-r2-ACLI-R6-1`: it does NOT
+/// return more) are named — the earlier version of this description dropped `documents_get_text`
+/// entirely rather than spelling out that its `id` param maps to `documents_list`'s `_id` value,
+/// leaving an assistant with no way to reach a résumé by id at all, only by re-listing.
+#[test]
+fn profile_tool_description_names_a_real_document_read() {
+    let list = tools(Tier::Read);
+    let description = list.iter().find(|t| t["name"] == TOOL_PROFILE).unwrap()["description"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        description.contains("Contact fields only"),
+        "must say the profile tool holds contact fields only: {description}"
+    );
+    // Every `ns:cmd`-shaped token is pulled OUT of the description text itself (same
+    // discipline as `instructions_ns_cmd_pairs_are_real_policy_rows` below) — a hand-picked
+    // pair list would keep passing after a rename inside the string, which is exactly how the
+    // round-1 fix missed `documents_get_text` (issue #1164 round 2).
+    let is_ident = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_lowercase() || c == '_');
+    let mut checked = 0usize;
+    for word in description.split_whitespace() {
+        let word = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != ':' && c != '_');
+        let Some((ns, cmd)) = word.split_once(':') else {
+            continue;
+        };
+        if !is_ident(ns) || !is_ident(cmd) {
+            continue;
+        }
+        checked += 1;
+        let entry = POLICY
+            .iter()
+            .find(|e| agent_call::split_path(e.path) == (ns, cmd))
+            .unwrap_or_else(|| {
+                panic!("profile's description names {word}, which is not a real POLICY row")
+            });
+        assert!(
+            matches!(entry.effect, Effect::Read),
+            "profile's description tells a caller to reach {word} via call-read, but its \
+             POLICY row is not Effect::Read"
+        );
+    }
+    assert_eq!(
+        checked, 2,
+        "expected exactly the 2 ns:cmd pairs the profile description names (round 5, \
+         `B1-r1-ACLI-R5-4`) — documents:documents_list and documents:documents_get_text, \
+         matching INSTRUCTIONS: {description}"
+    );
+}
+
 // ── Advertised schema text (issues #1129, #1130, #1132, #1144) ──────────
 
 /// One tool's `inputSchema.properties.<field>.description`.
@@ -1341,6 +1643,109 @@ fn the_found_jobs_cursor_is_advertised_as_an_opaque_per_autopilot_token() {
         cursor.contains("opaque") && cursor.contains("autopilotId"),
         "it must say it is opaque and bound to the id that issued it: {cursor}"
     );
+}
+
+/// Round 2 fix (B3-r2-F5) — `best-matches`' `query` filters the already-capped, ranked
+/// candidate list this tool computes (`BEST_MATCHES_CAP`, `commands::autopilot::best_matches`),
+/// not the full stored corpus: a posting outside that cap reads `total: 0`/`matches: []`, a
+/// confident false negative for issue #1168's headline question ("is this role already in my
+/// list?"). Both the `query` property AND the tool's own base description (`VERB_TABLE`) must
+/// steer a caller toward `found-jobs`' own `query`, which spans everything.
+#[test]
+fn best_matches_query_advertises_it_is_scoped_to_the_capped_ranked_list_not_the_full_corpus() {
+    let list = tools(Tier::Read);
+    let query = property_description(&list, TOOL_BEST_MATCHES, "query");
+    assert!(
+        query.contains("found-jobs") && query.contains("NOT"),
+        "query's own description must name the scope and point at found-jobs: {query}"
+    );
+    let base = tool_description(&list, TOOL_BEST_MATCHES);
+    assert!(
+        base.contains("found-jobs"),
+        "the tool's base description must point a caller at found-jobs for a full-corpus search: {base}"
+    );
+}
+
+/// Issues #1167/#1168 — every new `found-jobs` server-side filter/flag must be
+/// advertised on the schema a client reads BEFORE its first call, not
+/// discoverable only by trial and error. `autopilotId` moved from required to
+/// optional (issue #1168) at the same time, pinned here too so the two never
+/// drift apart again the way the round-2 review found the limit numbers did.
+#[test]
+fn the_found_jobs_schema_advertises_every_filter_and_no_longer_requires_autopilot_id() {
+    let list = tools(Tier::Read);
+    for field in [
+        "minScore",
+        "country",
+        "remote",
+        "applied",
+        "query",
+        "includeDescription",
+    ] {
+        let description = property_description(&list, TOOL_FOUND_JOBS, field);
+        assert!(
+            !description.is_empty(),
+            "found-jobs must advertise a `{field}` property"
+        );
+    }
+    let tool = list
+        .iter()
+        .find(|t| t["name"] == TOOL_FOUND_JOBS)
+        .expect("found-jobs listed");
+    let required = tool["inputSchema"]["required"].as_array();
+    assert!(
+        required.is_none_or(|r| r.is_empty()),
+        "autopilotId must no longer be required (issue #1168): {:?}",
+        tool["inputSchema"]
+    );
+}
+
+/// Issue #1146 P11 — `best-matches` gained the same `cursor`/`query` args
+/// `found-jobs` already advertised; a client has no other source for either
+/// before its first call.
+#[test]
+fn the_best_matches_schema_advertises_cursor_and_query() {
+    let list = tools(Tier::Read);
+    for field in ["cursor", "query"] {
+        let description = property_description(&list, TOOL_BEST_MATCHES, field);
+        assert!(
+            !description.is_empty(),
+            "best-matches must advertise a `{field}` property"
+        );
+    }
+}
+
+/// Issue #1168 — `job` matches by posting `url` ONLY; a caller trying to look
+/// a posting up by title/company needs to be pointed at `found-jobs`' own
+/// `query` filter instead of guessing.
+#[test]
+fn the_job_tool_description_says_url_only_and_points_at_found_jobs_query() {
+    let description = tool_description(&tools(Tier::Read), TOOL_JOB);
+    assert!(
+        description.to_lowercase().contains("url only"),
+        "job's description must say it matches by url only: {description}"
+    );
+    assert!(
+        description.contains("found-jobs"),
+        "job's description must point a title/company lookup at found-jobs: {description}"
+    );
+}
+
+/// Round-4 fix T3-cont (PR #1182 round-5) — the whole safety of "absent
+/// `applied` ≠ `false`" rests on a caller knowing to check for
+/// `appliedUnavailable` instead of reading a missing key as falsy; that must
+/// be readable from the tool descriptions themselves, not only from Rust doc
+/// comments no MCP client ever sees.
+#[test]
+fn the_job_and_found_jobs_descriptions_document_applied_unavailable() {
+    let list = tools(Tier::Read);
+    for tool in [TOOL_JOB, TOOL_FOUND_JOBS] {
+        let description = tool_description(&list, tool);
+        assert!(
+            description.contains("appliedUnavailable"),
+            "{tool}'s description must document appliedUnavailable: {description}"
+        );
+    }
 }
 
 /// Issue #1132 — `totalFound` is the LAST run's kept count and diverged from the traversable
@@ -1725,6 +2130,109 @@ fn every_declared_argument_still_reaches_the_bridge_or_its_local_result() {
         panic!("commands answers locally");
     };
     assert_eq!(result["isError"], false);
+}
+
+/// B3-r1-F2 — a PRESENT-but-blank `autopilotId` used to collapse silently to
+/// the same argv an OMITTED one produces, widening a one-autopilot selector
+/// into a spanning traversal with no signal to the caller. Must be a usage
+/// error, never routed to the bridge at all.
+#[test]
+fn found_jobs_with_a_blank_autopilot_id_is_a_usage_error_not_a_silent_widen() {
+    let server = Server::new(false, false);
+    for blank in [json!(""), json!("   ")] {
+        let ToolCall::Local(Ok(result)) = classify_tool_call(
+            &json!({ "name": TOOL_FOUND_JOBS, "arguments": { "autopilotId": blank } }),
+            &server,
+        ) else {
+            panic!("a blank autopilotId must never reach the bridge");
+        };
+        assert_eq!(result["isError"], true);
+        let text = result["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.contains("autopilotId"),
+            "the refusal must name the offending field: {text}"
+        );
+    }
+}
+
+/// The smuggling half: a flag-shaped `autopilotId` must be refused rather
+/// than forwarded as a bare CLI positional, where `parse_found_jobs` would
+/// read it as the real flag instead of as an id.
+#[test]
+fn found_jobs_with_a_flag_shaped_autopilot_id_is_a_usage_error_not_a_smuggled_flag() {
+    let server = Server::new(false, false);
+    let ToolCall::Local(Ok(result)) = classify_tool_call(
+        &json!({
+            "name": TOOL_FOUND_JOBS,
+            "arguments": { "autopilotId": "--include-description" },
+        }),
+        &server,
+    ) else {
+        panic!("a flag-shaped autopilotId must never reach the bridge");
+    };
+    assert_eq!(result["isError"], true);
+}
+
+/// The safe direction, unchanged: OMITTING `autopilotId` entirely is still a
+/// valid spanning traversal, never a usage error.
+#[test]
+fn found_jobs_with_an_absent_autopilot_id_still_reaches_the_bridge() {
+    let server = Server::new(false, false);
+    assert!(matches!(
+        classify_tool_call(
+            &json!({ "name": TOOL_FOUND_JOBS, "arguments": {} }),
+            &server,
+        ),
+        ToolCall::Bridge(_)
+    ));
+}
+
+/// Round 2 fix (B3-r2-F4) — `tool_argv` used to read `includeDescription` with
+/// `.and_then(Value::as_bool)`, so a non-bool value vanished as "absent" instead of reaching
+/// `parse_verb`/the resource's own refusal: the caller got compact rows back with no error and
+/// no signal that `description` was silently dropped. Must be a usage error, never routed to the
+/// bridge at all — mirrors `found_jobs_with_a_blank_autopilot_id_is_a_usage_error_not_a_silent_widen`
+/// on the sibling field.
+#[test]
+fn found_jobs_with_a_non_bool_include_description_is_a_usage_error_not_a_silent_drop() {
+    let server = Server::new(false, false);
+    for bad in [json!("true"), json!(1), json!("")] {
+        let ToolCall::Local(Ok(result)) = classify_tool_call(
+            &json!({ "name": TOOL_FOUND_JOBS, "arguments": { "includeDescription": bad } }),
+            &server,
+        ) else {
+            panic!("a non-bool includeDescription must never reach the bridge");
+        };
+        assert_eq!(result["isError"], true);
+        let text = result["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.contains("includeDescription"),
+            "the refusal must name the offending field: {text}"
+        );
+    }
+}
+
+/// The safe direction, unchanged: a real boolean (or an omitted key) still reaches the bridge.
+#[test]
+fn found_jobs_with_a_bool_or_absent_include_description_still_reaches_the_bridge() {
+    let server = Server::new(false, false);
+    for arguments in [
+        json!({}),
+        json!({ "includeDescription": true }),
+        json!({ "includeDescription": false }),
+        json!({ "includeDescription": null }),
+    ] {
+        assert!(
+            matches!(
+                classify_tool_call(
+                    &json!({ "name": TOOL_FOUND_JOBS, "arguments": arguments }),
+                    &server,
+                ),
+                ToolCall::Bridge(_)
+            ),
+            "must still reach the bridge for {arguments}"
+        );
+    }
 }
 
 /// MEDIUM fix, review round 4 — the #1134 gate refused MCP's own reserved `_`-prefixed keys,
@@ -2190,17 +2698,60 @@ fn a_confirm_argument_sent_to_call_read_is_silently_ignored() {
 // ── found-jobs tool_argv mapping (MEDIUM fix, review round 2 — this new arm had no
 // coverage at all) ───────────────────────────────────────────────────────────────
 
+/// Every field named explicitly (Rust's struct-update `..base` syntax does not
+/// exist for enum variants) — mirrors `agent_cli::tests`' own `found_jobs`
+/// helper, which this file cannot reuse (a sibling test module, not a
+/// descendant).
+#[allow(clippy::too_many_arguments)]
+fn found_jobs(
+    autopilot_id: Option<&str>,
+    limit: Option<u64>,
+    cursor: Option<&str>,
+    min_score: Option<f64>,
+    country: Option<&str>,
+    remote: Option<bool>,
+    applied: Option<bool>,
+    query: Option<&str>,
+    include_description: bool,
+) -> Verb {
+    Verb::FoundJobs {
+        autopilot_id: autopilot_id.map(str::to_string),
+        limit,
+        cursor: cursor.map(str::to_string),
+        min_score,
+        country: country.map(str::to_string),
+        remote,
+        applied,
+        query: query.map(str::to_string),
+        include_description,
+    }
+}
+
+fn best_matches(limit: Option<u64>, cursor: Option<&str>, query: Option<&str>) -> Verb {
+    Verb::BestMatches {
+        limit,
+        cursor: cursor.map(str::to_string),
+        query: query.map(str::to_string),
+    }
+}
+
 #[test]
 fn found_jobs_tool_argv_maps_autopilot_id_limit_and_cursor() {
     let arguments = json!({ "autopilotId": "ap-1", "limit": 10, "cursor": "20" });
     let argv = tool_argv(TOOL_FOUND_JOBS, &arguments);
     assert_eq!(
         parse_verb(&argv).unwrap(),
-        Verb::FoundJobs {
-            autopilot_id: "ap-1".to_string(),
-            limit: Some(10),
-            cursor: Some("20".to_string()),
-        }
+        found_jobs(
+            Some("ap-1"),
+            Some(10),
+            Some("20"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            false
+        )
     );
 }
 
@@ -2209,11 +2760,56 @@ fn found_jobs_tool_argv_omits_optional_flags_when_absent() {
     let argv = tool_argv(TOOL_FOUND_JOBS, &json!({ "autopilotId": "ap-1" }));
     assert_eq!(
         parse_verb(&argv).unwrap(),
-        Verb::FoundJobs {
-            autopilot_id: "ap-1".to_string(),
-            limit: None,
-            cursor: None,
-        }
+        found_jobs(
+            Some("ap-1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false
+        )
+    );
+}
+
+/// Issue #1168 — an entirely absent `autopilotId` argument must still round-trip as a
+/// VALID spanning traversal, not a usage error.
+#[test]
+fn found_jobs_tool_argv_omits_autopilot_id_entirely_when_absent() {
+    let argv = tool_argv(TOOL_FOUND_JOBS, &json!({}));
+    assert_eq!(
+        parse_verb(&argv).unwrap(),
+        found_jobs(None, None, None, None, None, None, None, None, false)
+    );
+}
+
+#[test]
+fn found_jobs_tool_argv_maps_every_new_filter() {
+    let arguments = json!({
+        "autopilotId": "ap-1",
+        "minScore": 70,
+        "country": "Germany",
+        "remote": true,
+        "applied": false,
+        "query": "engineer",
+        "includeDescription": true,
+    });
+    let argv = tool_argv(TOOL_FOUND_JOBS, &arguments);
+    assert_eq!(
+        parse_verb(&argv).unwrap(),
+        found_jobs(
+            Some("ap-1"),
+            None,
+            None,
+            Some(70.0),
+            Some("Germany"),
+            Some(true),
+            Some(false),
+            Some("engineer"),
+            true
+        )
     );
 }
 
@@ -2226,11 +2822,17 @@ fn found_jobs_tool_argv_forwards_a_numeric_cursor_rather_than_dropping_it() {
     let argv = tool_argv(TOOL_FOUND_JOBS, &arguments);
     assert_eq!(
         parse_verb(&argv).unwrap(),
-        Verb::FoundJobs {
-            autopilot_id: "ap-1".to_string(),
-            limit: None,
-            cursor: Some("100".to_string()),
-        }
+        found_jobs(
+            Some("ap-1"),
+            None,
+            Some("100"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            false
+        )
     );
 }
 
@@ -2240,11 +2842,17 @@ fn found_jobs_tool_argv_treats_an_explicit_null_cursor_as_absent() {
     let argv = tool_argv(TOOL_FOUND_JOBS, &arguments);
     assert_eq!(
         parse_verb(&argv).unwrap(),
-        Verb::FoundJobs {
-            autopilot_id: "ap-1".to_string(),
-            limit: None,
-            cursor: None,
-        }
+        found_jobs(
+            Some("ap-1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false
+        )
     );
 }
 
@@ -2260,15 +2868,21 @@ fn an_explicit_null_limit_reads_as_absent_on_both_tools_that_take_one() {
             &json!({ "autopilotId": "ap-1", "limit": null })
         ))
         .unwrap(),
-        Verb::FoundJobs {
-            autopilot_id: "ap-1".to_string(),
-            limit: None,
-            cursor: None,
-        }
+        found_jobs(
+            Some("ap-1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false
+        )
     );
     assert_eq!(
         parse_verb(&tool_argv(TOOL_BEST_MATCHES, &json!({ "limit": null }))).unwrap(),
-        Verb::BestMatches { limit: None }
+        best_matches(None, None, None)
     );
 }
 
@@ -2278,7 +2892,7 @@ fn an_explicit_null_limit_reads_as_absent_on_both_tools_that_take_one() {
 fn a_numeric_limit_still_reaches_parse_verb_on_both_tools() {
     assert_eq!(
         parse_verb(&tool_argv(TOOL_BEST_MATCHES, &json!({ "limit": 7 }))).unwrap(),
-        Verb::BestMatches { limit: Some(7) }
+        best_matches(Some(7), None, None)
     );
     assert_eq!(
         parse_verb(&tool_argv(
@@ -2286,11 +2900,17 @@ fn a_numeric_limit_still_reaches_parse_verb_on_both_tools() {
             &json!({ "autopilotId": "ap-1", "limit": 7 })
         ))
         .unwrap(),
-        Verb::FoundJobs {
-            autopilot_id: "ap-1".to_string(),
-            limit: Some(7),
-            cursor: None,
-        }
+        found_jobs(
+            Some("ap-1"),
+            Some(7),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false
+        )
     );
 }
 
@@ -2520,7 +3140,10 @@ fn commands_marks_the_paged_rows_and_only_those() {
         noted.push(row["command"].as_str().unwrap());
     }
     noted.sort_unstable();
-    assert_eq!(noted, vec!["ai_generations_list", "applications_list"]);
+    assert_eq!(
+        noted,
+        vec!["ai_generations_list", "applications_list", "documents_list"]
+    );
 }
 
 #[test]
@@ -3144,4 +3767,46 @@ fn the_generic_input_schema_says_limit_and_cursor_belong_to_the_paging_layer() {
             "the input description must state `{clause}`: {description}"
         );
     }
+}
+
+/// Round 5 (`B1-r1-ACLI-R5-1`): `updater:updater_check` writes `UpdaterState` and emits a UI
+/// event, so it must stay `Effect::Reversible`, NOT `Read` — `call-read`'s `readOnlyHint` is a
+/// per-TOOL promise covering every current and future `Read` row, and reclassifying one
+/// side-effecting row into `Read` would force that promise to `false` for all the genuinely
+/// read-only rows too. `updater::updater_status` is the read-only alternative (its own POLICY row
+/// comment).
+#[test]
+fn updater_check_is_not_dispatchable_as_read() {
+    let entry = POLICY
+        .iter()
+        .find(|e| e.path == "updater::updater_check")
+        .expect("updater_check has a POLICY row");
+    assert_eq!(
+        entry.effect,
+        Effect::Reversible,
+        "updater_check writes UpdaterState + emits updater:status — it must not be Read, or \
+         call-read's readOnlyHint would have to go false for every Read row"
+    );
+}
+
+/// Companion to the test above: `call-read`'s own annotations must still claim `readOnlyHint:
+/// true` now that no side-effecting row (`updater_check`) is classified `Read` — this is the
+/// promise every genuinely read-only row (63 of them) depends on for auto-approval.
+#[test]
+fn call_read_annotations_claim_read_only() {
+    let tool = tools(Tier::Read)
+        .into_iter()
+        .find(|t| t["name"] == TOOL_CALL_READ)
+        .expect("call-read is always present");
+    assert_eq!(
+        tool["annotations"]["readOnlyHint"],
+        json!(true),
+        "call-read must claim readOnlyHint: true — every row it can dispatch is genuinely \
+         side-effect-free on the persisted+in-memory axis: {tool}"
+    );
+    let description = tool_description(&tools(Tier::Read), TOOL_CALL_READ);
+    assert!(
+        description.contains("no state change"),
+        "call-read's description must say \"no state change\": {description}"
+    );
 }

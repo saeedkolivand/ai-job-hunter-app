@@ -130,7 +130,7 @@ fn the_real_extension_bridge_status_row_refuses_through_the_real_gate() {
 /// answers `Ok(Dispatch::Direct)` and `call-read` would ship a user path into
 /// an MCP client's persisted transcript. No other test catches that flip: it
 /// changes no row COUNT (`policy_table_has_exactly_167_rows`, the 34
-/// Irreversible tally, `extension_bridge::test`'s 167-row walk are all blind
+/// Irreversible tally, `extension_bridge::test`'s 168-row walk are all blind
 /// to an `Effect` swap), `not_exposed_rows_carry_a_real_reason` only inspects
 /// rows that ARE already `NotExposed`, and the per-row walk in
 /// `extension_bridge::test` keys its assertions off `entry.effect` itself, so
@@ -1929,11 +1929,13 @@ fn enforce_frame_cap_passes_an_under_cap_reply_through_untouched() {
 /// data can't catch a deletion" lesson). The second half proves each named
 /// row is a REAL, freely-dispatchable `Effect::Read` policy row, so a typo or
 /// a renamed command fails here rather than silently paging nothing.
+/// `documents_list` joined round 3 (`B1-r3-ACLI-5`) as the narrowing path
+/// `INSTRUCTIONS`/the `profile` tool description point a caller at.
 #[test]
-fn the_paginated_list_commands_are_exactly_these_two_real_read_policy_rows() {
+fn the_paginated_list_commands_are_exactly_these_three_real_read_policy_rows() {
     assert_eq!(
         PAGINATED_LIST_COMMANDS,
-        &["applications_list", "ai_generations_list"]
+        &["applications_list", "ai_generations_list", "documents_list"]
     );
     for command in PAGINATED_LIST_COMMANDS {
         let entry = POLICY
@@ -2232,6 +2234,224 @@ fn base64_byte_fields_never_marks_a_value_it_did_not_re_encode() {
     }
 }
 
+// ── Drop dead fields (issue #1171's residual, `B1-r3-ACLI-R7-3`) ──────────
+
+/// The audited const pinned against a hand-written literal, same reasoning
+/// as [`the_base64_byte_fields_are_exactly_this_one_audited_pair`], plus
+/// both rows' own policy check — `autopilot_list`/`autopilot_get` must stay
+/// `Effect::Read` (the raw, unprojected dispatch this reshape step exists to
+/// cover) for this to be reachable at all.
+#[test]
+fn the_drop_fields_are_exactly_these_two_audited_pairs() {
+    assert_eq!(
+        DROP_FIELDS,
+        &[
+            ("autopilot_list", "totalApplied"),
+            ("autopilot_get", "totalApplied"),
+        ]
+    );
+    for (command, _) in DROP_FIELDS {
+        let entry = find_policy("autopilot", command)
+            .unwrap_or_else(|| panic!("{command} is a real POLICY row"));
+        assert_eq!(entry.effect, Effect::Read);
+    }
+}
+
+/// The FIELD half of the audited pair, pinned against the struct it was
+/// audited against rather than a second copy of the literal — same
+/// reasoning as
+/// [`the_audited_field_is_the_key_the_real_export_struct_serializes_its_bytes_under`].
+/// Renaming `Autopilot.total_applied` (or dropping `#[serde(rename_all)]`)
+/// makes this fail instead of `DROP_FIELDS` silently pointing at a key no
+/// reply carries.
+#[test]
+fn the_audited_field_is_the_key_the_real_autopilot_struct_serializes_its_dead_counter_under() {
+    use crate::autopilot::{Autopilot, AutopilotFilter, AutopilotStatus, AutopilotTarget};
+
+    let ap = Autopilot {
+        id: "ap-1".into(),
+        name: "Test AP".into(),
+        status: AutopilotStatus::Active,
+        target: AutopilotTarget {
+            boards: vec!["linkedin".into()],
+            query: "engineer".into(),
+            location: None,
+            country_code: None,
+            work_types: None,
+            pages: 1,
+            date_filter: None,
+            top_n: 3,
+            watched_companies_only: None,
+        },
+        filter: AutopilotFilter {
+            min_match_score: 0.0,
+            keywords: None,
+            exclude_keywords: None,
+        },
+        schedule: "daily".into(),
+        schedule_hour: None,
+        schedule_minute: None,
+        resume_text: None,
+        cover_letter: None,
+        assistant: false,
+        assistant_provider: None,
+        assistant_model: None,
+        assistant_base_url: None,
+        total_found: 0,
+        total_applied: 0,
+        found_jobs: Vec::new(),
+        run_status: None,
+        last_run_summaries: Vec::new(),
+        last_run_at: None,
+        created_at: 0,
+        updated_at: 0,
+    };
+    let value = serde_json::to_value(ap).expect("Autopilot serializes");
+    assert!(
+        value.get("totalApplied").is_some(),
+        "`totalApplied` is no longer a key of Autopilot's wire shape — \
+         DROP_FIELDS now points at nothing: {value}"
+    );
+}
+
+#[test]
+fn drop_dead_fields_strips_total_applied_from_a_single_autopilot_object() {
+    let mut data = json!({ "id": "ap-1", "totalApplied": 0, "totalFound": 3 });
+    drop_dead_fields("autopilot_get", &mut data);
+    assert!(data.get("totalApplied").is_none());
+    assert_eq!(data["totalFound"], json!(3));
+}
+
+#[test]
+fn drop_dead_fields_strips_total_applied_from_every_row_of_an_autopilot_list() {
+    let mut data = json!([
+        { "id": "ap-1", "totalApplied": 0 },
+        { "id": "ap-2", "totalApplied": 0 },
+    ]);
+    drop_dead_fields("autopilot_list", &mut data);
+    assert!(data[0].get("totalApplied").is_none());
+    assert!(data[1].get("totalApplied").is_none());
+    assert_eq!(data[0]["id"], json!("ap-1"));
+    assert_eq!(data[1]["id"], json!("ap-2"));
+}
+
+/// `autopilot_get` on an unknown id replies with a bare `null`
+/// (`commands::autopilot::autopilot_get`'s own `json!(ap)` over an
+/// `Option`) — there is no object to strip a field from, so this must not
+/// panic and must leave the reply exactly `null`.
+#[test]
+fn drop_dead_fields_leaves_a_null_autopilot_get_reply_untouched() {
+    let mut data = json!(null);
+    drop_dead_fields("autopilot_get", &mut data);
+    assert_eq!(data, json!(null));
+}
+
+/// Mutation-check the `(command, field)` pair the same way
+/// [`base64_byte_fields_leaves_every_other_command_untouched`] does: the
+/// identical payload under a different command name must survive
+/// byte-for-byte. Deleting the `*cmd != command` check makes this fail.
+#[test]
+fn drop_dead_fields_leaves_every_other_command_untouched() {
+    let original = json!({ "id": "ap-1", "totalApplied": 0 });
+    let mut data = original.clone();
+    drop_dead_fields("jobs_list", &mut data);
+    assert_eq!(data, original);
+}
+
+/// This is the actual reshape it exists to fix: a raw `autopilot_list`
+/// reply, run through [`reshape_reply`] the same way `dispatch_direct`
+/// really calls it, must not carry `totalApplied` on the wire.
+#[test]
+fn reshape_reply_drops_total_applied_from_autopilot_list() {
+    let data = json!([{ "id": "ap-1", "totalApplied": 0, "status": "active" }]);
+    let out = reshape_reply("autopilot_list", data, None);
+    assert!(out.as_array().unwrap()[0].get("totalApplied").is_none());
+    assert_eq!(out[0]["status"], json!("active"));
+}
+
+// ── Per-document truncation marker (`B1-r3-ACLI-R7-5`) ────────────────────
+
+#[test]
+fn reserve_truncation_marker_leaves_short_text_unchanged() {
+    let body = "short résumé text";
+    assert_eq!(reserve_truncation_marker(body, 8_000), body);
+}
+
+#[test]
+fn reserve_truncation_marker_appends_inside_the_cap_when_too_long() {
+    let body = "x".repeat(9_000);
+    let marked = reserve_truncation_marker(&body, 8_000);
+    assert!(
+        marked.chars().count() <= 8_000,
+        "the whole marked body — original prefix plus marker — must still fit inside the cap \
+         `fenced` will apply, or `fenced`'s own truncation could still cut the marker off"
+    );
+    assert!(
+        marked.contains(TRUNCATION_MARKER),
+        "a body longer than the cap must carry the marker: {marked}"
+    );
+}
+
+#[test]
+fn mark_truncated_document_text_only_touches_the_documents_list_shape() {
+    let long_text = "x".repeat(9_000);
+    let mut data = json!([{ "id": "d-1", "text": long_text }, { "id": "d-2" }]);
+    mark_truncated_document_text(&mut data);
+    assert!(data[0]["text"].as_str().unwrap().contains("TRUNCATED"));
+    // No `text` field at all — must not panic, and must add nothing.
+    assert!(data[1].get("text").is_none());
+}
+
+/// The actual reshape it exists to fix: a raw `documents_list` reply run
+/// through [`reshape_reply`] the same way `dispatch_direct` really calls it
+/// must carry the marker on a row whose `text` exceeds the fence cap, and
+/// must NOT carry it on a short row.
+#[test]
+fn reshape_reply_marks_a_truncated_documents_list_row_but_not_a_short_one() {
+    let long_text = "x".repeat(crate::prompt_fence::JOB_CAP + 500);
+    let data = json!([
+        { "id": "d-1", "text": long_text },
+        { "id": "d-2", "text": "short" },
+    ]);
+    let out = reshape_reply("documents_list", data, None);
+    let rows = out.as_array().unwrap();
+    assert!(rows[0]["text"].as_str().unwrap().contains("TRUNCATED"));
+    // Still fenced (every `text` value is, regardless of length) — just not marked.
+    let short = rows[1]["text"].as_str().unwrap();
+    assert!(!short.contains("TRUNCATED"));
+    assert!(short.contains("short"));
+}
+
+/// Same fix, the `documents_get_text` scalar-reply arm — `reshape_reply`'s
+/// `fence_scalar_reply` step must carry the marker inside the fenced body
+/// when the bare string it fences exceeds the cap.
+#[test]
+fn reshape_reply_marks_a_truncated_documents_get_text_scalar_reply() {
+    let long_text = "x".repeat(crate::prompt_fence::JOB_CAP + 500);
+    let out = reshape_reply("documents_get_text", json!(long_text), None);
+    assert!(out.as_str().unwrap().contains("TRUNCATED"));
+
+    let out_short = reshape_reply("documents_get_text", json!("short"), None);
+    assert!(!out_short.as_str().unwrap().contains("TRUNCATED"));
+}
+
+/// Round-3 fix (M1): `SCALAR_FENCE_COMMANDS` widened to include
+/// `ai_research_answer` alongside `documents_get_text`, but the marker's
+/// own doc/text used to claim scope over "the two document call sites"
+/// only, i.e. it lied about what `ai_research_answer` gets. Pins that the
+/// SAME marker fires here too, and that its wording no longer promises
+/// "the whole document" for a reply that isn't one.
+#[test]
+fn reshape_reply_marks_a_truncated_ai_research_answer_scalar_reply() {
+    let long_text = "x".repeat(crate::prompt_fence::JOB_CAP + 500);
+    let out = reshape_reply("ai_research_answer", json!(long_text), None);
+    assert!(out.as_str().unwrap().contains(TRUNCATION_MARKER));
+    assert!(!TRUNCATION_MARKER.contains("document"));
+
+    let out_short = reshape_reply("ai_research_answer", json!("short"), None);
+    assert!(!out_short.as_str().unwrap().contains("TRUNCATED"));
+}
+
 // ── Bounded refusals (security review: the frame-cap fallback could itself
 // exceed the cap) ──
 
@@ -2480,6 +2700,58 @@ fn reshape_reply_base64_encodes_last_and_the_two_reshape_lists_stay_disjoint() {
     // envelope, no marker key.
     let out = reshape_reply("jobs_list", json!({ "id": "j-1" }), None);
     assert_eq!(out, json!({ "id": "j-1" }));
+}
+
+/// Round 5 (`B1-r1-ACLI-R5-7`): `documents_get_text` returns `AppResult<String>` — a BARE JSON
+/// string reply, not an object — so `fence_named_fields_recursive`'s name-keyed walk (which only
+/// ever fences a string reached UNDER a key) cannot reach it; its `_ => {}` arm silently passed
+/// the reply through untouched before this fix. This is the same untrusted document text
+/// `documents_list`'s `"text"` field gets fenced+capped, just returned through a different
+/// command shape.
+#[test]
+fn reshape_reply_fences_documents_get_text_bare_string_reply() {
+    let long_text = "s".repeat(crate::prompt_fence::JOB_CAP + 5_000);
+    let out = reshape_reply("documents_get_text", json!(long_text), None);
+    let fenced = out.as_str().expect("still a bare string reply");
+    assert!(
+        fenced.starts_with("<job_posting>"),
+        "documents_get_text's bare string reply must be fenced: {fenced:.80}"
+    );
+    assert!(
+        fenced.len() < long_text.len(),
+        "documents_get_text's reply must be capped at prompt_fence::JOB_CAP like every other \
+         fenced document text"
+    );
+}
+
+/// Security review round 9 (`SEC-1`): `ai_research_answer` returns
+/// `-> String` too — the active provider's own web search notes, the most
+/// injection-prone reply on the whole surface — and was missing from
+/// `SCALAR_FENCE_COMMANDS` even though `documents_get_text` right above it
+/// was already fenced for the identical bare-string reason.
+#[test]
+fn reshape_reply_fences_ai_research_answer_bare_string_reply() {
+    let notes = "s".repeat(crate::prompt_fence::JOB_CAP + 5_000);
+    let out = reshape_reply("ai_research_answer", json!(notes), None);
+    let fenced = out.as_str().expect("still a bare string reply");
+    assert!(
+        fenced.starts_with("<job_posting>"),
+        "ai_research_answer's bare string reply must be fenced: {fenced:.80}"
+    );
+    assert!(
+        fenced.len() < notes.len(),
+        "ai_research_answer's reply must be capped at prompt_fence::JOB_CAP like every other \
+         fenced document text"
+    );
+}
+
+/// A command NOT on `SCALAR_FENCE_COMMANDS` whose reply happens to be a bare string (e.g.
+/// `system_get_version`) must NOT be fenced — that value is this app's own version, never
+/// user-authored text.
+#[test]
+fn reshape_reply_does_not_fence_unrelated_bare_string_replies() {
+    let out = reshape_reply("system_get_version", json!("1.2.3"), None);
+    assert_eq!(out, json!("1.2.3"));
 }
 
 /// The discovery note is the ONLY thing the consumer ever reads about paging,

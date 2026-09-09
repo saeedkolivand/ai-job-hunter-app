@@ -100,6 +100,16 @@ pub fn get(id: &str) -> Option<&'static dyn Scraper> {
     SCRAPERS.iter().copied().find(|s| s.id() == id)
 }
 
+/// True when `id` names a board whose postings are ALL remote by definition
+/// ([`Scraper::is_all_remote`]) — an unknown/unregistered id is `false`, never
+/// a panic or a guess. Lets a READER (e.g. `agent_read::found_jobs`'s `remote`
+/// filter) re-derive remoteness for a `FoundJob` stored before its own
+/// `board_remote` bit existed, from the one place that actually knows which
+/// boards are remote-only, instead of a second hardcoded id list.
+pub(crate) fn is_all_remote_board(id: &str) -> bool {
+    get(id).is_some_and(Scraper::is_all_remote)
+}
+
 #[cfg(test)]
 mod registry_parity {
     use crate::ipc_contracts::board_ids::BOARD_IDS;
@@ -156,5 +166,27 @@ mod registry_parity {
             super::SCRAPERS.len(),
             "the two lists must have the same length, not merely overlap"
         );
+    }
+}
+
+#[cfg(test)]
+mod all_remote_registry {
+    use super::is_all_remote_board;
+
+    /// The exact four all-remote feeds (round-4 fix T1) — hand-written, not
+    /// derived by scanning `SCRAPERS` for the flag, so a board silently
+    /// losing its override still fails this list.
+    #[test]
+    fn every_all_remote_board_is_declared() {
+        for id in ["wwr", "remoteok", "remotive", "jobicy"] {
+            assert!(is_all_remote_board(id), "{id} must be declared all-remote");
+        }
+    }
+
+    #[test]
+    fn a_registered_non_remote_board_and_an_unknown_id_are_both_false() {
+        assert!(!is_all_remote_board("linkedin"));
+        assert!(!is_all_remote_board("aggregator"));
+        assert!(!is_all_remote_board("not-a-real-board"));
     }
 }

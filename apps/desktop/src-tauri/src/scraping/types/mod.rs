@@ -380,6 +380,19 @@ pub trait Scraper: Send + Sync {
         false
     }
 
+    /// Whether every posting this board returns is remote by definition
+    /// (`wwr`/`remoteok`/`remotive`/`jobicy` — each unconditionally sets
+    /// `extra["remote"] = true` in its own `search()`). The registry-level
+    /// counterpart of that per-posting flag: `build_found_job` reads
+    /// `extra["remote"]` at scrape time, but a `FoundJob` persisted before
+    /// that flag existed (or before a board started setting it) deserializes
+    /// with `board_remote: false` — this lets a READER re-derive the truth
+    /// from the stored `board` id alone, independent of when the row was
+    /// scraped. Default `false`.
+    fn is_all_remote(&self) -> bool {
+        false
+    }
+
     /// **Contract:** every posting streamed via `ctx.on_item` must also appear in
     /// the returned `Vec` (and vice versa) — the same set, not a subset/superset.
     /// The engine relies on this identity: under a live location filter it

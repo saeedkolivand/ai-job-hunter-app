@@ -190,6 +190,14 @@ pub fn canonical_job_url(url: &str) -> Option<String> {
     None
 }
 
+// `(board, id)` identity extraction (issue #1166) — a sibling of
+// `canonical_job_url` above, split into its own file purely to keep this
+// module under the R8 LOC hard cap (`docs/architecture-rules.md`); the
+// per-board url knowledge stays in this SAME directory, re-exported below so
+// every caller keeps writing `scrape_url::job_identity` unchanged.
+mod identity;
+pub use identity::job_identity;
+
 /// LinkedIn (and similar pages) render "Show more" / "Show less" toggle buttons
 /// right after the description markup; strip those trailing labels.
 static SHOW_MORE_RE: std::sync::LazyLock<regex::Regex> =

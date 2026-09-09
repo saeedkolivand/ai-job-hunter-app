@@ -38,6 +38,10 @@ impl Scraper for RemotiveScraper {
         "Remotive"
     }
 
+    fn is_all_remote(&self) -> bool {
+        true
+    }
+
     fn mode(&self) -> ScraperMode {
         ScraperMode::Http
     }

@@ -207,6 +207,19 @@ pub struct FoundJob {
     /// apply flow records accurate per-job provenance for multi-board autopilots.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub board: Option<String>,
+    /// The board's own "this posting is remote" classification — copied from
+    /// `JobPosting.extra["remote"]` at find-time, the SAME per-posting bit
+    /// `scraping::engine::location_filter::location_verdict` treats as
+    /// `board_remote` (its short-circuit BEFORE ever checking `location`
+    /// text for a marker). A posting's `location` string is not always a
+    /// reliable remote signal on its own — an all-remote board (WeWorkRemotely,
+    /// RemoteOK, Remotive, Jobicy) may store `location: None` or a
+    /// jurisdiction string like "USA Only" that carries no marker word at
+    /// all — so a `remote` filter over `found-jobs` must consult this flag
+    /// too, not `location` text alone (issue #1167 round-3 fix). `#[serde(default)]`
+    /// so a record written before this field existed loads as `false`.
+    #[serde(default)]
+    pub board_remote: bool,
     /// Full job description — used to pre-fill a tailored resume/cover letter generation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,

@@ -100,6 +100,10 @@ Three architectural points framed the decision:
 
 - **`.claude/skills/agent-cli-standards/SKILL.md`** §One JSON document: The rule states that the agent CLI emits exactly one JSON document per invocation. The MCP mode is an exception: it emits newline-delimited JSON-RPC frames (request-response pairs, plus server notifications if added). An 'MCP mode' block in the skill documents this exception.
 
+### Amendment (2026-09-08)
+
+**§2 and §4's "five curated" / "Eight tools total" have drifted.** `found-jobs` shipped as a sixth curated tool (issue #1115), and this branch (issues #1167/#1168) added server-side filters — including a `query` substring filter shared by both `found-jobs` and `best-matches` — plus per-scope cursor issuance to it and to `best-matches`. The curated set and the total tool count are no longer the numbers this ADR's title and §2/§4 state; the authoritative, current list is `mcp::schemas::tools()`, never a count restated here. The design decisions in §1–§6 (wire version, mode-not-binary, hand-rolled JSON-RPC, Effect-boundary tiering, verbatim confirm pass-through, opt-in write tiers) are unaffected — this amendment only corrects the stale tool inventory.
+
 ## Footnotes
 
 - The pairing token returned by `extension_bridge_status` is reclassified from `Effect::Read` to `Effect::NotExposed` and does not reach the generic tier, so the token never appears in tool results (addressed separately in PR).

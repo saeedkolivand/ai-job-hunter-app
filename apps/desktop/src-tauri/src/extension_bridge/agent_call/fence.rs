@@ -53,7 +53,11 @@ use serde_json::{json, Value};
 /// names. `discovered::DiscoveredCompany.display_name` → `displayName`
 /// (`discovery_search_companies`) is board-harvested from a posting's own
 /// apply-redirect URL, same category. `documents::DocumentRecord.text`
-/// (`documents_list`/`documents_get_text`) and
+/// under `documents_list`'s rows — `documents_get_text` returns the SAME
+/// text as a bare string reply with no key at all, which this name-keyed
+/// walk structurally cannot see; `reshape::SCALAR_FENCE_COMMANDS` is the
+/// separate fence for that shape (issue #1170's follow-up,
+/// `B1-r1-ACLI-R5-7`) — and
 /// `notifications::AppNotification.body` (`notifications_list`) are the
 /// generic `text`/`body` carriers this round closes — a résumé's own text
 /// is user-uploaded content, not board-scraped, but this repo's own

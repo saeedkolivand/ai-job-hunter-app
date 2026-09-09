@@ -340,3 +340,9 @@ fn unrelated_jobs_do_not_block_indexing() {
         assert!(!is_active_embed_job(kind, &JobStatus::Running), "{kind}");
     }
 }
+
+// AI-spend visibility (`ai_spend_summary` and its pure helpers, #1161) moved
+// to `commands::ai::spend`'s own `#[cfg(test)] mod test` alongside the code
+// it covers — see that module for `spend_totals_json`, `spend_summary_value`,
+// `spend_summary_from_store`, `resolve_window_days`, and
+// `per_provider_with_zero_rows` coverage.

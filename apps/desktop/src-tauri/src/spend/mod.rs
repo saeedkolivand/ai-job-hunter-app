@@ -248,14 +248,16 @@ impl SpendStore {
         .unwrap_or_default()
     }
 
-    /// Real token totals + estimated cost across every provider, since the
-    /// start of the current UTC day.
-    pub fn today_totals(&self) -> SpendTotals {
+    /// Real token totals + estimated cost across every provider, since
+    /// `since_ms` (epoch ms) — the general form behind
+    /// [`SpendStore::today_totals`] (`since_ms = today_start_ms()`) and the
+    /// `days`-scoped window `ai_spend_summary` reads (issue #1161).
+    pub fn totals_since(&self, since_ms: u64) -> SpendTotals {
         let conn = self.conn.lock();
         conn.query_row(
             "SELECT COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), COALESCE(SUM(est_cost_usd),0)
              FROM ai_spend WHERE created_at >= ?1",
-            params![ts_to_db(today_start_ms())],
+            params![ts_to_db(since_ms)],
             |row| {
                 Ok(SpendTotals {
                     input_tokens: row.get::<_, i64>(0)? as u64,
@@ -267,9 +269,18 @@ impl SpendStore {
         .unwrap_or_default()
     }
 
-    /// Real token totals + estimated cost per provider, since the start of
-    /// the current UTC day. Ordered by estimated cost, highest first.
-    pub fn by_provider_today(&self) -> Vec<ProviderTotals> {
+    /// Real token totals + estimated cost across every provider, since the
+    /// start of the current UTC day.
+    pub fn today_totals(&self) -> SpendTotals {
+        self.totals_since(today_start_ms())
+    }
+
+    /// Real token totals + estimated cost per provider, since `since_ms`
+    /// (epoch ms) — `since_ms = 0` returns ALL-TIME totals for every provider
+    /// that ever recorded a call, which is how `ai_spend_summary` learns the
+    /// full provider vocabulary to fill in a zero row (issue #1161). Ordered
+    /// by estimated cost, highest first.
+    pub fn by_provider_since(&self, since_ms: u64) -> Vec<ProviderTotals> {
         let conn = self.conn.lock();
         conn.prepare(
             "SELECT provider, COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), COALESCE(SUM(est_cost_usd),0)
@@ -278,7 +289,7 @@ impl SpendStore {
         )
         .ok()
         .and_then(|mut stmt| {
-            stmt.query_map(params![ts_to_db(today_start_ms())], |row| {
+            stmt.query_map(params![ts_to_db(since_ms)], |row| {
                 Ok(ProviderTotals {
                     provider: row.get(0)?,
                     input_tokens: row.get::<_, i64>(1)? as u64,
@@ -290,6 +301,12 @@ impl SpendStore {
             .map(|rows| rows.filter_map(|r| r.ok()).collect())
         })
         .unwrap_or_default()
+    }
+
+    /// Real token totals + estimated cost per provider, since the start of
+    /// the current UTC day. Ordered by estimated cost, highest first.
+    pub fn by_provider_today(&self) -> Vec<ProviderTotals> {
+        self.by_provider_since(today_start_ms())
     }
 
     /// Observed reasoning overhead per (provider, model), over ALL history —
@@ -349,6 +366,43 @@ fn row_to_spend_row(row: &rusqlite::Row) -> rusqlite::Result<SpendRow> {
 /// `limits::utc_day()`'s day-bucket convention.
 fn today_start_ms() -> u64 {
     (now_ms() / 86_400_000) * 86_400_000
+}
+
+/// The largest `days` window `ai_spend_summary` accepts (issue #1161) —
+/// generous enough for a "last quarter" glance without letting an unbounded
+/// value force a full-table scan on every call.
+pub const SPEND_WINDOW_MAX_DAYS: u32 = 90;
+
+/// Epoch-ms start of a `days`-day window ending today (inclusive of today).
+/// `days = 1` is exactly [`today_start_ms`] (today only, the pre-#1161
+/// default), `days = 7` is the last 7 UTC-day boundaries. `days = 0` is
+/// treated as 1 — there is no zero-day window.
+pub fn window_start_ms(days: u32) -> u64 {
+    let days = days.max(1);
+    today_start_ms().saturating_sub(u64::from(days - 1) * 86_400_000)
+}
+
+/// The `perProvider` "zero row" reason for a provider present in the ledger
+/// with no activity in the requested window (issue #1161). `hist` is that
+/// provider's ALL-TIME totals — "not priced" only holds if the provider has
+/// moved real tokens at some point without ever costing anything, which
+/// distinguishes a genuinely-never-billed endpoint (e.g. an
+/// `openai-compatible` gateway that has always pointed at a local server)
+/// from one that is simply quiet this window.
+///
+/// ponytail: a provider-level label, not a per-call one — `openai-compatible`
+/// can be free (localhost) on some calls and paid on others, and this
+/// function can't see past its own provider's aggregate to tell them apart.
+/// Good enough for a Settings-page hint; a per-call breakdown would be the
+/// upgrade path if that ever matters.
+pub fn zero_row_reason(hist: &ProviderTotals) -> &'static str {
+    if is_free_provider(&hist.provider) {
+        "local — always $0"
+    } else if hist.est_cost_usd == 0.0 && (hist.input_tokens > 0 || hist.output_tokens > 0) {
+        "not priced"
+    } else {
+        "no spend in window"
+    }
 }
 
 impl DataStore for SpendStore {

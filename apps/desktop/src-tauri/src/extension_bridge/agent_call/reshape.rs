@@ -51,6 +51,11 @@ use super::fence::*;
 /// and its real query (mirrors `policy`'s own per-row audit discipline):
 /// - `applications_list` → `applications::ApplicationStore::list`
 /// - `ai_generations_list` → `ai_generations::AiGenerationStore::list`
+/// - `documents_list` → `documents::DocumentStore::list` (round-3 fix,
+///   `B1-r3-ACLI-5`: it takes no argument and returns every document's FULL
+///   `text`, so a caller pointed at it by `INSTRUCTIONS`/the `profile` tool
+///   description had no way to narrow a `result_too_large` refusal — this
+///   is that narrowing path)
 ///
 /// Adding a row here CHANGES that command's reply shape for every generic-tier
 /// caller (a bare array becomes [`paginate_list_reply`]'s envelope), so it is
@@ -62,7 +67,7 @@ use super::fence::*;
 /// DISCOVER the paging instead of inferring it from a surprise envelope,
 /// never a second hand-typed name list.
 pub(in crate::extension_bridge) const PAGINATED_LIST_COMMANDS: &[&str] =
-    &["applications_list", "ai_generations_list"];
+    &["applications_list", "ai_generations_list", "documents_list"];
 
 /// What the `commands` tool prints on a [`PAGINATED_LIST_COMMANDS`] row.
 /// Lives HERE, next to the behaviour it describes, so the description cannot
@@ -277,8 +282,58 @@ pub(super) fn paginate_list_reply(data: Value, offset: usize, limit: usize) -> V
     json!({ "items": page, "total": total, "nextCursor": next_cursor })
 }
 
-/// Reverses `fence_named_fields_recursive`'s wrapper on every INCOMING
-/// `--input` value under a `FENCE_FIELD_NAMES` key, before ANY dispatched
+/// `(command, field)` pairs whose reply carries a field this codebase never
+/// gives a real value — the wire-shape twin of [`BASE64_BYTE_FIELDS`] above,
+/// but subtracting a key instead of re-encoding one. Scoped to the agent-cli
+/// surface only: the renderer's own `commands::autopilot::autopilot_list`/
+/// `autopilot_get` wire shape (consumed via `AppClient`) is untouched, so
+/// only this generic-tier reply drops it.
+///
+/// Audited by hand against the struct each pair actually serializes from:
+/// - `autopilot_list`/`autopilot_get` → `autopilot::Autopilot.total_applied`
+///   (issue #1171's residual, `B1-r3-ACLI-R7-3`): the `automations` resource
+///   already drops this field from its own curated projection
+///   ([`crate::extension_bridge::agent_read::AgentAutomation`]'s doc
+///   comment), but these two commands are dispatched RAW — no projection
+///   layer — and return the source struct's `totalApplied: 0` verbatim,
+///   contradicting `best-matches`'s real `applied: true` on the very jobs it
+///   never actually counted. The struct field itself stays —
+///   `docs/ARCHITECTURE_STATUS.md`'s "Drop dead totalApplied counter" row
+///   already tracks removing it everywhere, including the shared TS type
+///   this reshape layer must not touch.
+pub(super) const DROP_FIELDS: &[(&str, &str)] = &[
+    ("autopilot_list", "totalApplied"),
+    ("autopilot_get", "totalApplied"),
+];
+
+/// Removes every [`DROP_FIELDS`] key from `command`'s reply — from a single
+/// top-level object (`autopilot_get`) or from every element of a top-level
+/// array (`autopilot_list`). A `null`/non-object/non-array reply (e.g.
+/// `autopilot_get` on an unknown id) is left untouched — there is no field to
+/// drop.
+pub(super) fn drop_dead_fields(command: &str, data: &mut Value) {
+    for (cmd, field) in DROP_FIELDS {
+        if *cmd != command {
+            continue;
+        }
+        match data {
+            Value::Object(map) => {
+                map.remove(*field);
+            }
+            Value::Array(items) => {
+                for item in items.iter_mut() {
+                    if let Value::Object(map) = item {
+                        map.remove(*field);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Reverses [`fence_named_fields_recursive`]'s wrapper on every INCOMING
+/// `--input` value under a [`FENCE_FIELD_NAMES`] key, before ANY dispatched
 /// command's real body ever sees it (security review round 4 — the
 /// centralised fix: `commands::scrape::scrape_persist_job`'s own
 /// `unfence_job_field` was a hand-added per-call-site strip, and every OTHER
@@ -376,25 +431,88 @@ pub(super) fn unfence_named_fields_recursive(value: &mut Value) {
     }
 }
 
+/// Commands whose reply is a BARE JSON string carrying untrusted text —
+/// [`fence_named_fields_recursive`]'s name-keyed walk only fences a STRING
+/// VALUE reached under a named key, so a bare-string reply falls through its
+/// `_ => {}` arm untouched no matter how untrusted the text is (issue
+/// #1170's follow-up, `B1-r1-ACLI-R5-7`).
+///
+/// Every dispatchable command returning `String`/`AppResult<String>`,
+/// audited (security review round 9, `SEC-1`, after the prior version of
+/// this list and comment named only one and claimed — wrongly —
+/// completeness): `documents_get_text` (the user's OWN uploaded document
+/// text — fenced under the DISTINCT `user_document` tag, MAX_FRAME_BYTES
+/// -capped and never silently truncated; see
+/// [`USER_DOCUMENT_BARE_TEXT_COMMANDS`]/[`fence_user_document_bare_text`]
+/// below, issue #1157/#1162) and `ai_research_answer` (the active
+/// provider's own web search results — genuinely third-party text, and the
+/// most injection-prone reply on this surface, fenced under `job_posting`
+/// with a truncation marker via [`fence_scalar_reply`]'s general arm).
+/// `contact_profile_header_line` returns a bare string too, but it is
+/// rendered by this app FROM the user's own profile fields, never
+/// third-party content the user did not type themselves, so it stays off
+/// this list on the same reasoning as
+/// `system_get_version`/`system_get_protocol_version` (this app's own
+/// values, not user- or third-party-authored text).
+const SCALAR_FENCE_COMMANDS: &[&str] = &["documents_get_text", "ai_research_answer"];
+
+/// Fences `data` in place when `command` is on [`SCALAR_FENCE_COMMANDS`] and
+/// the reply is actually a bare string — a rename to an object reply (nothing
+/// requires `AppResult<String>` to stay that shape) simply stops matching
+/// here rather than double-fencing, since [`fence_scraped_fields`]'s
+/// name-keyed walk would then cover it instead.
+///
+/// `documents_get_text` is special-cased out to
+/// [`fence_user_document_bare_text`] rather than sharing the generic arm
+/// below (issue #1157/#1162): the user's OWN document gets the distinct
+/// `user_document` tag and a `MAX_FRAME_BYTES` cap with NO truncation
+/// marker — a reply that doesn't fit is refused whole by
+/// `super::enforce_frame_cap` rather than silently handed back as a partial
+/// document. Every OTHER [`SCALAR_FENCE_COMMANDS`] entry (`ai_research_answer`)
+/// takes the generic `job_posting`/[`crate::prompt_fence::JOB_CAP`] path with
+/// [`reserve_truncation_marker`], since a caller reading third-party research
+/// prose benefits from a usable, honestly-marked prefix more than an outright
+/// refusal.
+fn fence_scalar_reply(command: &str, data: &mut Value) {
+    if command == "documents_get_text" {
+        fence_user_document_bare_text(command, data);
+        return;
+    }
+    if let Value::String(s) = data {
+        if SCALAR_FENCE_COMMANDS.contains(&command) {
+            let marked = reserve_truncation_marker(s, crate::prompt_fence::JOB_CAP);
+            *data = json!(crate::prompt_fence::fenced(
+                "job_posting",
+                &marked,
+                crate::prompt_fence::JOB_CAP
+            ));
+        }
+    }
+}
+
 /// Commands whose reply is the user's OWN document text as a BARE value, not wrapped in a
 /// `text` field on an object -- `fence_named_fields_recursive`'s name-keyed walk (`agent_call/
 /// fence.rs`) can only fence a NAMED field, so a command whose whole reply IS the string (no
 /// wrapping object at all) needs its own small, audited list here instead (issue #1157).
 /// `documents_get_text` returns `AppResult<String>` -- a bare JSON string on success, an object
 /// on `Err` (never a string), so this list is command-name keyed rather than shape-keyed the way
-/// `fence.rs`'s object shapes are.
+/// `fence.rs`'s object shapes are. A SUBSET of [`SCALAR_FENCE_COMMANDS`] above (this dispatch
+/// surface's full bare-string coverage list) — the two are not the same list on purpose, since
+/// only THIS command's reply is genuinely first-party user content rather than third-party text.
 const USER_DOCUMENT_BARE_TEXT_COMMANDS: &[&str] = &["documents_get_text"];
 
 /// Fence `data` under the `user_document` tag when `command` is on
 /// [`USER_DOCUMENT_BARE_TEXT_COMMANDS`] and the reply really is a bare string (the success
-/// case); a no-op otherwise (an `Err` reply, or any other command). Called from [`reshape_reply`]
-/// right after [`fence_scraped_fields`] -- that walk only ever fences a NAMED field inside an
-/// object/array, so it cannot reach a top-level string on its own.
+/// case); a no-op otherwise (an `Err` reply, or any other command). Called from
+/// [`fence_scalar_reply`]'s `documents_get_text` special case, itself run from [`fence_reply`]
+/// right after -- that walk only ever fences a NAMED field inside an object/array, so it cannot
+/// reach a top-level string on its own.
 ///
-/// `pub(super)` (A3-r1-AC-6) -- `agent_call::proof::extract_from_fenced_response` calls this SAME
-/// fn (keyed by `ProofSource::read_command()`, the read whose response it is) so a proof's own
-/// value and the value a caller actually reads through this dispatcher stay the exact same
-/// transform of the exact same read, never two different views of one record.
+/// `pub(super)` (A3-r1-AC-6) -- `agent_call::proof::extract_from_fenced_response` calls
+/// [`fence_reply`] the SAME way `dispatch_direct` does (keyed by `ProofSource::read_command()`,
+/// the read whose response it is) so a proof's own value and the value a caller actually reads
+/// through this dispatcher stay the exact same transform of the exact same read, never two
+/// different views of one record.
 pub(super) fn fence_user_document_bare_text(command: &str, data: &mut Value) {
     if !USER_DOCUMENT_BARE_TEXT_COMMANDS.contains(&command) {
         return;
@@ -429,7 +547,9 @@ pub(super) fn fence_user_document_bare_text(command: &str, data: &mut Value) {
 /// (A3-r3-AC-3). `mcp::instructions`'s own test asserts `INSTRUCTIONS`
 /// documents every tag named here; update THIS list, not just the call
 /// site, the moment a new `fenced(...)`/`strip_fence_wrapper(...)` literal
-/// tag is added anywhere in `fence.rs` or this module.
+/// tag is added anywhere in `fence.rs` or this module. `ai_research_answer`
+/// joining [`SCALAR_FENCE_COMMANDS`] added no new tag here — its generic
+/// [`fence_scalar_reply`] arm reuses `job_posting`.
 ///
 /// `#[cfg(test)]` — read only by `mcp::tests`'s coverage assertion, the same
 /// reason `agent_call.rs`'s own `dispatch_plan::gate` re-export is gated.
@@ -437,15 +557,123 @@ pub(super) fn fence_user_document_bare_text(command: &str, data: &mut Value) {
 pub(in crate::extension_bridge) const EMITTED_FENCE_TAGS: [&str; 3] =
     ["job_posting", "user_document", "app_notification"];
 
+/// Trailing marker reserved INSIDE the fence cap when a reply's real text is
+/// longer than [`crate::prompt_fence::JOB_CAP`] (`B1-r3-ACLI-R7-5`): the
+/// prose deliberately never states the cap NUMBER (a moving implementation
+/// detail, not a promise), so without a wire signal a caller has no way to
+/// tell "this came back complete" from "this is a prefix" — the app's own
+/// "how well do I fit this job" question answered from a silently truncated
+/// résumé, or a research answer silently missing its second half. Scoped to
+/// every [`SCALAR_FENCE_COMMANDS`] entry OTHER than `documents_get_text`
+/// (round-3 fix, M1 — this doc used to name only the `documents_get_text`
+/// arm, which stopped being true the moment `ai_research_answer` joined that
+/// list; `documents_get_text` itself takes
+/// [`fence_user_document_bare_text`]'s own no-silent-truncation path instead)
+/// plus [`mark_truncated_document_text`]'s `documents_list` rows below —
+/// NOT a change to [`crate::prompt_fence::fenced`] itself, which every OTHER
+/// scraped-text surface (job descriptions, autopilot names, …) also calls,
+/// where a caller already knows it is reading third-party board text, not
+/// first-party output.
+pub(super) const TRUNCATION_MARKER: &str =
+    "\n[TRUNCATED — longer than the fence cap; this is a prefix, not the whole reply]";
+
+/// Truncates `body` to `cap` chars the same way [`crate::prompt_fence::fenced`]
+/// itself will, but reserves room for [`TRUNCATION_MARKER`] and appends it —
+/// so the marker always survives inside the cap rather than being cut off by
+/// `fenced`'s own truncation. A `body` already within `cap` chars is
+/// returned unchanged, and `fenced` then wraps it as a no-op truncation, so
+/// the marker never appears on a document that was never cut.
+pub(super) fn reserve_truncation_marker(body: &str, cap: usize) -> String {
+    if body.chars().count() <= cap {
+        return body.to_string();
+    }
+    let budget = cap.saturating_sub(TRUNCATION_MARKER.chars().count());
+    let truncated: String = body.chars().take(budget).collect();
+    format!("{truncated}{TRUNCATION_MARKER}")
+}
+
+/// Pre-fence step for `documents_list`: reserves [`TRUNCATION_MARKER`] room in
+/// every row's `text` field BEFORE the generic [`fence_scraped_fields`] walk
+/// truncates it at the cap — that walk is keyed by FIELD NAME, not command
+/// (security review round 2's deliberate design; see `FENCE_FIELD_NAMES`'s
+/// own doc), so this runs ahead of it rather than teaching the shared,
+/// security-critical walk one command's own truncation-disclosure policy.
+pub(super) fn mark_truncated_document_text(data: &mut Value) {
+    let Value::Array(rows) = data else { return };
+    for row in rows.iter_mut() {
+        let Value::Object(map) = row else { continue };
+        let Some(text) = map.get("text").and_then(Value::as_str) else {
+            continue;
+        };
+        let marked = reserve_truncation_marker(text, crate::prompt_fence::JOB_CAP);
+        if marked != text {
+            map.insert("text".to_string(), json!(marked));
+        }
+    }
+}
+
+/// Step 1 of [`reshape_reply`] ("fence first"), factored out so
+/// `proof::extract_from_fenced_response` can fence a confirm-proof
+/// read the EXACT SAME way [`super::dispatch_direct`] fences every reply a
+/// caller actually reads (MEDIUM fix, review round 6 —
+/// `B1-r2-ACLI-R6-4`). Before this fn existed, the proof path called only
+/// `fence_scraped_fields` directly, one call short of what a real dispatch
+/// does — latent today only because no `ProofSource::read_command` is on
+/// [`SCALAR_FENCE_COMMANDS`], but the two lists were never asserted disjoint
+/// either, so a future row landing on both would have silently reintroduced
+/// the "permanently unsatisfiable confirm" bug security review round 4 fixed
+/// once already (a caller reading a fenced string, `--confirm` checked
+/// against the raw one).
+pub(super) fn fence_reply(command: &str, data: &mut Value) {
+    fence_scalar_reply(command, data);
+    fence_scraped_fields(data);
+}
+
+/// Step 0 of [`reshape_reply`] ("drop dead fields, then reserve the
+/// truncation marker"), factored out for the SAME reason [`fence_reply`] was
+/// (MEDIUM fix, review round 8 — `B2-r1-ACLI-R8-1`): `proof::extract_from_
+/// fenced_response` must run the identical pre-fence transform a real
+/// dispatch runs, not a hand-rolled subset that stops at fencing. Before this
+/// fn existed, [`reshape_reply`] ran [`drop_dead_fields`]/
+/// [`mark_truncated_document_text`] inline and the proof path skipped both —
+/// latent only because both `documents_list`-backed `ListMatch` proofs read
+/// `name` (untouched by either step) and both `autopilot_get`-backed
+/// `Lookup` proofs read `name` (`totalApplied` is the only field
+/// `drop_dead_fields` touches on that command) — a future proof row reading
+/// `text` or `totalApplied` would make its confirm ceremony permanently
+/// unsatisfiable the moment either list grows, exactly like the fencing gap
+/// this mirrors.
+pub(super) fn reshape_pre_fence(command: &str, data: &mut Value) {
+    drop_dead_fields(command, data);
+    if command == "documents_list" {
+        mark_truncated_document_text(data);
+    }
+}
+
 /// Every reshape a dispatched reply gets before it goes on the wire, in the
 /// ONE order they are allowed to run in. Pure — no `AppHandle`, no I/O — so
 /// the ordering itself is testable, which is the reason it is a fn at all
 /// (as three statements inline, nothing failed when they were reordered).
 ///
-/// 1. **Fence first.** [`fence_scraped_fields`] is the security property and
-///    is unconditional over the WHOLE reply; narrowing it to "only the rows
-///    we are about to return" would make its coverage depend on a paging
-///    decision.
+/// 0. **Drop dead fields, then reserve the truncation marker.**
+///    [`reshape_pre_fence`] removes a [`DROP_FIELDS`] key before anything else
+///    looks at the payload — it carries no scraped text to fence, no byte
+///    array to re-encode, and dropping it first means the later steps'
+///    byte-budget math (paging) never accounts for a key about to disappear
+///    anyway. It then reserves [`TRUNCATION_MARKER`] room on `documents_list`
+///    only, and this must run BEFORE fencing — it needs the ORIGINAL text
+///    length to decide whether the marker applies, which fencing's own
+///    truncation would otherwise have already destroyed. This is the SAME fn
+///    [`super::proof::extract_from_fenced_response`] calls, so the
+///    confirm-proof path and the read path can never run a different
+///    pre-fence transform.
+/// 1. **Fence first.** [`fence_reply`] ([`fence_scraped_fields`] plus
+///    [`fence_scalar_reply`] for the one bare-string reply it structurally
+///    cannot reach) is the security property and is unconditional over the
+///    WHOLE reply; narrowing it to "only the rows we are about to return"
+///    would make its coverage depend on a paging decision. `fence_reply` is
+///    the SAME fn [`super::proof::extract_from_fenced_response`] calls, so
+///    the confirm-proof path and the read path can never fence differently.
 /// 2. **Then page.** [`paginate_list_reply`]'s byte budget must measure the
 ///    FENCED bytes that will really ship: fencing rewrites every field it
 ///    touches (`crate::prompt_fence::JOB_CAP` truncates a long one, the
@@ -466,8 +694,8 @@ pub(super) fn reshape_reply(
     mut data: Value,
     page_args: Option<(usize, usize)>,
 ) -> Value {
-    fence_scraped_fields(&mut data);
-    fence_user_document_bare_text(command, &mut data);
+    reshape_pre_fence(command, &mut data);
+    fence_reply(command, &mut data);
     if let Some((offset, limit)) = page_args {
         data = paginate_list_reply(data, offset, limit);
     }
