@@ -1007,13 +1007,17 @@ fn handle_message(
         Routed::Drop => None,
         Routed::Reply(frame) => Some(frame),
         Routed::Call { id, verb, kind } => {
+            // `dispatched_resource_result` (T8, PR #1184) can itself be `Err` — an oversized
+            // reply capped by `results::capped_result_text` — so both arms are unified as a
+            // `Result` here rather than always wrapping in `Ok`, letting `reply_frame` write a
+            // real JSON-RPC error for that case exactly as it does for any other refusal.
             let result = match &kind {
-                PendingKind::Tool => dispatched_tool_result(&verb, dispatch),
+                PendingKind::Tool => Ok(dispatched_tool_result(&verb, dispatch)),
                 PendingKind::Resource(uri) => {
                     resources::dispatched_resource_result(uri, &verb, dispatch)
                 }
             };
-            Some(reply_frame(id, Ok(result)))
+            Some(reply_frame(id, result))
         }
     }
 }

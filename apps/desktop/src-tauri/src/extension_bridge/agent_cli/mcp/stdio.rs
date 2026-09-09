@@ -111,14 +111,17 @@ pub(super) fn serve(
                     return;
                 }
                 // The one place `PendingKind` decides the reply SHAPE — the payload underneath is
-                // built by the SAME `dispatch_payload` either way (issue #1146 P4).
+                // built by the SAME `dispatch_payload` either way (issue #1146 P4). A resource
+                // reply can itself be `Err` (T8, PR #1184) when its payload was too large to
+                // answer honestly, so both arms are unified as a `Result` rather than always
+                // wrapping in `Ok`.
                 let result = match &kind {
-                    PendingKind::Tool => dispatched_tool_result(&verb, &mut dispatch),
+                    PendingKind::Tool => Ok(dispatched_tool_result(&verb, &mut dispatch)),
                     PendingKind::Resource(uri) => {
                         resources::dispatched_resource_result(uri, &verb, &mut dispatch)
                     }
                 };
-                let reply = reply_frame(id, Ok(result));
+                let reply = reply_frame(id, result);
                 // MAY BLOCK, and that is safe — a blocking `send` here can never stall the
                 // writer's drain, because the writer never waits on THIS thread while the loop
                 // runs: it hands work over with `try_send` (a full dispatch queue is refused, not
@@ -234,12 +237,12 @@ pub(super) fn serve(
                                 // in the SAME shape a successful dispatch of this `kind` would
                                 // have answered in (issue #1146 P4).
                                 let busy = match kind {
-                                    PendingKind::Tool => tool_result(busy_result(), 2),
+                                    PendingKind::Tool => Ok(tool_result(busy_result(), 2)),
                                     PendingKind::Resource(uri) => {
                                         resources::resource_result(&uri, busy_result())
                                     }
                                 };
-                                let refusal = reply_frame(id, Ok(busy));
+                                let refusal = reply_frame(id, busy);
                                 if emit(&mut output, &refusal).is_err() {
                                     return stop_serving(&abandoned);
                                 }
@@ -306,10 +309,10 @@ pub(super) fn serve(
         for (i, (id, kind)) in in_flight.iter().enumerate() {
             let payload = shutting_down_result(i == 0);
             let result = match kind {
-                PendingKind::Tool => tool_result(payload, 2),
+                PendingKind::Tool => Ok(tool_result(payload, 2)),
                 PendingKind::Resource(uri) => resources::resource_result(uri, payload),
             };
-            let refusal = reply_frame(id.clone(), Ok(result));
+            let refusal = reply_frame(id.clone(), result);
             if emit(&mut output, &refusal).is_err() {
                 break;
             }

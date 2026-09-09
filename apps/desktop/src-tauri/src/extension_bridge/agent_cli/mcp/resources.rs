@@ -56,8 +56,11 @@ pub(super) fn resource_templates() -> Vec<Value> {
 /// `ajh://profile` / `ajh://best-matches` / `ajh://job/<percent-encoded url>` → the SAME [`Verb`]
 /// the identically-named tool's own [`tool_argv`] builds for an empty/default `arguments` object
 /// — never a second, hand-typed construction. `None` for anything else, including a job URI whose
-/// tail fails to percent-decode: neither names a real resource, so both answer the identical
-/// `resources/read` refusal this fn's caller builds.
+/// tail fails to percent-decode OR decodes to an empty/whitespace-only string (T7, PR #1184
+/// CodeRabbit review: `ajh://job/` — no tail at all — previously built `Verb::Job { url: "" }`
+/// and paid a bridge round trip for a URL no `job` tool call would ever accept): none of these
+/// name a real resource, so all answer the identical `resources/read` refusal this fn's caller
+/// builds, before any bridge call.
 fn resource_verb(uri: &str) -> Option<Verb> {
     match uri {
         URI_PROFILE => Some(Verb::Profile),
@@ -68,10 +71,11 @@ fn resource_verb(uri: &str) -> Option<Verb> {
         }),
         _ => {
             let encoded = uri.strip_prefix(URI_JOB_PREFIX)?;
-            let url = urlencoding::decode(encoded).ok()?;
-            Some(Verb::Job {
-                url: url.into_owned(),
-            })
+            let url = urlencoding::decode(encoded).ok()?.into_owned();
+            if url.trim().is_empty() {
+                return None;
+            }
+            Some(Verb::Job { url })
         }
     }
 }
@@ -111,9 +115,24 @@ pub(super) fn classify_resource_read(params: &Value) -> ResourceCall {
 /// `tools/call` (its busy/shutting-down refusals included, see `mcp.rs`'s `PendingKind`), so it
 /// must be bounded the same way rather than growing a second, unbounded egress path for the exact
 /// data a tool call would have refused.
-pub(super) fn resource_result(uri: &str, payload: Value) -> Value {
-    let (text, _payload, _code) = results::capped_result_text(payload, 0);
-    json!({ "contents": [{ "uri": uri, "mimeType": "application/json", "text": text }] })
+///
+/// Returns `Err` when the cap fires (T8, PR #1184 CodeRabbit review): `tools/call` has an
+/// `isError` field to mark `tool_result`'s own capped reply as a failure, but `resources/read`
+/// has no such field — wrapping the `result_too_large` refusal in `contents[0]` unchanged would
+/// have shipped a `200`/successful JSON-RPC result whose body happens to be a refusal, which a
+/// client has no contractual way to distinguish from real posting/profile/match data. A genuine
+/// JSON-RPC error is the only shape that tells the client this reply is not the data it asked
+/// for. Every normal (uncapped) payload is unaffected — `Ok` with the exact same envelope as
+/// before.
+pub(super) fn resource_result(uri: &str, payload: Value) -> Result<Value, (i64, &'static str)> {
+    let (text, _payload, code) = results::capped_result_text(payload, 0);
+    if code != 0 {
+        // `capped_result_text` only ever returns a non-zero code (always `2`) when it substituted
+        // the oversized-result refusal for the payload it was given — the `0` passed in above is
+        // otherwise returned unchanged.
+        return Err((-32603, agent_call::ERR_RESULT_TOO_LARGE));
+    }
+    Ok(json!({ "contents": [{ "uri": uri, "mimeType": "application/json", "text": text }] }))
 }
 
 /// The bridge-backed TAIL of a `resources/read` — the resource mirror of
@@ -124,7 +143,7 @@ pub(super) fn dispatched_resource_result(
     uri: &str,
     verb: &Verb,
     dispatch: &mut dyn FnMut(&Verb) -> Result<Value, &'static str>,
-) -> Value {
+) -> Result<Value, (i64, &'static str)> {
     let (payload, _code) = results::dispatch_payload(verb, dispatch);
     resource_result(uri, payload)
 }
