@@ -622,7 +622,11 @@
         "copyCodex": "Konfiguration kopieren",
         "genericLabel": "Beliebiger MCP-Client (JSON)",
         "genericHint": "Fügen Sie dies in die MCP-Konfigurationsdatei Ihres Clients ein; falls dort bereits ein mcpServers-Block existiert, fügen Sie nur den inneren Eintrag hinzu. Claude Desktop, Cursor, Windsurf, Gemini CLI, LM Studio, Jan und die meisten anderen lesen dieses Format. Die Schreibstufe steckt im Flag in args.",
-        "copyGeneric": "JSON kopieren"
+        "copyGeneric": "JSON kopieren",
+        "deeplinkLabel": "Ein-Klick-Installationslink",
+        "deeplinkHint": "Cursor und VS Code registrieren jeweils ein eigenes adressähnliches Schema für einen Ein-Klick-MCP-Installationsdialog. Fügen Sie den kopierten Link in den Ausführen-Dialog Ihres Betriebssystems oder in die Adressleiste der Ziel-App ein, um ihn für die oben gewählte Stufe auszulösen.",
+        "copyCursorLink": "Cursor-Installationslink kopieren",
+        "copyVsCodeLink": "VS-Code-Installationslink kopieren"
       }
     },
     "about": {

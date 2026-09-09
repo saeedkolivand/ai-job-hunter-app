@@ -91,6 +91,8 @@ export const TEST_IDS = {
     agentCliClaudeSnippet: 'agent-cli-claude-snippet',
     agentCliCodexSnippet: 'agent-cli-codex-snippet',
     agentCliGenericSnippet: 'agent-cli-generic-snippet',
+    agentCliCopyCursorLink: 'agent-cli-copy-cursor-link',
+    agentCliCopyVsCodeLink: 'agent-cli-copy-vscode-link',
     aboutTab: 'about-tab',
   },
 

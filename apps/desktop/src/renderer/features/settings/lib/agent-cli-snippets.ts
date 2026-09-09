@@ -16,6 +16,11 @@
  * Claude Code and Codex each take a COMMAND (their own CLI parses it); every
  * other MCP client reads a `mcpServers` JSON block instead, which is why
  * {@link buildGenericMcpSnippet} exists alongside the two command builders.
+ *
+ * {@link buildCursorDeeplink} and {@link buildVsCodeDeeplink} (roadmap #1146
+ * P2) encode that same `mcpServers` entry into each editor's own one-click
+ * install URL scheme instead of a paste target — the card opens them via
+ * `openExternal`, never by navigating the window to them.
  */
 
 /** Which write tier the generated registration asks the MCP server for. */
@@ -152,6 +157,19 @@ function tomlString(value: string): string {
 }
 
 /**
+ * The `{name, command, args}` triple every non-command-line registration is
+ * built from — the generic `mcpServers` block below and both deeplink
+ * builders read this SAME shape, so a tier's server name or flag can never
+ * drift between the three (roadmap #1146 P2).
+ */
+function serverEntry(
+  exePath: string,
+  tier: AgentCliTier
+): { name: string; command: string; args: string[] } {
+  return { name: CLAUDE_SERVER_NAME[tier], command: exePath, args: mcpArgs(tier) };
+}
+
+/**
  * The generic `mcpServers` JSON block for one tier, or `null` when the path is
  * unknown — the shape Claude Desktop, Cursor, Windsurf, Gemini CLI,
  * LM Studio, Jan and most other MCP clients read verbatim from their own
@@ -164,16 +182,47 @@ function tomlString(value: string): string {
  */
 export function buildGenericMcpSnippet(exePath: string | null, tier: AgentCliTier): string | null {
   if (!exePath) return null;
-  return JSON.stringify(
-    {
-      mcpServers: {
-        [CLAUDE_SERVER_NAME[tier]]: {
-          command: exePath,
-          args: mcpArgs(tier),
-        },
-      },
-    },
-    null,
-    2
-  );
+  const { name, command, args } = serverEntry(exePath, tier);
+  return JSON.stringify({ mcpServers: { [name]: { command, args } } }, null, 2);
+}
+
+/**
+ * UTF-8 safe base64, without the deprecated `unescape`/`escape` pair: encode
+ * to bytes first, THEN base64 the byte string. `btoa` alone throws on any
+ * code point above U+00FF, and an install path can contain one.
+ */
+function utf8ToBase64(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+/**
+ * Cursor's one-click MCP install link (cursor.com/docs/context/mcp/install-links):
+ * `cursor://anysphere.cursor-deeplink/mcp/install?name=<server name>&config=<base64 JSON>`.
+ * The `config` payload is ONLY `{command, args}` — Cursor reads the server
+ * name from the query parameter, not from inside the encoded object.
+ *
+ * The base64 text is ALSO percent-encoded: raw base64 can contain `+`, `/`
+ * and `=`, and a `+` inside a query string is read back as a space by the
+ * standard `URLSearchParams` decode most link handlers use — silently
+ * corrupting the payload rather than failing to parse.
+ */
+export function buildCursorDeeplink(exePath: string | null, tier: AgentCliTier): string | null {
+  if (!exePath) return null;
+  const { name, command, args } = serverEntry(exePath, tier);
+  const config = utf8ToBase64(JSON.stringify({ command, args }));
+  return `cursor://anysphere.cursor-deeplink/mcp/install?name=${encodeURIComponent(name)}&config=${encodeURIComponent(config)}`;
+}
+
+/**
+ * VS Code's stable MCP install link: `vscode:mcp/install?<url-encoded JSON>`.
+ * Unlike Cursor's, `name` lives INSIDE the encoded payload alongside
+ * `command`/`args`, not as a separate query parameter.
+ */
+export function buildVsCodeDeeplink(exePath: string | null, tier: AgentCliTier): string | null {
+  if (!exePath) return null;
+  const entry = serverEntry(exePath, tier);
+  return `vscode:mcp/install?${encodeURIComponent(JSON.stringify(entry))}`;
 }
