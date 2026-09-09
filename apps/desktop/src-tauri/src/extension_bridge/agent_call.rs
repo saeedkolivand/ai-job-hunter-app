@@ -129,6 +129,12 @@ pub(super) enum Refusal {
     /// caller's input, so the carried string is always one of
     /// [`invoke_command`]'s own fixed messages, never an echo of `input`.
     DispatchFailed(String),
+    /// App state this dispatch needed to read (today: [`stored_profile_value`]'s
+    /// pre-write read) failed — a store I/O/parse error, never the target
+    /// command's own dispatch. P-r2-AC-R5-F4: used to fold into
+    /// [`Refusal::DispatchFailed`], whose doc guarantees a fixed,
+    /// framework-only string, making that guarantee false.
+    StateUnreadable(String),
     /// `InvokeResponse::Err` (HIGH fix — security review): the target
     /// command's OWN dispatch produced a Tauri-level error rather than a
     /// success payload — distinct from [`Refusal::DispatchFailed`], which is
@@ -204,6 +210,8 @@ pub(super) const ERR_NOT_EXPOSED: &str = "not_exposed";
 const ERR_CLI_ONLY: &str = "cli_only";
 const ERR_RATE_LIMITED: &str = "rate_limited";
 const ERR_DISPATCH_FAILED: &str = "dispatch_failed";
+/// Distinct from [`ERR_DISPATCH_FAILED`] — see [`Refusal::StateUnreadable`].
+const ERR_STATE_UNREADABLE: &str = "state_unreadable";
 const ERR_INVOKE_ERROR: &str = "invoke_error";
 /// `pub(super)` — [`super::agent_cli::exit_code_for_reply`] matches on this
 /// EXACT sentinel to special-case exit 4, never a second hand-typed copy of
@@ -231,6 +239,7 @@ impl Refusal {
             Refusal::OriginRefused => ERR_CLI_ONLY,
             Refusal::RateLimited => ERR_RATE_LIMITED,
             Refusal::DispatchFailed(_) => ERR_DISPATCH_FAILED,
+            Refusal::StateUnreadable(_) => ERR_STATE_UNREADABLE,
             Refusal::InvokeError(_) => ERR_INVOKE_ERROR,
             Refusal::ConfirmationRequired(_) => ERR_CONFIRMATION_REQUIRED,
             Refusal::ConfirmationMismatch => ERR_CONFIRMATION_MISMATCH,
@@ -267,6 +276,9 @@ impl Refusal {
             Refusal::OriginRefused => CLI_ONLY_MESSAGE.to_string(),
             Refusal::RateLimited => super::agent_read::THROTTLED_MESSAGE.to_string(),
             Refusal::DispatchFailed(detail) => detail.clone(),
+            Refusal::StateUnreadable(detail) => {
+                format!("could not read app state this dispatch needed: {detail}")
+            }
             Refusal::InvokeError(detail) => {
                 let fenced = crate::prompt_fence::fenced(
                     "job_posting",
@@ -1137,7 +1149,7 @@ fn stored_profile_value(
     };
     let profile = store
         .try_get()
-        .map_err(|e| Refusal::DispatchFailed(e.to_string()))?;
+        .map_err(|e| Refusal::StateUnreadable(e.to_string()))?;
     Ok(serde_json::to_value(&profile).ok())
 }
 

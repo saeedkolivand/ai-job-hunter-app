@@ -268,18 +268,25 @@ pub(super) const CONTACT_PROFILE_SET_COMMAND: &str = "contact_profile_set";
 /// Re-inject every key of `stored_profile` that
 /// [`super::super::autofill_profile::CONTACT_PROFILE_AGENT_FIELDS`] does not
 /// name into an outgoing [`CONTACT_PROFILE_SET_COMMAND`] call's
-/// `profile` object, but only when the caller's payload omits that key
-/// entirely — never when the key is present, including an explicit `null`.
-/// That distinction matters: the renderer's OWN settings form clears a photo
-/// by omitting the key on ITS OWN write path (`ContactProfileForm`, plain
-/// `invoke()`, never through this dispatcher), so an agent that explicitly
-/// sends `"photo": null` is making the same real, deliberate choice and must
-/// not be overridden. Pure — the impure half (reading the CURRENT stored
-/// profile before this write lands, as `serde_json::to_value`) is
-/// `dispatch_direct`'s job, the same "read app state, pass the value in"
-/// split this module already uses. A no-op for every other command, a
-/// non-object `input`, an `input.profile` that is not an object, or a
-/// `stored_profile` that is not an object.
+/// `profile` object, unless the caller's payload supplies a real value for
+/// that key — a present, non-null, non-empty-string value. Round-2 review
+/// (issue #1180, P-r2-AC-R5-F1) found the opposite rule here: treating an
+/// explicit `null`/`""` as "the caller's own deliberate choice" and skipping
+/// the restore. That was backwards — the published contract for this field
+/// (`photo?: string`, `packages/shared/src/ipc/contracts/contactProfile.ts`)
+/// never permits an explicit `null`, and the renderer's OWN clear gesture
+/// (`ContactProfileForm`'s `persistPhoto`) OMITS the key, it never sends
+/// `null` or `""`, on its own write path outside this dispatcher. So `null`
+/// and `""` are shapes no UI emits either — an agent sending one is not
+/// expressing a choice it could have made deliberately, since
+/// `project_contact_profile_get` never showed it a value to null out in the
+/// first place. Treating them as "not supplied" and restoring the stored
+/// value closes the same data-loss hole as an outright omission. Pure — the
+/// impure half (reading the CURRENT stored profile before this write lands,
+/// as `serde_json::to_value`) is `dispatch_direct`'s job, the same "read app
+/// state, pass the value in" split this module already uses. A no-op for
+/// every other command, a non-object `input`, an `input.profile` that is not
+/// an object, or a `stored_profile` that is not an object.
 pub(super) fn restore_local_only_contact_fields(
     command: &str,
     input: &mut Value,
@@ -298,7 +305,12 @@ pub(super) fn restore_local_only_contact_fields(
         if super::super::autofill_profile::CONTACT_PROFILE_AGENT_FIELDS.contains(&key.as_str()) {
             continue;
         }
-        if profile.contains_key(key) {
+        let supplied = match profile.get(key) {
+            None | Some(Value::Null) => false,
+            Some(Value::String(s)) => !s.is_empty(),
+            Some(_) => true,
+        };
+        if supplied {
             continue;
         }
         profile.insert(key.clone(), value.clone());

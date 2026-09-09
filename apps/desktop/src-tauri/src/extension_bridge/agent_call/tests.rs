@@ -208,6 +208,7 @@ fn every_refusal_variant_has_a_distinct_sentinel() {
         Refusal::OriginRefused.sentinel(),
         Refusal::RateLimited.sentinel(),
         Refusal::DispatchFailed(String::new()).sentinel(),
+        Refusal::StateUnreadable(String::new()).sentinel(),
         Refusal::InvokeError(String::new()).sentinel(),
         Refusal::ConfirmationRequired(String::new()).sentinel(),
         Refusal::ConfirmationMismatch.sentinel(),
@@ -1753,6 +1754,24 @@ fn reshape_reply_projects_contact_profile_get_to_the_photoless_allowlist() {
 // ── contact_profile_set local-only-field restore (round-1 review, issue
 // #1180; generalised round-2, P-r2-R2-F2) ──────────────────────────────
 
+/// P-r2-AC-R5-F2 (MEDIUM, round-2 review, issue #1180): `CONTACT_PROFILE_SET_COMMAND`
+/// is the one string that decides whether the whole restore above fires at
+/// all, and unlike its sibling `CONTACT_PROFILE_GET_COMMAND` (pinned by
+/// `commands_marks_the_contact_profile_get_row_with_its_projection_note` in
+/// `agent_cli::mcp::tests`) it had no anchor to a real `POLICY` row — a
+/// rename of the underlying command would leave this const matching
+/// nothing, silently stop the restore, and reopen the CRITICAL with a fully
+/// green suite.
+#[test]
+fn contact_profile_set_command_matches_a_real_policy_row() {
+    assert!(
+        super::super::agent_cli::policy::POLICY
+            .iter()
+            .any(|e| split_path(e.path) == ("contact_profile", CONTACT_PROFILE_SET_COMMAND)),
+        "CONTACT_PROFILE_SET_COMMAND must name a real POLICY row"
+    );
+}
+
 /// The CRITICAL repro (P-r1-F1): an agent read-modify-write that never saw
 /// `photo` (because [`project_contact_profile_get`] already stripped it) must
 /// not delete it on the whole-row-replace write.
@@ -1764,16 +1783,45 @@ fn restore_local_only_contact_fields_reinjects_the_stored_photo_when_the_payload
     assert_eq!(input["profile"]["photo"], "data:image/png;base64,AAAA");
 }
 
-/// The renderer's own settings form clears a photo by omitting the key on
-/// ITS OWN write path (never through this dispatcher); an agent that sends
-/// an EXPLICIT `"photo": null` is making that same real choice and must not
-/// be overridden.
+/// P-r2-AC-R5-F1 (HIGH, round-2 review, issue #1180): a `null` is a shape
+/// the published contract (`photo?: string`) does not even permit, and the
+/// renderer's own clear gesture OMITS the key rather than sending `null` —
+/// so an agent read-modify-write that echoes an explicit `"photo": null`
+/// (e.g. because its JSON library round-trips an absent field as `null`)
+/// must not be treated as a deliberate delete either; the stored value is
+/// restored the same as an outright omission. This is the inversion of the
+/// former `restore_local_only_contact_fields_respects_an_explicit_value_including_null`,
+/// which encoded the opposite, data-losing rule.
 #[test]
-fn restore_local_only_contact_fields_respects_an_explicit_value_including_null() {
+fn restore_local_only_contact_fields_treats_an_explicit_null_as_not_supplied_and_restores_the_stored_value(
+) {
     let mut input = json!({ "profile": { "photo": null } });
     let stored = json!({ "photo": "stored" });
     restore_local_only_contact_fields("contact_profile_set", &mut input, Some(&stored));
-    assert!(input["profile"]["photo"].is_null());
+    assert_eq!(input["profile"]["photo"], "stored");
+}
+
+/// Same rule, the other shape no UI ever emits: an explicit `""` is treated
+/// as "not supplied" too, not as a deliberate delete.
+#[test]
+fn restore_local_only_contact_fields_treats_an_explicit_empty_string_as_not_supplied_and_restores_the_stored_value(
+) {
+    let mut input = json!({ "profile": { "photo": "" } });
+    let stored = json!({ "photo": "stored" });
+    restore_local_only_contact_fields("contact_profile_set", &mut input, Some(&stored));
+    assert_eq!(input["profile"]["photo"], "stored");
+}
+
+/// The other half of the branch: a genuine, non-empty explicit value for a
+/// non-allowlisted field IS a real, visible choice (the caller must have
+/// computed or been given it some other way) and must not be clobbered by
+/// the stored one.
+#[test]
+fn restore_local_only_contact_fields_respects_a_genuine_non_empty_explicit_value() {
+    let mut input = json!({ "profile": { "photo": "data:image/png;base64,NEW" } });
+    let stored = json!({ "photo": "data:image/png;base64,OLD" });
+    restore_local_only_contact_fields("contact_profile_set", &mut input, Some(&stored));
+    assert_eq!(input["profile"]["photo"], "data:image/png;base64,NEW");
 }
 
 #[test]
@@ -1880,9 +1928,25 @@ fn dispatch_direct_wires_the_real_stored_profile_into_restore_local_only_contact
 /// but the two catch disjoint mutation classes: this one catches "is the
 /// call even made", the composition test above catches "does the call read
 /// real state"). Kept alongside it, not instead of it.
+///
+/// P-r2-AC-R5-F3 (MEDIUM, round-2 review): the call-line assertion alone
+/// pins the TEXT of the call, never the CONDITION under which it runs —
+/// disabling the `if` (e.g. `if command == CONTACT_PROFILE_SET_COMMAND &&
+/// false {`) leaves the call-site text intact and the whole suite green
+/// while the photo-deleting read-modify-write is fully restored. Pin the
+/// block opener and the read call alongside the call-site text so a gate
+/// that never runs fails HERE too.
 #[test]
 fn dispatch_direct_calls_the_local_only_contact_field_restore_with_the_real_stored_profile() {
     const SOURCE: &str = include_str!("../agent_call.rs");
+    assert!(
+        SOURCE.contains("if command == CONTACT_PROFILE_SET_COMMAND {"),
+        "dispatch_direct must gate the restore on the real command check, not a disabled one"
+    );
+    assert!(
+        SOURCE.contains("stored_profile_value("),
+        "dispatch_direct must read the CURRENT stored profile before restoring"
+    );
     assert!(
         SOURCE.contains(
             "restore_local_only_contact_fields(command, &mut input, stored_profile.as_ref());"
@@ -1916,9 +1980,27 @@ fn stored_profile_value_is_none_when_the_store_is_unmanaged() {
 fn stored_profile_value_reads_through_try_get_and_refuses_on_its_error() {
     const SOURCE: &str = include_str!("../agent_call.rs");
     assert!(
-        SOURCE.contains("store\n        .try_get()\n        .map_err(|e| Refusal::DispatchFailed(e.to_string()))?;"),
+        SOURCE.contains("store\n        .try_get()\n        .map_err(|e| Refusal::StateUnreadable(e.to_string()))?;"),
         "stored_profile_value must read via try_get() and refuse (not swallow) its error"
     );
+}
+
+/// P-r2-AC-R5-F4 (MEDIUM, round-2 review, issue #1180): an app-state read
+/// failure (e.g. [`stored_profile_value`]'s `try_get` error) must sentinel
+/// as its own `state_unreadable`, distinct from [`Refusal::DispatchFailed`]'s
+/// `dispatch_failed` — collapsing the two hid a real app-state failure
+/// behind a sentinel whose own doc guarantees a fixed, framework-only
+/// message, and would send a debugger to the webview dispatch path instead
+/// of the app-state read that actually failed.
+#[test]
+fn state_unreadable_has_its_own_sentinel_distinct_from_dispatch_failed() {
+    let refusal = Refusal::StateUnreadable("boom".to_string());
+    assert_eq!(refusal.sentinel(), "state_unreadable");
+    assert_ne!(
+        refusal.sentinel(),
+        Refusal::DispatchFailed(String::new()).sentinel()
+    );
+    assert!(refusal.detail().contains("boom"));
 }
 
 /// The gate is by command name, not by shape: another command whose reply
