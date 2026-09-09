@@ -1862,12 +1862,32 @@ fn dispatch_direct_wires_the_real_stored_profile_into_restore_local_only_contact
     // What a `contact_profile_get` caller can ever produce, since
     // `project_contact_profile_get` already stripped `photo` from the read.
     let mut input = json!({ "profile": { "fullName": "Jane Doe" } });
-    let stored_profile = stored_profile_value(Some(&store));
+    let stored_profile = stored_profile_value(Some(&store))
+        .unwrap_or_else(|_| panic!("real store read must succeed"));
     restore_local_only_contact_fields("contact_profile_set", &mut input, stored_profile.as_ref());
 
     assert_eq!(
         input["profile"]["photo"], "data:image/png;base64,AAAA",
         "a projected agent read-modify-write must not delete the stored photo"
+    );
+}
+
+/// The composition test above proves the wiring reads REAL state once it is
+/// wired up; it never touches `dispatch_direct` itself, so a mutation that
+/// simply dropped the wiring (or the whole `if` block) would still pass it
+/// (P-r1-AC-R4-F1 / P-r1-SEC-1180-01, round 4 — the wiring guard round 2
+/// added was deleted in round 3 as if the composition test superseded it,
+/// but the two catch disjoint mutation classes: this one catches "is the
+/// call even made", the composition test above catches "does the call read
+/// real state"). Kept alongside it, not instead of it.
+#[test]
+fn dispatch_direct_calls_the_local_only_contact_field_restore_with_the_real_stored_profile() {
+    const SOURCE: &str = include_str!("../agent_call.rs");
+    assert!(
+        SOURCE.contains(
+            "restore_local_only_contact_fields(command, &mut input, stored_profile.as_ref());"
+        ),
+        "dispatch_direct must pass the REAL stored profile, not a hardcoded None"
     );
 }
 
@@ -1877,7 +1897,28 @@ fn dispatch_direct_wires_the_real_stored_profile_into_restore_local_only_contact
 /// already covers on the pure side.
 #[test]
 fn stored_profile_value_is_none_when_the_store_is_unmanaged() {
-    assert_eq!(stored_profile_value(None), None);
+    assert!(matches!(stored_profile_value(None), Ok(None)));
+}
+
+/// P-r1-AC-R4-F3 (MEDIUM): `stored_profile_value` must read through
+/// [`crate::contact_profile::ContactProfileStore::try_get`], never `get`
+/// — `get` degrades a locked/busy read or a corrupt stored row to
+/// `ContactProfile::default()`, indistinguishable from "nothing stored" and
+/// a re-run of the round-1 CRITICAL. A real `ContactProfileStore` has no
+/// public way to land a corrupt row (`set`/`import` only ever write valid
+/// JSON) and the private `conn` field a raw-SQL test would need is only
+/// visible inside `contact_profile`'s own module tree, not here — so this
+/// source-guards the call, the same shape already used for `dispatch_direct`
+/// above for the identical "no mock, no reachable seam" gap.
+/// [`crate::contact_profile::test`] separately proves `try_get`'s error
+/// behaviour for real, against a row it CAN reach and corrupt.
+#[test]
+fn stored_profile_value_reads_through_try_get_and_refuses_on_its_error() {
+    const SOURCE: &str = include_str!("../agent_call.rs");
+    assert!(
+        SOURCE.contains("store\n        .try_get()\n        .map_err(|e| Refusal::DispatchFailed(e.to_string()))?;"),
+        "stored_profile_value must read via try_get() and refuse (not swallow) its error"
+    );
 }
 
 /// The gate is by command name, not by shape: another command whose reply

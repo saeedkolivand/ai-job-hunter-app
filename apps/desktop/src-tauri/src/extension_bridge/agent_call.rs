@@ -1122,11 +1122,23 @@ fn invoke_error_detail(v: &Value) -> String {
 /// app, so a call site taking `&AppHandle` directly can't be exercised at
 /// all; `commands/contact_profile.rs`'s own `_inner`/`Option<&Store>` split
 /// documents the same gap and uses the same shape.
+///
+/// Reads through [`ContactProfileStore::try_get`], not `get` (agent-cli
+/// review, P-r1-AC-R4-F3): `get` degrades a locked/busy read or a corrupt
+/// stored row to `ContactProfile::default()`, which is indistinguishable
+/// from "nothing stored" to `restore_local_only_contact_fields` and would
+/// reproduce the round-1 CRITICAL (a whole-row-replace deleting `photo`)
+/// on every such read. A real read failure refuses the dispatch instead.
 fn stored_profile_value(
     store: Option<&crate::contact_profile::ContactProfileStore>,
-) -> Option<Value> {
-    let profile = store?.get();
-    serde_json::to_value(&profile).ok()
+) -> Result<Option<Value>, Refusal> {
+    let Some(store) = store else {
+        return Ok(None);
+    };
+    let profile = store
+        .try_get()
+        .map_err(|e| Refusal::DispatchFailed(e.to_string()))?;
+    Ok(serde_json::to_value(&profile).ok())
 }
 
 /// Invoke a command for real: take this layer's own paging arguments off
@@ -1163,7 +1175,7 @@ async fn dispatch_direct(
         let stored_profile = stored_profile_value(
             app.try_state::<crate::contact_profile::ContactProfileStore>()
                 .as_deref(),
-        );
+        )?;
         restore_local_only_contact_fields(command, &mut input, stored_profile.as_ref());
     }
     let outcome = invoke_command(app, command, input)

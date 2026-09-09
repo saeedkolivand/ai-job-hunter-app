@@ -919,15 +919,28 @@ impl ContactProfileStore {
     }
 
     pub fn get(&self) -> ContactProfile {
+        self.try_get().unwrap_or_default()
+    }
+
+    /// The fallible half of [`Self::get`] (agent-cli review, P-r1-AC-R4-F3,
+    /// issue #1180): a query failure (locked/busy row) and a corrupt stored
+    /// row both surface here as `Err` instead of silently degrading to
+    /// `ContactProfile::default()`. `get()` keeps the old degrade-to-default
+    /// behaviour for its many read-only callers; a write path that would
+    /// otherwise treat "couldn't read" as "nothing stored" (the
+    /// `contact_profile_set` photo-restore in `extension_bridge/agent_call.rs`)
+    /// must use this instead and refuse rather than proceed on a guess.
+    pub fn try_get(&self) -> AppResult<ContactProfile> {
         let conn = self.conn.lock();
-        conn.query_row("SELECT data FROM contact_profile WHERE id = 1", [], |row| {
-            let json: Option<String> = row.get(0)?;
-            Ok(json)
-        })
-        .ok()
-        .flatten()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+        let json: Option<String> = conn
+            .query_row("SELECT data FROM contact_profile WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .map_err(|e| e.to_string())?;
+        match json {
+            Some(s) => Ok(serde_json::from_str(&s).map_err(|e| e.to_string())?),
+            None => Ok(ContactProfile::default()),
+        }
     }
 
     pub fn set(&self, profile: &ContactProfile) -> AppResult<()> {
