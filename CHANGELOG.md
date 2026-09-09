@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.152.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.151.0...v0.152.0) (2026-09-09)
+
+### ✨ Features
+
+* **landing:** link the microsoft store from the download page and release notes ([#1189](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1189)) ([f0c0063](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f0c00630e18431411c0e61e78c85dde1d452d01f)), closes [#1188](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1188)
+
+### 🐛 Bug Fixes
+
+* **ai:** parse current codex exec events and stop pinning a stale codex model list ([#1187](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1187)) ([be47baa](https://github.com/saeedkolivand/ai-job-hunter-app/commit/be47baaeaf54f9e8c98f909b74f39e29a7aeb070)), closes [#1185](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1185) [#1185](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1185) [#1185](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1185) [#1185](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1185) [#1185](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1185) [#1185](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1185) [#1185](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1185) [#1185](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1185) [#1185](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1185) [#1185](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1185)
+
+### 📚 Documentation
+
+* **adr:** record the loopback http transport, resources and prompts ([#1186](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1186)) ([f398fcf](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f398fcf5489c3e042ea1c34333b64f408b9a6ef0)), closes [#1184](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1184) [#1173](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1173) [#1146](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1146)
+
 ## [0.151.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.150.0...v0.151.0) (2026-09-09)
 
 ### ✨ Features
