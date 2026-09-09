@@ -1,17 +1,17 @@
-//! Reply-shaping for `tools/call` — the `CallToolResult` envelope every dispatched or locally
-//! refused payload goes through on the way out, plus the three fixed refusal shapes this module
-//! owns (`result_too_large`, `server_busy`, `shutting_down`). R8 LOC-cap split
+//! Reply-shaping for `tools/call` (and, since issue #1146 P4, `resources/read`) — the
+//! `CallToolResult`/`contents` envelope every dispatched or locally refused payload goes through
+//! on the way out, plus the three fixed refusal shapes this module owns (`result_too_large`,
+//! `server_busy`, `shutting_down`) and [`dispatch_payload`], the single dispatch-outcome fn both
+//! `mcp.rs` and `mcp/resources.rs` share so their payloads can never diverge. R8 LOC-cap split
 //! (`docs/architecture-rules.md`), the same move `mcp/instructions.rs`/`mcp/schemas.rs` already
-//! made: this is the RESULT-WRAPPING unit, so nothing about the protocol loop, dispatch or
-//! classification travelled with it — those stay in `mcp.rs`, which imports the three items it
-//! calls (`tool_result`, `busy_result`, `shutting_down_result`). `mcp::tests` reaches
-//! [`oversized_result`]/[`MCP_RESULT_MAX_BYTES`] directly through this module's own path, the
-//! same shape it already uses for `mcp::instructions`'s items.
+//! made: this is the RESULT-WRAPPING unit, so nothing about the protocol loop or classification
+//! travelled with it — those stay in `mcp.rs`. `mcp::tests` reaches [`oversized_result`]/
+//! [`MCP_RESULT_MAX_BYTES`] directly through this module's own path, the same shape it already
+//! uses for `mcp::instructions`'s items.
 
 use serde_json::{json, Value};
 
-use super::agent_call;
-use super::MCP_CALL_QUEUE_MAX;
+use super::{agent_call, exit_code_for_reply, Verb, MCP_CALL_QUEUE_MAX};
 
 const CONFIRMATION_NOTE: &str = "This command is Effect::Irreversible and was called with no \
     proof (exitCode 4). \"detail\" above names the read command and field the proof comes from. \
@@ -96,22 +96,34 @@ pub(super) fn shutting_down_result(in_flight: bool) -> Value {
     })
 }
 
+/// Applies [`MCP_RESULT_MAX_BYTES`] to any payload this module OR `mcp/resources.rs` emits,
+/// substituting [`oversized_result`] and forcing exit code 2 when it fires — pulled out of
+/// [`tool_result`] (issue #1146 P4) so a `resources/read` reply is bounded by the SAME cap a
+/// `tools/call` reply is, for the identical payload, rather than a resource growing a second,
+/// unbounded egress path for the exact data a tool call would have refused. Returns the exact
+/// text either caller writes into its own `content[0].text`/`contents[0].text`, the (possibly
+/// substituted) payload, and the exit code to report — the resource caller has none and ignores
+/// it.
+pub(super) fn capped_result_text(payload: Value, exit_code: i32) -> (String, Value, i32) {
+    let text = payload.to_string();
+    if text.len() > MCP_RESULT_MAX_BYTES {
+        let refusal = oversized_result(text.len());
+        (refusal.to_string(), refusal, 2)
+    } else {
+        (text, payload, exit_code)
+    }
+}
+
 /// One `CallToolResult`: `content[0].text` is the payload byte-for-byte, `content[1]` names the
 /// exit code, and a `confirmation_required` refusal gets one more block mapping `--confirm` to
 /// this tool's `confirm` argument. No `structuredContent` field (SHOULD fix — no observed client
 /// surfaces it to the model, and it doubled every PII-bearing payload in the client's persisted
 /// transcript for nothing). ALSO the ONE place [`MCP_RESULT_MAX_BYTES`] is enforced (moved here,
 /// review round 3 — see [`oversized_result`]'s own doc), so every payload this fn ever wraps is
-/// covered, not only a dispatched command's own reply; the size is measured exactly once, via the
-/// SAME `to_string()` this fn needs anyway for `content[0].text`.
+/// covered, not only a dispatched command's own reply; the size is measured exactly once, via
+/// [`capped_result_text`].
 pub(super) fn tool_result(payload: Value, exit_code: i32) -> Value {
-    let text = payload.to_string();
-    let (text, exit_code, payload) = if text.len() > MCP_RESULT_MAX_BYTES {
-        let refusal = oversized_result(text.len());
-        (refusal.to_string(), 2, refusal)
-    } else {
-        (text, exit_code, payload)
-    };
+    let (text, payload, exit_code) = capped_result_text(payload, exit_code);
     let mut content = vec![
         json!({ "type": "text", "text": text }),
         json!({ "type": "text", "text": format!("exitCode: {exit_code}") }),
@@ -123,4 +135,30 @@ pub(super) fn tool_result(payload: Value, exit_code: i32) -> Value {
         "content": content,
         "isError": exit_code != 0,
     })
+}
+
+/// The dispatch OUTCOME shared by every worker-thread reply shape — `tools/call`
+/// ([`super::dispatched_tool_result`]) and `resources/read`
+/// ([`super::resources::dispatched_resource_result`]) alike (issue #1146 P4) — so the PAYLOAD,
+/// the one thing a resource and its identically-named tool must agree on byte-for-byte, can never
+/// diverge between the two call sites: the payload `dispatch` actually returned, or, on a
+/// round-trip failure, the SAME synthesized `ok:false` sentinel wrapper `run_verb`'s own CLI path
+/// builds. The paired `i32` is the exit code a `tools/call` reply would carry (an `Err` is always
+/// exit 2; an `Ok` defers to [`exit_code_for_reply`]) — a resource has no exit code and ignores
+/// it.
+pub(super) fn dispatch_payload(
+    verb: &Verb,
+    dispatch: &mut dyn FnMut(&Verb) -> Result<Value, &'static str>,
+) -> (Value, i32) {
+    match dispatch(verb) {
+        Ok(payload) => {
+            let code = exit_code_for_reply(verb, &payload);
+            (payload, code)
+        }
+        Err(sentinel) => {
+            let payload =
+                json!({ "ok": false, "resource": verb.resource_name(), "error": sentinel });
+            (payload, 2)
+        }
+    }
 }

@@ -74,7 +74,12 @@ pub(super) const INSTRUCTIONS: &str = "These tools talk to the running AI Job Hu
     means its input contract isn't catalogued, so no key is validated for it; a wrapper arg whose \
     OWN `fields` is `null` (the generator could not resolve that wrapper's shape) is still checked \
     for presence, but nothing inside it is validated — an unrecognised key nested under that \
-    wrapper reaches the app uninspected.";
+    wrapper reaches the app uninspected. \
+    Resources ajh://profile, ajh://best-matches, and the ajh://job/{url} template \
+    (percent-encode the url) return byte-identical contents to the profile/best-matches/job \
+    tools, through the same read path and fencing. Prompts review-todays-best-matches, \
+    should-i-apply (argument jobUrl), and how-is-my-search-going are canned playbooks that name \
+    which tools above to call and in what order — nothing more.";
 
 /// Appended to [`INSTRUCTIONS`] when the reversible tier is enabled — worded by TIER, never by
 /// the literal flag typed (LOW fix, review round 3 — `--allow-irreversible` alone implies this

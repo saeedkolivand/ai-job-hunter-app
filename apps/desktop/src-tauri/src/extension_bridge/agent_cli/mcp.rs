@@ -240,6 +240,13 @@ use instructions::build_instructions;
 mod schemas;
 use schemas::{proof_from, tier_exposes, tool_for, tools, unavailable_reason};
 
+// `resources/*` (issue #1146 P4) and `prompts/*` (P5) each get their own R8-capped unit for the
+// same reason `schemas`/`instructions` do — only the items `route_line`/the worker thread call
+// are imported; both modules reach everything else here (`Verb`, `dispatch_payload`, the
+// `TOOL_*` name consts, `results`) through their own `use super::*;`.
+mod prompts;
+mod resources;
+
 fn initialize_result(params: &Value, instructions: &str) -> Value {
     let requested = params.get("protocolVersion").and_then(Value::as_str);
     let version = requested
@@ -247,7 +254,7 @@ fn initialize_result(params: &Value, instructions: &str) -> Value {
         .unwrap_or(DEFAULT_VERSION);
     json!({
         "protocolVersion": version,
-        "capabilities": { "tools": {} },
+        "capabilities": { "tools": {}, "resources": {}, "prompts": {} },
         "serverInfo": { "name": "ai-job-hunter", "version": env!("CARGO_PKG_VERSION") },
         "instructions": instructions,
     })
@@ -804,22 +811,14 @@ fn classify_tool_call(params: &Value, server: &Server) -> ToolCall {
 
 /// The bridge-backed TAIL of a `tools/call` — the only part that touches the wire, and so the
 /// only part [`serve`] hands to its worker thread. Split out of [`tool_call_result`] so the
-/// dispatch closure appears in exactly one signature.
+/// dispatch closure appears in exactly one signature. Shares [`results::dispatch_payload`] with
+/// [`resources::dispatched_resource_result`] (issue #1146 P4) — see that fn's own doc.
 fn dispatched_tool_result(
     verb: &Verb,
     dispatch: &mut dyn FnMut(&Verb) -> Result<Value, &'static str>,
 ) -> Value {
-    match dispatch(verb) {
-        Ok(payload) => {
-            let code = exit_code_for_reply(verb, &payload);
-            tool_result(payload, code)
-        }
-        Err(sentinel) => {
-            let payload =
-                json!({ "ok": false, "resource": verb.resource_name(), "error": sentinel });
-            tool_result(payload, 2)
-        }
-    }
+    let (payload, code) = results::dispatch_payload(verb, dispatch);
+    tool_result(payload, code)
 }
 
 // ── The JSON-RPC loop ───────────────────────────────────────────────────
@@ -869,12 +868,27 @@ enum Routed {
     /// Answerable without touching the bridge — written immediately, even mid-call. Every
     /// protocol method AND every [`ToolCall::Local`] outcome lands here.
     Reply(Value),
-    /// A bridge-backed tool call, already classified and parsed: the ONLY thing that queues
-    /// behind an earlier one (see the module doc).
+    /// A bridge-backed call, already classified and parsed: the ONLY thing that queues behind an
+    /// earlier one (see the module doc). `kind` decides the reply SHAPE once dispatched — a
+    /// `tools/call` and a `resources/read` share this one queue and worker (issue #1146 P4), so
+    /// the busy/shutting-down refusals below need it too, not just the happy path.
     Call {
         id: Value,
         verb: Verb,
+        kind: PendingKind,
     },
+}
+
+/// Which reply shape a queued bridge call is owed once dispatched, decided at classification
+/// time — `tools/call` becomes a `CallToolResult` ([`dispatched_tool_result`]), `resources/read`
+/// becomes a `contents` envelope naming its own `uri` ([`resources::dispatched_resource_result`]).
+/// Threaded through the dispatch queue AND `in_flight` so the busy ([`TrySendError::Full`]) and
+/// shutting-down (EOF drain) refusals answer in the SAME shape a successful dispatch would have,
+/// never a tool-shaped refusal for a resource read or vice versa.
+#[derive(Debug, Clone)]
+enum PendingKind {
+    Tool,
+    Resource(String),
 }
 
 /// Route one already-read JSON-RPC line. Pure: parses, classifies, and answers everything the
@@ -905,8 +919,35 @@ fn route_line(line: &str, server: &Server) -> Routed {
         // answered like any other immediate method (module doc).
         Some("tools/call") => match classify_tool_call(&params, server) {
             ToolCall::Local(outcome) => outcome,
-            ToolCall::Bridge(verb) => return Routed::Call { id, verb },
+            ToolCall::Bridge(verb) => {
+                return Routed::Call {
+                    id,
+                    verb,
+                    kind: PendingKind::Tool,
+                }
+            }
         },
+        // `resources/list`/`resources/templates/list` are pure catalogue reads, answered exactly
+        // like `tools/list` — no bridge call, no `Tier` gate (issue #1146 P4: every resource here
+        // mirrors a curated Read tool, so there is nothing to gate along the `Effect` boundary).
+        Some("resources/list") => Ok(json!({ "resources": resources::resources_list() })),
+        Some("resources/templates/list") => {
+            Ok(json!({ "resourceTemplates": resources::resource_templates() }))
+        }
+        Some("resources/read") => match resources::classify_resource_read(&params) {
+            resources::ResourceCall::Local(outcome) => outcome,
+            resources::ResourceCall::Bridge(uri, verb) => {
+                return Routed::Call {
+                    id,
+                    verb,
+                    kind: PendingKind::Resource(uri),
+                }
+            }
+        },
+        // `prompts/*` never touches the bridge (see `mcp/prompts.rs`'s own doc): both are
+        // answered locally, the same as `commands`.
+        Some("prompts/list") => Ok(json!({ "prompts": prompts::prompts_list() })),
+        Some("prompts/get") => prompts::prompts_get(&params),
         // Everything else — `server/discover` included — is a plain "Method not found", the
         // legacy-fallback signal the 2025-11-25 spec itself defines (see the module doc).
         Some(_) => Err((-32601, "Method not found")),
@@ -943,9 +984,9 @@ fn emit(output: &mut impl Write, frame: &Value) -> std::io::Result<()> {
 /// the EOF guarantee (module doc). Removes ONE entry, so a client that reused an id across two
 /// calls still has both tracked; a frame whose id matches nothing leaves the list untouched
 /// rather than shortening it under a later, real reply.
-fn forget_in_flight(in_flight: &mut Vec<Value>, frame: &Value) {
+fn forget_in_flight(in_flight: &mut Vec<(Value, PendingKind)>, frame: &Value) {
     let Some(id) = frame.get("id") else { return };
-    if let Some(pos) = in_flight.iter().position(|owed| owed == id) {
+    if let Some(pos) = in_flight.iter().position(|(owed, _)| owed == id) {
         in_flight.remove(pos);
     }
 }
@@ -984,8 +1025,10 @@ fn serve(
     // never does, which is what makes a full queue backpressure rather than a deadlock.
     let (events, incoming) = sync_channel::<Event>(MCP_EVENT_QUEUE_MAX);
     // BOUNDED (module doc): the writer never blocks on it — a full queue is refused with
-    // `server_busy` instead — so this bound is a memory bound, not a latency one.
-    let (calls, queued) = sync_channel::<(Value, Verb)>(MCP_CALL_QUEUE_MAX);
+    // `server_busy` instead — so this bound is a memory bound, not a latency one. Carries
+    // `PendingKind` alongside the `Verb` (issue #1146 P4) so the worker below can build the right
+    // reply shape for a `resources/read` too, not only a `tools/call`.
+    let (calls, queued) = sync_channel::<(Value, Verb, PendingKind)>(MCP_CALL_QUEUE_MAX);
 
     // Set when the drain deadline expires: whatever is still queued must not be dispatched, since
     // this loop has stopped reading replies and would spend a bridge round trip per call for a
@@ -1000,7 +1043,7 @@ fn serve(
             // the next is taken — this is the "single-flight, in input order" guarantee. The
             // queue carries an ALREADY-CLASSIFIED [`Verb`], so this thread needs no [`Server`]
             // and can do nothing but dispatch.
-            while let Ok((id, verb)) = queued.recv() {
+            while let Ok((id, verb, kind)) = queued.recv() {
                 // Checked per call, not once: dropping `calls` is not enough on its own, because
                 // a `Receiver` keeps yielding what was ALREADY buffered after its sender is gone.
                 //
@@ -1012,7 +1055,15 @@ fn serve(
                 if worker_abandoned.load(Ordering::SeqCst) {
                     return;
                 }
-                let reply = reply_frame(id, Ok(dispatched_tool_result(&verb, &mut dispatch)));
+                // The one place `PendingKind` decides the reply SHAPE — the payload underneath is
+                // built by the SAME `dispatch_payload` either way (issue #1146 P4).
+                let result = match &kind {
+                    PendingKind::Tool => dispatched_tool_result(&verb, &mut dispatch),
+                    PendingKind::Resource(uri) => {
+                        resources::dispatched_resource_result(uri, &verb, &mut dispatch)
+                    }
+                };
+                let reply = reply_frame(id, Ok(result));
                 // MAY BLOCK, and that is safe — a blocking `send` here can never stall the
                 // writer's drain, because the writer never waits on THIS thread while the loop
                 // runs: it hands work over with `try_send` (a full dispatch queue is refused, not
@@ -1065,10 +1116,12 @@ fn serve(
     let mut input_ended = false;
     // Calls handed to the worker that have not replied yet, in the order they were queued — EOF
     // may not end the loop until this is empty, or a reply the client is waiting for would be
-    // dropped on the floor. The IDS, not a count: an expired drain deadline has to answer
-    // whatever is left, and single-flight FIFO order is what makes the head of this list the
-    // only entry that can be running (see [`shutting_down_result`]).
-    let mut in_flight: Vec<Value> = Vec::new();
+    // dropped on the floor. The IDS, not a count — paired with the [`PendingKind`] each is owed a
+    // reply IN, so an expired drain deadline can answer whatever is left in the right SHAPE. An
+    // expired deadline has to answer everything still here, and single-flight FIFO order is what
+    // makes the head of this list the only entry that can be running (see
+    // [`shutting_down_result`]).
+    let mut in_flight: Vec<(Value, PendingKind)> = Vec::new();
     // When the drain started. ONE deadline for the whole drain (module doc), not one per queued
     // call: `drain_budget` is measured from this instant no matter how many replies are still
     // owed. `None` until `Eof`, which is when the loop first has a reason to stop waiting.
@@ -1111,28 +1164,45 @@ fn serve(
                             return stop_serving(&abandoned);
                         }
                     }
-                    Routed::Call { id, verb } => match calls.try_send((id.clone(), verb)) {
-                        Ok(()) => in_flight.push(id),
-                        Err(TrySendError::Full(_)) => {
-                            // `try_send`, never `send`: blocking here would stall the ONE thread
-                            // that answers pings and writes replies — the stall this split
-                            // exists to remove — so the excess call is refused instead.
-                            let refusal = reply_frame(id, Ok(tool_result(busy_result(), 2)));
-                            if emit(&mut output, &refusal).is_err() {
-                                return stop_serving(&abandoned);
+                    Routed::Call { id, verb, kind } => {
+                        // Cloned BEFORE the send, which consumes `kind`: cheap (a bare enum, or
+                        // one `String` for a resource's `uri`), and it's what lets `in_flight`
+                        // carry the SAME kind the queued tuple does without reaching back into a
+                        // channel that only yields values once.
+                        let in_flight_kind = kind.clone();
+                        match calls.try_send((id.clone(), verb, kind)) {
+                            Ok(()) => in_flight.push((id, in_flight_kind)),
+                            Err(TrySendError::Full((_, _, kind))) => {
+                                // `try_send`, never `send`: blocking here would stall the ONE
+                                // thread that answers pings and writes replies — the stall this
+                                // split exists to remove — so the excess call is refused instead,
+                                // in the SAME shape a successful dispatch of this `kind` would
+                                // have answered in (issue #1146 P4).
+                                let busy = match kind {
+                                    PendingKind::Tool => tool_result(busy_result(), 2),
+                                    PendingKind::Resource(uri) => {
+                                        resources::resource_result(&uri, busy_result())
+                                    }
+                                };
+                                let refusal = reply_frame(id, Ok(busy));
+                                if emit(&mut output, &refusal).is_err() {
+                                    return stop_serving(&abandoned);
+                                }
+                            }
+                            Err(TrySendError::Disconnected(_)) => {
+                                // The worker is gone (only reachable if its thread died, which
+                                // under `panic = "abort"` it cannot). Answer anyway rather than
+                                // leave the client waiting on a reply that can never come.
+                                let _ =
+                                    writeln!(std::io::stderr(), "the MCP dispatch thread is gone");
+                                if emit(&mut output, &rpc_error(id, -32603, "Internal error"))
+                                    .is_err()
+                                {
+                                    return stop_serving(&abandoned);
+                                }
                             }
                         }
-                        Err(TrySendError::Disconnected(_)) => {
-                            // The worker is gone (only reachable if its thread died, which under
-                            // `panic = "abort"` it cannot). Answer anyway rather than leave the
-                            // client waiting on a reply that can never come.
-                            let _ = writeln!(std::io::stderr(), "the MCP dispatch thread is gone");
-                            if emit(&mut output, &rpc_error(id, -32603, "Internal error")).is_err()
-                            {
-                                return stop_serving(&abandoned);
-                            }
-                        }
-                    },
+                    }
                 }
             }
             Event::Reply(frame) => {
@@ -1176,8 +1246,15 @@ fn serve(
         }
         // Every call the client is still waiting on gets an answer rather than silence (module
         // doc's EOF bullet). Head of the list first: it is the only one that can be in flight.
-        for (i, id) in in_flight.iter().enumerate() {
-            let refusal = reply_frame(id.clone(), Ok(tool_result(shutting_down_result(i == 0), 2)));
+        // Shaped by its own `kind` (issue #1146 P4) — a queued resource read gets a `contents`
+        // envelope here too, never a tool-shaped refusal for a call it never was.
+        for (i, (id, kind)) in in_flight.iter().enumerate() {
+            let payload = shutting_down_result(i == 0);
+            let result = match kind {
+                PendingKind::Tool => tool_result(payload, 2),
+                PendingKind::Resource(uri) => resources::resource_result(uri, payload),
+            };
+            let refusal = reply_frame(id.clone(), Ok(result));
             if emit(&mut output, &refusal).is_err() {
                 break;
             }
