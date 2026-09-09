@@ -1399,6 +1399,15 @@ fn profile_tool_description_never_overclaims_parity_with_the_generic_row() {
             && !description.to_ascii_lowercase().contains("round-"),
         "model-facing text must not carry review-process chatter: {description}"
     );
+    // P-r3-AC-R7-F1 (round-3 review, issue #1180): `curated_tool`'s `extra` param is
+    // APPENDED after the VERB_TABLE base sentence, never a replacement for it — passing a
+    // full description (including a restatement of the base) doubles the opening sentence.
+    assert_eq!(
+        description.matches("fields for autofill").count(),
+        1,
+        "the base VERB_TABLE sentence and `extra` must not both describe autofill fields: \
+         {description}"
+    );
 }
 
 /// P10 — deterministic ordering is what lets a client's prompt cache survive repeated

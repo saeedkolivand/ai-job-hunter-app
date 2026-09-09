@@ -1772,6 +1772,23 @@ fn contact_profile_set_command_matches_a_real_policy_row() {
     );
 }
 
+/// P-r3-AC-R7-F2 (MEDIUM, round-3 review, issue #1180): unlike the command name above,
+/// [`restore_local_only_contact_fields`]'s `"profile"` key is resolved against nothing — it
+/// mirrors the Tauri parameter name in `contact_profile_set`'s own signature, which
+/// (`docs/knowledge/agent-cli.md`) "exists only in the handler signature under `commands/`".
+/// A parameter rename there (e.g. to `payload`) would leave this key matching nothing,
+/// silently disarm the restore, and reopen the CRITICAL photo-deletion with a green suite —
+/// so pin the real signature text here.
+#[test]
+fn contact_profile_set_payload_key_matches_the_real_handler_signature() {
+    const SOURCE: &str = include_str!("../../commands/contact_profile.rs");
+    assert!(
+        SOURCE.contains("pub async fn contact_profile_set(app: AppHandle, profile: Value)"),
+        "restore_local_only_contact_fields reads input[\"profile\"] — the handler's own \
+         parameter must still be named `profile`"
+    );
+}
+
 /// The CRITICAL repro (P-r1-F1): an agent read-modify-write that never saw
 /// `photo` (because [`project_contact_profile_get`] already stripped it) must
 /// not delete it on the whole-row-replace write.

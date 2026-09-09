@@ -154,8 +154,7 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
         curated_tool(
             TOOL_PROFILE,
             "My Profile",
-            "Contact-profile fields for autofill (same consent gate as the extension's \
-             profile.get). Values are cleaned and collapsed for display — `location` resolves \
+            "Values are cleaned and collapsed for display — `location` resolves \
              to a single string, `extraLinks` is filtered and capped, and `photo` is never \
              included — and this consent gate is specific to this tool; it does not apply to \
              any other route the app might expose the same underlying data through.",
