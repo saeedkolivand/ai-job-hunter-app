@@ -349,6 +349,9 @@ fn every_refusal_variant_has_a_distinct_sentinel() {
     // Mutation-style guard: if two variants ever shared a sentinel, a
     // caller could not tell the causes apart — the exact defect
     // `agent_cli`'s own module doc says has been fixed twice already.
+    // All 13 variants (T1, PR #1184 CodeRabbit review: the list previously
+    // stopped at 11, missing `ResultTooLarge`/`InvalidCursor` — either
+    // could have collided with an existing sentinel undetected).
     let sentinels = [
         Refusal::UnknownCommand(None).sentinel(),
         Refusal::InvalidInput(String::new()).sentinel(),
@@ -361,6 +364,8 @@ fn every_refusal_variant_has_a_distinct_sentinel() {
         Refusal::ConfirmationRequired(String::new()).sentinel(),
         Refusal::ConfirmationMismatch { moved: false }.sentinel(),
         Refusal::ProofUnavailable.sentinel(),
+        Refusal::ResultTooLarge(0).sentinel(),
+        Refusal::InvalidCursor.sentinel(),
     ];
     let unique: std::collections::HashSet<_> = sentinels.iter().collect();
     assert_eq!(unique.len(), sentinels.len(), "{sentinels:?}");

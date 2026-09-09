@@ -6,6 +6,7 @@
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
+use std::time::Duration;
 
 use serde_json::{json, Value};
 
@@ -23,11 +24,19 @@ fn stub_ok(_verb: &Verb) -> Result<Value, &'static str> {
 /// the port to connect to plus the join handle to wait on. `Server::new(true, true)` (the
 /// broadest tier) unless a test needs a narrower one.
 fn spawn_one_connection(server: Server) -> (u16, thread::JoinHandle<()>) {
+    spawn_one_connection_with(server, stub_ok)
+}
+
+/// [`spawn_one_connection`] with a caller-supplied dispatch stub, for the one test (T8) that
+/// needs the bridge to answer with something other than the tiny [`stub_ok`] payload.
+fn spawn_one_connection_with(
+    server: Server,
+    mut dispatch: impl FnMut(&Verb) -> Result<Value, &'static str> + Send + 'static,
+) -> (u16, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind an ephemeral port");
     let port = listener.local_addr().expect("local_addr").port();
     let join = thread::spawn(move || {
         let (stream, _) = listener.accept().expect("accept the one test connection");
-        let mut dispatch = stub_ok;
         handle_connection(stream, &server, &mut dispatch, TOKEN);
     });
     (port, join)
@@ -204,4 +213,114 @@ fn constant_time_eq_matches_ordinary_string_equality() {
     assert!(!constant_time_eq("abc", "abcd"));
     assert!(!constant_time_eq("", "a"));
     assert!(constant_time_eq("", ""));
+}
+
+/// T3 (PR #1184 CodeRabbit review): a `POST` with no `Content-Length` at all must not read as an
+/// empty body — that used to surface as a `200` carrying `-32700 Parse error`, telling the client
+/// its JSON was malformed when the real problem was the missing transport framing.
+#[test]
+fn post_without_a_content_length_is_411() {
+    let (port, join) = spawn_one_connection(Server::new(false, false));
+    let req = format!(
+        "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {TOKEN}\r\n\
+         Content-Type: application/json\r\n\r\n"
+    );
+    let response = send_raw(port, &req);
+    join.join().expect("handler thread must not panic");
+    assert_eq!(status_line(&response), "HTTP/1.1 411 Length Required");
+}
+
+/// T3: `Transfer-Encoding` framing is never decoded by this server, so a request carrying it must
+/// be refused outright rather than read as an (empty) `Content-Length`-less body.
+#[test]
+fn post_with_a_transfer_encoding_header_is_501() {
+    let (port, join) = spawn_one_connection(Server::new(false, false));
+    let req = format!(
+        "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {TOKEN}\r\n\
+         Transfer-Encoding: chunked\r\n\r\n"
+    );
+    let response = send_raw(port, &req);
+    join.join().expect("handler thread must not panic");
+    assert_eq!(status_line(&response), "HTTP/1.1 501 Not Implemented");
+}
+
+/// T4 (PR #1184 CodeRabbit review): RFC 7235 §2.1 makes `auth-scheme` a case-insensitive token —
+/// a real client that sends `bearer` (or `BEARER`) must still authenticate.
+#[test]
+fn bearer_scheme_is_accepted_case_insensitively() {
+    let (port, join) = spawn_one_connection(Server::new(false, false));
+    let req = post_request(
+        "/mcp",
+        &format!("Authorization: bearer {TOKEN}\r\n"),
+        r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#,
+    );
+    let response = send_raw(port, &req);
+    join.join().expect("handler thread must not panic");
+    assert_eq!(status_line(&response), "HTTP/1.1 200 OK");
+}
+
+/// T5 (PR #1184 CodeRabbit review): this accept loop serves one connection at a time
+/// ([`super::run`]'s own doc), so a peer that connects and never sends a complete request must
+/// not be able to stall it forever — [`super::serve_one_connection`]'s read/write deadline is
+/// what bounds that stall. Uses a short deadline (never the real
+/// [`super::CONNECTION_IO_TIMEOUT`]) so this test does not itself wait out production's timeout.
+#[test]
+fn a_hung_peer_does_not_block_the_next_connection_from_being_answered() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind an ephemeral port");
+    let port = listener.local_addr().expect("local_addr").port();
+    let server = Server::new(false, false);
+    let short_timeout = Duration::from_millis(200);
+    let join = thread::spawn(move || {
+        let mut dispatch = stub_ok;
+        // First connection: a peer that connects and sends nothing, ever — the exact case a
+        // missing read timeout would block this single-threaded loop on forever.
+        let (hung, _) = listener.accept().expect("accept the hanging connection");
+        serve_one_connection(hung, &server, &mut dispatch, TOKEN, short_timeout);
+        // Second connection: an ordinary request, which must still be answered — proving the
+        // first connection's stall was bounded rather than starving this loop.
+        let (ok, _) = listener.accept().expect("accept the second connection");
+        serve_one_connection(ok, &server, &mut dispatch, TOKEN, short_timeout);
+    });
+    let _hanging_client = TcpStream::connect(("127.0.0.1", port)).expect("connect (hangs)");
+    // Gives the accept loop a moment to pick up the hanging connection first, so this test
+    // actually exercises "hung connection first", not a race between the two connects.
+    thread::sleep(Duration::from_millis(30));
+    let req = post_request(
+        "/mcp",
+        &format!("Authorization: Bearer {TOKEN}\r\n"),
+        r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#,
+    );
+    let response = send_raw(port, &req);
+    join.join().expect("handler thread must not panic");
+    assert_eq!(status_line(&response), "HTTP/1.1 200 OK");
+}
+
+/// T8, end to end through the REAL HTTP transport (not `resources::resource_result` alone): an
+/// oversized `resources/read` reply must reach the wire as a JSON-RPC `error` member, never a
+/// `result` member carrying the capped text as if it were the requested resource — the same
+/// guarantee `mcp::tests`' stdio-path sibling test pins for the other transport.
+#[test]
+fn resources_read_over_the_size_cap_is_a_jsonrpc_error_over_http() {
+    let huge = json!({
+        "ok": true, "resource": "profile",
+        "blob": "x".repeat(super::super::results::MCP_RESULT_MAX_BYTES + 10),
+    });
+    let (port, join) =
+        spawn_one_connection_with(Server::new(true, true), move |_: &Verb| Ok(huge.clone()));
+    let body = json!({
+        "jsonrpc": "2.0", "id": 1, "method": "resources/read",
+        "params": { "uri": super::super::resources::URI_PROFILE },
+    })
+    .to_string();
+    let req = post_request("/mcp", &format!("Authorization: Bearer {TOKEN}\r\n"), &body);
+    let response = send_raw(port, &req);
+    join.join().expect("handler thread must not panic");
+    assert_eq!(status_line(&response), "HTTP/1.1 200 OK");
+    let parsed: Value = serde_json::from_str(body_of(&response)).expect("valid json body");
+    assert!(
+        parsed.get("result").is_none(),
+        "an oversized resources/read reply must never carry a `result` member: {parsed}"
+    );
+    assert_eq!(parsed["error"]["code"], json!(-32603));
+    assert_eq!(parsed["error"]["message"], json!("result_too_large"));
 }
