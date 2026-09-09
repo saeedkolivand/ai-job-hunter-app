@@ -78,6 +78,21 @@ impl CliAgentBackend for CodexAgent {
 
     fn parse_stream_line(&self, line: &str) -> Option<CliEvent> {
         let v: Value = serde_json::from_str(line.trim()).ok()?;
+        // Current dialect (Codex CLI 0.144+ `exec --json`, verified live plus the
+        // app-server v2 protocol's shared `ThreadItem`/`Turn` schema): a flat,
+        // dotted top-level `type` (`thread.started`, `turn.started`,
+        // `item.completed`, `turn.completed`, `turn.failed`, `error`), with the
+        // completed/updated item's own fields nested under `item`. The legacy
+        // dialect below never produces a top-level `type` at all (it's always
+        // nested under `msg`, or — per `inner`'s fallback — unwrapped but never
+        // dotted), so this check alone distinguishes the two.
+        if let Some(ty) = v.get("type").and_then(|t| t.as_str()) {
+            if ty.contains('.') || ty == "error" {
+                return parse_dotted_event(ty, &v);
+            }
+        }
+        // Legacy dialect (`{"msg":{"type":"agent_message",…}}`) — kept as a
+        // fallback so an older/downgraded Codex install still works.
         let m = inner(&v);
         let ty = m.get("type").and_then(|t| t.as_str())?;
         if ty.contains("error") {
@@ -112,6 +127,28 @@ impl CliAgentBackend for CodexAgent {
             let Ok(v) = serde_json::from_str::<Value>(line) else {
                 continue;
             };
+            if let Some(ty) = v.get("type").and_then(|t| t.as_str()) {
+                if ty.contains('.') || ty == "error" {
+                    match ty {
+                        "item.completed" | "item.updated" => {
+                            if let Some(item) = v.get("item") {
+                                match item.get("type").and_then(|t| t.as_str()) {
+                                    Some("agent_message") => {
+                                        last_message = text_of(item).or(last_message)
+                                    }
+                                    Some("error") => error = text_of(item).or(error),
+                                    _ => {}
+                                }
+                            }
+                        }
+                        "turn.failed" => error = v.get("error").and_then(text_of).or(error),
+                        "error" => error = text_of(&v).or(error),
+                        _ => {}
+                    }
+                    continue;
+                }
+            }
+            // Legacy dialect.
             let m = inner(&v);
             match m.get("type").and_then(|t| t.as_str()) {
                 Some("agent_message") => last_message = text_of(m).or(last_message),
@@ -128,6 +165,40 @@ impl CliAgentBackend for CodexAgent {
         Err(AppError::Provider(
             "Codex: no response in output".to_string(),
         ))
+    }
+}
+
+/// Map one current-dialect (dotted-`type`) event to a [`CliEvent`] — split out from
+/// [`CodexAgent::parse_stream_line`] purely so the dialect-detection guard there stays
+/// readable. `ty` is already known dotted or `"error"`.
+fn parse_dotted_event(ty: &str, v: &Value) -> Option<CliEvent> {
+    match ty {
+        "item.completed" | "item.updated" => {
+            let item = v.get("item")?;
+            match item.get("type").and_then(|t| t.as_str())? {
+                "agent_message" => text_of(item).map(CliEvent::Delta),
+                // Reasoning items carry `content`/`summary` string arrays, not the
+                // scalar `text`/`message` field every other item type uses.
+                "reasoning" => reasoning_text(item).map(CliEvent::Thinking),
+                "error" => Some(CliEvent::Error(
+                    text_of(item).unwrap_or_else(|| "Codex reported an error".to_string()),
+                )),
+                // Tool-call / file-change / other item kinds — not chat output.
+                _ => None,
+            }
+        }
+        "turn.completed" => Some(CliEvent::Done),
+        "turn.failed" => Some(CliEvent::Error(
+            v.get("error")
+                .and_then(text_of)
+                .unwrap_or_else(|| "Codex turn failed".to_string()),
+        )),
+        "error" => Some(CliEvent::Error(
+            text_of(v).unwrap_or_else(|| "Codex reported an error".to_string()),
+        )),
+        // `thread.started` / `turn.started` / anything else new — recognized as
+        // the current dialect, but nothing the UI needs to see.
+        _ => None,
     }
 }
 
@@ -169,6 +240,22 @@ fn text_of(m: &Value) -> Option<String> {
         .find_map(|k| m.get(*k).and_then(|x| x.as_str()))
         .filter(|s| !s.is_empty())
         .map(str::to_string)
+}
+
+/// Reasoning items in the current dialect carry `content`/`summary` string arrays
+/// (per the app-server v2 `ReasoningThreadItem` schema, which shares its item shapes
+/// with `exec --json`) rather than a scalar text field — join whichever is present
+/// and non-empty.
+fn reasoning_text(item: &Value) -> Option<String> {
+    ["content", "summary"].iter().find_map(|key| {
+        let joined = item
+            .get(*key)?
+            .as_array()?
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect::<String>();
+        (!joined.is_empty()).then_some(joined)
+    })
 }
 
 #[cfg(test)]
@@ -221,6 +308,119 @@ mod tests {
                    {\"msg\":{\"type\":\"task_started\"}}\n\
                    {\"msg\":{\"type\":\"agent_message\",\"message\":\"final answer\"}}\n";
         assert_eq!(CodexAgent.parse_complete(out).unwrap(), "final answer");
+    }
+
+    // ── Current dialect (`exec --json`, Codex CLI 0.144+) ─────────────────────
+    // Fixtures below are real lines captured from a live `codex exec --json
+    // --skip-git-repo-check "Reply with the single word pong"` run against the
+    // installed CLI (0.144.6) — see issue #1185 — plus one synthetic success
+    // fixture (the account had no successful run available at capture time; its
+    // shape is the app-server v2 protocol's `AgentMessageThreadItem`/`Turn`
+    // schema, which shares its item/turn model with `exec --json`).
+
+    #[test]
+    fn dotted_item_completed_agent_message_becomes_delta() {
+        let line = r#"{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"pong"}}"#;
+        assert_eq!(
+            CodexAgent.parse_stream_line(line),
+            Some(CliEvent::Delta("pong".to_string()))
+        );
+    }
+
+    #[test]
+    fn dotted_item_completed_reasoning_joins_content_becomes_thinking() {
+        let line = r#"{"type":"item.completed","item":{"id":"item_0","type":"reasoning","content":["weighing ","options"]}}"#;
+        assert_eq!(
+            CodexAgent.parse_stream_line(line),
+            Some(CliEvent::Thinking("weighing options".to_string()))
+        );
+    }
+
+    #[test]
+    fn dotted_turn_completed_is_done() {
+        let line = r#"{"type":"turn.completed","threadId":"t1","turn":{}}"#;
+        assert_eq!(CodexAgent.parse_stream_line(line), Some(CliEvent::Done));
+    }
+
+    /// Real capture: an unsupported model surfaces as an `item.completed` whose
+    /// item is itself `type: "error"` (a shape the app-server v2 `ThreadItem`
+    /// schema doesn't even define — `exec --json`-specific).
+    #[test]
+    fn dotted_item_completed_error_item_becomes_error() {
+        let line = r#"{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Model metadata for `gpt-5.4-mini` not found."}}"#;
+        assert_eq!(
+            CodexAgent.parse_stream_line(line),
+            Some(CliEvent::Error(
+                "Model metadata for `gpt-5.4-mini` not found.".to_string()
+            ))
+        );
+    }
+
+    /// Real capture: `turn.failed` nests its message under `error`.
+    #[test]
+    fn dotted_turn_failed_becomes_error() {
+        let line = r#"{"type":"turn.failed","error":{"message":"You've hit your usage limit."}}"#;
+        assert_eq!(
+            CodexAgent.parse_stream_line(line),
+            Some(CliEvent::Error("You've hit your usage limit.".to_string()))
+        );
+    }
+
+    /// Real capture: a top-level `error` event (distinct from `turn.failed`).
+    #[test]
+    fn dotted_top_level_error_becomes_error() {
+        let line = r#"{"type":"error","message":"You've hit your usage limit. Upgrade to Plus…"}"#;
+        assert_eq!(
+            CodexAgent.parse_stream_line(line),
+            Some(CliEvent::Error(
+                "You've hit your usage limit. Upgrade to Plus…".to_string()
+            ))
+        );
+    }
+
+    /// Real captures: `thread.started`/`turn.started` are recognized (dotted
+    /// type) but carry nothing the UI needs — distinct from an unrecognized line.
+    #[test]
+    fn dotted_thread_and_turn_started_are_ignored() {
+        assert_eq!(
+            CodexAgent.parse_stream_line(r#"{"type":"thread.started","thread_id":"01a"}"#),
+            None
+        );
+        assert_eq!(
+            CodexAgent.parse_stream_line(r#"{"type":"turn.started"}"#),
+            None
+        );
+    }
+
+    #[test]
+    fn dotted_parse_complete_returns_the_last_agent_message() {
+        let out = "{\"type\":\"thread.started\",\"thread_id\":\"t\"}\n\
+                   {\"type\":\"item.completed\",\"item\":{\"id\":\"i0\",\"type\":\"agent_message\",\"text\":\"first\"}}\n\
+                   {\"type\":\"item.completed\",\"item\":{\"id\":\"i1\",\"type\":\"agent_message\",\"text\":\"final answer\"}}\n\
+                   {\"type\":\"turn.completed\",\"threadId\":\"t\",\"turn\":{}}\n";
+        assert_eq!(CodexAgent.parse_complete(out).unwrap(), "final answer");
+    }
+
+    /// Real-shaped repro of the issue: a run that never produces an agent
+    /// message surfaces the turn-failure text, not the generic "no response".
+    #[test]
+    fn dotted_parse_complete_surfaces_turn_failed_when_there_is_no_agent_message() {
+        let out = "{\"type\":\"thread.started\",\"thread_id\":\"t\"}\n\
+                   {\"type\":\"turn.started\"}\n\
+                   {\"type\":\"error\",\"message\":\"You've hit your usage limit.\"}\n\
+                   {\"type\":\"turn.failed\",\"error\":{\"message\":\"You've hit your usage limit.\"}}\n";
+        let err = CodexAgent.parse_complete(out).unwrap_err();
+        assert!(format!("{err}").contains("usage limit"));
+    }
+
+    /// Neither dialect yields anything — the honest "no response" error, not a
+    /// silent empty success.
+    #[test]
+    fn parse_complete_reports_no_response_when_output_has_no_message_or_error() {
+        let out = "{\"type\":\"thread.started\",\"thread_id\":\"t\"}\n\
+                   {\"type\":\"turn.started\"}\n";
+        let err = CodexAgent.parse_complete(out).unwrap_err();
+        assert!(format!("{err}").contains("no response in output"));
     }
 
     #[test]
