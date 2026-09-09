@@ -19,8 +19,10 @@
  *
  * {@link buildCursorDeeplink} and {@link buildVsCodeDeeplink} (roadmap #1146
  * P2) encode that same `mcpServers` entry into each editor's own one-click
- * install URL scheme instead of a paste target — the card opens them via
- * `openExternal`, never by navigating the window to them.
+ * install URL scheme instead of a paste target — the card COPIES them,
+ * exactly like the other snippets; `system_open_external` allowlists
+ * http(s) only (`commands/system/mod.rs`), so a `cursor:`/`vscode:` URL could
+ * never be handed to it.
  */
 
 /** Which write tier the generated registration asks the MCP server for. */
