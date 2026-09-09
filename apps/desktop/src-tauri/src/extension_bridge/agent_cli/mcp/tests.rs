@@ -1363,6 +1363,15 @@ fn tool_titles_match_a_hand_written_literal_list() {
 /// values, same consent gate" to an LLM client (and the next reviewer), and
 /// neither is true: this resource trims/collapses/cleans its values and is
 /// opt-in gated, the generic row is neither.
+///
+/// Round 3 (P-r3-AC-R3-F4): this is MODEL-facing text, so it must not (a)
+/// carry review-process chatter ("issue #1180", "round-2 review") into the
+/// tool catalogue a client reads, or (b) name the generic, ungated
+/// `call-read`/`contact_profile_get` route as an available substitute at
+/// exactly the moment this tool's own consent gate refuses — a disclaimer
+/// naming a bypass is a hint toward it, not a warning against it. That fuller
+/// comparison belongs in the Rust doc comment above the `curated_tool` call
+/// (a maintainer surface), not in the wire description.
 #[test]
 fn profile_tool_description_never_overclaims_parity_with_the_generic_row() {
     let list = tools(Tier::Irreversible);
@@ -1379,6 +1388,16 @@ fn profile_tool_description_never_overclaims_parity_with_the_generic_row() {
     assert!(
         description.contains("consent gate") && description.contains("does not apply"),
         "must say the consent gate does NOT extend to the generic row: {description}"
+    );
+    assert!(
+        !description.contains("call-read") && !description.contains("contact_profile_get"),
+        "must not name the ungated generic route as a substitute for this consent gate: \
+         {description}"
+    );
+    assert!(
+        !description.to_ascii_lowercase().contains("issue #")
+            && !description.to_ascii_lowercase().contains("round-"),
+        "model-facing text must not carry review-process chatter: {description}"
     );
 }
 

@@ -140,15 +140,25 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
                 &["url"],
             ),
         ),
+        // P-r3-AC-R3-F4 (round-3 review, issue #1180): this description ships to the model
+        // verbatim, so it must not (a) carry review-process chatter ("issue #1180, round-2
+        // review") into model-facing text, or (b) name the generic `call-read
+        // contact_profile_get` row as an available substitute at exactly the moment this tool's
+        // own consent gate refuses — a disclaimer is not a control, and pointing at an ungated
+        // route is a bypass hint, not a warning. That row's own doc
+        // (`agent_call::reshape::CONTACT_PROFILE_GET_PROJECTION_NOTE`) still carries the full
+        // "shares field names minus `photo`, UNGATED and uncleaned, raw {default,byLang}
+        // location, unfiltered/uncapped extraLinks" comparison for a caller who reads THAT row's
+        // own discovery surfaces (`agent schema`, the `call` verb's `--help`, the `commands`
+        // tool) — this description only needs to say what THIS resource is.
         curated_tool(
             TOOL_PROFILE,
             "My Profile",
-            "Prefer this resource over the generic call-read row for contact_profile_get: that \
-             row shares these field names minus photo, but UNGATED and uncleaned — location is \
-             the raw {default,byLang} object (not this collapsed default string), extraLinks is \
-             unfiltered and uncapped, and this resource's consent gate does not apply to that \
-             row (issue #1180, round-2 review: this is a warning about a pre-existing bypass, \
-             not a route to it).",
+            "Contact-profile fields for autofill (same consent gate as the extension's \
+             profile.get). Values are cleaned and collapsed for display — `location` resolves \
+             to a single string, `extraLinks` is filtered and capped, and `photo` is never \
+             included — and this consent gate is specific to this tool; it does not apply to \
+             any other route the app might expose the same underlying data through.",
             no_args.clone(),
         ),
         curated_tool(TOOL_AUTOMATIONS, "Automations", "", no_args),
