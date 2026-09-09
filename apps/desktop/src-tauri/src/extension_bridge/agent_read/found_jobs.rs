@@ -49,7 +49,7 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::autopilot::{Autopilot, FoundJob};
 use crate::error::{AppError, AppResult};
@@ -503,6 +503,11 @@ fn candidate_jobs<'a>(
     applied_urls: &HashSet<String>,
     dedupe_across_autopilots: bool,
 ) -> Vec<(&'a Autopilot, &'a FoundJob, bool)> {
+    // Built ONCE per call, not per row (round-4 perf fix — see
+    // `agent_read::applied_url_identities`'s own doc): the loop below can run
+    // over every found job across every scoped autopilot, and re-decoding +
+    // re-parsing the whole `applied_urls` set per row was the hot path.
+    let applied_identities = super::applied_url_identities(applied_urls);
     let mut seen: HashSet<String> = HashSet::new();
     let mut out = Vec::new();
     for &ap in scoped {
@@ -516,7 +521,8 @@ fn candidate_jobs<'a>(
             // this was silently under-reporting `total` on the very filter
             // this resource exists to serve). The first PASSING occurrence
             // in store order now wins the dedup, not merely the first one.
-            let is_applied = super::job_is_applied(&job.url, applied_urls);
+            let is_applied =
+                super::job_is_applied_indexed(&job.url, applied_urls, &applied_identities);
             if !passes_filters(job, filters, is_applied) {
                 continue;
             }
@@ -556,14 +562,28 @@ fn candidate_jobs<'a>(
 /// which this projection can actually fail — recovering from an
 /// unreachable failure only hid a class of bug behind untestable dead code;
 /// removing the `Option` removes the class instead.
+///
+/// The infallibility argument holds TODAY but is a type-shape claim, not one
+/// the compiler enforces — a release build is `panic = "abort"`, so an
+/// `.expect()` here would turn a future accidental field-type drift between
+/// `FoundJob`/`FoundJobSlice` into the whole app dying with no crash report,
+/// not merely one dropped row (round-4 fix T5-cont, PR #1182 round-5). A
+/// `debug_assert!` still catches the drift in every dev/test run; a release
+/// build instead degrades to a minimal row (bare `url`) so ONE malformed
+/// projection can never take the rest of a page down with it.
 fn project_found_job_row(
     job: &FoundJob,
     autopilot: &Autopilot,
     include_description: bool,
     is_applied: Option<bool>,
 ) -> Value {
-    let mut value = project_value::<_, FoundJobSlice>(job)
-        .expect("FoundJobSlice is a same-typed subset of FoundJob and cannot fail to project");
+    let mut value = project_value::<_, FoundJobSlice>(job).unwrap_or_else(|| {
+        debug_assert!(
+            false,
+            "FoundJobSlice is a same-typed subset of FoundJob and cannot fail to project"
+        );
+        json!({ "url": job.url })
+    });
     if include_description {
         if let Some(desc) = &job.description {
             value["description"] = json!(desc);
@@ -857,15 +877,18 @@ fn check_applied_filter_available(
 pub(super) fn found_jobs_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
     let autopilot_id = parse_autopilot_id_arg(payload)?;
     let filters = FoundJobsFilters::from_payload(payload)?;
-    let store_present = app
-        .try_state::<crate::applications::ApplicationStore>()
-        .is_some();
+    // `store_present` derives from the SAME checked read as `applied_urls`
+    // (round-4 fix T3-cont) — a `try_state().is_some()` alone can't tell a
+    // managed-but-unreadable store from a genuinely-empty one; see
+    // `commands::autopilot::applied_job_urls_checked`'s own doc.
+    let applied = crate::commands::autopilot::applied_job_urls_checked(app);
+    let store_present = applied.is_some();
     check_applied_filter_available(store_present, &filters)?;
     let cursor_issuer = found_jobs_cursor_issuer(autopilot_id.as_deref(), &filters);
     let offset = parse_found_jobs_cursor(payload, &cursor_issuer)?;
     let limit = clamp_found_jobs_limit(payload);
     let records = list_autopilots(app)?;
-    let applied_urls = crate::commands::autopilot::applied_job_urls(app);
+    let applied_urls = applied.unwrap_or_default();
     resolve_found_jobs_for_store(
         &records,
         autopilot_id.as_deref(),

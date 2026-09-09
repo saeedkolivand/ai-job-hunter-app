@@ -287,6 +287,21 @@ fn job_is_applied_does_not_match_a_different_linkedin_id() {
     ));
 }
 
+/// T4-cont (PR #1182 round-5 fix) — a stored job url and its recorded
+/// application can share the SAME percent-escaped spelling (e.g. `%2D`) on a
+/// board `job_identity` doesn't cover (only linkedin/indeed have a stable id
+/// space). Decoding only the found-job side before comparing broke this:
+/// `applied_urls` is keyed by `normalize_job_url(raw)`, never decoded, so the
+/// decoded job url no longer byte-matched the raw-spelling entry, and with no
+/// identity fallback for this board the lookup fell straight to `false`.
+#[test]
+fn job_is_applied_matches_the_same_percent_escaped_spelling_without_decoding() {
+    let raw_url = "https://boards.example.com/jobs/senior%2Dengineer";
+    let mut applied_urls = std::collections::HashSet::new();
+    applied_urls.insert(crate::applications::normalize_job_url(raw_url));
+    assert!(job_is_applied(raw_url, &applied_urls));
+}
+
 /// T3 — when the applications store is unavailable, `job`'s `applied` key
 /// must be OMITTED (never a confident `false`), and the reply carries
 /// `appliedUnavailable: true`. Store present stays byte-for-byte unchanged.

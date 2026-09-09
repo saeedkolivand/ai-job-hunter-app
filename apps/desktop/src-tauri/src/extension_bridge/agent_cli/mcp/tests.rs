@@ -1653,6 +1653,23 @@ fn the_job_tool_description_says_url_only_and_points_at_found_jobs_query() {
     );
 }
 
+/// Round-4 fix T3-cont (PR #1182 round-5) — the whole safety of "absent
+/// `applied` ≠ `false`" rests on a caller knowing to check for
+/// `appliedUnavailable` instead of reading a missing key as falsy; that must
+/// be readable from the tool descriptions themselves, not only from Rust doc
+/// comments no MCP client ever sees.
+#[test]
+fn the_job_and_found_jobs_descriptions_document_applied_unavailable() {
+    let list = tools(Tier::Read);
+    for tool in [TOOL_JOB, TOOL_FOUND_JOBS] {
+        let description = tool_description(&list, tool);
+        assert!(
+            description.contains("appliedUnavailable"),
+            "{tool}'s description must document appliedUnavailable: {description}"
+        );
+    }
+}
+
 /// Issue #1132 — `totalFound` is the LAST run's kept count and diverged from the traversable
 /// total by up to ~24x on real data, with nothing on the surface saying so.
 #[test]

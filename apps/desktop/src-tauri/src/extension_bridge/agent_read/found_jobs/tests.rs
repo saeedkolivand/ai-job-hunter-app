@@ -730,6 +730,28 @@ fn found_jobs_applied_filter_matches_the_derived_applied_set() {
     assert_eq!(out["jobs"][0]["applied"], true);
 }
 
+/// Round-4 perf fix (PR #1182 round-5) — `candidate_jobs` derives `applied`
+/// through the precomputed-identity path (`agent_read::job_is_applied_indexed`),
+/// not the per-call scan `agent_read::job_is_applied` uses; this must still
+/// bridge a regional LinkedIn host to a bare `linkedin.com` application the
+/// same way `job_is_applied`'s own identity fallback does — the two must never
+/// disagree about the same job (see that fn's own doc).
+#[test]
+fn found_jobs_applied_matches_a_regional_linkedin_host_through_the_indexed_path() {
+    let job = FoundJob {
+        url: "https://de.linkedin.com/jobs/view/4185657072".to_string(),
+        ..numbered_job(1)
+    };
+    let records = vec![autopilot_with_jobs("ap-1", vec![job])];
+    let mut applied_urls = HashSet::new();
+    applied_urls.insert(crate::applications::normalize_job_url(
+        "https://www.linkedin.com/jobs/view/4185657072",
+    ));
+    let out =
+        resolve_found_jobs(&records, Some("ap-1"), &no_filters(), &applied_urls, 0, 20).unwrap();
+    assert_eq!(out["jobs"][0]["applied"], true);
+}
+
 /// B3-r3-F1 — `applied_job_urls(app)` returns an EMPTY set both when the
 /// user has applied to nothing AND when `ApplicationStore` failed to open
 /// (a non-fatal boot path), so the `applied` filter must be refused, not
@@ -1356,6 +1378,18 @@ fn found_jobs_applied_matches_by_identity_across_a_regional_linkedin_host() {
     let out =
         resolve_found_jobs(&records, Some("ap-1"), &no_filters(), &applied_urls, 0, 20).unwrap();
     assert_eq!(out["jobs"][0]["applied"], true);
+}
+
+/// T5-cont (PR #1182 round-5) — `project_found_job_row`'s fallback branch
+/// (`unwrap_or_else` + `debug_assert!`, replacing a prior `.expect()` that
+/// would abort the whole process in a release build on a future field-type
+/// drift) is unreachable for any real `FoundJob` today, but `project_value`
+/// itself genuinely can return `None` for a shape that doesn't satisfy
+/// `FoundJobSlice`'s required fields — this pins that the primitive the
+/// fallback guards against is real, not dead code by construction.
+#[test]
+fn project_value_returns_none_for_a_shape_missing_a_required_found_job_slice_field() {
+    assert!(project_value::<Value, FoundJobSlice>(&json!({})).is_none());
 }
 
 /// T5 — `project_found_job_row` is now INFALLIBLE (see its own doc), so the

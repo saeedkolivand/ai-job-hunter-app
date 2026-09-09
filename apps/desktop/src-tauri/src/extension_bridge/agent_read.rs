@@ -103,7 +103,9 @@ pub(super) const RESOURCES: &[(&str, &str)] = &[
     (
         RES_JOB,
         "Full detail for one posting, matched by its posting `url` ONLY — never by title or \
-         company (use `found-jobs`' own `query` filter for that). `url` required.",
+         company (use `found-jobs`' own `query` filter for that). `url` required. `applied` is \
+         OMITTED (never a confident `false`) when the applications store is unreadable; the \
+         reply then carries `appliedUnavailable: true`.",
     ),
     (
         RES_PROFILE,
@@ -127,7 +129,9 @@ pub(super) const RESOURCES: &[(&str, &str)] = &[
          arguments that issued it. Optional \
          server-side filters `minScore`, `country` (substring match against location), `remote` \
          (bool), `applied` (bool) and `query` (substring over title/company). Rows are compact \
-         (no `description`) unless `includeDescription: true` is set.",
+         (no `description`) unless `includeDescription: true` is set. Each row's `applied` is \
+         OMITTED (never a confident `false`) when the applications store is unreadable; the \
+         reply then carries `appliedUnavailable: true` and the `applied` filter is refused.",
     ),
 ];
 
@@ -414,7 +418,16 @@ pub(super) fn job_is_applied(
     applied_urls: &std::collections::HashSet<String>,
 ) -> bool {
     let decoded = crate::applications::decode_unreserved(job_url);
-    if applied_urls.contains(&crate::applications::normalize_job_url(&decoded)) {
+    // Check BOTH the raw and the unreserved-decoded spelling (round-4 fix
+    // T4-cont — `applied_urls` is keyed by `normalize_job_url(raw)`, never
+    // decoded per that fn's own doc, so a job whose stored url and recorded
+    // application agree on a percent-escaped spelling, e.g. `%2D`, only
+    // matched when the raw side was compared too; decoding first turned an
+    // exact-spelling match into a miss on any board `job_identity` doesn't
+    // cover).
+    if applied_urls.contains(&crate::applications::normalize_job_url(job_url))
+        || applied_urls.contains(&crate::applications::normalize_job_url(&decoded))
+    {
         return true;
     }
     let Some(identity) = crate::scraping::scrape_url::job_identity(&decoded) else {
@@ -424,6 +437,50 @@ pub(super) fn job_is_applied(
         let stored_decoded = crate::applications::decode_unreserved(stored);
         crate::scraping::scrape_url::job_identity(&stored_decoded).as_ref() == Some(&identity)
     })
+}
+
+/// Precompute [`job_identity`](crate::scraping::scrape_url::job_identity) for
+/// every entry in `applied_urls`, once — round-4 perf fix (PR #1182 round-5):
+/// [`found_jobs::candidate_jobs`] calls the identity fallback below once per
+/// STORED row, and re-decoding + re-parsing the whole `applied_urls` set on
+/// every one of those calls was O(found jobs × applications) `Url::parse` +
+/// allocation, ahead of `limit` ever applying. [`job_is_applied_indexed`]
+/// takes this index instead of re-deriving it; [`job_is_applied`] (the
+/// single-lookup `job` resource path, called once per call, never in a loop)
+/// keeps its own inline scan — building an index there would cost the same
+/// as the scan it replaces.
+pub(super) fn applied_url_identities(
+    applied_urls: &std::collections::HashSet<String>,
+) -> std::collections::HashSet<(&'static str, String)> {
+    applied_urls
+        .iter()
+        .filter_map(|stored| {
+            let decoded = crate::applications::decode_unreserved(stored);
+            crate::scraping::scrape_url::job_identity(&decoded)
+        })
+        .collect()
+}
+
+/// Same contract as [`job_is_applied`], but takes a precomputed
+/// [`applied_url_identities`] index instead of re-deriving one per call —
+/// see that fn's own doc for why. Must stay behaviourally identical to
+/// `job_is_applied` for the same inputs; `found_jobs::tests` pins the two
+/// against each other.
+pub(super) fn job_is_applied_indexed(
+    job_url: &str,
+    applied_urls: &std::collections::HashSet<String>,
+    applied_identities: &std::collections::HashSet<(&'static str, String)>,
+) -> bool {
+    let decoded = crate::applications::decode_unreserved(job_url);
+    if applied_urls.contains(&crate::applications::normalize_job_url(job_url))
+        || applied_urls.contains(&crate::applications::normalize_job_url(&decoded))
+    {
+        return true;
+    }
+    let Some(identity) = crate::scraping::scrape_url::job_identity(&decoded) else {
+        return false;
+    };
+    applied_identities.contains(&identity)
 }
 
 /// [`resolve_job`] plus the store-unavailable path (round-4 fix T3): when
@@ -963,10 +1020,13 @@ fn job_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
     }
     let caller_identity = job_caller_identity(raw_url);
     let records = list_autopilots(app)?;
-    let store_present = app
-        .try_state::<crate::applications::ApplicationStore>()
-        .is_some();
-    let applied_urls = crate::commands::autopilot::applied_job_urls(app);
+    // `store_present` derives from the SAME checked read as `applied_urls`
+    // (round-4 fix T3-cont) — a `try_state().is_some()` alone can't tell a
+    // managed-but-unreadable store from a genuinely-empty one; see
+    // `commands::autopilot::applied_job_urls_checked`'s own doc.
+    let applied = crate::commands::autopilot::applied_job_urls_checked(app);
+    let store_present = applied.is_some();
+    let applied_urls = applied.unwrap_or_default();
     resolve_job_for_store(
         &records,
         caller_identity,

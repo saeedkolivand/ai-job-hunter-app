@@ -379,7 +379,8 @@ const VERB_TABLE: &[VerbHelp] = &[
         returns: "full detail for one posting, matched by its posting url ONLY — never by title \
                   or company (use `found-jobs --query` for that); pass back the `url` a reply \
                   gave you rather than re-encoding your own — write commands match the exact \
-                  spelling",
+                  spelling. `applied` is OMITTED (never a confident false) when the applications \
+                  store is unreadable; the reply then carries `appliedUnavailable: true`",
     },
     VerbHelp {
         name: "profile",
@@ -418,7 +419,9 @@ const VERB_TABLE: &[VerbHelp] = &[
                   cursor until it comes back null to traverse the whole (filtered) list — the \
                   cursor is only valid for the SAME autopilotId scope AND the same filter \
                   arguments that issued it; default/max limit are documented on \
-                  `agent_read::found_jobs::resolve_found_jobs`",
+                  `agent_read::found_jobs::resolve_found_jobs`. Each row's `applied` is OMITTED \
+                  (never a confident false) when the applications store is unreadable; the reply \
+                  then carries `appliedUnavailable: true` and `--applied` is refused",
     },
     VerbHelp {
         name: "call",
