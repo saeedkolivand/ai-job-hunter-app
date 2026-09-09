@@ -441,6 +441,30 @@ mod tests {
         assert_eq!(CodexAgent.parse_stream_line(line), None);
     }
 
+    /// `reasoning_text` tries `content` first, `summary` second — a real build
+    /// that only populates `summary` must still surface Thinking text, not fall
+    /// through to `text_of`'s scalar lookup (which would find nothing here and
+    /// silently drop the item).
+    #[test]
+    fn dotted_item_completed_reasoning_falls_back_to_summary_array() {
+        let line = r#"{"type":"item.completed","item":{"id":"item_0","type":"reasoning","summary":["short ","recap"]}}"#;
+        assert_eq!(
+            CodexAgent.parse_stream_line(line),
+            Some(CliEvent::Thinking("short recap".to_string()))
+        );
+    }
+
+    /// Tool-call / file-change / other non-chat item kinds under `item.completed`
+    /// must stay invisible to the UI — only `agent_message`/`reasoning`/`error`
+    /// map to an event.
+    #[test]
+    fn dotted_item_completed_unknown_item_type_is_ignored() {
+        // `text` is present on purpose — even a matching scalar field must not leak
+        // through as chat output for a kind the UI doesn't render.
+        let line = r#"{"type":"item.completed","item":{"id":"item_0","type":"command_execution","command":"ls","text":"ls -la"}}"#;
+        assert_eq!(CodexAgent.parse_stream_line(line), None);
+    }
+
     #[test]
     fn dotted_turn_completed_is_done() {
         let line = r#"{"type":"turn.completed","threadId":"t1","turn":{}}"#;
@@ -518,6 +542,30 @@ mod tests {
         assert!(format!("{err}").contains("usage limit"));
     }
 
+    /// Unlike streaming (`item.updated` is ignored — see
+    /// `dotted_item_updated_agent_message_is_ignored`), `parse_complete` reads the
+    /// whole output back after the process exits, so an `item.updated` snapshot
+    /// with no later `item.completed` for that item is the only text available and
+    /// must still be captured — otherwise a turn that ends mid-item would report
+    /// "no response" despite the CLI having produced text.
+    #[test]
+    fn dotted_parse_complete_captures_agent_message_from_item_updated_alone() {
+        let out = "{\"type\":\"thread.started\",\"thread_id\":\"t\"}\n\
+                   {\"type\":\"item.updated\",\"item\":{\"id\":\"i0\",\"type\":\"agent_message\",\"text\":\"partial so far\"}}\n";
+        assert_eq!(CodexAgent.parse_complete(out).unwrap(), "partial so far");
+    }
+
+    /// Same non-chat item kinds ignored in streaming (see
+    /// `dotted_item_completed_unknown_item_type_is_ignored`) must also leave no
+    /// trace in the aggregated output — the `_ => {}` arm doesn't accidentally
+    /// stringify a tool call into `last_message`.
+    #[test]
+    fn dotted_parse_complete_ignores_unknown_item_types() {
+        let out = "{\"type\":\"item.completed\",\"item\":{\"id\":\"i0\",\"type\":\"command_execution\",\"command\":\"ls\",\"text\":\"ls -la\"}}\n";
+        let err = CodexAgent.parse_complete(out).unwrap_err();
+        assert!(format!("{err}").contains("no response in output"));
+    }
+
     /// Neither dialect yields anything — the honest "no response" error, not a
     /// silent empty success.
     #[test]
@@ -565,6 +613,21 @@ mod tests {
     fn parse_debug_models_none_when_nothing_is_listable() {
         let out = r#"{"models":[{"slug":"x","display_name":"X","visibility":"hide"}]}"#;
         assert_eq!(parse_debug_models(out), None);
+    }
+
+    /// One row missing a required field (`DebugModel` has no default for
+    /// `display_name`) must be skipped, not abort the whole parse — the
+    /// `filter_map(...ok())` behind it silently drops just that row.
+    #[test]
+    fn parse_debug_models_skips_a_malformed_row_but_keeps_the_rest() {
+        let out = r#"{"models":[
+            {"slug":"broken","visibility":"list"},
+            {"slug":"gpt-5.5","display_name":"GPT-5.5","visibility":"list"}
+        ]}"#;
+        assert_eq!(
+            parse_debug_models(out).unwrap(),
+            vec![json!({ "name": "gpt-5.5", "displayName": "GPT-5.5" })]
+        );
     }
 
     #[test]

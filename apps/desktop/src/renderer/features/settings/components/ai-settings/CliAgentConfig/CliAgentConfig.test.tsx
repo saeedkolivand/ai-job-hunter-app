@@ -93,4 +93,19 @@ describe('CliAgentConfig — fallback-list labelling (issue #1185)', () => {
     );
     expect(screen.getByText('models.cli.fallbackList')).toBeInTheDocument();
   });
+
+  // A live discovery entry has no reason to omit `displayName`, but the option
+  // label must still read as the raw model id rather than rendering blank/`undefined`
+  // if it ever does (`m.displayName ?? m.name`).
+  it('falls back to the raw model name when a discovered entry has no displayName', () => {
+    render(
+      <CliAgentConfig
+        {...baseProps}
+        provider="codex"
+        providerModel="gpt-5.5"
+        expandedModels={[{ name: 'gpt-5.5' }]}
+      />
+    );
+    expect(screen.getByRole('button', { name: /^gpt-5\.5$/ })).toBeInTheDocument();
+  });
 });
