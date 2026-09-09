@@ -3810,3 +3810,459 @@ fn call_read_annotations_claim_read_only() {
         "call-read's description must say \"no state change\": {description}"
     );
 }
+
+// ── `resources/*` + `prompts/*` (issue #1146 P4/P5) ──────────────────────
+
+/// A dispatch stub that answers with the VERB it was given, never a fixed stub — so two call
+/// sites that silently built different `Verb`s (e.g. a resource path that dropped a filter the
+/// tool path sets) produce visibly different text instead of the identical stub answer masking
+/// it.
+fn dispatch_echo(verb: &Verb) -> Result<Value, &'static str> {
+    Ok(json!({ "ok": true, "resource": verb.resource_name(), "verb": format!("{verb:?}") }))
+}
+
+fn frame_with_id(frames: &[Value], id: i64) -> &Value {
+    frames
+        .iter()
+        .find(|f| f["id"].as_i64() == Some(id))
+        .unwrap_or_else(|| panic!("no frame with id {id} in {frames:?}"))
+}
+
+fn parsed_frames(text: &str) -> Vec<Value> {
+    text.lines()
+        .map(|l| serde_json::from_str(l).expect("each line is one JSON-RPC frame"))
+        .collect()
+}
+
+#[test]
+fn initialize_advertises_resources_and_prompts_capabilities() {
+    let result = initialize_result(&json!({}), INSTRUCTIONS);
+    assert_eq!(result["capabilities"]["resources"], json!({}));
+    assert_eq!(result["capabilities"]["prompts"], json!({}));
+}
+
+#[test]
+fn resources_list_advertises_profile_and_best_matches() {
+    let list = resources::resources_list();
+    let uris: Vec<&str> = list.iter().map(|r| r["uri"].as_str().unwrap()).collect();
+    assert_eq!(
+        uris,
+        vec![resources::URI_PROFILE, resources::URI_BEST_MATCHES]
+    );
+    for r in &list {
+        assert_eq!(r["mimeType"], "application/json", "{r}");
+    }
+}
+
+#[test]
+fn resource_templates_list_advertises_the_job_template() {
+    let templates = resources::resource_templates();
+    assert_eq!(templates.len(), 1, "{templates:?}");
+    assert_eq!(templates[0]["uriTemplate"], "ajh://job/{url}");
+    assert_eq!(templates[0]["name"], TOOL_JOB);
+}
+
+#[test]
+fn resources_read_missing_uri_is_invalid_params() {
+    assert!(matches!(
+        resources::classify_resource_read(&json!({})),
+        resources::ResourceCall::Local(Err((-32602, "Invalid params")))
+    ));
+}
+
+#[test]
+fn resources_read_unknown_uri_is_resource_not_found() {
+    assert!(matches!(
+        resources::classify_resource_read(&json!({ "uri": "ajh://nope" })),
+        resources::ResourceCall::Local(Err((-32002, "Resource not found")))
+    ));
+}
+
+#[test]
+fn resources_read_malformed_job_percent_encoding_is_resource_not_found() {
+    // `%FF` decodes to a lone byte that is not valid UTF-8 on its own — the one shape
+    // `urlencoding::decode` actually errors on (an unrecognized escape like `%zz` passes through
+    // literally instead, so it is not the case this test needs).
+    assert!(matches!(
+        resources::classify_resource_read(&json!({ "uri": "ajh://job/%FF" })),
+        resources::ResourceCall::Local(Err((-32002, "Resource not found")))
+    ));
+}
+
+#[test]
+fn resources_read_profile_and_best_matches_build_the_same_verb_the_tools_do() {
+    let cases = [
+        (resources::URI_PROFILE, Verb::Profile),
+        (
+            resources::URI_BEST_MATCHES,
+            Verb::BestMatches {
+                limit: None,
+                cursor: None,
+                query: None,
+            },
+        ),
+    ];
+    for (uri, expected) in cases {
+        match resources::classify_resource_read(&json!({ "uri": uri })) {
+            resources::ResourceCall::Bridge(got_uri, verb) => {
+                assert_eq!(got_uri, uri);
+                assert_eq!(verb, expected);
+            }
+            resources::ResourceCall::Local(_) => panic!("{uri} must be a bridge call"),
+        }
+    }
+}
+
+#[test]
+fn resources_read_job_percent_decodes_the_url_into_the_same_verb_the_tool_builds() {
+    let url = "https://example.com/x?y=1 2&z=ä";
+    let uri = format!("ajh://job/{}", urlencoding::encode(url));
+    match resources::classify_resource_read(&json!({ "uri": uri })) {
+        resources::ResourceCall::Bridge(got_uri, Verb::Job { url: got_url }) => {
+            assert_eq!(got_uri, uri);
+            assert_eq!(got_url, url);
+        }
+        _ => panic!("a job uri must be a bridge call carrying the decoded url"),
+    }
+}
+
+/// The literal ask behind issue #1146 P4: a resource and its identically-named tool must return
+/// BYTE-IDENTICAL text for the same input, because both share the same [`Verb`],
+/// [`results::dispatch_payload`] and [`results::capped_result_text`]. Run through the REAL
+/// [`serve`] loop (not the pure classify fns alone) with [`dispatch_echo`], so a regression that
+/// built a different `Verb` on one of the two paths would answer with visibly different text
+/// instead of an identical fixed stub masking it.
+#[test]
+fn profile_tool_and_resource_return_byte_identical_text() {
+    let input = format!(
+        "{}{}",
+        line(json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": TOOL_PROFILE, "arguments": {} },
+        })),
+        line(json!({
+            "jsonrpc": "2.0", "id": 2, "method": "resources/read",
+            "params": { "uri": resources::URI_PROFILE },
+        })),
+    );
+    let frames = parsed_frames(&run_serve(&input, dispatch_echo));
+    let tool_text = frame_with_id(&frames, 1)["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap();
+    let resource_text = frame_with_id(&frames, 2)["result"]["contents"][0]["text"]
+        .as_str()
+        .unwrap();
+    assert_eq!(tool_text, resource_text);
+}
+
+#[test]
+fn best_matches_tool_and_resource_return_byte_identical_text() {
+    let input = format!(
+        "{}{}",
+        line(json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": TOOL_BEST_MATCHES, "arguments": {} },
+        })),
+        line(json!({
+            "jsonrpc": "2.0", "id": 2, "method": "resources/read",
+            "params": { "uri": resources::URI_BEST_MATCHES },
+        })),
+    );
+    let frames = parsed_frames(&run_serve(&input, dispatch_echo));
+    let tool_text = frame_with_id(&frames, 1)["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap();
+    let resource_text = frame_with_id(&frames, 2)["result"]["contents"][0]["text"]
+        .as_str()
+        .unwrap();
+    assert_eq!(tool_text, resource_text);
+}
+
+#[test]
+fn job_tool_and_resource_return_byte_identical_text_for_a_percent_encoded_url() {
+    let url = "https://example.com/jobs?id=42&ref=abc def";
+    let input = format!(
+        "{}{}",
+        line(json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": TOOL_JOB, "arguments": { "url": url } },
+        })),
+        line(json!({
+            "jsonrpc": "2.0", "id": 2, "method": "resources/read",
+            "params": { "uri": format!("ajh://job/{}", urlencoding::encode(url)) },
+        })),
+    );
+    let frames = parsed_frames(&run_serve(&input, dispatch_echo));
+    let tool_text = frame_with_id(&frames, 1)["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap();
+    let resource_text = frame_with_id(&frames, 2)["result"]["contents"][0]["text"]
+        .as_str()
+        .unwrap();
+    assert_eq!(tool_text, resource_text);
+}
+
+#[test]
+fn resources_list_and_templates_list_answer_without_a_bridge_call() {
+    let input = format!(
+        "{}{}",
+        line(json!({ "jsonrpc": "2.0", "id": 1, "method": "resources/list" })),
+        line(json!({ "jsonrpc": "2.0", "id": 2, "method": "resources/templates/list" })),
+    );
+    let dispatched = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&dispatched);
+    let frames = parsed_frames(&run_serve(&input, move |_: &Verb| {
+        flag.store(true, Ordering::SeqCst);
+        Ok(json!({ "ok": true }))
+    }));
+    assert!(
+        !dispatched.load(Ordering::SeqCst),
+        "resources/list and resources/templates/list must never touch the bridge"
+    );
+    assert_eq!(
+        frame_with_id(&frames, 1)["result"]["resources"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        frame_with_id(&frames, 2)["result"]["resourceTemplates"][0]["uriTemplate"],
+        "ajh://job/{url}"
+    );
+}
+
+#[test]
+fn resources_read_unknown_uri_answers_a_json_rpc_error_end_to_end() {
+    let input = line(json!({
+        "jsonrpc": "2.0", "id": 1, "method": "resources/read",
+        "params": { "uri": "ajh://nope" },
+    }));
+    let text = run_serve(&input, stub_ok);
+    let reply: Value = serde_json::from_str(text.trim()).unwrap();
+    assert_eq!(reply["error"]["code"], -32002);
+    assert_eq!(reply["error"]["message"], "Resource not found");
+}
+
+/// A `resources/read` shares [`MCP_CALL_QUEUE_MAX`]'s queue and single worker with `tools/call`
+/// (issue #1146 P4), so a full queue must refuse it too — in the RESOURCE shape (`contents`),
+/// never the tool-shaped `content` a `tools/call` refusal carries.
+#[test]
+fn a_full_dispatch_queue_refuses_a_resource_read_in_the_resource_shape() {
+    let total = MCP_CALL_QUEUE_MAX + 2;
+    let input: String = (1..=total)
+        .map(|id| {
+            line(json!({
+                "jsonrpc": "2.0", "id": id, "method": "resources/read",
+                "params": { "uri": resources::URI_PROFILE },
+            }))
+        })
+        .collect();
+
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let (seen_busy, busy_written) = std::sync::mpsc::channel::<()>();
+    let writer = SignallingWriter {
+        buffer: Arc::clone(&buffer),
+        needle: "server_busy",
+        signal: Some(seen_busy),
+    };
+    let (release, blocked) = std::sync::mpsc::channel::<()>();
+    let server = std::thread::spawn(move || {
+        serve_with(&input, writer, move |_: &Verb| {
+            let _ = blocked.recv_timeout(SIGNAL_BUDGET);
+            Ok(json!({ "ok": true, "resource": "profile", "data": {} }))
+        })
+    });
+
+    busy_written
+        .recv_timeout(SIGNAL_BUDGET)
+        .expect("a server_busy refusal must be written while the dispatcher is blocked");
+    drop(release);
+    let code = server.join().expect("serve must not panic");
+    assert_eq!(code, 0);
+
+    let text = String::from_utf8(lock(&buffer).clone()).expect("valid utf8");
+    let busy_frame = parsed_frames(&text)
+        .into_iter()
+        .find(|f| {
+            f["result"]["contents"][0]["text"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("server_busy")
+        })
+        .expect("at least one resource-shaped busy refusal");
+    assert!(
+        busy_frame["result"]["content"].is_null(),
+        "a resource's busy refusal must use `contents`, never the tool-shaped `content`: {busy_frame}"
+    );
+}
+
+/// The EOF-drain mirror of the busy test above: a `resources/read` still QUEUED (never started)
+/// when the drain deadline expires must get a `shutting_down` refusal in the resource shape too.
+#[test]
+fn an_expired_drain_deadline_answers_a_queued_resource_read_in_the_resource_shape() {
+    let input = format!(
+        "{}{}",
+        line(json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "profile", "arguments": {} },
+        })),
+        line(json!({
+            "jsonrpc": "2.0", "id": 2, "method": "resources/read",
+            "params": { "uri": resources::URI_PROFILE },
+        })),
+    );
+    let mut output = Vec::new();
+    let code = serve_with_drain_budget(
+        &input,
+        &mut output,
+        move |_: &Verb| {
+            std::thread::sleep(DISPATCH_HOLD);
+            Ok(json!({ "ok": true, "resource": "profile", "data": {} }))
+        },
+        DRAIN_BUDGET,
+    );
+    assert_eq!(code, 0);
+    let text = String::from_utf8(output).expect("valid utf8");
+    let frames = parsed_frames(&text);
+    assert_eq!(reply_ids(&text), vec![1, 2]);
+    let queued_reply = frame_with_id(&frames, 2);
+    assert!(
+        queued_reply["result"]["content"].is_null(),
+        "the queued RESOURCE read's refusal must never use the tool shape: {queued_reply}"
+    );
+    let payload: Value = serde_json::from_str(
+        queued_reply["result"]["contents"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(payload["error"], "shutting_down");
+    assert_eq!(
+        payload["dispatched"], false,
+        "the queued resource read provably never reached the app"
+    );
+}
+
+#[test]
+fn prompts_list_shape() {
+    let list = prompts::prompts_list();
+    let names: Vec<&str> = list.iter().map(|p| p["name"].as_str().unwrap()).collect();
+    assert_eq!(
+        names,
+        vec![
+            "review-todays-best-matches",
+            "should-i-apply",
+            "how-is-my-search-going",
+        ]
+    );
+    let should_i_apply = &list[1];
+    let args = should_i_apply["arguments"]
+        .as_array()
+        .expect("should-i-apply must declare its jobUrl argument");
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0]["name"], "jobUrl");
+    assert_eq!(args[0]["required"], true);
+    // The other two take no arguments at all — never an empty array masquerading as "declared
+    // but none required" (the same "absent vs empty" distinction `commands`' own `args` draws).
+    assert!(list[0].get("arguments").is_none());
+    assert!(list[2].get("arguments").is_none());
+}
+
+#[test]
+fn prompts_get_review_best_matches_names_the_tool() {
+    let result = prompts::prompts_get(&json!({ "name": "review-todays-best-matches" }))
+        .expect("a known prompt");
+    let text = result["messages"][0]["content"]["text"].as_str().unwrap();
+    assert!(text.contains(TOOL_BEST_MATCHES), "{text}");
+}
+
+#[test]
+fn prompts_get_search_status_names_both_tools_in_order() {
+    let result =
+        prompts::prompts_get(&json!({ "name": "how-is-my-search-going" })).expect("a known prompt");
+    let text = result["messages"][0]["content"]["text"].as_str().unwrap();
+    let automations_at = text.find(TOOL_AUTOMATIONS).expect("names automations");
+    let found_jobs_at = text.find(TOOL_FOUND_JOBS).expect("names found-jobs");
+    assert!(
+        automations_at < found_jobs_at,
+        "run status before found-jobs, the order a status check reads naturally: {text}"
+    );
+}
+
+#[test]
+fn prompts_get_should_i_apply_requires_a_non_blank_job_url() {
+    assert!(matches!(
+        prompts::prompts_get(&json!({ "name": "should-i-apply" })),
+        Err((-32602, "Invalid params"))
+    ));
+    assert!(matches!(
+        prompts::prompts_get(&json!({
+            "name": "should-i-apply", "arguments": { "jobUrl": "   " },
+        })),
+        Err((-32602, "Invalid params"))
+    ));
+}
+
+#[test]
+fn prompts_get_should_i_apply_names_the_tools_and_carries_the_url() {
+    let url = "https://example.com/jobs/42";
+    let result = prompts::prompts_get(&json!({
+        "name": "should-i-apply",
+        "arguments": { "jobUrl": url },
+    }))
+    .expect("a valid call");
+    let text = result["messages"][0]["content"]["text"].as_str().unwrap();
+    assert!(text.contains(TOOL_JOB), "{text}");
+    assert!(text.contains(TOOL_PROFILE), "{text}");
+    assert!(text.contains(url), "{text}");
+}
+
+#[test]
+fn prompts_get_unknown_name_is_unknown_prompt() {
+    assert!(matches!(
+        prompts::prompts_get(&json!({ "name": "does-not-exist" })),
+        Err((-32602, "Unknown prompt"))
+    ));
+}
+
+#[test]
+fn prompts_get_missing_name_is_invalid_params() {
+    assert!(matches!(
+        prompts::prompts_get(&json!({})),
+        Err((-32602, "Invalid params"))
+    ));
+}
+
+#[test]
+fn prompts_list_and_get_answer_without_a_bridge_call() {
+    let input = format!(
+        "{}{}",
+        line(json!({ "jsonrpc": "2.0", "id": 1, "method": "prompts/list" })),
+        line(json!({
+            "jsonrpc": "2.0", "id": 2, "method": "prompts/get",
+            "params": { "name": "how-is-my-search-going" },
+        })),
+    );
+    let dispatched = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&dispatched);
+    let frames = parsed_frames(&run_serve(&input, move |_: &Verb| {
+        flag.store(true, Ordering::SeqCst);
+        Ok(json!({ "ok": true }))
+    }));
+    assert!(
+        !dispatched.load(Ordering::SeqCst),
+        "prompts/list and prompts/get must never touch the bridge"
+    );
+    assert_eq!(
+        frame_with_id(&frames, 1)["result"]["prompts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    let text = frame_with_id(&frames, 2)["result"]["messages"][0]["content"]["text"]
+        .as_str()
+        .unwrap();
+    assert!(text.contains(TOOL_AUTOMATIONS), "{text}");
+}
