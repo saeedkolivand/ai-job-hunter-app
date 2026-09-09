@@ -245,7 +245,7 @@
       "cachedList": "Showing the last saved list — live refresh failed."
     },
     "cli": {
-      "fallbackList": "Showing the built-in list — this CLI's live model list isn't available right now."
+      "fallbackList": "Showing the built-in list — this CLI doesn't publish a live model list."
     }
   },
   "shortcuts": {

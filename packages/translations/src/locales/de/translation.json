@@ -245,7 +245,7 @@
       "cachedList": "Zeigt die zuletzt gespeicherte Liste – die Live-Aktualisierung ist fehlgeschlagen."
     },
     "cli": {
-      "fallbackList": "Zeigt die integrierte Liste – die Live-Modellliste dieser CLI ist gerade nicht verfügbar."
+      "fallbackList": "Zeigt die integrierte Liste – diese CLI veröffentlicht keine Live-Modellliste."
     }
   },
   "shortcuts": {

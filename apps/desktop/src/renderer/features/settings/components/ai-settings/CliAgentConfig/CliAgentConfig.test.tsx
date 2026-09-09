@@ -77,4 +77,20 @@ describe('CliAgentConfig — fallback-list labelling (issue #1185)', () => {
     expect(screen.queryByText('models.cli.fallbackList')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /GPT-5\.6-Terra/ })).toBeInTheDocument();
   });
+
+  // claude-code/gemini-cli/antigravity don't implement `discover_models`
+  // (Rust default `None`), so their `expandedModels` is always `source:
+  // 'fallback'` — the banner is permanent for them, not a failure state.
+  // The copy ("doesn't publish a live model list") must hold for that case too.
+  it('shows the fallback notice for a non-Codex CLI agent (no live discovery to fail)', () => {
+    render(
+      <CliAgentConfig
+        {...baseProps}
+        provider="claude-code"
+        providerModel="sonnet"
+        expandedModels={[{ name: 'sonnet', source: 'fallback' }]}
+      />
+    );
+    expect(screen.getByText('models.cli.fallbackList')).toBeInTheDocument();
+  });
 });
