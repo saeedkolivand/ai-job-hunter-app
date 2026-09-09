@@ -24,6 +24,9 @@ name: 🚀 Release
 #   - publish-chrome: Upload + submit the chrome zip to the Chrome Web Store listing
 #   - publish-firefox: Build the AMO source archive, prove it rebuilds the shipped
 #       package, then submit the new version to the Firefox AMO listing
+#   - publish-msstore: Submit the packaged MSIX to the Microsoft Store listing
+#       (action: build-installers only — see the job's own comment for why there
+#       is no single-store re-run action for this one, unlike Chrome/Firefox)
 #   - generate-update-manifest: Publish latest.json for the auto-updater
 #   - update-cask: Pin the Homebrew cask to the built dmgs (version + per-arch sha256)
 #   - update-download-page: Sync apps/landing/src/data/version.json to the built installer URLs
@@ -370,8 +373,7 @@ jobs:
       #
       # The package is UNSIGNED by design: the Microsoft Store signs it during
       # submission, so it must never be attached to the GitHub Release. It is a
-      # build ARTIFACT, downloaded by hand for the (currently manual) Partner
-      # Center submission and, later, by an `msstore` publishing job. Skipped
+      # build ARTIFACT, consumed by the `publish-msstore` job below. Skipped
       # entirely until the MSIX_* repository variables exist — Partner Center
       # assigns those values, so this ships before the listing does.
       # See docs/DEPLOYMENT.md § Microsoft Store (MSIX).
@@ -1278,6 +1280,117 @@ jobs:
             echo "\`web-ext\`'s own output is in the **Submit the new version to Firefox AMO** step log, where the runner's secret masking applies. It is deliberately not copied here."
             echo ""
             echo "> **Submitted ≠ live.** A \`listed\` submission goes to human review at Mozilla; this job ends at _submitted_ and never waits for the signed XPI. Track it in [AMO Developer Hub](https://addons.mozilla.org/developers/addons)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # MSIX has no cheap standalone re-packaging step the way the browser
+  # extension does (`package-extension`) — packing it happens inside the same
+  # expensive multi-platform Tauri `build` job. So there is no single-store
+  # `publish-msstore` dispatch action to retry just this store the way
+  # `publish-chrome`/`publish-firefox` do: a failed submission is retried by
+  # re-running `build-installers`, which reruns this job too.
+  publish-msstore:
+    name: 🪟 Publish to Microsoft Store
+    needs: build
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'build-installers' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    env:
+      # PUBLIC Store product id — it is in the listing URL and the download
+      # page. Deliberately NOT a secret: hiding it would only make a
+      # misconfigured submission harder to diagnose.
+      MSSTORE_PRODUCT_ID: 9NC5KDJV0BTM
+
+    steps:
+      # Fail on a missing credential HERE, with its own name, rather than
+      # several steps later as an opaque 401 from Partner Center. Guarded in
+      # the shell, not in `if:` — the `secrets` context is not available to a
+      # step-level `if`.
+      - name: 🔐 Check Microsoft Store credentials
+        env:
+          MSSTORE_TENANT_ID: ${{ secrets.MSSTORE_TENANT_ID }}
+          MSSTORE_CLIENT_ID: ${{ secrets.MSSTORE_CLIENT_ID }}
+          MSSTORE_CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}
+          MSSTORE_SELLER_ID: ${{ secrets.MSSTORE_SELLER_ID }}
+        run: |
+          set -euo pipefail
+          missing=""
+          for name in MSSTORE_TENANT_ID MSSTORE_CLIENT_ID MSSTORE_CLIENT_SECRET MSSTORE_SELLER_ID; do
+            [ -n "${!name:-}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error title=Microsoft Store credentials missing::Set these repository secrets before releasing (setup steps: docs/DEPLOYMENT.md § Microsoft Store (MSIX)):$missing"
+            exit 1
+          fi
+          echo "All four Microsoft Store secrets are set."
+
+      # The MSIX pack step in `build` is itself gated on the MSIX_* repository
+      # variables (Partner Center identity) — a partial/missing set skips
+      # packing rather than failing the Windows leg, so this job would
+      # otherwise find no artifact and fail with a confusing download error.
+      - name: 📥 Download the packaged MSIX
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: msix-store-package
+          path: msix
+
+      - name: 🟣 Setup .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '9.0.x'
+
+      # Global tool, not a workspace dependency: msstore CLI has nothing to do
+      # with the pnpm workspace and nothing else in the repo needs it.
+      - name: 📥 Install the Microsoft Store Developer CLI
+        run: |
+          echo "::group::Installing msstore CLI"
+          dotnet tool install --global MSStore.CLI
+          echo "::endgroup::"
+
+      - name: 🚀 Reconfigure + publish to the Microsoft Store
+        id: msstore
+        env:
+          MSSTORE_TENANT_ID: ${{ secrets.MSSTORE_TENANT_ID }}
+          MSSTORE_CLIENT_ID: ${{ secrets.MSSTORE_CLIENT_ID }}
+          MSSTORE_CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}
+          MSSTORE_SELLER_ID: ${{ secrets.MSSTORE_SELLER_ID }}
+        run: |
+          set -euo pipefail
+          MSIX="$(find msix -maxdepth 1 -name '*.msix' | head -n1)"
+          if [ -z "$MSIX" ]; then
+            echo "::error title=MSIX missing::No .msix file was in the msix-store-package artifact — pack-msix.mjs's output naming and this job's expectation have drifted."
+            exit 1
+          fi
+          echo "::group::msstore reconfigure"
+          msstore reconfigure \
+            --tenantId "$MSSTORE_TENANT_ID" \
+            --sellerId "$MSSTORE_SELLER_ID" \
+            --clientId "$MSSTORE_CLIENT_ID" \
+            --clientSecret "$MSSTORE_CLIENT_SECRET"
+          echo "::endgroup::"
+          echo "::group::msstore publish (upload + submit)"
+          # No --noCommit = upload AND submit for review, mirroring the
+          # Chrome/Firefox jobs. Free products only — msstore publish rejects
+          # a paid product outright (see docs/DEPLOYMENT.md).
+          msstore publish "$MSIX" -id "$MSSTORE_PRODUCT_ID"
+          echo "::endgroup::"
+
+      - name: 📝 Job Summary
+        if: always()
+        run: |
+          {
+            echo "## 🪟 Microsoft Store Submission"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| Product | [\`$MSSTORE_PRODUCT_ID\`](https://apps.microsoft.com/detail/$MSSTORE_PRODUCT_ID) |"
+            echo "| Outcome | ${{ steps.msstore.outcome == 'success' && '✅ Submitted for review' || '❌ Failed' }} |"
+            echo ""
+            echo "The CLI's own output is in the **Reconfigure + publish to the Microsoft Store** step log, where the runner's secret masking applies. It is deliberately not copied here."
+            echo ""
+            echo "> **Submitted ≠ live.** Certification review runs at Partner Center after this job ends; track it in the [developer dashboard](https://partner.microsoft.com/dashboard/products/$MSSTORE_PRODUCT_ID/overview)."
           } >> "$GITHUB_STEP_SUMMARY"
 
   generate-update-manifest:

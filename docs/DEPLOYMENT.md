@@ -1,6 +1,6 @@
 # Deployment — AI Job Hunter
 
-Last updated: 2026-09-07
+Last updated: 2026-09-09
 
 AI Job Hunter is distributed as a native desktop installer built by [Tauri][tauri]. There is no server to deploy — the entire app runs on the end user's machine.
 
@@ -299,17 +299,20 @@ Registering the staged app is the only way to see the packaged-identity code pat
 2. **The CLI alias.** From a plain shell, `cd` into an empty scratch directory and run `ajh-tauri agent --help`, then a real verb. Two things are under test: that the alias resolves at all, and that the shim preserves the console and the working directory — anything the CLI writes relative to `.` must land in that scratch directory, not somewhere under the package.
 3. **Launch at login.** Toggle it in Settings, then check **Settings ▸ Apps ▸ Startup** shows the app; toggle it off there and confirm the app's own toggle reports the refusal instead of silently flipping back on.
 
-### First submission (manual)
+### Automated submission
 
 The `.msix` is **unsigned on purpose** — the Store signs it during submission — which is why it is a workflow **artifact** of the `build-installers` run and never a GitHub Release asset.
 
-1. Download the MSIX artifact from that run (the upload step in `release.yml` names it) and unzip it.
-2. Partner Center ▸ your product ▸ **Packages** ▸ upload the `.msix`.
-3. **Submission options** asks for a justification for the restricted capability. State what it is actually for: the app registers a browser **native-messaging host under HKCU** that browsers must read from the real hive rather than a virtualized copy, and it shares its data directory with the non-Store install so users can move between them without losing data.
-4. Fill the **tester notes** with the WebView2 prerequisite above, plus a pointer that the browser-extension features need the companion extension installed.
-5. Submit. Certification for a full-trust desktop app is manual and can take a few days.
+The `publish-msstore` job in `release.yml` uploads it and submits it for review via the [`msstore` CLI](https://learn.microsoft.com/windows/apps/publish/msstore-dev-cli/overview), authenticating with a Microsoft Entra app registration (Manager role, required by the CLI) linked to the Partner Center account. Credentials are repository secrets — `MSSTORE_TENANT_ID`, `MSSTORE_CLIENT_ID`, `MSSTORE_CLIENT_SECRET`, `MSSTORE_SELLER_ID` — missing any of them fails the job by name rather than the release. There is no single-store re-run action for this one (see the job's own comment for why); a failed submission is retried by re-running `build-installers`.
 
-Automating this with the `msstore` CLI is a follow-up: it needs an Entra tenant plus an app registration, which do not exist yet.
+**One-time setup**, if the app registration or its secret ever needs recreating:
+
+1. Entra admin center ▸ **App registrations** ▸ New registration (single tenant), then **Certificates & secrets** ▸ new client secret — copy the value immediately, it is shown once.
+2. Partner Center ▸ **Account settings** ▸ **User management** ▸ **Microsoft Entra applications** ▸ add the app, role **Manager(Windows)** (not Developer — the CLI's `submission publish` needs it).
+3. Partner Center ▸ **Account settings** ▸ **Legal info** ▸ **Publisher IDs** has the Seller ID.
+4. Set the four secrets above from those values (tenant/client ID from the app registration's Overview page).
+
+**Submission options and tester notes are one-time, set in the Partner Center listing itself**, not per-release: the restricted-capability justification (the app registers a browser **native-messaging host under HKCU**, read from the real hive rather than a virtualized copy, and shares its data directory with the non-Store install so users can move between flavours without losing data) and the WebView2 prerequisite note below. Certification for a full-trust desktop app is manual on Microsoft's side and can take a few days regardless of how the submission was filed.
 
 > **Uninstall leaves per-user traces.** Removing the package removes the app, its `StartupTask` and its execution alias — but not the files and keys the app itself wrote outside the package: the browser native-messaging host manifests (JSON + their HKCU entries) and the agent-CLI pointer file. That is the direct consequence of disabling write virtualization, and it is the same behaviour the NSIS build has. They are inert once the app is gone (they name a path that no longer resolves) and are overwritten on the next launch of either flavour.
 
