@@ -143,10 +143,12 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
         curated_tool(
             TOOL_PROFILE,
             "My Profile",
-            "The generic call-read row for contact_profile_get shares this resource's field \
-             names minus photo, not its values: location is the raw {default,byLang} object \
-             (not this collapsed default string), extraLinks is unfiltered and uncapped, and \
-             this resource's consent gate does not apply to that row (issue #1180).",
+            "Prefer this resource over the generic call-read row for contact_profile_get: that \
+             row shares these field names minus photo, but UNGATED and uncleaned — location is \
+             the raw {default,byLang} object (not this collapsed default string), extraLinks is \
+             unfiltered and uncapped, and this resource's consent gate does not apply to that \
+             row (issue #1180, round-2 review: this is a warning about a pre-existing bypass, \
+             not a route to it).",
             no_args.clone(),
         ),
         curated_tool(TOOL_AUTOMATIONS, "Automations", "", no_args),

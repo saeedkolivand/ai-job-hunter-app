@@ -60,7 +60,7 @@ mod proof;
 // read through it, the same shape `agent_read` uses for `found_jobs`.
 pub(in crate::extension_bridge) mod reshape;
 use reshape::{
-    reshape_reply, restore_contact_profile_photo, take_list_page_args,
+    reshape_reply, restore_local_only_contact_fields, take_list_page_args,
     unfence_named_fields_recursive, CONTACT_PROFILE_SET_COMMAND,
 };
 
@@ -1134,17 +1134,22 @@ async fn dispatch_direct(
 ) -> Result<Value, Refusal> {
     let page_args = take_list_page_args(command, &mut input)?;
     unfence_named_fields_recursive(&mut input);
-    // The CRITICAL fix for issue #1180's round-1 review: a `contact_profile_set`
-    // whose payload omits `photo` (the only shape a `contact_profile_get`
-    // caller can ever produce, since that reply's `photo` key was already
-    // stripped) must not silently delete it on this whole-row-replace write.
-    // Reads current app state here (the impure half) and hands the value to
-    // the pure `restore_contact_profile_photo`, which does the actual merge.
+    // The CRITICAL fix for issue #1180's round-1 review, generalised in
+    // round 2 (P-r2-R2-F2): a `contact_profile_set` whose payload omits a
+    // local-only field (the only shape a `contact_profile_get` caller can
+    // ever produce, since that reply already strips every such field) must
+    // not silently delete it on this whole-row-replace write — for `photo`
+    // today, and for whatever field is added to `ContactProfile` next
+    // without a matching `CONTACT_PROFILE_AGENT_FIELDS` entry. Reads current
+    // app state here (the impure half) and hands the whole stored profile to
+    // the pure `restore_local_only_contact_fields`, which does the actual
+    // merge.
     if command == CONTACT_PROFILE_SET_COMMAND {
-        let stored_photo = app
+        let stored_profile = app
             .try_state::<crate::contact_profile::ContactProfileStore>()
-            .and_then(|store| store.get().photo);
-        restore_contact_profile_photo(command, &mut input, stored_photo.as_deref());
+            .map(|store| store.get())
+            .and_then(|profile| serde_json::to_value(&profile).ok());
+        restore_local_only_contact_fields(command, &mut input, stored_profile.as_ref());
     }
     let outcome = invoke_command(app, command, input)
         .await

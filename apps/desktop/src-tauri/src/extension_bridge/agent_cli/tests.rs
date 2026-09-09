@@ -529,6 +529,22 @@ fn both_automations_descriptions_name_both_totals() {
     }
 }
 
+/// P-r2-R2-F7 (round-2 review, issue #1180): plain `call-read` (and any
+/// `ajh-tauri agent call` invocation) never sees an MCP tool description, so
+/// the `call` verb's own `--help` text is one of the only two places such a
+/// caller can learn `contact_profile_get`'s reply is projected. Pins that
+/// the clause actually landed, not just the doc comment claiming it did.
+#[test]
+fn call_verb_help_names_the_contact_profile_get_projection() {
+    let returns = VERB_TABLE
+        .iter()
+        .find(|v| v.name == "call")
+        .expect("the call verb")
+        .returns;
+    assert!(returns.contains("contact_profile_get"));
+    assert!(returns.contains("photo"));
+}
+
 #[test]
 fn is_help_request_recognizes_help_h_and_bare_help_verb() {
     assert!(is_help_request(&s(&["--help"])));

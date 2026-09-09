@@ -216,8 +216,10 @@ pub(in crate::extension_bridge) const CONTACT_PROFILE_GET_COMMAND: &str = "conta
 /// — the SAME discovery precedent [`PAGINATED_LIST_NOTE`] sets, for a caller
 /// this projection actually affects and who cannot read this source: plain
 /// `call-read` (and any `ajh-tauri agent call` invocation) never sees an MCP
-/// tool description at all, so `commands` is the only place such a caller can
-/// learn the reply is projected (round-1 review, issue #1180).
+/// tool description at all, so `commands` and the `call` verb's own
+/// `--help` text (`agent_cli::VERB_TABLE`'s `call` row, round-2 review) are
+/// the two places such a caller can learn the reply is projected (round-1
+/// review, issue #1180).
 pub(in crate::extension_bridge) const CONTACT_PROFILE_GET_PROJECTION_NOTE: &str =
     "returns only {fullName,email,phone,location,linkedin,github,website,extraLinks} — `photo` \
      is stripped before an agent ever sees it. The surviving fields are the RAW stored shapes \
@@ -242,34 +244,46 @@ pub(super) fn project_contact_profile_get(command: &str, data: &mut Value) {
 
 /// The write leg of [`CONTACT_PROFILE_GET_COMMAND`]'s projection (round-1
 /// review, issue #1180, CRITICAL). The generic tier's `contact_profile_get`
-/// reply never carries `photo`, so an agent doing the only edit path this
-/// tier has — read, change one field, write the whole object back — can only
-/// ever send a `contact_profile_set` payload with the key entirely ABSENT,
-/// never an explicit value (it cannot type back what it was never shown).
+/// reply never carries a field outside
+/// [`super::super::autofill_profile::CONTACT_PROFILE_AGENT_FIELDS`] — today
+/// that is only `photo`, but the allowlist is what decides that, not this
+/// fn — so an agent doing the only edit path this tier has — read, change
+/// one field, write the whole object back — can only ever send a
+/// `contact_profile_set` payload with any such key entirely ABSENT, never an
+/// explicit value (it cannot type back what it was never shown).
 /// `contact_profile_set` is a whole-row REPLACE
 /// (`contact_profile::ContactProfileStore::set`), so an absent key silently
-/// and permanently deletes the stored photo — on a row policy declares
+/// and permanently deletes the stored value — on a row policy declares
 /// [`super::super::agent_cli::policy::Effect::Reversible`].
-/// [`restore_contact_profile_photo`] closes that at the one dispatch
-/// chokepoint, before the write ever reaches the command body.
+/// [`restore_local_only_contact_fields`] closes that at the one dispatch
+/// chokepoint, before the write ever reaches the command body, for EVERY
+/// such field, not a single hardcoded name (round-2 review, P-r2-R2-F2):
+/// the next local-only field added to `ContactProfile` without a matching
+/// entry in [`super::super::autofill_profile::CONTACT_PROFILE_AGENT_FIELDS`]
+/// reproduces the identical
+/// delete-on-read-modify-write, with nothing here to notice, if the fix
+/// only ever names `photo`.
 pub(super) const CONTACT_PROFILE_SET_COMMAND: &str = "contact_profile_set";
 
-/// Re-inject `stored_photo` into an outgoing [`CONTACT_PROFILE_SET_COMMAND`]
-/// call's `profile.photo` when the caller's payload omits the key entirely —
-/// never when the key is present, including an explicit `null`. That
-/// distinction matters: the renderer's OWN settings form clears a photo by
-/// omitting the key on ITS OWN write path (`ContactProfileForm`, plain
+/// Re-inject every key of `stored_profile` that
+/// [`super::super::autofill_profile::CONTACT_PROFILE_AGENT_FIELDS`] does not
+/// name into an outgoing [`CONTACT_PROFILE_SET_COMMAND`] call's
+/// `profile` object, but only when the caller's payload omits that key
+/// entirely — never when the key is present, including an explicit `null`.
+/// That distinction matters: the renderer's OWN settings form clears a photo
+/// by omitting the key on ITS OWN write path (`ContactProfileForm`, plain
 /// `invoke()`, never through this dispatcher), so an agent that explicitly
 /// sends `"photo": null` is making the same real, deliberate choice and must
 /// not be overridden. Pure — the impure half (reading the CURRENT stored
-/// photo before this write lands) is `dispatch_direct`'s job, the same
-/// "read app state, pass the value in" split this module already uses. A
-/// no-op for every other command, a non-object `input`, or an `input.profile`
-/// that is not an object.
-pub(super) fn restore_contact_profile_photo(
+/// profile before this write lands, as `serde_json::to_value`) is
+/// `dispatch_direct`'s job, the same "read app state, pass the value in"
+/// split this module already uses. A no-op for every other command, a
+/// non-object `input`, an `input.profile` that is not an object, or a
+/// `stored_profile` that is not an object.
+pub(super) fn restore_local_only_contact_fields(
     command: &str,
     input: &mut Value,
-    stored_photo: Option<&str>,
+    stored_profile: Option<&Value>,
 ) {
     if command != CONTACT_PROFILE_SET_COMMAND {
         return;
@@ -277,11 +291,17 @@ pub(super) fn restore_contact_profile_photo(
     let Some(profile) = input.get_mut("profile").and_then(Value::as_object_mut) else {
         return;
     };
-    if profile.contains_key("photo") {
+    let Some(stored) = stored_profile.and_then(Value::as_object) else {
         return;
-    }
-    if let Some(photo) = stored_photo {
-        profile.insert("photo".to_string(), json!(photo));
+    };
+    for (key, value) in stored {
+        if super::super::autofill_profile::CONTACT_PROFILE_AGENT_FIELDS.contains(&key.as_str()) {
+            continue;
+        }
+        if profile.contains_key(key) {
+            continue;
+        }
+        profile.insert(key.clone(), value.clone());
     }
 }
 

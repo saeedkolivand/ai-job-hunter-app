@@ -2277,6 +2277,23 @@ fn commands_marks_the_contact_profile_get_row_with_its_projection_note() {
     );
 }
 
+/// P-r2-R2-F4 (round-2 review): the note above hand-copies the allowlist
+/// into prose with nothing pinning it to the list it describes — the exact
+/// drift `PAGINATED_LIST_NOTE`'s own sibling test guards against for its
+/// pacing numbers. Loop the real const rather than comparing against a
+/// second hand-typed literal, so a field added to (or dropped from)
+/// `CONTACT_PROFILE_AGENT_FIELDS` without updating the prose fails HERE.
+#[test]
+fn contact_profile_get_projection_note_names_every_allowlisted_field() {
+    use crate::extension_bridge::autofill_profile::CONTACT_PROFILE_AGENT_FIELDS;
+    for field in CONTACT_PROFILE_AGENT_FIELDS {
+        assert!(
+            agent_call::reshape::CONTACT_PROFILE_GET_PROJECTION_NOTE.contains(field),
+            "CONTACT_PROFILE_GET_PROJECTION_NOTE must name `{field}`"
+        );
+    }
+}
+
 #[test]
 fn commands_names_the_right_tool_for_every_effect_class_with_all_flags_enabled() {
     // Pins the SECOND copy of the Effect→tool mapping (`tool_for`, used by both `commands_value`

@@ -1115,6 +1115,38 @@ fn contact_profile_agent_fields_matches_the_autofill_profile_wire_shape() {
     );
 }
 
+/// The derived HALF of the guard above (round-2 review, P-r2-R2-F5): the
+/// hand-written literal there only catches `CONTACT_PROFILE_AGENT_FIELDS`
+/// drifting from ITSELF; it never notices a field added to `AutofillProfile`
+/// and forgotten here, because both guards compare literal to literal. This
+/// one serializes a FULLY populated `AutofillProfile` (every
+/// `skip_serializing_if` field set, so nothing is silently omitted) and
+/// compares its real wire key set to the same const — the literal above
+/// stays as the deletion guard, this is what fails when a field is added.
+#[test]
+fn contact_profile_agent_fields_matches_a_fully_populated_autofill_profile_wire_shape() {
+    use crate::contact_profile::ContactLink;
+    let profile = AutofillProfile {
+        full_name: Some("Saeed Kolivand".to_string()),
+        email: Some("saeed@example.com".to_string()),
+        phone: Some("+31 6 12".to_string()),
+        location: Some("Amsterdam".to_string()),
+        linkedin: Some("https://linkedin.com/in/saeed".to_string()),
+        github: Some("https://github.com/saeed".to_string()),
+        website: Some("https://saeed.dev".to_string()),
+        extra_links: vec![ContactLink {
+            label: "Portfolio".to_string(),
+            url: "https://saeed.dev/p".to_string(),
+        }],
+    };
+    let value = serde_json::to_value(&profile).unwrap();
+    let mut keys: Vec<String> = value.as_object().unwrap().keys().cloned().collect();
+    keys.sort();
+    let mut expected: Vec<&str> = super::autofill_profile::CONTACT_PROFILE_AGENT_FIELDS.to_vec();
+    expected.sort_unstable();
+    assert_eq!(keys, expected);
+}
+
 #[test]
 fn resolve_profile_errors_when_store_missing() {
     // opt-in on but no profile available (store not managed) → a Config error, not a panic.

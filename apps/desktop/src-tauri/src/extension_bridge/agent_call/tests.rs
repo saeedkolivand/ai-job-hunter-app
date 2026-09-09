@@ -1684,7 +1684,12 @@ fn reshape_reply_projects_contact_profile_get_to_the_photoless_allowlist() {
         phone: Some("+31 6 12".to_string()),
         location: Some(LocalizedText {
             default: "Amsterdam".to_string(),
-            by_lang: Default::default(),
+            // Non-empty — an empty `by_lang` is dropped entirely by its own
+            // `#[serde(skip_serializing_if = "BTreeMap::is_empty")]`, which
+            // would make the `byLang` assertion below inert against exactly
+            // the skip-serialized shape it claims to cover (round-2 review,
+            // P-r2-R2-F3).
+            by_lang: [("de".to_string(), "Amsterdam".to_string())].into(),
         }),
         linkedin: Some("https://linkedin.com/in/saeed".to_string()),
         github: Some("https://github.com/saeed".to_string()),
@@ -1724,12 +1729,13 @@ fn reshape_reply_projects_contact_profile_get_to_the_photoless_allowlist() {
     let location = out_map["location"]
         .as_object()
         .expect("location is an object");
-    for key in location.keys() {
-        assert!(
-            ["default", "byLang"].contains(&key.as_str()),
-            "unexpected `location` key `{key}` crossed the wire"
-        );
-    }
+    // Exact set, not membership (round-2 review, P-r2-R2-F3): a membership
+    // check over whatever keys HAPPEN to be present is inert against a
+    // fixture whose `byLang` never serializes at all, which is exactly the
+    // shape the fixture above used to have.
+    let mut location_keys: Vec<&str> = location.keys().map(String::as_str).collect();
+    location_keys.sort_unstable();
+    assert_eq!(location_keys, ["byLang", "default"]);
     let extra_links = out_map["extraLinks"]
         .as_array()
         .expect("extraLinks is an array");
@@ -1744,19 +1750,17 @@ fn reshape_reply_projects_contact_profile_get_to_the_photoless_allowlist() {
     }
 }
 
-// ── contact_profile_set photo restore (round-1 review, issue #1180) ────────
+// ── contact_profile_set local-only-field restore (round-1 review, issue
+// #1180; generalised round-2, P-r2-R2-F2) ──────────────────────────────
 
 /// The CRITICAL repro (P-r1-F1): an agent read-modify-write that never saw
 /// `photo` (because [`project_contact_profile_get`] already stripped it) must
 /// not delete it on the whole-row-replace write.
 #[test]
-fn restore_contact_profile_photo_reinjects_the_stored_photo_when_the_payload_omits_it() {
+fn restore_local_only_contact_fields_reinjects_the_stored_photo_when_the_payload_omits_it() {
     let mut input = json!({ "profile": { "fullName": "Jane Doe" } });
-    restore_contact_profile_photo(
-        "contact_profile_set",
-        &mut input,
-        Some("data:image/png;base64,AAAA"),
-    );
+    let stored = json!({ "fullName": "Jane Doe", "photo": "data:image/png;base64,AAAA" });
+    restore_local_only_contact_fields("contact_profile_set", &mut input, Some(&stored));
     assert_eq!(input["profile"]["photo"], "data:image/png;base64,AAAA");
 }
 
@@ -1765,24 +1769,57 @@ fn restore_contact_profile_photo_reinjects_the_stored_photo_when_the_payload_omi
 /// an EXPLICIT `"photo": null` is making that same real choice and must not
 /// be overridden.
 #[test]
-fn restore_contact_profile_photo_respects_an_explicit_value_including_null() {
+fn restore_local_only_contact_fields_respects_an_explicit_value_including_null() {
     let mut input = json!({ "profile": { "photo": null } });
-    restore_contact_profile_photo("contact_profile_set", &mut input, Some("stored"));
+    let stored = json!({ "photo": "stored" });
+    restore_local_only_contact_fields("contact_profile_set", &mut input, Some(&stored));
     assert!(input["profile"]["photo"].is_null());
 }
 
 #[test]
-fn restore_contact_profile_photo_is_a_no_op_for_any_other_command() {
+fn restore_local_only_contact_fields_is_a_no_op_for_any_other_command() {
     let mut input = json!({ "profile": { "fullName": "Jane Doe" } });
-    restore_contact_profile_photo("jobs_list", &mut input, Some("stored"));
+    let stored = json!({ "photo": "stored" });
+    restore_local_only_contact_fields("jobs_list", &mut input, Some(&stored));
     assert!(input["profile"].get("photo").is_none());
 }
 
 #[test]
-fn restore_contact_profile_photo_is_a_no_op_when_nothing_is_stored() {
+fn restore_local_only_contact_fields_is_a_no_op_when_nothing_is_stored() {
     let mut input = json!({ "profile": { "fullName": "Jane Doe" } });
-    restore_contact_profile_photo("contact_profile_set", &mut input, None);
+    restore_local_only_contact_fields("contact_profile_set", &mut input, None);
     assert!(input["profile"].get("photo").is_none());
+}
+
+/// P-r2-R2-F2: the restore is not photo-specific. ANY key the stored
+/// profile carries that `CONTACT_PROFILE_AGENT_FIELDS` does not name is
+/// restored the same way, so the next local-only field added to
+/// `ContactProfile` gets this fix for free instead of reproducing the
+/// CRITICAL the day someone forgets this fn also names `photo` specifically.
+#[test]
+fn restore_local_only_contact_fields_restores_any_field_the_allowlist_does_not_name() {
+    let mut input = json!({ "profile": { "fullName": "Jane Doe" } });
+    let stored = json!({ "fullName": "Jane Doe", "someFutureLocalOnlyField": "keep-me" });
+    restore_local_only_contact_fields("contact_profile_set", &mut input, Some(&stored));
+    assert_eq!(input["profile"]["someFutureLocalOnlyField"], "keep-me");
+}
+
+/// P-r2-R2-F1 (HIGH): the pure fn above is well tested, but nothing pinned
+/// the ONE call site that actually wires it up to real app state — round-2
+/// review mutated `dispatch_direct`'s call to pass `None` instead of the
+/// real stored profile and the whole 5423-test suite stayed green. Source-
+/// guards the exact call text so that mutation can never pass silently
+/// again; a rename or reshuffle of the call site is a deliberate edit that
+/// updates this literal too, not a silent regression.
+#[test]
+fn dispatch_direct_wires_the_real_stored_profile_into_restore_local_only_contact_fields() {
+    const SOURCE: &str = include_str!("../agent_call.rs");
+    assert!(
+        SOURCE.contains(
+            "restore_local_only_contact_fields(command, &mut input, stored_profile.as_ref());"
+        ),
+        "dispatch_direct must pass the REAL stored profile, not a hardcoded None"
+    );
 }
 
 /// The gate is by command name, not by shape: another command whose reply
