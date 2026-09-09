@@ -80,8 +80,9 @@ describe('CliAgentConfig — fallback-list labelling (issue #1185)', () => {
 
   // claude-code/gemini-cli/antigravity don't implement `discover_models`
   // (Rust default `None`), so their `expandedModels` is always `source:
-  // 'fallback'` — the banner is permanent for them, not a failure state.
-  // The copy ("doesn't publish a live model list") must hold for that case too.
+  // 'fallback'` — the banner is permanent for them, not a failure state. The
+  // copy stays neutral ("not the CLI's own live catalogue") rather than
+  // asserting the CLI can't ever publish one — it must hold for that case too.
   it('shows the fallback notice for a non-Codex CLI agent (no live discovery to fail)', () => {
     render(
       <CliAgentConfig
@@ -92,6 +93,25 @@ describe('CliAgentConfig — fallback-list labelling (issue #1185)', () => {
       />
     );
     expect(screen.getByText('models.cli.fallbackList')).toBeInTheDocument();
+  });
+
+  // PR #1187 review: `usingFallbackList` must be driven by the entry's own
+  // `source` field, never by "does this backend implement discover_models" —
+  // otherwise every non-Codex CLI agent (claude-code/gemini-cli/antigravity,
+  // whose `discover_models` is `None` today) would show the banner
+  // unconditionally, and a FUTURE backend that gains live discovery would keep
+  // showing it too. A non-Codex backend returning plain (non-fallback) entries
+  // must hide the banner exactly like Codex's live-discovery case above.
+  it('hides the fallback notice for a non-Codex backend returning plain (non-fallback) entries', () => {
+    render(
+      <CliAgentConfig
+        {...baseProps}
+        provider="claude-code"
+        providerModel="sonnet"
+        expandedModels={[{ name: 'sonnet', displayName: 'Sonnet' }]}
+      />
+    );
+    expect(screen.queryByText('models.cli.fallbackList')).not.toBeInTheDocument();
   });
 
   // A live discovery entry has no reason to omit `displayName`, but the option

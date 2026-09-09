@@ -1316,6 +1316,24 @@ mod tests {
         );
     }
 
+    /// PR #1187 review: `ProviderModelInfo.source` in the TS contract
+    /// (`packages/shared/src/ipc/contracts/ai.ts`) is `?: 'fallback'` — present
+    /// with that exact value on a curated entry, ABSENT (not `null`) on a live
+    /// one. `.get("source")` pins that field-presence contract directly, rather
+    /// than relying on whole-value equality alone.
+    #[test]
+    fn fallback_entries_carry_source_and_live_entries_omit_the_key_entirely() {
+        let fallback_out = resolve_models(None, &["gpt-5-codex"]);
+        assert_eq!(
+            fallback_out[0].get("source").and_then(Value::as_str),
+            Some("fallback")
+        );
+
+        let live = vec![json!({ "name": "gpt-6-astra" })];
+        let live_out = resolve_models(Some(live), &["gpt-5-codex"]);
+        assert!(live_out[0].get("source").is_none());
+    }
+
     #[tokio::test]
     async fn detect_missing_binary_is_false() {
         let (ok, version) = detect("ajh-definitely-not-a-real-binary-x9z").await;
