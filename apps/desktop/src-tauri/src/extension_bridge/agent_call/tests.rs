@@ -1804,6 +1804,34 @@ fn restore_local_only_contact_fields_restores_any_field_the_allowlist_does_not_n
     assert_eq!(input["profile"]["someFutureLocalOnlyField"], "keep-me");
 }
 
+/// The allowlist skip is the OTHER half of the loop body, untouched by any
+/// test above (every prior fixture's allowlisted key was already present in
+/// the payload, so `profile.contains_key(key)` alone would have skipped it
+/// too). An agent CAN see `email` ([`CONTACT_PROFILE_AGENT_FIELDS`] names
+/// it), so omitting it from the whole-row-replace payload is a real,
+/// visible deletion — unlike `photo`, it must NOT be reinjected. Deleting
+/// the allowlist `continue` (leaving only the `contains_key` check) makes
+/// this fail while every other `restore_local_only_contact_fields` test
+/// above stays green.
+#[test]
+fn restore_local_only_contact_fields_does_not_reinject_an_omitted_allowlisted_field() {
+    let mut input = json!({ "profile": { "fullName": "Jane Doe" } });
+    let stored = json!({
+        "fullName": "Jane Doe",
+        "email": "old@example.com",
+        "photo": "data:image/png;base64,AAAA",
+    });
+    restore_local_only_contact_fields("contact_profile_set", &mut input, Some(&stored));
+    assert!(
+        input["profile"].get("email").is_none(),
+        "an allowlisted field the caller can see and chose to omit is a real deletion"
+    );
+    assert_eq!(
+        input["profile"]["photo"], "data:image/png;base64,AAAA",
+        "the non-allowlisted field must still be restored in the same call"
+    );
+}
+
 /// P-r2-R2-F1 (HIGH), reopened round 3 (P-r3-AC-R3-F1): a source-text guard
 /// on the call site passed under a mutation that made `stored_profile_value`
 /// itself return an empty profile (`.map(|_store| ContactProfile::default())`
