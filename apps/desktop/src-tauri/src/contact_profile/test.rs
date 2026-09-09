@@ -1352,3 +1352,27 @@ fn try_get_is_ok_with_the_default_profile_when_nothing_is_stored() {
     let store = ContactProfileStore::open(&dir.path().to_path_buf()).expect("open store");
     assert_eq!(store.try_get().unwrap(), ContactProfile::default());
 }
+
+/// `try_get()` has TWO independent failure sources mapped through two
+/// separate `.map_err(...)?` calls — the SQL read itself (a locked/busy row
+/// in production; here, a dropped table) and the JSON parse of what it
+/// returns. The corrupt-row tests above only exercise the parse one (the
+/// query itself still succeeds there, returning a row with bad `data`);
+/// this drops the table so `query_row` itself errors, proving that failure
+/// is propagated too rather than silently degrading the way the old
+/// `.ok().flatten()` implementation did for every failure source alike.
+#[test]
+fn try_get_reports_a_query_failure_as_an_error() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let store = ContactProfileStore::open(&dir.path().to_path_buf()).expect("open store");
+    store
+        .conn
+        .lock()
+        .execute("DROP TABLE contact_profile", [])
+        .expect("drop the table");
+
+    assert!(
+        store.try_get().is_err(),
+        "a query failure (e.g. a locked/busy row) must be reported, not read back as an empty profile"
+    );
+}
