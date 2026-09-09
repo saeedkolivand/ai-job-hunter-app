@@ -1264,6 +1264,7 @@ pub fn run() {
             export::commands::documents_export_and_save,
             export::commands::documents_render_preview_images,
             // updater
+            updater::updater_status,
             updater::updater_check,
             updater::updater_download,
             updater::updater_install,

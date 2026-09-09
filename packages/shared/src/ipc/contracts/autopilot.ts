@@ -17,6 +17,7 @@ export interface AutopilotContract {
 
   update(req: { autopilotId: string } & AutopilotUpdate): Promise<Autopilot>;
 
+  /** Permanently delete this autopilot and stop its scheduled runs — the found-jobs history it built goes with it. */
   remove(req: { autopilotId: string }): Promise<void>;
 
   /**

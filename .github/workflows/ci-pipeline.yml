@@ -273,6 +273,29 @@ jobs:
           pnpm gen:ipc:check
           echo "::endgroup::"
 
+      # The generator shells out to the real `rustfmt` (never a hand-rolled
+      # approximation of its wrapping heuristics — see gen-agent-catalogue.ts's
+      # own doc) to byte-match `cargo fmt`'s own output. Must be the SAME
+      # pinned toolchain apps/desktop/src-tauri/rust-toolchain.toml selects —
+      # `rustup component add rustfmt` alone would add it to the runner's
+      # default toolchain instead, which drifts independently of the pin.
+      - name: 🦀 Install rustfmt (for agent-catalogue codegen check)
+        uses: dtolnay/rust-toolchain@032958afbdc797a9164d3bc0b56325c1308924a5 # 1.97.1
+        with:
+          components: rustfmt
+
+      # apps/desktop/src-tauri/src/extension_bridge/agent_cli/catalogue.rs —
+      # the agent-CLI dispatch tier's declared input contract, derived from the
+      # tauri-client invoke() call sites + the IPC contract TSDoc; fails when
+      # either source moved without regenerating (issues #1163, #1158, #1160).
+      - name: 🧬 Check Agent Catalogue Codegen Drift
+        id: gen_agent_catalogue
+        continue-on-error: true
+        run: |
+          echo "::group::Checking agent catalogue codegen drift"
+          pnpm gen:agent-catalogue:check
+          echo "::endgroup::"
+
       - name: 🧬 Check Prompts Codegen Drift
         id: gen_prompts
         continue-on-error: true
@@ -369,9 +392,9 @@ jobs:
           echo "::endgroup::"
 
       - name: ❌ Check for Failures
-        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure' || steps.gen_prompts.outcome == 'failure' || steps.gen_api.outcome == 'failure' || steps.landing_drift.outcome == 'failure' || steps.agent_system.outcome == 'failure' || steps.tech_radar.outcome == 'failure' || steps.toolchain_pin.outcome == 'failure' || steps.event_subscriptions.outcome == 'failure' || steps.adr_citations.outcome == 'failure' || steps.log_error_leaks.outcome == 'failure'
+        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure' || steps.gen_agent_catalogue.outcome == 'failure' || steps.gen_prompts.outcome == 'failure' || steps.gen_api.outcome == 'failure' || steps.landing_drift.outcome == 'failure' || steps.agent_system.outcome == 'failure' || steps.tech_radar.outcome == 'failure' || steps.toolchain_pin.outcome == 'failure' || steps.event_subscriptions.outcome == 'failure' || steps.adr_citations.outcome == 'failure' || steps.log_error_leaks.outcome == 'failure'
         run: |
-          echo "::error file=package.json::Lint, format, IPC codegen, prompts codegen, API-docs codegen, landing-diagram, agent-system, tech-radar, toolchain-pin, event-subscription, ADR-citation, or log-error-leak drift check failed. Run 'pnpm lint:fix', 'pnpm format', 'pnpm gen:ipc', 'pnpm gen:prompts', 'pnpm gen:api', 'pnpm check:landing-drift', 'pnpm check:agent-system', 'pnpm check:tech-radar', 'pnpm check:toolchain-pin', 'pnpm check:event-subscriptions', 'pnpm check:adr-citations', and 'pnpm check:log-error-leaks' locally to fix."
+          echo "::error file=package.json::Lint, format, IPC codegen, agent-catalogue codegen, prompts codegen, API-docs codegen, landing-diagram, agent-system, tech-radar, toolchain-pin, event-subscription, ADR-citation, or log-error-leak drift check failed. Run 'pnpm lint:fix', 'pnpm format', 'pnpm gen:ipc', 'pnpm gen:agent-catalogue', 'pnpm gen:prompts', 'pnpm gen:api', 'pnpm check:landing-drift', 'pnpm check:agent-system', 'pnpm check:tech-radar', 'pnpm check:toolchain-pin', 'pnpm check:event-subscriptions', 'pnpm check:adr-citations', and 'pnpm check:log-error-leaks' locally to fix."
           echo "::error::Please fix the issues above before merging."
           exit 1
 

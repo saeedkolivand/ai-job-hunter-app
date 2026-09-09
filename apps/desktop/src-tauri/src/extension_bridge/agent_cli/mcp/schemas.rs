@@ -77,6 +77,21 @@ pub(super) fn tool_for(effect: &Effect) -> Option<&'static str> {
     }
 }
 
+/// Whether this server's [`Tier`] exposes an [`Effect`]'s own tool at all — `Read` and
+/// `NotExposed` are never gated (`NotExposed` has no tool to gate; a caller reaching this fn with
+/// it gets `true`, but nothing ever routes it here). Used by BOTH `commands_value` and
+/// `local_call_refusal` (issue #1154 A2-r2-AC-r2-2) — those two used to carry independent,
+/// hand-typed copies of this match with a comment claiming reuse that wasn't real; a future edit
+/// to one could put `commands` and the refusal back into disagreement about which effects a Tier
+/// exposes.
+pub(super) fn tier_exposes(tier: Tier, effect: &Effect) -> bool {
+    match effect {
+        Effect::Reversible => tier.allows_reversible(),
+        Effect::Irreversible(_) => tier.allows_irreversible(),
+        _ => true,
+    }
+}
+
 /// `commands`' `"unavailable"` text for a row whose tool exists but this server's [`Tier`] doesn't
 /// expose it. Only reached where [`tool_for`] returned `Some` and that gate is closed — `Read` is
 /// never gated and `NotExposed` never reaches here.
@@ -127,7 +142,11 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
             "Best Matches",
             UNTRUSTED_FIELDS_NOTICE,
             schema_object(
-                json!({ "limit": { "type": "integer", "minimum": 0, "description": format!("rows to return (default {DEFAULT_BEST_MATCHES_LIMIT}, server cap {MAX_BEST_MATCHES_LIMIT})") } }),
+                json!({
+                    "limit": { "type": "integer", "minimum": 0, "description": format!("rows to return (default {DEFAULT_BEST_MATCHES_LIMIT}, server cap {MAX_BEST_MATCHES_LIMIT})") },
+                    "cursor": { "type": "string", "description": "an opaque token from a prior page's nextCursor, valid only for the SAME `query` (present or omitted) that issued it; omit to start at the first page" },
+                    "query": { "type": "string", "description": "case-insensitive substring filter over title or company, applied to the already-capped ranked candidate list this tool computes — NOT the full stored corpus; use the found-jobs tool's own query to search every stored posting" },
+                }),
                 &[],
             ),
         ),
@@ -154,10 +173,21 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
         curated_tool(
             TOOL_PROFILE,
             "My Profile",
-            "Values are cleaned and collapsed for display — `location` resolves \
-             to a single string, `extraLinks` is filtered and capped, and `photo` is never \
-             included — and this consent gate is specific to this tool; it does not apply to \
-             any other route the app might expose the same underlying data through.",
+            "Contact fields only (name, email, phone, location, links) — for the résumé/document \
+             text itself, read documents:documents_list (rows carry the document \
+             text, fenced and capped at the fence limit); documents:documents_get_text with \
+             {\"id\": <that row's `_id` value>} (the row's key is `_id`, but \
+             documents_get_text's own parameter is named `id`) returns the same text by id, \
+             fenced and capped at the same limit — neither call returns more of a document than \
+             that one cap; an `id` that matches no stored document returns the SAME EMPTY \
+             fenced block (`<job_posting>\\n\\n</job_posting>`) as a document that resolved but \
+             has no extracted text — not an error either way, and the two are NOT \
+             distinguishable from this reply alone; cross-check the `_id` against \
+             documents:documents_list's own rows to tell them apart. Values are cleaned and \
+             collapsed for display — `location` resolves to a single string, `extraLinks` is \
+             filtered and capped, and `photo` is never included — and this consent gate is \
+             specific to this tool; it does not apply to any other route the app might expose \
+             the same underlying data through.",
             no_args.clone(),
         ),
         curated_tool(TOOL_AUTOMATIONS, "Automations", "", no_args),
@@ -167,19 +197,28 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
             UNTRUSTED_FIELDS_NOTICE,
             schema_object(
                 json!({
-                    "autopilotId": { "type": "string", "description": "the target autopilot's id (see `automations`)" },
+                    "autopilotId": { "type": "string", "description": "the target autopilot's id (see `automations`); omit to span every autopilot, deduped by posting identity" },
                     "limit": { "type": "integer", "minimum": 1, "description": format!("rows to return (default {DEFAULT_FOUND_JOBS_LIMIT}, server cap {MAX_FOUND_JOBS_LIMIT})") },
-                    "cursor": { "type": "string", "description": "an opaque token from a prior page's nextCursor, valid only for the autopilotId that issued it; omit to start at the first page" },
+                    "cursor": { "type": "string", "description": "an opaque token from a prior page's nextCursor, valid only for the SAME autopilotId scope AND filter arguments that issued it (present or omitted); omit to start at the first page" },
+                    "minScore": { "type": "number", "description": "only rows scored at least this value; unscored rows are excluded when set" },
+                    "country": { "type": "string", "description": "case-insensitive substring match against the row's location" },
+                    "remote": { "type": "boolean", "description": "true keeps only rows determined remote (board flag, registry or location text); false keeps only rows determined NOT remote; a row with no location and no remote signal is undecided and matches neither" },
+                    "applied": { "type": "boolean", "description": "filter to rows already applied to (true) or not (false)" },
+                    "query": { "type": "string", "description": "case-insensitive substring filter over title or company" },
+                    "includeDescription": { "type": "boolean", "description": "include the full (fenced, capped) posting description on each row; rows are compact without it" },
                 }),
-                &["autopilotId"],
+                &[],
             ),
         ),
         json!({
             "name": TOOL_COMMANDS,
             "title": "Commands",
-            "description": "Enumerate every command this server can dispatch through call-read/call-reversible/call-irreversible, grouped by Effect class. Local — no bridge call, works even with the app closed. A row this server wasn't launched to expose is still listed, marked \"unavailable\" with the flag that would expose it, never silently dropped.",
+            "description": "Enumerate every command this server can dispatch through call-read/call-reversible/call-irreversible, grouped by Effect class. Local — no bridge call, works even with the app closed. Each row carries a one-line description (when the source has one) and args: either null (this command's input contract is not catalogued — nothing here validates its keys) or a list of {name, required, fields?} — fields lists a wrapper key's own nested field names when those resolved, and is null when they did not: a null fields wrapper is still checked for presence, but nothing inside it is validated. An Irreversible row also carries proofKind (\"field\" | \"count\" | \"response_value\"): what a confirm ceremony's proof will be, answerable without dispatching anything. proofField (the field name to read it from) is present only when proofKind is \"field\" — a \"count\" proof is the array length/total, a \"response_value\" proof is the whole read response, and neither names a field. Filter with effect and/or namespace (an exact match on the row's own namespace, never partial). A row this server wasn't launched to expose is still listed, marked \"unavailable\" with the flag that would expose it, never silently dropped.",
             "inputSchema": schema_object(
-                json!({ "effect": { "type": "string", "enum": EFFECT_FILTER_VALUES, "description": "filter to one effect class" } }),
+                json!({
+                    "effect": { "type": "string", "enum": EFFECT_FILTER_VALUES, "description": "filter to one effect class" },
+                    "namespace": { "type": "string", "description": "filter to one namespace, e.g. \"jobs\" — an exact match on the row's own namespace, never a partial one" },
+                }),
                 &[],
             ),
             "annotations": read_only_annotations(),

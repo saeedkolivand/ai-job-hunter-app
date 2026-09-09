@@ -666,6 +666,9 @@ fn every_registered_fence_tag_is_load_bearing() {
 const EXPECTED_FENCE_TAGS: &[&str] = &[
     "candidate_resume",
     "job_posting",
+    "user_document",
+    // Issue #1157/#1162 AC-7 — `notifications::AppNotification.title`/`.body`.
+    "app_notification",
     "company_research",
     "question",
     "web_search_notes",
@@ -693,4 +696,6 @@ const EXPECTED_FENCE_TAGS: &[&str] = &[
     "market_conventions",
     "letter_date",
     "posting_candidate",
+    // SEC-1 fix (issue #1157) — `extension_bridge::agent_call::Refusal::InvokeError`'s detail.
+    "command_error",
 ];

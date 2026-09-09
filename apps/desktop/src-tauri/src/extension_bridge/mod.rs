@@ -423,6 +423,17 @@ impl BridgeState {
         self.agent_query_limiter.lock().try_acquire(resource)
     }
 
+    /// Milliseconds until [`Self::try_acquire_agent`] would next admit one token for `resource`
+    /// (issue #1155) — call this ONLY right after a failed [`Self::try_acquire_agent`] for the
+    /// SAME resource, in the SAME dispatch match arm: that failed call already advanced the
+    /// correct bucket's clock to "now", so this is a pure read of its current fractional token
+    /// count, not a second `Instant::now()` advance. Both `agent.query`'s own throttle refusal
+    /// and `agent.call`'s (via `agent_call::throttle_key`) read this SAME bucket, never a
+    /// duplicated rate constant.
+    pub(super) fn agent_retry_after_ms(&self, resource: &str) -> u64 {
+        self.agent_query_limiter.lock().retry_after_ms(resource)
+    }
+
     fn set_port(&self, port: Option<u16>) {
         *self.port.lock() = port;
     }
@@ -905,10 +916,15 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                 );
                 None
             }
-            FrameDecision::AgentQuery { req_id, payload } => Some(agent_read::throttled_reply(
-                &req_id,
-                agent_read::resource_name(&payload),
-            )),
+            FrameDecision::AgentQuery { req_id, payload } => {
+                let retry_after_ms =
+                    state.agent_retry_after_ms(agent_read::resource_name(&payload));
+                Some(agent_read::throttled_reply(
+                    &req_id,
+                    &payload,
+                    retry_after_ms,
+                ))
+            }
             // ADR-038 §2 — same spawn-off-the-read-loop + shared-throttle
             // reasoning as AgentQuery above; see `stream::spawn_agent_call`
             // and `agent_call::throttle_key`'s own docs.
@@ -933,7 +949,13 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
             // clamped inside `agent_call::refusal_reply`, which is the only
             // thing bounding this frame. See `REFUSAL_IDENT_CAP`.
             FrameDecision::AgentCall { req_id, payload } => {
-                Some(agent_call::throttled_reply(&req_id, &payload))
+                let command = payload.get("command").and_then(Value::as_str).unwrap_or("");
+                let retry_after_ms = state.agent_retry_after_ms(agent_call::throttle_key(command));
+                Some(agent_call::throttled_reply(
+                    &req_id,
+                    &payload,
+                    retry_after_ms,
+                ))
             }
             FrameDecision::AnswerAssist { req_id, payload } => {
                 // Spawned onto its OWN task (see `stream::spawn_answer_assist`)

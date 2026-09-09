@@ -110,6 +110,7 @@ fn found(score: Option<f64>) -> FoundJob {
         url: "https://example.com/job".into(),
         location: None,
         board: None,
+        board_remote: false,
         description: None,
         salary_min: None,
         salary_max: None,
@@ -591,6 +592,40 @@ fn build_found_job_copies_posted_at_from_the_posting() {
     let dateless = posting("Rust Engineer", None);
     let job = build_found_job(&dateless, "", 0);
     assert_eq!(job.posted_at, None);
+}
+
+// ── board_remote projection (round-3 fix, H1) ─────────────────────────────
+
+#[test]
+fn build_found_job_copies_the_boards_remote_flag_from_extra() {
+    // An all-remote board (WeWorkRemotely/RemoteOK/Remotive/Jobicy) sets
+    // `extra["remote"] = true` unconditionally, often alongside a `None` or
+    // marker-free `location` — `build_found_job` must carry that flag
+    // through onto `FoundJob.board_remote` so `found-jobs`' `remote` filter
+    // can trust it, not just `location` text.
+    let mut remote = posting("Rust Engineer", None);
+    remote
+        .extra
+        .insert("remote".to_string(), serde_json::json!(true));
+    let job = build_found_job(&remote, "", 0);
+    assert!(job.board_remote);
+
+    let onsite = posting("Rust Engineer", None);
+    let job = build_found_job(&onsite, "", 0);
+    assert!(
+        !job.board_remote,
+        "absent extra[\"remote\"] must default false"
+    );
+
+    let mut wrong_type = posting("Rust Engineer", None);
+    wrong_type
+        .extra
+        .insert("remote".to_string(), serde_json::json!("yes"));
+    let job = build_found_job(&wrong_type, "", 0);
+    assert!(
+        !job.board_remote,
+        "a non-bool extra[\"remote\"] must not be treated as true"
+    );
 }
 
 // ── Phase 2: semantic re-rank (ADR-020 addendum) ──────────────────────────

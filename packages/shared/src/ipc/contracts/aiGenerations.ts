@@ -139,7 +139,9 @@ export interface AiGenerationsContract {
    */
   save(req: AiGenerationSaveRequest): Promise<AiGenerationSaveResult>;
   update(req: AiGenerationUpdateRequest): Promise<void>;
+  /** Permanently delete one saved generation row by id — no confirmation short of this call. */
   remove(id: string): Promise<void>;
+  /** Permanently delete every generation row whose id is in `ids` — same no-confirmation delete as `remove`, batched. */
   removeBulk(ids: string[]): Promise<void>;
 }
 

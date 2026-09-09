@@ -1,11 +1,14 @@
 //! `agent.query` → `agent.result` — the read-only agent/CLI surface (issue
 //! #1084, PR 1). Six resources, one dispatch table ([`RESOURCES`]):
-//! `best-matches` (optional `limit`), `job` (`url` required), `profile`,
-//! `automations`, `schema`, `found-jobs` (issue #1115 — `autopilotId`
-//! required, optional `limit`/`cursor`). `url` is the CROSS-RESOURCE KEY for
-//! `job` — not an id (a `best-matches` row's own `key` is a cluster id,
-//! never echoed here); `found-jobs` instead keys off `autopilotId` since it
-//! must survive across autopilots that legitimately share a posting.
+//! `best-matches` (optional `limit`/`cursor`/`query`, issue #1146 P11),
+//! `job` (`url` required), `profile`, `automations`, `schema`, `found-jobs`
+//! (issue #1115 — optional `autopilotId`/`limit`/`cursor` plus the
+//! `minScore`/`country`/`remote`/`applied`/`query` filters, issues
+//! #1167/#1168). `url` is the CROSS-RESOURCE KEY for `job` — not an id (a
+//! `best-matches` row's own `key` is a cluster id, never echoed here);
+//! `found-jobs` instead keys its cursor off `autopilotId` (or a fixed
+//! all-autopilots sentinel when omitted) since it must survive across
+//! autopilots that legitimately share a posting.
 //!
 //! ## Allowlist projections, absent by construction
 //! Every payload below is built by [`project`]: round-trip the SOURCE value
@@ -87,9 +90,23 @@ const RES_FOUND_JOBS: &str = "found-jobs";
 pub(super) const RESOURCES: &[(&str, &str)] = &[
     (
         RES_BEST_MATCHES,
-        "Strongest jobs across every autopilot. Optional `limit` (default 20, max 50).",
+        "Strongest jobs across every autopilot, ranked. Optional `limit` (default 20, max 100), \
+         `cursor` (repeat with the returned `nextCursor` until it is `null` to reach every row \
+         past the first page; a cursor is opaque and only valid for the same `query` — present \
+         or omitted — that issued it), and `query` (case-insensitive substring over title or \
+         company). `query` filters the already-capped, ranked top-N candidate list this tool \
+         computes (NOT the full stored corpus) — a posting outside that cap reads as absent even \
+         when it is still in storage; use `found-jobs`' own `query` to search every stored \
+         posting. `total` is the size of this capped ranked list, not the number of qualifying \
+         postings in storage — use `found-jobs` for a true corpus count.",
     ),
-    (RES_JOB, "Full detail for one posting. `url` required."),
+    (
+        RES_JOB,
+        "Full detail for one posting, matched by its posting `url` ONLY — never by title or \
+         company (use `found-jobs`' own `query` filter for that). `url` required. `applied` is \
+         OMITTED (never a confident `false`) when the applications store is unreadable; the \
+         reply then carries `appliedUnavailable: true`.",
+    ),
     (
         RES_PROFILE,
         "Contact-profile fields for autofill — same consent gate as `profile.get`.",
@@ -102,10 +119,19 @@ pub(super) const RESOURCES: &[(&str, &str)] = &[
     (RES_SCHEMA, "This resource list."),
     (
         RES_FOUND_JOBS,
-        "Paginated traversal of ONE autopilot's complete found-jobs list (issue #1115). \
-         `autopilotId` required, optional `limit`/`cursor` — repeat with the returned \
-         `nextCursor` until it is `null`. A `nextCursor` is opaque and only valid for \
-         the autopilot that returned it.",
+        "Paginated traversal of the stored found-jobs list (issue #1115). Every reply carries \
+         `total` — the filtered row count THIS call matches, so a count never requires a full \
+         traversal. `autopilotId` is optional (issue #1168): given, scopes to one autopilot; \
+         omitted, spans every autopilot (deduped by posting identity) — the one call that \
+         answers \"is this role already in my list?\" (`found-jobs {query: \"…\"}`). Optional \
+         `limit`/`cursor` — repeat with the returned `nextCursor` until it is `null`; a cursor \
+         is opaque and only valid for the same `autopilotId` scope AND the same filter \
+         arguments that issued it. Optional \
+         server-side filters `minScore`, `country` (substring match against location), `remote` \
+         (bool), `applied` (bool) and `query` (substring over title/company). Rows are compact \
+         (no `description`) unless `includeDescription: true` is set. Each row's `applied` is \
+         OMITTED (never a confident `false`) when the applications store is unreadable; the \
+         reply then carries `appliedUnavailable: true` and the `applied` filter is refused.",
     ),
 ];
 
@@ -151,6 +177,18 @@ impl TokenBucket {
             false
         }
     }
+
+    /// Milliseconds until this bucket would hold one full token, computed from its CURRENT
+    /// fractional `tokens` count (issue #1155) — a pure read, not a second clock advance. Only
+    /// meaningful called right after a failed [`Self::try_acquire_at`] in the SAME tick: that
+    /// call already set `self.tokens`/`self.last` to "now", so there is nothing left to advance.
+    fn retry_after_ms(&self) -> u64 {
+        if self.tokens >= 1.0 {
+            return 0;
+        }
+        let needed_secs = (1.0 - self.tokens) * self.refill_secs;
+        (needed_secs * 1000.0).ceil() as u64
+    }
 }
 
 /// Cheap-read bucket (`job`/`profile`/`automations`/`schema`): burst 10,
@@ -170,7 +208,10 @@ const AGENT_CHEAP_REFILL_SECS: f64 = 1.0;
 /// in the matching domain could add a real compute-side cap if that's not
 /// enough — flagged in the PR1 handoff.
 const AGENT_BEST_MATCHES_BURST: f64 = 1.0;
-const AGENT_BEST_MATCHES_REFILL_SECS: f64 = 30.0;
+// `pub(super)` (issue #1155) — `extension_bridge::test`'s
+// `bridge_state_agent_retry_after_ms_reads_the_same_bucket_try_acquire_agent_drew_from` anchors to
+// this value directly, so a `BridgeState`-level test can't be satisfied by any hardcoded constant.
+pub(super) const AGENT_BEST_MATCHES_REFILL_SECS: f64 = 30.0;
 
 /// Token-bucket throttle for `agent.query`, shared across EVERY connection for
 /// this pairing (lives on `BridgeState`, not per-connection) for the same
@@ -213,6 +254,18 @@ impl AgentQueryThrottle {
 
     pub(super) fn try_acquire(&mut self, resource: &str) -> bool {
         self.try_acquire_at(resource, std::time::Instant::now())
+    }
+
+    /// [`TokenBucket::retry_after_ms`] for whichever bucket `resource` draws from — same routing
+    /// [`Self::try_acquire_at`] uses, so the two can never disagree about which bucket a resource
+    /// belongs to. `pub(super)` (issue #1155) — `BridgeState::agent_retry_after_ms` is the one
+    /// caller, reached right after a failed `try_acquire` for the same resource.
+    pub(super) fn retry_after_ms(&self, resource: &str) -> u64 {
+        if resource == RES_BEST_MATCHES {
+            self.best_matches.retry_after_ms()
+        } else {
+            self.cheap.retry_after_ms()
+        }
     }
 }
 
@@ -295,6 +348,12 @@ struct AgentJob {
     posted_at: Option<i64>,
     found_at: u64,
     is_new: bool,
+    /// NOT a plain passthrough of the stored `FoundJob::applied` (issue
+    /// #1166/#1169) — that field's own doc says the stored value is ALWAYS
+    /// `false`. [`resolve_job`] overwrites this with a value derived off
+    /// `commands::autopilot::applied_job_urls`, the same set
+    /// `found_jobs::project_found_job_row` and `best_matches::mark_applied`
+    /// derive theirs from.
     applied: bool,
     is_agency: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -307,31 +366,189 @@ struct AgentJob {
 /// content (wire-error discipline, matches every other verb in this bridge).
 const JOB_NOT_FOUND_MESSAGE: &str = "no job found for this url";
 
+/// Fixed detail attached to [`JOB_NOT_FOUND_MESSAGE`] (issue #1166) — names
+/// where a caller that still misses can read the url the app actually
+/// stored, rather than being left at a dead end.
+const JOB_NOT_FOUND_DETAIL: &str =
+    "the stored url for a posting can be read from the `best-matches` or `found-jobs` resource";
+
 /// Pure core of the `job` resource: find the first `FoundJob` across every
 /// (non-filtered — every status, not just active) autopilot record whose
-/// normalized url matches, then project it. Mirrors
-/// `applied_check::resolve_applied_check`'s pure/impure split — directly
-/// unit-testable with hand-built `Autopilot` records, no `AppHandle`.
+/// identity matches, then project it. Mirrors `applied_check::
+/// resolve_applied_check`'s pure/impure split — directly unit-testable with
+/// hand-built `Autopilot` records, no `AppHandle`.
 ///
-/// Both sides of the compare run through
+/// Two independent compares, either one wins (issue #1166):
+///
+/// 1. **Identity** — `caller_identity` (already extracted from the raw
+///    caller url by [`job_resource`] via
+///    [`crate::scraping::scrape_url::job_identity`]) against the SAME
+///    extraction run on each stored url. This is what makes
+///    `de.linkedin.com/jobs/view/<id>`, `www.linkedin.com/jobs/view/<id>`,
+///    the numeric-only and slugged `/jobs/view/` forms, and the
+///    `currentJobId=<id>` query form all resolve to one posting — none of
+///    that is a byte-for-byte url difference the string compare below could
+///    ever bridge.
+/// 2. **Normalized string** — the pre-#1166 fallback, unchanged, for boards
+///    with no stable id space.
+///
+/// Both sides of BOTH compares run through
 /// [`decode_unreserved`](crate::applications::decode_unreserved) first (issue
 /// #1128): a STORED url can carry the percent-encoded spelling just as easily
 /// as a caller-supplied one, so decoding only the caller's half would fix the
 /// reported direction and leave the mirror image broken. `normalized_url` is
 /// pre-decoded by [`job_resource`]; this is the stored half.
-fn resolve_job(records: &[crate::autopilot::Autopilot], normalized_url: &str) -> AppResult<Value> {
+///
+/// `applied_urls` is [`crate::commands::autopilot::applied_job_urls`]'s
+/// output (issue #1166/#1169, HIGH — before this fix `AgentJob::applied` was
+/// a plain passthrough of `FoundJob::applied`, whose own doc says the stored
+/// value is ALWAYS `false` and only the read path ever fills it in; the two
+/// read paths that DO fill it in — `commands::autopilot::enrich_applied` and
+/// `found_jobs::project_found_job_row` — never ran on this one, so `job`
+/// reported every posting as not-applied even after a real application
+/// existed, the exact duplicate-application hazard this surface exists to
+/// prevent). Derived here through [`job_is_applied`], the SAME identity-aware
+/// helper `found_jobs::candidate_jobs` derives its own `applied` from (round-4
+/// fix T4 — before this, the two surfaces disagreed the moment an
+/// application was recorded under a different host/path spelling than the
+/// one currently stored on the found job), off the SAME set, so `job` and
+/// `found-jobs` agree by construction on one url.
+///
+/// Assumes the applications store is present; see
+/// [`resolve_job_for_store`] for the store-unavailable path (round-4 fix T3).
+/// `job_resource` calls [`resolve_job_for_store`] directly (it always knows
+/// whether the store is present) — this default-store wrapper exists only so
+/// the many existing store-present tests keep their original call shape.
+#[cfg(test)]
+fn resolve_job(
+    records: &[crate::autopilot::Autopilot],
+    caller_identity: Option<(&'static str, String)>,
+    normalized_url: &str,
+    applied_urls: &std::collections::HashSet<String>,
+) -> AppResult<Value> {
+    resolve_job_for_store(records, caller_identity, normalized_url, applied_urls, true)
+}
+
+/// Whether `job_url` (a `FoundJob`'s own RAW, never-normalized url) counts as
+/// applied against `applied_urls` (`commands::autopilot::applied_job_urls`'s
+/// already-normalized set) — round-4 fix T4. Byte-comparing two normalized
+/// strings misses a LinkedIn regional host (`de.linkedin.com` vs a stored
+/// `linkedin.com`) or a slugged `/jobs/view/` path against a bare numeric
+/// one, the SAME identity gap #1166 closed for `resolve_job`'s own posting
+/// lookup. Tries [`crate::scraping::scrape_url::job_identity`] first (a board
+/// with a stable id space folds every host/path variant onto one id) and
+/// falls back to the plain normalized-string compare for a board with none.
+/// Shared by [`resolve_job_for_store`] and `found_jobs::candidate_jobs` so
+/// the two surfaces can never disagree about the same job.
+pub(super) fn job_is_applied(
+    job_url: &str,
+    applied_urls: &std::collections::HashSet<String>,
+) -> bool {
+    let decoded = crate::applications::decode_unreserved(job_url);
+    // Check BOTH the raw and the unreserved-decoded spelling (round-4 fix
+    // T4-cont — `applied_urls` is keyed by `normalize_job_url(raw)`, never
+    // decoded per that fn's own doc, so a job whose stored url and recorded
+    // application agree on a percent-escaped spelling, e.g. `%2D`, only
+    // matched when the raw side was compared too; decoding first turned an
+    // exact-spelling match into a miss on any board `job_identity` doesn't
+    // cover).
+    if applied_urls.contains(&crate::applications::normalize_job_url(job_url))
+        || applied_urls.contains(&crate::applications::normalize_job_url(&decoded))
+    {
+        return true;
+    }
+    let Some(identity) = crate::scraping::scrape_url::job_identity(&decoded) else {
+        return false;
+    };
+    applied_urls.iter().any(|stored| {
+        let stored_decoded = crate::applications::decode_unreserved(stored);
+        crate::scraping::scrape_url::job_identity(&stored_decoded).as_ref() == Some(&identity)
+    })
+}
+
+/// Precompute [`job_identity`](crate::scraping::scrape_url::job_identity) for
+/// every entry in `applied_urls`, once — round-4 perf fix (PR #1182 round-5):
+/// [`found_jobs::candidate_jobs`] calls the identity fallback below once per
+/// STORED row, and re-decoding + re-parsing the whole `applied_urls` set on
+/// every one of those calls was O(found jobs × applications) `Url::parse` +
+/// allocation, ahead of `limit` ever applying. [`job_is_applied_indexed`]
+/// takes this index instead of re-deriving it; [`job_is_applied`] (the
+/// single-lookup `job` resource path, called once per call, never in a loop)
+/// keeps its own inline scan — building an index there would cost the same
+/// as the scan it replaces.
+pub(super) fn applied_url_identities(
+    applied_urls: &std::collections::HashSet<String>,
+) -> std::collections::HashSet<(&'static str, String)> {
+    applied_urls
+        .iter()
+        .filter_map(|stored| {
+            let decoded = crate::applications::decode_unreserved(stored);
+            crate::scraping::scrape_url::job_identity(&decoded)
+        })
+        .collect()
+}
+
+/// Same contract as [`job_is_applied`], but takes a precomputed
+/// [`applied_url_identities`] index instead of re-deriving one per call —
+/// see that fn's own doc for why. Must stay behaviourally identical to
+/// `job_is_applied` for the same inputs; `found_jobs::tests` pins the two
+/// against each other.
+pub(super) fn job_is_applied_indexed(
+    job_url: &str,
+    applied_urls: &std::collections::HashSet<String>,
+    applied_identities: &std::collections::HashSet<(&'static str, String)>,
+) -> bool {
+    let decoded = crate::applications::decode_unreserved(job_url);
+    if applied_urls.contains(&crate::applications::normalize_job_url(job_url))
+        || applied_urls.contains(&crate::applications::normalize_job_url(&decoded))
+    {
+        return true;
+    }
+    let Some(identity) = crate::scraping::scrape_url::job_identity(&decoded) else {
+        return false;
+    };
+    applied_identities.contains(&identity)
+}
+
+/// [`resolve_job`] plus the store-unavailable path (round-4 fix T3): when
+/// `store_present` is `false`, the caller's `applied_urls` is unconditionally
+/// empty (`applied_job_urls`'s own doc — a missing store collapses to "the
+/// user has applied to nothing"), so reporting `applied: false` from it would
+/// be a confident, WRONG answer for the unsafe direction — an autonomous
+/// caller could re-apply to a job it already applied to. Omitting the key
+/// (absent ≠ false) plus a `appliedUnavailable: true` marker lets a caller
+/// tell "definitely not applied" from "cannot tell right now" apart.
+fn resolve_job_for_store(
+    records: &[crate::autopilot::Autopilot],
+    caller_identity: Option<(&'static str, String)>,
+    normalized_url: &str,
+    applied_urls: &std::collections::HashSet<String>,
+    store_present: bool,
+) -> AppResult<Value> {
     let found = records
         .iter()
         .find_map(|ap| {
             ap.found_jobs.iter().find(|j| {
-                crate::applications::normalize_job_url(&crate::applications::decode_unreserved(
-                    &j.url,
-                )) == normalized_url
+                let decoded = crate::applications::decode_unreserved(&j.url);
+                if let Some(caller) = &caller_identity {
+                    if crate::scraping::scrape_url::job_identity(&decoded).as_ref() == Some(caller)
+                    {
+                        return true;
+                    }
+                }
+                crate::applications::normalize_job_url(&decoded) == normalized_url
             })
         })
         .ok_or_else(|| AppError::Validation(JOB_NOT_FOUND_MESSAGE.to_string()))?;
     let mut value = project_value::<_, AgentJob>(found)
         .ok_or_else(|| AppError::Message("failed to project job".to_string()))?;
+    if store_present {
+        let is_applied = job_is_applied(&found.url, applied_urls);
+        value["applied"] = json!(is_applied);
+    } else if let Value::Object(map) = &mut value {
+        map.remove("applied");
+        map.insert("appliedUnavailable".to_string(), json!(true));
+    }
     fence_description(&mut value);
     fence_posting_display_fields(&mut value);
     Ok(value)
@@ -346,7 +563,8 @@ fn resolve_job(records: &[crate::autopilot::Autopilot], normalized_url: &str) ->
 /// surface it reaches. `title`/`company`/`location` share this provenance —
 /// the follow-up this doc once deferred landed as
 /// [`fence_posting_display_fields`], called separately by both this fn's own
-/// caller ([`resolve_job`]) and [`fence_best_match_fields`].
+/// caller ([`resolve_job`]) and [`resolve_best_matches`] (one row at a time,
+/// per [`fence_posting_display_fields`]'s own doc).
 fn fence_description(value: &mut Value) {
     let Some(desc) = value.get("description").and_then(Value::as_str) else {
         return;
@@ -357,9 +575,14 @@ fn fence_description(value: &mut Value) {
 
 /// `automations` resource's per-row payload — projected off `autopilot::Autopilot`.
 /// Excludes `resumeText`/`coverLetter`/`assistant`/`assistantProvider`/
-/// `assistantModel`/`assistantBaseUrl`/`foundJobs`/`lastRunSummaries` — the
-/// first four forbidden outright, the last two out of scope for a status
-/// listing (`best-matches` and `job` already cover found-jobs detail).
+/// `assistantModel`/`assistantBaseUrl`/`foundJobs`/`lastRunSummaries`/
+/// `totalApplied` — the first four forbidden outright, the next two out of
+/// scope for a status listing (`best-matches` and `job` already cover
+/// found-jobs detail), and `totalApplied` dropped (issue #1171): the field
+/// is dead on the source struct too (`docs/ARCHITECTURE_STATUS.md`'s own
+/// "Drop dead `totalApplied` counter" row) — nothing in this codebase ever
+/// writes it past its zero default, so exposing it here promised a real
+/// applied-count that never existed.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AgentAutomation {
@@ -383,7 +606,6 @@ struct AgentAutomation {
     /// `found_jobs.len()` expression, so the two surfaces agree by construction).
     /// This is the number a caller asking "how many jobs did this find?" wants.
     found_jobs_total: u32,
-    total_applied: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     run_status: Option<crate::autopilot::RunStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -430,7 +652,6 @@ fn project_automation(ap: &crate::autopilot::Autopilot) -> AgentAutomation {
         },
         total_found: ap.total_found,
         found_jobs_total: ap.found_jobs.len() as u32,
-        total_applied: ap.total_applied,
         run_status: ap.run_status.clone(),
         last_run_at: ap.last_run_at,
         created_at: ap.created_at,
@@ -513,36 +734,160 @@ struct AgentBestMatch {
 /// `pub(in crate::extension_bridge)`: `agent_cli::mcp` derives the
 /// `best-matches` tool schema's advertised default/cap from THESE numbers
 /// rather than a hand-typed copy that can silently drift out of sync.
+///
+/// `MAX_BEST_MATCHES_LIMIT` equals
+/// `commands::autopilot::best_matches::BEST_MATCHES_CAP` (round 3 fix,
+/// B3-r3-F2 — it used to be half that cap, so a full traversal took 2–5
+/// calls, each one re-running the command's own real clustering pass with
+/// no cache; the 30s-refill throttle bucket sized for exactly one call per
+/// traversal turned that into 30–120s of forced stalls). Equal to the cap
+/// means one max-limit page always reaches the whole reachable set in a
+/// SINGLE call — see
+/// `agent_read::tests::max_best_matches_limit_covers_the_full_capped_row_set_in_one_page`.
 pub(super) const DEFAULT_BEST_MATCHES_LIMIT: usize = 20;
-pub(super) const MAX_BEST_MATCHES_LIMIT: usize = 50;
+pub(super) const MAX_BEST_MATCHES_LIMIT: usize = 100;
 
+/// Issue #1167/#1146 P11 — reuses `extension_bridge::paging::clamp_limit`, the
+/// same shared primitive `found_jobs` uses, rather than a hand-rolled copy: the
+/// hand-rolled version this replaced let `limit: 0` through as `0` instead of
+/// falling back to [`DEFAULT_BEST_MATCHES_LIMIT`] (`Value::as_u64` reads `0` as
+/// `Some(0)`, so `.unwrap_or` never fired) — a zero-row page whose `nextCursor`
+/// never advances, hanging any paging loop built on it forever.
 fn clamp_best_matches_limit(payload: &Value) -> usize {
-    payload
-        .get("limit")
-        .and_then(Value::as_u64)
-        .map(|n| n as usize)
-        .unwrap_or(DEFAULT_BEST_MATCHES_LIMIT)
-        .min(MAX_BEST_MATCHES_LIMIT)
+    crate::extension_bridge::paging::clamp_limit(
+        payload,
+        DEFAULT_BEST_MATCHES_LIMIT,
+        MAX_BEST_MATCHES_LIMIT,
+    )
 }
 
-/// Pure core of `best-matches`: project + `limit`-truncate an already-computed
-/// row set. Directly unit-testable with hand-built `Value` rows, no
-/// `AppHandle` — the impure half ([`best_matches_resource`]) only resolves
-/// `commands::autopilot::autopilot_best_matches`'s output and `limit`.
-fn resolve_best_matches(rows: &[Value], total: u64, limit: usize) -> Value {
-    let matches: Vec<AgentBestMatch> = rows
+/// A `cursor` that isn't a nextCursor SHAPE at all — mirrors
+/// `found_jobs::MALFORMED_CURSOR_MESSAGE`'s own wording for the identical
+/// case, one hop over.
+const BEST_MATCHES_MALFORMED_CURSOR_MESSAGE: &str =
+    "cursor must be a nextCursor returned by a best-matches page — a bare offset is not one; \
+     restart from `cursor: null`";
+
+/// A well-formed `<issuer>:<offset>` cursor issued under a DIFFERENT `query`
+/// (round 2 fix, B3-r1-F4 — `best-matches`' row set now depends on `query`
+/// too, issue #1168, so a bare offset let a cursor replayed under a
+/// DIFFERENT query silently page a different filtered list at a stale
+/// offset, skipping rows rather than refusing). Mirrors
+/// `found_jobs::WRONG_AUTOPILOT_CURSOR_MESSAGE`'s own split from the
+/// malformed case: this one is "you are paging the wrong list", recoverable
+/// by paging that same query.
+const BEST_MATCHES_WRONG_QUERY_CURSOR_MESSAGE: &str =
+    "cursor was issued for a different `query` — page that same query with it, or restart from \
+     `cursor: null`";
+
+/// Fold `query`'s already-normalized (lowercased/trimmed) value into the
+/// cursor's issuer half — mirrors `found_jobs::found_jobs_cursor_issuer`'s
+/// identical reasoning one resource over. [`crate::extension_bridge::paging::fingerprint`]
+/// rather than the raw query text: `query` is caller-typed and could itself
+/// contain `:`, and a fingerprint sidesteps needing to prove it never
+/// collides with the issuer's own delimiter.
+fn best_matches_cursor_issuer(query: Option<&str>) -> String {
+    crate::extension_bridge::paging::fingerprint(&[query.unwrap_or("")])
+}
+
+/// Parse `payload`'s `cursor` against `issuer` (see
+/// [`best_matches_cursor_issuer`]) — mirrors
+/// `found_jobs::parse_found_jobs_cursor`'s own shape-then-issuer contract
+/// and never-echo discipline, one resource over (round 2 fix, B3-r1-F4:
+/// `best-matches` used to accept a bare numeric offset via
+/// `extension_bridge::paging::parse_offset_cursor`, which carried no
+/// evidence of which `query` produced it).
+fn parse_best_matches_cursor(payload: &Value, issuer: &str) -> AppResult<usize> {
+    let malformed = || AppError::Validation(BEST_MATCHES_MALFORMED_CURSOR_MESSAGE.to_string());
+    match payload.get("cursor") {
+        None | Some(Value::Null) => Ok(0),
+        Some(Value::String(raw)) => {
+            match raw
+                .rsplit_once(':')
+                .and_then(|(iss, off)| Some((iss, off.parse::<usize>().ok()?)))
+            {
+                Some((iss, off)) if iss == issuer => Ok(off),
+                Some(_) => Err(AppError::Validation(
+                    BEST_MATCHES_WRONG_QUERY_CURSOR_MESSAGE.to_string(),
+                )),
+                None => Err(malformed()),
+            }
+        }
+        Some(_) => Err(malformed()),
+    }
+}
+
+/// Pure core of `best-matches`: project, optionally `query`-filter, then
+/// `offset`/`limit`-page an already-computed row set (issue #1146 P11 — the
+/// same cursor `found-jobs` already has, reusing `extension_bridge::paging`'s
+/// clamp/cursor primitives at the call site). Directly unit-testable with
+/// hand-built `Value` rows, no `AppHandle` — the impure half
+/// ([`best_matches_resource`]) only resolves
+/// `commands::autopilot::autopilot_best_matches`'s output.
+///
+/// `total` here is the count of rows THIS call's `query` actually matches —
+/// never the command's own pre-cap qualifying count
+/// (`commands::autopilot::best_matches::BestMatchesOutcome::total`, which
+/// this fn never receives): `rows` itself is already capped at
+/// `BEST_MATCHES_CAP` upstream, so a caller paging this cursor to `null`
+/// only ever reaches what `rows` actually holds — reporting the pre-cap
+/// number here would promise a page count this traversal cannot deliver.
+/// Raising that upstream cap is a job-matching-domain change, out of scope
+/// here.
+///
+/// `nextCursor` is `<query fingerprint>:<offset>` (round 2 fix, B3-r1-F4),
+/// not a bare offset — `query` here is already the SAME normalized value
+/// [`best_matches_resource`] fingerprinted to parse the incoming `offset`,
+/// so both halves of the format always agree.
+///
+/// [`trim_best_matches_page_to_budget`]s the fenced page before returning it
+/// (issue #1165, HIGH — the sibling `found-jobs` resource added this exact
+/// guard for the exact same reason: a row-count `limit` alone cannot bound a
+/// page's byte size, since a legitimate, non-adversarial posting's
+/// `title`/`company`/`location` can each independently reach
+/// `crate::prompt_fence::JOB_CAP` = 8,000 chars). Each row is fenced (per
+/// [`fence_posting_display_fields`]) BEFORE trimming, not after, so the
+/// bytes the budget measures are the exact bytes that leave the process.
+fn resolve_best_matches(rows: &[Value], offset: usize, limit: usize, query: Option<&str>) -> Value {
+    let mut matches: Vec<AgentBestMatch> = rows
         .iter()
         .filter_map(|row| serde_json::from_value(row.clone()).ok())
-        .take(limit)
         .collect();
-    let returned = matches.len();
-    let mut value = json!({ "matches": matches, "total": total, "returned": returned });
-    fence_best_match_fields(&mut value);
-    value
+    if let Some(q) = query {
+        matches
+            .retain(|m| m.title.to_lowercase().contains(q) || m.company.to_lowercase().contains(q));
+    }
+    let total = matches.len();
+    let cursor_issuer = best_matches_cursor_issuer(query);
+    let page_values: Vec<Value> = matches
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .filter_map(|m| serde_json::to_value(m).ok())
+        .map(|mut row| {
+            fence_posting_display_fields(&mut row);
+            row
+        })
+        .collect();
+    let base_cost = best_matches_base_envelope_cost(&cursor_issuer, total);
+    let page = trim_best_matches_page_to_budget(page_values, base_cost);
+    let returned = page.len();
+    let next_offset = offset + returned;
+    let next_cursor = if next_offset < total {
+        Some(format!("{cursor_issuer}:{next_offset}"))
+    } else {
+        None
+    };
+    json!({
+        "matches": page,
+        "total": total,
+        "returned": returned,
+        "nextCursor": next_cursor,
+    })
 }
 
 /// Fence `title`/`company`/`location` on ONE object — shared by
-/// [`fence_best_match_fields`] (one call per `best-matches` row) and
+/// [`resolve_best_matches`] (one call per `best-matches` row) and
 /// [`resolve_job`] (one call on the single job object), so the identical
 /// primitive/tag/cap can never drift between the two curated-tier surfaces
 /// that both carry these fields (MUST FIX — pre-PR gate: `resolve_job` used
@@ -560,30 +905,75 @@ fn fence_posting_display_fields(value: &mut Value) {
     }
 }
 
-/// Fence `title`/`company`/`location` on every `best-matches` row (MEDIUM
-/// fix, MCP security critique — the MCP server is the first surface where a
-/// model reads these fields with NO surrounding prompt at all, while also
-/// holding `call-reversible` dispatch in the same session). Delegates to
-/// [`fence_posting_display_fields`] per row.
-fn fence_best_match_fields(value: &mut Value) {
-    let Some(matches) = value.get_mut("matches").and_then(Value::as_array_mut) else {
-        return;
-    };
-    for row in matches {
-        fence_posting_display_fields(row);
-    }
+/// The REAL per-response safety net for `best-matches` (issue #1165) —
+/// mirrors `found_jobs::PAGE_BYTE_BUDGET`'s own target one resource over:
+/// half of `agent_cli::mcp::MCP_RESULT_MAX_BYTES` (256 KiB), leaving real
+/// margin for the MCP `content[]`/`isError` wrapper this payload rides
+/// inside on the MCP transport.
+const BEST_MATCHES_PAGE_BYTE_BUDGET: usize = 150_000;
+
+/// This resource's own [`BEST_MATCHES_PAGE_BYTE_BUDGET`] applied to the
+/// shared trim (`extension_bridge::paging::trim_to_byte_budget`, which
+/// carries the full rationale and the forward-progress guarantee). Named
+/// differently from the primitive it wraps for the same reason
+/// `found_jobs::trim_page_to_budget` is.
+fn trim_best_matches_page_to_budget(candidates: Vec<Value>, base_cost: usize) -> Vec<Value> {
+    crate::extension_bridge::paging::trim_to_byte_budget(
+        candidates,
+        base_cost,
+        BEST_MATCHES_PAGE_BYTE_BUDGET,
+    )
+}
+
+/// Every envelope byte OTHER than `matches` itself — mirrors
+/// `found_jobs::base_envelope_cost`'s own reasoning one resource over.
+/// `nextCursor` isn't known until after trimming, so it's measured in the
+/// SAME `<issuer>:<offset>` shape a real cursor has, with `total` standing in
+/// for both the offset and `returned` — a real offset/returned count can
+/// never exceed `total`, so this can only ever OVER-count and thus only trim
+/// MORE aggressively than strictly required, never less (the safe direction
+/// for a byte budget).
+fn best_matches_base_envelope_cost(cursor_issuer: &str, total: usize) -> usize {
+    let base_envelope = json!({
+        "matches": [],
+        "total": total,
+        "returned": total,
+        "nextCursor": format!("{cursor_issuer}:{total}"),
+    });
+    serde_json::to_string(&base_envelope)
+        .map_or(usize::MAX, |s| s.len())
+        .saturating_sub(2)
+}
+
+/// The payload-only half of `best-matches`' argument parsing — `query`
+/// (round 2 fix, B3-r2-F1 — MUST go through `found_jobs::trimmed_lowercase_filter`,
+/// never a raw `.and_then(Value::as_str)`, which silently read a non-string
+/// or present-but-blank `query` as absent and handed back the unfiltered
+/// ranked list with a `total` the caller read as filtered) plus the cursor
+/// offset it feeds. No `AppHandle` needed — unlike [`best_matches_resource`]
+/// itself, which only adds the `commands::autopilot::autopilot_best_matches`
+/// call this can't reach — so THIS delegation is directly unit-testable
+/// (round 3 fix, B3-r3-F7: the previous guard tested
+/// `found_jobs::trimmed_lowercase_filter` directly, which pinned nothing
+/// about `best_matches_resource` actually calling it — reverting the call
+/// site back to the old combinator left that guard green).
+fn parse_best_matches_args(payload: &Value) -> AppResult<(Option<String>, usize)> {
+    let query = found_jobs::trimmed_lowercase_filter(payload, "query")?;
+    let cursor_issuer = best_matches_cursor_issuer(query.as_deref());
+    let offset = parse_best_matches_cursor(payload, &cursor_issuer)?;
+    Ok((query, offset))
 }
 
 async fn best_matches_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
     let limit = clamp_best_matches_limit(payload);
+    let (query, offset) = parse_best_matches_args(payload)?;
     let raw = crate::commands::autopilot::autopilot_best_matches(app.clone()).await;
-    let total = raw.get("total").and_then(Value::as_u64).unwrap_or(0);
     let rows = raw
         .get("matches")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    Ok(resolve_best_matches(&rows, total, limit))
+    Ok(resolve_best_matches(&rows, offset, limit, query.as_deref()))
 }
 
 /// Shared `AutopilotStore` read for the `job`/`automations` resources —
@@ -629,6 +1019,17 @@ fn job_lookup_key(raw_url: &str) -> String {
     crate::applications::normalize_job_url(canonical.as_deref().unwrap_or(&decoded))
 }
 
+/// The CALLER side of [`resolve_job`]'s identity compare (issue #1166) — the
+/// identity counterpart to [`job_lookup_key`]'s normalized-string caller key,
+/// run over the SAME unreserved-decoded input so a percent-escaped LinkedIn
+/// slug still extracts the same id [`resolve_job`]'s stored-side extraction
+/// computes. `None` for a board with no stable id space (or an unparseable
+/// url) — [`resolve_job`] falls back to the normalized-string compare then.
+fn job_caller_identity(raw_url: &str) -> Option<(&'static str, String)> {
+    let decoded = crate::applications::decode_unreserved(raw_url);
+    crate::scraping::scrape_url::job_identity(&decoded)
+}
+
 fn job_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
     let raw_url = payload
         .get("url")
@@ -644,8 +1045,22 @@ fn job_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
             "url is not a valid http(s) URL".to_string(),
         ));
     }
+    let caller_identity = job_caller_identity(raw_url);
     let records = list_autopilots(app)?;
-    resolve_job(&records, &normalized)
+    // `store_present` derives from the SAME checked read as `applied_urls`
+    // (round-4 fix T3-cont) — a `try_state().is_some()` alone can't tell a
+    // managed-but-unreadable store from a genuinely-empty one; see
+    // `commands::autopilot::applied_job_urls_checked`'s own doc.
+    let applied = crate::commands::autopilot::applied_job_urls_checked(app);
+    let store_present = applied.is_some();
+    let applied_urls = applied.unwrap_or_default();
+    resolve_job_for_store(
+        &records,
+        caller_identity,
+        &normalized,
+        &applied_urls,
+        store_present,
+    )
 }
 
 fn automations_resource(app: &AppHandle) -> AppResult<Value> {
@@ -674,14 +1089,35 @@ pub(super) fn resource_name(payload: &Value) -> &str {
         .unwrap_or("")
 }
 
+/// `(resource, fixed error sentinel) -> fixed detail`, for the handful of
+/// refusals whose caller needs a next step rather than a bare sentinel
+/// (issue #1166). Both sides of the match are compile-time constants, so
+/// this can never echo caller-supplied content into `detail`.
+fn error_detail(resource: &str, error: &str) -> Option<&'static str> {
+    match (resource, error) {
+        (RES_JOB, JOB_NOT_FOUND_MESSAGE) => Some(JOB_NOT_FOUND_DETAIL),
+        _ => None,
+    }
+}
+
 fn agent_result_reply(req_id: &str, resource: &str, outcome: AppResult<Value>) -> String {
     let payload = match outcome {
         Ok(data) => json!({ "ok": true, "resource": resource, "data": data }),
         // Wire-error discipline: `AppError`'s `Display` here is always a fixed
         // sentinel or an echo of the CALLER'S OWN `resource`/`url` input
         // (never path/PII content) — mirrors `advance_authenticated`'s
-        // "unknown message type" reply.
-        Err(e) => json!({ "ok": false, "resource": resource, "error": e.to_string() }),
+        // "unknown message type" reply. `detail` (issue #1166) is looked up
+        // off the SAME fixed sentinel — never dynamic content either — and
+        // omitted entirely when there is none, same shape as every other
+        // resource's success-only payload.
+        Err(e) => {
+            let error = e.to_string();
+            let mut payload = json!({ "ok": false, "resource": resource, "error": error });
+            if let Some(detail) = error_detail(resource, &error) {
+                payload["detail"] = json!(detail);
+            }
+            payload
+        }
     };
     json!({
         "type": super::msg::AGENT_RESULT,
@@ -691,16 +1127,134 @@ fn agent_result_reply(req_id: &str, resource: &str, outcome: AppResult<Value>) -
     .to_string()
 }
 
+// ── Bounded refusals (issue #1151 — this tier had no equivalent to
+// `agent_call::refusal_reply`/`enforce_frame_cap`, so a refusal built from a near-cap `resource`/
+// `reqId` could itself exceed the frame cap on the way out, and a legitimately oversized SUCCESS
+// reply — an uncapped `job`/`best-matches` payload — closed the socket with no refusal at all) ──
+
+/// A [`super::agent_call::clamp_ident`]-bounded, sentinel+detail refusal — the shape
+/// `agent_call::refusal_reply` uses, adopted here for the two MACHINE-READABLE refusals this
+/// tier gained from issues #1151/#1155 (`rate_limited`, `result_too_large`). Every OTHER refusal
+/// this tier answers (an unrecognized `resource`, `origin_refused`, a resource fn's own
+/// validation error) keeps its EXISTING shape unchanged — `error` carries the prose directly, no
+/// `detail` — routed through [`bounded_result_reply`] instead, so no existing client parsing
+/// THOSE breaks. `extra` merges additional fields (`retryAfterMs`, an identity arg) onto the
+/// payload; pass `json!({})` for none. Re-measures the built reply and degrades to a minimal
+/// envelope (mirrors `agent_call::REFUSAL_UNDELIVERABLE_DETAIL` verbatim) if it still does not
+/// fit — "measured, not assumed" for the same reason that fn's own doc gives.
+fn sentinel_refusal_reply(
+    req_id: &str,
+    resource: &str,
+    error: &'static str,
+    detail: String,
+    extra: Value,
+) -> String {
+    let mut payload = json!({
+        "ok": false,
+        "resource": super::agent_call::clamp_ident(resource),
+        "error": error,
+        "detail": detail,
+    });
+    if let (Value::Object(base), Value::Object(more)) = (&mut payload, &extra) {
+        for (k, v) in more {
+            base.insert(k.clone(), v.clone());
+        }
+    }
+    let reply = json!({
+        "type": super::msg::AGENT_RESULT,
+        "reqId": super::agent_call::clamp_ident(req_id),
+        "payload": payload,
+    })
+    .to_string();
+    if reply.len() <= super::MAX_FRAME_BYTES {
+        return reply;
+    }
+    json!({
+        "type": super::msg::AGENT_RESULT,
+        "reqId": "",
+        "payload": {
+            "ok": false,
+            "resource": "",
+            "error": error,
+            "detail": super::agent_call::REFUSAL_UNDELIVERABLE_DETAIL,
+        },
+    })
+    .to_string()
+}
+
+/// [`agent_result_reply`], with `resource`/`reqId` pre-clamped and the built reply re-measured
+/// against [`super::MAX_FRAME_BYTES`] (issue #1151) — the SAME two properties
+/// `agent_call::refusal_reply` guarantees, one wire type over, applied to EVERY reply this tier
+/// builds (the success path included, mirroring `agent_call::handle_agent_call`'s single
+/// `enforce_frame_cap` call site): an oversized reply of any kind — a legitimately huge `job`/
+/// `best-matches` payload, or (after clamping, effectively unreachable) a refusal that still
+/// somehow didn't fit — is substituted with a [`sentinel_refusal_reply`] `result_too_large`
+/// refusal rather than closing the socket with nothing (the exact #1135 failure mode this mirrors
+/// from the generic tier).
+fn bounded_result_reply(req_id: &str, resource: &str, outcome: AppResult<Value>) -> String {
+    let reply = agent_result_reply(
+        super::agent_call::clamp_ident(req_id),
+        super::agent_call::clamp_ident(resource),
+        outcome,
+    );
+    if reply.len() <= super::MAX_FRAME_BYTES {
+        return reply;
+    }
+    sentinel_refusal_reply(
+        req_id,
+        resource,
+        super::agent_call::ERR_RESULT_TOO_LARGE,
+        format!(
+            "the reply ({} B) exceeds the bridge's own frame cap and was discarded rather than \
+             truncated — narrow the request (a smaller `limit`, a `found-jobs` page) if this \
+             resource takes one",
+            reply.len()
+        ),
+        json!({}),
+    )
+}
+
 // `pub(super)` — reused verbatim by `agent_call`'s own throttle refusal
 // (Phase 2, ADR-038 §2) so the two tiers report identical wording for the
 // identical shared-bucket cause, never a second hand-typed copy.
 pub(super) const THROTTLED_MESSAGE: &str = "Too many requests — try again shortly.";
 
-pub(super) fn throttled_reply(req_id: &str, resource: &str) -> String {
-    agent_result_reply(
+/// The caller-supplied argument that names WHICH request a throttle refusal belongs to, beyond
+/// `resource` alone (issue #1155 — a throttled `job` lookup used to echo only
+/// `"resource":"job"`, never which of several in-flight urls was refused). `job` keys on `url`,
+/// `found-jobs` on `autopilotId`; every other resource takes no per-request identifier. Clamped
+/// like every other echoed identifier here — caller-supplied, bounded only by the incoming frame.
+fn identity_arg<'a>(resource: &str, payload: &'a Value) -> Option<(&'static str, &'a str)> {
+    let field = match resource {
+        RES_JOB => "url",
+        RES_FOUND_JOBS => "autopilotId",
+        _ => return None,
+    };
+    payload
+        .get(field)
+        .and_then(Value::as_str)
+        .map(|v| (field, super::agent_call::clamp_ident(v)))
+}
+
+/// The read tier's own `rate_limited` refusal (issue #1155) — the SAME sentinel+detail shape,
+/// SAME `retryAfterMs`, as `agent_call::throttled_reply`'s: `retry_after_ms` is computed by the
+/// ONE caller (`mod.rs`) from the shared `AgentQueryThrottle` bucket right after the failed
+/// acquire, never invented here. Adds the refused request's identity — `resource` plus, where the
+/// resource takes one, [`identity_arg`] — so a caller juggling several in-flight lookups can tell
+/// WHICH one was blocked (the gap issue #1155 reports: three throttled `job` lookups previously
+/// looked identical).
+pub(super) fn throttled_reply(req_id: &str, payload: &Value, retry_after_ms: u64) -> String {
+    let resource = resource_name(payload);
+    let mut extra = json!({ "retryAfterMs": retry_after_ms });
+    if let Some((field, value)) = identity_arg(resource, payload) {
+        extra[field] = json!(value);
+    }
+    sentinel_refusal_reply(
         req_id,
         resource,
-        Err(AppError::RateLimited(THROTTLED_MESSAGE.to_string())),
+        super::agent_call::ERR_RATE_LIMITED,
+        THROTTLED_MESSAGE.to_string(),
+        extra,
     )
 }
 
@@ -713,9 +1267,11 @@ const CLI_ONLY_MESSAGE: &str = "agent.query is only available to the ajh-tauri a
 /// same `agent.result` envelope shape as every other outcome on this
 /// surface, so a caller that DID legitimately reach this (there is none
 /// today; see `msg::AGENT_QUERY`'s doc) parses it identically to any other
-/// refusal.
+/// refusal. Routed through [`bounded_result_reply`] (issue #1151) rather than [`agent_result_reply`]
+/// directly — this path writes straight to the socket (see `mod.rs`'s dispatch match), so nothing
+/// else in this crate bounds what it echoes.
 pub(super) fn origin_refused_reply(req_id: &str, payload: &Value) -> String {
-    agent_result_reply(
+    bounded_result_reply(
         req_id,
         resource_name(payload),
         Err(AppError::Validation(CLI_ONLY_MESSAGE.to_string())),
@@ -725,7 +1281,10 @@ pub(super) fn origin_refused_reply(req_id: &str, payload: &Value) -> String {
 /// Answer an authenticated, throttle-admitted `agent.query`. Never panics —
 /// every resource fn degrades to `Err` on a missing/unexpected state (see
 /// `list_autopilots`), and this match's fallback arm covers any resource name
-/// [`RESOURCES`] doesn't recognize.
+/// [`RESOURCES`] doesn't recognize. Routed through [`bounded_result_reply`] (issue #1151):
+/// identifiers are clamped and the reply is frame-capped, substituting `result_too_large` for an
+/// oversized SUCCESS payload the same way `agent_call::handle_agent_call` already does for the
+/// generic tier.
 pub(super) async fn handle_agent_query(app: &AppHandle, req_id: &str, payload: &Value) -> String {
     let resource = resource_name(payload).to_string();
     let outcome = match resource.as_str() {
@@ -735,11 +1294,17 @@ pub(super) async fn handle_agent_query(app: &AppHandle, req_id: &str, payload: &
         RES_AUTOMATIONS => automations_resource(app),
         RES_FOUND_JOBS => found_jobs::found_jobs_resource(app, payload),
         RES_SCHEMA => Ok(schema_value()),
+        // `other` is clamped here too (issue #1151, AC-3) — `bounded_result_reply` below only
+        // clamps the envelope's `reqId`/`resource`, not a copy embedded in THIS message, so an
+        // unclamped `other` could still blow the frame cap and get swallowed by the
+        // `result_too_large` fallback, hiding the real cause (an unknown resource) behind the
+        // wrong one (a reply too large).
         other => Err(AppError::Validation(format!(
-            "unknown agent resource '{other}'"
+            "unknown agent resource '{}'",
+            super::agent_call::clamp_ident(other)
         ))),
     };
-    agent_result_reply(req_id, &resource, outcome)
+    bounded_result_reply(req_id, &resource, outcome)
 }
 
 #[cfg(test)]

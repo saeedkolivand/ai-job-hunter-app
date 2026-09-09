@@ -808,6 +808,92 @@ fn canonical_unknown_host_is_none() {
     );
 }
 
+// ── job_identity: (board, id) identity for lookup, issue #1166 ────────────
+
+#[test]
+fn job_identity_linkedin_numeric_view_form() {
+    assert_eq!(
+        super::job_identity("https://www.linkedin.com/jobs/view/4185657072"),
+        Some(("linkedin", "4185657072".to_string()))
+    );
+}
+
+#[test]
+fn job_identity_linkedin_slugged_view_form_extracts_trailing_digits() {
+    assert_eq!(
+        super::job_identity(
+            "https://de.linkedin.com/jobs/view/ai-software-engineer-at-hyra-4464018189"
+        ),
+        Some(("linkedin", "4464018189".to_string()))
+    );
+}
+
+#[test]
+fn job_identity_linkedin_current_job_id_form_matches_the_view_form() {
+    assert_eq!(
+        super::job_identity("https://www.linkedin.com/jobs/search/?currentJobId=4185657072"),
+        super::job_identity("https://www.linkedin.com/jobs/view/4185657072")
+    );
+}
+
+#[test]
+fn job_identity_linkedin_folds_regional_and_apex_hosts() {
+    let want = Some(("linkedin", "4185657072".to_string()));
+    for host in [
+        "linkedin.com",
+        "www.linkedin.com",
+        "de.linkedin.com",
+        "uk.linkedin.com",
+    ] {
+        assert_eq!(
+            super::job_identity(&format!("https://{host}/jobs/view/4185657072")),
+            want,
+            "host {host} must fold to the same identity"
+        );
+    }
+}
+
+#[test]
+fn job_identity_linkedin_ignores_scheme_and_a_missing_scheme() {
+    let want = Some(("linkedin", "4185657072".to_string()));
+    for url in [
+        "http://www.linkedin.com/jobs/view/4185657072",
+        "https://www.linkedin.com/jobs/view/4185657072",
+        "www.linkedin.com/jobs/view/4185657072",
+        "linkedin.com/jobs/view/4185657072",
+    ] {
+        assert_eq!(
+            super::job_identity(url),
+            want,
+            "{url} must resolve to {want:?}"
+        );
+    }
+}
+
+#[test]
+fn job_identity_linkedin_rejects_lookalike_host() {
+    assert_eq!(
+        super::job_identity("https://linkedin.com.attacker.tld/jobs/view/123"),
+        None
+    );
+}
+
+#[test]
+fn job_identity_indeed_vjk_and_jk_forms_match() {
+    assert_eq!(
+        super::job_identity("https://www.indeed.com/jobs?q=x&vjk=9b6647ed6c731326"),
+        super::job_identity("https://de.indeed.com/viewjob?jk=9b6647ed6c731326")
+    );
+}
+
+#[test]
+fn job_identity_unknown_host_is_none() {
+    assert_eq!(
+        super::job_identity("https://boards.example.com/jobs/42"),
+        None
+    );
+}
+
 // PR 7 verify-live gate: Xing and StepStone were live-probed via browser
 // automation (public, no-login search); in those sessions neither host left the
 // current tab on a list-shell URL with the selected job only in a query param —

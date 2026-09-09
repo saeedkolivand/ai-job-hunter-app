@@ -190,6 +190,10 @@ impl Scraper for JobicyScraper {
         "Jobicy"
     }
 
+    fn is_all_remote(&self) -> bool {
+        true
+    }
+
     fn mode(&self) -> ScraperMode {
         ScraperMode::Http
     }

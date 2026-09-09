@@ -9,9 +9,13 @@ import type { AppNotification, NotificationOpen, NotificationToast } from '../..
  */
 export interface NotificationsContract {
   list(): Promise<AppNotification[]>;
+  /** Mark one notification read by id — no "mark unread" path exists, so this cannot be undone. */
   markRead(id: string): Promise<void>;
+  /** Mark every notification in the inbox read — no "mark unread" path exists, so this cannot be undone. */
   markAllRead(): Promise<void>;
+  /** Permanently delete one notification from the inbox by id. */
   remove(id: string): Promise<void>;
+  /** Permanently delete every notification in the inbox — no selector, no undo. */
   clearAll(): Promise<void>;
   /** Invokes `notifications_clicked` — focuses the window and opens the inbox. */
   clicked(): Promise<void>;

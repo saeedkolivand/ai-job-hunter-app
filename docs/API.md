@@ -355,6 +355,8 @@ layer fences them as untrusted and never lets them write the answer.
 pullModel(model: string): Promise<{ jobId: string }>;
 ```
 
+Download a local Ollama model by name — multi-GB, consuming disk and bandwidth.
+
 #### `ai.unloadModel`
 
 ```ts
@@ -810,11 +812,15 @@ update(req: AiGenerationUpdateRequest): Promise<void>;
 remove(id: string): Promise<void>;
 ```
 
+Permanently delete one saved generation row by id — no confirmation short of this call.
+
 #### `aiGenerations.removeBulk`
 
 ```ts
 removeBulk(ids: string[]): Promise<void>;
 ```
+
+Permanently delete every generation row whose id is in `ids` — same no-confirmation delete as `remove`, batched.
 
 ### Channels — `aiGenerations`
 
@@ -1114,6 +1120,11 @@ update(req: ApplicationUpdateRequest): Promise<ApplicationMutationResult>;
 remove(args: { id: string; keepDocuments: boolean }): Promise<ApplicationMutationResult>;
 ```
 
+Delete the Application and its status history — always irreversible; `keepDocuments: false`
+ALSO deletes every résumé/cover-letter generation produced for it, while `keepDocuments:
+ true` instead detaches those generations, which survive as orphaned documents outside this
+Application.
+
 #### `applications.track`
 
 ```ts
@@ -1257,6 +1268,8 @@ update(req: { autopilotId: string } & AutopilotUpdate): Promise<Autopilot>;
 ```ts
 remove(req: { autopilotId: string }): Promise<void>;
 ```
+
+Permanently delete this autopilot and stop its scheduled runs — the found-jobs history it built goes with it.
 
 #### `autopilot.run`
 
@@ -2225,6 +2238,8 @@ Suggest a template + locale from the generation metadata signals.
 ```ts
 remove(id: string): Promise<void>;
 ```
+
+Permanently delete this document (résumé/cover-letter/etc.) from the store — no undo.
 
 #### `documents.setDefault`
 
@@ -3344,11 +3359,15 @@ list(): Promise<AppNotification[]>;
 markRead(id: string): Promise<void>;
 ```
 
+Mark one notification read by id — no "mark unread" path exists, so this cannot be undone.
+
 #### `notifications.markAllRead`
 
 ```ts
 markAllRead(): Promise<void>;
 ```
+
+Mark every notification in the inbox read — no "mark unread" path exists, so this cannot be undone.
 
 #### `notifications.remove`
 
@@ -3356,11 +3375,15 @@ markAllRead(): Promise<void>;
 remove(id: string): Promise<void>;
 ```
 
+Permanently delete one notification from the inbox by id.
+
 #### `notifications.clearAll`
 
 ```ts
 clearAll(): Promise<void>;
 ```
+
+Permanently delete every notification in the inbox — no selector, no undo.
 
 #### `notifications.clicked`
 
@@ -3556,6 +3579,8 @@ Create or update a contact; resolves to the stored record.
 ```ts
 remove(id: string): Promise<void>;
 ```
+
+Permanently delete one referral contact by id — the drafts on it go with it.
 
 ### Channels — `referrals`
 
@@ -4144,6 +4169,8 @@ listPostings(): Promise<JobPosting[]>;
 clearPostings(): Promise<void>;
 ```
 
+Permanently wipe the entire cached postings list — no selector, no undo; interaction history is unaffected.
+
 #### `scrape.listInteractions`
 
 ```ts
@@ -4356,6 +4383,8 @@ Default accent. Used by the 'System' accent source in Appearance settings.
 ```ts
 openExternal(url: string): Promise<void>;
 ```
+
+Open `url` in the OS default handler (browser/app) — outside this app's own sandbox.
 
 #### `system.setPerformanceMode`
 

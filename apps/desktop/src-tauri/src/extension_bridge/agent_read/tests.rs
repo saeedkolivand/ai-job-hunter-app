@@ -25,9 +25,9 @@ use crate::scraping::trust::{TrustAssessment, TrustLevel};
 /// require mutating a sibling domain's type). `AgentTrust`'s own explicit
 /// field set is what makes it pass now.
 ///
-/// `pub(super)` — reused verbatim by `found_jobs::tests` (a sibling
-/// module, not a descendant of this one) so that module's fixtures never
-/// drift from these.
+/// `pub(super)` for `job`/`best-matches`'s own nested-object descent below
+/// (issue #1167's compact `found-jobs` row no longer carries a nested
+/// `trust` object, so `found_jobs::tests` no longer needs this helper).
 pub(super) fn assert_object_keys(value: &Value, path: &str, expected: &[&str]) {
     let obj = value
         .as_object()
@@ -79,6 +79,7 @@ pub(super) fn full_found_job() -> FoundJob {
         url: "https://boards.example.com/jobs/42".into(),
         location: Some("Berlin".into()),
         board: Some("adzuna".into()),
+        board_remote: false,
         description: Some("Full posting text.".into()),
         salary_min: Some(60_000.0),
         salary_max: Some(80_000.0),
@@ -164,11 +165,182 @@ fn resolve_job_finds_by_normalized_url_across_autopilots() {
     }];
     let normalized =
         crate::applications::normalize_job_url("https://boards.example.com/jobs/42?utm_source=x");
-    let out = resolve_job(&records, &normalized).expect("found");
+    let out = resolve_job(
+        &records,
+        None,
+        &normalized,
+        &std::collections::HashSet::new(),
+    )
+    .expect("found");
     // `title` is now fenced too (`fence_posting_display_fields`) — this test is about the
     // URL-matching lookup, not fencing (see the dedicated fencing test below), so it only
     // checks the real content survived, not the exact wrapper.
     assert!(out["title"].as_str().unwrap().contains("Backend Engineer"));
+}
+
+/// Issue #1166/#1169 (HIGH) — `job`'s `applied` must be DERIVED off
+/// `applied_urls`, never a plain passthrough of the stored `FoundJob::applied`
+/// (which is always `false` on the stored record — see that field's own
+/// doc). This fails against the pre-fix `resolve_job`, which ignored the
+/// `applied_urls` set entirely and echoed the stored (always-`false`) bit.
+#[test]
+fn resolve_job_derives_applied_from_the_applied_urls_set_not_the_stored_bit() {
+    let stored_url = "https://boards.example.com/jobs/42";
+    let records = vec![Autopilot {
+        found_jobs: vec![FoundJob {
+            url: stored_url.to_string(),
+            applied: false, // the stored bit — deliberately the OPPOSITE of the derived answer
+            ..full_found_job()
+        }],
+        ..blank_autopilot("ap-1")
+    }];
+    let normalized = crate::applications::normalize_job_url(stored_url);
+    let mut applied_urls = std::collections::HashSet::new();
+    applied_urls.insert(crate::applications::normalize_job_url(stored_url));
+
+    let applied_out = resolve_job(&records, None, &normalized, &applied_urls).expect("found");
+    assert_eq!(
+        applied_out["applied"], true,
+        "a url present in applied_urls must read as applied, even though the stored bit is false"
+    );
+
+    let not_applied_out = resolve_job(
+        &records,
+        None,
+        &normalized,
+        &std::collections::HashSet::new(),
+    )
+    .expect("found");
+    assert_eq!(
+        not_applied_out["applied"], false,
+        "a url absent from applied_urls must read as not applied"
+    );
+}
+
+// ── round-4 advisory findings (PR #1182): T3/T4 ───────────────────────────
+
+/// T4 — a job stored under a regional LinkedIn host must still read as
+/// applied when the application was recorded under the bare `linkedin.com`
+/// spelling for the SAME numeric id; a byte-exact normalized-string compare
+/// cannot bridge that, `job_identity` can.
+#[test]
+fn job_is_applied_matches_a_regional_linkedin_host_by_identity() {
+    let mut applied_urls = std::collections::HashSet::new();
+    applied_urls.insert(crate::applications::normalize_job_url(
+        "https://www.linkedin.com/jobs/view/4185657072",
+    ));
+    assert!(job_is_applied(
+        "https://de.linkedin.com/jobs/view/4185657072",
+        &applied_urls
+    ));
+}
+
+/// T4 — the numeric-only `/jobs/view/<id>` form and LinkedIn's slugged form
+/// must resolve to the same identity in either direction.
+#[test]
+fn job_is_applied_matches_a_slugged_linkedin_path_by_identity() {
+    let mut applied_urls = std::collections::HashSet::new();
+    applied_urls.insert(crate::applications::normalize_job_url(
+        "https://www.linkedin.com/jobs/view/4185657072",
+    ));
+    assert!(job_is_applied(
+        "https://www.linkedin.com/jobs/view/senior-engineer-at-acme-4185657072",
+        &applied_urls
+    ));
+}
+
+/// T4 — an application recorded from a `currentJobId=` search/SPA-view
+/// spelling must still match: `import_flow::import_job`'s own pipeline
+/// rewrites that spelling to the canonical `/jobs/view/<id>` form via
+/// `canonical_job_url` BEFORE `normalize_job_url` ever runs, so this is
+/// exactly what `ApplicationStore::applied_job_urls` holds for it — this
+/// test drives the SAME two calls in the SAME order to stay honest about
+/// what is actually stored.
+#[test]
+fn job_is_applied_matches_a_current_job_id_recorded_application_by_identity() {
+    let current_job_id_url = "https://www.linkedin.com/jobs/search/?currentJobId=4185657072";
+    let canonical =
+        crate::scraping::scrape_url::canonical_job_url(current_job_id_url).expect("rewritten");
+    let mut applied_urls = std::collections::HashSet::new();
+    applied_urls.insert(crate::applications::normalize_job_url(&canonical));
+
+    // The FOUND job's own stored spelling differs (regional host, slugged
+    // path) from the recorded application's — a byte-exact normalized-string
+    // compare would miss it; only identity bridges the two.
+    assert!(job_is_applied(
+        "https://de.linkedin.com/jobs/view/senior-engineer-4185657072",
+        &applied_urls
+    ));
+}
+
+/// T4 — identity matching must not turn into "any LinkedIn job counts as
+/// applied": a different numeric id on the same board must still miss.
+#[test]
+fn job_is_applied_does_not_match_a_different_linkedin_id() {
+    let mut applied_urls = std::collections::HashSet::new();
+    applied_urls.insert(crate::applications::normalize_job_url(
+        "https://www.linkedin.com/jobs/view/111",
+    ));
+    assert!(!job_is_applied(
+        "https://www.linkedin.com/jobs/view/222",
+        &applied_urls
+    ));
+}
+
+/// T4-cont (PR #1182 round-5 fix) — a stored job url and its recorded
+/// application can share the SAME percent-escaped spelling (e.g. `%2D`) on a
+/// board `job_identity` doesn't cover (only linkedin/indeed have a stable id
+/// space). Decoding only the found-job side before comparing broke this:
+/// `applied_urls` is keyed by `normalize_job_url(raw)`, never decoded, so the
+/// decoded job url no longer byte-matched the raw-spelling entry, and with no
+/// identity fallback for this board the lookup fell straight to `false`.
+#[test]
+fn job_is_applied_matches_the_same_percent_escaped_spelling_without_decoding() {
+    let raw_url = "https://boards.example.com/jobs/senior%2Dengineer";
+    let mut applied_urls = std::collections::HashSet::new();
+    applied_urls.insert(crate::applications::normalize_job_url(raw_url));
+    assert!(job_is_applied(raw_url, &applied_urls));
+}
+
+/// T3 — when the applications store is unavailable, `job`'s `applied` key
+/// must be OMITTED (never a confident `false`), and the reply carries
+/// `appliedUnavailable: true`. Store present stays byte-for-byte unchanged.
+#[test]
+fn resolve_job_omits_applied_key_and_flags_the_reply_when_the_store_is_absent() {
+    let records = vec![Autopilot {
+        found_jobs: vec![full_found_job()],
+        ..blank_autopilot("ap-1")
+    }];
+    let normalized = crate::applications::normalize_job_url("https://boards.example.com/jobs/42");
+
+    let absent = resolve_job_for_store(
+        &records,
+        None,
+        &normalized,
+        &std::collections::HashSet::new(),
+        false,
+    )
+    .expect("found");
+    assert!(
+        absent.as_object().unwrap().get("applied").is_none(),
+        "applied must be ABSENT, not false, when the store is unavailable"
+    );
+    assert_eq!(absent["appliedUnavailable"], true);
+
+    let present = resolve_job_for_store(
+        &records,
+        None,
+        &normalized,
+        &std::collections::HashSet::new(),
+        true,
+    )
+    .expect("found");
+    assert_eq!(present["applied"], false);
+    assert!(present
+        .as_object()
+        .unwrap()
+        .get("appliedUnavailable")
+        .is_none());
 }
 
 #[test]
@@ -183,7 +355,13 @@ fn resolve_job_fences_the_description_as_untrusted_data() {
         ..blank_autopilot("ap-1")
     }];
     let normalized = crate::applications::normalize_job_url("https://boards.example.com/jobs/42");
-    let out = resolve_job(&records, &normalized).expect("found");
+    let out = resolve_job(
+        &records,
+        None,
+        &normalized,
+        &std::collections::HashSet::new(),
+    )
+    .expect("found");
     let desc = out["description"]
         .as_str()
         .expect("description is a string");
@@ -212,7 +390,13 @@ fn resolve_job_fences_title_company_location_as_untrusted_data() {
         ..blank_autopilot("ap-1")
     }];
     let normalized = crate::applications::normalize_job_url("https://boards.example.com/jobs/42");
-    let out = resolve_job(&records, &normalized).expect("found");
+    let out = resolve_job(
+        &records,
+        None,
+        &normalized,
+        &std::collections::HashSet::new(),
+    )
+    .expect("found");
     for field in ["title", "company", "location"] {
         let value = out[field].as_str().expect("still a string");
         assert!(
@@ -237,7 +421,13 @@ fn resolve_job_caps_an_oversized_description() {
         ..blank_autopilot("ap-1")
     }];
     let normalized = crate::applications::normalize_job_url("https://boards.example.com/jobs/42");
-    let out = resolve_job(&records, &normalized).expect("found");
+    let out = resolve_job(
+        &records,
+        None,
+        &normalized,
+        &std::collections::HashSet::new(),
+    )
+    .expect("found");
     let desc = out["description"].as_str().unwrap();
     // `fenced`'s cap bounds the INPUT, not the output byte-for-byte (see
     // its own doc) — assert it is nowhere near the uncapped 3x length,
@@ -267,10 +457,132 @@ fn resolve_job_matches_a_percent_encoded_variant_of_the_same_url() {
             }],
             ..blank_autopilot("ap-1")
         }];
-        let out = resolve_job(&records, &job_lookup_key(looked_up))
-            .unwrap_or_else(|e| panic!("stored {stored} must match {looked_up}: {e}"));
+        let out = resolve_job(
+            &records,
+            job_caller_identity(looked_up),
+            &job_lookup_key(looked_up),
+            &std::collections::HashSet::new(),
+        )
+        .unwrap_or_else(|e| panic!("stored {stored} must match {looked_up}: {e}"));
         assert!(out["title"].as_str().unwrap().contains("Backend Engineer"));
     }
+}
+
+/// Issue #1166's own repro table: every url below must resolve to the SAME
+/// stored posting by `(board, id)` identity, not a byte-exact string match.
+/// Drives the real caller-side pipeline (`job_caller_identity` +
+/// `job_lookup_key`, the exact two calls `job_resource` makes) against ONE
+/// fixed stored url.
+#[test]
+fn resolve_job_matches_every_linkedin_url_variant_by_identity() {
+    let stored = "https://www.linkedin.com/jobs/view/4464018189";
+    let records = vec![Autopilot {
+        found_jobs: vec![FoundJob {
+            url: stored.to_string(),
+            ..full_found_job()
+        }],
+        ..blank_autopilot("ap-1")
+    }];
+    let variants = [
+        stored,
+        "https://www.linkedin.com/jobs/view/4464018189/",
+        "https://www.linkedin.com/jobs/view/4464018189?trk=abc&refId=z",
+        "https://linkedin.com/jobs/view/4464018189",
+        "https://de.linkedin.com/jobs/view/4464018189",
+        "https://uk.linkedin.com/jobs/view/senior-engineer-4464018189",
+        "https://www.linkedin.com/jobs/search/?currentJobId=4464018189",
+        "http://www.linkedin.com/jobs/view/4464018189",
+        "www.linkedin.com/jobs/view/4464018189",
+    ];
+    for caller_url in variants {
+        let out = resolve_job(
+            &records,
+            job_caller_identity(caller_url),
+            &job_lookup_key(caller_url),
+            &std::collections::HashSet::new(),
+        )
+        .unwrap_or_else(|e| panic!("{caller_url} must resolve to the stored posting: {e}"));
+        assert!(
+            out["title"].as_str().unwrap().contains("Backend Engineer"),
+            "{caller_url} resolved to the wrong posting"
+        );
+    }
+}
+
+#[test]
+fn resolve_job_does_not_match_a_different_linkedin_id() {
+    let records = vec![Autopilot {
+        found_jobs: vec![FoundJob {
+            url: "https://www.linkedin.com/jobs/view/111".to_string(),
+            ..full_found_job()
+        }],
+        ..blank_autopilot("ap-1")
+    }];
+    let caller_url = "https://de.linkedin.com/jobs/view/222";
+    let err = resolve_job(
+        &records,
+        job_caller_identity(caller_url),
+        &job_lookup_key(caller_url),
+        &std::collections::HashSet::new(),
+    )
+    .unwrap_err();
+    assert_eq!(err.to_string(), JOB_NOT_FOUND_MESSAGE);
+}
+
+/// A board with no id extractor (`job_identity` returns `None` for both
+/// halves) must still resolve through the pre-#1166 normalized-string
+/// fallback — the identity compare is additive, never a replacement.
+#[test]
+fn resolve_job_matches_a_non_identity_board_by_normalized_string_only() {
+    let stored = "https://boards.example.com/jobs/42";
+    let records = vec![Autopilot {
+        found_jobs: vec![FoundJob {
+            url: stored.to_string(),
+            ..full_found_job()
+        }],
+        ..blank_autopilot("ap-1")
+    }];
+    let caller_url = "https://www.boards.example.com/jobs/42/?utm_source=newsletter";
+    assert!(
+        job_caller_identity(caller_url).is_none(),
+        "boards.example.com has no id extractor"
+    );
+    let out = resolve_job(
+        &records,
+        job_caller_identity(caller_url),
+        &job_lookup_key(caller_url),
+        &std::collections::HashSet::new(),
+    )
+    .expect("must still match by normalized string alone");
+    assert!(out["title"].as_str().unwrap().contains("Backend Engineer"));
+}
+
+#[test]
+fn resolve_job_miss_carries_a_detail_naming_best_matches_and_found_jobs() {
+    let detail = error_detail(RES_JOB, JOB_NOT_FOUND_MESSAGE).expect("detail present");
+    assert!(detail.contains("best-matches"));
+    assert!(detail.contains("found-jobs"));
+}
+
+#[test]
+fn agent_result_reply_attaches_the_job_miss_detail_on_the_wire() {
+    let reply = agent_result_reply(
+        "req-1",
+        RES_JOB,
+        Err(AppError::Validation(JOB_NOT_FOUND_MESSAGE.to_string())),
+    );
+    let parsed: Value = serde_json::from_str(&reply).unwrap();
+    let detail = parsed["payload"]["detail"]
+        .as_str()
+        .expect("detail present on the wire");
+    assert!(detail.contains("best-matches"));
+    assert!(detail.contains("found-jobs"));
+}
+
+#[test]
+fn error_detail_is_none_for_an_unrelated_refusal() {
+    assert!(error_detail(RES_JOB, "url is required").is_none());
+    assert!(error_detail(RES_PROFILE, JOB_NOT_FOUND_MESSAGE).is_none());
 }
 
 /// The scheme guard must still see what a browser would: the decode runs
@@ -284,7 +596,13 @@ fn job_lookup_key_still_refuses_a_percent_encoded_javascript_scheme() {
 
 #[test]
 fn resolve_job_refuses_with_fixed_sentinel_when_absent() {
-    let err = resolve_job(&[], "https://nowhere.example.com/x").unwrap_err();
+    let err = resolve_job(
+        &[],
+        None,
+        "https://nowhere.example.com/x",
+        &std::collections::HashSet::new(),
+    )
+    .unwrap_err();
     assert_eq!(err.to_string(), JOB_NOT_FOUND_MESSAGE);
 }
 
@@ -352,7 +670,6 @@ fn automations_projection_has_exact_keys() {
             "runStatus",
             "status",
             "target",
-            "totalApplied",
             "totalFound",
             "updatedAt",
         ]
@@ -377,7 +694,16 @@ fn automations_found_jobs_total_matches_found_jobs_own_total() {
         ..blank_autopilot("ap-1")
     }];
     let row = &resolve_automations(&records)["automations"][0];
-    let paged = found_jobs::resolve_found_jobs(&records, "ap-1", 0, 1).expect("pages");
+    let no_filters = found_jobs::FoundJobsFilters::from_payload(&json!({})).unwrap();
+    let paged = found_jobs::resolve_found_jobs(
+        &records,
+        Some("ap-1"),
+        &no_filters,
+        &std::collections::HashSet::new(),
+        0,
+        1,
+    )
+    .expect("pages");
     assert_eq!(
         row["foundJobsTotal"], paged["total"],
         "foundJobsTotal must be exactly what found-jobs will page through"
@@ -402,6 +728,7 @@ fn automations_projection_never_carries_forbidden_keys() {
         "assistantProvider",
         "assistantModel",
         "assistantBaseUrl",
+        "totalApplied", // issue #1171 — dead on the source struct, never a real applied count
         "SECRET",
         "internal.example.local",
     ] {
@@ -456,7 +783,7 @@ fn full_best_match_row_json() -> Value {
 
 #[test]
 fn best_match_projection_has_exact_keys() {
-    let out = resolve_best_matches(&[full_best_match_row_json()], 1, 20);
+    let out = resolve_best_matches(&[full_best_match_row_json()], 0, 20, None);
     let row = &out["matches"][0];
     let mut keys: Vec<String> = row.as_object().unwrap().keys().cloned().collect();
     keys.sort();
@@ -507,7 +834,7 @@ fn best_match_projection_has_exact_keys() {
 
 #[test]
 fn best_match_projection_never_carries_forbidden_keys() {
-    let out = resolve_best_matches(&[full_best_match_row_json()], 1, 20);
+    let out = resolve_best_matches(&[full_best_match_row_json()], 0, 20, None);
     let text = out.to_string();
     for forbidden in [
         "assistantNotes",
@@ -521,7 +848,7 @@ fn best_match_projection_never_carries_forbidden_keys() {
 #[test]
 fn best_match_limit_is_honored_and_capped_server_side() {
     let rows: Vec<Value> = (0..5).map(|_| full_best_match_row_json()).collect();
-    let out = resolve_best_matches(&rows, 5, 2);
+    let out = resolve_best_matches(&rows, 0, 2, None);
     assert_eq!(out["matches"].as_array().unwrap().len(), 2);
     assert_eq!(out["returned"], 2);
     assert_eq!(out["total"], 5, "total is the pre-limit qualifying count");
@@ -543,7 +870,7 @@ fn best_match_title_company_location_are_fenced_as_untrusted_data() {
         "applied": false,
         "isAgency": false,
     });
-    let out = resolve_best_matches(&[malicious], 1, 20);
+    let out = resolve_best_matches(&[malicious], 0, 20, None);
     let row = &out["matches"][0];
     for field in ["title", "company", "location"] {
         let value = row[field].as_str().expect("still a string");
@@ -570,6 +897,280 @@ fn best_matches_limit_defaults_when_absent() {
     assert_eq!(
         clamp_best_matches_limit(&payload),
         DEFAULT_BEST_MATCHES_LIMIT
+    );
+}
+
+/// Regression for the hand-rolled clamp this now-shared one replaced: a
+/// `limit: 0` used to read as `Some(0)` off `Value::as_u64` and slip past
+/// `.unwrap_or`, returning 0 rows per page forever — a page whose
+/// `nextCursor` never advances hangs any paging loop. `0` must fall back to
+/// the default, same as an absent limit.
+#[test]
+fn best_matches_limit_zero_falls_back_to_the_default_not_to_zero() {
+    let payload = json!({ "resource": "best-matches", "limit": 0 });
+    assert_eq!(
+        clamp_best_matches_limit(&payload),
+        DEFAULT_BEST_MATCHES_LIMIT
+    );
+}
+
+/// B3-r3-F2 — `MAX_BEST_MATCHES_LIMIT` must reach the full row set
+/// `commands::autopilot::best_matches::BEST_MATCHES_CAP` (100) allows
+/// through, in ONE page: that command's clustering pass is real CPU work
+/// (its own doc — 3.03s at 2000 found-jobs, 12.3s at 4000), and the
+/// 30s-refill throttle bucket is sized for exactly one call per traversal.
+/// Before this fix `MAX_BEST_MATCHES_LIMIT` was half the cap, so a max-limit
+/// page never reached the end in one call — this fails against that value
+/// (both on the length assertion and on `nextCursor` staying non-null).
+#[test]
+fn max_best_matches_limit_covers_the_full_capped_row_set_in_one_page() {
+    // Mirrors `commands::autopilot::best_matches::BEST_MATCHES_CAP` — that
+    // const is private to a sibling module this file doesn't own, so this is
+    // a literal pin, not an import; the two must be kept in sync by hand.
+    const BEST_MATCHES_CAP: usize = 100;
+    assert_eq!(
+        MAX_BEST_MATCHES_LIMIT, BEST_MATCHES_CAP,
+        "a max-limit page must cover the whole capped row set in one call"
+    );
+
+    let rows: Vec<Value> = (0..BEST_MATCHES_CAP)
+        .map(|i| {
+            let mut row = full_best_match_row_json();
+            row["url"] = json!(format!("https://boards.example.com/jobs/{i}"));
+            row
+        })
+        .collect();
+    let out = resolve_best_matches(&rows, 0, MAX_BEST_MATCHES_LIMIT, None);
+    assert_eq!(
+        out["matches"].as_array().unwrap().len(),
+        BEST_MATCHES_CAP,
+        "every row of the capped set must fit in one max-limit page"
+    );
+    assert!(
+        out["nextCursor"].is_null(),
+        "a single max-limit page must reach the true end, not need a second call"
+    );
+}
+
+/// Issue #1146 P11 — `best-matches` gained the same `cursor`/`nextCursor`
+/// paging `found-jobs` already had. Walks every row via `resolve_best_matches`
+/// directly (no `AppHandle` needed, same pure/impure split as `found-jobs`),
+/// proving the traversal covers every row exactly once and terminates with a
+/// `null` cursor rather than looping forever. The cursor goes back through
+/// the REAL parser (round 2 fix, B3-r1-F4 — `nextCursor` is now
+/// `<query fingerprint>:<offset>`, not a bare offset), not a hand-rolled
+/// `parse()`, so this fails if the two halves of the format ever disagree.
+#[test]
+fn best_matches_cursor_walks_every_row_exactly_once_then_terminates_with_null() {
+    let rows: Vec<Value> = (0..25)
+        .map(|i| {
+            let mut row = full_best_match_row_json();
+            row["url"] = json!(format!("https://boards.example.com/jobs/{i}"));
+            row
+        })
+        .collect();
+
+    let page_size = 10;
+    let mut seen: Vec<String> = Vec::new();
+    let mut cursor: Option<String> = None;
+    let issuer = best_matches_cursor_issuer(None);
+    loop {
+        let offset =
+            parse_best_matches_cursor(&json!({ "cursor": cursor }), &issuer).expect("own cursor");
+        let out = resolve_best_matches(&rows, offset, page_size, None);
+        for row in out["matches"].as_array().unwrap() {
+            seen.push(row["url"].as_str().unwrap().to_string());
+        }
+        match out["nextCursor"].as_str() {
+            Some(next) => cursor = Some(next.to_string()),
+            None => break,
+        }
+        assert!(seen.len() <= rows.len(), "must terminate at the true end");
+    }
+
+    assert_eq!(
+        seen.len(),
+        rows.len(),
+        "every row must be seen exactly once"
+    );
+    let mut unique = seen.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(unique.len(), rows.len(), "no row must repeat across pages");
+}
+
+/// A cursor issued under one `query` replayed under a DIFFERENT one must
+/// refuse rather than silently page the new query's list at the old query's
+/// stale offset — the B3-r1-F4 hazard this fix closes.
+#[test]
+fn best_matches_cursor_issued_under_one_query_is_rejected_under_another() {
+    let rows: Vec<Value> = (0..25)
+        .map(|i| {
+            let mut row = full_best_match_row_json();
+            row["url"] = json!(format!("https://boards.example.com/jobs/{i}"));
+            row
+        })
+        .collect();
+    let issued = resolve_best_matches(&rows, 0, 10, Some("engineer"))["nextCursor"]
+        .as_str()
+        .expect("more pages")
+        .to_string();
+
+    let err = parse_best_matches_cursor(
+        &json!({ "cursor": issued }),
+        &best_matches_cursor_issuer(Some("designer")),
+    )
+    .unwrap_err();
+    assert_eq!(err.to_string(), BEST_MATCHES_WRONG_QUERY_CURSOR_MESSAGE);
+}
+
+/// The pre-round-2 wire shape (a bare numeric offset) is rejected, not
+/// accepted for compatibility — same reasoning as
+/// `found_jobs::found_jobs_rejects_a_bare_numeric_offset_cursor`.
+#[test]
+fn best_matches_rejects_a_bare_numeric_offset_cursor() {
+    let err = parse_best_matches_cursor(
+        &json!({ "cursor": "10" }),
+        &best_matches_cursor_issuer(None),
+    )
+    .unwrap_err();
+    assert_eq!(err.to_string(), BEST_MATCHES_MALFORMED_CURSOR_MESSAGE);
+}
+
+/// `best-matches`' `query` must go through the SAME hardened parse
+/// `found-jobs` uses for its own `query`/`country` (round 2 fix, B3-r2-F1/
+/// B3-r2-F2) — a wrong-typed or present-but-blank value refuses rather than
+/// silently reading as "absent" and handing back the unfiltered ranked list
+/// with a `total` the caller reads as filtered. Drives [`parse_best_matches_args`]
+/// itself, not `found_jobs::trimmed_lowercase_filter` directly (round 3 fix,
+/// B3-r3-F7 — the previous version of this test called the shared helper
+/// directly, pinning nothing about `best_matches_resource`'s ACTUAL call
+/// site; reverting that call site to the old `.and_then(Value::as_str)`
+/// combinator left the whole suite green). `parse_best_matches_args` needs
+/// no `AppHandle` — only [`best_matches_resource`] adds the
+/// `autopilot_best_matches` call this can't reach.
+#[test]
+fn best_matches_query_filter_refuses_a_wrong_typed_or_blank_value() {
+    for bad in [json!(true), json!(5), json!(""), json!("   ")] {
+        let err = parse_best_matches_args(&json!({ "query": bad })).unwrap_err();
+        assert!(
+            err.to_string().contains("query"),
+            "refusal must name the key: {err}"
+        );
+    }
+    let (query, offset) = parse_best_matches_args(&json!({})).unwrap();
+    assert_eq!(query, None, "an OMITTED query must still mean no filter");
+    assert_eq!(offset, 0, "no cursor means start at the first page");
+}
+
+/// The `query` filter itself must actually narrow the row set — every test
+/// above this one only exercises cursor issuance/refusal or the argument
+/// PARSE, never whether `resolve_best_matches`' own `retain` actually drops
+/// a non-matching row or matches by EITHER `title` or `company` (mirrors
+/// `found_jobs::tests::found_jobs_query_filter_matches_title_or_company_case_insensitively`,
+/// one resource over — this same predicate, hand-rolled here as
+/// `resolve_best_matches`' own `.retain(...)` rather than reused from
+/// `found_jobs`). Mutation check: deleting the `if let Some(q) = query {
+/// matches.retain(...) }` block in `resolve_best_matches` makes this fail —
+/// `total`/`returned` would read 3 instead of 1, and the `miss`/`by_title`
+/// rows would leak into `matches`.
+#[test]
+fn best_matches_query_filter_matches_title_or_company_case_insensitively() {
+    let mut by_title = full_best_match_row_json();
+    by_title["title"] = json!("Senior Backend Engineer");
+    by_title["company"] = json!("Acme");
+    by_title["url"] = json!("https://boards.example.com/jobs/1");
+
+    let mut by_company = full_best_match_row_json();
+    by_company["title"] = json!("Frontend Developer");
+    by_company["company"] = json!("Roboto Widgets");
+    by_company["url"] = json!("https://boards.example.com/jobs/2");
+
+    let mut miss = full_best_match_row_json();
+    miss["title"] = json!("Sales Associate");
+    miss["company"] = json!("Nope Inc");
+    miss["url"] = json!("https://boards.example.com/jobs/3");
+
+    // `resolve_best_matches` receives an already-lowercased `query` (the
+    // real call site normalizes it via `parse_best_matches_args` →
+    // `found_jobs::trimmed_lowercase_filter` before this fn ever runs), so
+    // the fixture passes the lowercase form directly while the SOURCE row
+    // keeps mixed case — proving the match itself, not the caller's
+    // normalization, is what makes this case-insensitive.
+    let rows = vec![by_title, by_company, miss];
+    let out = resolve_best_matches(&rows, 0, 20, Some("roboto"));
+    assert_eq!(
+        out["total"], 1,
+        "the query must exclude the two non-matching rows, not just narrow the page"
+    );
+    assert_eq!(out["returned"], 1);
+    assert_eq!(
+        out["matches"][0]["url"], "https://boards.example.com/jobs/2",
+        "the surviving row must be the COMPANY match, proving `query` checks company too, \
+         not only title"
+    );
+}
+
+/// A row at the REAL permitted worst case: `title`/`company`/`location`
+/// each pinned to `crate::prompt_fence::JOB_CAP` (8,000 chars), in
+/// multi-byte CJK text (stresses the char-vs-byte distinction — a
+/// char-counted cap is NOT a byte cap). Mirrors
+/// `found_jobs::tests::worst_permitted_job`'s own reasoning one resource
+/// over — this is legitimate, non-adversarial content a board could
+/// genuinely return, not an adversarial payload.
+fn worst_permitted_best_match_row(n: usize) -> Value {
+    let cjk_field = |cap: usize| "中".repeat(cap);
+    let mut row = full_best_match_row_json();
+    row["title"] = json!(cjk_field(crate::prompt_fence::JOB_CAP));
+    row["company"] = json!(cjk_field(crate::prompt_fence::JOB_CAP));
+    row["location"] = json!(cjk_field(crate::prompt_fence::JOB_CAP));
+    row["url"] = json!(format!("https://boards.example.com/jobs/{n}"));
+    row
+}
+
+/// Issue #1165 (HIGH) — a row-count `limit` alone cannot bound a page's byte
+/// size: raising `MAX_BEST_MATCHES_LIMIT` to 100 without a byte-budget trim
+/// let a max-limit page of worst-permitted rows reach ~7 MB, well past both
+/// `agent_cli::mcp::MCP_RESULT_MAX_BYTES` (256 KiB) and, eventually,
+/// `extension_bridge::mod::MAX_FRAME_BYTES`. Mirrors
+/// `found_jobs::tests::found_jobs_trims_an_oversized_page_and_keeps_the_cursor_correct`
+/// one resource over: this fails against the pre-fix `resolve_best_matches`,
+/// which built `page` and returned it unconditionally.
+#[test]
+fn best_matches_trims_an_oversized_page_and_keeps_the_cursor_correct() {
+    const MCP_RESULT_MAX_BYTES: usize = 256 * 1024;
+    let total_rows = MAX_BEST_MATCHES_LIMIT * 2;
+    let rows: Vec<Value> = (0..total_rows)
+        .map(worst_permitted_best_match_row)
+        .collect();
+
+    let page1 = resolve_best_matches(&rows, 0, MAX_BEST_MATCHES_LIMIT, None);
+    let kept = page1["matches"].as_array().unwrap().len();
+    assert!(
+        kept < MAX_BEST_MATCHES_LIMIT,
+        "worst-permitted content must actually trigger trimming, kept {kept} of \
+         {MAX_BEST_MATCHES_LIMIT} requested"
+    );
+    assert!(kept > 0, "at least one row must always come back");
+    let bytes = page1.to_string().len();
+    assert!(
+        bytes < MCP_RESULT_MAX_BYTES,
+        "a trimmed page must stay under the MCP cap, was {bytes} bytes"
+    );
+    let issuer = best_matches_cursor_issuer(None);
+    assert_eq!(
+        page1["nextCursor"].as_str().unwrap(),
+        format!("{issuer}:{kept}"),
+        "nextCursor must reflect rows ACTUALLY kept, not the requested limit"
+    );
+
+    // The next page must start exactly at `kept` — no row skipped, none repeated.
+    let page2 = resolve_best_matches(&rows, kept, MAX_BEST_MATCHES_LIMIT, None);
+    let first_url_page2 = page2["matches"][0]["url"].as_str().unwrap();
+    assert_eq!(
+        first_url_page2,
+        format!("https://boards.example.com/jobs/{kept}"),
+        "the row immediately after the trimmed page must be next, not skipped or repeated"
     );
 }
 
@@ -639,23 +1240,299 @@ fn best_matches_bucket_refills_slowly() {
 fn no_resource_output_ever_carries_a_forbidden_key() {
     let job = project_value::<_, AgentJob>(&full_found_job()).unwrap();
     let automations = resolve_automations(&[blank_autopilot("ap-1")]);
-    let best_matches = resolve_best_matches(&[full_best_match_row_json()], 1, 20);
+    let best_matches = resolve_best_matches(&[full_best_match_row_json()], 0, 20, None);
     let found_jobs_records = vec![Autopilot {
         found_jobs: vec![full_found_job()],
         ..blank_autopilot("ap-1")
     }];
-    let found_jobs = found_jobs::resolve_found_jobs(&found_jobs_records, "ap-1", 0, 20).unwrap();
+    let no_filters = found_jobs::FoundJobsFilters::from_payload(&json!({})).unwrap();
+    let found_jobs = found_jobs::resolve_found_jobs(
+        &found_jobs_records,
+        Some("ap-1"),
+        &no_filters,
+        &std::collections::HashSet::new(),
+        0,
+        20,
+    )
+    .unwrap();
     for value in [job, automations, best_matches, found_jobs] {
         let text = value.to_string();
         for forbidden in [
+            // Key names.
             "resumeText",
             "coverLetter",
             "assistantNotes",
             "assistantProvider",
             "assistantModel",
             "assistantBaseUrl",
+            // T3 hardening — the distinctive VALUES the fixtures above carry
+            // for those keys, so a projection regression that leaks the same
+            // content under a differently-named key (e.g. `notes`, `body`,
+            // `sourceText`) cannot pass this sweep just by renaming the key.
+            "SECRET RESUME TEXT",
+            "SECRET COVER LETTER",
+            "secret AI note",
+            "gpt-secret",
+            "internal.example.local",
         ] {
             assert!(!text.contains(forbidden), "leaked {forbidden} in {text}");
         }
     }
+}
+
+// ── issue #1155 — retryAfterMs + refused-request identity on the throttle envelope ──
+
+#[test]
+fn token_bucket_retry_after_ms_is_zero_with_a_token_available_and_positive_once_exhausted() {
+    let mut t = AgentQueryThrottle::new();
+    let now = std::time::Instant::now();
+    assert_eq!(
+        t.retry_after_ms(RES_SCHEMA),
+        0,
+        "a fresh bucket has a token ready"
+    );
+    for _ in 0..(AGENT_CHEAP_BURST as usize) {
+        assert!(t.try_acquire_at(RES_SCHEMA, now));
+    }
+    assert!(!t.try_acquire_at(RES_SCHEMA, now));
+    assert!(
+        t.retry_after_ms(RES_SCHEMA) > 0,
+        "an exhausted bucket must report a positive wait"
+    );
+}
+
+/// Issue #1155 (HIGH review finding A2-r1-AC-2): `> 0` alone is satisfied by ANY positive
+/// constant, including a hardcoded `1`ms that would reproduce the reported transcript (a caller
+/// retrying instantly, getting throttled again, and abandoning the request). Anchor each bucket
+/// to its OWN refill rate — the two differ (1 s vs 30 s), so no single constant can satisfy both,
+/// closing the exact gap the review's "Mutation B" (`retry_after_ms` hardcoded to a constant
+/// `1`ms) exploited.
+#[test]
+fn retry_after_ms_is_anchored_to_each_buckets_own_refill_rate_once_exhausted() {
+    let mut t = AgentQueryThrottle::new();
+    let now = std::time::Instant::now();
+
+    for _ in 0..(AGENT_CHEAP_BURST as usize) {
+        assert!(t.try_acquire_at(RES_SCHEMA, now));
+    }
+    assert!(!t.try_acquire_at(RES_SCHEMA, now));
+    assert_eq!(
+        t.retry_after_ms(RES_SCHEMA),
+        (AGENT_CHEAP_REFILL_SECS * 1000.0) as u64,
+        "the cheap bucket's wait must equal its own refill interval, not a hardcoded constant"
+    );
+
+    assert!(t.try_acquire_at(RES_BEST_MATCHES, now));
+    assert!(!t.try_acquire_at(RES_BEST_MATCHES, now));
+    assert_eq!(
+        t.retry_after_ms(RES_BEST_MATCHES),
+        (AGENT_BEST_MATCHES_REFILL_SECS * 1000.0) as u64,
+        "the best-matches bucket's wait must equal ITS OWN (30x longer) refill interval"
+    );
+}
+
+#[test]
+fn throttled_reply_carries_the_rate_limited_sentinel_a_positive_retry_after_and_the_refused_url() {
+    let payload = json!({ "resource": RES_JOB, "url": "https://example.com/job/1" });
+    let reply = throttled_reply("req-1", &payload, 1_000);
+    let parsed: Value = serde_json::from_str(&reply).unwrap();
+    let p = &parsed["payload"];
+    assert_eq!(p["ok"], false);
+    assert_eq!(p["resource"], RES_JOB);
+    assert_eq!(
+        p["error"],
+        crate::extension_bridge::agent_call::ERR_RATE_LIMITED
+    );
+    assert_eq!(p["detail"], THROTTLED_MESSAGE);
+    assert_eq!(p["retryAfterMs"], 1_000);
+    assert!(p["retryAfterMs"].as_u64().unwrap() > 0);
+    // The refused request's own identity — the gap issue #1155 reports: three throttled `job`
+    // lookups previously looked identical (only "resource":"job", never which url).
+    assert_eq!(p["url"], "https://example.com/job/1");
+}
+
+#[test]
+fn throttled_reply_echoes_the_found_jobs_autopilot_id_identity() {
+    let payload = json!({ "resource": RES_FOUND_JOBS, "autopilotId": "ap-9" });
+    let reply = throttled_reply("req-2", &payload, 500);
+    let parsed: Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(parsed["payload"]["autopilotId"], "ap-9");
+}
+
+#[test]
+fn throttled_reply_names_no_identity_for_a_resource_that_has_none() {
+    let payload = json!({ "resource": RES_BEST_MATCHES });
+    let reply = throttled_reply("req-3", &payload, 100);
+    let parsed: Value = serde_json::from_str(&reply).unwrap();
+    assert!(parsed["payload"].get("url").is_none());
+    assert!(parsed["payload"].get("autopilotId").is_none());
+}
+
+// ── issue #1151 — bounded refusals + the success-path frame cap ──────────
+
+/// Mirrors `agent_call`'s own `a_refusal_built_from_a_cap_sized_identifier_still_fits_the_frame_cap`
+/// — a `resource` at the incoming frame cap must still fit the OUTGOING one once clamped, and the
+/// clamp (not the last-resort envelope) must be what made it fit.
+#[test]
+fn a_throttled_reply_built_from_a_cap_sized_resource_still_fits_the_frame_cap() {
+    let cap = super::super::MAX_FRAME_BYTES;
+    let huge = "n".repeat(cap);
+    let payload = json!({ "resource": huge.clone() });
+    let reply = throttled_reply(&huge, &payload, 1_000);
+    assert!(
+        reply.len() <= cap,
+        "the refusal is {} B, over the {cap} B cap it exists to enforce",
+        reply.len()
+    );
+    let parsed: Value = serde_json::from_str(&reply).expect("the refusal is valid JSON");
+    let clamped = crate::extension_bridge::agent_call::clamp_ident(&huge).to_string();
+    assert_eq!(
+        parsed["payload"]["resource"], clamped,
+        "the resource must be CLAMPED, not dropped"
+    );
+    assert_eq!(parsed["reqId"], clamped);
+    assert_ne!(
+        parsed["payload"]["detail"],
+        crate::extension_bridge::agent_call::REFUSAL_UNDELIVERABLE_DETAIL,
+        "fitting via the last-resort envelope means the clamp did not do its job"
+    );
+}
+
+/// Issue #1151 HIGH review finding A2-r1-AC-1: the two mutation cases above only prove
+/// `bounded_result_reply` itself is correct, never that its TWO call sites — this one and
+/// `handle_agent_query`'s — actually route through it. `origin_refused_reply` takes no
+/// `AppHandle`, so unlike `handle_agent_query` it CAN be driven directly: mirrors the
+/// `throttled_reply` cap-sized test above, one call site over. Reverting
+/// `origin_refused_reply`'s call from `bounded_result_reply` back to a raw `agent_result_reply`
+/// (the review's "Mutation 3") makes this fail — an unclamped cap-sized `resource` blows the
+/// reply past `MAX_FRAME_BYTES`.
+#[test]
+fn origin_refused_reply_built_from_a_cap_sized_resource_still_fits_the_frame_cap() {
+    let cap = super::super::MAX_FRAME_BYTES;
+    let huge = "n".repeat(cap);
+    let payload = json!({ "resource": huge.clone() });
+    let reply = origin_refused_reply(&huge, &payload);
+    assert!(
+        reply.len() <= cap,
+        "the refusal is {} B, over the {cap} B cap it exists to enforce",
+        reply.len()
+    );
+    let parsed: Value = serde_json::from_str(&reply).expect("the refusal is valid JSON");
+    let clamped = crate::extension_bridge::agent_call::clamp_ident(&huge).to_string();
+    assert_eq!(
+        parsed["payload"]["resource"], clamped,
+        "the resource must be CLAMPED, not dropped"
+    );
+    assert_eq!(parsed["reqId"], clamped);
+    assert_eq!(
+        parsed["payload"]["error"], CLI_ONLY_MESSAGE,
+        "a cap-sized resource must not push this refusal into the result_too_large fallback"
+    );
+}
+
+/// `handle_agent_query`'s OTHER call site of `bounded_result_reply` cannot be driven directly the
+/// same way — it is `async fn(app: &AppHandle, ..)` and this crate has no `tauri::test` mock-app
+/// harness (see `extension_bridge::test::spawn_detached_runs_without_an_ambient_tokio_runtime`'s
+/// doc for why that's a deliberately deferred, separately-reviewed change, not an oversight here).
+/// A literal scan of this module's own source is the fallback this repo already uses for the
+/// identical problem (`tests/architecture.rs`'s `job_complete_sites_in`): assert
+/// `handle_agent_query`'s body still ends in `bounded_result_reply(..)`, never a bare
+/// `agent_result_reply(..)` (the review's "Mutation 2"). Catches the mutation via a source-text
+/// scan of `handle_agent_query`'s own body, not `bounded_result_reply`'s.
+#[test]
+fn handle_agent_query_routes_its_reply_through_the_frame_capped_builder() {
+    let src = include_str!("../agent_read.rs");
+    let start = src
+        .find("pub(super) async fn handle_agent_query")
+        .expect("handle_agent_query must still exist under this exact signature");
+    let body = &src[start..];
+    let end = body
+        .find("\n}\n")
+        .expect("handle_agent_query's closing brace")
+        + "\n}\n".len();
+    let body = &body[..end];
+    assert!(
+        body.contains("bounded_result_reply("),
+        "handle_agent_query must build its reply via bounded_result_reply (issue #1151's frame cap)"
+    );
+    assert!(
+        !body.contains("agent_result_reply("),
+        "handle_agent_query must not fall back to the raw, unbounded agent_result_reply"
+    );
+    // Issue #1151 AC-3: the SAME source scan pins the fallback arm's embedded resource name too
+    // — `bounded_result_reply` only clamps the envelope's `resource`/`reqId`, not a copy inside
+    // the "unknown agent resource '…'" message itself, so that copy must be clamped inline.
+    assert!(
+        body.contains("clamp_ident(other)"),
+        "the fallback arm's 'unknown agent resource' message must clamp `other` inline, not \
+         just rely on bounded_result_reply's envelope clamp"
+    );
+}
+
+/// Issue #1151 AC-3 (MEDIUM review finding): behavioral half of the scan test above — with `other`
+/// clamped inline (mirrors `handle_agent_query`'s fallback arm exactly), a cap-sized unknown
+/// resource still reports its REAL cause instead of collapsing into the generic
+/// `result_too_large` sentinel, which used to send the next debugger to the wrong place (a
+/// "narrow the request" hint for what was actually a plain unrecognized resource name).
+#[test]
+fn unknown_resource_error_clamps_the_embedded_resource_so_the_real_cause_survives_the_frame_cap() {
+    let cap = super::super::MAX_FRAME_BYTES;
+    let huge = "n".repeat(cap);
+    let outcome: AppResult<Value> = Err(AppError::Validation(format!(
+        "unknown agent resource '{}'",
+        crate::extension_bridge::agent_call::clamp_ident(&huge)
+    )));
+    let reply = bounded_result_reply("req-6", &huge, outcome);
+    assert!(
+        reply.len() <= cap,
+        "the reply is {} B, over the cap",
+        reply.len()
+    );
+    let parsed: Value = serde_json::from_str(&reply).unwrap();
+    assert_ne!(
+        parsed["payload"]["error"],
+        crate::extension_bridge::agent_call::ERR_RESULT_TOO_LARGE,
+        "a cap-sized unknown resource must not collapse into the generic result_too_large \
+         sentinel — that hides the real cause behind the wrong remedy"
+    );
+    assert!(
+        parsed["payload"]["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("unknown agent resource '"),
+        "the real cause must survive: {}",
+        parsed["payload"]["error"]
+    );
+}
+
+/// Issue #1151's own test: an over-cap SUCCESS reply (a resource fn's own data, not a refusal)
+/// must be substituted with a `result_too_large` refusal that itself fits — mirrors
+/// `agent_call::enforce_frame_cap`'s own guard, one wire type over.
+#[test]
+fn bounded_result_reply_refuses_an_oversized_success_payload_with_result_too_large() {
+    let cap = super::super::MAX_FRAME_BYTES;
+    let oversized = json!({ "padding": "x".repeat(cap + 1) });
+    let reply = bounded_result_reply("req-4", RES_JOB, Ok(oversized));
+    assert!(
+        reply.len() <= cap,
+        "the substitute itself must fit: {} B",
+        reply.len()
+    );
+    let parsed: Value = serde_json::from_str(&reply).expect("the substitute is valid JSON");
+    let p = &parsed["payload"];
+    assert_eq!(p["ok"], false);
+    assert_eq!(
+        p["error"],
+        crate::extension_bridge::agent_call::ERR_RESULT_TOO_LARGE
+    );
+    assert!(p["detail"].as_str().unwrap().contains("frame cap"));
+}
+
+/// The other direction: an ordinary under-cap reply must pass through untouched.
+#[test]
+fn bounded_result_reply_passes_an_under_cap_reply_through_untouched() {
+    let reply = bounded_result_reply("req-5", RES_SCHEMA, Ok(schema_value()));
+    let parsed: Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(parsed["payload"]["ok"], true);
+    assert_eq!(parsed["payload"]["resource"], RES_SCHEMA);
 }

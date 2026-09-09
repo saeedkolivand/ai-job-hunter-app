@@ -17,7 +17,10 @@ use crate::scraping::types::{JobPosting, LocationSpec};
 /// "never drop". Covers what the remote boards actually emit
 /// (Remotive/RemoteOK/WWR set `extra.remote=true` AND strings like
 /// "Worldwide"/"Anywhere"; German feeds emit "Homeoffice").
-const REMOTE_MARKERS: &[&str] = &[
+// `pub(crate)` (issue #1167) — `agent_read::found_jobs`'s `remote` filter reuses this EXACT list
+// (never a second hand-typed one) so a found-jobs row is classified "remote" by the identical
+// marker set the scrape-time post-filter already uses.
+pub(crate) const REMOTE_MARKERS: &[&str] = &[
     "remote",
     "anywhere",
     "worldwide",

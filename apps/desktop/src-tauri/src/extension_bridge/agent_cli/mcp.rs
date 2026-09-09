@@ -9,7 +9,8 @@
 //! ## Three launch tiers over the [`Effect`] boundary
 //! Six curated, `readOnlyHint:true`, names/base descriptions derived from [`super::VERB_TABLE`]
 //! (never a second hand-typed copy): `best-matches`, `job`, `profile`, `automations`,
-//! `found-jobs` (issue #1115 — paginated per-autopilot found-jobs traversal), and a LOCAL
+//! `found-jobs` (issue #1115 — paginated, filtered found-jobs traversal, one autopilot or every
+//! one; issues #1167/#1168), and a LOCAL
 //! `commands` (no bridge call — works with the app closed) enumerating [`POLICY`] by `effect`.
 //! Three generic dispatch tools sit over that SAME table: `call-read` (always present),
 //! `call-reversible` (`--allow-reversible`), and `call-irreversible` (`--allow-irreversible`,
@@ -150,7 +151,10 @@ use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender, TrySendError};
 use std::sync::Arc;
 use std::thread;
 
+use serde_json::Value;
+
 use super::agent_call;
+use super::catalogue::{CatalogueEntry, CATALOGUE};
 use super::policy::{Effect, LookupInput, ProofSource, POLICY};
 use super::*;
 // The ENFORCING constants (issue #1129): both `limit` descriptions are `format!`ed from these,
@@ -234,7 +238,7 @@ use instructions::build_instructions;
 // input schema — lives in its own file for the same R8 reason; see
 // `mcp/schemas.rs`. Only the four items the protocol half calls are imported.
 mod schemas;
-use schemas::{proof_from, tool_for, tools, unavailable_reason};
+use schemas::{proof_from, tier_exposes, tool_for, tools, unavailable_reason};
 
 fn initialize_result(params: &Value, instructions: &str) -> Value {
     let requested = params.get("protocolVersion").and_then(Value::as_str);
@@ -251,23 +255,67 @@ fn initialize_result(params: &Value, instructions: &str) -> Value {
 
 // ── `commands` (local — no bridge call) ────────────────────────────────
 
+/// `command`'s row in the generated [`CATALOGUE`], or `None` when it is absent (an `invoke()` call
+/// the generator could not parse with confidence, or one with no call site at all — its own module
+/// doc). `commands` marks that absence with `args: null` (issue #1163) rather than an empty list,
+/// which would otherwise be indistinguishable from "this command genuinely takes no arguments".
+fn catalogue_lookup(command: &str) -> Option<&'static CatalogueEntry> {
+    CATALOGUE.iter().find(|entry| entry.command == command)
+}
+
 fn commands_value(arguments: &Value, tier: Tier) -> Value {
-    let filter = arguments.get("effect").and_then(Value::as_str);
+    let effect_filter = arguments.get("effect").and_then(Value::as_str);
+    let namespace_filter = arguments.get("namespace").and_then(Value::as_str);
     let rows: Vec<Value> = POLICY
         .iter()
         .filter_map(|entry| {
             let (namespace, command) = agent_call::split_path(entry.path);
+            if namespace_filter.is_some_and(|n| n != namespace) {
+                return None;
+            }
             let effect_name = match entry.effect {
                 Effect::Read => "read",
                 Effect::Reversible => "reversible",
                 Effect::Irreversible(_) => "irreversible",
                 Effect::NotExposed(_) => "not_exposed",
             };
-            if filter.is_some_and(|f| f != effect_name) {
+            if effect_filter.is_some_and(|f| f != effect_name) {
                 return None;
             }
             let mut row =
                 json!({ "namespace": namespace, "command": command, "effect": effect_name });
+            match catalogue_lookup(command) {
+                Some(catalogued) => {
+                    if !catalogued.description.is_empty() {
+                        row["description"] = json!(catalogued.description);
+                    }
+                    row["args"] = json!(catalogued
+                        .args
+                        .iter()
+                        .map(|arg| {
+                            let mut value = json!({ "name": arg.name, "required": arg.required });
+                            // `None` (scalar arg) omits the key entirely — unchanged. `Some(&[])`
+                            // (a wrapper type this generator could not resolve — see
+                            // `CatalogueArg::fields`'s own doc) is surfaced as an explicit
+                            // `null`, distinct from omission, so a caller can tell "known to
+                            // take no nested fields" apart from "unknown nested shape" (MEDIUM —
+                            // CLI review).
+                            match arg.fields {
+                                None => {}
+                                Some([]) => {
+                                    value["fields"] = Value::Null;
+                                }
+                                Some(fields) => {
+                                    value["fields"] = json!(fields);
+                                }
+                            }
+                            value
+                        })
+                        .collect::<Vec<_>>());
+                }
+                // `args: null`, never an absent key or an empty array — see this fn's own doc.
+                None => row["args"] = Value::Null,
+            }
             // A paged row's reply is an ENVELOPE, not the bare array its name suggests
             // (issue #1136). Both the list and the note come from `agent_call`, so this
             // row cannot drift from the behaviour `dispatch_direct` actually applies.
@@ -281,11 +329,7 @@ fn commands_value(arguments: &Value, tier: Tier) -> Value {
             if command == agent_call::reshape::CONTACT_PROFILE_GET_COMMAND {
                 row["returns"] = json!(agent_call::reshape::CONTACT_PROFILE_GET_PROJECTION_NOTE);
             }
-            let gate_open = match entry.effect {
-                Effect::Reversible => tier.allows_reversible(),
-                Effect::Irreversible(_) => tier.allows_irreversible(),
-                _ => true,
-            };
+            let gate_open = tier_exposes(tier, &entry.effect);
             match tool_for(&entry.effect) {
                 Some(tool) if gate_open => row["tool"] = json!(tool),
                 Some(_) => row["unavailable"] = json!(unavailable_reason(&entry.effect)),
@@ -296,6 +340,19 @@ fn commands_value(arguments: &Value, tier: Tier) -> Value {
                     if let Some(pf) = proof_from(source) {
                         row["proofFrom"] = json!(pf);
                     }
+                    // The field a confirm ceremony will require (issue #1160: "what would
+                    // deleting this require?" answerable without dispatching) — derived, never
+                    // hand-typed, the same as `proofFrom`/`hint`'s own `field` clause.
+                    if let Some(field) = agent_call::proof_field_for(source) {
+                        row["proofField"] = json!(field);
+                    }
+                    // What an ABSENT `proofField` means for this row (CLI review round 2 —
+                    // MEDIUM): `"count"` — pass the array length / `total`; `"response_value"` —
+                    // pass the whole response value; `"field"` — a field IS named above. Carried
+                    // on every Irreversible row, not just the ones with a named field, so a
+                    // caller never has to dispatch the destructive command just to discover which
+                    // shape its own refusal would have described.
+                    row["proofKind"] = json!(agent_call::proof_kind_for(source));
                     if let ProofSource::Lookup { key, input, .. } = source {
                         row["proofInput"] = json!(key);
                         // A `Literal` input's VALUE (e.g. `privacy_sign_out_all`'s `boardId` =
@@ -338,14 +395,22 @@ fn value_as_arg(v: &Value) -> String {
 /// own `None | Some(Value::Null)` arm; a strict schema unions optionals with `null`).
 fn tool_argv(name: &str, arguments: &Value) -> Vec<String> {
     match name {
-        TOOL_BEST_MATCHES => match arguments.get("limit").filter(|v| !v.is_null()) {
-            Some(v) => vec![
-                "best-matches".to_string(),
-                "--limit".to_string(),
-                value_as_arg(v),
-            ],
-            None => vec!["best-matches".to_string()],
-        },
+        TOOL_BEST_MATCHES => {
+            let mut argv = vec!["best-matches".to_string()];
+            if let Some(limit) = arguments.get("limit").filter(|v| !v.is_null()) {
+                argv.push("--limit".to_string());
+                argv.push(value_as_arg(limit));
+            }
+            if let Some(cursor) = arguments.get("cursor").filter(|v| !v.is_null()) {
+                argv.push("--cursor".to_string());
+                argv.push(value_as_arg(cursor));
+            }
+            if let Some(query) = arguments.get("query").filter(|v| !v.is_null()) {
+                argv.push("--query".to_string());
+                argv.push(value_as_arg(query));
+            }
+            argv
+        }
         TOOL_JOB => vec![
             "job".to_string(),
             arguments
@@ -356,15 +421,22 @@ fn tool_argv(name: &str, arguments: &Value) -> Vec<String> {
         ],
         TOOL_PROFILE => vec!["profile".to_string()],
         TOOL_AUTOMATIONS => vec!["automations".to_string()],
+        // Issue #1168 — `autopilotId` is now OPTIONAL (omitted spans every
+        // autopilot). Forwarded as the SAME bare leading positional as
+        // before when present, simply omitted when absent — `parse_found_jobs`
+        // only reads the first token as `autopilotId` when it does not look
+        // like a flag, so an omitted id here correctly falls through to
+        // "start flag parsing at index 0".
         TOOL_FOUND_JOBS => {
-            let mut argv = vec![
-                "found-jobs".to_string(),
-                arguments
-                    .get("autopilotId")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-            ];
+            let mut argv = vec!["found-jobs".to_string()];
+            if let Some(id) = arguments
+                .get("autopilotId")
+                .filter(|v| !v.is_null())
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+            {
+                argv.push(id.to_string());
+            }
             if let Some(limit) = arguments.get("limit").filter(|v| !v.is_null()) {
                 argv.push("--limit".to_string());
                 argv.push(value_as_arg(limit));
@@ -372,6 +444,29 @@ fn tool_argv(name: &str, arguments: &Value) -> Vec<String> {
             if let Some(cursor) = arguments.get("cursor").filter(|v| !v.is_null()) {
                 argv.push("--cursor".to_string());
                 argv.push(value_as_arg(cursor));
+            }
+            if let Some(min_score) = arguments.get("minScore").filter(|v| !v.is_null()) {
+                argv.push("--min-score".to_string());
+                argv.push(value_as_arg(min_score));
+            }
+            if let Some(country) = arguments.get("country").filter(|v| !v.is_null()) {
+                argv.push("--country".to_string());
+                argv.push(value_as_arg(country));
+            }
+            if let Some(remote) = arguments.get("remote").filter(|v| !v.is_null()) {
+                argv.push("--remote".to_string());
+                argv.push(value_as_arg(remote));
+            }
+            if let Some(applied) = arguments.get("applied").filter(|v| !v.is_null()) {
+                argv.push("--applied".to_string());
+                argv.push(value_as_arg(applied));
+            }
+            if let Some(query) = arguments.get("query").filter(|v| !v.is_null()) {
+                argv.push("--query".to_string());
+                argv.push(value_as_arg(query));
+            }
+            if arguments.get("includeDescription").and_then(Value::as_bool) == Some(true) {
+                argv.push("--include-description".to_string());
             }
             argv
         }
@@ -413,13 +508,23 @@ fn tool_argv(name: &str, arguments: &Value) -> Vec<String> {
 }
 
 /// Local effect-class routing for `call-*`: refuse a target the bundled [`POLICY`] copy does not
-/// know at all (never forward it), refuse a KNOWN target on the wrong tool naming the right one,
-/// and (MUST FIX — security review round 2) refuse a [`Effect::NotExposed`] target on EVERY tool,
-/// naming its own stored reason — never forwarded to let a possibly-stale peer's own gate be the
-/// only thing catching it (see the module doc). Never touches the wire.
-fn local_call_refusal(tool_name: &str, verb: &Verb) -> Option<Value> {
+/// know at all (never forward it), refuse a KNOWN target on the wrong tool naming the right one —
+/// or, when that right tool isn't even REGISTERED on this launch, `tier_not_enabled` naming the
+/// flag to relaunch with instead (issue #1154: `wrong_tool` used to name `call-reversible`/
+/// `call-irreversible` unconditionally, even on a read-only launch where the client's own
+/// `tools/list` never advertised them — a dead end the model could not act on) — refuse a
+/// [`Effect::NotExposed`] target on EVERY tool naming its own stored reason (MUST FIX — security
+/// review round 2), and (A1-r1-SEC-1 HIGH) refuse a body that fails the bundled catalogue's own
+/// declared contract with `invalid_input` — none of these forwarded, so a possibly stale PEER app
+/// process (e.g. an updater-staged newer exe still paired with an older running app) is never the
+/// only thing catching them, matching what [`instructions::INSTRUCTIONS`] promises the model
+/// before any call runs. Never touches the wire.
+fn local_call_refusal(tool_name: &str, verb: &Verb, tier: Tier) -> Option<Value> {
     let Verb::Call {
-        namespace, command, ..
+        namespace,
+        command,
+        input,
+        ..
     } = verb
     else {
         return None;
@@ -428,13 +533,15 @@ fn local_call_refusal(tool_name: &str, verb: &Verb) -> Option<Value> {
         .iter()
         .find(|e| agent_call::split_path(e.path) == (namespace.as_str(), command.as_str()));
     let Some(entry) = entry else {
+        // Same suggestion `agent_call::dispatch`'s own `UnknownCommand` refusal names — never a
+        // second hand-typed scan of `POLICY` (issue #1163).
+        let suggestion = agent_call::namespace_suggestion(command);
         return Some(json!({
             "dispatched": false,
             "namespace": namespace,
             "command": command,
             "error": agent_call::ERR_UNKNOWN_COMMAND,
-            "detail": "no policy row matches this namespace/command in this server's own \
-                       table — call `commands` to enumerate real targets",
+            "detail": agent_call::unknown_command_detail(suggestion),
         }));
     };
     if let Effect::NotExposed(reason) = entry.effect {
@@ -450,58 +557,48 @@ fn local_call_refusal(tool_name: &str, verb: &Verb) -> Option<Value> {
     // invariant ever breaks, forward to the app (which refuses on its own) rather than panic:
     // this path runs under `panic = "abort"`, where a panic is a silent server death.
     let right_tool = tool_for(&entry.effect)?;
-    if right_tool == tool_name {
-        None
-    } else {
-        Some(json!({
+    if right_tool != tool_name {
+        // [`tier_exposes`] — the SAME fn `commands_value` calls per row (issue #1154), not a
+        // second hand-typed copy, so the two can never disagree about which effects this Tier
+        // exposes.
+        let gate_open = tier_exposes(tier, &entry.effect);
+        if !gate_open {
+            return Some(json!({
+                "dispatched": false,
+                "namespace": namespace,
+                "command": command,
+                "error": "tier_not_enabled",
+                "detail": format!(
+                    "this command is classified for `{right_tool}`, but this server was \
+                     launched without it registered ({}) — do not retry on `{right_tool}`, it is \
+                     not in this session's tool list; ask the user to relaunch `ajh-tauri agent \
+                     mcp` with that flag (Settings → Developer)",
+                    unavailable_reason(&entry.effect),
+                ),
+            }));
+        }
+        return Some(json!({
             "dispatched": false,
             "namespace": namespace,
             "command": command,
             "error": "wrong_tool",
             "detail": format!("this command is classified for `{right_tool}`, not `{tool_name}` — call it there instead"),
-        }))
+        }));
     }
-}
-
-const CONFIRMATION_NOTE: &str = "This command is Effect::Irreversible and was called with no \
-    proof (exitCode 4). \"detail\" above names the read command and field the proof comes from. \
-    Call call-read for that command, take the named field from its result, then retry this exact \
-    call-irreversible with confirm set to it VERBATIM (including any fence wrapper and its \
-    newlines) — the value is never disclosed by this refusal.";
-
-/// A payload's serialized `content[0].text` length above which [`tool_result`] refuses rather
-/// than returning it: `documents_export_document` (PDF bytes as a `number[]`) and
-/// `documents_render_preview_images` are `Read` and auto-approved by most clients, and a local
-/// refusal can echo a caller-chosen `namespace`/`command` of any length — nothing else bounded
-/// either path but the bridge's own 8 MiB `MAX_FRAME_BYTES` WS frame limit. 256 KiB is
-/// comfortably above every legitimate payload observed and comfortably below either oversized
-/// case.
-const MCP_RESULT_MAX_BYTES: usize = 256 * 1024;
-
-/// The refusal [`tool_result`] substitutes for ANY payload over [`MCP_RESULT_MAX_BYTES`] — this
-/// fn no longer takes the triggering `Verb` (review round 3): `detail` is addressed to the HUMAN
-/// reading the transcript, never to the model (MEDIUM fix — naming `agent call ns:cmd` here was a
-/// working bypass recipe handed to the exact agent this cap exists to bound, since Claude Code has
-/// Bash), and this refusal now also fires from local refusals that have no single command to name.
-/// `bytes` is the length actually measured, never an estimate. Mirrors every other `Verb::Call`
-/// refusal's own `dispatched:false` shape rather than a bespoke `ok:false` (LOW fix) — no
-/// `namespace`/`command` here, since not every payload this wraps has one.
-fn oversized_result(bytes: usize) -> Value {
-    json!({
-        "dispatched": false,
-        // The app-side frame cap refuses with this SAME sentinel (issue #1135) — one
-        // definition of the string, in `agent_call`, never a second hand-typed copy here.
-        "error": agent_call::ERR_RESULT_TOO_LARGE,
-        "bytes": bytes,
-        // Same warning the app-side twin carries (`agent_call::Refusal::ResultTooLarge`):
-        // `dispatched:false` here means no result was delivered, NOT that nothing happened —
-        // this cap can fire on the reply to a call that already took effect.
-        "detail": format!(
-            "payload exceeds the server's result cap ({bytes} B); narrow the query, or ask \
-             the user to run it outside this session. The command may already have run and \
-             only its reply was discarded, so do not re-send a mutating call on this refusal."
-        ),
-    })
+    // Catalogue validation (A1-r1-SEC-1 HIGH, widened for A1-r1-AC-1 MEDIUM to also cover an
+    // empty required wrapper), same contract `agent_call::plan` enforces app-side — checked
+    // locally so a mis-keyed or empty-wrapper body never depends on a possibly stale PEER app
+    // process to catch it.
+    if let Some(detail) = agent_call::invalid_input_detail(command, entry.effect, input) {
+        return Some(json!({
+            "dispatched": false,
+            "namespace": namespace,
+            "command": command,
+            "error": agent_call::ERR_INVALID_INPUT,
+            "detail": detail,
+        }));
+    }
+    None
 }
 
 /// How many classified `tools/call`s may WAIT on the single-flight dispatch thread, on top of the
@@ -527,75 +624,12 @@ const MCP_CALL_QUEUE_MAX: usize = 8;
 /// slack the loop never has to grow into rather than a depth anyone waits out.
 const MCP_EVENT_QUEUE_MAX: usize = 64;
 
-/// The refusal answered when that queue is full — see the module doc's concurrency section for
-/// why the excess call is refused rather than blocking the writer thread until there is room.
-/// `dispatched:false`, like every other refusal that never reached the wire; the `detail` is a
-/// plain instruction to wait, because unlike `result_too_large` this one IS worth repeating.
-fn busy_result() -> Value {
-    json!({
-        "dispatched": false,
-        "error": "server_busy",
-        "detail": format!(
-            "this server dispatches one call at a time and its queue is full \
-             ({MCP_CALL_QUEUE_MAX} waiting); wait for an outstanding call's reply, then send \
-             this one again."
-        ),
-    })
-}
-
-/// The refusal written for a call the EOF drain deadline expired on — see the module doc's EOF
-/// bullet. Two shapes behind one sentinel, because the honest answer differs by exactly one fact
-/// the loop knows: `in_flight` is `dispatch` reaching `false` for a call the worker never
-/// started (`abandoned` is set before this is written, so it never will) and `true` for the one
-/// call single-flight FIFO order allows to be running, whose reply was never received.
-///
-/// `dispatched` therefore means what it means everywhere else here — did this call reach the app
-/// — and the uncertainty that belongs to the `true` case (did it take effect?) is stated in
-/// `detail` rather than smuggled into that boolean. Answering both as `dispatched:false` would be
-/// the dangerous direction: a client re-sending a write it was told never landed.
-fn shutting_down_result(in_flight: bool) -> Value {
-    json!({
-        "dispatched": in_flight,
-        "error": "shutting_down",
-        "detail": if in_flight {
-            "this server's input closed and its shutdown deadline expired while this call was \
-             still in flight; its result was never received and it may already have taken \
-             effect — re-read the affected resource before sending it again."
-        } else {
-            "this server's input closed and its shutdown deadline expired before this call was \
-             dispatched; it never reached the app. Send it again to a new server."
-        },
-    })
-}
-
-/// One `CallToolResult`: `content[0].text` is the payload byte-for-byte, `content[1]` names the
-/// exit code, and a `confirmation_required` refusal gets one more block mapping `--confirm` to
-/// this tool's `confirm` argument. No `structuredContent` field (SHOULD fix — no observed client
-/// surfaces it to the model, and it doubled every PII-bearing payload in the client's persisted
-/// transcript for nothing). ALSO the ONE place [`MCP_RESULT_MAX_BYTES`] is enforced (moved here,
-/// review round 3 — see [`oversized_result`]'s own doc), so every payload this fn ever wraps is
-/// covered, not only a dispatched command's own reply; the size is measured exactly once, via the
-/// SAME `to_string()` this fn needs anyway for `content[0].text`.
-fn tool_result(payload: Value, exit_code: i32) -> Value {
-    let text = payload.to_string();
-    let (text, exit_code, payload) = if text.len() > MCP_RESULT_MAX_BYTES {
-        let refusal = oversized_result(text.len());
-        (refusal.to_string(), 2, refusal)
-    } else {
-        (text, exit_code, payload)
-    };
-    let mut content = vec![
-        json!({ "type": "text", "text": text }),
-        json!({ "type": "text", "text": format!("exitCode: {exit_code}") }),
-    ];
-    if payload.get("error").and_then(Value::as_str) == Some(agent_call::ERR_CONFIRMATION_REQUIRED) {
-        content.push(json!({ "type": "text", "text": CONFIRMATION_NOTE }));
-    }
-    json!({
-        "content": content,
-        "isError": exit_code != 0,
-    })
-}
+// `tools/call`'s reply-shaping — the `CallToolResult` envelope plus the three fixed refusal
+// shapes it wraps — lives in its own file for the same R8 reason `instructions.rs`/`schemas.rs`
+// do; see `mcp/results.rs`. Only the three items this module's protocol loop calls are imported;
+// `mcp::tests` reaches `oversized_result`/`MCP_RESULT_MAX_BYTES` through that module's own path.
+mod results;
+use results::{busy_result, shutting_down_result, tool_result};
 
 /// What a `tools/call` frame turns out to be, once classified. The split exists because only
 /// [`ToolCall::Bridge`] costs a bridge round trip: everything else is decided from this binary's
@@ -688,7 +722,71 @@ fn classify_tool_call(params: &Value, server: &Server) -> ToolCall {
                 )));
             }
         }
+        // Same reasoning as `effect` just above, for the SAME failure shape (issue #1163's
+        // `namespace` filter): a typo'd namespace would otherwise match zero rows and answer
+        // `{"commands":[]}` isError:false exit 0 — a refusal disguised as an empty success.
+        // `namespace` has no small enum to advertise in the schema (unlike `effect`), so it is
+        // checked against POLICY's own real namespace set rather than a hand-typed list.
+        if let Some(namespace_value) = arguments.get("namespace") {
+            let valid = namespace_value.as_str().is_some_and(|s| {
+                POLICY
+                    .iter()
+                    .any(|entry| agent_call::split_path(entry.path).0 == s)
+            });
+            if !valid {
+                return ToolCall::Local(Ok(tool_result(
+                    usage_error_value("namespace does not match any real command's namespace"),
+                    2,
+                )));
+            }
+        }
         return ToolCall::Local(Ok(tool_result(commands_value(&arguments, server.tier), 0)));
+    }
+
+    // B3-r1-F2 — a PRESENT-but-blank `autopilotId` used to collapse to the
+    // same argv [`tool_argv`] builds for an OMITTED one (`.filter(|s|
+    // !s.is_empty())` before the push below), silently widening a
+    // one-autopilot selector into a spanning traversal
+    // (`agent-cli-standards`: an empty selector must never mean "all"). A
+    // flag-shaped value (`"--include-description"`) was WORSE: forwarded as
+    // the bare leading positional [`tool_argv`] builds, [`parse_found_jobs`]
+    // reads it as a real flag rather than as an id, since it doesn't look
+    // like one — turning on a filter the caller never asked for. Checked
+    // HERE, before argv is built, rather than inside [`tool_argv`] (which
+    // never validates anything itself, by its own documented contract) —
+    // mirrors `found_jobs::parse_autopilot_id_arg`'s identical guard on the
+    // SAME field one hop further in.
+    if name == TOOL_FOUND_JOBS {
+        if let Some(id) = arguments.get("autopilotId").filter(|v| !v.is_null()) {
+            let usable = id
+                .as_str()
+                .is_some_and(|s| !s.trim().is_empty() && !s.trim().starts_with("--"));
+            if !usable {
+                return ToolCall::Local(Ok(tool_result(
+                    usage_error_value(
+                        "autopilotId must be a non-empty id, not blank or flag-shaped — omit \
+                         the key entirely to span every autopilot",
+                    ),
+                    2,
+                )));
+            }
+        }
+        // Round 2 fix (B3-r2-F4) — `tool_argv`'s `includeDescription` arm used to read this
+        // value with `.and_then(Value::as_bool)`, the exact silent-drop combinator this fn's own
+        // doc says every optional argument avoids: a non-bool (`"true"`, `1`) vanished as
+        // "absent" rather than reaching `parse_verb`, so the resource-level refusal for the
+        // identical value one hop further in (`found_jobs::bool_filter`, via
+        // `FoundJobsFilters::from_payload`) could never fire — the caller got compact rows with
+        // no error and no signal that `description` was silently dropped. Checked HERE, before
+        // argv is built, mirroring the `autopilotId` guard above on the SAME tool.
+        if let Some(v) = arguments.get("includeDescription").filter(|v| !v.is_null()) {
+            if v.as_bool().is_none() {
+                return ToolCall::Local(Ok(tool_result(
+                    usage_error_value("includeDescription must be a boolean"),
+                    2,
+                )));
+            }
+        }
     }
 
     let argv = tool_argv(name, &arguments);
@@ -697,7 +795,7 @@ fn classify_tool_call(params: &Value, server: &Server) -> ToolCall {
         Err(e) => return ToolCall::Local(Ok(tool_result(usage_error_value(&e.to_string()), 2))),
     };
 
-    if let Some(refusal) = local_call_refusal(name, &verb) {
+    if let Some(refusal) = local_call_refusal(name, &verb, server.tier) {
         return ToolCall::Local(Ok(tool_result(refusal, 2)));
     }
 

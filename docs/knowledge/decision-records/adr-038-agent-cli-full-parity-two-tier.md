@@ -1,4 +1,4 @@
-# ADR-038 — Full CLI parity: a policy table over all 164 commands, curated and generic tiers kept apart
+# ADR-038 — Full CLI parity: a policy table over every registered command, curated and generic tiers kept apart
 
 **Status:** Accepted
 
@@ -16,8 +16,9 @@ can perform in the UI, **including** irreversible ones (`privacy:reset_app`, `si
 
 Three facts, each independently reproduced, shaped the design:
 
-- There are **164** `#[tauri::command]` sites, exactly 1:1 with `generate_handler!` (`lib.rs`), diffed
-  both directions.
+- Every `#[tauri::command]` site is exactly 1:1 with `generate_handler!` (`lib.rs`), diffed both
+  directions — the current count is pinned by `policy::tests::policy_table_row_count_is_pinned`, never
+  restated here since it moves with every new command.
 - **`IPC_CHANNELS` is not that registry.** `NOTIFICATIONS_CHANNELS` is literally `{} as const` and
   `AI_CHANNELS` has 5 entries for a 29-method contract, so deriving from it ships a CLI that silently
   cannot do what the UI does.
@@ -29,8 +30,9 @@ CLI _more_ than the UI, not the same. That is accepted and is why the policy tab
 
 ## Decision
 
-**1. A committed policy table is the allowlist, and it must match the registry exactly.** Every one of
-the 164 commands carries a declared `Effect` — `Read`, `Reversible`, `Irreversible`, or `NotExposed`
+**1. A committed policy table is the allowlist, and it must match the registry exactly.** Every
+registered command (row count pinned by `policy::tests::policy_table_row_count_is_pinned`) carries a
+declared `Effect` — `Read`, `Reversible`, `Irreversible`, or `NotExposed`
 with a stated reason — and a test asserts the table and `generate_handler!` agree with no extras and no
 missing entries. This is [ADR-014](adr-014-cli-agent-shell-plugin-static-allowlist.md)'s static-allowlist
 invariant applied to _inbound_ dispatch: an unclassified command fails CI instead of shipping. Effects
@@ -70,8 +72,9 @@ exactly the drift-prone hand-maintained literal AGENTS.md rule 17 forbids.
 
 ### Tradeoffs
 
-- **The policy table is 164 rows of one-time manual classification.** That tedium is the point: it is
-  the enumerated allowlist.
+- **The policy table is one row per command of one-time manual classification** (row count pinned by
+  `policy::tests::policy_table_row_count_is_pinned`). That tedium is the point: it is the enumerated
+  allowlist.
 - **Parity exceeds the UI.** Four commands the UI never calls become reachable, one destructive.
 - **No preview.** Irreversible commands cannot be simulated; the ceremony is the only control.
 
@@ -129,3 +132,30 @@ the agent layer a pure pass-through, but those commands are the ones the rendere
 UI. Confining the reshape to the agent layer cannot regress the renderer at all. Same reasoning as §5,
 which keeps the generic tier's own `dispatched` vocabulary inside the dispatcher rather than teaching
 every command a new one.
+
+## Amendment — 2026-09-08
+
+§4's ceremony ("a caller reads the proof, then presents that exact value") assumed the proof value is
+stable between the two calls. It is not for one `ProofSource::Scalar` row family: `ai_spend_summary`'s
+`today.inputTokens` backs several `Irreversible` commands and moves under ordinary background AI
+activity, so an honest caller could read a value, present it moments later, and be refused for a drift
+it didn't cause (issue #1162).
+
+Fix, deliberately narrow to that one read command (security review round A3-r1 flagged the general case
+as a CRITICAL cross-target bypass risk): a short-TTL, per-process snapshot of the value disclosed by the
+`confirmation_required` refusal is remembered and accepted as an alternative to the fresh value, then
+**consumed** on acceptance so one disclosure cannot authorize more than one dispatch. Every other
+`Irreversible` row keeps the original §4 behavior — exact match against the live value only, no
+snapshot, no window — because those proofs are bound to a caller-chosen target (a document id, a run
+id…) and a shared snapshot would let a value disclosed for one target authorize a different one. The
+eligibility gate, the snapshot lifetime, and the consume-on-accept rule live on
+`extension_bridge::agent_call::proof::{grace_window_key, accepted_at, PROOF_SNAPSHOT_TTL}` — read there
+for the current read-command name and TTL rather than restating them here.
+
+The same round also taught the fencing boundary (§3) an origin split it didn't have before: the generic
+tier no longer wraps every long text field under one `job_posting` tag by provenance-blind field name.
+User-authored text (a résumé/cover-letter body) and a notification's title/body (genuinely mixed —
+several producers interpolate scraped job text into it) each get their own tag, chosen by shape rather
+than field name so a forged sibling key can't borrow an exemption. The current tag set and which shape
+routes to which tag are `extension_bridge::agent_call::reshape::EMITTED_FENCE_TAGS` and the fencing walk
+in `extension_bridge/agent_call/fence.rs`; the MCP `instructions` document each tag documented there.

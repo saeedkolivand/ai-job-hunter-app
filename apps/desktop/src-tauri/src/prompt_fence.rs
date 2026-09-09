@@ -104,6 +104,21 @@ static FENCE_TAG_PATTERNS: std::sync::LazyLock<
     [
         "candidate_resume",
         "job_posting",
+        // Issue #1157 - the user's OWN document text (documents_list.text,
+        // documents_get_text, resume_extract_text), fenced distinctly from
+        // job_posting: still framed as DATA (this repo treats a user's own
+        // uploaded resume as untrusted too - real resumes do carry prompt
+        // injections), but never labelled third-party-scraped when it is
+        // first-party. See agent_call.rs::fence_named_fields_recursive for
+        // the shape rules that choose this tag over job_posting.
+        "user_document",
+        // Issue #1157/#1162 AC-7 -- `notifications::AppNotification.title`/`.body`
+        // (`agent_call::fence::fence_named_fields_recursive`'s `NOTIFICATION_ANCHOR_FIELDS`
+        // shape check). Distinct from `job_posting`: a notification's copy is genuinely MIXED
+        // provenance (first-party in the common case, but can echo a scraped job title), so it
+        // must stay fenced as untrusted data without asserting third-party board authorship the
+        // way `job_posting` does.
+        "app_notification",
         "company_research",
         "question",
         "web_search_notes",
@@ -222,6 +237,19 @@ static FENCE_TAG_PATTERNS: std::sync::LazyLock<
         // inject a fabricated extra candidate the reranker would treat as a
         // real search result.
         "posting_candidate",
+        // SEC-1 fix (issue #1157): `extension_bridge::agent_call::Refusal::InvokeError`'s
+        // `detail` — the app's own Tauri argument-validation sentence OR a dispatched command's
+        // typed error, which CAN itself embed remote text (a scrape/HTTP/provider failure
+        // echoing part of a caller-chosen host's own response body, e.g. `ai_pull_model`'s Ollama
+        // body or a provider's raw error message — that variant's own `detail()` doc traces the
+        // exact chokepoints). Round-4 fenced it as `job_posting`, which mislabelled a first-party
+        // diagnostic as third-party scraped text; #1157 then went the other way and stopped
+        // fencing it at all, dropping the "treat as data" label from a field that can still carry
+        // attacker-influenced prose, on a surface whose caller holds destructive tools (SEC-1
+        // HIGH). This tag is the middle ground `agent_call::fence`'s `app_notification` already
+        // uses for other mixed-provenance fields: distinct from `job_posting` so the prose is
+        // never asserted third-party-scraped, but still framed as DATA rather than left bare.
+        "command_error",
     ]
     .into_iter()
     .map(|tag| (tag, compile_fence_tag_pattern(tag)))

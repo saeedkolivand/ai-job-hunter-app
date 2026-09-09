@@ -59,6 +59,7 @@ export interface ScrapeContract {
 
   listPostings(): Promise<JobPosting[]>;
 
+  /** Permanently wipe the entire cached postings list — no selector, no undo; interaction history is unaffected. */
   clearPostings(): Promise<void>;
 
   listInteractions(filter?: { interactionType?: string }): Promise<
