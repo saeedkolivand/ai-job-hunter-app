@@ -177,6 +177,33 @@ h2 {
   outline-offset: 3px;
   border-radius: 12px;
 }
+/* Store link — deliberately not `.dl-btn` (see the comment at its anchor in
+   DownloadCards.tsx); reuses .dl-btn.alt's look so it still reads as a sibling
+   button rather than a new visual language. */
+.store-btn {
+  font-family: var(--hand);
+  font-size: 15px;
+  background: transparent;
+  color: var(--ink);
+  border: 2.6px solid var(--ink);
+  border-radius: 12px 9px 13px 8px;
+  padding: 7px 16px;
+  box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.14);
+  text-align: center;
+  text-decoration: none;
+  transition: transform 0.14s;
+}
+.store-btn:hover {
+  transform: translateY(-2px);
+}
+/* store-btn on light pcard bg: ink ring (high contrast), same standard as
+   .dl-btn.alt:focus-visible above */
+.store-btn:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 12px;
+}
+
 /* Download-count pill, appended into each .dl-btn by DownloadCounts.tsx once
    the static /downloads-by-platform.json lands. It is absent on first paint and
    absent entirely when the fetch fails, so nothing here may change the button's
@@ -290,11 +317,13 @@ h2 {
 /* reduced motion — disable transitions/transforms but keep focus-visible rings */
 @media (prefers-reduced-motion: reduce) {
   .dl-btn,
+  .store-btn,
   .ext-btn,
   .copy-cmd {
     transition: none;
   }
   .dl-btn:hover,
+  .store-btn:hover,
   .ext-btn:hover {
     transform: none;
   }

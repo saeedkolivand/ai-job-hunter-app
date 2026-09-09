@@ -1,3 +1,4 @@
+import { MS_STORE } from '@/lib/site-links';
 import type { Installers } from '@/lib/version';
 
 // Reproduces the old buildDownloadsHtml() markup (the release-pipeline-stamped
@@ -94,9 +95,18 @@ export function DownloadCards({
           <a className="dl-btn alt" data-platform="winMsi" href={installers.winMsi}>
             .msi
           </a>
+          {/* Not a `.dl-btn`: DownloadFreshness swaps installer hrefs by
+              `.dl-btn` positional index and DownloadCounts keys pills off
+              `.dl-btn[data-platform]` — an 8th `.dl-btn` here would shift
+              every installer URL over by one. This links straight to the
+              Store listing, nothing to swap or count. */}
+          <a className="store-btn" href={MS_STORE} target="_blank" rel="noopener noreferrer">
+            Microsoft Store
+          </a>
         </div>
         <p className="dl-note">
-          SmartScreen may warn (unsigned). Click &quot;More info&quot; → &quot;Run anyway&quot;.
+          SmartScreen may warn (unsigned). Click &quot;More info&quot; → &quot;Run anyway&quot; — or
+          skip the warning entirely and get it from the Microsoft Store, which is signed.
         </p>
       </div>
 
