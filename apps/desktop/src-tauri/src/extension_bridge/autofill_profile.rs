@@ -65,6 +65,17 @@ pub(super) const MAX_EXTRA_LINKS: usize = 10;
 /// string, and cleans/caps `extraLinks`, none of which the generic row's raw
 /// stored shapes get; and [`resolve_profile`]'s opt-in gate does not extend
 /// to the generic dispatch path either.
+///
+/// **Adding a field here widens two other, UNGATED surfaces at the same
+/// time** (agent-cli review, P-r1-SEC-1180-02): it un-strips that field on
+/// the generic `call-read contact_profile_get` row (no autofill consent
+/// required) via `project_contact_profile_get`, and it stops
+/// `restore_local_only_contact_fields` from restoring it on a
+/// `contact_profile_set` write. `contact_profile_agent_fields_matches_a_fully_populated_autofill_profile_wire_shape`
+/// (`extension_bridge/test.rs`) forces every new `AutofillProfile` field to
+/// land here — that mechanical fix IS the widening decision, not a
+/// drive-by; a genuinely PII-bearing field (like `photo`) should stay OFF
+/// `AutofillProfile` entirely rather than being added and then excluded here.
 pub(super) const CONTACT_PROFILE_AGENT_FIELDS: &[&str] = &[
     "fullName",
     "email",
