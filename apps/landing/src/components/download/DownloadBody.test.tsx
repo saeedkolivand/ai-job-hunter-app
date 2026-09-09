@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 
-import { CHROME_EXT, FIREFOX_EXT, KOFI, PAYPAL, SPONSOR } from '@/lib/site-links';
+import { CHROME_EXT, FIREFOX_EXT, KOFI, MS_STORE, PAYPAL, SPONSOR } from '@/lib/site-links';
 import { buildInstallers } from '@/lib/version';
 
 import { DownloadBody } from './DownloadBody';
@@ -93,6 +93,17 @@ describe('DownloadBody', () => {
 
     const back = container.querySelector('a.top-back');
     expect(back?.getAttribute('href')).toBe('/');
+  });
+
+  it('renders the Microsoft Store link as a non-dl-btn anchor to MS_STORE', () => {
+    const { container } = render(<DownloadBody version={VERSION} installers={installers} />);
+    const storeBtn = container.querySelector('a.store-btn');
+    expect(storeBtn).not.toBeNull();
+    expect(storeBtn?.getAttribute('href')).toBe(MS_STORE);
+    expect(storeBtn?.classList.contains('dl-btn')).toBe(false);
+    expect(storeBtn?.hasAttribute('data-platform')).toBe(false);
+    expect(storeBtn?.getAttribute('target')).toBe('_blank');
+    expect(storeBtn?.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
   it('renders the ext-grid with 2 ext-btn anchors to the Chrome and Firefox store urls', () => {
