@@ -68,9 +68,17 @@ fn registered_command_paths() -> Vec<&'static str> {
 /// the table it guards covers additions only (this repo's own standing
 /// lesson: `feedback_a_guard_driven_off_its_own_data_cannot_catch_a_deletion`)
 /// — this fails independently of either source's own content.
+// Named without the count itself (issue #1170, MEDIUM — a prior name
+// baked in "167", and two module docs elsewhere cited that name AS the
+// authoritative row count, so both silently restated a stale number the
+// moment this row grew to 168): the count lives ONLY in the `assert_eq!`
+// below, never in a name or a doc pointer to this test.
 #[test]
-fn policy_table_has_exactly_167_rows() {
-    assert_eq!(POLICY.len(), 167);
+fn policy_table_row_count_is_pinned() {
+    // 167 + 1 (round 5, `B1-r1-ACLI-R5-1`): `updater::updater_status`, the
+    // read-only counterpart added when `updater_check` was reverted from
+    // `Read` back to `Reversible`.
+    assert_eq!(POLICY.len(), 168);
 }
 
 /// ADR-038 §1's core invariant: the policy table and `generate_handler!`
@@ -161,7 +169,7 @@ fn extension_bridge_regenerate_token_reason_explains_why_connected_is_vacuous_to
 /// `budget: None` when `semanticScoringEnabled: true` — the SAME
 /// uncapped-spend shape that forced `ai_embed` `NotExposed` before ITS
 /// gate landed. Hand-written (not looped, mirroring
-/// `policy_table_has_exactly_167_rows`'s own discipline): a revert of
+/// `policy_table_row_count_is_pinned`'s own discipline): a revert of
 /// either row back to `Reversible` (freely dispatchable, no confirm, no
 /// cap) would not be caught by any OTHER test in this file — the
 /// Irreversible-row count is untouched by a `Reversible` change, and
@@ -205,7 +213,7 @@ fn extraction_finds_known_paths_at_each_end_of_the_list() {
         "extraction must find the LAST registered command"
     );
     assert!(found.contains(&"commands::privacy::privacy_reset_app"));
-    assert_eq!(found.len(), 167);
+    assert_eq!(found.len(), 168);
 }
 
 /// ADR-038 §4 (Phase 3): every `Irreversible` row's
@@ -244,7 +252,7 @@ fn every_proof_source_read_command_is_a_read_row() {
     }
     // Hand-written literal (not derived from POLICY itself — the same
     // "pair a loop with a literal" discipline as
-    // `policy_table_has_exactly_167_rows`): 34 Irreversible rows
+    // `policy_table_row_count_is_pinned`): 34 Irreversible rows
     // (`extension_bridge_regenerate_token` moved to `NotExposed` —
     // security review round 1; `ai_embed` moved NotExposed → Irreversible
     // once its `charge_provider_daily` gate landed, and
@@ -263,10 +271,16 @@ fn every_proof_source_read_command_is_a_read_row() {
     // definition regardless of nothing being destroyed [+1]; `scrape_
     // hybrid_search` adds ONE new Irreversible row for the same
     // charge_provider_daily reason as `ai_embed`/`autopilot_run` [+1];
-    // `help_search` (this PR) adds ONE more for that same reason — its
-    // dense arm embeds the question plus every uncached help entry [+1];
-    // see each row's own comment).
-    assert_eq!(checked, 34, "expected exactly 34 Irreversible rows");
+    // `help_search` added one for that same reason, then moved Irreversible
+    // → `NotExposed` (issue #1169): the corpus it would embed is the
+    // caller's OWN `entries` field, not anything Rust can read, so no
+    // dispatch here ever has a real corpus to search [-1];
+    // `notifications_mark_read`/`notifications_mark_all_read` moved
+    // Reversible → Irreversible (issue #1164): no "mark unread" exists
+    // anywhere on this surface, so flipping the bit is permanent, same as
+    // `notifications_remove`/`notifications_clear_all` whose ProofSource
+    // shapes they now reuse [+2]; see each row's own comment).
+    assert_eq!(checked, 35, "expected exactly 35 Irreversible rows");
 }
 
 /// Hand-written pin (security review round 3), mirroring
@@ -382,6 +396,210 @@ fn extension_bridge_status_stays_not_exposed_so_the_pairing_token_never_reaches_
         matches!(entry.effect, Effect::NotExposed(_)),
         "{path} must stay NotExposed — got {:?}",
         entry.effect
+    );
+}
+
+/// Issue #1164 round 2 (`B1-r2-B2-r2-ACLI-2`): `notifications_list` returns EVERY notification,
+/// read and unread, while `notifications_mark_all_read` only flips the unread subset — so the
+/// `ProofSource::Count` comment above that row must call the count a superset of the blast
+/// radius, never claim it is "exact". Pinned against the source text rather than behaviour
+/// because the defect was the COMMENT lying about what the count proves, not the `ProofSource`
+/// shape itself (round 1 sanctioned keeping `Count` here).
+#[test]
+fn mark_all_read_proof_comment_calls_the_count_a_superset_not_exact() {
+    const POLICY_RS: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/extension_bridge/agent_cli/policy.rs"
+    ));
+    let row = POLICY_RS
+        .find("notifications_mark_all_read")
+        .expect("notifications_mark_all_read row present in policy.rs");
+    let comment = &POLICY_RS[..row];
+    let comment_start = comment
+        .rfind("// Same no-inverse argument")
+        .expect("notifications_mark_all_read's leading comment block present in policy.rs");
+    let comment = &comment[comment_start..];
+    assert!(
+        comment.contains("superset"),
+        "the comment must call the notifications_list count a superset of what actually \
+         flips: {comment}"
+    );
+    assert!(
+        !comment.contains("exact count about to be flipped"),
+        "the comment must not claim the total count is the exact count about to flip — only \
+         the unread subset flips: {comment}"
+    );
+}
+
+/// Round 5 (`B1-r1-ACLI-R5-3`): direct pin for both rows issue #1164 reclassified — the aggregate
+/// row count (`policy_table_row_count_is_pinned`) and the Irreversible tally
+/// (`every_proof_source_read_command_is_a_read_row`'s trailing `checked == 35`) are BOTH blind to
+/// a revert of one row paired with an unrelated +1/-1 elsewhere in the table: `checked` stays 35
+/// either way. `notifications_mark_read` had no direct pin anywhere (it appeared in this file only
+/// inside a comment); `notifications_mark_all_read` was pinned only for its comment's WORDING
+/// (`mark_all_read_proof_comment_calls_the_count_a_superset_not_exact` above), never its `Effect`
+/// or `ProofSource` shape. This asserts both rows' actual classification and proof shape directly.
+#[test]
+fn notifications_mark_rows_stay_irreversible_with_their_proof_shapes() {
+    let mark_read = POLICY
+        .iter()
+        .find(|e| e.path == "commands::notifications::notifications_mark_read")
+        .expect("commands::notifications::notifications_mark_read is a real POLICY row");
+    let Effect::Irreversible(ProofSource::ListMatch {
+        read_command,
+        id_field,
+        match_field,
+        value_field,
+    }) = mark_read.effect
+    else {
+        panic!(
+            "notifications_mark_read must be Irreversible(ProofSource::ListMatch), got {:?}",
+            mark_read.effect
+        );
+    };
+    assert_eq!(read_command, "notifications_list");
+    assert_eq!(id_field, &["id"]);
+    assert_eq!(match_field, "id");
+    assert_eq!(value_field, "title");
+
+    let mark_all_read = POLICY
+        .iter()
+        .find(|e| e.path == "commands::notifications::notifications_mark_all_read")
+        .expect("commands::notifications::notifications_mark_all_read is a real POLICY row");
+    let Effect::Irreversible(ProofSource::Count { read_command }) = mark_all_read.effect else {
+        panic!(
+            "notifications_mark_all_read must be Irreversible(ProofSource::Count), got {:?}",
+            mark_all_read.effect
+        );
+    };
+    assert_eq!(read_command, "notifications_list");
+}
+
+/// Round 5 (`B1-r1-ACLI-R5-1`): `updater_install`'s proof must read the PENDING version off
+/// `updater_status` — the read-only counterpart added when `updater_check` was reverted from
+/// `Read` back to `Reversible` (it writes `UpdaterState`/emits an event, so it cannot be the proof
+/// source for another `Irreversible` row: `every_proof_source_read_command_is_a_read_row` requires
+/// the target to be `Effect::Read`) — rather than `system_get_version` (the CURRENTLY RUNNING
+/// version — a vacuous proof, since it never changes as a result of confirming).
+#[test]
+fn updater_install_proof_reads_the_pending_version_off_updater_status() {
+    let entry = POLICY
+        .iter()
+        .find(|e| e.path == "updater::updater_install")
+        .expect("updater::updater_install is a real POLICY row");
+    let Effect::Irreversible(ProofSource::Scalar { read_command, path }) = entry.effect else {
+        panic!(
+            "updater_install must stay Irreversible(ProofSource::Scalar), got {:?}",
+            entry.effect
+        );
+    };
+    assert_eq!(
+        read_command, "updater_status",
+        "updater_install's proof must read updater_status, not system_get_version's vacuous \
+         running-version echo, and not updater_check (Reversible, not a valid Read proof source)"
+    );
+    assert_eq!(
+        path,
+        &["version"],
+        "updater_install's proof must walk to updater_status's `version` field"
+    );
+}
+
+/// Round 5 (`B1-r1-ACLI-R5-1`): `updater_check` must stay `Effect::Reversible` — it writes
+/// `UpdaterState` and emits `updater:status`, and reclassifying it `Read` (issue #1165) forced
+/// `call-read`'s `readOnlyHint` to `false` for every one of this table's 63 other `Read` rows,
+/// since the hint is a per-TOOL promise, not per-row (see `mcp::tests::
+/// call_read_annotations_claim_read_only`). `updater::updater_status` is the read-only
+/// alternative this row's proof now points at.
+#[test]
+fn updater_check_stays_reversible_not_read() {
+    let entry = POLICY
+        .iter()
+        .find(|e| e.path == "updater::updater_check")
+        .expect("updater::updater_check is a real POLICY row");
+    assert_eq!(
+        entry.effect,
+        Effect::Reversible,
+        "updater_check must stay Reversible, not Read — got {:?}",
+        entry.effect
+    );
+    let status = POLICY
+        .iter()
+        .find(|e| e.path == "updater::updater_status")
+        .expect("updater::updater_status is a real POLICY row");
+    assert_eq!(
+        status.effect,
+        Effect::Read,
+        "updater_status must be the genuinely read-only alternative — got {:?}",
+        status.effect
+    );
+}
+
+/// Issue #1169: `commands::help::help_search` must actually BE the `NotExposed` row the doc
+/// guard below and `every_proof_source_read_command_is_a_read_row`'s comment both describe — the
+/// prior version of this file asserted the PROSE said so without ever reading `POLICY` itself
+/// (round-3 finding `B1-r3-ACLI-2`), so reverting the row back to `Irreversible`/`Read` left every
+/// other test in this file green.
+#[test]
+fn help_search_stays_not_exposed() {
+    let entry = POLICY
+        .iter()
+        .find(|e| e.path == "commands::help::help_search")
+        .expect("commands::help::help_search is a real POLICY row");
+    assert!(
+        matches!(entry.effect, Effect::NotExposed(_)),
+        "commands::help::help_search must stay NotExposed (issue #1169) — got {:?}",
+        entry.effect
+    );
+}
+
+/// Issue #1164 round 2 (`B1-r2-B2-r2-ACLI-6`): `commands::help::help_search` is `NotExposed`
+/// (issue #1169), but its own module doc claimed unqualified reachability from the agent CLI /
+/// extension bridge in four spans — falsifying the RATIONALE those spans give for re-checking
+/// every Zod cap in Rust. Every span that mentions the agent CLI or extension bridge reaching
+/// `help_search` must also name its current `NotExposed` status (issue #1169), so a future
+/// reclassification of the POLICY row is the only thing that can make the doc true again without
+/// a human re-reading it — enforced together with `help_search_stays_not_exposed` above, which
+/// pins the ROW itself (round-3 finding `B1-r3-ACLI-2`: this test alone never read `POLICY`).
+#[test]
+fn help_module_doc_reachability_claims_stay_paired_with_its_not_exposed_status() {
+    let entry = POLICY
+        .iter()
+        .find(|e| e.path == "commands::help::help_search")
+        .expect("commands::help::help_search is a real POLICY row");
+    assert!(
+        matches!(entry.effect, Effect::NotExposed(_)),
+        "this doc-reachability guard only makes sense while the row is NotExposed — got {:?}",
+        entry.effect
+    );
+    const HELP_RS: &str =
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/commands/help.rs"));
+    let lines: Vec<&str> = HELP_RS.lines().collect();
+    let mut checked = 0usize;
+    for (n, line) in lines.iter().enumerate() {
+        if !(line.contains("agent CLI") || line.contains("agent-CLI")) {
+            continue; // not a span naming the agent CLI at all
+        }
+        // A window of comment lines around the mention, so "reach"/"NotExposed"/"#1169" can
+        // be on a neighbouring line within the same prose block, not literally the same line.
+        let start = n.saturating_sub(6);
+        let end = (n + 6).min(lines.len());
+        let window = lines[start..end].join("\n");
+        if !window.contains("reach") {
+            continue; // an "agent CLI" mention unrelated to reachability
+        }
+        checked += 1;
+        assert!(
+            window.contains("NotExposed") && window.contains("#1169"),
+            "a reachability claim at help.rs line {} must name help_search's current \
+             NotExposed status (issue #1169): {window}",
+            n + 1
+        );
+    }
+    assert!(
+        checked >= 4,
+        "expected at least the 4 reachability spans issue #1164 round 2 flagged, found \
+         {checked}"
     );
 }
 

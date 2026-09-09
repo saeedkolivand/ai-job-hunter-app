@@ -498,6 +498,50 @@ fn applied_job_urls_excludes_saved() {
     assert!(!applied.contains("https://a.com/1"), "saved is not applied");
 }
 
+/// Round-4 fix T3-cont (PR #1182 round-5) — a query failure (locked/corrupt
+/// DB) must be `None`, distinguishable from "queried fine, applied to
+/// nothing" (`Some(empty)`); `applied_job_urls` collapses both to empty for
+/// its own best-effort callers, but `agent_read`'s `store_present` needs the
+/// distinction. Forced with the same second-raw-connection/DROP TABLE trick
+/// as `a_broken_follow_up_query_degrades_to_an_empty_sweep_instead_of_panicking`,
+/// including its own two-schema-arm note: the connection's cached schema can
+/// let one call still succeed (degrading per-row) before a later call
+/// re-prepares and fails outright.
+#[test]
+fn applied_job_urls_checked_returns_none_when_the_query_fails() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    store
+        .upsert_for_origin(
+            "https://gamma.example/1",
+            "b",
+            &meta("Gamma", "T"),
+            ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        store.applied_job_urls_checked().unwrap().len(),
+        1,
+        "baseline: the query succeeds before the table goes away"
+    );
+
+    {
+        let conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        conn.execute("DROP TABLE applications", []).unwrap();
+    }
+
+    // The first call after the drop may still run against the connection's
+    // stale cached schema (degrading per-row, per the sibling test's own
+    // "arm 1" note); the goal here is the SECOND call, which re-prepares
+    // against the now-broken schema and must fail outright.
+    let _ = store.applied_job_urls_checked();
+    assert!(
+        store.applied_job_urls_checked().is_none(),
+        "a query failure must read as None, never the same shape as an empty result"
+    );
+}
+
 #[test]
 fn set_status_appends_event_and_sets_applied_at() {
     let dir = TempDir::new().unwrap();

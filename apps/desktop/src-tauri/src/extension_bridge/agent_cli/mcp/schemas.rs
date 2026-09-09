@@ -127,7 +127,11 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
             "Best Matches",
             UNTRUSTED_FIELDS_NOTICE,
             schema_object(
-                json!({ "limit": { "type": "integer", "minimum": 0, "description": format!("rows to return (default {DEFAULT_BEST_MATCHES_LIMIT}, server cap {MAX_BEST_MATCHES_LIMIT})") } }),
+                json!({
+                    "limit": { "type": "integer", "minimum": 0, "description": format!("rows to return (default {DEFAULT_BEST_MATCHES_LIMIT}, server cap {MAX_BEST_MATCHES_LIMIT})") },
+                    "cursor": { "type": "string", "description": "an opaque token from a prior page's nextCursor, valid only for the SAME `query` (present or omitted) that issued it; omit to start at the first page" },
+                    "query": { "type": "string", "description": "case-insensitive substring filter over title or company, applied to the already-capped ranked candidate list this tool computes — NOT the full stored corpus; use the found-jobs tool's own query to search every stored posting" },
+                }),
                 &[],
             ),
         ),
@@ -140,7 +144,22 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
                 &["url"],
             ),
         ),
-        curated_tool(TOOL_PROFILE, "My Profile", "", no_args.clone()),
+        curated_tool(
+            TOOL_PROFILE,
+            "My Profile",
+            "Contact fields only (name, email, phone, location, links) — for the résumé/document \
+             text itself, read documents:documents_list via call-read (rows carry the document \
+             text, fenced and capped at the fence limit); documents:documents_get_text with \
+             {\"id\": <that row's `_id` value>} (the row's key is `_id`, but \
+             documents_get_text's own parameter is named `id`) returns the same text by id, \
+             fenced and capped at the same limit — neither call returns more of a document than \
+             that one cap; an `id` that matches no stored document returns the SAME EMPTY \
+             fenced block (`<job_posting>\\n\\n</job_posting>`) as a document that resolved but \
+             has no extracted text — not an error either way, and the two are NOT \
+             distinguishable from this reply alone; cross-check the `_id` against \
+             documents:documents_list's own rows to tell them apart.",
+            no_args.clone(),
+        ),
         curated_tool(TOOL_AUTOMATIONS, "Automations", "", no_args),
         curated_tool(
             TOOL_FOUND_JOBS,
@@ -148,11 +167,17 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
             UNTRUSTED_FIELDS_NOTICE,
             schema_object(
                 json!({
-                    "autopilotId": { "type": "string", "description": "the target autopilot's id (see `automations`)" },
+                    "autopilotId": { "type": "string", "description": "the target autopilot's id (see `automations`); omit to span every autopilot, deduped by posting identity" },
                     "limit": { "type": "integer", "minimum": 1, "description": format!("rows to return (default {DEFAULT_FOUND_JOBS_LIMIT}, server cap {MAX_FOUND_JOBS_LIMIT})") },
-                    "cursor": { "type": "string", "description": "an opaque token from a prior page's nextCursor, valid only for the autopilotId that issued it; omit to start at the first page" },
+                    "cursor": { "type": "string", "description": "an opaque token from a prior page's nextCursor, valid only for the SAME autopilotId scope AND filter arguments that issued it (present or omitted); omit to start at the first page" },
+                    "minScore": { "type": "number", "description": "only rows scored at least this value; unscored rows are excluded when set" },
+                    "country": { "type": "string", "description": "case-insensitive substring match against the row's location" },
+                    "remote": { "type": "boolean", "description": "true keeps only rows determined remote (board flag, registry or location text); false keeps only rows determined NOT remote; a row with no location and no remote signal is undecided and matches neither" },
+                    "applied": { "type": "boolean", "description": "filter to rows already applied to (true) or not (false)" },
+                    "query": { "type": "string", "description": "case-insensitive substring filter over title or company" },
+                    "includeDescription": { "type": "boolean", "description": "include the full (fenced, capped) posting description on each row; rows are compact without it" },
                 }),
-                &["autopilotId"],
+                &[],
             ),
         ),
         json!({

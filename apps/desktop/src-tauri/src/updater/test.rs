@@ -6,6 +6,7 @@ fn test_updater_state_default() {
     assert!(state.pending_version.is_none());
     assert!(state.pending_update.is_none());
     assert!(state.downloaded_bytes.is_none());
+    assert!(!state.checked);
 }
 
 #[test]
@@ -152,6 +153,81 @@ fn test_download_in_progress_or_done_false_after_bytes_taken() {
     assert!(!download_in_progress_or_done(&state));
 }
 
+// ── status_reply: `updater_status`'s read-only reply (round 5,
+// `B1-r1-ACLI-R5-1`) — no network, no `UpdaterState` write, no event ────────
+
+#[test]
+fn test_status_reply_unknown_when_nothing_pending_and_never_checked() {
+    assert_eq!(
+        status_reply(&UpdaterState::default(), false),
+        json!({ "available": false, "checked": false })
+    );
+}
+
+/// `B1-r2-ACLI-R6-2` — the sole regression this whole field exists to fix:
+/// a caller must be able to tell "checked, genuinely current" apart from
+/// "no check has ever run" / "the last one failed". Both used to be the
+/// exact same `{"available": false}`.
+#[test]
+fn test_status_reply_checked_and_current_differs_from_never_checked() {
+    let checked = UpdaterState {
+        checked: true,
+        ..UpdaterState::default()
+    };
+    let never_checked = UpdaterState::default();
+    assert_eq!(
+        status_reply(&checked, false),
+        json!({ "available": false, "checked": true })
+    );
+    assert_ne!(
+        status_reply(&checked, false),
+        status_reply(&never_checked, false)
+    );
+}
+
+/// A Store (MSIX) build never runs a network check at all — `checked` stays
+/// `false` forever on that flavour, so without consulting `packaged` first
+/// this reply would be indistinguishable from "never checked" on a build
+/// that will NEVER check, rather than the store's own `managedBy` marker.
+#[test]
+fn test_status_reply_store_managed_wins_over_checked_state() {
+    let state = UpdaterState {
+        checked: true,
+        ..UpdaterState::default()
+    };
+    assert_eq!(
+        status_reply(&state, true),
+        json!({ "available": false, "managedBy": "store" })
+    );
+}
+
+#[test]
+fn test_status_reply_available_with_the_pending_version_once_checked() {
+    let state = UpdaterState {
+        pending_version: Some("2.5.0".to_string()),
+        ..UpdaterState::default()
+    };
+    assert_eq!(
+        status_reply(&state, false),
+        json!({ "available": true, "version": "2.5.0" })
+    );
+}
+
+#[test]
+fn test_status_reply_reads_pending_version_not_downloaded_bytes() {
+    // A finished download still reports the PENDING version — `updater_install`'s proof source
+    // reads it here, not off `downloaded_bytes`, which carries no version string of its own.
+    let state = UpdaterState {
+        pending_version: Some("3.0.0".to_string()),
+        downloaded_bytes: Some(vec![1, 2, 3]),
+        ..UpdaterState::default()
+    };
+    assert_eq!(
+        status_reply(&state, false),
+        json!({ "available": true, "version": "3.0.0" })
+    );
+}
+
 // ── Changelog parsing ────────────────────────────────────────────────────────
 
 /// `major.minor.patch` as a tuple for order comparisons in tests only — not a
@@ -266,6 +342,46 @@ fn test_changelog_response_real_bundled_file() {
         .as_str()
         .unwrap()
         .contains(&format!("releases/tag/v{first_version}")));
+}
+
+// ── The `checked` producer side (`B1-r3-ACLI-R7-1`) ─────────────────────────
+
+/// Every `status_reply` test above is pure — it reads `UpdaterState.checked`,
+/// never sets it — so deleting all four production writes (`updater_check`'s
+/// two `Ok(...)` arms, `silent_check`'s two mirrors) left the whole suite
+/// green while `updater_status` would answer "never checked" forever on a
+/// build that checks every 4 h. This crate has no `tauri::test` mock-app
+/// harness (see the doc comments on [`download_in_progress_or_done`] and
+/// [`store_managed`]), so the producer side is pinned at the SOURCE rather
+/// than by driving the async commands: deleting any of the four writes fails
+/// this test even though every `status_reply` test above stays green.
+#[test]
+fn all_four_checked_true_writes_are_still_present() {
+    const MOD_RS: &str = include_str!("mod.rs");
+    let guard_writes = MOD_RS.matches("guard.checked = true;").count();
+    assert_eq!(
+        guard_writes, 2,
+        "expected both in-scope-guard writes — `updater_check`'s and `silent_check`'s \
+         `Ok(Some(update))` arms — got {guard_writes}"
+    );
+    let relocked_writes = MOD_RS
+        .matches("app.state::<Mutex<UpdaterState>>().lock().checked = true")
+        .count();
+    assert_eq!(
+        relocked_writes, 2,
+        "expected both re-locked writes — `updater_check`'s and `silent_check`'s \
+         `Ok(None)` arms — got {relocked_writes}"
+    );
+    // T2 hardening: the two counts above are position-independent — they
+    // cannot tell WHICH match arm a write sits in, so moving `silent_check`'s
+    // `Ok(None)` write into its `Err(_)` arm would leave both counts
+    // unchanged. Pin the swallow arm directly: a failed background probe
+    // must never be marked `checked`.
+    assert!(
+        MOD_RS.contains("Err(_) => {}"),
+        "silent_check's failed-probe arm must stay a no-op — a `checked` \
+         write here would claim a fresh answer after a failed check"
+    );
 }
 
 // ── Microsoft Store flavour ───────────────────────────────────────────────────

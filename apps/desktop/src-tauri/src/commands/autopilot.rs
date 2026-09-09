@@ -72,10 +72,26 @@ impl Drop for RunGuard {
 /// `autopilot_best_matches` both need, expressed once instead of twice.
 /// Best-effort: a missing store yields an empty set (nothing reads as
 /// applied), never a failure.
-fn applied_job_urls(app: &AppHandle) -> HashSet<String> {
+// `pub(crate)` (issue #1167) — `agent_read::found_jobs` reuses this EXACT set (never a second
+// hand-typed `ApplicationStore` read) so its `applied` filter/row-flag agrees with what
+// `enrich_applied`/`mark_applied` already compute for `autopilot_list`/`best-matches`.
+pub(crate) fn applied_job_urls(app: &AppHandle) -> HashSet<String> {
     app.try_state::<crate::applications::ApplicationStore>()
         .map(|s| s.applied_job_urls())
         .unwrap_or_default()
+}
+
+/// Like [`applied_job_urls`], but `None` means "cannot answer right now" —
+/// either the store isn't managed, or it is and the query itself failed —
+/// rather than collapsing both to the same empty set. `pub(crate)` (round-4
+/// fix T3-cont, issue #1166/#1169) — `extension_bridge::agent_read`'s
+/// `store_present` derives from this so a locked/corrupt applications DB
+/// doesn't read as "the user applied to nothing" (see
+/// `ApplicationStore::applied_job_urls_checked`'s own doc for the failure
+/// mode this closes).
+pub(crate) fn applied_job_urls_checked(app: &AppHandle) -> Option<HashSet<String>> {
+    app.try_state::<crate::applications::ApplicationStore>()?
+        .applied_job_urls_checked()
 }
 
 /// Fill each found job's `applied` from the set of `job_url`s that have a saved
@@ -894,6 +910,11 @@ pub(crate) fn build_found_job(p: &JobPosting, resume: &str, found_at: u64) -> Fo
                 Some(s.to_string())
             }
         },
+        board_remote: p
+            .extra
+            .get("remote")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
         description: p.description.clone(),
         salary_min: p.extra.get("salaryMin").and_then(|v| v.as_f64()),
         salary_max: p.extra.get("salaryMax").and_then(|v| v.as_f64()),

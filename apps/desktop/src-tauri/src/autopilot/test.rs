@@ -1394,6 +1394,7 @@ fn found_job_full(url: &str, title: &str, company: &str, found_at: u64) -> Found
         url: url.into(),
         location: None,
         board: None,
+        board_remote: false,
         description: None,
         salary_min: None,
         salary_max: None,

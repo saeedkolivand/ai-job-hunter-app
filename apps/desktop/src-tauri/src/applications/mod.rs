@@ -496,18 +496,36 @@ impl ApplicationStore {
 
     /// Normalized non-empty urls of Applications that are NOT `saved` — the set
     /// that derives a found job's `applied` flag (was: "a generation exists").
+    /// Best-effort: a query failure collapses to empty, same as "applied to
+    /// nothing" — fine for this fn's own callers (a cosmetic badge, or a
+    /// best-effort filter over an ALREADY-known-present store), but NOT fine
+    /// for a caller that needs to tell that failure apart from a real empty
+    /// set — see [`Self::applied_job_urls_checked`] for that case.
     pub fn applied_job_urls(&self) -> std::collections::HashSet<String> {
+        self.applied_job_urls_checked().unwrap_or_default()
+    }
+
+    /// Same query as [`Self::applied_job_urls`], but `None` means the query
+    /// itself failed (a locked or corrupt applications DB) rather than
+    /// "queried fine, found nothing" — round-4 fix T3-cont (PR #1182 round-5):
+    /// `extension_bridge::agent_read`'s `store_present` derives from this, not
+    /// from `try_state().is_some()` alone, because a MANAGED-but-unreadable
+    /// store previously produced the exact same empty set as a genuinely
+    /// empty one, so `job`/`found-jobs` reported a confident `applied: false`
+    /// for a DB read failure — precisely the "cannot tell" case the
+    /// `appliedUnavailable` marker exists to surface. A per-row decode
+    /// failure (a malformed stored value) still degrades that ONE row rather
+    /// than failing the whole call, matching `applied_job_urls`'s prior
+    /// leniency.
+    pub fn applied_job_urls_checked(&self) -> Option<std::collections::HashSet<String>> {
         let conn = self.conn.lock();
-        conn.prepare(
-            "SELECT DISTINCT job_url FROM applications WHERE job_url != '' AND status != 'saved'",
-        )
-        .ok()
-        .and_then(|mut stmt| {
-            stmt.query_map([], |row| row.get::<_, String>(0))
-                .ok()
-                .map(|rows| rows.filter_map(|r| r.ok()).collect())
-        })
-        .unwrap_or_default()
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT job_url FROM applications WHERE job_url != '' AND status != 'saved'",
+            )
+            .ok()?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0)).ok()?;
+        Some(rows.filter_map(|r| r.ok()).collect())
     }
 
     // ── Writes ────────────────────────────────────────────────────────────────

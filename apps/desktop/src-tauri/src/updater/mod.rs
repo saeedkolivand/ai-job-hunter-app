@@ -44,6 +44,15 @@ pub struct UpdaterState {
     /// running" without polling the update plugin — the single re-entrancy
     /// flag both commands share.
     pub downloading: bool,
+    /// Set once a network check (`updater_check` or the automatic
+    /// `silent_check`) has actually COMPLETED — on either a found update or
+    /// a confirmed "none available", never on an error, which leaves this
+    /// untouched rather than claiming a fresh answer it doesn't have.
+    /// [`status_reply`] reads this so a read-only caller can tell "checked,
+    /// genuinely current" apart from "no check has ever run" / "the last
+    /// one failed" — both of which stayed the exact same `{"available":
+    /// false}` before this field existed (`B1-r2-ACLI-R6-2`).
+    pub checked: bool,
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -100,6 +109,54 @@ fn store_managed_refusal() -> Value {
 const STARTUP_STATUS_DELAY: tokio::time::Duration = tokio::time::Duration::from_secs(10);
 
 // ── Commands ──────────────────────────────────────────────────────────────────
+
+/// The [`updater_status`] reply for a given [`UpdaterState`] — split out so
+/// it is testable without a live `AppHandle` (this crate has no
+/// `tauri::test` mock-app harness, same reason
+/// [`download_in_progress_or_done`] and [`store_managed`] are split out).
+///
+/// A packaged (Store) build is reported via [`store_managed`] BEFORE
+/// `pending_version` is even consulted — that state field never gets set on
+/// such a build (`setup_auto_check` returns before the first `silent_check`
+/// runs), so without this branch a Store build reported the same bare
+/// `{"available": false}` as "genuinely current" (`B1-r2-ACLI-R6-2`).
+/// Otherwise, `state.checked` distinguishes "checked, none available" from
+/// "never checked" / "last check failed" — both of the latter used to be
+/// the identical, unfalsifiable `{"available": false}`.
+// `pub(crate)` (T5 hardening) — `agent_call::proof`'s
+// `extract_scalar_reads_updater_installs_real_pending_version_off_status_reply`
+// feeds a real reply through this to cross-check `updater_install`'s POLICY
+// proof source, so the two can never drift apart silently.
+pub(crate) fn status_reply(state: &UpdaterState, packaged: bool) -> Value {
+    if let Some(managed) = store_managed(packaged) {
+        return managed;
+    }
+    match &state.pending_version {
+        Some(version) => json!({ "available": true, "version": version }),
+        None => json!({ "available": false, "checked": state.checked }),
+    }
+}
+
+/// The last-known update state — whatever `updater_check` or the automatic
+/// `silent_check` (10s after launch, then every 4h) already found — with no
+/// network call and no `updater:status` emission. Exists so a read-only
+/// caller (the agent-cli `Read` tier) can answer "is an update available"
+/// without triggering `updater_check`'s network probe/event, which selects
+/// the install target the rest of the check→download→install flow acts on
+/// (issue #1165's follow-up: `updater_check` itself stays `Effect::Reversible`
+/// for exactly that reason — see its POLICY row comment).
+///
+/// Agent-tier only, by design (round-4 advisory T6, PR #1182): registered in
+/// `generate_handler!` so it is reachable from the webview like any other
+/// command, but no `ipc/contracts/` entry, `tauri-client/` binding, or
+/// `services/` hook exists for it (AGENTS.md rule 14) — the renderer has no
+/// caller for a bare-status read with no accompanying network probe/event,
+/// so a webview-side contract half would exist for nobody.
+#[tauri::command]
+pub fn updater_status(app: AppHandle) -> Value {
+    let state = app.state::<Mutex<UpdaterState>>();
+    status_reply(&state.lock(), crate::platform::msix::is_packaged())
+}
 
 /// Check for an available update.
 /// Emits checking → available(version) | not-available | error.
@@ -160,6 +217,7 @@ pub async fn updater_check(app: AppHandle) -> Value {
                 guard.pending_version = Some(version.clone());
                 guard.pending_update = Some(Arc::new(update));
                 guard.downloaded_bytes = None;
+                guard.checked = true;
             }
             emit_status(
                 &app,
@@ -168,6 +226,7 @@ pub async fn updater_check(app: AppHandle) -> Value {
             json!({ "available": true, "version": version })
         }
         Ok(None) => {
+            app.state::<Mutex<UpdaterState>>().lock().checked = true;
             emit_status(&app, json!({ "state": "not-available" }));
             json!({ "available": false })
         }
@@ -466,8 +525,9 @@ pub fn setup_auto_check(app: &AppHandle) {
 }
 
 async fn silent_check(app: &AppHandle) {
-    if let Ok(updater) = app.updater() {
-        if let Ok(Some(update)) = updater.check().await {
+    let Ok(updater) = app.updater() else { return };
+    match updater.check().await {
+        Ok(Some(update)) => {
             let version = update.version.clone();
             let notes = update.body.clone();
             {
@@ -476,12 +536,22 @@ async fn silent_check(app: &AppHandle) {
                 guard.pending_version = Some(version.clone());
                 guard.pending_update = Some(Arc::new(update));
                 guard.downloaded_bytes = None;
+                guard.checked = true;
             }
             emit_status(
                 app,
                 json!({ "state": "available", "version": version, "releaseNotes": notes }),
             );
         }
+        // A confirmed "nothing newer" still counts as a completed check for
+        // `status_reply` — before this arm, a silent check that found
+        // nothing left `checked` exactly as unset as one that never ran at
+        // all, the same collapse `updater_check`'s own `Ok(None)` arm fixes.
+        Ok(None) => app.state::<Mutex<UpdaterState>>().lock().checked = true,
+        // Swallowed on purpose (this check is silent) — but never marked
+        // `checked`, so a caller reading `updater_status` after a failed
+        // background probe sees "unknown", not a confident "current".
+        Err(_) => {}
     }
 }
 

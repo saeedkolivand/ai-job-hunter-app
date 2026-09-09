@@ -165,10 +165,23 @@ const INVOCATION_TIMEOUT: Duration = Duration::from_secs(90);
 
 // ── argv → verb ─────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+// No `Eq` (issue #1167 — `min_score: Option<f64>` can't implement it; every
+// test comparison below only ever needs `PartialEq`).
+#[derive(Debug, Clone, PartialEq)]
 enum Verb {
     BestMatches {
         limit: Option<u64>,
+        /// Opaque to this client — passed through verbatim, never parsed
+        /// here. Issue #1146 P11 introduced it as a plain numeric offset;
+        /// round 2 (B3-r1-F4) folded `query`'s fingerprint into an
+        /// `<issuer>:<offset>` grammar instead, once `query` (below) started
+        /// changing which rows a traversal contains — the SAME per-list
+        /// issuer ambiguity `found-jobs`' own cursor exists to close, this
+        /// resource is no longer exempt from. See
+        /// `agent_read::best_matches_cursor_issuer`/`parse_best_matches_cursor`.
+        cursor: Option<String>,
+        /// Case-insensitive substring over title or company (issue #1168).
+        query: Option<String>,
     },
     Job {
         url: String,
@@ -176,19 +189,32 @@ enum Verb {
     Profile,
     Automations,
     Schema,
-    /// Paginated traversal of one autopilot's `found_jobs` (issue #1115) —
+    /// Paginated, filtered traversal of the stored found-jobs list (issue
+    /// #1115), one or every autopilot at once (issue #1168) —
     /// `autopilot_get`/`autopilot_list`/`autopilot_best_matches` cannot
     /// enumerate this: the first two are unbounded (every real autopilot
     /// exceeds the MCP bridge's own result cap) and the third is a
-    /// cross-autopilot top-N ranking, not a per-autopilot full traversal.
-    /// `cursor` is opaque to this client — it is passed through verbatim in
-    /// both directions and never parsed here; its shape, and the fact that a
-    /// cursor is only valid for the autopilot that issued it (issue #1130),
-    /// live on `agent_read::found_jobs::parse_found_jobs_cursor`.
+    /// cross-autopilot top-N ranking, not a full traversal. `cursor` is
+    /// opaque to this client — it is passed through verbatim in both
+    /// directions and never parsed here; its shape, and the fact that a
+    /// cursor is only valid for the same `autopilotId` scope (present or
+    /// omitted) that issued it (issue #1130), live on
+    /// `agent_read::found_jobs::parse_found_jobs_cursor`.
     FoundJobs {
-        autopilot_id: String,
+        /// Optional (issue #1168) — omitted, the traversal spans every
+        /// autopilot, deduped by posting identity.
+        autopilot_id: Option<String>,
         limit: Option<u64>,
         cursor: Option<String>,
+        /// Server-side filters (issue #1167) — the app's own predicates for
+        /// each, never a fresh matcher invented on this surface (see
+        /// `agent_read::found_jobs::FoundJobsFilters`'s own doc).
+        min_score: Option<f64>,
+        country: Option<String>,
+        remote: Option<bool>,
+        applied: Option<bool>,
+        query: Option<String>,
+        include_description: bool,
     },
     /// ADR-038 §2's generic dispatch tier (`agent call <namespace>:<command>
     /// [--input '<json>'] [--confirm '<value>']`) — a SEPARATE wire frame
@@ -240,10 +266,20 @@ impl Verb {
     /// The outbound frame's `payload` object for this verb.
     fn payload(&self) -> Value {
         match self {
-            Verb::BestMatches { limit } => {
+            Verb::BestMatches {
+                limit,
+                cursor,
+                query,
+            } => {
                 let mut p = json!({ "resource": self.resource_name() });
                 if let Some(limit) = limit {
                     p["limit"] = json!(limit);
+                }
+                if let Some(cursor) = cursor {
+                    p["cursor"] = json!(cursor);
+                }
+                if let Some(query) = query {
+                    p["query"] = json!(query);
                 }
                 p
             }
@@ -255,14 +291,40 @@ impl Verb {
                 autopilot_id,
                 limit,
                 cursor,
+                min_score,
+                country,
+                remote,
+                applied,
+                query,
+                include_description,
             } => {
-                let mut p =
-                    json!({ "resource": self.resource_name(), "autopilotId": autopilot_id });
+                let mut p = json!({ "resource": self.resource_name() });
+                if let Some(autopilot_id) = autopilot_id {
+                    p["autopilotId"] = json!(autopilot_id);
+                }
                 if let Some(limit) = limit {
                     p["limit"] = json!(limit);
                 }
                 if let Some(cursor) = cursor {
                     p["cursor"] = json!(cursor);
+                }
+                if let Some(min_score) = min_score {
+                    p["minScore"] = json!(min_score);
+                }
+                if let Some(country) = country {
+                    p["country"] = json!(country);
+                }
+                if let Some(remote) = remote {
+                    p["remote"] = json!(remote);
+                }
+                if let Some(applied) = applied {
+                    p["applied"] = json!(applied);
+                }
+                if let Some(query) = query {
+                    p["query"] = json!(query);
+                }
+                if *include_description {
+                    p["includeDescription"] = json!(true);
                 }
                 p
             }
@@ -297,8 +359,15 @@ struct VerbHelp {
 const VERB_TABLE: &[VerbHelp] = &[
     VerbHelp {
         name: "best-matches",
-        args: "[--limit <n>]",
-        returns: "the strongest jobs across every autopilot (default 20, max 50)",
+        args: "[--limit <n>] [--cursor <c>] [--query <q>]",
+        returns: "the strongest jobs across every autopilot (default 20, max 100 per page); \
+                  repeat with the returned `nextCursor` to reach every ranked row; `--query` \
+                  filters to a title/company substring over the already-capped, ranked \
+                  candidate list this call computes (NOT the full stored corpus — use \
+                  `found-jobs --query` to search every stored posting), and the cursor is only \
+                  valid for the SAME `--query` (present or omitted) that issued it; `total` is \
+                  the size of this capped ranked list, not the number of qualifying postings in \
+                  storage — use `found-jobs` for a true corpus count",
     },
     VerbHelp {
         name: "job",
@@ -307,8 +376,11 @@ const VERB_TABLE: &[VerbHelp] = &[
         // doc (MEDIUM fix, security review round 4): this READ is deliberately lenient about
         // percent-escapes, the write commands are not, so the spelling a reply hands back is the
         // one that works on both.
-        returns: "full detail for one posting (pass back the `url` a reply gave you rather than \
-                  re-encoding your own — write commands match the exact spelling)",
+        returns: "full detail for one posting, matched by its posting url ONLY — never by title \
+                  or company (use `found-jobs --query` for that); pass back the `url` a reply \
+                  gave you rather than re-encoding your own — write commands match the exact \
+                  spelling. `applied` is OMITTED (never a confident false) when the applications \
+                  store is unreadable; the reply then carries `appliedUnavailable: true`",
     },
     VerbHelp {
         name: "profile",
@@ -337,11 +409,19 @@ const VERB_TABLE: &[VerbHelp] = &[
     },
     VerbHelp {
         name: "found-jobs",
-        args: "<autopilotId> [--limit <n>] [--cursor <c>]",
-        returns: "one page of an autopilot's complete found-jobs list (default/max limit are \
-                  documented on `agent_read::found_jobs::resolve_found_jobs`, the cursor format \
-                  on `agent_read::found_jobs::parse_found_jobs_cursor`); repeat with the \
-                  returned cursor until it comes back null to traverse the whole list",
+        args: "[<autopilotId>] [--limit <n>] [--cursor <c>] [--min-score <n>] [--country <s>] \
+               [--remote <bool>] [--applied <bool>] [--query <q>] [--include-description]",
+        returns: "one page of the stored found-jobs list; every reply carries `total` — the \
+                  filtered row count this call matches, so a count never needs a full traversal. \
+                  `<autopilotId>` is optional: given, scopes to one autopilot; omitted, spans \
+                  every autopilot (deduped by posting identity). Rows are compact (no \
+                  description) unless --include-description is set. Repeat with the returned \
+                  cursor until it comes back null to traverse the whole (filtered) list — the \
+                  cursor is only valid for the SAME autopilotId scope AND the same filter \
+                  arguments that issued it; default/max limit are documented on \
+                  `agent_read::found_jobs::resolve_found_jobs`. Each row's `applied` is OMITTED \
+                  (never a confident false) when the applications store is unreadable; the reply \
+                  then carries `appliedUnavailable: true` and `--applied` is refused",
     },
     VerbHelp {
         name: "call",
@@ -404,51 +484,9 @@ fn parse_verb(args: &[String]) -> AppResult<Verb> {
 
 fn parse_best_matches(rest: &[String]) -> AppResult<Verb> {
     let mut limit = None;
-    let mut i = 0;
-    while i < rest.len() {
-        match rest[i].as_str() {
-            "--limit" => {
-                let raw = rest
-                    .get(i + 1)
-                    .ok_or_else(|| AppError::Validation("--limit requires a value".to_string()))?;
-                limit = Some(raw.parse::<u64>().map_err(|_| {
-                    AppError::Validation("--limit must be a non-negative integer".to_string())
-                })?);
-                i += 2;
-            }
-            // Never echoes the typed token (MINOR fix — same reasoning as
-            // the unknown-verb branch above and pinned by the same kind of
-            // test): argv can carry a path/username, and this reply lands
-            // in an agent transcript — name the flag this verb accepts
-            // instead of the one that failed.
-            _ => {
-                return Err(AppError::Validation(
-                    "unknown argument (expected: --limit)".to_string(),
-                ))
-            }
-        }
-    }
-    Ok(Verb::BestMatches { limit })
-}
-
-/// Parse `found-jobs`' own args: `<autopilotId> [--limit <n>] [--cursor <c>]`.
-/// Mirrors [`parse_best_matches`]'s flag-parsing loop, plus the one
-/// positional argument every other multi-arg verb here (`job`) also takes
-/// first. Never echoes an unknown flag's raw token (same reasoning as
-/// [`parse_best_matches`]'s own comment).
-fn parse_found_jobs(rest: &[String]) -> AppResult<Verb> {
-    let autopilot_id = rest
-        .first()
-        .map(String::as_str)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            AppError::Validation("found-jobs requires an <autopilotId> argument".to_string())
-        })?
-        .to_string();
-
-    let mut limit = None;
     let mut cursor = None;
-    let mut i = 1;
+    let mut query = None;
+    let mut i = 0;
     while i < rest.len() {
         match rest[i].as_str() {
             "--limit" => {
@@ -467,9 +505,161 @@ fn parse_found_jobs(rest: &[String]) -> AppResult<Verb> {
                 cursor = Some(raw.to_string());
                 i += 2;
             }
+            "--query" => {
+                let raw = rest
+                    .get(i + 1)
+                    .ok_or_else(|| AppError::Validation("--query requires a value".to_string()))?;
+                query = Some(raw.to_string());
+                i += 2;
+            }
+            // Never echoes the typed token (MINOR fix — same reasoning as
+            // the unknown-verb branch above and pinned by the same kind of
+            // test): argv can carry a path/username, and this reply lands
+            // in an agent transcript — name the flags this verb accepts
+            // instead of the one that failed.
             _ => {
                 return Err(AppError::Validation(
-                    "unknown argument (expected: --limit, --cursor)".to_string(),
+                    "unknown argument (expected: --limit, --cursor, --query)".to_string(),
+                ))
+            }
+        }
+    }
+    Ok(Verb::BestMatches {
+        limit,
+        cursor,
+        query,
+    })
+}
+
+/// Parse `--flag <true|false>`'s value into a `bool` — the one place every
+/// bool flag [`parse_found_jobs`] takes goes through, so `--remote maybe`
+/// fails the same clear way everywhere rather than silently reading as
+/// `false` (`str::parse::<bool>` already refuses anything but the exact
+/// lowercase `"true"`/`"false"`, which is what this leans on).
+fn parse_bool_flag(flag: &str, raw: &str) -> AppResult<bool> {
+    raw.parse::<bool>()
+        .map_err(|_| AppError::Validation(format!("{flag} must be `true` or `false`")))
+}
+
+/// A present-but-empty `<autopilotId>` positional (the canonical unset-shell-
+/// variable shape, `agent found-jobs "$AP_ID"` with `AP_ID` unset) must
+/// refuse with the SAME blank-selector message
+/// `found_jobs::parse_autopilot_id_arg`/`mcp::classify_tool_call` give the
+/// identical mistake one hop further in (round 3 fix, B3-r3-F9) — before
+/// this fix, an empty first token fell to `(None, 0)` below, `omitted`, so
+/// the flag-parsing loop started AT that same empty token and hit the
+/// catch-all "unknown argument" arm, steering a caller toward dropping the
+/// positional entirely (the exact spanning-scope mistake `agent-cli-standards`
+/// says an empty selector must never fall into). A whitespace-only id (`" "`)
+/// is left to the existing downstream refusal — it survives this positional
+/// check (not empty) and is caught by `parse_autopilot_id_arg`'s own trim.
+const BLANK_FOUND_JOBS_AUTOPILOT_ID_MESSAGE: &str =
+    "autopilotId must be a non-empty id, not blank or flag-shaped — omit the positional \
+     entirely to span every autopilot";
+
+/// Parse `found-jobs`' own args: `[<autopilotId>] [--limit <n>] [--cursor <c>]
+/// [--min-score <n>] [--country <s>] [--remote <bool>] [--applied <bool>]
+/// [--query <q>] [--include-description]`. `autopilotId` is now OPTIONAL
+/// (issue #1168) — the first token is read as one only when it does not look
+/// like a flag (does not start with `--`); omitted entirely, flag parsing
+/// simply starts at index 0. Mirrors [`parse_best_matches`]'s flag-parsing
+/// loop. Never echoes an unknown flag's raw token (same reasoning as
+/// [`parse_best_matches`]'s own comment).
+fn parse_found_jobs(rest: &[String]) -> AppResult<Verb> {
+    let (autopilot_id, mut i) = match rest.first() {
+        Some(s) if s.is_empty() => {
+            return Err(AppError::Validation(
+                BLANK_FOUND_JOBS_AUTOPILOT_ID_MESSAGE.to_string(),
+            ))
+        }
+        Some(s) if !s.starts_with("--") => (Some(s.clone()), 1),
+        _ => (None, 0),
+    };
+
+    let mut limit = None;
+    let mut cursor = None;
+    let mut min_score = None;
+    let mut country = None;
+    let mut remote = None;
+    let mut applied = None;
+    let mut query = None;
+    let mut include_description = false;
+    while i < rest.len() {
+        match rest[i].as_str() {
+            "--limit" => {
+                let raw = rest
+                    .get(i + 1)
+                    .ok_or_else(|| AppError::Validation("--limit requires a value".to_string()))?;
+                limit = Some(raw.parse::<u64>().map_err(|_| {
+                    AppError::Validation("--limit must be a non-negative integer".to_string())
+                })?);
+                i += 2;
+            }
+            "--cursor" => {
+                let raw = rest
+                    .get(i + 1)
+                    .ok_or_else(|| AppError::Validation("--cursor requires a value".to_string()))?;
+                cursor = Some(raw.to_string());
+                i += 2;
+            }
+            "--min-score" => {
+                let raw = rest.get(i + 1).ok_or_else(|| {
+                    AppError::Validation("--min-score requires a value".to_string())
+                })?;
+                let parsed = raw.parse::<f64>().map_err(|_| {
+                    AppError::Validation("--min-score must be a number".to_string())
+                })?;
+                // B3-r1-F3 — `f64::parse` accepts `"1e400"`/`"inf"`/`"nan"`
+                // as valid non-finite values; `json!(non_finite)` then
+                // serializes to `null`, which the resource-side filter reads
+                // as "absent" and silently drops. Refused here so the filter
+                // either applies or the call fails, never a third, quiet
+                // option.
+                if !parsed.is_finite() {
+                    return Err(AppError::Validation(
+                        "--min-score must be a finite number".to_string(),
+                    ));
+                }
+                min_score = Some(parsed);
+                i += 2;
+            }
+            "--country" => {
+                let raw = rest.get(i + 1).ok_or_else(|| {
+                    AppError::Validation("--country requires a value".to_string())
+                })?;
+                country = Some(raw.to_string());
+                i += 2;
+            }
+            "--remote" => {
+                let raw = rest
+                    .get(i + 1)
+                    .ok_or_else(|| AppError::Validation("--remote requires a value".to_string()))?;
+                remote = Some(parse_bool_flag("--remote", raw)?);
+                i += 2;
+            }
+            "--applied" => {
+                let raw = rest.get(i + 1).ok_or_else(|| {
+                    AppError::Validation("--applied requires a value".to_string())
+                })?;
+                applied = Some(parse_bool_flag("--applied", raw)?);
+                i += 2;
+            }
+            "--query" => {
+                let raw = rest
+                    .get(i + 1)
+                    .ok_or_else(|| AppError::Validation("--query requires a value".to_string()))?;
+                query = Some(raw.to_string());
+                i += 2;
+            }
+            "--include-description" => {
+                include_description = true;
+                i += 1;
+            }
+            _ => {
+                return Err(AppError::Validation(
+                    "unknown argument (expected: --limit, --cursor, --min-score, --country, \
+                     --remote, --applied, --query, --include-description)"
+                        .to_string(),
                 ))
             }
         }
@@ -478,6 +668,12 @@ fn parse_found_jobs(rest: &[String]) -> AppResult<Verb> {
         autopilot_id,
         limit,
         cursor,
+        min_score,
+        country,
+        remote,
+        applied,
+        query,
+        include_description,
     })
 }
 
@@ -1179,9 +1375,11 @@ pub fn run(args: &[String]) -> i32 {
     ))
 }
 
-// ADR-038 §1 — the command policy table (167 rows) + its exactness test
-// against `generate_handler!`. Data only in this phase: nothing here
-// dispatches yet (§2's generic `agent call <ns>:<command>` tier is later).
+// ADR-038 §1 — the command policy table (row count pinned by
+// `policy::tests::policy_table_row_count_is_pinned`, never restated here)
+// + its exactness test against `generate_handler!`. Data only in this
+// phase: nothing here dispatches yet (§2's generic `agent call
+// <ns>:<command>` tier is later).
 pub(crate) mod policy;
 
 // The MCP (Model Context Protocol) stdio server mode — `agent mcp`.

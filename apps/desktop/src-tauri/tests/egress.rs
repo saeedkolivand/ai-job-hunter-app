@@ -257,6 +257,10 @@ const DYNAMIC_SITES: &[(&str, &str)] = &[
     ("scraping/boards/personio/mod.rs", "https://{}.{}"),
     ("scraping/scrape_url/mod.rs", "https://{host}"),
     ("scraping/scrape_url/mod.rs", "https://{}"),
+    // Prepends a scheme onto a possibly scheme-less caller-pasted url purely
+    // to satisfy `reqwest::Url::parse` for IDENTITY comparison (issue
+    // #1166) — the parsed `Url` is never fetched, only read for its host/path.
+    ("scraping/scrape_url/identity.rs", "https://{url}"),
 ];
 
 // ── Source-tree access (mirrors tests/architecture.rs's `sources()`) ────────
