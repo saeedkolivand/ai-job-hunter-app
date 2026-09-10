@@ -53,8 +53,8 @@ on:
         description: 'What to run'
         type: choice
         options:
-          - build-installers
           - release
+          - build-installers
           - publish-chrome
           - publish-firefox
           - publish-msstore
