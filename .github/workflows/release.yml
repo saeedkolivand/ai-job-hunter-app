@@ -1407,22 +1407,22 @@ jobs:
 
       # msstore-cli is NOT a .NET global tool (no NuGet package exists) —
       # it ships as a self-contained tarball per-OS from its own GitHub
-      # releases. Verified against the sha256 the release publishes alongside it.
+      # releases. Pinned to a release tag and verified against the checksum
+      # committed HERE, not the .sha256.txt published next to the tarball:
+      # a same-origin checksum only proves the download survived transit,
+      # never that upstream is still the release that was reviewed (#1197).
+      # Bump both values together — the sha256 is that tag's
+      # MSStoreCLI-linux-x64.tar.gz, recomputed locally with sha256sum.
       - name: 📥 Install the Microsoft Store Developer CLI
+        env:
+          MSSTORE_CLI_VERSION: v0.4.2
+          MSSTORE_CLI_SHA256: 2810cb60c4688351136bbffa321d368153c003027aec60ae1346644fd6b392e2
         run: |
           set -euo pipefail
-          echo "::group::Installing msstore CLI"
+          echo "::group::Installing msstore CLI $MSSTORE_CLI_VERSION"
           cd "$RUNNER_TEMP"
-          curl -sSLO https://github.com/microsoft/msstore-cli/releases/latest/download/MSStoreCLI-linux-x64.tar.gz
-          curl -sSLO https://github.com/microsoft/msstore-cli/releases/latest/download/MSStoreCLI-linux-x64.tar.gz.sha256.txt
-          # The .sha256.txt Microsoft publishes is UTF-16LE with a BOM, not
-          # UTF-8 — sha256sum can't parse a checksum line with a null byte
-          # after every character, so it must be converted first. iconv's
-          # output still carries the BOM (now UTF-8-encoded), stripped by
-          # the sed pass. Verified directly against the real download, not
-          # assumed: sha256sum -c failed silently-wrong ("no properly
-          # formatted checksum lines found") without this conversion.
-          iconv -f UTF-16LE -t UTF-8 MSStoreCLI-linux-x64.tar.gz.sha256.txt | sed '1s/^\xEF\xBB\xBF//' | sha256sum -c -
+          curl -fsSLO "https://github.com/microsoft/msstore-cli/releases/download/$MSSTORE_CLI_VERSION/MSStoreCLI-linux-x64.tar.gz"
+          echo "$MSSTORE_CLI_SHA256  MSStoreCLI-linux-x64.tar.gz" | sha256sum -c -
           mkdir -p "$HOME/.local/msstore-cli"
           tar -xzf MSStoreCLI-linux-x64.tar.gz -C "$HOME/.local/msstore-cli"
           chmod +x "$HOME/.local/msstore-cli/msstore"
