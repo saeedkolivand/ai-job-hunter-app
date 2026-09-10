@@ -1415,7 +1415,14 @@ jobs:
           cd "$RUNNER_TEMP"
           curl -sSLO https://github.com/microsoft/msstore-cli/releases/latest/download/MSStoreCLI-linux-x64.tar.gz
           curl -sSLO https://github.com/microsoft/msstore-cli/releases/latest/download/MSStoreCLI-linux-x64.tar.gz.sha256.txt
-          sed 's/^\xEF\xBB\xBF//' MSStoreCLI-linux-x64.tar.gz.sha256.txt | sha256sum -c -
+          # The .sha256.txt Microsoft publishes is UTF-16LE with a BOM, not
+          # UTF-8 — sha256sum can't parse a checksum line with a null byte
+          # after every character, so it must be converted first. iconv's
+          # output still carries the BOM (now UTF-8-encoded), stripped by
+          # the sed pass. Verified directly against the real download, not
+          # assumed: sha256sum -c failed silently-wrong ("no properly
+          # formatted checksum lines found") without this conversion.
+          iconv -f UTF-16LE -t UTF-8 MSStoreCLI-linux-x64.tar.gz.sha256.txt | sed '1s/^\xEF\xBB\xBF//' | sha256sum -c -
           mkdir -p "$HOME/.local/msstore-cli"
           tar -xzf MSStoreCLI-linux-x64.tar.gz -C "$HOME/.local/msstore-cli"
           chmod +x "$HOME/.local/msstore-cli/msstore"
