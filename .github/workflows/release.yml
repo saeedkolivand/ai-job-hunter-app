@@ -1466,6 +1466,7 @@ jobs:
             echo "::error title=MSIX missing::No .msix file was in the msix-store-package artifact — pack-msix.mjs's output naming and this job's expectation have drifted."
             exit 1
           fi
+          MSIX="$(readlink -f "$MSIX")"
           export MSIX
 
           # msstore-cli's settings.json does NOT follow XDG_DATA_HOME or
@@ -1484,6 +1485,18 @@ jobs:
             set -euo pipefail
             eval "$(printf "%s\n" "ci" | gnome-keyring-daemon --unlock --daemonize --login)"
 
+            # `msstore info` (which does nothing but load+print the config)
+            # fails with the exact same "SellerId is not set" as publish did
+            # — so this is not publish-specific, it is ANY second msstore
+            # invocation after reconfigure, in this exact job workspace
+            # path. Forcing a short, simple, explicit CWD for every
+            # invocation next, in case the deeply-nested GitHub Actions
+            # workspace path itself is the trigger (a NativeAOT/trimming
+            # path-resolution bug is the leading theory at this point, not
+            # anything under this workflow'"'"'s control).
+            mkdir -p /tmp/msstore-cwd
+            cd /tmp/msstore-cwd
+
             echo "::group::msstore reconfigure"
             msstore reconfigure --verbose \
               --tenantId "$MSSTORE_TENANT_ID" \
@@ -1492,19 +1505,12 @@ jobs:
               --clientSecret "$MSSTORE_CLIENT_SECRET"
             echo "::endgroup::"
             echo "::group::settings.json after reconfigure (no secret in this file — only in the keyring)"
-            echo "pwd=$(pwd)"
-            cat "Microsoft/MSStore.CLI/settings.json" 2>&1 || true
-            # `msstore info --verbose` prints _configurationManager.ConfigPath
-            # directly (its own resolved settings path), plus the loaded
-            # SellerId/TenantId/ClientId — the actual source of truth, not a
-            # guess from this shell about where the file "should" be.
-            msstore info --verbose
+            find /tmp/msstore-cwd -iname "settings.json" -exec cat {} \; 2>&1 || true
             echo "::endgroup::"
             echo "::group::msstore publish (upload + submit)"
             # No --noCommit = upload AND submit for review, mirroring the
             # Chrome/Firefox jobs. Free products only — msstore publish
             # rejects a paid product outright (see docs/DEPLOYMENT.md).
-            msstore info --verbose
             msstore publish "$MSIX" -id "$MSSTORE_PRODUCT_ID" --verbose
             echo "::endgroup::"
           '
