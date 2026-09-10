@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.153.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.153.0...v0.153.1) (2026-09-10)
+
+### 🐛 Bug Fixes
+
+* **release:** bootstrap a keyring for msstore-cli on the headless runner ([99df738](https://github.com/saeedkolivand/ai-job-hunter-app/commit/99df738260e338333887873fe016ba1fc1352580))
+* **release:** decode msstore-cli's utf-16le checksum file before verifying ([5c08bd0](https://github.com/saeedkolivand/ai-job-hunter-app/commit/5c08bd08edfaa234f165eee5223726b345180d25))
+* **release:** pin xdg_data_home so msstore-cli's config path is stable ([ab1eda8](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ab1eda86a6a6837be8cc0befadf785a7fa48dbff))
+
 ## [0.153.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.152.0...v0.153.0) (2026-09-10)
 
 ### ✨ Features
