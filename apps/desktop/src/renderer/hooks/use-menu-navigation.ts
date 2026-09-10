@@ -82,7 +82,7 @@ export function useMenuNavigation() {
           } else if (res.managedBy) {
             // A packaged build never checked anything — saying "up to date"
             // here would be a claim we did not make. `by` names the flavour,
-            // so a Flatpak/Snap install is never told it came from the Store.
+            // so a Snap install is never told it came from the Store.
             notify.open({
               key: KEY,
               variant: 'info',

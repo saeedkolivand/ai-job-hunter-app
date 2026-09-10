@@ -4618,13 +4618,13 @@ export type UpdateCheckResult =
   | { available: true; version: string; downloaded?: boolean; downloading?: boolean }
   | {
       available: false;
-      /** Present only on a **packaged** install — Microsoft Store (MSIX),
-       *  Flatpak, or Snap: that flavour's store/sandbox delivers updates for
-       *  it, so the shell answers without ever contacting GitHub — no check,
-       *  no background poll, and `download`/`install` refuse. Absent on
-       *  every other install, where `available: false` keeps its plain "you
-       *  are up to date" meaning. */
-      managedBy?: 'msstore' | 'flatpak' | 'snap';
+      /** Present only on a **packaged** install — Microsoft Store (MSIX) or
+       *  Snap: that flavour's store/sandbox delivers updates for it, so the
+       *  shell answers without ever contacting GitHub — no check, no
+       *  background poll, and `download`/`install` refuse. Absent on every
+       *  other install, where `available: false` keeps its plain "you are
+       *  up to date" meaning. */
+      managedBy?: 'msstore' | 'snap';
     }
   | { error: string };
 ```

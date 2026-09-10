@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 ///   { state: "downloading",   percent }
 ///   { state: "downloaded",    version }
 ///   { state: "error",         message }
-///   { state: "managed",       by: "msstore" | "flatpak" | "snap" }   — packaged build, flavour-specific
+///   { state: "managed",       by: "msstore" | "snap" }   — packaged build, flavour-specific
 ///
 /// ── Event channel ────────────────────────────────────────────────────────────
 ///   updater:status  — emitted by every state transition.
@@ -76,8 +76,8 @@ fn download_in_progress_or_done(state: &UpdaterState) -> bool {
 /// the packaged branch) and via `Option::map` by [`status_reply`] (which
 /// still needs the "or check normally" `None` case).
 ///
-/// `flavour` comes from [`crate::platform::packaged_flavour`] (MSIX,
-/// Flatpak, or Snap); it is a parameter rather than a call so the decision
+/// `flavour` comes from [`crate::platform::packaged_flavour`] (MSIX or
+/// Snap); it is a parameter rather than a call so the decision
 /// is testable off-Windows and without a live `AppHandle` (this crate has
 /// no `tauri::test` mock-app harness — same reason
 /// [`download_in_progress_or_done`] is split out).
@@ -104,7 +104,6 @@ fn managed_status(flavour: PackageFlavour) -> Value {
 fn store_managed_refusal(flavour: PackageFlavour) -> Value {
     let source = match flavour {
         PackageFlavour::MsStore => "the Microsoft Store",
-        PackageFlavour::Flatpak => "Flatpak",
         PackageFlavour::Snap => "the Snap Store",
     };
     json!({ "error": format!("This build is installed from {source} — updates are delivered by {source}.") })
@@ -124,7 +123,7 @@ const STARTUP_STATUS_DELAY: tokio::time::Duration = tokio::time::Duration::from_
 /// `tauri::test` mock-app harness, same reason
 /// [`download_in_progress_or_done`] and [`store_managed`] are split out).
 ///
-/// A packaged (Store/Flatpak/Snap) build is reported via [`store_managed`]
+/// A packaged (Store/Snap) build is reported via [`store_managed`]
 /// BEFORE `pending_version` is even consulted — that state field never gets
 /// set on such a build (`setup_auto_check` returns before the first
 /// `silent_check` runs), so without this branch a packaged build reported
@@ -172,7 +171,7 @@ pub fn updater_status(app: AppHandle) -> Value {
 /// Stores the Update object for use by updater_download.
 #[tauri::command]
 pub async fn updater_check(app: AppHandle) -> Value {
-    // Before the network, before the state: a packaged (Store/Flatpak/Snap)
+    // Before the network, before the state: a packaged (Store/Snap)
     // build never checks GitHub at all. Emitted as well as returned so every
     // mounted listener (banner, settings panel, menu) converges on the same
     // answer, exactly like the outcomes below.
@@ -507,7 +506,7 @@ pub fn updater_changelog() -> Value {
 
 /// Silent check 10 s after launch, then every 4 h.
 ///
-/// A packaged (Store/Flatpak/Snap) build gets neither: no first check, no
+/// A packaged (Store/Snap) build gets neither: no first check, no
 /// interval, no network. It announces once (so the settings panel can say
 /// where updates come from without the user pressing anything) and stops
 /// there.

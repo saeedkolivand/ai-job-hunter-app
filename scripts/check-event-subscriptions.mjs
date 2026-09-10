@@ -242,7 +242,7 @@ const SUBSCRIBERS = {
       'against re-entry by a Drop-based guard that cannot latch. NOTE the fix lives in ' +
       "`services/use-updater/` and the Rust updater, so this entry's own hash could not have " +
       'detected it (see the dependency caveat above). A fourth status rides the same store: on ' +
-      'a packaged build (Microsoft Store/MSIX, Flatpak, or Snap) the shell pushes `managed` ' +
+      'a packaged build (Microsoft Store/MSIX or Snap) the shell pushes `managed` ' +
       'ONCE, ~10 s after launch (`updater::setup_auto_check`) — almost certainly before this ' +
       'route is ever visited. The always-mounted banner is what receives it and records it into ' +
       'the shared snapshot, so a panel mounted minutes later still renders the right ' +

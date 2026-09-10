@@ -20,7 +20,6 @@ import { UpdateSection } from './index';
 const MANAGED_KEY = 'settings.update.managedByStore';
 const MANAGED_KEY_BY_FLAVOUR = {
   msstore: 'settings.update.managedByStore',
-  flatpak: 'settings.update.managedByFlatpak',
   snap: 'settings.update.managedBySnap',
 } as const;
 
@@ -73,10 +72,9 @@ describe('UpdateSection', () => {
   });
 
   // Mutation-visible: hardcode the Store copy for every flavour and this
-  // fails for the Flatpak/Snap cases — the whole reason this fix exists is
-  // that a Flatpak/Snap user must never be told they installed from the
-  // Microsoft Store.
-  it.each(['msstore', 'flatpak', 'snap'] as const)(
+  // fails for the Snap case — the whole reason this fix exists is that a
+  // Snap user must never be told they installed from the Microsoft Store.
+  it.each(['msstore', 'snap'] as const)(
     "renders the '%s' flavour's own copy, not another flavour's",
     (by) => {
       const key = MANAGED_KEY_BY_FLAVOUR[by];
@@ -85,7 +83,7 @@ describe('UpdateSection', () => {
       emit({ state: 'managed', by });
 
       expect(screen.getByRole('status')).toHaveTextContent(i18n.t(key));
-      for (const other of ['msstore', 'flatpak', 'snap'] as const) {
+      for (const other of ['msstore', 'snap'] as const) {
         if (other === by) continue;
         expect(screen.queryByText(i18n.t(MANAGED_KEY_BY_FLAVOUR[other]))).not.toBeInTheDocument();
       }

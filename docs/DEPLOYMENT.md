@@ -345,47 +345,6 @@ The snapcraft manifest uses the `dump` plugin to reuse the built `.deb` rather t
 
 ---
 
-## Flathub
-
-A third **flavour** of the Linux build, not a second build: the Flathub package wraps the same `ajh-tauri` binary. Packaging manifest in [`apps/desktop/src-tauri/linux/flatpak/io.github.saeedkolivand.Ai_Job_Hunter_App.yml`](../apps/desktop/src-tauri/linux/flatpak/io.github.saeedkolivand.Ai_Job_Hunter_App.yml), with companion files `.desktop`, `.metainfo.xml`, and auto-generated vendor sources (`cargo-sources.json`, `node-sources.json`).
-
-Which container is running is a **runtime** question: `platform::flatpak::is_packaged()` checks for the `/.flatpak-info` file. A Flatpak build shares the same runtime detection and behaviour-difference pattern as MSIX/Snap — Store owns updating, native-messaging-host registration is skipped (no usable solution even with sandboxed helpers), and launch-at-login is delegated to the manifest's Background portal. See [ADR-049](knowledge/decision-records/adr-049-microsoft-store-msix-flavour.md) for the full decision; that ADR now covers all three packaged flavours.
-
-### Submission and automation
-
-The Flathub submission process requires a one-time manual step: the user must create a fork of the external `flathub/flathub` repository and file a pull request per Flathub's submission workflow. If using an `io.github.*` app ID, verify it demangles (underscores to dashes) to an existing GitHub repository — Flathub's linter requires that URL to resolve. Do not hardcode stale submission steps as fact — verify against Flathub's current live documentation when that step is undertaken.
-
-The `update-flathub` job in `release.yml` pins the Flatpak manifest's git tag, regenerates the two vendor-sources files (`cargo-sources.json`, `node-sources.json` — ~1.6MB combined, regenerated per-release by CI), syncs the AppStream release entry in the metainfo file, and pushes all three to the external fork, which must exist first (a GitHub-app-verified fork; the job skips quietly with a warning if `FLATHUB_DEPLOY_KEY` is unset, since the Flathub submission has not been reviewed/merged yet). `scripts/sync-snapcraft.cjs` is a separate tool used only by the `publish-snap` job to bump the Snap manifest's version.
-
-### Known open risk — pnpm offline bootstrap
-
-Flathub requires **fully offline, vendored builds** with no network access to package registries. Flathub's buildbot will have no network stack. The manifest mitigates pnpm's registry metadata fetches with `pnpm config set minimum-release-age 0` and `pnpm config set fetch-retries 0`, both confirmed necessary in a real local flatpak-builder test run. However:
-
-- **Not fully verified end-to-end.** WSL testing proved core mechanics (git+tag source fetch, cargo vendoring, node-sources vendoring, GNOME 49 SDK/runtime resolution, pnpm bootstrapping via vendored tarball) individually, but a clean full build inside flathub-builder's truly absent network was **not achieved** — the WSL test with flaky/slow DNS eventually timed out rather than completing. The refusals Flathub's buildbot encounters (network genuinely absent, failing fast rather than slow-retrying) are unconfirmed.
-- **Belongs in the manifest itself, not in code.** This is a build-system limitation with workarounds already in place; if it resurfaces, the fix stays in `flatpak/io.github.saeedkolivand.Ai_Job_Hunter_App.yml`.
-
-Verify the build end-to-end on Flathub's actual buildbot once the submission reaches that stage.
-
-### Local test loop
-
-Flathub requires flatpak-builder and a Linux system; it cannot be tested on the primary Windows dev machine. Testing must occur on Linux/WSL:
-
-```bash
-# 1. Install flatpak and flatpak-builder
-sudo apt-get install flatpak flatpak-builder
-
-# 2. Add flathub remote
-flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-
-# 3. Build the flatpak
-cd apps/desktop/src-tauri/linux/flatpak
-flatpak-builder --user --install build-dir io.github.saeedkolivand.Ai_Job_Hunter_App.yml
-```
-
-The build is fully offline once GNOME runtime/SDK are installed locally; network is only needed for their first-run fetch. The pnpm registry metadata problem (see "Known open risk" above) is mitigated with the config settings in the manifest, but a genuinely clean, zero-network end-to-end build is still pending verification against the real Flathub buildbot.
-
----
-
 ## Auto-Update
 
 The app checks for updates on launch via Tauri's updater plugin. The update manifest is published to GitHub Releases automatically. **Not on a Microsoft Store install** — that flavour never reaches any of this; see § Microsoft Store (MSIX).

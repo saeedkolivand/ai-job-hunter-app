@@ -41,7 +41,6 @@ vi.mock('@/services/use-updater', () => ({
   useUpdater: () => ({ check }),
   MANAGED_BY_KEY: {
     msstore: 'settings.update.managedByStore',
-    flatpak: 'settings.update.managedByFlatpak',
     snap: 'settings.update.managedBySnap',
   },
 }));
@@ -122,11 +121,10 @@ describe('useMenuNavigation', () => {
   // A packaged build's `check` never contacts GitHub — it reports who owns
   // updates. Saying "you are up to date" there would be a claim about a check
   // that did not happen. (`t` is mocked to the identity above, so the
-  // assertions are on keys.) Exercised per flavour: a Flatpak/Snap install
-  // must never surface the Microsoft Store's own key.
+  // assertions are on keys.) Exercised per flavour: a Snap install must
+  // never surface the Microsoft Store's own key.
   it.each([
     ['msstore', 'settings.update.managedByStore'],
-    ['flatpak', 'settings.update.managedByFlatpak'],
     ['snap', 'settings.update.managedBySnap'],
   ] as const)('names %s as the update owner instead of claiming "up to date"', async (by, key) => {
     check.mockResolvedValueOnce({ available: false, managedBy: by });

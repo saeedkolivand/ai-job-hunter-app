@@ -1,7 +1,6 @@
 pub mod accent_watcher;
 pub mod chrome;
 pub mod config;
-pub mod flatpak;
 pub mod linux_appimage;
 pub mod msix;
 pub mod process;
@@ -19,13 +18,11 @@ pub use process::{resolve_cli_binary, ResolvedCli};
 /// "is it packaged at all" wants [`is_packaged_build`]; one whose reply
 /// reaches the user (updater status/refusal copy — see `crate::updater`)
 /// needs to know WHICH one, since "Updates come from the Microsoft Store" is
-/// simply false for a Flatpak or Snap install.
+/// simply false for a Snap install.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PackageFlavour {
     /// Microsoft Store (MSIX) — see [`msix`].
     MsStore,
-    /// Flatpak sandbox — see [`flatpak`].
-    Flatpak,
     /// Snap confinement — see [`snap`].
     Snap,
 }
@@ -37,7 +34,6 @@ impl PackageFlavour {
     pub fn as_wire_str(self) -> &'static str {
         match self {
             PackageFlavour::MsStore => "msstore",
-            PackageFlavour::Flatpak => "flatpak",
             PackageFlavour::Snap => "snap",
         }
     }
@@ -50,8 +46,6 @@ impl PackageFlavour {
 pub fn packaged_flavour() -> Option<PackageFlavour> {
     if msix::is_packaged() {
         Some(PackageFlavour::MsStore)
-    } else if flatpak::is_packaged() {
-        Some(PackageFlavour::Flatpak)
     } else if snap::is_packaged() {
         Some(PackageFlavour::Snap)
     } else {
@@ -60,11 +54,11 @@ pub fn packaged_flavour() -> Option<PackageFlavour> {
 }
 
 /// `true` when this process is running inside ANY store/sandbox package
-/// (MSIX, Flatpak, or Snap) — the umbrella "the app is not free to manage
-/// its own updates/native-messaging registration" question. Individual
-/// callers that need to know WHICH one (e.g. `msix::published_exe_path`, or
-/// anything the user reads — see [`packaged_flavour`]) go through the
-/// specific module or [`packaged_flavour`] instead.
+/// (MSIX or Snap) — the umbrella "the app is not free to manage its own
+/// updates/native-messaging registration" question. Individual callers that
+/// need to know WHICH one (e.g. `msix::published_exe_path`, or anything the
+/// user reads — see [`packaged_flavour`]) go through the specific module or
+/// [`packaged_flavour`] instead.
 pub fn is_packaged_build() -> bool {
     packaged_flavour().is_some()
 }
