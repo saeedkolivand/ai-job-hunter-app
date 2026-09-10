@@ -6,7 +6,7 @@ import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
 import { useMenuIntents } from '@/services';
-import { useUpdater } from '@/services/use-updater';
+import { MANAGED_BY_KEY, useUpdater } from '@/services/use-updater';
 import { useWindowControls } from '@/services/use-window-controls';
 import { type SettingsSection, useSessionStore } from '@/store/session-store';
 import { useUiStore } from '@/store/ui-store';
@@ -79,13 +79,14 @@ export function useMenuNavigation() {
             notify.open({ key: KEY, variant: 'error', message: res.error });
           } else if (res.available) {
             notify.destroy(KEY); // the UpdateBanner takes over
-          } else if (res.managedBy === 'store') {
-            // A Store build never checked anything — saying "up to date" here
-            // would be a claim we did not make.
+          } else if (res.managedBy) {
+            // A packaged build never checked anything — saying "up to date"
+            // here would be a claim we did not make. `by` names the flavour,
+            // so a Flatpak/Snap install is never told it came from the Store.
             notify.open({
               key: KEY,
               variant: 'info',
-              message: t('settings.update.managedByStore'),
+              message: t(MANAGED_BY_KEY[res.managedBy]),
             });
           } else {
             notify.open({ key: KEY, variant: 'success', message: t('updater.upToDate') });

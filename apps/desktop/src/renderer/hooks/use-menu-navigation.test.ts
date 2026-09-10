@@ -39,6 +39,11 @@ vi.mock('@/store/ui-store', () => ({
 const check = vi.fn().mockResolvedValue({ available: false });
 vi.mock('@/services/use-updater', () => ({
   useUpdater: () => ({ check }),
+  MANAGED_BY_KEY: {
+    msstore: 'settings.update.managedByStore',
+    flatpak: 'settings.update.managedByFlatpak',
+    snap: 'settings.update.managedBySnap',
+  },
 }));
 
 // useMenuNavigation raises check-for-updates feedback via useNotification and
@@ -114,18 +119,21 @@ describe('useMenuNavigation', () => {
     expect(setShortcutsOpen).not.toHaveBeenCalled();
   });
 
-  // A Store build's `check` never contacts GitHub — it reports who owns
+  // A packaged build's `check` never contacts GitHub — it reports who owns
   // updates. Saying "you are up to date" there would be a claim about a check
   // that did not happen. (`t` is mocked to the identity above, so the
-  // assertions are on keys.)
-  it('names the Store as the update owner instead of claiming "up to date"', async () => {
-    check.mockResolvedValueOnce({ available: false, managedBy: 'store' });
+  // assertions are on keys.) Exercised per flavour: a Flatpak/Snap install
+  // must never surface the Microsoft Store's own key.
+  it.each([
+    ['msstore', 'settings.update.managedByStore'],
+    ['flatpak', 'settings.update.managedByFlatpak'],
+    ['snap', 'settings.update.managedBySnap'],
+  ] as const)('names %s as the update owner instead of claiming "up to date"', async (by, key) => {
+    check.mockResolvedValueOnce({ available: false, managedBy: by });
     renderWithPending({ event: 'menu:action', payload: { action: 'check-updates' } });
 
     await waitFor(() =>
-      expect(notifyApi.open).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'settings.update.managedByStore' })
-      )
+      expect(notifyApi.open).toHaveBeenCalledWith(expect.objectContaining({ message: key }))
     );
     expect(notifyApi.open).not.toHaveBeenCalledWith(
       expect.objectContaining({ message: 'updater.upToDate' })

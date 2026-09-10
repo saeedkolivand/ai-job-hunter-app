@@ -159,7 +159,7 @@ fn test_download_in_progress_or_done_false_after_bytes_taken() {
 #[test]
 fn test_status_reply_unknown_when_nothing_pending_and_never_checked() {
     assert_eq!(
-        status_reply(&UpdaterState::default(), false),
+        status_reply(&UpdaterState::default(), None),
         json!({ "available": false, "checked": false })
     );
 }
@@ -176,29 +176,36 @@ fn test_status_reply_checked_and_current_differs_from_never_checked() {
     };
     let never_checked = UpdaterState::default();
     assert_eq!(
-        status_reply(&checked, false),
+        status_reply(&checked, None),
         json!({ "available": false, "checked": true })
     );
     assert_ne!(
-        status_reply(&checked, false),
-        status_reply(&never_checked, false)
+        status_reply(&checked, None),
+        status_reply(&never_checked, None)
     );
 }
 
-/// A Store (MSIX) build never runs a network check at all — `checked` stays
-/// `false` forever on that flavour, so without consulting `packaged` first
+/// A packaged build never runs a network check at all — `checked` stays
+/// `false` forever on that flavour, so without consulting `flavour` first
 /// this reply would be indistinguishable from "never checked" on a build
-/// that will NEVER check, rather than the store's own `managedBy` marker.
+/// that will NEVER check, rather than its own `managedBy` marker. Exercised
+/// for every flavour, since each is a different wire value.
 #[test]
 fn test_status_reply_store_managed_wins_over_checked_state() {
     let state = UpdaterState {
         checked: true,
         ..UpdaterState::default()
     };
-    assert_eq!(
-        status_reply(&state, true),
-        json!({ "available": false, "managedBy": "store" })
-    );
+    for (flavour, wire) in [
+        (PackageFlavour::MsStore, "msstore"),
+        (PackageFlavour::Flatpak, "flatpak"),
+        (PackageFlavour::Snap, "snap"),
+    ] {
+        assert_eq!(
+            status_reply(&state, Some(flavour)),
+            json!({ "available": false, "managedBy": wire })
+        );
+    }
 }
 
 #[test]
@@ -208,7 +215,7 @@ fn test_status_reply_available_with_the_pending_version_once_checked() {
         ..UpdaterState::default()
     };
     assert_eq!(
-        status_reply(&state, false),
+        status_reply(&state, None),
         json!({ "available": true, "version": "2.5.0" })
     );
 }
@@ -223,7 +230,7 @@ fn test_status_reply_reads_pending_version_not_downloaded_bytes() {
         ..UpdaterState::default()
     };
     assert_eq!(
-        status_reply(&state, false),
+        status_reply(&state, None),
         json!({ "available": true, "version": "3.0.0" })
     );
 }
@@ -384,49 +391,79 @@ fn all_four_checked_true_writes_are_still_present() {
     );
 }
 
-// ── Microsoft Store flavour ───────────────────────────────────────────────────
-
-#[test]
-fn test_store_managed_only_when_packaged() {
-    assert!(
-        store_managed(false).is_none(),
-        "an NSIS/MSI install must keep checking GitHub"
-    );
-    assert!(
-        store_managed(true).is_some(),
-        "a Store install must never check GitHub"
-    );
-}
+// ── Packaged-build flavours (MSIX / Flatpak / Snap) ───────────────────────────
+//
+// An NSIS/MSI/AppImage/.deb install (no flavour) must keep checking GitHub —
+// `test_status_reply_unknown_when_nothing_pending_and_never_checked` above
+// already covers `status_reply`'s `None` case. `store_managed` itself no
+// longer takes an `Option` (round-2 review: nothing kept it in sync with
+// `updater_check`'s hand-rolled reply — `updater_check` now calls it
+// directly), so there is nothing left to assert of it for the unpackaged
+// case.
 
 /// Anchored on the FIELDS — the thing `UpdateCheckResult` in
 /// `packages/shared/src/ipc/contracts/updater.ts` actually declares — so a
 /// renamed or dropped field fails while a serializer that reorders keys does
 /// not. (Comparing serialized strings would invent a key-order invariant the
-/// IPC contract does not have.)
+/// IPC contract does not have.) Every flavour gets its own wire value — the
+/// whole point of the finding this replaced (`managedBy: "store"` telling a
+/// Flatpak/Snap user they installed from the Microsoft Store).
 #[test]
 fn test_store_managed_has_the_contract_shape() {
     assert_eq!(
-        store_managed(true).unwrap(),
-        json!({ "available": false, "managedBy": "store" })
+        store_managed(PackageFlavour::MsStore),
+        json!({ "available": false, "managedBy": "msstore" })
+    );
+    assert_eq!(
+        store_managed(PackageFlavour::Flatpak),
+        json!({ "available": false, "managedBy": "flatpak" })
+    );
+    assert_eq!(
+        store_managed(PackageFlavour::Snap),
+        json!({ "available": false, "managedBy": "snap" })
     );
 }
 
-/// The pushed shape the renderer's `managed` status variant matches on.
+/// The pushed shape the renderer's `managed` status variant matches on, one
+/// flavour at a time.
 #[test]
 fn test_managed_status_has_the_contract_shape() {
     assert_eq!(
-        managed_status(),
-        json!({ "state": "managed", "by": "store" })
+        managed_status(PackageFlavour::MsStore),
+        json!({ "state": "managed", "by": "msstore" })
+    );
+    assert_eq!(
+        managed_status(PackageFlavour::Flatpak),
+        json!({ "state": "managed", "by": "flatpak" })
+    );
+    assert_eq!(
+        managed_status(PackageFlavour::Snap),
+        json!({ "state": "managed", "by": "snap" })
     );
 }
 
-/// A Store build's download/install refusal is an `error` reply — the shape the
-/// renderer already renders — not a silent no-op that would look like success.
+/// A packaged build's download/install refusal is an `error` reply — the
+/// shape the renderer already renders — not a silent no-op that would look
+/// like success. Each flavour names ITSELF, not always "the Microsoft
+/// Store" — a Flatpak/Snap user must not be told they installed from the
+/// Store.
 #[test]
 fn test_store_managed_refusal_is_an_error_reply() {
-    let refusal = store_managed_refusal();
-    assert!(refusal
+    let msstore = store_managed_refusal(PackageFlavour::MsStore);
+    assert!(msstore
         .get("error")
         .and_then(|e| e.as_str())
-        .is_some_and(|m| m.contains("Store")));
+        .is_some_and(|m| m.contains("Microsoft Store")));
+
+    let flatpak = store_managed_refusal(PackageFlavour::Flatpak);
+    assert!(flatpak
+        .get("error")
+        .and_then(|e| e.as_str())
+        .is_some_and(|m| m.contains("Flatpak") && !m.contains("Microsoft Store")));
+
+    let snap = store_managed_refusal(PackageFlavour::Snap);
+    assert!(snap
+        .get("error")
+        .and_then(|e| e.as_str())
+        .is_some_and(|m| m.contains("Snap Store") && !m.contains("Microsoft Store")));
 }

@@ -1,6 +1,6 @@
 # Agent CLI (`ajh-tauri agent <verb>`)
 
-Last updated: 2026-09-09
+Last updated: 2026-09-10
 
 A headless CLI mode of the shipped `ajh-tauri` binary, invoked alongside the running desktop app. Enables external programs (shell scripts, LLM agents, CI pipelines) to query job data, profile fields, and trigger commands without a GUI. The same binary, no separate install.
 
@@ -45,7 +45,7 @@ A program can locate the app's binary and data directory via the pointer file:
 { "exePath": "…/ajh-tauri", "dataDir": "…/app-data" }
 ```
 
-Its location (directory and filename both) is owned by `platform::config::agent_pointer_path`; `extension_bridge::register` rewrites it on each launch (idempotent) **only when both that path and the published exe path resolve**. Otherwise the write is skipped, including the MSIX no-alias case above, so a missing pointer file is a normal state to handle rather than an error; the skip conditions are the early returns on `write_agent_pointer` and its caller `register_native_host`, and they are what to read. This is the supported mechanism for automated discovery: resolve the path through that function rather than hardcoding one.
+Its location (directory and filename both) is owned by `platform::config::agent_pointer_path`; `extension_bridge::register` attempts to rewrite it on each launch (idempotent) **only when both that path and the published exe path resolve**. Otherwise the write is skipped, including the MSIX no-alias case above and the Snap/Flatpak sandbox cases, so a missing pointer file is a normal state to handle rather than an error. The skip conditions are the early returns within `write_agent_pointer` itself (missing home dir or exe path), which is what to read. (Registration guards like the native-messaging skip in `register_native_host_inner` no longer affect the pointer write — they only skip their own registration, not the pointer.) This is the supported mechanism for automated discovery: resolve the path through that function rather than hardcoding one.
 
 The `exePath` it publishes is resolved by `platform::config::agent_cli_exe_path` (see [ADR-037](decision-records/adr-037-agent-cli-as-binary-mode-thin-client.md)'s amendment for the AppImage case). For a human rather than a program, the same value is shown in the app at **Settings → Developer**, together with ready-to-copy registration snippets (Claude Code, Codex, and a generic `mcpServers` block for any other client) that already carry the path and the chosen access tier. That card is backed by `commands::system::system_agent_cli_info`, which is renderer-only: it is classified `NotExposed` in `extension_bridge/agent_cli/policy.rs`, so the agent tier cannot call it and an agent discovers the path through the pointer file instead. Card, command and pointer file all read the one resolver, so they cannot disagree.
 
