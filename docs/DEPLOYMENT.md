@@ -330,7 +330,7 @@ The `publish-snap` job in `release.yml` publishes to the Snap Store's **`edge` c
 
 Listing: https://snapcraft.io/ai-job-hunter
 
-When the snap is promoted to `stable`, three places still say "edge" and need the same edit: the `SNAP_STORE` comment in `apps/landing/src/lib/site-links.ts`, the Linux card note in `apps/landing/src/components/download/DownloadCards.tsx`, and the Downloads-table footnote in `release.yml`'s `create-release` job (that one self-corrects on the next tag; the landing copy is a static export and does not).
+When the snap is promoted to `stable`, three places still say "edge" and need the same edit: the `SNAP_STORE` comment in `apps/landing/src/lib/site-links.ts`, the Linux card note in `apps/landing/src/components/download/DownloadCards.tsx`, and the Downloads-table footnote in `release.yml`'s `generate-update-manifest` job (that one self-corrects on the next tag; the landing copy is a static export and does not).
 
 ### Local test loop
 

@@ -1480,7 +1480,9 @@ jobs:
           # "SellerId is not set". Fix: create the dir first so both writes
           # land in the same place. Upstream fix: SpecialFolderOption.Create
           # in ConfigurationManager.cs.
-          mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}"
+          # 0700: this dir will hold settings.json (tenant/client/seller ids)
+          # and the keyring unlocked with a throwaway password.
+          mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}" && chmod 700 "${XDG_DATA_HOME:-$HOME/.local/share}"
 
           # reconfigure (writes the secret) and publish (reads it back) both
           # go through libsecret, so they must share the same live D-Bus
@@ -1870,6 +1872,10 @@ jobs:
           # Strip any prior block (idempotent) then re-append a fresh one.
           BODY="$(gh release view "$VERSION" --json body -q .body)"
           BODY="$(printf '%s' "$BODY" | sed '/<!-- downloads:start -->/,/<!-- downloads:end -->/d')"
+          # UNQUOTED heredoc on purpose so $URL and ${RAW} expand — which also
+          # means a backtick or $( in the prose below becomes a command
+          # substitution whose failure the outer $( ) swallows (set -e will
+          # NOT catch it). Never put shell metacharacters in this table.
           TABLE="$(cat <<EOF
           <!-- downloads:start -->
           ## 📥 Downloads
@@ -1882,7 +1888,7 @@ jobs:
           | 🐧 Linux | [Snap Store](https://snapcraft.io/ai-job-hunter) · [AppImage]($URL/linux-AI-Job-Hunter_${RAW}_amd64.AppImage) · [.deb]($URL/linux-AI-Job-Hunter_${RAW}_amd64.deb) · [.rpm]($URL/linux-AI-Job-Hunter-${RAW}-1.x86_64.rpm) |
           | 🧩 Browser extension | [Chrome (.zip)]($URL/ai-job-hunter-extension-chrome-${RAW}.zip) · [Firefox (.zip)]($URL/ai-job-hunter-extension-firefox-${RAW}.zip) |
 
-          _The Microsoft Store build is signed, so it installs without the SmartScreen warning the direct .exe/.msi downloads trigger; it may lag this tag by a day or two while Store certification runs. Installed apps auto-update — no need to re-download for new versions. The browser extension installs from its .zip (load unpacked / store upload). The Snap Store build lands in the edge channel first (sudo snap install ai-job-hunter --edge) and is promoted to stable by hand once it has been checked._
+          _The Microsoft Store build is signed, so it installs without the SmartScreen warning the direct .exe/.msi downloads trigger; it may lag this tag by a day or two while Store certification runs. Installed apps auto-update — no need to re-download for new versions. The browser extension installs from its .zip (load unpacked / store upload). The Snap Store build lands in the edge channel first and is promoted to stable by hand once it has been checked; the listing page shows the install command for whichever channel is live._
           <!-- downloads:end -->
           EOF
           )"
