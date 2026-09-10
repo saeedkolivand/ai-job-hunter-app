@@ -12,10 +12,10 @@ name: 🚀 Release
 #       and commits the bump back to main. Does NOT build installers.
 #   - build-installers (default) → build Tauri apps + browser extension for a chosen
 #       tag, then run the cask/manifest/download-page fan-out.
-#   - publish-chrome / publish-firefox → re-run ONE store submission for a chosen
-#       tag (package-extension + that store's publish job, nothing else). For when
-#       one store's job failed and the other went through: a store rejects a
-#       version it already has, so re-running both would only redden the good one.
+#   - publish-chrome / publish-firefox / publish-msstore / publish-snap → re-run ONE
+#       store submission for a chosen tag, nothing else. For when one store's job
+#       failed and the others went through: a store rejects a version it already
+#       has, so re-running all of them would only redden the good ones.
 # Jobs:
 #   - release: Determine version, sync version files + changelog, create the
 #       GitHub release, and commit the bump back to main (action: release only)
@@ -24,12 +24,15 @@ name: 🚀 Release
 #   - publish-chrome: Upload + submit the chrome zip to the Chrome Web Store listing
 #   - publish-firefox: Build the AMO source archive, prove it rebuilds the shipped
 #       package, then submit the new version to the Firefox AMO listing
-#   - publish-msstore: Submit the packaged MSIX to the Microsoft Store listing
-#       (action: build-installers only — see the job's own comment for why there
-#       is no single-store re-run action for this one, unlike Chrome/Firefox)
+#   - publish-msstore: Submit the packaged MSIX to the Microsoft Store listing.
+#       Single-store re-run downloads the most recent msix-store-package artifact
+#       from a prior build-installers run instead of rebuilding — there is no
+#       cheap way to reproduce the unsigned .msix on demand (Windows-only Tauri
+#       compile, never a Release asset by design), so this reuses build output
+#       rather than a fresh compile (see the job's own comment)
 #   - publish-snap: Pack the released .deb as a snap and upload it to the Snap
-#       Store's `edge` channel (single-store re-run action, like Chrome/Firefox —
-#       it only needs the release .deb, not a rebuild)
+#       Store's `edge` channel (single-store re-run action — it only needs the
+#       release .deb, not a rebuild)
 #   - generate-update-manifest: Publish latest.json for the auto-updater
 #   - update-cask: Pin the Homebrew cask to the built dmgs (version + per-arch sha256)
 #   - update-download-page: Sync apps/landing/src/data/version.json to the built installer URLs
@@ -40,7 +43,7 @@ name: 🚀 Release
 #   2. Actions → "🚀 Release" → Run workflow → action: build-installers
 #      Leave the version blank for the latest tag, or pass one (e.g. 0.61.0).
 #   3. Only if one store submission failed: action: publish-chrome,
-#      publish-firefox, or publish-snap with that same version.
+#      publish-firefox, publish-msstore, or publish-snap with that same version.
 # ──────────────────────────────────────────────────────────────────────
 
 on:
@@ -54,6 +57,7 @@ on:
           - release
           - publish-chrome
           - publish-firefox
+          - publish-msstore
           - publish-snap
         default: build-installers
       version:
@@ -1287,19 +1291,25 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # MSIX has no cheap standalone re-packaging step the way the browser
-  # extension does (`package-extension`) — packing it happens inside the same
-  # expensive multi-platform Tauri `build` job. So there is no single-store
-  # `publish-msstore` dispatch action to retry just this store the way
-  # `publish-chrome`/`publish-firefox` do: a failed submission is retried by
-  # re-running `build-installers`, which reruns this job too.
+  # extension does (`package-extension`) — packing it happens inside the
+  # expensive multi-platform Tauri `build` job, and the unsigned .msix is
+  # never a GitHub Release asset the way Snap's .deb is (see the pack step's
+  # own comment). A standalone `publish-msstore` re-run therefore does not
+  # rebuild: it reuses the msix-store-package artifact a prior
+  # `build-installers` run already produced (`retention-days: 90` on that
+  # upload). `needs: build` still gates the build-installers case (waits for
+  # THIS run's own fresh artifact); for a standalone dispatch `build` is
+  # skipped rather than failed, which satisfies the implicit `success()` this
+  # job's `if:` carries, so it still runs.
   publish-msstore:
     name: 🪟 Publish to Microsoft Store
     needs: build
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'build-installers' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.action == 'build-installers' || inputs.action == 'publish-msstore') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
+      actions: read
 
     env:
       # PUBLIC Store product id — it is in the listing URL and the download
@@ -1334,11 +1344,50 @@ jobs:
       # variables (Partner Center identity) — a partial/missing set skips
       # packing rather than failing the Windows leg, so this job would
       # otherwise find no artifact and fail with a confusing download error.
-      - name: 📥 Download the packaged MSIX
+      # Same-run only (no run-id given): a standalone `publish-msstore`
+      # dispatch skips `build` entirely, so this step is gated to the
+      # build-installers case — the next step handles the standalone one.
+      - name: 📥 Download the packaged MSIX (same-run)
+        if: inputs.action == 'build-installers'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: msix-store-package
           path: msix
+
+      # Standalone re-run: no fresh artifact from this run to fall back on,
+      # so reuse the most recent one `gh run download` can find across ALL
+      # runs (it searches by name when no run-id is given) rather than
+      # forcing a second full Windows compile just to retry a submission.
+      # Verified against the resolved `version` input (when one is given) by
+      # the version pack-msix.mjs embeds in the filename itself
+      # (`AI-Job-Hunter_<version>_x64.msix`) — not by run metadata, since
+      # workflow_dispatch inputs aren't queryable from the artifacts list.
+      - name: 📥 Download the packaged MSIX (cross-run fallback)
+        if: inputs.action == 'publish-msstore'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p msix
+          if ! gh run download -n msix-store-package -D msix --repo "${{ github.repository }}"; then
+            echo "::error title=No MSIX artifact found::No msix-store-package artifact exists (or every one has expired past its 90-day retention) — run action: build-installers first to produce one."
+            exit 1
+          fi
+          MSIX="$(find msix -maxdepth 1 -name '*.msix' | head -n1)"
+          if [ -z "$MSIX" ]; then
+            echo "::error title=MSIX missing::Downloaded the msix-store-package artifact but it contained no .msix file — pack-msix.mjs's output naming and this job's expectation have drifted."
+            exit 1
+          fi
+          if [ -n "${INPUT_VERSION:-}" ]; then
+            TARGET="${INPUT_VERSION#v}"
+            FOUND="$(basename "$MSIX" | sed -E 's/^AI-Job-Hunter_([0-9]+\.[0-9]+\.[0-9]+)(\.[0-9]+)?_x64\.msix$/\1/')"
+            if [ "$FOUND" != "$TARGET" ]; then
+              echo "::error title=MSIX version mismatch::The most recent available msix-store-package artifact is for v$FOUND, not the requested v$TARGET. Run action: build-installers with version: $TARGET first to produce a fresh one for that version."
+              exit 1
+            fi
+          fi
+          echo "Using $(basename "$MSIX")"
 
       - name: 🟣 Setup .NET
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
