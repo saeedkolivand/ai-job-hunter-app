@@ -11,6 +11,10 @@ export const FIREFOX_EXT = 'https://addons.mozilla.org/en-US/firefox/addon/ai-jo
 // Neither belongs in a link served to a global audience, so both are
 // stripped; this is the canonical, query-param-free listing URL.
 export const MS_STORE = 'https://apps.microsoft.com/detail/9nc5kdjv0btm';
+// Only the `edge` channel is published so far — the store page itself shows
+// the channel-correct install command, so DownloadCards links here rather
+// than printing `snap install` directly.
+export const SNAP_STORE = 'https://snapcraft.io/ai-job-hunter';
 export const SPONSOR = 'https://github.com/sponsors/saeedkolivand';
 export const KOFI = 'https://ko-fi.com/saeedkolivand';
 export const PAYPAL = 'https://paypal.me/saeedkolivand';

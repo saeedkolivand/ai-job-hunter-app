@@ -2,7 +2,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 
-import { CHROME_EXT, FIREFOX_EXT, KOFI, MS_STORE, PAYPAL, SPONSOR } from '@/lib/site-links';
+import {
+  CHROME_EXT,
+  FIREFOX_EXT,
+  KOFI,
+  MS_STORE,
+  PAYPAL,
+  SNAP_STORE,
+  SPONSOR,
+} from '@/lib/site-links';
 import { buildInstallers } from '@/lib/version';
 
 import { DownloadBody } from './DownloadBody';
@@ -95,15 +103,21 @@ describe('DownloadBody', () => {
     expect(back?.getAttribute('href')).toBe('/');
   });
 
-  it('renders the Microsoft Store link as a non-dl-btn anchor to MS_STORE', () => {
+  it('renders both store links as non-dl-btn anchors, MS_STORE then SNAP_STORE', () => {
     const { container } = render(<DownloadBody version={VERSION} installers={installers} />);
-    const storeBtn = container.querySelector('a.store-btn');
-    expect(storeBtn).not.toBeNull();
-    expect(storeBtn?.getAttribute('href')).toBe(MS_STORE);
-    expect(storeBtn?.classList.contains('dl-btn')).toBe(false);
-    expect(storeBtn?.hasAttribute('data-platform')).toBe(false);
-    expect(storeBtn?.getAttribute('target')).toBe('_blank');
-    expect(storeBtn?.getAttribute('rel')).toBe('noopener noreferrer');
+    const storeBtns = Array.from(container.querySelectorAll('a.store-btn'));
+    expect(storeBtns).toHaveLength(2);
+    expect(storeBtns.map((a) => a.getAttribute('href'))).toEqual([MS_STORE, SNAP_STORE]);
+
+    for (const storeBtn of storeBtns) {
+      expect(storeBtn.classList.contains('dl-btn')).toBe(false);
+      expect(storeBtn.hasAttribute('data-platform')).toBe(false);
+      expect(storeBtn.getAttribute('target')).toBe('_blank');
+      expect(storeBtn.getAttribute('rel')).toBe('noopener noreferrer');
+    }
+
+    // Guards the positional invariant DownloadFreshness relies on.
+    expect(container.querySelectorAll('a.dl-btn')).toHaveLength(7);
   });
 
   it('renders the ext-grid with 2 ext-btn anchors to the Chrome and Firefox store urls', () => {

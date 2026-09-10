@@ -1,4 +1,4 @@
-import { MS_STORE } from '@/lib/site-links';
+import { MS_STORE, SNAP_STORE } from '@/lib/site-links';
 import type { Installers } from '@/lib/version';
 
 // Reproduces the old buildDownloadsHtml() markup (the release-pipeline-stamped
@@ -125,9 +125,15 @@ export function DownloadCards({
           <a className="dl-btn alt" data-platform="linuxRpm" href={installers.linuxRpm}>
             .rpm
           </a>
+          {/* Same rationale as the Windows card's store-btn: no dl-btn, no
+              data-platform — this links straight to the Store listing. */}
+          <a className="store-btn" href={SNAP_STORE} target="_blank" rel="noopener noreferrer">
+            Snap Store
+          </a>
         </div>
         <p className="dl-note">
-          <code>chmod +x</code> the AppImage, then run it.
+          <code>chmod +x</code> the AppImage, then run it. Or install it from the Snap Store (edge
+          channel for now).
         </p>
       </div>
     </div>
