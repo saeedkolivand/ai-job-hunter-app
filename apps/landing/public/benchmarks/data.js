@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1789025472348,
+  "lastUpdate": 1789042499002,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "35212698+thejesh23@users.noreply.github.com",
-            "name": "Thejesh",
-            "username": "thejesh23"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "a9c0c91d8287dcd5ad71085541caaba18b1895d6",
-          "message": "fix(export): do not consume a letter's salutation as the letterhead name (#876)\n\nThe DOCX letter renderers treated the first non-blank line as the letterhead\nname whatever it was: `if !header_done && docx.document.children.is_empty()`.\nA letter that opens straight at the salutation (no letterhead) therefore had its\n\"Dear …\" line consumed as the name and replaced with meta.candidate_name — and\nbecause `in_body` is set only in the salutation arm, the whole body then\nrendered in the muted addressee style.\n\nGuard the name block with `!is_salutation && !is_signoff` (both already computed\njust above) so a salutation-first letter falls through to the salutation arm,\nwhich sets header_done/in_body correctly. The block is duplicated in\ngenerate_cover_letter_docx_classic (Classic) and generate_cover_letter_docx_layout\n(Refined/Banded); both are guarded.\n\nTest opens a letterhead-less letter with a candidate name set and asserts the\n\"Dear Hiring Manager\" line survives, across all three layouts. Fails on main\n(Classic path: the salutation is replaced by the candidate name).\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
-          "timestamp": "2026-07-23T13:15:43+02:00",
-          "tree_id": "648cdd7b9f8f6b6fec31146b3d2c544b0c353c60",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/a9c0c91d8287dcd5ad71085541caaba18b1895d6"
-        },
-        "date": 1784806664280,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2211462,
-            "range": "± 8561",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2632122,
-            "range": "± 21564",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 292792,
-            "range": "± 6115",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 207782,
             "range": "± 31048",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "saeedkolivand1997@gmail.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "saeedkolivand1997@gmail.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "distinct": true,
+          "id": "89d84df1ca998a1a69f6136df0b706f2f78f2cf3",
+          "message": "fix(desktop): pin autostart app_name to kebab-case slug\n\nThe Snap Store's manifest schema rejects a .desktop filename containing\na space, but tauri_plugin_autostart defaulted to productName verbatim\n(\"AI Job Hunter\"), which the Linux autostart XDG file is named after.\nPin app_name to \"ai-job-hunter\" via the plugin's Builder and update the\nsnap manifest's autostart key to match.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01QGpSqLip51VERGwR6LLqus",
+          "timestamp": "2026-09-10T13:50:42+02:00",
+          "tree_id": "72f203e039d694543854bc18f3fdbcc4f9fe7991",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/89d84df1ca998a1a69f6136df0b706f2f78f2cf3"
+        },
+        "date": 1789042498263,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2187879,
+            "range": "± 8941",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2570493,
+            "range": "± 11042",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 303116,
+            "range": "± 9804",
             "unit": "ns/iter"
           }
         ]
