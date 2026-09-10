@@ -1658,7 +1658,7 @@ jobs:
           # each snap on its own retry loop first means each one only needs
           # to succeed once, independently — snapcraft then sees them already
           # installed and skips the install.
-          for snap in core22 gnome-42-2204 gtk-common-themes; do
+          for snap in core22 gnome-42-2204 gnome-42-2204-sdk gtk-common-themes; do
             for attempt in 1 2 3 4 5; do
               if sudo snap install "$snap"; then
                 break
