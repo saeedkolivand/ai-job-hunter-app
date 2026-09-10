@@ -44,14 +44,6 @@ on:
   release:
     types: [published]
 
-# Only write access — needed to push the regenerated charts to the badges branch.
-permissions:
-  contents: write
-  # Dispatching pages.yml below. workflow_dispatch is exempt from the
-  # GITHUB_TOKEN no-recursion rule, so this is sufficient — same as
-  # metrics-snapshot.yml, which triggers the deploy the same way.
-  actions: write
-
 # Don't cancel an in-flight publish; queue overlapping runs (schedule + release).
 concurrency:
   group: repo-charts
@@ -62,6 +54,15 @@ jobs:
     name: Build & publish charts
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Job-scoped, not workflow-level (Scorecard's Token-Permissions check flags
+    # top-level write grants specifically — same real permissions, tighter
+    # declared scope; this workflow has only the one job either way).
+    permissions:
+      contents: write # push the regenerated charts to the badges branch
+      # Dispatching pages.yml below. workflow_dispatch is exempt from the
+      # GITHUB_TOKEN no-recursion rule, so this is sufficient — same as
+      # metrics-snapshot.yml, which triggers the deploy the same way.
+      actions: write
 
     steps:
       - name: 📥 Checkout Repository
