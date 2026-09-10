@@ -1911,16 +1911,16 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::Pinning the manifest's git tag"
-          sed -i "s/tag: v[0-9][0-9A-Za-z.\-]*/tag: $VERSION/" "$FLATPAK_DIR/io.github.saeedkolivand.AIJobHunter.yml"
+          sed -i "s/tag: v[0-9][0-9A-Za-z.\-]*/tag: $VERSION/" "$FLATPAK_DIR/io.github.saeedkolivand.Ai_Job_Hunter_App.yml"
           echo "::endgroup::"
 
           echo "::group::Syncing the AppStream release entry"
           RELEASE_DATE="$(git log -1 --format=%ad --date=short "$VERSION")"
           sed -i "s|<release version=\"[^\"]*\" date=\"[^\"]*\" />|<release version=\"$RAW\" date=\"$RELEASE_DATE\" />|" \
-            "$FLATPAK_DIR/io.github.saeedkolivand.AIJobHunter.metainfo.xml"
+            "$FLATPAK_DIR/io.github.saeedkolivand.Ai_Job_Hunter_App.metainfo.xml"
           echo "::endgroup::"
 
-      - name: 📤 Push to flathub/io.github.saeedkolivand.AIJobHunter
+      - name: 📤 Push to flathub/io.github.saeedkolivand.Ai_Job_Hunter_App
         if: steps.check.outputs.skip != 'true'
         env:
           FLATHUB_DEPLOY_KEY: ${{ secrets.FLATHUB_DEPLOY_KEY }}
@@ -1935,13 +1935,14 @@ jobs:
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/flathub_deploy_key -o StrictHostKeyChecking=accept-new"
 
           rm -rf /tmp/flathub-repo
-          git clone git@github.com:flathub/io.github.saeedkolivand.AIJobHunter.git /tmp/flathub-repo
+          git clone git@github.com:flathub/io.github.saeedkolivand.Ai_Job_Hunter_App.git /tmp/flathub-repo
 
-          cp "$FLATPAK_DIR"/io.github.saeedkolivand.AIJobHunter.yml \
-             "$FLATPAK_DIR"/io.github.saeedkolivand.AIJobHunter.desktop \
-             "$FLATPAK_DIR"/io.github.saeedkolivand.AIJobHunter.metainfo.xml \
+          cp "$FLATPAK_DIR"/io.github.saeedkolivand.Ai_Job_Hunter_App.yml \
+             "$FLATPAK_DIR"/io.github.saeedkolivand.Ai_Job_Hunter_App.desktop \
+             "$FLATPAK_DIR"/io.github.saeedkolivand.Ai_Job_Hunter_App.metainfo.xml \
              "$FLATPAK_DIR"/cargo-sources.json \
              "$FLATPAK_DIR"/node-sources.json \
+             "$FLATPAK_DIR"/icon.png \
              /tmp/flathub-repo/
 
           cd /tmp/flathub-repo
@@ -1964,7 +1965,7 @@ jobs:
             if [ "${{ steps.check.outputs.skip }}" == "true" ]; then
               echo "Skipped — \`FLATHUB_DEPLOY_KEY\` is not set. Expected until the initial Flathub submission is reviewed and merged (docs/DEPLOYMENT.md § Flathub)."
             else
-              echo "Pushed to \`flathub/io.github.saeedkolivand.AIJobHunter\`. Flathub's own buildbot picks up the push — track it in that repo's Actions/build log, not here."
+              echo "Pushed to \`flathub/io.github.saeedkolivand.Ai_Job_Hunter_App\`. Flathub's own buildbot picks up the push — track it in that repo's Actions/build log, not here."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
