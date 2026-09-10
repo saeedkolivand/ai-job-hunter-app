@@ -1443,6 +1443,12 @@ jobs:
       # guessed. The dbus-run-session + gnome-keyring-daemon --unlock pattern
       # below was verified end-to-end (a real store + lookup through
       # libsecret) in a headless WSL session before writing this.
+      - name: 💾 Cache apt packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: /var/cache/apt/archives/*.deb
+          key: ${{ runner.os }}-apt-gnome-keyring-v1
+
       - name: 🔑 Install gnome-keyring
         run: sudo apt-get update -qq && sudo apt-get install -y gnome-keyring dbus-x11 libsecret-1-0
 
@@ -1470,17 +1476,26 @@ jobs:
             eval "$(printf "%s\n" "ci" | gnome-keyring-daemon --unlock --daemonize --login)"
 
             echo "::group::msstore reconfigure"
-            msstore reconfigure \
+            msstore reconfigure --verbose \
               --tenantId "$MSSTORE_TENANT_ID" \
               --sellerId "$MSSTORE_SELLER_ID" \
               --clientId "$MSSTORE_CLIENT_ID" \
               --clientSecret "$MSSTORE_CLIENT_SECRET"
             echo "::endgroup::"
+            echo "::group::settings.json after reconfigure (no secret in this file — only in the keyring)"
+            cat "$HOME/.local/share/Microsoft/MSStore.CLI/settings.json" || echo "(file not found at the expected path)"
+            echo "::endgroup::"
             echo "::group::msstore publish (upload + submit)"
             # No --noCommit = upload AND submit for review, mirroring the
             # Chrome/Firefox jobs. Free products only — msstore publish
             # rejects a paid product outright (see docs/DEPLOYMENT.md).
-            msstore publish "$MSIX" -id "$MSSTORE_PRODUCT_ID"
+            # --verbose on both calls: reconfigure succeeds and reports
+            # "Configuration saved!" but publish (moments later, same
+            # session) fails with "SellerId is not set" — the LoadAsync
+            # settings.json read/write path looks provably correct from the
+            # CLI source, so this surfaces what publish actually sees
+            # instead of guessing further.
+            msstore publish "$MSIX" -id "$MSSTORE_PRODUCT_ID" --verbose
             echo "::endgroup::"
           '
 
