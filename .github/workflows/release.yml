@@ -1494,22 +1494,17 @@ jobs:
             echo "::group::settings.json after reconfigure (no secret in this file — only in the keyring)"
             echo "pwd=$(pwd)"
             cat "Microsoft/MSStore.CLI/settings.json" 2>&1 || true
+            # `msstore info --verbose` prints _configurationManager.ConfigPath
+            # directly (its own resolved settings path), plus the loaded
+            # SellerId/TenantId/ClientId — the actual source of truth, not a
+            # guess from this shell about where the file "should" be.
+            msstore info --verbose
             echo "::endgroup::"
             echo "::group::msstore publish (upload + submit)"
             # No --noCommit = upload AND submit for review, mirroring the
             # Chrome/Firefox jobs. Free products only — msstore publish
             # rejects a paid product outright (see docs/DEPLOYMENT.md).
-            # --verbose on both calls: reconfigure succeeds and reports
-            # "Configuration saved!" but publish (moments later, same
-            # session) fails with "SellerId is not set" — traced the CLI
-            # source to config.SellerId == null with NO exception logged,
-            # which per LoadAsync (clearInvalidConfig: false here) is only
-            # reachable via File.Exists(_settingsPath) being false — so the
-            # file this shell sees is not what publish's own process sees.
-            # Checking with publish's exact working directory right as it
-            # starts, from the same shell, instead of guessing why further.
-            echo "pwd just before publish=$(pwd)"
-            ls -la "Microsoft/MSStore.CLI/" 2>&1 || true
+            msstore info --verbose
             msstore publish "$MSIX" -id "$MSSTORE_PRODUCT_ID" --verbose
             echo "::endgroup::"
           '
