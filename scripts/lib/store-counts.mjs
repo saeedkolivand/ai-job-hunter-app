@@ -160,15 +160,26 @@ export async function fetchMsStoreAcquisitions(env = process.env) {
       `?applicationId=${MS_STORE_APP_ID}&startDate=${MS_STORE_START_DATE}&endDate=${today}` +
       '&aggregationLevel=day&top=10000';
     const pages = [];
-    while (url) {
+    // Hard cap: `top=10000` with no `groupby` returns rows disaggregated
+    // across date x market x deviceType x ..., so page count only grows over
+    // time. A runaway (or looping) @nextLink must not spin forever.
+    const MAX_PAGES = 50;
+    while (url && pages.length < MAX_PAGES) {
       const res = await fetch(url, {
         headers: { authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(20_000),
       });
-      if (!res.ok) break;
+      // Fail loud, not quiet: a non-2xx mid-pagination means the sum so far
+      // is partial. Returning it would silently publish a truncated count.
+      if (!res.ok) return null;
       const page = await res.json();
       pages.push(page);
-      url = page['@nextLink'] || null;
+      // `@nextLink` is documented as relative to the analytics base path, so
+      // resolve it against a base rather than fetching it as-is.
+      url = page['@nextLink']
+        ? new URL(page['@nextLink'], 'https://manage.devcenter.microsoft.com/v1.0/my/analytics/')
+            .href
+        : null;
     }
     return sumAcquisitions(pages);
   } catch {
