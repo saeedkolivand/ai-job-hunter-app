@@ -1633,6 +1633,14 @@ jobs:
         run: |
           echo "::group::Installing snapcraft"
           sudo snap install snapcraft --classic
+          # GitHub Actions runner images have `/` NOT owned by root:root,
+          # which snapd's stricter validation rejects for a confined
+          # content-snap install (like the gnome extension's own
+          # gnome-42-2204 dependency below) even though a --classic install
+          # (snapcraft itself, just above) tolerates it fine. Same fix the
+          # widely-used samuelmeuli/action-snapcraft applies for exactly
+          # this reason.
+          sudo chown root:root /
           echo "::endgroup::"
 
       - name: 📦 Pack the snap
