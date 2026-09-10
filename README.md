@@ -214,6 +214,9 @@ Grab the latest installer for your OS from the **<a href="https://github.com/sae
 <a href="https://apps.microsoft.com/detail/9nc5kdjv0btm" target="_blank" rel="noopener noreferrer">
   <img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200" alt="Download from the Microsoft Store" />
 </a>
+<a href="https://snapcraft.io/ai-job-hunter" target="_blank" rel="noopener noreferrer">
+  <img src="https://snapcraft.io/en/dark/install.svg" width="182" alt="Get it from the Snap Store" />
+</a>
 
 **macOS**: open the `.dmg` and drag the app into Applications. Because the app isn't notarized by Apple, Gatekeeper may refuse to open it the first time ("app is damaged and can't be opened"). Clear the quarantine attribute once:
 

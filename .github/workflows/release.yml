@@ -1469,19 +1469,20 @@ jobs:
           MSIX="$(readlink -f "$MSIX")"
           export MSIX
 
-          # KNOWN UPSTREAM BUG, tracked at
-          # https://github.com/microsoft/msstore-cli/issues/181 — msstore
-          # reconfigure writes a complete, correct settings.json (verified
-          # directly: read the file right after reconfigure, before the next
-          # invocation — valid JSON, SellerId/TenantId/ClientId all
-          # populated), but ANY subsequent msstore invocation in the same
-          # environment (not just publish — msstore info fails identically)
-          # reports "SellerId is not set" regardless. Ruled out directly,
-          # not assumed: XDG_DATA_HOME, the working directory (both the
-          # nested GitHub Actions workspace path and a short flat one), and
-          # any exception in the load path (none is ever logged). This job
-          # will keep failing here until that issue is resolved upstream —
-          # check it before re-investigating from scratch.
+          # ROOT CAUSE (not our config — upstream tracker:
+          # https://github.com/microsoft/msstore-cli/issues/181): .NET's
+          # GetFolderPath(LocalApplicationData) returns "" on Unix if
+          # $XDG_DATA_HOME/$HOME/.local/share doesn't exist yet, so
+          # `reconfigure` writes settings.json CWD-relative. Its libsecret
+          # store then creates ~/.local/share/keyrings/ as a side effect,
+          # so the NEXT msstore call resolves the real dir, finds no
+          # settings.json, and silently creates an empty one — hence
+          # "SellerId is not set". Fix: create the dir first so both writes
+          # land in the same place. Upstream fix: SpecialFolderOption.Create
+          # in ConfigurationManager.cs.
+          # 0700: this dir will hold settings.json (tenant/client/seller ids)
+          # and the keyring unlocked with a throwaway password.
+          mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}" && chmod 700 "${XDG_DATA_HOME:-$HOME/.local/share}"
 
           # reconfigure (writes the secret) and publish (reads it back) both
           # go through libsecret, so they must share the same live D-Bus
@@ -1871,6 +1872,10 @@ jobs:
           # Strip any prior block (idempotent) then re-append a fresh one.
           BODY="$(gh release view "$VERSION" --json body -q .body)"
           BODY="$(printf '%s' "$BODY" | sed '/<!-- downloads:start -->/,/<!-- downloads:end -->/d')"
+          # UNQUOTED heredoc on purpose so $URL and ${RAW} expand — which also
+          # means a backtick or $( in the prose below becomes a command
+          # substitution whose failure the outer $( ) swallows (set -e will
+          # NOT catch it). Never put shell metacharacters in this table.
           TABLE="$(cat <<EOF
           <!-- downloads:start -->
           ## 📥 Downloads
@@ -1880,10 +1885,10 @@ jobs:
           | 🪟 Windows | [Microsoft Store](https://apps.microsoft.com/detail/9nc5kdjv0btm) · [Installer (.exe)]($URL/windows-AI-Job-Hunter_${RAW}_x64-setup.exe) · [MSI]($URL/windows-AI-Job-Hunter_${RAW}_x64_en-US.msi) |
           | 🍎 macOS (Apple Silicon) | [.dmg]($URL/macos-AI-Job-Hunter_${RAW}_aarch64-apple-silicon.dmg) |
           | 🍎 macOS (Intel) | [.dmg]($URL/macos-AI-Job-Hunter_${RAW}_x64-intel.dmg) |
-          | 🐧 Linux | [AppImage]($URL/linux-AI-Job-Hunter_${RAW}_amd64.AppImage) · [.deb]($URL/linux-AI-Job-Hunter_${RAW}_amd64.deb) · [.rpm]($URL/linux-AI-Job-Hunter-${RAW}-1.x86_64.rpm) |
+          | 🐧 Linux | [Snap Store](https://snapcraft.io/ai-job-hunter) · [AppImage]($URL/linux-AI-Job-Hunter_${RAW}_amd64.AppImage) · [.deb]($URL/linux-AI-Job-Hunter_${RAW}_amd64.deb) · [.rpm]($URL/linux-AI-Job-Hunter-${RAW}-1.x86_64.rpm) |
           | 🧩 Browser extension | [Chrome (.zip)]($URL/ai-job-hunter-extension-chrome-${RAW}.zip) · [Firefox (.zip)]($URL/ai-job-hunter-extension-firefox-${RAW}.zip) |
 
-          _The Microsoft Store build is signed, so it installs without the SmartScreen warning the direct .exe/.msi downloads trigger; it may lag this tag by a day or two while Store certification runs. Installed apps auto-update — no need to re-download for new versions. The browser extension installs from its .zip (load unpacked / store upload)._
+          _The Microsoft Store build is signed, so it installs without the SmartScreen warning the direct .exe/.msi downloads trigger; it may lag this tag by a day or two while Store certification runs. Installed apps auto-update — no need to re-download for new versions. The browser extension installs from its .zip (load unpacked / store upload). The Snap Store build lands in the edge channel first and is promoted to stable by hand once it has been checked; the listing page shows the install command for whichever channel is live._
           <!-- downloads:end -->
           EOF
           )"
