@@ -35,6 +35,9 @@ release-artifacts/
 *.AppImage
 *.snap
 *.pkg
+apps/desktop/src-tauri/linux/snap/deb-contents/
+apps/desktop/src-tauri/linux/flatpak/.flatpak-builder/
+apps/desktop/src-tauri/linux/flatpak/build-dir/
 
 # ── Tauri / Rust ───────────────────────────────────────────────────────────────
 target/

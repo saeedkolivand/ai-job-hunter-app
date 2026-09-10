@@ -24,6 +24,12 @@ name: 🚀 Release
 #   - publish-chrome: Upload + submit the chrome zip to the Chrome Web Store listing
 #   - publish-firefox: Build the AMO source archive, prove it rebuilds the shipped
 #       package, then submit the new version to the Firefox AMO listing
+#   - publish-msstore: Submit the packaged MSIX to the Microsoft Store listing
+#       (action: build-installers only — see the job's own comment for why there
+#       is no single-store re-run action for this one, unlike Chrome/Firefox)
+#   - publish-snap: Pack the released .deb as a snap and upload it to the Snap
+#       Store's `edge` channel (single-store re-run action, like Chrome/Firefox —
+#       it only needs the release .deb, not a rebuild)
 #   - generate-update-manifest: Publish latest.json for the auto-updater
 #   - update-cask: Pin the Homebrew cask to the built dmgs (version + per-arch sha256)
 #   - update-download-page: Sync apps/landing/src/data/version.json to the built installer URLs
@@ -33,8 +39,8 @@ name: 🚀 Release
 #      semantic-release derives the bump from commit types (feat/fix/perf/BREAKING).
 #   2. Actions → "🚀 Release" → Run workflow → action: build-installers
 #      Leave the version blank for the latest tag, or pass one (e.g. 0.61.0).
-#   3. Only if one store submission failed: action: publish-chrome or
-#      publish-firefox with that same version.
+#   3. Only if one store submission failed: action: publish-chrome,
+#      publish-firefox, or publish-snap with that same version.
 # ──────────────────────────────────────────────────────────────────────
 
 on:
@@ -48,6 +54,7 @@ on:
           - release
           - publish-chrome
           - publish-firefox
+          - publish-snap
         default: build-installers
       version:
         description: 'Version to build installers / publish the extension for, e.g. 0.61.0 (blank = latest tag)'
@@ -370,8 +377,7 @@ jobs:
       #
       # The package is UNSIGNED by design: the Microsoft Store signs it during
       # submission, so it must never be attached to the GitHub Release. It is a
-      # build ARTIFACT, downloaded by hand for the (currently manual) Partner
-      # Center submission and, later, by an `msstore` publishing job. Skipped
+      # build ARTIFACT, consumed by the `publish-msstore` job below. Skipped
       # entirely until the MSIX_* repository variables exist — Partner Center
       # assigns those values, so this ships before the listing does.
       # See docs/DEPLOYMENT.md § Microsoft Store (MSIX).
@@ -1280,6 +1286,283 @@ jobs:
             echo "> **Submitted ≠ live.** A \`listed\` submission goes to human review at Mozilla; this job ends at _submitted_ and never waits for the signed XPI. Track it in [AMO Developer Hub](https://addons.mozilla.org/developers/addons)."
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # MSIX has no cheap standalone re-packaging step the way the browser
+  # extension does (`package-extension`) — packing it happens inside the same
+  # expensive multi-platform Tauri `build` job. So there is no single-store
+  # `publish-msstore` dispatch action to retry just this store the way
+  # `publish-chrome`/`publish-firefox` do: a failed submission is retried by
+  # re-running `build-installers`, which reruns this job too.
+  publish-msstore:
+    name: 🪟 Publish to Microsoft Store
+    needs: build
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'build-installers' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    env:
+      # PUBLIC Store product id — it is in the listing URL and the download
+      # page. Deliberately NOT a secret: hiding it would only make a
+      # misconfigured submission harder to diagnose.
+      MSSTORE_PRODUCT_ID: 9NC5KDJV0BTM
+
+    steps:
+      # Fail on a missing credential HERE, with its own name, rather than
+      # several steps later as an opaque 401 from Partner Center. Guarded in
+      # the shell, not in `if:` — the `secrets` context is not available to a
+      # step-level `if`.
+      - name: 🔐 Check Microsoft Store credentials
+        env:
+          MSSTORE_TENANT_ID: ${{ secrets.MSSTORE_TENANT_ID }}
+          MSSTORE_CLIENT_ID: ${{ secrets.MSSTORE_CLIENT_ID }}
+          MSSTORE_CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}
+          MSSTORE_SELLER_ID: ${{ secrets.MSSTORE_SELLER_ID }}
+        run: |
+          set -euo pipefail
+          missing=""
+          for name in MSSTORE_TENANT_ID MSSTORE_CLIENT_ID MSSTORE_CLIENT_SECRET MSSTORE_SELLER_ID; do
+            [ -n "${!name:-}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error title=Microsoft Store credentials missing::Set these repository secrets before releasing (setup steps: docs/DEPLOYMENT.md § Microsoft Store (MSIX)):$missing"
+            exit 1
+          fi
+          echo "All four Microsoft Store secrets are set."
+
+      # The MSIX pack step in `build` is itself gated on the MSIX_* repository
+      # variables (Partner Center identity) — a partial/missing set skips
+      # packing rather than failing the Windows leg, so this job would
+      # otherwise find no artifact and fail with a confusing download error.
+      - name: 📥 Download the packaged MSIX
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: msix-store-package
+          path: msix
+
+      - name: 🟣 Setup .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '9.0.x'
+
+      # msstore-cli is NOT a .NET global tool (no NuGet package exists) —
+      # it ships as a self-contained tarball per-OS from its own GitHub
+      # releases. Verified against the sha256 the release publishes alongside it.
+      - name: 📥 Install the Microsoft Store Developer CLI
+        run: |
+          set -euo pipefail
+          echo "::group::Installing msstore CLI"
+          cd "$RUNNER_TEMP"
+          curl -sSLO https://github.com/microsoft/msstore-cli/releases/latest/download/MSStoreCLI-linux-x64.tar.gz
+          curl -sSLO https://github.com/microsoft/msstore-cli/releases/latest/download/MSStoreCLI-linux-x64.tar.gz.sha256.txt
+          sed 's/^\xEF\xBB\xBF//' MSStoreCLI-linux-x64.tar.gz.sha256.txt | sha256sum -c -
+          mkdir -p "$HOME/.local/msstore-cli"
+          tar -xzf MSStoreCLI-linux-x64.tar.gz -C "$HOME/.local/msstore-cli"
+          chmod +x "$HOME/.local/msstore-cli/msstore"
+          echo "$HOME/.local/msstore-cli" >> "$GITHUB_PATH"
+          echo "::endgroup::"
+
+      - name: 🚀 Reconfigure + publish to the Microsoft Store
+        id: msstore
+        env:
+          MSSTORE_TENANT_ID: ${{ secrets.MSSTORE_TENANT_ID }}
+          MSSTORE_CLIENT_ID: ${{ secrets.MSSTORE_CLIENT_ID }}
+          MSSTORE_CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}
+          MSSTORE_SELLER_ID: ${{ secrets.MSSTORE_SELLER_ID }}
+        run: |
+          set -euo pipefail
+          MSIX="$(find msix -maxdepth 1 -name '*.msix' | head -n1)"
+          if [ -z "$MSIX" ]; then
+            echo "::error title=MSIX missing::No .msix file was in the msix-store-package artifact — pack-msix.mjs's output naming and this job's expectation have drifted."
+            exit 1
+          fi
+          echo "::group::msstore reconfigure"
+          msstore reconfigure \
+            --tenantId "$MSSTORE_TENANT_ID" \
+            --sellerId "$MSSTORE_SELLER_ID" \
+            --clientId "$MSSTORE_CLIENT_ID" \
+            --clientSecret "$MSSTORE_CLIENT_SECRET"
+          echo "::endgroup::"
+          echo "::group::msstore publish (upload + submit)"
+          # No --noCommit = upload AND submit for review, mirroring the
+          # Chrome/Firefox jobs. Free products only — msstore publish rejects
+          # a paid product outright (see docs/DEPLOYMENT.md).
+          msstore publish "$MSIX" -id "$MSSTORE_PRODUCT_ID"
+          echo "::endgroup::"
+
+      - name: 📝 Job Summary
+        if: always()
+        run: |
+          {
+            echo "## 🪟 Microsoft Store Submission"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| Product | [\`$MSSTORE_PRODUCT_ID\`](https://apps.microsoft.com/detail/$MSSTORE_PRODUCT_ID) |"
+            echo "| Outcome | ${{ steps.msstore.outcome == 'success' && '✅ Submitted for review' || '❌ Failed' }} |"
+            echo ""
+            echo "The CLI's own output is in the **Reconfigure + publish to the Microsoft Store** step log, where the runner's secret masking applies. It is deliberately not copied here."
+            echo ""
+            echo "> **Submitted ≠ live.** Certification review runs at Partner Center after this job ends; track it in the [developer dashboard](https://partner.microsoft.com/dashboard/products/$MSSTORE_PRODUCT_ID/overview)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-snap:
+    name: 📦 Publish to the Snap Store
+    # Unlike publish-msstore, this one needs no `needs: build` and supports a
+    # standalone single-store re-run (added to the workflow_dispatch choices
+    # above) — packing a snap only needs the release .deb, fetched straight
+    # from the GitHub Release the same way update-cask reads dmg digests, so
+    # there is nothing expensive to rebuild if just this store's submission
+    # failed.
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.action == 'build-installers' || inputs.action == 'publish-snap') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: 🔐 Check Snap Store credentials
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SNAPCRAFT_STORE_CREDENTIALS:-}" ]; then
+            echo "::error title=Snap Store credentials missing::Set the SNAPCRAFT_STORE_CREDENTIALS repository secret before releasing (setup steps: docs/DEPLOYMENT.md § Snap Store)."
+            exit 1
+          fi
+          echo "SNAPCRAFT_STORE_CREDENTIALS is set."
+
+      - name: 📥 Checkout Repository (for tag lookup)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 🏷️ Resolve Version
+        id: resolve
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${INPUT_VERSION:-}" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="$(git tag --sort=-version:refname | head -n1)"
+          fi
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::No release tags found. Create a release first or provide a version manually."
+            exit 1
+          fi
+
+          VERSION="${VERSION#v}"
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
+            echo "::error::Could not resolve a valid version (got '$VERSION'). Pass one via the workflow input."
+            exit 1
+          fi
+          echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "raw=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing v$VERSION to the Snap Store"
+
+      - name: 📥 Checkout Release Tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.resolve.outputs.version }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: 📥 Download the released .deb
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "::group::Downloading the release .deb"
+          gh release download "$VERSION" --dir deb-download --pattern '*.deb'
+          echo "::endgroup::"
+
+      - name: 🧩 Extract the .deb + sync the manifest
+        env:
+          RAW: ${{ steps.resolve.outputs.raw }}
+        run: |
+          set -euo pipefail
+          echo "::group::Extracting .deb contents"
+          DEB="$(find deb-download -maxdepth 1 -name '*.deb' | head -n1)"
+          if [ -z "$DEB" ]; then
+            echo "::error title=.deb missing::No .deb file was in the v$RAW release assets."
+            exit 1
+          fi
+          mkdir -p apps/desktop/src-tauri/linux/snap/deb-contents
+          dpkg-deb -x "$DEB" apps/desktop/src-tauri/linux/snap/deb-contents
+          # Fixed filename the manifest's `apps.ai-job-hunter.desktop` expects —
+          # Tauri's deb bundler doesn't guarantee a stable one to hardcode there.
+          DESKTOP_FILE="$(find apps/desktop/src-tauri/linux/snap/deb-contents/usr/share/applications -maxdepth 1 -name '*.desktop' | head -n1)"
+          if [ -z "$DESKTOP_FILE" ]; then
+            echo "::error title=.desktop missing::No .desktop file in the extracted .deb — Tauri's bundler output has drifted."
+            exit 1
+          fi
+          cp "$DESKTOP_FILE" apps/desktop/src-tauri/linux/snap/deb-contents/usr/share/applications/ai-job-hunter.desktop
+          echo "::endgroup::"
+
+          echo "::group::Syncing snapcraft.yaml version"
+          node scripts/sync-snapcraft.cjs "$RAW"
+          echo "::endgroup::"
+
+      - name: 🪚 Install snapcraft
+        run: |
+          echo "::group::Installing snapcraft"
+          sudo snap install snapcraft --classic
+          echo "::endgroup::"
+
+      - name: 📦 Pack the snap
+        id: pack
+        run: |
+          set -euo pipefail
+          echo "::group::snapcraft pack"
+          cd apps/desktop/src-tauri/linux/snap
+          snapcraft pack
+          SNAP_FILE="$(find . -maxdepth 1 -name '*.snap' | head -n1)"
+          if [ -z "$SNAP_FILE" ]; then
+            echo "::error title=Pack produced no .snap::snapcraft pack ran but no .snap file was found."
+            exit 1
+          fi
+          echo "path=apps/desktop/src-tauri/linux/snap/${SNAP_FILE#./}" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+
+      - name: 🚀 Upload to the Snap Store (edge channel)
+        id: snap
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: |
+          set -euo pipefail
+          echo "::group::snapcraft upload"
+          # `edge`, not `stable`, on purpose: promoting to stable is a manual
+          # `snapcraft release`/Snap Store web UI action once a build is
+          # confirmed to install and run correctly — never flipped here.
+          snapcraft upload --release=edge "${{ steps.pack.outputs.path }}"
+          echo "::endgroup::"
+
+      - name: 📝 Job Summary
+        if: always()
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          {
+            echo "## 📦 Snap Store Submission"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| Version | \`${VERSION:-unresolved}\` |"
+            echo "| Channel | \`edge\` |"
+            echo "| Outcome | ${{ steps.snap.outcome == 'success' && '✅ Uploaded' || '❌ Failed' }} |"
+            echo ""
+            echo "\`snapcraft\`'s own output is in the **Upload to the Snap Store (edge channel)** step log, where the runner's secret masking applies. It is deliberately not copied here."
+            echo ""
+            echo "> **Uploaded ≠ stable.** This job only ever publishes to \`edge\`. Install with \`snap install --edge ai-job-hunter\`, confirm it launches correctly, then promote to \`stable\` by hand (\`snapcraft release ai-job-hunter <revision> stable\` or the Snap Store web UI) — never automatically."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   generate-update-manifest:
     name: 📝 Generate Update Manifest
     # Runs after the manual installer build to (re)generate latest.json from the
@@ -1521,6 +1804,169 @@ jobs:
           git add Casks/ai-job-hunter.rb
           git commit -m "chore: sync homebrew cask to ${VERSION} [skip ci]"
           git push git@github.com:saeedkolivand/ai-job-hunter-app.git HEAD:main
+
+  update-flathub:
+    name: 🌐 Update Flathub Manifest
+    # Regenerates the Flatpak manifest's pinned tag + vendored cargo/node
+    # sources and pushes straight to the EXTERNAL flathub/<app-id> repo's
+    # main — that repo doesn't exist yet (first submission is pending human
+    # review, see docs/DEPLOYMENT.md § Flathub), so every step below is
+    # gated on FLATHUB_DEPLOY_KEY existing rather than failing the release.
+    # Once it exists, Flathub's own buildbot is triggered by the push itself
+    # — there is no CLI submission call the way msstore/chrome-webstore-upload
+    # need one. No `needs` ordering with update-cask/update-download-page:
+    # those two race each other pushing to OUR main and need serializing;
+    # this pushes to a different remote entirely, so it doesn't.
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: 🔐 Check Flathub deploy key
+        id: check
+        env:
+          FLATHUB_DEPLOY_KEY: ${{ secrets.FLATHUB_DEPLOY_KEY }}
+        run: |
+          if [ -z "${FLATHUB_DEPLOY_KEY:-}" ]; then
+            echo "::warning title=Flathub not yet set up::FLATHUB_DEPLOY_KEY is not set — skipping (docs/DEPLOYMENT.md § Flathub). This is expected until the initial Flathub submission is reviewed and merged."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 📥 Checkout Repository (for tag lookup)
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 🏷️ Resolve Release Version
+        id: version
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          VERSION="$(git tag --sort=-version:refname | head -n1)"
+          if [ -z "$VERSION" ]; then
+            echo "::error::No release tags found"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "raw=${VERSION#v}" >> "$GITHUB_OUTPUT"
+
+      - name: 📥 Checkout Release Tag
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.version.outputs.version }}
+          fetch-depth: 1
+
+      - name: 🐍 Set up Python
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+
+      - name: 📥 Install the source generators
+        if: steps.check.outputs.skip != 'true'
+        env:
+          # Both generators are pinned to the same reviewed commit of
+          # flatpak/flatpak-builder-tools, not the mutable `master` branch —
+          # a later upstream commit shouldn't silently change what this job
+          # runs. Bump deliberately (and re-verify the sha256 below) to update.
+          PIN_SHA: 1fc32195e3e60fe5c97f0af646dec7a99df5962b
+          CARGO_GENERATOR_SHA256: b373c8ab1a05378ec5d8ed0645c7b127bcec7d2f7a1798694fbc627d570d856c
+        run: |
+          set -euo pipefail
+          echo "::group::flatpak-cargo-generator"
+          curl -sSL -o /tmp/flatpak-cargo-generator.py \
+            "https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/$PIN_SHA/cargo/flatpak-cargo-generator.py"
+          echo "$CARGO_GENERATOR_SHA256  /tmp/flatpak-cargo-generator.py" | sha256sum -c -
+          pip install --quiet "aiohttp<4.0.0,>=3.9.5" "PyYAML<7.0.0,>=6.0.2" "tomlkit>=0.13.3,<1.0"
+          echo "::endgroup::"
+          echo "::group::flatpak-node-generator (pnpm-capable fork — PyPI's release predates pnpm support)"
+          git clone https://github.com/flatpak/flatpak-builder-tools.git /tmp/flatpak-builder-tools
+          git -C /tmp/flatpak-builder-tools checkout --quiet "$PIN_SHA"
+          pip install --quiet "aiohttp<4.0.0,>=3.9.0" "pyyaml<7.0,>=6.0"
+          echo "::endgroup::"
+
+      - name: 🔄 Regenerate the vendored sources + pin the tag
+        if: steps.check.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          RAW: ${{ steps.version.outputs.raw }}
+        run: |
+          set -euo pipefail
+          FLATPAK_DIR="apps/desktop/src-tauri/linux/flatpak"
+
+          echo "::group::cargo-sources.json"
+          python3 /tmp/flatpak-cargo-generator.py apps/desktop/src-tauri/Cargo.lock -o "$FLATPAK_DIR/cargo-sources.json"
+          echo "::endgroup::"
+
+          echo "::group::node-sources.json"
+          PYTHONPATH="/tmp/flatpak-builder-tools/node" python3 -m flatpak_node_generator \
+            --no-requests-cache pnpm pnpm-lock.yaml -o "$FLATPAK_DIR/node-sources.json"
+          echo "::endgroup::"
+
+          echo "::group::Pinning the manifest's git tag"
+          sed -i "s/tag: v[0-9][0-9A-Za-z.\-]*/tag: $VERSION/" "$FLATPAK_DIR/io.github.saeedkolivand.AIJobHunter.yml"
+          echo "::endgroup::"
+
+          echo "::group::Syncing the AppStream release entry"
+          RELEASE_DATE="$(git log -1 --format=%ad --date=short "$VERSION")"
+          sed -i "s|<release version=\"[^\"]*\" date=\"[^\"]*\" />|<release version=\"$RAW\" date=\"$RELEASE_DATE\" />|" \
+            "$FLATPAK_DIR/io.github.saeedkolivand.AIJobHunter.metainfo.xml"
+          echo "::endgroup::"
+
+      - name: 📤 Push to flathub/io.github.saeedkolivand.AIJobHunter
+        if: steps.check.outputs.skip != 'true'
+        env:
+          FLATHUB_DEPLOY_KEY: ${{ secrets.FLATHUB_DEPLOY_KEY }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          FLATPAK_DIR="apps/desktop/src-tauri/linux/flatpak"
+
+          mkdir -p ~/.ssh
+          echo "$FLATHUB_DEPLOY_KEY" > ~/.ssh/flathub_deploy_key
+          chmod 600 ~/.ssh/flathub_deploy_key
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/flathub_deploy_key -o StrictHostKeyChecking=accept-new"
+
+          rm -rf /tmp/flathub-repo
+          git clone git@github.com:flathub/io.github.saeedkolivand.AIJobHunter.git /tmp/flathub-repo
+
+          cp "$FLATPAK_DIR"/io.github.saeedkolivand.AIJobHunter.yml \
+             "$FLATPAK_DIR"/io.github.saeedkolivand.AIJobHunter.desktop \
+             "$FLATPAK_DIR"/io.github.saeedkolivand.AIJobHunter.metainfo.xml \
+             "$FLATPAK_DIR"/cargo-sources.json \
+             "$FLATPAK_DIR"/node-sources.json \
+             /tmp/flathub-repo/
+
+          cd /tmp/flathub-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Flathub manifest already up to date."
+            exit 0
+          fi
+          git add -A
+          git commit -m "chore: sync manifest to $VERSION"
+          git push origin HEAD:master
+
+      - name: 📝 Job Summary
+        if: always()
+        run: |
+          {
+            echo "## 🌐 Flathub Manifest Sync"
+            echo ""
+            if [ "${{ steps.check.outputs.skip }}" == "true" ]; then
+              echo "Skipped — \`FLATHUB_DEPLOY_KEY\` is not set. Expected until the initial Flathub submission is reviewed and merged (docs/DEPLOYMENT.md § Flathub)."
+            else
+              echo "Pushed to \`flathub/io.github.saeedkolivand.AIJobHunter\`. Flathub's own buildbot picks up the push — track it in that repo's Actions/build log, not here."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
   update-download-page:
     name: 🌐 Update Landing Download Page

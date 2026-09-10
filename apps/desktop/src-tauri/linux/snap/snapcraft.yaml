@@ -1,0 +1,57 @@
+# Snap Store manifest for AI Job Hunter.
+#
+# Deviates from Tauri's own Snapcraft guide on purpose: their example rebuilds
+# the whole app from source inside the snap part (`build-snaps: [node/*,
+# rustup/*]` + `npm run tauri build`). This repo already builds the `.deb`
+# once in release.yml's `build` job and reuses it everywhere downstream
+# (Chrome/Firefox/MSStore never rebuild either) — so this manifest's single
+# part just unpacks that already-built `.deb`, via the `dump` plugin against a
+# directory `publish-snap` extracts it into before calling `snapcraft pack`.
+# See docs/DEPLOYMENT.md § Snap Store for the CI wiring.
+#
+# `version` is a placeholder kept in sync with releases by
+# scripts/sync-snapcraft.cjs (mirrors scripts/sync-cask.cjs's job for the
+# Homebrew cask) — never hand-edit it.
+name: ai-job-hunter
+version: '0.152.0'
+summary: AI-powered job search and application assistant
+description: |
+  AI Job Hunter finds, scores, and helps you apply to jobs — résumé tailoring,
+  cover letters, application tracking, and job-board scraping, running
+  locally with your choice of AI provider (including fully offline via
+  Ollama). See https://aijobhunter.app.
+icon: ../../icons/icon.png
+grade: stable
+confinement: strict
+base: core22
+
+apps:
+  ai-job-hunter:
+    command: usr/bin/ajh-tauri
+    # Extracted + renamed to this fixed name by publish-snap before packing —
+    # Tauri's deb bundler doesn't guarantee a stable filename here, so the CI
+    # step normalizes it rather than this manifest guessing at one.
+    desktop: usr/share/applications/ai-job-hunter.desktop
+    # tauri_plugin_autostart's Linux backend (auto-launch crate) names the
+    # XDG autostart file after `app_name`, which we never override — it
+    # defaults to tauri.conf.json's `productName` verbatim ("AI Job Hunter",
+    # not the kebab-case slug used elsewhere), written under
+    # $SNAP_USER_DATA/.config/autostart/ inside the sandbox. This key is what
+    # makes snapd actually honor that file, rather than silently ignoring it.
+    autostart: 'AI Job Hunter.desktop'
+    extensions: [gnome]
+    # The gnome extension covers desktop/wayland/x11/opengl — NOT network,
+    # network-bind, or home. This app needs all three: network for the AI
+    # provider + job-board scraping (core egress, not optional), network-bind
+    # for the loopback extension-bridge/MCP server, home for résumé
+    # import/export dialogs. A strictly-confined snap with none of these
+    # cannot function at all — verify the final plug set with
+    # `snapcraft expand-extensions` against a real build.
+    plugs: [network, network-bind, home]
+
+parts:
+  ai-job-hunter:
+    plugin: dump
+    # Populated by publish-snap (`dpkg-deb -x` of the release .deb) before
+    # `snapcraft pack` runs — never a real path at manifest-authoring time.
+    source: deb-contents

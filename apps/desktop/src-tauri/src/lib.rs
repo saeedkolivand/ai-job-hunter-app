@@ -682,6 +682,14 @@ pub fn run() {
                 // update — and it would outlive an uninstall. `on_open_url`
                 // below is untouched; that is how the packaged activation
                 // arrives.
+                //
+                // Deliberately `msix::is_packaged()`, not the
+                // `platform::is_packaged_build()` aggregator: the HKCU-write
+                // shadowing above is Windows/registry-specific, and Flatpak/
+                // Snap have no analogous "this write would shadow the
+                // manifest's own registration" hazard — their portal/desktop
+                // file registration doesn't go through this call at all. Do
+                // not "fix" this into the aggregator.
                 if !crate::platform::msix::is_packaged() {
                     let _ = app.deep_link().register_all();
                 }

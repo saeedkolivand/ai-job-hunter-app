@@ -607,7 +607,7 @@ requires a second call to a different Verb, and therefore requires having actual
 record. This is the safety property that survives the absence of a dry-run.
 _Avoid_: "confirmation prompt" (there is no interactive prompt; an autonomous caller cannot answer one)
 
-## Domain — Windows distribution
+## Domain — Packaged builds
 
 **Flavour**:
 A **container** around the same shipped `ajh-tauri` binary — not a build variant. There is no
@@ -615,10 +615,14 @@ compile-time flag and no second artifact, so which flavour is running is a **run
 and anything that must differ branches on that rather than on `cfg!`.
 _Avoid_: "edition" / "build variant" / "build target" (each implies a second binary)
 
-**Store flavour** (in Rust: a **packaged build**):
-The Microsoft Store install — the same binary wrapped in an MSIX package — identified at runtime by
-`platform::msix::is_packaged`. The word marks the closed set of behaviours the Store or its manifest
-owns instead of the app; [ADR-049](knowledge/decision-records/adr-049-microsoft-store-msix-flavour.md)
-is why, `docs/DEPLOYMENT.md` § Microsoft Store (MSIX) is which.
-_Avoid_: "UWP app" (it is a packaged **classic** full-trust app) / "sandboxed build" (write
-virtualization is deliberately disabled) / "Store version" (the version number is the same one)
+**Packaged build**:
+Any distribution container where the app's updating, registration, or path publishing is owned by the
+container or its manifest rather than by app code. Three flavours: **Microsoft Store (MSIX)** on Windows,
+**Snap** on Linux, and **Flathub** on Linux, each with its own detection function (`platform::msix::is_packaged()`,
+`platform::snap::is_packaged()`, `platform::flatpak::is_packaged()`). Summarized by the enum `PackageFlavour`
+(see `apps/desktop/src-tauri/src/platform/mod.rs`) with the aggregator `platform::is_packaged_build()` covering all three. The closed
+set of behaviours each flavour differs on is enumerated in [ADR-049](knowledge/decision-records/adr-049-microsoft-store-msix-flavour.md)
+(updated to cover all three); `docs/DEPLOYMENT.md` § Snap Store / § Flathub / § Microsoft Store (MSIX) is the
+operational view of each.
+_Avoid_: "Store version" (the version number is identical across flavours); "sandboxed build" (Snap/Flatpak
+are sandboxed; MSIX has write virtualization deliberately disabled)

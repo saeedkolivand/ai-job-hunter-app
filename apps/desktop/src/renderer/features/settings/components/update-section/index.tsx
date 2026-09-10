@@ -16,7 +16,7 @@ import { Button, cn, MarkdownMessage, RefreshButton, SettingsSection } from '@aj
 
 import { parseCalendarOrIsoDate } from '@/lib/time';
 import { useAppVersion, useOpenExternal } from '@/services';
-import { useChangelog, useUpdater } from '@/services/use-updater';
+import { MANAGED_BY_KEY, useChangelog, useUpdater } from '@/services/use-updater';
 
 const NO_RELEASE_PATTERNS = [
   'valid release json',
@@ -117,9 +117,10 @@ export function UpdateSection() {
         ) : null}
       </div>
 
-      {/* Status messages. `managed` (Microsoft Store build) renders no action
+      {/* Status messages. `managed` (packaged build) renders no action
           control at all — the chain above ends at `null` for it — so this line
-          is the whole story: the Store updates the app, this panel cannot. */}
+          is the whole story: the store/sandbox updates the app, this panel
+          cannot. Copy varies by `status.by` — never assume Microsoft Store. */}
       {status.state === 'managed' && (
         // `role="status"` because this line REPLACES the control the user just
         // activated: the check button disappears on the idle→managed
@@ -127,7 +128,7 @@ export function UpdateSection() {
         // would lose focus to a silent swap and never hear the reason.
         <div role="status" className="mt-3 flex items-center gap-2 text-xs text-foreground/50">
           <Store size={12} />
-          {t('settings.update.managedByStore')}
+          {t(MANAGED_BY_KEY[status.by])}
         </div>
       )}
       {(status.state === 'not-available' || noRelease) && (

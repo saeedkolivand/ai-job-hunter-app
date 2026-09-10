@@ -146,6 +146,53 @@ fn write_agent_pointer(data_dir: &Path) {
 /// Register the native-messaging host for Firefox + Chrome. Best-effort and
 /// idempotent — safe to call on every launch.
 pub fn register_native_host(data_dir: &Path) {
+    let sandboxed = crate::platform::flatpak::is_packaged() || crate::platform::snap::is_packaged();
+    register_native_host_inner(data_dir, sandboxed);
+}
+
+/// [`register_native_host`], with the Flatpak/Snap check taken as a
+/// parameter rather than a call — same split as `updater::store_managed`
+/// takes `packaged: bool` — so the guard clause below is exercised by a
+/// plain unit test instead of needing to race `flatpak`/`snap`'s
+/// process-cached `is_packaged()` against env-var mutation.
+fn register_native_host_inner(data_dir: &Path, sandboxed: bool) {
+    // The pointer publishes the path a HUMAN types to reach the agent CLI,
+    // which inside an AppImage is NOT `current_exe()`. It resolves that
+    // itself (one resolver, `platform::config::agent_cli_exe_path`, shared
+    // with the Settings card behind `commands::system::system_agent_cli_info`,
+    // so the file and the UI can never disagree) — see its doc for why the
+    // choice is not made here.
+    //
+    // Written BEFORE the sandbox guard below, deliberately — its own doc
+    // says "OS- and browser-independent... this call is unconditional", and
+    // that invariant holds even inside Flatpak/Snap: the pointer lands under
+    // the CONFINED `$HOME`, which is writable and is exactly what an
+    // in-sandbox `flatpak run --command=ajh-tauri … agent mcp` / `snap run
+    // ai-job-hunter.agent-cli … agent mcp` invocation reads. Skipping it here
+    // would misdiagnose that in-sandbox call as `app_not_located`
+    // (`extension_bridge::agent_cli` warns about exactly that class of
+    // mistake elsewhere). A HOST-side MCP client still can't reach the
+    // confined HOME either way — writing the pointer changes nothing for
+    // that case, it only keeps the in-sandbox one working.
+    write_agent_pointer(data_dir);
+
+    // Flatpak/Snap sandboxing has no clean answer for the BROWSER-spawned
+    // native-messaging host below: the browser (running OUTSIDE the sandbox)
+    // has to spawn this host, but a sandboxed process cannot register a path
+    // the browser could launch. Even funded projects (1Password, KeePassXC)
+    // only offer `flatpak-spawn --host`, which explicitly breaks sandbox
+    // isolation — rejected here for the same reason — and Snap's strict
+    // confinement has no equivalent escape hatch at all. So this is a
+    // disclosed limitation, not silently broken: see docs/DEPLOYMENT.md
+    // (Flatpak/Snap Store sections).
+    if sandboxed {
+        log::warn!(
+            "[native_host] running inside a Flatpak/Snap sandbox — browser native-messaging \
+             registration is not supported in this confinement (the agent-CLI pointer was \
+             still written), see docs/DEPLOYMENT.md (Flatpak/Snap Store sections)"
+        );
+        return;
+    }
     // A Store (MSIX) build is the one case where `current_exe()` is the WRONG
     // thing to record: it points inside `…\WindowsApps\<PackageFullName>\`,
     // which a normal user — and therefore the browser process that has to spawn
@@ -159,11 +206,15 @@ pub fn register_native_host(data_dir: &Path) {
         crate::platform::msix::PublishedExe::Alias(alias) => alias,
         // A packaged build with no usable alias (the user can switch one off
         // in Settings ▸ Apps ▸ App execution aliases) has NO path worth
-        // publishing, so the whole registration is skipped — including the
-        // pointer below. Writing `current_exe()` instead would register a host
-        // the browser cannot launch. Deliberately not DELETING the existing
-        // manifests either: they are shared with a non-Store install on the
-        // same machine, which may still own a working one.
+        // publishing, so the browser-manifest registration is skipped. The
+        // pointer call above ran, but its resolver (`agent_cli_exe_path()`)
+        // answers `None` on this same arm, so nothing was actually
+        // published there either (see its doc, and
+        // `docs/knowledge/agent-cli.md`) — writing `current_exe()` instead
+        // would register a host the browser cannot launch. Deliberately not
+        // DELETING the existing manifests either: they are shared with a
+        // non-Store install on the same machine, which may still own a
+        // working one.
         crate::platform::msix::PublishedExe::Unavailable => return,
         crate::platform::msix::PublishedExe::Unpackaged => match std::env::current_exe() {
             Ok(p) => p,
@@ -173,15 +224,11 @@ pub fn register_native_host(data_dir: &Path) {
             }
         },
     };
-    // The pointer publishes the path a HUMAN types to reach the agent CLI,
-    // which inside an AppImage is NOT `exe`. It resolves that itself (one
-    // resolver, `platform::config::agent_cli_exe_path`, shared with the
-    // Settings card behind `commands::system::system_agent_cli_info`, so the
-    // file and the UI can never disagree) — see its doc for why the choice is
-    // not made here. The browser manifests below take `exe`, which differs from
-    // that resolver only on Linux/AppImage: a native-messaging host is launched
-    // by the browser, not typed.
-    write_agent_pointer(data_dir);
+    // The agent-CLI pointer was already written above (unconditional,
+    // regardless of what `exe` resolves to here). The browser manifests
+    // below take `exe` instead of that resolver's path, which differs from
+    // it only on Linux/AppImage: a native-messaging host is launched by the
+    // browser, not typed.
     let firefox_json = manifest_json(&exe, true);
     let chrome_json = manifest_json(&exe, false);
 
@@ -514,6 +561,68 @@ mod tests {
             v["dataDir"],
             data_dir_b.path().to_string_lossy().as_ref(),
             "a second launch's pointer must overwrite the first, not append"
+        );
+    }
+
+    // ── Flatpak/Snap sandbox guard ────────────────────────────────────────────
+
+    /// The agent-CLI pointer must survive the sandbox guard — it's what an
+    /// in-sandbox `flatpak run … agent mcp` / `snap run … agent mcp`
+    /// invocation reads from the confined HOME. Mutation-visible: reorder
+    /// `write_agent_pointer(data_dir)` back below the `if sandboxed { …
+    /// return; }` guard and this fails.
+    #[test]
+    #[serial_test::serial]
+    fn register_native_host_still_writes_the_agent_pointer_when_sandboxed() {
+        let home = tempfile::TempDir::new().unwrap();
+        let _guard = crate::platform::config::HomeDirGuard::set(home.path());
+        let data_dir = tempfile::TempDir::new().unwrap();
+
+        register_native_host_inner(data_dir.path(), true);
+
+        let pointer_path = home.path().join(".ajh-agent").join("agent.json");
+        assert!(
+            pointer_path.exists(),
+            "the agent-CLI pointer must be written even inside a sandbox"
+        );
+        assert_eq!(
+            std::fs::read_dir(data_dir.path()).unwrap().count(),
+            0,
+            "no browser-manifest state should be written under data_dir"
+        );
+    }
+
+    /// `#[cfg(target_os = "linux")]`, so no CI job actually runs this
+    /// assertion — CI's Rust jobs are `--test architecture`, `--test
+    /// egress`, one targeted `--lib` test on Windows, `--test mcp_smoke`,
+    /// and `cargo mutants --in-diff`; none is an ubuntu `--lib` run.
+    /// `cargo clippy --all-targets` on ubuntu at least keeps this compiling,
+    /// so it can't rot into a build break unnoticed. The actual mutation
+    /// coverage is the cross-platform sibling test above (real on every
+    /// host) plus THIS test running for real on a Linux dev machine's own
+    /// pre-push `cargo test`. Unlike the per-Flatpak-app guard dirs below,
+    /// the NATIVE Linux browser paths (`write_manifest`, not
+    /// `write_manifest_if_app_dir_exists`) are written unconditionally with
+    /// no directory precondition — so a `HomeDirGuard`-scoped temp HOME with
+    /// nothing pre-created still catches a deleted `if sandboxed { … return;
+    /// }` guard: delete it and Firefox's manifest appears here.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[serial_test::serial]
+    fn register_native_host_skips_the_native_browser_manifest_when_sandboxed() {
+        let home = tempfile::TempDir::new().unwrap();
+        let _guard = crate::platform::config::HomeDirGuard::set(home.path());
+        let data_dir = tempfile::TempDir::new().unwrap();
+
+        register_native_host_inner(data_dir.path(), true);
+
+        let firefox_manifest = home
+            .path()
+            .join(".mozilla/native-messaging-hosts")
+            .join(NATIVE_HOST_MANIFEST);
+        assert!(
+            !firefox_manifest.exists(),
+            "a sandboxed process must not register the browser-spawned native-messaging host"
         );
     }
 

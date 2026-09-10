@@ -30,12 +30,13 @@ export type UpdateCheckResult =
   | { available: true; version: string; downloaded?: boolean; downloading?: boolean }
   | {
       available: false;
-      /** Present (as `'store'`) only on a **Microsoft Store (MSIX)** install:
-       *  the Store delivers updates for that flavour, so the shell answers
-       *  without ever contacting GitHub — no check, no background poll, and
-       *  `download`/`install` refuse. Absent on every other install, where
-       *  `available: false` keeps its plain "you are up to date" meaning. */
-      managedBy?: 'store';
+      /** Present only on a **packaged** install — Microsoft Store (MSIX),
+       *  Flatpak, or Snap: that flavour's store/sandbox delivers updates for
+       *  it, so the shell answers without ever contacting GitHub — no check,
+       *  no background poll, and `download`/`install` refuse. Absent on
+       *  every other install, where `available: false` keeps its plain "you
+       *  are up to date" meaning. */
+      managedBy?: 'msstore' | 'flatpak' | 'snap';
     }
   | { error: string };
 
@@ -45,14 +46,14 @@ export interface UpdaterContract {
 
   /** Download the update {@link check} found. Resolves either way — the shell
    *  reports failure on the `updater:status` stream, not by rejecting. On a
-   *  Microsoft Store install the shell refuses instead (the Store owns
+   *  packaged install the shell refuses instead (the store/sandbox owns
    *  updating); that refusal is defence in depth for a non-renderer caller
    *  such as the agent CLI, since this signature discards it and the UI never
-   *  offers the action once it has seen `managedBy: 'store'`. */
+   *  offers the action once it has seen a `managedBy` value. */
   download(): Promise<void>;
 
-  /** Install the downloaded update and relaunch. Same Store caveat as
-   *  {@link download}. */
+  /** Install the downloaded update and relaunch. Same packaged-install
+   *  caveat as {@link download}. */
   install(): Promise<void>;
 
   /** Recent release history (newest first) for the in-app changelog. */

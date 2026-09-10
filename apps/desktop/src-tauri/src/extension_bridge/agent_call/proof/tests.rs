@@ -193,7 +193,7 @@ fn extract_scalar_reads_updater_installs_real_pending_version_off_status_reply()
         pending_version: Some("2.5.0".to_string()),
         ..crate::updater::UpdaterState::default()
     };
-    let response = crate::updater::status_reply(&state, false);
+    let response = crate::updater::status_reply(&state, None);
 
     assert_eq!(
         extract(source, &json!({}), &response),

@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 ///   { state: "downloading",   percent }
 ///   { state: "downloaded",    version }
 ///   { state: "error",         message }
-///   { state: "managed",       by: "store" }   — Microsoft Store build
+///   { state: "managed",       by: "msstore" | "flatpak" | "snap" }   — packaged build, flavour-specific
 ///
 /// ── Event channel ────────────────────────────────────────────────────────────
 ///   updater:status  — emitted by every state transition.
@@ -27,6 +27,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::events::{emit_event, UPDATER_STATUS};
+use crate::platform::PackageFlavour;
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 /// Holds the pending Update and downloaded bytes between commands.
@@ -70,42 +71,50 @@ fn download_in_progress_or_done(state: &UpdaterState) -> bool {
     state.downloading || state.downloaded_bytes.is_some()
 }
 
-/// The `updater_check` reply for a build the Microsoft Store owns, or `None`
-/// when this process should check GitHub as usual.
+/// The `{ available: false, managedBy }` reply for a build a store/sandbox
+/// owns — used directly by `updater_check` (once it already knows it is in
+/// the packaged branch) and via `Option::map` by [`status_reply`] (which
+/// still needs the "or check normally" `None` case).
 ///
-/// `packaged` comes from [`crate::platform::msix::is_packaged`]; it is a
-/// parameter rather than a call so the decision is testable off-Windows and
-/// without a live `AppHandle` (this crate has no `tauri::test` mock-app
-/// harness — same reason [`download_in_progress_or_done`] is split out).
+/// `flavour` comes from [`crate::platform::packaged_flavour`] (MSIX,
+/// Flatpak, or Snap); it is a parameter rather than a call so the decision
+/// is testable off-Windows and without a live `AppHandle` (this crate has
+/// no `tauri::test` mock-app harness — same reason
+/// [`download_in_progress_or_done`] is split out).
 ///
-/// Shape: the existing `{ available: false }` reply plus an optional
-/// `managedBy` — see `UpdateCheckResult` in
-/// `packages/shared/src/ipc/contracts/updater.ts`. Additive on purpose, so a
-/// client that never heard of the Store flavour still reads it as "no update".
-pub(crate) fn store_managed(packaged: bool) -> Option<Value> {
-    packaged.then(|| json!({ "available": false, "managedBy": "store" }))
+/// Shape: the existing `{ available: false }` reply plus `managedBy` — see
+/// `UpdateCheckResult` in `packages/shared/src/ipc/contracts/updater.ts`.
+pub(crate) fn store_managed(flavour: PackageFlavour) -> Value {
+    json!({ "available": false, "managedBy": flavour.as_wire_str() })
 }
 
 /// The pushed counterpart of [`store_managed`] — what the renderer's status
-/// stream carries for a Store build (`use-updater.ts`'s `managed` variant).
-fn managed_status() -> Value {
-    json!({ "state": "managed", "by": "store" })
+/// stream carries for a packaged build (`use-updater.ts`'s `managed`
+/// variant). Takes the flavour directly (not `Option`): every call site
+/// already knows it is inside the packaged branch.
+fn managed_status(flavour: PackageFlavour) -> Value {
+    json!({ "state": "managed", "by": flavour.as_wire_str() })
 }
 
-/// Refusal returned by `updater_download`/`updater_install` on a Store build.
-/// Defence in depth: the renderer never offers those actions once it has seen
-/// the `managed` status, but an IPC caller could still invoke them, and
-/// running the NSIS installer over a packaged install is exactly what
-/// [`crate::platform::msix`] exists to prevent.
-fn store_managed_refusal() -> Value {
-    json!({ "error": "This build is installed from the Microsoft Store — updates are delivered by the Store." })
+/// Refusal returned by `updater_download`/`updater_install` on a packaged
+/// build. Defence in depth: the renderer never offers those actions once it
+/// has seen the `managed` status, but an IPC caller could still invoke them,
+/// and running the NSIS installer over a packaged install is exactly what
+/// [`crate::platform`]'s packaged-build detection exists to prevent.
+fn store_managed_refusal(flavour: PackageFlavour) -> Value {
+    let source = match flavour {
+        PackageFlavour::MsStore => "the Microsoft Store",
+        PackageFlavour::Flatpak => "Flatpak",
+        PackageFlavour::Snap => "the Snap Store",
+    };
+    json!({ "error": format!("This build is installed from {source} — updates are delivered by {source}.") })
 }
 
 /// How long after launch the first status is pushed. The silent check has
-/// always waited this out so it does not compete with startup; the Store
-/// announcement reuses it for a second reason — `updater:status` events are
-/// not replayed, so anything emitted before the webview mounts its listeners
-/// is simply lost.
+/// always waited this out so it does not compete with startup; the packaged-
+/// build announcement reuses it for a second reason — `updater:status`
+/// events are not replayed, so anything emitted before the webview mounts
+/// its listeners is simply lost.
 const STARTUP_STATUS_DELAY: tokio::time::Duration = tokio::time::Duration::from_secs(10);
 
 // ── Commands ──────────────────────────────────────────────────────────────────
@@ -115,20 +124,20 @@ const STARTUP_STATUS_DELAY: tokio::time::Duration = tokio::time::Duration::from_
 /// `tauri::test` mock-app harness, same reason
 /// [`download_in_progress_or_done`] and [`store_managed`] are split out).
 ///
-/// A packaged (Store) build is reported via [`store_managed`] BEFORE
-/// `pending_version` is even consulted — that state field never gets set on
-/// such a build (`setup_auto_check` returns before the first `silent_check`
-/// runs), so without this branch a Store build reported the same bare
-/// `{"available": false}` as "genuinely current" (`B1-r2-ACLI-R6-2`).
-/// Otherwise, `state.checked` distinguishes "checked, none available" from
-/// "never checked" / "last check failed" — both of the latter used to be
-/// the identical, unfalsifiable `{"available": false}`.
+/// A packaged (Store/Flatpak/Snap) build is reported via [`store_managed`]
+/// BEFORE `pending_version` is even consulted — that state field never gets
+/// set on such a build (`setup_auto_check` returns before the first
+/// `silent_check` runs), so without this branch a packaged build reported
+/// the same bare `{"available": false}` as "genuinely current"
+/// (`B1-r2-ACLI-R6-2`). Otherwise, `state.checked` distinguishes "checked,
+/// none available" from "never checked" / "last check failed" — both of the
+/// latter used to be the identical, unfalsifiable `{"available": false}`.
 // `pub(crate)` (T5 hardening) — `agent_call::proof`'s
 // `extract_scalar_reads_updater_installs_real_pending_version_off_status_reply`
 // feeds a real reply through this to cross-check `updater_install`'s POLICY
 // proof source, so the two can never drift apart silently.
-pub(crate) fn status_reply(state: &UpdaterState, packaged: bool) -> Value {
-    if let Some(managed) = store_managed(packaged) {
+pub(crate) fn status_reply(state: &UpdaterState, flavour: Option<PackageFlavour>) -> Value {
+    if let Some(managed) = flavour.map(store_managed) {
         return managed;
     }
     match &state.pending_version {
@@ -155,7 +164,7 @@ pub(crate) fn status_reply(state: &UpdaterState, packaged: bool) -> Value {
 #[tauri::command]
 pub fn updater_status(app: AppHandle) -> Value {
     let state = app.state::<Mutex<UpdaterState>>();
-    status_reply(&state.lock(), crate::platform::msix::is_packaged())
+    status_reply(&state.lock(), crate::platform::packaged_flavour())
 }
 
 /// Check for an available update.
@@ -163,13 +172,13 @@ pub fn updater_status(app: AppHandle) -> Value {
 /// Stores the Update object for use by updater_download.
 #[tauri::command]
 pub async fn updater_check(app: AppHandle) -> Value {
-    // Before the network, before the state: a Store build never checks GitHub
-    // at all. Emitted as well as returned so every mounted listener (banner,
-    // settings panel, menu) converges on the same answer, exactly like the
-    // outcomes below.
-    if let Some(managed) = store_managed(crate::platform::msix::is_packaged()) {
-        emit_status(&app, managed_status());
-        return managed;
+    // Before the network, before the state: a packaged (Store/Flatpak/Snap)
+    // build never checks GitHub at all. Emitted as well as returned so every
+    // mounted listener (banner, settings panel, menu) converges on the same
+    // answer, exactly like the outcomes below.
+    if let Some(flavour) = crate::platform::packaged_flavour() {
+        emit_status(&app, managed_status(flavour));
+        return store_managed(flavour);
     }
 
     // A finished or in-flight download must never be thrown away by a fresh
@@ -272,8 +281,8 @@ impl Drop for DownloadGuard {
 /// second caller has nothing useful to do but wait.
 #[tauri::command]
 pub async fn updater_download(app: AppHandle) -> Value {
-    if crate::platform::msix::is_packaged() {
-        return store_managed_refusal();
+    if let Some(flavour) = crate::platform::packaged_flavour() {
+        return store_managed_refusal(flavour);
     }
     let (update, version) = {
         let state = app.state::<Mutex<UpdaterState>>();
@@ -352,8 +361,8 @@ pub async fn updater_download(app: AppHandle) -> Value {
 /// Uses the Update object and bytes stored by earlier commands — no re-fetch.
 #[tauri::command]
 pub async fn updater_install(app: AppHandle) -> Value {
-    if crate::platform::msix::is_packaged() {
-        return store_managed_refusal();
+    if let Some(flavour) = crate::platform::packaged_flavour() {
+        return store_managed_refusal(flavour);
     }
     let (update, bytes) = {
         let state = app.state::<Mutex<UpdaterState>>();
@@ -498,15 +507,16 @@ pub fn updater_changelog() -> Value {
 
 /// Silent check 10 s after launch, then every 4 h.
 ///
-/// A Store build gets neither: no first check, no interval, no network. It
-/// announces once (so the settings panel can say where updates come from
-/// without the user pressing anything) and stops there.
+/// A packaged (Store/Flatpak/Snap) build gets neither: no first check, no
+/// interval, no network. It announces once (so the settings panel can say
+/// where updates come from without the user pressing anything) and stops
+/// there.
 pub fn setup_auto_check(app: &AppHandle) {
-    if crate::platform::msix::is_packaged() {
+    if let Some(flavour) = crate::platform::packaged_flavour() {
         let app_announce = app.clone();
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(STARTUP_STATUS_DELAY).await;
-            emit_status(&app_announce, managed_status());
+            emit_status(&app_announce, managed_status(flavour));
         });
         return;
     }
