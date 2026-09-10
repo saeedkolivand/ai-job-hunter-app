@@ -95,6 +95,15 @@ describe('DownloadBody', () => {
     }
   });
 
+  it('renders the installs-total placeholder hidden at SSR', () => {
+    const { container } = render(<DownloadBody version={VERSION} installers={installers} />);
+    const el = container.querySelector('[data-installs-total]');
+    expect(el).not.toBeNull();
+    expect(el?.classList.contains('installs-total')).toBe(true);
+    expect((el as HTMLElement | null)?.hidden).toBe(true);
+    expect(el?.textContent).toBe('');
+  });
+
   it('renders the h1 and the top back-link', () => {
     const { container } = render(<DownloadBody version={VERSION} installers={installers} />);
     expect(container.querySelector('h1')?.textContent).toBe('Take the app');

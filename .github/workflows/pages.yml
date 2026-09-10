@@ -109,13 +109,15 @@ jobs:
           # It shipped missing exactly once, because repo-charts.yml builds the
           # badges tree from its own hardcoded file list: adding an output to
           # build-repo-charts.mjs publishes nothing until that list names it too.
-          if git show "FETCH_HEAD:downloads-by-platform.json" > apps/landing/public/downloads-by-platform.json 2>/dev/null \
-            && [ -s apps/landing/public/downloads-by-platform.json ]; then
-            echo "fetched downloads-by-platform.json ($(wc -c < apps/landing/public/downloads-by-platform.json) bytes)"
-          else
-            rm -f apps/landing/public/downloads-by-platform.json
-            echo "::warning::downloads-by-platform.json missing on the badges branch — /download ships without its count pills. Check the publish list in repo-charts.yml."
-          fi
+          for f in downloads-by-platform.json store-counts.json; do
+            if git show "FETCH_HEAD:$f" > "apps/landing/public/$f" 2>/dev/null \
+              && [ -s "apps/landing/public/$f" ]; then
+              echo "fetched $f ($(wc -c < "apps/landing/public/$f") bytes)"
+            else
+              rm -f "apps/landing/public/$f"
+              echo "::warning::$f missing on the badges branch — the page it feeds degrades quietly. Check the publish list in repo-charts.yml."
+            fi
+          done
 
       - name: 🏗️ Build landing (static export)
         run: pnpm --filter @ajh/landing build

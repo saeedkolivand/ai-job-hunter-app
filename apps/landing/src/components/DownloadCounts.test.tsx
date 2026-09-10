@@ -22,14 +22,19 @@ const COUNTS = {
   linuxRpm: 0,
 };
 
-function stubFetch(impl: () => unknown) {
+// Dispatches on the requested URL, so the by-platform pills and the installs
+// total (two independent fetches) can be stubbed differently in one test. A
+// stub that ignores the `url` argument — most of the existing tests below —
+// answers both endpoints identically, which is fine for cases that don't care.
+function stubFetch(impl: (url: string) => unknown) {
   vi.stubGlobal(
     'fetch',
-    vi.fn(() => Promise.resolve(impl()))
+    vi.fn((url: string) => Promise.resolve(impl(url)))
   );
 }
 
 const ok = (body: unknown) => ({ ok: true, json: () => Promise.resolve(body) });
+const notOk = { ok: false, json: () => Promise.reject(new Error('nope')) };
 
 /** The real download page, so the pills are tested against the real buttons. */
 function renderPage() {
@@ -110,7 +115,7 @@ describe('DownloadCounts', () => {
   });
 
   it('stays silent when the counts file is missing, and never touches the buttons', async () => {
-    stubFetch(() => ({ ok: false, json: () => Promise.reject(new Error('nope')) }));
+    stubFetch(() => notOk);
     const { container } = renderPage();
 
     await waitFor(() => expect(container.querySelectorAll('a.dl-btn')).toHaveLength(7));
@@ -130,5 +135,34 @@ describe('DownloadCounts', () => {
     const { container } = renderPage();
     await waitFor(() => expect(container.querySelectorAll('a.dl-btn')).toHaveLength(7));
     expect(container.querySelectorAll('.dl-count')).toHaveLength(0);
+  });
+
+  it('renders the installs total and un-hides it, formatted', async () => {
+    stubFetch((url) =>
+      url.includes('store-counts')
+        ? ok({ total: 12345, github: 12000, msStore: 200, snap: 100, chrome: 40, firefox: 5 })
+        : ok(COUNTS)
+    );
+    const { container } = renderPage();
+
+    const el = () => container.querySelector<HTMLElement>('[data-installs-total]');
+    await waitFor(() => expect(el()?.hidden).toBe(false));
+    expect(el()?.textContent).toContain('12,345 installs so far');
+  });
+
+  it('keeps the installs total hidden when store-counts.json 404s, without touching the pills', async () => {
+    stubFetch((url) => (url.includes('store-counts') ? notOk : ok(COUNTS)));
+    const { container } = renderPage();
+
+    await waitFor(() => expect(container.querySelectorAll('.dl-count')).toHaveLength(7));
+    expect(container.querySelector<HTMLElement>('[data-installs-total]')?.hidden).toBe(true);
+  });
+
+  it('keeps the installs total hidden when `total` is malformed', async () => {
+    stubFetch((url) => (url.includes('store-counts') ? ok({ total: 'lots' }) : ok(COUNTS)));
+    const { container } = renderPage();
+
+    await waitFor(() => expect(container.querySelectorAll('.dl-count')).toHaveLength(7));
+    expect(container.querySelector<HTMLElement>('[data-installs-total]')?.hidden).toBe(true);
   });
 });
