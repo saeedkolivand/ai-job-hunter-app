@@ -33,12 +33,12 @@ apps:
     # step normalizes it rather than this manifest guessing at one.
     desktop: usr/share/applications/ai-job-hunter.desktop
     # tauri_plugin_autostart's Linux backend (auto-launch crate) names the
-    # XDG autostart file after `app_name`, which we never override — it
-    # defaults to tauri.conf.json's `productName` verbatim ("AI Job Hunter",
-    # not the kebab-case slug used elsewhere), written under
+    # XDG autostart file after the plugin's `app_name` override in lib.rs
+    # ("ai-job-hunter", not productName's "AI Job Hunter" — the Snap Store's
+    # schema rejects a filename with a space), written under
     # $SNAP_USER_DATA/.config/autostart/ inside the sandbox. This key is what
     # makes snapd actually honor that file, rather than silently ignoring it.
-    autostart: 'AI Job Hunter.desktop'
+    autostart: 'ai-job-hunter.desktop'
     extensions: [gnome]
     # The gnome extension covers desktop/wayland/x11/opengl — NOT network,
     # network-bind, or home. This app needs all three: network for the AI

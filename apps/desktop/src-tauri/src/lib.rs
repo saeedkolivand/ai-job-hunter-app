@@ -620,10 +620,18 @@ pub fn run() {
         // Opt-in launch-at-login (default OFF; toggled via `system_*` commands).
         // Registered after single-instance so a login launch focuses the
         // existing window rather than spawning a duplicate. No launch args.
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ))
+        // `app_name` pinned to the kebab-case slug (defaults to productName
+        // "AI Job Hunter" otherwise) — the Snap Store's manifest schema
+        // rejects a `.desktop` filename containing a space, and the Linux
+        // autostart file is named after this value.
+        .plugin({
+            #[cfg(target_os = "macos")]
+            let builder = tauri_plugin_autostart::Builder::new()
+                .macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent);
+            #[cfg(not(target_os = "macos"))]
+            let builder = tauri_plugin_autostart::Builder::new();
+            builder.app_name("ai-job-hunter").build()
+        })
         // Added for FUTURE use — no renderer callers yet (their `*:default`
         // capabilities are listed in capabilities/default.json so they are ready
         // to wire). OS info, process control, window positioning, a JSON
