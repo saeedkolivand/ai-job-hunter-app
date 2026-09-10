@@ -1468,13 +1468,17 @@ jobs:
 
   publish-snap:
     name: 📦 Publish to the Snap Store
-    # Unlike publish-msstore, this one needs no `needs: build` and supports a
-    # standalone single-store re-run (added to the workflow_dispatch choices
-    # above) — packing a snap only needs the release .deb, fetched straight
-    # from the GitHub Release the same way update-cask reads dmg digests, so
-    # there is nothing expensive to rebuild if just this store's submission
-    # failed.
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.action == 'build-installers' || inputs.action == 'publish-snap') }}
+    # `needs: build` here is for the Actions graph grouping (and so
+    # build-installers won't try to publish a snap of a build that failed),
+    # not because this job needs anything build PRODUCES — packing a snap
+    # only needs the release .deb, fetched straight from the GitHub Release
+    # the same way update-cask reads dmg digests, so there is nothing
+    # expensive to rebuild if just this store's submission failed. Same
+    # `!cancelled()` + `needs.build.result` shape as publish-msstore: without
+    # it, a standalone publish-snap dispatch (where `build` is skipped, not
+    # failed) would itself always be skipped too — see that job's comment.
+    needs: build
+    if: ${{ github.event_name == 'workflow_dispatch' && !cancelled() && ((inputs.action == 'build-installers' && needs.build.result == 'success') || inputs.action == 'publish-snap') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
