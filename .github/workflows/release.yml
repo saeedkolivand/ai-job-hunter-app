@@ -1647,6 +1647,32 @@ jobs:
         id: pack
         run: |
           set -euo pipefail
+          echo "::group::Pre-install build-snaps (retry each independently)"
+          # The gnome extension pulls in these build-snaps, installed
+          # back-to-back against the live Snap Store from inside `snapcraft
+          # pack`. That's shown transient one-off failures — but a DIFFERENT
+          # one of the three failing on each of 3 straight `snapcraft pack`
+          # retries (real run, 2026-09-10) means retrying the whole pack
+          # doesn't converge: it needs all three to succeed in the SAME
+          # attempt, discarding ones that already installed fine. Installing
+          # each snap on its own retry loop first means each one only needs
+          # to succeed once, independently — snapcraft then sees them already
+          # installed and skips the install.
+          for snap in core22 gnome-42-2204 gtk-common-themes; do
+            for attempt in 1 2 3 4 5; do
+              if sudo snap install "$snap"; then
+                break
+              elif [ "$attempt" = 5 ]; then
+                echo "::error title=snap install $snap failed 5 times::Not a fresh flake — see the log above."
+                exit 1
+              else
+                echo "snap install $snap failed (attempt $attempt/5) — retrying in 10s"
+                sleep 10
+              fi
+            done
+          done
+          echo "::endgroup::"
+
           echo "::group::snapcraft pack"
           cd apps/desktop/src-tauri/linux/snap
           # snapcraft's default provider (LXD) isn't installed on this
@@ -1655,25 +1681,7 @@ jobs:
           # compilation happens inside the sandbox) — --destructive-mode
           # builds directly on the runner itself, which is already a
           # disposable, single-purpose environment.
-          #
-          # Retried: the gnome extension pulls in several build-snaps
-          # (core22, gnome-42-2204, gtk-common-themes, ...) and installing
-          # them back-to-back against the live Snap Store has shown
-          # transient one-off failures in real runs — a different snap
-          # failing each time, succeeding on the very next attempt. A short
-          # retry is the standard mitigation for this class of flakiness,
-          # not a fix for a specific snap.
-          for attempt in 1 2 3; do
-            if snapcraft pack --destructive-mode; then
-              break
-            elif [ "$attempt" = 3 ]; then
-              echo "::error title=snapcraft pack failed 3 times::Not a fresh flake — see the step log above for the real error."
-              exit 1
-            else
-              echo "snapcraft pack failed (attempt $attempt/3) — retrying in 15s"
-              sleep 15
-            fi
-          done
+          snapcraft pack --destructive-mode
           SNAP_FILE="$(find . -maxdepth 1 -name '*.snap' | head -n1)"
           if [ -z "$SNAP_FILE" ]; then
             echo "::error title=Pack produced no .snap::snapcraft pack ran but no .snap file was found."
