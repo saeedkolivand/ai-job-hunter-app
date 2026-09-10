@@ -83,7 +83,7 @@ code {
    assume it is present. */
 .installs-total {
   font-family: var(--hand);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--muted);
   margin: 6px 0 0;
 }

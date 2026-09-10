@@ -94,8 +94,11 @@ export function DownloadCounts() {
         if (!el || el.textContent) return;
 
         const format = new Intl.NumberFormat('en-US');
-        el.textContent = `${format.format(total)} installs so far — GitHub downloads plus the Microsoft, Snap, Chrome and Firefox stores.`;
+        // Un-hide BEFORE filling the text: aria-live only announces mutations
+        // of a region that is already rendered, so setting textContent first
+        // would speak to nobody.
         el.hidden = false;
+        el.textContent = `${format.format(total)} installs so far — GitHub downloads plus the app and extension stores.`;
       } catch {
         // Silent, same contract as the per-platform fetch above: a missing or
         // malformed total must never break the page, just leave it hidden.

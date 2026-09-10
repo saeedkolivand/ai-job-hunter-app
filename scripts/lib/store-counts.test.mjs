@@ -1,12 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  collectStoreCounts,
+  fetchChromeUsers,
+  fetchFirefoxUsers,
+  fetchMsStoreAcquisitions,
+  fetchSnapInstalledBase,
   parseChromeUsers,
   parseFirefoxUsers,
   snapInstalledBase,
   sumAcquisitions,
   totalInstalls,
 } from './store-counts.mjs';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('parseChromeUsers', () => {
   it('parses the plain form', () => {
@@ -34,6 +43,10 @@ describe('parseChromeUsers', () => {
     expect(parseChromeUsers('<div>Overview</div>')).toBeNull();
     expect(parseChromeUsers('')).toBeNull();
     expect(parseChromeUsers(undefined)).toBeNull();
+  });
+
+  it('returns null above the sanity ceiling', () => {
+    expect(parseChromeUsers('10M users')).toBeNull();
   });
 });
 
@@ -92,6 +105,27 @@ describe('snapInstalledBase', () => {
     expect(snapInstalledBase({ series: [], buckets: [] })).toBeNull();
     expect(snapInstalledBase(null)).toBeNull();
   });
+
+  it('walks back one bucket when the latest is entirely null', () => {
+    const m = {
+      buckets: ['a', 'b'],
+      series: [
+        { name: 's', values: [5, null] },
+        { name: 't', values: [2, null] },
+      ],
+    };
+    expect(snapInstalledBase(m)).toBe(7);
+  });
+
+  it('returns null when every bucket is null', () => {
+    const m = { buckets: ['a', 'b'], series: [{ name: 's', values: [null, null] }] };
+    expect(snapInstalledBase(m)).toBeNull();
+  });
+
+  it("returns null when status is a string other than 'OK'", () => {
+    const m = { status: 'error', buckets: ['a'], series: [{ name: 's', values: [3] }] };
+    expect(snapInstalledBase(m)).toBeNull();
+  });
 });
 
 describe('sumAcquisitions', () => {
@@ -126,5 +160,142 @@ describe('totalInstalls', () => {
     expect(
       totalInstalls({ github: null, msStore: null, snap: null, chrome: null, firefox: null })
     ).toBe(0);
+  });
+});
+
+describe('fetchMsStoreAcquisitions', () => {
+  it('returns null and never calls fetch when secrets are missing', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await fetchMsStoreAcquisitions({})).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('resolves a relative @nextLink to an absolute manage.devcenter.microsoft.com URL and sums both pages', async () => {
+    const urls = [];
+    let n = 0;
+    const fetchMock = vi.fn(async (url) => {
+      urls.push(String(url));
+      n += 1;
+      if (n === 1) return { ok: true, json: async () => ({ access_token: 'tok' }) };
+      if (n === 2) {
+        return {
+          ok: true,
+          json: async () => ({
+            Value: [{ acquisitionQuantity: 3 }],
+            '@nextLink': 'appacquisitions?applicationId=x&skip=10000',
+          }),
+        };
+      }
+      return { ok: true, json: async () => ({ Value: [{ acquisitionQuantity: 4 }] }) };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const env = { MSSTORE_TENANT_ID: 't', MSSTORE_CLIENT_ID: 'c', MSSTORE_CLIENT_SECRET: 's' };
+    expect(await fetchMsStoreAcquisitions(env)).toBe(7);
+    expect(urls[2]).toMatch(/^https:\/\/manage\.devcenter\.microsoft\.com\//);
+  });
+
+  it('returns null when a page mid-pagination responds non-2xx', async () => {
+    let n = 0;
+    const fetchMock = vi.fn(async () => {
+      n += 1;
+      if (n === 1) return { ok: true, json: async () => ({ access_token: 'tok' }) };
+      if (n === 2) {
+        return {
+          ok: true,
+          json: async () => ({ Value: [{ acquisitionQuantity: 1 }], '@nextLink': 'more' }),
+        };
+      }
+      return { ok: false, json: async () => ({}) };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const env = { MSSTORE_TENANT_ID: 't', MSSTORE_CLIENT_ID: 'c', MSSTORE_CLIENT_SECRET: 's' };
+    expect(await fetchMsStoreAcquisitions(env)).toBeNull();
+  });
+
+  it('returns null and never fetches a foreign-origin absolute @nextLink', async () => {
+    let n = 0;
+    const hosts = [];
+    const fetchMock = vi.fn(async (url) => {
+      hosts.push(new URL(String(url)).host);
+      n += 1;
+      if (n === 1) return { ok: true, json: async () => ({ access_token: 'tok' }) };
+      return {
+        ok: true,
+        json: async () => ({
+          Value: [{ acquisitionQuantity: 1 }],
+          '@nextLink': 'https://evil.example.com/steal',
+        }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const env = { MSSTORE_TENANT_ID: 't', MSSTORE_CLIENT_ID: 'c', MSSTORE_CLIENT_SECRET: 's' };
+    expect(await fetchMsStoreAcquisitions(env)).toBeNull();
+    expect(hosts).not.toContain('evil.example.com');
+  });
+
+  it('returns null when more pages exist than the page cap', async () => {
+    let n = 0;
+    const fetchMock = vi.fn(async () => {
+      n += 1;
+      if (n === 1) return { ok: true, json: async () => ({ access_token: 'tok' }) };
+      return {
+        ok: true,
+        json: async () => ({
+          Value: [{ acquisitionQuantity: 1 }],
+          '@nextLink': `more?page=${n}`,
+        }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const env = { MSSTORE_TENANT_ID: 't', MSSTORE_CLIENT_ID: 'c', MSSTORE_CLIENT_SECRET: 's' };
+    expect(await fetchMsStoreAcquisitions(env)).toBeNull();
+  });
+});
+
+describe('fetchFirefoxUsers', () => {
+  it('returns null on a non-2xx response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, json: async () => ({}) }))
+    );
+    expect(await fetchFirefoxUsers('ai-job-hunter')).toBeNull();
+  });
+});
+
+describe('fetchChromeUsers', () => {
+  it('returns null when fetch throws', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('offline');
+      })
+    );
+    expect(await fetchChromeUsers('id')).toBeNull();
+  });
+});
+
+describe('fetchSnapInstalledBase', () => {
+  it('returns null when SNAPCRAFT_STORE_CREDENTIALS is unset', async () => {
+    expect(await fetchSnapInstalledBase('ai-job-hunter', {})).toBeNull();
+  });
+});
+
+describe('collectStoreCounts', () => {
+  it('resolves (never rejects) with nulls for the HTTP stores when fetch throws', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('offline');
+      })
+    );
+
+    const result = await collectStoreCounts({});
+    expect(result).toEqual({ msStore: null, snap: null, chrome: null, firefox: null });
   });
 });

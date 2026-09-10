@@ -22,6 +22,8 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
+// Must match MSSTORE_PRODUCT_ID in .github/workflows/release.yml — same app,
+// two separate pipelines (publish vs. read-only metrics).
 const MS_STORE_APP_ID = '9NC5KDJV0BTM';
 // The listing went live 2026-09-09; started a week early on purpose so a clock
 // skew or a late first read can never fall outside the window.
@@ -50,10 +52,12 @@ export function parseChromeUsers(html) {
   const m = /([\d,.]+)\s*([KM])?\+?\s*users/i.exec(html ?? '');
   if (!m) return null;
   const n = Number.parseFloat(m[1].replace(/,/g, ''));
-  if (!Number.isFinite(n)) return null;
+  if (!Number.isFinite(n) || n < 0) return null;
   const multiplier =
     m[2]?.toUpperCase() === 'K' ? 1_000 : m[2]?.toUpperCase() === 'M' ? 1_000_000 : 1;
-  return Math.round(n * multiplier);
+  const result = Math.round(n * multiplier);
+  // Sanity ceiling: guards against matching some other number on the page.
+  return result > 5_000_000 ? null : result;
 }
 
 /**
@@ -65,8 +69,21 @@ export function snapInstalledBase(json) {
   const metric = Array.isArray(json?.metrics) ? json.metrics[0] : json;
   if (!metric || !Array.isArray(metric.series) || !Array.isArray(metric.buckets)) return null;
   if (metric.buckets.length === 0) return null;
-  const last = metric.buckets.length - 1;
-  return metric.series.reduce((sum, s) => sum + (Number(s?.values?.[last]) || 0), 0);
+  if (typeof metric.status === 'string' && metric.status !== 'OK') return null;
+
+  const hasReading = (i) =>
+    metric.series.some((s) => {
+      const v = s?.values?.[i];
+      return typeof v === 'number' && Number.isFinite(v);
+    });
+  // An all-null latest day must read as "unavailable", not 0 — walk back to
+  // the most recent bucket that actually has a reading.
+  let last = metric.buckets.length - 1;
+  while (last >= 0 && !hasReading(last)) last -= 1;
+  if (last < 0) return null;
+
+  const total = metric.series.reduce((sum, s) => sum + (Number(s?.values?.[last]) || 0), 0);
+  return total < 0 ? null : total;
 }
 
 /** Sum of `acquisitionQuantity` across every paginated Microsoft Store response. */
@@ -78,7 +95,7 @@ export function sumAcquisitions(pages) {
     sawValueArray = true;
     for (const row of page.Value) {
       const q = row?.acquisitionQuantity;
-      if (typeof q === 'number' && Number.isFinite(q)) sum += q;
+      if (typeof q === 'number' && Number.isFinite(q) && q >= 0) sum += q;
     }
   }
   return sawValueArray ? sum : null;
@@ -125,14 +142,14 @@ export async function fetchChromeUsers(id = 'oaoekkgkhmgdfnpmfkpphgiikliaicll') 
 
 /**
  * Microsoft Store — OAuth2 client-credentials token, then a paginated
- * analytics GET. `null` (with a stderr note) when any of the three secrets is
- * missing, so an unconfigured store degrades exactly like an unreachable one.
- * Never logs the token, the secret, a URL that carries them, or a response body.
+ * analytics GET. `null` when any of the three secrets is missing (collectStoreCounts
+ * logs the one-line "unavailable" note), so an unconfigured store degrades
+ * exactly like an unreachable one. Never logs the token, the secret, a URL
+ * that carries them, or a response body.
  */
 export async function fetchMsStoreAcquisitions(env = process.env) {
   const { MSSTORE_TENANT_ID, MSSTORE_CLIENT_ID, MSSTORE_CLIENT_SECRET } = env;
   if (!MSSTORE_TENANT_ID || !MSSTORE_CLIENT_ID || !MSSTORE_CLIENT_SECRET) {
-    process.stderr.write('store-counts: msStore not configured\n');
     return null;
   }
   try {
@@ -147,6 +164,7 @@ export async function fetchMsStoreAcquisitions(env = process.env) {
           client_secret: MSSTORE_CLIENT_SECRET,
           resource: 'https://manage.devcenter.microsoft.com',
         }),
+        redirect: 'error',
         signal: AbortSignal.timeout(20_000),
       }
     );
@@ -164,24 +182,39 @@ export async function fetchMsStoreAcquisitions(env = process.env) {
     // across date x market x deviceType x ..., so page count only grows over
     // time. A runaway (or looping) @nextLink must not spin forever.
     const MAX_PAGES = 50;
+    // One shared deadline for the whole pagination walk (the token POST keeps
+    // its own 20s) — a slow upstream that keeps answering just under 20s per
+    // page could otherwise page for a very long time.
+    const deadline = AbortSignal.timeout(60_000);
     while (url && pages.length < MAX_PAGES) {
       const res = await fetch(url, {
         headers: { authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(20_000),
+        redirect: 'error',
+        signal: deadline,
       });
       // Fail loud, not quiet: a non-2xx mid-pagination means the sum so far
       // is partial. Returning it would silently publish a truncated count.
       if (!res.ok) return null;
       const page = await res.json();
       pages.push(page);
-      // `@nextLink` is documented as relative to the analytics base path, so
-      // resolve it against a base rather than fetching it as-is.
-      url = page['@nextLink']
-        ? new URL(page['@nextLink'], 'https://manage.devcenter.microsoft.com/v1.0/my/analytics/')
-            .href
-        : null;
+      if (page['@nextLink']) {
+        // `@nextLink` is documented as relative to the analytics base path,
+        // so resolve it against a base rather than fetching it as-is — and
+        // pin the result to the real host, so the bearer token can never be
+        // sent to another origin even if a response were ever compromised.
+        const next = new URL(
+          page['@nextLink'],
+          'https://manage.devcenter.microsoft.com/v1.0/my/analytics/'
+        );
+        if (next.origin !== 'https://manage.devcenter.microsoft.com') return null;
+        url = next.href;
+      } else {
+        url = null;
+      }
     }
-    return sumAcquisitions(pages);
+    // Hitting the page cap with a next link still pending means the sum is
+    // incomplete — publish null, never a truncated number.
+    return url ? null : sumAcquisitions(pages);
   } catch {
     return null;
   }
@@ -195,18 +228,25 @@ export async function fetchMsStoreAcquisitions(env = process.env) {
 export async function fetchSnapInstalledBase(name = 'ai-job-hunter', env = process.env) {
   if (!env.SNAPCRAFT_STORE_CREDENTIALS) return null;
   try {
+    // Minimal env only — never the whole process env, which on CI also
+    // carries GITHUB_TOKEN and the MS Store secrets this command has no
+    // business seeing.
+    const minimalEnv = {
+      PATH: env.PATH,
+      HOME: env.HOME,
+      SNAPCRAFT_STORE_CREDENTIALS: env.SNAPCRAFT_STORE_CREDENTIALS,
+    };
     const { stdout } = await execFileAsync(
       'snapcraft',
       ['metrics', name, '--name', 'installed_base_by_channel', '--format', 'json'],
-      { timeout: 60_000, env }
+      { timeout: 60_000, env: minimalEnv }
     );
     return snapInstalledBase(JSON.parse(stdout));
   } catch (err) {
-    // Only the exit code and a short stderr snippet — never the full output,
-    // which could echo back credentials on some failure paths.
+    // Only the exit code — never a stderr snippet, even truncated: a
+    // truncated prefix can still defeat GitHub's exact-match secret masking.
     const code = err?.code ?? 'unknown';
-    const stderrSnippet = String(err?.stderr ?? '').slice(0, 200);
-    process.stderr.write(`store-counts: snap metrics failed (exit ${code}): ${stderrSnippet}\n`);
+    process.stderr.write(`store-counts: snap metrics failed (exit ${code})\n`);
     return null;
   }
 }

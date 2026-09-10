@@ -115,7 +115,7 @@ jobs:
               echo "fetched $f ($(wc -c < "apps/landing/public/$f") bytes)"
             else
               rm -f "apps/landing/public/$f"
-              echo "::warning::$f missing on the badges branch — the page it feeds degrades quietly. Check the publish list in repo-charts.yml."
+              echo "::warning::$f missing on the badges branch — /download ships without the figure $f feeds. Check the publish list in repo-charts.yml."
             fi
           done
 

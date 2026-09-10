@@ -158,6 +158,20 @@ describe('DownloadCounts', () => {
     expect(container.querySelector<HTMLElement>('[data-installs-total]')?.hidden).toBe(true);
   });
 
+  it('renders the installs total when downloads-by-platform.json 404s, without any pills', async () => {
+    stubFetch((url) =>
+      url.includes('store-counts')
+        ? ok({ total: 999, github: 900, msStore: 50, snap: 30, chrome: 15, firefox: 4 })
+        : notOk
+    );
+    const { container } = renderPage();
+
+    const el = () => container.querySelector<HTMLElement>('[data-installs-total]');
+    await waitFor(() => expect(el()?.hidden).toBe(false));
+    expect(el()?.textContent).toContain('999 installs so far');
+    expect(container.querySelectorAll('.dl-count')).toHaveLength(0);
+  });
+
   it('keeps the installs total hidden when `total` is malformed', async () => {
     stubFetch((url) => (url.includes('store-counts') ? ok({ total: 'lots' }) : ok(COUNTS)));
     const { container } = renderPage();

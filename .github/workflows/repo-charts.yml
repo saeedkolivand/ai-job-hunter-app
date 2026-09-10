@@ -93,8 +93,9 @@ jobs:
           fi
 
       - name: 🧰 Install snapcraft (Snap Store metrics)
+        timeout-minutes: 4
         run: |
-          sudo snap install snapcraft --classic || echo "::warning::snapcraft install failed — the Snap Store installed base will be reported as unavailable"
+          sudo snap install snapcraft --classic --channel=latest/stable || echo "::warning::snapcraft install failed — the Snap Store installed base will be reported as unavailable"
 
       - name: 📊 Build badge and charts
         env:
