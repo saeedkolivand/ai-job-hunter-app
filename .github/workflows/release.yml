@@ -1469,14 +1469,19 @@ jobs:
           MSIX="$(readlink -f "$MSIX")"
           export MSIX
 
-          # msstore-cli's settings.json does NOT follow XDG_DATA_HOME or
-          # $HOME on this build/runtime — verified directly: exporting
-          # XDG_DATA_HOME made no difference across two real runs, it always
-          # lands relative to the process's own working directory instead
-          # (confirmed at "$GITHUB_WORKSPACE/Microsoft/MSStore.CLI/settings.json").
-          # reconfigure and publish already share the same CWD (no `cd`
-          # between them), so that alone isn't the bug — reading the file's
-          # actual CONTENT after reconfigure, at its REAL location, next.
+          # KNOWN UPSTREAM BUG, tracked at
+          # https://github.com/microsoft/msstore-cli/issues/181 — msstore
+          # reconfigure writes a complete, correct settings.json (verified
+          # directly: read the file right after reconfigure, before the next
+          # invocation — valid JSON, SellerId/TenantId/ClientId all
+          # populated), but ANY subsequent msstore invocation in the same
+          # environment (not just publish — msstore info fails identically)
+          # reports "SellerId is not set" regardless. Ruled out directly,
+          # not assumed: XDG_DATA_HOME, the working directory (both the
+          # nested GitHub Actions workspace path and a short flat one), and
+          # any exception in the load path (none is ever logged). This job
+          # will keep failing here until that issue is resolved upstream —
+          # check it before re-investigating from scratch.
 
           # reconfigure (writes the secret) and publish (reads it back) both
           # go through libsecret, so they must share the same live D-Bus
@@ -1485,27 +1490,12 @@ jobs:
             set -euo pipefail
             eval "$(printf "%s\n" "ci" | gnome-keyring-daemon --unlock --daemonize --login)"
 
-            # `msstore info` (which does nothing but load+print the config)
-            # fails with the exact same "SellerId is not set" as publish did
-            # — so this is not publish-specific, it is ANY second msstore
-            # invocation after reconfigure, in this exact job workspace
-            # path. Forcing a short, simple, explicit CWD for every
-            # invocation next, in case the deeply-nested GitHub Actions
-            # workspace path itself is the trigger (a NativeAOT/trimming
-            # path-resolution bug is the leading theory at this point, not
-            # anything under this workflow'"'"'s control).
-            mkdir -p /tmp/msstore-cwd
-            cd /tmp/msstore-cwd
-
             echo "::group::msstore reconfigure"
             msstore reconfigure --verbose \
               --tenantId "$MSSTORE_TENANT_ID" \
               --sellerId "$MSSTORE_SELLER_ID" \
               --clientId "$MSSTORE_CLIENT_ID" \
               --clientSecret "$MSSTORE_CLIENT_SECRET"
-            echo "::endgroup::"
-            echo "::group::settings.json after reconfigure (no secret in this file — only in the keyring)"
-            find /tmp/msstore-cwd -iname "settings.json" -exec cat {} \; 2>&1 || true
             echo "::endgroup::"
             echo "::group::msstore publish (upload + submit)"
             # No --noCommit = upload AND submit for review, mirroring the
