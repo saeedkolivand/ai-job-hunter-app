@@ -13,7 +13,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const [version] = process.argv.slice(2);
-if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
+if (!version || !/^\d+\.\d+\.\d+(?:[.-][0-9A-Za-z.-]+)?$/.test(version)) {
   console.error('usage: sync-snapcraft.cjs <version>  (e.g. 0.152.0)');
   process.exit(1);
 }

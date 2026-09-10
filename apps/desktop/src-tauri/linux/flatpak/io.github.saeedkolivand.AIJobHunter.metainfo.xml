@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  AppStream metadata for the Flathub listing. `<releases>` is intentionally
-  left to Flathub's own generated-from-git-tags support rather than hand
-  duplicated here — CHANGELOG.md is already the source of truth (see
-  scripts/sync-tauri-version.cjs) and this file would drift the moment a
-  release shipped without a manual edit here too.
+  AppStream metadata for the Flathub listing. Flathub's appstreamcli
+  validation REQUIRES a non-empty <releases> element (there is no
+  generate-from-git-tags support) — the entry below is a placeholder kept in
+  sync with the resolved release tag by release.yml's `update-flathub` job
+  (same sed step that pins the manifest's `tag:`), not hand-edited per release.
 -->
 <component type="desktop-application">
   <id>io.github.saeedkolivand.AIJobHunter</id>
@@ -46,6 +46,9 @@
     </screenshot>
     -->
   </screenshots>
+  <releases>
+    <release version="0.152.0" date="2026-09-09" />
+  </releases>
   <content_rating type="oars-1.1" />
   <categories>
     <category>Office</category>

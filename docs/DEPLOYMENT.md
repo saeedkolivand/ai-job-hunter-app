@@ -326,7 +326,7 @@ Which container is running is a **runtime** question: `platform::snap::is_packag
 
 ### Submission and automation
 
-`scripts/sync-snapcraft.cjs` mirrors `sync-cask.cjs`'s job — bumps the Snap manifest's `version` field during release. The `publish-snap` job in `release.yml` is wired as a standalone dispatch option like `publish-chrome`/`publish-firefox`, and publishes to the Snap Store's **`edge` channel only** — never auto-promoted to `stable`. Approval and promotion to `stable` remain manual, as the Store's own review process and versioning strategy require.
+The `publish-snap` job in `release.yml` publishes to the Snap Store's **`edge` channel only** — never auto-promoted to `stable`. Approval and promotion to `stable` remain manual, as the Store's own review process and versioning strategy require. The job is wired as a standalone dispatch option (the same model as `publish-chrome`/`publish-firefox` for store-specific re-runs); see the job's own comment and implementation in `.github/workflows/release.yml` for the full details. Before the job runs, `scripts/sync-snapcraft.cjs` (mirrors `sync-cask.cjs`'s job) bumps the Snap manifest's `version` field to match the release version.
 
 ### Local test loop
 
@@ -355,7 +355,7 @@ Which container is running is a **runtime** question: `platform::flatpak::is_pac
 
 The Flathub submission process requires a one-time manual step: the user must create a fork of the external `flathub/flathub` repository and file a pull request per Flathub's submission workflow. Do not hardcode stale submission steps as fact — verify against Flathub's current live documentation when that step is undertaken.
 
-`scripts/sync-snapcraft.cjs` also bumps the Flatpak manifest's version. The `update-flathub` job in `release.yml` regenerates the two vendor-sources files (`cargo-sources.json`, `node-sources.json` — ~1.6MB combined, regenerated per-release by CI) and pushes them to the external fork, which must exist first (a GitHub-app-verified fork; the job skips quietly with a warning if `FLATHUB_DEPLOY_KEY` is unset, since the Flathub submission has not been reviewed/merged yet).
+The `update-flathub` job in `release.yml` pins the Flatpak manifest's git tag, regenerates the two vendor-sources files (`cargo-sources.json`, `node-sources.json` — ~1.6MB combined, regenerated per-release by CI), syncs the AppStream release entry in the metainfo file, and pushes all three to the external fork, which must exist first (a GitHub-app-verified fork; the job skips quietly with a warning if `FLATHUB_DEPLOY_KEY` is unset, since the Flathub submission has not been reviewed/merged yet). `scripts/sync-snapcraft.cjs` is a separate tool used only by the `publish-snap` job to bump the Snap manifest's version.
 
 ### Known open risk — pnpm offline bootstrap
 

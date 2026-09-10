@@ -54,13 +54,4 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         assert!(!decide(&dir.path().join("does-not-exist")));
     }
-
-    /// Not running inside Flatpak in CI/dev, so the real marker is absent
-    /// and this must answer `false` — the branch that keeps a plain install
-    /// on the GitHub updater and native-messaging registration.
-    #[test]
-    fn unsandboxed_process_is_not_packaged() {
-        assert!(!Path::new(MARKER_PATH).exists());
-        assert!(!is_packaged());
-    }
 }

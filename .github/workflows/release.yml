@@ -1345,12 +1345,21 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
-      # Global tool, not a workspace dependency: msstore CLI has nothing to do
-      # with the pnpm workspace and nothing else in the repo needs it.
+      # msstore-cli is NOT a .NET global tool (no NuGet package exists) —
+      # it ships as a self-contained tarball per-OS from its own GitHub
+      # releases. Verified against the sha256 the release publishes alongside it.
       - name: 📥 Install the Microsoft Store Developer CLI
         run: |
+          set -euo pipefail
           echo "::group::Installing msstore CLI"
-          dotnet tool install --global MSStore.CLI
+          cd "$RUNNER_TEMP"
+          curl -sSLO https://github.com/microsoft/msstore-cli/releases/latest/download/MSStoreCLI-linux-x64.tar.gz
+          curl -sSLO https://github.com/microsoft/msstore-cli/releases/latest/download/MSStoreCLI-linux-x64.tar.gz.sha256.txt
+          sed 's/^\xEF\xBB\xBF//' MSStoreCLI-linux-x64.tar.gz.sha256.txt | sha256sum -c -
+          mkdir -p "$HOME/.local/msstore-cli"
+          tar -xzf MSStoreCLI-linux-x64.tar.gz -C "$HOME/.local/msstore-cli"
+          chmod +x "$HOME/.local/msstore-cli/msstore"
+          echo "$HOME/.local/msstore-cli" >> "$GITHUB_PATH"
           echo "::endgroup::"
 
       - name: 🚀 Reconfigure + publish to the Microsoft Store
@@ -1423,7 +1432,7 @@ jobs:
           fi
           echo "SNAPCRAFT_STORE_CREDENTIALS is set."
 
-      - name: 📥 Checkout Repository (for tag lookup + manifest)
+      - name: 📥 Checkout Repository (for tag lookup)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
@@ -1456,6 +1465,13 @@ jobs:
           echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "raw=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Publishing v$VERSION to the Snap Store"
+
+      - name: 📥 Checkout Release Tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.resolve.outputs.version }}
+          fetch-depth: 1
+          persist-credentials: false
 
       - name: 📥 Download the released .deb
         env:
@@ -1820,7 +1836,7 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: 📥 Checkout main
+      - name: 📥 Checkout Repository (for tag lookup)
         if: steps.check.outputs.skip != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1840,6 +1856,13 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "raw=${VERSION#v}" >> "$GITHUB_OUTPUT"
 
+      - name: 📥 Checkout Release Tag
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.version.outputs.version }}
+          fetch-depth: 1
+
       - name: 🐍 Set up Python
         if: steps.check.outputs.skip != 'true'
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -1848,14 +1871,24 @@ jobs:
 
       - name: 📥 Install the source generators
         if: steps.check.outputs.skip != 'true'
+        env:
+          # Both generators are pinned to the same reviewed commit of
+          # flatpak/flatpak-builder-tools, not the mutable `master` branch —
+          # a later upstream commit shouldn't silently change what this job
+          # runs. Bump deliberately (and re-verify the sha256 below) to update.
+          PIN_SHA: 1fc32195e3e60fe5c97f0af646dec7a99df5962b
+          CARGO_GENERATOR_SHA256: b373c8ab1a05378ec5d8ed0645c7b127bcec7d2f7a1798694fbc627d570d856c
         run: |
+          set -euo pipefail
           echo "::group::flatpak-cargo-generator"
           curl -sSL -o /tmp/flatpak-cargo-generator.py \
-            https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+            "https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/$PIN_SHA/cargo/flatpak-cargo-generator.py"
+          echo "$CARGO_GENERATOR_SHA256  /tmp/flatpak-cargo-generator.py" | sha256sum -c -
           pip install --quiet "aiohttp<4.0.0,>=3.9.5" "PyYAML<7.0.0,>=6.0.2" "tomlkit>=0.13.3,<1.0"
           echo "::endgroup::"
           echo "::group::flatpak-node-generator (pnpm-capable fork — PyPI's release predates pnpm support)"
-          git clone --depth 1 https://github.com/flatpak/flatpak-builder-tools.git /tmp/flatpak-builder-tools
+          git clone https://github.com/flatpak/flatpak-builder-tools.git /tmp/flatpak-builder-tools
+          git -C /tmp/flatpak-builder-tools checkout --quiet "$PIN_SHA"
           pip install --quiet "aiohttp<4.0.0,>=3.9.0" "pyyaml<7.0,>=6.0"
           echo "::endgroup::"
 
@@ -1879,6 +1912,12 @@ jobs:
 
           echo "::group::Pinning the manifest's git tag"
           sed -i "s/tag: v[0-9][0-9A-Za-z.\-]*/tag: $VERSION/" "$FLATPAK_DIR/io.github.saeedkolivand.AIJobHunter.yml"
+          echo "::endgroup::"
+
+          echo "::group::Syncing the AppStream release entry"
+          RELEASE_DATE="$(git log -1 --format=%ad --date=short "$VERSION")"
+          sed -i "s|<release version=\"[^\"]*\" date=\"[^\"]*\" />|<release version=\"$RAW\" date=\"$RELEASE_DATE\" />|" \
+            "$FLATPAK_DIR/io.github.saeedkolivand.AIJobHunter.metainfo.xml"
           echo "::endgroup::"
 
       - name: 📤 Push to flathub/io.github.saeedkolivand.AIJobHunter

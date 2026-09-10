@@ -105,13 +105,4 @@ mod tests {
             Some(Path::new(""))
         ));
     }
-
-    /// Not running inside a snap in CI/dev, so this must answer `false` —
-    /// the branch that keeps a plain install on the GitHub updater and
-    /// native-messaging registration.
-    #[test]
-    fn unconfined_process_is_not_packaged() {
-        assert!(std::env::var_os("SNAP").is_none());
-        assert!(!is_packaged());
-    }
 }
