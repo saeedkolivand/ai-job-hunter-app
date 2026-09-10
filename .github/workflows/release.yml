@@ -1501,10 +1501,15 @@ jobs:
             # rejects a paid product outright (see docs/DEPLOYMENT.md).
             # --verbose on both calls: reconfigure succeeds and reports
             # "Configuration saved!" but publish (moments later, same
-            # session) fails with "SellerId is not set" — the LoadAsync
-            # settings.json read/write path looks provably correct from the
-            # CLI source, so this surfaces what publish actually sees
-            # instead of guessing further.
+            # session) fails with "SellerId is not set" — traced the CLI
+            # source to config.SellerId == null with NO exception logged,
+            # which per LoadAsync (clearInvalidConfig: false here) is only
+            # reachable via File.Exists(_settingsPath) being false — so the
+            # file this shell sees is not what publish's own process sees.
+            # Checking with publish's exact working directory right as it
+            # starts, from the same shell, instead of guessing why further.
+            echo "pwd just before publish=$(pwd)"
+            ls -la "Microsoft/MSStore.CLI/" 2>&1 || true
             msstore publish "$MSIX" -id "$MSSTORE_PRODUCT_ID" --verbose
             echo "::endgroup::"
           '
