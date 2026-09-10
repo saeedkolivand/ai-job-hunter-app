@@ -1421,7 +1421,7 @@ jobs:
           set -euo pipefail
           echo "::group::Installing msstore CLI $MSSTORE_CLI_VERSION"
           cd "$RUNNER_TEMP"
-          curl -sSLO "https://github.com/microsoft/msstore-cli/releases/download/$MSSTORE_CLI_VERSION/MSStoreCLI-linux-x64.tar.gz"
+          curl -fsSLO "https://github.com/microsoft/msstore-cli/releases/download/$MSSTORE_CLI_VERSION/MSStoreCLI-linux-x64.tar.gz"
           echo "$MSSTORE_CLI_SHA256  MSStoreCLI-linux-x64.tar.gz" | sha256sum -c -
           mkdir -p "$HOME/.local/msstore-cli"
           tar -xzf MSStoreCLI-linux-x64.tar.gz -C "$HOME/.local/msstore-cli"
