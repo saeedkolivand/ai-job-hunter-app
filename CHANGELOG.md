@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.153.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.153.1...v0.153.2) (2026-09-10)
+
+### 🐛 Bug Fixes
+
+* **ci:** pre-install missing gnome-42-2204-sdk build-snap for snap pack ([ab3bc7e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ab3bc7e515eacafe0d28b80cffa6748c848323f6))
+* **ci:** pre-install snap build-snaps individually with independent retries ([5937667](https://github.com/saeedkolivand/ai-job-hunter-app/commit/59376675afcb4a96d69d57b04950d10999286498))
+* **desktop:** pin autostart app_name to kebab-case slug ([89d84df](https://github.com/saeedkolivand/ai-job-hunter-app/commit/89d84df1ca998a1a69f6136df0b706f2f78f2cf3))
+* **release:** fix root ownership before snapcraft pack ([b3d9931](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b3d9931e7cff083d3362801179e785d0ee90227d))
+* **release:** pack the snap in destructive mode ([a18ec6d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/a18ec6dccaf9b0b9dffce9619ea9891483ce683f))
+* **release:** retry snapcraft pack on transient build-snap install failures ([cabd8e8](https://github.com/saeedkolivand/ai-job-hunter-app/commit/cabd8e86db7a749238a850f19e1eb91ce23b2570))
+
 ## [0.153.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.153.0...v0.153.1) (2026-09-10)
 
 ### 🐛 Bug Fixes
