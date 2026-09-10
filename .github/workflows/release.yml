@@ -1483,7 +1483,9 @@ jobs:
               --clientSecret "$MSSTORE_CLIENT_SECRET"
             echo "::endgroup::"
             echo "::group::settings.json after reconfigure (no secret in this file — only in the keyring)"
-            cat "$HOME/.local/share/Microsoft/MSStore.CLI/settings.json" || echo "(file not found at the expected path)"
+            echo "HOME=$HOME XDG_DATA_HOME=${XDG_DATA_HOME:-<unset>} XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-<unset>}"
+            cat "$HOME/.local/share/Microsoft/MSStore.CLI/settings.json" 2>/dev/null || echo "(not at the assumed XDG path — searching instead)"
+            find "$HOME" /tmp /root /var/lib /etc -iname "settings.json" -path "*MSStore*" 2>/dev/null
             echo "::endgroup::"
             echo "::group::msstore publish (upload + submit)"
             # No --noCommit = upload AND submit for review, mirroring the
