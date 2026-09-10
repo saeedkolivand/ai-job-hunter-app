@@ -7,10 +7,10 @@ name: 🚀 Release
 # Triggers:
 #   - workflow_dispatch only — nothing runs automatically on push to main
 # Actions (select via the `action` input):
-#   - release (manual)          → semantic-release computes version from conventional
+#   - release (default)   → semantic-release computes version from conventional
 #       commits, syncs version files + CHANGELOG, creates the GitHub Release and tag,
 #       and commits the bump back to main. Does NOT build installers.
-#   - build-installers (default) → build Tauri apps + browser extension for a chosen
+#   - build-installers    → build Tauri apps + browser extension for a chosen
 #       tag, then run the cask/manifest/download-page fan-out.
 #   - publish-chrome / publish-firefox / publish-msstore / publish-snap → re-run ONE
 #       store submission for a chosen tag, nothing else. For when one store's job
@@ -59,7 +59,7 @@ on:
           - publish-firefox
           - publish-msstore
           - publish-snap
-        default: build-installers
+        default: release
       version:
         description: 'Version to build installers / publish the extension for, e.g. 0.61.0 (blank = latest tag)'
         required: false
