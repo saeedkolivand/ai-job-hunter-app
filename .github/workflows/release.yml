@@ -1641,7 +1641,13 @@ jobs:
           set -euo pipefail
           echo "::group::snapcraft pack"
           cd apps/desktop/src-tauri/linux/snap
-          snapcraft pack
+          # snapcraft's default provider (LXD) isn't installed on this
+          # runner, and isn't worth installing just to spin up a container
+          # for a manifest that only `dump`s an already-built .deb (no real
+          # compilation happens inside the sandbox) — --destructive-mode
+          # builds directly on the runner itself, which is already a
+          # disposable, single-purpose environment.
+          snapcraft pack --destructive-mode
           SNAP_FILE="$(find . -maxdepth 1 -name '*.snap' | head -n1)"
           if [ -z "$SNAP_FILE" ]; then
             echo "::error title=Pack produced no .snap::snapcraft pack ran but no .snap file was found."
