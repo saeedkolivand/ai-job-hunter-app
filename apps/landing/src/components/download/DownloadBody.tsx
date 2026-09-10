@@ -25,6 +25,10 @@ export function DownloadBody({ version, installers }: { version: string; install
           reassure it.
         </p>
 
+        {/* Filled and un-hidden at runtime by DownloadCounts once /store-counts.json
+            lands (empty + hidden here so SSR never shows a stale or zero figure). */}
+        <p className="installs-total" data-installs-total hidden aria-live="polite" />
+
         <div className="platforms">
           <DownloadCards version={version} installers={installers} />
         </div>

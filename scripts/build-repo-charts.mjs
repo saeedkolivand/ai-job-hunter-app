@@ -18,7 +18,7 @@
 //     seeded once from git history (scripts/backfill-downloads-history.mjs) and
 //     appended to daily from here.
 //
-// Output: badge-out/{downloads.json,downloads-by-platform.json,
+// Output: badge-out/{downloads.json,downloads-by-platform.json,store-counts.json,
 //                    downloads-history.json,downloads.svg,stars.svg}
 // Run locally: GITHUB_TOKEN=$(gh auth token) node scripts/build-repo-charts.mjs
 
@@ -34,6 +34,7 @@ import {
   installerDownloads,
 } from './lib/github-releases.mjs';
 import { GOLD, RED, renderLineChart } from './lib/line-chart-svg.mjs';
+import { collectStoreCounts, totalInstalls } from './lib/store-counts.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, '..', 'badge-out');
@@ -69,6 +70,8 @@ function starSeries(stargazers) {
 
 const releases = await fetchAllReleases();
 const total = installerDownloads(releases);
+const stores = await collectStoreCounts();
+const installs = totalInstalls({ github: total, ...stores });
 
 // `--prev-history` is the copy the workflow fetched off the `badges` branch.
 // Absent on a first run, and absent locally — both degrade to seed-only.
@@ -76,6 +79,9 @@ const prevArg = process.argv.indexOf('--prev-history');
 const prevHistory =
   prevArg === -1 ? [] : readJsonArray(process.argv[prevArg + 1], 'prior downloads history');
 
+// History and both charts below stay GitHub-only (`total`, not `installs`):
+// their seed is GitHub-only, so mixing in store counts would draw a fake jump
+// on the day the stores were added rather than reflecting real growth.
 const history = mergePoints(readJsonArray(seedPath, 'downloads history seed'), prevHistory, [
   { date: today, value: total },
 ]);
@@ -84,9 +90,18 @@ mkdirSync(outDir, { recursive: true });
 
 writeFileSync(
   join(outDir, 'downloads.json'),
-  `${JSON.stringify({ schemaVersion: 1, label: 'downloads', message: humanize(total), color: RED.slice(1) }, null, 2)}\n`
+  `${JSON.stringify({ schemaVersion: 1, label: 'installs', message: humanize(installs), color: RED.slice(1) }, null, 2)}\n`
 );
 writeFileSync(join(outDir, 'downloads-history.json'), `${JSON.stringify(history, null, 2)}\n`);
+
+// One public number, everything an install by any reading: GitHub installer
+// downloads (floor-corrected) plus Microsoft Store acquisitions, Snap Store
+// installed base, Chrome Web Store users and Firefox AMO average daily users.
+// Nulls are preserved (not zeroed) so a store outage stays visible here.
+writeFileSync(
+  join(outDir, 'store-counts.json'),
+  `${JSON.stringify({ generatedAt: today, github: total, ...stores, total: installs }, null, 2)}\n`
+);
 
 // Per-platform split for the /download buttons. Published here rather than
 // fetched by the page: the honest number is cumulative across every release, so
@@ -132,5 +147,6 @@ if (stars.length) {
 
 process.stderr.write(
   `downloads: ${total} installers, ${history.length} daily points (${history[0]?.date} → ${history.at(-1)?.date})\n` +
-    `stars: ${stargazers.length} stargazers, ${stars.length} dated points\n`
+    `stars: ${stargazers.length} stargazers, ${stars.length} dated points\n` +
+    `installs: ${installs} (github ${total} + stores msStore ${stores.msStore} snap ${stores.snap} chrome ${stores.chrome} firefox ${stores.firefox})\n`
 );

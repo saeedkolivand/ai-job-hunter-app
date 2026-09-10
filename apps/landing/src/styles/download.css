@@ -78,6 +78,16 @@ code {
   color: var(--ink);
 }
 
+/* Filled + un-hidden at runtime by DownloadCounts once /store-counts.json
+   lands (see DownloadBody.tsx); empty and hidden at SSR, so nothing here may
+   assume it is present. */
+.installs-total {
+  font-family: var(--hand);
+  font-size: 14px;
+  color: var(--muted);
+  margin: 6px 0 0;
+}
+
 h2 {
   font-family: var(--scrawl);
   font-size: clamp(18px, 4vw, 24px);

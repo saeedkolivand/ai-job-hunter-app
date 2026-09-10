@@ -273,6 +273,7 @@ apps/landing/public/world/vid/
 apps/landing/public/stars.svg
 apps/landing/public/downloads.svg
 apps/landing/public/downloads-by-platform.json
+apps/landing/public/store-counts.json
 
 # ── Generated image sets ───────────────────────────────────────────────────────
 # All rendered output, not source: every file below is produced by a committed

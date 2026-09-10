@@ -6,15 +6,18 @@ name: 📈 Repo Charts
 # Purpose: publish everything the README embeds about repo growth, generated
 #   in-repo so no third-party service sits in the README's critical path.
 #
-#   1. downloads.json         — Shields endpoint badge. The stock
-#        github/downloads/<repo>/total badge is updater-inflated (it sums
-#        latest.json polling, .sig fetches and Tauri update payloads);
-#        scripts/build-repo-charts.mjs keeps only OS installers.
-#   2. downloads-history.json — the daily series behind the chart. GitHub has NO
-#        historical download endpoint, so a time series exists only because this
-#        job appends one reading per day. Losing this file loses the past.
+#   1. downloads.json         — Shields endpoint badge, labeled "installs": GitHub
+#        installer downloads (the stock github/downloads/<repo>/total badge is
+#        updater-inflated — it sums latest.json polling, .sig fetches and Tauri
+#        update payloads; scripts/build-repo-charts.mjs keeps only OS installers)
+#        plus Microsoft Store, Snap Store, Chrome Web Store and Firefox AMO counts.
+#   2. downloads-history.json — the daily series behind the chart, GitHub-only.
+#        GitHub has NO historical download endpoint, so a time series exists only
+#        because this job appends one reading per day. Losing this file loses the past.
 #   3. downloads.svg          — that series, drawn.
 #   4. stars.svg              — star history, rebuilt from scratch each run.
+#   5. store-counts.json      — the store-side counters behind #1's sum, published
+#        for transparency (nulls preserved when a store is unreachable).
 #
 #   Charts are dark-only, matching apps/landing's body (#0a0c11 / #e7ecf3).
 #
@@ -89,9 +92,18 @@ jobs:
             echo "no prior history on the badges branch — seeding from the repo"
           fi
 
+      - name: 🧰 Install snapcraft (Snap Store metrics)
+        timeout-minutes: 4
+        run: |
+          sudo snap install snapcraft --classic --channel=latest/stable || echo "::warning::snapcraft install failed — the Snap Store installed base will be reported as unavailable"
+
       - name: 📊 Build badge and charts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MSSTORE_TENANT_ID: ${{ secrets.MSSTORE_TENANT_ID }}
+          MSSTORE_CLIENT_ID: ${{ secrets.MSSTORE_CLIENT_ID }}
+          MSSTORE_CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         run: node scripts/build-repo-charts.mjs --prev-history prev-history.json
 
       - name: 📤 Publish to the badges branch
@@ -118,7 +130,7 @@ jobs:
             # pages.yml's fetch loop. Adding an output to the script alone publishes
             # nothing — which is exactly how downloads-by-platform.json shipped
             # missing and broke the next Pages deploy.
-            for f in downloads.json downloads-by-platform.json downloads-history.json downloads.svg stars.svg; do
+            for f in downloads.json downloads-by-platform.json store-counts.json downloads-history.json downloads.svg stars.svg; do
               [ -f "badge-out/$f" ] || continue
               printf '100644 blob %s\t%s\n' "$(git hash-object -w "badge-out/$f")" "$f"
             done | git mktree
