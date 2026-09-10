@@ -1,5 +1,161 @@
 [
   {
+    "sha": "406cb2b0fbac7d12545400783f483df207beb4af",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-10T07:31:12Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "728c1ce8d9a8589b73ef2ac2d3887505e034595c",
+    "commit": {
+      "message": "fix(release): correct flathub app id and two linter-blocking manifest bugs (#1194)",
+      "author": {
+        "date": "2026-09-10T07:11:32Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "870982b92867ae6dc500a088011e4e17c0dc3f75",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-10T07:05:28Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "22b21751377c9f20b9ec59c2a19d1a7078794fd6",
+    "commit": {
+      "message": "feat(release): automate microsoft store submission via msstore cli (#1193)",
+      "author": {
+        "date": "2026-09-10T06:41:13Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "d5de2a9f30aef83b4fc5cfc53c2d0f3733a92039",
+    "commit": {
+      "message": "chore: bump the javascript group with 7 updates (#1192)",
+      "author": {
+        "date": "2026-09-09T18:26:49Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "172863fafd129198edac6de0e1746d4f5b92f426",
+    "commit": {
+      "message": "chore: bump the ci-actions group with 3 updates (#1191)",
+      "author": {
+        "date": "2026-09-09T18:26:37Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "a48bf76190c9c713a3d1589953e4bcda2daf27b1",
+    "commit": {
+      "message": "chore: bump the desktop-rust group (#1190)",
+      "author": {
+        "date": "2026-09-09T18:26:28Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "18ee008ea965560e432d92e3dd4c780960abbaa5",
+    "commit": {
+      "message": "chore: sync landing download version to v0.152.0",
+      "author": {
+        "date": "2026-09-09T13:02:47Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "d125f5cba76d905ba0be07012b315132b2753ee9",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.152.0 [skip ci]",
+      "author": {
+        "date": "2026-09-09T13:02:21Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "ee1f6f91bd3cce1dfb1b32b90cd3411a8f657d42",
+    "commit": {
+      "message": "chore(release): 0.152.0 [skip ci]",
+      "author": {
+        "date": "2026-09-09T12:18:25Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "f0c00630e18431411c0e61e78c85dde1d452d01f",
+    "commit": {
+      "message": "feat(landing): link the microsoft store from the download page and release notes (#1189)",
+      "author": {
+        "date": "2026-09-09T12:13:29Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "be47baaeaf54f9e8c98f909b74f39e29a7aeb070",
+    "commit": {
+      "message": "fix(ai): parse current codex exec events and stop pinning a stale codex model list (#1187)",
+      "author": {
+        "date": "2026-09-09T12:12:17Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "e1507f07814ae75c90c4efdc477a5d9685a6eed6",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-09T08:07:13Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "f398fcf5489c3e042ea1c34333b64f408b9a6ef0",
     "commit": {
       "message": "docs(adr): record the loopback http transport, resources and prompts (#1186)",
@@ -1041,162 +1197,6 @@
     },
     "author": {
       "login": "github"
-    }
-  },
-  {
-    "sha": "c01e7eaf7a81cbc801498ee40ce1480f6e56924d",
-    "commit": {
-      "message": "docs: make the ai rigour visible where a reviewer actually reads (#1091)",
-      "author": {
-        "date": "2026-09-02T00:27:24Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "87f4de34b06bbf962e357c464c1bcd46b333bcfe",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-01T23:37:31Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "a27d89da76e2edf8921b3eac28448cda636ba173",
-    "commit": {
-      "message": "feat: hybrid search over the live postings cache (#1090)",
-      "author": {
-        "date": "2026-09-01T23:25:45Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "0fafe4881633e7e03850bd6c6d573d63d03463a7",
-    "commit": {
-      "message": "chore: sync landing download version to v0.145.2",
-      "author": {
-        "date": "2026-09-01T19:41:24Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "f1640757e623696adcb32eeb103d4c681f391e18",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.145.2 [skip ci]",
-      "author": {
-        "date": "2026-09-01T19:40:44Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "11a94450c7669401f2f13e8b6daa5c944026e8e4",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-01T19:04:07Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "22a5efb3d9b82768307780ad849d9b4a1ca7f407",
-    "commit": {
-      "message": "chore(release): 0.145.2 [skip ci]",
-      "author": {
-        "date": "2026-09-01T18:53:19Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "f336aee29da2093700de054c75e2dbed99bef6c5",
-    "commit": {
-      "message": "fix: move the nsis installMode guard inside the hook macros (#1089)",
-      "author": {
-        "date": "2026-09-01T18:52:01Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "51096a2a83559ac7cc61c1b14dcb575b9f755e4b",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-01T18:21:26Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "3e8b26b5dd6e45a4662c12c68d143f02378126fb",
-    "commit": {
-      "message": "chore(release): 0.145.1 [skip ci]",
-      "author": {
-        "date": "2026-09-01T18:11:29Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "f65103265f63cbe18143710d4448bd0c41d95007",
-    "commit": {
-      "message": "fix: make the agent CLI reachable after an install or update (#1088)",
-      "author": {
-        "date": "2026-09-01T18:09:57Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "0487aed4f7ec68c546ef6980fd9996ee042a546d",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-01T08:37:24Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "a9835b15d8198fcafd39bcbb1e8a5ed62ffc4bf2",
-    "commit": {
-      "message": "chore: sync landing download version to v0.145.0",
-      "author": {
-        "date": "2026-09-01T03:56:58Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
     }
   }
 ]
