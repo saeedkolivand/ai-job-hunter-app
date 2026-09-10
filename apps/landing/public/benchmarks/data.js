@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788919839594,
+  "lastUpdate": 1789023927922,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "49699333+dependabot[bot]@users.noreply.github.com",
-            "name": "dependabot[bot]",
-            "username": "dependabot[bot]"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "e0eebbcbfceb446412760147d592ca442a0b0063",
-          "message": "chore: bump uuid from 1.23.5 to 1.24.0 in /apps/desktop/src-tauri (#871)\n\nBumps [uuid](https://github.com/uuid-rs/uuid) from 1.23.5 to 1.24.0.\n- [Release notes](https://github.com/uuid-rs/uuid/releases)\n- [Commits](https://github.com/uuid-rs/uuid/compare/v1.23.5...v1.24.0)\n\n---\nupdated-dependencies:\n- dependency-name: uuid\n  dependency-version: 1.24.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-          "timestamp": "2026-07-22T23:08:06+02:00",
-          "tree_id": "ccb98cc7dcbd0cf12d8616f0ddb9a96a34aad20d",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/e0eebbcbfceb446412760147d592ca442a0b0063"
-        },
-        "date": 1784756075335,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2156873,
-            "range": "± 22140",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2592760,
-            "range": "± 34304",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 302271,
-            "range": "± 17168",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 312810,
             "range": "± 3859",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "22b21751377c9f20b9ec59c2a19d1a7078794fd6",
+          "message": "feat(release): automate microsoft store submission via msstore cli (#1193)\n\n* feat(release): automate microsoft store submission via msstore cli\n\nAdds a publish-msstore job that uploads and submits the built MSIX via\nthe msstore CLI, authenticating with an Entra app registration (Manager\nrole) linked to Partner Center. Closes the manual-submission gap noted\nin ADR-049.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01RPd8KiANfeysL8tL7MTKsx\n\n* docs(readme): add microsoft store badge to installation section\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01RPd8KiANfeysL8tL7MTKsx\n\n* feat(release): add snap store + flathub distribution alongside msix\n\nExtends the packaged-build concept (ADR-049) from MSIX-only to also\ncover Snap and Flatpak on Linux: self-updater skip, native-messaging\nregistration skip (a disclosed limitation — no clean solution exists\nfor either sandbox), and flavour-aware \"why can't I update\" copy\nend-to-end through the wire contract, renderer, and both locales.\n\nAdds publish-snap (single-store re-runnable, edge channel only) and\nupdate-flathub (gated on FLATHUB_DEPLOY_KEY until the pending Flathub\nsubmission is reviewed) release jobs, plus the Snap/Flatpak packaging\nmanifests. Flatpak's vendored cargo/node sources were generated and\nvalidated against the real lockfiles; a known open risk (pnpm's\noffline install still touching the registry during frozen-lockfile\nverification, a real upstream gap) is disclosed inline pending\nverification against Flathub's actual buildbot.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01RPd8KiANfeysL8tL7MTKsx\n\n* fix(release): address coderabbit findings on msix/snap/flathub pr\n\n- release.yml: install msstore-cli from its actual tarball release\n  (not a nonexistent dotnet tool), checkout the resolved release tag\n  instead of mutable main before packaging snap/flathub, pin the\n  flatpak generator scripts to a reviewed commit sha with checksum\n  verification, and sync the flathub appstream release entry\n- snapcraft.yaml: wire the desktop file into the autostart key so\n  snapd honors tauri_plugin_autostart's xdg entry\n- metainfo.xml: add the flathub-required <releases> element\n- sync-snapcraft.cjs: accept pre-release versions in the version regex\n- flatpak.rs/snap.rs: drop the two environment-dependent tests that\n  assert ambient host state and would fail inside a real sandbox\n  (reviewed by rust-backend-architect, approved)\n- docs: fix thin-pointer violations, wrong job/script attribution,\n  and swapped snap/flatpak flatpak-spawn attribution in adr-049\n  (project-steward)\n\n---------\n\nCo-authored-by: Claude Sonnet 5 <noreply@anthropic.com>",
+          "timestamp": "2026-09-10T08:41:13+02:00",
+          "tree_id": "e7d54c4f54ddfd362287654adfe5bf4f131163b9",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/22b21751377c9f20b9ec59c2a19d1a7078794fd6"
+        },
+        "date": 1789023927784,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2207111,
+            "range": "± 34281",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2627426,
+            "range": "± 25011",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 307807,
+            "range": "± 3646",
             "unit": "ns/iter"
           }
         ]
