@@ -1468,17 +1468,14 @@ jobs:
           fi
           export MSIX
 
-          # msstore-cli's settings.json lives under .NET's
-          # SpecialFolder.LocalApplicationData, which checks XDG_DATA_HOME
-          # first. Left unset, a real run showed it resolving to a path
-          # RELATIVE TO THE JOB'S WORKING DIRECTORY instead of the
-          # documented ~/.local/share fallback — reconfigure (this step) and
-          # publish (a separate process moments later) landed on different
-          # resolved paths, so publish's "SellerId is not set" was really
-          # "found no settings.json at all". Pinning this explicitly removes
-          # the ambiguity rather than chasing exactly why the fallback
-          # didn't apply here.
-          export XDG_DATA_HOME="$HOME/.local/share"
+          # msstore-cli's settings.json does NOT follow XDG_DATA_HOME or
+          # $HOME on this build/runtime — verified directly: exporting
+          # XDG_DATA_HOME made no difference across two real runs, it always
+          # lands relative to the process's own working directory instead
+          # (confirmed at "$GITHUB_WORKSPACE/Microsoft/MSStore.CLI/settings.json").
+          # reconfigure and publish already share the same CWD (no `cd`
+          # between them), so that alone isn't the bug — reading the file's
+          # actual CONTENT after reconfigure, at its REAL location, next.
 
           # reconfigure (writes the secret) and publish (reads it back) both
           # go through libsecret, so they must share the same live D-Bus
@@ -1495,9 +1492,8 @@ jobs:
               --clientSecret "$MSSTORE_CLIENT_SECRET"
             echo "::endgroup::"
             echo "::group::settings.json after reconfigure (no secret in this file — only in the keyring)"
-            echo "HOME=$HOME XDG_DATA_HOME=${XDG_DATA_HOME:-<unset>} XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-<unset>}"
-            cat "$HOME/.local/share/Microsoft/MSStore.CLI/settings.json" 2>/dev/null || echo "(not at the assumed XDG path — searching instead)"
-            find "$HOME" /tmp /root /var/lib /etc -iname "settings.json" -path "*MSStore*" 2>/dev/null
+            echo "pwd=$(pwd)"
+            cat "Microsoft/MSStore.CLI/settings.json" 2>&1 || true
             echo "::endgroup::"
             echo "::group::msstore publish (upload + submit)"
             # No --noCommit = upload AND submit for review, mirroring the
