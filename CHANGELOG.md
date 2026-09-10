@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.153.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.152.0...v0.153.0) (2026-09-10)
+
+### ✨ Features
+
+* **release:** automate microsoft store submission via msstore cli ([#1193](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1193)) ([22b2175](https://github.com/saeedkolivand/ai-job-hunter-app/commit/22b21751377c9f20b9ec59c2a19d1a7078794fd6))
+* **release:** remove flatpak distribution, add standalone msstore re-run ([#1195](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1195)) ([44828c9](https://github.com/saeedkolivand/ai-job-hunter-app/commit/44828c9457f35fe3283b8c8f0a56cecd405973b3))
+
+### 🐛 Bug Fixes
+
+* **release:** correct flathub app id and two linter-blocking manifest bugs ([#1194](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1194)) ([728c1ce](https://github.com/saeedkolivand/ai-job-hunter-app/commit/728c1ce8d9a8589b73ef2ac2d3887505e034595c))
+
 ## [0.152.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.151.0...v0.152.0) (2026-09-09)
 
 ### ✨ Features
