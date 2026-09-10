@@ -1655,7 +1655,25 @@ jobs:
           # compilation happens inside the sandbox) — --destructive-mode
           # builds directly on the runner itself, which is already a
           # disposable, single-purpose environment.
-          snapcraft pack --destructive-mode
+          #
+          # Retried: the gnome extension pulls in several build-snaps
+          # (core22, gnome-42-2204, gtk-common-themes, ...) and installing
+          # them back-to-back against the live Snap Store has shown
+          # transient one-off failures in real runs — a different snap
+          # failing each time, succeeding on the very next attempt. A short
+          # retry is the standard mitigation for this class of flakiness,
+          # not a fix for a specific snap.
+          for attempt in 1 2 3; do
+            if snapcraft pack --destructive-mode; then
+              break
+            elif [ "$attempt" = 3 ]; then
+              echo "::error title=snapcraft pack failed 3 times::Not a fresh flake — see the step log above for the real error."
+              exit 1
+            else
+              echo "snapcraft pack failed (attempt $attempt/3) — retrying in 15s"
+              sleep 15
+            fi
+          done
           SNAP_FILE="$(find . -maxdepth 1 -name '*.snap' | head -n1)"
           if [ -z "$SNAP_FILE" ]; then
             echo "::error title=Pack produced no .snap::snapcraft pack ran but no .snap file was found."
