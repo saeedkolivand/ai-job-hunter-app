@@ -1429,6 +1429,23 @@ jobs:
           echo "$HOME/.local/msstore-cli" >> "$GITHUB_PATH"
           echo "::endgroup::"
 
+      # msstore-cli persists the client secret via libsecret (GNOME Keyring /
+      # D-Bus Secret Service) on Linux, with no env-var bypass — verified
+      # against its own source
+      # (Services/CredentialManager/Unix/CredentialManagerUnix.cs calls
+      # secret_password_store_sync/secret_password_lookup_sync
+      # unconditionally, both platform-gated to Linux/macOS only). A bare
+      # ubuntu-latest runner has neither a D-Bus session nor a keyring daemon
+      # running, so both the write `reconfigure` does and the read `publish`
+      # needs moments later would fail outright — this is what a real run
+      # surfaced as a generic "Ops, something doesn't seem to be right!" from
+      # the CLI's own catch-all, traced back to this via its source, not
+      # guessed. The dbus-run-session + gnome-keyring-daemon --unlock pattern
+      # below was verified end-to-end (a real store + lookup through
+      # libsecret) in a headless WSL session before writing this.
+      - name: 🔑 Install gnome-keyring
+        run: sudo apt-get update -qq && sudo apt-get install -y gnome-keyring dbus-x11 libsecret-1-0
+
       - name: 🚀 Reconfigure + publish to the Microsoft Store
         id: msstore
         env:
@@ -1443,19 +1460,29 @@ jobs:
             echo "::error title=MSIX missing::No .msix file was in the msix-store-package artifact — pack-msix.mjs's output naming and this job's expectation have drifted."
             exit 1
           fi
-          echo "::group::msstore reconfigure"
-          msstore reconfigure \
-            --tenantId "$MSSTORE_TENANT_ID" \
-            --sellerId "$MSSTORE_SELLER_ID" \
-            --clientId "$MSSTORE_CLIENT_ID" \
-            --clientSecret "$MSSTORE_CLIENT_SECRET"
-          echo "::endgroup::"
-          echo "::group::msstore publish (upload + submit)"
-          # No --noCommit = upload AND submit for review, mirroring the
-          # Chrome/Firefox jobs. Free products only — msstore publish rejects
-          # a paid product outright (see docs/DEPLOYMENT.md).
-          msstore publish "$MSIX" -id "$MSSTORE_PRODUCT_ID"
-          echo "::endgroup::"
+          export MSIX
+
+          # reconfigure (writes the secret) and publish (reads it back) both
+          # go through libsecret, so they must share the same live D-Bus
+          # session — run together here rather than split across steps.
+          dbus-run-session -- bash -c '
+            set -euo pipefail
+            eval "$(printf "%s\n" "ci" | gnome-keyring-daemon --unlock --daemonize --login)"
+
+            echo "::group::msstore reconfigure"
+            msstore reconfigure \
+              --tenantId "$MSSTORE_TENANT_ID" \
+              --sellerId "$MSSTORE_SELLER_ID" \
+              --clientId "$MSSTORE_CLIENT_ID" \
+              --clientSecret "$MSSTORE_CLIENT_SECRET"
+            echo "::endgroup::"
+            echo "::group::msstore publish (upload + submit)"
+            # No --noCommit = upload AND submit for review, mirroring the
+            # Chrome/Firefox jobs. Free products only — msstore publish
+            # rejects a paid product outright (see docs/DEPLOYMENT.md).
+            msstore publish "$MSIX" -id "$MSSTORE_PRODUCT_ID"
+            echo "::endgroup::"
+          '
 
       - name: 📝 Job Summary
         if: always()
