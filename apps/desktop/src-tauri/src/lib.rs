@@ -685,11 +685,11 @@ pub fn run() {
                 //
                 // Deliberately `msix::is_packaged()`, not the
                 // `platform::is_packaged_build()` aggregator: the HKCU-write
-                // shadowing above is Windows/registry-specific, and Flatpak/
-                // Snap have no analogous "this write would shadow the
-                // manifest's own registration" hazard — their portal/desktop
-                // file registration doesn't go through this call at all. Do
-                // not "fix" this into the aggregator.
+                // shadowing above is Windows/registry-specific, and Snap has
+                // no analogous "this write would shadow the manifest's own
+                // registration" hazard — its desktop-file registration
+                // doesn't go through this call at all. Do not "fix" this
+                // into the aggregator.
                 if !crate::platform::msix::is_packaged() {
                     let _ = app.deep_link().register_all();
                 }

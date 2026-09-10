@@ -198,7 +198,6 @@ fn test_status_reply_store_managed_wins_over_checked_state() {
     };
     for (flavour, wire) in [
         (PackageFlavour::MsStore, "msstore"),
-        (PackageFlavour::Flatpak, "flatpak"),
         (PackageFlavour::Snap, "snap"),
     ] {
         assert_eq!(
@@ -391,7 +390,7 @@ fn all_four_checked_true_writes_are_still_present() {
     );
 }
 
-// ── Packaged-build flavours (MSIX / Flatpak / Snap) ───────────────────────────
+// ── Packaged-build flavours (MSIX / Snap) ──────────────────────────────────────
 //
 // An NSIS/MSI/AppImage/.deb install (no flavour) must keep checking GitHub —
 // `test_status_reply_unknown_when_nothing_pending_and_never_checked` above
@@ -407,16 +406,12 @@ fn all_four_checked_true_writes_are_still_present() {
 /// not. (Comparing serialized strings would invent a key-order invariant the
 /// IPC contract does not have.) Every flavour gets its own wire value — the
 /// whole point of the finding this replaced (`managedBy: "store"` telling a
-/// Flatpak/Snap user they installed from the Microsoft Store).
+/// Snap user they installed from the Microsoft Store).
 #[test]
 fn test_store_managed_has_the_contract_shape() {
     assert_eq!(
         store_managed(PackageFlavour::MsStore),
         json!({ "available": false, "managedBy": "msstore" })
-    );
-    assert_eq!(
-        store_managed(PackageFlavour::Flatpak),
-        json!({ "available": false, "managedBy": "flatpak" })
     );
     assert_eq!(
         store_managed(PackageFlavour::Snap),
@@ -433,10 +428,6 @@ fn test_managed_status_has_the_contract_shape() {
         json!({ "state": "managed", "by": "msstore" })
     );
     assert_eq!(
-        managed_status(PackageFlavour::Flatpak),
-        json!({ "state": "managed", "by": "flatpak" })
-    );
-    assert_eq!(
         managed_status(PackageFlavour::Snap),
         json!({ "state": "managed", "by": "snap" })
     );
@@ -445,8 +436,7 @@ fn test_managed_status_has_the_contract_shape() {
 /// A packaged build's download/install refusal is an `error` reply — the
 /// shape the renderer already renders — not a silent no-op that would look
 /// like success. Each flavour names ITSELF, not always "the Microsoft
-/// Store" — a Flatpak/Snap user must not be told they installed from the
-/// Store.
+/// Store" — a Snap user must not be told they installed from the Store.
 #[test]
 fn test_store_managed_refusal_is_an_error_reply() {
     let msstore = store_managed_refusal(PackageFlavour::MsStore);
@@ -454,12 +444,6 @@ fn test_store_managed_refusal_is_an_error_reply() {
         .get("error")
         .and_then(|e| e.as_str())
         .is_some_and(|m| m.contains("Microsoft Store")));
-
-    let flatpak = store_managed_refusal(PackageFlavour::Flatpak);
-    assert!(flatpak
-        .get("error")
-        .and_then(|e| e.as_str())
-        .is_some_and(|m| m.contains("Flatpak") && !m.contains("Microsoft Store")));
 
     let snap = store_managed_refusal(PackageFlavour::Snap);
     assert!(snap

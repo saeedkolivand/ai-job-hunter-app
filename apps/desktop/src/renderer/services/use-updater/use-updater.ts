@@ -21,20 +21,19 @@ export type UpdateStatus =
   | { state: 'downloading'; percent: number; downloaded?: number; total?: number }
   | { state: 'downloaded'; version: string }
   | { state: 'error'; message: string }
-  // A packaged install (Microsoft Store/MSIX, Flatpak, or Snap): the shell
-  // pushes this once after launch and on every check, and never contacts
-  // GitHub. Terminal — no download or install can follow it, so the banner
-  // stays hidden and the settings panel says where updates come from
-  // instead of offering to fetch one. `by` names which flavour, since the
-  // three read very differently in copy.
-  | { state: 'managed'; by: 'msstore' | 'flatpak' | 'snap' };
+  // A packaged install (Microsoft Store/MSIX or Snap): the shell pushes
+  // this once after launch and on every check, and never contacts GitHub.
+  // Terminal — no download or install can follow it, so the banner stays
+  // hidden and the settings panel says where updates come from instead of
+  // offering to fetch one. `by` names which flavour, since they read very
+  // differently in copy.
+  | { state: 'managed'; by: 'msstore' | 'snap' };
 
 /** Which flavour owns updates, mapped to its own translation key — a single
  *  source shared by the settings panel and the menu's "check now" toast, so
- *  a Flatpak/Snap install is never told it came from the Microsoft Store. */
+ *  a Snap install is never told it came from the Microsoft Store. */
 export const MANAGED_BY_KEY = {
   msstore: 'settings.update.managedByStore',
-  flatpak: 'settings.update.managedByFlatpak',
   snap: 'settings.update.managedBySnap',
 } as const;
 

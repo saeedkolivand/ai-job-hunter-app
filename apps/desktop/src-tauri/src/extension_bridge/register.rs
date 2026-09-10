@@ -146,15 +146,15 @@ fn write_agent_pointer(data_dir: &Path) {
 /// Register the native-messaging host for Firefox + Chrome. Best-effort and
 /// idempotent — safe to call on every launch.
 pub fn register_native_host(data_dir: &Path) {
-    let sandboxed = crate::platform::flatpak::is_packaged() || crate::platform::snap::is_packaged();
+    let sandboxed = crate::platform::snap::is_packaged();
     register_native_host_inner(data_dir, sandboxed);
 }
 
-/// [`register_native_host`], with the Flatpak/Snap check taken as a
-/// parameter rather than a call — same split as `updater::store_managed`
-/// takes `packaged: bool` — so the guard clause below is exercised by a
-/// plain unit test instead of needing to race `flatpak`/`snap`'s
-/// process-cached `is_packaged()` against env-var mutation.
+/// [`register_native_host`], with the Snap check taken as a parameter rather
+/// than a call — same split as `updater::store_managed` takes `packaged:
+/// bool` — so the guard clause below is exercised by a plain unit test
+/// instead of needing to race `snap`'s process-cached `is_packaged()`
+/// against env-var mutation.
 fn register_native_host_inner(data_dir: &Path, sandboxed: bool) {
     // The pointer publishes the path a HUMAN types to reach the agent CLI,
     // which inside an AppImage is NOT `current_exe()`. It resolves that
@@ -165,31 +165,27 @@ fn register_native_host_inner(data_dir: &Path, sandboxed: bool) {
     //
     // Written BEFORE the sandbox guard below, deliberately — its own doc
     // says "OS- and browser-independent... this call is unconditional", and
-    // that invariant holds even inside Flatpak/Snap: the pointer lands under
-    // the CONFINED `$HOME`, which is writable and is exactly what an
-    // in-sandbox `flatpak run --command=ajh-tauri … agent mcp` / `snap run
-    // ai-job-hunter.agent-cli … agent mcp` invocation reads. Skipping it here
-    // would misdiagnose that in-sandbox call as `app_not_located`
-    // (`extension_bridge::agent_cli` warns about exactly that class of
-    // mistake elsewhere). A HOST-side MCP client still can't reach the
-    // confined HOME either way — writing the pointer changes nothing for
-    // that case, it only keeps the in-sandbox one working.
+    // that invariant holds even inside Snap: the pointer lands under the
+    // CONFINED `$HOME`, which is writable and is exactly what an in-sandbox
+    // `snap run ai-job-hunter.agent-cli … agent mcp` invocation reads.
+    // Skipping it here would misdiagnose that in-sandbox call as
+    // `app_not_located` (`extension_bridge::agent_cli` warns about exactly
+    // that class of mistake elsewhere). A HOST-side MCP client still can't
+    // reach the confined HOME either way — writing the pointer changes
+    // nothing for that case, it only keeps the in-sandbox one working.
     write_agent_pointer(data_dir);
 
-    // Flatpak/Snap sandboxing has no clean answer for the BROWSER-spawned
+    // Snap confinement has no clean answer for the BROWSER-spawned
     // native-messaging host below: the browser (running OUTSIDE the sandbox)
     // has to spawn this host, but a sandboxed process cannot register a path
-    // the browser could launch. Even funded projects (1Password, KeePassXC)
-    // only offer `flatpak-spawn --host`, which explicitly breaks sandbox
-    // isolation — rejected here for the same reason — and Snap's strict
-    // confinement has no equivalent escape hatch at all. So this is a
-    // disclosed limitation, not silently broken: see docs/DEPLOYMENT.md
-    // (Flatpak/Snap Store sections).
+    // the browser could launch, and Snap's strict confinement has no escape
+    // hatch for it. So this is a disclosed limitation, not silently broken:
+    // see docs/DEPLOYMENT.md (Snap Store section).
     if sandboxed {
         log::warn!(
-            "[native_host] running inside a Flatpak/Snap sandbox — browser native-messaging \
+            "[native_host] running inside a Snap sandbox — browser native-messaging \
              registration is not supported in this confinement (the agent-CLI pointer was \
-             still written), see docs/DEPLOYMENT.md (Flatpak/Snap Store sections)"
+             still written), see docs/DEPLOYMENT.md (Snap Store section)"
         );
         return;
     }
@@ -564,11 +560,11 @@ mod tests {
         );
     }
 
-    // ── Flatpak/Snap sandbox guard ────────────────────────────────────────────
+    // ── Snap sandbox guard ─────────────────────────────────────────────────
 
     /// The agent-CLI pointer must survive the sandbox guard — it's what an
-    /// in-sandbox `flatpak run … agent mcp` / `snap run … agent mcp`
-    /// invocation reads from the confined HOME. Mutation-visible: reorder
+    /// in-sandbox `snap run … agent mcp` invocation reads from the confined
+    /// HOME. Mutation-visible: reorder
     /// `write_agent_pointer(data_dir)` back below the `if sandboxed { …
     /// return; }` guard and this fails.
     #[test]

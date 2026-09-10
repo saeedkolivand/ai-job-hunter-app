@@ -1206,7 +1206,6 @@
       "checking": "Checking…",
       "upToDate": "You are up to date",
       "managedByStore": "Updates are delivered through the Microsoft Store.",
-      "managedByFlatpak": "Updates are delivered through Flatpak.",
       "managedBySnap": "Updates are delivered through the Snap Store.",
       "download": "Download {{version}}",
       "install": "Restart & install",

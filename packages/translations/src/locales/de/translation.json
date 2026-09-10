@@ -1206,7 +1206,6 @@
       "checking": "Prüfe…",
       "upToDate": "Sie sind auf dem neuesten Stand",
       "managedByStore": "Updates werden über den Microsoft Store bereitgestellt.",
-      "managedByFlatpak": "Updates werden über Flatpak bereitgestellt.",
       "managedBySnap": "Updates werden über den Snap Store bereitgestellt.",
       "download": "{{version}} herunterladen",
       "install": "Neu starten & installieren",
