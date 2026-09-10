@@ -29,7 +29,7 @@ Underneath both sits one choice with real consequences: whether the container's 
 - **Windows (MSIX):** `platform::msix::is_packaged()` checks package identity **plus** the running exe living inside the package's install root (identity alone is inherited by child processes, so it cannot tell the two apart; both sides are canonicalized first, since neither short names nor Windows case rules survive a string compare).
 - **Linux (Snap):** `platform::snap::is_packaged()` checks whether `current_exe()` lives under the `$SNAP` directory.
 
-Missing or unreadable evidence counts as **not packaged**, because the dangerous direction is a packaged build concluding it is unpackaged and re-enabling the GitHub updater. An aggregator `platform::is_packaged_build()` and the enum `PackageFlavour` (`Msstore`, `Snap`) summarize both.
+Missing or unreadable evidence counts as **not packaged**, because the dangerous direction is a packaged build concluding it is unpackaged and re-enabling the GitHub updater. An aggregator `platform::is_packaged_build()` and the enum `PackageFlavour` (`MsStore`, `Snap`) summarize both.
 
 Each behaviour that differs is owned by its own symbol rather than by this record. The set is closed:
 

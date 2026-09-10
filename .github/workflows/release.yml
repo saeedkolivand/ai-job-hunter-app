@@ -1304,7 +1304,18 @@ jobs:
   publish-msstore:
     name: 🪟 Publish to Microsoft Store
     needs: build
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.action == 'build-installers' || inputs.action == 'publish-msstore') }}
+    # `!cancelled()` is load-bearing, not decorative: with no status-check
+    # function in this expression GitHub silently ANDs its own success() onto
+    # it, and success() is false whenever a needed job's result is anything
+    # but 'success' — including 'skipped'. `build` IS skipped for a
+    # publish-msstore-only dispatch (its own `if:` only matches
+    # build-installers), so without this, a standalone publish-msstore run
+    # would always be skipped too, never reaching the cross-run fallback
+    # below — caught by CodeRabbit, verified against GitHub's own documented
+    # semantics before fixing. `needs.build.result == 'success'` keeps the
+    # build-installers path exactly as strict as before (a genuinely FAILED
+    # build must still block this job, only a SKIPPED one should not).
+    if: ${{ github.event_name == 'workflow_dispatch' && !cancelled() && ((inputs.action == 'build-installers' && needs.build.result == 'success') || inputs.action == 'publish-msstore') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
