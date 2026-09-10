@@ -22,7 +22,7 @@
 # there's no per-package filter finer than that. One extra vendored archive,
 # not worth a custom lockfile-pruning step; revisit only if a Flathub
 # reviewer specifically flags it.
-app-id: io.github.saeedkolivand.AIJobHunter
+app-id: io.github.saeedkolivand.Ai_Job_Hunter_App
 runtime: org.gnome.Platform
 runtime-version: '49'
 sdk: org.gnome.Sdk
@@ -33,6 +33,8 @@ sdk: org.gnome.Sdk
 # invalid syntax and fails with "Unknown extension ... in runtime"). GNOME 47
 # (Tauri's own doc example) is EOL as of 2025-10-15 — verified this whole
 # pairing with a real local flatpak-builder run in WSL, not just literature.
+# GNOME 50 is available but not yet verified locally the same way 49 was —
+# bump deliberately, with a fresh WSL flatpak-builder run, not blindly.
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.node22
   - org.freedesktop.Sdk.Extension.rust-stable
@@ -45,7 +47,11 @@ finish-args:
   - --share=ipc
   - --share=network # core egress: AI provider calls + job-board scraping
   - --talk-name=org.kde.StatusNotifierWatcher # tray icon
-  - --talk-name=org.freedesktop.portal.Background # launch-at-login, via the portal — see docs/DEPLOYMENT.md § Flathub
+  # No --talk-name for org.freedesktop.portal.Background (launch-at-login):
+  # every sandboxed app already has portal access by default — an explicit
+  # talk-name to any org.freedesktop.portal.* busname is redundant and is a
+  # hard error in Flathub's linter (finish-args-portal-talk-name, no
+  # exceptions granted), caught by the first real submission's test build.
   - --filesystem=xdg-download # résumé/cover-letter export target
 
 build-options:
@@ -76,11 +82,16 @@ modules:
       - cargo-sources.json
       - node-sources.json
       - type: file
-        path: io.github.saeedkolivand.AIJobHunter.desktop
+        path: io.github.saeedkolivand.Ai_Job_Hunter_App.desktop
       - type: file
-        path: io.github.saeedkolivand.AIJobHunter.metainfo.xml
+        path: io.github.saeedkolivand.Ai_Job_Hunter_App.metainfo.xml
+      # A local sibling copy, not ../../icons/icon.png: update-flathub copies
+      # this directory's files FLAT into the external flathub/<app-id> repo
+      # (no parent icons/ dir survives that copy), so the source path here
+      # must resolve the same way in both places. Re-copy by hand from
+      # ../../icons/icon.png on an icon update — it changes rarely.
       - type: file
-        path: ../../icons/icon.png
+        path: icon.png
       # The node22 SDK extension bundles Node + npm only, not pnpm — this
       # repo's pinned pnpm (package.json's "packageManager") is vendored
       # explicitly and installed via `npm install -g` below, fully offline.
@@ -139,6 +150,6 @@ modules:
       - cd apps/desktop/src-tauri && cargo build --release --offline --locked
 
       - install -Dm755 apps/desktop/src-tauri/target/release/ajh-tauri /app/bin/ajh-tauri
-      - install -Dm644 io.github.saeedkolivand.AIJobHunter.desktop /app/share/applications/io.github.saeedkolivand.AIJobHunter.desktop
-      - install -Dm644 io.github.saeedkolivand.AIJobHunter.metainfo.xml /app/share/metainfo/io.github.saeedkolivand.AIJobHunter.metainfo.xml
-      - install -Dm644 icon.png /app/share/icons/hicolor/512x512/apps/io.github.saeedkolivand.AIJobHunter.png
+      - install -Dm644 io.github.saeedkolivand.Ai_Job_Hunter_App.desktop /app/share/applications/io.github.saeedkolivand.Ai_Job_Hunter_App.desktop
+      - install -Dm644 io.github.saeedkolivand.Ai_Job_Hunter_App.metainfo.xml /app/share/metainfo/io.github.saeedkolivand.Ai_Job_Hunter_App.metainfo.xml
+      - install -Dm644 icon.png /app/share/icons/hicolor/512x512/apps/io.github.saeedkolivand.Ai_Job_Hunter_App.png

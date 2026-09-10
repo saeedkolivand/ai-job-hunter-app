@@ -7,7 +7,7 @@
   (same sed step that pins the manifest's `tag:`), not hand-edited per release.
 -->
 <component type="desktop-application">
-  <id>io.github.saeedkolivand.AIJobHunter</id>
+  <id>io.github.saeedkolivand.Ai_Job_Hunter_App</id>
   <name>AI Job Hunter</name>
   <summary>AI-powered job search and application assistant</summary>
   <metadata_license>CC0-1.0</metadata_license>
@@ -34,7 +34,7 @@
         except to the AI provider or job board you configure</li>
     </ul>
   </description>
-  <launchable type="desktop-id">io.github.saeedkolivand.AIJobHunter.desktop</launchable>
+  <launchable type="desktop-id">io.github.saeedkolivand.Ai_Job_Hunter_App.desktop</launchable>
   <screenshots>
     <!--
       TODO before Flathub submission: add at least one real screenshot here

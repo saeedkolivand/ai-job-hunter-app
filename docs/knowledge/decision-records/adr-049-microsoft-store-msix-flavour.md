@@ -90,7 +90,7 @@ Identity values for MSIX are assigned by Partner Center and supplied as GitHub r
 
 - `apps/desktop/src-tauri/windows/msix/AppxManifest.xml` — MSIX manifest, with reasoning on every element; packed by `apps/desktop/scripts/pack-msix.mjs`
 - `apps/desktop/src-tauri/linux/snap/snapcraft.yaml` — Snap manifest; version synced by `scripts/sync-snapcraft.cjs`
-- `apps/desktop/src-tauri/linux/flatpak/io.github.saeedkolivand.AIJobHunter.yml` — Flatpak manifest; version and vendor-sources synced by CI
+- `apps/desktop/src-tauri/linux/flatpak/io.github.saeedkolivand.Ai_Job_Hunter_App.yml` — Flatpak manifest; version and vendor-sources synced by CI
 
 **Operational documentation:**
 
