@@ -90,6 +90,28 @@ An earlier draft of this amendment claimed `'page'` and `'selection'` are indepe
 
 No manifest/permission change: `contextMenus` was already declared for decision 2's entry, and widening its `contexts` array costs no new permission.
 
+## Amendment — 2026-09-11
+
+**Decision 1 is reversed: the popup no longer hosts the Answer tools.** In the extension
+redesign (owner decisions, `.claude/scratch/extension-round-design.md` §R1/R2), the popup becomes
+a compact **launcher** — connection pill, page context, the three gesture-bound page actions
+(Import/Check fit/Fill), and a quiet "Open the panel →" — and the side panel becomes the
+**workspace**: a tab bar (`apps/extension/src/tabs/tabs.ts`'s `mountTabs`) whose Answers tab is
+now the Answer tools' only home. `popup.ts`'s own doc comment states it plainly: "the interactive
+Answer-tools UI moved fully into the side panel's Answers tab (ADR-044 decision 1 reversed by the
+owner)."
+
+Why now: the redesign round adds Documents, Prep and a Settings surface, roughly doubling what
+the two surfaces together must hold; keeping the Answer tools duplicated in a popup already
+tight on space (360×520, no scroll) stopped paying for itself. Alternative 1 above — a single
+home in the side panel, rejected in 2026-09-03 for making the feature "harder to reach for no
+user-visible gain" — is the shape now shipped; the one extra reach the owner then rejected
+("Open the panel →") is exactly what makes room for the rest.
+
+Everything else in this record is unchanged: the tab-id-keyed shared state (the other half of
+decision 1), the gesture model (decision 2), the per-navigation trust behavior (decision 3), and
+the deferred in-page card (decision 9). Shipped in PR0 of the redesign round.
+
 ## References
 
 - Manifest + permission pins: `apps/extension/src/manifest.ts`, `apps/extension/src/manifest.test.ts`

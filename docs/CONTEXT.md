@@ -207,6 +207,19 @@ structurally never does. See
 _Avoid_: Answer tools (the separate, older shared component for drafting/iterating on an
 **Application question** — Job tools never drafts anything)
 
+**Launcher**:
+The popup's role in the redesigned extension surface split: connection state, the current
+page's detected context, the gesture-bound page actions, and a way into the **Workspace**.
+Nothing that needs a second screen belongs here.
+_Avoid_: "the popup" as a synonym once a feature needs more than a glance — that belongs in
+the Workspace instead
+
+**Workspace**:
+The side panel's role: the tabbed home of everything that outlives one click — answers,
+documents, prep, and the entry point into Settings.
+_Avoid_: "the side panel" as a synonym for one tab inside it (each is a tab of the Workspace,
+not a separate surface)
+
 **Autofill** (a.k.a. assisted autofill):
 The inverse of **Extension import**: the extension writes the user's **own** Contact
 Profile fields (fullName, email, phone, location, linkedin, github, website) _out_ onto
