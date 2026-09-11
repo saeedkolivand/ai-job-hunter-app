@@ -1,49 +1,59 @@
 /**
  * Side-panel controller (Chrome `sidePanel`, Firefox `sidebar_action`).
  *
- * It is deliberately thin. The panel is the SECOND view of ADR-044 decision
- * 1's one state, not a second implementation of the Answer tools: it mounts
- * the same component the popup mounts, against the same `storage.session`
- * record, and adds only the two things that are true of a panel and not of a
- * popup.
+ * The panel is the WORKSPACE surface of the PR0 redesign (`.claude/scratch/
+ * extension-round-design.md`): a tab bar (`src/tabs/tabs.ts`) with a Job tab
+ * (page-context card + stage strip + the four job-tools controls) and an
+ * Answers tab (the existing Answer-tools component, restyled but functionally
+ * unchanged). It is deliberately thin — the panel is the SECOND view of
+ * ADR-044 decision 1's one Answer-tools state, not a second implementation,
+ * and the job-status card is likewise a pure view over `appliedCheck`
+ * (`job-status.ts`'s own doc).
  *
  * 1. **It outlives the click that uses it.** That is the whole point — a
- *    copy-only tool disappearing on blur is the defect this record answers.
+ *    copy-only tool disappearing on blur is the defect ADR-044 answers.
  *    Nothing here has to be done to get that; it is what a panel is.
  * 2. **It is per WINDOW, not per tab.** Chrome keeps one panel open across
  *    tab switches, so it follows `tabs.onActivated` and re-subscribes to
  *    whichever tab is now active. A tab's ID is readable without the `tabs`
  *    permission (only its url and title are gated behind it), which is what
  *    lets this work while `tabs` stays on the manifest denylist.
+ * 3. **It has connection-status awareness (ADR-046)**: the shared
+ *    `connection-status.ts` module (also mounted by the popup) owns the
+ *    pill/retry + pair/offline/outdated/searching views, and this file's only
+ *    job is to show/hide `#view-connected` based on the phase it reports.
  *
  * The panel has NO page access of its own and never asks for any: every read
  * or write of the page goes through the background, which acts under the
  * `activeTab` grant a user gesture created. After a navigation the shared
- * state says so and the component replaces every write control with one line
- * — this file does not need to know about that case at all. The same is now
- * true of the job-tools controls (Import/Check fit/Fill/Save answers) mounted
- * below — see `job-tools.ts`'s doc for its own trust gate, which this file
- * only has to feed via `jobTools.render`/`jobTools.checkPage`.
- *
- * 3. **It has connection-status awareness (ADR-046)**, unlike before: the
- *    shared `connection-status.ts` module (also mounted by the popup) owns
- *    the pill/retry + pair/offline/outdated/searching views, and this file's
- *    only job is to show/hide `#view-connected` (the job/answer tools above)
- *    based on the phase it reports — so a click can no longer silently fail
- *    against a desktop app that isn't there.
+ * state says so and job-tools replaces its own write controls with one line
+ * — see job-tools.ts's own trust-gate doc, which this file only feeds via
+ * `jobTools.render`/`jobTools.checkPage`.
  */
 
-import { browser } from '@wxt-dev/browser';
+import { type Browser, browser } from '@wxt-dev/browser';
 
 import { copyText, mountAnswerTools } from '../answer-tools/answer-tools';
 import { mountConnectionStatus } from '../connection-status/connection-status';
-import { mountJobTools } from '../job-tools/job-tools';
-import { subscribeAnswerState } from '../lib/answer-state';
+import { mountJobStatus } from '../job-status/job-status';
+import { isPageTrusted, mountJobTools } from '../job-tools/job-tools';
+import { type AnswerState, subscribeAnswerState } from '../lib/answer-state';
 import type { PopupRequest, PopupResponse } from '../lib/messages';
+import {
+  getRememberedHosts,
+  hostOf,
+  mountFirstFillConfirm,
+  rememberHost,
+} from '../lib/site-memory';
+import { bootTheme } from '../lib/theme';
+import { mountTabs } from '../tabs/tabs';
 
 // The panel loads the POPUP's stylesheet, not a copy of it. A forked theme is
 // how two surfaces start looking like two products.
 import '../popup/popup.css';
+
+// Apply the Settings → Appearance → Theme choice before anything else renders.
+void bootTheme();
 
 function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -55,6 +65,9 @@ const els = {
   viewConnected: byId<HTMLElement>('view-connected'),
   connectionPillHost: byId<HTMLDivElement>('connection-pill-host'),
   connectionViewsHost: byId<HTMLDivElement>('connection-views-host'),
+  btnSettings: byId<HTMLButtonElement>('btn-settings'),
+  trustLine: byId<HTMLParagraphElement>('trust-line'),
+  tabsHost: byId<HTMLDivElement>('tabs-host'),
 };
 
 /** Send a typed request to the background — the same seam the popup uses. */
@@ -64,25 +77,97 @@ async function send(req: PopupRequest): Promise<PopupResponse> {
   return res;
 }
 
-const answerTools = mountAnswerTools(byId<HTMLDivElement>('answer-tools-host'), {
-  send,
-  copy: copyText,
+els.btnSettings.addEventListener('click', () => {
+  void browser.runtime.openOptionsPage();
 });
+
+// ── the tab bar (PR0 §3) ──────────────────────────────────────────────────
+// Job + Answers today; Documents/Prep register through the same
+// `mountTabs`/`tabs.setCount` list in PR2/PR4, per the redesign record.
+
+const tabs = mountTabs(
+  els.tabsHost,
+  [
+    { id: 'job', label: 'Job' },
+    { id: 'answers', label: 'Answers' },
+  ],
+  { onSelect: (id) => selectTab(id) }
+);
+// Job is the default active tab — set synchronously so a panel is visible
+// immediately, before the persisted per-window preference (async, and best-
+// effort if `storage.session` is unavailable) can override it below.
+tabs.setActive('job');
+
+const jobPanel = tabs.panel('job');
+const jobStatusHost = document.createElement('div');
+jobPanel.append(jobStatusHost);
+const jobToolsHost = document.createElement('div');
+jobToolsHost.id = 'job-tools-host';
+jobPanel.append(jobToolsHost);
+
+const answersPanel = tabs.panel('answers');
+const answerToolsHost = document.createElement('div');
+answerToolsHost.id = 'answer-tools-host';
+answerToolsHost.className = 'atools';
+answersPanel.append(answerToolsHost);
+
+// First-time Fill confirmation (PR0 §4) — mounted once into the Job tab, fed
+// the CURRENTLY-followed tab's origin (updated on every state push below).
+const fillConfirmHost = document.createElement('div');
+jobPanel.append(fillConfirmHost);
+const fillConfirm = mountFirstFillConfirm(fillConfirmHost, { getRememberedHosts, rememberHost });
+
+let currentOrigin: string | null = null;
+
+const answerTools = mountAnswerTools(answerToolsHost, { send, copy: copyText });
+
+const jobStatus = mountJobStatus(jobStatusHost, { send });
 
 // No `onAnswerToolsVisibility` here: the panel's Answer-tools section has no
 // disclosure to gate on the fields probe today (unlike the popup's), and
-// adding that is out of scope for this parity change.
-const jobTools = mountJobTools(byId<HTMLDivElement>('job-tools-host'), { send });
+// adding that is out of scope for this parity change. `hideSaveAnswers` is
+// also omitted — the panel keeps all four job-tools controls.
+const jobTools = mountJobTools(jobToolsHost, {
+  send,
+  confirmFill: () => fillConfirm.confirm(hostOf(currentOrigin)),
+});
+
+/**
+ * The one trust line under the header (ADR-045 of the redesign record). Only
+ * the TRUSTED case renders here ("Reading: <host>", derived from
+ * `AnswerState.origin` — the wire carries no job title/company without a new
+ * bridge call, which PR0 forbids, so this names the SITE rather than the
+ * posting, honestly narrower than the mockup's literal text). The untrusted
+ * case is intentionally left to job-tools.ts's own `JOB_TOOLS_GATED_LINE`
+ * (rendered inside the Job tab, already covered by its own tests) — showing
+ * the identical sentence in both places would be a literal duplicate on
+ * screen, which is worse than the mockup's exact position.
+ */
+function updateTrustLine(state: AnswerState | null): void {
+  if (state && isPageTrusted(state)) {
+    let host = state.origin;
+    try {
+      host = new URL(state.origin).hostname;
+    } catch {
+      // Keep the raw origin — better than nothing.
+    }
+    els.trustLine.textContent = `Reading: ${host}`;
+    els.trustLine.hidden = false;
+  } else {
+    els.trustLine.textContent = '';
+    els.trustLine.hidden = true;
+  }
+}
 
 /**
  * The connection-status pill/retry + the four non-connected views — the SAME
  * component the popup mounts (ADR-046). `onStatus` fires on every render and
  * is the panel's ONLY connection-status responsibility: show `view-connected`
- * (the job/answer tools) only while `phase === 'connected'`, the non-connected
- * view otherwise. Unlike the popup, the panel needs no `onConnected`/
- * `onPaired` — its own tab-follow logic (`follow()` below) already runs
- * `jobTools.checkPage()` independently on mount/tab-activation, and it has no
- * focus target to move on a fresh pair.
+ * (the trust line + tabs) only while `phase === 'connected'`, the
+ * non-connected view otherwise. Unlike the popup, the panel needs no
+ * `onConnected`/`onPaired` — its own tab-follow logic (`follow()` below)
+ * already runs `jobTools.checkPage()` independently on mount/tab-activation,
+ * and it has no focus target to move on a fresh pair.
  */
 mountConnectionStatus(els.connectionPillHost, els.connectionViewsHost, {
   send,
@@ -114,26 +199,10 @@ let followGeneration = 0;
  * would keep re-rendering with a background tab's rows on top of the active
  * one's, which is exactly the confusion a per-window surface has to avoid.
  *
- * `jobTools.checkPage()` fires from INSIDE the subscription's own first
- * delivery, never as a separate statement right after `subscribeAnswerState`
- * — that read is unavoidably asynchronous (`readAnswerState(tabId).then(...)`
- * in `lib/answer-state.ts`), so a `checkPage()` call placed right here would
- * run against whatever `jobTools`'s trust flag was left over from BEFORE this
- * follow (the previous tab, or its cold-mount default) and could fire the
- * fields probe against a tab job-tools has not actually evaluated yet — the
- * exact ungated call its own trust gate exists to prevent. Waiting for the
- * first delivery means `jobTools.render(state)` has already updated that flag
- * to the tab actually being followed by the time `checkPage()` reads it. This
- * function is still both of the job-tools trigger points its own doc names
- * for the panel ("mount and tab activation"): the first call from
- * `resolvePanelWindowId().then(...)` below is the mount, every later call
- * from `tabs.onActivated`/a focus change is an activation — `firstDelivery`
- * just defers each one's `checkPage()` to the moment it is actually safe to
- * fire, without changing which gesture triggers it.
- *
- * `followGeneration` guards the SAME callback against a different race: this
- * call being superseded by a NEWER `follow()` before its own first delivery
- * lands (see that flag's own doc).
+ * `jobTools.checkPage()` (and `jobStatus.refresh()`, its equivalent for the
+ * page-context card) fire from INSIDE the subscription's own first delivery,
+ * never as a separate statement right after `subscribeAnswerState` — see
+ * job-tools.ts's `checkPage` doc for why that ordering is load-bearing.
  */
 function follow(tabId: number | null): void {
   followGeneration += 1;
@@ -143,6 +212,9 @@ function follow(tabId: number | null): void {
   if (tabId === null) {
     answerTools.render(null);
     jobTools.render(null);
+    jobStatus.reset();
+    updateTrustLine(null);
+    currentOrigin = null;
     return;
   }
   let firstDelivery = true;
@@ -152,11 +224,51 @@ function follow(tabId: number | null): void {
     if (myGeneration !== followGeneration) return;
     answerTools.render(state);
     jobTools.render(state);
+    updateTrustLine(state);
+    currentOrigin = state?.origin ?? null;
+    tabs.setCount('answers', state?.rows.length ?? 0);
+    if (state && isPageTrusted(state)) void jobStatus.refresh();
+    else jobStatus.reset();
     if (firstDelivery) {
       firstDelivery = false;
       jobTools.checkPage();
     }
   });
+}
+
+// ── active tab, remembered per browser window (PR0 §3) ──────────────────────
+
+/** `storage.session` key for the last active tab of `windowId`. */
+function activeTabKey(windowId: number): string {
+  return `sidepanelActiveTab:${windowId}`;
+}
+
+/** `storage.session` handle — absent on an engine/context without it, in
+ *  which case the active tab just defaults to `job` every time (same
+ *  best-effort discipline as `lib/answer-state.ts`'s `sessionArea`). */
+function sessionArea(): Browser.storage.StorageArea | null {
+  const area = (browser.storage as { session?: Browser.storage.StorageArea }).session;
+  return area ?? null;
+}
+
+function selectTab(id: string): void {
+  tabs.setActive(id);
+  if (panelWindowId === null) return;
+  const area = sessionArea();
+  if (!area) return;
+  void area.set({ [activeTabKey(panelWindowId)]: id }).catch(() => undefined);
+}
+
+async function loadActiveTab(windowId: number): Promise<string> {
+  const area = sessionArea();
+  if (!area) return 'job';
+  try {
+    const stored = await area.get(activeTabKey(windowId));
+    const value = stored[activeTabKey(windowId)];
+    return value === 'answers' ? 'answers' : 'job';
+  } catch {
+    return 'job';
+  }
 }
 
 /** This panel's own window — resolved once, since a panel never migrates
@@ -198,5 +310,6 @@ browser.windows?.onFocusChanged.addListener(() => {
 
 void resolvePanelWindowId().then((id) => {
   panelWindowId = id;
+  if (id !== null) void loadActiveTab(id).then((tabId) => tabs.setActive(tabId));
   void activeTabId().then(follow);
 });

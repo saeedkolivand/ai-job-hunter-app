@@ -439,6 +439,51 @@ describe('doFill (#btn-fill)', () => {
 
     expect(msg(host).textContent).toBe('Autofill failed. Please retry.');
   });
+
+  it('asks confirmFill first and skips the request when it resolves false', async () => {
+    const send = vi.fn(async (): Promise<PopupResponse> => ({ ok: false, error: 'unused' }));
+    const confirmFill = vi.fn(async () => false);
+    const host = document.createElement('div');
+    mountJobTools(host, { send, confirmFill });
+
+    host.querySelector<HTMLButtonElement>('#btn-fill')!.click();
+    await flush();
+
+    expect(confirmFill).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+    expect(msg(host).textContent).toBe('');
+  });
+
+  it('proceeds with the fill request when confirmFill resolves true', async () => {
+    const send = vi.fn(async (): Promise<PopupResponse> => ({
+      ok: true,
+      kind: 'fill',
+      summary: { filled: [], nameSplit: null, filledNothing: true },
+    }));
+    const confirmFill = vi.fn(async () => true);
+    const host = document.createElement('div');
+    mountJobTools(host, { send, confirmFill });
+
+    host.querySelector<HTMLButtonElement>('#btn-fill')!.click();
+    await flush();
+
+    expect(send).toHaveBeenCalledWith({ kind: 'fill' });
+  });
+});
+
+describe('hideSaveAnswers (popup three-action rule)', () => {
+  it('hides "Save my answers from this page" when set', () => {
+    const host = document.createElement('div');
+    const send = vi.fn(async (): Promise<PopupResponse> => ({ ok: false, error: 'unused' }));
+    mountJobTools(host, { send, hideSaveAnswers: true });
+
+    expect(host.querySelector<HTMLButtonElement>('#btn-save-answers')!.hidden).toBe(true);
+  });
+
+  it('shows it by default (the side panel keeps all four controls)', () => {
+    const { host } = mount();
+    expect(host.querySelector<HTMLButtonElement>('#btn-save-answers')!.hidden).toBe(false);
+  });
 });
 
 describe('doCheckFit (#btn-check-fit)', () => {

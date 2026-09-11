@@ -607,6 +607,17 @@ requires a second call to a different Verb, and therefore requires having actual
 record. This is the safety property that survives the absence of a dry-run.
 _Avoid_: "confirmation prompt" (there is no interactive prompt; an autonomous caller cannot answer one)
 
+**Extension read tier**:
+The paired browser extension's access to the generic tier: only Commands whose Effect class
+is Read, only while the **Autofill** opt-in is on (the same consent class that already lets the
+user's own data reach the browser), and told apart from the CLI by its own caller class rather
+than by widening the CLI's. Reversible and Irreversible Commands are refused in-band for this
+caller; writes and billable AI work reach the extension only through dedicated bridge verbs,
+each with its own opt-in.
+_Avoid_: "permission" (nothing is granted per-caller — the caller class picks a tier, the
+pairing proves the user), "extension agent" (the extension is a client of the user's own app,
+not an autonomous caller — the **Confirm proof** ceremony is not offered to it)
+
 ## Domain — Packaged builds
 
 **Flavour**:

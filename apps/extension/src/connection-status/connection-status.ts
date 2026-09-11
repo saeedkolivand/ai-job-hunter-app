@@ -64,10 +64,15 @@ const PILL_LABEL: Record<ConnectionStatus['phase'], string> = {
 /** First status resolves within this budget, else fall back to the offline/Retry view. */
 const STATUS_TIMEOUT_MS = 3_000;
 
-/** Desktop deep link: launches/focuses the app on Settings → Browser extension
- *  with the pairing token highlighted. The click is the required user gesture;
- *  the browser may show its own "Open AI Job Hunter?" confirmation (expected). */
-const PAIRING_DEEP_LINK = 'ajh://settings/extension';
+/**
+ * Desktop deep link: launches/focuses the app on Settings → Browser extension
+ * with the pairing token highlighted. The click is the required user gesture;
+ * the browser may show its own "Open AI Job Hunter?" confirmation (expected).
+ * Exported so the options page (`src/options/options.ts`) can reuse the SAME
+ * link for its "Open app settings →" row and its opt-in switches' "Change in
+ * app →" caption, rather than a second hardcoded copy.
+ */
+export const PAIRING_DEEP_LINK = 'ajh://settings/extension';
 
 /** Public download page, offered in the offline view for users who don't yet
  *  have the desktop app installed. */

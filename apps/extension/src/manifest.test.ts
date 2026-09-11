@@ -207,6 +207,15 @@ describe('both targets', () => {
     expect(sidebar?.default_panel).toBe(chromePanel);
   });
 
+  it('declares the same options_ui Settings page (open_in_tab) on both targets (PR0 §5)', () => {
+    for (const target of TARGETS) {
+      const optionsUi = buildManifest(target).options_ui as
+        { page?: string; open_in_tab?: boolean } | undefined;
+      expect(optionsUi?.page, `${target} has no options_ui.page`).toBe('options.html');
+      expect(optionsUi?.open_in_tab, `${target} options page should open in a tab`).toBe(true);
+    }
+  });
+
   it('never opens the panel on the action click, which a declared popup overrides anyway', () => {
     // ADR-044 decision 2 / decision 10a: with `action.default_popup` declared,
     // Chrome ignores `openPanelOnActionClick`, so shipping it would be a lie in

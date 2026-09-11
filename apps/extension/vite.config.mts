@@ -159,6 +159,7 @@ export default defineConfig({
         background: resolve(srcDir, 'background.ts'),
         popup: resolve(srcDir, 'popup.html'),
         sidepanel: resolve(srcDir, 'sidepanel.html'),
+        options: resolve(srcDir, 'options.html'),
       },
       output: {
         // Stable, manifest-referenced filenames at the dist root.

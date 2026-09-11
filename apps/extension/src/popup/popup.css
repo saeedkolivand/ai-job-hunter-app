@@ -48,7 +48,10 @@
   --pill-down-bg: var(--red);
   --pill-down-fg: #fff;
   --pill-down-border: var(--red-ink);
-  --btn-text-on-red: #fff;
+  /* Dark ink, not white — white-on-red fails WCAG AA (4.5:1) for the 13px/600
+   * button label; this ink on --red clears ~4.57:1 (same pairing the dark
+   * theme already uses for --pill-down-fg on its own red). */
+  --btn-text-on-red: #1a1612;
   --focus-ring: var(--red);
   /* Low-opacity group divider — derived from --card-border so it adapts to
    * the dark-mode override below without a second definition. */
@@ -292,6 +295,56 @@ body {
   border-top: 1px solid var(--divider);
 }
 
+/* Popup-only tighter rhythm — `.view`/`.group` above are shared with the
+ * side panel and options page (which have room to spare), but only the
+ * popup (`#view-import`) is held to the 360×≤520 no-scroll budget (PR0
+ * §2); scoping here instead of shrinking the shared tokens keeps the
+ * panel/options spacing untouched. */
+#view-import.view {
+  gap: 7px;
+}
+
+#view-import .group {
+  gap: 5px;
+}
+
+#view-import .group--divided {
+  padding-top: 6px;
+}
+
+/* #job-card/.score-circle are popup-only ids/instances of shared classes —
+ * tighter than the panel's roomier versions, same budget reason as above. */
+#job-card {
+  padding: 6px 10px;
+  gap: 4px;
+}
+
+#view-import .score-circle {
+  width: 44px;
+  height: 44px;
+  font-size: 16px;
+}
+
+#view-import .fit-card {
+  padding: 6px 6px 5px;
+  margin: 6px 0;
+}
+
+#view-import .why-toggle {
+  margin: 4px 0 0;
+}
+
+/* `.app`/`.head` are shared by the panel/options too (`#view-import` only
+ * exists in the popup) — trim only the popup's own outer margin/padding. */
+body:has(#view-import) .app {
+  margin: 6px;
+  padding: 12px 16px 12px;
+}
+
+body:has(#view-import) .head {
+  margin-bottom: 10px;
+}
+
 details.group {
   /* Reset the UA default marker/indent — replaced by the ::before chevron below. */
   margin: 0;
@@ -326,6 +379,14 @@ details.group[open] > summary::before {
   font-family: var(--sans);
   font-size: 13px;
   color: var(--ink-soft);
+}
+
+/* Once the page-context card has a job to show, the generic "Import the job
+ * on this page…" line above it is redundant — and its own reserved line +
+ * view-gap is real budget in the popup's 360×≤520 no-scroll requirement
+ * (PR0 §2). CSS-only (no JS/state to keep in sync): #job-card is popup-only. */
+.hint:has(~ #job-card:not([hidden])) {
+  display: none;
 }
 
 .hint strong {
@@ -907,7 +968,549 @@ details.group[open] > summary::before {
     --pill-down-fg: #1a1612;
     --pill-down-border: #c4423f;
 
-    --btn-text-on-red: #fff;
+    --btn-text-on-red: #1a1612;
     --focus-ring: #ef5d5a;
   }
+}
+
+/* ── Explicit theme override (Settings → Appearance → Theme) ─────────────────
+ * The System choice is the attribute's ABSENCE — the `prefers-color-scheme`
+ * media query above still decides. Light/Dark force one or the other
+ * regardless of system preference: the attribute selector's specificity
+ * beats the plain `:root` selector the dark media query uses, so it always
+ * wins once `data-theme` is set on `<html>` by `options.ts`/each surface's
+ * boot (mirrors the persisted `theme` storage value). Values are the SAME
+ * ones the base `:root` (light) / dark-media block (dark) already declare —
+ * duplicated here rather than restructured, since plain CSS custom
+ * properties have no mixin/`@apply` to share them without a preprocessor. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --paper: #1a1612;
+  --card: #241f19;
+  --ink: #efe6d4;
+  --ink-soft: #b9ac95;
+  --red: #ef5d5a;
+  --red-ink: #ef5d5a;
+  --ok: #5fd08a;
+  --warn: #e0b35a;
+  --shadow: rgba(0, 0, 0, 0.45);
+  --card-border: rgba(240, 231, 214, 0.16);
+  --quiet-border: rgba(240, 231, 214, 0.4);
+  --divider: rgba(240, 231, 214, 0.28);
+  --token-bg: #1f1a15;
+  --placeholder: #8c826e;
+  --primary-hover: #f06f6c;
+  --pill-search-bg: #2b251d;
+  --pill-search-fg: #cdbfa6;
+  --pill-search-border: rgba(240, 231, 214, 0.22);
+  --pill-connected-bg: #1c2f24;
+  --pill-connected-fg: #7fd6a0;
+  --pill-connected-border: #3f7d57;
+  --pill-paired-bg: #322a18;
+  --pill-paired-fg: #e6c172;
+  --pill-paired-border: #8a6e2c;
+  --pill-down-bg: #ef5d5a;
+  --pill-down-fg: #1a1612;
+  --pill-down-border: #c4423f;
+  --btn-text-on-red: #1a1612;
+  --focus-ring: #ef5d5a;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --paper: #f4ecdc;
+  --card: #fffdf6;
+  --ink: #1c1812;
+  --ink-soft: #4a4332;
+  --red: #e24b4a;
+  --red-ink: #b5302f;
+  --ok: #2f7d4f;
+  --warn: #9a6a12;
+  --shadow: rgba(28, 24, 18, 0.16);
+  --card-border: var(--ink);
+  --token-bg: #fffefb;
+  --placeholder: #8a8270;
+  --primary-hover: #e8504f;
+  --pill-search-bg: #f1e9d7;
+  --pill-search-fg: var(--ink-soft);
+  --pill-search-border: var(--ink-soft);
+  --pill-connected-bg: #e4f2e7;
+  --pill-connected-fg: #1e5e3a;
+  --pill-connected-border: #2f7d4f;
+  --pill-paired-bg: #f6ecd0;
+  --pill-paired-fg: #7a520c;
+  --pill-paired-border: #9a6a12;
+  --pill-down-bg: #e24b4a;
+  --pill-down-fg: #fff;
+  --pill-down-border: #b5302f;
+  --btn-text-on-red: #1a1612;
+  --focus-ring: #e24b4a;
+  --quiet-border: var(--card-border);
+  --divider: color-mix(in srgb, var(--card-border) 22%, transparent);
+}
+
+/* ── Notebook redesign components (PR0) ───────────────────────────────────────
+ * Plain-paper cards (hand-cut radius + soft offset shadow, NO drawn rule
+ * lines), a hand-lettered voice reserved for titles/headings + the score
+ * circle, and every functional string in the system sans ≥ 13px — see
+ * `.claude/scratch/ext-ui/candidate-c.html` (concept C "Notebook", R5
+ * amended: no ruled-paper backgrounds). Shared by the popup, the side panel
+ * and the options page (all three load this stylesheet).
+ */
+
+.card {
+  background: var(--card);
+  border-radius: 10px 7px 13px 8px;
+  box-shadow: 2px 4px 0 var(--shadow);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.job-title {
+  font-size: 14.5px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--ink);
+  /* A real job title is unbounded length — cap the page-context card at 2
+   * lines (with the browser's native line-clamp ellipsis) so it can't blow
+   * the popup's 360×≤520 no-scroll budget open-ended (PR0 §2). */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.job-meta {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.chip-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+/* A small status/score pill — distinct from `.chip` (the Answer-tools
+ * rewrite/tone buttons above), which is an interactive control, not a status
+ * indicator. */
+.tag {
+  font-size: 12px;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--ink-soft);
+  background: var(--token-bg);
+  color: var(--ink-soft);
+}
+
+.tag--ok {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.tag--score {
+  border-color: var(--red-ink);
+  color: var(--red-ink);
+  font-weight: 700;
+}
+
+.tag--warn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+/* The red-pen fit score — a wonky near-circle, Patrick Hand, reserved
+ * (together with headings) for the ONE hand-lettered use besides titles. */
+.score-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  flex: none;
+  border: 3px solid var(--red);
+  border-radius: 52% 48% 55% 45% / 48% 52% 45% 55%;
+  transform: rotate(-3deg);
+  font-family: var(--hand);
+  font-size: 19px;
+  color: var(--red-ink);
+  background: var(--card);
+}
+
+.fit-card {
+  border: 1.5px solid var(--card-border);
+  border-radius: 10px 8px 11px 7px;
+  padding: 8px 8px 6px;
+  margin: 8px 0;
+  background: var(--card);
+}
+
+.fit-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.fit-head-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.why-toggle {
+  margin: 6px 0 0;
+}
+
+.why-toggle summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+
+.why-toggle summary::-webkit-details-marker {
+  display: none;
+}
+
+.match-result__gaps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+/* Missing-keyword pill inside "why?" — amber outline (chip-warn). */
+.match-result__gap {
+  font-size: 12px;
+  padding: 2px 9px;
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  border-radius: 999px;
+}
+
+/* Read-only application-stage strip (Saved → Applied → Interview → Offer). */
+.stage-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 8px 0 2px;
+}
+
+.stage {
+  font-size: 11.5px;
+  font-weight: 600;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--ink-soft);
+  color: var(--placeholder);
+  display: inline-flex;
+  align-items: center;
+  background: var(--card);
+}
+
+.stage.current {
+  background: var(--red);
+  border-color: var(--red-ink);
+  /* Same ink-on-red pairing as .btn--primary — white on this red fails AA. */
+  color: var(--btn-text-on-red);
+  font-weight: 700;
+}
+
+.stage-arrow {
+  color: var(--placeholder);
+  font-size: 12px;
+}
+
+.stage-caption {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--placeholder);
+  margin: 2px 0 0;
+}
+
+/* Tab bar — mounted by `tabs.ts` into the side panel (Job / Answers; PR2/PR4
+ * add Documents / Prep through the same list). */
+.tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 2px solid var(--ink-soft);
+  margin: 10px 0 0;
+  overflow-x: auto;
+}
+
+.tab {
+  appearance: none;
+  font-family: var(--sans);
+  font-size: 13px;
+  padding: 8px 9px;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  min-height: 36px;
+  white-space: nowrap;
+}
+
+.tab.active {
+  color: var(--ink);
+  font-weight: 700;
+  border-bottom-color: var(--red);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.tab-body-section {
+  padding-top: 4px;
+}
+
+.section-label {
+  font-family: var(--hand);
+  font-size: 19px;
+  margin: 14px 0 6px;
+  color: var(--ink);
+}
+
+/* The same wobbly red underline the title carries, as a CSS mask so it takes
+ * the theme's --red without a second SVG per heading (the concept gives every
+ * section head the hand-lettered treatment, not only the title). */
+.section-label::after {
+  content: '';
+  display: block;
+  width: 120px;
+  height: 8px;
+  margin-top: 2px;
+  background: var(--red);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 8'%3E%3Cpath d='M3 5 Q34 1 62 4 T117 4' fill='none' stroke='%23000' stroke-width='3.6' stroke-linecap='round'/%3E%3C/svg%3E")
+    no-repeat center / 100% 100%;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 8'%3E%3Cpath d='M3 5 Q34 1 62 4 T117 4' fill='none' stroke='%23000' stroke-width='3.6' stroke-linecap='round'/%3E%3C/svg%3E")
+    no-repeat center / 100% 100%;
+}
+
+/* A small popover menu, e.g. the popup's "?" button (Help center / Settings /
+ * About). Reuses `.help-popover`'s card treatment. */
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.menu__item {
+  appearance: none;
+  text-align: left;
+  font-family: var(--sans);
+  font-size: 13px;
+  padding: 7px 4px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.menu__item:hover,
+.menu__item:focus-visible {
+  background: var(--divider);
+}
+
+/* Dashed inset — first-time Fill confirmation, empty states, "also shown"
+ * secondary panels. */
+.inset {
+  border: 1.5px dashed var(--ink-soft);
+  border-radius: 10px 7px 9px 8px;
+  padding: 10px;
+  margin: 10px 0;
+  background: var(--card);
+}
+
+.inset-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-soft);
+  margin: 0 0 6px;
+}
+
+.inset-copy {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin: 6px 0 0;
+}
+
+.action-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+
+/* Segmented control — e.g. Settings → Appearance → Theme (System/Light/Dark). */
+.seg {
+  display: inline-flex;
+  border: 1.5px solid var(--ink-soft);
+  border-radius: 8px 6px 9px 7px;
+  overflow: hidden;
+}
+
+.seg button {
+  font-family: var(--sans);
+  font-size: 12.5px;
+  padding: 6px 12px;
+  border: none;
+  background: var(--card);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.seg button.active {
+  background: var(--red);
+  color: var(--btn-text-on-red);
+  font-weight: 700;
+}
+
+.seg button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Toggle switch — the Settings page's four opt-in mirrors (read-only in
+ * PR0) + the Appearance on/off switches. */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.toggle {
+  position: relative;
+  display: inline-block;
+  width: 38px;
+  height: 22px;
+  flex: none;
+  border-radius: 999px;
+  border: 1.5px solid var(--ink-soft);
+  background: var(--card);
+  appearance: none;
+  cursor: pointer;
+}
+
+.toggle:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--ink-soft);
+}
+
+.toggle.on {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+
+.toggle.on::after {
+  left: 18px;
+  background: #fff;
+}
+
+/* Settings page rows/sections (also used for the "Sites you've approved" list). */
+.settings-head {
+  margin: 22px 0 8px;
+}
+
+.settings-head:first-child {
+  margin-top: 2px;
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+  border: 1.5px solid var(--ink-soft);
+  border-radius: 10px 8px 11px 7px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--card);
+}
+
+.set-row-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.set-row-copy p {
+  margin: 0;
+}
+
+.set-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.set-meta,
+.set-desc {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+
+.kbd {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--ink-soft);
+  background: var(--token-bg);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.shortcut-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 24px;
+}
+
+.about-links {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+/* The options page is a full tab, not the fixed 360px popup body. */
+.options-page {
+  width: auto;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.trust-line {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  font-style: italic;
+  margin: 4px 0 8px;
 }

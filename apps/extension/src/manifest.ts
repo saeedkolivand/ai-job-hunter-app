@@ -70,6 +70,10 @@ const PANEL_PAGE = 'sidepanel.html';
 /** Title shown on the panel/sidebar in both browsers' own chrome. */
 const PANEL_TITLE = 'AI Job Hunter — Answer tools';
 
+/** The Settings page (PR0 §5) — a full tab on BOTH targets via the shared
+ *  `options_ui` MV3 key (no per-target delta needed, unlike the panel). */
+const OPTIONS_PAGE = 'options.html';
+
 type ManifestRecord = Record<string, unknown>;
 
 /** Fields shared by both targets. */
@@ -113,6 +117,11 @@ function baseManifest(): ManifestRecord {
       '48': 'icons/icon-48.png',
       '128': 'icons/icon-128.png',
     },
+    // Settings page (PR0 §5) — a full browser tab, not a dialog, so the
+    // Connection/Sites/Appearance/Shortcuts/Privacy sections have room. One
+    // shared key: both Chrome and Firefox MV3 support `options_ui`, unlike the
+    // panel (`side_panel` vs `sidebar_action`), so there is no per-target delta.
+    options_ui: { page: OPTIONS_PAGE, open_in_tab: true },
     // No remotely-hosted code, no eval — everything is bundled. We deliberately
     // do NOT loosen content_security_policy.
   };

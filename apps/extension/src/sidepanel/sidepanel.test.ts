@@ -12,13 +12,30 @@
 import { describe, expect, it, vi } from 'vitest';
 import { browser } from '@wxt-dev/browser';
 
+import type * as JobToolsModule from '../job-tools/job-tools';
+
 vi.mock('../answer-tools/answer-tools', () => ({
   mountAnswerTools: vi.fn(() => ({ render: vi.fn() })),
   copyText: vi.fn(),
 }));
 
-vi.mock('../job-tools/job-tools', () => ({
-  mountJobTools: vi.fn(() => ({ render: vi.fn(), checkPage: vi.fn() })),
+vi.mock('../job-tools/job-tools', async () => {
+  const actual = await vi.importActual<typeof JobToolsModule>('../job-tools/job-tools');
+  return {
+    ...actual,
+    mountJobTools: vi.fn(() => ({ render: vi.fn(), checkPage: vi.fn() })),
+  };
+});
+
+vi.mock('../job-status/job-status', () => ({
+  mountJobStatus: vi.fn(() => ({ refresh: vi.fn(), reset: vi.fn() })),
+}));
+
+vi.mock('../lib/site-memory', () => ({
+  mountFirstFillConfirm: vi.fn(() => ({ confirm: vi.fn(async () => true) })),
+  getRememberedHosts: vi.fn(async () => []),
+  rememberHost: vi.fn(async () => undefined),
+  hostOf: vi.fn((url: string | null) => (url ? new URL(url).hostname : null)),
 }));
 
 vi.mock('../connection-status/connection-status', () => ({
@@ -41,7 +58,18 @@ const PANEL_WINDOW_ID = 100;
 
 vi.mock('@wxt-dev/browser', () => ({
   browser: {
-    runtime: { sendMessage: vi.fn(), onMessage: { addListener: vi.fn() } },
+    runtime: {
+      sendMessage: vi.fn(),
+      onMessage: { addListener: vi.fn() },
+      openOptionsPage: vi.fn(),
+    },
+    // No `session` area in this mock — `sidepanel.ts`'s `sessionArea()` must
+    // degrade to "no persisted tab" rather than throw (mirrors
+    // `lib/answer-state.ts`'s own best-effort discipline for the same gap).
+    // `local` IS present — `lib/theme.ts`'s `bootTheme()` reads it at load.
+    storage: {
+      local: { get: vi.fn(() => Promise.resolve({})), set: vi.fn(), remove: vi.fn() },
+    },
     windows: {
       getCurrent: vi.fn(() => Promise.resolve({ id: PANEL_WINDOW_ID })),
       onFocusChanged: { addListener: vi.fn() },
@@ -56,9 +84,13 @@ vi.mock('@wxt-dev/browser', () => ({
 }));
 
 document.body.innerHTML =
-  '<div id="view-connected" hidden></div>' +
-  '<div id="job-tools-host"></div><div id="answer-tools-host"></div>' +
-  '<div id="connection-pill-host"></div><div id="connection-views-host"></div>';
+  '<header><h1 class="title">AI Job Hunter</h1>' +
+  '<div id="connection-pill-host"><button id="btn-settings"></button></div></header>' +
+  '<section id="view-connected" hidden>' +
+  '<p id="trust-line" hidden></p>' +
+  '<div id="tabs-host"></div>' +
+  '</section>' +
+  '<div id="connection-views-host"></div>';
 
 // `sidepanel.ts` has no exports: everything under test — the `tabs.onActivated`
 // listener, the `mountJobTools`/`mountConnectionStatus` calls and the deps they
@@ -338,5 +370,109 @@ describe('follow() sequencing regression (checkPage must not race the async stat
 
     expect(jobTools.render).not.toHaveBeenCalled();
     expect(jobTools.checkPage).not.toHaveBeenCalled();
+  });
+});
+
+// ── PR0 §3: the gear button, the tab bar, the trust line, job-status ────────
+
+describe('the gear button opens the Settings page', () => {
+  it('calls browser.runtime.openOptionsPage on click', () => {
+    document.getElementById('btn-settings')!.dispatchEvent(new Event('click', { bubbles: true }));
+    expect(browser.runtime.openOptionsPage).toHaveBeenCalled();
+  });
+});
+
+describe('the tab bar (Job / Answers)', () => {
+  it('mounts two tabs, Job active by default', () => {
+    const buttons = document.querySelectorAll<HTMLButtonElement>('.tab');
+    expect(buttons).toHaveLength(2);
+    expect(document.querySelector<HTMLButtonElement>('[data-tab="job"]')!.classList).toContain(
+      'active'
+    );
+  });
+
+  it('mounts job-status + job-tools into the Job panel, and answer-tools into the Answers panel', () => {
+    const jobPanel = document.querySelector<HTMLElement>('[data-section="job"]')!;
+    const answersPanel = document.querySelector<HTMLElement>('[data-section="answers"]')!;
+    expect(jobPanel.querySelector('#job-tools-host')).not.toBeNull();
+    expect(answersPanel.querySelector('#answer-tools-host')).not.toBeNull();
+  });
+});
+
+describe('the trust line (ADR-045)', () => {
+  it('shows "Reading: <host>" once a trusted state is delivered', async () => {
+    const trustLine = document.getElementById('trust-line') as HTMLElement;
+    vi.mocked(subscribeAnswerState).mockImplementationOnce((_tabId, onState) => {
+      queueMicrotask(() =>
+        onState({
+          tabId: 42,
+          origin: 'https://jobs.example.com',
+          scannedAt: 1,
+          rows: [],
+          stream: null,
+          pageChanged: false,
+        } as never)
+      );
+      return vi.fn();
+    });
+
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+    onActivated({ tabId: 42, windowId: PANEL_WINDOW_ID } as never);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(trustLine.hidden).toBe(false);
+    expect(trustLine.textContent).toBe('Reading: jobs.example.com');
+  });
+
+  it('hides again for an untrusted (pageChanged) state, leaving the message to job-tools', async () => {
+    const trustLine = document.getElementById('trust-line') as HTMLElement;
+    vi.mocked(subscribeAnswerState).mockImplementationOnce((_tabId, onState) => {
+      queueMicrotask(() =>
+        onState({
+          tabId: 43,
+          origin: 'https://jobs.example.com',
+          scannedAt: 1,
+          rows: [],
+          stream: null,
+          pageChanged: true,
+        } as never)
+      );
+      return vi.fn();
+    });
+
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+    onActivated({ tabId: 43, windowId: PANEL_WINDOW_ID } as never);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(trustLine.hidden).toBe(true);
+  });
+});
+
+describe('the Answers tab count badge', () => {
+  it('reflects the delivered state row count', async () => {
+    vi.mocked(subscribeAnswerState).mockImplementationOnce((_tabId, onState) => {
+      queueMicrotask(() =>
+        onState({
+          tabId: 44,
+          origin: 'https://jobs.example.com',
+          scannedAt: 1,
+          rows: [
+            { id: 'a', question: 'Q', field: null, status: 'empty', versions: [], selected: -1 },
+          ],
+          stream: null,
+          pageChanged: false,
+        } as never)
+      );
+      return vi.fn();
+    });
+
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+    onActivated({ tabId: 44, windowId: PANEL_WINDOW_ID } as never);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector('[data-tab="answers"]')!.textContent).toBe('Answers (1)');
   });
 });

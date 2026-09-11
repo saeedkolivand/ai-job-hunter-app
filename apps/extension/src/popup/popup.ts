@@ -1,6 +1,13 @@
 /**
  * Popup controller (plain TS — deliberately NOT the app's React stack).
  *
+ * The popup is the LAUNCHER surface of the PR0 redesign (`.claude/scratch/
+ * extension-round-design.md`): a page-context card, exactly three gesture
+ * actions (Import / Check fit / Fill — `job-tools.ts`'s `hideSaveAnswers`),
+ * a quiet "Open the panel →", and a best-effort notice line. The interactive
+ * Answer-tools UI moved fully into the side panel's Answers tab (ADR-044
+ * decision 1 reversed by the owner) — this file only reports a count.
+ *
  * It is a thin view over the background worker: it sends typed
  * {@link PopupRequest}s, delegates the connection status (pill/retry, pairing/
  * offline/outdated/searching views) to the shared `connection-status.ts`
@@ -11,55 +18,20 @@
 
 import { browser } from '@wxt-dev/browser';
 
-import { copyText, mountAnswerTools } from '../answer-tools/answer-tools';
 import { mountConnectionStatus } from '../connection-status/connection-status';
+import { resolveJobStatusView } from '../job-status/job-status';
 import { IMPORT_LABEL_DEFAULT, IMPORT_LABEL_FOUND, mountJobTools } from '../job-tools/job-tools';
-import { subscribeAnswerState } from '../lib/answer-state';
+import { type AnswerState, subscribeAnswerState } from '../lib/answer-state';
 import type { PopupRequest, PopupResponse } from '../lib/messages';
-import { getAnswerToolsExpanded, setAnswerToolsExpanded } from '../lib/storage';
+import { bootTheme } from '../lib/theme';
 
 import './popup.css';
 
-// `resolveStatusResponse` moved to `connection-status.ts` (ADR-046) — the pure
-// helper the module's own tests cover.
+// Apply the Settings → Appearance → Theme choice before anything else renders
+// (best-effort — see `lib/theme.ts`'s doc for the system-default fallback).
+void bootTheme();
 
 // ── pure view-decision helpers (exported for unit tests) ─────────────────────
-
-/** Format an epoch-ms timestamp as a short local date (e.g. "Jun 12", or
- *  "Jun 12, 2025" when the date's year differs from the current year) —
- *  popup-local formatting, no date library. */
-function formatShortDate(epochMs: number): string {
-  const date = new Date(epochMs);
-  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
-  if (date.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
-  return date.toLocaleDateString(undefined, opts);
-}
-
-/**
- * Given an `appliedCheck` response, return the status line to render above the
- * import controls, or `null` when nothing should be shown — not found, or ANY
- * error (the check is a silent best-effort enhancement, never a blocker; see
- * `runAppliedCheck` in background.ts, which already folds every failure mode
- * into `result.found === false`).
- *
- * Pure: no DOM access, no side effects.
- */
-export function resolveAppliedStatusLine(res: PopupResponse): string | null {
-  if (!res.ok || res.kind !== 'appliedCheck') return null;
-  const { result } = res;
-  if (result.error || !result.found) return null;
-
-  const title = result.title?.trim();
-  const lead = title ? `“${title}”` : null;
-  if (!result.status || result.status === 'saved') {
-    return lead ? `${lead} is saved in your pipeline.` : 'Saved in your pipeline.';
-  }
-  const when = typeof result.appliedAt === 'number' ? formatShortDate(result.appliedAt) : null;
-  if (lead && when) return `${lead} is already in your pipeline — applied ${when}.`;
-  if (lead) return `${lead} is already in your pipeline.`;
-  if (when) return `Already in your pipeline — applied ${when}.`;
-  return 'Already in your pipeline.';
-}
 
 /**
  * The import button's label: unchanged when no existing Application was found
@@ -96,12 +68,12 @@ export function resolveShowMarkAppliedButton(res: PopupResponse): boolean {
 
 /**
  * Given a `statusUpdate` response, return the message text + tone. UNLIKE
- * `resolveAppliedStatusLine`/`resolveImportButtonLabel` (which fold every
- * failure into "render nothing" — this is a passive, best-effort check),
- * this verb's errors ARE shown: it answers a deliberate click. A
- * transport-level `ok:false` surfaces its `error`; a resolved
- * `result.ok === false` (the desktop's own refusal — no match / wrong
- * starting status) surfaces `result.error`.
+ * `resolveImportButtonLabel` (which folds every failure into "render
+ * nothing" — the auto-check is a passive, best-effort enhancement), this
+ * verb's errors ARE shown: it answers a deliberate click. A transport-level
+ * `ok:false` surfaces its `error`; a resolved `result.ok === false` (the
+ * desktop's own refusal — no match / wrong starting status) surfaces
+ * `result.error`.
  *
  * Pure: no DOM access, no side effects.
  */
@@ -120,6 +92,24 @@ export function resolveMarkAppliedResponse(res: PopupResponse): {
   return { text: 'Marked as applied.', tone: 'ok' };
 }
 
+/**
+ * The popup's best-effort "notice line" (PR0 §2) — a passive count of
+ * answers already ready for this page, in place of the panel's full
+ * Answer-tools UI. `company` is not part of {@link AnswerState} (it only
+ * carries `origin`, the gesture-captured url origin), so this deliberately
+ * does not name the employer the way the design record's example line does —
+ * same honest-narrowing discipline as `job-status.ts`'s own doc for the same
+ * missing field.
+ *
+ * Pure: no DOM access, no side effects.
+ */
+export function resolveAnswersNoticeLine(state: AnswerState | null): string | null {
+  if (!state) return null;
+  const ready = state.rows.filter((row) => row.status !== 'empty').length;
+  if (ready === 0) return null;
+  return `${ready} answer${ready === 1 ? '' : 's'} ready on this page.`;
+}
+
 function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`missing element #${id}`);
@@ -132,17 +122,24 @@ const els = {
   },
   connectionPillHost: byId<HTMLDivElement>('connection-pill-host'),
   connectionViewsHost: byId<HTMLDivElement>('connection-views-host'),
+  jobCard: byId<HTMLDivElement>('job-card'),
+  jobCardTitle: byId<HTMLParagraphElement>('job-card-title'),
+  appliedStatus: byId<HTMLSpanElement>('applied-status'),
   btnMarkApplied: byId<HTMLButtonElement>('btn-mark-applied'),
-  answerTools: byId<HTMLDetailsElement>('answer-tools'),
-  answerToolsHost: byId<HTMLDivElement>('answer-tools-host'),
   jobToolsHost: byId<HTMLDivElement>('job-tools-host'),
   btnOpenPanel: byId<HTMLButtonElement>('btn-open-panel'),
-  appliedStatus: byId<HTMLParagraphElement>('applied-status'),
+  answersNotice: byId<HTMLParagraphElement>('answers-notice'),
   importMsg: byId<HTMLParagraphElement>('import-msg'),
   unpairGroup: byId<HTMLElement>('unpair-group'),
   btnUnpair: byId<HTMLButtonElement>('btn-unpair'),
   btnHelp: byId<HTMLButtonElement>('btn-help'),
+  menu: byId<HTMLDivElement>('menu'),
+  menuHelp: byId<HTMLButtonElement>('menu-help'),
+  menuSettings: byId<HTMLButtonElement>('menu-settings'),
+  menuAbout: byId<HTMLButtonElement>('menu-about'),
   helpPopover: byId<HTMLParagraphElement>('help-popover'),
+  aboutPopover: byId<HTMLDivElement>('about-popover'),
+  aboutVersion: byId<HTMLParagraphElement>('about-version'),
 };
 
 /**
@@ -161,28 +158,15 @@ async function send(req: PopupRequest): Promise<PopupResponse> {
 }
 
 /**
- * The Answer-tools section — the SAME component the side panel mounts, over
- * the SAME shared state (ADR-044 decision 1). Everything the two surfaces
- * have to agree about lives in that state; this is only a view of it.
+ * The Import/Check-fit/Fill controls — the SAME component the side panel
+ * mounts (see `job-tools.ts`'s doc), with `hideSaveAnswers` so the popup
+ * shows exactly the three gesture actions PR0 §2 asks for; "Save my answers"
+ * lives only in the panel's Answers tab now.
  */
-const answerTools = mountAnswerTools(els.answerToolsHost, { send, copy: copyText });
+const jobTools = mountJobTools(els.jobToolsHost, { send, hideSaveAnswers: true });
 
 /**
- * The Import/Check-fit/Fill/Save-answers controls — the SAME component the
- * side panel mounts (see `job-tools.ts`'s doc). `onAnswerToolsVisibility`
- * forwards the fields probe's other signal to the ONE thing this module has
- * no opinion on: the `<details>` disclosure around the Answer-tools section
- * above, which only the popup renders.
- */
-const jobTools = mountJobTools(els.jobToolsHost, {
-  send,
-  onAnswerToolsVisibility: (visible) => {
-    els.answerTools.hidden = !visible;
-  },
-});
-
-/**
- * Open the answer panel. Called SYNCHRONOUSLY from the click handler on both
+ * Open the side panel. Called SYNCHRONOUSLY from the click handler on both
  * browsers, because both `chrome.sidePanel.open` and
  * `browser.sidebarAction.open` require a user gesture and an await before
  * either one spends it. There is no `setOptions` call to make first: the
@@ -219,9 +203,9 @@ function openAnswerPanel(): void {
 
 /**
  * Rescan the page into the shared answer state. Fire-and-forget: it runs off
- * a gesture the user made for another reason (opening the popup, saving their
- * answers), so a failure must never talk over what they actually asked for —
- * the Answer-tools section shows its own empty state instead.
+ * a gesture the user made for another reason (opening the popup), so a
+ * failure must never talk over what they actually asked for. The scan feeds
+ * the panel's Answers tab AND this popup's own notice line.
  */
 function runAnswerScan(): void {
   void send({ kind: 'answerScan' }).catch(() => undefined);
@@ -230,6 +214,10 @@ function runAnswerScan(): void {
 function setMsg(el: HTMLElement, text: string, tone: 'ok' | 'err' | 'muted'): void {
   el.textContent = text;
   el.className = tone === 'muted' ? 'msg' : `msg msg--${tone}`;
+  // An empty status line still reserves `.msg`'s min-height — costly in the
+  // popup's tight 360×520 no-scroll budget (PR0 §2) when #import-msg (the
+  // only caller) has nothing to say, which is most of the time.
+  el.hidden = text.length === 0;
 }
 
 /**
@@ -240,9 +228,7 @@ function setMsg(el: HTMLElement, text: string, tone: 'ok' | 'err' | 'muted'): vo
  * this device" visibility (keyed on `hasToken` alone — the help popover is
  * global, not scoped to any one phase), and reset the connected-only content
  * left over from a previous page. `onConnected` fires once per TRANSITION
- * into `connected` for the fire-and-forget auto-checks. `onPaired` moves
- * focus off the (now-hidden) token input onto the Import button job-tools
- * owns, once a fresh pair reaches the connected view.
+ * into `connected` for the fire-and-forget auto-checks.
  */
 const connectionStatus = mountConnectionStatus(els.connectionPillHost, els.connectionViewsHost, {
   send,
@@ -250,16 +236,17 @@ const connectionStatus = mountConnectionStatus(els.connectionPillHost, els.conne
     els.unpairGroup.hidden = !status.hasToken;
     els.views.import.hidden = status.phase !== 'connected';
     if (status.phase !== 'connected') {
+      els.jobCard.hidden = true;
+      els.jobCardTitle.hidden = true;
+      els.jobCardTitle.textContent = '';
       els.appliedStatus.hidden = true;
       els.appliedStatus.textContent = '';
       els.btnMarkApplied.hidden = true;
       els.btnMarkApplied.disabled = false;
       jobTools.reset();
-      // The Answer-tools rows are NOT cleared here: they live in the shared
-      // per-tab state, not in this popup instance, and losing connection to
-      // the desktop is not a reason to throw away drafts the user can still
-      // copy (ADR-044 decision 3 keeps the rows even after a navigation).
-      answerTools.render(null);
+      // The notice line is NOT cleared here: it reflects the shared per-tab
+      // state, not a connection-scoped fetch — losing connection to the
+      // desktop is not a reason to hide that the page already has answers.
     }
   },
   onConnected: () => {
@@ -284,20 +271,26 @@ const connectionStatus = mountConnectionStatus(els.connectionPillHost, els.conne
 let appliedCheckGeneration = 0;
 
 /**
- * Run the fire-and-forget `appliedCheck` and render its outcome: the status
- * line above the import controls, plus the adaptive import-button label.
+ * Run the fire-and-forget `appliedCheck` and render its outcome into the
+ * page-context card: title + a saved/applied chip (via
+ * `job-status.ts`'s already-tested `resolveJobStatusView`, shared with the
+ * panel's Job tab — this file has no local copy of that decision), plus the
+ * adaptive import-button label and the "Mark as applied" button.
  * `runAppliedCheck` in background.ts already folds every failure mode into
  * `ok:true, result:{found:false}`, so the try/catch here only guards a
- * transport-level rejection (message-channel closed) — either way nothing is
- * ever shown but "no line, default label".
+ * transport-level rejection (message-channel closed) — either way the card
+ * just stays hidden.
  */
 async function runAppliedAutoCheck(): Promise<void> {
   appliedCheckGeneration += 1;
   const myGeneration = appliedCheckGeneration;
   // Clear synchronously before the request goes out (belt-and-suspenders): if
   // render() re-enters `connected` for a new page while a previous check is
-  // still in flight, the previous page's line/label must not linger while
-  // this fresh one resolves.
+  // still in flight, the previous page's card must not linger while this
+  // fresh one resolves.
+  els.jobCard.hidden = true;
+  els.jobCardTitle.hidden = true;
+  els.jobCardTitle.textContent = '';
   els.appliedStatus.hidden = true;
   els.appliedStatus.textContent = '';
   jobTools.setImportLabel(IMPORT_LABEL_DEFAULT);
@@ -309,9 +302,16 @@ async function runAppliedAutoCheck(): Promise<void> {
     // DOM state the newer check already wrote) must win; bail before touching
     // the DOM.
     if (myGeneration !== appliedCheckGeneration) return;
-    const line = resolveAppliedStatusLine(res);
-    els.appliedStatus.hidden = line === null;
-    els.appliedStatus.textContent = line ?? '';
+    const view = resolveJobStatusView(res);
+    if (view) {
+      els.jobCard.hidden = false;
+      if (view.title) {
+        els.jobCardTitle.textContent = view.title;
+        els.jobCardTitle.hidden = false;
+      }
+      els.appliedStatus.textContent = view.chipText;
+      els.appliedStatus.hidden = false;
+    }
     jobTools.setImportLabel(resolveImportButtonLabel(res));
     // Only a found+saved result shows the button — reset disabled here too,
     // so a re-fire after a successful "Mark as applied" click (which left the
@@ -320,8 +320,7 @@ async function runAppliedAutoCheck(): Promise<void> {
     els.btnMarkApplied.disabled = false;
   } catch {
     if (myGeneration !== appliedCheckGeneration) return;
-    els.appliedStatus.hidden = true;
-    els.appliedStatus.textContent = '';
+    els.jobCard.hidden = true;
     jobTools.setImportLabel(IMPORT_LABEL_DEFAULT);
     els.btnMarkApplied.hidden = true;
     els.btnMarkApplied.disabled = false;
@@ -334,8 +333,8 @@ async function runAppliedAutoCheck(): Promise<void> {
  * failures ARE shown here (this is a deliberate click action). On success it
  * re-fires {@link runAppliedAutoCheck} (the SAME generation-guarded path
  * every other applied.check render goes through) instead of hand-rolling a
- * DOM update, so the status line flips to the applied wording and this
- * button hides itself once the fresh check confirms it.
+ * DOM update, so the chip flips to the applied wording and this button hides
+ * itself once the fresh check confirms it.
  */
 async function doMarkApplied(): Promise<void> {
   els.btnMarkApplied.disabled = true;
@@ -365,11 +364,28 @@ async function unpair(): Promise<void> {
   connectionStatus.focusPairInputIfShown();
 }
 
-/** Toggle the help popover open/closed and keep `aria-expanded` in sync. */
-function toggleHelp(): void {
-  const open = els.helpPopover.hidden;
-  els.helpPopover.hidden = !open;
-  els.btnHelp.setAttribute('aria-expanded', String(open));
+// ── the "?" menu (PR0 §2: Help center / Settings / About) ──────────────────
+
+type PopoverView = 'menu' | 'help' | 'about' | null;
+
+let popoverView: PopoverView = null;
+
+function setPopover(view: PopoverView): void {
+  popoverView = view;
+  els.menu.hidden = view !== 'menu';
+  els.helpPopover.hidden = view !== 'help';
+  els.aboutPopover.hidden = view !== 'about';
+  els.btnHelp.setAttribute('aria-expanded', String(view !== null));
+}
+
+function toggleMenu(): void {
+  setPopover(popoverView === null ? 'menu' : null);
+}
+
+function showAbout(): void {
+  const version = browser.runtime.getManifest().version;
+  els.aboutVersion.textContent = `AI Job Hunter — Job Importer v${version}`;
+  setPopover('about');
 }
 
 function wire(): void {
@@ -378,23 +394,20 @@ function wire(): void {
   // user gesture this click IS, and any await before the call spends it.
   els.btnOpenPanel.addEventListener('click', openAnswerPanel);
   els.btnUnpair.addEventListener('click', () => void unpair());
-  els.btnHelp.addEventListener('click', toggleHelp);
-  // Persist the Answer-tools expand/collapse preference across popup opens —
-  // a UI boolean only, not PII/job data. Fires on BOTH a user click on the
-  // <summary> and a programmatic `.open` set (e.g. the stream-reattach
-  // auto-expand), per the `toggle` event's spec — that is fine here, the
-  // stored preference is just "what state it was last left in".
-  els.answerTools.addEventListener('toggle', () => {
-    void setAnswerToolsExpanded(els.answerTools.open);
+  els.btnHelp.addEventListener('click', toggleMenu);
+  els.menuHelp.addEventListener('click', () => setPopover('help'));
+  els.menuSettings.addEventListener('click', () => {
+    setPopover(null);
+    void browser.runtime.openOptionsPage();
   });
+  els.menuAbout.addEventListener('click', showAbout);
 
   // The streamed draft itself is NOT rendered from this push: the background
-  // mirrors every chunk into the shared per-tab state, and the Answer-tools
-  // component below is subscribed to it, so the popup and the panel show the
-  // same stream without either of them owning it. What IS worth doing here
-  // is surfacing a TERMINAL interruption on the shared status line, which the
-  // row itself cannot say as loudly. (The `status` push is handled inside
-  // `connectionStatus` itself — see its own `start()`.)
+  // mirrors every chunk into the shared per-tab state, and the panel's
+  // Answers tab is subscribed to it — this popup only surfaces a TERMINAL
+  // interruption on the shared status line, which the row itself cannot say
+  // as loudly. (The `status` push is handled inside `connectionStatus` itself
+  // — see its own `start()`.)
   browser.runtime.onMessage.addListener((message: unknown) => {
     const res = message as PopupResponse;
     if (res && res.ok && res.kind === 'answerAssistProgress' && res.done && res.interrupted) {
@@ -404,39 +417,27 @@ function wire(): void {
 }
 
 /**
- * Apply the persisted Answer-tools expand/collapse preference, then subscribe
- * the shared Answer-tools component to THIS tab's state — in that order, so a
- * buffered draft (which always wins) is never immediately re-collapsed by a
- * stale "collapsed" preference applied after it.
- *
- * The subscription is what replaces the old popup-open reattach: the
- * background mirrors an in-flight stream into the state, so a popup that
- * opens mid-stream renders it from the first `render` call rather than
- * querying for it. A tab id that cannot be read (no active tab) leaves the
- * component on its empty state, which is also what it shows before the first
- * scan.
+ * Resolve the active tab id (for the panel-open call above) and subscribe the
+ * notice line to this tab's shared answer state. Replaces the old Answer-tools
+ * disclosure bootstrap now that the interactive rows live only in the panel.
  *
  * Exported (unlike the other `do*`/render helpers) because nothing wires a
  * user click to re-run this bootstrap — it only ever runs once, automatically,
  * at popup load — so it has no other seam for tests to drive it directly.
  */
-export async function bootstrapAnswerTools(): Promise<void> {
-  try {
-    els.answerTools.open = await getAnswerToolsExpanded();
-  } catch {
-    // Best-effort — a storage read hiccup just keeps the collapsed default.
-  }
+export async function bootstrapNotice(): Promise<void> {
   try {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
     activeTabId = typeof tab?.id === 'number' ? tab.id : null;
-    // The "N questions · M to go" summary is rendered ONCE, by the panel body
-    // itself (`answer-tools.ts`'s `render()`) — it needs it there for the side
-    // panel, which has no `<summary>` disclosure. Duplicating it into this
-    // `<summary>` line as well showed it twice in the popup.
-    if (activeTabId !== null)
-      subscribeAnswerState(activeTabId, (state) => answerTools.render(state));
+    if (activeTabId !== null) {
+      subscribeAnswerState(activeTabId, (state) => {
+        const line = resolveAnswersNoticeLine(state);
+        els.answersNotice.hidden = line === null;
+        els.answersNotice.textContent = line ?? '';
+      });
+    }
   } catch {
-    // Best-effort — no tab id just means the section renders its empty state.
+    // Best-effort — no tab id just means the notice line stays hidden.
   }
 }
 
@@ -446,4 +447,4 @@ export async function bootstrapAnswerTools(): Promise<void> {
 // register second.
 connectionStatus.start();
 wire();
-void bootstrapAnswerTools();
+void bootstrapNotice();
