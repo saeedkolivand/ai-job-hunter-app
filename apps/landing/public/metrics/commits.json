@@ -1,5 +1,413 @@
 [
   {
+    "sha": "c9c93848a2489844323ed6e7427072072854645a",
+    "commit": {
+      "message": "ui(extension): notebook redesign shell — launcher popup, tabbed panel, settings page (#1201)",
+      "author": {
+        "date": "2026-09-11T04:34:33Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "bf2aa39dbb0932be3264523bd220593c16ad4823",
+    "commit": {
+      "message": "ci(charts): count store installs in the public installs badge (#1200)",
+      "author": {
+        "date": "2026-09-10T13:42:54Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "435c4634b112007d8bcd43a36d9fbbdd8ac853b3",
+    "commit": {
+      "message": "ci(release): pin msstore-cli to v0.4.2 and verify against a committed sha256 (#1199)",
+      "author": {
+        "date": "2026-09-10T13:39:02Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "fee1e5e2a806feb6552154399383e386c303f4bd",
+    "commit": {
+      "message": "fix(release): create the xdg data dir before msstore runs; surface the snap store listing (#1198)",
+      "author": {
+        "date": "2026-09-10T13:15:26Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "3e4c3220a014cd6ae19a2672d8f8e930e8ce13a0",
+    "commit": {
+      "message": "chore: sync landing download version to v0.153.2",
+      "author": {
+        "date": "2026-09-10T12:34:20Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "588eb3a702de0a23e93bae6010b0ed37528344e9",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.153.2 [skip ci]",
+      "author": {
+        "date": "2026-09-10T12:33:36Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "1b5ea8ec9e3bea97c45b5bb45ec215be06cee22d",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-10T12:14:59Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "cb7f0ba2634adbd2dbf0c8865eb83114fb9e62bf",
+    "commit": {
+      "message": "chore(release): 0.153.2 [skip ci]",
+      "author": {
+        "date": "2026-09-10T11:52:34Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "89d84df1ca998a1a69f6136df0b706f2f78f2cf3",
+    "commit": {
+      "message": "fix(desktop): pin autostart app_name to kebab-case slug",
+      "author": {
+        "date": "2026-09-10T11:50:42Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "ab3bc7e515eacafe0d28b80cffa6748c848323f6",
+    "commit": {
+      "message": "fix(ci): pre-install missing gnome-42-2204-sdk build-snap for snap pack",
+      "author": {
+        "date": "2026-09-10T11:42:10Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "59376675afcb4a96d69d57b04950d10999286498",
+    "commit": {
+      "message": "fix(ci): pre-install snap build-snaps individually with independent retries",
+      "author": {
+        "date": "2026-09-10T11:39:20Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "cabd8e86db7a749238a850f19e1eb91ce23b2570",
+    "commit": {
+      "message": "fix(release): retry snapcraft pack on transient build-snap install failures",
+      "author": {
+        "date": "2026-09-10T11:33:45Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "b3d9931e7cff083d3362801179e785d0ee90227d",
+    "commit": {
+      "message": "fix(release): fix root ownership before snapcraft pack",
+      "author": {
+        "date": "2026-09-10T11:25:41Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "a18ec6dccaf9b0b9dffce9619ea9891483ce683f",
+    "commit": {
+      "message": "fix(release): pack the snap in destructive mode",
+      "author": {
+        "date": "2026-09-10T11:12:32Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "41c357246b1b293b2046ee292db8d1fddf83ca75",
+    "commit": {
+      "message": "chore: sync landing download version to v0.153.1",
+      "author": {
+        "date": "2026-09-10T11:10:50Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "472ab8dffffc508432867bc2f8a0b4e4c79fd14e",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.153.1 [skip ci]",
+      "author": {
+        "date": "2026-09-10T11:10:12Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "bd1ccdb95231c86f4041d5787afd28f6c4eb9798",
+    "commit": {
+      "message": "chore(release): 0.153.1 [skip ci]",
+      "author": {
+        "date": "2026-09-10T10:28:58Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "2963464775e628b25cbc1435d45a2cd943f5ea75",
+    "commit": {
+      "message": "ci(release): park publish-msstore, strip debug cruft, link upstream bug",
+      "author": {
+        "date": "2026-09-10T10:24:25Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "19ae00cb28882ddc2eb2649e7382773a6a9c2d93",
+    "commit": {
+      "message": "ci(release): run msstore from a short fixed cwd, not the job workspace",
+      "author": {
+        "date": "2026-09-10T10:19:10Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "bf342806167a624f0f8058961ccb60abb6f9274e",
+    "commit": {
+      "message": "ci(release): use msstore info to see its own resolved config path",
+      "author": {
+        "date": "2026-09-10T10:13:24Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "fe822c742793fd3dac932d1fbbb155e510c5da19",
+    "commit": {
+      "message": "ci(release): check publish's own working directory right before it runs",
+      "author": {
+        "date": "2026-09-10T10:08:39Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "a47474be032fd3300aac38d28f6363fc8e51fb5c",
+    "commit": {
+      "message": "ci(release): read the real settings.json instead of a broken find",
+      "author": {
+        "date": "2026-09-10T10:04:29Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "ab1eda86a6a6837be8cc0befadf785a7fa48dbff",
+    "commit": {
+      "message": "fix(release): pin xdg_data_home so msstore-cli's config path is stable",
+      "author": {
+        "date": "2026-09-10T10:01:03Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "ac24f566ce9f601cb9476de80dd71aa30a1f9f2e",
+    "commit": {
+      "message": "ci(release): search for msstore-cli's real settings.json location",
+      "author": {
+        "date": "2026-09-10T09:58:21Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "c4669f2dc410ea5f1dab03da020d0f066229e0fb",
+    "commit": {
+      "message": "ci(release): add verbose logging + apt caching to publish-msstore",
+      "author": {
+        "date": "2026-09-10T09:55:34Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "99df738260e338333887873fe016ba1fc1352580",
+    "commit": {
+      "message": "fix(release): bootstrap a keyring for msstore-cli on the headless runner",
+      "author": {
+        "date": "2026-09-10T09:48:29Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "5c08bd08edfaa234f165eee5223726b345180d25",
+    "commit": {
+      "message": "fix(release): decode msstore-cli's utf-16le checksum file before verifying",
+      "author": {
+        "date": "2026-09-10T09:40:17Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "3b39492919c067f1a59f40aaf8d945feaaa8bf76",
+    "commit": {
+      "message": "ci(release): group publish-snap under build in the actions graph",
+      "author": {
+        "date": "2026-09-10T09:37:32Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "6839bd62da5b1d63d684ff9ea0c5b2eb7bc28465",
+    "commit": {
+      "message": "chore(release): 0.153.0 [skip ci]",
+      "author": {
+        "date": "2026-09-10T09:35:31Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "6fbba242f005eb401f4594846477ac89f0a66606",
+    "commit": {
+      "message": "chore(release): default the dispatch action to release, not build-installers",
+      "author": {
+        "date": "2026-09-10T09:34:30Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "8a5e86ae3d817f2853a844427cfe4b47e51969e1",
+    "commit": {
+      "message": "chore(release): list release before build-installers in dispatch options",
+      "author": {
+        "date": "2026-09-10T09:33:11Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "9c1adc77bcadbb161bb099705866d317e1f4f53a",
+    "commit": {
+      "message": "ci(repo-charts): scope permissions to job level (#1196)",
+      "author": {
+        "date": "2026-09-10T09:28:21Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "44828c9457f35fe3283b8c8f0a56cecd405973b3",
+    "commit": {
+      "message": "feat(release): remove flatpak distribution, add standalone msstore re-run (#1195)",
+      "author": {
+        "date": "2026-09-10T09:22:01Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "0d63d1e77688c3bf10761616844904deea264662",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-10T08:06:22Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "406cb2b0fbac7d12545400783f483df207beb4af",
     "commit": {
       "message": "chore: update export benchmark data [skip ci]",
@@ -789,414 +1197,6 @@
     },
     "author": {
       "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "be7ec50bfb10b8a10589fa1a51b16c5f5a09e3d6",
-    "commit": {
-      "message": "feat: open the answer panel from a plain right-click on the page (#1110)",
-      "author": {
-        "date": "2026-09-04T23:29:58Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "4145ca8d1f66f6a414d94c47e30a994b58553f56",
-    "commit": {
-      "message": "chore: sync landing download version to v0.146.2",
-      "author": {
-        "date": "2026-09-04T21:28:00Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "d86387586ea9ac73bff8205e58470ade4f8083cd",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.146.2 [skip ci]",
-      "author": {
-        "date": "2026-09-04T21:27:18Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "f22e07db7eec6c760e54758df458ec63b4e88aa5",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-04T20:58:08Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "dbc1960ca0a4ccca6a8e55542c492e862ff68b23",
-    "commit": {
-      "message": "chore(release): 0.146.2 [skip ci]",
-      "author": {
-        "date": "2026-09-04T20:44:43Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "84ef96d377a5d83ca632261fc8f5285744869b13",
-    "commit": {
-      "message": "fix: posting score, trust and agent-cli addressing integrity (#1104-#1107) (#1109)",
-      "author": {
-        "date": "2026-09-04T20:33:24Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "5ac11085cd07bab920bee847edd58f5d7cfb04e0",
-    "commit": {
-      "message": "chore: sync landing download version to v0.146.1",
-      "author": {
-        "date": "2026-09-04T15:49:25Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "f3927ece880ff387e8d783e824dd279e02a11df3",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.146.1 [skip ci]",
-      "author": {
-        "date": "2026-09-04T15:48:54Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "80fe73fbc5757b3083d18ba721ba87f5b3811f10",
-    "commit": {
-      "message": "chore(release): 0.146.1 [skip ci]",
-      "author": {
-        "date": "2026-09-04T15:04:24Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "446d4aece4a399f040a08962500dbc2c3db2b598",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-04T15:03:11Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "57be8988d8496a4ee79456a40b284c1565b4acbf",
-    "commit": {
-      "message": "fix: give extension answer tools a side panel; fix the inline rewrite popover (#1108)",
-      "author": {
-        "date": "2026-09-04T14:51:43Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "c57678096f2ba90a30bc78f6fbebce727f0d94b7",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-04T13:51:09Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "1034ca546f21556c211fad54e7370d18a5cca7b0",
-    "commit": {
-      "message": "fix: extension answer tools capture script and reasoning-aware draft budget (#1103)",
-      "author": {
-        "date": "2026-09-04T13:26:18Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "6d67e81d97648b7ae94131e0e5d9115bc8c7f4c3",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-04T07:57:17Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "7195ca9611830e202fc6d2d38bb4a269ea67f904",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-03T08:01:12Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "489786c7d04acb44f1e9d85bdbc9bebd66585f28",
-    "commit": {
-      "message": "chore: sync landing download version to v0.146.0",
-      "author": {
-        "date": "2026-09-03T04:51:40Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "e03a70d569e66ec150332effc240032deb2d049f",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.146.0 [skip ci]",
-      "author": {
-        "date": "2026-09-03T04:50:49Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "ee49262ce06005addf3767ff54de4b7b1a0a5bc0",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-03T04:32:36Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "0f76837851c618c2805d284ef5157e8397baa521",
-    "commit": {
-      "message": "chore(release): 0.146.0 [skip ci]",
-      "author": {
-        "date": "2026-09-03T04:11:25Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "f5fa164d0bd9d5386a1b6c40ae1819dbfaa1be0e",
-    "commit": {
-      "message": "feat: per-language help retrieval with cancellation, agent cli settings card, cross-os mcp smoke (#1102)",
-      "author": {
-        "date": "2026-09-03T04:08:31Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "c77de253bb74a33e52530fa648ba4d380baf0dba",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-02T23:52:11Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "0c14e8f15a38f4ced0a5f3bf5a9f5c96cfcb3702",
-    "commit": {
-      "message": "feat: help chat, a11y lint over the design system, orphan copy cleanup and the mcp residuals (#1101)",
-      "author": {
-        "date": "2026-09-02T23:27:51Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "a546557456e1d145c351b4a46705539d8befe72e",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-02T18:45:13Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "84cbcc6d5edb79ae245ddc494e8fc7ad678d986f",
-    "commit": {
-      "message": "chore: bump the desktop-rust group (#1097)",
-      "author": {
-        "date": "2026-09-02T18:21:05Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "b6c31f08f277e079101fdca969bcc1b7a5efd4c6",
-    "commit": {
-      "message": "chore: bump the javascript group with 26 updates (#1099)",
-      "author": {
-        "date": "2026-09-02T18:18:56Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "be667116eed959ba7c046188bae43ab8f19baa62",
-    "commit": {
-      "message": "chore: bump the ci-actions group with 4 updates (#1098)",
-      "author": {
-        "date": "2026-09-02T18:18:35Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "d71d5756a5f22ac6e788a4b5e314801ef2e40ca1",
-    "commit": {
-      "message": "chore: bump the codeql-action group with 3 updates (#1096)",
-      "author": {
-        "date": "2026-09-02T18:17:43Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "9867c060fc97e67c1df9662efa27b0295fe2d734",
-    "commit": {
-      "message": "feat: persistent next-step tile on the dashboard (#1095)",
-      "author": {
-        "date": "2026-09-02T17:46:44Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "ad6fa2f24f083daad9b18aa95af516933ad31b51",
-    "commit": {
-      "message": "feat: searchable help page over a corrected, feature-grouped corpus (#1094)",
-      "author": {
-        "date": "2026-09-02T10:29:15Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "ce2133295aa0f2b20e6ec680da148fc535d21337",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-02T07:53:23Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "e98b9421792337c4f0d5382af97e9b5a4bb7c4f1",
-    "commit": {
-      "message": "docs: record the live client handshakes in adr-040 (#1093)",
-      "author": {
-        "date": "2026-09-02T05:24:15Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "f5d5378183a68ce28d815242e080e20d6cc00ee1",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-02T05:17:05Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "44fd17dde4ad2dbe8e5719db52b84fda02f51475",
-    "commit": {
-      "message": "feat: mcp stdio server mode for the agent cli (#1092)",
-      "author": {
-        "date": "2026-09-02T05:05:15Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "0377ca78dc3a98a0c45e0d2d12c7976bc7f3a1b1",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-02T00:39:05Z"
-      }
-    },
-    "author": {
-      "login": "github"
     }
   }
 ]

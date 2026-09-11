@@ -1,41 +1,97 @@
 [
   {
-    "number": 1194,
-    "title": "fix(release): correct flathub app id and two linter-blocking manifest bugs",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1194",
+    "number": 1201,
+    "title": "ui(extension): notebook redesign shell — launcher popup, tabbed panel, settings page",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1201",
     "draft": false,
-    "created_at": "2026-09-10T07:11:16Z",
-    "updated_at": "2026-09-10T07:31:20Z",
-    "merged_at": "2026-09-10T07:11:32Z",
-    "closed_at": "2026-09-10T07:11:32Z",
+    "created_at": "2026-09-11T03:46:53Z",
+    "updated_at": "2026-09-11T04:48:19Z",
+    "merged_at": "2026-09-11T04:34:34Z",
+    "closed_at": "2026-09-11T04:34:34Z",
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"
     }
   },
   {
-    "number": 1193,
-    "title": "feat(release): automate microsoft store submission via msstore cli",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1193",
+    "number": 1199,
+    "title": "ci(release): pin msstore-cli to v0.4.2 and verify against a committed sha256",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1199",
     "draft": false,
-    "created_at": "2026-09-09T18:37:10Z",
-    "updated_at": "2026-09-10T06:58:57Z",
-    "merged_at": "2026-09-10T06:41:14Z",
-    "closed_at": "2026-09-10T06:41:14Z",
+    "created_at": "2026-09-10T13:37:55Z",
+    "updated_at": "2026-09-10T14:00:16Z",
+    "merged_at": "2026-09-10T13:39:02Z",
+    "closed_at": "2026-09-10T13:39:02Z",
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"
     }
   },
   {
-    "number": 1192,
-    "title": "chore: bump the javascript group with 7 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1192",
+    "number": 1200,
+    "title": "ci(charts): count store installs in the public installs badge",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1200",
     "draft": false,
-    "created_at": "2026-09-09T16:12:58Z",
-    "updated_at": "2026-09-09T18:26:53Z",
-    "merged_at": "2026-09-09T18:26:50Z",
-    "closed_at": "2026-09-09T18:26:50Z",
+    "created_at": "2026-09-10T13:41:21Z",
+    "updated_at": "2026-09-10T13:44:55Z",
+    "merged_at": "2026-09-10T13:42:54Z",
+    "closed_at": "2026-09-10T13:42:54Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1198,
+    "title": "fix(release): create the xdg data dir before msstore runs; surface the snap store listing",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1198",
+    "draft": false,
+    "created_at": "2026-09-10T13:09:15Z",
+    "updated_at": "2026-09-10T13:34:10Z",
+    "merged_at": "2026-09-10T13:15:27Z",
+    "closed_at": "2026-09-10T13:15:27Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1196,
+    "title": "ci(repo-charts): scope permissions to job level",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1196",
+    "draft": false,
+    "created_at": "2026-09-10T09:27:41Z",
+    "updated_at": "2026-09-10T09:53:04Z",
+    "merged_at": "2026-09-10T09:28:21Z",
+    "closed_at": "2026-09-10T09:28:21Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1195,
+    "title": "feat(release): remove flatpak distribution, add standalone msstore re-run",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1195",
+    "draft": false,
+    "created_at": "2026-09-10T09:05:19Z",
+    "updated_at": "2026-09-10T09:45:32Z",
+    "merged_at": "2026-09-10T09:22:02Z",
+    "closed_at": "2026-09-10T09:22:02Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1190,
+    "title": "chore: bump the desktop-rust group in /apps/desktop/src-tauri with 2 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1190",
+    "draft": false,
+    "created_at": "2026-09-09T16:09:44Z",
+    "updated_at": "2026-09-10T09:35:58Z",
+    "merged_at": "2026-09-09T18:26:28Z",
+    "closed_at": "2026-09-09T18:26:28Z",
     "requested_reviewers": [],
     "user": {
       "login": "dependabot[bot]"
@@ -47,7 +103,7 @@
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1191",
     "draft": false,
     "created_at": "2026-09-09T16:12:02Z",
-    "updated_at": "2026-09-09T18:26:41Z",
+    "updated_at": "2026-09-10T09:35:55Z",
     "merged_at": "2026-09-09T18:26:38Z",
     "closed_at": "2026-09-09T18:26:38Z",
     "requested_reviewers": [],
@@ -56,17 +112,45 @@
     }
   },
   {
-    "number": 1190,
-    "title": "chore: bump the desktop-rust group in /apps/desktop/src-tauri with 2 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1190",
+    "number": 1192,
+    "title": "chore: bump the javascript group with 7 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1192",
     "draft": false,
-    "created_at": "2026-09-09T16:09:44Z",
-    "updated_at": "2026-09-09T18:26:30Z",
-    "merged_at": "2026-09-09T18:26:28Z",
-    "closed_at": "2026-09-09T18:26:28Z",
+    "created_at": "2026-09-09T16:12:58Z",
+    "updated_at": "2026-09-10T09:35:52Z",
+    "merged_at": "2026-09-09T18:26:50Z",
+    "closed_at": "2026-09-09T18:26:50Z",
     "requested_reviewers": [],
     "user": {
       "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1193,
+    "title": "feat(release): automate microsoft store submission via msstore cli",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1193",
+    "draft": false,
+    "created_at": "2026-09-09T18:37:10Z",
+    "updated_at": "2026-09-10T09:35:49Z",
+    "merged_at": "2026-09-10T06:41:14Z",
+    "closed_at": "2026-09-10T06:41:14Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1194,
+    "title": "fix(release): correct flathub app id and two linter-blocking manifest bugs",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1194",
+    "draft": false,
+    "created_at": "2026-09-10T07:11:16Z",
+    "updated_at": "2026-09-10T09:35:48Z",
+    "merged_at": "2026-09-10T07:11:32Z",
+    "closed_at": "2026-09-10T07:11:32Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
     }
   },
   {
@@ -613,90 +697,6 @@
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1094,
-    "title": "feat: searchable help page over a corrected, feature-grouped corpus",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1094",
-    "draft": false,
-    "created_at": "2026-09-02T10:06:59Z",
-    "updated_at": "2026-09-03T04:11:54Z",
-    "merged_at": "2026-09-02T10:29:15Z",
-    "closed_at": "2026-09-02T10:29:15Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1095,
-    "title": "feat: persistent next-step tile on the dashboard",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1095",
-    "draft": false,
-    "created_at": "2026-09-02T12:25:14Z",
-    "updated_at": "2026-09-03T04:11:51Z",
-    "merged_at": "2026-09-02T17:46:44Z",
-    "closed_at": "2026-09-02T17:46:44Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1096,
-    "title": "chore: bump the codeql-action group with 3 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1096",
-    "draft": false,
-    "created_at": "2026-09-02T16:08:00Z",
-    "updated_at": "2026-09-03T04:11:50Z",
-    "merged_at": "2026-09-02T18:17:44Z",
-    "closed_at": "2026-09-02T18:17:44Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1098,
-    "title": "chore: bump the ci-actions group with 4 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1098",
-    "draft": false,
-    "created_at": "2026-09-02T16:12:46Z",
-    "updated_at": "2026-09-03T04:11:49Z",
-    "merged_at": "2026-09-02T18:18:36Z",
-    "closed_at": "2026-09-02T18:18:36Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1099,
-    "title": "chore: bump the javascript group with 26 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1099",
-    "draft": false,
-    "created_at": "2026-09-02T16:31:52Z",
-    "updated_at": "2026-09-03T04:11:48Z",
-    "merged_at": "2026-09-02T18:18:56Z",
-    "closed_at": "2026-09-02T18:18:56Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1097,
-    "title": "chore: bump the desktop-rust group in /apps/desktop/src-tauri with 15 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1097",
-    "draft": false,
-    "created_at": "2026-09-02T16:11:25Z",
-    "updated_at": "2026-09-03T04:11:47Z",
-    "merged_at": "2026-09-02T18:21:05Z",
-    "closed_at": "2026-09-02T18:21:05Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
     }
   }
 ]
