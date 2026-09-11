@@ -25,19 +25,29 @@
             id="btn-help"
             class="help"
             type="button"
-            aria-label="How this works"
+            aria-label="More"
+            aria-haspopup="true"
             aria-expanded="false"
-            aria-controls="help-popover"
+            aria-controls="menu"
           >
             ?
           </button>
         </div>
       </header>
 
-      <!-- Help popover: explains the local-only connection and what to do when the
-           app isn't running — the guidance the offline view used to spell out inline.
-           Toggled by #btn-help; hidden by default. Also hosts "Unpair this device" —
-           moved off the import view's standing row (see #view-import's Job group). -->
+      <!-- The launcher's "?" menu (PR0 §2, replaces the old bare help popover):
+           Help center reveals the SAME explanatory text the popover always had
+           (plus "Unpair this device"); Settings opens the options page;
+           About shows the version. Exactly one of #menu/#help-popover/
+           #about-popover is visible at a time — see popup.ts's `setPopover`. -->
+      <div id="menu" class="menu" role="menu" hidden>
+        <button id="menu-help" class="menu__item" type="button" role="menuitem">Help center</button>
+        <button id="menu-settings" class="menu__item" type="button" role="menuitem">
+          Settings
+        </button>
+        <button id="menu-about" class="menu__item" type="button" role="menuitem">About</button>
+      </div>
+
       <div
         id="help-popover"
         class="help-popover"
@@ -51,97 +61,66 @@
         </p>
         <!-- Only shown while a pairing token is actually stored (toggled in
              render() from ConnectionStatus.hasToken) — nothing to unpair
-             otherwise. Hidden by default here too, matching that no-token
-             starting assumption before the first status arrives. -->
+             otherwise. -->
         <div id="unpair-group" class="help-popover__unpair" hidden>
           <p class="help-popover__hint">Reset pairing</p>
           <button id="btn-unpair" class="link" type="button">Unpair this device</button>
         </div>
       </div>
 
-      <!-- Import view: shown when paired + connected. Grouped by job-to-be-done
-           (Job / Form / Answer tools) instead of one flat stack. -->
+      <div id="about-popover" class="help-popover" role="region" aria-label="About" hidden>
+        <p id="about-version"></p>
+      </div>
+
+      <!-- Import view: shown when paired + connected. -->
       <section id="view-import" class="view" hidden>
-        <!-- Persistent "authorized" cue: this section only renders when phase ===
-             'connected', which requires a stored pairing token — so the button is
-             correctly visible only when authorized (no JS toggle needed). It is
-             always disabled (a pure status indicator, not actionable). The "✓"
-             glyph carries the meaning beyond color (deuteranopia-safe). -->
-        <button
-          id="authorized-indicator"
-          class="btn btn--authorized"
-          type="button"
-          disabled
-          aria-label="Already authorized"
-        >
-          ✓ Authorized
-        </button>
         <p class="hint">Import the job on this page into your desktop app.</p>
 
-        <!-- Job status: found/applied state — stays owned by popup.ts directly
-             (not part of the shared job-tools module below; "Mark as applied"
-             was never in the panel-parity scope). -->
-        <section class="group" aria-label="Job status">
-          <!-- Fire-and-forget "have I already applied?" line, populated after the
-               popup opens (background auto-check). Empty/hidden until (and unless)
-               an existing Application is found — never shown on a failure/timeout. -->
-          <p id="applied-status" class="msg msg--ok" role="status" aria-live="polite" hidden></p>
-          <!-- Shown only for a found+saved applied.check result; hides itself once
-               the job is marked applied (re-fires the same auto-check). -->
-          <button id="btn-mark-applied" class="btn btn--quiet" type="button" hidden>
+        <!-- Page-context card: title + the saved/applied chip (from
+             `applied.check`), restyled onto the Notebook `.card`/`.tag`
+             components — the logic driving it is unchanged from before this
+             redesign (`resolveAppliedStatusLine`/`resolveShowMarkAppliedButton`
+             in popup.ts). No stage strip here (unlike the panel's Job tab) —
+             the popup must fit 360×≤520 without scrolling. -->
+        <div id="job-card" class="card" hidden>
+          <p id="job-card-title" class="job-title" hidden></p>
+          <div class="chip-row">
+            <span
+              id="applied-status"
+              class="tag tag--ok"
+              role="status"
+              aria-live="polite"
+              hidden
+            ></span>
+          </div>
+          <!-- Shown only for a found+saved applied.check result; hides itself
+               once the job is marked applied (re-fires the same auto-check). -->
+          <button id="btn-mark-applied" class="btn btn--quiet btn--small" type="button" hidden>
             Mark as applied
           </button>
-        </section>
+        </div>
 
-        <!-- Job + Form groups (Import/Check fit, Fill/Save answers): the SHARED
-             job-tools component (`src/job-tools/job-tools.ts`), which the side
-             panel also mounts — this is what gives the panel parity with these
-             four controls. Empty in the markup; the component builds its own
-             DOM into this host, including the Form group's fields-probe
-             visibility (unchanged behavior, moved out of popup.ts). -->
+        <!-- Exactly three gesture actions (PR0 §2) — the SHARED job-tools
+             component (`src/job-tools/job-tools.ts`, `hideSaveAnswers`), which
+             the side panel also mounts with the fourth ("Save my answers")
+             restored. Includes the fit chip + "why?" once Check fit ran. -->
         <div id="job-tools-host"></div>
 
-        <!-- Answer tools: collapsed by default (persisted expand/collapse
-             preference — see popup.ts's bootstrapAnswerTools); auto-expands
-             if a streamed AI answer is buffered/still running on reopen. Hidden
-             (together with the Form group above) when this page has no fillable
-             fields. -->
-        <details id="answer-tools" class="group group--divided">
-          <summary id="answer-tools-summary">Answer tools</summary>
-          <!-- The whole body of this section is rendered by the SHARED
-               component (`src/answer-tools/answer-tools.ts`) from the
-               per-(tab, origin) state the background owns in
-               `chrome.storage.session`. The side panel mounts the SAME
-               component against the SAME state, which is what makes the two
-               surfaces two views of one thing (ADR-044 decision 1) rather
-               than two implementations that drift apart on the first fix.
-               Empty in the markup on purpose: there is no state to render
-               until the first scan, and a hardcoded skeleton here would be a
-               second place for the row model to live. -->
-          <div id="answer-tools-host" class="atools"></div>
-          <!-- Opening the panel needs a USER GESTURE, and this click is one.
-               `chrome.sidePanel.open({ tabId })` is therefore called directly
-               in the handler with no await before it (see popup.ts's
-               `openAnswerPanel`), and the panel's path comes from the
-               manifest so there is no setOptions call to lose the gesture on.
-               The toolbar click cannot do this itself: a declared
-               `default_popup` takes priority over opening the panel on the
-               action click. -->
-          <button
-            id="btn-open-panel"
-            class="btn btn--quiet"
-            type="button"
-            title="Open these tools in the side panel, where they stay open while you fill the form"
-          >
-            Open AI Job Hunter answer tool
-          </button>
-          <p class="hint">
-            The panel stays open while you work through the form. On Firefox it opens as the
-            sidebar.
-          </p>
-        </details>
+        <button
+          id="btn-open-panel"
+          class="btn btn--quiet"
+          type="button"
+          title="Open these tools in the side panel, where they stay open while you fill the form"
+        >
+          Open the panel →
+        </button>
 
-        <p id="import-msg" class="msg" role="status" aria-live="polite"></p>
+        <!-- Best-effort summary of the shared answer-tools state for this tab
+             (PR0 §2's "notice line") — the panel's Answers tab is where the
+             rows themselves are edited; the popup only reports the count. -->
+        <p id="answers-notice" class="msg msg--muted" role="status" aria-live="polite" hidden></p>
+
+        <p id="import-msg" class="msg" role="status" aria-live="polite" hidden></p>
       </section>
 
       <!-- The pair / offline / outdated / searching views are built by the

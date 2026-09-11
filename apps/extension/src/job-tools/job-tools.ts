@@ -216,25 +216,59 @@ export function resolveMatchLiveResponse(res: PopupResponse): MatchLiveView {
   };
 }
 
-/** Build the "Check fit" score card — score / source+résumé line / gap chips.
+/** Qualitative band next to the score (R6 of the redesign record) — same
+ *  bands the popup/panel mockups use: strong ≥ 80, partial 50–79, low < 50. */
+export function scoreBand(score: number): 'strong match' | 'partial match' | 'low match' {
+  if (score >= 80) return 'strong match';
+  if (score >= 50) return 'partial match';
+  return 'low match';
+}
+
+/** Build the "Check fit" score card — red-pen score circle, band, an
+ *  expandable "why?" (missing-keyword chips + which résumé was used).
  *  `textContent` only — no `innerHTML` with page/desktop-derived text. */
 function buildMatchResultCard(view: MatchLiveView): HTMLElement {
   const card = document.createElement('div');
+  card.className = 'fit-card';
 
-  const score = document.createElement('p');
-  score.className = 'match-result__score';
-  score.textContent = `${view.score}% fit`;
-  card.append(score);
+  const head = document.createElement('div');
+  head.className = 'fit-head';
+  const circle = document.createElement('span');
+  circle.className = 'score-circle';
+  circle.textContent = `${view.score}%`;
+  head.append(circle);
 
-  const meta = document.createElement('p');
-  meta.className = 'match-result__meta';
-  const bits: string[] = [];
-  if (view.scoreLabel) bits.push(view.scoreLabel);
-  if (view.resumeName) bits.push(`against “${view.resumeName}”`);
-  meta.textContent = bits.join(' — ');
-  card.append(meta);
+  const headCopy = document.createElement('div');
+  headCopy.className = 'fit-head-copy';
+  const band = view.score === null ? null : scoreBand(view.score);
+  const scoreLine = document.createElement('p');
+  scoreLine.className = 'match-result__score';
+  scoreLine.textContent = band ? `${view.score}% fit · ${band}` : `${view.score}% fit`;
+  headCopy.append(scoreLine);
+  head.append(headCopy);
+  card.append(head);
+
+  if (view.scoreLabel || view.resumeName) {
+    const meta = document.createElement('p');
+    meta.className = 'match-result__meta';
+    const bits: string[] = [];
+    if (view.scoreLabel) bits.push(view.scoreLabel);
+    if (view.resumeName) bits.push(`against “${view.resumeName}”`);
+    meta.textContent = bits.join(' — ');
+    card.append(meta);
+  }
 
   if (view.gaps.length > 0) {
+    const why = document.createElement('details');
+    why.className = 'why-toggle';
+    // Collapsed by default — open, the popup's connected+Check-fit view
+    // overflows the 360×520 no-scroll budget (PR0 §2); the gap chips are one
+    // tap away behind "why?".
+    const summary = document.createElement('summary');
+    summary.className = 'link';
+    summary.textContent = 'why?';
+    why.append(summary);
+
     const gapsWrap = document.createElement('div');
     gapsWrap.className = 'match-result__gaps';
     for (const gap of view.gaps) {
@@ -243,7 +277,15 @@ function buildMatchResultCard(view: MatchLiveView): HTMLElement {
       chip.textContent = gap;
       gapsWrap.append(chip);
     }
-    card.append(gapsWrap);
+    why.append(gapsWrap);
+
+    if (view.resumeName) {
+      const resumeLine = document.createElement('p');
+      resumeLine.className = 'match-result__meta';
+      resumeLine.textContent = `Résumé used: ${view.resumeName}`;
+      why.append(resumeLine);
+    }
+    card.append(why);
   }
 
   return card;
@@ -324,6 +366,21 @@ export interface JobToolsDeps {
    *  element); the panel's Answer-tools section has no such gating today and
    *  simply omits this — adding it there is out of scope for this module. */
   onAnswerToolsVisibility?: (visible: boolean) => void;
+  /**
+   * Asked BEFORE the Fill request goes out (PR0 §4, first-time Fill
+   * confirmation). Resolves `true` to proceed, `false` to cancel — a caller
+   * that omits this deps entry gets the old always-proceed behavior (no
+   * confirmation), which is what a test double with no site-memory wiring
+   * gets for free.
+   */
+  confirmFill?: () => Promise<boolean>;
+  /**
+   * Hide "Save my answers from this page" (PR0 §2's three-action rule for the
+   * popup launcher — Import / Check fit / Fill only; saving answers moved
+   * fully into the panel's Answers tab). Static: set once at mount. Omitted
+   * (shown) by the side panel, which keeps all four controls.
+   */
+  hideSaveAnswers?: boolean;
 }
 
 export interface JobToolsView {
@@ -431,6 +488,7 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
   btnSaveAnswers.title = "Save the answers you typed on this page's application form";
   btnSaveAnswers.textContent = 'Save my answers from this page';
 
+  if (deps.hideSaveAnswers) btnSaveAnswers.hidden = true;
   formGroup.append(btnFill, btnSaveAnswers);
 
   const msgEl = document.createElement('p');
@@ -472,6 +530,11 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
     gatedMsg.hidden = trusted;
     activeWrap.hidden = !trusted;
     formGroup.hidden = !formGroupVisible;
+    // Exactly one solid-red primary CTA per render (popup.css's own
+    // `.btn--primary` doc: "the ONE raised primary CTA per context"). Fill
+    // outranks Import once the Form group is showing — Import demotes to
+    // the quiet tier rather than doubling up on two primaries at once.
+    btnImport.className = formGroupVisible ? 'btn btn--quiet' : 'btn btn--primary';
   }
   redraw();
 
@@ -522,9 +585,18 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
   }
 
   async function doFill(): Promise<void> {
+    // Lock the button BEFORE awaiting the (possibly slow, user-facing)
+    // confirmation — a repeated click while it's pending must not start a
+    // second concurrent confirmation or double-send `fill` once the first
+    // resolves.
+    if (btnFill.disabled) return;
     btnFill.disabled = true;
-    setMsg('Filling…', 'muted');
     try {
+      if (deps.confirmFill) {
+        const proceed = await deps.confirmFill();
+        if (!proceed) return;
+      }
+      setMsg('Filling…', 'muted');
       const res = await deps.send({ kind: 'fill' });
       const { text, tone } = resolveFillResponse(res);
       setMsg(text, tone);

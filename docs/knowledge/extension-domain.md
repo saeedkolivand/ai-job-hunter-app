@@ -1,6 +1,6 @@
 # Extension domain (browser extension + desktop bridge)
 
-Last updated: 2026-09-07 (ADR-045: job-tools panel parity + the `isPageTrusted` gate; ADR-044: extension Answer tools side panel + popup, shared per-tab state, draft-time `maxChars` field; `answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
+Last updated: 2026-09-11 (PR0 of the extension redesign: popup is now a launcher, side panel is now a tabbed workspace, Settings page, first-Fill site memory — ADR-044 amendment; ADR-045: job-tools panel parity + the `isPageTrusted` gate; ADR-044: extension Answer tools side panel, shared per-tab state, draft-time `maxChars` field; `answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
 
 Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tauri-security-reviewer`.
 
@@ -136,9 +136,31 @@ To guard against cancellation-race bugs and billable-job leaks, every in-flight 
 
 A reasoning model spends its thinking out of the **same output budget** as the answer, so a per-surface budget sized for a full-length answer alone can be eaten entirely by reasoning and end as `finish_reason: length` with no text at all. `answer.assist`'s budget sizing, effort-tier selection, one-retry rule, cancellation handling and per-attempt cap window are owned by [`extension_bridge/answer_assist.rs::compose_with_length_retry`](../../apps/desktop/src-tauri/src/extension_bridge/answer_assist.rs) and [`stream.rs::ComposeStream`](../../apps/desktop/src-tauri/src/extension_bridge/stream.rs) — read their doc comments for the contract rather than restating it here, where it would drift from the constants and predicates those symbols own.
 
-## Answer tools — side panel + popup, one shared state (ADR-044)
+## Popup = launcher, side panel = workspace (PR0 of the extension redesign)
 
-Two views over one state keyed by **tab id alone** (`answerStateKey(tabId)`, origin captured into the record itself — see that function's doc for why), so a draft survives the popup closing: the popup (`apps/extension/src/popup/popup.ts`) keeps the full Answer tools section, and a side panel (`apps/extension/src/sidepanel/sidepanel.ts` — Chrome `chrome.sidePanel`, Firefox `sidebar_action`) is a second view mounting the same `mountAnswerTools` component (`apps/extension/src/answer-tools/answer-tools.ts`) against the same record. The shared state (`AnswerState`, `subscribeAnswerState`, `apps/extension/src/lib/answer-state.ts`) lives in `chrome.storage.session`. Full record: [ADR-044](decision-records/adr-044-extension-answer-tools-side-panel-and-popup.md).
+Owner decisions: `.claude/scratch/extension-round-design.md` §R1/R2; ADR-044's 2026-09-11
+amendment. The popup (`apps/extension/src/popup/popup.ts`) is now a compact **launcher**:
+connection pill, the page-context card + read-only stage strip
+(`apps/extension/src/job-status/job-status.ts`), three gesture actions (Import/Check
+fit/Fill — `mountJobTools(..., { hideSaveAnswers: true })`), and "Open the panel →". The side
+panel (`apps/extension/src/sidepanel/sidepanel.ts`) is the **workspace**: a tab bar
+(`apps/extension/src/tabs/tabs.ts`'s `mountTabs`) with Job and Answers tabs in this PR
+(Documents/Prep register through the same list in PR2/PR4); the Answers tab is now the Answer
+tools' only home (see the amendment below). Score band + why: `job-tools.ts`'s `scoreBand`.
+Settings (`apps/extension/src/options.html` + `src/options/options.ts`, manifest `options_ui`)
+opens from the popup's "?" menu and the panel's gear; PR0 ships Connection & pairing, Sites
+(backed by `lib/site-memory.ts`'s remembered-hostnames store), read-only "What the extension may
+do" rows, Appearance (`lib/theme.ts` + `lib/appearance.ts`), Shortcuts, Privacy & about — the four
+opt-in switches turn live-toggleable in PR1 per the design record's R7.
+
+First-time Fill confirmation (`lib/site-memory.ts`'s `mountFirstFillConfirm`): shown once per
+un-remembered host before the first Fill on it; "don't ask again" persists the hostname only (no
+PII) to `browser.storage.local`, forgettable one at a time from Settings → Sites
+(`getRememberedHosts`/`forgetHost`).
+
+## Answer tools — the workspace's Answers tab, one shared state (ADR-044)
+
+State keyed by **tab id alone** (`answerStateKey(tabId)`, origin captured into the record itself — see that function's doc for why) lives in `chrome.storage.session`: the side panel (`apps/extension/src/sidepanel/sidepanel.ts` — Chrome `chrome.sidePanel`, Firefox `sidebar_action`) follows the active tab and mounts `mountAnswerTools` (`apps/extension/src/answer-tools/answer-tools.ts`) in its Answers tab against that tab's record. **The popup no longer hosts this component** (ADR-044's 2026-09-11 amendment, decision 1 reversed) — see the redesign section above. The shared state (`AnswerState`, `subscribeAnswerState`, `apps/extension/src/lib/answer-state.ts`) is unaffected: it was always keyed by tab, never by which surface last rendered it. Full record: [ADR-044](decision-records/adr-044-extension-answer-tools-side-panel-and-popup.md).
 
 **Gesture model** (identical on both browsers — `background.ts::openAnswerPanel` / `popup.ts::openAnswerPanel`): the toolbar click grants `activeTab` and opens the popup (a declared `default_popup` takes priority over `openPanelOnActionClick`); the popup's own `#btn-open-panel` control (popup.html) opens the panel from that same click, synchronously; two context-menu entries (`contextMenus` permission, both on both targets) are the second gesture path, defined together in `background.ts`'s `installContextMenu` — one on selected text that adds the selection as a free-text row before opening the panel, one that opens the panel directly with nothing prefilled. The two are mutually exclusive in the common case, per how Chrome resolves its own context types, not stacked — see [ADR-044](decision-records/adr-044-extension-answer-tools-side-panel-and-popup.md)'s amendment for which case is the one exception and why. There is no open-on-action-click anywhere in this codebase — `manifest.test.ts` asserts its absence.
 
@@ -157,6 +179,8 @@ A separate shared component, `apps/extension/src/job-tools/job-tools.ts` (`mount
 **Trust gate**: `isPageTrusted` (`job-tools.ts`), fed via `JobToolsView.render`/`checkPage`; re-armed by both context-menu entries through `rearmPageChangedForGesture` (`background.ts::installContextMenu`). See ADR-045 for the exact condition, the gated-state UI, and the caller-ordering contract `checkPage` depends on (`sidepanel.ts::follow`).
 
 **Scope boundary**: "Mark as applied" and the popup's adaptive Import re-label stay in `popup.ts`, unmoved — `JobToolsView.setImportLabel` is the one seam between them. See ADR-045 decision 5 for why.
+
+**PR0 redesign**: the launcher popup passes `hideSaveAnswers: true` (three of four controls fit the 360×520 no-scroll budget); the workspace panel's Job tab renders all four alongside the page-context card + stage strip — see "Popup = launcher, side panel = workspace" above.
 
 ## Store policy
 

@@ -1,5 +1,9 @@
 /**
- * Unit tests for the pure view-decision helpers exported from popup.ts.
+ * Unit tests for the pure view-decision helpers exported from popup.ts, plus
+ * the launcher's own wired-DOM behavior (PR0 §2: the page-context card, the
+ * "?" menu, the notice line — the interactive Answer-tools UI itself moved to
+ * the side panel's Answers tab, so its persistence/bootstrap tests moved with
+ * it; only a passive count survives here, via {@link resolveAnswersNoticeLine}).
  *
  * popup.ts runs side-effects at module load (DOM queries via byId, wire(),
  * refreshStatusWithTimeout()).  To keep tests light we import only the PURE
@@ -12,7 +16,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { browser } from '@wxt-dev/browser';
 
 import type { ConnectionStatus } from '../lib/messages';
-import { getAnswerToolsExpanded, setAnswerToolsExpanded } from '../lib/storage';
 
 // vi.mock must come before the import that triggers the module side-effects.
 // popup.ts imports @wxt-dev/browser; stub it out so the module-level
@@ -24,12 +27,16 @@ vi.mock('@wxt-dev/browser', () => ({
     runtime: {
       sendMessage: vi.fn(),
       onMessage: { addListener: vi.fn() },
+      openOptionsPage: vi.fn(),
+      getManifest: vi.fn(() => ({ version: '1.2.3' })),
     },
     // `query` resolves the tab id the shared answer state is keyed by (ADR-044)
     // — available without the `tabs` permission, which stays on the denylist.
     tabs: { create: vi.fn(), query: vi.fn(() => Promise.resolve([{ id: 7 }])) },
     storage: {
       session: { get: vi.fn(() => Promise.resolve({})), set: vi.fn(), remove: vi.fn() },
+      // `lib/theme.ts`'s `bootTheme()` reads this at module load.
+      local: { get: vi.fn(() => Promise.resolve({})), set: vi.fn(), remove: vi.fn() },
       onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
     },
   },
@@ -37,10 +44,6 @@ vi.mock('@wxt-dev/browser', () => ({
 
 vi.mock('../lib/storage', () => ({
   looksLikeToken: vi.fn(() => false),
-  // Default: collapsed, matching the fresh-install default (no stored value
-  // yet) — individual tests override via mockResolvedValueOnce as needed.
-  getAnswerToolsExpanded: vi.fn(() => Promise.resolve(false)),
-  setAnswerToolsExpanded: vi.fn(() => Promise.resolve(undefined)),
 }));
 
 // Build the minimal DOM that popup.ts queries at module load (byId calls).
@@ -55,23 +58,31 @@ function buildPopupDom(): void {
          connection-status.test.ts for that component's own unit tests. -->
     <div id="connection-pill-host"></div>
     <div id="connection-views-host"></div>
-    <button id="btn-mark-applied" hidden></button>
-    <!-- job-tools mounts its own Import/Check-fit/Fill/Save-answers DOM
-         (with matching ids) into this host at module load — see
+    <div id="job-card" hidden>
+      <p id="job-card-title" hidden></p>
+      <span id="applied-status" hidden></span>
+      <button id="btn-mark-applied" hidden></button>
+    </div>
+    <!-- job-tools mounts its own Import/Check-fit/Fill DOM (with matching
+         ids) into this host at module load, with hideSaveAnswers — see
          job-tools.test.ts for that component's own unit tests. -->
     <div id="job-tools-host"></div>
-    <details id="answer-tools">
-      <summary id="answer-tools-summary">Answer tools</summary>
-      <div id="answer-tools-host"></div>
-      <button id="btn-open-panel">Open AI Job Hunter answer tool</button>
-    </details>
-    <p id="applied-status" hidden></p>
+    <button id="btn-open-panel">Open the panel →</button>
+    <p id="answers-notice" hidden></p>
     <p id="import-msg"></p>
     <div id="unpair-group" hidden>
       <button id="btn-unpair"></button>
     </div>
-    <button id="btn-help"></button>
+    <button id="btn-help" aria-expanded="false"></button>
+    <div id="menu" hidden>
+      <button id="menu-help">Help center</button>
+      <button id="menu-settings">Settings</button>
+      <button id="menu-about">About</button>
+    </div>
     <p id="help-popover" hidden></p>
+    <div id="about-popover" hidden>
+      <p id="about-version"></p>
+    </div>
   `;
 }
 
@@ -81,16 +92,14 @@ buildPopupDom();
 // listeners at load (wire()), so the behavioral tests below drive the controller
 // by dispatching real clicks on the wired buttons and asserting DOM state.
 const {
-  resolveAppliedStatusLine,
   resolveImportButtonLabel,
   resolveShowMarkAppliedButton,
   resolveMarkAppliedResponse,
-  bootstrapAnswerTools,
+  resolveAnswersNoticeLine,
+  bootstrapNotice,
 } = await import('./popup');
 
 const sendMessageMock = vi.mocked(browser.runtime.sendMessage);
-const getAnswerToolsExpandedMock = vi.mocked(getAnswerToolsExpanded);
-const setAnswerToolsExpandedMock = vi.mocked(setAnswerToolsExpanded);
 const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 // `resolveStatusResponse` + the connection-status pill/retry/pairing/offline/
@@ -99,101 +108,7 @@ const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) 
 // above because `connection-status.ts` (which this file mounts for real, not
 // mocked) imports it too.
 
-// ── resolveAppliedStatusLine / resolveImportButtonLabel ───────────────────────
-
-describe('resolveAppliedStatusLine', () => {
-  it('returns null when the response is not an appliedCheck response', () => {
-    const res = { ok: true as const, kind: 'token' as const };
-    expect(resolveAppliedStatusLine(res)).toBeNull();
-  });
-
-  it('returns null when ok is false', () => {
-    const res = { ok: false as const, error: 'boom' };
-    expect(resolveAppliedStatusLine(res)).toBeNull();
-  });
-
-  it('returns null when the result carries an error (soft-fail)', () => {
-    const res = {
-      ok: true as const,
-      kind: 'appliedCheck' as const,
-      result: { found: false, error: 'malformed' },
-    };
-    expect(resolveAppliedStatusLine(res)).toBeNull();
-  });
-
-  it('returns null when not found', () => {
-    const res = {
-      ok: true as const,
-      kind: 'appliedCheck' as const,
-      result: { found: false },
-    };
-    expect(resolveAppliedStatusLine(res)).toBeNull();
-  });
-
-  it('reports "Saved in your pipeline" for a found saved status with no title', () => {
-    const res = {
-      ok: true as const,
-      kind: 'appliedCheck' as const,
-      result: { found: true, status: 'saved' },
-    };
-    expect(resolveAppliedStatusLine(res)).toBe('Saved in your pipeline.');
-  });
-
-  it('names the job when a title is present for a found saved status', () => {
-    const res = {
-      ok: true as const,
-      kind: 'appliedCheck' as const,
-      result: { found: true, status: 'saved', title: 'Senior Rust Engineer' },
-    };
-    expect(resolveAppliedStatusLine(res)).toBe('“Senior Rust Engineer” is saved in your pipeline.');
-  });
-
-  it('reports the applied date for a found non-saved status with appliedAt', () => {
-    const appliedAt = Date.UTC(2026, 5, 12); // Jun 12, 2026 (UTC)
-    const res = {
-      ok: true as const,
-      kind: 'appliedCheck' as const,
-      result: { found: true, status: 'applied', appliedAt },
-    };
-    expect(resolveAppliedStatusLine(res)).toMatch(/^Already in your pipeline — applied .+\.$/);
-  });
-
-  it('names the job + date together when both a title and appliedAt are present', () => {
-    const appliedAt = Date.UTC(2026, 5, 12);
-    const res = {
-      ok: true as const,
-      kind: 'appliedCheck' as const,
-      result: { found: true, status: 'interviewing', title: 'Backend Engineer', appliedAt },
-    };
-    expect(resolveAppliedStatusLine(res)).toMatch(
-      /^“Backend Engineer” is already in your pipeline — applied .+\.$/
-    );
-  });
-
-  it('falls back to a dateless message when a non-saved status carries no appliedAt', () => {
-    const res = {
-      ok: true as const,
-      kind: 'appliedCheck' as const,
-      result: { found: true, status: 'applied' },
-    };
-    expect(resolveAppliedStatusLine(res)).toBe('Already in your pipeline.');
-  });
-
-  it('includes the year in the applied date when it differs from the current year', () => {
-    // Relative to the current year so this never rots — June avoids any
-    // UTC/local timezone day-boundary rollover into a different year.
-    const priorYear = new Date().getFullYear() - 1;
-    const appliedAt = Date.UTC(priorYear, 5, 12);
-    const res = {
-      ok: true as const,
-      kind: 'appliedCheck' as const,
-      result: { found: true, status: 'applied', appliedAt },
-    };
-    expect(resolveAppliedStatusLine(res)).toMatch(
-      new RegExp(`^Already in your pipeline — applied .+\\b${priorYear}\\.$`)
-    );
-  });
-});
+// ── resolveImportButtonLabel ───────────────────────────────────────────────
 
 describe('resolveImportButtonLabel', () => {
   it('returns the default label when not found', () => {
@@ -336,22 +251,138 @@ describe('resolveMarkAppliedResponse', () => {
   });
 });
 
+// ── resolveAnswersNoticeLine (PR0 §2's passive notice, replacing the popup's
+// own interactive Answer-tools rows) ────────────────────────────────────────
+
+describe('resolveAnswersNoticeLine', () => {
+  it('returns null when there is no state at all', () => {
+    expect(resolveAnswersNoticeLine(null)).toBeNull();
+  });
+
+  it('returns null when every row is still empty', () => {
+    const state = {
+      tabId: 1,
+      origin: 'https://jobs.example.com',
+      scannedAt: 0,
+      rows: [
+        {
+          id: 'a',
+          question: 'Q',
+          field: null,
+          status: 'empty' as const,
+          versions: [],
+          selected: -1,
+        },
+      ],
+      stream: null,
+      pageChanged: false,
+    };
+    expect(resolveAnswersNoticeLine(state)).toBeNull();
+  });
+
+  it('counts rows that are not empty, singular phrasing for one', () => {
+    const state = {
+      tabId: 1,
+      origin: 'https://jobs.example.com',
+      scannedAt: 0,
+      rows: [
+        {
+          id: 'a',
+          question: 'Q1',
+          field: null,
+          status: 'drafted' as const,
+          versions: [],
+          selected: -1,
+        },
+        {
+          id: 'b',
+          question: 'Q2',
+          field: null,
+          status: 'empty' as const,
+          versions: [],
+          selected: -1,
+        },
+      ],
+      stream: null,
+      pageChanged: false,
+    };
+    expect(resolveAnswersNoticeLine(state)).toBe('1 answer ready on this page.');
+  });
+
+  it('uses plural phrasing for more than one', () => {
+    const state = {
+      tabId: 1,
+      origin: 'https://jobs.example.com',
+      scannedAt: 0,
+      rows: [
+        {
+          id: 'a',
+          question: 'Q1',
+          field: null,
+          status: 'filled' as const,
+          versions: [],
+          selected: -1,
+        },
+        {
+          id: 'b',
+          question: 'Q2',
+          field: null,
+          status: 'saved-available' as const,
+          versions: [],
+          selected: -1,
+        },
+      ],
+      stream: null,
+      pageChanged: false,
+    };
+    expect(resolveAnswersNoticeLine(state)).toBe('2 answers ready on this page.');
+  });
+});
+
 // ── controller behavior (wired DOM) ───────────────────────────────────────────
 
-describe('help toggle (#btn-help)', () => {
-  it('toggles the popover open/closed and keeps aria-expanded in sync', () => {
+describe('the "?" menu (#btn-help → Help center / Settings / About)', () => {
+  beforeEach(() => {
+    byId<HTMLElement>('menu').hidden = true;
+    byId<HTMLElement>('help-popover').hidden = true;
+    byId<HTMLElement>('about-popover').hidden = true;
+    byId<HTMLButtonElement>('btn-help').setAttribute('aria-expanded', 'false');
+  });
+
+  it('opens the menu on click, closes it on a second click', () => {
     const btn = byId<HTMLButtonElement>('btn-help');
-    const popover = byId<HTMLParagraphElement>('help-popover');
-    popover.hidden = true;
-    btn.setAttribute('aria-expanded', 'false');
 
     btn.click();
-    expect(popover.hidden).toBe(false);
+    expect(byId<HTMLElement>('menu').hidden).toBe(false);
     expect(btn.getAttribute('aria-expanded')).toBe('true');
 
     btn.click();
-    expect(popover.hidden).toBe(true);
+    expect(byId<HTMLElement>('menu').hidden).toBe(true);
     expect(btn.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('"Help center" swaps the menu for the existing help-popover content', () => {
+    byId<HTMLButtonElement>('btn-help').click();
+    byId<HTMLButtonElement>('menu-help').click();
+
+    expect(byId<HTMLElement>('menu').hidden).toBe(true);
+    expect(byId<HTMLElement>('help-popover').hidden).toBe(false);
+  });
+
+  it('"Settings" opens the options page and closes the menu', () => {
+    byId<HTMLButtonElement>('btn-help').click();
+    byId<HTMLButtonElement>('menu-settings').click();
+
+    expect(browser.runtime.openOptionsPage).toHaveBeenCalled();
+    expect(byId<HTMLElement>('menu').hidden).toBe(true);
+  });
+
+  it('"About" shows the version line from the manifest', () => {
+    byId<HTMLButtonElement>('btn-help').click();
+    byId<HTMLButtonElement>('menu-about').click();
+
+    expect(byId<HTMLElement>('about-popover').hidden).toBe(false);
+    expect(byId<HTMLElement>('about-version').textContent).toContain('1.2.3');
   });
 });
 
@@ -369,7 +400,7 @@ describe('view-import + unpair-group gating (via the real connection-status modu
   const push = (phase: ConnectionStatus['phase'], hasToken = true) =>
     statusListener({ ok: true, kind: 'status', status: { phase, port: null, hasToken } });
 
-  it('shows view-import only for connected, and hides it (resetting job/answer tools) otherwise', () => {
+  it('shows view-import only for connected, and hides it (resetting job/job-card) otherwise', () => {
     const importView = byId<HTMLElement>('view-import');
 
     push('connected');
@@ -377,6 +408,7 @@ describe('view-import + unpair-group gating (via the real connection-status modu
 
     push('app_not_running');
     expect(importView.hidden).toBe(true);
+    expect(byId<HTMLElement>('job-card').hidden).toBe(true);
   });
 
   it('shows "Unpair this device" only while a pairing token is stored, independent of phase', () => {
@@ -410,7 +442,7 @@ describe('appliedCheck auto-check', () => {
     push('searching');
   });
 
-  it('sends an appliedCheck request and renders the found+applied status line with the relabeled button', async () => {
+  it('sends an appliedCheck request and renders the job-card chip with the relabeled button', async () => {
     sendMessageMock.mockResolvedValueOnce({
       ok: true,
       kind: 'appliedCheck',
@@ -421,9 +453,10 @@ describe('appliedCheck auto-check', () => {
     await flush();
 
     expect(sendMessageMock).toHaveBeenCalledWith({ kind: 'appliedCheck' });
-    const status = byId<HTMLParagraphElement>('applied-status');
+    expect(byId<HTMLElement>('job-card').hidden).toBe(false);
+    const status = byId<HTMLSpanElement>('applied-status');
     expect(status.hidden).toBe(false);
-    expect(status.textContent).toContain('Already in your pipeline');
+    expect(status.textContent).toMatch(/^Applied /);
     expect(byId<HTMLButtonElement>('btn-import').textContent).toBe('Re-import / update');
     // Already applied — the mark-applied button has nothing left to do.
     expect(byId<HTMLButtonElement>('btn-mark-applied').hidden).toBe(true);
@@ -452,19 +485,17 @@ describe('appliedCheck auto-check', () => {
     push('connected');
     await flush();
 
-    const status = byId<HTMLParagraphElement>('applied-status');
-    expect(status.hidden).toBe(true);
+    expect(byId<HTMLElement>('job-card').hidden).toBe(true);
     expect(byId<HTMLButtonElement>('btn-import').textContent).toBe('Import this job');
   });
 
-  it('soft-fails silently (no status line, default label, no thrown error) when the request rejects', async () => {
+  it('soft-fails silently (card stays hidden, default label, no thrown error) when the request rejects', async () => {
     sendMessageMock.mockRejectedValueOnce(new Error('message channel closed'));
 
     push('connected');
     await flush();
 
-    const status = byId<HTMLParagraphElement>('applied-status');
-    expect(status.hidden).toBe(true);
+    expect(byId<HTMLElement>('job-card').hidden).toBe(true);
     expect(byId<HTMLButtonElement>('btn-import').textContent).toBe('Import this job');
   });
 
@@ -476,8 +507,8 @@ describe('appliedCheck auto-check', () => {
     });
     push('connected');
     await flush();
-    // Entering `connected` fires the three fire-and-forget auto-checks —ppliedCheck
-    // and fieldsProbe (see the sibling `fieldsProbe auto-check` describe block).
+    // Entering `connected` fires three fire-and-forget auto-checks — appliedCheck,
+    // fieldsProbe (Form group gating) and answerScan (the notice line's data).
     expect(sendMessageMock).toHaveBeenCalledTimes(3);
     expect(sendMessageMock).toHaveBeenCalledWith({ kind: 'answerScan' });
     expect(sendMessageMock).toHaveBeenCalledWith({ kind: 'fieldsProbe' });
@@ -488,7 +519,7 @@ describe('appliedCheck auto-check', () => {
     expect(sendMessageMock).not.toHaveBeenCalled();
   });
 
-  it('clears the stale status line + button label on leaving connected, with no flash before the next check resolves', async () => {
+  it('clears the stale card + button label on leaving connected, with no flash before the next check resolves', async () => {
     sendMessageMock.mockResolvedValueOnce({
       ok: true,
       kind: 'appliedCheck',
@@ -498,30 +529,28 @@ describe('appliedCheck auto-check', () => {
     push('connected');
     await flush();
 
-    const status = byId<HTMLParagraphElement>('applied-status');
+    const jobCard = byId<HTMLElement>('job-card');
     const btnImport = byId<HTMLButtonElement>('btn-import');
     const btnMarkApplied = byId<HTMLButtonElement>('btn-mark-applied');
-    expect(status.hidden).toBe(false);
+    expect(jobCard.hidden).toBe(false);
     expect(btnImport.textContent).toBe('Re-import / update');
     expect(btnMarkApplied.hidden).toBe(true); // job A is already applied
 
-    // Desktop drops the connection — job A's stale line/label must not survive.
+    // Desktop drops the connection — job A's stale card must not survive.
     push('app_not_running');
-    expect(status.hidden).toBe(true);
-    expect(status.textContent).toBe('');
+    expect(jobCard.hidden).toBe(true);
     expect(btnImport.textContent).toBe('Import this job');
     expect(btnMarkApplied.hidden).toBe(true);
 
     // Reconnect for job B — before its own check resolves, the pre-resolve
-    // state must already be clean (no lingering job-A text while it's in flight).
+    // state must already be clean (no lingering job-A content while it's in flight).
     sendMessageMock.mockResolvedValueOnce({
       ok: true,
       kind: 'appliedCheck',
       result: { found: true, status: 'saved' },
     });
     push('connected');
-    expect(status.hidden).toBe(true);
-    expect(status.textContent).toBe('');
+    expect(jobCard.hidden).toBe(true);
     expect(btnImport.textContent).toBe('Import this job');
     expect(btnMarkApplied.hidden).toBe(true);
     await flush();
@@ -550,9 +579,11 @@ describe('appliedCheck auto-check', () => {
     push('connected');
     await flush();
 
-    const status = byId<HTMLParagraphElement>('applied-status');
+    const jobCardTitle = byId<HTMLParagraphElement>('job-card-title');
+    const status = byId<HTMLSpanElement>('applied-status');
     const btnImport = byId<HTMLButtonElement>('btn-import');
-    expect(status.textContent).toBe('“Job B” is saved in your pipeline.');
+    expect(jobCardTitle.textContent).toBe('Job B');
+    expect(status.textContent).toBe('Saved');
     expect(btnImport.textContent).toBe('Re-import / update');
 
     // Check A finally resolves late (found:false for job A) — it must NOT
@@ -560,19 +591,21 @@ describe('appliedCheck auto-check', () => {
     resolveA?.({ ok: true, kind: 'appliedCheck', result: { found: false } });
     await flush();
 
-    expect(status.textContent).toBe('“Job B” is saved in your pipeline.');
+    expect(jobCardTitle.textContent).toBe('Job B');
+    expect(status.textContent).toBe('Saved');
     expect(btnImport.textContent).toBe('Re-import / update');
   });
 });
 
 // ── fieldsProbe auto-check (fire-and-forget on entering `connected`) ──────────
-// Gates the Form group (#group-form) + the Answer-tools disclosure
-// (#answer-tools) on "does this page have fillable form fields?". Runs
-// ALONGSIDE the appliedCheck auto-check above on the SAME transition — the
-// first queued sendMessage response answers appliedCheck (code calls it
-// first), the second answers fieldsProbe.
+// Gates the Form group (#group-form) on "does this page have fillable form
+// fields?". Runs ALONGSIDE the appliedCheck auto-check above on the SAME
+// transition — the first queued sendMessage response answers appliedCheck
+// (code calls it first), the second answers fieldsProbe. Unlike before this
+// redesign there is no Answer-tools disclosure in the popup to gate anymore
+// (`onAnswerToolsVisibility` is intentionally omitted) — only #group-form.
 
-describe('fieldsProbe auto-check (Form group + Answer-tools gating)', () => {
+describe('fieldsProbe auto-check (#group-form gating)', () => {
   const statusListener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
     ((message: unknown) => void) | undefined;
   if (!statusListener) throw new Error('onMessage status listener not registered');
@@ -593,7 +626,7 @@ describe('fieldsProbe auto-check (Form group + Answer-tools gating)', () => {
     push('searching');
   });
 
-  it('shows the Form group + Answer-tools disclosure when the probe finds fillable fields', async () => {
+  it('shows the Form group when the probe finds fillable fields', async () => {
     sendMessageMock.mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK).mockResolvedValueOnce({
       ok: true,
       kind: 'fieldsProbe',
@@ -605,10 +638,9 @@ describe('fieldsProbe auto-check (Form group + Answer-tools gating)', () => {
     await flush();
 
     expect(byId<HTMLElement>('group-form').hidden).toBe(false);
-    expect(byId<HTMLDetailsElement>('answer-tools').hidden).toBe(false);
   });
 
-  it('hides the Form group + Answer-tools disclosure when the probe finds no fillable fields at all', async () => {
+  it('hides the Form group when the probe finds no fillable fields at all', async () => {
     sendMessageMock.mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK).mockResolvedValueOnce({
       ok: true,
       kind: 'fieldsProbe',
@@ -620,25 +652,9 @@ describe('fieldsProbe auto-check (Form group + Answer-tools gating)', () => {
     await flush();
 
     expect(byId<HTMLElement>('group-form').hidden).toBe(true);
-    expect(byId<HTMLDetailsElement>('answer-tools').hidden).toBe(true);
   });
 
-  it('shows the Form group but hides Answer tools for an IDENTITY-ONLY form (name/email/phone) — the union vs. narrower-signal split', async () => {
-    sendMessageMock.mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK).mockResolvedValueOnce({
-      ok: true,
-      kind: 'fieldsProbe',
-      hasFormFields: true, // hasAutofillableFields matched name/email/phone
-      hasAnswerFields: false, // hasAnswerCapturableFields excludes identity fields
-    });
-
-    push('connected');
-    await flush();
-
-    expect(byId<HTMLElement>('group-form').hidden).toBe(false);
-    expect(byId<HTMLDetailsElement>('answer-tools').hidden).toBe(true);
-  });
-
-  it('fails OPEN (shows both groups) when the probe request rejects', async () => {
+  it('fails OPEN (shows the Form group) when the probe request rejects', async () => {
     sendMessageMock
       .mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK)
       .mockRejectedValueOnce(new Error('message channel closed'));
@@ -647,10 +663,9 @@ describe('fieldsProbe auto-check (Form group + Answer-tools gating)', () => {
     await flush();
 
     expect(byId<HTMLElement>('group-form').hidden).toBe(false);
-    expect(byId<HTMLDetailsElement>('answer-tools').hidden).toBe(false);
   });
 
-  it('re-shows both groups on a fresh page after a previous page hid them (no stale hide across a reconnect)', async () => {
+  it('re-shows the Form group on a fresh page after a previous page hid it (no stale hide across a reconnect)', async () => {
     sendMessageMock.mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK).mockResolvedValueOnce({
       ok: true,
       kind: 'fieldsProbe',
@@ -675,37 +690,6 @@ describe('fieldsProbe auto-check (Form group + Answer-tools gating)', () => {
     push('connected');
     await flush();
     expect(byId<HTMLElement>('group-form').hidden).toBe(false);
-  });
-
-  it('a stale hasFields:false response that resolves AFTER leaving connected must not hide the groups again (generation invalidated on disconnect)', async () => {
-    // The probe starts on entering `connected` but its response never
-    // resolves yet (simulates it still being in flight when the user
-    // disconnects before it settles).
-    let resolveProbe: ((res: unknown) => void) | undefined;
-    const pendingProbe = new Promise((resolve) => {
-      resolveProbe = resolve;
-    });
-    sendMessageMock.mockResolvedValueOnce(NEUTRAL_APPLIED_CHECK).mockReturnValueOnce(pendingProbe);
-    push('connected');
-    await flush();
-    expect(byId<HTMLElement>('group-form').hidden).toBe(false);
-
-    // Leave `connected` BEFORE the probe resolves — this must invalidate it.
-    push('app_not_running');
-    expect(byId<HTMLElement>('group-form').hidden).toBe(false);
-    expect(byId<HTMLDetailsElement>('answer-tools').hidden).toBe(false);
-
-    // The stale probe finally resolves as "no fields" — must be a no-op now.
-    resolveProbe?.({
-      ok: true,
-      kind: 'fieldsProbe',
-      hasFormFields: false,
-      hasAnswerFields: false,
-    });
-    await flush();
-
-    expect(byId<HTMLElement>('group-form').hidden).toBe(false);
-    expect(byId<HTMLDetailsElement>('answer-tools').hidden).toBe(false);
   });
 });
 
@@ -785,79 +769,34 @@ describe('doMarkApplied (#btn-mark-applied)', () => {
   });
 });
 
-// ── Answer-tools expand/collapse (#answer-tools <details>) ──────────────────
-// Collapsed by default; the expand/collapse state persists via
-// chrome.storage.local (a UI boolean, not PII/job data); a buffered/still-
-// running stream always wins over a persisted "collapsed" preference.
+// ── bootstrapNotice (resolves the active tab, subscribes the notice line) ────
+// Replaces the old bootstrapAnswerTools now that the interactive rows live
+// only in the panel's Answers tab — this popup only reports a passive count.
 
-describe('answer-tools persistence (toggle → storage)', () => {
-  beforeEach(() => {
-    setAnswerToolsExpandedMock.mockClear();
-  });
-
-  it('persists the CURRENT open state when the disclosure is toggled', () => {
-    const details = byId<HTMLDetailsElement>('answer-tools');
-    details.open = true;
-    details.dispatchEvent(new Event('toggle'));
-
-    expect(setAnswerToolsExpandedMock).toHaveBeenCalledWith(true);
-  });
-
-  it('persists collapsed the same way', () => {
-    const details = byId<HTMLDetailsElement>('answer-tools');
-    details.open = false;
-    details.dispatchEvent(new Event('toggle'));
-
-    expect(setAnswerToolsExpandedMock).toHaveBeenCalledWith(false);
-  });
-});
-
-describe('bootstrapAnswerTools (applies the persisted preference, then subscribes)', () => {
+describe('bootstrapNotice', () => {
   beforeEach(() => {
     sendMessageMock.mockReset();
-    getAnswerToolsExpandedMock.mockReset();
-    byId<HTMLDetailsElement>('answer-tools').open = false;
+    byId<HTMLElement>('answers-notice').hidden = true;
+    byId<HTMLElement>('answers-notice').textContent = '';
   });
 
-  it('defaults to collapsed when no preference has been stored', async () => {
-    getAnswerToolsExpandedMock.mockResolvedValueOnce(false);
-    byId<HTMLDetailsElement>('answer-tools').open = true; // start non-default to prove it applies
-
-    await bootstrapAnswerTools();
-
-    expect(byId<HTMLDetailsElement>('answer-tools').open).toBe(false);
-  });
-
-  it('applies a persisted "expanded" preference', async () => {
-    getAnswerToolsExpandedMock.mockResolvedValueOnce(true);
-
-    await bootstrapAnswerTools();
-
-    expect(byId<HTMLDetailsElement>('answer-tools').open).toBe(true);
-  });
-
-  it('subscribes the Answer-tools section to the shared state instead of querying for it', async () => {
-    // The old popup-open reattach asked the background "what is buffered?".
-    // The stream now lives in the shared per-tab state, so the popup must
-    // SUBSCRIBE rather than ask — a query would go stale the moment the panel
-    // (or the next chunk) changed it, which is the drift ADR-044 decision 1
-    // exists to prevent.
-    getAnswerToolsExpandedMock.mockResolvedValueOnce(false);
+  it('subscribes the notice line to the shared answer state instead of querying for it', async () => {
+    // The stream lives in the shared per-tab state (ADR-044 decision 1) — a
+    // query would go stale the moment the panel changed it, which subscribing
+    // avoids.
     const addListener = vi.mocked(browser.storage.onChanged.addListener);
     addListener.mockClear();
 
-    await bootstrapAnswerTools();
+    await bootstrapNotice();
 
     expect(addListener).toHaveBeenCalled();
-    expect(sendMessageMock).not.toHaveBeenCalledWith({ kind: 'answerAssistProgress' });
   });
 
-  it('renders the empty state rather than throwing when no tab id can be read', async () => {
-    getAnswerToolsExpandedMock.mockResolvedValueOnce(false);
+  it('leaves the notice line hidden rather than throwing when no tab id can be read', async () => {
     vi.mocked(browser.tabs.query).mockResolvedValueOnce([]);
 
-    await expect(bootstrapAnswerTools()).resolves.toBeUndefined();
-    expect(byId<HTMLElement>('answer-tools-host').textContent).toContain('Nothing scanned yet');
+    await expect(bootstrapNotice()).resolves.toBeUndefined();
+    expect(byId<HTMLElement>('answers-notice').hidden).toBe(true);
   });
 });
 
@@ -882,23 +821,21 @@ describe('openAnswerPanel (#btn-open-panel)', () => {
   it('calls chrome.sidePanel.open with the active tab id, synchronously from the click', async () => {
     const open = vi.fn().mockResolvedValue(undefined);
     mutableBrowser.sidePanel = { open };
-    await bootstrapAnswerTools(); // (re)resolves activeTabId from the tabs.query mock (id 7)
+    await bootstrapNotice(); // (re)resolves activeTabId from the tabs.query mock (id 7)
 
     byId<HTMLButtonElement>('btn-open-panel').click();
 
     expect(open).toHaveBeenCalledWith({ tabId: 7 });
   });
 
-  it('renders the label shared with the context-menu entry of the same name', () => {
-    expect(byId<HTMLButtonElement>('btn-open-panel').textContent?.trim()).toBe(
-      'Open AI Job Hunter answer tool'
-    );
+  it('renders the launcher label (PR0 §2)', () => {
+    expect(byId<HTMLButtonElement>('btn-open-panel').textContent?.trim()).toBe('Open the panel →');
   });
 
   it('falls back to browser.sidebarAction.open() when there is no sidePanel API (Firefox)', async () => {
     const open = vi.fn().mockResolvedValue(undefined);
     mutableBrowser.sidebarAction = { open };
-    await bootstrapAnswerTools();
+    await bootstrapNotice();
 
     byId<HTMLButtonElement>('btn-open-panel').click();
 
@@ -906,7 +843,7 @@ describe('openAnswerPanel (#btn-open-panel)', () => {
   });
 
   it('surfaces a message rather than throwing when neither API is available', async () => {
-    await bootstrapAnswerTools();
+    await bootstrapNotice();
     byId<HTMLElement>('import-msg').textContent = '';
 
     byId<HTMLButtonElement>('btn-open-panel').click();
@@ -919,7 +856,7 @@ describe('openAnswerPanel (#btn-open-panel)', () => {
     mutableBrowser.sidePanel = { open };
     // No tab from `tabs.query` this time — `activeTabId` stays `null`.
     vi.mocked(browser.tabs.query).mockResolvedValueOnce([]);
-    await bootstrapAnswerTools();
+    await bootstrapNotice();
     byId<HTMLElement>('import-msg').textContent = '';
 
     byId<HTMLButtonElement>('btn-open-panel').click();

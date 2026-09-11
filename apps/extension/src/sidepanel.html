@@ -3,27 +3,37 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AI Job Hunter — Answer tools</title>
+    <title>AI Job Hunter — workspace</title>
     <!-- No inline script/style: the bundled module (which imports the POPUP's
          stylesheet, not a fork of it) is loaded externally to satisfy the MV3
          content security policy. -->
   </head>
   <!-- `panel` widens the fixed 360px popup body to the panel's own width. It is
        the only visual difference between the two surfaces — everything else is
-       the same stylesheet and the same component (ADR-044 decision 1). -->
+       the same stylesheet and the same components (ADR-044 decision 1). -->
   <body class="panel">
     <main class="app">
       <header class="head">
         <h1 class="title">
-          Answers
+          AI Job Hunter
           <svg class="title__ul" viewBox="0 0 120 8" preserveAspectRatio="none" aria-hidden="true">
             <path d="M3 5 Q34 1 62 4 T117 4" />
           </svg>
         </h1>
         <!-- Retry button + status pill are built by the shared
              `connection-status.ts` module (ADR-046, also mounted by the
-             popup). -->
-        <div class="status" id="connection-pill-host"></div>
+             popup), `prepend`-ed here so they land BEFORE the gear button. -->
+        <div class="status" id="connection-pill-host">
+          <button
+            id="btn-settings"
+            class="help"
+            type="button"
+            aria-label="Open Settings"
+            title="Settings"
+          >
+            ⚙
+          </button>
+        </div>
       </header>
 
       <!-- The panel is an extension page with NO page access of its own: every
@@ -35,16 +45,20 @@
            `phase === 'connected'` (ADR-046) — otherwise the pair/offline/
            outdated/searching view built into #connection-views-host below
            takes its place, instead of every button silently failing against
-           a desktop app that isn't there.
-
-           job-tools-host: the shared job-tools component (Import/Check fit/
-           Fill/Save answers — `src/job-tools/job-tools.ts`), also mounted by
-           the popup. Gated on a live `activeTab` grant for THIS panel's
-           active tab (see that module's doc) since, unlike the popup, the
-           panel is never itself a fresh gesture. -->
+           a desktop app that isn't there. -->
       <section id="view-connected" class="view" hidden>
-        <div id="job-tools-host"></div>
-        <div id="answer-tools-host" class="atools"></div>
+        <!-- ONE trust line (ADR-045) — see sidepanel.ts's `updateTrustLine`
+             doc for why only the TRUSTED case ("Reading: <host>") renders
+             here; the untrusted case is job-tools.ts's own already-tested
+             `JOB_TOOLS_GATED_LINE`, so this never duplicates that message. -->
+        <p id="trust-line" class="trust-line" hidden></p>
+
+        <!-- Tab bar (`src/tabs/tabs.ts`) — Job / Answers today, Documents /
+             Prep register through the same list in PR2/PR4. The panels
+             themselves (job-status + job-tools host, answer-tools host) are
+             built into it by sidepanel.ts, not hardcoded here — see that
+             file's mount sequence. -->
+        <div id="tabs-host"></div>
       </section>
 
       <!-- The pair / offline / outdated / searching views are built by the

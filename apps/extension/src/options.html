@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Job Hunter — Settings</title>
+  </head>
+  <body class="panel">
+    <main class="app options-page">
+      <header class="head">
+        <h1 class="title">
+          Settings
+          <svg class="title__ul" viewBox="0 0 120 8" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M3 5 Q34 1 62 4 T117 4" />
+          </svg>
+        </h1>
+        <div class="status" id="connection-pill-host"></div>
+      </header>
+
+      <!-- Connection & pairing — the SAME connection-status.ts module the
+           popup and panel mount (pill + pair/offline/outdated/searching
+           views + the pairing-token flow). "Unpair this device" is this
+           page's own control (the popup's lives in its "?" menu instead). -->
+      <section aria-labelledby="section-connection">
+        <h2 id="section-connection" class="section-label">Connection &amp; pairing</h2>
+        <div id="connection-views-host"></div>
+        <div class="action-row">
+          <button id="btn-unpair" class="btn btn--quiet" type="button" hidden>
+            Unpair this device
+          </button>
+          <button id="btn-open-app-settings" class="btn btn--quiet" type="button">
+            Open app settings →
+          </button>
+        </div>
+      </section>
+
+      <!-- Sites you've approved — the "don't ask again" hosts from the
+           first-time Fill confirmation (PR0 §4, `lib/site-memory.ts`). -->
+      <section aria-labelledby="section-sites">
+        <h2 id="section-sites" class="section-label">Sites you've approved</h2>
+        <p class="hint">
+          Fill skips the first-time confirmation on these sites. Forget one to see it again.
+        </p>
+        <div id="sites-list"></div>
+      </section>
+
+      <!-- What the extension may do — read-only mirrors of the app's opt-ins
+           this PR can actually learn (autofillCheck); the rest read "unknown
+           until connected" — see options.ts's doc for why there are three
+           rows, not the mockup's four. -->
+      <section aria-labelledby="section-permissions">
+        <h2 id="section-permissions" class="section-label">What the extension may do</h2>
+        <div id="permissions-list"></div>
+      </section>
+
+      <!-- Appearance -->
+      <section aria-labelledby="section-appearance">
+        <h2 id="section-appearance" class="section-label">Appearance</h2>
+        <div class="set-row">
+          <div class="set-row-copy">
+            <p class="set-title">Theme</p>
+          </div>
+          <div id="theme-seg" class="seg" role="group" aria-label="Theme">
+            <button type="button" data-theme-choice="system">System</button>
+            <button type="button" data-theme-choice="light">Light</button>
+            <button type="button" data-theme-choice="dark">Dark</button>
+          </div>
+        </div>
+        <div class="set-row">
+          <div class="set-row-copy">
+            <p class="set-title">Default panel tab</p>
+          </div>
+          <div id="default-tab-seg" class="seg" role="group" aria-label="Default panel tab">
+            <button type="button" data-tab-choice="job">Job</button>
+            <button type="button" data-tab-choice="answers">Answers</button>
+          </div>
+        </div>
+        <!-- Preferences persist from PR0, but nothing on the page reads them
+             yet — an honest UI shows no switch that does nothing, so these
+             two rows stay hidden: revealed by the on-page badge PR. -->
+        <div class="set-row toggle-row" hidden>
+          <div class="set-row-copy">
+            <p id="title-fit-badge" class="set-title">Show the on-page fit badge after Check fit</p>
+          </div>
+          <button
+            id="toggle-fit-badge"
+            class="toggle"
+            type="button"
+            role="switch"
+            aria-checked="false"
+            aria-labelledby="title-fit-badge"
+          ></button>
+        </div>
+        <div class="set-row toggle-row" hidden>
+          <div class="set-row-copy">
+            <p id="title-stamp-results" class="set-title">Stamp saved/applied on results pages</p>
+          </div>
+          <button
+            id="toggle-stamp-results"
+            class="toggle"
+            type="button"
+            role="switch"
+            aria-checked="false"
+            aria-labelledby="title-stamp-results"
+          ></button>
+        </div>
+      </section>
+
+      <!-- Shortcuts -->
+      <section aria-labelledby="section-shortcuts">
+        <h2 id="section-shortcuts" class="section-label">Shortcuts</h2>
+        <div id="shortcuts-list"></div>
+      </section>
+
+      <!-- Privacy & about -->
+      <section aria-labelledby="section-about">
+        <h2 id="section-about" class="section-label">Privacy &amp; about</h2>
+        <p class="hint">
+          The extension talks only to the AI Job Hunter app on this computer. When you press Fill,
+          your details are typed into the job site you chose — nothing else.
+        </p>
+        <p id="about-version" class="hint"></p>
+        <div class="about-links">
+          <a id="link-privacy" class="link" href="#" target="_blank" rel="noopener">Privacy</a>
+          <a id="link-help" class="link" href="#" target="_blank" rel="noopener">Help</a>
+          <a id="link-source" class="link" href="#" target="_blank" rel="noopener">Source</a>
+          <a id="link-report" class="link" href="#" target="_blank" rel="noopener"
+            >Report an issue</a
+          >
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./options/options.ts"></script>
+  </body>
+</html>
