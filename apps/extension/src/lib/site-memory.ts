@@ -66,6 +66,15 @@ export interface FirstFillConfirmView {
    * choice.
    */
   confirm: (host: string | null) => Promise<boolean>;
+  /**
+   * Cancel a currently-open confirmation: hide the inset and resolve its
+   * pending {@link confirm} promise `false`, as if the user had clicked "Not
+   * now". A no-op when nothing is open. For a caller whose followed
+   * tab/page changed while the inset was up (`sidepanel.ts`'s `follow()`) —
+   * the confirmation belonged to the page it opened on, never to whatever
+   * the panel is now showing.
+   */
+  cancel: () => void;
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(
@@ -87,6 +96,10 @@ export function mountFirstFillConfirm(
   const inset = el('div', 'inset');
   inset.hidden = true;
   host.append(inset);
+
+  /** The currently-open confirmation's own "resolve as Not now" step, or
+   *  `null` when none is open — what {@link cancel} invokes. */
+  let pendingCancel: (() => void) | null = null;
 
   async function confirm(siteHost: string | null): Promise<boolean> {
     if (!siteHost) return true;
@@ -119,18 +132,36 @@ export function mountFirstFillConfirm(
       checkLabel.append(checkbox, checkSpan);
       inset.append(checkLabel);
 
-      const finish = (ok: boolean): void => {
+      const finish = async (ok: boolean): Promise<void> => {
+        pendingCancel = null;
         inset.hidden = true;
         inset.replaceChildren();
-        if (ok && checkbox.checked) void deps.rememberHost(siteHost);
+        if (ok && checkbox.checked) {
+          try {
+            await deps.rememberHost(siteHost);
+          } catch (err) {
+            // Best-effort — a failed "remember" must not block the Fill the
+            // user just confirmed; only the "don't ask again" convenience is
+            // lost for next time.
+            console.warn(
+              '[ajh] remember host failed:',
+              err instanceof Error ? err.name : 'unknown'
+            );
+          }
+        }
         resolve(ok);
       };
-      fillBtn.addEventListener('click', () => finish(true));
-      notNowBtn.addEventListener('click', () => finish(false));
+      fillBtn.addEventListener('click', () => void finish(true));
+      notNowBtn.addEventListener('click', () => void finish(false));
+      pendingCancel = () => void finish(false);
 
       inset.hidden = false;
     });
   }
 
-  return { confirm };
+  function cancel(): void {
+    pendingCancel?.();
+  }
+
+  return { confirm, cancel };
 }

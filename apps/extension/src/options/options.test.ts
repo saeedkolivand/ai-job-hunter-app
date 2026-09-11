@@ -49,8 +49,14 @@ function buildOptionsDom(): void {
       <button type="button" data-tab-choice="job">Job</button>
       <button type="button" data-tab-choice="answers">Answers</button>
     </div>
-    <button id="toggle-fit-badge" role="switch" aria-checked="false"></button>
-    <button id="toggle-stamp-results" role="switch" aria-checked="false"></button>
+    <div class="set-row toggle-row" hidden>
+      <p id="title-fit-badge">Show the on-page fit badge after Check fit</p>
+      <button id="toggle-fit-badge" role="switch" aria-checked="false" aria-labelledby="title-fit-badge"></button>
+    </div>
+    <div class="set-row toggle-row" hidden>
+      <p id="title-stamp-results">Stamp saved/applied on results pages</p>
+      <button id="toggle-stamp-results" role="switch" aria-checked="false" aria-labelledby="title-stamp-results"></button>
+    </div>
     <div id="shortcuts-list"></div>
     <p id="about-version"></p>
     <a id="link-privacy" href="#"></a>
@@ -138,6 +144,20 @@ describe('appearance toggles', () => {
     expect(btn.getAttribute('aria-checked')).toBe('true');
     expect(browser.storage.local.set).toHaveBeenCalledWith({ showFitBadge: true });
   });
+
+  it('has an accessible name (aria-labelledby the row title) even though the row is hidden', () => {
+    const btn = byId<HTMLButtonElement>('toggle-fit-badge');
+    const labelledbyId = btn.getAttribute('aria-labelledby');
+    expect(labelledbyId).toBeTruthy();
+    expect(document.getElementById(labelledbyId!)?.textContent).toBe(
+      'Show the on-page fit badge after Check fit'
+    );
+  });
+
+  it('hides the row for a preference no on-page surface consumes yet (honest UI)', () => {
+    expect(byId('toggle-fit-badge').closest('.toggle-row')).toHaveProperty('hidden', true);
+    expect(byId('toggle-stamp-results').closest('.toggle-row')).toHaveProperty('hidden', true);
+  });
 });
 
 describe('sites list', () => {
@@ -151,8 +171,11 @@ describe('sites list', () => {
 
     await renderSites();
 
-    const row = Array.from(byId('sites-list').querySelectorAll('.set-row')).find((r) =>
-      r.textContent?.includes('acme.com')
+    // Match the host EXACTLY (via the dedicated `.set-title` node), not a
+    // substring of the row's whole text — a row whose host merely CONTAINS
+    // "acme.com" (e.g. "notacme.com" or "acme.com.evil.test") must not match.
+    const row = Array.from(byId('sites-list').querySelectorAll('.set-row')).find(
+      (r) => r.querySelector('.set-title')?.textContent?.trim() === 'acme.com'
     );
     expect(row).toBeDefined();
     row!.querySelector<HTMLButtonElement>('button')!.click();
@@ -174,6 +197,25 @@ describe('what the extension may do', () => {
     expect(captions.length).toBeGreaterThan(0);
     captions[0]!.click();
     expect(browser.tabs.create).toHaveBeenCalledWith({ url: 'ajh://settings/extension' });
+  });
+
+  it('re-runs autofillCheck and re-renders on a disconnected→connected transition (onConnected)', async () => {
+    const { mountConnectionStatus } = await import('../connection-status/connection-status');
+    const onConnected = vi.mocked(mountConnectionStatus).mock.calls[0]?.[2]?.onConnected;
+    if (!onConnected) throw new Error('onConnected dep not passed to mountConnectionStatus');
+
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'autofillCheck',
+      enabled: true,
+    });
+
+    onConnected();
+    await flush();
+
+    expect(browser.runtime.sendMessage).toHaveBeenCalledWith({ kind: 'autofillCheck' });
+    expect(byId('permissions-list').textContent).toContain('On');
   });
 });
 

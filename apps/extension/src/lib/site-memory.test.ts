@@ -134,4 +134,43 @@ describe('mountFirstFillConfirm', () => {
     await expect(pending).resolves.toBe(true);
     expect(rememberHostMock).not.toHaveBeenCalled();
   });
+
+  it('still resolves true (the Fill proceeds) when rememberHost rejects', async () => {
+    const host = document.createElement('div');
+    const rememberHostMock = vi.fn(() => Promise.reject(new Error('storage full')));
+    const getRememberedHostsMock = vi.fn(() => Promise.resolve<string[]>([]));
+    const view = mountFirstFillConfirm(host, {
+      getRememberedHosts: getRememberedHostsMock,
+      rememberHost: rememberHostMock,
+    });
+
+    const pending = view.confirm('acme.com');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    host.querySelector<HTMLInputElement>('input[type=checkbox]')!.checked = true;
+    host.querySelector<HTMLButtonElement>('.btn--primary')!.click();
+
+    await expect(pending).resolves.toBe(true);
+    expect(rememberHostMock).toHaveBeenCalledWith('acme.com');
+  });
+
+  it('cancel() hides an open inset and resolves confirm() false, without remembering the host', async () => {
+    const { view, host, rememberHostMock } = mount();
+    const pending = view.confirm('acme.com');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(host.textContent).toContain('First Fill on acme.com');
+
+    view.cancel();
+
+    await expect(pending).resolves.toBe(false);
+    expect(rememberHostMock).not.toHaveBeenCalled();
+    expect(host.querySelector('.inset')?.hasAttribute('hidden')).toBe(true);
+  });
+
+  it('cancel() is a no-op when no confirmation is open', () => {
+    const { view } = mount();
+    expect(() => view.cancel()).not.toThrow();
+  });
 });

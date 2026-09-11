@@ -75,9 +75,12 @@
             <button type="button" data-tab-choice="answers">Answers</button>
           </div>
         </div>
-        <div class="set-row toggle-row">
+        <!-- Preferences persist from PR0, but nothing on the page reads them
+             yet — an honest UI shows no switch that does nothing, so these
+             two rows stay hidden: revealed by the on-page badge PR. -->
+        <div class="set-row toggle-row" hidden>
           <div class="set-row-copy">
-            <p class="set-title">Show the on-page fit badge after Check fit</p>
+            <p id="title-fit-badge" class="set-title">Show the on-page fit badge after Check fit</p>
           </div>
           <button
             id="toggle-fit-badge"
@@ -85,11 +88,12 @@
             type="button"
             role="switch"
             aria-checked="false"
+            aria-labelledby="title-fit-badge"
           ></button>
         </div>
-        <div class="set-row toggle-row">
+        <div class="set-row toggle-row" hidden>
           <div class="set-row-copy">
-            <p class="set-title">Stamp saved/applied on results pages</p>
+            <p id="title-stamp-results" class="set-title">Stamp saved/applied on results pages</p>
           </div>
           <button
             id="toggle-stamp-results"
@@ -97,6 +101,7 @@
             type="button"
             role="switch"
             aria-checked="false"
+            aria-labelledby="title-stamp-results"
           ></button>
         </div>
       </section>
@@ -110,7 +115,10 @@
       <!-- Privacy & about -->
       <section aria-labelledby="section-about">
         <h2 id="section-about" class="section-label">Privacy &amp; about</h2>
-        <p class="hint">Nothing leaves your computer except through the app you configured.</p>
+        <p class="hint">
+          The extension talks only to the AI Job Hunter app on this computer. When you press Fill,
+          your details are typed into the job site you chose — nothing else.
+        </p>
         <p id="about-version" class="hint"></p>
         <div class="about-links">
           <a id="link-privacy" class="link" href="#" target="_blank" rel="noopener">Privacy</a>

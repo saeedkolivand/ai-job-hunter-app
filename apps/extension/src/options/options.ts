@@ -84,6 +84,12 @@ mountConnectionStatus(els.connectionPillHost, els.connectionViewsHost, {
   onStatus: (status) => {
     els.btnUnpair.hidden = !status.hasToken;
   },
+  // A disconnected→connected transition (e.g. the desktop app was just
+  // launched) means the ONE opt-in this page can actually ask about may have
+  // changed since the last (possibly "Unknown until connected") answer —
+  // re-run it rather than leaving the Assisted autofill row stale for the
+  // rest of this page's lifetime.
+  onConnected: () => void runAutofillCheck(),
 }).start();
 
 els.btnUnpair.addEventListener('click', () => {
@@ -191,12 +197,21 @@ function renderPermissions(autofillEnabled: boolean | null): void {
     els.permissionsList.append(el);
   }
 }
-renderPermissions(null);
-send({ kind: 'autofillCheck' })
-  .then((res) => {
+/** Fetch `autofillCheck` and re-render the "Assisted autofill" row — run once
+ *  at load, and again on every disconnected→connected transition (the
+ *  `onConnected` dep above) since the opt-in it reports is set on the
+ *  desktop side and can change between connections. */
+async function runAutofillCheck(): Promise<void> {
+  try {
+    const res = await send({ kind: 'autofillCheck' });
     if (res.ok && res.kind === 'autofillCheck') renderPermissions(res.enabled);
-  })
-  .catch(() => undefined);
+  } catch {
+    // Best-effort — same discipline as this page's other fire-and-forget checks.
+  }
+}
+
+renderPermissions(null);
+void runAutofillCheck();
 
 // ── Appearance ────────────────────────────────────────────────────────────
 

@@ -71,4 +71,16 @@ describe('mountTabs', () => {
     const { view } = mount();
     expect(() => view.panel('nope')).toThrow();
   });
+
+  it('associates each tab button with its panel via aria-controls/aria-labelledby, and gives the panel role=tabpanel', () => {
+    const { host } = mount();
+    const job = host.querySelector<HTMLButtonElement>('[data-tab="job"]')!;
+    const jobPanel = host.querySelector<HTMLElement>('[data-section="job"]')!;
+
+    expect(jobPanel.getAttribute('role')).toBe('tabpanel');
+    expect(job.getAttribute('aria-controls')).toBe(jobPanel.id);
+    expect(jobPanel.getAttribute('aria-labelledby')).toBe(job.id);
+    expect(job.id).not.toBe('');
+    expect(jobPanel.id).not.toBe('');
+  });
 });

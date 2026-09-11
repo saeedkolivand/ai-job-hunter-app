@@ -210,13 +210,13 @@ _Avoid_: Answer tools (the separate, older shared component for drafting/iterati
 **Launcher**:
 The popup's role in the redesigned extension surface split: connection state, the current
 page's detected context, the gesture-bound page actions, and a way into the **Workspace**.
-Nothing that needs a second screen belongs here.
+Nothing that needs a second screen belongs here. See `apps/extension/src/popup/popup.ts`.
 _Avoid_: "the popup" as a synonym once a feature needs more than a glance — that belongs in
 the Workspace instead
 
 **Workspace**:
 The side panel's role: the tabbed home of everything that outlives one click — answers,
-documents, prep, and the entry point into Settings.
+documents, prep, and the entry point into Settings. See `apps/extension/src/sidepanel/sidepanel.ts`.
 _Avoid_: "the side panel" as a synonym for one tab inside it (each is a tab of the Workspace,
 not a separate surface)
 
@@ -625,8 +625,10 @@ The paired browser extension's access to the generic tier: only Commands whose E
 is Read, only while the **Autofill** opt-in is on (the same consent class that already lets the
 user's own data reach the browser), and told apart from the CLI by its own caller class rather
 than by widening the CLI's. Reversible and Irreversible Commands are refused in-band for this
-caller; writes and billable AI work reach the extension only through dedicated bridge verbs,
-each with its own opt-in.
+caller; writes and billable AI reach the extension only through dedicated bridge verbs with
+their own gates — Autofill for PII-out and the generic read tier, Auto-track for automatic
+status writes, AI-assist for billable drafts — while a user-initiated import or a manual
+saved→applied mark stays ungated as today.
 _Avoid_: "permission" (nothing is granted per-caller — the caller class picks a tier, the
 pairing proves the user), "extension agent" (the extension is a client of the user's own app,
 not an autonomous caller — the **Confirm proof** ceremony is not offered to it)

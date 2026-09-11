@@ -51,17 +51,25 @@ export function mountTabs(host: HTMLElement, tabs: readonly TabSpec[], deps: Tab
   }
 
   for (const spec of tabs) {
+    const btnId = `tab-${spec.id}`;
+    const panelId = `tabpanel-${spec.id}`;
+
     const btn = document.createElement('button');
     btn.type = 'button';
+    btn.id = btnId;
     btn.className = 'tab';
     btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-controls', panelId);
     btn.dataset.tab = spec.id;
     btn.textContent = buttonText(spec);
     btn.addEventListener('click', () => deps.onSelect(spec.id));
     bar.append(btn);
 
     const panel = document.createElement('section');
+    panel.id = panelId;
     panel.className = 'tab-body-section';
+    panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-labelledby', btnId);
     panel.dataset.section = spec.id;
     panel.hidden = true;
 

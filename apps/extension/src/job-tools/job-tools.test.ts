@@ -469,6 +469,38 @@ describe('doFill (#btn-fill)', () => {
 
     expect(send).toHaveBeenCalledWith({ kind: 'fill' });
   });
+
+  it('locks the button before awaiting confirmFill, so a repeated click cannot start a second confirmation or double-send fill', async () => {
+    let resolveConfirm: ((v: boolean) => void) | undefined;
+    const confirmFill = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveConfirm = resolve;
+        })
+    );
+    const send = vi.fn(async (): Promise<PopupResponse> => ({
+      ok: true,
+      kind: 'fill',
+      summary: { filled: [], nameSplit: null, filledNothing: true },
+    }));
+    const host = document.createElement('div');
+    mountJobTools(host, { send, confirmFill });
+    const btn = host.querySelector<HTMLButtonElement>('#btn-fill')!;
+
+    btn.click();
+    expect(btn.disabled).toBe(true);
+
+    // Repeated clicks while the first confirmation is still pending.
+    btn.click();
+    btn.click();
+
+    resolveConfirm?.(true);
+    await flush();
+
+    expect(confirmFill).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(btn.disabled).toBe(false);
+  });
 });
 
 describe('hideSaveAnswers (popup three-action rule)', () => {

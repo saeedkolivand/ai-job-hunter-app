@@ -9,7 +9,7 @@
  * window-scoping decision, not rendering.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { browser } from '@wxt-dev/browser';
 
 import type * as JobToolsModule from '../job-tools/job-tools';
@@ -32,7 +32,7 @@ vi.mock('../job-status/job-status', () => ({
 }));
 
 vi.mock('../lib/site-memory', () => ({
-  mountFirstFillConfirm: vi.fn(() => ({ confirm: vi.fn(async () => true) })),
+  mountFirstFillConfirm: vi.fn(() => ({ confirm: vi.fn(async () => true), cancel: vi.fn() })),
   getRememberedHosts: vi.fn(async () => []),
   rememberHost: vi.fn(async () => undefined),
   hostOf: vi.fn((url: string | null) => (url ? new URL(url).hostname : null)),
@@ -63,12 +63,19 @@ vi.mock('@wxt-dev/browser', () => ({
       onMessage: { addListener: vi.fn() },
       openOptionsPage: vi.fn(),
     },
-    // No `session` area in this mock — `sidepanel.ts`'s `sessionArea()` must
-    // degrade to "no persisted tab" rather than throw (mirrors
-    // `lib/answer-state.ts`'s own best-effort discipline for the same gap).
-    // `local` IS present — `lib/theme.ts`'s `bootTheme()` reads it at load.
+    // `local` IS present — `lib/theme.ts`'s `bootTheme()` reads it at load,
+    // and (below) `lib/appearance.ts`'s `getDefaultPanelTab()`. `session`
+    // defaults to "nothing stored" for every test EXCEPT the dedicated
+    // "active tab restore at load" describe block, which drives it — that
+    // default keeps `sessionArea()` degrading the same way it did when this
+    // key was absent altogether (mirrors `lib/answer-state.ts`'s own
+    // best-effort discipline for the same gap).
     storage: {
       local: { get: vi.fn(() => Promise.resolve({})), set: vi.fn(), remove: vi.fn() },
+      session: {
+        get: vi.fn(() => Promise.resolve({})),
+        set: vi.fn(() => Promise.resolve(undefined)),
+      },
     },
     windows: {
       getCurrent: vi.fn(() => Promise.resolve({ id: PANEL_WINDOW_ID })),
@@ -83,14 +90,21 @@ vi.mock('@wxt-dev/browser', () => ({
   },
 }));
 
-document.body.innerHTML =
-  '<header><h1 class="title">AI Job Hunter</h1>' +
-  '<div id="connection-pill-host"><button id="btn-settings"></button></div></header>' +
-  '<section id="view-connected" hidden>' +
-  '<p id="trust-line" hidden></p>' +
-  '<div id="tabs-host"></div>' +
-  '</section>' +
-  '<div id="connection-views-host"></div>';
+/** The DOM `sidepanel.ts` queries via `byId` at module load — factored out so
+ *  the "active tab restore at load" tests (below) can rebuild it fresh before
+ *  each `vi.resetModules()` + reimport. */
+function buildPanelDom(): void {
+  document.body.innerHTML =
+    '<header><h1 class="title">AI Job Hunter</h1>' +
+    '<div id="connection-pill-host"><button id="btn-settings"></button></div></header>' +
+    '<section id="view-connected" hidden>' +
+    '<p id="trust-line" hidden></p>' +
+    '<div id="tabs-host"></div>' +
+    '</section>' +
+    '<div id="connection-views-host"></div>';
+}
+
+buildPanelDom();
 
 // `sidepanel.ts` has no exports: everything under test — the `tabs.onActivated`
 // listener, the `mountJobTools`/`mountConnectionStatus` calls and the deps they
@@ -106,6 +120,8 @@ vi.setConfig({ clearMocks: false });
 
 const { subscribeAnswerState } = await import('../lib/answer-state');
 const { mountJobTools } = await import('../job-tools/job-tools');
+const { mountJobStatus } = await import('../job-status/job-status');
+const { mountFirstFillConfirm } = await import('../lib/site-memory');
 const { mountConnectionStatus } = await import('../connection-status/connection-status');
 await import('./sidepanel');
 
@@ -474,5 +490,167 @@ describe('the Answers tab count badge', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(document.querySelector('[data-tab="answers"]')!.textContent).toBe('Answers (1)');
+  });
+});
+
+// ── Fill confirmation binding (item 12): capture + revalidate ──────────────
+// `mountJobTools` is mocked out entirely in this file (no real DOM/buttons),
+// so these tests drive the REAL `confirmFill` closure sidepanel.ts built and
+// handed to it — captured off `mountJobTools`'s own `mock.calls`, since the
+// mock function itself ignores its arguments but still records them.
+
+describe('Fill confirmation binding (item 12)', () => {
+  it("follow() cancels whatever confirmation was open for the tab it's leaving", async () => {
+    await flush();
+    const fillConfirm = vi.mocked(mountFirstFillConfirm).mock.results[0]?.value;
+    if (!fillConfirm) throw new Error('mountFirstFillConfirm was not called at module load');
+    vi.mocked(fillConfirm.cancel).mockClear();
+
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+    onActivated({ tabId: 501, windowId: PANEL_WINDOW_ID } as never);
+
+    expect(fillConfirm.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-validates the captured origin/generation after confirm() resolves, aborting a stale confirmation even when the user answered Fill', async () => {
+    await flush();
+    const jobToolsCall = vi.mocked(mountJobTools).mock.calls[0] as unknown as [
+      HTMLElement,
+      JobToolsModule.JobToolsDeps,
+    ];
+    const confirmFill = jobToolsCall[1].confirmFill;
+    if (!confirmFill) throw new Error('confirmFill dep not passed to mountJobTools');
+    const fillConfirm = vi.mocked(mountFirstFillConfirm).mock.results[0]?.value;
+    if (!fillConfirm) throw new Error('mountFirstFillConfirm was not called at module load');
+
+    let resolveConfirm: ((v: boolean) => void) | undefined;
+    vi.mocked(fillConfirm.confirm).mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        resolveConfirm = resolve;
+      })
+    );
+
+    const pending = confirmFill();
+
+    // The panel follows a DIFFERENT tab while the confirmation is still open
+    // (bumps the follow generation and, in real usage, calls cancel() too —
+    // this test's own assertion is about sidepanel.ts's re-validation, which
+    // must hold regardless of whether the mocked confirm() ever "hears" it).
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+    onActivated({ tabId: 502, windowId: PANEL_WINDOW_ID } as never);
+    await flush();
+
+    // The user eventually answers "Fill" on the now-stale confirmation.
+    resolveConfirm?.(true);
+
+    await expect(pending).resolves.toBe(false);
+  });
+});
+
+// ── job-status refresh keyed by (origin, pageChanged) transitions (item 13) ─
+
+describe('job-status refresh is keyed by transition, not every state push (item 13)', () => {
+  it('refreshes once for N streamed updates that only change unrelated fields', async () => {
+    const jobStatus = vi.mocked(mountJobStatus).mock.results[0]?.value;
+    if (!jobStatus) throw new Error('mountJobStatus was not called at module load');
+    vi.mocked(jobStatus.refresh).mockClear();
+
+    let deliver: ((state: unknown) => void) | undefined;
+    vi.mocked(subscribeAnswerState).mockImplementationOnce((_tabId, onState) => {
+      deliver = onState as (state: unknown) => void;
+      return vi.fn();
+    });
+
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+    onActivated({ tabId: 601, windowId: PANEL_WINDOW_ID } as never);
+
+    if (!deliver) throw new Error('subscribeAnswerState callback not captured');
+    const base = {
+      tabId: 601,
+      origin: 'https://jobs.example.com',
+      scannedAt: 1,
+      rows: [],
+      stream: null,
+      pageChanged: false,
+    };
+    deliver(base); // first delivery for this tab
+    deliver({ ...base, scannedAt: 2 }); // streamed chunk 1
+    deliver({ ...base, scannedAt: 3 }); // streamed chunk 2
+    deliver({ ...base, scannedAt: 4 }); // streamed chunk 3
+
+    expect(jobStatus.refresh).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── active tab restore at load — storage.session + Appearance default ──────
+// (items 6 & 11). `loadActiveTab()` only runs once, at module load, so these
+// drive a FRESH `sidepanel.ts` instance per test via `vi.resetModules()` —
+// the mocked `@wxt-dev/browser` module itself is NOT re-evaluated by that
+// (its `vi.fn()`s and any `mockResolvedValueOnce` queued below survive), only
+// `sidepanel.ts` (and its other, real, non-mocked dependencies) are.
+
+describe('active tab restore at load (storage.session + Appearance default, items 6 & 11)', () => {
+  afterEach(() => {
+    vi.mocked(browser.storage.session.get).mockReset().mockResolvedValue({});
+    vi.mocked(browser.storage.session.set).mockReset().mockResolvedValue(undefined);
+    vi.mocked(browser.storage.local.get).mockReset().mockResolvedValue({});
+  });
+
+  it('restores the tab stored in storage.session for this window', async () => {
+    vi.mocked(browser.storage.session.get).mockResolvedValueOnce({
+      'sidepanelActiveTab:100': 'answers',
+    });
+    vi.resetModules();
+    buildPanelDom();
+
+    await import('./sidepanel');
+    await flush();
+
+    expect(document.querySelector('[data-tab="answers"]')!.classList.contains('active')).toBe(true);
+  });
+
+  it('clicking Answers persists sidepanelActiveTab:<windowId> to storage.session', async () => {
+    vi.resetModules();
+    buildPanelDom();
+    await import('./sidepanel');
+    await flush();
+
+    document.querySelector<HTMLButtonElement>('[data-tab="answers"]')!.click();
+
+    expect(browser.storage.session.set).toHaveBeenCalledWith({
+      'sidepanelActiveTab:100': 'answers',
+    });
+  });
+
+  it('falls back to the Appearance default panel tab when nothing is stored for this window', async () => {
+    // Call #1 to `local.get` is bootTheme()'s getTheme() (key 'theme',
+    // synchronous at the top of the module); call #2 is
+    // getDefaultPanelTab()'s own read (key 'defaultPanelTab', only once
+    // resolvePanelWindowId()'s chain reaches loadActiveTab()) — a fixed
+    // order, so queuing two values in sequence targets each correctly.
+    vi.mocked(browser.storage.local.get)
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ defaultPanelTab: 'answers' });
+    vi.resetModules();
+    buildPanelDom();
+
+    await import('./sidepanel');
+    await flush();
+
+    expect(document.querySelector('[data-tab="answers"]')!.classList.contains('active')).toBe(true);
+  });
+
+  it('falls back to job without throwing when storage.session.get rejects', async () => {
+    vi.mocked(browser.storage.session.get).mockRejectedValueOnce(new Error('quota'));
+    vi.resetModules();
+    buildPanelDom();
+
+    await expect(import('./sidepanel')).resolves.toBeDefined();
+    await flush();
+
+    expect(document.querySelector('[data-tab="job"]')!.classList.contains('active')).toBe(true);
   });
 });

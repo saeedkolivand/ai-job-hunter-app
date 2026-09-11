@@ -585,13 +585,18 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
   }
 
   async function doFill(): Promise<void> {
-    if (deps.confirmFill) {
-      const proceed = await deps.confirmFill();
-      if (!proceed) return;
-    }
+    // Lock the button BEFORE awaiting the (possibly slow, user-facing)
+    // confirmation — a repeated click while it's pending must not start a
+    // second concurrent confirmation or double-send `fill` once the first
+    // resolves.
+    if (btnFill.disabled) return;
     btnFill.disabled = true;
-    setMsg('Filling…', 'muted');
     try {
+      if (deps.confirmFill) {
+        const proceed = await deps.confirmFill();
+        if (!proceed) return;
+      }
+      setMsg('Filling…', 'muted');
       const res = await deps.send({ kind: 'fill' });
       const { text, tone } = resolveFillResponse(res);
       setMsg(text, tone);

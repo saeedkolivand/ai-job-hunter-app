@@ -156,9 +156,16 @@ both browsers; it grants **no** access to any public or LAN host.
   desktop app over a loopback (`127.0.0.1`) connection on the same machine.
 - **No data is ever sent to any remote or third-party server** by this
   extension. There is no telemetry, no analytics, no external API.
-- The only stored value is the pairing token, kept in `chrome.storage.local`,
-  used solely as the HMAC key for the mutual challenge-response handshake with the
-  local desktop app — it is **never transmitted** to the app (or anywhere else).
+- Values persisted in `chrome.storage.local` (never transmitted anywhere): the pairing
+  token, used solely as the HMAC key for the mutual challenge-response handshake with
+  the local desktop app — it is **never transmitted** to the app (or anywhere else);
+  the hostnames of sites where the user chose "don't ask again" for the Fill
+  confirmation (`src/lib/site-memory.ts` — hostnames only, never page content); and
+  the extension's own appearance preferences and theme override
+  (`src/lib/appearance.ts`, `src/lib/theme.ts`).
+- The in-progress answer state for the active tab and the panel's last-active tab per
+  browser window live only in `chrome.storage.session` — cleared when the browser
+  closes, never written to `storage.local`.
 - The extension captures the page's rendered DOM **only when the user clicks Import this job** — never in the background — and sends it only to the local app. On restricted pages (e.g. browser system pages) DOM capture is skipped and only the URL is sent.
 - **Assisted autofill data flow:** the feature is **opt-in and off by default** (the toggle lives in the desktop app; the desktop refuses the request when it is off). When on and the user clicks **Fill this form**, the extension requests the user's Contact Profile from the desktop over the same loopback connection, holds it **transiently** to fill matching empty fields on the **current tab only** (`activeTab`, on the click), then discards it. The profile is the user's **own data**, never written to `chrome.storage`, and **never sent to any remote or third-party server** — it only ever moves from the user's desktop into a page the user chose to fill. This is why the Firefox AMO `data_collection_permissions` stays `["none"]` (see `src/manifest.ts`): the extension does not collect or transmit data to the developer or any third party.
 

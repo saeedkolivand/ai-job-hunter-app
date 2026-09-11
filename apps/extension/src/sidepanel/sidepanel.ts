@@ -38,6 +38,7 @@ import { mountConnectionStatus } from '../connection-status/connection-status';
 import { mountJobStatus } from '../job-status/job-status';
 import { isPageTrusted, mountJobTools } from '../job-tools/job-tools';
 import { type AnswerState, subscribeAnswerState } from '../lib/answer-state';
+import { getDefaultPanelTab } from '../lib/appearance';
 import type { PopupRequest, PopupResponse } from '../lib/messages';
 import {
   getRememberedHosts,
@@ -119,6 +120,22 @@ const fillConfirm = mountFirstFillConfirm(fillConfirmHost, { getRememberedHosts,
 
 let currentOrigin: string | null = null;
 
+/**
+ * Generation guard against a STALE in-flight subscription callback — mirrors
+ * `popup.ts`'s `appliedCheckGeneration`/`fieldsProbeGeneration` pattern
+ * exactly (same stale-response race those already guard against).
+ * `subscribeAnswerState`'s returned unsubscribe (called at the top of
+ * `follow` below) only removes the `storage.onChanged` listener — it does
+ * NOT cancel the in-flight `readAnswerState(tabId).then(onState)` promise
+ * the SAME call already kicked off (`lib/answer-state.ts`). So a rapid
+ * `follow(A)` → `follow(B)` (fast tab-cycling) can still let A's stale
+ * closure fire its `onState` callback AFTER B's own subscription — and
+ * possibly after B's own render — with A's now-irrelevant data. Declared
+ * ahead of `jobTools`'s own mount below since its `confirmFill` dep already
+ * needs to snapshot this value.
+ */
+let followGeneration = 0;
+
 const answerTools = mountAnswerTools(answerToolsHost, { send, copy: copyText });
 
 const jobStatus = mountJobStatus(jobStatusHost, { send });
@@ -129,7 +146,22 @@ const jobStatus = mountJobStatus(jobStatusHost, { send });
 // also omitted — the panel keeps all four job-tools controls.
 const jobTools = mountJobTools(jobToolsHost, {
   send,
-  confirmFill: () => fillConfirm.confirm(hostOf(currentOrigin)),
+  // Snapshot the origin + follow generation at the moment the confirmation
+  // opens. `follow()` cancels an open inset immediately on a target change
+  // (hiding it + resolving `false`), but the panel can still switch targets
+  // in the gap between the user's own click and this async confirm()
+  // settling — re-validate both before treating the click as authorized for
+  // THIS page.
+  // TODO(follow-up, out of scope for this PR): thread the captured/validated
+  // tab id through the `fill` request itself (background.ts) rather than
+  // relying solely on this caller-side re-check.
+  confirmFill: async () => {
+    const capturedGeneration = followGeneration;
+    const capturedOrigin = currentOrigin;
+    const ok = await fillConfirm.confirm(hostOf(capturedOrigin));
+    if (!ok) return false;
+    return followGeneration === capturedGeneration && currentOrigin === capturedOrigin;
+  },
 });
 
 /**
@@ -179,19 +211,19 @@ mountConnectionStatus(els.connectionPillHost, els.connectionViewsHost, {
 /** Unsubscribe the previous tab's state subscription, if any. */
 let unsubscribe: (() => void) | null = null;
 
-/**
- * Generation guard against a STALE in-flight subscription callback — mirrors
- * `popup.ts`'s `appliedCheckGeneration`/`fieldsProbeGeneration` pattern
- * exactly (same stale-response race those already guard against).
- * `subscribeAnswerState`'s returned unsubscribe (called at the top of
- * `follow` below) only removes the `storage.onChanged` listener — it does
- * NOT cancel the in-flight `readAnswerState(tabId).then(onState)` promise
- * the SAME call already kicked off (`lib/answer-state.ts`). So a rapid
- * `follow(A)` → `follow(B)` (fast tab-cycling) can still let A's stale
- * closure fire its `onState` callback AFTER B's own subscription — and
- * possibly after B's own render — with A's now-irrelevant data.
- */
-let followGeneration = 0;
+/** The (origin, pageChanged) pair `jobStatus` last refreshed/reset for —
+ *  reset to `null` on every `follow()` call so a freshly-followed tab always
+ *  gets its own first check, and updated only when a state push actually
+ *  changes it. Without this, every streamed answer-state update (each
+ *  chunk changes only `stream`/`rows`, not `origin`/`pageChanged`) re-ran
+ *  `appliedCheck` — `job-status.ts`'s own generation guard already covers
+ *  the staleness risk of the calls this now makes, so nothing extra is
+ *  needed here for that. */
+let lastJobStatusKey: string | null = null;
+
+function jobStatusKeyOf(state: AnswerState | null): string {
+  return state ? `${state.origin}|${state.pageChanged}` : 'none';
+}
 
 /**
  * Point the panel at `tabId`'s state. Dropping the previous subscription
@@ -209,6 +241,11 @@ function follow(tabId: number | null): void {
   const myGeneration = followGeneration;
   unsubscribe?.();
   unsubscribe = null;
+  // Any confirmation left open belonged to the target `follow()` is about to
+  // leave — cancel it (hides the inset, resolves its promise `false`) rather
+  // than let it linger over whatever this call is about to show instead.
+  fillConfirm.cancel();
+  lastJobStatusKey = null;
   if (tabId === null) {
     answerTools.render(null);
     jobTools.render(null);
@@ -227,8 +264,15 @@ function follow(tabId: number | null): void {
     updateTrustLine(state);
     currentOrigin = state?.origin ?? null;
     tabs.setCount('answers', state?.rows.length ?? 0);
-    if (state && isPageTrusted(state)) void jobStatus.refresh();
-    else jobStatus.reset();
+    // Only re-check job-status when the trust-relevant bits of the state
+    // actually changed — a streamed answer update pushes a fresh `state` on
+    // every chunk without touching either.
+    const key = jobStatusKeyOf(state);
+    if (key !== lastJobStatusKey) {
+      lastJobStatusKey = key;
+      if (state && isPageTrusted(state)) void jobStatus.refresh();
+      else jobStatus.reset();
+    }
     if (firstDelivery) {
       firstDelivery = false;
       jobTools.checkPage();
@@ -259,15 +303,20 @@ function selectTab(id: string): void {
   void area.set({ [activeTabKey(panelWindowId)]: id }).catch(() => undefined);
 }
 
+/** No per-window tab was ever persisted (or `storage.session` is
+ *  unavailable/erroring) — fall back to the Settings → Appearance → Default
+ *  panel tab choice rather than a hardcoded 'job', same discipline as every
+ *  other best-effort read in this file. */
 async function loadActiveTab(windowId: number): Promise<string> {
   const area = sessionArea();
-  if (!area) return 'job';
+  if (!area) return getDefaultPanelTab();
   try {
     const stored = await area.get(activeTabKey(windowId));
     const value = stored[activeTabKey(windowId)];
-    return value === 'answers' ? 'answers' : 'job';
+    if (value === 'answers' || value === 'job') return value;
+    return getDefaultPanelTab();
   } catch {
-    return 'job';
+    return getDefaultPanelTab();
   }
 }
 

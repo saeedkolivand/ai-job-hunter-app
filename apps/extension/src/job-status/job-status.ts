@@ -45,6 +45,11 @@ export interface JobStatusView {
   currentStageIndex: number;
 }
 
+/** Same fallback the import button's own "already tracked" line uses (job-tools.ts). */
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 function formatShortDate(epochMs: number): string {
   const date = new Date(epochMs);
   const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
@@ -65,7 +70,12 @@ export function resolveJobStatusView(res: PopupResponse): JobStatusView | null {
   if (result.error || !result.found) return null;
 
   const status = result.status ?? 'saved';
-  const label = STAGES.find((s) => s.key === status)?.label ?? 'Saved';
+  // A status this extension doesn't track as a stage (screening, accepted,
+  // rejected, ghosted, withdrawn, …) still gets its OWN neutral label —
+  // falling back to "Saved" for it would misreport a closed application as
+  // still-open. `stageIndex` below already renders no highlighted stage for
+  // it (its `-1` never equals a real stage's index).
+  const label = STAGES.find((s) => s.key === status)?.label ?? capitalize(status);
   const when = typeof result.appliedAt === 'number' ? formatShortDate(result.appliedAt) : null;
   const chipText = when ? `${label} ${when}` : label;
 
@@ -107,6 +117,12 @@ export function mountJobStatus(host: HTMLElement, deps: JobStatusDeps): JobStatu
   card.hidden = true;
   host.append(card);
 
+  /** Guards against a stale in-flight `refresh()` clobbering a newer one —
+   *  same pattern as `popup.ts`'s `appliedCheckGeneration`. Bumped by BOTH
+   *  `refresh()` and `reset()` so a caller resetting (e.g. on leaving
+   *  `connected`) also invalidates whatever `refresh()` is still in flight. */
+  let generation = 0;
+
   function renderStrip(currentStageIndex: number): HTMLElement {
     const strip = el('div', 'stage-strip');
     strip.setAttribute('aria-label', 'Application stage');
@@ -131,17 +147,24 @@ export function mountJobStatus(host: HTMLElement, deps: JobStatusDeps): JobStatu
   }
 
   function reset(): void {
+    generation += 1;
     card.hidden = true;
     card.replaceChildren();
   }
 
   async function refresh(): Promise<void> {
+    generation += 1;
+    const myGeneration = generation;
     try {
       const res = await deps.send({ kind: 'appliedCheck' });
+      // A newer refresh()/reset() started while this one was in flight — its
+      // outcome must win; bail before touching the DOM.
+      if (myGeneration !== generation) return;
       const view = resolveJobStatusView(res);
       if (view) render(view);
       else reset();
     } catch {
+      if (myGeneration !== generation) return;
       reset();
     }
   }

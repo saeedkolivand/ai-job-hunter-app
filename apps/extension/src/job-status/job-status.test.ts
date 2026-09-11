@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { PopupRequest, PopupResponse } from '../lib/messages';
 import { mountJobStatus, resolveJobStatusView, stageIndex } from './job-status';
 
 describe('stageIndex (pure)', () => {
@@ -69,6 +70,22 @@ describe('resolveJobStatusView (pure)', () => {
     });
     expect(view?.title).toBeNull();
   });
+
+  it('gives an unmapped terminal status its own neutral, capitalized label rather than "Saved"', () => {
+    const rejected = resolveJobStatusView({
+      ok: true,
+      kind: 'appliedCheck',
+      result: { found: true, status: 'rejected' },
+    });
+    expect(rejected).toEqual({ title: null, chipText: 'Rejected', currentStageIndex: -1 });
+
+    const ghosted = resolveJobStatusView({
+      ok: true,
+      kind: 'appliedCheck',
+      result: { found: true, status: 'ghosted' },
+    });
+    expect(ghosted).toEqual({ title: null, chipText: 'Ghosted', currentStageIndex: -1 });
+  });
 });
 
 describe('mountJobStatus', () => {
@@ -135,5 +152,79 @@ describe('mountJobStatus', () => {
     const card = host.querySelector<HTMLElement>('.card')!;
     expect(card.hidden).toBe(true);
     expect(card.textContent).toBe('');
+  });
+
+  it('renders the stage strip with no stage highlighted for an unmapped status', async () => {
+    const { host, send, handle } = mount();
+    send.mockResolvedValueOnce({
+      ok: true,
+      kind: 'appliedCheck',
+      result: { found: true, status: 'rejected', title: 'X' },
+    });
+
+    await handle.refresh();
+
+    const card = host.querySelector<HTMLElement>('.card')!;
+    expect(card.textContent).toContain('Rejected');
+    expect(card.querySelectorAll('.stage.current')).toHaveLength(0);
+  });
+
+  it('a stale in-flight refresh() must not clobber a newer render (generation guard)', async () => {
+    let resolveFirst: ((res: PopupResponse) => void) | undefined;
+    const first = new Promise<PopupResponse>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const send = vi
+      .fn<(req: PopupRequest) => Promise<PopupResponse>>()
+      .mockReturnValueOnce(first)
+      .mockResolvedValueOnce({
+        ok: true,
+        kind: 'appliedCheck',
+        result: { found: true, status: 'applied', title: 'Newer' },
+      });
+    const host = document.createElement('div');
+    const handle = mountJobStatus(host, { send });
+
+    const p1 = handle.refresh(); // first call — left pending
+    const p2 = handle.refresh(); // second call — resolves immediately, "wins"
+    await p2;
+
+    const card = host.querySelector<HTMLElement>('.card')!;
+    expect(card.textContent).toContain('Newer');
+
+    // The first call's stale response arrives late — must be a no-op.
+    resolveFirst?.({
+      ok: true,
+      kind: 'appliedCheck',
+      result: { found: true, status: 'saved', title: 'Stale' },
+    });
+    await p1;
+
+    expect(card.textContent).toContain('Newer');
+    expect(card.textContent).not.toContain('Stale');
+  });
+
+  it('reset() also bumps the generation, so a refresh() left in flight cannot resurrect the card', async () => {
+    let resolvePending: ((res: PopupResponse) => void) | undefined;
+    const pending = new Promise<PopupResponse>((resolve) => {
+      resolvePending = resolve;
+    });
+    const send = vi
+      .fn<(req: PopupRequest) => Promise<PopupResponse>>()
+      .mockReturnValueOnce(pending);
+    const host = document.createElement('div');
+    const handle = mountJobStatus(host, { send });
+
+    const p = handle.refresh(); // left pending
+    handle.reset();
+
+    resolvePending?.({
+      ok: true,
+      kind: 'appliedCheck',
+      result: { found: true, status: 'saved', title: 'Stale' },
+    });
+    await p;
+
+    expect(host.querySelector<HTMLElement>('.card')!.hidden).toBe(true);
   });
 });
