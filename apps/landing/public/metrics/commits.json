@@ -1,5 +1,17 @@
 [
   {
+    "sha": "882700abf14d2d0ac5b47c52dd735b720bb93dd8",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-11T08:01:37Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "c9c93848a2489844323ed6e7427072072854645a",
     "commit": {
       "message": "ui(extension): notebook redesign shell — launcher popup, tabbed panel, settings page (#1201)",
@@ -1185,18 +1197,6 @@
     },
     "author": {
       "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "73d7efad8067daabd5faa045f482ee5edace3500",
-    "commit": {
-      "message": "chore(release): 0.147.0 [skip ci]",
-      "author": {
-        "date": "2026-09-04T23:38:08Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
     }
   }
 ]
