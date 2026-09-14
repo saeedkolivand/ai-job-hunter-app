@@ -59,6 +59,17 @@ fn message_type_constants_match_ts() {
         msg::ASSIST_CHUNK,
         msg::ASSIST_DONE,
         msg::ASSIST_CANCEL,
+        // PR1 (extension read tier): the extension itself now sends these four —
+        // Read-only, Autofill-gated, reply-capped (see `msg::AGENT_QUERY`'s doc) —
+        // so they belong in the parity-tested set for the first time.
+        msg::AGENT_QUERY,
+        msg::AGENT_RESULT,
+        msg::AGENT_CALL,
+        msg::AGENT_CALL_RESULT,
+        // PR1 — new settings.get/settings.set verbs (R7).
+        msg::SETTINGS_GET,
+        msg::SETTINGS_RESULT,
+        msg::SETTINGS_SET,
     ] {
         let needle = format!("'{literal}'");
         assert!(
@@ -165,17 +176,13 @@ fn reserved_types_are_distinct() {
         msg::ASSIST_CHUNK,
         msg::ASSIST_DONE,
         msg::ASSIST_CANCEL,
-        // NOT in `message_type_constants_match_ts`'s list above (that
-        // exclusion is deliberate — see `msg::AGENT_QUERY`'s doc — the
-        // browser extension never sends these, so there is no TS side to
-        // pin them against) but THIS test has no TS dependency at all: it
-        // only checks that every Rust wire-type constant is distinct from
-        // every other one, an invariant these two constants must satisfy
-        // exactly like the rest.
         msg::AGENT_QUERY,
         msg::AGENT_RESULT,
         msg::AGENT_CALL,
         msg::AGENT_CALL_RESULT,
+        msg::SETTINGS_GET,
+        msg::SETTINGS_RESULT,
+        msg::SETTINGS_SET,
     ];
     let set: std::collections::HashSet<_> = all.iter().collect();
     assert_eq!(set.len(), all.len(), "wire type constants must be unique");
@@ -493,6 +500,40 @@ fn autofill_optin_defaults_off_and_persists() {
     assert!(!BridgeState::load(dir.path()).autofill_enabled());
 }
 
+/// Issue #1203-r1-2 (settings-switch race): each of the three consent
+/// setters now returns whether it actually changed the value, and
+/// `resolve_settings_set` (`settings.rs`) relies on this instead of its own
+/// separate compare — a stale `true` here would silently break "a
+/// Notification Center entry per actual change" (R7 guard rail #3).
+#[test]
+fn optin_setters_report_false_on_a_redundant_same_value_call() {
+    let (_dir, state) = state();
+
+    assert!(
+        state.set_autofill_enabled(true),
+        "off → on is a real change"
+    );
+    assert!(
+        !state.set_autofill_enabled(true),
+        "requesting autofill's already-current value must report no change"
+    );
+
+    assert!(state.set_ai_assist(true), "off → on is a real change");
+    assert!(
+        !state.set_ai_assist(true),
+        "requesting ai-assist's already-current value must report no change"
+    );
+
+    assert!(
+        state.set_autotrack_enabled(true),
+        "off → on is a real change"
+    );
+    assert!(
+        !state.set_autotrack_enabled(true),
+        "requesting autotrack's already-current value must report no change"
+    );
+}
+
 // ── match.live throttle (MEDIUM: reconnect-proof, lives on BridgeState) ──────
 
 #[test]
@@ -770,8 +811,15 @@ fn advance_authenticated_routes_autotrack_check() {
         "reqId": "req-9",
         "payload": Value::Null,
     });
-    let decision =
-        advance_authenticated(msg::AUTOTRACK_CHECK, "req-9".to_string(), &envelope, false);
+    let dir = tempfile::tempdir().unwrap();
+    let state = BridgeState::load(dir.path());
+    let decision = advance_authenticated(
+        &state,
+        msg::AUTOTRACK_CHECK,
+        "req-9".to_string(),
+        &envelope,
+        CallerClass::Other,
+    );
     match decision {
         FrameDecision::AutotrackCheck { req_id } => assert_eq!(req_id, "req-9"),
         other => panic!("expected FrameDecision::AutotrackCheck, got {other:?}"),
@@ -801,42 +849,126 @@ fn advance_authenticated_routes_autofill_check() {
         "reqId": "req-10",
         "payload": Value::Null,
     });
-    let decision =
-        advance_authenticated(msg::AUTOFILL_CHECK, "req-10".to_string(), &envelope, false);
+    let dir = tempfile::tempdir().unwrap();
+    let state = BridgeState::load(dir.path());
+    let decision = advance_authenticated(
+        &state,
+        msg::AUTOFILL_CHECK,
+        "req-10".to_string(),
+        &envelope,
+        CallerClass::Other,
+    );
     match decision {
         FrameDecision::AutofillCheck { req_id } => assert_eq!(req_id, "req-10"),
         other => panic!("expected FrameDecision::AutofillCheck, got {other:?}"),
     }
 }
 
-// ── agent.query is gated on `is_agent_cli` (finding #5, security review) ──
+// ── CallerClass::resolve (PR1 — extension read tier) ───────────────────────
 
 #[test]
-fn advance_authenticated_routes_agent_query_only_for_the_cli_origin() {
+fn caller_class_resolve_matches_the_agent_cli_sentinel() {
+    assert_eq!(
+        CallerClass::resolve(auth::AGENT_CLI_ORIGIN, &[]),
+        CallerClass::Cli
+    );
+}
+
+#[test]
+fn caller_class_resolve_matches_a_known_extension_origin() {
+    assert_eq!(
+        CallerClass::resolve("chrome-extension://oaoekkgkhmgdfnpmfkpphgiikliaicll", &[]),
+        CallerClass::Extension
+    );
+    // The REAL Firefox background-script origin.
+    assert_eq!(CallerClass::resolve("null", &[]), CallerClass::Extension);
+    // The native-messaging relay forwards the paired extension's frames 1:1, so it
+    // resolves to the extension too — only the CLI sentinel is carved out.
+    assert_eq!(
+        CallerClass::resolve(auth::NATIVE_HOST_ORIGIN, &[]),
+        CallerClass::Extension
+    );
+}
+
+#[test]
+fn caller_class_resolve_falls_back_to_other_for_everything_else() {
+    assert_eq!(
+        CallerClass::resolve("https://evil.example.com", &[]),
+        CallerClass::Other
+    );
+    assert_eq!(CallerClass::resolve("", &[]), CallerClass::Other);
+}
+
+// ── settings.set throttle on BridgeState (R7, guard rail #4) ──────────────
+
+#[test]
+fn bridge_state_try_acquire_settings_set_throttles_a_burst() {
+    let (_dir, state) = state();
+    let mut admitted = 0;
+    for _ in 0..20 {
+        if state.try_acquire_settings_set() {
+            admitted += 1;
+        }
+    }
+    assert!(
+        admitted < 20,
+        "an unbounded burst of settings.set must eventually be throttled"
+    );
+    assert!(admitted > 0, "a reasonable burst must still be admitted");
+}
+
+// ── agent.query / agent.call are gated on `CallerClass` (finding #5, security
+// review; extended by PR1's extension read tier) ──────────────────────────
+
+fn state() -> (tempfile::TempDir, BridgeState) {
+    let dir = tempfile::tempdir().unwrap();
+    let state = BridgeState::load(dir.path());
+    (dir, state)
+}
+
+#[test]
+fn advance_authenticated_routes_agent_query_for_the_cli_regardless_of_autofill() {
     let envelope = serde_json::json!({
         "type": msg::AGENT_QUERY,
         "reqId": "req-11",
         "payload": { "resource": "schema" },
     });
-    let decision = advance_authenticated(msg::AGENT_QUERY, "req-11".to_string(), &envelope, true);
+    let (_dir, state) = state();
+    // Autofill stays OFF (default) — the CLI's own gate is unaffected by that opt-in.
+    let decision = advance_authenticated(
+        &state,
+        msg::AGENT_QUERY,
+        "req-11".to_string(),
+        &envelope,
+        CallerClass::Cli,
+    );
     match decision {
-        FrameDecision::AgentQuery { req_id, .. } => assert_eq!(req_id, "req-11"),
+        FrameDecision::AgentQuery { req_id, caller, .. } => {
+            assert_eq!(req_id, "req-11");
+            assert_eq!(caller, CallerClass::Cli);
+        }
         other => panic!("expected FrameDecision::AgentQuery, got {other:?}"),
     }
 }
 
 #[test]
-fn advance_authenticated_refuses_agent_query_from_a_non_cli_origin() {
-    // The exact case this fix closes: an authenticated connection whose
-    // handshake Origin was NOT the CLI's — e.g. the browser extension's own
-    // already-authenticated session — must never reach `FrameDecision::
-    // AgentQuery`, even though it is fully authenticated.
+fn advance_authenticated_refuses_agent_query_from_a_non_cli_non_extension_origin() {
+    // The exact case finding #5 closed: an authenticated connection whose
+    // handshake Origin was neither the CLI's nor the extension's must never
+    // reach `FrameDecision::AgentQuery`, even though it is fully authenticated.
     let envelope = serde_json::json!({
         "type": msg::AGENT_QUERY,
         "reqId": "req-12",
         "payload": { "resource": "schema" },
     });
-    let decision = advance_authenticated(msg::AGENT_QUERY, "req-12".to_string(), &envelope, false);
+    let (_dir, state) = state();
+    let decision = advance_authenticated(
+        &state,
+        msg::AGENT_QUERY,
+        "req-12".to_string(),
+        &envelope,
+        CallerClass::Other,
+    );
     let FrameDecision::Reply(text) = decision else {
         panic!("expected FrameDecision::Reply (a refusal), got {decision:?}");
     };
@@ -847,30 +979,99 @@ fn advance_authenticated_refuses_agent_query_from_a_non_cli_origin() {
     assert_eq!(v["payload"]["resource"], "schema");
 }
 
-// ── agent.call is gated on `is_agent_cli` too (ADR-038 §2, Phase 2) ───────
+#[test]
+fn advance_authenticated_refuses_agent_query_from_the_extension_while_autofill_is_off() {
+    let envelope = serde_json::json!({
+        "type": msg::AGENT_QUERY,
+        "reqId": "req-ext-1",
+        "payload": { "resource": "schema" },
+    });
+    let (_dir, state) = state();
+    assert!(!state.autofill_enabled());
+    let decision = advance_authenticated(
+        &state,
+        msg::AGENT_QUERY,
+        "req-ext-1".to_string(),
+        &envelope,
+        CallerClass::Extension,
+    );
+    let FrameDecision::Reply(text) = decision else {
+        panic!("expected FrameDecision::Reply (a refusal), got {decision:?}");
+    };
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        v["payload"]["error"],
+        crate::extension_bridge::agent_call::ERR_EXTENSION_READ_GATE
+    );
+}
 
 #[test]
-fn advance_authenticated_routes_agent_call_only_for_the_cli_origin() {
+fn advance_authenticated_routes_agent_query_for_the_extension_once_autofill_is_on() {
+    let envelope = serde_json::json!({
+        "type": msg::AGENT_QUERY,
+        "reqId": "req-ext-2",
+        "payload": { "resource": "schema" },
+    });
+    let (_dir, state) = state();
+    state.set_autofill_enabled(true);
+    let decision = advance_authenticated(
+        &state,
+        msg::AGENT_QUERY,
+        "req-ext-2".to_string(),
+        &envelope,
+        CallerClass::Extension,
+    );
+    match decision {
+        FrameDecision::AgentQuery { req_id, caller, .. } => {
+            assert_eq!(req_id, "req-ext-2");
+            assert_eq!(caller, CallerClass::Extension);
+        }
+        other => panic!("expected FrameDecision::AgentQuery, got {other:?}"),
+    }
+}
+
+// ── agent.call: same CallerClass gate, plus the extension's own Read-only effect gate
+// (ADR-038 §2, Phase 2; PR1 decision 1) ─────────────────────────────────────
+
+#[test]
+fn advance_authenticated_routes_agent_call_for_the_cli_regardless_of_effect_or_autofill() {
     let envelope = serde_json::json!({
         "type": msg::AGENT_CALL,
         "reqId": "req-13",
-        "payload": { "namespace": "jobs", "command": "jobs_list", "input": {} },
+        "payload": { "namespace": "applications", "command": "applications_delete", "input": {} },
     });
-    let decision = advance_authenticated(msg::AGENT_CALL, "req-13".to_string(), &envelope, true);
+    let (_dir, state) = state();
+    let decision = advance_authenticated(
+        &state,
+        msg::AGENT_CALL,
+        "req-13".to_string(),
+        &envelope,
+        CallerClass::Cli,
+    );
     match decision {
-        FrameDecision::AgentCall { req_id, .. } => assert_eq!(req_id, "req-13"),
+        FrameDecision::AgentCall { req_id, caller, .. } => {
+            assert_eq!(req_id, "req-13");
+            assert_eq!(caller, CallerClass::Cli);
+        }
         other => panic!("expected FrameDecision::AgentCall, got {other:?}"),
     }
 }
 
 #[test]
-fn advance_authenticated_refuses_agent_call_from_a_non_cli_origin() {
+fn advance_authenticated_refuses_agent_call_from_a_non_cli_non_extension_origin() {
     let envelope = serde_json::json!({
         "type": msg::AGENT_CALL,
         "reqId": "req-14",
         "payload": { "namespace": "jobs", "command": "jobs_list", "input": {} },
     });
-    let decision = advance_authenticated(msg::AGENT_CALL, "req-14".to_string(), &envelope, false);
+    let (_dir, state) = state();
+    let decision = advance_authenticated(
+        &state,
+        msg::AGENT_CALL,
+        "req-14".to_string(),
+        &envelope,
+        CallerClass::Other,
+    );
     let FrameDecision::Reply(text) = decision else {
         panic!("expected FrameDecision::Reply (a refusal), got {decision:?}");
     };
@@ -879,6 +1080,225 @@ fn advance_authenticated_refuses_agent_call_from_a_non_cli_origin() {
     assert_eq!(v["reqId"], "req-14");
     assert_eq!(v["payload"]["dispatched"], false);
     assert_eq!(v["payload"]["error"], "cli_only");
+}
+
+#[test]
+fn advance_authenticated_refuses_agent_call_from_the_extension_while_autofill_is_off() {
+    let envelope = serde_json::json!({
+        "type": msg::AGENT_CALL,
+        "reqId": "req-ext-3",
+        "payload": { "namespace": "jobs", "command": "jobs_list", "input": {} },
+    });
+    let (_dir, state) = state();
+    let decision = advance_authenticated(
+        &state,
+        msg::AGENT_CALL,
+        "req-ext-3".to_string(),
+        &envelope,
+        CallerClass::Extension,
+    );
+    let FrameDecision::Reply(text) = decision else {
+        panic!("expected FrameDecision::Reply (a refusal), got {decision:?}");
+    };
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        v["payload"]["error"],
+        crate::extension_bridge::agent_call::ERR_EXTENSION_READ_GATE
+    );
+}
+
+#[test]
+fn advance_authenticated_dispatches_agent_call_for_the_extension_on_a_read_row() {
+    let envelope = serde_json::json!({
+        "type": msg::AGENT_CALL,
+        "reqId": "req-ext-4",
+        // Namespace is the WIRE shape `split_path` derives from the policy path's middle segment
+        // (`"commands::jobs::jobs_list"` → `("jobs", "jobs_list")`), never the full `path` string.
+        "payload": { "namespace": "jobs", "command": "jobs_list", "input": {} },
+    });
+    let (_dir, state) = state();
+    state.set_autofill_enabled(true);
+    let decision = advance_authenticated(
+        &state,
+        msg::AGENT_CALL,
+        "req-ext-4".to_string(),
+        &envelope,
+        CallerClass::Extension,
+    );
+    match decision {
+        FrameDecision::AgentCall { req_id, caller, .. } => {
+            assert_eq!(req_id, "req-ext-4");
+            assert_eq!(caller, CallerClass::Extension);
+        }
+        other => panic!("expected FrameDecision::AgentCall, got {other:?}"),
+    }
+}
+
+#[test]
+fn advance_authenticated_refuses_agent_call_for_the_extension_on_a_non_read_row_without_a_confirm_ceremony(
+) {
+    let envelope = serde_json::json!({
+        "type": msg::AGENT_CALL,
+        "reqId": "req-ext-5",
+        "payload": {
+            "namespace": "applications",
+            "command": "applications_delete",
+            "input": {},
+        },
+    });
+    let (_dir, state) = state();
+    state.set_autofill_enabled(true);
+    let decision = advance_authenticated(
+        &state,
+        msg::AGENT_CALL,
+        "req-ext-5".to_string(),
+        &envelope,
+        CallerClass::Extension,
+    );
+    let FrameDecision::Reply(text) = decision else {
+        panic!("expected FrameDecision::Reply (a refusal), got {decision:?}");
+    };
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(v["payload"]["dispatched"], false);
+    assert_eq!(
+        v["payload"]["error"], "effect_not_allowed_for_extension",
+        "an Irreversible row must refuse in-band, never enter the confirm ceremony"
+    );
+    assert!(
+        v["payload"].get("confirm").is_none(),
+        "the refusal must carry no confirm ceremony hint at all"
+    );
+}
+
+// ── settings.get / settings.set (R7) — extension caller only ──────────────
+
+#[test]
+fn advance_authenticated_routes_settings_get_for_the_extension_regardless_of_autofill() {
+    let envelope = serde_json::json!({
+        "type": msg::SETTINGS_GET,
+        "reqId": "req-set-1",
+        "payload": Value::Null,
+    });
+    let (_dir, state) = state();
+    assert!(!state.autofill_enabled());
+    let decision = advance_authenticated(
+        &state,
+        msg::SETTINGS_GET,
+        "req-set-1".to_string(),
+        &envelope,
+        CallerClass::Extension,
+    );
+    match decision {
+        FrameDecision::SettingsGet { req_id } => assert_eq!(req_id, "req-set-1"),
+        other => panic!("expected FrameDecision::SettingsGet, got {other:?}"),
+    }
+}
+
+#[test]
+fn advance_authenticated_refuses_settings_get_for_the_cli_and_other() {
+    for caller in [CallerClass::Cli, CallerClass::Other] {
+        let envelope = serde_json::json!({
+            "type": msg::SETTINGS_GET,
+            "reqId": "req-set-2",
+            "payload": Value::Null,
+        });
+        let (_dir, state) = state();
+        let decision = advance_authenticated(
+            &state,
+            msg::SETTINGS_GET,
+            "req-set-2".to_string(),
+            &envelope,
+            caller,
+        );
+        let FrameDecision::Reply(text) = decision else {
+            panic!("expected FrameDecision::Reply (a refusal) for {caller:?}, got {decision:?}");
+        };
+        let v: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["payload"]["ok"], false);
+        assert_eq!(v["payload"]["error"], "extension_only");
+    }
+}
+
+#[test]
+fn advance_authenticated_routes_settings_set_for_the_extension() {
+    let envelope = serde_json::json!({
+        "type": msg::SETTINGS_SET,
+        "reqId": "req-set-3",
+        "payload": { "key": "autofill", "enabled": true },
+    });
+    let (_dir, state) = state();
+    let decision = advance_authenticated(
+        &state,
+        msg::SETTINGS_SET,
+        "req-set-3".to_string(),
+        &envelope,
+        CallerClass::Extension,
+    );
+    match decision {
+        FrameDecision::SettingsSet { req_id, payload } => {
+            assert_eq!(req_id, "req-set-3");
+            assert_eq!(payload["key"], "autofill");
+        }
+        other => panic!("expected FrameDecision::SettingsSet, got {other:?}"),
+    }
+}
+
+// ── `reqId` bound (mod.rs `advance_frame_from`, `MAX_REQ_ID_BYTES`) ──────────
+// No existing test exercised `advance_frame_from` itself before this pair —
+// every other test above goes through `advance_authenticated` directly. Both
+// go through the outer function so the cap is proven to run BEFORE the type
+// dispatch, not just inside one handler.
+
+#[test]
+fn advance_frame_from_passes_through_a_req_id_at_exactly_the_cap() {
+    let (_dir, state) = state();
+    let req_id = "r".repeat(MAX_REQ_ID_BYTES);
+    let text = serde_json::json!({
+        "type": msg::SETTINGS_GET,
+        "reqId": req_id,
+        "payload": Value::Null,
+    })
+    .to_string();
+    let decision = advance_frame_from(
+        &state,
+        &ConnState::Authenticated,
+        &text,
+        CallerClass::Extension,
+    );
+    match decision {
+        FrameDecision::SettingsGet { req_id: got } => assert_eq!(got, req_id),
+        other => panic!("expected FrameDecision::SettingsGet, got {other:?}"),
+    }
+}
+
+#[test]
+fn advance_frame_from_refuses_an_oversized_req_id_without_echoing_it() {
+    let (_dir, state) = state();
+    let req_id = "r".repeat(MAX_REQ_ID_BYTES + 1);
+    let text = serde_json::json!({
+        "type": msg::SETTINGS_GET,
+        "reqId": req_id,
+        "payload": Value::Null,
+    })
+    .to_string();
+    let decision = advance_frame_from(
+        &state,
+        &ConnState::Authenticated,
+        &text,
+        CallerClass::Extension,
+    );
+    let FrameDecision::Reply(reply) = decision else {
+        panic!("expected FrameDecision::Reply (a bounded refusal), got {decision:?}");
+    };
+    assert!(
+        reply.len() < 512,
+        "the refusal itself must stay small regardless of the oversized input: got {} bytes",
+        reply.len()
+    );
+    assert!(
+        !reply.contains(&req_id),
+        "the oversized reqId must never be echoed back on the wire"
+    );
 }
 
 /// ADR-038 §3/§4 — the exhaustive counterpart to `agent_call::tests`' 4
@@ -1027,7 +1447,14 @@ fn advance_authenticated_routes_assist_cancel_by_req_id() {
         "reqId": "req-7",
         "payload": Value::Null,
     });
-    let decision = advance_authenticated(msg::ASSIST_CANCEL, "req-7".to_string(), &envelope, false);
+    let (_dir, bridge_state) = state();
+    let decision = advance_authenticated(
+        &bridge_state,
+        msg::ASSIST_CANCEL,
+        "req-7".to_string(),
+        &envelope,
+        CallerClass::Other,
+    );
     match decision {
         FrameDecision::AssistCancel { req_id } => assert_eq!(req_id, "req-7"),
         other => panic!("expected FrameDecision::AssistCancel, got {other:?}"),

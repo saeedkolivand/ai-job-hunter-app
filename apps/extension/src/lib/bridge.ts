@@ -38,6 +38,8 @@ import { type Browser, browser } from '@wxt-dev/browser';
 import {
   EXTENSION_MESSAGE_TYPES,
   EXTENSION_PROTOCOL_VERSION,
+  type ExtensionAgentCallResult,
+  type ExtensionAgentQueryResult,
   type ExtensionAnswerAssistRequest,
   type ExtensionAnswerAssistResult,
   type ExtensionAnswerPair,
@@ -52,6 +54,8 @@ import {
   type ExtensionMatchLiveRequest,
   type ExtensionMatchLiveResult,
   type ExtensionProfileResult,
+  type ExtensionSettingsKey,
+  type ExtensionSettingsResult,
   type ExtensionStatusUpdateResult,
 } from '@ajh/shared/extension-protocol';
 
@@ -104,6 +108,9 @@ type MatchResolver = (result: ExtensionMatchLiveResult) => void;
 type AssistResolver = (result: ExtensionAnswerAssistResult) => void;
 type AutotrackResolver = (enabled: boolean) => void;
 type AutofillResolver = (enabled: boolean) => void;
+type SettingsResolver = (result: ExtensionSettingsResult) => void;
+type AgentQueryResolver = (result: ExtensionAgentQueryResult) => void;
+type AgentCallResolver = (result: ExtensionAgentCallResult) => void;
 
 export type BridgePhase = 'searching' | 'connected' | 'app_not_running' | 'outdated' | 'bad_token';
 
@@ -444,6 +451,137 @@ function normalizeMatchLiveResult(payload: unknown): ExtensionMatchLiveResult {
   return out;
 }
 
+/**
+ * Hand-written guard for an `agent.result` payload (PR1 — extension read
+ * tier; extension stays zod-free). Mirrors `ExtensionAgentQueryResultSchema`'s
+ * discriminated union: `ok:true` requires a string `resource` + an OWN
+ * `data` property (Rust always emits `data` on success — a payload missing
+ * it entirely is malformed, never a silent `data: undefined`); `ok:false`
+ * requires a string `resource` + `error` (`detail`/`retryAfterMs` optional —
+ * the latter set only on a throttle refusal).
+ */
+function isExtensionAgentQueryResult(v: unknown): v is ExtensionAgentQueryResult {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  if (typeof o.resource !== 'string') return false;
+  if (o.ok === true) return Object.hasOwn(o, 'data');
+  if (o.ok === false) {
+    if (typeof o.error !== 'string') return false;
+    if (o.detail !== undefined && typeof o.detail !== 'string') return false;
+    if (o.retryAfterMs !== undefined && !Number.isFinite(o.retryAfterMs)) return false;
+    return true;
+  }
+  return false;
+}
+
+/** Rebuild an {@link ExtensionAgentQueryResult} from only the known, defined
+ *  keys — mirrors `normalizeMatchLiveResult`. This verb's errors are
+ *  surfaced to the user (it answers a deliberate read), so the fallback
+ *  text is written the same way: `ok:false` + a plain `error`. */
+function normalizeAgentQueryResult(payload: unknown): ExtensionAgentQueryResult {
+  if (!isExtensionAgentQueryResult(payload)) {
+    return { ok: false, resource: '', error: 'The desktop app sent a malformed read result.' };
+  }
+  if (payload.ok) return { ok: true, resource: payload.resource, data: payload.data };
+  const out: ExtensionAgentQueryResult = {
+    ok: false,
+    resource: payload.resource,
+    error: payload.error,
+  };
+  if (payload.detail !== undefined) out.detail = payload.detail;
+  if (payload.retryAfterMs !== undefined) out.retryAfterMs = payload.retryAfterMs;
+  return out;
+}
+
+/**
+ * Hand-written guard for an `agent.call.result` payload (PR1 — extension
+ * read tier; extension stays zod-free). Mirrors
+ * `ExtensionAgentCallResultSchema`'s discriminated union on `dispatched`
+ * (never `ok` — ADR-038 §5): `dispatched:true` requires string
+ * `namespace`/`command` + an OWN `data` property (Rust always emits `data`
+ * on success); `dispatched:false` requires string `namespace`/`command`/
+ * `error` (`detail`/`retryAfterMs` optional — the latter set only on a
+ * throttle refusal).
+ */
+function isExtensionAgentCallResult(v: unknown): v is ExtensionAgentCallResult {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  if (typeof o.namespace !== 'string' || typeof o.command !== 'string') return false;
+  if (o.dispatched === true) return Object.hasOwn(o, 'data');
+  if (o.dispatched === false) {
+    if (typeof o.error !== 'string') return false;
+    if (o.detail !== undefined && typeof o.detail !== 'string') return false;
+    if (o.retryAfterMs !== undefined && !Number.isFinite(o.retryAfterMs)) return false;
+    return true;
+  }
+  return false;
+}
+
+/** Rebuild an {@link ExtensionAgentCallResult} from only the known, defined
+ *  keys — mirrors `normalizeAgentQueryResult`. */
+function normalizeAgentCallResult(payload: unknown): ExtensionAgentCallResult {
+  if (!isExtensionAgentCallResult(payload)) {
+    return {
+      dispatched: false,
+      namespace: '',
+      command: '',
+      error: 'The desktop app sent a malformed call result.',
+    };
+  }
+  if (payload.dispatched) {
+    return {
+      dispatched: true,
+      namespace: payload.namespace,
+      command: payload.command,
+      data: payload.data,
+    };
+  }
+  const out: ExtensionAgentCallResult = {
+    dispatched: false,
+    namespace: payload.namespace,
+    command: payload.command,
+    error: payload.error,
+  };
+  if (payload.detail !== undefined) out.detail = payload.detail;
+  if (payload.retryAfterMs !== undefined) out.retryAfterMs = payload.retryAfterMs;
+  return out;
+}
+
+/**
+ * Hand-written guard for a `settings.result` payload (PR1 — extension read
+ * tier; extension stays zod-free). Mirrors `ExtensionSettingsResultSchema`'s
+ * discriminated union: `ok:true` requires a `settings` object whose three
+ * fields are all booleans; `ok:false` requires a string `error`.
+ */
+function isExtensionSettingsResult(v: unknown): v is ExtensionSettingsResult {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  if (o.ok === true) {
+    if (typeof o.settings !== 'object' || o.settings === null) return false;
+    const s = o.settings as Record<string, unknown>;
+    return (
+      typeof s.autofill === 'boolean' &&
+      typeof s.aiAssist === 'boolean' &&
+      typeof s.autotrack === 'boolean'
+    );
+  }
+  if (o.ok === false) return typeof o.error === 'string';
+  return false;
+}
+
+/** Rebuild an {@link ExtensionSettingsResult} from only the known, defined
+ *  keys — mirrors `normalizeAgentCallResult`. This verb's errors are
+ *  surfaced to the user (it answers a deliberate toggle click), so the
+ *  fallback text is written the same way: `ok:false` + a plain `error`. */
+function normalizeSettingsResult(payload: unknown): ExtensionSettingsResult {
+  if (!isExtensionSettingsResult(payload)) {
+    return { ok: false, error: 'The desktop app sent a malformed settings result.' };
+  }
+  return payload.ok
+    ? { ok: true, settings: payload.settings }
+    : { ok: false, error: payload.error };
+}
+
 /** Hand-written guard for an `answer.assist` payload (extension stays
  *  zod-free). Mirrors `ExtensionAnswerAssistResultSchema`'s discriminated
  *  union: `ok:true` requires string `question`/`draft` + a `sourced` object
@@ -663,6 +801,19 @@ export class BridgeClient {
    *  mirrors {@link pendingAutotrack} exactly (never rejects — a failure
    *  degrades to OFF). */
   private readonly pendingAutofill = new Map<string, AutofillResolver>();
+  /** In-flight `settings.get` / `settings.set` resolvers, correlated by
+   *  `reqId` (PR1 — extension read tier). Both verbs answer with the SAME
+   *  `settings.result` payload, so they share one map — kept separate from
+   *  {@link pending} for the same reason as {@link pendingProfile}. */
+  private readonly pendingSettings = new Map<string, SettingsResolver>();
+  /** In-flight `agent.query` resolvers, correlated by `reqId` (PR1 —
+   *  extension read tier). Kept separate from {@link pending} for the same
+   *  reason as {@link pendingProfile}. */
+  private readonly pendingAgentQuery = new Map<string, AgentQueryResolver>();
+  /** In-flight `agent.call` resolvers, correlated by `reqId` (PR1 —
+   *  extension read tier, Read-effect rows only). Kept separate from
+   *  {@link pending} for the same reason as {@link pendingProfile}. */
+  private readonly pendingAgentCall = new Map<string, AgentCallResolver>();
   /** In-flight `answer.assist` streaming-preview callbacks, correlated by
    *  `reqId` — registered by {@link answerAssist} for EVERY call (even with
    *  no caller-supplied `onChunk`), because a chunk's arrival also resets the
@@ -855,19 +1006,13 @@ export class BridgeClient {
     this.handshakeClosed?.();
     this.handshakeFrame = null;
     this.handshakeClosed = null;
-    for (const t of this.timers.values()) clearTimeout(t);
-    this.timers.clear();
-    this.pending.clear();
-    this.pendingProfile.clear();
-    this.pendingApplied.clear();
-    this.pendingStatus.clear();
-    this.pendingAnswers.clear();
-    this.pendingSuggest.clear();
-    this.pendingMatch.clear();
-    this.pendingAssist.clear();
-    this.pendingAutotrack.clear();
-    this.pendingAutofill.clear();
-    this.assistChunkListeners.clear();
+    // Settle every in-flight request BEFORE closing the transport —
+    // `failAllPending` already resolves + clears every pending map/timer
+    // (including `assistChunkListeners`), so closing first would let the
+    // transport's own `onClose` handler find nothing left to settle: each
+    // promise's resolver/timer was already cleared without ever being
+    // called, and it would hang forever instead of rejecting/resolving.
+    this.failAllPending('Bridge client disposed.');
     this.transport?.close();
     this.transport = null;
   }
@@ -1263,6 +1408,195 @@ export class BridgeClient {
         clearTimeout(timer);
         this.timers.delete(reqId);
         this.pendingMatch.delete(reqId);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
+  /**
+   * Send a `settings.get` (no payload) and resolve with the validated
+   * `settings.result` payload — the current `{ autofill, aiAssist,
+   * autotrack }` values, or a refusal. Rejects only on no connection /
+   * timeout / send failure; like `matchLive`, a well-formed `ok:false`
+   * reply is NOT folded away here — the caller (the Settings page) must
+   * render it.
+   */
+  async settingsGet(): Promise<ExtensionSettingsResult> {
+    await this.ensureConnected();
+    if (this.phase !== 'connected' || !this.transport) {
+      throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
+    }
+    const transport = this.transport;
+
+    const reqId = newReqId();
+    const envelope: ExtensionEnvelope = {
+      type: EXTENSION_MESSAGE_TYPES.settingsGet,
+      reqId,
+      payload: {},
+    };
+
+    return new Promise<ExtensionSettingsResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingSettings.delete(reqId);
+        this.timers.delete(reqId);
+        reject(new Error('Timed out waiting for the desktop app to respond.'));
+      }, REQUEST_TIMEOUT_MS);
+      this.timers.set(reqId, timer);
+      this.pendingSettings.set(reqId, resolve);
+
+      try {
+        transport.send(envelope);
+      } catch (err) {
+        clearTimeout(timer);
+        this.timers.delete(reqId);
+        this.pendingSettings.delete(reqId);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
+  /**
+   * Send a `settings.set { key, enabled }` (the user-clicked one of the
+   * Settings page's three live toggles) and resolve with the validated
+   * `settings.result` payload — the full new settings, or a refusal (a
+   * malformed key/value; the desktop otherwise applies + notifies).
+   * Rejects only on no connection / timeout / send failure; like
+   * `settingsGet`, a well-formed `ok:false` reply is NOT folded away — the
+   * caller must roll its optimistic toggle back on it.
+   */
+  async settingsSet(key: ExtensionSettingsKey, enabled: boolean): Promise<ExtensionSettingsResult> {
+    await this.ensureConnected();
+    if (this.phase !== 'connected' || !this.transport) {
+      throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
+    }
+    const transport = this.transport;
+
+    const reqId = newReqId();
+    const envelope: ExtensionEnvelope = {
+      type: EXTENSION_MESSAGE_TYPES.settingsSet,
+      reqId,
+      payload: { key, enabled },
+    };
+
+    return new Promise<ExtensionSettingsResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingSettings.delete(reqId);
+        this.timers.delete(reqId);
+        reject(new Error('Timed out waiting for the desktop app to respond.'));
+      }, REQUEST_TIMEOUT_MS);
+      this.timers.set(reqId, timer);
+      this.pendingSettings.set(reqId, resolve);
+
+      try {
+        transport.send(envelope);
+      } catch (err) {
+        clearTimeout(timer);
+        this.timers.delete(reqId);
+        this.pendingSettings.delete(reqId);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
+  /**
+   * Send an `agent.query { resource, params? }` (PR1 — extension read tier)
+   * and resolve with the validated `agent.result` payload — the curated
+   * resource's data, or a refusal (Autofill opt-in off, the 256 KiB reply
+   * cap, a throttle, or an unknown/malformed resource — see the Rust
+   * `msg::AGENT_QUERY` doc). Rejects only on no connection / timeout / send
+   * failure; like `matchLive`, a well-formed `ok:false` reply is NOT folded
+   * away here.
+   */
+  async agentQuery(
+    resource: string,
+    params?: Record<string, unknown>
+  ): Promise<ExtensionAgentQueryResult> {
+    await this.ensureConnected();
+    if (this.phase !== 'connected' || !this.transport) {
+      throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
+    }
+    const transport = this.transport;
+
+    const reqId = newReqId();
+    const envelope: ExtensionEnvelope = {
+      type: EXTENSION_MESSAGE_TYPES.agentQuery,
+      // Resource-specific fields sit at the payload's TOP level (not nested
+      // under a `params` key) — matches the Rust `job_resource`/etc. readers
+      // AND the CLI's own wire builder (`agent_cli.rs` `Verb::payload`).
+      // `resource` spreads LAST so a colliding `params.resource` key can
+      // never override the resource this call actually named.
+      reqId,
+      payload: { ...params, resource },
+    };
+
+    return new Promise<ExtensionAgentQueryResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingAgentQuery.delete(reqId);
+        this.timers.delete(reqId);
+        reject(new Error('Timed out waiting for the desktop app to respond.'));
+      }, REQUEST_TIMEOUT_MS);
+      this.timers.set(reqId, timer);
+      this.pendingAgentQuery.set(reqId, resolve);
+
+      try {
+        transport.send(envelope);
+      } catch (err) {
+        clearTimeout(timer);
+        this.timers.delete(reqId);
+        this.pendingAgentQuery.delete(reqId);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
+  /**
+   * Send an `agent.call { namespace, command, input? }` (PR1 — extension read
+   * tier) and resolve with the validated `agent.call.result` payload. The
+   * `command` argument here is the full `<namespace>:<command>` path — split
+   * on the first `:` to build the wire frame's flat `namespace`/`command`
+   * fields (matches the Rust `payload_target` reader and the CLI's own wire
+   * builder). ONLY `Effect::Read` policy rows ever dispatch for this caller
+   * — anything else comes back `dispatched:false` with a fixed refusal
+   * naming the tier, never the CLI's confirm ceremony. Rejects only on no
+   * connection / timeout / send failure; like `matchLive`, a well-formed
+   * `dispatched:false` reply is NOT folded away here.
+   */
+  async agentCall(command: string, args?: unknown): Promise<ExtensionAgentCallResult> {
+    await this.ensureConnected();
+    if (this.phase !== 'connected' || !this.transport) {
+      throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
+    }
+    const transport = this.transport;
+
+    const colonIdx = command.indexOf(':');
+    const namespace = colonIdx === -1 ? command : command.slice(0, colonIdx);
+    const commandName = colonIdx === -1 ? '' : command.slice(colonIdx + 1);
+
+    const reqId = newReqId();
+    const envelope: ExtensionEnvelope = {
+      type: EXTENSION_MESSAGE_TYPES.agentCall,
+      // `namespace`/`command`/`input` — matches the Rust `payload_target`
+      // reader AND the CLI's own wire builder (`agent_cli.rs` `Verb::Call`
+      // arm), not a nested `{ command: 'ns:cmd', args }` shape.
+      reqId,
+      payload: { namespace, command: commandName, input: args === undefined ? {} : args },
+    };
+
+    return new Promise<ExtensionAgentCallResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingAgentCall.delete(reqId);
+        this.timers.delete(reqId);
+        reject(new Error('Timed out waiting for the desktop app to respond.'));
+      }, REQUEST_TIMEOUT_MS);
+      this.timers.set(reqId, timer);
+      this.pendingAgentCall.set(reqId, resolve);
+
+      try {
+        transport.send(envelope);
+      } catch (err) {
+        clearTimeout(timer);
+        this.timers.delete(reqId);
+        this.pendingAgentCall.delete(reqId);
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     });
@@ -1852,6 +2186,39 @@ export class BridgeClient {
       return;
     }
 
+    // settings.result → the "settings.get" / "settings.set" outcome (PR1,
+    // separate map — shared by both verbs, which answer identically).
+    if (env.type === EXTENSION_MESSAGE_TYPES.settingsResult) {
+      const resolveSettings = this.pendingSettings.get(reqId);
+      if (typeof resolveSettings !== 'function') return;
+      this.pendingSettings.delete(reqId);
+      this.clearTimer(reqId);
+      resolveSettings(normalizeSettingsResult(env.payload));
+      return;
+    }
+
+    // agent.result → the "agent.query" outcome (PR1 — extension read tier,
+    // separate map).
+    if (env.type === EXTENSION_MESSAGE_TYPES.agentResult) {
+      const resolveAgentQuery = this.pendingAgentQuery.get(reqId);
+      if (typeof resolveAgentQuery !== 'function') return;
+      this.pendingAgentQuery.delete(reqId);
+      this.clearTimer(reqId);
+      resolveAgentQuery(normalizeAgentQueryResult(env.payload));
+      return;
+    }
+
+    // agent.call.result → the "agent.call" outcome (PR1 — extension read
+    // tier, separate map).
+    if (env.type === EXTENSION_MESSAGE_TYPES.agentCallResult) {
+      const resolveAgentCall = this.pendingAgentCall.get(reqId);
+      if (typeof resolveAgentCall !== 'function') return;
+      this.pendingAgentCall.delete(reqId);
+      this.clearTimer(reqId);
+      resolveAgentCall(normalizeAgentCallResult(env.payload));
+      return;
+    }
+
     // assist.chunk → one incremental delta of a streaming reply (currently
     // only `answer.assist`). Best-effort: silently dropped when there is no
     // registered listener for this `reqId` (no `onChunk` was passed, or the
@@ -1984,6 +2351,21 @@ export class BridgeClient {
       if (timer) clearTimeout(timer);
       resolve(false); // a dropped connection → treat the opt-in as OFF (safe).
     }
+    for (const [reqId, resolve] of this.pendingSettings.entries()) {
+      const timer = this.timers.get(reqId);
+      if (timer) clearTimeout(timer);
+      resolve({ ok: false, error: reason });
+    }
+    for (const [reqId, resolve] of this.pendingAgentQuery.entries()) {
+      const timer = this.timers.get(reqId);
+      if (timer) clearTimeout(timer);
+      resolve({ ok: false, resource: '', error: reason });
+    }
+    for (const [reqId, resolve] of this.pendingAgentCall.entries()) {
+      const timer = this.timers.get(reqId);
+      if (timer) clearTimeout(timer);
+      resolve({ dispatched: false, namespace: '', command: '', error: reason });
+    }
     this.pending.clear();
     this.pendingProfile.clear();
     this.pendingApplied.clear();
@@ -1994,6 +2376,9 @@ export class BridgeClient {
     this.pendingAssist.clear();
     this.pendingAutotrack.clear();
     this.pendingAutofill.clear();
+    this.pendingSettings.clear();
+    this.pendingAgentQuery.clear();
+    this.pendingAgentCall.clear();
     // A dropped connection mid-stream never sends `assist.done` — this is
     // the "interrupted" case: no more chunks are coming, so retire every
     // listener now rather than leaving it to fire on a transport that no

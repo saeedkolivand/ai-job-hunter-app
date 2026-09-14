@@ -12,6 +12,8 @@ import type {
   ExtensionImportResult,
   ExtensionMatchLiveResult,
   ExtensionRewritePreset,
+  ExtensionSettingsKey,
+  ExtensionSettingsResult,
   ExtensionStatusUpdateResult,
 } from '@ajh/shared';
 
@@ -81,6 +83,28 @@ export type PopupRequest =
    * discipline exactly.
    */
   | { kind: 'autofillCheck' }
+  /**
+   * Fire-and-forget "what does the read tier say about this page's job?"
+   * lookup (PR1 — extension read tier), run once per Job-tab follow to
+   * upgrade the trust line from the host-only fallback to "Reading: <title>
+   * · <company>" (see `sidepanel.ts`'s `updateTrustLine`). Read-only; ANY
+   * refusal (Autofill off, throttled, unknown job) is folded away here —
+   * mirrors `appliedCheck`'s never-blocks discipline exactly, never
+   * surfaced as an error.
+   */
+  | { kind: 'trustLineJob' }
+  /**
+   * Settings page: read the extension's opt-in switches (R7 of the
+   * redesign record). Unlike `autofillCheck`, this verb's errors ARE
+   * user-facing — the page must show why the toggles couldn't load.
+   */
+  | { kind: 'settingsGet' }
+  /**
+   * Settings page: flip one switch. Like `statusUpdate`, this is a
+   * deliberate action — its failures are surfaced to the user (the page
+   * rolls its optimistic toggle back on one).
+   */
+  | { kind: 'settingsSet'; key: ExtensionSettingsKey; enabled: boolean }
   /**
    * User-clicked "Mark as applied" for the active tab's URL. Unlike
    * `appliedCheck`, this is a deliberate WRITE action — its failures are
@@ -260,6 +284,27 @@ export type PopupResponse =
    * `BridgeClient`).
    */
   | { ok: true; kind: 'autofillCheck'; enabled: boolean }
+  /**
+   * Always `ok:true` — mirrors `appliedCheck`'s never-a-transport-error
+   * fold: ANY refusal (Autofill off, throttled, an unknown job, no
+   * connection) resolves `title`/`company` both `null`, which
+   * `sidepanel.ts` renders as its existing host-only trust line rather
+   * than a special-cased error path.
+   */
+  | { ok: true; kind: 'trustLineJob'; title: string | null; company: string | null }
+  /**
+   * `ok:true` at the transport level; the desktop's own `ok`/`error` on
+   * `result` is what the page renders — this verb's failures are NOT
+   * folded away (unlike `autofillCheck`), so the caller must check
+   * `result.ok` itself.
+   */
+  | { ok: true; kind: 'settingsGet'; result: ExtensionSettingsResult }
+  /**
+   * `ok:true` at the transport level; like `settingsGet`, the desktop's own
+   * `ok`/`error` on `result` is what the page renders — the Settings page
+   * rolls its optimistic toggle back on a well-formed `ok:false`.
+   */
+  | { ok: true; kind: 'settingsSet'; result: ExtensionSettingsResult }
   /**
    * `ok:true` at the transport level; the desktop's own `ok`/`error` on
    * `result` is what the popup renders — this verb's failures are NOT

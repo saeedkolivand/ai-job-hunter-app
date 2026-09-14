@@ -1,6 +1,6 @@
 # Knowledge base (`docs/knowledge/`)
 
-Last updated: 2026-09-11
+Last updated: 2026-09-14
 
 A **thin, pointer-style** index for AI agents (and humans). It describes _shape and contracts_ and points at the **owning source symbol**; it deliberately does **not** copy drift-prone literals (scoring weights, template/board counts) — those live in code.
 
@@ -95,6 +95,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-047](decision-records/adr-047-relicense-to-apache-2-0.md)                               | Relicense to Apache-2.0 (supersedes ADR-023) so the OSS code-signing programmes apply; vendored CC BY-NC 4.0 ATS datasets are a documented carve-out                                                                                                                          |
 | [ADR-048](decision-records/adr-048-automated-extension-store-submission.md)                  | Extension store submission is automated and terminal at "submitted", gated on a source archive that provably rebuilds the shipped package; the AMO tool is pinned outside the pnpm workspace                                                                                  |
 | [ADR-049](decision-records/adr-049-microsoft-store-msix-flavour.md)                          | Microsoft Store MSIX as a runtime-detected flavour of the same binary (no build variant), updates handed to the Store, write virtualization disabled on purpose                                                                                                               |
+| [ADR-050](decision-records/adr-050-extension-read-tier-and-settings-verbs.md)                | Extension read tier (a narrower caller class on the ADR-038 policy table) and dedicated settings verbs so the extension can toggle its own opt-ins                                                                                                                            |
 
 ### The `NNNN-` series (closed)
 

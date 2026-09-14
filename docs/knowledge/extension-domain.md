@@ -1,6 +1,6 @@
 # Extension domain (browser extension + desktop bridge)
 
-Last updated: 2026-09-11 (PR0 of the extension redesign: popup is now a launcher, side panel is now a tabbed workspace, Settings page, first-Fill site memory — ADR-044 amendment; ADR-045: job-tools panel parity + the `isPageTrusted` gate; ADR-044: extension Answer tools side panel, shared per-tab state, draft-time `maxChars` field; `answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
+Last updated: 2026-09-14 (PR1 of the extension redesign: extension read tier + live settings verbs — ADR-050; PR0: popup is now a launcher, side panel is now a tabbed workspace, Settings page, first-Fill site memory — ADR-044 amendment; ADR-045: job-tools panel parity + the `isPageTrusted` gate; ADR-044: extension Answer tools side panel, shared per-tab state, draft-time `maxChars` field; `answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
 
 Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tauri-security-reviewer`.
 
@@ -75,6 +75,18 @@ The bridge uses a **reserved-verb pattern**: each verb is defined in shared cons
 | `answer.assist` / `assist.chunk` / `assist.done` / `assist.cancel` / `answer.assist.result` | Extension → Desktop             | AI-assist opt-in via `BridgeState` ([ADR 0011](decision-records/0011-extension-ai-assist-optin.md))                                                                           | Request: `{ question, url?, searchWeb?, mode?, existingAnswer?, preset?, instruction? }`. Streaming: chunk `{ delta }`, cancel (no payload), done (no payload). Result: `{ ok, question, draft, sourced }` | Billable AI drafting (draft or rewrite modes). Gate: **bare boolean** — no provider/model/base_url. Routing resolves live from backend `AiConfigStore` via `Completer::from_active` ([ADR 0012](decision-records/0012-ai-provider-base-url-provenance.md)); per-connection per-reqId via `AssistStreamRegistry`; streaming chunks ordered per-reqId; `assist.cancel` early-abort before compose. Rewrite mode: pure text transform with optional free-text instruction.                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 **Wire-error discipline:** All verbs use fixed sentinel text (no dynamic/path/PII content) in error payloads — detailed context belongs in desktop log, not the wire. Errors never echo page-derived text.
+
+### Extension read tier + live settings verbs (ADR-050)
+
+The paired extension also reaches the generic `agent.query`/`agent.call` dispatch the agent CLI
+uses ([ADR-038](decision-records/adr-038-agent-cli-full-parity-two-tier.md)), as its own caller
+class. What that class may dispatch, how it is gated, capped and throttled, and what it refuses
+with is owned by `extension_bridge::caller_gate` (`CallerClass` + the dispatch matrix) and the
+refusal sentinels in `extension_bridge/agent_call.rs` / `agent_read.rs`. The extension's own
+opt-in switches are read and flipped through `settings.get`/`settings.set`
+(`extension_bridge/settings.rs`: `SettingsKey`, the setters it shares with the desktop Settings
+commands, and the notification it raises on every change). The decision, its guard rails and the
+desktop-side-consent tradeoff: [ADR-050](decision-records/adr-050-extension-read-tier-and-settings-verbs.md).
 
 ### Revocation reach — an inherent limitation
 

@@ -166,14 +166,15 @@ const jobTools = mountJobTools(jobToolsHost, {
 
 /**
  * The one trust line under the header (ADR-045 of the redesign record). Only
- * the TRUSTED case renders here ("Reading: <host>", derived from
- * `AnswerState.origin` — the wire carries no job title/company without a new
- * bridge call, which PR0 forbids, so this names the SITE rather than the
- * posting, honestly narrower than the mockup's literal text). The untrusted
- * case is intentionally left to job-tools.ts's own `JOB_TOOLS_GATED_LINE`
- * (rendered inside the Job tab, already covered by its own tests) — showing
- * the identical sentence in both places would be a literal duplicate on
- * screen, which is worse than the mockup's exact position.
+ * the TRUSTED case renders here — synchronously the host-only fallback
+ * ("Reading: <host>", derived from `AnswerState.origin`), immediately
+ * upgraded to "Reading: <title> · <company>" if/when {@link
+ * refreshTrustLineJob} answers (PR1 — extension read tier); NEVER blocks on
+ * that query. The untrusted case is intentionally left to job-tools.ts's own
+ * `JOB_TOOLS_GATED_LINE` (rendered inside the Job tab, already covered by its
+ * own tests) — showing the identical sentence in both places would be a
+ * literal duplicate on screen, which is worse than the mockup's exact
+ * position.
  */
 function updateTrustLine(state: AnswerState | null): void {
   if (state && isPageTrusted(state)) {
@@ -188,6 +189,41 @@ function updateTrustLine(state: AnswerState | null): void {
   } else {
     els.trustLine.textContent = '';
     els.trustLine.hidden = true;
+  }
+}
+
+/**
+ * Generation guard against a STALE in-flight `trustLineJob` query
+ * superseding a newer one — mirrors `followGeneration`/`lastJobStatusKey`'s
+ * own staleness discipline. Bumped by every call (so a fast tab-cycle's
+ * earlier query can never overwrite a later one's host-only fallback) and
+ * by `follow()`'s reset paths, so a query started for a page the panel has
+ * since left can never write into the current trust line.
+ */
+let trustLineJobGeneration = 0;
+
+/**
+ * Upgrade the already-rendered host-only trust line to "Reading: <title> ·
+ * <company>" once the read tier answers (PR1). Called ONLY for a trusted
+ * page, alongside `jobStatus.refresh()`, from the SAME trust-relevant-bits
+ * de-dup `follow()` already applies — never on every streamed chunk. ANY
+ * refusal (Autofill off, throttled, an unknown job) or a request failure
+ * simply leaves the synchronous host-only line in place — this never blocks
+ * or errors the panel.
+ */
+async function refreshTrustLineJob(): Promise<void> {
+  trustLineJobGeneration += 1;
+  const myGeneration = trustLineJobGeneration;
+  try {
+    const res = await send({ kind: 'trustLineJob' });
+    if (myGeneration !== trustLineJobGeneration) return; // a newer call/reset superseded this one
+    if (res.ok && res.kind === 'trustLineJob' && res.title) {
+      els.trustLine.textContent = res.company
+        ? `Reading: ${res.title} · ${res.company}`
+        : `Reading: ${res.title}`;
+    }
+  } catch {
+    // Best-effort — keep whatever `updateTrustLine` already rendered.
   }
 }
 
@@ -246,6 +282,7 @@ function follow(tabId: number | null): void {
   // than let it linger over whatever this call is about to show instead.
   fillConfirm.cancel();
   lastJobStatusKey = null;
+  trustLineJobGeneration += 1; // invalidate any in-flight query for the tab being left
   if (tabId === null) {
     answerTools.render(null);
     jobTools.render(null);
@@ -270,8 +307,13 @@ function follow(tabId: number | null): void {
     const key = jobStatusKeyOf(state);
     if (key !== lastJobStatusKey) {
       lastJobStatusKey = key;
-      if (state && isPageTrusted(state)) void jobStatus.refresh();
-      else jobStatus.reset();
+      if (state && isPageTrusted(state)) {
+        void jobStatus.refresh();
+        void refreshTrustLineJob();
+      } else {
+        jobStatus.reset();
+        trustLineJobGeneration += 1; // invalidate any in-flight query — the page is no longer trusted
+      }
     }
     if (firstDelivery) {
       firstDelivery = false;

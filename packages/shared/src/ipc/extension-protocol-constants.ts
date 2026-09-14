@@ -285,6 +285,62 @@ export const EXTENSION_MESSAGE_TYPES = {
    * already stopped listening for it.
    */
   assistCancel: 'assist.cancel',
+  /**
+   * Extension → desktop: the read-only agent surface (issue #1084 PR 1),
+   * now ALSO reachable by the paired extension (PR1 — extension read tier,
+   * ADR-050 extending ADR-038) — previously CLI-only. For this caller the
+   * curated `agent_read` resources are answered ONLY while the desktop's
+   * Autofill opt-in is on (refused in-band otherwise, a fixed sentinel, no
+   * partial data), the reply is capped at 256 KiB (refuse, never truncate —
+   * the MCP precedent), and every call draws from the SAME per-pairing
+   * `AgentQueryThrottle` bucket the CLI already shares. The CLI's own origin
+   * gate is untouched — the extension is admitted through a SEPARATE check
+   * (`is_extension`), never by widening `auth::AGENT_CLI_ORIGIN`. See the
+   * Rust `msg::AGENT_QUERY` doc for the resource/wire-shape catalogue.
+   */
+  agentQuery: 'agent.query',
+  /** Desktop → extension/CLI: the `agent.query` outcome — `{ ok: true,
+   *  resource, data } | { ok: false, resource, error }`. See {@link
+   *  ExtensionAgentQueryResult}. */
+  agentResult: 'agent.result',
+  /**
+   * Extension → desktop: ADR-038 §2's generic dispatch tier, now ALSO
+   * reachable by the paired extension (PR1, ADR-050) — but ONLY rows whose
+   * policy `Effect` is `Read` ever dispatch for this caller; any other
+   * effect (Reversible/Irreversible/NotExposed) is refused in-band with a
+   * fixed sentinel naming the tier — the extension never enters the CLI's
+   * `--confirm` ceremony. Same Autofill-opt-in gate, 256 KiB reply cap, and
+   * per-pairing throttle as `agent.query` above.
+   */
+  agentCall: 'agent.call',
+  /** Desktop → extension/CLI: the `agent.call` outcome — `{ dispatched:
+   *  true, namespace, command, data } | { dispatched: false, namespace,
+   *  command, error, detail? }`. `dispatched`, never `ok` (ADR-038 §5 — a
+   *  dispatched command can still fail INSIDE its own success payload). See
+   *  {@link ExtensionAgentCallResult}. */
+  agentCallResult: 'agent.call.result',
+  /**
+   * Extension → desktop: read the extension's opt-in switches (R7 of the
+   * redesign record — Assisted autofill / AI answer-assist / Auto-track;
+   * the fourth switch, `saveAnswersOnSubmit`, lands in PR4) — no payload.
+   * Allowed for the extension caller REGARDLESS of the Autofill gate (this
+   * is how the user turns it back on); refused for the CLI (it has the
+   * Reversible policy rows already) and any other caller.
+   */
+  settingsGet: 'settings.get',
+  /** Desktop → extension: the outcome of BOTH `settings.get` and
+   *  `settings.set` — the current `{ autofill, aiAssist, autotrack }`
+   *  values, or a refusal. See {@link ExtensionSettingsResult}. */
+  settingsResult: 'settings.result',
+  /**
+   * Extension → desktop: flip exactly one switch — `{ key, enabled }`.
+   * Applies through the SAME setters the desktop Settings UI uses (so both
+   * surfaces stay coherent) and raises a Notification Center entry every
+   * time, throttled per pairing — a flip made from the extension is never
+   * silent. A malformed key/value is refused with a fixed sentinel, never
+   * partially applied.
+   */
+  settingsSet: 'settings.set',
 } as const;
 
 /** Union of all wire `type` strings. */
@@ -766,6 +822,110 @@ export type ExtensionMatchLiveResult =
       scoreSource: 'keyword' | 'combined';
     }
   | { ok: false; error: string };
+
+/**
+ * `agent.query` payload for the extension read tier (PR1, ADR-050) — the
+ * curated resource to read (`"best-matches"|"job"|"profile"|"automations"|
+ * "schema"`, the SAME catalogue the Rust `msg::AGENT_QUERY` doc documents)
+ * plus resource-specific parameters (`url`, `limit`, …), spread at the
+ * payload's TOP LEVEL (never nested under a `params` key) — matches the
+ * Rust `job_resource`/`best_matches_resource`/etc. readers, which read every
+ * field straight off the payload, AND `bridge.ts`'s own wire builder
+ * (`agentQuery`).
+ */
+export interface ExtensionAgentQueryRequest {
+  resource: string;
+  [key: string]: unknown;
+}
+
+/**
+ * `agent.result` payload — a discriminated union on `ok`: `ok:true` carries
+ * the resource's own `data` shape (opaque here — each resource documents
+ * its own, see the Rust `agent_read` module doc); `ok:false` carries a
+ * user-facing `error` (the Autofill opt-in is off, the reply would exceed
+ * the extension's 256 KiB cap, too many requests in quick succession, or an
+ * unknown/malformed resource), an optional `detail` (e.g. `job`'s
+ * not-found hint), and an optional `retryAfterMs` (set only on a throttle
+ * refusal — mirrors the Rust `agent_read::throttled_reply` doc).
+ */
+export type ExtensionAgentQueryResult =
+  | { ok: true; resource: string; data: unknown }
+  | { ok: false; resource: string; error: string; detail?: string; retryAfterMs?: number };
+
+/**
+ * `agent.call` payload for the extension read tier (PR1, ADR-050) — a FLAT
+ * `namespace`/`command` pair (split from the CLI-facing
+ * `<namespace>:<command>` syntax by the caller — see `bridge.ts`'s
+ * `agentCall`) plus `input`, its JSON body — matches the Rust
+ * `payload_target`/`handle_agent_call` readers, which read
+ * `namespace`/`command`/`input` straight off the payload, never a combined
+ * path or an `args` key. Only rows whose policy `Effect` is `Read` ever
+ * dispatch for this caller — see `EXTENSION_MESSAGE_TYPES.agentCall`'s doc.
+ */
+export interface ExtensionAgentCallRequest {
+  namespace: string;
+  command: string;
+  input?: unknown;
+}
+
+/**
+ * `agent.call.result` payload — mirrors the Rust `msg::AGENT_CALL_RESULT`
+ * doc: a discriminated union on `dispatched` (never `ok` — ADR-038 §5, a
+ * dispatched command can still fail INSIDE its own success payload).
+ * `dispatched:true` carries the resolved `namespace`/`command` (split from
+ * the request's combined `command` string) plus the command's own `data`;
+ * `dispatched:false` carries `namespace`/`command` (best-effort — empty
+ * when the request couldn't even be parsed) plus a user-facing `error`, an
+ * optional `detail`, and an optional `retryAfterMs` (set only on a throttle
+ * refusal — mirrors the Rust `agent_call::call_result_reply` doc).
+ */
+export type ExtensionAgentCallResult =
+  | { dispatched: true; namespace: string; command: string; data: unknown }
+  | {
+      dispatched: false;
+      namespace: string;
+      command: string;
+      error: string;
+      detail?: string;
+      retryAfterMs?: number;
+    };
+
+/**
+ * The extension's opt-in switches reachable through `settings.get`/
+ * `settings.set` (R7 of the redesign record) — wire camelCase. The fourth
+ * key, `saveAnswersOnSubmit`, lands in PR4; this union is designed so
+ * adding it later is one more literal here plus one more setter
+ * server-side, never a protocol bump.
+ */
+export type ExtensionSettingsKey = 'autofill' | 'aiAssist' | 'autotrack';
+
+/** `settings.get` payload — no fields; the caller already knows its own `reqId`. */
+export type ExtensionSettingsGetRequest = Record<string, never>;
+
+/** `settings.set` payload — flip exactly one switch. */
+export interface ExtensionSettingsSetRequest {
+  key: ExtensionSettingsKey;
+  enabled: boolean;
+}
+
+/** The live values of every switch `settings.get`/`settings.set` covers. */
+export interface ExtensionSettingsValues {
+  autofill: boolean;
+  aiAssist: boolean;
+  autotrack: boolean;
+}
+
+/**
+ * `settings.result` payload — answers BOTH `settings.get` and `settings.set`
+ * with the SAME shape (a discriminated union on `ok`): `ok:true` carries the
+ * full current `settings` object (not just the one key that changed, so a
+ * caller never has to merge its own optimistic update against a partial
+ * reply); `ok:false` carries a user-facing `error` (a malformed key/value —
+ * the fixed `invalid_settings_request` sentinel, rendered verbatim like
+ * every other opaque `error` on this protocol).
+ */
+export type ExtensionSettingsResult =
+  { ok: true; settings: ExtensionSettingsValues } | { ok: false; error: string };
 
 /**
  * `assist.chunk` payload — one incremental delta of a streaming reply. The

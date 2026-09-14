@@ -2352,6 +2352,372 @@ describe('BridgeClient – matchLive', () => {
   });
 });
 
+// ── PR1 — extension read tier: agent.query / agent.call / settings.get/set ───
+// All four mirror the matchLive suite above: a deliberate action whose
+// well-formed refusal (`ok:false`/`dispatched:false`) is NEVER folded away.
+
+describe('BridgeClient – agentQuery', () => {
+  let latestSocket: FakeWebSocket | undefined;
+  let createdSockets: FakeWebSocket[] = [];
+  let restoreWS: () => void;
+
+  beforeEach(() => {
+    latestSocket = undefined;
+    createdSockets = [];
+    restoreWS = installFakeWS((ws) => {
+      latestSocket = ws;
+      createdSockets.push(ws);
+    });
+  });
+
+  afterEach(() => {
+    restoreWS();
+    vi.useRealTimers();
+  });
+
+  async function connectedClient(): Promise<{ client: BridgeClient; socket: FakeWebSocket }> {
+    const client = new BridgeClient(vi.fn());
+    const p = client.ensureConnected();
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+    await p;
+    return { client, socket };
+  }
+
+  function makeAgentResultEnvelope(reqId: string, payload: unknown): string {
+    return JSON.stringify({ type: EXTENSION_MESSAGE_TYPES.agentResult, reqId, payload });
+  }
+
+  async function startAgentQuery(
+    client: BridgeClient,
+    socket: FakeWebSocket,
+    resource: string,
+    params?: Record<string, unknown>
+  ): Promise<{ resultPromise: Promise<unknown>; reqId: string }> {
+    const resultPromise = client.agentQuery(resource, params);
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const frame = JSON.parse(raw) as { type: string; reqId: string; payload: unknown };
+    expect(frame.type).toBe(EXTENSION_MESSAGE_TYPES.agentQuery);
+    expect(frame.payload).toEqual({ resource, ...params });
+    return { resultPromise, reqId: frame.reqId };
+  }
+
+  it('round-trips a success result into the resolved payload', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startAgentQuery(client, socket, 'job', {
+      url: 'https://example.com/job/1',
+    });
+
+    const payload = { ok: true, resource: 'job', data: { title: 'Engineer', company: 'Acme' } };
+    socket.simulateMessage(makeAgentResultEnvelope(reqId, payload));
+
+    expect(await resultPromise).toEqual(payload);
+    client.dispose();
+  });
+
+  it('round-trips a desktop-side refusal (ok:false + error) — never rejects', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startAgentQuery(client, socket, 'job');
+
+    socket.simulateMessage(
+      makeAgentResultEnvelope(reqId, { ok: false, resource: 'job', error: 'Autofill is off.' })
+    );
+
+    expect(await resultPromise).toEqual({ ok: false, resource: 'job', error: 'Autofill is off.' });
+    client.dispose();
+  });
+
+  it('resolves with a malformed error (never throws) when the payload is bad', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startAgentQuery(client, socket, 'job');
+
+    socket.simulateMessage(makeAgentResultEnvelope(reqId, { ok: true }));
+
+    const result = (await resultPromise) as { ok: boolean; error?: string };
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/malformed/i);
+    client.dispose();
+  });
+
+  it('resolves with a malformed error (never throws) when an ok:true payload has no data property', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startAgentQuery(client, socket, 'job');
+
+    // `resource` present, `ok: true`, but no `data` key at all — Rust always
+    // emits `data` on success, so this must never be treated as a valid
+    // `data: undefined` success.
+    socket.simulateMessage(makeAgentResultEnvelope(reqId, { ok: true, resource: 'job' }));
+
+    const result = (await resultPromise) as { ok: boolean; error?: string };
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/malformed/i);
+    client.dispose();
+  });
+
+  it('round-trips a throttle refusal carrying detail + retryAfterMs', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startAgentQuery(client, socket, 'job');
+
+    const payload = {
+      ok: false,
+      resource: 'job',
+      error: 'rate_limited',
+      detail: 'Too many requests — try again shortly.',
+      retryAfterMs: 500,
+    };
+    socket.simulateMessage(makeAgentResultEnvelope(reqId, payload));
+
+    expect(await resultPromise).toEqual(payload);
+    client.dispose();
+  });
+
+  it('spreads params before resource so a colliding params.resource key can never override it', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.agentQuery('job', {
+      resource: 'other',
+      url: 'https://example.com/job/1',
+    });
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const frame = JSON.parse(raw) as { payload: { resource: string; url: string } };
+    expect(frame.payload).toEqual({ resource: 'job', url: 'https://example.com/job/1' });
+
+    client.dispose();
+    await resultPromise;
+  });
+
+  it('rejects when not connected — every port fails and the ws probe exhausts', async () => {
+    vi.useFakeTimers();
+    const client = new BridgeClient(vi.fn());
+    const outcomePromise = client.agentQuery('job').then(
+      () => ({ ok: true as const }),
+      (e: unknown) => ({ ok: false as const, error: e })
+    );
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const idx = attempt;
+      await vi.waitFor(() => {
+        expect(createdSockets.length).toBeGreaterThanOrEqual(idx + 1);
+      });
+      createdSockets[idx]!.simulateClose();
+    }
+
+    const outcome = await outcomePromise;
+    expect(outcome.ok).toBe(false);
+    client.dispose();
+  });
+});
+
+describe('BridgeClient – agentCall', () => {
+  let latestSocket: FakeWebSocket | undefined;
+  let restoreWS: () => void;
+
+  beforeEach(() => {
+    latestSocket = undefined;
+    restoreWS = installFakeWS((ws) => {
+      latestSocket = ws;
+    });
+  });
+
+  afterEach(() => {
+    restoreWS();
+    vi.useRealTimers();
+  });
+
+  async function connectedClient(): Promise<{ client: BridgeClient; socket: FakeWebSocket }> {
+    const client = new BridgeClient(vi.fn());
+    const p = client.ensureConnected();
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+    await p;
+    return { client, socket };
+  }
+
+  function makeAgentCallResultEnvelope(reqId: string, payload: unknown): string {
+    return JSON.stringify({ type: EXTENSION_MESSAGE_TYPES.agentCallResult, reqId, payload });
+  }
+
+  it('sends command + args and round-trips a dispatched:true result', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.agentCall('documents:list', { limit: 10 });
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const frame = JSON.parse(raw) as { type: string; reqId: string; payload: unknown };
+    expect(frame.type).toBe(EXTENSION_MESSAGE_TYPES.agentCall);
+    expect(frame.payload).toEqual({
+      namespace: 'documents',
+      command: 'list',
+      input: { limit: 10 },
+    });
+
+    const payload = {
+      dispatched: true,
+      namespace: 'documents',
+      command: 'list',
+      data: { items: [] },
+    };
+    socket.simulateMessage(makeAgentCallResultEnvelope(frame.reqId, payload));
+    expect(await resultPromise).toEqual(payload);
+    client.dispose();
+  });
+
+  it('round-trips a dispatched:false refusal (e.g. a non-Read effect) — never rejects', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.agentCall('documents:delete');
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const { reqId } = JSON.parse(raw) as { reqId: string };
+
+    const payload = {
+      dispatched: false,
+      namespace: 'documents',
+      command: 'delete',
+      error: 'this tier only dispatches Read commands',
+    };
+    socket.simulateMessage(makeAgentCallResultEnvelope(reqId, payload));
+    expect(await resultPromise).toEqual(payload);
+    client.dispose();
+  });
+
+  it('round-trips a dispatched:false throttle refusal carrying retryAfterMs', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.agentCall('documents:list');
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const { reqId } = JSON.parse(raw) as { reqId: string };
+
+    const payload = {
+      dispatched: false,
+      namespace: 'documents',
+      command: 'list',
+      error: 'rate_limited',
+      retryAfterMs: 500,
+    };
+    socket.simulateMessage(makeAgentCallResultEnvelope(reqId, payload));
+    expect(await resultPromise).toEqual(payload);
+    client.dispose();
+  });
+
+  it('resolves with a malformed error (never throws) when a dispatched:true payload has no data property', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.agentCall('documents:list');
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const { reqId } = JSON.parse(raw) as { reqId: string };
+
+    // `namespace`/`command` present, `dispatched: true`, but no `data` key
+    // at all — Rust always emits `data` on success.
+    socket.simulateMessage(
+      makeAgentCallResultEnvelope(reqId, {
+        dispatched: true,
+        namespace: 'documents',
+        command: 'list',
+      })
+    );
+
+    const result = (await resultPromise) as { dispatched: boolean; error?: string };
+    expect(result.dispatched).toBe(false);
+    expect(result.error).toMatch(/malformed/i);
+    client.dispose();
+  });
+});
+
+describe('BridgeClient – settingsGet / settingsSet', () => {
+  let latestSocket: FakeWebSocket | undefined;
+  let restoreWS: () => void;
+
+  beforeEach(() => {
+    latestSocket = undefined;
+    restoreWS = installFakeWS((ws) => {
+      latestSocket = ws;
+    });
+  });
+
+  afterEach(() => {
+    restoreWS();
+    vi.useRealTimers();
+  });
+
+  async function connectedClient(): Promise<{ client: BridgeClient; socket: FakeWebSocket }> {
+    const client = new BridgeClient(vi.fn());
+    const p = client.ensureConnected();
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+    await p;
+    return { client, socket };
+  }
+
+  function makeSettingsResultEnvelope(reqId: string, payload: unknown): string {
+    return JSON.stringify({ type: EXTENSION_MESSAGE_TYPES.settingsResult, reqId, payload });
+  }
+
+  it('settingsGet sends an empty payload and round-trips the current values', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.settingsGet();
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const frame = JSON.parse(raw) as { type: string; reqId: string; payload: unknown };
+    expect(frame.type).toBe(EXTENSION_MESSAGE_TYPES.settingsGet);
+    expect(frame.payload).toEqual({});
+
+    const payload = { ok: true, settings: { autofill: true, aiAssist: false, autotrack: false } };
+    socket.simulateMessage(makeSettingsResultEnvelope(frame.reqId, payload));
+    expect(await resultPromise).toEqual(payload);
+    client.dispose();
+  });
+
+  it('settingsSet sends the key/enabled and round-trips the new values', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.settingsSet('autofill', true);
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const frame = JSON.parse(raw) as { type: string; reqId: string; payload: unknown };
+    expect(frame.type).toBe(EXTENSION_MESSAGE_TYPES.settingsSet);
+    expect(frame.payload).toEqual({ key: 'autofill', enabled: true });
+
+    const payload = { ok: true, settings: { autofill: true, aiAssist: false, autotrack: false } };
+    socket.simulateMessage(makeSettingsResultEnvelope(frame.reqId, payload));
+    expect(await resultPromise).toEqual(payload);
+    client.dispose();
+  });
+
+  it('settingsSet round-trips a refusal (e.g. a malformed key/value) — never rejects', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.settingsSet('autofill', true);
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const { reqId } = JSON.parse(raw) as { reqId: string };
+
+    socket.simulateMessage(
+      makeSettingsResultEnvelope(reqId, { ok: false, error: 'invalid_settings_request' })
+    );
+    expect(await resultPromise).toEqual({ ok: false, error: 'invalid_settings_request' });
+    client.dispose();
+  });
+
+  it('settles an in-flight settingsGet instead of leaving it hanging when dispose() is called', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.settingsGet();
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+
+    client.dispose();
+
+    expect(await resultPromise).toEqual({ ok: false, error: 'Bridge client disposed.' });
+  });
+});
+
 // ── "Help me answer…" answer.assist ↔ answer.assist.result ───────────────────
 // The first BILLABLE-AI verb on the bridge — mirrors the matchLive suite above.
 

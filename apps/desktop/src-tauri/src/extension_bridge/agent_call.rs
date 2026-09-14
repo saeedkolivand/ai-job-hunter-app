@@ -299,6 +299,20 @@ pub(super) enum Refusal {
     /// tool call and reaching an LLM's context verbatim is exactly the echo
     /// this surface avoids everywhere else.
     InvalidCursor,
+    /// The extension caller's own consent gate (PR1, decision 2): an `agent.call` from the
+    /// paired EXTENSION while Assisted autofill is off. Never applies to the CLI — it has no such
+    /// gate — nor to [`Refusal::OriginRefused`]'s case (that caller failed origin resolution
+    /// entirely); this is a THIRD caller class's own refusal, checked only once origin AND effect
+    /// would otherwise allow the call through.
+    ExtensionReadGate,
+    /// The extension caller reached a row whose [`Effect`] is NOT `Read` (PR1, decision 1): the
+    /// extension tier is Read-only by construction — checked PURELY off [`POLICY`], before any
+    /// I/O — so a Reversible/Irreversible/NotExposed row refuses HERE, never entering the confirm
+    /// ceremony (no `proof_field_for`, no hint about which `Resource` yields a proof). That
+    /// ceremony is built for a CLI/LLM caller issuing two sequential calls itself (`agent_cli.rs`'s
+    /// own doc); collapsing it into an extension-driven two-hop flow with no human click between
+    /// would be the exact one-hop self-authenticating shape ADR-040 already flags as unsafe.
+    EffectNotAllowedForExtension,
 }
 
 /// `pub(super)` — the MCP server's `call-*` tools refuse locally with this
@@ -333,6 +347,10 @@ const ERR_PROOF_UNAVAILABLE: &str = "proof_unavailable";
 /// [`ERR_CONFIRMATION_REQUIRED`] doc already argues against.
 pub(super) const ERR_RESULT_TOO_LARGE: &str = "result_too_large";
 const ERR_INVALID_CURSOR: &str = "invalid_cursor";
+/// `pub(super)` — reused verbatim by `agent_read::extension_gate_reply` for the IDENTICAL gate on
+/// its own tier (PR1), so both surfaces report the same sentinel for the same cause.
+pub(super) const ERR_EXTENSION_READ_GATE: &str = "extension_read_gate";
+const ERR_EFFECT_NOT_ALLOWED_FOR_EXTENSION: &str = "effect_not_allowed_for_extension";
 
 /// Fixed sentinel — mirrors `agent_read::CLI_ONLY_MESSAGE` for the identical
 /// gate, applied to the generic tier's own wire type.
@@ -354,6 +372,8 @@ impl Refusal {
             Refusal::ProofUnavailable => ERR_PROOF_UNAVAILABLE,
             Refusal::ResultTooLarge(_) => ERR_RESULT_TOO_LARGE,
             Refusal::InvalidCursor => ERR_INVALID_CURSOR,
+            Refusal::ExtensionReadGate => ERR_EXTENSION_READ_GATE,
+            Refusal::EffectNotAllowedForExtension => ERR_EFFECT_NOT_ALLOWED_FOR_EXTENSION,
         }
     }
 
@@ -448,9 +468,26 @@ impl Refusal {
                  alternative if this command has one."
             ),
             Refusal::InvalidCursor => super::paging::INVALID_CURSOR_MESSAGE.to_string(),
+            Refusal::ExtensionReadGate => EXTENSION_READ_GATE_MESSAGE.to_string(),
+            Refusal::EffectNotAllowedForExtension => {
+                EFFECT_NOT_ALLOWED_FOR_EXTENSION_MESSAGE.to_string()
+            }
         }
     }
 }
+
+/// [`Refusal::ExtensionReadGate`]'s detail — mirrors `agent_read::EXTENSION_READ_GATE_DETAIL`
+/// (same gate, same wording, one wire type over); kept as a separate literal (not threaded across
+/// the module boundary) since the two files already keep their own `detail` prose independent
+/// (compare `CLI_ONLY_MESSAGE` in each), while the SENTINEL is what both actually reuse
+/// ([`ERR_EXTENSION_READ_GATE`]).
+const EXTENSION_READ_GATE_MESSAGE: &str =
+    "Turn on Assisted autofill in AI Job Hunter → Settings → Accounts → Browser extension to let \
+     the paired browser extension read your data.";
+/// [`Refusal::EffectNotAllowedForExtension`]'s detail.
+const EFFECT_NOT_ALLOWED_FOR_EXTENSION_MESSAGE: &str =
+    "the browser extension may only reach Read-effect commands through agent.call — this command \
+     is not exposed to it";
 
 /// `dispatched`, never `ok` (ADR-038 §5): ~47 commands signal failure INSIDE
 /// their own Ok payload, so this dispatcher cannot know whether the
@@ -598,6 +635,73 @@ pub(super) fn throttled_reply(req_id: &str, payload: &Value, retry_after_ms: u64
     let (namespace, command) = payload_target(payload);
     let refusal = Refusal::RateLimited { retry_after_ms };
     refusal_reply(req_id, namespace, command, refusal)
+}
+
+/// Whether an `agent.call` payload names a policy row whose [`Effect`] is `Read` — the extension
+/// read tier's own gate (PR1, decision 1). Unlike the CLI (which also dispatches `Reversible`,
+/// and — after a confirm ceremony — `Irreversible`), the paired extension may reach ONLY `Read`
+/// rows; an unknown `(namespace, command)` pair reads as "not Read" here too (refused, never
+/// dispatched — [`dispatch`]'s own `UnknownCommand` refusal is what a caller sees either way).
+/// Pure — reuses the SAME [`find_policy`] lookup [`dispatch`] itself uses, never a second policy
+/// table or a duplicated `(namespace, command)` split.
+pub(super) fn extension_may_dispatch(payload: &Value) -> bool {
+    let (namespace, command) = payload_target(payload);
+    matches!(
+        find_policy(namespace, command).map(|entry| entry.effect),
+        Some(Effect::Read)
+    )
+}
+
+/// Reply for an `agent.call` from the paired EXTENSION caller while Assisted autofill is off
+/// (PR1, decision 2) — mirrors `agent_read::extension_gate_reply` one wire type over; see
+/// [`Refusal::ExtensionReadGate`].
+pub(super) fn extension_gate_reply(req_id: &str, payload: &Value) -> String {
+    let (namespace, command) = payload_target(payload);
+    refusal_reply(req_id, namespace, command, Refusal::ExtensionReadGate)
+}
+
+/// Reply for an `agent.call` from the paired EXTENSION caller that named a row whose `Effect`
+/// isn't `Read` — see [`extension_may_dispatch`] and [`Refusal::EffectNotAllowedForExtension`].
+pub(super) fn effect_not_allowed_reply(req_id: &str, payload: &Value) -> String {
+    let (namespace, command) = payload_target(payload);
+    refusal_reply(
+        req_id,
+        namespace,
+        command,
+        Refusal::EffectNotAllowedForExtension,
+    )
+}
+
+/// The extension caller's own reply cap ([`super::EXTENSION_RESULT_MAX_BYTES`], MCP precedent),
+/// enforced ON TOP of [`enforce_frame_cap`]'s generic [`super::MAX_FRAME_BYTES`] check — an
+/// ordinary CLI reply legitimately runs larger, so [`stream::spawn_agent_call`] applies this only
+/// when the resolved caller is `CallerClass::Extension`. Built directly (not through
+/// [`refusal_reply`]/[`Refusal`]) so its `detail` can name the SMALLER cap it actually enforces
+/// rather than reusing [`Refusal::ResultTooLarge`]'s "the bridge's own frame cap" wording, which
+/// would be misleading at this size; still bounded the same way (`clamp_ident` on every echoed
+/// identifier).
+pub(super) fn extension_capped_reply(req_id: &str, payload: &Value, reply: String) -> String {
+    if reply.len() <= super::EXTENSION_RESULT_MAX_BYTES {
+        return reply;
+    }
+    let (namespace, command) = payload_target(payload);
+    json!({
+        "type": super::msg::AGENT_CALL_RESULT,
+        "reqId": clamp_ident(req_id),
+        "payload": {
+            "dispatched": false,
+            "namespace": clamp_ident(namespace),
+            "command": clamp_ident(command),
+            "error": ERR_RESULT_TOO_LARGE,
+            "detail": format!(
+                "the command RAN, but its reply ({} B) exceeds the extension caller's own {} \
+                 KiB cap and was discarded rather than truncated",
+                reply.len(),
+                super::EXTENSION_RESULT_MAX_BYTES / 1024
+            ),
+        },
+    })
+    .to_string()
 }
 
 fn payload_target(payload: &Value) -> (&str, &str) {

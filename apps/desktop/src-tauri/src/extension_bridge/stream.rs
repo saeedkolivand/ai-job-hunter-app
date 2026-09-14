@@ -361,10 +361,18 @@ pub(super) fn spawn_agent_query(
     payload: Value,
     out_tx: UnboundedSender<Message>,
     cancel: CancellationToken,
+    caller: super::CallerClass,
 ) {
     tokio::spawn(async move {
         let query = super::agent_read::handle_agent_query(&app, &req_id, &payload);
         if let Some(reply) = agent_query_or_cancelled(query, &cancel).await {
+            // The extension's own smaller reply cap (PR1) — applied ONLY for that caller; the
+            // CLI's reply is unchanged (see `agent_read::extension_capped_reply`'s doc).
+            let reply = if caller == super::CallerClass::Extension {
+                super::agent_read::extension_capped_reply(&req_id, &payload, reply)
+            } else {
+                reply
+            };
             let _ = out_tx.send(Message::text(reply));
         }
         // `None`: the connection tore down before the query finished — see
@@ -414,10 +422,17 @@ pub(super) fn spawn_agent_call(
     payload: Value,
     out_tx: UnboundedSender<Message>,
     cancel: CancellationToken,
+    caller: super::CallerClass,
 ) {
     tokio::spawn(async move {
         let call = super::agent_call::handle_agent_call(&app, &req_id, &payload);
         if let Some(reply) = agent_query_or_cancelled(call, &cancel).await {
+            // Same extension-only cap as `spawn_agent_query` — see that fn's doc.
+            let reply = if caller == super::CallerClass::Extension {
+                super::agent_call::extension_capped_reply(&req_id, &payload, reply)
+            } else {
+                reply
+            };
             let _ = out_tx.send(Message::text(reply));
         }
     });

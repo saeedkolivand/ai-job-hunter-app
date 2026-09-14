@@ -145,42 +145,47 @@ pub const ASSIST_DONE: &str = "assist.done";
 /// connection's own [`stream::AssistStreamRegistry`], never a global
 /// registry (see [`stream`]'s module doc).
 pub const ASSIST_CANCEL: &str = "assist.cancel";
-/// CLI → desktop: the read-only agent surface (issue #1084 PR 1).
+/// CLI/extension → desktop: the read-only agent surface (issue #1084 PR 1).
 /// `{ resource: "best-matches"|"job"|"profile"|"automations"|"schema", url?,
 /// limit? }` — see [`super::agent_read`]'s module doc for the full wire shape
-/// per resource. **CLI-agent only, and now actually gated on it**
-/// (`super::advance_authenticated` refuses this for any connection whose
-/// handshake `Origin` isn't `auth::AGENT_CLI_ORIGIN` — finding #5, security
-/// review; before that fix this was true of the extension's OWN code, but
-/// unenforced server-side, so any authenticated socket could send it).
-/// Unlike every other constant in this file, this one is deliberately NOT
-/// mirrored in the shared TS `EXTENSION_MESSAGE_TYPES`
-/// (`packages/shared/src/ipc/extension-protocol-constants.ts`) or the
-/// Rust↔TS parity test (`super::test::message_type_constants_match_ts`): the
-/// browser extension never sends it (the CLI is a separate Rust process
-/// speaking this same loopback protocol directly), so there is no
-/// browser-vs-desktop drift for `extension-standards`' protocol-lockstep
-/// rule to guard against. A future PR that lets the extension itself use
-/// this verb would need to add both AND extend the origin gate.
+/// per resource. **Gated by [`super::CallerClass`]**
+/// (`super::advance_authenticated` resolves it off the handshake `Origin` —
+/// finding #5, security review): the CLI dispatches unconditionally; the
+/// paired EXTENSION (PR1, extension read tier) dispatches too, but ONLY
+/// while the Assisted-autofill opt-in is on and its reply is capped at
+/// [`super::EXTENSION_RESULT_MAX_BYTES`] — see `super::agent_read::
+/// extension_gate_reply`/`extension_capped_reply`; any other caller is
+/// refused. Mirrored in the shared TS `EXTENSION_MESSAGE_TYPES`
+/// (`packages/shared/src/ipc/extension-protocol-constants.ts`) and pinned by
+/// the Rust↔TS parity test (`super::test::message_type_constants_match_ts`)
+/// now that the extension itself sends it.
 pub const AGENT_QUERY: &str = "agent.query";
 /// Desktop → extension/CLI: the `agent.query` outcome — `{ ok: true,
 /// resource, data } | { ok: false, resource, error }`. See [`AGENT_QUERY`]'s doc.
 pub const AGENT_RESULT: &str = "agent.result";
-/// CLI → desktop: ADR-038 §2's generic dispatch tier (`agent call
+/// CLI/extension → desktop: ADR-038 §2's generic dispatch tier (`agent call
 /// <namespace>:<command> --input '<json>'`). `{ namespace, command, input }`
 /// — dispatches to a registered Tauri command via `Webview::on_message` (see
-/// `super::agent_call`'s module doc). Phase 2 only reached `Effect::Read`
-/// rows; Phase 4 widened it to also dispatch `Effect::Reversible` rows
-/// unconditionally (no confirm, no ceremony — undoable through the app is
-/// what that class means), and Phase 3 lets `Effect::Irreversible` rows
-/// dispatch too, but only after a `--confirm` ceremony (`agent_call::gate`,
-/// `ProofSource`) whose expected value is resolved fresh per call — never a
-/// value this dispatcher invents or hands out. Only `Effect::NotExposed`
-/// refuses unconditionally, in-band. So the real trust boundary here is the
-/// whole policy table plus the confirm ceremony, never "read-only" — **CLI-
-/// agent only**, gated the SAME way as [`AGENT_QUERY`] — and, like it,
-/// deliberately NOT mirrored in the shared TS `EXTENSION_MESSAGE_TYPES`: the
-/// browser extension never sends it.
+/// `super::agent_call`'s module doc). For the **CLI**: Phase 2 only reached
+/// `Effect::Read` rows; Phase 4 widened it to also dispatch
+/// `Effect::Reversible` rows unconditionally (no confirm, no ceremony —
+/// undoable through the app is what that class means), and Phase 3 lets
+/// `Effect::Irreversible` rows dispatch too, but only after a `--confirm`
+/// ceremony (`agent_call::gate`, `ProofSource`) whose expected value is
+/// resolved fresh per call — never a value this dispatcher invents or hands
+/// out. Only `Effect::NotExposed` refuses unconditionally, in-band. For the
+/// **paired EXTENSION** (PR1, extension read tier — decision 1): narrower by
+/// construction — ONLY an `Effect::Read` row ever dispatches (checked
+/// PURELY, off the same policy table, before any I/O); a
+/// Reversible/Irreversible/NotExposed row refuses in-band with its own
+/// sentinel (`effect_not_allowed_for_extension`) and NEVER enters the
+/// confirm ceremony — see `super::agent_call::extension_may_dispatch`. Both
+/// callers share the Assisted-autofill gate + [`super::EXTENSION_RESULT_MAX_BYTES`]
+/// reply cap [`AGENT_QUERY`]'s doc describes for the extension only; the
+/// CLI's own behaviour is unchanged. Gated by [`super::CallerClass`]; any
+/// other caller is refused. Mirrored in the shared TS
+/// `EXTENSION_MESSAGE_TYPES` and pinned by the parity test now that the
+/// extension itself sends it.
 pub const AGENT_CALL: &str = "agent.call";
 /// Desktop → CLI: the `agent.call` outcome — `{ dispatched: true, namespace,
 /// command, data } | { dispatched: false, namespace, command, error, detail
@@ -188,3 +193,22 @@ pub const AGENT_CALL: &str = "agent.call";
 /// INSIDE their own Ok payload, so the dispatcher cannot know whether the
 /// underlying operation succeeded, only whether it ran.
 pub const AGENT_CALL_RESULT: &str = "agent.call.result";
+/// Extension → desktop: read the extension's own opt-in switches (R7) — no
+/// payload. Answered REGARDLESS of the Assisted-autofill gate (this is how
+/// the user turns it on in the first place) — extension caller only;
+/// refused for the CLI (it already has the `Effect::Reversible` rows for
+/// these same opt-ins) and any other caller. See [`super::settings`]'s
+/// module doc.
+pub const SETTINGS_GET: &str = "settings.get";
+/// Desktop → extension: the `settings.get`/`settings.set` outcome —
+/// `{ ok: true, settings: { autofill, aiAssist, autotrack } } | { ok: false,
+/// error }`.
+pub const SETTINGS_RESULT: &str = "settings.result";
+/// Extension → desktop: flip one of the extension's own opt-in switches —
+/// `{ key: "autofill" | "aiAssist" | "autotrack", enabled }`. Applies
+/// through the SAME `BridgeState` setters the Tauri Settings commands use
+/// (never a second write path), so the desktop stays the source of truth,
+/// and raises a Notification Center entry every time (a flip made from the
+/// extension is never silent — R7's guard rail). Extension caller only,
+/// per-pairing throttled. See [`super::settings`]'s module doc.
+pub const SETTINGS_SET: &str = "settings.set";
