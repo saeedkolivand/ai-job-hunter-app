@@ -1278,6 +1278,55 @@ pub(super) fn origin_refused_reply(req_id: &str, payload: &Value) -> String {
     )
 }
 
+/// [`ERR_EXTENSION_READ_GATE`]'s detail text — the extension read tier's own consent gate (PR1,
+/// decision 2), distinct from [`CLI_ONLY_MESSAGE`] (the CLI has no such gate at all) and from
+/// `super::AUTOFILL_OFF_MESSAGE` (that one names `profile.get`/`answers.save` specifically; this
+/// one is the generic agent surface).
+const EXTENSION_READ_GATE_DETAIL: &str =
+    "Turn on Assisted autofill in AI Job Hunter → Settings → Accounts → Browser extension to let \
+     the paired browser extension read your data.";
+
+/// Reply for an `agent.query` from the paired EXTENSION caller while Assisted autofill is off
+/// (PR1, decision 2) — no partial data, ever. Distinct from [`origin_refused_reply`]: this caller
+/// origin-checked fine, but has not opted the extension into reading its data yet. Routed through
+/// the SAME bounded shape as the throttle/oversized refusals (issue #1151's `sentinel_refusal_reply`).
+/// Sentinel reused verbatim from `agent_call::ERR_EXTENSION_READ_GATE` — the identical gate on the
+/// generic tier — so both surfaces report the same string for the same cause, never two hand-typed
+/// copies.
+pub(super) fn extension_gate_reply(req_id: &str, payload: &Value) -> String {
+    sentinel_refusal_reply(
+        req_id,
+        resource_name(payload),
+        super::agent_call::ERR_EXTENSION_READ_GATE,
+        EXTENSION_READ_GATE_DETAIL.to_string(),
+        json!({}),
+    )
+}
+
+/// The extension caller's own reply cap ([`super::EXTENSION_RESULT_MAX_BYTES`], MCP precedent) —
+/// enforced ON TOP of the generic [`super::MAX_FRAME_BYTES`] cap [`bounded_result_reply`] already
+/// applies: an ordinary CLI reply legitimately runs larger, so this is never applied to one (the
+/// ONE caller, `stream::spawn_agent_query`, applies it only when `caller` resolved to
+/// `CallerClass::Extension`). `payload` is re-read for `resource` here rather than threaded
+/// separately, mirroring [`throttled_reply`]'s own shape.
+pub(super) fn extension_capped_reply(req_id: &str, payload: &Value, reply: String) -> String {
+    if reply.len() <= super::EXTENSION_RESULT_MAX_BYTES {
+        return reply;
+    }
+    sentinel_refusal_reply(
+        req_id,
+        resource_name(payload),
+        super::agent_call::ERR_RESULT_TOO_LARGE,
+        format!(
+            "the reply ({} B) exceeds the extension caller's own {} KiB cap and was discarded \
+             rather than truncated",
+            reply.len(),
+            super::EXTENSION_RESULT_MAX_BYTES / 1024
+        ),
+        json!({}),
+    )
+}
+
 /// Answer an authenticated, throttle-admitted `agent.query`. Never panics —
 /// every resource fn degrades to `Err` on a missing/unexpected state (see
 /// `list_autopilots`), and this match's fallback arm covers any resource name

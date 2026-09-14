@@ -33,6 +33,19 @@ Ship **assisted autofill + answers capture**: a user-initiated, click-to-fill ac
    - **Honest residual risk (disclosed, not hidden):** with the opt-in ON, a page can flip its OWN already-tracked `saved` job to `applied` purely from a post-gesture submit/apply-click it observes — there is no way to prove intent-behind-the-click beyond the existing gesture-then-detect design. This is inherent to observe-a-submit (not a bug), bounded (only the one job the user already gestured on, only `saved → applied`, never a new Application), and reversible (the stage picker can move it back), with **no egress** — the whole exchange stays on the loopback/native-messaging bridge. Layer C (#23, local email-confirmation parsing) is the planned complement that corroborates from a second, independent signal.
    - New wire surface: `autotrack.check` / `autotrack.result` (`{ enabled }`, read-only, no gate) and the optional `auto` flag on `status.update` (see decisions above's reference file for the schema).
 
+## Amendment (2026-09-11, ADR-050) — consent may also be granted/withdrawn from the extension
+
+Decision 5's "opt-in, default OFF, enforced desktop-side" still holds at USE time: the desktop
+refuses `profile.get`/`agent.query`/`agent.call` whenever its own stored flag is off, and that
+refusal is never based on anything the extension asserts about itself. What changes: the STORED
+flag can now also be flipped from the paired extension's own Settings page, through a dedicated
+`settings.get`/`settings.set` verb pair scoped to exactly the extension's own opt-in switches
+(`SettingsKey` in `extension_bridge/settings.rs`; never the
+generic tier), applying through the same setters the desktop Settings UI uses. Every successful
+change raises a Notification Center entry so a flip made from the extension is never silent to the
+person at the desktop — see [ADR-050](adr-050-extension-read-tier-and-settings-verbs.md) for the
+concern that was raised and how it was resolved.
+
 ## Considered options
 
 1. **Assisted, generic, transparent, no-persistence, opt-in (chosen).** Matches the market's most-used capability while preserving both the privacy boundary and the human-in-the-loop brand. Cost: partial fills on complex ATS, and no file upload — accepted and disclosed.

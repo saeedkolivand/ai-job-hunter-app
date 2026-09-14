@@ -1,8 +1,8 @@
 /**
- * Unit tests for the Settings page controller (PR0 §5): render, the theme
- * segmented control persisting + applying `data-theme`, the sites list
- * (empty state + Forget), and the read-only "What the extension may do"
- * rows (three, not the mockup's four — see options.ts's own doc for why).
+ * Unit tests for the Settings page controller: render, the theme segmented
+ * control persisting + applying `data-theme`, the sites list (empty state +
+ * Forget), and the LIVE "What the extension may do" toggles (PR1, R7 —
+ * three switches today, the fourth lands in PR4; see options.ts's own doc).
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -185,21 +185,174 @@ describe('sites list', () => {
 });
 
 describe('what the extension may do', () => {
-  it('renders three rows, all "Unknown until connected" while autofillCheck has not answered', async () => {
+  it('renders three toggles, all disabled/off while settings.get has not answered', async () => {
     await flush();
     const rows = byId('permissions-list').querySelectorAll('.set-row');
     expect(rows).toHaveLength(3);
     expect(byId('permissions-list').textContent).toContain('Unknown until connected');
+    const toggles = byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle');
+    expect(toggles).toHaveLength(3);
+    for (const toggle of toggles) {
+      expect(toggle.disabled).toBe(true);
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
+    }
   });
 
-  it('each row has a "Change in app →" caption that opens the deep link', () => {
-    const captions = byId('permissions-list').querySelectorAll<HTMLButtonElement>('.link');
-    expect(captions.length).toBeGreaterThan(0);
-    captions[0]!.click();
-    expect(browser.tabs.create).toHaveBeenCalledWith({ url: 'ajh://settings/extension' });
+  it('fetches settings.get and renders the live values', async () => {
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'settingsGet',
+      result: { ok: true, settings: { autofill: true, aiAssist: false, autotrack: false } },
+    });
+
+    // Drive it via the onConnected dep (module-load's own settings.get was
+    // already consumed by the default `not configured` mock).
+    const { mountConnectionStatus } = await import('../connection-status/connection-status');
+    const onConnected = vi.mocked(mountConnectionStatus).mock.calls[0]?.[2]?.onConnected;
+    if (!onConnected) throw new Error('onConnected dep not passed to mountConnectionStatus');
+    onConnected();
+    await flush();
+
+    expect(browser.runtime.sendMessage).toHaveBeenCalledWith({ kind: 'settingsGet' });
+    const toggles = byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle');
+    expect(toggles[0]!.classList.contains('on')).toBe(true);
+    expect(toggles[0]!.disabled).toBe(false);
+    expect(toggles[1]!.classList.contains('on')).toBe(false);
   });
 
-  it('re-runs autofillCheck and re-renders on a disconnected→connected transition (onConnected)', async () => {
+  it('clicking a toggle flips it optimistically and sends settings.set', async () => {
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'settingsGet',
+      result: { ok: true, settings: { autofill: false, aiAssist: false, autotrack: false } },
+    });
+    const { mountConnectionStatus } = await import('../connection-status/connection-status');
+    const onConnected = vi.mocked(mountConnectionStatus).mock.calls[0]?.[2]?.onConnected;
+    onConnected!();
+    await flush();
+
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'settingsSet',
+      result: { ok: true, settings: { autofill: true, aiAssist: false, autotrack: false } },
+    });
+
+    const toggle = byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle')[0]!;
+    expect(toggle.classList.contains('on')).toBe(false);
+    toggle.click();
+    // Optimistic flip happens synchronously, before the request settles.
+    expect(toggle.classList.contains('on')).toBe(true);
+    await flush();
+
+    expect(browser.runtime.sendMessage).toHaveBeenCalledWith({
+      kind: 'settingsSet',
+      key: 'autofill',
+      enabled: true,
+    });
+    expect(toggle.classList.contains('on')).toBe(true);
+  });
+
+  it('rolls back the optimistic flip on a desktop-side refusal', async () => {
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'settingsGet',
+      result: { ok: true, settings: { autofill: false, aiAssist: false, autotrack: false } },
+    });
+    const { mountConnectionStatus } = await import('../connection-status/connection-status');
+    const onConnected = vi.mocked(mountConnectionStatus).mock.calls[0]?.[2]?.onConnected;
+    onConnected!();
+    await flush();
+
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'settingsSet',
+      result: { ok: false, error: 'invalid_settings_request' },
+    });
+
+    const toggle = byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle')[0]!;
+    toggle.click();
+    expect(toggle.classList.contains('on')).toBe(true); // optimistic
+    await flush();
+
+    // `renderPermissions` rebuilds the row set on rollback, so re-query
+    // rather than reuse the now-detached `toggle` reference.
+    const afterRollback =
+      byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle')[0]!;
+    expect(afterRollback.classList.contains('on')).toBe(false);
+  });
+
+  it('ignores a rapid second click on the same toggle while its request is in flight, sending settingsSet exactly once, then re-enables the toggles after the reply', async () => {
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'settingsGet',
+      result: { ok: true, settings: { autofill: false, aiAssist: false, autotrack: false } },
+    });
+    const { mountConnectionStatus } = await import('../connection-status/connection-status');
+    const onConnected = vi.mocked(mountConnectionStatus).mock.calls[0]?.[2]?.onConnected;
+    onConnected!();
+    await flush();
+
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'settingsSet',
+      result: { ok: true, settings: { autofill: true, aiAssist: false, autotrack: false } },
+    });
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+
+    const toggle = byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle')[0]!;
+    toggle.click();
+    toggle.click(); // rapid double-click before the first reply settles
+
+    expect(browser.runtime.sendMessage).toHaveBeenCalledTimes(1);
+    for (const t of byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle')) {
+      expect(t.disabled).toBe(true);
+    }
+
+    await flush();
+
+    expect(browser.runtime.sendMessage).toHaveBeenCalledTimes(1);
+    for (const t of byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle')) {
+      expect(t.disabled).toBe(false);
+    }
+  });
+
+  it('re-enables all toggles after an error reply rolls the optimistic flip back', async () => {
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'settingsGet',
+      result: { ok: true, settings: { autofill: false, aiAssist: false, autotrack: false } },
+    });
+    const { mountConnectionStatus } = await import('../connection-status/connection-status');
+    const onConnected = vi.mocked(mountConnectionStatus).mock.calls[0]?.[2]?.onConnected;
+    onConnected!();
+    await flush();
+
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'settingsSet',
+      result: { ok: false, error: 'invalid_settings_request' },
+    });
+
+    const toggle = byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle')[0]!;
+    toggle.click();
+
+    for (const t of byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle')) {
+      expect(t.disabled).toBe(true);
+    }
+
+    await flush();
+
+    for (const t of byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle')) {
+      expect(t.disabled).toBe(false);
+    }
+  });
+
+  it('re-runs settings.get and re-renders on a disconnected→connected transition (onConnected)', async () => {
     const { mountConnectionStatus } = await import('../connection-status/connection-status');
     const onConnected = vi.mocked(mountConnectionStatus).mock.calls[0]?.[2]?.onConnected;
     if (!onConnected) throw new Error('onConnected dep not passed to mountConnectionStatus');
@@ -207,15 +360,16 @@ describe('what the extension may do', () => {
     vi.mocked(browser.runtime.sendMessage).mockClear();
     vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
       ok: true,
-      kind: 'autofillCheck',
-      enabled: true,
+      kind: 'settingsGet',
+      result: { ok: true, settings: { autofill: true, aiAssist: false, autotrack: false } },
     });
 
     onConnected();
     await flush();
 
-    expect(browser.runtime.sendMessage).toHaveBeenCalledWith({ kind: 'autofillCheck' });
-    expect(byId('permissions-list').textContent).toContain('On');
+    expect(browser.runtime.sendMessage).toHaveBeenCalledWith({ kind: 'settingsGet' });
+    const toggles = byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle');
+    expect(toggles[0]!.classList.contains('on')).toBe(true);
   });
 });
 

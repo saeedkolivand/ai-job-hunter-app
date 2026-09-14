@@ -130,6 +130,31 @@ pub fn is_allowed_origin(origin: &str, dev_origins: &[String]) -> bool {
     false
 }
 
+/// Whether a handshake `Origin` is the paired browser EXTENSION itself — the label
+/// `handle_connection` resolves once (PR1, extension read tier) and threads alongside
+/// [`AGENT_CLI_ORIGIN`]'s own label into [`super::CallerClass`]. Same defense-in-depth caveat as
+/// every other check in this file: a label, not a boundary — the v2 mutual HMAC handshake remains
+/// the only real one.
+///
+/// Reuses [`is_allowed_origin`] (never a second origin-matching implementation) and excludes ONLY
+/// the one sentinel that is never the extension: [`AGENT_CLI_ORIGIN`]. [`NATIVE_HOST_ORIGIN`] IS
+/// the extension here — the native-messaging host ([`super::native_host`], the Firefox
+/// HTTPS-Only-Mode fallback) has no origin of its own and relays the paired extension's frames 1:1,
+/// and the native-messaging manifests pin which extension may launch it, so a relayed frame
+/// genuinely came from that extension; `Origin` is only a label either way, and the mutual HMAC
+/// handshake stays the real boundary. Everything else [`is_allowed_origin`] accepts genuinely IS
+/// the extension too: the dev override, a known Chrome id, a well-formed Firefox UUID, and `null` —
+/// the real origin a Firefox extension's BACKGROUND script sends (see [`is_allowed_origin`]'s own
+/// doc), which is the shape production connections actually arrive as, since the bridge client
+/// runs in the extension's background/service-worker context on both browsers.
+pub fn is_extension_origin(origin: &str, dev_origins: &[String]) -> bool {
+    let origin = origin.trim();
+    if origin == AGENT_CLI_ORIGIN {
+        return false;
+    }
+    is_allowed_origin(origin, dev_origins)
+}
+
 /// Whether `s` is a well-formed Firefox extension UUID: the standard
 /// `8-4-4-4-12` form, lowercase hex, dashes in the canonical positions, and
 /// nothing else (no trailing path, no extra segment). Hand-written hex/dash
@@ -441,6 +466,40 @@ mod tests {
             "chrome-extension://otherotherotherotherotherotherot",
             &origins
         ));
+    }
+
+    // ── is_extension_origin (PR1 — extension read tier caller-class label) ───
+
+    #[test]
+    fn is_extension_origin_accepts_chrome_and_firefox_shapes() {
+        assert!(is_extension_origin(
+            "chrome-extension://oaoekkgkhmgdfnpmfkpphgiikliaicll",
+            &[]
+        ));
+        let firefox = format!("moz-extension://{FIREFOX_UUID}");
+        assert!(is_extension_origin(&firefox, &[]));
+        // The REAL Firefox background-script origin — see the doc.
+        assert!(is_extension_origin("null", &[]));
+    }
+
+    #[test]
+    fn is_extension_origin_accepts_dev_override() {
+        let origins = dev();
+        assert!(is_extension_origin(&origins[0], &origins));
+    }
+
+    #[test]
+    fn is_extension_origin_accepts_the_native_host_relay_but_rejects_the_cli() {
+        // The native-messaging relay forwards the paired extension's frames 1:1, so it
+        // counts as the extension; only the CLI sentinel is carved out.
+        assert!(is_extension_origin(NATIVE_HOST_ORIGIN, &[]));
+        assert!(!is_extension_origin(AGENT_CLI_ORIGIN, &[]));
+    }
+
+    #[test]
+    fn is_extension_origin_rejects_unknown_origins() {
+        assert!(!is_extension_origin("https://evil.example.com", &[]));
+        assert!(!is_extension_origin("", &[]));
     }
 
     #[test]

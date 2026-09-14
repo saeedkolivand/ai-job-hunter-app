@@ -8,17 +8,20 @@
  * own "Unpair this device" and "Open app settings →" controls, since the
  * popup's own unpair lives inside its "?" menu instead.
  *
- * "What the extension may do" renders THREE rows, not the design record's
- * four: `autofillCheck` is the only opt-in the extension↔background wire
- * (`lib/messages.ts`) can actually ask about today — AI-answer-assist and
- * auto-track have desktop-side settings (`packages/shared/…/extensionBridge.ts`)
- * but no matching extension-side check verb, and PR0 forbids adding one
- * ("no new bridge verbs"). Both read "Unknown until connected" rather than a
- * fabricated fourth row. // TODO(PR1 settings.set): turn all three into live
- * toggles — design record R7.
+ * "What the extension may do" renders THREE live toggles (PR1, R7 of the
+ * redesign record — resolved in favor of toggling from the extension, not
+ * read-only mirrors): `settings.get`/`settings.set` cover `autofill` /
+ * `aiAssist` / `autotrack` today; the fourth switch, `saveAnswersOnSubmit`,
+ * lands in PR4. A toggle click is OPTIMISTIC (flips immediately) and rolls
+ * back on a refusal or a failed request — the desktop is still the source
+ * of truth and re-enforces every gate at use time regardless of what this
+ * page shows; every change made from here also raises a Notification
+ * Center entry in the app.
  */
 
 import { browser } from '@wxt-dev/browser';
+
+import type { ExtensionSettingsKey, ExtensionSettingsValues } from '@ajh/shared';
 
 import { mountConnectionStatus, PAIRING_DEEP_LINK } from '../connection-status/connection-status';
 import {
@@ -85,11 +88,10 @@ mountConnectionStatus(els.connectionPillHost, els.connectionViewsHost, {
     els.btnUnpair.hidden = !status.hasToken;
   },
   // A disconnected→connected transition (e.g. the desktop app was just
-  // launched) means the ONE opt-in this page can actually ask about may have
-  // changed since the last (possibly "Unknown until connected") answer —
-  // re-run it rather than leaving the Assisted autofill row stale for the
-  // rest of this page's lifetime.
-  onConnected: () => void runAutofillCheck(),
+  // launched) means every switch may have changed since the last (possibly
+  // "Unknown until connected") answer — re-fetch rather than leaving the
+  // toggles stale for the rest of this page's lifetime.
+  onConnected: () => void runSettingsGet(),
 }).start();
 
 els.btnUnpair.addEventListener('click', () => {
@@ -134,84 +136,137 @@ export async function renderSites(): Promise<void> {
 }
 void renderSites();
 
-// ── What the extension may do (read-only, PR0) ───────────────────────────
+// ── What the extension may do (LIVE toggles, PR1, R7) ────────────────────
 
 interface PermissionRow {
+  key: ExtensionSettingsKey;
   title: string;
   desc: string;
-  /** `true` once `autofillCheck` has answered; the other two rows never
-   *  resolve in this PR (no check verb exists yet — see this file's doc). */
-  checkable: boolean;
 }
 
 const PERMISSION_ROWS: readonly PermissionRow[] = [
   {
+    key: 'autofill',
     title: 'Assisted autofill',
     desc: 'Fill forms on this page with your saved contact details, on request.',
-    checkable: true,
   },
   {
+    key: 'aiAssist',
     title: 'AI-answer-assist',
     desc: 'Draft and rewrite answers to application questions.',
-    checkable: false,
   },
   {
+    key: 'autotrack',
     title: 'Auto-track applied status',
     desc: 'Mark a job Applied automatically when its form submits.',
-    checkable: false,
   },
 ];
 
-function renderPermissions(autofillEnabled: boolean | null): void {
+/** The last known switch values, or `null` before the first `settings.get`
+ *  answers (or after a disconnect) — a toggle stays disabled while this is
+ *  `null`, since there is nothing to optimistically flip. */
+let currentSettings: ExtensionSettingsValues | null = null;
+
+function renderPermissions(settings: ExtensionSettingsValues | null): void {
+  currentSettings = settings;
   els.permissionsList.replaceChildren();
   for (const row of PERMISSION_ROWS) {
     const el = document.createElement('div');
     el.className = 'set-row';
     const copy = document.createElement('div');
     copy.className = 'set-row-copy';
+    const titleId = `perm-title-${row.key}`;
     const title = document.createElement('p');
+    title.id = titleId;
     title.className = 'set-title';
     title.textContent = row.title;
     const desc = document.createElement('p');
     desc.className = 'set-desc';
-    desc.textContent = row.desc;
+    desc.textContent = settings ? row.desc : `${row.desc} (Unknown until connected.)`;
     copy.append(title, desc);
 
-    const state = document.createElement('span');
-    state.className = 'tag';
-    const known = row.checkable ? autofillEnabled : null;
-    if (known === null) {
-      state.textContent = 'Unknown until connected';
-    } else {
-      state.textContent = known ? 'On' : 'Off';
-      state.classList.add(known ? 'tag--ok' : 'tag--warn');
-    }
+    const known = settings ? settings[row.key] : null;
+    const toggle = document.createElement('button');
+    toggle.className = 'toggle';
+    toggle.type = 'button';
+    toggle.setAttribute('role', 'switch');
+    toggle.setAttribute('aria-labelledby', titleId);
+    toggle.classList.toggle('on', known === true);
+    toggle.setAttribute('aria-checked', String(known === true));
+    toggle.disabled = known === null;
+    toggle.addEventListener('click', () => void toggleSetting(row.key, toggle));
 
-    const caption = document.createElement('button');
-    caption.className = 'link';
-    caption.type = 'button';
-    caption.textContent = 'Change in app →';
-    caption.addEventListener('click', () => void openDeepLink(PAIRING_DEEP_LINK));
-
-    el.append(copy, state, caption);
+    el.append(copy, toggle);
     els.permissionsList.append(el);
   }
 }
-/** Fetch `autofillCheck` and re-render the "Assisted autofill" row — run once
- *  at load, and again on every disconnected→connected transition (the
- *  `onConnected` dep above) since the opt-in it reports is set on the
- *  desktop side and can change between connections. */
-async function runAutofillCheck(): Promise<void> {
-  try {
-    const res = await send({ kind: 'autofillCheck' });
-    if (res.ok && res.kind === 'autofillCheck') renderPermissions(res.enabled);
-  } catch {
-    // Best-effort — same discipline as this page's other fire-and-forget checks.
+
+/** True while a `settings.set` round trip is in flight. Guards against a
+ *  rapid double-click on the same switch, or a second switch clicked before
+ *  the first reply — both would otherwise compute `next` from the same
+ *  stale `currentSettings` snapshot and fire overlapping requests. */
+let settingsRequestInFlight = false;
+
+/**
+ * Flip one switch, optimistically. `btn`'s visual state changes immediately
+ * (so the click feels instant); a well-formed desktop refusal or a failed
+ * request rolls the WHOLE row set back to the values from before the click
+ * (simplest correct fix — a single-key rollback would drift from the
+ * desktop's own reply on `ok:true`, which already carries the FULL
+ * settings object for exactly this reason).
+ */
+async function toggleSetting(key: ExtensionSettingsKey, btn: HTMLButtonElement): Promise<void> {
+  const prev = currentSettings;
+  // Disabled while unknown, or while a previous toggle's request is still
+  // in flight — defensive, a click shouldn't fire here either way.
+  if (!prev || settingsRequestInFlight) return;
+  const next = !prev[key];
+  btn.classList.toggle('on', next);
+  btn.setAttribute('aria-checked', String(next));
+
+  settingsRequestInFlight = true;
+  btn.setAttribute('aria-busy', 'true');
+  for (const toggle of els.permissionsList.querySelectorAll<HTMLButtonElement>('.toggle')) {
+    toggle.disabled = true;
   }
+
+  try {
+    const res = await send({ kind: 'settingsSet', key, enabled: next });
+    if (res.ok && res.kind === 'settingsSet' && res.result.ok) {
+      renderPermissions(res.result.settings);
+      return;
+    }
+  } catch {
+    // fall through to rollback — same discipline as a failed request below.
+  } finally {
+    // `renderPermissions` below (or above, on success) rebuilds the row set
+    // from scratch — including each toggle's `disabled` state — so there is
+    // nothing to manually re-enable here, only the guard to release.
+    settingsRequestInFlight = false;
+  }
+  renderPermissions(prev);
+}
+
+/** Fetch `settings.get` and render the three live toggles — run once at
+ *  load, and again on every disconnected→connected transition (the
+ *  `onConnected` dep above), since the values live on the desktop side and
+ *  can change between connections. */
+async function runSettingsGet(): Promise<void> {
+  try {
+    const res = await send({ kind: 'settingsGet' });
+    if (res.ok && res.kind === 'settingsGet' && res.result.ok) {
+      renderPermissions(res.result.settings);
+      return;
+    }
+  } catch {
+    // fall through to the unknown state — same discipline as this page's
+    // other fire-and-forget checks.
+  }
+  renderPermissions(null);
 }
 
 renderPermissions(null);
-void runAutofillCheck();
+void runSettingsGet();
 
 // ── Appearance ────────────────────────────────────────────────────────────
 

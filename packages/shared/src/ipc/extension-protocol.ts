@@ -23,6 +23,10 @@ import {
   EXTENSION_MESSAGE_TYPES,
   EXTENSION_NO_PROVIDER_MESSAGE,
   EXTENSION_PROTOCOL_VERSION,
+  type ExtensionAgentCallRequest,
+  type ExtensionAgentCallResult,
+  type ExtensionAgentQueryRequest,
+  type ExtensionAgentQueryResult,
   type ExtensionAnswerAssistRequest,
   type ExtensionAnswerAssistResult,
   type ExtensionAnswerPair,
@@ -48,6 +52,11 @@ import {
   type ExtensionMessageType,
   type ExtensionProfileResult,
   type ExtensionRewritePreset,
+  type ExtensionSettingsGetRequest,
+  type ExtensionSettingsKey,
+  type ExtensionSettingsResult,
+  type ExtensionSettingsSetRequest,
+  type ExtensionSettingsValues,
   type ExtensionStatusUpdateRequest,
   type ExtensionStatusUpdateResult,
   HANDSHAKE_DOMAIN,
@@ -62,6 +71,10 @@ export {
   EXTENSION_MESSAGE_TYPES,
   EXTENSION_NO_PROVIDER_MESSAGE,
   EXTENSION_PROTOCOL_VERSION,
+  type ExtensionAgentCallRequest,
+  type ExtensionAgentCallResult,
+  type ExtensionAgentQueryRequest,
+  type ExtensionAgentQueryResult,
   type ExtensionAnswerAssistRequest,
   type ExtensionAnswerAssistResult,
   type ExtensionAnswerPair,
@@ -87,6 +100,11 @@ export {
   type ExtensionMessageType,
   type ExtensionProfileResult,
   type ExtensionRewritePreset,
+  type ExtensionSettingsGetRequest,
+  type ExtensionSettingsKey,
+  type ExtensionSettingsResult,
+  type ExtensionSettingsSetRequest,
+  type ExtensionSettingsValues,
   type ExtensionStatusUpdateRequest,
   type ExtensionStatusUpdateResult,
   HANDSHAKE_DOMAIN,
@@ -125,6 +143,13 @@ export const ExtensionMessageTypeSchema = z.enum([
   EXTENSION_MESSAGE_TYPES.assistChunk,
   EXTENSION_MESSAGE_TYPES.assistDone,
   EXTENSION_MESSAGE_TYPES.assistCancel,
+  EXTENSION_MESSAGE_TYPES.agentQuery,
+  EXTENSION_MESSAGE_TYPES.agentResult,
+  EXTENSION_MESSAGE_TYPES.agentCall,
+  EXTENSION_MESSAGE_TYPES.agentCallResult,
+  EXTENSION_MESSAGE_TYPES.settingsGet,
+  EXTENSION_MESSAGE_TYPES.settingsResult,
+  EXTENSION_MESSAGE_TYPES.settingsSet,
 ]) satisfies z.ZodType<ExtensionMessageType>;
 
 /** `hello` payload (handshake step 1). No token — the proof authenticates later. */
@@ -419,6 +444,98 @@ export const ExtensionMatchLiveResultSchema = z.discriminatedUnion('ok', [
   }),
   z.object({ ok: z.literal(false), error: z.string() }),
 ]) satisfies z.ZodType<ExtensionMatchLiveResult>;
+
+/**
+ * `agent.query` payload for the extension read tier (PR1, ADR-050). Mirrors
+ * {@link ExtensionAgentQueryRequest} — shape-only (no per-resource
+ * validation here: the desktop's own `agent_read` resolver is what
+ * validates `params` against the resource it names).
+ */
+export const ExtensionAgentQueryRequestSchema = z.object({
+  resource: z.string().min(1),
+  params: z.record(z.string(), z.unknown()).optional(),
+}) satisfies z.ZodType<ExtensionAgentQueryRequest>;
+
+/**
+ * `agent.result` payload. Mirrors {@link ExtensionAgentQueryResult} — a
+ * discriminated union on `ok`: `ok:true` requires the echoed `resource` +
+ * an opaque `data`; `ok:false` requires the echoed `resource` + a
+ * user-facing `error`.
+ */
+export const ExtensionAgentQueryResultSchema = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true), resource: z.string(), data: z.unknown() }),
+  z.object({ ok: z.literal(false), resource: z.string(), error: z.string() }),
+]) satisfies z.ZodType<ExtensionAgentQueryResult>;
+
+/**
+ * `agent.call` payload for the extension read tier (PR1, ADR-050). Mirrors
+ * {@link ExtensionAgentCallRequest} — shape-only: `command` is the full
+ * `<namespace>:<command>` path, re-validated desktop-side against the
+ * policy table (only `Effect::Read` rows ever dispatch for this caller).
+ */
+export const ExtensionAgentCallRequestSchema = z.object({
+  command: z.string().min(1),
+  args: z.unknown().optional(),
+}) satisfies z.ZodType<ExtensionAgentCallRequest>;
+
+/**
+ * `agent.call.result` payload. Mirrors {@link ExtensionAgentCallResult} — a
+ * discriminated union on `dispatched` (never `ok`, ADR-038 §5):
+ * `dispatched:true` requires `namespace`/`command` + an opaque `data`;
+ * `dispatched:false` requires `namespace`/`command` + a user-facing `error`
+ * (`detail` optional).
+ */
+export const ExtensionAgentCallResultSchema = z.discriminatedUnion('dispatched', [
+  z.object({
+    dispatched: z.literal(true),
+    namespace: z.string(),
+    command: z.string(),
+    data: z.unknown(),
+  }),
+  z.object({
+    dispatched: z.literal(false),
+    namespace: z.string(),
+    command: z.string(),
+    error: z.string(),
+    detail: z.string().optional(),
+  }),
+]) satisfies z.ZodType<ExtensionAgentCallResult>;
+
+/** The extension's opt-in switch keys. Mirrors {@link ExtensionSettingsKey}. */
+export const ExtensionSettingsKeySchema = z.enum([
+  'autofill',
+  'aiAssist',
+  'autotrack',
+]) satisfies z.ZodType<ExtensionSettingsKey>;
+
+/** `settings.get` payload — no fields. Mirrors {@link ExtensionSettingsGetRequest}. */
+export const ExtensionSettingsGetRequestSchema = z.object(
+  {}
+) satisfies z.ZodType<ExtensionSettingsGetRequest>;
+
+/** `settings.set` payload — flip exactly one switch. Mirrors {@link ExtensionSettingsSetRequest}. */
+export const ExtensionSettingsSetRequestSchema = z.object({
+  key: ExtensionSettingsKeySchema,
+  enabled: z.boolean(),
+}) satisfies z.ZodType<ExtensionSettingsSetRequest>;
+
+/** The live values of every switch. Mirrors {@link ExtensionSettingsValues}. */
+export const ExtensionSettingsValuesSchema = z.object({
+  autofill: z.boolean(),
+  aiAssist: z.boolean(),
+  autotrack: z.boolean(),
+}) satisfies z.ZodType<ExtensionSettingsValues>;
+
+/**
+ * `settings.result` payload — answers BOTH `settings.get` and `settings.set`.
+ * Mirrors {@link ExtensionSettingsResult} — a discriminated union on `ok`:
+ * `ok:true` requires the full `settings` object; `ok:false` requires a
+ * user-facing `error`.
+ */
+export const ExtensionSettingsResultSchema = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true), settings: ExtensionSettingsValuesSchema }),
+  z.object({ ok: z.literal(false), error: z.string() }),
+]) satisfies z.ZodType<ExtensionSettingsResult>;
 
 /**
  * The transport envelope every frame is wrapped in. `payload` is left as

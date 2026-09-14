@@ -44,12 +44,16 @@
         <div id="sites-list"></div>
       </section>
 
-      <!-- What the extension may do — read-only mirrors of the app's opt-ins
-           this PR can actually learn (autofillCheck); the rest read "unknown
-           until connected" — see options.ts's doc for why there are three
-           rows, not the mockup's four. -->
+      <!-- What the extension may do — LIVE toggles (PR1, R7 of the redesign
+           record) for the three switches reachable through settings.get/
+           settings.set; the fourth row (save answers on submit) stays
+           hidden until PR4 — see options.ts's doc. -->
       <section aria-labelledby="section-permissions">
         <h2 id="section-permissions" class="section-label">What the extension may do</h2>
+        <p class="hint">
+          Changes apply in the app right away; the app shows a notice each time a switch is
+          changed from here.
+        </p>
         <div id="permissions-list"></div>
       </section>
 

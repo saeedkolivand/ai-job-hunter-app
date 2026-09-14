@@ -1,6 +1,6 @@
 # Agent CLI (`ajh-tauri agent <verb>`)
 
-Last updated: 2026-09-10
+Last updated: 2026-09-14
 
 A headless CLI mode of the shipped `ajh-tauri` binary, invoked alongside the running desktop app. Enables external programs (shell scripts, LLM agents, CI pipelines) to query job data, profile fields, and trigger commands without a GUI. The same binary, no separate install.
 
@@ -53,7 +53,7 @@ The `exePath` it publishes is resolved by `platform::config::agent_cli_exe_path`
 
 - **Mode, not binary**: The CLI is an argv mode of the shipped `ajh-tauri` executable, detected by the first post-binary token being exactly `agent`. It short-circuits before the GUI or single-instance plugin, and exits cleanly.
 - **Authentication**: Uses the same loopback WebSocket bridge as the browser extension, with mutual HMAC challenge-response. The pairing token is used only as an HMAC key and is never sent on the wire; both clients reuse the same OS-stored credential.
-- **Policy table**: The `call` verb is a generic tier that respects per-command `Effect` classification (Read, Reversible, Irreversible). Irreversible commands require a `--confirm` proof value read from a separate command first (ADR-038 §4). The curated verbs are a separate, simpler tier that predates it.
+- **Policy table**: The `call` verb is a generic tier that respects per-command `Effect` classification (Read, Reversible, Irreversible). Irreversible commands require a `--confirm` proof value read from a separate command first (ADR-038 §4). The curated verbs are a separate, simpler tier that predates it. **A third consumer** now reads the same policy table under a narrower gate: the paired browser extension, resolved to its own `CallerClass::Extension`, dispatches `Effect::Read` rows only (behind the Autofill opt-in, its own reply cap, no confirm ceremony) — see [ADR-050](decision-records/adr-050-extension-read-tier-and-settings-verbs.md) and `docs/knowledge/extension-domain.md`.
 - **Frame-cap refusal**: a reply too large for the bridge's own WS frame ceiling (`MAX_FRAME_BYTES` in `extension_bridge/mod.rs`) is refused as `result_too_large` rather than written and dropped, on BOTH tiers — a deterministic refusal instead of the `connection_lost` an over-cap frame used to produce, which reads as transient and invites a retry that can never succeed. Every echoed identifier (`reqId`, plus `namespace`/`command` or `resource`) is bounded before a refusal is built, and the built reply is re-measured against that same constant rather than assumed bounded; the refusal builders and their sentinels live in `agent_call.rs` (generic tier) and `agent_read.rs` (curated tier), with the reasoning on each. The MCP mode's own result cap is a separate, smaller constant one hop further out (MCP section below).
 - **Paging on the generic tier**: a list command that takes no argument able to narrow its result returns one page — `limit`/`cursor` in, an `items`/`total`/`nextCursor` envelope out — bounded by an audited page-size constant beside the generic tier's reshaping (`agent_call/reshape.rs`). Which rows page, and why that size, live on the constant; a caller discovers it per row from the `commands` tool's returns note, never from a list on this page. The limit-clamp and byte-budget primitives are shared with the curated `found-jobs`/`best-matches` resources (`extension_bridge/paging.rs`); the offset-cursor parse there is this tier's alone, because `found-jobs`/`best-matches` each layer their own issuer-scoped cursor grammar on top (MCP section below).
 - **Binary payloads**: where a command's value is bytes rather than JSON text, the agent layer base64-encodes it and states so in an explicit encoding marker on the reply, so a caller decodes on the marker rather than on a guess. The marker's key and the rows it applies to are named beside the same constants in `agent_call/reshape.rs`.
@@ -86,5 +86,6 @@ The agent CLI can run as an MCP (Model Context Protocol) stdio server, exposing 
 - [ADR-037](decision-records/adr-037-agent-cli-as-binary-mode-thin-client.md) — Design rationale (binary mode, loopback bridge, authentication)
 - [ADR-038](decision-records/adr-038-agent-cli-full-parity-two-tier.md) — Confirmation ceremony and policy table (curated vs. generic tiers)
 - [ADR-040](decision-records/adr-040-mcp-server-as-agent-cli-mode.md) — MCP stdio server mode
+- [ADR-050](decision-records/adr-050-extension-read-tier-and-settings-verbs.md) — Extension read tier: the policy table's third, narrower caller class
 - `apps/desktop/src-tauri/src/extension_bridge/agent_cli.rs` — Client implementation (verb parsing, exit codes, error sentinels)
 - `apps/desktop/src-tauri/src/extension_bridge/agent_call.rs` — Server-side dispatch and policy lookup

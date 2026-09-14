@@ -15,6 +15,7 @@ import type {
   ExtensionImportRequest,
   ExtensionMatchLiveRequest,
   ExtensionRewritePreset,
+  ExtensionSettingsKey,
 } from '@ajh/shared';
 // Runtime import, so it comes from the dedicated entrypoint rather than the
 // barrel — see the note at the top of `answer-tools/answer-tools.ts`.
@@ -556,6 +557,59 @@ async function runFieldsProbe(): Promise<PopupResponse> {
 async function runAutofillCheck(): Promise<PopupResponse> {
   const enabled = await getClient().autofillEnabled();
   return { ok: true, kind: 'autofillCheck', enabled };
+}
+
+/** Minimal guard for the `job` resource's `data` shape (PR1 — extension read
+ *  tier) — only the two fields the trust line renders; every other field
+ *  the resource carries is ignored here. `title`/`company` are optional
+ *  strings on the wire (a stub/partial posting may lack either). */
+function readJobTitleCompany(data: unknown): { title: string | null; company: string | null } {
+  if (typeof data !== 'object' || data === null) return { title: null, company: null };
+  const o = data as Record<string, unknown>;
+  return {
+    title: typeof o.title === 'string' && o.title.trim() ? o.title : null,
+    company: typeof o.company === 'string' && o.company.trim() ? o.company : null,
+  };
+}
+
+/**
+ * Passive "what does the read tier say about this page's job?" lookup (PR1
+ * — extension read tier), feeding `sidepanel.ts`'s trust line. Mirrors
+ * `runAppliedCheck`'s always-`ok:true`, never-throws fold: ANY refusal
+ * (Autofill off, throttled, an unknown job, no connection) resolves both
+ * fields `null`, which the panel renders as its existing host-only line.
+ */
+async function runTrustLineJob(): Promise<PopupResponse> {
+  try {
+    const url = await activeTabUrl();
+    const res = await getClient().agentQuery('job', { url });
+    if (!res.ok) return { ok: true, kind: 'trustLineJob', title: null, company: null };
+    return { ok: true, kind: 'trustLineJob', ...readJobTitleCompany(res.data) };
+  } catch {
+    return { ok: true, kind: 'trustLineJob', title: null, company: null };
+  }
+}
+
+/**
+ * Settings page: read the extension's opt-in switches (R7 of the redesign
+ * record). UNLIKE `runAutofillCheck`, failures are NOT folded away — a
+ * transport-level rejection propagates to `handleRequest`'s outer catch,
+ * and a resolved desktop-side refusal passes straight through as `result`
+ * so the page can show why the toggles couldn't load.
+ */
+async function runSettingsGet(): Promise<PopupResponse> {
+  const result = await getClient().settingsGet();
+  return { ok: true, kind: 'settingsGet', result };
+}
+
+/**
+ * Settings page: flip one switch. Like `runStatusUpdate`, failures are NOT
+ * folded away — the page rolls its optimistic toggle back on a well-formed
+ * `ok:false`.
+ */
+async function runSettingsSet(key: ExtensionSettingsKey, enabled: boolean): Promise<PopupResponse> {
+  const result = await getClient().settingsSet(key, enabled);
+  return { ok: true, kind: 'settingsSet', result };
 }
 
 /**
@@ -1392,6 +1446,12 @@ async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
         return await runFieldsProbe();
       case 'autofillCheck':
         return await runAutofillCheck();
+      case 'trustLineJob':
+        return await runTrustLineJob();
+      case 'settingsGet':
+        return await runSettingsGet();
+      case 'settingsSet':
+        return await runSettingsSet(req.key, req.enabled);
       case 'statusUpdate':
         return await runStatusUpdate();
       case 'answersSave':

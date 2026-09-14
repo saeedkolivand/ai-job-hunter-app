@@ -441,6 +441,74 @@ describe('the trust line (ADR-045)', () => {
     expect(trustLine.textContent).toBe('Reading: jobs.example.com');
   });
 
+  it('upgrades the host-only line to "Reading: <title> · <company>" once the read tier answers (PR1)', async () => {
+    const trustLine = document.getElementById('trust-line') as HTMLElement;
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'trustLineJob',
+      title: 'Senior Rust Engineer',
+      company: 'Acme',
+    });
+    vi.mocked(subscribeAnswerState).mockImplementationOnce((_tabId, onState) => {
+      queueMicrotask(() =>
+        onState({
+          tabId: 45,
+          origin: 'https://jobs.example.com',
+          scannedAt: 1,
+          rows: [],
+          stream: null,
+          pageChanged: false,
+        } as never)
+      );
+      return vi.fn();
+    });
+
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+    onActivated({ tabId: 45, windowId: PANEL_WINDOW_ID } as never);
+    // The synchronous host-only line renders first (never blocks)…
+    await new Promise((r) => setTimeout(r, 0));
+    // …then the async agentQuery answer upgrades it.
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(browser.runtime.sendMessage).toHaveBeenCalledWith({ kind: 'trustLineJob' });
+    expect(trustLine.textContent).toBe('Reading: Senior Rust Engineer · Acme');
+  });
+
+  it('keeps the host-only line on a read-tier refusal (Autofill off, throttled, unknown job)', async () => {
+    const trustLine = document.getElementById('trust-line') as HTMLElement;
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'trustLineJob',
+      title: null,
+      company: null,
+    });
+    vi.mocked(subscribeAnswerState).mockImplementationOnce((_tabId, onState) => {
+      queueMicrotask(() =>
+        onState({
+          tabId: 46,
+          origin: 'https://jobs.example.com',
+          scannedAt: 1,
+          rows: [],
+          stream: null,
+          pageChanged: false,
+        } as never)
+      );
+      return vi.fn();
+    });
+
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+    onActivated({ tabId: 46, windowId: PANEL_WINDOW_ID } as never);
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(trustLine.hidden).toBe(false);
+    expect(trustLine.textContent).toBe('Reading: jobs.example.com');
+  });
+
   it('hides again for an untrusted (pageChanged) state, leaving the message to job-tools', async () => {
     const trustLine = document.getElementById('trust-line') as HTMLElement;
     vi.mocked(subscribeAnswerState).mockImplementationOnce((_tabId, onState) => {

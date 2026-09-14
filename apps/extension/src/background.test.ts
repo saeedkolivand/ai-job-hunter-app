@@ -47,6 +47,9 @@ const mockClient = vi.hoisted(() => ({
   matchLive: vi.fn(),
   answerAssist: vi.fn(),
   autotrackEnabled: vi.fn(),
+  agentQuery: vi.fn(),
+  settingsGet: vi.fn(),
+  settingsSet: vi.fn(),
 }));
 
 vi.mock('@wxt-dev/browser', () => ({
@@ -206,6 +209,9 @@ beforeEach(() => {
   mockClient.matchLive.mockReset();
   mockClient.answerAssist.mockReset();
   mockClient.autotrackEnabled.mockReset();
+  mockClient.agentQuery.mockReset();
+  mockClient.settingsGet.mockReset();
+  mockClient.settingsSet.mockReset();
   setBadgeTextMock.mockClear();
 });
 
@@ -387,6 +393,142 @@ describe('appliedCheck request', () => {
 
     expect(res).toEqual({ ok: true, kind: 'appliedCheck', result: { found: false } });
     expect(mockClient.checkApplied).not.toHaveBeenCalled();
+  });
+});
+
+// ── trustLineJob request (PR1) — always ok:true, every failure folds into
+// title:null/company:null, mirroring appliedCheck's fail-CLOSED discipline ──
+
+describe('trustLineJob request', () => {
+  it('returns title/company from a successful agent.query', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.agentQuery.mockResolvedValue({
+      ok: true,
+      resource: 'job',
+      data: { title: 'Senior Rust Engineer', company: 'Acme' },
+    });
+
+    const res = await send({ kind: 'trustLineJob' });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'trustLineJob',
+      title: 'Senior Rust Engineer',
+      company: 'Acme',
+    });
+    expect(mockClient.agentQuery).toHaveBeenCalledWith('job', {
+      url: 'https://jobs.example.com/posting/9',
+    });
+  });
+
+  it('folds a desktop refusal (e.g. Autofill off) into title:null/company:null, never ok:false', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.agentQuery.mockResolvedValue({
+      ok: false,
+      resource: 'job',
+      error: 'Assisted autofill is off.',
+    });
+
+    const res = await send({ kind: 'trustLineJob' });
+
+    expect(res).toEqual({ ok: true, kind: 'trustLineJob', title: null, company: null });
+  });
+
+  it('folds a rejection (no connection / throttled) into title:null/company:null', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.agentQuery.mockRejectedValue(new Error('Desktop app not reachable.'));
+
+    const res = await send({ kind: 'trustLineJob' });
+
+    expect(res).toEqual({ ok: true, kind: 'trustLineJob', title: null, company: null });
+  });
+
+  it('folds a missing active tab into title:null/company:null', async () => {
+    tabsQueryMock.mockResolvedValue([]);
+
+    const res = await send({ kind: 'trustLineJob' });
+
+    expect(res).toEqual({ ok: true, kind: 'trustLineJob', title: null, company: null });
+    expect(mockClient.agentQuery).not.toHaveBeenCalled();
+  });
+
+  it('folds a malformed data shape (missing title/company) into null fields, never throws', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.agentQuery.mockResolvedValue({ ok: true, resource: 'job', data: {} });
+
+    const res = await send({ kind: 'trustLineJob' });
+
+    expect(res).toEqual({ ok: true, kind: 'trustLineJob', title: null, company: null });
+  });
+});
+
+// ── settingsGet / settingsSet requests (PR1 — extension read tier) — errors
+// are NOT folded, mirroring statusUpdate's discipline ────────────────────────
+
+describe('settingsGet request', () => {
+  it('returns the settingsGet result on success', async () => {
+    mockClient.settingsGet.mockResolvedValue({
+      ok: true,
+      settings: { autofill: true, aiAssist: false, autotrack: false },
+    });
+
+    const res = await send({ kind: 'settingsGet' });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'settingsGet',
+      result: { ok: true, settings: { autofill: true, aiAssist: false, autotrack: false } },
+    });
+  });
+
+  it('passes a desktop-side refusal straight through as result, never folds it', async () => {
+    mockClient.settingsGet.mockResolvedValue({ ok: false, error: 'not paired' });
+
+    const res = await send({ kind: 'settingsGet' });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'settingsGet',
+      result: { ok: false, error: 'not paired' },
+    });
+  });
+});
+
+describe('settingsSet request', () => {
+  it('sends the key/enabled and returns the new settings on success', async () => {
+    mockClient.settingsSet.mockResolvedValue({
+      ok: true,
+      settings: { autofill: true, aiAssist: false, autotrack: false },
+    });
+
+    const res = await send({ kind: 'settingsSet', key: 'autofill', enabled: true });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'settingsSet',
+      result: { ok: true, settings: { autofill: true, aiAssist: false, autotrack: false } },
+    });
+    expect(mockClient.settingsSet).toHaveBeenCalledWith('autofill', true);
+  });
+
+  it('passes a desktop-side refusal straight through as result, never folds it', async () => {
+    mockClient.settingsSet.mockResolvedValue({ ok: false, error: 'invalid_settings_request' });
+
+    const res = await send({ kind: 'settingsSet', key: 'autofill', enabled: true });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'settingsSet',
+      result: { ok: false, error: 'invalid_settings_request' },
+    });
   });
 });
 
