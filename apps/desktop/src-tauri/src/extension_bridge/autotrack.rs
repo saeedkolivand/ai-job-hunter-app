@@ -33,17 +33,23 @@ impl BridgeState {
         self.autotrack_enabled.load(Ordering::Relaxed)
     }
 
-    /// Set (and persist) the auto-track opt-in. A persist failure is non-fatal
-    /// but leaves the in-memory value authoritative for this run — same
-    /// discipline as `set_autofill_enabled`.
-    pub fn set_autotrack_enabled(&self, enabled: bool) {
-        self.autotrack_enabled.store(enabled, Ordering::Relaxed);
+    /// Set (and persist) the auto-track opt-in; returns `true` iff this call
+    /// actually changed the value. Holds `BridgeState::optin_write_lock`
+    /// across the compare + swap + persist — same critical section, and same
+    /// always-persist-but-conditionally-report discipline, as
+    /// `BridgeState::set_autofill_enabled` (see that method's doc for why the
+    /// write itself is unconditional). A persist failure is non-fatal but
+    /// leaves the in-memory value authoritative for this run.
+    pub fn set_autotrack_enabled(&self, enabled: bool) -> bool {
+        let _guard = self.optin_write_lock.lock();
+        let prev = self.autotrack_enabled.swap(enabled, Ordering::Relaxed);
         if let Err(e) = persist_autotrack_optin(&self.data_dir, enabled) {
             log::warn!(
                 "[extension_bridge] failed to persist auto-track opt-in (non-fatal): {}",
                 crate::observability::sanitize_reason(&e.to_string())
             );
         }
+        prev != enabled
     }
 }
 

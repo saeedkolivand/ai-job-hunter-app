@@ -12,7 +12,11 @@
 //! `set_autotrack_enabled`) — never a second write path — so the desktop
 //! stays the single source of truth and still enforces every gate at use
 //! time (a switch flipped from the extension is just as real, and just as
-//! re-checkable, as one flipped in the app). Every `settings.set` that
+//! re-checkable, as one flipped in the app). Each setter serializes its own
+//! compare-against-current-value + persist behind `BridgeState`'s
+//! `optin_write_lock`, so two writers racing the same key (a second paired
+//! browser, or the desktop command, on another thread) can't interleave and
+//! leave memory and disk disagreeing. Every `settings.set` that
 //! actually changes a switch also raises a Notification Center entry
 //! (`push_and_notify`) so a flip made from the extension is never silent
 //! (R7's guard rail #3) — a request that merely re-states the switch's
@@ -76,8 +80,12 @@ impl SettingsKey {
         }
     }
 
-    /// Apply through the SAME setter the Tauri Settings command uses.
-    fn set(self, state: &BridgeState, enabled: bool) {
+    /// Apply through the SAME setter the Tauri Settings command uses, and
+    /// return whether it actually changed the value. The setter itself is
+    /// now the one critical section that compares-against-current-value AND
+    /// writes (`BridgeState::optin_write_lock`), so this is a pure
+    /// passthrough of that outcome — not a second, separately-racy compare.
+    fn set(self, state: &BridgeState, enabled: bool) -> bool {
         match self {
             Self::Autofill => state.set_autofill_enabled(enabled),
             Self::AiAssist => state.set_ai_assist(enabled),
@@ -151,21 +159,26 @@ struct SettingsSetOk {
     key: SettingsKey,
     enabled: bool,
     /// `false` when `enabled` already matched the switch's current value —
-    /// see [`resolve_settings_set`]'s doc for why that skips the write.
+    /// see [`resolve_settings_set`]'s doc for why the SETTER still persists
+    /// regardless (only the notification below is conditioned on this).
     changed: bool,
 }
 
 /// The pure half of `settings.set`: validate `{ key, enabled }` and, on
 /// success, APPLY it to `state` through the SAME setter the Tauri Settings
-/// command uses — but only when `enabled` actually differs from the switch's
-/// current value. A request that merely re-states the current value is a
-/// no-op: skipping the write (and, via [`SettingsSetOk::changed`],
-/// [`handle_settings_set`]'s notification) keeps "a Notification Center entry
-/// per actual change" (R7's guard rail #3) true in the literal sense, not
-/// once per redundant request. Takes no `AppHandle` — directly unit-testable
-/// (mirrors `status_update::resolve_status_update`'s pure/impure split). The
-/// write happens here (not a separate step) so a caller can never observe a
-/// validated-but-not-yet-applied gap.
+/// command uses. The compare-against-current-value + write is now ONE
+/// critical section INSIDE that setter (`BridgeState::optin_write_lock`) —
+/// this function no longer reads-then-decides itself, so a concurrent writer
+/// (a second paired browser's `settings.set`, or the desktop Settings command
+/// on another thread) can never land between this function's own read and
+/// write. [`SettingsSetOk::changed`] is exactly the setter's return value.
+/// The setter itself still persists unconditionally (even on a no-op value —
+/// see `BridgeState::set_autofill_enabled`'s doc for why); it is only
+/// [`handle_settings_set`]'s NOTIFICATION that `changed` gates, which is what
+/// keeps "a Notification Center entry per actual change" (R7's guard rail #3)
+/// true in the literal sense, not once per redundant request. Takes no
+/// `AppHandle` — directly unit-testable (mirrors
+/// `status_update::resolve_status_update`'s pure/impure split).
 fn resolve_settings_set(
     state: &BridgeState,
     payload: &Value,
@@ -179,10 +192,7 @@ fn resolve_settings_set(
         .get("enabled")
         .and_then(Value::as_bool)
         .ok_or(ERR_INVALID_SETTINGS_REQUEST)?;
-    let changed = key.get(state) != enabled;
-    if changed {
-        key.set(state, enabled);
-    }
+    let changed = key.set(state, enabled);
     Ok(SettingsSetOk {
         key,
         enabled,

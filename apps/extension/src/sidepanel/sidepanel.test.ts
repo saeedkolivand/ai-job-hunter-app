@@ -509,6 +509,71 @@ describe('the trust line (ADR-045)', () => {
     expect(trustLine.textContent).toBe('Reading: jobs.example.com');
   });
 
+  it('never lands a stale trustLineJob reply for a tab the panel has since left (follow(A) → follow(B))', async () => {
+    const trustLine = document.getElementById('trust-line') as HTMLElement;
+
+    // Tab A's trustLineJob query is kicked off but deliberately never
+    // resolves until later in this test — captured so it can be settled
+    // AFTER follow(B) has already superseded it.
+    let resolveA: ((value: unknown) => void) | undefined;
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+    vi.mocked(browser.runtime.sendMessage).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveA = resolve;
+        })
+    );
+    vi.mocked(subscribeAnswerState).mockImplementationOnce((_tabId, onState) => {
+      queueMicrotask(() =>
+        onState({
+          tabId: 901,
+          origin: 'https://jobs.example.com',
+          scannedAt: 1,
+          rows: [],
+          stream: null,
+          pageChanged: false,
+        } as never)
+      );
+      return vi.fn();
+    });
+
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+
+    // follow(A) — the host-only line renders synchronously; its trustLineJob
+    // query is in flight but held open by `resolveA` above.
+    onActivated({ tabId: 901, windowId: PANEL_WINDOW_ID } as never);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(trustLine.textContent).toBe('Reading: jobs.example.com');
+
+    // follow(B) — a fresh tab activation supersedes A before A's query
+    // resolves (bumps `trustLineJobGeneration`, invalidating A's in-flight
+    // read — sidepanel.ts's own `follow()` doc).
+    vi.mocked(subscribeAnswerState).mockImplementationOnce((_tabId, onState) => {
+      queueMicrotask(() =>
+        onState({
+          tabId: 902,
+          origin: 'https://other.example.com',
+          scannedAt: 1,
+          rows: [],
+          stream: null,
+          pageChanged: false,
+        } as never)
+      );
+      return vi.fn();
+    });
+    onActivated({ tabId: 902, windowId: PANEL_WINDOW_ID } as never);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(trustLine.textContent).toBe('Reading: other.example.com');
+
+    // Tab A's stale trustLineJob reply finally resolves — must be a no-op.
+    resolveA?.({ ok: true, kind: 'trustLineJob', title: 'Stale Job', company: 'Stale Co' });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(trustLine.textContent).toBe('Reading: other.example.com');
+    expect(trustLine.textContent).not.toContain('Stale Job');
+  });
+
   it('hides again for an untrusted (pageChanged) state, leaving the message to job-tools', async () => {
     const trustLine = document.getElementById('trust-line') as HTMLElement;
     vi.mocked(subscribeAnswerState).mockImplementationOnce((_tabId, onState) => {

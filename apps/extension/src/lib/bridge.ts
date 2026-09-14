@@ -454,15 +454,23 @@ function normalizeMatchLiveResult(payload: unknown): ExtensionMatchLiveResult {
 /**
  * Hand-written guard for an `agent.result` payload (PR1 — extension read
  * tier; extension stays zod-free). Mirrors `ExtensionAgentQueryResultSchema`'s
- * discriminated union: `ok:true` requires a string `resource` (`data` is
- * opaque, accepted as-is); `ok:false` requires a string `resource` + `error`.
+ * discriminated union: `ok:true` requires a string `resource` + an OWN
+ * `data` property (Rust always emits `data` on success — a payload missing
+ * it entirely is malformed, never a silent `data: undefined`); `ok:false`
+ * requires a string `resource` + `error` (`detail`/`retryAfterMs` optional —
+ * the latter set only on a throttle refusal).
  */
 function isExtensionAgentQueryResult(v: unknown): v is ExtensionAgentQueryResult {
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Record<string, unknown>;
   if (typeof o.resource !== 'string') return false;
-  if (o.ok === true) return true;
-  if (o.ok === false) return typeof o.error === 'string';
+  if (o.ok === true) return Object.hasOwn(o, 'data');
+  if (o.ok === false) {
+    if (typeof o.error !== 'string') return false;
+    if (o.detail !== undefined && typeof o.detail !== 'string') return false;
+    if (o.retryAfterMs !== undefined && !Number.isFinite(o.retryAfterMs)) return false;
+    return true;
+  }
   return false;
 }
 
@@ -474,9 +482,15 @@ function normalizeAgentQueryResult(payload: unknown): ExtensionAgentQueryResult 
   if (!isExtensionAgentQueryResult(payload)) {
     return { ok: false, resource: '', error: 'The desktop app sent a malformed read result.' };
   }
-  return payload.ok
-    ? { ok: true, resource: payload.resource, data: payload.data }
-    : { ok: false, resource: payload.resource, error: payload.error };
+  if (payload.ok) return { ok: true, resource: payload.resource, data: payload.data };
+  const out: ExtensionAgentQueryResult = {
+    ok: false,
+    resource: payload.resource,
+    error: payload.error,
+  };
+  if (payload.detail !== undefined) out.detail = payload.detail;
+  if (payload.retryAfterMs !== undefined) out.retryAfterMs = payload.retryAfterMs;
+  return out;
 }
 
 /**
@@ -484,16 +498,21 @@ function normalizeAgentQueryResult(payload: unknown): ExtensionAgentQueryResult 
  * read tier; extension stays zod-free). Mirrors
  * `ExtensionAgentCallResultSchema`'s discriminated union on `dispatched`
  * (never `ok` — ADR-038 §5): `dispatched:true` requires string
- * `namespace`/`command` (`data` opaque); `dispatched:false` requires string
- * `namespace`/`command`/`error` (`detail` optional string).
+ * `namespace`/`command` + an OWN `data` property (Rust always emits `data`
+ * on success); `dispatched:false` requires string `namespace`/`command`/
+ * `error` (`detail`/`retryAfterMs` optional — the latter set only on a
+ * throttle refusal).
  */
 function isExtensionAgentCallResult(v: unknown): v is ExtensionAgentCallResult {
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Record<string, unknown>;
   if (typeof o.namespace !== 'string' || typeof o.command !== 'string') return false;
-  if (o.dispatched === true) return true;
+  if (o.dispatched === true) return Object.hasOwn(o, 'data');
   if (o.dispatched === false) {
-    return typeof o.error === 'string' && (o.detail === undefined || typeof o.detail === 'string');
+    if (typeof o.error !== 'string') return false;
+    if (o.detail !== undefined && typeof o.detail !== 'string') return false;
+    if (o.retryAfterMs !== undefined && !Number.isFinite(o.retryAfterMs)) return false;
+    return true;
   }
   return false;
 }
@@ -524,6 +543,7 @@ function normalizeAgentCallResult(payload: unknown): ExtensionAgentCallResult {
     error: payload.error,
   };
   if (payload.detail !== undefined) out.detail = payload.detail;
+  if (payload.retryAfterMs !== undefined) out.retryAfterMs = payload.retryAfterMs;
   return out;
 }
 
@@ -986,22 +1006,13 @@ export class BridgeClient {
     this.handshakeClosed?.();
     this.handshakeFrame = null;
     this.handshakeClosed = null;
-    for (const t of this.timers.values()) clearTimeout(t);
-    this.timers.clear();
-    this.pending.clear();
-    this.pendingProfile.clear();
-    this.pendingApplied.clear();
-    this.pendingStatus.clear();
-    this.pendingAnswers.clear();
-    this.pendingSuggest.clear();
-    this.pendingMatch.clear();
-    this.pendingAssist.clear();
-    this.pendingAutotrack.clear();
-    this.pendingAutofill.clear();
-    this.pendingSettings.clear();
-    this.pendingAgentQuery.clear();
-    this.pendingAgentCall.clear();
-    this.assistChunkListeners.clear();
+    // Settle every in-flight request BEFORE closing the transport —
+    // `failAllPending` already resolves + clears every pending map/timer
+    // (including `assistChunkListeners`), so closing first would let the
+    // transport's own `onClose` handler find nothing left to settle: each
+    // promise's resolver/timer was already cleared without ever being
+    // called, and it would hang forever instead of rejecting/resolving.
+    this.failAllPending('Bridge client disposed.');
     this.transport?.close();
     this.transport = null;
   }
@@ -1512,8 +1523,10 @@ export class BridgeClient {
       // Resource-specific fields sit at the payload's TOP level (not nested
       // under a `params` key) — matches the Rust `job_resource`/etc. readers
       // AND the CLI's own wire builder (`agent_cli.rs` `Verb::payload`).
+      // `resource` spreads LAST so a colliding `params.resource` key can
+      // never override the resource this call actually named.
       reqId,
-      payload: { resource, ...params },
+      payload: { ...params, resource },
     };
 
     return new Promise<ExtensionAgentQueryResult>((resolve, reject) => {

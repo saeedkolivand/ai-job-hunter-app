@@ -500,6 +500,40 @@ fn autofill_optin_defaults_off_and_persists() {
     assert!(!BridgeState::load(dir.path()).autofill_enabled());
 }
 
+/// Issue #1203-r1-2 (settings-switch race): each of the three consent
+/// setters now returns whether it actually changed the value, and
+/// `resolve_settings_set` (`settings.rs`) relies on this instead of its own
+/// separate compare — a stale `true` here would silently break "a
+/// Notification Center entry per actual change" (R7 guard rail #3).
+#[test]
+fn optin_setters_report_false_on_a_redundant_same_value_call() {
+    let (_dir, state) = state();
+
+    assert!(
+        state.set_autofill_enabled(true),
+        "off → on is a real change"
+    );
+    assert!(
+        !state.set_autofill_enabled(true),
+        "requesting autofill's already-current value must report no change"
+    );
+
+    assert!(state.set_ai_assist(true), "off → on is a real change");
+    assert!(
+        !state.set_ai_assist(true),
+        "requesting ai-assist's already-current value must report no change"
+    );
+
+    assert!(
+        state.set_autotrack_enabled(true),
+        "off → on is a real change"
+    );
+    assert!(
+        !state.set_autotrack_enabled(true),
+        "requesting autotrack's already-current value must report no change"
+    );
+}
+
 // ── match.live throttle (MEDIUM: reconnect-proof, lives on BridgeState) ──────
 
 #[test]
@@ -1207,6 +1241,64 @@ fn advance_authenticated_routes_settings_set_for_the_extension() {
         }
         other => panic!("expected FrameDecision::SettingsSet, got {other:?}"),
     }
+}
+
+// ── `reqId` bound (mod.rs `advance_frame_from`, `MAX_REQ_ID_BYTES`) ──────────
+// No existing test exercised `advance_frame_from` itself before this pair —
+// every other test above goes through `advance_authenticated` directly. Both
+// go through the outer function so the cap is proven to run BEFORE the type
+// dispatch, not just inside one handler.
+
+#[test]
+fn advance_frame_from_passes_through_a_req_id_at_exactly_the_cap() {
+    let (_dir, state) = state();
+    let req_id = "r".repeat(MAX_REQ_ID_BYTES);
+    let text = serde_json::json!({
+        "type": msg::SETTINGS_GET,
+        "reqId": req_id,
+        "payload": Value::Null,
+    })
+    .to_string();
+    let decision = advance_frame_from(
+        &state,
+        &ConnState::Authenticated,
+        &text,
+        CallerClass::Extension,
+    );
+    match decision {
+        FrameDecision::SettingsGet { req_id: got } => assert_eq!(got, req_id),
+        other => panic!("expected FrameDecision::SettingsGet, got {other:?}"),
+    }
+}
+
+#[test]
+fn advance_frame_from_refuses_an_oversized_req_id_without_echoing_it() {
+    let (_dir, state) = state();
+    let req_id = "r".repeat(MAX_REQ_ID_BYTES + 1);
+    let text = serde_json::json!({
+        "type": msg::SETTINGS_GET,
+        "reqId": req_id,
+        "payload": Value::Null,
+    })
+    .to_string();
+    let decision = advance_frame_from(
+        &state,
+        &ConnState::Authenticated,
+        &text,
+        CallerClass::Extension,
+    );
+    let FrameDecision::Reply(reply) = decision else {
+        panic!("expected FrameDecision::Reply (a bounded refusal), got {decision:?}");
+    };
+    assert!(
+        reply.len() < 512,
+        "the refusal itself must stay small regardless of the oversized input: got {} bytes",
+        reply.len()
+    );
+    assert!(
+        !reply.contains(&req_id),
+        "the oversized reqId must never be echoed back on the wire"
+    );
 }
 
 /// ADR-038 §3/§4 — the exhaustive counterpart to `agent_call::tests`' 4

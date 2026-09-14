@@ -2445,6 +2445,53 @@ describe('BridgeClient – agentQuery', () => {
     client.dispose();
   });
 
+  it('resolves with a malformed error (never throws) when an ok:true payload has no data property', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startAgentQuery(client, socket, 'job');
+
+    // `resource` present, `ok: true`, but no `data` key at all — Rust always
+    // emits `data` on success, so this must never be treated as a valid
+    // `data: undefined` success.
+    socket.simulateMessage(makeAgentResultEnvelope(reqId, { ok: true, resource: 'job' }));
+
+    const result = (await resultPromise) as { ok: boolean; error?: string };
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/malformed/i);
+    client.dispose();
+  });
+
+  it('round-trips a throttle refusal carrying detail + retryAfterMs', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startAgentQuery(client, socket, 'job');
+
+    const payload = {
+      ok: false,
+      resource: 'job',
+      error: 'rate_limited',
+      detail: 'Too many requests — try again shortly.',
+      retryAfterMs: 500,
+    };
+    socket.simulateMessage(makeAgentResultEnvelope(reqId, payload));
+
+    expect(await resultPromise).toEqual(payload);
+    client.dispose();
+  });
+
+  it('spreads params before resource so a colliding params.resource key can never override it', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.agentQuery('job', {
+      resource: 'other',
+      url: 'https://example.com/job/1',
+    });
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const frame = JSON.parse(raw) as { payload: { resource: string; url: string } };
+    expect(frame.payload).toEqual({ resource: 'job', url: 'https://example.com/job/1' });
+
+    client.dispose();
+    await resultPromise;
+  });
+
   it('rejects when not connected — every port fails and the ws probe exhausts', async () => {
     vi.useFakeTimers();
     const client = new BridgeClient(vi.fn());
@@ -2540,6 +2587,48 @@ describe('BridgeClient – agentCall', () => {
     expect(await resultPromise).toEqual(payload);
     client.dispose();
   });
+
+  it('round-trips a dispatched:false throttle refusal carrying retryAfterMs', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.agentCall('documents:list');
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const { reqId } = JSON.parse(raw) as { reqId: string };
+
+    const payload = {
+      dispatched: false,
+      namespace: 'documents',
+      command: 'list',
+      error: 'rate_limited',
+      retryAfterMs: 500,
+    };
+    socket.simulateMessage(makeAgentCallResultEnvelope(reqId, payload));
+    expect(await resultPromise).toEqual(payload);
+    client.dispose();
+  });
+
+  it('resolves with a malformed error (never throws) when a dispatched:true payload has no data property', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.agentCall('documents:list');
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const { reqId } = JSON.parse(raw) as { reqId: string };
+
+    // `namespace`/`command` present, `dispatched: true`, but no `data` key
+    // at all — Rust always emits `data` on success.
+    socket.simulateMessage(
+      makeAgentCallResultEnvelope(reqId, {
+        dispatched: true,
+        namespace: 'documents',
+        command: 'list',
+      })
+    );
+
+    const result = (await resultPromise) as { dispatched: boolean; error?: string };
+    expect(result.dispatched).toBe(false);
+    expect(result.error).toMatch(/malformed/i);
+    client.dispose();
+  });
 });
 
 describe('BridgeClient – settingsGet / settingsSet', () => {
@@ -2616,6 +2705,16 @@ describe('BridgeClient – settingsGet / settingsSet', () => {
     );
     expect(await resultPromise).toEqual({ ok: false, error: 'invalid_settings_request' });
     client.dispose();
+  });
+
+  it('settles an in-flight settingsGet instead of leaving it hanging when dispose() is called', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.settingsGet();
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+
+    client.dispose();
+
+    expect(await resultPromise).toEqual({ ok: false, error: 'Bridge client disposed.' });
   });
 });
 

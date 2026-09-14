@@ -54,6 +54,7 @@ const els = {
   btnOpenAppSettings: byId<HTMLButtonElement>('btn-open-app-settings'),
   sitesList: byId<HTMLDivElement>('sites-list'),
   permissionsList: byId<HTMLDivElement>('permissions-list'),
+  permissionsError: byId<HTMLParagraphElement>('permissions-error'),
   themeSeg: byId<HTMLDivElement>('theme-seg'),
   defaultTabSeg: byId<HTMLDivElement>('default-tab-seg'),
   toggleFitBadge: byId<HTMLButtonElement>('toggle-fit-badge'),
@@ -201,6 +202,18 @@ function renderPermissions(settings: ExtensionSettingsValues | null): void {
   }
 }
 
+/** Show a user-facing line under the permissions list for a `settings.get`/
+ *  `settings.set` failure — hidden again by {@link hidePermissionsError} on
+ *  the next success. */
+function showPermissionsError(text: string): void {
+  els.permissionsError.textContent = text;
+  els.permissionsError.hidden = false;
+}
+
+function hidePermissionsError(): void {
+  els.permissionsError.hidden = true;
+}
+
 /** True while a `settings.set` round trip is in flight. Guards against a
  *  rapid double-click on the same switch, or a second switch clicked before
  *  the first reply — both would otherwise compute `next` from the same
@@ -233,6 +246,7 @@ async function toggleSetting(key: ExtensionSettingsKey, btn: HTMLButtonElement):
   try {
     const res = await send({ kind: 'settingsSet', key, enabled: next });
     if (res.ok && res.kind === 'settingsSet' && res.result.ok) {
+      hidePermissionsError();
       renderPermissions(res.result.settings);
       return;
     }
@@ -244,6 +258,9 @@ async function toggleSetting(key: ExtensionSettingsKey, btn: HTMLButtonElement):
     // nothing to manually re-enable here, only the guard to release.
     settingsRequestInFlight = false;
   }
+  showPermissionsError(
+    "Couldn't change this in the app right now. Check the app is running and try again."
+  );
   renderPermissions(prev);
 }
 
@@ -255,6 +272,7 @@ async function runSettingsGet(): Promise<void> {
   try {
     const res = await send({ kind: 'settingsGet' });
     if (res.ok && res.kind === 'settingsGet' && res.result.ok) {
+      hidePermissionsError();
       renderPermissions(res.result.settings);
       return;
     }
@@ -262,6 +280,7 @@ async function runSettingsGet(): Promise<void> {
     // fall through to the unknown state — same discipline as this page's
     // other fire-and-forget checks.
   }
+  showPermissionsError("Couldn't read the app's settings.");
   renderPermissions(null);
 }
 

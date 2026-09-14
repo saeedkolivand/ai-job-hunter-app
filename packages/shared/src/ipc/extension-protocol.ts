@@ -447,35 +447,44 @@ export const ExtensionMatchLiveResultSchema = z.discriminatedUnion('ok', [
 
 /**
  * `agent.query` payload for the extension read tier (PR1, ADR-050). Mirrors
- * {@link ExtensionAgentQueryRequest} — shape-only (no per-resource
- * validation here: the desktop's own `agent_read` resolver is what
- * validates `params` against the resource it names).
+ * {@link ExtensionAgentQueryRequest} — `resource` required, every other
+ * string-keyed field passed through as-is (`.catchall`, the resource-specific
+ * parameters spread at the payload's top level; no per-resource validation
+ * here — the desktop's own `agent_read` resolver validates those against the
+ * resource it names).
  */
-export const ExtensionAgentQueryRequestSchema = z.object({
-  resource: z.string().min(1),
-  params: z.record(z.string(), z.unknown()).optional(),
-}) satisfies z.ZodType<ExtensionAgentQueryRequest>;
+export const ExtensionAgentQueryRequestSchema = z
+  .object({ resource: z.string().min(1) })
+  .catchall(z.unknown()) satisfies z.ZodType<ExtensionAgentQueryRequest>;
 
 /**
  * `agent.result` payload. Mirrors {@link ExtensionAgentQueryResult} — a
  * discriminated union on `ok`: `ok:true` requires the echoed `resource` +
  * an opaque `data`; `ok:false` requires the echoed `resource` + a
- * user-facing `error`.
+ * user-facing `error` (`detail`/`retryAfterMs` optional — the latter set
+ * only on a throttle refusal).
  */
 export const ExtensionAgentQueryResultSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true), resource: z.string(), data: z.unknown() }),
-  z.object({ ok: z.literal(false), resource: z.string(), error: z.string() }),
+  z.object({
+    ok: z.literal(false),
+    resource: z.string(),
+    error: z.string(),
+    detail: z.string().optional(),
+    retryAfterMs: z.number().optional(),
+  }),
 ]) satisfies z.ZodType<ExtensionAgentQueryResult>;
 
 /**
  * `agent.call` payload for the extension read tier (PR1, ADR-050). Mirrors
- * {@link ExtensionAgentCallRequest} — shape-only: `command` is the full
- * `<namespace>:<command>` path, re-validated desktop-side against the
- * policy table (only `Effect::Read` rows ever dispatch for this caller).
+ * {@link ExtensionAgentCallRequest} — shape-only: a flat `namespace`/
+ * `command` pair, re-validated desktop-side against the policy table (only
+ * `Effect::Read` rows ever dispatch for this caller).
  */
 export const ExtensionAgentCallRequestSchema = z.object({
+  namespace: z.string().min(1),
   command: z.string().min(1),
-  args: z.unknown().optional(),
+  input: z.unknown().optional(),
 }) satisfies z.ZodType<ExtensionAgentCallRequest>;
 
 /**
@@ -483,7 +492,8 @@ export const ExtensionAgentCallRequestSchema = z.object({
  * discriminated union on `dispatched` (never `ok`, ADR-038 §5):
  * `dispatched:true` requires `namespace`/`command` + an opaque `data`;
  * `dispatched:false` requires `namespace`/`command` + a user-facing `error`
- * (`detail` optional).
+ * (`detail`/`retryAfterMs` optional — the latter set only on a throttle
+ * refusal).
  */
 export const ExtensionAgentCallResultSchema = z.discriminatedUnion('dispatched', [
   z.object({
@@ -498,6 +508,7 @@ export const ExtensionAgentCallResultSchema = z.discriminatedUnion('dispatched',
     command: z.string(),
     error: z.string(),
     detail: z.string().optional(),
+    retryAfterMs: z.number().optional(),
   }),
 ]) satisfies z.ZodType<ExtensionAgentCallResult>;
 
@@ -508,8 +519,10 @@ export const ExtensionSettingsKeySchema = z.enum([
   'autotrack',
 ]) satisfies z.ZodType<ExtensionSettingsKey>;
 
-/** `settings.get` payload — no fields. Mirrors {@link ExtensionSettingsGetRequest}. */
-export const ExtensionSettingsGetRequestSchema = z.object(
+/** `settings.get` payload — no fields, and none allowed (`.strict()` rejects a
+ *  surplus key rather than silently ignoring it). Mirrors
+ *  {@link ExtensionSettingsGetRequest}. */
+export const ExtensionSettingsGetRequestSchema = z.strictObject(
   {}
 ) satisfies z.ZodType<ExtensionSettingsGetRequest>;
 

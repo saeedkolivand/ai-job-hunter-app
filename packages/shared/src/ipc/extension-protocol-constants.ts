@@ -827,13 +827,15 @@ export type ExtensionMatchLiveResult =
  * `agent.query` payload for the extension read tier (PR1, ADR-050) — the
  * curated resource to read (`"best-matches"|"job"|"profile"|"automations"|
  * "schema"`, the SAME catalogue the Rust `msg::AGENT_QUERY` doc documents)
- * plus resource-specific parameters (`url`, `limit`, …), bundled under
- * `params` rather than spread at the top level so this request type never
- * has to grow a new field per resource.
+ * plus resource-specific parameters (`url`, `limit`, …), spread at the
+ * payload's TOP LEVEL (never nested under a `params` key) — matches the
+ * Rust `job_resource`/`best_matches_resource`/etc. readers, which read every
+ * field straight off the payload, AND `bridge.ts`'s own wire builder
+ * (`agentQuery`).
  */
 export interface ExtensionAgentQueryRequest {
   resource: string;
-  params?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 /**
@@ -842,21 +844,28 @@ export interface ExtensionAgentQueryRequest {
  * its own, see the Rust `agent_read` module doc); `ok:false` carries a
  * user-facing `error` (the Autofill opt-in is off, the reply would exceed
  * the extension's 256 KiB cap, too many requests in quick succession, or an
- * unknown/malformed resource).
+ * unknown/malformed resource), an optional `detail` (e.g. `job`'s
+ * not-found hint), and an optional `retryAfterMs` (set only on a throttle
+ * refusal — mirrors the Rust `agent_read::throttled_reply` doc).
  */
 export type ExtensionAgentQueryResult =
-  { ok: true; resource: string; data: unknown } | { ok: false; resource: string; error: string };
+  | { ok: true; resource: string; data: unknown }
+  | { ok: false; resource: string; error: string; detail?: string; retryAfterMs?: number };
 
 /**
- * `agent.call` payload for the extension read tier (PR1, ADR-050) — `command`
- * is the full `<namespace>:<command>` path (the SAME syntax the
- * `ajh-tauri agent call` CLI takes), `args` its JSON input. Only rows whose
- * policy `Effect` is `Read` ever dispatch for this caller — see
- * `EXTENSION_MESSAGE_TYPES.agentCall`'s doc.
+ * `agent.call` payload for the extension read tier (PR1, ADR-050) — a FLAT
+ * `namespace`/`command` pair (split from the CLI-facing
+ * `<namespace>:<command>` syntax by the caller — see `bridge.ts`'s
+ * `agentCall`) plus `input`, its JSON body — matches the Rust
+ * `payload_target`/`handle_agent_call` readers, which read
+ * `namespace`/`command`/`input` straight off the payload, never a combined
+ * path or an `args` key. Only rows whose policy `Effect` is `Read` ever
+ * dispatch for this caller — see `EXTENSION_MESSAGE_TYPES.agentCall`'s doc.
  */
 export interface ExtensionAgentCallRequest {
+  namespace: string;
   command: string;
-  args?: unknown;
+  input?: unknown;
 }
 
 /**
@@ -866,12 +875,20 @@ export interface ExtensionAgentCallRequest {
  * `dispatched:true` carries the resolved `namespace`/`command` (split from
  * the request's combined `command` string) plus the command's own `data`;
  * `dispatched:false` carries `namespace`/`command` (best-effort — empty
- * when the request couldn't even be parsed) plus a user-facing `error` and
- * an optional `detail`.
+ * when the request couldn't even be parsed) plus a user-facing `error`, an
+ * optional `detail`, and an optional `retryAfterMs` (set only on a throttle
+ * refusal — mirrors the Rust `agent_call::call_result_reply` doc).
  */
 export type ExtensionAgentCallResult =
   | { dispatched: true; namespace: string; command: string; data: unknown }
-  | { dispatched: false; namespace: string; command: string; error: string; detail?: string };
+  | {
+      dispatched: false;
+      namespace: string;
+      command: string;
+      error: string;
+      detail?: string;
+      retryAfterMs?: number;
+    };
 
 /**
  * The extension's opt-in switches reachable through `settings.get`/

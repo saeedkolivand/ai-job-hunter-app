@@ -78,18 +78,15 @@ The bridge uses a **reserved-verb pattern**: each verb is defined in shared cons
 
 ### Extension read tier + live settings verbs (ADR-050)
 
-The paired extension also reaches `agent.query`/`agent.call` — the same generic dispatch the agent
-CLI uses ([ADR-038](decision-records/adr-038-agent-cli-full-parity-two-tier.md)) — but as its own
-`CallerClass::Extension` (`extension_bridge::caller_gate::CallerClass`, resolved once per
-connection from the handshake Origin): only `Effect::Read` rows dispatch, gated by the Autofill
-opt-in, behind a dedicated reply cap (`EXTENSION_RESULT_MAX_BYTES`, `extension_bridge/mod.rs`) and
-the existing per-pairing query throttle. Any Reversible/Irreversible/NotExposed row, or the gate
-being off, refuses with a fixed sentinel — never the CLI's confirm-proof ceremony. Separately,
-`settings.get`/`settings.set` (`extension_bridge/settings.rs`) let the extension read/flip its own
-opt-in switches (`SettingsKey`) regardless of the Autofill gate, applying through the same setters the desktop
-Settings UI uses and raising a Notification Center entry on every successful change so a flip from
-the extension is never silent. Full record + the desktop-side-consent tradeoff:
-[ADR-050](decision-records/adr-050-extension-read-tier-and-settings-verbs.md).
+The paired extension also reaches the generic `agent.query`/`agent.call` dispatch the agent CLI
+uses ([ADR-038](decision-records/adr-038-agent-cli-full-parity-two-tier.md)), as its own caller
+class. What that class may dispatch, how it is gated, capped and throttled, and what it refuses
+with is owned by `extension_bridge::caller_gate` (`CallerClass` + the dispatch matrix) and the
+refusal sentinels in `extension_bridge/agent_call.rs` / `agent_read.rs`. The extension's own
+opt-in switches are read and flipped through `settings.get`/`settings.set`
+(`extension_bridge/settings.rs`: `SettingsKey`, the setters it shares with the desktop Settings
+commands, and the notification it raises on every change). The decision, its guard rails and the
+desktop-side-consent tradeoff: [ADR-050](decision-records/adr-050-extension-read-tier-and-settings-verbs.md).
 
 ### Revocation reach — an inherent limitation
 

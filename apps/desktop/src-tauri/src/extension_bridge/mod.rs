@@ -112,6 +112,7 @@ pub mod native_host;
 mod paging;
 mod persist;
 pub mod register;
+mod req_id_cap;
 /// The `token.revoked` wire surface + its no-oracle gate — see its module doc.
 mod revoke;
 /// `settings.get`/`settings.set` (R7) — the extension's own opt-in switches, toggleable from the
@@ -130,6 +131,7 @@ pub(crate) use stream::FrameSink;
 // keep referring to these by their original bare names — see `caller_gate`'s own module doc.
 use self::caller_gate::advance_authenticated;
 use self::caller_gate::CallerClass;
+use self::req_id_cap::{oversized_req_id_reply, MAX_REQ_ID_BYTES};
 
 /// Refusal text for the assisted-autofill opt-in gate — shared verbatim by
 /// [`resolve_profile`] (`profile.get`) and
@@ -244,6 +246,10 @@ pub struct BridgeState {
     /// without the user's opt-in. A bare `AtomicBool`, same shape as
     /// `autofill_enabled` / `ai_assist_enabled`.
     autotrack_enabled: AtomicBool,
+    /// Serializes compare + persist across the three consent-switch setters,
+    /// so two writers racing the same key (a second paired browser, or the
+    /// desktop Settings command) can't interleave and disagree memory-vs-disk.
+    optin_write_lock: Mutex<()>,
     /// `match.live` token-bucket throttle — shared across EVERY connection for
     /// this pairing, not per-connection, so a loopback reconnect (a cheap,
     /// near-instant handshake) can never reset the burst allowance. See
@@ -297,6 +303,7 @@ impl BridgeState {
             autofill_enabled: AtomicBool::new(load_autofill_optin(data_dir)),
             ai_assist_enabled: AtomicBool::new(load_ai_assist_optin(data_dir)),
             autotrack_enabled: AtomicBool::new(autotrack::load_autotrack_optin(data_dir)),
+            optin_write_lock: Mutex::new(()),
             match_live_limiter: Mutex::new(match_live::MatchLiveThrottle::new()),
             agent_query_limiter: Mutex::new(agent_read::AgentQueryThrottle::new()),
             settings_set_limiter: Mutex::new(settings::SettingsSetThrottle::new()),
@@ -398,14 +405,18 @@ impl BridgeState {
         self.autofill_enabled.load(Ordering::Relaxed)
     }
 
-    /// Set (and persist) the assisted-autofill opt-in. A persist failure is
-    /// non-fatal but leaves the in-memory value authoritative for this run.
-    pub fn set_autofill_enabled(&self, enabled: bool) {
-        self.autofill_enabled.store(enabled, Ordering::Relaxed);
+    /// Set (and persist) the assisted-autofill opt-in; returns `true` iff
+    /// changed. Holds `optin_write_lock` across the swap + persist. Always
+    /// persists even on a no-op value (a stale on-disk format still needs
+    /// normalizing) — only the RETURN VALUE is conditioned on `changed`.
+    pub fn set_autofill_enabled(&self, enabled: bool) -> bool {
+        let _guard = self.optin_write_lock.lock();
+        let prev = self.autofill_enabled.swap(enabled, Ordering::Relaxed);
         if let Err(e) = persist_autofill_optin(&self.data_dir, enabled) {
             let reason = sanitize_reason(&e.to_string());
             log::warn!("[extension_bridge] failed to persist autofill opt-in: {reason}");
         }
+        prev != enabled
     }
 
     /// Whether AI-answer-assist is opted in (the `answer.assist` consent gate
@@ -415,18 +426,19 @@ impl BridgeState {
         self.ai_assist_enabled.load(Ordering::Relaxed)
     }
 
-    /// Set (and persist) the AI-answer-assist opt-in. A persist failure is
-    /// non-fatal but leaves the in-memory value authoritative for this run.
-    /// The opt-in no longer carries a provider snapshot: a draft resolves the
-    /// active provider from the backend-owned
-    /// [`crate::ai_config::AiConfigStore`] at answer-time (task #16), so this
-    /// is a bare boolean gate — the exact shape of `set_autofill_enabled`.
-    pub fn set_ai_assist(&self, enabled: bool) {
-        self.ai_assist_enabled.store(enabled, Ordering::Relaxed);
+    /// Set (and persist) the AI-answer-assist opt-in; returns `true` iff
+    /// changed — same discipline as `set_autofill_enabled`. The opt-in no
+    /// longer carries a provider snapshot: a draft resolves the active
+    /// provider from the backend-owned [`crate::ai_config::AiConfigStore`]
+    /// at answer-time (task #16), so this is a bare boolean gate.
+    pub fn set_ai_assist(&self, enabled: bool) -> bool {
+        let _guard = self.optin_write_lock.lock();
+        let prev = self.ai_assist_enabled.swap(enabled, Ordering::Relaxed);
         if let Err(e) = persist_ai_assist_optin(&self.data_dir, enabled) {
             let reason = sanitize_reason(&e.to_string());
             log::warn!("[extension_bridge] failed to persist ai-assist opt-in: {reason}");
         }
+        prev != enabled
     }
 
     /// Try to consume one `match.live` token from the throttle shared across
@@ -1241,6 +1253,11 @@ fn advance_frame_from(
         .unwrap_or("")
         .to_string();
     let payload = envelope.get("payload");
+
+    // Bound BEFORE type dispatch, every verb + handshake state (see `req_id_cap`'s doc).
+    if req_id.len() > MAX_REQ_ID_BYTES {
+        return FrameDecision::Reply(oversized_req_id_reply());
+    }
 
     match conn {
         ConnState::AwaitingHello => advance_hello(kind, &req_id, payload),

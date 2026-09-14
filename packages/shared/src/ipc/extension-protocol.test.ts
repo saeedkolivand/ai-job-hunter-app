@@ -1040,11 +1040,11 @@ describe('ExtensionAgentQueryRequestSchema', () => {
     expect(() => ExtensionAgentQueryRequestSchema.parse({ resource: 'job' })).not.toThrow();
   });
 
-  it('accepts a request with params', () => {
+  it('accepts a request with resource-specific fields spread at the top level', () => {
     expect(() =>
       ExtensionAgentQueryRequestSchema.parse({
         resource: 'job',
-        params: { url: 'https://example.com/job/123' },
+        url: 'https://example.com/job/123',
       })
     ).not.toThrow();
   });
@@ -1074,6 +1074,17 @@ describe('ExtensionAgentQueryResultSchema', () => {
     ).not.toThrow();
   });
 
+  it('round-trips a throttle refusal carrying detail + retryAfterMs', () => {
+    const payload = {
+      ok: false,
+      resource: 'job',
+      error: 'rate_limited',
+      detail: 'Too many requests — try again shortly.',
+      retryAfterMs: 500,
+    };
+    expect(ExtensionAgentQueryResultSchema.parse(payload)).toEqual(payload);
+  });
+
   it('rejects a missing ok field', () => {
     expect(() => ExtensionAgentQueryResultSchema.parse({ resource: 'job' })).toThrow();
   });
@@ -1087,7 +1098,7 @@ describe('ExtensionAgentQueryResultSchema', () => {
       ExtensionEnvelopeSchema.parse({
         type: EXTENSION_MESSAGE_TYPES.agentQuery,
         reqId: 'req-014',
-        payload: { resource: 'job', params: { url: 'https://example.com/job/123' } },
+        payload: { resource: 'job', url: 'https://example.com/job/123' },
       })
     ).not.toThrow();
     expect(() =>
@@ -1105,27 +1116,34 @@ describe('ExtensionAgentQueryResultSchema', () => {
 // ---------------------------------------------------------------------------
 
 describe('ExtensionAgentCallRequestSchema', () => {
-  it('accepts a minimal request (command only)', () => {
+  it('accepts a minimal request (namespace + command only)', () => {
     expect(() =>
-      ExtensionAgentCallRequestSchema.parse({ command: 'documents:list' })
+      ExtensionAgentCallRequestSchema.parse({ namespace: 'documents', command: 'list' })
     ).not.toThrow();
   });
 
-  it('accepts a request with args', () => {
+  it('accepts a request with input', () => {
     expect(() =>
       ExtensionAgentCallRequestSchema.parse({
-        command: 'documents:list',
-        args: { limit: 10 },
+        namespace: 'documents',
+        command: 'list',
+        input: { limit: 10 },
       })
     ).not.toThrow();
   });
 
   it('rejects an empty command', () => {
-    expect(() => ExtensionAgentCallRequestSchema.parse({ command: '' })).toThrow();
+    expect(() =>
+      ExtensionAgentCallRequestSchema.parse({ namespace: 'documents', command: '' })
+    ).toThrow();
   });
 
   it('rejects a request with no command field', () => {
-    expect(() => ExtensionAgentCallRequestSchema.parse({})).toThrow();
+    expect(() => ExtensionAgentCallRequestSchema.parse({ namespace: 'documents' })).toThrow();
+  });
+
+  it('rejects a request with no namespace field', () => {
+    expect(() => ExtensionAgentCallRequestSchema.parse({ command: 'list' })).toThrow();
   });
 });
 
@@ -1147,6 +1165,17 @@ describe('ExtensionAgentCallResultSchema', () => {
       command: 'delete',
       error: 'this tier only dispatches Read commands',
       detail: 'documents:delete is Irreversible',
+    };
+    expect(ExtensionAgentCallResultSchema.parse(payload)).toEqual(payload);
+  });
+
+  it('round-trips a dispatched:false throttle refusal carrying retryAfterMs', () => {
+    const payload = {
+      dispatched: false,
+      namespace: 'documents',
+      command: 'list',
+      error: 'rate_limited',
+      retryAfterMs: 500,
     };
     expect(ExtensionAgentCallResultSchema.parse(payload)).toEqual(payload);
   });
@@ -1173,7 +1202,7 @@ describe('ExtensionAgentCallResultSchema', () => {
       ExtensionEnvelopeSchema.parse({
         type: EXTENSION_MESSAGE_TYPES.agentCall,
         reqId: 'req-016',
-        payload: { command: 'documents:list' },
+        payload: { namespace: 'documents', command: 'list' },
       })
     ).not.toThrow();
     expect(() =>
@@ -1193,6 +1222,10 @@ describe('ExtensionAgentCallResultSchema', () => {
 describe('ExtensionSettingsGetRequestSchema', () => {
   it('accepts an empty request', () => {
     expect(() => ExtensionSettingsGetRequestSchema.parse({})).not.toThrow();
+  });
+
+  it('rejects a request with a surplus field', () => {
+    expect(() => ExtensionSettingsGetRequestSchema.parse({ extra: true })).toThrow();
   });
 });
 

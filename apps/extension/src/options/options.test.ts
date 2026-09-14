@@ -40,6 +40,7 @@ function buildOptionsDom(): void {
     <button id="btn-open-app-settings"></button>
     <div id="sites-list"></div>
     <div id="permissions-list"></div>
+    <p id="permissions-error" class="hint" role="status" hidden></p>
     <div id="theme-seg">
       <button type="button" data-theme-choice="system">System</button>
       <button type="button" data-theme-choice="light">Light</button>
@@ -370,6 +371,72 @@ describe('what the extension may do', () => {
     expect(browser.runtime.sendMessage).toHaveBeenCalledWith({ kind: 'settingsGet' });
     const toggles = byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle');
     expect(toggles[0]!.classList.contains('on')).toBe(true);
+  });
+
+  it('shows a user-facing error on a refused settings.set, hiding it again on the next success', async () => {
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'settingsGet',
+      result: { ok: true, settings: { autofill: false, aiAssist: false, autotrack: false } },
+    });
+    const { mountConnectionStatus } = await import('../connection-status/connection-status');
+    const onConnected = vi.mocked(mountConnectionStatus).mock.calls[0]?.[2]?.onConnected;
+    onConnected!();
+    await flush();
+
+    expect(byId('permissions-error').hidden).toBe(true);
+
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'settingsSet',
+      result: { ok: false, error: 'invalid_settings_request' },
+    });
+
+    const toggle = byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle')[0]!;
+    toggle.click();
+    await flush();
+
+    expect(byId('permissions-error').hidden).toBe(false);
+    expect(byId('permissions-error').textContent).toMatch(/couldn't change/i);
+
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'settingsSet',
+      result: { ok: true, settings: { autofill: true, aiAssist: false, autotrack: false } },
+    });
+    // `renderPermissions` rebuilds the row set on rollback, so re-query.
+    const afterRollback =
+      byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle')[0]!;
+    afterRollback.click();
+    await flush();
+
+    expect(byId('permissions-error').hidden).toBe(true);
+  });
+
+  it('shows a user-facing error when settings.get fails, hiding it again on the next success', async () => {
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: false,
+      error: 'not configured',
+    });
+    const { mountConnectionStatus } = await import('../connection-status/connection-status');
+    const onConnected = vi.mocked(mountConnectionStatus).mock.calls[0]?.[2]?.onConnected;
+    onConnected!();
+    await flush();
+
+    expect(byId('permissions-error').hidden).toBe(false);
+    expect(byId('permissions-error').textContent).toMatch(/couldn't read/i);
+
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'settingsGet',
+      result: { ok: true, settings: { autofill: true, aiAssist: false, autotrack: false } },
+    });
+    onConnected!();
+    await flush();
+
+    expect(byId('permissions-error').hidden).toBe(true);
   });
 });
 
