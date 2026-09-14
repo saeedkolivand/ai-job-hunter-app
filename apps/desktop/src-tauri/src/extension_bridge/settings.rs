@@ -27,8 +27,10 @@
 //!
 //! [`resolve_settings_set`] takes no `AppHandle` (mirrors
 //! `status_update::resolve_status_update`'s split) so it stays directly
-//! unit-testable — this crate has no `tauri::test` mock-app harness; only
-//! [`handle_settings_set`]'s thin notify tail needs a live `AppHandle`.
+//! unit-testable — this crate has no `tauri::test` mock-app harness. The
+//! push-vs-no-push decision and the notification's contents are pure too,
+//! via [`notification_for`]; only the actual `push_and_notify` call in
+//! [`handle_settings_set`] needs a live `AppHandle`.
 
 use serde_json::{json, Value};
 use tauri::AppHandle;
@@ -141,7 +143,7 @@ pub(super) fn handle_settings_get(req_id: &str, state: &BridgeState) -> String {
     settings_ok_reply(req_id, state)
 }
 
-/// What a validated `settings.set` changed — [`handle_settings_set`]'s only
+/// What a validated `settings.set` changed — [`notification_for`]'s only
 /// use for this is deciding whether to notify + building the notification
 /// body; nothing here needs an `AppHandle`.
 #[derive(Debug)]
@@ -188,11 +190,40 @@ fn resolve_settings_set(
     })
 }
 
+/// Notification Center title for a switch flipped from the extension side —
+/// pulled out as a constant so [`notification_for`]'s tests assert against
+/// it instead of duplicating the literal.
+const SETTINGS_CHANGED_TITLE: &str = "Browser extension changed a setting";
+
+/// The Notification Center entry a validated `settings.set` should raise, or
+/// `None` when the request was a no-op ([`SettingsSetOk::changed`] is
+/// `false`) — keeps "a Notification Center entry per actual change" (R7's
+/// guard rail #3) true in the literal sense, not once per redundant request.
+/// Pure — no `AppHandle` — so it is directly unit-testable; only turning the
+/// result into a live push (`push_and_notify`) needs one.
+fn notification_for(ok: &SettingsSetOk) -> Option<crate::notifications::NewNotification> {
+    if !ok.changed {
+        return None;
+    }
+    Some(crate::notifications::NewNotification {
+        kind: "extension.settings".to_string(),
+        title: SETTINGS_CHANGED_TITLE.to_string(),
+        body: format!(
+            "{} turned {} from the browser extension",
+            ok.key.label(),
+            if ok.enabled { "on" } else { "off" }
+        ),
+        route: Some(crate::notifications::NotificationRoute {
+            to: "/settings".to_string(),
+            search: None,
+        }),
+    })
+}
+
 /// Answer a `settings.set`: [`resolve_settings_set`], then — on success —
-/// push a Notification Center entry naming what changed, UNLESS the request
-/// was a no-op ([`SettingsSetOk::changed`] is `false`), and reply with the
-/// full (possibly unchanged) `settings` object either way. A malformed
-/// request is refused before anything is written or notified.
+/// push whatever [`notification_for`] returns (nothing for a no-op), and
+/// reply with the full (possibly unchanged) `settings` object either way. A
+/// malformed request is refused before anything is written or notified.
 pub(super) fn handle_settings_set(
     app: &AppHandle,
     req_id: &str,
@@ -201,22 +232,10 @@ pub(super) fn handle_settings_set(
 ) -> String {
     match resolve_settings_set(state, payload) {
         Ok(ok) => {
-            if ok.changed {
+            if let Some(notification) = notification_for(&ok) {
                 crate::commands::notifications::push_and_notify(
                     app,
-                    crate::notifications::NewNotification {
-                        kind: "extension.settings".to_string(),
-                        title: "Browser extension changed a setting".to_string(),
-                        body: format!(
-                            "{} turned {} from the browser extension",
-                            ok.key.label(),
-                            if ok.enabled { "on" } else { "off" }
-                        ),
-                        route: Some(crate::notifications::NotificationRoute {
-                            to: "/settings".to_string(),
-                            search: None,
-                        }),
-                    },
+                    notification,
                     crate::commands::notifications::OsBanner::WhenUnfocused,
                 );
             }
@@ -308,12 +327,8 @@ mod tests {
     }
 
     /// Setting a key to its own current value is a no-op: no re-apply
-    /// ([`SettingsSetOk::changed`] is `false`) and — pinned the same
-    /// source-text way [`handle_settings_set_notifies_on_a_successful_change`]
-    /// pins the opposite branch, since this crate has no `tauri::test` mock-app
-    /// harness to actually invoke [`handle_settings_set`] and observe whether
-    /// `push_and_notify` ran — [`handle_settings_set`]'s notify call is gated
-    /// on `ok.changed`, not unconditional.
+    /// ([`SettingsSetOk::changed`] is `false`), and [`notification_for`]
+    /// agrees — see its own tests below for the changed-branch behaviour.
     #[test]
     fn resolve_settings_set_no_op_does_not_reapply_or_notify() {
         let (_dir, state) = state();
@@ -325,26 +340,9 @@ mod tests {
             "requesting the current value must not report a change"
         );
         assert!(!state.autofill_enabled());
-
-        let src = include_str!("settings.rs");
-        let start = src
-            .find("pub(super) fn handle_settings_set")
-            .expect("handle_settings_set must still exist under this exact signature");
-        let body = &src[start..];
-        let end = body
-            .find("\n}\n")
-            .expect("handle_settings_set's closing brace")
-            + "\n}\n".len();
-        let body = &body[..end];
-        let notify_idx = body
-            .find("push_and_notify(")
-            .expect("handle_settings_set must still call push_and_notify");
-        let guard_idx = body
-            .find("if ok.changed")
-            .expect("the notify call must be gated on SettingsSetOk::changed");
         assert!(
-            guard_idx < notify_idx,
-            "push_and_notify must sit inside the `if ok.changed` guard, not unconditional"
+            notification_for(&ok).is_none(),
+            "a no-op request must not produce a notification"
         );
     }
 
@@ -407,29 +405,52 @@ mod tests {
         assert_eq!(v["payload"]["error"], agent_call::ERR_RATE_LIMITED);
     }
 
-    /// [`handle_settings_set`] needs a live `AppHandle` to call `push_and_notify` — this crate has
-    /// no `tauri::test` mock-app harness (see `resolve_settings_set`'s tests above for the
-    /// pure half this crate CAN drive directly). Mirrors `agent_read::tests`'
-    /// `handle_agent_query_routes_its_reply_through_the_frame_capped_builder`: a source-text scan
-    /// pins that the success branch still calls `push_and_notify` exactly once, so R7's "never
-    /// silent" guard rail can't silently regress to a write with no notification.
+    /// A no-op ([`SettingsSetOk::changed`] is `false`) must never notify —
+    /// the behavioural half of what used to be a source-text scan on
+    /// [`handle_settings_set`]; [`notification_for`] is pure and directly
+    /// testable, so there is no need to grep the function body anymore.
     #[test]
-    fn handle_settings_set_notifies_on_a_successful_change() {
-        let src = include_str!("settings.rs");
-        let start = src
-            .find("pub(super) fn handle_settings_set")
-            .expect("handle_settings_set must still exist under this exact signature");
-        let body = &src[start..];
-        let end = body
-            .find("\n}\n")
-            .expect("handle_settings_set's closing brace")
-            + "\n}\n".len();
-        let body = &body[..end];
-        assert_eq!(
-            body.matches("push_and_notify(").count(),
-            1,
-            "a successful settings.set must push exactly one Notification Center entry"
-        );
+    fn notification_for_is_none_when_nothing_changed() {
+        let ok = SettingsSetOk {
+            key: SettingsKey::Autofill,
+            enabled: false,
+            changed: false,
+        };
+        assert!(notification_for(&ok).is_none());
+    }
+
+    /// A real change, for every key and either direction, names the switch
+    /// and its new state in the body and routes to the Settings page — R7's
+    /// "never silent" guard rail, pinned on the pure function instead of the
+    /// live `push_and_notify` call this crate has no mock `AppHandle` for.
+    #[test]
+    fn notification_for_names_the_key_and_state_for_every_settings_key() {
+        for key in SettingsKey::ALL {
+            for enabled in [true, false] {
+                let ok = SettingsSetOk {
+                    key,
+                    enabled,
+                    changed: true,
+                };
+                let notification = notification_for(&ok).expect("a changed request must notify");
+                assert_eq!(notification.title, SETTINGS_CHANGED_TITLE);
+                let expected_state = if enabled { "on" } else { "off" };
+                assert!(
+                    notification.body.contains(key.label()),
+                    "body must name the switch that changed: {}",
+                    notification.body
+                );
+                assert!(
+                    notification.body.contains(expected_state),
+                    "body must say whether it turned on or off: {}",
+                    notification.body
+                );
+                assert_eq!(
+                    notification.route.as_ref().map(|r| r.to.as_str()),
+                    Some("/settings")
+                );
+            }
+        }
     }
 
     #[test]
