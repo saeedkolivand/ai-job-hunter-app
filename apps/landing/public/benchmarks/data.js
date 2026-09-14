@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1789042499002,
+  "lastUpdate": 1789423786059,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "a8bf6089e9e4d89a4daccfc0000da8c6bf219d2f",
-          "message": "fix(export): keep a subject-line-first letterhead-less letter's subject line (#878)\n\nExtends the #876 name-block guard in both docx letter renderer arms with\n!is_subject_line, so a letter opening with a subject/reference line (e.g. a\nGerman Betreff: line) and no letterhead name no longer has that line consumed\nas the candidate name. The later subject-line call sites reuse the computed\nbinding instead of recomputing. Pinning test covers all three letter layouts\nand fails on the unguarded renderer.\n\nFixes #877\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-          "timestamp": "2026-07-23T13:44:23+02:00",
-          "tree_id": "15e825023643862c1ae397913a79b422e62b7d3f",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/a8bf6089e9e4d89a4daccfc0000da8c6bf219d2f"
-        },
-        "date": 1784807653153,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2202960,
-            "range": "± 7815",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2625640,
-            "range": "± 17341",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 293703,
-            "range": "± 2009",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 303116,
             "range": "± 9804",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dd5b0d9081c41905a70ab558d1668afc8f7219a5",
+          "message": "feat(extension): read-only agent tier + live settings switches (ADR-050) (#1203)\n\n* feat(extension): read-only agent tier + live settings switches (adr-050)\n\nThe paired extension gets its own CallerClass on the bridge: agent.query/agent.call dispatch\nonly Effect::Read rows, only with the Assisted-autofill opt-in on, behind a per-pairing throttle\nand a dedicated 256 KiB reply cap (refuse, never truncate); every other row answers a fixed\nsentinel and never enters the CLI confirm ceremony. The CLI path is unchanged. New settings.get /\nsettings.set verbs let the extension's Settings page flip its own consent switches through the\nsame setters the desktop uses, with a Notification Center entry on every actual change. The\noptions page toggles go live (optimistic flip, rollback, in-flight guard) and the side panel trust\nline reads the followed job's title and company through the curated job resource.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_019MiSvmrSngrTR8dYb9kEPF\n\n* style(extension): format options page markup\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_019MiSvmrSngrTR8dYb9kEPF\n\n* test(ui): move the storybook browser port pin to test.api for vitest 5\n\nvitest 5 deprecated browser.api, so the 6317 pin was ignored and the default 63315 fell inside a\nwindows hyper-v port exclusion block, failing every pre-push run with zero failing tests.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_019MiSvmrSngrTR8dYb9kEPF\n\n* test(bridge): assert the settings.set notification through a pure helper\n\nthe two source-text-scanning tests carried a lone closing brace inside a string literal, which the\negress guard's naive brace counter read as the end of the test module; notification_for() makes\nthe once-per-actual-change rule directly testable instead.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_019MiSvmrSngrTR8dYb9kEPF\n\n* build(deps): bump rustls to the rustsec-2026-0285 fix version\n\ncargo deny rejects the tls 1.3 handshake advisory on every branch until the lock moves; a plain\ncargo update stops at 0.23.43, so the fix version was pinned with --precise, pulling rustls-webpki\nand aws-lc-sys along (all msrv 1.71, no toolchain change).\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_019MiSvmrSngrTR8dYb9kEPF\n\n* fix(extension): review round 1 — bounded req ids, serialized opt-in writes, flat wire contracts\n\nBridge: reqId is capped once at the protocol boundary (MAX_REQ_ID_BYTES) with a fixed refusal that\nnever echoes the raw id; the three consent setters hold one write lock across swap + persist and\nreport whether the value changed, so settings.set's compare and write are one critical section.\nShared/extension: agent request schemas model the flat wire shapes, refusal detail/retryAfterMs\nsurvive parsing and normalization, settings.get is strict, success guards require data, dispose()\nsettles in-flight requests, the explicit resource wins over params, the options page surfaces\nsettings failures, and a stale trust-line response is pinned by a test. Docs trimmed to pointers.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_019MiSvmrSngrTR8dYb9kEPF\n\n---------\n\nCo-authored-by: Claude Fable 5.1 <noreply@anthropic.com>",
+          "timestamp": "2026-09-14T23:45:38+02:00",
+          "tree_id": "f514df53a4803149168fb399b8cb4d3778031863",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/dd5b0d9081c41905a70ab558d1668afc8f7219a5"
+        },
+        "date": 1789423785462,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2279048,
+            "range": "± 19348",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2661332,
+            "range": "± 17193",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 295894,
+            "range": "± 11061",
             "unit": "ns/iter"
           }
         ]
