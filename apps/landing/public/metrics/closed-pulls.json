@@ -1,5 +1,19 @@
 [
   {
+    "number": 1203,
+    "title": "feat(extension): read-only agent tier + live settings switches (ADR-050)",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1203",
+    "draft": false,
+    "created_at": "2026-09-14T20:54:08Z",
+    "updated_at": "2026-09-14T21:58:52Z",
+    "merged_at": "2026-09-14T21:45:38Z",
+    "closed_at": "2026-09-14T21:45:38Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
     "number": 1201,
     "title": "ui(extension): notebook redesign shell — launcher popup, tabbed panel, settings page",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1201",
@@ -680,20 +694,6 @@
     "updated_at": "2026-09-03T04:12:00Z",
     "merged_at": "2026-09-02T05:05:16Z",
     "closed_at": "2026-09-02T05:05:16Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1093,
-    "title": "docs: record the live client handshakes in adr-040",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1093",
-    "draft": false,
-    "created_at": "2026-09-02T05:23:47Z",
-    "updated_at": "2026-09-03T04:11:57Z",
-    "merged_at": "2026-09-02T05:24:16Z",
-    "closed_at": "2026-09-02T05:24:16Z",
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"

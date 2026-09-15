@@ -1,5 +1,41 @@
 [
   {
+    "sha": "0a002b77fd647263debdf55c799ab3212a4b6de5",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-14T22:09:46Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "dd5b0d9081c41905a70ab558d1668afc8f7219a5",
+    "commit": {
+      "message": "feat(extension): read-only agent tier + live settings switches (ADR-050) (#1203)",
+      "author": {
+        "date": "2026-09-14T21:45:38Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "3cb7ed99a3ce0019ad404e5e2836c29e24870a48",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-14T08:52:37Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "c110bb721b66ea23e80c82fd33222cf9059cb1ae",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1157,42 +1193,6 @@
       "message": "feat: bring Import/Check fit/Fill form/Save answers into the side panel (#1113)",
       "author": {
         "date": "2026-09-05T05:53:36Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "02da30a7d10a8ba04f5d61ff0e253d7c81b1c79d",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-05T04:51:27Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "8a289ef2b70c7e44b234c74ffd86fd5060891416",
-    "commit": {
-      "message": "fix: make tray pause/resume-all autopilots actually work (#1112)",
-      "author": {
-        "date": "2026-09-05T04:26:44Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "12446c07df2c90c53418e73c3658d3526dca33e6",
-    "commit": {
-      "message": "ui: rename the open-panel control to \"Open AI Job Hunter answer tool\" (#1111)",
-      "author": {
-        "date": "2026-09-05T01:14:38Z"
       }
     },
     "author": {
