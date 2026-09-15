@@ -66,6 +66,11 @@ use crate::error::{AppError, AppResult};
 // Everything else in there stays private to this module.
 pub(super) mod found_jobs;
 
+/// `documents` resource (PR2 — documents into ATS) — see its own module doc. Plain `mod` (no
+/// visibility needed beyond this module; unlike `found_jobs`, nothing outside `agent_read` reads
+/// into it).
+mod documents;
+
 // ── Resource table (schema's single source of truth) ───────────────────────
 
 const RES_BEST_MATCHES: &str = "best-matches";
@@ -74,6 +79,7 @@ const RES_PROFILE: &str = "profile";
 const RES_AUTOMATIONS: &str = "automations";
 const RES_SCHEMA: &str = "schema";
 const RES_FOUND_JOBS: &str = "found-jobs";
+const RES_DOCUMENTS: &str = "documents";
 
 /// `(name, description)` — `schema` maps this directly; [`handle_agent_query`]'s
 /// `match` uses these SAME constants as its patterns (never a second literal),
@@ -132,6 +138,14 @@ pub(super) const RESOURCES: &[(&str, &str)] = &[
          (no `description`) unless `includeDescription: true` is set. Each row's `applied` is \
          OMITTED (never a confident `false`) when the applications store is unreadable; the \
          reply then carries `appliedUnavailable: true` and the `applied` filter is refused.",
+    ),
+    (
+        RES_DOCUMENTS,
+        "Document-picker candidates for one job posting (PR2 — documents into ATS): `url` \
+         required. Reports whether a saved generation exists for it — résumé/cover-letter TEXT \
+         PRESENCE only, never the text itself — plus the base résumés on file, newest first \
+         (capped). Fetch the actual bytes with the dedicated `document.export` bridge verb, not \
+         through this resource.",
     ),
 ];
 
@@ -1342,6 +1356,7 @@ pub(super) async fn handle_agent_query(app: &AppHandle, req_id: &str, payload: &
         RES_PROFILE => profile_resource(app),
         RES_AUTOMATIONS => automations_resource(app),
         RES_FOUND_JOBS => found_jobs::found_jobs_resource(app, payload),
+        RES_DOCUMENTS => documents::documents_resource(app, payload),
         RES_SCHEMA => Ok(schema_value()),
         // `other` is clamped here too (issue #1151, AC-3) — `bounded_result_reply` below only
         // clamps the envelope's `reqId`/`resource`, not a copy embedded in THIS message, so an

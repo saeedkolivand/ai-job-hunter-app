@@ -3,14 +3,18 @@
 //! When the app is re-launched (or a second instance starts) with an `ajh://…`
 //! URL on its argv, we must NOT blindly drive the renderer to whatever route the
 //! URL names — a hostile argv (`ajh://settings/wipe`, `ajh://../../x`) is an
-//! injection vector. This parses argv and accepts ONLY two allowlisted shapes:
-//!   - `ajh://autopilot/<id>` with a syntactically valid id, and
+//! injection vector. This parses argv and accepts ONLY four allowlisted shapes:
+//!   - `ajh://autopilot/<id>` with a syntactically valid id,
 //!   - `ajh://settings/extension` (exactly — the browser-extension pairing
-//!     deep link; no id, no other settings sub-page).
+//!     deep link; no id, no other settings sub-page),
+//!   - `ajh://generate?url=<percent-encoded http(s) job url>` (PR2 — documents
+//!     into ATS: "Generate in the app" from the extension's Documents tab
+//!     when no generation exists for a job yet), and
+//!   - `ajh://open?url=<percent-encoded http(s) job url>` (PR2: "Open in app").
 //!
 //! Everything else yields `None` (the caller then just focuses the window,
-//! navigating nowhere). Both targets are navigation-only: they focus the window
-//! and route the renderer; they carry no command/action payload.
+//! navigating nowhere). Every target is navigation-only: it focuses the window
+//! and routes the renderer; none carries a command/action payload.
 //!
 //! The OS URI scheme is registered (`tauri-plugin-deep-link`: `init()` +
 //! `register_all()` in `lib.rs`); this guard validates every incoming URL/argv
@@ -24,22 +28,40 @@ pub enum FocusTarget {
     /// Navigate to Settings → Accounts → Browser extension and focus the
     /// pairing token. From `ajh://settings/extension` (the popup's pair button).
     ExtensionPairing,
+    /// Land on the generate flow for a job with no saved generation yet, the
+    /// url prefilled (PR2). From `ajh://generate?url=<canonical job url>` — the
+    /// extension Documents tab's "Generate in the app" action. Carries the
+    /// SAME normalized form [`crate::applications::normalize_job_url`] produces
+    /// everywhere else on this bridge, so the renderer's own job lookup by url
+    /// agrees with every other surface.
+    GenerateForJob(String),
+    /// Land on a job's detail page, or the jobs list with the url as the search
+    /// term if no job exists for it (PR2). From `ajh://open?url=<canonical job
+    /// url>` — the extension's "Open in app" action.
+    OpenJob(String),
 }
 
 const SCHEME: &str = "ajh://";
 
-/// Scan argv for the first valid `ajh://autopilot/<id>` or
-/// `ajh://settings/extension` URL. Returns `None` for any other scheme,
-/// host/action, extra path segments, query/fragment, or a malformed id — the
-/// deny-by-default posture for an externally-controlled input.
+/// Scan argv for the first valid `ajh://autopilot/<id>`, `ajh://settings/extension`,
+/// `ajh://generate?url=…`, or `ajh://open?url=…` URL. Returns `None` for any other scheme,
+/// host/action, extra path segments/params, unparseable/non-http(s)/oversized url, or a
+/// malformed id — the deny-by-default posture for an externally-controlled input.
 pub fn parse_focus_target(argv: &[String]) -> Option<FocusTarget> {
     argv.iter().find_map(|arg| parse_one(arg.trim()))
 }
 
 fn parse_one(arg: &str) -> Option<FocusTarget> {
     let rest = arg.strip_prefix(SCHEME)?; // exact scheme, case-sensitive
-                                          // Reject query/fragment/backslash outright — we only accept `<action>/<id>`.
-    if rest.contains(['?', '#', '\\']) {
+    if rest.contains('\\') {
+        return None;
+    }
+    if let Some(target) = parse_job_url_target(rest) {
+        return Some(target);
+    }
+    // Reject query/fragment outright for the remaining two-segment shapes — we only accept
+    // `<action>/<id>` past this point.
+    if rest.contains(['?', '#']) {
         return None;
     }
     let mut parts = rest.split('/');
@@ -53,6 +75,45 @@ fn parse_one(arg: &str) -> Option<FocusTarget> {
         // Exactly `ajh://settings/extension` — no id, no other settings sub-page.
         "settings" if id == "extension" => Some(FocusTarget::ExtensionPairing),
         _ => None,
+    }
+}
+
+/// Conservative bound on the raw (pre-decode) `url=` query value — an externally-controlled argv
+/// string, same "at most 2048 chars" posture the PR2 spec sets.
+const MAX_JOB_URL_LEN: usize = 2048;
+
+/// `ajh://generate?url=<percent-encoded job url>` / `ajh://open?url=<percent-encoded job url>` —
+/// `rest` is the scheme-stripped, backslash-checked tail. `None` for anything else: a
+/// non-`generate`/`open` action, a missing/extra query param, a url that fails to percent-decode,
+/// isn't http(s), or is over [`MAX_JOB_URL_LEN`] — a malformed or hostile deep link degrades to
+/// "focus the window, navigate nowhere" like every other reject case in [`parse_one`]. Normalises
+/// through [`crate::applications::normalize_job_url`] — the SAME canonical form
+/// `import.request`/`applied.check`/`document.export`'s `generation` source key on — so the
+/// renderer's own job lookup by url agrees with every other surface.
+fn parse_job_url_target(rest: &str) -> Option<FocusTarget> {
+    let (action, query) = rest.split_once('?')?;
+    if action != "generate" && action != "open" {
+        return None;
+    }
+    let encoded = query.strip_prefix("url=")?;
+    // Exactly one query param — deny-by-default for an externally-controlled input, same posture
+    // as `parse_one`'s "exactly two segments" rule.
+    if encoded.is_empty() || encoded.contains('&') || encoded.len() > MAX_JOB_URL_LEN {
+        return None;
+    }
+    let decoded = urlencoding::decode(encoded).ok()?.into_owned();
+    let lower = decoded.trim().to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return None;
+    }
+    let normalized = crate::applications::normalize_job_url(decoded.trim());
+    if normalized.is_empty() {
+        return None;
+    }
+    match action {
+        "generate" => Some(FocusTarget::GenerateForJob(normalized)),
+        "open" => Some(FocusTarget::OpenJob(normalized)),
+        _ => unreachable!("action is checked above"),
     }
 }
 

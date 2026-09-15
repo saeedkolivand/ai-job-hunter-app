@@ -102,7 +102,11 @@ fn locale_file_path(app: &AppHandle) -> std::path::PathBuf {
         .join("locale.json")
 }
 
-fn read_locale_file(app: &AppHandle) -> String {
+/// `pub(crate)` (PR2 — documents into ATS): `extension_bridge::document_export` reads the app's
+/// own configured locale as the language fallback for a base-résumé export with no stored
+/// `locale` of its own — the same "app locale" `system_get_locale` answers, reused rather than a
+/// second read of `locale.json`.
+pub(crate) fn read_locale_file(app: &AppHandle) -> String {
     std::fs::read_to_string(locale_file_path(app))
         .ok()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())

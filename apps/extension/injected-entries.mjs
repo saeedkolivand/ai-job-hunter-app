@@ -31,6 +31,7 @@ export const INJECTED_ENTRIES = [
   'answer-replace', // single-field answer REPLACE (rewrite Accept/Restore)
   'submit-watch', // post-submit application watcher
   'probe-fields', // the popup's fillable-fields probe
+  'attach-file', // PR2: résumé attach via DataTransfer
 ];
 
 /** The built filenames, at the root of `dist/<target>/`. */

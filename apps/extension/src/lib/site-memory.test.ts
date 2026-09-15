@@ -97,6 +97,41 @@ describe('mountFirstFillConfirm', () => {
     expect(host.querySelector('.inset')?.hasAttribute('hidden')).toBe(true);
   });
 
+  it('renders a caller-supplied copy override instead of the default Fill text (PR2 reuse)', async () => {
+    const { view, host } = mount();
+    const pending = view.confirm(
+      'acme.com',
+      'this will attach your résumé file — nothing is submitted'
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(host.textContent).toContain('this will attach your résumé file — nothing is submitted');
+    expect(host.textContent).not.toContain('This will fill: name, email, phone');
+
+    host.querySelector<HTMLButtonElement>('.btn--primary')!.click();
+    await pending;
+  });
+
+  it('renders a caller-supplied label override in both the heading and the primary button (PR2 attach reuse)', async () => {
+    const { view, host } = mount();
+    const pending = view.confirm(
+      'acme.com',
+      'this will attach your résumé file — nothing is submitted',
+      'Attach'
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(host.textContent).toContain('First Attach on acme.com');
+    expect(host.textContent).not.toContain('First Fill on acme.com');
+    const primaryBtn = host.querySelector<HTMLButtonElement>('.btn--primary')!;
+    expect(primaryBtn.textContent).toBe('Attach');
+
+    primaryBtn.click();
+    await pending;
+  });
+
   it('shows the inset and resolves true on Fill, remembering the host when the checkbox is checked', async () => {
     const { view, host, rememberHostMock } = mount();
     const pending = view.confirm('acme.com');

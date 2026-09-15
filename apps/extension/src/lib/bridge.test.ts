@@ -3098,3 +3098,167 @@ describe('BridgeClient – answerAssist', () => {
     client.dispose();
   });
 });
+
+// ---------------------------------------------------------------------------
+// BridgeClient – documentExport (PR2 — documents into ATS)
+// ---------------------------------------------------------------------------
+
+describe('BridgeClient – documentExport', () => {
+  let latestSocket: FakeWebSocket | undefined;
+  let createdSockets: FakeWebSocket[] = [];
+  let restoreWS: () => void;
+
+  beforeEach(() => {
+    latestSocket = undefined;
+    createdSockets = [];
+    restoreWS = installFakeWS((ws) => {
+      latestSocket = ws;
+      createdSockets.push(ws);
+    });
+  });
+
+  afterEach(() => {
+    restoreWS();
+    vi.useRealTimers();
+  });
+
+  async function connectedClient(): Promise<{ client: BridgeClient; socket: FakeWebSocket }> {
+    const client = new BridgeClient(vi.fn());
+    const p = client.ensureConnected();
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+    await p;
+    return { client, socket };
+  }
+
+  function makeDocumentResultEnvelope(reqId: string, payload: unknown): string {
+    return JSON.stringify({ type: EXTENSION_MESSAGE_TYPES.documentResult, reqId, payload });
+  }
+
+  const REQUEST = {
+    source: { kind: 'generation' as const, url: 'https://example.com/job/1' },
+    kind: 'resume' as const,
+    format: 'pdf' as const,
+    templateId: 'classic',
+  };
+
+  it('sends the request payload verbatim and round-trips a success result', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.documentExport(REQUEST);
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const frame = JSON.parse(raw) as { type: string; reqId: string; payload: unknown };
+    expect(frame.type).toBe(EXTENSION_MESSAGE_TYPES.documentExport);
+    expect(frame.payload).toEqual(REQUEST);
+
+    const payload = {
+      ok: true,
+      data: 'JVBERi0xLjQK',
+      dataEncoding: 'base64',
+      mimeType: 'application/pdf',
+      filename: 'resume.pdf',
+      byteLength: 9,
+      kind: 'resume',
+      format: 'pdf',
+      templateId: 'classic',
+    };
+    socket.simulateMessage(makeDocumentResultEnvelope(frame.reqId, payload));
+    expect(await resultPromise).toEqual(payload);
+    client.dispose();
+  });
+
+  it('round-trips a desktop-side refusal (ok:false + error) — never rejects', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.documentExport(REQUEST);
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const { reqId } = JSON.parse(raw) as { reqId: string };
+
+    socket.simulateMessage(
+      makeDocumentResultEnvelope(reqId, { ok: false, error: 'export_failed', detail: 'no text' })
+    );
+    expect(await resultPromise).toEqual({
+      ok: false,
+      error: 'export_failed',
+      detail: 'no text',
+    });
+    client.dispose();
+  });
+
+  it('round-trips a throttle refusal carrying retryAfterMs', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.documentExport(REQUEST);
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const { reqId } = JSON.parse(raw) as { reqId: string };
+
+    const payload = { ok: false, error: 'rate_limited', retryAfterMs: 5_000 };
+    socket.simulateMessage(makeDocumentResultEnvelope(reqId, payload));
+    expect(await resultPromise).toEqual(payload);
+    client.dispose();
+  });
+
+  it('resolves with a malformed error (never throws) when dataEncoding is not base64', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.documentExport(REQUEST);
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const { reqId } = JSON.parse(raw) as { reqId: string };
+
+    socket.simulateMessage(
+      makeDocumentResultEnvelope(reqId, {
+        ok: true,
+        data: 'abc',
+        dataEncoding: 'utf8',
+        mimeType: 'application/pdf',
+        filename: 'resume.pdf',
+        byteLength: 3,
+        kind: 'resume',
+        format: 'pdf',
+        templateId: 'classic',
+      })
+    );
+
+    const result = (await resultPromise) as { ok: boolean; error?: string };
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/malformed/i);
+    client.dispose();
+  });
+
+  it('rejects when not connected — every port fails and the ws probe exhausts', async () => {
+    vi.useFakeTimers();
+    const client = new BridgeClient(vi.fn());
+    const outcomePromise = client.documentExport(REQUEST).then(
+      () => ({ ok: true as const }),
+      (e: unknown) => ({ ok: false as const, error: e })
+    );
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const idx = attempt;
+      await vi.waitFor(() => {
+        expect(createdSockets.length).toBeGreaterThanOrEqual(idx + 1);
+      });
+      createdSockets[idx]!.simulateClose();
+    }
+
+    const outcome = await outcomePromise;
+    expect(outcome.ok).toBe(false);
+    client.dispose();
+  });
+
+  it('settles with a refusal on dispose (failAllPending covers this verb too)', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.documentExport(REQUEST);
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+
+    client.dispose();
+
+    expect(await resultPromise).toEqual({
+      ok: false,
+      error: 'Bridge client disposed.',
+    });
+  });
+});

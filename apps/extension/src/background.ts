@@ -12,6 +12,7 @@ import { type Browser, browser } from '@wxt-dev/browser';
 
 import type {
   ExtensionAnswerAssistRequest,
+  ExtensionDocumentSource,
   ExtensionImportRequest,
   ExtensionMatchLiveRequest,
   ExtensionRewritePreset,
@@ -47,6 +48,13 @@ import {
 // (erased at build) to keep answers-capture.ts's runtime code out of the
 // background's bundle.
 import type { CapturedAnswer, FilledField, ScannedQuestion } from './lib/answers-capture';
+// TYPE-ONLY import — same rationale as the autofill.ts import below:
+// `attach-file.js` is a classic-script injection target (see
+// `injected-entries.mjs`), so its runtime code (`runAttachFile`,
+// `ATTACH_FILE_GLOBAL`) must be imported ONLY by `attach-file.ts`. The
+// global key is duplicated as a local literal below, same discipline as
+// `AUTOFILL_GLOBAL`.
+import type { AttachFileResult } from './lib/attach-file';
 import { handleSubmitDetected, maybeArmSubmitWatch } from './lib/auto-track';
 // TYPE-ONLY import from the autofill module. This is deliberate: `fill.js` is
 // injected via `executeScript({ files })`, which runs as a CLASSIC script (no ES
@@ -82,6 +90,12 @@ const ANSWER_FILL_GLOBAL = '__ajhRunAnswerFill';
  *  above. */
 const ANSWER_REPLACE_GLOBAL = '__ajhRunAnswerReplace';
 
+/** Isolated-world global key under which `attach-file.js` exposes the
+ *  runner (PR2). MUST match `ATTACH_FILE_GLOBAL` in `lib/attach-file.ts`.
+ *  Duplicated as a local literal for the same reason as `AUTOFILL_GLOBAL`
+ *  above. */
+const ATTACH_FILE_GLOBAL = '__ajhRunAttachFile';
+
 /** Internal message kind the injected `submit-watch.js` posts on a detected
  *  form submit (Task #22). Duplicated as a local literal — MUST match
  *  `SUBMIT_DETECTED_MSG` in `lib/submit-watch.ts` — so that pure DOM module
@@ -105,6 +119,7 @@ const GESTURE_KINDS: ReadonlySet<PopupRequest['kind']> = new Set([
   'answerAccept',
   'answerRestoreOriginal',
   'matchLive',
+  'documentAttach',
 ]);
 
 /** Client-side cap on the number of scanned question labels sent in one
@@ -477,6 +492,32 @@ async function runFill(): Promise<PopupResponse> {
 }
 
 /**
+ * Job tab copy-field fallback (decision 8): fetch the Contact Profile fresh —
+ * same source + Autofill opt-in gate `runFill` itself uses — for the panel to
+ * show as Copy-able fields when a `fill` came back `filledNothing`. Passive:
+ * NEVER surfaces `ok:false`. Any failure (not paired, bridge down, opt-in
+ * off, a malformed reply) folds into `result.error` so the caller shows
+ * nothing rather than an error, mirroring `runAppliedCheck`'s fail-quiet
+ * discipline. The profile is held only for this call, never persisted.
+ */
+async function runProfileGet(): Promise<PopupResponse> {
+  try {
+    const token = await getToken();
+    if (!token) {
+      return { ok: true, kind: 'profileGet', result: { error: 'Not paired.' } };
+    }
+    const result = await getClient().getProfile();
+    return { ok: true, kind: 'profileGet', result };
+  } catch (err) {
+    return {
+      ok: true,
+      kind: 'profileGet',
+      result: { error: err instanceof Error ? err.message : String(err) },
+    };
+  }
+}
+
+/**
  * Fire-and-forget "have I already applied?" check for the active tab's URL —
  * a read-only, best-effort enhancement over the import view. NEVER surfaces
  * `ok:false`: any failure (not paired, bridge unreachable, an old desktop's
@@ -625,6 +666,127 @@ async function runStatusUpdate(): Promise<PopupResponse> {
   const url = await activeTabUrl();
   const result = await getClient().updateStatus(url);
   return { ok: true, kind: 'statusUpdate', result };
+}
+
+// ── Documents into ATS (PR2) ────────────────────────────────────────────────
+
+/** Minimal guard for the summary that crossed the `executeScript` boundary
+ *  (attach-file.js's completion value). Mirrors `isFillAnswerResult`. */
+function isAttachFileResult(v: unknown): v is AttachFileResult {
+  if (typeof v !== 'object' || v === null) return false;
+  return typeof (v as Record<string, unknown>).attached === 'boolean';
+}
+
+/**
+ * Decode a base64 `document.result` payload to raw bytes. Shared by the
+ * attach/paste document flows so `bridge.ts` stays base64-agnostic (per its
+ * own doc, it decodes NOTHING beyond checking `dataEncoding === 'base64'`) —
+ * this is the one place that turns the wire string into bytes.
+ */
+function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Documents tab (PR2 §C.2): list this job's generation + saved base résumés
+ * — the curated `documents` read-tier resource (PR1, `agent.query`). UNLIKE
+ * `runTrustLineJob`, a refusal is NOT folded away — the tab renders the
+ * desktop's own `error` (Autofill opt-in off / throttled) so the user can
+ * act on it. `url` is echoed back so the Documents tab (which has no `tabs`
+ * permission of its own) can build the `{kind:'generation', url}` source for
+ * the job's own generation candidate without a second round trip.
+ */
+async function runDocumentsList(): Promise<PopupResponse> {
+  const url = await activeTabUrl().catch(() => '');
+  const result = await getClient().agentQuery('documents', { url });
+  return { ok: true, kind: 'documentsList', result, url };
+}
+
+/**
+ * Documents tab: export the picked source as DECODED plain text (cover
+ * letter, TXT only — the picker's Copy/Paste actions both need text, never
+ * base64). Like `runStatusUpdate`, failures are NOT folded away — a
+ * deliberate click.
+ */
+async function runDocumentExportText(
+  source: ExtensionDocumentSource,
+  templateId: string,
+  letterLayoutId: string | undefined
+): Promise<PopupResponse> {
+  const token = await getToken();
+  if (!token) {
+    return { ok: false, error: 'Not paired. Paste your pairing token first.' };
+  }
+  const res = await getClient().documentExport({
+    source,
+    kind: 'cover-letter',
+    format: 'txt',
+    templateId,
+    ...(letterLayoutId ? { letterLayoutId } : {}),
+  });
+  if (!res.ok) return { ok: false, error: res.error };
+  const text = new TextDecoder().decode(base64ToBytes(res.data));
+  return { ok: true, kind: 'documentExportText', text, filename: res.filename };
+}
+
+/**
+ * Inject the résumé-attach script into the active tab and run it against the
+ * decoded bytes. Two-step like `injectFill`: the bytes (the user's own
+ * résumé) are passed in transiently via the second `executeScript({ func,
+ * args })` rather than baked into the `files` injection.
+ */
+async function injectAttachFile(
+  bytes: Uint8Array,
+  filename: string,
+  mimeType: string
+): Promise<AttachFileResult> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tabId = tab?.id;
+  if (typeof tabId !== 'number') throw new Error('No active tab to attach to.');
+
+  await browser.scripting.executeScript({ target: { tabId }, files: ['attach-file.js'] });
+
+  const results = await browser.scripting.executeScript({
+    target: { tabId },
+    func: (b: Uint8Array, name: string, mime: string, key: string): AttachFileResult | null => {
+      const runner = (globalThis as Record<string, unknown>)[key] as
+        ((bytes: Uint8Array, filename: string, mimeType: string) => AttachFileResult) | undefined;
+      return runner ? runner(b, name, mime) : null;
+    },
+    args: [bytes, filename, mimeType, ATTACH_FILE_GLOBAL],
+  });
+
+  const result = results[0]?.result;
+  if (!isAttachFileResult(result)) {
+    throw new Error('Could not attach the file on this page.');
+  }
+  return result;
+}
+
+/**
+ * "Attach résumé to this page": export as pdf/docx, decode to bytes, inject
+ * via {@link injectAttachFile}, and surface the fail-closed outcome. The
+ * caller (`documents/documents.ts`) is responsible for the first-time-per-
+ * site confirmation BEFORE sending this request. Like `runStatusUpdate`,
+ * failures are NOT folded away — a deliberate click.
+ */
+async function runDocumentAttach(
+  source: ExtensionDocumentSource,
+  templateId: string,
+  format: 'pdf' | 'docx'
+): Promise<PopupResponse> {
+  const token = await getToken();
+  if (!token) {
+    return { ok: false, error: 'Not paired. Paste your pairing token first.' };
+  }
+  const res = await getClient().documentExport({ source, kind: 'resume', format, templateId });
+  if (!res.ok) return { ok: false, error: res.error };
+  const bytes = base64ToBytes(res.data);
+  const result = await injectAttachFile(bytes, res.filename, res.mimeType);
+  return { ok: true, kind: 'documentAttach', result };
 }
 
 // ── Auto-track (Task #22, Layer A) ──────────────────────────────────────────────
@@ -1440,6 +1602,8 @@ async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
         return await runImport(req.applied);
       case 'fill':
         return await runFill();
+      case 'profileGet':
+        return await runProfileGet();
       case 'appliedCheck':
         return await runAppliedCheck();
       case 'fieldsProbe':
@@ -1511,6 +1675,12 @@ async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
           req.text,
           req.expectedValue
         );
+      case 'documentsList':
+        return await runDocumentsList();
+      case 'documentExportText':
+        return await runDocumentExportText(req.source, req.templateId, req.letterLayoutId);
+      case 'documentAttach':
+        return await runDocumentAttach(req.source, req.templateId, req.format);
       default: {
         // Exhaustiveness guard — a new PopupRequest variant must be handled.
         const _never: never = req;

@@ -89,6 +89,18 @@ export interface AutofillSummary {
    * sets it.
    */
   skippedAmbiguous?: number;
+  /**
+   * Set ONLY by the résumé-attach flow (PR2, `lib/attach-file.ts`'s
+   * `runAttachFile`), which reuses THIS overlay rather than building a
+   * second one. `null` = the attach was attempted and failed (the reason is
+   * returned separately, to the panel, not rendered here); the object =
+   * it succeeded. Absent (the default, `undefined`) on every ordinary Fill
+   * pass — `planAndFill` never touches this key, so an ordinary
+   * `AutofillSummary` is unaffected. `renderSummaryOverlay` checks `key in
+   * summary` (not truthiness) to tell "an attach pass with nothing to show"
+   * apart from "an ordinary Fill pass".
+   */
+  attached?: { filename: string; byteLength: number } | null;
 }
 
 /** DOM id of the injected summary overlay (also used to clear a prior pass). */
@@ -434,7 +446,17 @@ export function renderSummaryOverlay(doc: Document, summary: AutofillSummary): v
   title.style.cssText = 'font-weight:600;margin-bottom:6px';
   box.appendChild(title);
 
-  if (summary.filledNothing) {
+  if ('attached' in summary) {
+    // A résumé-attach pass (`lib/attach-file.ts`) — carries nothing else to
+    // report, so it skips the ordinary filled/filledNothing rendering below
+    // entirely rather than showing a contradictory "no matchable fields"
+    // line alongside it.
+    const row = doc.createElement('div');
+    row.textContent = summary.attached
+      ? `Résumé attached → ${summary.attached.filename} (${Math.max(1, Math.round(summary.attached.byteLength / 1024))} KB)`
+      : 'Could not attach the résumé to this page. Nothing was changed.';
+    box.appendChild(row);
+  } else if (summary.filledNothing) {
     // Suppress this line when fields WERE skipped as ambiguous — the
     // skipped-note below already explains the outcome; showing both reads as
     // contradictory ("no matchable fields" + "N fields skipped").

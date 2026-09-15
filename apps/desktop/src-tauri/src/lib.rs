@@ -185,6 +185,10 @@ fn handle_deep_link(app: &AppHandle, target: Option<deeplink::FocusTarget>) {
     match target {
         Some(deeplink::FocusTarget::Autopilot(id)) => tray::dispatch_focus(app, &id),
         Some(deeplink::FocusTarget::ExtensionPairing) => tray::dispatch_extension_pairing(app),
+        Some(deeplink::FocusTarget::GenerateForJob(url)) => {
+            tray::dispatch_generate_for_job(app, &url)
+        }
+        Some(deeplink::FocusTarget::OpenJob(url)) => tray::dispatch_open_job(app, &url),
         None => {}
     }
 }

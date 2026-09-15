@@ -8,9 +8,9 @@ import type {
   ApplicationUpdateRequest,
 } from '@ajh/shared';
 
-import { useAppClient } from '@/providers/AppClientProvider';
+import { getClient, useAppClient } from '@/providers/AppClientProvider';
 
-import { keys } from '../query-client';
+import { keys, queryClient } from '../query-client';
 
 export const useApplications = () => {
   const api = useAppClient();
@@ -19,6 +19,17 @@ export const useApplications = () => {
     queryFn: () => api.applications.list(),
   });
 };
+
+/** Fetch the applications list outside of a component (e.g. a deep-link
+ *  resolver reacting to a menu-navigate event) — same pattern as `fetchJob`
+ *  in `use-jobs`. `staleTime: 0` so a cold app always resolves against a
+ *  fresh list rather than an empty pre-mount cache. */
+export const fetchApplications = () =>
+  queryClient.fetchQuery({
+    queryKey: keys.applications.all,
+    queryFn: () => getClient().applications.list(),
+    staleTime: 0,
+  });
 
 export const useApplication = (id: string) => {
   const api = useAppClient();

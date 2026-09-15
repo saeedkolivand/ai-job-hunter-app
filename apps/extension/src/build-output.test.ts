@@ -69,7 +69,13 @@ const COMPLETION_VALUE_ENTRIES = [
  * {@link INJECTED_ENTRIES}: a new injected script then has to be classified into
  * one list or the other before this file goes green.
  */
-const GLOBAL_INSTALLING_ENTRIES = ['fill', 'answer-fill', 'answer-replace', 'submit-watch'];
+const GLOBAL_INSTALLING_ENTRIES = [
+  'fill',
+  'answer-fill',
+  'answer-replace',
+  'submit-watch',
+  'attach-file',
+];
 
 /**
  * An application form as the collectors see one: two labelled textareas the

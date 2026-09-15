@@ -3316,7 +3316,12 @@ export type PendingMenuIntent =
   | { event: 'menu:action'; payload: MenuActionEvent };
 
 export interface MenuNavigateEvent {
-  route: string;
+  /**
+   * Either a real in-app route (`/settings`, `/jobs`, …) or one of the two
+   * symbolic deep-link destinations below — the renderer resolves those
+   * against live app data instead of navigating to them literally.
+   */
+  route: string | 'generate-for-job' | 'open-job';
   section: string | null;
   /** Optional in-page focus signal carried alongside the route. The native menu
    *  and tray omit it; the `ajh://settings/extension` deep link sets it to
@@ -3324,6 +3329,17 @@ export interface MenuNavigateEvent {
    *  pairing token. Optional so omitting consumers (the native menu) still
    *  type-check. */
   focus?: 'extension-token';
+  /**
+   * Canonical job URL (`applications::normalize_job_url`), present only when
+   * `route` is `'generate-for-job'` or `'open-job'` — the two deep links the
+   * paired extension opens (`ajh://generate?url=…` / `ajh://open?url=…`).
+   * `generate-for-job`: land on that job's tailor/generate flow, or the
+   * generate flow prefilled with this URL when no job exists for it yet.
+   * `open-job`: land on that job's detail page, or the jobs list with this
+   * URL as the search term when no job exists for it. Omitted for every
+   * other `route` value.
+   */
+  url?: string;
 }
 
 export interface MenuActionEvent {

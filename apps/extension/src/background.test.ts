@@ -50,6 +50,7 @@ const mockClient = vi.hoisted(() => ({
   agentQuery: vi.fn(),
   settingsGet: vi.fn(),
   settingsSet: vi.fn(),
+  documentExport: vi.fn(),
 }));
 
 vi.mock('@wxt-dev/browser', () => ({
@@ -212,6 +213,7 @@ beforeEach(() => {
   mockClient.agentQuery.mockReset();
   mockClient.settingsGet.mockReset();
   mockClient.settingsSet.mockReset();
+  mockClient.documentExport.mockReset();
   setBadgeTextMock.mockClear();
 });
 
@@ -529,6 +531,215 @@ describe('settingsSet request', () => {
       kind: 'settingsSet',
       result: { ok: false, error: 'invalid_settings_request' },
     });
+  });
+});
+
+// ── documentsList / documentExportText / documentAttach requests (PR2) ─────
+
+describe('documentsList request', () => {
+  it('resolves the active tab url server-side, calls agent.query(documents, {url}), and echoes the url back', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.agentQuery.mockResolvedValue({
+      ok: true,
+      resource: 'documents',
+      data: { generation: null, documents: [] },
+    });
+
+    const res = await send({ kind: 'documentsList' });
+
+    expect(mockClient.agentQuery).toHaveBeenCalledWith('documents', {
+      url: 'https://jobs.example.com/posting/9',
+    });
+    expect(res).toEqual({
+      ok: true,
+      kind: 'documentsList',
+      result: { ok: true, resource: 'documents', data: { generation: null, documents: [] } },
+      url: 'https://jobs.example.com/posting/9',
+    });
+  });
+
+  it('passes a desktop-side refusal straight through as result, never folds it (unlike trustLineJob)', async () => {
+    tabsQueryMock.mockResolvedValue([]);
+    mockClient.agentQuery.mockResolvedValue({
+      ok: false,
+      resource: 'documents',
+      error: 'Assisted autofill is off.',
+    });
+
+    const res = await send({ kind: 'documentsList' });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'documentsList',
+      result: { ok: false, resource: 'documents', error: 'Assisted autofill is off.' },
+      url: '',
+    });
+  });
+});
+
+describe('documentExportText request', () => {
+  it('surfaces "Not paired" and never reaches the bridge when no token is stored', async () => {
+    getTokenMock.mockResolvedValue(null);
+
+    const res = await send({
+      kind: 'documentExportText',
+      source: { kind: 'document', id: 'doc-1' },
+      templateId: 'classic',
+    });
+
+    expect(res).toEqual({ ok: false, error: 'Not paired. Paste your pairing token first.' });
+    expect(mockClient.documentExport).not.toHaveBeenCalled();
+  });
+
+  it('decodes the base64 cover-letter bytes to UTF-8 text (never leaks base64 to the caller)', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    const encoded = Buffer.from('Dear hiring manager, — Ünïcödé', 'utf8').toString('base64');
+    mockClient.documentExport.mockResolvedValue({
+      ok: true,
+      data: encoded,
+      dataEncoding: 'base64',
+      mimeType: 'text/plain',
+      filename: 'letter.txt',
+      byteLength: encoded.length,
+      kind: 'cover-letter',
+      format: 'txt',
+      templateId: 'classic',
+    });
+
+    const res = await send({
+      kind: 'documentExportText',
+      source: { kind: 'document', id: 'doc-1' },
+      templateId: 'classic',
+      letterLayoutId: 'banded',
+    });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'documentExportText',
+      text: 'Dear hiring manager, — Ünïcödé',
+      filename: 'letter.txt',
+    });
+    expect(mockClient.documentExport).toHaveBeenCalledWith({
+      source: { kind: 'document', id: 'doc-1' },
+      kind: 'cover-letter',
+      format: 'txt',
+      templateId: 'classic',
+      letterLayoutId: 'banded',
+    });
+  });
+
+  it('surfaces a desktop refusal verbatim, never folded away', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    mockClient.documentExport.mockResolvedValue({ ok: false, error: 'not_found' });
+
+    const res = await send({
+      kind: 'documentExportText',
+      source: { kind: 'generation', url: 'https://example.com/job/1' },
+      templateId: 'classic',
+    });
+
+    expect(res).toEqual({ ok: false, error: 'not_found' });
+  });
+});
+
+describe('documentAttach request', () => {
+  it('surfaces "Not paired" and never reaches the bridge when no token is stored', async () => {
+    getTokenMock.mockResolvedValue(null);
+
+    const res = await send({
+      kind: 'documentAttach',
+      source: { kind: 'document', id: 'doc-1' },
+      templateId: 'classic',
+      format: 'pdf',
+    });
+
+    expect(res).toEqual({ ok: false, error: 'Not paired. Paste your pairing token first.' });
+    expect(mockClient.documentExport).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a desktop export refusal verbatim, never injects', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    mockClient.documentExport.mockResolvedValue({ ok: false, error: 'export_failed' });
+
+    const res = await send({
+      kind: 'documentAttach',
+      source: { kind: 'document', id: 'doc-1' },
+      templateId: 'classic',
+      format: 'pdf',
+    });
+
+    expect(res).toEqual({ ok: false, error: 'export_failed' });
+    expect(executeScriptMock).not.toHaveBeenCalled();
+  });
+
+  it('decodes the base64 bytes, injects attach-file.js, and returns the fail-closed result', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    const encoded = Buffer.from('%PDF-1.4 fake', 'utf8').toString('base64');
+    mockClient.documentExport.mockResolvedValue({
+      ok: true,
+      data: encoded,
+      dataEncoding: 'base64',
+      mimeType: 'application/pdf',
+      filename: 'resume.pdf',
+      byteLength: encoded.length,
+      kind: 'resume',
+      format: 'pdf',
+      templateId: 'classic',
+    });
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://example.com/apply' } as never]);
+    executeScriptMock
+      .mockResolvedValueOnce([] as never) // step 1: files:['attach-file.js'] injection
+      .mockResolvedValueOnce([
+        { result: { attached: true, filename: 'resume.pdf', byteLength: 13 } },
+      ] as never); // step 2: func call
+
+    const res = await send({
+      kind: 'documentAttach',
+      source: { kind: 'document', id: 'doc-1' },
+      templateId: 'classic',
+      format: 'pdf',
+    });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'documentAttach',
+      result: { attached: true, filename: 'resume.pdf', byteLength: 13 },
+    });
+    expect(executeScriptMock).toHaveBeenCalledTimes(2);
+    expect(executeScriptMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ files: ['attach-file.js'] })
+    );
+  });
+
+  it('surfaces "Could not attach the file on this page." when the injected func returns a non-result', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    mockClient.documentExport.mockResolvedValue({
+      ok: true,
+      data: 'AAAA',
+      dataEncoding: 'base64',
+      mimeType: 'application/pdf',
+      filename: 'resume.pdf',
+      byteLength: 3,
+      kind: 'resume',
+      format: 'pdf',
+      templateId: 'classic',
+    });
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://example.com/apply' } as never]);
+    executeScriptMock
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce([{ result: null }] as never);
+
+    const res = await send({
+      kind: 'documentAttach',
+      source: { kind: 'document', id: 'doc-1' },
+      templateId: 'classic',
+      format: 'pdf',
+    });
+
+    expect(res).toEqual({ ok: false, error: 'Could not attach the file on this page.' });
   });
 });
 

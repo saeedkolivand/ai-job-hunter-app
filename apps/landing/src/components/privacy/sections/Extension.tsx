@@ -53,6 +53,14 @@ export function Extension() {
             request. This is why the extension collects no data and its Firefox data-collection
             declaration is <code>["none"]</code>.
           </li>
+          <li>
+            <b>Attaching a résumé or pasting a cover letter (same opt-in).</b> The workspace panel
+            can export your résumé or a saved cover letter — rendered on <b>your own computer</b> —
+            and either attach it to the page's résumé upload field or paste/copy its text into a
+            field you pick. The file is <b>never stored in the browser</b> and{' '}
+            <b>never leaves your computer except into the page you are on</b>; nothing is attached
+            or pasted until you choose the action.
+          </li>
         </ul>
       </div>
 

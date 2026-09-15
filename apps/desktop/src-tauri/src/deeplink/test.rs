@@ -101,3 +101,68 @@ fn finds_the_url_among_other_args() {
         Some(FocusTarget::Autopilot("abc".to_string()))
     );
 }
+
+// ── PR2 — `ajh://generate?url=…` / `ajh://open?url=…` ───────────────────────
+
+#[test]
+fn accepts_a_valid_generate_for_job_url() {
+    let encoded = urlencoding::encode("https://example.com/job/1?ref=abc");
+    let target = parse_focus_target(&argv(&format!("ajh://generate?url={encoded}")));
+    assert!(matches!(target, Some(FocusTarget::GenerateForJob(_))));
+    let Some(FocusTarget::GenerateForJob(url)) = target else {
+        unreachable!()
+    };
+    assert!(url.contains("example.com"), "url = {url:?}");
+}
+
+#[test]
+fn accepts_a_valid_open_job_url() {
+    let encoded = urlencoding::encode("https://example.com/job/2");
+    assert!(matches!(
+        parse_focus_target(&argv(&format!("ajh://open?url={encoded}"))),
+        Some(FocusTarget::OpenJob(_))
+    ));
+}
+
+#[test]
+fn rejects_a_non_http_job_url() {
+    let encoded = urlencoding::encode("javascript:alert(1)");
+    assert_eq!(
+        parse_focus_target(&argv(&format!("ajh://generate?url={encoded}"))),
+        None
+    );
+    let encoded_ftp = urlencoding::encode("ftp://example.com/x");
+    assert_eq!(
+        parse_focus_target(&argv(&format!("ajh://open?url={encoded_ftp}"))),
+        None
+    );
+}
+
+#[test]
+fn rejects_an_oversized_job_url() {
+    let long = format!("https://example.com/{}", "x".repeat(2100));
+    let encoded = urlencoding::encode(&long);
+    assert_eq!(
+        parse_focus_target(&argv(&format!("ajh://generate?url={encoded}"))),
+        None
+    );
+}
+
+#[test]
+fn rejects_a_missing_or_malformed_url_param() {
+    assert_eq!(parse_focus_target(&argv("ajh://generate")), None);
+    assert_eq!(parse_focus_target(&argv("ajh://generate?")), None);
+    assert_eq!(parse_focus_target(&argv("ajh://generate?url=")), None);
+    assert_eq!(parse_focus_target(&argv("ajh://open?foo=bar")), None);
+    // A second query param is rejected outright rather than silently ignored.
+    let encoded = urlencoding::encode("https://example.com/job/1");
+    assert_eq!(
+        parse_focus_target(&argv(&format!("ajh://generate?url={encoded}&x=1"))),
+        None
+    );
+    // Unknown action with the same query shape.
+    assert_eq!(
+        parse_focus_target(&argv(&format!("ajh://bogus?url={encoded}"))),
+        None
+    );
+}

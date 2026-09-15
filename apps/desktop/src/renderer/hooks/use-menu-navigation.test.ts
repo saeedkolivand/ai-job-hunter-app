@@ -5,7 +5,7 @@ import type { PendingMenuIntent } from '@ajh/shared';
 
 import { createMockClient, withProviders } from '@/test-support';
 
-import { useMenuNavigation } from './use-menu-navigation';
+import { resolveJobDeepLinkTarget, useMenuNavigation } from './use-menu-navigation';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 // The hook's only side-effect surface is: router navigate, the session/ui store
@@ -20,9 +20,16 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 const setSettings = vi.fn();
+const setJobs = vi.fn();
+const setAIGenerate = vi.fn();
 vi.mock('@/store/session-store', () => ({
-  useSessionStore: (selector: (s: { setSettings: typeof setSettings }) => unknown) =>
-    selector({ setSettings }),
+  useSessionStore: (
+    selector: (s: {
+      setSettings: typeof setSettings;
+      setJobs: typeof setJobs;
+      setAIGenerate: typeof setAIGenerate;
+    }) => unknown
+  ) => selector({ setSettings, setJobs, setAIGenerate }),
 }));
 
 const setShortcutsOpen = vi.fn();
@@ -64,12 +71,15 @@ vi.mock('@ajh/translations', () => ({ useTranslation: () => ({ t: (k: string) =>
  * Render the hook with a mock client whose `menu.takePending` resolves to
  * `pending` (the shell-buffered intent). On mount the hook drains once; a test
  * can also override `takePending` to script later focus/visibility drains.
+ * `clientOverrides` extends the mock client (e.g. `applications.list`) for the
+ * job-deep-link tests, which resolve against a fetched applications list.
  */
 function renderWithPending(
   pending: PendingMenuIntent | null,
-  takePending = vi.fn().mockResolvedValue(pending)
+  takePending = vi.fn().mockResolvedValue(pending),
+  clientOverrides: Record<string, (...args: never[]) => unknown> = {}
 ) {
-  const client = createMockClient({ 'menu.takePending': takePending });
+  const client = createMockClient({ 'menu.takePending': takePending, ...clientOverrides });
   const utils = renderHook(() => useMenuNavigation(), { wrapper: withProviders(client) });
   return { ...utils, takePending };
 }
@@ -77,6 +87,8 @@ function renderWithPending(
 beforeEach(() => {
   navigate.mockClear();
   setSettings.mockClear();
+  setJobs.mockClear();
+  setAIGenerate.mockClear();
   setShortcutsOpen.mockClear();
   setExtensionTokenFocus.mockClear();
   check.mockClear();
@@ -214,5 +226,148 @@ describe('useMenuNavigation', () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/settings' }));
     expect(setSettings).toHaveBeenCalledExactlyOnceWith({ activeSection: 'accounts' });
     expect(setExtensionTokenFocus).not.toHaveBeenCalled();
+  });
+
+  // ── `generate-for-job` / `open-job` deep links (PR2 §B.2) ──────────────────
+  // Each fetches the applications list fresh (via `fetchApplications`, backed
+  // by the same mock client's `applications.list`) rather than trusting a
+  // component-local cache.
+
+  describe('generate-for-job / open-job deep links', () => {
+    const URL = 'https://boards.greenhouse.io/acme/jobs/1';
+
+    it('generate-for-job with a matching application lands on its Documents tab', async () => {
+      const list = vi.fn().mockResolvedValue([{ id: 'app-1', jobUrl: URL }]);
+      renderWithPending(
+        { event: 'menu:navigate', payload: { route: 'generate-for-job', section: null, url: URL } },
+        undefined,
+        { 'applications.list': list }
+      );
+
+      await waitFor(() =>
+        expect(navigate).toHaveBeenCalledWith({
+          to: '/applications/$id',
+          params: { id: 'app-1' },
+          search: { tab: 'documents' },
+        })
+      );
+      expect(setAIGenerate).not.toHaveBeenCalled();
+    });
+
+    it('generate-for-job with no matching application prefills the generate flow with the URL', async () => {
+      const list = vi.fn().mockResolvedValue([]);
+      renderWithPending(
+        { event: 'menu:navigate', payload: { route: 'generate-for-job', section: null, url: URL } },
+        undefined,
+        { 'applications.list': list }
+      );
+
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/ai-generate' }));
+      expect(setAIGenerate).toHaveBeenCalledExactlyOnceWith({ jobUrl: URL });
+      expect(setJobs).not.toHaveBeenCalled();
+    });
+
+    it('open-job with a matching application lands on its detail page', async () => {
+      const list = vi.fn().mockResolvedValue([{ id: 'app-2', jobUrl: URL }]);
+      renderWithPending(
+        { event: 'menu:navigate', payload: { route: 'open-job', section: null, url: URL } },
+        undefined,
+        { 'applications.list': list }
+      );
+
+      await waitFor(() =>
+        expect(navigate).toHaveBeenCalledWith({
+          to: '/applications/$id',
+          params: { id: 'app-2' },
+          search: {},
+        })
+      );
+    });
+
+    it('open-job with no matching application falls back to the jobs list, URL as the search term', async () => {
+      const list = vi.fn().mockResolvedValue([]);
+      renderWithPending(
+        { event: 'menu:navigate', payload: { route: 'open-job', section: null, url: URL } },
+        undefined,
+        { 'applications.list': list }
+      );
+
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/jobs' }));
+      expect(setJobs).toHaveBeenCalledExactlyOnceWith({ filter: URL });
+      expect(setAIGenerate).not.toHaveBeenCalled();
+    });
+
+    it('matches an application by canonical URL identity, not exact string equality', async () => {
+      // Trailing slash + different casing — same canonical identity as URL.
+      const list = vi
+        .fn()
+        .mockResolvedValue([{ id: 'app-3', jobUrl: 'HTTPS://Boards.Greenhouse.io/acme/jobs/1/' }]);
+      renderWithPending(
+        { event: 'menu:navigate', payload: { route: 'open-job', section: null, url: URL } },
+        undefined,
+        { 'applications.list': list }
+      );
+
+      await waitFor(() =>
+        expect(navigate).toHaveBeenCalledWith(
+          expect.objectContaining({ to: '/applications/$id', params: { id: 'app-3' } })
+        )
+      );
+    });
+
+    it('does nothing when the deep-link intent carries no url', async () => {
+      const list = vi.fn().mockResolvedValue([]);
+      const { takePending } = renderWithPending(
+        { event: 'menu:navigate', payload: { route: 'open-job', section: null } },
+        undefined,
+        { 'applications.list': list }
+      );
+
+      await waitFor(() => expect(takePending).toHaveBeenCalled());
+      expect(list).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('resolveJobDeepLinkTarget', () => {
+  const URL = 'https://boards.greenhouse.io/acme/jobs/1';
+  const applications = [{ id: 'app-1', jobUrl: URL }];
+
+  it('routes generate-for-job to the Documents tab of a matching application', () => {
+    expect(resolveJobDeepLinkTarget('generate-for-job', URL, applications)).toEqual({
+      kind: 'application',
+      id: 'app-1',
+      tab: 'documents',
+    });
+  });
+
+  it('routes open-job to a matching application with no forced tab', () => {
+    expect(resolveJobDeepLinkTarget('open-job', URL, applications)).toEqual({
+      kind: 'application',
+      id: 'app-1',
+    });
+  });
+
+  it('falls back to a prefilled generate session when no application matches', () => {
+    expect(resolveJobDeepLinkTarget('generate-for-job', URL, [])).toEqual({
+      kind: 'generate-prefill',
+      url: URL,
+    });
+  });
+
+  it('falls back to a jobs-list search when no application matches', () => {
+    expect(resolveJobDeepLinkTarget('open-job', URL, [])).toEqual({
+      kind: 'jobs-search',
+      url: URL,
+    });
+  });
+
+  it('never matches on an unnormalizable url (e.g. a non-http scheme)', () => {
+    expect(
+      resolveJobDeepLinkTarget('open-job', 'javascript:alert(1)', [
+        { id: 'app-1', jobUrl: 'javascript:alert(1)' },
+      ])
+    ).toEqual({ kind: 'jobs-search', url: 'javascript:alert(1)' });
   });
 });

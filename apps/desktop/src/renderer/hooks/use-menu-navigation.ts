@@ -1,17 +1,60 @@
 import { useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
-import type { MenuActionEvent, MenuNavigateEvent } from '@ajh/shared';
+import type { Application, MenuActionEvent, MenuNavigateEvent } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
-import { useMenuIntents } from '@/services';
+import { normalizeJobUrl } from '@/features/jobs/lib/canonical-job-key';
+import { fetchApplications, useMenuIntents } from '@/services';
 import { MANAGED_BY_KEY, useUpdater } from '@/services/use-updater';
 import { useWindowControls } from '@/services/use-window-controls';
 import { type SettingsSection, useSessionStore } from '@/store/session-store';
 import { useUiStore } from '@/store/ui-store';
 
 import type { AppRoute } from './use-keyboard-shortcuts';
+
+/** The two symbolic `menu:navigate` destinations the `ajh://generate?url=`
+ *  and `ajh://open?url=` deep links resolve to — see {@link MenuNavigateEvent.route}. */
+type JobDeepLinkDestination = 'generate-for-job' | 'open-job';
+
+/** Where a job deep link actually lands, once resolved against the live
+ *  Applications list. Exported (pure, no React) for direct unit testing. */
+export type JobDeepLinkTarget =
+  | { kind: 'application'; id: string; tab?: 'documents' }
+  | { kind: 'generate-prefill'; url: string }
+  | { kind: 'jobs-search'; url: string };
+
+/**
+ * Resolve a `generate-for-job` / `open-job` deep link against the applications
+ * already fetched — an Application whose `jobUrl` normalizes to the same
+ * canonical identity as the deep link's `url` (mirrors the dedup identity
+ * `canonicalJobKey` uses elsewhere, via the same `normalizeJobUrl`).
+ *
+ * `generate-for-job`: an existing job lands on its Documents tab (the
+ * tailor/generate flow); no job lands on a fresh generate session prefilled
+ * with the URL (no in-flow generation from a deep link — the pipeline still
+ * runs in the renderer, per ADR-050 §PR2 decision 4).
+ * `open-job`: an existing job lands on its detail page; no job falls back to
+ * the jobs list with the URL as the search term.
+ */
+export function resolveJobDeepLinkTarget(
+  destination: JobDeepLinkDestination,
+  url: string,
+  applications: Pick<Application, 'id' | 'jobUrl'>[]
+): JobDeepLinkTarget {
+  const target = normalizeJobUrl(url);
+  const match = target ? applications.find((a) => normalizeJobUrl(a.jobUrl) === target) : undefined;
+
+  if (match) {
+    return destination === 'generate-for-job'
+      ? { kind: 'application', id: match.id, tab: 'documents' }
+      : { kind: 'application', id: match.id };
+  }
+  return destination === 'generate-for-job'
+    ? { kind: 'generate-prefill', url }
+    : { kind: 'jobs-search', url };
+}
 
 /** Settings sub-sections we accept off the wire — mirrors the `SettingsSection`
  *  union in session-store. Guards the unchecked cast of an arbitrary string. */
@@ -41,6 +84,8 @@ const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 export function useMenuNavigation() {
   const navigate = useNavigate();
   const setSettings = useSessionStore((s) => s.setSettings);
+  const setJobs = useSessionStore((s) => s.setJobs);
+  const setAIGenerate = useSessionStore((s) => s.setAIGenerate);
   const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
   const setExtensionTokenFocus = useUiStore((s) => s.setExtensionTokenFocus);
   const { check } = useUpdater();
@@ -48,15 +93,46 @@ export function useMenuNavigation() {
   const { t } = useTranslation();
   const { isMacos } = useWindowControls();
 
+  // `generate-for-job` / `open-job`: fetch the live applications list (fresh —
+  // a cold app has nothing warm yet) and land on whichever page
+  // `resolveJobDeepLinkTarget` resolves to. A malformed/missing `url` (should
+  // never happen — the shell validates it before dispatch) is a no-op.
+  const goToJobDeepLink = useCallback(
+    (destination: JobDeepLinkDestination, url: string | undefined) => {
+      if (!url) return;
+      void fetchApplications().then((applications) => {
+        const target = resolveJobDeepLinkTarget(destination, url, applications);
+        if (target.kind === 'application') {
+          void navigate({
+            to: '/applications/$id',
+            params: { id: target.id },
+            search: target.tab ? { tab: target.tab } : {},
+          });
+        } else if (target.kind === 'generate-prefill') {
+          setAIGenerate({ jobUrl: target.url });
+          void navigate({ to: '/ai-generate' });
+        } else {
+          setJobs({ filter: target.url });
+          void navigate({ to: '/jobs' });
+        }
+      });
+    },
+    [navigate, setAIGenerate, setJobs]
+  );
+
   const onNavigate = useCallback(
-    ({ route, section, focus }: MenuNavigateEvent) => {
+    ({ route, section, focus, url }: MenuNavigateEvent) => {
+      if (route === 'generate-for-job' || route === 'open-job') {
+        goToJobDeepLink(route, url);
+        return;
+      }
       if (section && SETTINGS_SECTIONS.includes(section as SettingsSection)) {
         setSettings({ activeSection: section as SettingsSection });
       }
       void navigate({ to: route as AppRoute });
       if (focus === 'extension-token') setExtensionTokenFocus(true);
     },
-    [navigate, setSettings, setExtensionTokenFocus]
+    [navigate, setSettings, setExtensionTokenFocus, goToJobDeepLink]
   );
 
   const onAction = useCallback(

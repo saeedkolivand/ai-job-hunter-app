@@ -98,6 +98,10 @@ mod autotrack;
 /// `CallerClass` + the per-verb dispatch matrix that gates on it — see its own module doc
 /// (R8 relief, PR1 — extension read tier).
 mod caller_gate;
+/// `document.export` → `document.result` (PR2 — documents into ATS) — see its own module doc.
+mod document_export;
+/// [`FrameDecision`] — see its own module doc (R8 relief, PR2).
+mod frame;
 pub mod handshake;
 mod import_flow;
 #[cfg(test)]
@@ -131,6 +135,7 @@ pub(crate) use stream::FrameSink;
 // keep referring to these by their original bare names — see `caller_gate`'s own module doc.
 use self::caller_gate::advance_authenticated;
 use self::caller_gate::CallerClass;
+use self::frame::FrameDecision;
 use self::req_id_cap::{oversized_req_id_reply, MAX_REQ_ID_BYTES};
 
 /// Refusal text for the assisted-autofill opt-in gate — shared verbatim by
@@ -264,6 +269,11 @@ pub struct BridgeState {
     /// reconnect-proof reasoning as `match_live_limiter`/`agent_query_limiter`. Deliberately its
     /// OWN instance, never shared with `agent_query_limiter`: see [`settings::SettingsSetThrottle`]'s doc.
     settings_set_limiter: Mutex<settings::SettingsSetThrottle>,
+    /// `document.export` token-bucket throttle (PR2 — documents into ATS) — per pairing, same
+    /// reconnect-proof reasoning as every other throttle here. Its OWN instance, never sharing
+    /// `agent_query_limiter`'s cheap-read bucket: an export is a real Typst compile (100-400ms),
+    /// not a cheap DB read. See [`document_export::DocumentExportThrottle`]'s doc.
+    document_export_limiter: Mutex<document_export::DocumentExportThrottle>,
     /// Fan-out signal telling every LIVE connection task that the pairing
     /// token is being rotated (see [`Self::regenerate_token`]). A broadcast —
     /// not a per-connection registry — because that is exactly the shape the
@@ -307,6 +317,7 @@ impl BridgeState {
             match_live_limiter: Mutex::new(match_live::MatchLiveThrottle::new()),
             agent_query_limiter: Mutex::new(agent_read::AgentQueryThrottle::new()),
             settings_set_limiter: Mutex::new(settings::SettingsSetThrottle::new()),
+            document_export_limiter: Mutex::new(document_export::DocumentExportThrottle::new()),
             // Capacity 1: the signal is a bare "rotate happened" edge, so a
             // receiver that fell behind two back-to-back rotations gets
             // `RecvError::Lagged` — which the read loop treats exactly like the
@@ -461,6 +472,19 @@ impl BridgeState {
     /// [`settings::SettingsSetThrottle`]'s doc.
     pub(super) fn try_acquire_settings_set(&self) -> bool {
         self.settings_set_limiter.lock().try_acquire()
+    }
+
+    /// Try to consume one `document.export` token — per pairing (PR2). See
+    /// [`document_export::DocumentExportThrottle`]'s doc.
+    pub(super) fn try_acquire_document_export(&self) -> bool {
+        self.document_export_limiter.lock().try_acquire()
+    }
+
+    /// Milliseconds until [`Self::try_acquire_document_export`] would next admit one token — call
+    /// this ONLY right after a failed [`Self::try_acquire_document_export`], same discipline as
+    /// [`Self::agent_retry_after_ms`].
+    pub(super) fn document_export_retry_after_ms(&self) -> u64 {
+        self.document_export_limiter.lock().retry_after_ms()
     }
 
     /// Milliseconds until [`Self::try_acquire_agent`] would next admit one token for `resource`
@@ -1025,6 +1049,21 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                 ))
             }
             FrameDecision::SettingsSet { req_id, .. } => Some(settings::throttled_reply(&req_id)),
+            // `document.export` (PR2 — documents into ATS): extension caller + Assisted-autofill
+            // gate already checked in `caller_gate::advance_authenticated`; only the throttle is
+            // decided here, same shape as `SettingsSet` just above. Awaited inline (not spawned
+            // off the read loop) — a Typst compile is bounded (100-400ms per
+            // `documents_export_document`'s own doc), the same class of cost `Import`/`MatchLive`
+            // already await inline here.
+            FrameDecision::DocumentExport { req_id, payload }
+                if state.try_acquire_document_export() =>
+            {
+                Some(document_export::handle_document_export(&app, &req_id, &payload).await)
+            }
+            FrameDecision::DocumentExport { req_id, .. } => Some(document_export::throttled_reply(
+                &req_id,
+                state.document_export_retry_after_ms(),
+            )),
             FrameDecision::AnswerAssist { req_id, payload } => {
                 // Spawned onto its OWN task (see `stream::spawn_answer_assist`)
                 // so a multi-second stream never blocks THIS loop's
@@ -1112,110 +1151,6 @@ enum ConnState {
     },
     /// Mutual handshake complete — subsequent frames are session-authorized.
     Authenticated,
-}
-
-/// Outcome of the per-frame handshake/dispatch decision, isolated from any
-/// `AppHandle` so the size gate + handshake state machine are unit-testable. The
-/// connection loop runs the (async, app-stateful) import only for
-/// [`FrameDecision::Import`]; every other variant is resolved here from pure
-/// inputs (+ the token off [`BridgeState`] for the constant-time proof check).
-#[cfg_attr(test, derive(Debug))]
-enum FrameDecision {
-    /// Frame exceeds [`MAX_FRAME_BYTES`] — close the socket without parsing.
-    CloseOverCap,
-    /// Not JSON, or an ignorable frame — drop silently, no reply, stay in state.
-    Drop,
-    /// The first frame was not a valid protocol-2 `hello` (a legacy `{type:'auth',
-    /// token}` frame, a missing/older protocol): send this ready-to-send
-    /// [`msg::UPDATE_REQUIRED`] reply, then CLOSE. Force cutover — no dual path.
-    Outdated(String),
-    /// A handshake step failed (bad/absent proof, or an unexpected frame
-    /// mid-handshake): CLOSE without a reply and without marking connected.
-    /// Distinct from [`FrameDecision::AuthOk`] so the loop never authorizes a
-    /// socket whose proof did not verify.
-    Unauthorized,
-    /// `hello` accepted: send this `challenge` reply and advance to `next`
-    /// (`AwaitingAuth`). NOT yet connected.
-    Challenge { reply: String, next: ConnState },
-    /// The client proof VERIFIED (constant-time): send this `auth.ok` reply, mark
-    /// the socket connected, and advance to `Authenticated`.
-    AuthOk(String),
-    /// A ready-to-send reply from an authenticated frame (an unknown message
-    /// type acknowledged as an error). Stays `Authenticated`.
-    Reply(String),
-    /// An authenticated `import.request` to dispatch through
-    /// [`import_flow::handle_import`].
-    Import { req_id: String, payload: Value },
-    /// An authenticated `profile.get` to answer through [`handle_profile`]. Carries
-    /// no payload — the reply is gated on the autofill opt-in, not on any input.
-    Profile { req_id: String },
-    /// An authenticated `applied.check` to answer through
-    /// [`applied_check::handle_applied_check`]. Carries the payload verbatim so
-    /// the handler can read `url`. Read-only by construction: resolved from the
-    /// local `ApplicationStore` only — never the network.
-    AppliedCheck { req_id: String, payload: Value },
-    /// An authenticated `status.update` to answer through
-    /// [`status_update::handle_status_update`]. Carries the payload verbatim so
-    /// the handler can read `url` + `to`. The ONLY write this dispatch can
-    /// route to besides `Import`;
-    /// [`status_update::resolve_status_update`] is what actually restricts it
-    /// to `saved → applied` on an exact match.
-    StatusUpdate { req_id: String, payload: Value },
-    /// An authenticated `autotrack.check` (Task #22) — a pure read of the
-    /// auto-track opt-in off [`BridgeState`]. No payload; the loop answers it
-    /// with `autotrack::autotrack_result_reply`.
-    AutotrackCheck { req_id: String },
-    /// An authenticated `autofill.check` (Task #30) — a pure read of the
-    /// assisted-autofill opt-in off [`BridgeState`]. Mirrors
-    /// [`FrameDecision::AutotrackCheck`] exactly. No payload; the loop
-    /// answers it with `autofill_check::autofill_check_result_reply`.
-    AutofillCheck { req_id: String },
-    /// An authenticated `answers.save` to answer through
-    /// [`answers_save::handle_answers_save`]. Carries the payload verbatim so
-    /// the handler can read `url` + `answers`.
-    AnswersSave { req_id: String, payload: Value },
-    /// An authenticated `answers.suggest` to answer through
-    /// [`answers_suggest::handle_answers_suggest`]. Carries the payload
-    /// verbatim so the handler can read `questions`.
-    AnswersSuggest { req_id: String, payload: Value },
-    /// An authenticated `match.live` to answer through
-    /// [`match_live::handle_match_live`]. Carries the payload verbatim so the
-    /// handler can read `url` + `html`.
-    MatchLive { req_id: String, payload: Value },
-    /// An authenticated `answer.assist` to answer through
-    /// [`answer_assist::handle_answer_assist`]. Carries the payload verbatim
-    /// so the handler can read `question` + `url` + `searchWeb`.
-    AnswerAssist { req_id: String, payload: Value },
-    /// An authenticated `assist.cancel` — cancel the in-flight stream named
-    /// by `req_id` on THIS connection's own
-    /// [`stream::AssistStreamRegistry`]. No reply is ever sent for this frame.
-    AssistCancel { req_id: String },
-    /// An authenticated `agent.query` (issue #1084 PR 1) to answer through
-    /// [`agent_read::handle_agent_query`]. Carries the payload verbatim so
-    /// the handler can read `resource` (+ `url`/`limit`), and the resolved
-    /// `caller` (PR1) so the dispatch loop knows whether to apply the
-    /// extension's own smaller reply cap.
-    AgentQuery {
-        req_id: String,
-        payload: Value,
-        caller: CallerClass,
-    },
-    /// An authenticated `agent.call` (ADR-038 §2, Phase 2) to answer through
-    /// [`agent_call::handle_agent_call`]. Carries the payload verbatim so the
-    /// handler can read `namespace`/`command`/`input`, and the resolved
-    /// `caller` (PR1) — same reasoning as [`FrameDecision::AgentQuery`].
-    AgentCall {
-        req_id: String,
-        payload: Value,
-        caller: CallerClass,
-    },
-    /// An authenticated `settings.get` (R7) — extension caller only, answered through
-    /// [`settings::handle_settings_get`]. No payload.
-    SettingsGet { req_id: String },
-    /// An authenticated `settings.set` (R7) — extension caller only, answered through
-    /// [`settings::handle_settings_set`]. Carries the payload verbatim so the handler can read
-    /// `key`/`enabled`.
-    SettingsSet { req_id: String, payload: Value },
 }
 
 /// The per-message handshake gate + dispatch routing (size cap → JSON parse →
