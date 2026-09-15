@@ -35,6 +35,9 @@ import {
   type ExtensionAnswersSuggestRequest,
   type ExtensionAnswersSuggestResult,
   type ExtensionAnswerSuggestion,
+  type ExtensionAppliedBatchEntry,
+  type ExtensionAppliedCheckBatchRequest,
+  type ExtensionAppliedCheckBatchResult,
   type ExtensionAppliedCheckRequest,
   type ExtensionAppliedCheckResult,
   type ExtensionAssistChunkPayload,
@@ -86,6 +89,9 @@ export {
   type ExtensionAnswersSuggestRequest,
   type ExtensionAnswersSuggestResult,
   type ExtensionAnswerSuggestion,
+  type ExtensionAppliedBatchEntry,
+  type ExtensionAppliedCheckBatchRequest,
+  type ExtensionAppliedCheckBatchResult,
   type ExtensionAppliedCheckRequest,
   type ExtensionAppliedCheckResult,
   type ExtensionAssistChunkPayload,
@@ -158,6 +164,8 @@ export const ExtensionMessageTypeSchema = z.enum([
   EXTENSION_MESSAGE_TYPES.settingsSet,
   EXTENSION_MESSAGE_TYPES.documentExport,
   EXTENSION_MESSAGE_TYPES.documentResult,
+  EXTENSION_MESSAGE_TYPES.appliedCheckBatch,
+  EXTENSION_MESSAGE_TYPES.appliedBatchResult,
 ]) satisfies z.ZodType<ExtensionMessageType>;
 
 /** `hello` payload (handshake step 1). No token — the proof authenticates later. */
@@ -255,6 +263,41 @@ export const ExtensionAppliedCheckResultSchema = z.object({
   appliedAt: z.number().optional(),
   error: z.string().optional(),
 }) satisfies z.ZodType<ExtensionAppliedCheckResult>;
+
+/**
+ * `applied.check.batch` payload (PR3, results-page stamps). Shape-only, like
+ * every sibling request schema above — the desktop enforces the
+ * `MAX_APPLIED_CHECK_BATCH_URLS` cap (refuse, never truncate). Mirrors
+ * {@link ExtensionAppliedCheckBatchRequest}.
+ */
+export const ExtensionAppliedCheckBatchRequestSchema = z.object({
+  urls: z.array(z.string()),
+}) satisfies z.ZodType<ExtensionAppliedCheckBatchRequest>;
+
+/** One url's outcome in an `applied.batch.result` reply. Mirrors
+ *  {@link ExtensionAppliedBatchEntry}. */
+export const ExtensionAppliedBatchEntrySchema = z.object({
+  url: z.string(),
+  found: z.boolean(),
+  status: z.string().optional(),
+}) satisfies z.ZodType<ExtensionAppliedBatchEntry>;
+
+/**
+ * `applied.check.batch` payload. Mirrors {@link ExtensionAppliedCheckBatchResult}
+ * — a discriminated union on `ok`: `ok:true` requires a `results` array;
+ * `ok:false` requires `error` (`detail`/`retryAfterMs` optional — the latter
+ * set only on a throttle refusal, same shape as
+ * {@link ExtensionDocumentExportResultSchema}).
+ */
+export const ExtensionAppliedCheckBatchResultSchema = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true), results: z.array(ExtensionAppliedBatchEntrySchema) }),
+  z.object({
+    ok: z.literal(false),
+    error: z.string(),
+    detail: z.string().optional(),
+    retryAfterMs: z.number().optional(),
+  }),
+]) satisfies z.ZodType<ExtensionAppliedCheckBatchResult>;
 
 /**
  * `status.update` payload — the url to mark applied. `to` is a literal, not a
@@ -449,6 +492,9 @@ export const ExtensionMatchLiveResultSchema = z.discriminatedUnion('ok', [
     gaps: z.array(z.string()),
     resumeName: z.string(),
     scoreSource: z.enum(['keyword', 'combined']),
+    // PR3 — two verbatim salary facts, never a verdict. Additive/optional:
+    // an older desktop never sends it, an older extension ignores it.
+    salary: z.object({ posting: z.string(), expectation: z.string().optional() }).optional(),
   }),
   z.object({ ok: z.literal(false), error: z.string() }),
 ]) satisfies z.ZodType<ExtensionMatchLiveResult>;

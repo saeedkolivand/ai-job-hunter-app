@@ -15,6 +15,7 @@ import type {
   ExtensionDocumentSource,
   ExtensionImportRequest,
   ExtensionMatchLiveRequest,
+  ExtensionMatchLiveResult,
   ExtensionRewritePreset,
   ExtensionSettingsKey,
 } from '@ajh/shared';
@@ -48,6 +49,7 @@ import {
 // (erased at build) to keep answers-capture.ts's runtime code out of the
 // background's bundle.
 import type { CapturedAnswer, FilledField, ScannedQuestion } from './lib/answers-capture';
+import { getShowFitBadge, getStampResultsPages } from './lib/appearance';
 // TYPE-ONLY import — same rationale as the autofill.ts import below:
 // `attach-file.js` is a classic-script injection target (see
 // `injected-entries.mjs`), so its runtime code (`runAttachFile`,
@@ -66,7 +68,18 @@ import { handleSubmitDetected, maybeArmSubmitWatch } from './lib/auto-track';
 // bits the background needs (the global key + a result guard) are defined below.
 import type { AutofillProfile, AutofillSummary } from './lib/autofill';
 import { BridgeClient } from './lib/bridge';
+// TYPE-ONLY import — same rationale as the autofill.ts import above:
+// `fit-badge.js` is a classic-script injection target (see
+// `injected-entries.mjs`), so its runtime code (`runRenderFitBadge`) must be
+// imported ONLY by `fit-badge.ts`. The global key is duplicated as a local
+// literal below, same discipline as `AUTOFILL_GLOBAL`.
+import type { FitBadgeView } from './lib/fit-badge';
 import type { ConnectionStatus, PopupRequest, PopupResponse } from './lib/messages';
+// TYPE-ONLY import — same rationale as `fit-badge.ts` above: `results-
+// stamp.js` is a classic-script injection target, so its runtime code must
+// be imported ONLY by `results-stamp.ts`. Both global keys are duplicated
+// as local literals below.
+import type { CollectedCard, StampInput } from './lib/results-stamp';
 import { clearToken, getToken, looksLikeToken, setToken } from './lib/storage';
 
 /**
@@ -96,6 +109,24 @@ const ANSWER_REPLACE_GLOBAL = '__ajhRunAnswerReplace';
  *  above. */
 const ATTACH_FILE_GLOBAL = '__ajhRunAttachFile';
 
+/** Isolated-world global key under which `fit-badge.js` exposes the
+ *  renderer (PR3). MUST match `FIT_BADGE_GLOBAL` in `lib/fit-badge.ts`.
+ *  Duplicated as a local literal for the same reason as `AUTOFILL_GLOBAL`
+ *  above. */
+const FIT_BADGE_GLOBAL = '__ajhRenderFitBadge';
+
+/** Internal message kind the fit badge's "Open the panel" button posts —
+ *  MUST match `OPEN_PANEL_MSG` in `lib/fit-badge.ts`. Duplicated as a local
+ *  literal for the same reason as `SUBMIT_DETECTED_MSG` below. */
+const OPEN_PANEL_FROM_BADGE_MSG = 'ajhOpenPanelFromBadge';
+
+/** Isolated-world global keys under which `results-stamp.js` exposes the
+ *  collector/stamper (PR3). MUST match `RESULTS_COLLECT_GLOBAL`/
+ *  `RESULTS_STAMP_GLOBAL` in `lib/results-stamp.ts`. Duplicated as local
+ *  literals for the same reason as `AUTOFILL_GLOBAL` above. */
+const RESULTS_COLLECT_GLOBAL = '__ajhCollectResultsCards';
+const RESULTS_STAMP_GLOBAL = '__ajhStampResultsCards';
+
 /** Internal message kind the injected `submit-watch.js` posts on a detected
  *  form submit (Task #22). Duplicated as a local literal — MUST match
  *  `SUBMIT_DETECTED_MSG` in `lib/submit-watch.ts` — so that pure DOM module
@@ -120,6 +151,7 @@ const GESTURE_KINDS: ReadonlySet<PopupRequest['kind']> = new Set([
   'answerRestoreOriginal',
   'matchLive',
   'documentAttach',
+  'stampResults',
 ]);
 
 /** Client-side cap on the number of scanned question labels sent in one
@@ -147,6 +179,21 @@ function isScannedQuestions(v: unknown): v is ScannedQuestion[] {
 function isFillAnswerResult(v: unknown): v is FillAnswerResult {
   if (typeof v !== 'object' || v === null) return false;
   return typeof (v as Record<string, unknown>).filled === 'boolean';
+}
+
+/** Minimal guard for the `{url, index}[]` array that crossed the
+ *  `executeScript` boundary (`results-stamp.js`'s collect-step return, PR3). */
+function isCollectedCards(v: unknown): v is CollectedCard[] {
+  return (
+    Array.isArray(v) &&
+    v.every(
+      (e) =>
+        typeof e === 'object' &&
+        e !== null &&
+        typeof (e as Record<string, unknown>).url === 'string' &&
+        typeof (e as Record<string, unknown>).index === 'number'
+    )
+  );
 }
 
 /** Minimal guard for the summary that crossed the `executeScript` boundary. */
@@ -821,6 +868,131 @@ async function runDocumentAttach(
   return { ok: true, kind: 'documentAttach', result };
 }
 
+// ── Results-page stamps (PR3 §B.4) ──────────────────────────────────────────────
+
+/**
+ * Step one: inject the results-stamp entry (registers BOTH the collect and
+ * stamp globals on the page — see `results-stamp.ts`'s doc) and call the
+ * collector. Returns the candidate `{url, index}[]` the background sends on
+ * as `applied.check.batch`.
+ */
+async function injectResultsCollect(tabId: number): Promise<CollectedCard[]> {
+  await browser.scripting.executeScript({ target: { tabId }, files: ['results-stamp.js'] });
+  const results = await browser.scripting.executeScript({
+    target: { tabId },
+    func: (key: string): unknown => {
+      const runner = (globalThis as Record<string, unknown>)[key] as (() => unknown) | undefined;
+      return runner ? runner() : null;
+    },
+    args: [RESULTS_COLLECT_GLOBAL],
+  });
+  const collected = results[0]?.result;
+  if (!isCollectedCards(collected)) throw new Error('Could not read job cards on this page.');
+  return collected;
+}
+
+/**
+ * Step two: call the SAME injected instance's stamper with the resolved
+ * `applied.check.batch` entries (in the SAME order the urls were sent —
+ * `stampResultsCards` maps them back to its own collected anchors by
+ * index). Returns how many cards were actually stamped.
+ */
+async function injectResultsStamp(tabId: number, entries: StampInput[]): Promise<number> {
+  const results = await browser.scripting.executeScript({
+    target: { tabId },
+    func: (data: StampInput[], key: string): unknown => {
+      const runner = (globalThis as Record<string, unknown>)[key] as
+        ((r: StampInput[]) => number) | undefined;
+      return runner ? runner(data) : 0;
+    },
+    args: [entries, RESULTS_STAMP_GLOBAL],
+  });
+  const stamped = results[0]?.result;
+  return typeof stamped === 'number' ? stamped : 0;
+}
+
+/**
+ * User-clicked "Stamp this results page" (PR3 §B.4). Mirrors `runAnswersSave`'s
+ * not-paired short-circuit. UNLIKE most gesture verbs, a refusal at any step
+ * beyond "not paired" (over-cap, throttled, a malformed batch reply, a
+ * collect/stamp injection failure) degrades to a `stamped: 0` + explanatory
+ * `status` line rather than `ok:false` — "respect the refusals… degrade to
+ * no stamps, never a partial lie" (PR3 §B.4).
+ */
+async function runStampResults(): Promise<PopupResponse> {
+  const token = await getToken();
+  if (!token) {
+    return { ok: false, error: 'Not paired. Paste your pairing token first.' };
+  }
+  // Re-read the preference here too (never cached at load) — defense in
+  // depth against a stale UI state that still shows the button after the
+  // user turned the preference off elsewhere (Settings page, another
+  // surface).
+  if (!(await getStampResultsPages())) {
+    return { ok: false, error: 'Results-page stamps are off. Turn them on in Settings.' };
+  }
+
+  let tabId: number;
+  try {
+    tabId = await activeTabId();
+  } catch {
+    return { ok: false, error: 'No active tab to scan.' };
+  }
+
+  let collected: CollectedCard[];
+  try {
+    collected = await injectResultsCollect(tabId);
+  } catch {
+    return { ok: false, error: 'Could not read this page. Reload and try again.' };
+  }
+  if (collected.length === 0) {
+    return {
+      ok: true,
+      kind: 'stampResults',
+      stamped: 0,
+      status: 'No job cards found on this page.',
+    };
+  }
+
+  let batch: Awaited<ReturnType<BridgeClient['checkAppliedBatch']>>;
+  try {
+    batch = await getClient().checkAppliedBatch(collected.map((c) => c.url));
+  } catch {
+    return {
+      ok: true,
+      kind: 'stampResults',
+      stamped: 0,
+      status: 'Could not reach the desktop app.',
+    };
+  }
+  if (!batch.ok) {
+    return { ok: true, kind: 'stampResults', stamped: 0, status: batch.error };
+  }
+
+  const entries: StampInput[] = batch.results.map((r) => {
+    const out: StampInput = { url: r.url, found: r.found };
+    if (r.status !== undefined) out.status = r.status;
+    return out;
+  });
+
+  let stamped: number;
+  try {
+    stamped = await injectResultsStamp(tabId, entries);
+  } catch {
+    return { ok: true, kind: 'stampResults', stamped: 0, status: 'Could not stamp this page.' };
+  }
+
+  return {
+    ok: true,
+    kind: 'stampResults',
+    stamped,
+    status:
+      stamped > 0
+        ? `Stamped ${stamped} card${stamped === 1 ? '' : 's'}.`
+        : 'No saved/applied jobs found among the cards on this page.',
+  };
+}
+
 // ── Auto-track (Task #22, Layer A) ──────────────────────────────────────────────
 
 /** Guard for the injected submit-watcher's fire-and-forget message. */
@@ -828,6 +1000,13 @@ function isSubmitDetected(v: unknown): v is { kind: 'submitDetected'; url: strin
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Record<string, unknown>;
   return o.kind === SUBMIT_DETECTED_MSG && typeof o.url === 'string';
+}
+
+/** Guard for the fit badge's fire-and-forget "Open the panel" click (PR3) —
+ *  mirrors {@link isSubmitDetected}'s shape exactly. */
+function isOpenPanelFromBadge(v: unknown): v is { kind: typeof OPEN_PANEL_FROM_BADGE_MSG } {
+  if (typeof v !== 'object' || v === null) return false;
+  return (v as Record<string, unknown>).kind === OPEN_PANEL_FROM_BADGE_MSG;
 }
 
 /**
@@ -972,6 +1151,87 @@ async function runAnswersSuggest(): Promise<PopupResponse> {
   return { ok: true, kind: 'answersSuggest', result, scanned };
 }
 
+/** Qualitative band next to the score — mirrors `job-tools.ts::scoreBand`
+ *  EXACTLY (duplicated rather than imported: `job-tools.ts` is UI-mounting
+ *  code with its own dependency chain, and this is a 3-line pure function,
+ *  not a wire contract, so there is nothing to keep in protocol lockstep —
+ *  same "duplicate the tiny bit" discipline as `AUTOFILL_GLOBAL` above). */
+function fitBadgeScoreBand(score: number): FitBadgeView['band'] {
+  if (score >= 80) return 'strong match';
+  if (score >= 50) return 'partial match';
+  return 'low match';
+}
+
+/** Mirrors `job-tools.ts`'s `SCORE_SOURCE_LABEL` EXACTLY — same duplication
+ *  discipline as {@link fitBadgeScoreBand} above: this is a 2-entry literal
+ *  map, not a wire contract. The on-page badge must show this qualifier too
+ *  (never one tap deeper than the panel/popup card does). */
+const FIT_BADGE_SCORE_SOURCE_LABEL: Record<'keyword' | 'combined', string> = {
+  keyword: 'keyword coverage',
+  combined: 'combined (keyword + semantic)',
+};
+
+/**
+ * Inject the on-page fit badge into `tabId` and render `view`. Two steps so
+ * the match result is passed transiently as an `executeScript` arg rather
+ * than through any stored/registered surface — mirrors `injectFill`'s
+ * two-step register-then-invoke pattern exactly. Every value on `view` is a
+ * JSON-safe primitive/array/plain-object (PR2 lesson).
+ */
+async function injectFitBadge(tabId: number, view: FitBadgeView): Promise<void> {
+  await browser.scripting.executeScript({ target: { tabId }, files: ['fit-badge.js'] });
+  await browser.scripting.executeScript({
+    target: { tabId },
+    func: (v: FitBadgeView, key: string): void => {
+      const runner = (globalThis as Record<string, unknown>)[key] as
+        ((view: FitBadgeView) => void) | undefined;
+      runner?.(v);
+    },
+    args: [view, FIT_BADGE_GLOBAL],
+  });
+}
+
+/**
+ * Best-effort on-page badge after a successful Check-fit (PR3 §B.3) — ONLY
+ * when `getShowFitBadge()` is true. Never affects the popup's own
+ * `matchLive` response: every failure here (opt-in read, the applied-status
+ * lookup, the injection itself) is swallowed, since this is a UI
+ * enhancement layered on an already-successful gesture, not the gesture's
+ * own result.
+ */
+async function maybeShowFitBadge(
+  tabId: number,
+  url: string,
+  result: Extract<ExtensionMatchLiveResult, { ok: true }>
+): Promise<void> {
+  try {
+    if (!(await getShowFitBadge())) return;
+    const score = Math.round(result.combined);
+
+    let applied: FitBadgeView['applied'] = null;
+    try {
+      const check = await getClient().checkApplied(url);
+      if (check.found) applied = check.status === 'applied' ? 'applied' : 'saved';
+    } catch {
+      // Best-effort — the badge still renders without the saved/applied chip.
+    }
+
+    const view: FitBadgeView = {
+      score,
+      band: fitBadgeScoreBand(score),
+      scoreLabel: FIT_BADGE_SCORE_SOURCE_LABEL[result.scoreSource],
+      gaps: result.gaps,
+      applied,
+    };
+    if (result.salary) view.salary = result.salary;
+
+    await injectFitBadge(tabId, view);
+  } catch {
+    // Never let a badge-rendering failure surface anywhere — see this
+    // function's own doc.
+  }
+}
+
 /**
  * User-clicked "Check fit". Mirrors `runAnswersSuggest`'s not-paired
  * short-circuit (token checked BEFORE the capture injection) and its
@@ -998,6 +1258,18 @@ async function runMatchLive(): Promise<PopupResponse> {
 
   const payload: ExtensionMatchLiveRequest = { url, html };
   const result = await getClient().matchLive(payload);
+  if (result.ok) {
+    // Fire-and-forget: the badge is a UI enhancement on top of an already-
+    // resolved Check-fit, never something the popup's own response waits on.
+    void (async () => {
+      try {
+        const tabId = await activeTabId();
+        await maybeShowFitBadge(tabId, url, result);
+      } catch {
+        // No active tab to render into — skip silently.
+      }
+    })();
+  }
   return { ok: true, kind: 'matchLive', result };
 }
 
@@ -1713,6 +1985,8 @@ async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
         return await runDocumentExportText(req.source, req.templateId, req.letterLayoutId);
       case 'documentAttach':
         return await runDocumentAttach(req.source, req.templateId, req.format);
+      case 'stampResults':
+        return await runStampResults();
       default: {
         // Exhaustiveness guard — a new PopupRequest variant must be handled.
         const _never: never = req;
@@ -1759,6 +2033,14 @@ browser.runtime.onMessage.addListener(
       // before acting on it (defense-in-depth, costs nothing).
       if (sender.id === browser.runtime.id) {
         void handleSubmitDetected(message.url, submitFlowDeps());
+      }
+      return undefined;
+    }
+    // The injected fit badge's "Open the panel" button — also fire-and-forget,
+    // same sender-check discipline as `isSubmitDetected` above.
+    if (isOpenPanelFromBadge(message)) {
+      if (sender.id === browser.runtime.id && typeof sender.tab?.id === 'number') {
+        openAnswerPanel(sender.tab.id);
       }
       return undefined;
     }

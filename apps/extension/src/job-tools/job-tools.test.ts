@@ -9,6 +9,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AnswerState } from '../lib/answer-state';
+import { setStampResultsPages } from '../lib/appearance';
 import type { PopupRequest, PopupResponse } from '../lib/messages';
 import {
   buildProfileFallbackFields,
@@ -22,6 +23,7 @@ import {
   resolveFillResponse,
   resolveImportResponse,
   resolveMatchLiveResponse,
+  resolveStampResultsResponse,
 } from './job-tools';
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
@@ -356,6 +358,73 @@ describe('resolveMatchLiveResponse', () => {
     expect(view.resumeName).toBe('My Resume');
     expect(view.gaps).toEqual(['kubernetes', 'terraform']);
     expect(view.text).toBe('72% fit against “My Resume”.');
+  });
+
+  it('passes the salary facts through verbatim (PR3), when present', () => {
+    const res = {
+      ok: true as const,
+      kind: 'matchLive' as const,
+      result: {
+        ok: true as const,
+        combined: 71.6,
+        ats: 60,
+        gaps: [],
+        resumeName: 'My Resume',
+        scoreSource: 'keyword' as const,
+        salary: { posting: '€70,000–€90,000', expectation: '€80,000' },
+      },
+    };
+    const view = resolveMatchLiveResponse(res);
+    expect(view.salary).toEqual({ posting: '€70,000–€90,000', expectation: '€80,000' });
+  });
+
+  it('leaves salary undefined when the desktop omitted it', () => {
+    const res = {
+      ok: true as const,
+      kind: 'matchLive' as const,
+      result: {
+        ok: true as const,
+        combined: 50,
+        ats: 50,
+        gaps: [],
+        resumeName: 'My Resume',
+        scoreSource: 'keyword' as const,
+      },
+    };
+    expect(resolveMatchLiveResponse(res).salary).toBeUndefined();
+  });
+});
+
+// ── resolveStampResultsResponse ──────────────────────────────────────────────
+
+describe('resolveStampResultsResponse', () => {
+  it('surfaces a transport-level error', () => {
+    const res = { ok: false as const, error: 'Not paired. Paste your pairing token first.' };
+    const { text, tone } = resolveStampResultsResponse(res);
+    expect(tone).toBe('err');
+    expect(text).toBe('Not paired. Paste your pairing token first.');
+  });
+
+  it('renders the status line as ok, even for a desktop-side refusal (never a partial lie)', () => {
+    const res = {
+      ok: true as const,
+      kind: 'stampResults' as const,
+      stamped: 0,
+      status: 'Too many job cards on this page.',
+    };
+    const { text, tone } = resolveStampResultsResponse(res);
+    expect(tone).toBe('ok');
+    expect(text).toBe('Too many job cards on this page.');
+  });
+
+  it('renders the success count', () => {
+    const res = {
+      ok: true as const,
+      kind: 'stampResults' as const,
+      stamped: 3,
+      status: 'Stamped 3 cards.',
+    };
+    expect(resolveStampResultsResponse(res).text).toBe('Stamped 3 cards.');
   });
 });
 
@@ -772,6 +841,67 @@ describe('doCheckFit (#btn-check-fit)', () => {
     expect(msg(host).textContent).toBe(
       'Add a resume in AI Job Hunter first, then try Check fit again.'
     );
+  });
+
+  it('shows the two salary facts, verbatim and never a verdict, inside the why? details (PR3)', async () => {
+    const { host } = mount(async () => ({
+      ok: true,
+      kind: 'matchLive',
+      result: {
+        ok: true,
+        combined: 72,
+        ats: 60,
+        gaps: [],
+        resumeName: 'My Resume',
+        scoreSource: 'keyword',
+        salary: { posting: '€70,000–€90,000', expectation: '€80,000' },
+      },
+    }));
+    host.querySelector<HTMLButtonElement>('#btn-check-fit')!.click();
+    await flush();
+
+    const card = host.querySelector<HTMLDivElement>('#match-result')!;
+    expect(card.textContent).toContain('Posting says €70,000–€90,000');
+    expect(card.textContent).toContain('You want €80,000');
+  });
+});
+
+describe('#btn-stamp-results visibility + doStampResults (PR3)', () => {
+  it('stays hidden by default (results-stamp preference OFF)', async () => {
+    await setStampResultsPages(false);
+    const { host } = mount();
+    await flush();
+    expect(host.querySelector<HTMLButtonElement>('#btn-stamp-results')!.hidden).toBe(true);
+  });
+
+  it('shows once the results-stamp preference is ON, read live at mount (not cached)', async () => {
+    await setStampResultsPages(true);
+    const { host } = mount();
+    await flush();
+    expect(host.querySelector<HTMLButtonElement>('#btn-stamp-results')!.hidden).toBe(false);
+    await setStampResultsPages(false); // reset for later tests in this file
+  });
+
+  it('sends stampResults and renders the returned status line', async () => {
+    await setStampResultsPages(true);
+    const { host, send } = mount(async () => ({
+      ok: true,
+      kind: 'stampResults',
+      stamped: 2,
+      status: 'Stamped 2 cards.',
+    }));
+    await flush();
+    const btn = host.querySelector<HTMLButtonElement>('#btn-stamp-results')!;
+    expect(btn.hidden).toBe(false);
+
+    btn.click();
+    expect(msg(host).textContent).toBe('Stamping…');
+    await flush();
+
+    expect(send).toHaveBeenCalledWith({ kind: 'stampResults' });
+    expect(msg(host).textContent).toBe('Stamped 2 cards.');
+    expect(btn.disabled).toBe(false);
+    await setStampResultsPages(false); // reset for later tests in this file
   });
 });
 

@@ -123,4 +123,10 @@ pub(super) enum FrameDecision {
     /// payload verbatim so the handler can read `source`/`kind`/`format`/`templateId`/
     /// `letterLayoutId`/`atsMode`.
     DocumentExport { req_id: String, payload: Value },
+    /// An authenticated `applied.check.batch` (PR3 — Check-fit on the page) to answer through
+    /// [`super::applied_check_batch::handle_applied_check_batch`]. Carries the payload verbatim so
+    /// the handler can read `urls`. Same caller posture as [`FrameDecision::AppliedCheck`]
+    /// (unconditional — see `applied_check_batch`'s module doc) — the throttle admission is
+    /// decided at the dispatch site, not here.
+    AppliedCheckBatch { req_id: String, payload: Value },
 }

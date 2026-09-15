@@ -46,6 +46,8 @@ import {
   type ExtensionAnswersSaveResult,
   type ExtensionAnswersSuggestResult,
   type ExtensionAnswerSuggestion,
+  type ExtensionAppliedBatchEntry,
+  type ExtensionAppliedCheckBatchResult,
   type ExtensionAppliedCheckResult,
   type ExtensionAssistChunkPayload,
   type ExtensionDocumentExportRequest,
@@ -103,6 +105,7 @@ const READY_TIMEOUT_MS = 1_500;
 type PendingResolver = (result: ExtensionImportResult) => void;
 type ProfileResolver = (result: ExtensionProfileResult) => void;
 type AppliedResolver = (result: ExtensionAppliedCheckResult) => void;
+type AppliedBatchResolver = (result: ExtensionAppliedCheckBatchResult) => void;
 type StatusResolver = (result: ExtensionStatusUpdateResult) => void;
 type AnswersResolver = (result: ExtensionAnswersSaveResult) => void;
 type SuggestResolver = (result: ExtensionAnswersSuggestResult) => void;
@@ -252,6 +255,65 @@ function normalizeAppliedCheckResult(payload: unknown): ExtensionAppliedCheckRes
   if (src.title !== undefined) out.title = src.title;
   if (src.appliedAt !== undefined) out.appliedAt = src.appliedAt;
   if (src.error !== undefined) out.error = src.error;
+  return out;
+}
+
+/** One entry of an `applied.batch.result` `results` array. */
+function isExtensionAppliedBatchEntry(v: unknown): v is ExtensionAppliedBatchEntry {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return (
+    typeof o.url === 'string' &&
+    typeof o.found === 'boolean' &&
+    (o.status === undefined || typeof o.status === 'string')
+  );
+}
+
+/**
+ * Hand-written guard for an `applied.check.batch` payload (PR3, extension
+ * stays zod-free). Mirrors `ExtensionAppliedCheckBatchResultSchema`'s
+ * discriminated union: `ok:true` requires a `results` array of
+ * {@link ExtensionAppliedBatchEntry}; `ok:false` mirrors
+ * `isExtensionDocumentExportResult`'s refusal shape exactly (`error` +
+ * optional `detail`/`retryAfterMs`).
+ */
+function isExtensionAppliedCheckBatchResult(v: unknown): v is ExtensionAppliedCheckBatchResult {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  if (o.ok === true) {
+    return Array.isArray(o.results) && o.results.every(isExtensionAppliedBatchEntry);
+  }
+  if (o.ok === false) {
+    if (typeof o.error !== 'string') return false;
+    if (o.detail !== undefined && typeof o.detail !== 'string') return false;
+    if (o.retryAfterMs !== undefined && !Number.isFinite(o.retryAfterMs)) return false;
+    return true;
+  }
+  return false;
+}
+
+/** Rebuild an {@link ExtensionAppliedCheckBatchResult} from only the known,
+ *  defined keys — mirrors `normalizeDocumentExportResult`. This verb's
+ *  errors are NOT rendered directly to the user (the caller degrades a
+ *  refusal to "no stamps" instead), but the fallback text still names the
+ *  failure for logging/diagnostics parity with every other guard here. */
+function normalizeAppliedCheckBatchResult(payload: unknown): ExtensionAppliedCheckBatchResult {
+  if (!isExtensionAppliedCheckBatchResult(payload)) {
+    return { ok: false, error: 'The desktop app sent a malformed applied-batch result.' };
+  }
+  if (payload.ok) {
+    return {
+      ok: true,
+      results: payload.results.map((r) => {
+        const out: ExtensionAppliedBatchEntry = { url: r.url, found: r.found };
+        if (r.status !== undefined) out.status = r.status;
+        return out;
+      }),
+    };
+  }
+  const out: ExtensionAppliedCheckBatchResult = { ok: false, error: payload.error };
+  if (payload.detail !== undefined) out.detail = payload.detail;
+  if (payload.retryAfterMs !== undefined) out.retryAfterMs = payload.retryAfterMs;
   return out;
 }
 
@@ -413,13 +475,15 @@ function normalizeAnswersSuggestResult(payload: unknown): ExtensionAnswersSugges
  * `resumeName`, and a `scoreSource` literal (the optional `semantic` is
  * wire-reserved — never sent by the current desktop, but validated as
  * numeric-or-absent so a future desktop's value round-trips); `ok:false`
- * requires a string `error`.
+ * requires a string `error`. `salary` (PR3, additive/optional) is validated
+ * only when PRESENT: a `posting` string, with an optional string
+ * `expectation` — never a computed/verdict field.
  */
 function isExtensionMatchLiveResult(v: unknown): v is ExtensionMatchLiveResult {
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Record<string, unknown>;
   if (o.ok === true) {
-    return (
+    if (!(
       typeof o.combined === 'number' &&
       typeof o.ats === 'number' &&
       (o.semantic === undefined || typeof o.semantic === 'number') &&
@@ -427,6 +491,15 @@ function isExtensionMatchLiveResult(v: unknown): v is ExtensionMatchLiveResult {
       o.gaps.every((g) => typeof g === 'string') &&
       typeof o.resumeName === 'string' &&
       (o.scoreSource === 'keyword' || o.scoreSource === 'combined')
+    )) {
+      return false;
+    }
+    if (o.salary === undefined) return true;
+    if (typeof o.salary !== 'object' || o.salary === null) return false;
+    const s = o.salary as Record<string, unknown>;
+    return (
+      typeof s.posting === 'string' &&
+      (s.expectation === undefined || typeof s.expectation === 'string')
     );
   }
   if (o.ok === false) return typeof o.error === 'string';
@@ -451,6 +524,11 @@ function normalizeMatchLiveResult(payload: unknown): ExtensionMatchLiveResult {
     scoreSource: payload.scoreSource,
   };
   if (payload.semantic !== undefined) out.semantic = payload.semantic;
+  if (payload.salary !== undefined) {
+    const salary: { posting: string; expectation?: string } = { posting: payload.salary.posting };
+    if (payload.salary.expectation !== undefined) salary.expectation = payload.salary.expectation;
+    out.salary = salary;
+  }
   return out;
 }
 
@@ -842,6 +920,10 @@ export class BridgeClient {
   /** In-flight `applied.check` resolvers, correlated by `reqId`. Kept separate
    *  from {@link pending} for the same reason as {@link pendingProfile}. */
   private readonly pendingApplied = new Map<string, AppliedResolver>();
+  /** In-flight `applied.check.batch` resolvers (PR3), correlated by `reqId`.
+   *  Kept separate from {@link pending} for the same reason as
+   *  {@link pendingProfile}. */
+  private readonly pendingAppliedBatch = new Map<string, AppliedBatchResolver>();
   /** In-flight `status.update` resolvers, correlated by `reqId`. Kept separate
    *  from {@link pending} for the same reason as {@link pendingProfile}. */
   private readonly pendingStatus = new Map<string, StatusResolver>();
@@ -1213,6 +1295,48 @@ export class BridgeClient {
         clearTimeout(timer);
         this.timers.delete(reqId);
         this.pendingApplied.delete(reqId);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
+  /**
+   * Send an `applied.check.batch { urls }` (PR3, results-page stamps) and
+   * resolve with the validated `applied.batch.result` payload. Rejects only
+   * on no connection / timeout / send failure — UNLIKE `checkApplied`, a
+   * well-formed `ok:false` reply is NOT folded away here: the caller
+   * (background.ts) degrades an over-cap/throttle/malformed refusal to "no
+   * stamps" itself, never a partial/best-effort result.
+   */
+  async checkAppliedBatch(urls: string[]): Promise<ExtensionAppliedCheckBatchResult> {
+    await this.ensureConnected();
+    if (this.phase !== 'connected' || !this.transport) {
+      throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
+    }
+    const transport = this.transport;
+
+    const reqId = newReqId();
+    const envelope: ExtensionEnvelope = {
+      type: EXTENSION_MESSAGE_TYPES.appliedCheckBatch,
+      reqId,
+      payload: { urls },
+    };
+
+    return new Promise<ExtensionAppliedCheckBatchResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingAppliedBatch.delete(reqId);
+        this.timers.delete(reqId);
+        reject(new Error('Timed out waiting for the desktop app to respond.'));
+      }, REQUEST_TIMEOUT_MS);
+      this.timers.set(reqId, timer);
+      this.pendingAppliedBatch.set(reqId, resolve);
+
+      try {
+        transport.send(envelope);
+      } catch (err) {
+        clearTimeout(timer);
+        this.timers.delete(reqId);
+        this.pendingAppliedBatch.delete(reqId);
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     });
@@ -2244,6 +2368,16 @@ export class BridgeClient {
       return;
     }
 
+    // applied.batch.result → the results-page batch outcome (PR3, separate map).
+    if (env.type === EXTENSION_MESSAGE_TYPES.appliedBatchResult) {
+      const resolveAppliedBatch = this.pendingAppliedBatch.get(reqId);
+      if (typeof resolveAppliedBatch !== 'function') return;
+      this.pendingAppliedBatch.delete(reqId);
+      this.clearTimer(reqId);
+      resolveAppliedBatch(normalizeAppliedCheckBatchResult(env.payload));
+      return;
+    }
+
     // status.result → the "mark as applied" outcome (separate map).
     if (env.type === EXTENSION_MESSAGE_TYPES.statusResult) {
       const resolveStatus = this.pendingStatus.get(reqId);
@@ -2444,6 +2578,11 @@ export class BridgeClient {
       if (timer) clearTimeout(timer);
       resolve({ found: false, error: reason });
     }
+    for (const [reqId, resolve] of this.pendingAppliedBatch.entries()) {
+      const timer = this.timers.get(reqId);
+      if (timer) clearTimeout(timer);
+      resolve({ ok: false, error: reason });
+    }
     for (const [reqId, resolve] of this.pendingStatus.entries()) {
       const timer = this.timers.get(reqId);
       if (timer) clearTimeout(timer);
@@ -2502,6 +2641,7 @@ export class BridgeClient {
     this.pending.clear();
     this.pendingProfile.clear();
     this.pendingApplied.clear();
+    this.pendingAppliedBatch.clear();
     this.pendingStatus.clear();
     this.pendingAnswers.clear();
     this.pendingSuggest.clear();

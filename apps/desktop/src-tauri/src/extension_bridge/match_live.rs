@@ -111,6 +111,13 @@ pub(super) struct MatchLiveOk {
     pub(super) ats: f64,
     pub(super) gaps: Vec<String>,
     pub(super) resume_name: String,
+    /// A salary range found in the posting text (PR3, design decision 5) — `None` when no range
+    /// was found, in which case the WHOLE `salary` wire field is omitted (never a lone
+    /// `expectation` with no posting fact — "two facts side by side, never a judgement").
+    pub(super) salary_posting: Option<String>,
+    /// `JobPreferences.salary_expectation` verbatim, non-empty only — attached to the reply ONLY
+    /// alongside [`Self::salary_posting`]. See [`msg::MATCH_LIVE`]'s doc.
+    pub(super) salary_expectation: Option<String>,
 }
 
 /// Resolve which résumé to score: the `is_default` row, else the
@@ -228,6 +235,9 @@ fn build_match_ok(result: &Value, resume_name: String) -> MatchLiveOk {
         ats,
         gaps,
         resume_name,
+        // Filled in by the caller (`resolve_match_live`) — this extraction has no salary context.
+        salary_posting: None,
+        salary_expectation: None,
     }
 }
 
@@ -279,11 +289,16 @@ pub(super) async fn resolve_match_live(
     autofill_enabled: bool,
     url: &str,
     html: &str,
+    salary_expectation: Option<String>,
 ) -> AppResult<MatchLiveOk> {
     validate_match_live_request(autofill_enabled, url, html)?;
 
     let job_text = parse_job_text(url, html)
         .ok_or_else(|| AppError::Validation(NO_JOB_TEXT_MESSAGE.to_string()))?;
+
+    // Extracted BEFORE `job_text` is moved into `score_keyword_only` below — pure, no scoring
+    // dependency (see `salary_facts`'s module doc: two facts, never a verdict).
+    let salary_posting = super::salary_facts::extract_salary_range(&job_text);
 
     let docs = store.list();
     let resume =
@@ -298,7 +313,13 @@ pub(super) async fn resolve_match_live(
     let result =
         score_or_timeout(score_keyword_only(app, store, resume, &job_id, job_text)).await?;
 
-    Ok(build_match_ok(&result, resume.title.clone()))
+    let mut ok = build_match_ok(&result, resume.title.clone());
+    // `expectation` rides ONLY alongside a found `posting` range — see `MatchLiveOk`'s doc.
+    if salary_posting.is_some() {
+        ok.salary_expectation = salary_expectation;
+    }
+    ok.salary_posting = salary_posting;
+    Ok(ok)
 }
 
 /// Build the `match.live` reply. Discriminated union: `ok:true` mirrors a
@@ -310,14 +331,27 @@ pub(super) async fn resolve_match_live(
 /// into a silent no-op.
 pub(super) fn match_result_reply(req_id: &str, outcome: AppResult<MatchLiveOk>) -> String {
     let payload = match outcome {
-        Ok(ok) => json!({
-            "ok": true,
-            "combined": ok.combined,
-            "ats": ok.ats,
-            "gaps": ok.gaps,
-            "resumeName": ok.resume_name,
-            "scoreSource": "keyword",
-        }),
+        Ok(ok) => {
+            let mut payload = json!({
+                "ok": true,
+                "combined": ok.combined,
+                "ats": ok.ats,
+                "gaps": ok.gaps,
+                "resumeName": ok.resume_name,
+                "scoreSource": "keyword",
+            });
+            // Additive, OPTIONAL — an older extension ignores an unrecognized field harmlessly.
+            // Only ever present when a range was actually found (see `MatchLiveOk`'s doc); two
+            // facts side by side, never a verdict (design decision 5).
+            if let Some(posting) = ok.salary_posting {
+                let mut salary = json!({ "posting": posting });
+                if let Some(expectation) = ok.salary_expectation {
+                    salary["expectation"] = json!(expectation);
+                }
+                payload["salary"] = salary;
+            }
+            payload
+        }
         // Wire-error discipline: fixed sentinel text only (no dynamic/path/PII
         // content) — detailed context belongs in the desktop log, not on the wire.
         Err(e) => json!({ "ok": false, "error": e.to_string() }),
@@ -350,10 +384,29 @@ pub(super) async fn handle_match_live(app: &AppHandle, req_id: &str, payload: &V
         .to_string();
     let html = payload.get("html").and_then(|v| v.as_str()).unwrap_or("");
 
+    // The backend-readable salary expectation (Task #30) — same managed-state fetch pattern
+    // `answers_suggest::handle_answers_suggest` uses; an absent `JobPreferencesStore` (a start-up
+    // failure) just means no `expectation` fact, never an error. Rides the SAME autofill gate as
+    // the rest of this reply (checked inside `resolve_match_live`).
+    let salary_expectation = app
+        .try_state::<crate::job_preferences::JobPreferencesStore>()
+        .and_then(|s| s.get().salary_expectation)
+        .filter(|s| !s.trim().is_empty());
+
     // Validation order (gate before url/html emptiness) lives inside
     // `resolve_match_live` — see `validate_match_live_request`'s doc.
     let outcome = match app.try_state::<DocumentStore>() {
-        Some(store) => resolve_match_live(app, store.inner(), autofill_enabled, &url, html).await,
+        Some(store) => {
+            resolve_match_live(
+                app,
+                store.inner(),
+                autofill_enabled,
+                &url,
+                html,
+                salary_expectation,
+            )
+            .await
+        }
         None => Err(AppError::Config("document store unavailable".to_string())),
     };
 
@@ -767,17 +820,20 @@ mod tests {
 
     // ── match_result_reply ───────────────────────────────────────────────────
 
+    fn base_ok() -> MatchLiveOk {
+        MatchLiveOk {
+            combined: 72.0,
+            ats: 60.0,
+            gaps: vec!["kubernetes".to_string()],
+            resume_name: "My Resume".to_string(),
+            salary_posting: None,
+            salary_expectation: None,
+        }
+    }
+
     #[test]
     fn match_result_reply_carries_ok_payload() {
-        let reply = match_result_reply(
-            "req-1",
-            Ok(MatchLiveOk {
-                combined: 72.0,
-                ats: 60.0,
-                gaps: vec!["kubernetes".to_string()],
-                resume_name: "My Resume".to_string(),
-            }),
-        );
+        let reply = match_result_reply("req-1", Ok(base_ok()));
         let v: Value = serde_json::from_str(&reply).unwrap();
         assert_eq!(v["type"], msg::MATCH_RESULT);
         assert_eq!(v["reqId"], "req-1");
@@ -791,6 +847,44 @@ mod tests {
             v["payload"].get("semantic").is_none(),
             "semantic is never populated by this path"
         );
+        assert!(
+            v["payload"].get("salary").is_none(),
+            "salary must be OMITTED (not null) when no posting range was found"
+        );
+    }
+
+    // ── salary facts on the reply (PR3, design decision 5) ────────────────────
+
+    #[test]
+    fn match_result_reply_carries_salary_posting_and_expectation() {
+        let mut ok = base_ok();
+        ok.salary_posting = Some("$50,000 - $70,000".to_string());
+        ok.salary_expectation = Some("€75,000".to_string());
+        let reply = match_result_reply("req-2", Ok(ok));
+        let v: Value = serde_json::from_str(&reply).unwrap();
+        assert_eq!(v["payload"]["salary"]["posting"], "$50,000 - $70,000");
+        assert_eq!(v["payload"]["salary"]["expectation"], "€75,000");
+    }
+
+    #[test]
+    fn match_result_reply_omits_expectation_when_unset_but_keeps_posting() {
+        let mut ok = base_ok();
+        ok.salary_posting = Some("$50,000 - $70,000".to_string());
+        let reply = match_result_reply("req-3", Ok(ok));
+        let v: Value = serde_json::from_str(&reply).unwrap();
+        assert_eq!(v["payload"]["salary"]["posting"], "$50,000 - $70,000");
+        assert!(v["payload"]["salary"].get("expectation").is_none());
+    }
+
+    #[test]
+    fn match_result_reply_omits_the_whole_salary_field_when_no_posting_range() {
+        // Never a lone `expectation` with no posting fact — "two facts side by side" (design
+        // decision 5), never one fact alone framed as a comparison target.
+        let mut ok = base_ok();
+        ok.salary_expectation = Some("€75,000".to_string());
+        let reply = match_result_reply("req-4", Ok(ok));
+        let v: Value = serde_json::from_str(&reply).unwrap();
+        assert!(v["payload"].get("salary").is_none());
     }
 
     #[test]
