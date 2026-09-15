@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1789423786059,
+  "lastUpdate": 1789490550256,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "95a0656baecf8b0f05f4c5333dcc3962303af085",
-          "message": "fix: scraping response caps, country backfill, jobicy label (#884)\n\n* fix: raise lever/ashby response cap and backfill scrape country code\n\nFour scrape-trust fixes:\n\n- Lever/Ashby fetch a company's WHOLE board in one call, so a large employer\n  (veeva, openai) tripped the shared 8 MB guard and the company was dropped\n  silently. Raise max_bytes to 16 MB for these two boards only, following the\n  germantechjobs precedent.\n- Per-company ATS fetch failures were invisible whenever a sibling company\n  succeeded (the run still returns Ok). Lever/Ashby now count them and emit the\n  new companies-failed:<n> note via ctx.report_note; BoardSummaryChips maps it\n  to a localized chip (en/de).\n- Manual scrape passed req.country_code straight through, so a typed-freehand\n  location arrived with none and the aggregator hardcoded a 'de' guess and\n  suppressed broadening. derive_country_code moves from commands::autopilot to\n  commands::geocoding (next to suggest) and now also runs on the scrape path,\n  inside the spawned task so the command still returns its jobId immediately.\n- ScrapeFilters kept a stale picked countryCode/lat/lon when the location was\n  typed over; clear them on freehand input, mirroring autopilot's StepTarget.\n- Add the missing jobs.boards.jobicy label (en/de) and defaultValue fallbacks\n  at the four bare board-label call sites.\n\n* fix: close the lost-cancel window on the scrape geocode backfill\n\nReview fixes from the scraping-applier audit:\n\n- HIGH: a jobs_cancel landing during the awaited geocode backfill was silently\n  discarded — ScraperEngine::cancel removes the job slot before cancelling it,\n  so the later scrape_boards found no pre-registered token and minted a fresh,\n  un-cancelled one; the abandoned run then scraped on and its first streamed\n  item cleared the cache the user's new search was filling. Register a clone of\n  the token, race the backfill against it with a biased tokio::select!, and\n  return without starting the scrape when it is already cancelled. Engine\n  contract test pins the mint-fresh behavior the guard exists for.\n- Drop the non-cancellation gate on the new companies-failed note in lever and\n  ashby: the engine cancels ctx.signal the moment the central amount cap fills,\n  which is exactly when a long seeded company list has failures worth showing.\n  failed_fetches only ever counts non-cancellation errors, so the count is\n  honest without the gate.\n- Extract LEVER_BASE_URL + fetch_lever_company and a base-parameterized search\n  loop (the aggregator's JOOBLE_BASE_URL pattern) so the note wiring is covered\n  by two wiremock tests: 200-then-404 yields companies-failed:1 with the good\n  company's postings kept, and an all-success run emits no note.\n- Document companies-failed:<n> in the BoardScrapeSummary note vocabulary and\n  amend the at-most-one-of sentence it invalidated.\n- ScrapeFilters test: the LocationInput stub now fires onChange then\n  onSelectSuggestion in the real order and the pick assertion reads the last\n  call, so a clear-after-pick regression can actually fail it.\n- Correct the lat/lon clearing rationale: no board consumes the coordinates\n  today; they ride into LocationSpec and countryCode is what changes behavior.\n\n* fix: cancel scrape jobs in place so a pre-run stop is never lost\n\nRoot fix for the lost-cancel window plus the PR review follow-ups:\n\n- ScraperEngine::cancel now cancels the job slot in place instead of removing\n  it. Removing it meant a run reaching the engine after the cancel found no\n  slot and minted a fresh, un-cancelled token — the window spans the caller's\n  pre-scrape work AND the engine's own semaphore wait, so the abandoned run\n  could scrape on and clobber the search the user started instead. Verified no\n  leak first: every owner (commands::scrape both exits, autopilot_run's\n  scrape-Err, cancelled and success paths) already unregisters, and an\n  engine-minted slot is removed by the we_minted branch.\n- Replace the tautological map-bookkeeping test with a real one: cancel, then\n  run scrape_boards_with_resolver against FakeScraper and assert zero items\n  streamed and Err(\"scrape cancelled\"). Add an idempotent-cancel companion\n  pinning the slot-survives invariant the no-leak argument rests on.\n- Extract backfill_country_code(token, input) -> bool with an injected-lookup\n  seam, and unit-test all four cases against hung/instant/never-polled futures\n  (no network, no AppHandle): pre-cancelled never polls the lookup, a cancel\n  during the lookup wins immediately, a resolved lookup fills the country, and\n  a picked country is never clobbered. Comment now states honestly that the\n  command layer narrows the window and the engine layer closes it.\n- Ashby parity with lever: ASHBY_BASE_URL + fetch_ashby_company + a\n  base-parameterized search loop, with the same two wiremock tests\n  (partial failure yields companies-failed:1 and keeps the good company's\n  postings; a clean run emits no note).\n- JobsPage: functional setScrapeForm update so two changes dispatched in one\n  tick can't drop the first.",
-          "timestamp": "2026-07-28T00:31:15+02:00",
-          "tree_id": "9c57874ce6536a30f9d158acea9251a1bf9a58fd",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/95a0656baecf8b0f05f4c5333dcc3962303af085"
-        },
-        "date": 1785192737897,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2155166,
-            "range": "± 68469",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2641056,
-            "range": "± 50287",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 319309,
-            "range": "± 8889",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 295894,
             "range": "± 11061",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c5940511bbdef8704b64c30739f53311cfdc09fe",
+          "message": "feat(extension): documents into ATS — résumé attach, cover-letter paste, deep links, copy fallback (#1204)\n\n* feat(extension): documents into ats — résumé attach, cover-letter paste, deep links, copy fallback\n\nThe paired extension gets a dedicated document.export/document.result verb (Autofill opt-in, its own\nper-pairing throttle, frame-cap refusal) that resolves this job's generation or a base résumé on the\ndesktop and calls the existing export chain with the generation language, letter market and stored\ncontact; a curated documents resource feeds the picker with ids and flags only. ajh://generate and\najh://open join the deep-link allowlist and the menu navigation path. FrameDecision moves out of\nmod.rs for R8 headroom, and a frame-budget test exports a dense résumé through every template.\n\nTEMPLATE_LABELS and LETTER_LAYOUT_LABELS live next to the id unions with a registry parity test; the\nmenu navigation hook lands the two deep links; the shared ./ipc export pointed at a file that never\nexisted and now resolves at runtime.\n\nThe side panel gains a Documents tab (picker, template/layout/format, attach, paste, copy, generate or\nopen in the app). A new attach-file injected entry assigns the file through DataTransfer, re-reads the\ninput and fails closed; the first-time per-site confirmation carries attach copy; a copy-field fallback\nshows profile fields when a fill filled nothing; a real-Chromium test pins the DataTransfer claim.\nADR-0009 is amended to correct the file-upload disclosure, with README, privacy copy, knowledge\npointers and the glossary updated.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011ocEc45NGuZTYhxdJheNTL\n\n* fix(extension): review round 1 — attach bytes survive injection, exports stop at revocation\n\nThe résumé bytes were handed to the injected runner as a typed array through executeScript args,\nwhich the browser serializes as JSON, so the page received a plain object, built a zero-byte file\nand refused its own verification every time. The base64 string now crosses that boundary untouched\nand is decoded inside the runner, with a round-trip regression test and a real-browser decode check.\nAttach and cover-letter paste both capture their target before the export and abort if the tab,\norigin or followed generation changed while it was in flight, and a late profile reply can no longer\nrepaint the copy-field fallback after a tab switch.\n\nOn the desktop side an export whose pairing is revoked mid-flight is now discarded instead of being\nhanded to the revoked client, keyed off the rotation epoch that moves inside the same lock hold as\nthe revoke broadcast. The locale path and read helpers moved to the configuration layer that owns\nfilesystem paths, a bare scheme no longer parses as a job deep link, and a failed applications fetch\nfalls back to the existing no-match destinations instead of leaving the deep link nowhere.\n\nDocs lose the copied protocol details in favour of pointers, and the contract doc comment that\nduplicated the renderer resolver was trimmed at its source and the page regenerated. Tests gained\nthe assertions they were missing: canonical URLs, the DOCX reply format, and the confirmation result.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011ocEc45NGuZTYhxdJheNTL\n\n---------\n\nCo-authored-by: Claude Fable 5.1 <noreply@anthropic.com>",
+          "timestamp": "2026-09-15T18:18:14+02:00",
+          "tree_id": "dcd1d8599673411e73182a5d466dc2b8e886a4f7",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/c5940511bbdef8704b64c30739f53311cfdc09fe"
+        },
+        "date": 1789490549049,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2210488,
+            "range": "± 48574",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2622995,
+            "range": "± 38463",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 308342,
+            "range": "± 23495",
             "unit": "ns/iter"
           }
         ]
