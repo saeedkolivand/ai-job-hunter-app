@@ -173,6 +173,34 @@ pub fn resolve_and_export_data_dir(app: &tauri::AppHandle) -> PathBuf {
     dir
 }
 
+/// Path to the persisted app-locale file — `<app data dir>/locale.json`. The centralized
+/// path-reconstruction site for `commands::system::system_get_locale`/`system_set_locale` and
+/// `extension_bridge::document_export`'s base-résumé language fallback (moved here per the
+/// "filesystem paths live in `platform::config`" rule — `docs/architecture-rules.md`; verbatim
+/// behavior, including the `.` fallback below, preserved from its prior home in `commands::system`).
+///
+/// Uses Tauri's own `app.path().app_data_dir()` directly (not [`data_dir`]'s env-first
+/// resolution) — every caller of this fn already holds a live `AppHandle`, so there is no
+/// AppHandle-less-worker case to serve, unlike [`data_dir`]/[`resolve_and_export_data_dir`].
+pub fn locale_file_path(app: &tauri::AppHandle) -> PathBuf {
+    use tauri::Manager;
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("locale.json")
+}
+
+/// Read the app's persisted locale, defaulting to `"en"` when the file is absent, unreadable, or
+/// malformed. The single reader shared by `commands::system::system_get_locale` and
+/// `extension_bridge::document_export`'s base-résumé language fallback — see [`locale_file_path`].
+pub fn read_locale_file(app: &tauri::AppHandle) -> String {
+    std::fs::read_to_string(locale_file_path(app))
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("locale").and_then(|l| l.as_str()).map(String::from))
+        .unwrap_or_else(|| "en".to_string())
+}
+
 const OLLAMA_HOST_ENV: &str = "OLLAMA_HOST";
 const DEFAULT_OLLAMA_HOST: &str = "http://127.0.0.1:11434";
 

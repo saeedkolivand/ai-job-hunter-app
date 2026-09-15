@@ -101,3 +101,97 @@ fn finds_the_url_among_other_args() {
         Some(FocusTarget::Autopilot("abc".to_string()))
     );
 }
+
+// ── PR2 — `ajh://generate?url=…` / `ajh://open?url=…` ───────────────────────
+
+#[test]
+fn accepts_a_valid_generate_for_job_url() {
+    // Assert the FULL canonical url, not just the variant + a domain substring: the renderer
+    // uses `url` as its lookup key, so a regression that truncates the path or returns a fixed
+    // url (but still contains "example.com") must fail this test.
+    let input = "https://example.com/job/1?ref=abc";
+    let encoded = urlencoding::encode(input);
+    let target = parse_focus_target(&argv(&format!("ajh://generate?url={encoded}")));
+    assert_eq!(
+        target,
+        Some(FocusTarget::GenerateForJob(
+            crate::applications::normalize_job_url(input)
+        ))
+    );
+}
+
+#[test]
+fn accepts_a_valid_open_job_url() {
+    let input = "https://example.com/job/2";
+    let encoded = urlencoding::encode(input);
+    let target = parse_focus_target(&argv(&format!("ajh://open?url={encoded}")));
+    assert_eq!(
+        target,
+        Some(FocusTarget::OpenJob(
+            crate::applications::normalize_job_url(input)
+        ))
+    );
+}
+
+#[test]
+fn rejects_a_bare_scheme_with_no_authority() {
+    // A scheme with nothing after it must not parse into a target — `normalize_job_url("https://")`
+    // returns the non-empty literal `"https://"`, which the renderer would otherwise treat as a
+    // real search/lookup url.
+    for bare in ["https://", "http://"] {
+        let encoded = urlencoding::encode(bare);
+        assert_eq!(
+            parse_focus_target(&argv(&format!("ajh://generate?url={encoded}"))),
+            None,
+            "bare = {bare:?}"
+        );
+        assert_eq!(
+            parse_focus_target(&argv(&format!("ajh://open?url={encoded}"))),
+            None,
+            "bare = {bare:?}"
+        );
+    }
+}
+
+#[test]
+fn rejects_a_non_http_job_url() {
+    let encoded = urlencoding::encode("javascript:alert(1)");
+    assert_eq!(
+        parse_focus_target(&argv(&format!("ajh://generate?url={encoded}"))),
+        None
+    );
+    let encoded_ftp = urlencoding::encode("ftp://example.com/x");
+    assert_eq!(
+        parse_focus_target(&argv(&format!("ajh://open?url={encoded_ftp}"))),
+        None
+    );
+}
+
+#[test]
+fn rejects_an_oversized_job_url() {
+    let long = format!("https://example.com/{}", "x".repeat(2100));
+    let encoded = urlencoding::encode(&long);
+    assert_eq!(
+        parse_focus_target(&argv(&format!("ajh://generate?url={encoded}"))),
+        None
+    );
+}
+
+#[test]
+fn rejects_a_missing_or_malformed_url_param() {
+    assert_eq!(parse_focus_target(&argv("ajh://generate")), None);
+    assert_eq!(parse_focus_target(&argv("ajh://generate?")), None);
+    assert_eq!(parse_focus_target(&argv("ajh://generate?url=")), None);
+    assert_eq!(parse_focus_target(&argv("ajh://open?foo=bar")), None);
+    // A second query param is rejected outright rather than silently ignored.
+    let encoded = urlencoding::encode("https://example.com/job/1");
+    assert_eq!(
+        parse_focus_target(&argv(&format!("ajh://generate?url={encoded}&x=1"))),
+        None
+    );
+    // Unknown action with the same query shape.
+    assert_eq!(
+        parse_focus_target(&argv(&format!("ajh://bogus?url={encoded}"))),
+        None
+    );
+}

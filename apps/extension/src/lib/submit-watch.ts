@@ -102,7 +102,10 @@ const RESUME_FILE_ACCEPT_RE = /pdf|\.docx?|msword|wordprocessingml/;
  * document types) so an arbitrary hidden file input can't masquerade as an
  * application form — the module UNDER-reports rather than over-reports.
  */
-function isResumeFileInput(el: HTMLElement): boolean {
+// Exported (PR2) so `lib/attach-file.ts`'s résumé-attach flow reuses the SAME
+// heuristic to locate its target field — one heuristic, two consumers, never
+// a forked copy.
+export function isResumeFileInput(el: HTMLElement): boolean {
   if ((el.getAttribute('type') ?? '').toLowerCase() !== 'file') return false;
   const accept = (el.getAttribute('accept') ?? '').toLowerCase();
   return RESUME_FILE_TEXT_RE.test(textSignal(el)) || RESUME_FILE_ACCEPT_RE.test(accept);

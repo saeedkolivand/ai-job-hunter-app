@@ -10,7 +10,10 @@ use serde_json::Value;
 
 use crate::error::AppError;
 
-use super::{agent_call, agent_read, auth, import_flow, msg, settings, BridgeState, FrameDecision};
+use super::{
+    agent_call, agent_read, auth, document_export, import_flow, msg, settings, BridgeState,
+    FrameDecision,
+};
 
 /// The caller class a handshake `Origin` resolves to (PR1, extension read tier — extends the
 /// bare `is_agent_cli` bool finding #5's security review introduced). Resolved ONCE by
@@ -195,6 +198,24 @@ pub(super) fn advance_authenticated(
             }
             CallerClass::Cli | CallerClass::Other => {
                 FrameDecision::Reply(settings::origin_refused_reply(&req_id))
+            }
+        },
+        // `document.export` (PR2 — documents into ATS) — extension caller ONLY (unlike
+        // `agent.query`/`agent.call`, the CLI never reaches this verb: it already has
+        // `documents:documents_export_document` via `agent.call`). Assisted-autofill checked HERE,
+        // same shape as `AGENT_QUERY`'s own extension arm — exporting a résumé/cover-letter out of
+        // the app is the same consent class as handing it to a form field.
+        msg::DOCUMENT_EXPORT => match caller {
+            CallerClass::Extension => {
+                let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
+                if state.autofill_enabled() {
+                    FrameDecision::DocumentExport { req_id, payload }
+                } else {
+                    FrameDecision::Reply(document_export::extension_gate_reply(&req_id))
+                }
+            }
+            CallerClass::Cli | CallerClass::Other => {
+                FrameDecision::Reply(document_export::origin_refused_reply(&req_id))
             }
         },
         // Unknown message types — acknowledged as an error, never panic.

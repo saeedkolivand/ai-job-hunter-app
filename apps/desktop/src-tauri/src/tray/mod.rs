@@ -275,6 +275,42 @@ pub fn dispatch_extension_pairing(app: &AppHandle) {
     );
 }
 
+/// Restore the window and deliver a `generate-for-job` navigation intent (PR2 deep link,
+/// `ajh://generate?url=…`) — the extension's "Generate in the app" action when no generation
+/// exists for a job yet. Same buffer-before-show discipline as [`dispatch_extension_pairing`]
+/// (the app may not be running yet). Payload shape: `{ route: "generate-for-job", section: null,
+/// url }` — `route` IS the symbolic destination here (see
+/// `MenuNavigateEvent.route` in `packages/shared/src/ipc/contracts/menu.ts`); the renderer's
+/// `menu:navigate` handler switches on `route` and reads `url` for the canonical job url to
+/// land the generate flow on.
+pub fn dispatch_generate_for_job(app: &AppHandle, url: &str) {
+    dispatch_menu(
+        app,
+        MENU_NAVIGATE,
+        serde_json::json!({
+            "route": "generate-for-job",
+            "section": serde_json::Value::Null,
+            "url": url,
+        }),
+    );
+}
+
+/// Restore the window and deliver an `open-job` navigation intent (PR2 deep link,
+/// `ajh://open?url=…`) — lands on that job's detail page (fallback: the jobs list with `url` as
+/// the search term, per the renderer's own lookup). Same shape convention as
+/// [`dispatch_generate_for_job`].
+pub fn dispatch_open_job(app: &AppHandle, url: &str) {
+    dispatch_menu(
+        app,
+        MENU_NAVIGATE,
+        serde_json::json!({
+            "route": "open-job",
+            "section": serde_json::Value::Null,
+            "url": url,
+        }),
+    );
+}
+
 /// Restore the window and deliver an autopilot-focus intent so the renderer jumps
 /// to a specific autopilot's found-jobs panel.
 ///

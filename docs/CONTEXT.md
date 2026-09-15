@@ -633,6 +633,17 @@ _Avoid_: "permission" (nothing is granted per-caller — the caller class picks 
 pairing proves the user), "extension agent" (the extension is a client of the user's own app,
 not an autonomous caller — the **Confirm proof** ceremony is not offered to it)
 
+**Document attach**:
+The paired extension exporting a saved résumé or cover letter (rendered on the user's own device
+by `extension_bridge::document_export`) and placing it into the page the user is on — a
+`type=file` upload field for a résumé, or a text field the user picks for a cover letter
+(`apps/extension/src/lib/attach-file.ts`). Rides the same **Autofill** opt-in as the rest of the
+"user's own data to the browser" consent class. The extension verifies the file actually landed
+(re-reads the field) rather than assuming, since some custom drag-and-drop widgets ignore a
+programmatic assignment.
+_Avoid_: "upload" (nothing crosses a network boundary — the file moves from the local desktop app
+into the local page over the loopback bridge, then the browser's own DOM)
+
 ## Domain — Packaged builds
 
 **Flavour**:

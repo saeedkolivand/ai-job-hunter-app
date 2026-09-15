@@ -1,6 +1,6 @@
 # Extension domain (browser extension + desktop bridge)
 
-Last updated: 2026-09-14 (PR1 of the extension redesign: extension read tier + live settings verbs — ADR-050; PR0: popup is now a launcher, side panel is now a tabbed workspace, Settings page, first-Fill site memory — ADR-044 amendment; ADR-045: job-tools panel parity + the `isPageTrusted` gate; ADR-044: extension Answer tools side panel, shared per-tab state, draft-time `maxChars` field; `answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
+Last updated: 2026-09-15 (PR2 of the extension redesign: documents into ATS — résumé/cover-letter attach via `document.export`, the `documents` picker resource, `frame.rs` split, two deep-link routes; PR1: extension read tier + live settings verbs — ADR-050; PR0: popup is now a launcher, side panel is now a tabbed workspace, Settings page, first-Fill site memory — ADR-044 amendment; ADR-045: job-tools panel parity + the `isPageTrusted` gate; ADR-044: extension Answer tools side panel, shared per-tab state, draft-time `maxChars` field; `answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
 
 Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tauri-security-reviewer`.
 
@@ -87,6 +87,18 @@ opt-in switches are read and flipped through `settings.get`/`settings.set`
 (`extension_bridge/settings.rs`: `SettingsKey`, the setters it shares with the desktop Settings
 commands, and the notification it raises on every change). The decision, its guard rails and the
 desktop-side-consent tradeoff: [ADR-050](decision-records/adr-050-extension-read-tier-and-settings-verbs.md).
+
+### Document attach — `document.export` (PR2 — documents into ATS)
+
+A dedicated verb pair, `document.export` → `document.result`, lets the paired extension render a
+saved generation's résumé/cover-letter text (or a base résumé) for the panel's Documents tab to
+attach into a page's file-upload field or paste as a cover letter. Gate, throttle, frame cap and
+reply shape are owned by `extension_bridge/document_export.rs`'s own module doc; the consent
+tradeoff is [ADR-050](decision-records/adr-050-extension-read-tier-and-settings-verbs.md) decision 6. The picker's candidate list (presence flags only, never document text) is the `documents`
+resource on the same `agent_read` dispatch (`extension_bridge/agent_read/documents.rs`). The tab's
+"Generate in the app" / "Open in app" actions use two deep-link routes parsed in `deeplink/mod.rs`.
+See [ADR-0009](decision-records/0009-assisted-autofill.md)'s 2026-09-15 amendment for the corrected
+file-upload disclosure this verb enables.
 
 ### Revocation reach — an inherent limitation
 

@@ -1514,3 +1514,64 @@ details.group[open] > summary::before {
   font-style: italic;
   margin: 4px 0 8px;
 }
+
+/* Documents tab (PR2) — template/format/layout selects share `.field-label`,
+ * the kind toggle shares `.btn`/`.btn--primary` (see `.chips`/`.group`
+ * above for the same convention). */
+.field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+.field-label select {
+  font: inherit;
+  padding: 5px 8px;
+  border: 1px solid var(--quiet-border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--ink);
+}
+
+.kind-row {
+  display: flex;
+  gap: 6px;
+}
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+}
+
+.picker__row {
+  text-align: left;
+}
+
+/* Job tab copy-field fallback (decision 8) — one row per profile field,
+ * shown only after a Fill comes back `filledNothing`. */
+.profile-fallback-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.profile-fallback-row__value {
+  font-size: 12.5px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* The Job tab's "Open in app" deep link (PR2) — sits above the page-context
+ * card, hidden until a job url resolves. */
+.job-header {
+  display: flex;
+  justify-content: flex-end;
+}

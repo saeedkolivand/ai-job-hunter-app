@@ -48,6 +48,8 @@ import {
   type ExtensionAnswerSuggestion,
   type ExtensionAppliedCheckResult,
   type ExtensionAssistChunkPayload,
+  type ExtensionDocumentExportRequest,
+  type ExtensionDocumentExportResult,
   type ExtensionEnvelope,
   type ExtensionImportRequest,
   type ExtensionImportResult,
@@ -111,6 +113,7 @@ type AutofillResolver = (enabled: boolean) => void;
 type SettingsResolver = (result: ExtensionSettingsResult) => void;
 type AgentQueryResolver = (result: ExtensionAgentQueryResult) => void;
 type AgentCallResolver = (result: ExtensionAgentCallResult) => void;
+type DocumentExportResolver = (result: ExtensionDocumentExportResult) => void;
 
 export type BridgePhase = 'searching' | 'connected' | 'app_not_running' | 'outdated' | 'bad_token';
 
@@ -582,6 +585,68 @@ function normalizeSettingsResult(payload: unknown): ExtensionSettingsResult {
     : { ok: false, error: payload.error };
 }
 
+/**
+ * Hand-written guard for a `document.result` payload (PR2 — documents into
+ * ATS; extension stays zod-free). Mirrors
+ * `ExtensionDocumentExportResultSchema`'s discriminated union: `ok:true`
+ * requires a string `data` + the literal `dataEncoding: 'base64'` + string
+ * `mimeType`/`filename` + numeric `byteLength` + the echoed
+ * `kind`/`format`/`templateId`; `ok:false` requires a string `error`
+ * (`detail`/`retryAfterMs` optional — the latter set only on a throttle
+ * refusal). This guard checks `dataEncoding === 'base64'` ONLY — it never
+ * decodes `data` itself (decoding to bytes/text is the caller's job).
+ */
+function isExtensionDocumentExportResult(v: unknown): v is ExtensionDocumentExportResult {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  if (o.ok === true) {
+    return (
+      typeof o.data === 'string' &&
+      o.dataEncoding === 'base64' &&
+      typeof o.mimeType === 'string' &&
+      typeof o.filename === 'string' &&
+      typeof o.byteLength === 'number' &&
+      (o.kind === 'resume' || o.kind === 'cover-letter') &&
+      (o.format === 'pdf' || o.format === 'docx' || o.format === 'txt') &&
+      typeof o.templateId === 'string'
+    );
+  }
+  if (o.ok === false) {
+    if (typeof o.error !== 'string') return false;
+    if (o.detail !== undefined && typeof o.detail !== 'string') return false;
+    if (o.retryAfterMs !== undefined && !Number.isFinite(o.retryAfterMs)) return false;
+    return true;
+  }
+  return false;
+}
+
+/** Rebuild an {@link ExtensionDocumentExportResult} from only the known,
+ *  defined keys — mirrors `normalizeAgentQueryResult`. This verb's errors
+ *  are surfaced to the user (it answers a deliberate click), so the
+ *  fallback text is written the same way: `ok:false` + a plain `error`. */
+function normalizeDocumentExportResult(payload: unknown): ExtensionDocumentExportResult {
+  if (!isExtensionDocumentExportResult(payload)) {
+    return { ok: false, error: 'The desktop app sent a malformed document-export result.' };
+  }
+  if (payload.ok) {
+    return {
+      ok: true,
+      data: payload.data,
+      dataEncoding: 'base64',
+      mimeType: payload.mimeType,
+      filename: payload.filename,
+      byteLength: payload.byteLength,
+      kind: payload.kind,
+      format: payload.format,
+      templateId: payload.templateId,
+    };
+  }
+  const out: ExtensionDocumentExportResult = { ok: false, error: payload.error };
+  if (payload.detail !== undefined) out.detail = payload.detail;
+  if (payload.retryAfterMs !== undefined) out.retryAfterMs = payload.retryAfterMs;
+  return out;
+}
+
 /** Hand-written guard for an `answer.assist` payload (extension stays
  *  zod-free). Mirrors `ExtensionAnswerAssistResultSchema`'s discriminated
  *  union: `ok:true` requires string `question`/`draft` + a `sourced` object
@@ -814,6 +879,10 @@ export class BridgeClient {
    *  extension read tier, Read-effect rows only). Kept separate from
    *  {@link pending} for the same reason as {@link pendingProfile}. */
   private readonly pendingAgentCall = new Map<string, AgentCallResolver>();
+  /** In-flight `document.export` resolvers, correlated by `reqId` (PR2 —
+   *  documents into ATS). Kept separate from {@link pending} for the same
+   *  reason as {@link pendingProfile}. */
+  private readonly pendingDocumentExport = new Map<string, DocumentExportResolver>();
   /** In-flight `answer.assist` streaming-preview callbacks, correlated by
    *  `reqId` — registered by {@link answerAssist} for EVERY call (even with
    *  no caller-supplied `onChunk`), because a chunk's arrival also resets the
@@ -1603,6 +1672,55 @@ export class BridgeClient {
   }
 
   /**
+   * Send a `document.export { source, kind, format, templateId,
+   * letterLayoutId?, atsMode? }` (PR2 — documents into ATS; the user-clicked
+   * Attach résumé / Paste cover letter / Copy cover letter) and resolve with
+   * the validated `document.result` payload — the rendered document as
+   * base64 bytes, or a refusal (Autofill opt-in off, an oversize export, a
+   * throttle, or a malformed/unresolvable source). This client decodes
+   * NOTHING beyond validating `dataEncoding === 'base64'` (see
+   * `isExtensionDocumentExportResult`) — turning `data` into bytes/text is
+   * the caller's job (`background.ts`). Rejects only on no connection /
+   * timeout / send failure; like `matchLive`, a well-formed `ok:false` reply
+   * is NOT folded away here.
+   */
+  async documentExport(
+    payload: ExtensionDocumentExportRequest
+  ): Promise<ExtensionDocumentExportResult> {
+    await this.ensureConnected();
+    if (this.phase !== 'connected' || !this.transport) {
+      throw new Error('Desktop app not reachable. Is AI Job Hunter running?');
+    }
+    const transport = this.transport;
+
+    const reqId = newReqId();
+    const envelope: ExtensionEnvelope = {
+      type: EXTENSION_MESSAGE_TYPES.documentExport,
+      reqId,
+      payload,
+    };
+
+    return new Promise<ExtensionDocumentExportResult>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingDocumentExport.delete(reqId);
+        this.timers.delete(reqId);
+        reject(new Error('Timed out waiting for the desktop app to respond.'));
+      }, REQUEST_TIMEOUT_MS);
+      this.timers.set(reqId, timer);
+      this.pendingDocumentExport.set(reqId, resolve);
+
+      try {
+        transport.send(envelope);
+      } catch (err) {
+        clearTimeout(timer);
+        this.timers.delete(reqId);
+        this.pendingDocumentExport.delete(reqId);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
+  /**
    * Send an `answer.assist { question, url?, searchWeb? }` (the user-clicked
    * "Help me answer…") — OR (PR 11) `{ question, mode: 'rewrite',
    * existingAnswer, preset?, instruction? }` for a rewrite — and resolve with
@@ -2219,6 +2337,16 @@ export class BridgeClient {
       return;
     }
 
+    // document.result → the "document.export" outcome (PR2, separate map).
+    if (env.type === EXTENSION_MESSAGE_TYPES.documentResult) {
+      const resolveDocumentExport = this.pendingDocumentExport.get(reqId);
+      if (typeof resolveDocumentExport !== 'function') return;
+      this.pendingDocumentExport.delete(reqId);
+      this.clearTimer(reqId);
+      resolveDocumentExport(normalizeDocumentExportResult(env.payload));
+      return;
+    }
+
     // assist.chunk → one incremental delta of a streaming reply (currently
     // only `answer.assist`). Best-effort: silently dropped when there is no
     // registered listener for this `reqId` (no `onChunk` was passed, or the
@@ -2366,6 +2494,11 @@ export class BridgeClient {
       if (timer) clearTimeout(timer);
       resolve({ dispatched: false, namespace: '', command: '', error: reason });
     }
+    for (const [reqId, resolve] of this.pendingDocumentExport.entries()) {
+      const timer = this.timers.get(reqId);
+      if (timer) clearTimeout(timer);
+      resolve({ ok: false, error: reason });
+    }
     this.pending.clear();
     this.pendingProfile.clear();
     this.pendingApplied.clear();
@@ -2379,6 +2512,7 @@ export class BridgeClient {
     this.pendingSettings.clear();
     this.pendingAgentQuery.clear();
     this.pendingAgentCall.clear();
+    this.pendingDocumentExport.clear();
     // A dropped connection mid-stream never sends `assist.done` — this is
     // the "interrupted" case: no more chunks are coming, so retire every
     // listener now rather than leaving it to fire on a transport that no

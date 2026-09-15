@@ -47,6 +47,7 @@ const EXPECTED_INJECTED_SCRIPTS = [
   'answer-replace.js',
   'submit-watch.js',
   'probe-fields.js',
+  'attach-file.js',
 ];
 
 const readme = (over = {}) =>

@@ -35,6 +35,7 @@ import { type Browser, browser } from '@wxt-dev/browser';
 
 import { copyText, mountAnswerTools } from '../answer-tools/answer-tools';
 import { mountConnectionStatus } from '../connection-status/connection-status';
+import { mountDocuments } from '../documents/documents';
 import { mountJobStatus } from '../job-status/job-status';
 import { isPageTrusted, mountJobTools } from '../job-tools/job-tools';
 import { type AnswerState, subscribeAnswerState } from '../lib/answer-state';
@@ -48,6 +49,11 @@ import {
 } from '../lib/site-memory';
 import { bootTheme } from '../lib/theme';
 import { mountTabs } from '../tabs/tabs';
+
+/** The résumé-attach confirmation's own copy (PR2 §C.3) — reuses the SAME
+ *  first-time-per-site inset the Fill button already shows (R6 of the
+ *  redesign record), with this gesture's own text. */
+const ATTACH_CONFIRM_COPY = 'This will attach your résumé file — nothing is submitted.';
 
 // The panel loads the POPUP's stylesheet, not a copy of it. A forked theme is
 // how two surfaces start looking like two products.
@@ -90,6 +96,7 @@ const tabs = mountTabs(
   els.tabsHost,
   [
     { id: 'job', label: 'Job' },
+    { id: 'documents', label: 'Documents' },
     { id: 'answers', label: 'Answers' },
   ],
   { onSelect: (id) => selectTab(id) }
@@ -100,11 +107,40 @@ const tabs = mountTabs(
 tabs.setActive('job');
 
 const jobPanel = tabs.panel('job');
+const jobHeader = document.createElement('div');
+jobHeader.className = 'job-header';
+// A button, not an `<a href="ajh://…">` — this extension's own deep links
+// (connection-status.ts's PAIRING_DEEP_LINK/GET_APP_URL, options.ts) all fire
+// through `browser.tabs.create` in a click handler; a raw custom-scheme
+// anchor is unverified cross-browser and can silently no-op if the click
+// falls through without a handler.
+const openInAppLink = document.createElement('button');
+openInAppLink.type = 'button';
+openInAppLink.className = 'btn btn--quiet';
+openInAppLink.textContent = 'Open in app';
+openInAppLink.hidden = true;
+let openInAppUrl = '';
+async function openInApp(): Promise<void> {
+  try {
+    await browser.tabs.create({ url: openInAppUrl });
+  } catch {
+    // No-op: the deep link is best-effort — same discipline as
+    // connection-status.ts's own deep links.
+  }
+}
+openInAppLink.addEventListener('click', () => void openInApp());
+jobHeader.append(openInAppLink);
+jobPanel.append(jobHeader);
 const jobStatusHost = document.createElement('div');
 jobPanel.append(jobStatusHost);
 const jobToolsHost = document.createElement('div');
 jobToolsHost.id = 'job-tools-host';
 jobPanel.append(jobToolsHost);
+
+const documentsPanel = tabs.panel('documents');
+const documentsHost = document.createElement('div');
+documentsHost.id = 'documents-host';
+documentsPanel.append(documentsHost);
 
 const answersPanel = tabs.panel('answers');
 const answerToolsHost = document.createElement('div');
@@ -161,6 +197,21 @@ const jobTools = mountJobTools(jobToolsHost, {
     const ok = await fillConfirm.confirm(hostOf(capturedOrigin));
     if (!ok) return false;
     return followGeneration === capturedGeneration && currentOrigin === capturedOrigin;
+  },
+});
+
+// Documents tab (PR2) — reuses the SAME first-time-per-site confirmation as
+// Fill above (R6 "reuses the R6 Fill confirmation" — one inset, one
+// remembered-host set, a different copy per gesture).
+const documents = mountDocuments(documentsHost, {
+  send,
+  copy: copyText,
+  confirmAttach: (host) => fillConfirm.confirm(host, ATTACH_CONFIRM_COPY, 'Attach'),
+  currentHost: () => hostOf(currentOrigin),
+  getFollowGeneration: () => followGeneration,
+  onUrlResolved: (url) => {
+    openInAppUrl = `ajh://open?url=${encodeURIComponent(url)}`;
+    openInAppLink.hidden = false;
   },
 });
 
@@ -286,6 +337,9 @@ function follow(tabId: number | null): void {
   if (tabId === null) {
     answerTools.render(null);
     jobTools.render(null);
+    documents.render(null);
+    documents.reset();
+    openInAppLink.hidden = true;
     jobStatus.reset();
     updateTrustLine(null);
     currentOrigin = null;
@@ -298,6 +352,7 @@ function follow(tabId: number | null): void {
     if (myGeneration !== followGeneration) return;
     answerTools.render(state);
     jobTools.render(state);
+    documents.render(state);
     updateTrustLine(state);
     currentOrigin = state?.origin ?? null;
     tabs.setCount('answers', state?.rows.length ?? 0);
@@ -310,9 +365,12 @@ function follow(tabId: number | null): void {
       if (state && isPageTrusted(state)) {
         void jobStatus.refresh();
         void refreshTrustLineJob();
+        documents.refresh();
       } else {
         jobStatus.reset();
         trustLineJobGeneration += 1; // invalidate any in-flight query — the page is no longer trusted
+        documents.reset();
+        openInAppLink.hidden = true;
       }
     }
     if (firstDelivery) {
@@ -355,7 +413,11 @@ async function loadActiveTab(windowId: number): Promise<string> {
   try {
     const stored = await area.get(activeTabKey(windowId));
     const value = stored[activeTabKey(windowId)];
-    if (value === 'answers' || value === 'job') return value;
+    // 'documents' (PR2) is a valid per-window session choice even though it
+    // is not (yet) a `DefaultPanelTab` the Settings page can target — see
+    // that type's own doc for why the two are a deliberately narrower/wider
+    // pair.
+    if (value === 'answers' || value === 'job' || value === 'documents') return value;
     return getDefaultPanelTab();
   } catch {
     return getDefaultPanelTab();

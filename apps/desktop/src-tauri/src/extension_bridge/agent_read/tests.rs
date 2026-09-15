@@ -53,6 +53,7 @@ fn schema_lists_every_known_resource() {
         vec![
             "automations",
             "best-matches",
+            "documents",
             "found-jobs",
             "job",
             "profile",

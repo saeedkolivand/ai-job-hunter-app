@@ -84,7 +84,7 @@ function retainIdentifyingParams(host: string, query: string): string {
  * `#fragment`; drops the query except per-host identifying params; strips a
  * trailing `/` on the path. Empty/blank input → `""`.
  */
-function normalizeJobUrl(url: string): string {
+export function normalizeJobUrl(url: string): string {
   const trimmed = url.trim();
   if (trimmed === '') return '';
 

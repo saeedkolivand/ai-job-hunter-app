@@ -341,6 +341,20 @@ export const EXTENSION_MESSAGE_TYPES = {
    * partially applied.
    */
   settingsSet: 'settings.set',
+  /**
+   * Extension → desktop: PR2 — export a résumé/cover letter as file bytes so
+   * the paired extension can attach it to a page's `type=file` field or
+   * paste it as text. A DEDICATED verb, deliberately OUTSIDE the generic
+   * `agent.query`/`agent.call` read tier (decision 1 keeps that tier
+   * Read-only) and outside its 256 KiB reply cap — a rendered PDF does not
+   * fit it. Rides the SAME assisted-autofill opt-in as `profile.get`
+   * (a résumé/cover-letter byte stream is at least as sensitive). See
+   * {@link ExtensionDocumentExportRequest}.
+   */
+  documentExport: 'document.export',
+  /** Desktop → extension: the `document.export` outcome — see
+   *  {@link ExtensionDocumentExportResult}. */
+  documentResult: 'document.result',
 } as const;
 
 /** Union of all wire `type` strings. */
@@ -926,6 +940,68 @@ export interface ExtensionSettingsValues {
  */
 export type ExtensionSettingsResult =
   { ok: true; settings: ExtensionSettingsValues } | { ok: false; error: string };
+
+/**
+ * The two ways a `document.export` request names which text to render — a
+ * per-job tailored generation (keyed by its canonical job url) or a saved
+ * base document (keyed by its stored id). Mirrors the Rust `DocumentSource`
+ * enum (`extension_bridge::document_export`, PR2 §A.1).
+ */
+export type ExtensionDocumentSource =
+  { kind: 'generation'; url: string } | { kind: 'document'; id: string };
+
+/**
+ * `document.export` payload (PR2 — documents into ATS). `templateId`/
+ * `letterLayoutId` are free-text on the wire — an unknown id falls back
+ * exactly as the desktop's `ExportRequest` serde does (see
+ * `packages/shared/src/ipc/contracts/documents.ts`'s `TemplateId`/
+ * `LetterLayoutId` unions for the CURRENT catalogue, and
+ * `TEMPLATE_LABELS`/`LETTER_LAYOUT_LABELS` there for their display names).
+ * `letterLayoutId` is ignored for a résumé export (`kind: 'resume'`).
+ * `atsMode` mirrors `BaseExportRequest.atsMode` — omitted (the default)
+ * leaves the template's normal rendering.
+ */
+export interface ExtensionDocumentExportRequest {
+  source: ExtensionDocumentSource;
+  kind: 'resume' | 'cover-letter';
+  format: 'pdf' | 'docx' | 'txt';
+  templateId: string;
+  letterLayoutId?: string;
+  atsMode?: boolean;
+}
+
+/**
+ * `document.result` payload — a discriminated union on `ok`: `ok:true`
+ * carries the rendered document as base64 bytes (`dataEncoding` is always
+ * the literal `'base64'`, spelled out on the wire rather than assumed, so a
+ * future second encoding is additive) plus `mimeType`/`filename`/
+ * `byteLength` and the ECHOED `kind`/`format`/`templateId` (so a caller that
+ * fired more than one export in flight can tell replies apart without
+ * threading its own correlation). Capped by the bridge's general
+ * `MAX_FRAME_BYTES` refusal (`result_too_large`) — deliberately NOT the
+ * tighter 256 KiB `agent.query`/`agent.call` cap, which a rendered PDF would
+ * never fit. `ok:false` carries a user-facing `error` (fixed sentinels —
+ * `invalid_document_request` / `not_found` / `unsupported_source` /
+ * `export_failed` / `result_too_large` / the Autofill-off gate sentinel / a
+ * throttle refusal) plus optional `detail`/`retryAfterMs` — mirrors
+ * {@link ExtensionAgentQueryResult} exactly. The client never decodes `data`
+ * itself beyond checking `dataEncoding === 'base64'` — decoding to bytes/text
+ * is the caller's job (`background.ts`), same discipline as every other
+ * hand-written guard in `bridge.ts`.
+ */
+export type ExtensionDocumentExportResult =
+  | {
+      ok: true;
+      data: string;
+      dataEncoding: 'base64';
+      mimeType: string;
+      filename: string;
+      byteLength: number;
+      kind: 'resume' | 'cover-letter';
+      format: 'pdf' | 'docx' | 'txt';
+      templateId: string;
+    }
+  | { ok: false; error: string; detail?: string; retryAfterMs?: number };
 
 /**
  * `assist.chunk` payload — one incremental delta of a streaming reply. The

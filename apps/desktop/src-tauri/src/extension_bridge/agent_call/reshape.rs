@@ -179,7 +179,6 @@ pub(super) const BASE64_ENCODING: &str = "base64";
 /// a hand-copied literal of it that could silently drift (same
 /// cross-module-test reasoning as [`gate`]'s own `pub(super)`).
 pub(in crate::extension_bridge) fn base64_byte_fields(command: &str, data: &mut Value) {
-    use base64::Engine;
     let Some(map) = data.as_object_mut() else {
         return;
     };
@@ -195,13 +194,21 @@ pub(in crate::extension_bridge) fn base64_byte_fields(command: &str, data: &mut 
             .map(|v| v.as_u64().and_then(|n| u8::try_from(n).ok()))
             .collect();
         let Some(bytes) = bytes else { continue };
-        let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
-        map.insert((*field).to_string(), json!(encoded));
+        map.insert((*field).to_string(), json!(encode_base64(&bytes)));
         map.insert(
             format!("{field}{ENCODING_KEY_SUFFIX}"),
             json!(BASE64_ENCODING),
         );
     }
+}
+
+/// Base64-encode raw bytes for the wire — the ONE encoder every byte-carrying reply on this
+/// bridge uses. `pub(in crate::extension_bridge)` (PR2): `document_export.rs` (a COUSIN of this
+/// module, not a descendant) needs it too for `document.export`'s own `data` field, the same
+/// reasoning [`base64_byte_fields`] above is visible crate-tree-wide for.
+pub(in crate::extension_bridge) fn encode_base64(bytes: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
 /// The one command whose raw reply is projected to a photo-less allowlist

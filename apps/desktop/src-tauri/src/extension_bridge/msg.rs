@@ -212,3 +212,16 @@ pub const SETTINGS_RESULT: &str = "settings.result";
 /// extension is never silent — R7's guard rail). Extension caller only,
 /// per-pairing throttled. See [`super::settings`]'s module doc.
 pub const SETTINGS_SET: &str = "settings.set";
+/// Extension → desktop: export a saved generation's résumé/cover-letter text, or a base résumé,
+/// to PDF/DOCX/TXT bytes (PR2 — documents into ATS). `{ source: {kind:'generation',url} |
+/// {kind:'document',id}, kind:'resume'|'cover-letter', format:'pdf'|'docx'|'txt', templateId,
+/// letterLayoutId?, atsMode? }` — see [`super::document_export`]'s module doc for the full gate
+/// (extension caller only, Assisted-autofill opt-in, its own throttle) and reply shape. Rides
+/// OUTSIDE the generic `agent.call`/`agent.query` tier and its [`super::EXTENSION_RESULT_MAX_BYTES`]
+/// cap — a rendered document does not fit 256 KiB, so this uses the bridge's generic
+/// [`super::MAX_FRAME_BYTES`] refusal instead.
+pub const DOCUMENT_EXPORT: &str = "document.export";
+/// Desktop → extension: the `document.export` outcome — `{ ok: true, data: <base64>,
+/// dataEncoding: 'base64', mimeType, filename, byteLength, kind, format, templateId } | { ok:
+/// false, error, detail, retryAfterMs? }`. See [`DOCUMENT_EXPORT`]'s doc.
+pub const DOCUMENT_RESULT: &str = "document.result";

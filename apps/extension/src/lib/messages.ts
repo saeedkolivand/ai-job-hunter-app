@@ -5,12 +5,15 @@
  */
 
 import type {
+  ExtensionAgentQueryResult,
   ExtensionAnswerAssistResult,
   ExtensionAnswersSaveResult,
   ExtensionAnswersSuggestResult,
   ExtensionAppliedCheckResult,
+  ExtensionDocumentSource,
   ExtensionImportResult,
   ExtensionMatchLiveResult,
+  ExtensionProfileResult,
   ExtensionRewritePreset,
   ExtensionSettingsKey,
   ExtensionSettingsResult,
@@ -20,6 +23,7 @@ import type {
 import type { FillAnswerResult } from './answer-fill';
 import type { AnswerState } from './answer-state';
 import type { FilledField, ScannedQuestion } from './answers-capture';
+import type { AttachFileResult } from './attach-file';
 import type { AutofillSummary } from './autofill';
 
 /** Coarse connection state the popup renders. */
@@ -59,6 +63,15 @@ export type PopupRequest =
   | { kind: 'import'; applied: boolean }
   /** Assisted autofill: fetch the profile fresh + inject the filler on this tab. */
   | { kind: 'fill' }
+  /**
+   * Job tab copy-field fallback (decision 8): when a `fill` result comes
+   * back `filledNothing`, fetch the Contact Profile fresh (same desktop
+   * source + Autofill opt-in gate `fill` itself uses) so the panel can show
+   * each field with a Copy button instead of nothing. Read-only — the
+   * profile is held only for this call, same as `fill`'s own fetch, and is
+   * never persisted client-side.
+   */
+  | { kind: 'profileGet' }
   /**
    * Fire-and-forget "have I already applied to this URL?" check for the
    * active tab, run once when the popup shows the connected view. Read-only;
@@ -244,6 +257,41 @@ export type PopupRequest =
       count: number;
       text: string;
       expectedValue: string;
+    }
+  /**
+   * Documents tab (PR2): list this job's generation + saved base résumés —
+   * the curated `agent.query('documents', {url})` read-tier resource
+   * (PR1). Unlike `trustLineJob`, a refusal is NOT folded away — the tab
+   * renders the desktop's own `error` (Autofill opt-in off, throttled) so
+   * the user can act on it.
+   */
+  | { kind: 'documentsList' }
+  /**
+   * Documents tab: export the picked source as DECODED text (cover-letter
+   * TXT only — the picker's Copy/Paste actions both need plain text, never
+   * base64). The background is what decodes (`bridge.ts` stays base64-
+   * agnostic) — see `PopupResponse`'s `documentExportText` doc.
+   */
+  | {
+      kind: 'documentExportText';
+      source: ExtensionDocumentSource;
+      templateId: string;
+      letterLayoutId?: string;
+    }
+  /**
+   * Documents tab: "Attach résumé to this page" — export as pdf/docx,
+   * decode to bytes, and inject via the same `type=file` DataTransfer
+   * assignment `lib/attach-file.ts` implements, then verify. The caller
+   * (`documents/documents.ts`) is responsible for the first-time-per-site
+   * confirmation (reuses the panel's existing Fill confirmation) BEFORE
+   * sending this — a deliberate page-touching gesture, so it joins
+   * `GESTURE_KINDS` in `background.ts`.
+   */
+  | {
+      kind: 'documentAttach';
+      source: ExtensionDocumentSource;
+      templateId: string;
+      format: 'pdf' | 'docx';
     };
 
 /** background → popup responses (discriminated by the originating request). */
@@ -252,6 +300,10 @@ export type PopupResponse =
   | { ok: true; kind: 'token' }
   | { ok: true; kind: 'import'; result: ExtensionImportResult }
   | { ok: true; kind: 'fill'; summary: AutofillSummary }
+  /** `profileGet` reply — `result.error` present means a refusal (Autofill
+   *  opt-in off) or a fetch failure; the caller shows nothing on it, same
+   *  fail-closed discipline as everywhere else this profile is read. */
+  | { ok: true; kind: 'profileGet'; result: ExtensionProfileResult }
   /**
    * Always `ok:true` — every failure mode (not paired, bridge down, malformed
    * reply, an old desktop's unrecognized message type) is folded into
@@ -388,4 +440,21 @@ export type PopupResponse =
   /** The rewrite Accept/Restore outcome (fail-safe on any page mutation) —
    *  mirrors `answerFill`'s response shape exactly. */
   | { ok: true; kind: 'answerReplace'; result: FillAnswerResult }
+  /**
+   * `ok:true` at the transport level; the desktop's own `ok`/`error` on
+   * `result` is what the Documents tab renders — this verb's failures are
+   * NOT folded away (unlike `trustLineJob`), so the caller must check
+   * `result.ok` itself. `url` is the active tab's url the background
+   * resolved for this query (echoed back — the Documents tab has no `tabs`
+   * permission of its own to read it), used to build the `{kind:
+   * 'generation', url}` source for the job's own generation candidate.
+   */
+  | { ok: true; kind: 'documentsList'; result: ExtensionAgentQueryResult; url: string }
+  /** A `document.export{format:'txt'}` decoded to plain text, plus the
+   *  desktop-chosen `filename` (diagnostics only). Failures are NOT folded
+   *  away — `ok:false` on the transport-level response. */
+  | { ok: true; kind: 'documentExportText'; text: string; filename: string }
+  /** The résumé-attach outcome — fail-closed on anything short of a
+   *  confirmed re-read (see `lib/attach-file.ts`'s own doc). */
+  | { ok: true; kind: 'documentAttach'; result: AttachFileResult }
   | { ok: false; error: string };

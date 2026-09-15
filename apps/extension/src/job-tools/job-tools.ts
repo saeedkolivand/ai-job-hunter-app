@@ -45,6 +45,9 @@
  * the one caller this currently matters for.
  */
 
+import type { ExtensionProfileResult } from '@ajh/shared';
+
+import { copyText } from '../answer-tools/answer-tools';
 import type { AnswerState } from '../lib/answer-state';
 import type { PopupRequest, PopupResponse } from '../lib/messages';
 
@@ -160,6 +163,38 @@ export function resolveFillResponse(res: PopupResponse): { text: string; tone: '
     text: summary.nameSplit ? `${base} (name split is a guess — verify).` : `${base}.`,
     tone: 'ok',
   };
+}
+
+/** One profile field the copy-field fallback renders. */
+export interface ProfileFallbackField {
+  label: string;
+  value: string;
+}
+
+/**
+ * Copy-field fallback (decision 8): when Fill finds nothing to match, project
+ * a `profileGet` result into the field list the Job tab shows instead — each
+ * with a Copy button, never stored. A refusal/failure (`result.error` set)
+ * or an empty profile both project to `[]`, which the caller renders as
+ * nothing (the fallback's own fail-closed discipline, same as `runFill`'s).
+ *
+ * Pure: no DOM access, no side effects.
+ */
+export function buildProfileFallbackFields(result: ExtensionProfileResult): ProfileFallbackField[] {
+  if (result.error) return [];
+  const fields: ProfileFallbackField[] = [];
+  const push = (label: string, value: string | undefined): void => {
+    if (value?.trim()) fields.push({ label, value });
+  };
+  push('Name', result.fullName);
+  push('Email', result.email);
+  push('Phone', result.phone);
+  push('Location', result.location);
+  push('LinkedIn', result.linkedin);
+  push('GitHub', result.github);
+  push('Website', result.website);
+  for (const link of result.extraLinks ?? []) push(link.label, link.url);
+  return fields;
 }
 
 // ── Check fit ─────────────────────────────────────────────────────────────
@@ -381,6 +416,14 @@ export interface JobToolsDeps {
    * (shown) by the side panel, which keeps all four controls.
    */
   hideSaveAnswers?: boolean;
+  /**
+   * Copy-field fallback's Copy action. Defaults to the shared `copyText`
+   * (`navigator.clipboard.writeText`) — a caller only needs to override this
+   * for a test double; both real mounts (`popup.ts`, `sidepanel.ts`) get the
+   * default for free, same as the old always-proceed default for
+   * `confirmFill`.
+   */
+  copy?: (text: string) => Promise<boolean>;
 }
 
 export interface JobToolsView {
@@ -497,7 +540,16 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
   msgEl.setAttribute('role', 'status');
   msgEl.setAttribute('aria-live', 'polite');
 
-  activeWrap.append(jobGroup, formGroup, msgEl);
+  // Copy-field fallback (decision 8) — shown only after a `fill` comes back
+  // `filledNothing`; see `showProfileFallback` below. Never populated from
+  // storage — rebuilt fresh from a `profileGet` reply each time it opens.
+  const profileFallback = document.createElement('section');
+  profileFallback.id = 'job-tools-profile-fallback';
+  profileFallback.className = 'group group--divided';
+  profileFallback.setAttribute('aria-label', 'Your profile');
+  profileFallback.hidden = true;
+
+  activeWrap.append(jobGroup, formGroup, msgEl, profileFallback);
   host.append(gatedMsg, activeWrap);
 
   // ── state ───────────────────────────────────────────────────────────────
@@ -520,6 +572,14 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
    *  different tabs can both be trusted, and `isPageTrusted` alone cannot
    *  tell them apart. */
   let lastTabId: number | null = null;
+  /** A DEDICATED generation for the copy-field fallback's own `profileGet`
+   *  fetch (PR review round 2) — sharing `fieldsProbeGeneration` would
+   *  invalidate the unrelated fields probe every time the fallback opens.
+   *  Bumped by {@link hideProfileFallback}, so every call site that hides the
+   *  fallback (`render`'s tab/trust change, `reset()`, a `filled` Fill
+   *  result) also discards any `profileGet` reply still in flight for the
+   *  PREVIOUS tab/page. */
+  let profileFallbackGeneration = 0;
 
   function setMsg(text: string, tone: 'ok' | 'err' | 'muted'): void {
     msgEl.textContent = text;
@@ -546,6 +606,74 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
     }
     matchResult.append(buildMatchResultCard(view));
     matchResult.hidden = false;
+  }
+
+  // ── copy-field fallback (decision 8) ─────────────────────────────────────
+
+  /** Copy action for the fallback's per-field buttons — defaults to the
+   *  shared `copyText`, same discipline as {@link JobToolsDeps.copy}'s doc. */
+  const copyField = deps.copy ?? copyText;
+
+  function hideProfileFallback(): void {
+    // Invalidates any `profileGet` reply still in flight (see
+    // `profileFallbackGeneration`'s own doc) — every caller of this function
+    // (render's tab/trust change, reset(), a `filled` Fill result) counts as
+    // leaving the fallback this fetch was for.
+    profileFallbackGeneration += 1;
+    profileFallback.hidden = true;
+    profileFallback.replaceChildren();
+  }
+
+  function renderProfileFallback(fields: ProfileFallbackField[]): void {
+    profileFallback.replaceChildren();
+    if (fields.length === 0) {
+      profileFallback.hidden = true;
+      return;
+    }
+    const heading = document.createElement('p');
+    heading.className = 'field-label';
+    heading.textContent = "Nothing matched — here's your profile";
+    profileFallback.append(heading);
+    for (const field of fields) {
+      const row = document.createElement('div');
+      row.className = 'profile-fallback-row';
+      const text = document.createElement('span');
+      text.className = 'profile-fallback-row__value';
+      text.textContent = `${field.label}: ${field.value}`;
+      const copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.className = 'btn btn--small btn--quiet';
+      copyBtn.textContent = 'Copy';
+      copyBtn.addEventListener('click', () => void copyField(field.value));
+      row.append(text, copyBtn);
+      profileFallback.append(row);
+    }
+    profileFallback.hidden = false;
+  }
+
+  /**
+   * Fetch the profile fresh (`profileGet` — the same source + Autofill
+   * opt-in gate `fill` itself uses) and render it as Copy-able fields.
+   * Fail-closed: any refusal, error, or empty profile renders nothing (never
+   * stored, never retried automatically).
+   */
+  async function showProfileFallback(): Promise<void> {
+    const myGeneration = profileFallbackGeneration;
+    try {
+      const res = await deps.send({ kind: 'profileGet' });
+      // A tab switch / trust change / reset landed while this was in
+      // flight — that already hid the fallback for whatever page this now
+      // is; a stale reply must never resurrect it (PR review round 2).
+      if (myGeneration !== profileFallbackGeneration) return;
+      if (res.ok && res.kind === 'profileGet') {
+        renderProfileFallback(buildProfileFallbackFields(res.result));
+      } else {
+        hideProfileFallback();
+      }
+    } catch {
+      if (myGeneration !== profileFallbackGeneration) return;
+      hideProfileFallback();
+    }
   }
 
   // ── the four actions (moved essentially unchanged from popup.ts) ──────────
@@ -600,6 +728,11 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
       const res = await deps.send({ kind: 'fill' });
       const { text, tone } = resolveFillResponse(res);
       setMsg(text, tone);
+      if (res.ok && res.kind === 'fill' && res.summary.filledNothing) {
+        await showProfileFallback();
+      } else {
+        hideProfileFallback();
+      }
     } catch {
       // A transport/messaging rejection must not strand the status on "Filling…".
       setMsg('Autofill failed. Please retry.', 'err');
@@ -687,6 +820,7 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
     fieldsProbeGeneration += 1;
     matchResult.hidden = true;
     matchResult.textContent = '';
+    hideProfileFallback();
     formGroupVisible = true;
     deps.onAnswerToolsVisibility?.(true);
     if (trusted) {
@@ -711,6 +845,7 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
     btnImport.textContent = IMPORT_LABEL_DEFAULT;
     matchResult.hidden = true;
     matchResult.textContent = '';
+    hideProfileFallback();
     setMsg('', 'muted');
     redraw();
   }

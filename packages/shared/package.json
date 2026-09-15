@@ -12,7 +12,7 @@
     },
     "./ipc": {
       "types": "./src/ipc/contracts/index.ts",
-      "default": "./dist/ipc/contracts.js"
+      "default": "./dist/ipc/contracts/index.js"
     },
     "./extension-protocol": {
       "types": "./src/ipc/extension-protocol-constants.ts",

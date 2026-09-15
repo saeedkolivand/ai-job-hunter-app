@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { LETTER_LAYOUT_LABELS, TEMPLATE_LABELS } from '@ajh/shared';
+
 import {
   atsModeHintKey,
   isDecoratedLetterLayout,
@@ -43,6 +45,18 @@ describe('TEMPLATES', () => {
       'swiss-minimal',
       'throughline',
     ]);
+  });
+
+  // Parity guard (PR2 §B.1): the shared `TEMPLATE_LABELS` (consumed by the
+  // extension's Documents tab, which has no renderer i18n) must name every
+  // template exactly as the in-app picker does, or the two surfaces show
+  // different labels for the same id.
+  it('names every template exactly as the shared TEMPLATE_LABELS constant', () => {
+    for (const id of ids) {
+      expect(TEMPLATES[id as keyof typeof TEMPLATES].name).toBe(
+        TEMPLATE_LABELS[id as keyof typeof TEMPLATE_LABELS]
+      );
+    }
   });
 
   it('uses 6-digit hex colours without a leading hash', () => {
@@ -192,6 +206,15 @@ describe('LETTER_LAYOUT_IDS', () => {
       'sidebar',
       'monogram',
     ]);
+  });
+
+  // Completeness guard (PR2 §B.1): the shared `LETTER_LAYOUT_LABELS` (the
+  // extension's letter-layout select has no renderer i18n) must name every
+  // layout id — the display TEXT stays the in-app picker's translated
+  // strings (`aiGenerate.letterLayout*`) as the localization source of
+  // truth, so this only pins the id SET, not the English wording.
+  it('has a shared LETTER_LAYOUT_LABELS entry for every layout id', () => {
+    expect(Object.keys(LETTER_LAYOUT_LABELS).sort()).toEqual([...LETTER_LAYOUT_IDS].sort());
   });
 });
 

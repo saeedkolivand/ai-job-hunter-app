@@ -30,6 +30,48 @@ export type TemplateId =
  */
 export type LetterLayoutId = 'classic' | 'refined' | 'banded' | 'navy' | 'sidebar' | 'monogram';
 
+/**
+ * Plain-English display name per {@link TemplateId} — the single source of
+ * truth for any caller that cannot run the renderer's i18n (e.g. the paired
+ * browser extension's Documents tab template picker). Mirrors the renderer
+ * registry's `TEMPLATES[id].name` (`apps/desktop/src/renderer/lib/generate/
+ * templates/templates.ts`) — a parity test there pins the two together.
+ */
+export const TEMPLATE_LABELS: Record<TemplateId, string> = {
+  classic: 'ATS Classic',
+  'swiss-minimal': 'Swiss Minimal',
+  academic: 'Academic',
+  atelier: 'Atelier',
+  meridian: 'Meridian',
+  throughline: 'Throughline',
+  portrait: 'Portrait',
+  lebenslauf: 'Lebenslauf (DACH)',
+  cadence: 'Cadence',
+  regent: 'Regent',
+  'cologne-navy': 'Cologne Navy',
+  aria: 'Aria',
+  saffron: 'Saffron',
+  jake: 'Jake',
+  awesome: 'Awesome',
+  deedy: 'Deedy',
+};
+
+/**
+ * Plain-English display name per {@link LetterLayoutId} — same rationale as
+ * {@link TEMPLATE_LABELS}; matches the renderer's `aiGenerate.letterLayout*`
+ * English translation strings (`packages/translations/src/locales/en/
+ * translation.json`), which stay the localization source of truth for the
+ * in-app picker.
+ */
+export const LETTER_LAYOUT_LABELS: Record<LetterLayoutId, string> = {
+  classic: 'Classic',
+  refined: 'Refined',
+  banded: 'Banded',
+  navy: 'Navy',
+  sidebar: 'Sidebar',
+  monogram: 'Monogram',
+};
+
 interface ExportMeta {
   candidateName?: string;
   jobTitle?: string;

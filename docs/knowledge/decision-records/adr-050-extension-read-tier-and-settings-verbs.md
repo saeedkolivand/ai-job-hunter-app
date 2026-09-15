@@ -50,6 +50,11 @@ truth for consent" question the owner resolved explicitly.
    the extension is never silent to the person sitting at the desktop. `settings.set` carries its
    own per-pairing throttle (guard rail #4); `settings.get` is unthrottled (a pure read of the
    user's own device-local settings). A malformed key/value refuses with `invalid_settings_request`.
+6. **`document.export`/`document.result` (PR2 — documents into ATS) is likewise a dedicated verb,
+   not a Resource in this tier.** It rides the same `CallerClass::Extension` + Autofill-opt-in gate
+   this ADR establishes, but sits outside the generic `agent.query`/`agent.call` dispatch and
+   outside `EXTENSION_RESULT_MAX_BYTES` (a rendered document does not fit that cap) — see
+   `extension_bridge::document_export`.
 
 ## The desktop-side-consent concern (raised and resolved)
 

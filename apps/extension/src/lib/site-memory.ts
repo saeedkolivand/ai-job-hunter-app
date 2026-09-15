@@ -58,14 +58,29 @@ export interface FirstFillConfirmDeps {
   rememberHost: (host: string) => Promise<void>;
 }
 
+/** The Fill confirmation's default copy — extracted so a caller reusing this
+ *  SAME inset for a different page-touching gesture (PR2's résumé attach)
+ *  can pass its own, while every existing Fill call site keeps this text
+ *  unchanged by omitting the override. */
+export const DEFAULT_FILL_CONFIRM_COPY =
+  "This will fill: name, email, phone, résumé file. Nothing is submitted — you review and press the site's own button.";
+
 export interface FirstFillConfirmView {
   /**
-   * Ask the user to confirm the first Fill on `host`. Resolves `true`
-   * immediately (no UI shown) when `host` is already remembered or `null`
-   * (unparsable url); otherwise shows the inset and resolves with the user's
-   * choice.
+   * Ask the user to confirm the first Fill (or, with a `copy`/`label`
+   * override, a different page-touching gesture reusing this same inset —
+   * e.g. PR2's résumé attach) on `host`. Resolves `true` immediately (no UI
+   * shown) when `host` is already remembered or `null` (unparsable url);
+   * otherwise shows the inset (with `copy`, or {@link
+   * DEFAULT_FILL_CONFIRM_COPY} when omitted; `label`, default `'Fill'`, names
+   * both the heading — "First {label} on {host}" — and the primary button, so
+   * a reusing gesture never calls itself "First Fill" with a "Fill" button)
+   * and resolves with the user's choice. The "don't ask again"
+   * memory is shared across every gesture that calls this — reusing the
+   * SAME per-host record, not a second one, per this module's own "reuses
+   * the R6 Fill confirmation" contract.
    */
-  confirm: (host: string | null) => Promise<boolean>;
+  confirm: (host: string | null, copy?: string, label?: string) => Promise<boolean>;
   /**
    * Cancel a currently-open confirmation: hide the inset and resolve its
    * pending {@link confirm} promise `false`, as if the user had clicked "Not
@@ -101,24 +116,22 @@ export function mountFirstFillConfirm(
    *  `null` when none is open — what {@link cancel} invokes. */
   let pendingCancel: (() => void) | null = null;
 
-  async function confirm(siteHost: string | null): Promise<boolean> {
+  async function confirm(
+    siteHost: string | null,
+    copy = DEFAULT_FILL_CONFIRM_COPY,
+    label = 'Fill'
+  ): Promise<boolean> {
     if (!siteHost) return true;
     const remembered = await deps.getRememberedHosts();
     if (!shouldConfirmFill(siteHost, remembered)) return true;
 
     return new Promise<boolean>((resolve) => {
       inset.replaceChildren();
-      inset.append(el('p', 'inset-label', `First Fill on ${siteHost}`));
-      inset.append(
-        el(
-          'p',
-          'inset-copy',
-          "This will fill: name, email, phone, résumé file. Nothing is submitted — you review and press the site's own button."
-        )
-      );
+      inset.append(el('p', 'inset-label', `First ${label} on ${siteHost}`));
+      inset.append(el('p', 'inset-copy', copy));
 
       const actions = el('div', 'action-row');
-      const fillBtn = el('button', 'btn btn--primary', 'Fill');
+      const fillBtn = el('button', 'btn btn--primary', label);
       fillBtn.type = 'button';
       const notNowBtn = el('button', 'btn btn--quiet', 'Not now');
       notNowBtn.type = 'button';

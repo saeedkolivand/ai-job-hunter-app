@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AnswerState } from '../lib/answer-state';
 import type { PopupRequest, PopupResponse } from '../lib/messages';
 import {
+  buildProfileFallbackFields,
   IMPORT_LABEL_DEFAULT,
   isPageTrusted,
   JOB_TOOLS_GATED_LINE,
@@ -195,6 +196,37 @@ describe('resolveFillResponse', () => {
     };
     const { text } = resolveFillResponse(res);
     expect(text).toBe('Filled 1 field — review them on the page (name split is a guess — verify).');
+  });
+});
+
+describe('buildProfileFallbackFields', () => {
+  it('returns an empty list on a refusal/failure (error set)', () => {
+    expect(buildProfileFallbackFields({ error: 'Not paired.', fullName: 'Ada' })).toEqual([]);
+  });
+
+  it('returns an empty list for an empty profile', () => {
+    expect(buildProfileFallbackFields({})).toEqual([]);
+  });
+
+  it('omits blank/whitespace-only fields, includes only populated ones in order', () => {
+    expect(
+      buildProfileFallbackFields({ fullName: 'Ada Lovelace', email: '  ', phone: '555-1234' })
+    ).toEqual([
+      { label: 'Name', value: 'Ada Lovelace' },
+      { label: 'Phone', value: '555-1234' },
+    ]);
+  });
+
+  it('appends each extraLink under its own label', () => {
+    expect(
+      buildProfileFallbackFields({
+        email: 'ada@example.com',
+        extraLinks: [{ label: 'Portfolio', url: 'https://ada.dev' }],
+      })
+    ).toEqual([
+      { label: 'Email', value: 'ada@example.com' },
+      { label: 'Portfolio', value: 'https://ada.dev' },
+    ]);
   });
 });
 
@@ -498,8 +530,187 @@ describe('doFill (#btn-fill)', () => {
     await flush();
 
     expect(confirmFill).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenCalledTimes(1);
+    // The mocked `fill` response comes back `filledNothing: true`, which also
+    // triggers ONE `profileGet` fetch for the copy-field fallback (decision
+    // 8) — assert the `fill` request itself was never double-sent, rather
+    // than the raw call count.
+    expect(send.mock.calls.filter(([req]) => req.kind === 'fill')).toHaveLength(1);
     expect(btn.disabled).toBe(false);
+  });
+});
+
+describe('copy-field fallback (decision 8)', () => {
+  const fallback = (host: HTMLElement) =>
+    host.querySelector<HTMLElement>('#job-tools-profile-fallback')!;
+
+  it('fetches the profile and renders Copy-able fields when Fill comes back filledNothing', async () => {
+    const send = vi.fn(async (req: PopupRequest): Promise<PopupResponse> => {
+      if (req.kind === 'fill') {
+        return {
+          ok: true,
+          kind: 'fill',
+          summary: { filled: [], nameSplit: null, filledNothing: true },
+        };
+      }
+      if (req.kind === 'profileGet') {
+        return {
+          ok: true,
+          kind: 'profileGet',
+          result: { fullName: 'Ada Lovelace', email: 'ada@example.com' },
+        };
+      }
+      return { ok: false, error: 'unused' };
+    });
+    const host = document.createElement('div');
+    mountJobTools(host, { send });
+
+    host.querySelector<HTMLButtonElement>('#btn-fill')!.click();
+    await flush();
+
+    expect(send).toHaveBeenCalledWith({ kind: 'profileGet' });
+    const section = fallback(host);
+    expect(section.hidden).toBe(false);
+    expect(section.textContent).toContain('Ada Lovelace');
+    expect(section.textContent).toContain('ada@example.com');
+    expect(section.querySelectorAll('button')).toHaveLength(2);
+  });
+
+  it('renders nothing when the profile fetch refuses (Autofill opt-in off)', async () => {
+    const send = vi.fn(async (req: PopupRequest): Promise<PopupResponse> => {
+      if (req.kind === 'fill') {
+        return {
+          ok: true,
+          kind: 'fill',
+          summary: { filled: [], nameSplit: null, filledNothing: true },
+        };
+      }
+      if (req.kind === 'profileGet') {
+        return { ok: true, kind: 'profileGet', result: { error: 'Not paired.' } };
+      }
+      return { ok: false, error: 'unused' };
+    });
+    const host = document.createElement('div');
+    mountJobTools(host, { send });
+
+    host.querySelector<HTMLButtonElement>('#btn-fill')!.click();
+    await flush();
+
+    expect(fallback(host).hidden).toBe(true);
+  });
+
+  it('never fetches the profile, and hides any previously shown fallback, when Fill matched something', async () => {
+    const send = vi.fn(async (req: PopupRequest): Promise<PopupResponse> => {
+      if (req.kind === 'fill') {
+        return {
+          ok: true,
+          kind: 'fill',
+          summary: {
+            filled: [{ key: 'email', label: 'Email', count: 1 }],
+            nameSplit: null,
+            filledNothing: false,
+          },
+        };
+      }
+      return { ok: false, error: 'unused' };
+    });
+    const host = document.createElement('div');
+    mountJobTools(host, { send });
+
+    host.querySelector<HTMLButtonElement>('#btn-fill')!.click();
+    await flush();
+
+    expect(send).not.toHaveBeenCalledWith({ kind: 'profileGet' });
+    expect(fallback(host).hidden).toBe(true);
+  });
+
+  it("copies a field's value via deps.copy when its Copy button is clicked", async () => {
+    const copy = vi.fn(async () => true);
+    const send = vi.fn(async (req: PopupRequest): Promise<PopupResponse> => {
+      if (req.kind === 'fill') {
+        return {
+          ok: true,
+          kind: 'fill',
+          summary: { filled: [], nameSplit: null, filledNothing: true },
+        };
+      }
+      if (req.kind === 'profileGet') {
+        return { ok: true, kind: 'profileGet', result: { email: 'ada@example.com' } };
+      }
+      return { ok: false, error: 'unused' };
+    });
+    const host = document.createElement('div');
+    mountJobTools(host, { send, copy });
+
+    host.querySelector<HTMLButtonElement>('#btn-fill')!.click();
+    await flush();
+    fallback(host).querySelector<HTMLButtonElement>('button')!.click();
+    await flush();
+
+    expect(copy).toHaveBeenCalledWith('ada@example.com');
+  });
+
+  it('discards a stale profileGet reply when render() switches tabs while it is in flight', async () => {
+    let resolveProfile: ((res: PopupResponse) => void) | undefined;
+    const send = vi.fn(async (req: PopupRequest): Promise<PopupResponse> => {
+      if (req.kind === 'fill') {
+        return {
+          ok: true,
+          kind: 'fill',
+          summary: { filled: [], nameSplit: null, filledNothing: true },
+        };
+      }
+      if (req.kind === 'profileGet') {
+        return new Promise<PopupResponse>((resolve) => {
+          resolveProfile = resolve;
+        });
+      }
+      return { ok: false, error: 'unused' };
+    });
+    const host = document.createElement('div');
+    const view = mountJobTools(host, { send });
+
+    host.querySelector<HTMLButtonElement>('#btn-fill')!.click();
+    await flush();
+    expect(send).toHaveBeenCalledWith({ kind: 'profileGet' });
+
+    // The panel followed a different tab while the profileGet fetch above
+    // was still in flight — this must invalidate it.
+    view.render(answerState({ tabId: 2 }));
+
+    resolveProfile?.({
+      ok: true,
+      kind: 'profileGet',
+      result: { fullName: 'Ada Lovelace', email: 'ada@example.com' },
+    });
+    await flush();
+
+    expect(fallback(host).hidden).toBe(true);
+    expect(fallback(host).textContent).not.toContain('Ada Lovelace');
+  });
+
+  it('reset() hides an open fallback', async () => {
+    const send = vi.fn(async (req: PopupRequest): Promise<PopupResponse> => {
+      if (req.kind === 'fill') {
+        return {
+          ok: true,
+          kind: 'fill',
+          summary: { filled: [], nameSplit: null, filledNothing: true },
+        };
+      }
+      if (req.kind === 'profileGet') {
+        return { ok: true, kind: 'profileGet', result: { email: 'ada@example.com' } };
+      }
+      return { ok: false, error: 'unused' };
+    });
+    const host = document.createElement('div');
+    const view = mountJobTools(host, { send });
+
+    host.querySelector<HTMLButtonElement>('#btn-fill')!.click();
+    await flush();
+    expect(fallback(host).hidden).toBe(false);
+
+    view.reset();
+    expect(fallback(host).hidden).toBe(true);
   });
 });
 

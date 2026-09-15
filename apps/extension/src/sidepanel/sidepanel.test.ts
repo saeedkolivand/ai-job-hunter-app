@@ -31,6 +31,10 @@ vi.mock('../job-status/job-status', () => ({
   mountJobStatus: vi.fn(() => ({ refresh: vi.fn(), reset: vi.fn() })),
 }));
 
+vi.mock('../documents/documents', () => ({
+  mountDocuments: vi.fn(() => ({ render: vi.fn(), refresh: vi.fn(), reset: vi.fn() })),
+}));
+
 vi.mock('../lib/site-memory', () => ({
   mountFirstFillConfirm: vi.fn(() => ({ confirm: vi.fn(async () => true), cancel: vi.fn() })),
   getRememberedHosts: vi.fn(async () => []),
@@ -86,6 +90,7 @@ vi.mock('@wxt-dev/browser', () => ({
         Promise.resolve(windowId === PANEL_WINDOW_ID ? [{ id: 7 }] : [])
       ),
       onActivated: { addListener: vi.fn() },
+      create: vi.fn(),
     },
   },
 }));
@@ -398,19 +403,21 @@ describe('the gear button opens the Settings page', () => {
   });
 });
 
-describe('the tab bar (Job / Answers)', () => {
-  it('mounts two tabs, Job active by default', () => {
+describe('the tab bar (Job / Documents / Answers)', () => {
+  it('mounts three tabs, Job active by default', () => {
     const buttons = document.querySelectorAll<HTMLButtonElement>('.tab');
-    expect(buttons).toHaveLength(2);
+    expect(buttons).toHaveLength(3);
     expect(document.querySelector<HTMLButtonElement>('[data-tab="job"]')!.classList).toContain(
       'active'
     );
   });
 
-  it('mounts job-status + job-tools into the Job panel, and answer-tools into the Answers panel', () => {
+  it('mounts job-status + job-tools into the Job panel, the Documents host into the Documents panel, and answer-tools into the Answers panel', () => {
     const jobPanel = document.querySelector<HTMLElement>('[data-section="job"]')!;
+    const documentsPanel = document.querySelector<HTMLElement>('[data-section="documents"]')!;
     const answersPanel = document.querySelector<HTMLElement>('[data-section="answers"]')!;
     expect(jobPanel.querySelector('#job-tools-host')).not.toBeNull();
+    expect(documentsPanel.querySelector('#documents-host')).not.toBeNull();
     expect(answersPanel.querySelector('#answer-tools-host')).not.toBeNull();
   });
 });
