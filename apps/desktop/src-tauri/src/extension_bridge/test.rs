@@ -74,6 +74,9 @@ fn message_type_constants_match_ts() {
         // outside the generic agent.query/agent.call tier.
         msg::DOCUMENT_EXPORT,
         msg::DOCUMENT_RESULT,
+        // PR3 (Check-fit on the page) — batch form of applied.check for a results-listing page.
+        msg::APPLIED_CHECK_BATCH,
+        msg::APPLIED_BATCH_RESULT,
     ] {
         let needle = format!("'{literal}'");
         assert!(

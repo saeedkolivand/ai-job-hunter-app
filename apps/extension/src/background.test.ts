@@ -21,6 +21,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type Browser, browser } from '@wxt-dev/browser';
 
 import type { AnswerRow } from './lib/answer-state';
+import { setShowFitBadge, setStampResultsPages } from './lib/appearance';
 import type { AutofillSummary } from './lib/autofill';
 import type { PopupRequest, PopupResponse } from './lib/messages';
 import { getToken } from './lib/storage';
@@ -41,6 +42,7 @@ const mockClient = vi.hoisted(() => ({
   importJob: vi.fn(),
   getProfile: vi.fn(),
   checkApplied: vi.fn(),
+  checkAppliedBatch: vi.fn(),
   updateStatus: vi.fn(),
   saveAnswers: vi.fn(),
   suggestAnswers: vi.fn(),
@@ -90,6 +92,22 @@ vi.mock('@wxt-dev/browser', () => ({
     // background is the only writer.
     storage: {
       session: (() => {
+        const store: Record<string, unknown> = {};
+        return {
+          get: vi.fn((key: string) => Promise.resolve({ [key]: store[key] })),
+          set: vi.fn((entries: Record<string, unknown>) => {
+            Object.assign(store, entries);
+            return Promise.resolve();
+          }),
+          remove: vi.fn((key: string) => {
+            delete store[key];
+            return Promise.resolve();
+          }),
+        };
+      })(),
+      // `lib/appearance.ts`'s `getShowFitBadge`/`getStampResultsPages` (PR3)
+      // read/write this area — an in-memory store mirrors `session` above.
+      local: (() => {
         const store: Record<string, unknown> = {};
         return {
           get: vi.fn((key: string) => Promise.resolve({ [key]: store[key] })),
@@ -197,13 +215,14 @@ function flush(): Promise<void> {
 
 const FAKE_TOKEN = 'a'.repeat(64);
 
-beforeEach(() => {
+beforeEach(async () => {
   getTokenMock.mockReset();
   tabsQueryMock.mockReset();
   executeScriptMock.mockReset();
   mockClient.getProfile.mockReset();
   mockClient.importJob.mockReset();
   mockClient.checkApplied.mockReset();
+  mockClient.checkAppliedBatch.mockReset();
   mockClient.updateStatus.mockReset();
   mockClient.saveAnswers.mockReset();
   mockClient.suggestAnswers.mockReset();
@@ -215,6 +234,11 @@ beforeEach(() => {
   mockClient.settingsSet.mockReset();
   mockClient.documentExport.mockReset();
   setBadgeTextMock.mockClear();
+  // PR3 preferences default OFF — re-pin them before every test so an
+  // earlier test's `setShowFitBadge(true)`/`setStampResultsPages(true)`
+  // never leaks into the next one via the shared in-memory storage.local mock.
+  await setShowFitBadge(false);
+  await setStampResultsPages(false);
 });
 
 // ── not-paired short-circuit ────────────────────────────────────────────────
@@ -1363,6 +1387,200 @@ describe('matchLive request', () => {
     expect(res).toEqual({
       ok: false,
       error: 'Desktop app not reachable. Is AI Job Hunter running?',
+    });
+  });
+});
+
+// ── fit badge injection (PR3 §B.3) — best-effort, fire-and-forget ──────────
+
+describe('matchLive → on-page fit badge injection', () => {
+  it('injects the badge when getShowFitBadge is on, including the applied chip and salary facts', async () => {
+    await setShowFitBadge(true);
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: '<html>job</html>' }] as never); // content.js capture
+    mockClient.matchLive.mockResolvedValue({
+      ok: true,
+      combined: 82,
+      ats: 60,
+      gaps: ['kubernetes'],
+      resumeName: 'My Resume',
+      scoreSource: 'keyword',
+      salary: { posting: '€70,000–€90,000', expectation: '€80,000' },
+    });
+    mockClient.checkApplied.mockResolvedValue({ found: true, status: 'saved' });
+    executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never); // fit-badge.js files
+    executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never); // fit-badge.js func call
+
+    await send({ kind: 'matchLive' });
+    await flush();
+
+    expect(executeScriptMock).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { tabId: 7 }, files: ['fit-badge.js'] })
+    );
+    const funcCall = executeScriptMock.mock.calls.find(
+      (c) => (c[0] as { args?: unknown[] }).args?.[1] === '__ajhRenderFitBadge'
+    );
+    expect(funcCall).toBeDefined();
+    const view = (funcCall?.[0] as { args: [unknown, string] }).args[0] as {
+      score: number;
+      band: string;
+      applied: string | null;
+      salary?: { posting: string; expectation?: string };
+    };
+    expect(view.score).toBe(82);
+    expect(view.band).toBe('strong match');
+    expect(view.applied).toBe('saved');
+    expect(view.salary).toEqual({ posting: '€70,000–€90,000', expectation: '€80,000' });
+  });
+
+  it('never injects the badge when getShowFitBadge is off (the default)', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: '<html>job</html>' }] as never);
+    mockClient.matchLive.mockResolvedValue({
+      ok: true,
+      combined: 82,
+      ats: 60,
+      gaps: [],
+      resumeName: 'My Resume',
+      scoreSource: 'keyword',
+    });
+
+    await send({ kind: 'matchLive' });
+    await flush();
+
+    expect(executeScriptMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ files: ['fit-badge.js'] })
+    );
+  });
+
+  it('never affects the popup response even when badge injection fails', async () => {
+    await setShowFitBadge(true);
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: '<html>job</html>' }] as never);
+    mockClient.matchLive.mockResolvedValue({
+      ok: true,
+      combined: 82,
+      ats: 60,
+      gaps: [],
+      resumeName: 'My Resume',
+      scoreSource: 'keyword',
+    });
+    mockClient.checkApplied.mockRejectedValue(new Error('boom'));
+    executeScriptMock.mockRejectedValueOnce(new Error('injection blocked'));
+
+    const res = await send({ kind: 'matchLive' });
+    await flush();
+
+    expect(res.ok).toBe(true);
+    expect(res).toMatchObject({ kind: 'matchLive', result: { ok: true, combined: 82 } });
+  });
+});
+
+// ── stampResults request — results-page batch stamping (PR3 §B.4) ──────────
+
+describe('stampResults request — not-paired / preference short-circuits', () => {
+  it('surfaces "Not paired" and never reads the page when no token is stored', async () => {
+    getTokenMock.mockResolvedValue(null);
+
+    const res = await send({ kind: 'stampResults' });
+
+    expect(res).toEqual({ ok: false, error: 'Not paired. Paste your pairing token first.' });
+    expect(executeScriptMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the results-stamp preference is off (defense in depth against a stale UI)', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    await setStampResultsPages(false);
+
+    const res = await send({ kind: 'stampResults' });
+
+    expect(res.ok).toBe(false);
+    expect(executeScriptMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('stampResults request', () => {
+  it('collects candidate cards, batch-checks them, stamps, and reports the count', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    await setStampResultsPages(true);
+    tabsQueryMock.mockResolvedValue([{ id: 7 } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never); // results-stamp.js files
+    executeScriptMock.mockResolvedValueOnce([
+      { result: [{ url: 'https://x/jobs/1', index: 0 }] },
+    ] as never); // collect func
+    mockClient.checkAppliedBatch.mockResolvedValue({
+      ok: true,
+      results: [{ url: 'https://x/jobs/1', found: true, status: 'saved' }],
+    });
+    executeScriptMock.mockResolvedValueOnce([{ result: 1 }] as never); // stamp func
+
+    const res = await send({ kind: 'stampResults' });
+
+    expect(mockClient.checkAppliedBatch).toHaveBeenCalledWith(['https://x/jobs/1']);
+    expect(res).toEqual({ ok: true, kind: 'stampResults', stamped: 1, status: 'Stamped 1 card.' });
+  });
+
+  it('degrades a desktop-side refusal (over-cap/throttle) to "no stamps", never a partial lie', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    await setStampResultsPages(true);
+    tabsQueryMock.mockResolvedValue([{ id: 7 } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: [{ url: 'https://x/jobs/1', index: 0 }] },
+    ] as never);
+    mockClient.checkAppliedBatch.mockResolvedValue({ ok: false, error: 'too_many_urls' });
+
+    const res = await send({ kind: 'stampResults' });
+
+    expect(res).toEqual({ ok: true, kind: 'stampResults', stamped: 0, status: 'too_many_urls' });
+    // No stamp step is ever reached once the batch itself was refused.
+    expect(executeScriptMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports "no job cards" without ever calling the bridge when the page has none', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    await setStampResultsPages(true);
+    tabsQueryMock.mockResolvedValue([{ id: 7 } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never);
+    executeScriptMock.mockResolvedValueOnce([{ result: [] }] as never);
+
+    const res = await send({ kind: 'stampResults' });
+
+    expect(mockClient.checkAppliedBatch).not.toHaveBeenCalled();
+    expect(res).toEqual({
+      ok: true,
+      kind: 'stampResults',
+      stamped: 0,
+      status: 'No job cards found on this page.',
+    });
+  });
+
+  it('degrades a transport rejection on the batch call to "no stamps" too', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    await setStampResultsPages(true);
+    tabsQueryMock.mockResolvedValue([{ id: 7 } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: [{ url: 'https://x/jobs/1', index: 0 }] },
+    ] as never);
+    mockClient.checkAppliedBatch.mockRejectedValue(new Error('Desktop app not reachable.'));
+
+    const res = await send({ kind: 'stampResults' });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'stampResults',
+      stamped: 0,
+      status: 'Could not reach the desktop app.',
     });
   });
 });

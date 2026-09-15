@@ -32,6 +32,8 @@ export const INJECTED_ENTRIES = [
   'submit-watch', // post-submit application watcher
   'probe-fields', // the popup's fillable-fields probe
   'attach-file', // PR2: résumé attach via DataTransfer
+  'fit-badge', // PR3: on-page Check-fit score badge
+  'results-stamp', // PR3: results-page saved/applied stamps
 ];
 
 /** The built filenames, at the root of `dist/<target>/`. */

@@ -1713,6 +1713,110 @@ describe('BridgeClient – checkApplied', () => {
   });
 });
 
+// ── results-page batch lookup applied.check.batch ↔ applied.batch.result (PR3) ─
+
+describe('BridgeClient – checkAppliedBatch', () => {
+  let latestSocket: FakeWebSocket | undefined;
+  let restoreWS: () => void;
+
+  beforeEach(() => {
+    latestSocket = undefined;
+    restoreWS = installFakeWS((ws) => {
+      latestSocket = ws;
+    });
+  });
+
+  afterEach(() => {
+    restoreWS();
+  });
+
+  async function connectedClient(): Promise<{ client: BridgeClient; socket: FakeWebSocket }> {
+    const client = new BridgeClient(vi.fn());
+    const p = client.ensureConnected();
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+    await p;
+    return { client, socket };
+  }
+
+  function makeBatchEnvelope(reqId: string, payload: unknown): string {
+    return JSON.stringify({
+      type: EXTENSION_MESSAGE_TYPES.appliedBatchResult,
+      reqId,
+      payload,
+    });
+  }
+
+  async function startCheckAppliedBatch(
+    client: BridgeClient,
+    socket: FakeWebSocket,
+    urls: string[]
+  ): Promise<{ resultPromise: Promise<unknown>; reqId: string }> {
+    const resultPromise = client.checkAppliedBatch(urls);
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const frame = JSON.parse(raw) as { type: string; reqId: string; payload: unknown };
+    expect(frame.type).toBe(EXTENSION_MESSAGE_TYPES.appliedCheckBatch);
+    expect(frame.payload).toEqual({ urls });
+    return { resultPromise, reqId: frame.reqId };
+  }
+
+  it('round-trips a success result, preserving order', async () => {
+    const { client, socket } = await connectedClient();
+    const urls = ['https://jobs.example.com/1', 'https://jobs.example.com/2'];
+    const { resultPromise, reqId } = await startCheckAppliedBatch(client, socket, urls);
+
+    const payload = {
+      ok: true,
+      results: [
+        { url: urls[0], found: true, status: 'saved' },
+        { url: urls[1], found: false },
+      ],
+    };
+    socket.simulateMessage(makeBatchEnvelope(reqId, payload));
+
+    const result = await resultPromise;
+    expect(result).toEqual(payload);
+
+    client.dispose();
+  });
+
+  it('round-trips a desktop-side refusal (over-cap/throttle) — never rejects', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startCheckAppliedBatch(client, socket, ['https://x']);
+
+    socket.simulateMessage(
+      makeBatchEnvelope(reqId, { ok: false, error: 'too_many_urls', retryAfterMs: 1500 })
+    );
+
+    const result = await resultPromise;
+    expect(result).toEqual({ ok: false, error: 'too_many_urls', retryAfterMs: 1500 });
+
+    client.dispose();
+  });
+
+  it('resolves with a malformed error (never throws) when the payload is bad', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startCheckAppliedBatch(client, socket, ['https://x']);
+
+    // `results` entries must have a boolean `found`; a string breaks the guard.
+    socket.simulateMessage(
+      makeBatchEnvelope(reqId, { ok: true, results: [{ url: 'https://x', found: 'yes' }] })
+    );
+
+    const result = (await resultPromise) as { ok: boolean; error?: string };
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/malformed/i);
+
+    client.dispose();
+  });
+});
+
 // ── "mark this URL applied" status.update ↔ status.result ─────────────────────
 
 describe('BridgeClient – updateStatus', () => {
@@ -2292,6 +2396,48 @@ describe('BridgeClient – matchLive', () => {
       ok: false,
       error: 'Add a resume in AI Job Hunter first, then try Check fit again.',
     });
+
+    client.dispose();
+  });
+
+  it('round-trips the optional PR3 salary object', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startMatchLive(client, socket);
+
+    const payload = {
+      ok: true,
+      combined: 72,
+      ats: 60,
+      gaps: [],
+      resumeName: 'My Resume',
+      scoreSource: 'keyword',
+      salary: { posting: '€70,000–€90,000', expectation: '€80,000' },
+    };
+    socket.simulateMessage(makeMatchEnvelope(reqId, payload));
+
+    const result = await resultPromise;
+    expect(result).toEqual(payload);
+
+    client.dispose();
+  });
+
+  it('leaves salary undefined when the desktop omitted it (an older desktop, additive field)', async () => {
+    const { client, socket } = await connectedClient();
+    const { resultPromise, reqId } = await startMatchLive(client, socket);
+
+    socket.simulateMessage(
+      makeMatchEnvelope(reqId, {
+        ok: true,
+        combined: 72,
+        ats: 60,
+        gaps: [],
+        resumeName: 'My Resume',
+        scoreSource: 'keyword',
+      })
+    );
+
+    const result = (await resultPromise) as { salary?: unknown };
+    expect(result.salary).toBeUndefined();
 
     client.dispose();
   });

@@ -644,6 +644,29 @@ programmatic assignment.
 _Avoid_: "upload" (nothing crosses a network boundary — the file moves from the local desktop app
 into the local page over the loopback bridge, then the browser's own DOM)
 
+**On-page badge**:
+The fixed pill the extension renders on the current page after a successful **Check-fit** gesture —
+score plus a saved/applied chip, expanding on click to a mini card (missing keywords, the salary
+facts line when present, one "Open the panel" action). Renders inside a **closed** shadow root, so
+the page's own scripts cannot read the score, gaps, or salary text back off the DOM. No form action,
+ever; opt-in, default OFF (`apps/extension/src/lib/fit-badge.ts`,
+`apps/extension/src/lib/appearance.ts`). See [ADR 0009](knowledge/decision-records/0009-assisted-autofill.md)'s
+2026-09-15 amendment.
+_Avoid_: "overlay" as a synonym for this specifically (that word is reserved for
+`renderSummaryOverlay`, the existing autofill fill-summary, a distinct surface)
+
+**Results stamp**:
+The small saved/applied marker the extension places next to a matched job-card link on a
+results-listing page, after its own gesture resolves every visible card in one round trip via the
+batched `applied.check.batch` verb. Detection is generic (an anchor-href pattern, never
+board-specific selectors); a stamp is idempotent (a re-run replaces, never duplicates) and renders
+inside a **closed** shadow root, the same isolation the **On-page badge** uses. Nothing clickable but
+its own dismiss; opt-in, default OFF (`apps/extension/src/lib/results-stamp.ts`,
+`apps/extension/src/lib/appearance.ts`). See [ADR 0009](knowledge/decision-records/0009-assisted-autofill.md)'s
+2026-09-15 amendment.
+_Avoid_: conflating with the **On-page badge** (that carries the score/gaps for the CURRENT job;
+this carries saved/applied only, for MANY cards on a listing page)
+
 ## Domain — Packaged builds
 
 **Flavour**:

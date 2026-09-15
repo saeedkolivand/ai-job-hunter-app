@@ -292,7 +292,19 @@ export type PopupRequest =
       source: ExtensionDocumentSource;
       templateId: string;
       format: 'pdf' | 'docx';
-    };
+    }
+  /**
+   * User-clicked "Stamp this results page" (PR3): collect the active
+   * results-listing tab's candidate job-card links, resolve them in one
+   * `applied.check.batch` round trip, and stamp each known card
+   * saved/applied. Like `statusUpdate`, this is a deliberate action — its
+   * refusals (not paired, no active tab, a read/collect failure) surface as
+   * `ok:false`; a desktop-side refusal (over-cap, throttled, malformed) or a
+   * page with nothing to stamp instead degrades to `ok:true` with
+   * `stamped: 0` and an explanatory `status` line (see `PopupResponse`'s
+   * `stampResults` doc) — never a partial lie.
+   */
+  | { kind: 'stampResults' };
 
 /** background → popup responses (discriminated by the originating request). */
 export type PopupResponse =
@@ -457,4 +469,13 @@ export type PopupResponse =
   /** The résumé-attach outcome — fail-closed on anything short of a
    *  confirmed re-read (see `lib/attach-file.ts`'s own doc). */
   | { ok: true; kind: 'documentAttach'; result: AttachFileResult }
+  /**
+   * The "Stamp this results page" outcome (PR3) — ALWAYS `ok:true` once
+   * paired with an active tab (a desktop-side/injection refusal degrades to
+   * `stamped: 0` + `status`, never `ok:false` — see `PopupRequest`'s
+   * `stampResults` doc). `status` is a short, always-present line the panel
+   * renders regardless of `stamped` (a success count or a refusal reason),
+   * mirroring `resolveAnswersSaveResponse`'s single-line-of-truth discipline.
+   */
+  | { ok: true; kind: 'stampResults'; stamped: number; status: string }
   | { ok: false; error: string };
