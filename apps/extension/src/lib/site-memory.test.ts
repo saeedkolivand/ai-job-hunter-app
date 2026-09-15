@@ -110,7 +110,7 @@ describe('mountFirstFillConfirm', () => {
     expect(host.textContent).not.toContain('This will fill: name, email, phone');
 
     host.querySelector<HTMLButtonElement>('.btn--primary')!.click();
-    await pending;
+    await expect(pending).resolves.toBe(true);
   });
 
   it('renders a caller-supplied label override in both the heading and the primary button (PR2 attach reuse)', async () => {
@@ -129,7 +129,7 @@ describe('mountFirstFillConfirm', () => {
     expect(primaryBtn.textContent).toBe('Attach');
 
     primaryBtn.click();
-    await pending;
+    await expect(pending).resolves.toBe(true);
   });
 
   it('shows the inset and resolves true on Fill, remembering the host when the checkbox is checked', async () => {

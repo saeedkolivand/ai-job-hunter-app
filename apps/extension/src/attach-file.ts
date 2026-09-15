@@ -22,7 +22,7 @@ import { ATTACH_FILE_GLOBAL, type AttachFileResult, runAttachFile } from './lib/
 (
   globalThis as unknown as Record<
     string,
-    (bytes: Uint8Array, filename: string, mimeType: string) => AttachFileResult
+    (base64: string, filename: string, mimeType: string) => AttachFileResult
   >
 )[ATTACH_FILE_GLOBAL] = runAttachFile;
 

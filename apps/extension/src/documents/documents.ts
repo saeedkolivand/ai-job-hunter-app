@@ -129,6 +129,13 @@ export interface DocumentsDeps {
    *  function (not a static string) so it always reads the CURRENT tab at
    *  click time. */
   currentHost: () => string | null;
+  /** `sidepanel.ts`'s own `followGeneration` (PR review round 2) — bumped
+   *  every time `follow()` re-targets the panel at a different tab. The
+   *  cover-letter paste flow ({@link doPasteInto}) snapshots this alongside
+   *  the fed `AnswerState.tabId` before its export wait and re-checks both
+   *  right before sending `answerFill`/`answerReplace`, so a tab switch
+   *  during that wait can never paste into a page the user did not pick. */
+  getFollowGeneration: () => number;
   /** Called with the active tab's url every time `refresh()` resolves one —
    *  lets the caller (`sidepanel.ts`) drive the Job tab header's "Open in
    *  app" deep link from the SAME resolved url, without a second
@@ -408,6 +415,12 @@ export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): Document
     const row = state?.rows.find((r) => r.id === rowId);
     const field = row?.field;
     if (!row || !field) return;
+    // Bind this paste to the followed tab captured BEFORE the (possibly
+    // slow) cover-letter export below — `follow()` can re-target the panel
+    // at a different tab during that wait, and `deps.send` has no tabId of
+    // its own to bind to (PR review round 2).
+    const capturedGeneration = deps.getFollowGeneration();
+    const capturedTabId = state?.tabId ?? null;
     busy = true;
     pastePickerOpen = false;
     setStatus('Fetching…', 'muted');
@@ -416,6 +429,13 @@ export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): Document
       const out = await fetchCoverLetterText();
       if ('error' in out) {
         setStatus(out.error, 'err');
+        return;
+      }
+      if (
+        deps.getFollowGeneration() !== capturedGeneration ||
+        (state?.tabId ?? null) !== capturedTabId
+      ) {
+        setStatus('The followed tab changed — please retry.', 'err');
         return;
       }
       const res = await deps.send(

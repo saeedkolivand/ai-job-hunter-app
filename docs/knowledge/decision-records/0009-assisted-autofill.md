@@ -53,8 +53,8 @@ Decision 6's original claim — a résumé FILE "cannot be uploaded" from a cont
 `DataTransfer` to a `type=file` input (`input.files = dt.files`) works. The honest limit is
 narrower than what was disclosed: a custom drag-and-drop upload widget built on its own
 `drop`/`dragover` handlers, rather than the native `change` event, may ignore the assignment — so
-the extension **verifies** by re-reading the field (name + byte length) after assigning it and
-**reports** whether it actually took, rather than assuming success
+the extension **verifies** by re-reading the field after assigning it and **reports** whether it
+actually took, rather than assuming success
 (`apps/extension/src/lib/attach-file.ts`, injected via `apps/extension/src/attach-file.ts`). The
 file is rendered/exported on the user's own device — through the same `document.export` →
 `document.result` bridge verb pair the panel's Documents tab drives (see

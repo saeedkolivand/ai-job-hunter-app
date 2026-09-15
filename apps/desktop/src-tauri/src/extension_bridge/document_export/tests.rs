@@ -448,11 +448,25 @@ async fn document_export_reply_stays_well_under_the_frame_cap_for_every_template
                     )
                 });
 
+            // The wire value MUST come from the loop's own `format`, not a fixed literal — a
+            // hardcoded "pdf" here would let the DOCX iteration silently carry wrong metadata
+            // (and slightly understate the DOCX envelope size) without this test ever noticing.
+            let format_wire = match format {
+                ExportFormat::Pdf => "pdf",
+                ExportFormat::Docx => "docx",
+                ExportFormat::Txt => "txt",
+            };
+
             // Base64 round trip: the reply's `data` field must decode back to exactly the raw
             // export bytes `documents_export_document` produced. Built through the REAL
             // `success_or_capped_reply` — not a re-implementation of its shape.
-            let reply = success_or_capped_reply("req-budget", &result, "resume", "pdf", "classic");
+            let reply =
+                success_or_capped_reply("req-budget", &result, "resume", format_wire, "classic");
             let v: Value = serde_json::from_str(&reply).unwrap();
+            assert_eq!(
+                v["payload"]["format"], format_wire,
+                "template {template_id:?} format {format:?}: the reply must echo the requested format"
+            );
             let decoded = {
                 use base64::Engine;
                 base64::engine::general_purpose::STANDARD

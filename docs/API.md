@@ -3333,11 +3333,9 @@ export interface MenuNavigateEvent {
    * Canonical job URL (`applications::normalize_job_url`), present only when
    * `route` is `'generate-for-job'` or `'open-job'` — the two deep links the
    * paired extension opens (`ajh://generate?url=…` / `ajh://open?url=…`).
-   * `generate-for-job`: land on that job's tailor/generate flow, or the
-   * generate flow prefilled with this URL when no job exists for it yet.
-   * `open-job`: land on that job's detail page, or the jobs list with this
-   * URL as the search term when no job exists for it. Omitted for every
-   * other `route` value.
+   * Omitted for every other `route` value. How each destination resolves this
+   * URL against the live Applications list is owned by
+   * `resolveJobDeepLinkTarget` (`apps/desktop/src/renderer/hooks/use-menu-navigation.ts`).
    */
   url?: string;
 }

@@ -110,12 +110,16 @@ describe('buildCandidates', () => {
 // mountDocuments (the view)
 // ---------------------------------------------------------------------------
 
-function makeDeps(send: (req: PopupRequest) => Promise<PopupResponse>) {
+function makeDeps(
+  send: (req: PopupRequest) => Promise<PopupResponse>,
+  getFollowGeneration: () => number = () => 0
+) {
   return {
     send,
     copy: vi.fn(async () => true),
     confirmAttach: vi.fn(async () => true),
     currentHost: () => 'example.com',
+    getFollowGeneration,
     onUrlResolved: vi.fn(),
   };
 }
@@ -379,6 +383,73 @@ describe('mountDocuments', () => {
       )
     );
     await vi.waitFor(() => expect(host.textContent).toContain('Pasted into the field.'));
+  });
+
+  it('Paste cover letter: aborts the send when the followed tab changes during the export wait', async () => {
+    let resolveExport: ((res: PopupResponse) => void) | undefined;
+    const send = vi.fn(async (req: PopupRequest) => {
+      if (req.kind === 'documentsList') return GENERATION_RESULT;
+      if (req.kind === 'documentExportText') {
+        return new Promise<PopupResponse>((resolve) => {
+          resolveExport = resolve;
+        });
+      }
+      throw new Error(`unexpected request ${req.kind}`);
+    });
+    let followGeneration = 0;
+    const view = mountDocuments(
+      host,
+      makeDeps(send, () => followGeneration)
+    );
+    view.refresh();
+    await vi.waitFor(() => expect(host.textContent).toContain('Attach résumé to this page'));
+
+    view.render({
+      tabId: 1,
+      origin: 'https://example.com',
+      scannedAt: 1,
+      pageChanged: false,
+      stream: null,
+      rows: [
+        {
+          id: 'empty:0:Cover letter',
+          question: 'Cover letter',
+          status: 'empty',
+          versions: [],
+          selected: -1,
+          field: { kind: 'empty', index: 0, count: 1, currentText: '', originalText: '' },
+        },
+      ],
+    } satisfies AnswerState);
+
+    Array.from(host.querySelectorAll('button'))
+      .find((b) => b.textContent === 'Cover letter')!
+      .click();
+    await vi.waitFor(() => expect(host.textContent).toContain('Paste cover letter…'));
+
+    Array.from(host.querySelectorAll('button'))
+      .find((b) => b.textContent === 'Paste cover letter…')!
+      .click();
+    await vi.waitFor(() => expect(host.textContent).toContain('Cover letter'));
+
+    const rowBtn = Array.from(host.querySelectorAll<HTMLButtonElement>('.picker__row'))[0]!;
+    rowBtn.click();
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ kind: 'documentExportText' }))
+    );
+
+    // The panel followed a different tab while the export above was still
+    // in flight — the stale paste must never fire.
+    followGeneration += 1;
+    resolveExport?.({
+      ok: true,
+      kind: 'documentExportText',
+      text: 'Dear hiring manager…',
+      filename: 'letter.txt',
+    });
+
+    await vi.waitFor(() => expect(host.textContent).toContain('The followed tab changed'));
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'answerFill' }));
   });
 
   it('reset() clears candidates and any open picker', async () => {

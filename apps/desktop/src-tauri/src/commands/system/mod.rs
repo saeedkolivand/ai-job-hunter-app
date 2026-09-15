@@ -85,7 +85,7 @@ pub fn system_get_version() -> String {
 
 #[tauri::command]
 pub fn system_get_locale(app: AppHandle) -> Value {
-    let locale = read_locale_file(&app);
+    let locale = crate::platform::config::read_locale_file(&app);
     json!(locale)
 }
 
@@ -95,27 +95,8 @@ pub fn system_set_locale(app: AppHandle, locale: String) -> Value {
     json!(null)
 }
 
-fn locale_file_path(app: &AppHandle) -> std::path::PathBuf {
-    app.path()
-        .app_data_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .join("locale.json")
-}
-
-/// `pub(crate)` (PR2 — documents into ATS): `extension_bridge::document_export` reads the app's
-/// own configured locale as the language fallback for a base-résumé export with no stored
-/// `locale` of its own — the same "app locale" `system_get_locale` answers, reused rather than a
-/// second read of `locale.json`.
-pub(crate) fn read_locale_file(app: &AppHandle) -> String {
-    std::fs::read_to_string(locale_file_path(app))
-        .ok()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-        .and_then(|v| v.get("locale").and_then(|l| l.as_str()).map(String::from))
-        .unwrap_or_else(|| "en".to_string())
-}
-
 fn write_locale_file(app: &AppHandle, locale: &str) {
-    let path = locale_file_path(app);
+    let path = crate::platform::config::locale_file_path(app);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).ok();
     }

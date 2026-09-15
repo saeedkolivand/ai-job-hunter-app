@@ -15,7 +15,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { attachResumeFile } from './attach-file';
+import { attachResumeFile, runAttachFile } from './attach-file';
 
 class FakeFileList extends Array<File> {
   item(i: number): File | null {
@@ -152,5 +152,21 @@ describe('attachResumeFile', () => {
     attachResumeFile(document, bytesOf('x'), 'resume.pdf', 'application/pdf');
 
     expect(dropSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('runAttachFile (the injected entry-point)', () => {
+  it('decodes the base64 payload — the JSON-safe form that crosses the executeScript boundary, never raw bytes (PR review round 2) — and attaches it', () => {
+    document.body.innerHTML = '<input type="file" name="resume" accept=".pdf,.docx">';
+    const bytes = bytesOf('%PDF-1.4 fake');
+    const base64 = Buffer.from(bytes).toString('base64');
+
+    const result = runAttachFile(base64, 'resume.pdf', 'application/pdf');
+
+    expect(result).toEqual({
+      attached: true,
+      filename: 'resume.pdf',
+      byteLength: bytes.byteLength,
+    });
   });
 });

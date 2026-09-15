@@ -208,6 +208,7 @@ const documents = mountDocuments(documentsHost, {
   copy: copyText,
   confirmAttach: (host) => fillConfirm.confirm(host, ATTACH_CONFIRM_COPY, 'Attach'),
   currentHost: () => hostOf(currentOrigin),
+  getFollowGeneration: () => followGeneration,
   onUrlResolved: (url) => {
     openInAppUrl = `ajh://open?url=${encodeURIComponent(url)}`;
     openInAppLink.hidden = false;

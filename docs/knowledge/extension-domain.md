@@ -91,19 +91,14 @@ desktop-side-consent tradeoff: [ADR-050](decision-records/adr-050-extension-read
 ### Document attach — `document.export` (PR2 — documents into ATS)
 
 A dedicated verb pair, `document.export` → `document.result`, lets the paired extension render a
-saved generation's résumé/cover-letter text (or a base résumé) to PDF/DOCX/TXT bytes for the
-panel's Documents tab to attach into a page's file-upload field or paste as a cover letter — gate,
-throttle and reply shape are owned by `extension_bridge/document_export.rs`'s own module doc; it
-rides the same Autofill opt-in as the read tier above but sits outside it (own throttle, the
-generic frame cap rather than `EXTENSION_RESULT_MAX_BYTES` — see
-[ADR-050](decision-records/adr-050-extension-read-tier-and-settings-verbs.md)). The picker's
-candidate list (which job has a saved generation, which base résumés exist — presence flags only,
-never document text) is a curated `documents` resource on the same `agent_read` dispatch
-(`extension_bridge/agent_read/documents.rs`). `extension_bridge/frame.rs` holds `FrameDecision`,
-split out of `mod.rs` (R8 LOC relief) when this verb was added. The tab's "Generate in the app" /
-"Open in app" actions use two allowlisted deep-link routes parsed in `deeplink/mod.rs` alongside
-the existing autopilot/settings shapes. See [ADR-0009](decision-records/0009-assisted-autofill.md)'s
-2026-09-15 amendment for the corrected file-upload disclosure this verb enables.
+saved generation's résumé/cover-letter text (or a base résumé) for the panel's Documents tab to
+attach into a page's file-upload field or paste as a cover letter. Gate, throttle, frame cap and
+reply shape are owned by `extension_bridge/document_export.rs`'s own module doc; the consent
+tradeoff is [ADR-050](decision-records/adr-050-extension-read-tier-and-settings-verbs.md) decision 6. The picker's candidate list (presence flags only, never document text) is the `documents`
+resource on the same `agent_read` dispatch (`extension_bridge/agent_read/documents.rs`). The tab's
+"Generate in the app" / "Open in app" actions use two deep-link routes parsed in `deeplink/mod.rs`.
+See [ADR-0009](decision-records/0009-assisted-autofill.md)'s 2026-09-15 amendment for the corrected
+file-upload disclosure this verb enables.
 
 ### Revocation reach — an inherent limitation
 

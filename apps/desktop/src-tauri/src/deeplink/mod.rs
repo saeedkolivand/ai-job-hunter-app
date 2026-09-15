@@ -103,7 +103,17 @@ fn parse_job_url_target(rest: &str) -> Option<FocusTarget> {
     }
     let decoded = urlencoding::decode(encoded).ok()?.into_owned();
     let lower = decoded.trim().to_ascii_lowercase();
-    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+    // Require a non-empty authority after the scheme — a bare "http://"/"https://" (no host)
+    // must not parse into a target: `normalize_job_url` would still hand back that literal
+    // scheme string (empty host, empty path/query all collapse to nothing to strip), and the
+    // renderer then treats it as a real url — searching the jobs list for the literal
+    // "https://", or landing generate-prefill on it. `strip_prefix` (not `starts_with`, the
+    // prior check) is what lets us see whether anything follows the scheme at all.
+    let has_authority = lower
+        .strip_prefix("https://")
+        .or_else(|| lower.strip_prefix("http://"))
+        .is_some_and(|rest| !rest.is_empty());
+    if !has_authority {
         return None;
     }
     let normalized = crate::applications::normalize_job_url(decoded.trim());

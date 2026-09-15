@@ -572,6 +572,14 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
    *  different tabs can both be trusted, and `isPageTrusted` alone cannot
    *  tell them apart. */
   let lastTabId: number | null = null;
+  /** A DEDICATED generation for the copy-field fallback's own `profileGet`
+   *  fetch (PR review round 2) — sharing `fieldsProbeGeneration` would
+   *  invalidate the unrelated fields probe every time the fallback opens.
+   *  Bumped by {@link hideProfileFallback}, so every call site that hides the
+   *  fallback (`render`'s tab/trust change, `reset()`, a `filled` Fill
+   *  result) also discards any `profileGet` reply still in flight for the
+   *  PREVIOUS tab/page. */
+  let profileFallbackGeneration = 0;
 
   function setMsg(text: string, tone: 'ok' | 'err' | 'muted'): void {
     msgEl.textContent = text;
@@ -607,6 +615,11 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
   const copyField = deps.copy ?? copyText;
 
   function hideProfileFallback(): void {
+    // Invalidates any `profileGet` reply still in flight (see
+    // `profileFallbackGeneration`'s own doc) — every caller of this function
+    // (render's tab/trust change, reset(), a `filled` Fill result) counts as
+    // leaving the fallback this fetch was for.
+    profileFallbackGeneration += 1;
     profileFallback.hidden = true;
     profileFallback.replaceChildren();
   }
@@ -645,14 +658,20 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
    * stored, never retried automatically).
    */
   async function showProfileFallback(): Promise<void> {
+    const myGeneration = profileFallbackGeneration;
     try {
       const res = await deps.send({ kind: 'profileGet' });
+      // A tab switch / trust change / reset landed while this was in
+      // flight — that already hid the fallback for whatever page this now
+      // is; a stale reply must never resurrect it (PR review round 2).
+      if (myGeneration !== profileFallbackGeneration) return;
       if (res.ok && res.kind === 'profileGet') {
         renderProfileFallback(buildProfileFallbackFields(res.result));
       } else {
         hideProfileFallback();
       }
     } catch {
+      if (myGeneration !== profileFallbackGeneration) return;
       hideProfileFallback();
     }
   }

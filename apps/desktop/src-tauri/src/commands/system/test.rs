@@ -17,12 +17,6 @@ fn test_system_get_platform() {
 }
 
 #[test]
-fn test_locale_file_path() {
-    // This test would need a mock AppHandle in practice
-    // For now, we'll skip the full integration test
-}
-
-#[test]
 fn test_gpu_info_empty() {
     #[cfg(not(windows))]
     {

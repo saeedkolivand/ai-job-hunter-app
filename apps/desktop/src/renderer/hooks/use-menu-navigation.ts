@@ -100,22 +100,34 @@ export function useMenuNavigation() {
   const goToJobDeepLink = useCallback(
     (destination: JobDeepLinkDestination, url: string | undefined) => {
       if (!url) return;
-      void fetchApplications().then((applications) => {
-        const target = resolveJobDeepLinkTarget(destination, url, applications);
-        if (target.kind === 'application') {
-          void navigate({
-            to: '/applications/$id',
-            params: { id: target.id },
-            search: target.tab ? { tab: target.tab } : {},
+      void fetchApplications()
+        .catch((error: unknown) => {
+          // Applications couldn't be fetched (offline / IPC failure) — resolve
+          // against an empty list, which lands on the same fallback the
+          // no-match case already uses, instead of leaving the deep link with
+          // no navigation and an unhandled rejection.
+          console.error('[useMenuNavigation] fetching applications for a deep link failed', {
+            destination,
+            error,
           });
-        } else if (target.kind === 'generate-prefill') {
-          setAIGenerate({ jobUrl: target.url });
-          void navigate({ to: '/ai-generate' });
-        } else {
-          setJobs({ filter: target.url });
-          void navigate({ to: '/jobs' });
-        }
-      });
+          return [];
+        })
+        .then((applications) => {
+          const target = resolveJobDeepLinkTarget(destination, url, applications);
+          if (target.kind === 'application') {
+            void navigate({
+              to: '/applications/$id',
+              params: { id: target.id },
+              search: target.tab ? { tab: target.tab } : {},
+            });
+          } else if (target.kind === 'generate-prefill') {
+            setAIGenerate({ jobUrl: target.url });
+            void navigate({ to: '/ai-generate' });
+          } else {
+            setJobs({ filter: target.url });
+            void navigate({ to: '/jobs' });
+          }
+        });
     },
     [navigate, setAIGenerate, setJobs]
   );

@@ -733,30 +733,37 @@ async function runDocumentExportText(
 }
 
 /**
- * Inject the résumé-attach script into the active tab and run it against the
- * decoded bytes. Two-step like `injectFill`: the bytes (the user's own
- * résumé) are passed in transiently via the second `executeScript({ func,
- * args })` rather than baked into the `files` injection.
+ * Inject the résumé-attach script into `tabId` and run it against `base64`.
+ * Two-step like `injectFill`: the payload (the user's own résumé) is passed
+ * in transiently via the second `executeScript({ func, args })` rather than
+ * baked into the `files` injection.
+ *
+ * The payload crosses that boundary as a base64 STRING, never a `Uint8Array`
+ * (PR review round 2 — a real defect, not a hypothetical): Chrome
+ * JSON-serializes `executeScript` `args`, so a `Uint8Array` arrives in the
+ * injected function as a plain `{"0":…,"1":…}` object — `new
+ * Uint8Array(that)` is empty and `that.byteLength` is `undefined`, so
+ * `attachResumeFile`'s own byte-length verification then always refuses. A
+ * base64 string is JSON-safe and survives the boundary intact; `attach-
+ * file.ts`'s injected {@link runAttachFile} decodes it back to bytes INSIDE
+ * the page (see that function's own doc).
  */
 async function injectAttachFile(
-  bytes: Uint8Array,
+  tabId: number,
+  base64: string,
   filename: string,
   mimeType: string
 ): Promise<AttachFileResult> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  const tabId = tab?.id;
-  if (typeof tabId !== 'number') throw new Error('No active tab to attach to.');
-
   await browser.scripting.executeScript({ target: { tabId }, files: ['attach-file.js'] });
 
   const results = await browser.scripting.executeScript({
     target: { tabId },
-    func: (b: Uint8Array, name: string, mime: string, key: string): AttachFileResult | null => {
+    func: (data: string, name: string, mime: string, key: string): AttachFileResult | null => {
       const runner = (globalThis as Record<string, unknown>)[key] as
-        ((bytes: Uint8Array, filename: string, mimeType: string) => AttachFileResult) | undefined;
-      return runner ? runner(b, name, mime) : null;
+        ((base64: string, filename: string, mimeType: string) => AttachFileResult) | undefined;
+      return runner ? runner(data, name, mime) : null;
     },
-    args: [bytes, filename, mimeType, ATTACH_FILE_GLOBAL],
+    args: [base64, filename, mimeType, ATTACH_FILE_GLOBAL],
   });
 
   const result = results[0]?.result;
@@ -767,11 +774,29 @@ async function injectAttachFile(
 }
 
 /**
- * "Attach résumé to this page": export as pdf/docx, decode to bytes, inject
- * via {@link injectAttachFile}, and surface the fail-closed outcome. The
- * caller (`documents/documents.ts`) is responsible for the first-time-per-
- * site confirmation BEFORE sending this request. Like `runStatusUpdate`,
- * failures are NOT folded away — a deliberate click.
+ * Re-verify, right before injection, that `tabId` is still the active tab
+ * AND still on `origin` (PR review round 2). `runDocumentAttach` captures
+ * both BEFORE the desktop export round trip below, which can take long
+ * enough for the user to switch tabs or navigate away — without this check
+ * the résumé would attach to whatever page happens to be active once the
+ * export finally resolves, not the one the user confirmed.
+ */
+async function tabStillConfirmed(tabId: number, origin: string): Promise<boolean> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  if (tab?.id !== tabId || !tab.url) return false;
+  try {
+    return new URL(tab.url).origin === origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * "Attach résumé to this page": export as pdf/docx, inject via {@link
+ * injectAttachFile}, and surface the fail-closed outcome. The caller
+ * (`documents/documents.ts`) is responsible for the first-time-per-site
+ * confirmation BEFORE sending this request. Like `runStatusUpdate`, failures
+ * are NOT folded away — a deliberate click.
  */
 async function runDocumentAttach(
   source: ExtensionDocumentSource,
@@ -782,10 +807,17 @@ async function runDocumentAttach(
   if (!token) {
     return { ok: false, error: 'Not paired. Paste your pairing token first.' };
   }
+  // Bind the attach to the tab + origin confirmed BEFORE the (possibly slow)
+  // desktop export round trip — re-verified via `tabStillConfirmed` right
+  // before injection (PR review round 2).
+  const tabId = await activeTabId();
+  const origin = await activeTabOriginAtGesture();
   const res = await getClient().documentExport({ source, kind: 'resume', format, templateId });
   if (!res.ok) return { ok: false, error: res.error };
-  const bytes = base64ToBytes(res.data);
-  const result = await injectAttachFile(bytes, res.filename, res.mimeType);
+  if (!(await tabStillConfirmed(tabId, origin))) {
+    return { ok: false, error: 'The page changed while exporting — please retry.' };
+  }
+  const result = await injectAttachFile(tabId, res.data, res.filename, res.mimeType);
   return { ok: true, kind: 'documentAttach', result };
 }
 

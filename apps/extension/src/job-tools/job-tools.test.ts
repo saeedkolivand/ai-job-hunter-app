@@ -649,6 +649,45 @@ describe('copy-field fallback (decision 8)', () => {
     expect(copy).toHaveBeenCalledWith('ada@example.com');
   });
 
+  it('discards a stale profileGet reply when render() switches tabs while it is in flight', async () => {
+    let resolveProfile: ((res: PopupResponse) => void) | undefined;
+    const send = vi.fn(async (req: PopupRequest): Promise<PopupResponse> => {
+      if (req.kind === 'fill') {
+        return {
+          ok: true,
+          kind: 'fill',
+          summary: { filled: [], nameSplit: null, filledNothing: true },
+        };
+      }
+      if (req.kind === 'profileGet') {
+        return new Promise<PopupResponse>((resolve) => {
+          resolveProfile = resolve;
+        });
+      }
+      return { ok: false, error: 'unused' };
+    });
+    const host = document.createElement('div');
+    const view = mountJobTools(host, { send });
+
+    host.querySelector<HTMLButtonElement>('#btn-fill')!.click();
+    await flush();
+    expect(send).toHaveBeenCalledWith({ kind: 'profileGet' });
+
+    // The panel followed a different tab while the profileGet fetch above
+    // was still in flight — this must invalidate it.
+    view.render(answerState({ tabId: 2 }));
+
+    resolveProfile?.({
+      ok: true,
+      kind: 'profileGet',
+      result: { fullName: 'Ada Lovelace', email: 'ada@example.com' },
+    });
+    await flush();
+
+    expect(fallback(host).hidden).toBe(true);
+    expect(fallback(host).textContent).not.toContain('Ada Lovelace');
+  });
+
   it('reset() hides an open fallback', async () => {
     const send = vi.fn(async (req: PopupRequest): Promise<PopupResponse> => {
       if (req.kind === 'fill') {

@@ -386,7 +386,7 @@ pub(super) async fn handle_document_export(
                 .locale
                 .as_deref()
                 .and_then(non_empty)
-                .unwrap_or_else(|| crate::commands::system::read_locale_file(app));
+                .unwrap_or_else(|| crate::platform::config::read_locale_file(app));
             (
                 doc.text,
                 GenerationMeta {

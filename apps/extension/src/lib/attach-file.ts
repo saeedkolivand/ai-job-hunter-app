@@ -134,16 +134,37 @@ export function attachResumeFile(
 }
 
 /**
- * The injected entry-point: attach, render the shared summary overlay (see
- * `AutofillSummary.attached`'s doc), and return the result for the
- * popup/panel. Kept side-effect-first so `chrome.scripting.executeScript`
- * gets a serializable return value — mirrors `autofill.ts`'s `runAutofill`.
+ * Decode a base64 string to raw bytes — called INSIDE the injected runner
+ * below, never in the background (PR review round 2). Chrome JSON-serializes
+ * `executeScript({ func, args })` arguments, so a `Uint8Array` arg would
+ * arrive here as a plain `{"0":…}` object rather than a real typed array; a
+ * base64 STRING is JSON-safe and survives that boundary intact, so
+ * `background.ts` passes the raw base64 and this decodes it back to bytes
+ * once it's already running on the page (never crossing the boundary as
+ * bytes at all). `atob` + a byte-copy loop — no dependency; a private
+ * duplicate of `background.ts`'s own `base64ToBytes` since this file is a
+ * classic-script injection target and cannot import from it.
+ */
+function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * The injected entry-point: decode the base64 payload, attach, render the
+ * shared summary overlay (see `AutofillSummary.attached`'s doc), and return
+ * the result for the popup/panel. Kept side-effect-first so
+ * `chrome.scripting.executeScript` gets a serializable return value — mirrors
+ * `autofill.ts`'s `runAutofill`.
  */
 export function runAttachFile(
-  bytes: Uint8Array,
+  base64: string,
   filename: string,
   mimeType: string
 ): AttachFileResult {
+  const bytes = base64ToBytes(base64);
   const result = attachResumeFile(document, bytes, filename, mimeType);
   const summary: AutofillSummary = {
     filled: [],

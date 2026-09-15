@@ -62,5 +62,53 @@ describe.skipIf(!playwrightResolvable())(
         await browser.close();
       }
     }, 30_000);
+
+    /**
+     * The other load-bearing claim jsdom/background.test.ts's mocked args
+     * capture can't prove: that a base64 STRING (not raw bytes) is what must
+     * cross `chrome.scripting.executeScript({ func, args })`, because Chrome
+     * JSON-serializes `args` on the way to the page (PR review round 2 — a
+     * `Uint8Array` arg degrades to a plain `{"0":…}` object there, which is
+     * what made attach silently 0-byte in production). Playwright can't drive
+     * the real `executeScript` call without loading a full unpacked extension
+     * (a materially bigger fixture than this file's existing scope), so this
+     * reproduces the boundary it DOES enforce — a real `JSON.parse(JSON.
+     * stringify(...))` round trip — then decodes with the SAME `atob` +
+     * byte-copy loop as `lib/attach-file.ts`'s `base64ToBytes`, inside a real
+     * browser's DOM (not jsdom), and confirms the file that lands on the
+     * input has the exact original byte length.
+     */
+    it('the base64 payload survives a JSON round trip (mirrors the executeScript args boundary) and decodes to the exact original bytes', async (ctx) => {
+      const { chromium } = await import('playwright');
+      const browser = await chromium.launch().catch(() => null);
+      if (!browser) {
+        ctx.skip();
+        return;
+      }
+      try {
+        const page = await browser.newPage();
+        await page.setContent('<input type="file" id="resume">');
+        const original = new Uint8Array([1, 2, 3, 255, 0, 128]);
+        const base64 = Buffer.from(original).toString('base64');
+        const [roundTrippedBase64] = JSON.parse(JSON.stringify([base64])) as [string];
+
+        const confirmed = await page.evaluate((b64: string) => {
+          const binary = atob(b64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+          const input = document.getElementById('resume') as HTMLInputElement;
+          const dt = new DataTransfer();
+          const file = new File([bytes], 'resume.pdf', { type: 'application/pdf' });
+          dt.items.add(file);
+          input.files = dt.files;
+          const first = input.files?.[0];
+          return first ? { size: first.size, byteLength: bytes.byteLength } : null;
+        }, roundTrippedBase64);
+
+        expect(confirmed).toEqual({ size: original.byteLength, byteLength: original.byteLength });
+      } finally {
+        await browser.close();
+      }
+    }, 30_000);
   }
 );

@@ -327,6 +327,45 @@ describe('useMenuNavigation', () => {
       expect(list).not.toHaveBeenCalled();
       expect(navigate).not.toHaveBeenCalled();
     });
+
+    // A rejected `applications.list` must not leave the deep link stuck with no
+    // navigation and no error handling (an unhandled rejection) — it resolves
+    // against an empty list, landing on the same fallback the no-match case uses.
+    it('open-job falls back to the jobs list when applications.list rejects', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const list = vi.fn().mockRejectedValue(new Error('offline'));
+      renderWithPending(
+        { event: 'menu:navigate', payload: { route: 'open-job', section: null, url: URL } },
+        undefined,
+        { 'applications.list': list }
+      );
+
+      // React Query's `retry: 1` (query-client.ts) backs off ~1s before the
+      // query settles — a longer timeout than the default.
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/jobs' }), {
+        timeout: 3000,
+      });
+      expect(setJobs).toHaveBeenCalledExactlyOnceWith({ filter: URL });
+      expect(consoleError).toHaveBeenCalled();
+      consoleError.mockRestore();
+    });
+
+    it('generate-for-job falls back to a prefilled generate session when applications.list rejects', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const list = vi.fn().mockRejectedValue(new Error('offline'));
+      renderWithPending(
+        { event: 'menu:navigate', payload: { route: 'generate-for-job', section: null, url: URL } },
+        undefined,
+        { 'applications.list': list }
+      );
+
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/ai-generate' }), {
+        timeout: 3000,
+      });
+      expect(setAIGenerate).toHaveBeenCalledExactlyOnceWith({ jobUrl: URL });
+      expect(consoleError).toHaveBeenCalled();
+      consoleError.mockRestore();
+    });
   });
 });
 

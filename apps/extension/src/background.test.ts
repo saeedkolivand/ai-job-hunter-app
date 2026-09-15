@@ -662,6 +662,9 @@ describe('documentAttach request', () => {
 
   it('surfaces a desktop export refusal verbatim, never injects', async () => {
     getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    // The tab+origin are captured BEFORE the export round trip now (PR review
+    // round 2), so a valid active tab must resolve even on a refusal.
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://example.com/apply' } as never]);
     mockClient.documentExport.mockResolvedValue({ ok: false, error: 'export_failed' });
 
     const res = await send({
@@ -712,6 +715,125 @@ describe('documentAttach request', () => {
     expect(executeScriptMock.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({ files: ['attach-file.js'] })
     );
+  });
+
+  it('the résumé payload crosses the injection boundary as a JSON-safe base64 string, never a Uint8Array (regression: Chrome JSON-serializes executeScript args, which silently emptied a Uint8Array)', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    const encoded = Buffer.from('%PDF-1.4 fake', 'utf8').toString('base64');
+    mockClient.documentExport.mockResolvedValue({
+      ok: true,
+      data: encoded,
+      dataEncoding: 'base64',
+      mimeType: 'application/pdf',
+      filename: 'resume.pdf',
+      byteLength: encoded.length,
+      kind: 'resume',
+      format: 'pdf',
+      templateId: 'classic',
+    });
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://example.com/apply' } as never]);
+    let capturedFunc: ((...args: unknown[]) => unknown) | undefined;
+    let capturedArgs: unknown[] | undefined;
+    executeScriptMock.mockResolvedValueOnce([] as never).mockImplementationOnce(async (opts) => {
+      const o = opts as { func?: (...args: unknown[]) => unknown; args?: unknown[] };
+      capturedFunc = o.func;
+      capturedArgs = o.args;
+      return [{ result: null }] as never;
+    });
+
+    await send({
+      kind: 'documentAttach',
+      source: { kind: 'document', id: 'doc-1' },
+      templateId: 'classic',
+      format: 'pdf',
+    });
+
+    // Chrome JSON-serializes `executeScript({ args })` on the way to the page
+    // — anything that doesn't survive `JSON.parse(JSON.stringify(...))` never
+    // reaches the injected function intact. A `Uint8Array` argument would
+    // degrade to a plain `{"0":…}` object here; the fix's base64 STRING
+    // survives byte-for-byte.
+    const roundTripped = JSON.parse(JSON.stringify(capturedArgs)) as unknown[];
+    expect(typeof roundTripped[0]).toBe('string');
+    expect(roundTripped[0]).toBe(encoded);
+
+    // And the injected func itself must still resolve to the correct bytes
+    // once wired to a real runner — proves the round trip, not just the arg
+    // shape.
+    const key = roundTripped[3] as string;
+    const runnerCalls: unknown[][] = [];
+    (globalThis as Record<string, unknown>)[key] = (...args: unknown[]) => {
+      runnerCalls.push(args);
+      return { attached: true, filename: 'resume.pdf', byteLength: 13 };
+    };
+    try {
+      const result = capturedFunc?.(...roundTripped);
+      expect(result).toEqual({ attached: true, filename: 'resume.pdf', byteLength: 13 });
+      expect(runnerCalls[0]?.[0]).toBe(encoded);
+    } finally {
+      delete (globalThis as Record<string, unknown>)[key];
+    }
+  });
+
+  it('aborts and never injects when the user switches tabs during the export wait', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    const encoded = Buffer.from('%PDF-1.4 fake', 'utf8').toString('base64');
+    mockClient.documentExport.mockResolvedValue({
+      ok: true,
+      data: encoded,
+      dataEncoding: 'base64',
+      mimeType: 'application/pdf',
+      filename: 'resume.pdf',
+      byteLength: encoded.length,
+      kind: 'resume',
+      format: 'pdf',
+      templateId: 'classic',
+    });
+    tabsQueryMock
+      .mockResolvedValueOnce([{ id: 7, url: 'https://example.com/apply' } as never]) // captured at gesture time
+      .mockResolvedValueOnce([{ id: 7, url: 'https://example.com/apply' } as never]) // origin capture
+      .mockResolvedValueOnce([{ id: 9, url: 'https://other.com/page' } as never]); // re-verify: a different tab is now active
+
+    const res = await send({
+      kind: 'documentAttach',
+      source: { kind: 'document', id: 'doc-1' },
+      templateId: 'classic',
+      format: 'pdf',
+    });
+
+    expect(res).toEqual({ ok: false, error: 'The page changed while exporting — please retry.' });
+    expect(executeScriptMock).not.toHaveBeenCalled();
+  });
+
+  it('aborts and never injects on a same-tab navigation to a different origin during the export wait', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    const encoded = Buffer.from('%PDF-1.4 fake', 'utf8').toString('base64');
+    mockClient.documentExport.mockResolvedValue({
+      ok: true,
+      data: encoded,
+      dataEncoding: 'base64',
+      mimeType: 'application/pdf',
+      filename: 'resume.pdf',
+      byteLength: encoded.length,
+      kind: 'resume',
+      format: 'pdf',
+      templateId: 'classic',
+    });
+    tabsQueryMock
+      .mockResolvedValueOnce([{ id: 7, url: 'https://example.com/apply' } as never])
+      .mockResolvedValueOnce([{ id: 7, url: 'https://example.com/apply' } as never])
+      // Same tab id, but navigated to a different origin during the wait.
+      .mockResolvedValueOnce([{ id: 7, url: 'https://attacker.example/apply' } as never]);
+
+    const res = await send({
+      kind: 'documentAttach',
+      source: { kind: 'document', id: 'doc-1' },
+      templateId: 'classic',
+      format: 'pdf',
+    });
+
+    expect(res).toEqual({ ok: false, error: 'The page changed while exporting — please retry.' });
+    expect(executeScriptMock).not.toHaveBeenCalled();
   });
 
   it('surfaces "Could not attach the file on this page." when the injected func returns a non-result', async () => {

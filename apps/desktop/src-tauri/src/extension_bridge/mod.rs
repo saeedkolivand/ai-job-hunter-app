@@ -1054,11 +1054,18 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
             // decided here, same shape as `SettingsSet` just above. Awaited inline (not spawned
             // off the read loop) — a Typst compile is bounded (100-400ms per
             // `documents_export_document`'s own doc), the same class of cost `Import`/`MatchLive`
-            // already await inline here.
+            // already await inline here. `export_reply_unless_revoked` guards the inline await:
+            // this loop cannot poll `revoked_rx` while it is suspended here, so a rotation that
+            // lands mid-compile must not still hand the finished document to the now-revoked
+            // socket — see that function's doc.
             FrameDecision::DocumentExport { req_id, payload }
                 if state.try_acquire_document_export() =>
             {
-                Some(document_export::handle_document_export(&app, &req_id, &payload).await)
+                export_reply_unless_revoked(
+                    &state,
+                    document_export::handle_document_export(&app, &req_id, &payload),
+                )
+                .await
             }
             FrameDecision::DocumentExport { req_id, .. } => Some(document_export::throttled_reply(
                 &req_id,
@@ -1132,6 +1139,31 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
             json!({ "connected": false }),
         );
     }
+}
+
+/// Await `export` (in production, [`document_export::handle_document_export`]), then discard its
+/// reply if this connection's pairing was revoked WHILE it was in flight, rather than enqueue a
+/// résumé/cover-letter for a socket that is already gone. `handle_connection`'s read loop awaits
+/// `document.export` inline — a real Typst compile, per that call site's doc — so it cannot poll
+/// `revoked_rx` until this call returns; without this guard a rotation landing mid-compile would
+/// still let the loop enqueue `document.result` on its next line, ahead of the very next
+/// iteration's own `NextStep::Revoked` handling (`revoke::revoke_frames` + close). `state`'s
+/// rotation epoch is bumped inside the SAME lock hold `regenerate_token` sends the revoke
+/// broadcast under (see its doc), so ANY rotation that reaches this connection at all — this
+/// socket's `revoked_rx` was subscribed at accept time, before the handshake — moves it; an
+/// epoch mismatch after the await therefore proves a revoke was broadcast mid-export, with no
+/// need to also inspect `authenticated` (only an authenticated connection ever reaches the
+/// `DocumentExport` dispatch arm this guards). Generic over `export` (rather than calling
+/// `document_export::handle_document_export` directly) so the race is unit-testable without a
+/// live socket/`AppHandle`/real Typst compile: a test future can rotate `state` itself before
+/// resolving, modelling "the rotation lands while the export is still in flight" deterministically.
+async fn export_reply_unless_revoked(
+    state: &BridgeState,
+    export: impl std::future::Future<Output = String>,
+) -> Option<String> {
+    let epoch_before = state.rotation_epoch();
+    let reply = export.await;
+    (state.rotation_epoch() == epoch_before).then_some(reply)
 }
 
 /// Per-connection handshake state. A socket starts `AwaitingHello`; a valid

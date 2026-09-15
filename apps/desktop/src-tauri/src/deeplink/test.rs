@@ -106,22 +106,51 @@ fn finds_the_url_among_other_args() {
 
 #[test]
 fn accepts_a_valid_generate_for_job_url() {
-    let encoded = urlencoding::encode("https://example.com/job/1?ref=abc");
+    // Assert the FULL canonical url, not just the variant + a domain substring: the renderer
+    // uses `url` as its lookup key, so a regression that truncates the path or returns a fixed
+    // url (but still contains "example.com") must fail this test.
+    let input = "https://example.com/job/1?ref=abc";
+    let encoded = urlencoding::encode(input);
     let target = parse_focus_target(&argv(&format!("ajh://generate?url={encoded}")));
-    assert!(matches!(target, Some(FocusTarget::GenerateForJob(_))));
-    let Some(FocusTarget::GenerateForJob(url)) = target else {
-        unreachable!()
-    };
-    assert!(url.contains("example.com"), "url = {url:?}");
+    assert_eq!(
+        target,
+        Some(FocusTarget::GenerateForJob(
+            crate::applications::normalize_job_url(input)
+        ))
+    );
 }
 
 #[test]
 fn accepts_a_valid_open_job_url() {
-    let encoded = urlencoding::encode("https://example.com/job/2");
-    assert!(matches!(
-        parse_focus_target(&argv(&format!("ajh://open?url={encoded}"))),
-        Some(FocusTarget::OpenJob(_))
-    ));
+    let input = "https://example.com/job/2";
+    let encoded = urlencoding::encode(input);
+    let target = parse_focus_target(&argv(&format!("ajh://open?url={encoded}")));
+    assert_eq!(
+        target,
+        Some(FocusTarget::OpenJob(
+            crate::applications::normalize_job_url(input)
+        ))
+    );
+}
+
+#[test]
+fn rejects_a_bare_scheme_with_no_authority() {
+    // A scheme with nothing after it must not parse into a target — `normalize_job_url("https://")`
+    // returns the non-empty literal `"https://"`, which the renderer would otherwise treat as a
+    // real search/lookup url.
+    for bare in ["https://", "http://"] {
+        let encoded = urlencoding::encode(bare);
+        assert_eq!(
+            parse_focus_target(&argv(&format!("ajh://generate?url={encoded}"))),
+            None,
+            "bare = {bare:?}"
+        );
+        assert_eq!(
+            parse_focus_target(&argv(&format!("ajh://open?url={encoded}"))),
+            None,
+            "bare = {bare:?}"
+        );
+    }
 }
 
 #[test]
