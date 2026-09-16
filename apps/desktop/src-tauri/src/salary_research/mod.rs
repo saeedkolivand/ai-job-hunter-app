@@ -222,6 +222,37 @@ impl SalaryResearch {
         tracing::info!(role = %role, company = %company, source = "provider", "salary_research: range");
         Some(range)
     }
+
+    /// The cached, still-fresh, currency-reconciled range [`Self::enrich`]'s OWN fast path would
+    /// return — checked WITHOUT ever touching `searcher`, so a caller that must not spend a
+    /// billable/rate-limited provider round trip (or whatever ELSE gates that round trip, like a
+    /// daily quota charge) can check for a hit first. Built from the exact same pure building
+    /// blocks `enrich`'s fast path uses ([`truncate_input`], [`cache_key`], [`parse_and_validate`],
+    /// [`reconcile_expected_currency`]) rather than a hand-copied fast path, so a hit here is
+    /// always the SAME hit `enrich` would find — nothing to keep in sync by hand.
+    ///
+    /// `None` on a missing role, a cache miss, an expired/malformed entry, or an entry in the
+    /// wrong currency (which `enrich` would re-fetch rather than trust — see its own doc for why).
+    pub fn cached_range(
+        &self,
+        cache: Option<&KvCache>,
+        role: &str,
+        company: &str,
+        location: &str,
+        currency: &str,
+    ) -> Option<SalaryRange> {
+        if role_is_missing(role) {
+            return None;
+        }
+        let role = truncate_input(role.trim());
+        let company = truncate_input(company.trim());
+        let location = truncate_input(location.trim());
+        let currency = truncate_input(currency.trim());
+        let key = cache_key(&role, &company, &location, &currency);
+        let json = cache?.get(CACHE_NS, &key, TTL_SECS)?;
+        let range = parse_and_validate(&json)?;
+        reconcile_expected_currency(range, &currency)
+    }
 }
 
 /// Fail-safe backstop behind [`commands::ai_provider::research::salary_system`]'s

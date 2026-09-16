@@ -631,9 +631,12 @@ function normalizeAgentCallResult(payload: unknown): ExtensionAgentCallResult {
 /**
  * Hand-written guard for a `settings.result` payload (PR1 — extension read
  * tier; extension stays zod-free). Mirrors `ExtensionSettingsResultSchema`'s
- * discriminated union: `ok:true` requires a `settings` object whose FOUR
- * fields (incl. `saveAnswersOnSubmit`, PR4) are all booleans; `ok:false`
- * requires a string `error`.
+ * discriminated union: `ok:true` requires a `settings` object whose first
+ * three fields are booleans; `ok:false` requires a string `error`. The
+ * fourth field (`saveAnswersOnSubmit`, PR4) may be ABSENT — a protocol-v2
+ * desktop from before this PR answers with only the first three keys —
+ * `normalizeSettingsResult` fills the missing key in as `false`. A PRESENT
+ * but wrong-typed fourth key still fails the guard.
  */
 function isExtensionSettingsResult(v: unknown): v is ExtensionSettingsResult {
   if (typeof v !== 'object' || v === null) return false;
@@ -645,7 +648,7 @@ function isExtensionSettingsResult(v: unknown): v is ExtensionSettingsResult {
       typeof s.autofill === 'boolean' &&
       typeof s.aiAssist === 'boolean' &&
       typeof s.autotrack === 'boolean' &&
-      typeof s.saveAnswersOnSubmit === 'boolean'
+      (s.saveAnswersOnSubmit === undefined || typeof s.saveAnswersOnSubmit === 'boolean')
     );
   }
   if (o.ok === false) return typeof o.error === 'string';
@@ -655,13 +658,22 @@ function isExtensionSettingsResult(v: unknown): v is ExtensionSettingsResult {
 /** Rebuild an {@link ExtensionSettingsResult} from only the known, defined
  *  keys — mirrors `normalizeAgentCallResult`. This verb's errors are
  *  surfaced to the user (it answers a deliberate toggle click), so the
- *  fallback text is written the same way: `ok:false` + a plain `error`. */
+ *  fallback text is written the same way: `ok:false` + a plain `error`.
+ *  `saveAnswersOnSubmit` (PR4) is normalized to `false` when the desktop
+ *  omitted it (protocol-v2 back-compat — see {@link isExtensionSettingsResult})
+ *  so Settings/Prep degrade to "the feature is off" rather than "unknown". */
 function normalizeSettingsResult(payload: unknown): ExtensionSettingsResult {
   if (!isExtensionSettingsResult(payload)) {
     return { ok: false, error: 'The desktop app sent a malformed settings result.' };
   }
   return payload.ok
-    ? { ok: true, settings: payload.settings }
+    ? {
+        ok: true,
+        settings: {
+          ...payload.settings,
+          saveAnswersOnSubmit: payload.settings.saveAnswersOnSubmit ?? false,
+        },
+      }
     : { ok: false, error: payload.error };
 }
 

@@ -1487,11 +1487,22 @@ describe('ExtensionSettingsResultSchema', () => {
     ).toThrow();
   });
 
-  it('rejects an incomplete ok:true payload missing the fourth key (saveAnswersOnSubmit)', () => {
+  it('accepts an ok:true payload missing ONLY the fourth key (protocol-v2 back-compat) and normalizes it to false', () => {
+    const result = ExtensionSettingsResultSchema.parse({
+      ok: true,
+      settings: { autofill: true, aiAssist: false, autotrack: false },
+    });
+    expect(result).toEqual({
+      ok: true,
+      settings: { autofill: true, aiAssist: false, autotrack: false, saveAnswersOnSubmit: false },
+    });
+  });
+
+  it('still rejects a PRESENT but wrong-typed fourth key', () => {
     expect(() =>
       ExtensionSettingsResultSchema.parse({
         ok: true,
-        settings: { autofill: true, aiAssist: false, autotrack: false },
+        settings: { autofill: true, aiAssist: false, autotrack: false, saveAnswersOnSubmit: 'no' },
       })
     ).toThrow();
   });

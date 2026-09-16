@@ -16,12 +16,16 @@
  * import is the pure `./lib/submit-watch`, inlined by that pass.
  *
  * Idempotent: a page can be gestured (and this re-injected) many times, so it
- * arms the watcher AT MOST ONCE per frame via an isolated-world global flag
- * (same discipline as `AUTOFILL_GLOBAL`) — a later re-arm with a DIFFERENT
- * `captureAnswers` value is a no-op, same as every other arm-time setting
- * here (the watcher already fires at most once per frame regardless). The one
- * extension API it touches is `chrome.runtime.sendMessage` (available in the
- * injected isolated world), used to post the detected URL (plus any captured
+ * arms the DOM LISTENERS at most once per frame via an isolated-world global
+ * flag (same discipline as `AUTOFILL_GLOBAL`). The `captureAnswers` VALUE is
+ * NOT frozen at that first arm, though (PR-1209 finding) — it is stored in a
+ * mutable module-level variable updated on EVERY call, and the watcher reads
+ * it fresh at fire time (a getter, not a boolean, passed to
+ * `armSubmitWatch`), so a later re-arm with a DIFFERENT `captureAnswers`
+ * value (the desktop-enforced opt-in toggled mid-frame) takes effect on this
+ * SAME arming without needing a navigation. The one extension API this file
+ * touches is `chrome.runtime.sendMessage` (available in the injected
+ * isolated world), used to post the detected URL (plus any captured
  * answers) back to the background — fire-and-forget.
  */
 
@@ -32,12 +36,25 @@ import { armSubmitWatch, SUBMIT_DETECTED_MSG, SUBMIT_WATCH_GLOBAL } from './lib/
  *  frame must not stack a second listener set. */
 const ARMED_FLAG = '__ajhSubmitWatchArmed';
 
+/** Isolated-world MUTABLE consent value, updated on EVERY `runArmSubmitWatch`
+ *  call (not gated by {@link ARMED_FLAG}) — the desktop-enforced
+ *  `saveAnswersOnSubmit` opt-in can change mid-frame (background.ts's
+ *  `maybeArmSubmitWatch` re-reads it fresh on every subsequent gesture and
+ *  re-injects), so freezing the FIRST value for the DOM-listener's whole life
+ *  meant turning the switch off still captured on a later submit, and
+ *  turning it on did nothing until a navigation (PR-1209 finding). The
+ *  listeners themselves are still armed AT MOST ONCE per frame; only this
+ *  value is live. Kept policy-free here too — this file only stores the
+ *  value the background handed it, never decides it. */
+let currentCaptureAnswers = false;
+
 // `chrome` is available in the injected isolated-world content-script context in
 // both Chrome and Firefox; declared locally so this classic script pulls in no
 // extension-types dependency.
 declare const chrome: { runtime: { sendMessage(message: unknown): unknown } };
 
 function runArmSubmitWatch(captureAnswers: boolean): void {
+  currentCaptureAnswers = captureAnswers;
   const g = globalThis as unknown as Record<string, boolean>;
   if (g[ARMED_FLAG]) return;
   g[ARMED_FLAG] = true;
@@ -61,7 +78,9 @@ function runArmSubmitWatch(captureAnswers: boolean): void {
         // Background unavailable — best-effort only.
       }
     },
-    { captureAnswers }
+    // A getter, not the snapshot `captureAnswers` argument — read FRESH at
+    // fire time so a later re-arm's updated value takes effect immediately.
+    { captureAnswers: () => currentCaptureAnswers }
   );
 }
 

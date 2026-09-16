@@ -298,6 +298,22 @@ describe('collectAnswers — visibility (computed-style-only, jsdom-safe)', () =
   });
 });
 
+describe('collectAnswers — scoped to a specific form (PR-1209, submit-watch capture)', () => {
+  it('passing an HTMLFormElement scopes the scan to that form only, excluding a second filled form', () => {
+    document.body.innerHTML = `
+      <form id="app">
+        <label for="q">Question</label><input id="q" type="text" value="A" />
+      </form>
+      <form id="other">
+        <label for="q2">Other question</label><input id="q2" type="text" value="B" />
+      </form>
+    `;
+    const appForm = document.getElementById('app') as HTMLFormElement;
+    expect(collectAnswers(appForm)).toEqual([{ question: 'Question', answer: 'A' }]);
+    document.body.innerHTML = '';
+  });
+});
+
 // ── collectQuestions — the "questions mode" collector (answers.suggest) ────────
 
 describe('collectQuestions — scans EMPTY candidate fields, the mirror of collectAnswers', () => {

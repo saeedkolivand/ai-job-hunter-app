@@ -389,4 +389,39 @@ describe('mountPrep', () => {
     view.reset();
     expect(host.textContent).not.toContain('Acme.');
   });
+
+  it('reset() during a stream cancels the in-flight draft instead of leaving it billing (PR-1209)', async () => {
+    const send = vi.fn(async (req: PopupRequest) => {
+      if (req.kind === 'prepGet')
+        return prepResult({ hasCompanyBrief: false, interviewQuestions: [] });
+      if (req.kind === 'settingsGet') return AI_ASSIST_ON;
+      if (req.kind === 'answerAssist') return new Promise<PopupResponse>(() => {});
+      if (req.kind === 'assistCancel') return { ok: true, kind: 'assistCancel' };
+      return { ok: false, error: `unhandled: ${req.kind}` };
+    });
+    const view = mountPrep(host, makeDeps(send));
+    view.refresh();
+    const draftBtn = await waitForEnabledButton(host, 'Draft company brief');
+    draftBtn.click();
+    await vi.waitFor(() => expect(host.textContent).toContain('Cancel'));
+
+    view.reset();
+    await vi.waitFor(() => expect(send).toHaveBeenCalledWith({ kind: 'assistCancel' }));
+  });
+
+  it('reset() with no draft in flight never sends assistCancel', async () => {
+    const send = vi.fn(
+      router({
+        prepGet: prepResult({ hasCompanyBrief: false, interviewQuestions: [] }),
+        settingsGet: AI_ASSIST_ON,
+      })
+    );
+    const view = mountPrep(host, makeDeps(send));
+    view.refresh();
+    await vi.waitFor(() => expect(host.textContent).toContain('Draft company brief'));
+
+    send.mockClear();
+    view.reset();
+    expect(send).not.toHaveBeenCalledWith({ kind: 'assistCancel' });
+  });
 });

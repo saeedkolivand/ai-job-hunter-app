@@ -21,10 +21,39 @@
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-use super::msg;
+use super::{msg, BridgeState};
 use crate::ai_generations::ApplicationAnswer;
 use crate::applications::{normalize_job_url, ApplicationStore};
 use crate::error::{AppError, AppResult};
+
+impl BridgeState {
+    /// Read both `answers.save` consent gates — the assisted-autofill opt-in
+    /// (`autofill_enabled`) and the AUTO-only `saveAnswersOnSubmit` opt-in
+    /// (`save_answers_on_submit_enabled`) — and run `f` with them, all under ONE hold of
+    /// `optin_write_lock`: the SAME lock every consent setter (`set_autofill_enabled`/
+    /// `set_ai_assist`/`set_autotrack_enabled`/`set_save_answers_on_submit_enabled`) already
+    /// shares.
+    ///
+    /// Closes a TOCTOU the plain "read `save_on_submit_enabled`, then merge" order left open
+    /// (PR #1209 review): a `settings.set` disabling the switch could land between the check and
+    /// [`crate::applications::ApplicationStore::merge_answers`], so an AUTO-flagged capture could
+    /// still be persisted after the user turned the switch off. Holding the setters' own lock
+    /// across `f` forces that `settings.set` to BLOCK until this whole check-and-merge finishes,
+    /// rather than reaching for a second, verb-local lock (a second lock would need its own
+    /// ordering argument against this one; reusing the existing one needs none).
+    ///
+    /// Safe against deadlock with the setters: they only ever touch `optin_write_lock` — never
+    /// [`ApplicationStore`]'s own `conn` mutex, which `f`'s merge acquires internally — so
+    /// `optin_write_lock → conn` is the only nesting order either side ever takes. No path
+    /// acquires `conn` first and `optin_write_lock` second to invert it.
+    pub(super) fn with_answers_save_consent_locked<T>(&self, f: impl FnOnce(bool, bool) -> T) -> T {
+        let _guard = self.optin_write_lock.lock();
+        f(
+            self.autofill_enabled(),
+            self.save_answers_on_submit_enabled(),
+        )
+    }
+}
 
 /// Per-question / per-answer byte caps, char-boundary safe (mirrors
 /// `applications::clamp_job_description`'s discipline) — untrusted
@@ -285,30 +314,36 @@ pub(super) fn handle_answers_save(app: &AppHandle, req_id: &str, payload: &Value
             )),
         );
     }
-    let enabled = app
-        .try_state::<super::BridgeState>()
-        .map(|s| s.autofill_enabled())
-        .unwrap_or(false);
-    // Defense-in-depth precedent (PR4, mirrors `status_update::auto_write_refused`): an
-    // AUTO-flagged save (fired synchronously by the submit-watch injected entry, not a user
-    // click) is honored ONLY while the dedicated `saveAnswersOnSubmit` opt-in is on. A non-auto
-    // save is unaffected — it keeps today's byte-identical behaviour, gated only by `enabled`
-    // above.
-    let save_on_submit_enabled = app
-        .try_state::<super::BridgeState>()
-        .map(|s| s.save_answers_on_submit_enabled())
-        .unwrap_or(false);
-    if auto_save_refused(payload, save_on_submit_enabled) {
+    let Some(state) = app.try_state::<BridgeState>() else {
         return answers_result_reply(
             req_id,
-            Err(AppError::Validation(
-                SAVE_ANSWERS_ON_SUBMIT_OFF_MESSAGE.to_string(),
+            Err(AppError::Config("bridge state unavailable".to_string())),
+        );
+    };
+    let Some(store) = app.try_state::<ApplicationStore>() else {
+        return answers_result_reply(
+            req_id,
+            Err(AppError::Config(
+                "applications store unavailable".to_string(),
             )),
         );
-    }
-    let outcome = app
-        .try_state::<ApplicationStore>()
-        .ok_or_else(|| AppError::Config("applications store unavailable".to_string()))
-        .and_then(|store| resolve_answers_save(store.inner(), enabled, payload));
+    };
+    // Consent check + merge run under ONE hold of `optin_write_lock` — see
+    // `BridgeState::with_answers_save_consent_locked`'s doc for why this closes the TOCTOU a
+    // separate read-then-merge left open.
+    let outcome =
+        state.with_answers_save_consent_locked(|autofill_enabled, save_on_submit_enabled| {
+            // Defense-in-depth precedent (PR4, mirrors `status_update::auto_write_refused`): an
+            // AUTO-flagged save (fired synchronously by the submit-watch injected entry, not a user
+            // click) is honored ONLY while the dedicated `saveAnswersOnSubmit` opt-in is on. A
+            // non-auto save is unaffected — it keeps today's byte-identical behaviour, gated only by
+            // `autofill_enabled` below.
+            if auto_save_refused(payload, save_on_submit_enabled) {
+                return Err(AppError::Validation(
+                    SAVE_ANSWERS_ON_SUBMIT_OFF_MESSAGE.to_string(),
+                ));
+            }
+            resolve_answers_save(store.inner(), autofill_enabled, payload)
+        });
     answers_result_reply(req_id, outcome)
 }

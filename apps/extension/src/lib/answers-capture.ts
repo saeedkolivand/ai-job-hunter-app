@@ -161,14 +161,24 @@ function emptyCandidateFields(doc: Document): HTMLElement[] {
 }
 
 /**
- * Scan `doc` for filled, visible, labelled `input[type=text]` / `textarea` /
+ * Scan `root` for filled, visible, labelled `input[type=text]` / `textarea` /
  * `select` fields (skipping the ambiguous/sensitive denylist and any
  * unlabelled or blank-valued field) and return their question/answer pairs.
  * Pure — no side effects.
+ *
+ * `root` accepts a `Document` (the "Save my answers" popup gesture, which
+ * intentionally scans the whole page) OR a specific `HTMLFormElement` (the
+ * submit-watcher — see `lib/submit-watch.ts`) — scoping to the SUBMITTED
+ * form is load-bearing there: an unrelated filled form elsewhere on the page
+ * must never ride along into an automatic save (PR-1209 finding). Label
+ * resolution (`labelText`) still searches the field's OWN document, not
+ * `root` — a `<label for>`/`aria-labelledby` target is occasionally a
+ * structural sibling outside the form, and that lookup is unaffected by
+ * which root this function scans for CANDIDATE fields.
  */
-export function collectAnswers(doc: Document): CapturedAnswer[] {
+export function collectAnswers(root: Document | HTMLFormElement): CapturedAnswer[] {
   const out: CapturedAnswer[] = [];
-  const fields = doc.querySelectorAll<HTMLElement>('input, textarea, select');
+  const fields = root.querySelectorAll<HTMLElement>('input, textarea, select');
 
   for (const el of Array.from(fields)) {
     let answer: string;

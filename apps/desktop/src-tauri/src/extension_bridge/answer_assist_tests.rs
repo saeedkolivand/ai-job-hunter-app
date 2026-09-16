@@ -732,6 +732,56 @@ async fn resolve_salary_range_reuses_the_cache_instead_of_re_spending_on_a_repea
     );
 }
 
+/// The exact regression the review flagged (PR #1209): quota used to be charged BEFORE the cache
+/// was consulted, so every cache HIT still burned the daily budget — and once it was exhausted, a
+/// value already sitting in the cache could no longer be read at all. Prime the cache with one
+/// real (cache-miss) lookup, THEN exhaust the daily budget, and assert the cached value still
+/// comes back — and that the second call never touches the searcher (so it can't be charging the
+/// now-exhausted quota either).
+#[tokio::test]
+async fn resolve_salary_range_reads_a_cache_hit_even_once_the_daily_budget_is_exhausted() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let cache = crate::pipeline::cache::KvCache::open(dir.path()).expect("open cache");
+    let limiter = crate::limits::Limiter::new();
+    let app_ctx = app_with_salary(None, None, None);
+    let searcher = FakeSalarySearcher {
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    };
+
+    // Prime: the one call in this test allowed to actually spend budget.
+    let primed =
+        resolve_salary_range(&searcher, &limiter, "openai", Some(&cache), Some(&app_ctx)).await;
+    assert!(primed.is_some(), "the priming lookup must succeed");
+    assert_eq!(searcher.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+    // Exhaust the rest of the SAME per-provider daily ceiling `resolve_salary_range` charges
+    // against (the priming call above already spent one unit of it).
+    for _ in 1..crate::limits::PROVIDER_DAILY_MAX {
+        limiter
+            .charge_provider_daily("openai", crate::limits::PROVIDER_DAILY_MAX)
+            .expect("charge within the daily ceiling");
+    }
+    assert!(
+        limiter
+            .charge_provider_daily("openai", crate::limits::PROVIDER_DAILY_MAX)
+            .is_err(),
+        "the daily budget must now be fully exhausted"
+    );
+
+    let cached =
+        resolve_salary_range(&searcher, &limiter, "openai", Some(&cache), Some(&app_ctx)).await;
+    assert_eq!(
+        cached, primed,
+        "a cache hit must still return the value, even with the daily budget fully exhausted"
+    );
+    assert_eq!(
+        searcher.calls.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "a cache hit must never touch the searcher — and, per the fix, must never need to \
+         charge the (already exhausted) quota either"
+    );
+}
+
 // ── charge_compose_budget (no longer touches the registry — single
 // unregister owner is `unregister_after_request`, below) ───────────────
 

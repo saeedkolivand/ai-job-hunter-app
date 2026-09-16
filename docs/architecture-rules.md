@@ -1,6 +1,6 @@
 # Architecture Rules — Rust/Tauri Core
 
-Last updated: 2026-09-01
+Last updated: 2026-09-16
 
 > **Status:** enforceable rules (Phase 2), derived from the June 2026 architecture
 > discovery analysis (now in git history) — the **actual** structure of
@@ -17,7 +17,7 @@ lower layer; a lower layer may never use a higher one). Layer = the first path s
 a module under `src/`.
 
 ```
-L3  Shell / IPC        commands, ipc_contracts, lib, main, updater, tray, deeplink, extension_bridge, notifications, events, crash_reporting
+L3  Shell / IPC        commands, ipc_contracts, lib, app_menu, main, updater, tray, deeplink, extension_bridge, notifications, events, crash_reporting
 L2  Application        pipeline, cover_letter, autopilot, autopilot_scheduler,
                        autopilot_helpers, recommend, salary_research
 L1  Domain             scraping, extraction, export, documents, jobs, postings, dedup,
@@ -105,7 +105,7 @@ L0  Shared infra       error, observability, performance, db, data_store, net, p
   moved the pure prompt primitives to `prompt_fence` and `AUTOPILOT_NOTE_SYSTEM`
   into `autopilot_helpers` itself.)
 
-### L3 — Shell / IPC (`commands`, `ipc_contracts`, `lib`, `main`, `updater`, `tray`, `deeplink`, `extension_bridge`, `notifications`, `events`, `crash_reporting`)
+### L3 — Shell / IPC (`commands`, `ipc_contracts`, `lib`, `app_menu`, `main`, `updater`, `tray`, `deeplink`, `extension_bridge`, `notifications`, `events`, `crash_reporting`)
 
 - **Allowed deps:** anything below (L0/L1/L2).
 - **Forbidden deps:** none structurally — but L3 must stay **thin**: command handlers
@@ -116,8 +116,9 @@ L0  Shared infra       error, observability, performance, db, data_store, net, p
   `AppHandle`/`State`/`Manager`/`emit`. Command-defining locations are limited to
   `commands/**`, `export/commands/**`, and `updater/mod.rs` (cohesive command surfaces).
 - **Ownership:** `commands/data.rs` owns the backup/restore bundle; `lib.rs` owns the
-  builder, menu, tray, and store registration (`main.rs` is a thin launcher that calls
-  `ajh_tauri::run()`, kept separate so the app is reachable from benches/integration tests).
+  builder, tray, and store registration and delegates the native app menu to `app_menu`
+  (`main.rs` is a thin launcher that calls `ajh_tauri::run()`, kept separate so the app is
+  reachable from benches/integration tests).
 
 ---
 

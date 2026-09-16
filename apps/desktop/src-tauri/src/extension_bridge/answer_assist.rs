@@ -1166,6 +1166,17 @@ async fn resolve_salary_range<S: crate::salary_research::SalarySearcher>(
         return None;
     }
     let company = app_ctx.map(|a| a.company.as_str()).unwrap_or("");
+
+    // Cache check BEFORE charging the daily provider quota (PR #1209 review): charging
+    // unconditionally meant every cache HIT still burned a unit of budget, and once the budget
+    // was exhausted this returned `None` before it could ever read a value already sitting in
+    // the cache. A hit must cost nothing — only a genuine miss reaches the charge below.
+    if let Some(range) =
+        crate::salary_research::SalaryResearch.cached_range(cache, role, company, "", "")
+    {
+        return Some(range);
+    }
+
     if let Err(e) = limiter.charge_provider_daily(provider_id, crate::limits::PROVIDER_DAILY_MAX) {
         tracing::debug!("answer_assist: salary lookup skipped, daily budget exceeded: {e}");
         return None;

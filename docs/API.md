@@ -3317,11 +3317,11 @@ export type PendingMenuIntent =
 
 export interface MenuNavigateEvent {
   /**
-   * Either a real in-app route (`/settings`, `/jobs`, …) or one of the two
+   * Either a real in-app route (`/settings`, `/jobs`, …) or one of the three
    * symbolic deep-link destinations below — the renderer resolves those
    * against live app data instead of navigating to them literally.
    */
-  route: string | 'generate-for-job' | 'open-job';
+  route: string | 'generate-for-job' | 'open-job' | 'prep-for-job';
   section: string | null;
   /** Optional in-page focus signal carried alongside the route. The native menu
    *  and tray omit it; the `ajh://settings/extension` deep link sets it to
@@ -3331,11 +3331,12 @@ export interface MenuNavigateEvent {
   focus?: 'extension-token';
   /**
    * Canonical job URL (`applications::normalize_job_url`), present only when
-   * `route` is `'generate-for-job'` or `'open-job'` — the two deep links the
-   * paired extension opens (`ajh://generate?url=…` / `ajh://open?url=…`).
-   * Omitted for every other `route` value. How each destination resolves this
-   * URL against the live Applications list is owned by
-   * `resolveJobDeepLinkTarget` (`apps/desktop/src/renderer/hooks/use-menu-navigation.ts`).
+   * `route` is `'generate-for-job'`, `'open-job'`, or `'prep-for-job'` — the
+   * three deep links the paired extension opens (`ajh://generate?url=…` /
+   * `ajh://open?url=…` / `ajh://prep?url=…`). Omitted for every other `route`
+   * value. How each destination resolves this URL against the live
+   * Applications list is owned by `resolveJobDeepLinkTarget`
+   * (`apps/desktop/src/renderer/hooks/use-menu-navigation.ts`).
    */
   url?: string;
 }

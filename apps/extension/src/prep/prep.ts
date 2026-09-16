@@ -347,6 +347,13 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
 
   function reset(): void {
     generation += 1;
+    // Cancel a draft in flight BEFORE clearing `pendingTopic` — otherwise a
+    // tab switch/trust loss leaves the provider request running (still
+    // billable) for a result nobody will see (PR-1209 finding). Best-effort,
+    // same discipline as `doCancel`.
+    if (pendingTopic !== null) {
+      void deps.send({ kind: 'assistCancel' }).catch(() => undefined);
+    }
     data = EMPTY_PREP_DATA;
     lastUrl = '';
     pendingTopic = null;

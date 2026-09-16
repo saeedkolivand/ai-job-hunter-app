@@ -2878,20 +2878,40 @@ describe('BridgeClient – settingsGet / settingsSet', () => {
     client.dispose();
   });
 
-  it('treats a settings.result missing saveAnswersOnSubmit (the fourth key) as malformed rather than passing it through with the field undefined', async () => {
+  it('normalizes a settings.result missing saveAnswersOnSubmit (a pre-PR4/protocol-v2 desktop) to false rather than rejecting the whole reply', async () => {
     const { client, socket } = await connectedClient();
     const resultPromise = client.settingsGet();
     await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
     const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
     const { reqId } = JSON.parse(raw) as { reqId: string };
 
-    // A desktop reply that dropped the fourth key — the guard must reject
-    // this rather than let `settings.saveAnswersOnSubmit` reach the caller
-    // as `undefined`.
+    // A pre-PR4 desktop's three-key reply — the guard must accept it and
+    // normalize the missing fourth key to `false` (the safe "off" default)
+    // so Settings/Prep degrade to "the feature is off", not "unknown".
     socket.simulateMessage(
       makeSettingsResultEnvelope(reqId, {
         ok: true,
         settings: { autofill: true, aiAssist: false, autotrack: false },
+      })
+    );
+    expect(await resultPromise).toEqual({
+      ok: true,
+      settings: { autofill: true, aiAssist: false, autotrack: false, saveAnswersOnSubmit: false },
+    });
+    client.dispose();
+  });
+
+  it('still treats a settings.result with a PRESENT but wrong-typed fourth key as malformed', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.settingsGet();
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const { reqId } = JSON.parse(raw) as { reqId: string };
+
+    socket.simulateMessage(
+      makeSettingsResultEnvelope(reqId, {
+        ok: true,
+        settings: { autofill: true, aiAssist: false, autotrack: false, saveAnswersOnSubmit: 'no' },
       })
     );
     expect(await resultPromise).toEqual({

@@ -157,6 +157,24 @@ describe('handleSubmitDetected', () => {
     await expect(handleSubmitDetected('https://x.co/j', deps, answers)).resolves.toBeUndefined();
     expect(deps.notifyAutoSave).not.toHaveBeenCalled();
   });
+
+  it('a checkApplied rejection does not lose the captured answers — the save runs as a SEPARATE best-effort step (PR-1209)', async () => {
+    const deps = flowDeps({ checkApplied: vi.fn().mockRejectedValue(new Error('bridge down')) });
+    const answers = [{ question: 'Why this role?', answer: 'Because I love it.' }];
+    await expect(handleSubmitDetected('https://x.co/j', deps, answers)).resolves.toBeUndefined();
+    expect(deps.saveAnswersAuto).toHaveBeenCalledWith('https://x.co/j', answers);
+    expect(deps.notifyAutoSave).toHaveBeenCalledWith(OK_SAVE);
+  });
+
+  it('an updateStatusAuto rejection does not lose the captured answers — the save runs as a SEPARATE best-effort step (PR-1209)', async () => {
+    const deps = flowDeps({
+      updateStatusAuto: vi.fn().mockRejectedValue(new Error('bridge down')),
+    });
+    const answers = [{ question: 'Why this role?', answer: 'Because I love it.' }];
+    await expect(handleSubmitDetected('https://x.co/j', deps, answers)).resolves.toBeUndefined();
+    expect(deps.saveAnswersAuto).toHaveBeenCalledWith('https://x.co/j', answers);
+    expect(deps.notifyAutoSave).toHaveBeenCalledWith(OK_SAVE);
+  });
 });
 
 describe('maybeArmSubmitWatch', () => {

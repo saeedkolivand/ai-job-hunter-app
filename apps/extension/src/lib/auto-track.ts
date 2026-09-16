@@ -77,42 +77,56 @@ export interface SubmitFlowDeps {
 
 /**
  * Orchestrate a detected submit: RE-CHECK the opt-in (it may have been toggled
- * off since arming), then apply {@link decideSubmitAction}. Best-effort — every
- * failure (bridge unreachable, malformed reply) is swallowed so a page submit
- * never surfaces an error. The success confirmation for an auto-apply is shown
- * by the DESKTOP's own `status.update` notify tail (Notification Center + OS
+ * off since arming), then run the applied-status workflow and the answer-save
+ * workflow as TWO SEPARATE best-effort steps — every failure (bridge
+ * unreachable, malformed reply) is swallowed so a page submit never surfaces
+ * an error, AND a `checkApplied`/`updateStatusAuto` rejection can never cost
+ * the captured answers (they'd otherwise unload with the page — PR-1209
+ * finding). The success confirmation for an auto-apply is shown by the
+ * DESKTOP's own `status.update` notify tail (Notification Center + OS
  * banner), not here.
  *
  * `answers` (PR4) is the submit-watcher's own SYNCHRONOUS capture, present
  * only when it was armed with `captureAnswers: true` AND something was
  * filled — see `lib/submit-watch.ts`'s own doc for why that capture cannot
- * happen here (async, after the fact) at all. Saved through the SAME
- * best-effort try/catch as the applied-check/auto-apply flow above, and
- * gated behind the SAME `enabled` (auto-track) re-check — see this module's
- * doc for why the two are nested rather than independently gated.
+ * happen here (async, after the fact) at all. Gated behind the SAME
+ * `enabled` (auto-track) re-check as the applied-status step — see this
+ * module's doc for why the two are nested rather than independently gated.
  */
 export async function handleSubmitDetected(
   url: string,
   deps: SubmitFlowDeps,
   answers?: CapturedAnswer[]
 ): Promise<void> {
+  let enabled = false;
   try {
-    const enabled = await deps.autotrackEnabled();
-    if (!enabled) return;
+    enabled = await deps.autotrackEnabled();
+  } catch {
+    // Best-effort — an unreadable opt-in degrades to OFF (skip both steps).
+  }
+  if (!enabled) return;
+
+  try {
     const applied = await deps.checkApplied(url);
     const action = decideSubmitAction(true, applied);
     if (action.kind === 'promptImport') deps.promptImport();
     else if (action.kind === 'autoApply') await deps.updateStatusAuto(url);
     // 'noop' → already applied / non-saved status → do nothing (silent).
-    if (answers && answers.length > 0) {
+  } catch {
+    // Best-effort — never surface an error for a passive, page-triggered check.
+  }
+
+  if (answers && answers.length > 0) {
+    try {
       const result = await deps.saveAnswersAuto(url, answers);
       // A refusal (the desktop's own saveAnswersOnSubmit gate off, or no
       // matched Application) degrades SILENTLY — nothing was saved, so
       // nothing to announce; never a partial claim.
       if (result.ok) deps.notifyAutoSave(result);
+    } catch {
+      // Best-effort — an unreachable bridge must not lose the captured
+      // answers' chance to be reported; there's simply nothing more to do.
     }
-  } catch {
-    // Best-effort — never surface an error for a passive, page-triggered check.
   }
 }
 

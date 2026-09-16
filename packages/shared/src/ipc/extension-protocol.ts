@@ -599,12 +599,18 @@ export const ExtensionSettingsSetRequestSchema = z.object({
   enabled: z.boolean(),
 }) satisfies z.ZodType<ExtensionSettingsSetRequest>;
 
-/** The live values of every switch. Mirrors {@link ExtensionSettingsValues}. */
+/** The live values of every switch. Mirrors {@link ExtensionSettingsValues}.
+ *  `saveAnswersOnSubmit` (the fourth key, PR4) is optional ON THE WIRE ONLY —
+ *  a protocol-v2 desktop from before this PR answers `settings.result` with
+ *  just the first three keys, so a MISSING fourth key is normalized to
+ *  `false` (the safe "off" default) rather than failing the whole parse; a
+ *  PRESENT but wrong-typed value still fails. The parsed/output shape is
+ *  still every field required, matching {@link ExtensionSettingsValues}. */
 export const ExtensionSettingsValuesSchema = z.object({
   autofill: z.boolean(),
   aiAssist: z.boolean(),
   autotrack: z.boolean(),
-  saveAnswersOnSubmit: z.boolean(),
+  saveAnswersOnSubmit: z.boolean().optional().default(false),
 }) satisfies z.ZodType<ExtensionSettingsValues>;
 
 /**
