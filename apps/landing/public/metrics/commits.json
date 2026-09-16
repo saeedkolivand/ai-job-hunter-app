@@ -1,5 +1,65 @@
 [
   {
+    "sha": "cea0e56b3ab4df74a5a9e61c3af3a7a82b708b29",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-16T03:14:23Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "dbb36fe20af0d7fac23e4dd0725c6f5360a497d0",
+    "commit": {
+      "message": "feat(extension): Check-fit on the page — fit badge, results stamps, salary facts (#1205)",
+      "author": {
+        "date": "2026-09-16T02:50:27Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "2a73650eb78abd34b06ce0561d5d9e494dae063b",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-15T16:42:30Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "c5940511bbdef8704b64c30739f53311cfdc09fe",
+    "commit": {
+      "message": "feat(extension): documents into ATS — résumé attach, cover-letter paste, deep links, copy fallback (#1204)",
+      "author": {
+        "date": "2026-09-15T16:18:14Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "b8ad6b23890b6e87f6728aeb7df11eb9a60704e0",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-15T08:39:05Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "0a002b77fd647263debdf55c799ab3212a4b6de5",
     "commit": {
       "message": "chore: update export benchmark data [skip ci]",
@@ -1133,66 +1193,6 @@
       "message": "feat: give the extension side panel connection-status awareness (#1116)",
       "author": {
         "date": "2026-09-05T18:20:21Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "2d7ef6dd69a8d368dc336586ce70cdc7b309badb",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-05T07:38:49Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "7c158df5e0fb0da8fd39d6e34dac6adb7d065c8c",
-    "commit": {
-      "message": "chore: sync landing download version to v0.148.0",
-      "author": {
-        "date": "2026-09-05T06:37:21Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "89a9a10e0630cdc92900d474d32e21f2a4ae69eb",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.148.0 [skip ci]",
-      "author": {
-        "date": "2026-09-05T06:36:52Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "f7243153795729bbbcd3ee9c9409b8ed1ff9f62d",
-    "commit": {
-      "message": "chore(release): 0.148.0 [skip ci]",
-      "author": {
-        "date": "2026-09-05T05:55:39Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "cca2e4e82fe409f0a7eed2f3eeaed66609aca462",
-    "commit": {
-      "message": "feat: bring Import/Check fit/Fill form/Save answers into the side panel (#1113)",
-      "author": {
-        "date": "2026-09-05T05:53:36Z"
       }
     },
     "author": {

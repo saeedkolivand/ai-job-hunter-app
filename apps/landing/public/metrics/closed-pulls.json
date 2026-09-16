@@ -1,5 +1,33 @@
 [
   {
+    "number": 1205,
+    "title": "feat(extension): Check-fit on the page — fit badge, results stamps, salary facts",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1205",
+    "draft": false,
+    "created_at": "2026-09-15T21:12:01Z",
+    "updated_at": "2026-09-16T03:07:48Z",
+    "merged_at": "2026-09-16T02:50:28Z",
+    "closed_at": "2026-09-16T02:50:28Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1204,
+    "title": "feat(extension): documents into ATS — résumé attach, cover-letter paste, deep links, copy fallback",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1204",
+    "draft": false,
+    "created_at": "2026-09-15T10:30:37Z",
+    "updated_at": "2026-09-15T16:18:17Z",
+    "merged_at": "2026-09-15T16:18:15Z",
+    "closed_at": "2026-09-15T16:18:15Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
     "number": 1203,
     "title": "feat(extension): read-only agent tier + live settings switches (ADR-050)",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1203",
@@ -666,34 +694,6 @@
     "updated_at": "2026-09-03T04:12:06Z",
     "merged_at": "2026-09-01T23:25:46Z",
     "closed_at": "2026-09-01T23:25:46Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1091,
-    "title": "docs: make the ai rigour visible where a reviewer actually reads",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1091",
-    "draft": false,
-    "created_at": "2026-09-01T23:52:06Z",
-    "updated_at": "2026-09-03T04:12:03Z",
-    "merged_at": "2026-09-02T00:27:24Z",
-    "closed_at": "2026-09-02T00:27:24Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1092,
-    "title": "feat: mcp stdio server mode for the agent cli",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1092",
-    "draft": false,
-    "created_at": "2026-09-02T04:32:09Z",
-    "updated_at": "2026-09-03T04:12:00Z",
-    "merged_at": "2026-09-02T05:05:16Z",
-    "closed_at": "2026-09-02T05:05:16Z",
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"

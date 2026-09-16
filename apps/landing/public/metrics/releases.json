@@ -15,7 +15,7 @@
       },
       {
         "name": "latest.json",
-        "download_count": 70
+        "download_count": 91
       },
       {
         "name": "linux-AI-Job-Hunter-0.153.2-1.x86_64.rpm",
@@ -51,7 +51,7 @@
       },
       {
         "name": "macos-AI-Job-Hunter_0.153.2_aarch64-apple-silicon.dmg",
-        "download_count": 1
+        "download_count": 2
       },
       {
         "name": "macos-AI-Job-Hunter_0.153.2_x64-intel.dmg",
@@ -465,7 +465,7 @@
       },
       {
         "name": "linux-AI-Job-Hunter-0.147.0-1.x86_64.rpm",
-        "download_count": 2
+        "download_count": 3
       },
       {
         "name": "linux-AI-Job-Hunter_0.147.0_amd64.AppImage",
@@ -481,7 +481,7 @@
       },
       {
         "name": "macos-AI-Job-Hunter-apple-silicon.app.tar.gz",
-        "download_count": 2
+        "download_count": 3
       },
       {
         "name": "macos-AI-Job-Hunter-apple-silicon.app.tar.gz.sig",
@@ -529,7 +529,7 @@
       },
       {
         "name": "ai-job-hunter-extension-firefox-0.146.2.zip",
-        "download_count": 2
+        "download_count": 3
       },
       {
         "name": "latest.json",
@@ -597,7 +597,7 @@
     "assets": [
       {
         "name": "ai-job-hunter-extension-chrome-0.146.1.zip",
-        "download_count": 2
+        "download_count": 3
       },
       {
         "name": "ai-job-hunter-extension-firefox-0.146.1.zip",
@@ -621,7 +621,7 @@
       },
       {
         "name": "linux-AI-Job-Hunter_0.146.1_amd64.deb",
-        "download_count": 1
+        "download_count": 2
       },
       {
         "name": "macos-AI-Job-Hunter-apple-silicon.app.tar.gz",
