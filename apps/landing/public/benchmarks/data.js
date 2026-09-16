@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1789490550256,
+  "lastUpdate": 1789528463098,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "650bcdda79e22036559745e2dbda7b99930acc58",
-          "message": "feat: revoke extension pairing over the bridge on token rotation (#895)\n\n* feat: revoke extension pairing over the bridge on token rotation\n\nRotating the pairing token (Settings -> Regenerate, or a factory reset) left\nlive authenticated sockets running and the connected count up, and a\nreconnecting extension only saw the deliberately silent failed-handshake close\n- indistinguishable from a crashed app - so it retried the dead token forever\nand never returned to its pairing view.\n\nAdds a desktop -> extension `token.revoked` frame (TS constants + zod enum and\nthe Rust msg mirror, in lockstep). BridgeState::regenerate_token now signals\nevery live connection task, zeroes the live-connection count, then swaps the\nsecret, all inside the token lock so no handshake can authenticate against the\nold token and miss the revoke. Only an ALREADY-AUTHENTICATED socket is sent the\nframe; an unauthenticated one closes silently as before, preserving the\nno-token-oracle invariant (ADR-0010). The frame carries no payload and no token\nmaterial.\n\nThe extension drops its stored token through the same local un-pair path the\npopup's Unpair button uses, skips the backoff loop, and re-probes once unpaired\nso the popup lands on the pairing view. Old extensions ignore an unknown wire\ntype, so no protocol-version bump is needed.\n\nAlso moves the msg constant table into its own module (the addition pushed\nextension_bridge/mod.rs past the R8 hard LOC cap) and mentions re-pairing in the\nfactory-reset confirm copy (en + de).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: honor token.revoked only on an authenticated bridge session\n\nThe `handshakeFrame` intercept is a step-in-flight latch, not an auth check:\n`awaitHandshakeFrame`'s `settle` nulls it the instant a step's frame is\nconsumed, so a frame arriving between steps - notably while `computeProof` is\nawaited - fell through to the type dispatch. A port-squatter needs zero token\nknowledge to send a syntactically-valid `challenge`, then a `token.revoked`, to\ndestroy the stored pairing credential; the revoke close path's backoff reset\nmade that loopable. The pre-hello window and the no-token attach (which reaches\nphase `connected` with no handshake at all) were exposed the same way.\n\nAdds a real `authenticated` flag on BridgeClient, set only where serverProof\nverification completes and cleared on every attach and on close, and gates the\nrevoke branch on it. The branch stays below the handshake intercept so both\nprotections compose.\n\nTests: the security probe is now permanent (valid-challenge-then-revoke during\nthe computeProof window must not unpair), plus a stale-frame-after-close probe\nand a revoke aimed at the unpaired re-probe socket - both verified to fail\nwithout their respective guard.\n\nAlso: a failed token clear now forces bad_token instead of silently retrying a\nknown-dead secret, and the rotation lock-scope comments no longer overclaim\n(the proof is verified outside the token lock; safety rests on\nsubscribe-at-accept plus the buffered broadcast).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: bind the bridge handshake verdict to the transport that earned it\n\nWS5 defense-in-depth. `authenticated` is set after `await computeProof(...)`,\nso a socket that closes inside that await had the flag cleared by `onClose` and\nthen set straight back by the resuming continuation - leaving it true with a\nnull transport until the next attach, and `setPhase('connected')` claiming a\nlive session over nothing. Only a valid serverProof reaches that line, so it\nwas not peer-reachable, but a stale-true auth flag on the bridge is worth zero\ntolerance: the next frame delivered on that dead transport would be trusted.\n\nRe-checks the captured transport identity before applying the verdict. Plain\nreturn rather than finishHandshake: whatever ended the transport already set\nits phase and armed its reconnect, and finishHandshake would null and close\n`this.transport` - which in the replaced case is a different, healthy socket.\n\nTest: socket closes during the serverProof await -> phase never becomes\nconnected and a following token.revoked is ignored. Verified to fail before the\nguard (phase came back connected on a dead transport).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* style: apply rustfmt to extension bridge\n\nFormatting drift from my own edits, not the main sync: the third `next_step`\nargument rewrapped the read loop's match, and the new `token_revoked_reply`\nassert exceeded the width. `cargo check`/`clippy`/`test` all pass on\nbadly-formatted code, so nothing I ran locally caught it - `cargo fmt --check`\nis its own gate.\n\nFormatting only, no behavior change: cargo test --lib extension_bridge 315\npassed and clippy --all-features --all-targets is clean after the reformat.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: harden bridge pairing revocation after review\n\nHIGH - the failed-clear branch was dead under test. Every revoke case resolved\n`onTokenRevoked`, so nothing exercised the path where storage refuses to drop\nthe token. Covered now: rejecting the clear must surface `bad_token` and start\nno re-probe, since reconnecting would put a known-dead secret back on the wire\nand resume the forever-retry loop the frame exists to end.\n\nMEDIUM - count theft. A socket parked in a long dispatch await had not polled\nits revoke receiver when the rotation zeroed the count; if a browser re-paired\nfirst, that socket's later teardown decremented a count it no longer owned and\n`is_connected()` under-reported a live pairing. Adds a rotation epoch bumped\ninside the same lock hold; a connection stamps the epoch it counted itself\nunder (read AFTER the increment) and only decrements while it still matches.\n\nMEDIUM - the desktop no-oracle gate had no Rust coverage. Extracted as the pure\n`revoke_frames(authenticated)` with both arms pinned: authenticated gets the\nrevoke then a close, unauthenticated gets nothing at all.\n\nLOW - compute both handshake proofs up front, leaving zero await between\nreceiving `auth.ok` and setting `authenticated`; the old lazy server-proof await\nsat exactly where a legitimate `token.revoked` lands and dropped it. LOW - a\nclosed broadcast channel is no longer treated as a revocation (it would have\nmass-unpaired every browser on a channel-lifecycle change); it tears the\nconnection down without a frame. LOW - cancel assist streams before enqueueing\nthe close, so no billable chunk trails behind it. LOW - reset the revoke latches\nin `attach()` like their siblings. LOW - the rotation doc now names BOTH\nload-bearing invariants (single lock hold AND subscribe-at-accept).\n\nAlso splits the revoke wire surface into its own module: the epoch work pushed\nextension_bridge/mod.rs past the R8 hard LOC cap again.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-          "timestamp": "2026-07-28T06:24:58+02:00",
-          "tree_id": "b9ec9704198538786893d9d063cb146eb61b08f6",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/650bcdda79e22036559745e2dbda7b99930acc58"
-        },
-        "date": 1785213999794,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2130085,
-            "range": "± 45825",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2544464,
-            "range": "± 78726",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 295775,
-            "range": "± 16269",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 308342,
             "range": "± 23495",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dbb36fe20af0d7fac23e4dd0725c6f5360a497d0",
+          "message": "feat(extension): Check-fit on the page — fit badge, results stamps, salary facts (#1205)\n\n* feat(extension): check-fit on the page — fit badge, results stamps, salary facts\n\nA new batched applied lookup answers a whole results page in one round trip, reusing the single-URL\nresolver's normalization, capped and refusing rather than truncating over the cap, throttled per\npairing, and returning only the status each stamp needs. Salary facts ride the existing match reply\nas optional fields: the desktop extracts a pay range from the posting text it just scored and pairs\nit with the saved expectation, both verbatim, absent unless a real range was found, and never a\ncomparison or a verdict.\n\nOn the page, a fit badge shows the score with its source qualifier and a saved or applied chip,\nexpanding on click to the missing keywords, the salary facts and a single link into the panel, and a\nresults page can be stamped with what is already saved or applied. Both render inside a closed shadow\nroot so the page cannot read the score, keywords or salary back out, both are off by default behind\nthe appearance toggles PR0 left hidden, and neither offers any form action. A palette module carries\nthe design tokens into the injected scripts, with a parity test against the stylesheet.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011ocEc45NGuZTYhxdJheNTL\n\n* fix(extension): review round — honest salary ranges, no auto-track from a results page\n\nThe pay-range pattern let an ungrouped second bound stop after three digits, so a posting offering\n100,000 to 120,000 was shown as a range ending at 120 — a fabricated figure in a surface whose whole\npremise is quoting the posting verbatim. The number pattern now splits into a grouped branch that\nrequires a separator and a bounded raw-digit branch, and a candidate whose match ends against another\ndigit is rejected as truncated rather than returned. The rule that a saved salary expectation never\ntravels without a posting range is now a pure function with its own tests.\n\nStamping a results page armed the auto-track submit watcher on that page, where a later submit-like\ninteraction could mark a saved application as applied from a search page the user never applied on.\nStamping is read-only, so it no longer arms anything. The badge also resolved the active tab three\nseparate times and rendered after the round trip, which could paint one page's score onto another;\nthe tab and URL are now captured once and re-verified before the badge is drawn.\n\nThe expand control exposes its state to assistive technology, the shared request schema enforces the\nsame cap the desktop does, two tests that could not fail were repaired, and the comments and docs no\nlonger claim the closed shadow root hides that a card matched, only what the marker says.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011ocEc45NGuZTYhxdJheNTL\n\n* refactor(extension): move salary parsing to the domain layer and pin the batch cap\n\nThe salary parser was pure text extraction living in the bridge, which the layer rules ask to stay\nthin, so it moves to the domain extraction module that already owns pulling structured values out of\ntext. The regex, its percentage and truncation rejections, the clamp and all its tests move verbatim;\nthe bridge keeps the call and the wire mapping. Nothing there duplicated an existing parser, and the\nbridge module drops back under its size cap as a side effect.\n\nThe shared cap constant claimed in its own doc comment to be pinned by a parity test against the\ndesktop constant, and no such test existed. It does now, modelled on the one guarding the answer\nassist cap, so changing either side alone fails the build.\n\nThe badge's tab check ran before two later awaits, so a navigation in that window could still land a\nstale badge on a different posting. The expected URL now travels into the injected call and the page\ncompares it against its own location as the last step before rendering, strictly, because relaxing it\nwould reopen the single-page-app case the guard exists for.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_011ocEc45NGuZTYhxdJheNTL\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-09-16T04:50:27+02:00",
+          "tree_id": "7ce0e868b12b9bbd86d958a306b0d658bf6cfc23",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/dbb36fe20af0d7fac23e4dd0725c6f5360a497d0"
+        },
+        "date": 1789528462201,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2192430,
+            "range": "± 6537",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2579317,
+            "range": "± 8769",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 299027,
+            "range": "± 8711",
             "unit": "ns/iter"
           }
         ]
