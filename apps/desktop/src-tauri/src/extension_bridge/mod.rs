@@ -89,6 +89,8 @@ mod answer_rewrite;
 mod answers_save;
 mod answers_suggest;
 mod applied_check;
+/// `applied.check.batch` → `applied.batch.result` (PR3).
+mod applied_check_batch;
 mod assist_registry;
 pub mod auth;
 mod autofill_check;
@@ -274,6 +276,8 @@ pub struct BridgeState {
     /// `agent_query_limiter`'s cheap-read bucket: an export is a real Typst compile (100-400ms),
     /// not a cheap DB read. See [`document_export::DocumentExportThrottle`]'s doc.
     document_export_limiter: Mutex<document_export::DocumentExportThrottle>,
+    /// `applied.check.batch` throttle (PR3) — own instance (that verb amplifies N-fold; see [`applied_check_batch::AppliedCheckBatchThrottle`]).
+    applied_check_batch_limiter: Mutex<applied_check_batch::AppliedCheckBatchThrottle>,
     /// Fan-out signal telling every LIVE connection task that the pairing
     /// token is being rotated (see [`Self::regenerate_token`]). A broadcast —
     /// not a per-connection registry — because that is exactly the shape the
@@ -318,6 +322,9 @@ impl BridgeState {
             agent_query_limiter: Mutex::new(agent_read::AgentQueryThrottle::new()),
             settings_set_limiter: Mutex::new(settings::SettingsSetThrottle::new()),
             document_export_limiter: Mutex::new(document_export::DocumentExportThrottle::new()),
+            applied_check_batch_limiter: Mutex::new(
+                applied_check_batch::AppliedCheckBatchThrottle::new(),
+            ),
             // Capacity 1: the signal is a bare "rotate happened" edge, so a
             // receiver that fell behind two back-to-back rotations gets
             // `RecvError::Lagged` — which the read loop treats exactly like the
@@ -485,6 +492,18 @@ impl BridgeState {
     /// [`Self::agent_retry_after_ms`].
     pub(super) fn document_export_retry_after_ms(&self) -> u64 {
         self.document_export_limiter.lock().retry_after_ms()
+    }
+
+    /// Try to consume one `applied.check.batch` token (PR3). See
+    /// [`applied_check_batch::AppliedCheckBatchThrottle`]'s doc.
+    pub(super) fn try_acquire_applied_check_batch(&self) -> bool {
+        self.applied_check_batch_limiter.lock().try_acquire()
+    }
+
+    /// Call ONLY right after a failed [`Self::try_acquire_applied_check_batch`] — same discipline
+    /// as [`Self::document_export_retry_after_ms`].
+    pub(super) fn applied_check_batch_retry_after_ms(&self) -> u64 {
+        self.applied_check_batch_limiter.lock().retry_after_ms()
     }
 
     /// Milliseconds until [`Self::try_acquire_agent`] would next admit one token for `resource`
@@ -1071,6 +1090,21 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                 &req_id,
                 state.document_export_retry_after_ms(),
             )),
+            // `applied.check.batch` (PR3): caller-unconditional like `AppliedCheck`; only the
+            // throttle is decided here — same shape as `DocumentExport`/`SettingsSet` above.
+            FrameDecision::AppliedCheckBatch { req_id, payload }
+                if state.try_acquire_applied_check_batch() =>
+            {
+                Some(applied_check_batch::handle_applied_check_batch(
+                    &app, &req_id, &payload,
+                ))
+            }
+            FrameDecision::AppliedCheckBatch { req_id, .. } => {
+                Some(applied_check_batch::throttled_reply(
+                    &req_id,
+                    state.applied_check_batch_retry_after_ms(),
+                ))
+            }
             FrameDecision::AnswerAssist { req_id, payload } => {
                 // Spawned onto its OWN task (see `stream::spawn_answer_assist`)
                 // so a multi-second stream never blocks THIS loop's

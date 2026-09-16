@@ -355,6 +355,20 @@ export const EXTENSION_MESSAGE_TYPES = {
   /** Desktop → extension: the `document.export` outcome — see
    *  {@link ExtensionDocumentExportResult}. */
   documentResult: 'document.result',
+  /**
+   * Extension → desktop: PR3 — batch "have I already applied?" lookup for a
+   * results-listing page's visible job-card links (results-page stamps).
+   * Same trust class as `applied.check` (the user's own device-local
+   * metadata, read-only, no consent gate) — but ONE gesture here amplifies
+   * into up to {@link MAX_APPLIED_CHECK_BATCH_URLS} lookups instead of one,
+   * so it rides its OWN per-pairing throttle bucket rather than sharing
+   * `applied.check`'s (unthrottled) path. See
+   * {@link ExtensionAppliedCheckBatchRequest}.
+   */
+  appliedCheckBatch: 'applied.check.batch',
+  /** Desktop → extension: the `applied.check.batch` outcome — see
+   *  {@link ExtensionAppliedCheckBatchResult}. */
+  appliedBatchResult: 'applied.batch.result',
 } as const;
 
 /** Union of all wire `type` strings. */
@@ -526,6 +540,54 @@ export interface ExtensionAppliedCheckResult {
   appliedAt?: number;
   error?: string;
 }
+
+/**
+ * The most job cards one `applied.check.batch` request may name (PR3). Mirrors
+ * the Rust `applied_check_batch::MAX_BATCH_URLS` constant EXACTLY (pinned by
+ * a parity test, same discipline as every other wire constant) — the
+ * extension's results-page collector caps its own candidate list at this same
+ * number BEFORE sending, so a page with more job-card links than this simply
+ * stamps only the first {@link MAX_APPLIED_CHECK_BATCH_URLS} rather than ever
+ * building an over-cap request the desktop would refuse.
+ */
+export const MAX_APPLIED_CHECK_BATCH_URLS = 50;
+
+/**
+ * `applied.check.batch` payload (PR3, results-page stamps) — the candidate
+ * job-card URLs collected from one results-listing page, already deduped and
+ * capped at {@link MAX_APPLIED_CHECK_BATCH_URLS} client-side (the desktop
+ * re-enforces the cap and refuses over it, never truncates).
+ */
+export interface ExtensionAppliedCheckBatchRequest {
+  urls: string[];
+}
+
+/**
+ * One url's outcome in an `applied.batch.result` reply — deliberately
+ * narrower than {@link ExtensionAppliedCheckResult}: a results-page stamp
+ * needs only the saved/applied fact, never `applicationId`/`title`/`appliedAt`.
+ */
+export interface ExtensionAppliedBatchEntry {
+  /** Echoed back VERBATIM from the request so the caller can map results to
+   *  its own collected cards without re-normalizing anything itself. */
+  url: string;
+  found: boolean;
+  status?: string;
+}
+
+/**
+ * `applied.batch.result` payload — a discriminated union on `ok`: `ok:true`
+ * carries one {@link ExtensionAppliedBatchEntry} per requested url, in the
+ * SAME order as the request's `urls` (so the caller can zip them back
+ * against its own index-ordered card list); `ok:false` carries a user-facing
+ * `error` (over-cap — the fixed `too_many_urls` sentinel, a malformed
+ * request, or a throttle refusal) plus optional `detail`/`retryAfterMs` —
+ * mirrors {@link ExtensionDocumentExportResult} exactly. A refusal here
+ * degrades to "no stamps" client-side — never a partial/best-effort result.
+ */
+export type ExtensionAppliedCheckBatchResult =
+  | { ok: true; results: ExtensionAppliedBatchEntry[] }
+  | { ok: false; error: string; detail?: string; retryAfterMs?: number };
 
 /**
  * `status.update` payload — mark a `saved` Application `applied` on an exact
@@ -824,6 +886,18 @@ export interface ExtensionMatchLiveRequest {
  * keyword-only today (`scoreSource` is always `'keyword'`). These fields are
  * reserved so a future PR that gives the bridge a Rust-readable version of
  * that setting doesn't need a protocol bump.
+ *
+ * `salary` (PR3, additive/optional) carries two verbatim facts, never a
+ * verdict (design decision 5 / the trust programme): `posting` is the
+ * matched salary-range substring found in the posting text (whitespace-
+ * normalized only, shown exactly as extracted — never a computed number),
+ * present ONLY when the desktop's conservative regex actually found a range;
+ * `expectation` is the user's own stored `salary_expectation`, verbatim,
+ * when non-empty. Neither field is ever compared or combined into a match/
+ * mismatch signal — the popup/panel/badge render them as two facts side by
+ * side. Omitted (not sent) on an older desktop, or when no range was found
+ * and no expectation is stored — a client that has never heard of the key
+ * simply renders nothing extra, so this needs no protocol bump.
  */
 export type ExtensionMatchLiveResult =
   | {
@@ -834,6 +908,7 @@ export type ExtensionMatchLiveResult =
       gaps: string[];
       resumeName: string;
       scoreSource: 'keyword' | 'combined';
+      salary?: { posting: string; expectation?: string };
     }
   | { ok: false; error: string };
 

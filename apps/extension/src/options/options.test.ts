@@ -50,11 +50,11 @@ function buildOptionsDom(): void {
       <button type="button" data-tab-choice="job">Job</button>
       <button type="button" data-tab-choice="answers">Answers</button>
     </div>
-    <div class="set-row toggle-row" hidden>
+    <div class="set-row toggle-row">
       <p id="title-fit-badge">Show the on-page fit badge after Check fit</p>
       <button id="toggle-fit-badge" role="switch" aria-checked="false" aria-labelledby="title-fit-badge"></button>
     </div>
-    <div class="set-row toggle-row" hidden>
+    <div class="set-row toggle-row">
       <p id="title-stamp-results">Stamp saved/applied on results pages</p>
       <button id="toggle-stamp-results" role="switch" aria-checked="false" aria-labelledby="title-stamp-results"></button>
     </div>
@@ -146,7 +146,7 @@ describe('appearance toggles', () => {
     expect(browser.storage.local.set).toHaveBeenCalledWith({ showFitBadge: true });
   });
 
-  it('has an accessible name (aria-labelledby the row title) even though the row is hidden', () => {
+  it('has an accessible name (aria-labelledby the row title)', () => {
     const btn = byId<HTMLButtonElement>('toggle-fit-badge');
     const labelledbyId = btn.getAttribute('aria-labelledby');
     expect(labelledbyId).toBeTruthy();
@@ -155,9 +155,19 @@ describe('appearance toggles', () => {
     );
   });
 
-  it('hides the row for a preference no on-page surface consumes yet (honest UI)', () => {
-    expect(byId('toggle-fit-badge').closest('.toggle-row')).toHaveProperty('hidden', true);
-    expect(byId('toggle-stamp-results').closest('.toggle-row')).toHaveProperty('hidden', true);
+  it('shows both rows — PR3 wired the on-page badge/stamps these preferences gate', () => {
+    expect(byId('toggle-fit-badge').closest('.toggle-row')).toHaveProperty('hidden', false);
+    expect(byId('toggle-stamp-results').closest('.toggle-row')).toHaveProperty('hidden', false);
+  });
+
+  it('toggles the stamp-results switch on click and persists it', () => {
+    const btn = byId<HTMLButtonElement>('toggle-stamp-results');
+    expect(btn.classList.contains('on')).toBe(false);
+
+    btn.click();
+
+    expect(btn.classList.contains('on')).toBe(true);
+    expect(browser.storage.local.set).toHaveBeenCalledWith({ stampResultsPages: true });
   });
 });
 

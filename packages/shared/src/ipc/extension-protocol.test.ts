@@ -11,6 +11,9 @@ import {
   ExtensionAnswersSaveResultSchema,
   ExtensionAnswersSuggestRequestSchema,
   ExtensionAnswersSuggestResultSchema,
+  ExtensionAppliedBatchEntrySchema,
+  ExtensionAppliedCheckBatchRequestSchema,
+  ExtensionAppliedCheckBatchResultSchema,
   ExtensionAppliedCheckRequestSchema,
   ExtensionAppliedCheckResultSchema,
   ExtensionAssistChunkPayloadSchema,
@@ -34,6 +37,7 @@ import {
   EXTENSION_NO_PROVIDER_MESSAGE,
   HANDSHAKE_TEST_VECTOR,
   handshakeMessage,
+  MAX_APPLIED_CHECK_BATCH_URLS,
 } from './extension-protocol-constants.js';
 
 // ---------------------------------------------------------------------------
@@ -300,6 +304,123 @@ describe('ExtensionAppliedCheckResultSchema', () => {
         type: EXTENSION_MESSAGE_TYPES.appliedResult,
         reqId: 'req-003',
         payload: { found: false },
+      })
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ExtensionAppliedCheckBatchRequestSchema / ExtensionAppliedBatchEntrySchema /
+// ExtensionAppliedCheckBatchResultSchema (PR3, results-page stamps)
+// ---------------------------------------------------------------------------
+
+describe('ExtensionAppliedCheckBatchRequestSchema', () => {
+  it('accepts a list of urls', () => {
+    expect(() =>
+      ExtensionAppliedCheckBatchRequestSchema.parse({
+        urls: ['https://example.com/jobs/1', 'https://example.com/jobs/2'],
+      })
+    ).not.toThrow();
+  });
+
+  it('accepts an empty urls array', () => {
+    expect(() => ExtensionAppliedCheckBatchRequestSchema.parse({ urls: [] })).not.toThrow();
+  });
+
+  it('rejects a request with no urls field', () => {
+    expect(() => ExtensionAppliedCheckBatchRequestSchema.parse({})).toThrow();
+  });
+
+  it('rejects a non-array urls field', () => {
+    expect(() =>
+      ExtensionAppliedCheckBatchRequestSchema.parse({ urls: 'https://example.com/jobs/1' })
+    ).toThrow();
+  });
+
+  it('accepts exactly MAX_APPLIED_CHECK_BATCH_URLS urls', () => {
+    const urls = Array.from(
+      { length: MAX_APPLIED_CHECK_BATCH_URLS },
+      (_, i) => `https://example.com/jobs/${i}`
+    );
+    expect(() => ExtensionAppliedCheckBatchRequestSchema.parse({ urls })).not.toThrow();
+  });
+
+  it('rejects one more than MAX_APPLIED_CHECK_BATCH_URLS urls — the Rust side refuses `too_many_urls`, so shared validation must not pass a request it is guaranteed to reject', () => {
+    const urls = Array.from(
+      { length: MAX_APPLIED_CHECK_BATCH_URLS + 1 },
+      (_, i) => `https://example.com/jobs/${i}`
+    );
+    expect(() => ExtensionAppliedCheckBatchRequestSchema.parse({ urls })).toThrow();
+  });
+});
+
+describe('ExtensionAppliedBatchEntrySchema', () => {
+  it('accepts an entry with a status', () => {
+    expect(() =>
+      ExtensionAppliedBatchEntrySchema.parse({
+        url: 'https://example.com/jobs/1',
+        found: true,
+        status: 'saved',
+      })
+    ).not.toThrow();
+  });
+
+  it('accepts a not-found entry (status omitted)', () => {
+    expect(() =>
+      ExtensionAppliedBatchEntrySchema.parse({ url: 'https://example.com/jobs/1', found: false })
+    ).not.toThrow();
+  });
+
+  it('rejects an entry missing url', () => {
+    expect(() => ExtensionAppliedBatchEntrySchema.parse({ found: true })).toThrow();
+  });
+});
+
+describe('ExtensionAppliedCheckBatchResultSchema', () => {
+  it('round-trips a success payload, preserving order', () => {
+    const payload = {
+      ok: true,
+      results: [
+        { url: 'https://example.com/jobs/1', found: true, status: 'saved' },
+        { url: 'https://example.com/jobs/2', found: false },
+      ],
+    };
+    expect(ExtensionAppliedCheckBatchResultSchema.parse(payload)).toEqual(payload);
+  });
+
+  it('accepts a refusal (over-cap/throttle) with detail + retryAfterMs', () => {
+    const payload = {
+      ok: false,
+      error: 'too_many_urls',
+      detail: 'max 50 urls per batch',
+      retryAfterMs: 2000,
+    };
+    expect(ExtensionAppliedCheckBatchResultSchema.parse(payload)).toEqual(payload);
+  });
+
+  it('rejects a missing ok field', () => {
+    expect(() => ExtensionAppliedCheckBatchResultSchema.parse({})).toThrow();
+  });
+
+  it('rejects a contradictory ok:false payload carrying results but no error', () => {
+    expect(() =>
+      ExtensionAppliedCheckBatchResultSchema.parse({ ok: false, results: [] })
+    ).toThrow();
+  });
+
+  it('carries applied.check.batch / applied.batch.result through a valid envelope', () => {
+    expect(() =>
+      ExtensionEnvelopeSchema.parse({
+        type: EXTENSION_MESSAGE_TYPES.appliedCheckBatch,
+        reqId: 'req-020',
+        payload: { urls: ['https://example.com/jobs/1'] },
+      })
+    ).not.toThrow();
+    expect(() =>
+      ExtensionEnvelopeSchema.parse({
+        type: EXTENSION_MESSAGE_TYPES.appliedBatchResult,
+        reqId: 'req-020',
+        payload: { ok: true, results: [] },
       })
     ).not.toThrow();
   });
@@ -971,6 +1092,47 @@ describe('ExtensionMatchLiveResultSchema', () => {
         error: 'Add a resume in AI Job Hunter first, then try Check fit again.',
       })
     ).not.toThrow();
+  });
+
+  it('accepts the optional PR3 salary object (two verbatim facts, never a verdict)', () => {
+    const payload = {
+      ok: true,
+      combined: 72,
+      ats: 60,
+      gaps: [],
+      resumeName: 'My Resume',
+      scoreSource: 'keyword',
+      salary: { posting: '€70,000–€90,000', expectation: '€80,000' },
+    };
+    expect(ExtensionMatchLiveResultSchema.parse(payload)).toEqual(payload);
+  });
+
+  it('accepts salary with posting only (expectation is optional)', () => {
+    expect(() =>
+      ExtensionMatchLiveResultSchema.parse({
+        ok: true,
+        combined: 72,
+        ats: 60,
+        gaps: [],
+        resumeName: 'My Resume',
+        scoreSource: 'keyword',
+        salary: { posting: '$100k–$120k' },
+      })
+    ).not.toThrow();
+  });
+
+  it('rejects a salary object missing posting', () => {
+    expect(() =>
+      ExtensionMatchLiveResultSchema.parse({
+        ok: true,
+        combined: 72,
+        ats: 60,
+        gaps: [],
+        resumeName: 'My Resume',
+        scoreSource: 'keyword',
+        salary: { expectation: '€80,000' },
+      })
+    ).toThrow();
   });
 
   it('rejects a missing ok field', () => {

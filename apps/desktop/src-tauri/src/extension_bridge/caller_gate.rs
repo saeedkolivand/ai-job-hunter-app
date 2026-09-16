@@ -58,7 +58,7 @@ impl CallerClass {
 
 /// Post-auth dispatch: the socket is session-authenticated, so frames carry no
 /// token. Routes `import.request` / `profile.get` / `applied.check` /
-/// `status.update` / `answers.save` / `answers.suggest` / `match.live` /
+/// `applied.check.batch` / `status.update` / `answers.save` / `answers.suggest` / `match.live` /
 /// `answer.assist` / `assist.cancel` unconditionally; `caller` (a
 /// [`CallerClass`], resolved once at handshake time — finding #5, security
 /// review; extended in PR1) gates `agent.query` / `agent.call` (CLI
@@ -85,6 +85,14 @@ pub(super) fn advance_authenticated(
         msg::APPLIED_CHECK => {
             let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
             FrameDecision::AppliedCheck { req_id, payload }
+        }
+        // Batch form of APPLIED_CHECK for a results-listing page (PR3) — same trust class (the
+        // user's own device-local metadata), so unconditional here too; see
+        // `applied_check_batch`'s module doc for why the throttle (not this gate) is what bounds
+        // the N-fold amplification.
+        msg::APPLIED_CHECK_BATCH => {
+            let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
+            FrameDecision::AppliedCheckBatch { req_id, payload }
         }
         // "Mark this URL applied" — the narrowest possible write (saved → applied
         // on an exact URL-key match only).

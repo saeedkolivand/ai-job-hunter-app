@@ -63,6 +63,35 @@ user is currently on. Nothing changes about the consent boundary: this still rid
 Autofill opt-in. Cover-letter text is pasted the same way the existing answer-replace flow works:
 into a textarea the user picks, never auto-selected; a Copy action is offered alongside it.
 
+## Amendment (2026-09-15, PR3 — Check-fit on the page) — a read-only badge and read-only results-page stamps join the page-touching surface
+
+Two new page-touching renders join the ones decisions 1-6 already cover, following the same shape:
+user-initiated (an explicit Check-fit gesture for the badge, a dedicated "stamp this results page"
+gesture for the stamps), opt-in and **default OFF**
+(`getShowFitBadge`/`getStampResultsPages`, `apps/extension/src/lib/appearance.ts`), and never a
+form action — neither can submit anything, and neither offers a control beyond its own dismiss and
+(badge only) "Open the panel".
+
+- **On-page fit badge** (`apps/extension/src/lib/fit-badge.ts`): a fixed pill carrying the Check-fit
+  score, expanding on click to a mini card. Field-level shape is owned by that module's own doc.
+- **Results-page stamps** (`apps/extension/src/lib/results-stamp.ts`): a small saved/applied marker
+  placed next to each matched job-card link on a results-listing page, resolved through
+  `apps/desktop/src-tauri/src/extension_bridge/applied_check_batch.rs` — verb shape, trust class and
+  throttle are owned by that module's own doc.
+
+**Both render their content inside a `mode: 'closed'` shadow root** — the page's own scripts (an ad,
+a tracker, a compromised board) cannot read the label, score, gaps or salary text back off the DOM.
+This hides **content only, not presence**: each host is itself an ordinary, visible DOM node (the
+badge is a fixed pill on the page; the stamp sits immediately next to the anchor it marks), so a page
+script can observe that a fit was checked or that a card got stamped — it just cannot read what the
+badge/stamp says, or tell a saved stamp from an applied one.
+
+**Salary is two facts, never a verdict** — matching design decision 5
+(`.claude/scratch/extension-round-design.md`): when present, the badge's mini card and the panel's
+own `why?` details show the posting's own stated range side by side with the user's stored
+expectation, with no comparison or computed verdict between them. Extraction is owned by
+`apps/desktop/src-tauri/src/extension_bridge/salary_facts.rs`.
+
 ## Considered options
 
 1. **Assisted, generic, transparent, no-persistence, opt-in (chosen).** Matches the market's most-used capability while preserving both the privacy boundary and the human-in-the-loop brand. Cost: partial fills on complex ATS — accepted and disclosed. (File upload was believed impossible when this option was weighed; the 2026-09-15 amendment below corrects that.)
@@ -91,4 +120,5 @@ into a textarea the user picks, never auto-selected; a Copy action is offered al
 - Disclosure: `apps/extension/README.md`, `landing/privacy.html`.
 - Related: [ADR 0005](0005-network-egress-privacy-boundary.md) (egress boundary), [ADR 0010](0010-bridge-hmac-handshake.md) (hardened auth), [ADR 0011](0011-extension-ai-assist-optin.md) (separate billable AI assist tier), Extension import + Pairing token in `docs/CONTEXT.md`.
 - **Résumé file attach (PR2 amendment):** `extension_bridge/document_export.rs` (`document.export`/`document.result` handler + gate/throttle), `apps/extension/src/lib/attach-file.ts` (`DataTransfer` assignment + re-read verification, fail-closed), `apps/extension/src/documents/` (the panel's Documents tab).
+- **Check-fit on the page (PR3 amendment):** `apps/desktop/src-tauri/src/extension_bridge/applied_check_batch.rs` (`applied.check.batch`/`applied.batch.result` handler, its own throttle), `apps/desktop/src-tauri/src/extension_bridge/salary_facts.rs` (the posting-side salary-range extractor), `apps/extension/src/lib/fit-badge.ts` (the on-page badge, closed shadow root), `apps/extension/src/lib/results-stamp.ts` (the results-page collector/stamper, closed shadow root), `apps/extension/src/lib/notebook-palette.ts` (the portable palette an injected script inlines), `apps/extension/src/lib/appearance.ts` (`getShowFitBadge`/`getStampResultsPages`, both default OFF).
 - **Auto-track (Task #22 amendment):** protocol — `autotrack.check`/`autotrack.result`, `ExtensionStatusUpdateRequest.auto` (`packages/shared/src/ipc/extension-protocol-constants.ts`); server-side enforcement — `handle_status_update`/`auto_write_refused`/`is_auto_status_update` (`apps/desktop/src-tauri/src/extension_bridge/status_update.rs`); opt-in state — `BridgeState::autotrack_enabled`/`set_autotrack_enabled` (`apps/desktop/src-tauri/src/extension_bridge/mod.rs`) + `extension_bridge_auto_track_enabled`/`extension_bridge_set_auto_track_enabled` (`apps/desktop/src-tauri/src/commands/extension_bridge.rs`); client-side arming/decision — `armSubmitWatch` (`apps/extension/src/lib/submit-watch.ts`), `decideSubmitAction`/`handleSubmitDetected`/`maybeArmSubmitWatch` (`apps/extension/src/lib/auto-track.ts`); background wiring — `apps/extension/src/background.ts`. Deferred complement: Layer C (#23, local email-confirmation parsing).

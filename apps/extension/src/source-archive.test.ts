@@ -48,6 +48,8 @@ const EXPECTED_INJECTED_SCRIPTS = [
   'submit-watch.js',
   'probe-fields.js',
   'attach-file.js',
+  'fit-badge.js',
+  'results-stamp.js',
 ];
 
 const readme = (over = {}) =>

@@ -75,6 +75,8 @@ const GLOBAL_INSTALLING_ENTRIES = [
   'answer-replace',
   'submit-watch',
   'attach-file',
+  'fit-badge',
+  'results-stamp',
 ];
 
 /**

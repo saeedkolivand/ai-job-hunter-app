@@ -17,11 +17,13 @@
  * in-memory store.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type Browser, browser } from '@wxt-dev/browser';
 
 import type { AnswerRow } from './lib/answer-state';
+import { setShowFitBadge, setStampResultsPages } from './lib/appearance';
 import type { AutofillSummary } from './lib/autofill';
+import type { FitBadgeView } from './lib/fit-badge';
 import type { PopupRequest, PopupResponse } from './lib/messages';
 import { getToken } from './lib/storage';
 import { SUBMIT_DETECTED_MSG } from './lib/submit-watch';
@@ -41,6 +43,7 @@ const mockClient = vi.hoisted(() => ({
   importJob: vi.fn(),
   getProfile: vi.fn(),
   checkApplied: vi.fn(),
+  checkAppliedBatch: vi.fn(),
   updateStatus: vi.fn(),
   saveAnswers: vi.fn(),
   suggestAnswers: vi.fn(),
@@ -90,6 +93,22 @@ vi.mock('@wxt-dev/browser', () => ({
     // background is the only writer.
     storage: {
       session: (() => {
+        const store: Record<string, unknown> = {};
+        return {
+          get: vi.fn((key: string) => Promise.resolve({ [key]: store[key] })),
+          set: vi.fn((entries: Record<string, unknown>) => {
+            Object.assign(store, entries);
+            return Promise.resolve();
+          }),
+          remove: vi.fn((key: string) => {
+            delete store[key];
+            return Promise.resolve();
+          }),
+        };
+      })(),
+      // `lib/appearance.ts`'s `getShowFitBadge`/`getStampResultsPages` (PR3)
+      // read/write this area — an in-memory store mirrors `session` above.
+      local: (() => {
         const store: Record<string, unknown> = {};
         return {
           get: vi.fn((key: string) => Promise.resolve({ [key]: store[key] })),
@@ -197,13 +216,14 @@ function flush(): Promise<void> {
 
 const FAKE_TOKEN = 'a'.repeat(64);
 
-beforeEach(() => {
+beforeEach(async () => {
   getTokenMock.mockReset();
   tabsQueryMock.mockReset();
   executeScriptMock.mockReset();
   mockClient.getProfile.mockReset();
   mockClient.importJob.mockReset();
   mockClient.checkApplied.mockReset();
+  mockClient.checkAppliedBatch.mockReset();
   mockClient.updateStatus.mockReset();
   mockClient.saveAnswers.mockReset();
   mockClient.suggestAnswers.mockReset();
@@ -215,6 +235,11 @@ beforeEach(() => {
   mockClient.settingsSet.mockReset();
   mockClient.documentExport.mockReset();
   setBadgeTextMock.mockClear();
+  // PR3 preferences default OFF — re-pin them before every test so an
+  // earlier test's `setShowFitBadge(true)`/`setStampResultsPages(true)`
+  // never leaks into the next one via the shared in-memory storage.local mock.
+  await setShowFitBadge(false);
+  await setStampResultsPages(false);
 });
 
 // ── not-paired short-circuit ────────────────────────────────────────────────
@@ -1363,6 +1388,353 @@ describe('matchLive request', () => {
     expect(res).toEqual({
       ok: false,
       error: 'Desktop app not reachable. Is AI Job Hunter running?',
+    });
+  });
+});
+
+// ── fit badge injection (PR3 §B.3) — best-effort, fire-and-forget ──────────
+
+describe('matchLive → on-page fit badge injection', () => {
+  it('injects the badge when getShowFitBadge is on, including the applied chip and salary facts', async () => {
+    await setShowFitBadge(true);
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: '<html>job</html>' }] as never); // content.js capture
+    mockClient.matchLive.mockResolvedValue({
+      ok: true,
+      combined: 82,
+      ats: 60,
+      gaps: ['kubernetes'],
+      resumeName: 'My Resume',
+      scoreSource: 'keyword',
+      salary: { posting: '€70,000–€90,000', expectation: '€80,000' },
+    });
+    mockClient.checkApplied.mockResolvedValue({ found: true, status: 'saved' });
+    executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never); // fit-badge.js files
+    executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never); // fit-badge.js func call
+
+    await send({ kind: 'matchLive' });
+    await flush();
+
+    expect(executeScriptMock).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { tabId: 7 }, files: ['fit-badge.js'] })
+    );
+    const funcCall = executeScriptMock.mock.calls.find(
+      (c) => (c[0] as { args?: unknown[] }).args?.[1] === '__ajhRenderFitBadge'
+    );
+    expect(funcCall).toBeDefined();
+    const view = (funcCall?.[0] as { args: [unknown, string] }).args[0] as {
+      score: number;
+      band: string;
+      applied: string | null;
+      salary?: { posting: string; expectation?: string };
+    };
+    expect(view.score).toBe(82);
+    expect(view.band).toBe('strong match');
+    expect(view.applied).toBe('saved');
+    expect(view.salary).toEqual({ posting: '€70,000–€90,000', expectation: '€80,000' });
+  });
+
+  it('never injects the badge when getShowFitBadge is off (the default)', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: '<html>job</html>' }] as never);
+    mockClient.matchLive.mockResolvedValue({
+      ok: true,
+      combined: 82,
+      ats: 60,
+      gaps: [],
+      resumeName: 'My Resume',
+      scoreSource: 'keyword',
+    });
+
+    await send({ kind: 'matchLive' });
+    await flush();
+
+    expect(executeScriptMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ files: ['fit-badge.js'] })
+    );
+  });
+
+  it('never affects the popup response even when badge injection fails', async () => {
+    await setShowFitBadge(true);
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: '<html>job</html>' }] as never);
+    mockClient.matchLive.mockResolvedValue({
+      ok: true,
+      combined: 82,
+      ats: 60,
+      gaps: [],
+      resumeName: 'My Resume',
+      scoreSource: 'keyword',
+    });
+    mockClient.checkApplied.mockRejectedValue(new Error('boom'));
+    executeScriptMock.mockRejectedValueOnce(new Error('injection blocked'));
+
+    const res = await send({ kind: 'matchLive' });
+    await flush();
+
+    expect(res.ok).toBe(true);
+    expect(res).toMatchObject({ kind: 'matchLive', result: { ok: true, combined: 82 } });
+  });
+
+  it('binds the badge to the tab resolved BEFORE the desktop round trip and aborts it silently when a different tab is active afterwards (tab switch mid-request)', async () => {
+    await setShowFitBadge(true);
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock
+      // Resolved once, up front, together with the url used for the capture + payload.
+      .mockResolvedValueOnce([{ id: 7, url: 'https://jobs.example.com/posting/9' } as never])
+      // Re-verify right before injection: a DIFFERENT tab is now active.
+      .mockResolvedValueOnce([{ id: 9, url: 'https://other.example.com/' } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: '<html>job</html>' }] as never); // content.js capture
+    mockClient.matchLive.mockResolvedValue({
+      ok: true,
+      combined: 82,
+      ats: 60,
+      gaps: ['kubernetes'],
+      resumeName: 'My Resume',
+      scoreSource: 'keyword',
+    });
+
+    const res = await send({ kind: 'matchLive' });
+    await flush();
+
+    // The popup's own response is unaffected — only the best-effort badge aborts.
+    expect(res).toMatchObject({ kind: 'matchLive', result: { ok: true, combined: 82 } });
+    // The captured/sent url is the tab resolved BEFORE the switch, not the new one.
+    expect(mockClient.matchLive).toHaveBeenCalledWith({
+      url: 'https://jobs.example.com/posting/9',
+      html: '<html>job</html>',
+    });
+    expect(mockClient.checkApplied).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ files: ['fit-badge.js'] })
+    );
+  });
+
+  it('aborts the badge silently when the SAME tab navigated to a different url during the round trip (same-tab navigation)', async () => {
+    await setShowFitBadge(true);
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock
+      .mockResolvedValueOnce([{ id: 7, url: 'https://jobs.example.com/posting/9' } as never])
+      // Same tab id, but it has since navigated to a different posting.
+      .mockResolvedValueOnce([{ id: 7, url: 'https://jobs.example.com/posting/10' } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: '<html>job</html>' }] as never);
+    mockClient.matchLive.mockResolvedValue({
+      ok: true,
+      combined: 82,
+      ats: 60,
+      gaps: [],
+      resumeName: 'My Resume',
+      scoreSource: 'keyword',
+    });
+
+    await send({ kind: 'matchLive' });
+    await flush();
+
+    expect(mockClient.checkApplied).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ files: ['fit-badge.js'] })
+    );
+  });
+
+  // ── PR review finding: the tab-and-url re-check above (tabStillOnExactUrl)
+  // runs BEFORE maybeShowFitBadge's own later awaits (getShowFitBadge,
+  // checkApplied) — a navigation during either of those isn't caught by it.
+  // injectFitBadge's injected `func` now re-checks `location.href` against the
+  // captured url as the LAST possible step, IN the page, immediately before
+  // the renderer runs. These three drive that `func` directly (extracted from
+  // the mocked `executeScript` call, exactly as the "background thinks
+  // everything still matches" case would invoke it), the same seam the
+  // existing badge tests above use.
+  describe('the final in-page url check inside the injected renderer', () => {
+    const postingUrl = 'https://jobs.example.com/posting/9';
+
+    async function driveMatchLiveAndExtractRenderCall(): Promise<{
+      func: (v: FitBadgeView, key: string, expectedUrl: string) => void;
+      args: [FitBadgeView, string, string];
+    }> {
+      getTokenMock.mockResolvedValue(FAKE_TOKEN);
+      tabsQueryMock.mockResolvedValue([{ id: 7, url: postingUrl } as never]);
+      executeScriptMock.mockResolvedValueOnce([{ result: '<html>job</html>' }] as never); // content.js capture
+      mockClient.matchLive.mockResolvedValue({
+        ok: true,
+        combined: 82,
+        ats: 60,
+        gaps: [],
+        resumeName: 'My Resume',
+        scoreSource: 'keyword',
+      });
+      mockClient.checkApplied.mockResolvedValue({ found: false });
+      executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never); // fit-badge.js files
+      executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never); // fit-badge.js func call
+
+      await send({ kind: 'matchLive' });
+      await flush();
+
+      const funcCall = executeScriptMock.mock.calls.find(
+        (c) => (c[0] as { args?: unknown[] }).args?.[1] === '__ajhRenderFitBadge'
+      );
+      const { func, args } = funcCall![0] as {
+        func: (v: FitBadgeView, key: string, expectedUrl: string) => void;
+        args: [FitBadgeView, string, string];
+      };
+      // The url captured before the round trip is threaded through as the
+      // renderer's third arg, unchanged.
+      expect(args[2]).toBe(postingUrl);
+      return { func, args };
+    }
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('still renders when the live page url matches the captured url (happy path)', async () => {
+      await setShowFitBadge(true);
+      const { func, args } = await driveMatchLiveAndExtractRenderCall();
+
+      const runnerSpy = vi.fn();
+      vi.stubGlobal('__ajhRenderFitBadge', runnerSpy);
+      vi.stubGlobal('location', { href: postingUrl } as Location);
+
+      func(...args);
+
+      expect(runnerSpy).toHaveBeenCalledWith(args[0]);
+    });
+
+    it('does not render after a full navigation between the desktop reply and the injection (a fresh document with a different url)', async () => {
+      await setShowFitBadge(true);
+      const { func, args } = await driveMatchLiveAndExtractRenderCall();
+
+      const runnerSpy = vi.fn();
+      vi.stubGlobal('__ajhRenderFitBadge', runnerSpy);
+      vi.stubGlobal('location', { href: 'https://jobs.example.com/posting/999' } as Location);
+
+      func(...args);
+
+      expect(runnerSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not render after an SPA-style url change with the fit-badge global already installed (same document, different url)', async () => {
+      await setShowFitBadge(true);
+      const { func, args } = await driveMatchLiveAndExtractRenderCall();
+
+      const runnerSpy = vi.fn();
+      vi.stubGlobal('__ajhRenderFitBadge', runnerSpy);
+      // Same origin/document, e.g. a client-side route change — still a
+      // different posting, so it must not match.
+      vi.stubGlobal('location', { href: `${postingUrl}?ref=nav` } as Location);
+
+      func(...args);
+
+      expect(runnerSpy).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// ── stampResults request — results-page batch stamping (PR3 §B.4) ──────────
+
+describe('stampResults request — not-paired / preference short-circuits', () => {
+  it('surfaces "Not paired" and never reads the page when no token is stored', async () => {
+    getTokenMock.mockResolvedValue(null);
+
+    const res = await send({ kind: 'stampResults' });
+
+    expect(res).toEqual({ ok: false, error: 'Not paired. Paste your pairing token first.' });
+    expect(executeScriptMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the results-stamp preference is off (defense in depth against a stale UI)', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    await setStampResultsPages(false);
+
+    const res = await send({ kind: 'stampResults' });
+
+    expect(res.ok).toBe(false);
+    expect(executeScriptMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('stampResults request', () => {
+  it('collects candidate cards, batch-checks them, stamps, and reports the count', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    await setStampResultsPages(true);
+    tabsQueryMock.mockResolvedValue([{ id: 7 } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never); // results-stamp.js files
+    executeScriptMock.mockResolvedValueOnce([
+      { result: [{ url: 'https://x/jobs/1', index: 0 }] },
+    ] as never); // collect func
+    mockClient.checkAppliedBatch.mockResolvedValue({
+      ok: true,
+      results: [{ url: 'https://x/jobs/1', found: true, status: 'saved' }],
+    });
+    executeScriptMock.mockResolvedValueOnce([{ result: 1 }] as never); // stamp func
+
+    const res = await send({ kind: 'stampResults' });
+
+    expect(mockClient.checkAppliedBatch).toHaveBeenCalledWith(['https://x/jobs/1']);
+    expect(res).toEqual({ ok: true, kind: 'stampResults', stamped: 1, status: 'Stamped 1 card.' });
+  });
+
+  it('degrades a desktop-side refusal (over-cap/throttle) to "no stamps", never a partial lie', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    await setStampResultsPages(true);
+    tabsQueryMock.mockResolvedValue([{ id: 7 } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: [{ url: 'https://x/jobs/1', index: 0 }] },
+    ] as never);
+    mockClient.checkAppliedBatch.mockResolvedValue({ ok: false, error: 'too_many_urls' });
+
+    const res = await send({ kind: 'stampResults' });
+
+    expect(res).toEqual({ ok: true, kind: 'stampResults', stamped: 0, status: 'too_many_urls' });
+    // No stamp step is ever reached once the batch itself was refused.
+    expect(executeScriptMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports "no job cards" without ever calling the bridge when the page has none', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    await setStampResultsPages(true);
+    tabsQueryMock.mockResolvedValue([{ id: 7 } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never);
+    executeScriptMock.mockResolvedValueOnce([{ result: [] }] as never);
+
+    const res = await send({ kind: 'stampResults' });
+
+    expect(mockClient.checkAppliedBatch).not.toHaveBeenCalled();
+    expect(res).toEqual({
+      ok: true,
+      kind: 'stampResults',
+      stamped: 0,
+      status: 'No job cards found on this page.',
+    });
+  });
+
+  it('degrades a transport rejection on the batch call to "no stamps" too', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    await setStampResultsPages(true);
+    tabsQueryMock.mockResolvedValue([{ id: 7 } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: [{ url: 'https://x/jobs/1', index: 0 }] },
+    ] as never);
+    mockClient.checkAppliedBatch.mockRejectedValue(new Error('Desktop app not reachable.'));
+
+    const res = await send({ kind: 'stampResults' });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'stampResults',
+      stamped: 0,
+      status: 'Could not reach the desktop app.',
     });
   });
 });
@@ -2903,6 +3275,24 @@ describe('arming the submit watcher after a gesture request (Task #22 review clo
     await send({ kind: 'fieldsProbe' });
     await flush();
 
+    expect(mockClient.autotrackEnabled).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ files: ['submit-watch.js'] })
+    );
+  });
+
+  it('a successful stampResults request never arms the watcher — it is read-only (no form interaction), so arming it would let a later, unrelated submit-like interaction on a results page auto-mark a saved application applied (PR review finding)', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    mockClient.autotrackEnabled.mockResolvedValue(true);
+    await setStampResultsPages(true);
+    tabsQueryMock.mockResolvedValue([{ id: 7 } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never); // results-stamp.js files
+    executeScriptMock.mockResolvedValueOnce([{ result: [] }] as never); // collect func — no cards
+
+    const res = await send({ kind: 'stampResults' });
+    await flush();
+
+    expect(res.ok).toBe(true);
     expect(mockClient.autotrackEnabled).not.toHaveBeenCalled();
     expect(executeScriptMock).not.toHaveBeenCalledWith(
       expect.objectContaining({ files: ['submit-watch.js'] })

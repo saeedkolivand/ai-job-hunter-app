@@ -56,7 +56,10 @@ pub const PROFILE_RESULT: &str = "profile.result";
 /// per-connection throttled — see [`super::match_live`]'s module doc.
 pub const MATCH_LIVE: &str = "match.live";
 /// Desktop → extension: the `match.live` outcome. Like `status.update`,
-/// this verb's errors ARE user-facing (a deliberate click).
+/// this verb's errors ARE user-facing (a deliberate click). PR3 (Check-fit on the page) adds an
+/// OPTIONAL `salary: { posting, expectation? }` field — two facts verbatim, never a verdict/
+/// comparison (design decision 5) — present ONLY when a range was found in the posting text; an
+/// older extension ignores the unrecognized field harmlessly. See `crate::extraction::salary`'s doc.
 pub const MATCH_RESULT: &str = "match.result";
 /// Extension → desktop: "have I already applied to this URL?" — a pure,
 /// read-only lookup against the local `ApplicationStore` keyed by the
@@ -225,3 +228,16 @@ pub const DOCUMENT_EXPORT: &str = "document.export";
 /// dataEncoding: 'base64', mimeType, filename, byteLength, kind, format, templateId } | { ok:
 /// false, error, detail, retryAfterMs? }`. See [`DOCUMENT_EXPORT`]'s doc.
 pub const DOCUMENT_RESULT: &str = "document.result";
+/// Extension → desktop: batch form of [`APPLIED_CHECK`] for a results-listing page (PR3 — Check-fit
+/// on the page). `{ urls: string[] }`, capped at
+/// [`super::applied_check_batch::MAX_BATCH_URLS`] — over the cap refuses with `too_many_urls`,
+/// never truncates. Same trust class as [`APPLIED_CHECK`] (the user's own device-local metadata,
+/// no consent gate), so the dispatch arm stays unconditional — but this verb amplifies that same
+/// read N-fold, so it carries its OWN per-pairing throttle (see
+/// [`super::applied_check_batch`]'s module doc).
+pub const APPLIED_CHECK_BATCH: &str = "applied.check.batch";
+/// Desktop → extension: the `applied.check.batch` outcome — `{ ok: true, results: [{ url, found,
+/// status? }] } | { ok: false, error, retryAfterMs? }`. One entry per input url, in input order,
+/// duplicates included; each entry carries ONLY `status` (no `applicationId`/`title`/`appliedAt` —
+/// a results-page stamp needs nothing else). See [`APPLIED_CHECK_BATCH`]'s doc.
+pub const APPLIED_BATCH_RESULT: &str = "applied.batch.result";

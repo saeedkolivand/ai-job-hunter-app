@@ -60,28 +60,26 @@ pub(super) fn applied_result_reply(req_id: &str, outcome: AppResult<AppliedCheck
     .to_string()
 }
 
-/// Core `applied.check`: normalize the `url` field the SAME way `handle_import`
-/// does (the canonical SPA/list-view rewrite, then [`normalize_job_url`]) so a
-/// check against the active tab's URL resolves to the exact identity an import
-/// would have used — then looks up any existing Application for it. Pure
-/// read-only store lookup: no fetch, no SSRF host gate (there is nothing to
-/// fetch), and it never creates, merges, or advances a row.
-pub(super) fn resolve_applied_check(
+/// Core `applied.check`, taking an already-extracted url string — the SAME normalization chain
+/// `handle_import` uses (the canonical SPA/list-view rewrite, then [`normalize_job_url`]) so a
+/// check against the active tab's URL resolves to the exact identity an import would have used —
+/// then looks up any existing Application for it. Pure read-only store lookup: no fetch, no SSRF
+/// host gate (there is nothing to fetch), and it never creates, merges, or advances a row.
+///
+/// Shared by [`resolve_applied_check`] (single `applied.check`, url read from the JSON payload)
+/// and `applied_check_batch::resolve_applied_check_batch` (many urls in one `applied.check.batch`
+/// request) so the two verbs can never drift — see that module's doc.
+pub(super) fn resolve_applied_check_url(
     store: &ApplicationStore,
-    payload: &Value,
+    url: &str,
 ) -> AppResult<AppliedCheckOk> {
-    let url = payload
-        .get("url")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
+    let url = url.trim();
     if url.is_empty() {
         return Err(AppError::Validation("url is required".to_string()));
     }
 
-    let canonical = crate::scraping::scrape_url::canonical_job_url(&url);
-    let effective_url = canonical.as_deref().unwrap_or(url.as_str());
+    let canonical = crate::scraping::scrape_url::canonical_job_url(url);
+    let effective_url = canonical.as_deref().unwrap_or(url);
     let normalized = normalize_job_url(effective_url);
     if normalized.is_empty() {
         return Err(AppError::Validation(
@@ -105,6 +103,18 @@ pub(super) fn resolve_applied_check(
             applied_at: None,
         },
     })
+}
+
+/// `applied.check`'s own entry point: pull `url` out of the JSON payload, then delegate to
+/// [`resolve_applied_check_url`]. Kept separate from that function (rather than inlining the
+/// payload read into it) so the batch verb never has to fabricate a `{"url": ...}` envelope just
+/// to call in.
+pub(super) fn resolve_applied_check(
+    store: &ApplicationStore,
+    payload: &Value,
+) -> AppResult<AppliedCheckOk> {
+    let url = payload.get("url").and_then(|v| v.as_str()).unwrap_or("");
+    resolve_applied_check_url(store, url)
 }
 
 /// Answer an authenticated `applied.check`: resolve against the local

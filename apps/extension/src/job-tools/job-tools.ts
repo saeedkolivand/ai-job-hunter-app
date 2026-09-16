@@ -49,6 +49,7 @@ import type { ExtensionProfileResult } from '@ajh/shared';
 
 import { copyText } from '../answer-tools/answer-tools';
 import type { AnswerState } from '../lib/answer-state';
+import { getStampResultsPages } from '../lib/appearance';
 import type { PopupRequest, PopupResponse } from '../lib/messages';
 
 // ── the trust gate ────────────────────────────────────────────────────────
@@ -215,6 +216,9 @@ export interface MatchLiveView {
   scoreLabel: string | null;
   resumeName: string | null;
   gaps: string[];
+  /** PR3 — two verbatim salary facts, never a verdict (design decision 5).
+   *  `undefined` when the desktop found no range and no stored expectation. */
+  salary?: { posting: string; expectation?: string };
 }
 
 const NO_MATCH_VIEW = (text: string, tone: 'ok' | 'err'): MatchLiveView => ({
@@ -248,6 +252,7 @@ export function resolveMatchLiveResponse(res: PopupResponse): MatchLiveView {
     scoreLabel: SCORE_SOURCE_LABEL[result.scoreSource],
     resumeName: result.resumeName,
     gaps: result.gaps,
+    salary: result.salary,
   };
 }
 
@@ -293,7 +298,7 @@ function buildMatchResultCard(view: MatchLiveView): HTMLElement {
     card.append(meta);
   }
 
-  if (view.gaps.length > 0) {
+  if (view.gaps.length > 0 || view.salary) {
     const why = document.createElement('details');
     why.className = 'why-toggle';
     // Collapsed by default — open, the popup's connected+Check-fit view
@@ -304,15 +309,28 @@ function buildMatchResultCard(view: MatchLiveView): HTMLElement {
     summary.textContent = 'why?';
     why.append(summary);
 
-    const gapsWrap = document.createElement('div');
-    gapsWrap.className = 'match-result__gaps';
-    for (const gap of view.gaps) {
-      const chip = document.createElement('span');
-      chip.className = 'match-result__gap';
-      chip.textContent = gap;
-      gapsWrap.append(chip);
+    if (view.gaps.length > 0) {
+      const gapsWrap = document.createElement('div');
+      gapsWrap.className = 'match-result__gaps';
+      for (const gap of view.gaps) {
+        const chip = document.createElement('span');
+        chip.className = 'match-result__gap';
+        chip.textContent = gap;
+        gapsWrap.append(chip);
+      }
+      why.append(gapsWrap);
     }
-    why.append(gapsWrap);
+
+    if (view.salary) {
+      // Two verbatim facts side by side, never a verdict (design decision 5)
+      // — same wording the on-page fit badge uses (`lib/fit-badge.ts`).
+      const salaryLine = document.createElement('p');
+      salaryLine.className = 'match-result__meta';
+      const bits = [`Posting says ${view.salary.posting}`];
+      if (view.salary.expectation) bits.push(`You want ${view.salary.expectation}`);
+      salaryLine.textContent = bits.join(' · ');
+      why.append(salaryLine);
+    }
 
     if (view.resumeName) {
       const resumeLine = document.createElement('p');
@@ -324,6 +342,28 @@ function buildMatchResultCard(view: MatchLiveView): HTMLElement {
   }
 
   return card;
+}
+
+// ── Stamp this results page (PR3 §B.4) ──────────────────────────────────────
+
+/**
+ * Given a `stampResults` response, return the message text + tone. UNLIKE
+ * `resolveAnswersSaveResponse`, a desktop-side refusal is NOT surfaced as
+ * `err` — `PopupResponse`'s `stampResults` doc: any refusal short of "not
+ * paired"/"no active tab" degrades to `ok:true, stamped:0` with an
+ * explanatory `status`, which reads as a neutral/ok status line here too.
+ *
+ * Pure: no DOM access, no side effects.
+ */
+export function resolveStampResultsResponse(res: PopupResponse): {
+  text: string;
+  tone: 'ok' | 'err';
+} {
+  if (!res.ok) return { text: res.error, tone: 'err' };
+  if (res.kind !== 'stampResults') {
+    return { text: 'Unexpected response — please retry.', tone: 'err' };
+  }
+  return { text: res.status, tone: 'ok' };
 }
 
 // ── Save my answers ───────────────────────────────────────────────────────
@@ -500,6 +540,16 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
   matchResult.className = 'match-result';
   matchResult.hidden = true;
 
+  // "Stamp this results page" (PR3 §B.4) — hidden until the preference read
+  // resolves it on (re-checked in `checkPage`, never cached at mount).
+  const btnStampResults = document.createElement('button');
+  btnStampResults.id = 'btn-stamp-results';
+  btnStampResults.type = 'button';
+  btnStampResults.className = 'btn btn--quiet';
+  btnStampResults.title = 'Mark each visible job card on this results page saved or applied';
+  btnStampResults.textContent = 'Stamp this results page';
+  btnStampResults.hidden = true;
+
   const chkApplied = document.createElement('input');
   chkApplied.id = 'chk-applied';
   chkApplied.type = 'checkbox';
@@ -509,7 +559,7 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
   chkSpan.textContent = 'I already applied to this job';
   chkLabel.append(chkApplied, chkSpan);
 
-  jobGroup.append(btnImport, btnCheckFit, matchResult, chkLabel);
+  jobGroup.append(btnImport, btnCheckFit, btnStampResults, matchResult, chkLabel);
 
   const formGroup = document.createElement('section');
   formGroup.id = 'group-form';
@@ -741,6 +791,27 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
     }
   }
 
+  async function doStampResults(): Promise<void> {
+    btnStampResults.disabled = true;
+    setMsg('Stamping…', 'muted');
+    try {
+      const res = await deps.send({ kind: 'stampResults' });
+      const { text, tone } = resolveStampResultsResponse(res);
+      setMsg(text, tone);
+    } catch {
+      setMsg('Could not stamp this page. Please retry.', 'err');
+    } finally {
+      btnStampResults.disabled = false;
+    }
+  }
+
+  /** Re-read the results-stamp preference — called on mount and every
+   *  `checkPage()` (tab show/activation), never cached: R7/PR3 "the
+   *  panel/popup must honour them live". */
+  async function refreshStampResultsVisibility(): Promise<void> {
+    btnStampResults.hidden = !(await getStampResultsPages());
+  }
+
   async function doSaveAnswers(): Promise<void> {
     btnSaveAnswers.disabled = true;
     setMsg('Saving your answers…', 'muted');
@@ -758,8 +829,13 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
 
   btnImport.addEventListener('click', () => void doImport());
   btnCheckFit.addEventListener('click', () => void doCheckFit());
+  btnStampResults.addEventListener('click', () => void doStampResults());
   btnFill.addEventListener('click', () => void doFill());
   btnSaveAnswers.addEventListener('click', () => void doSaveAnswers());
+
+  // Popup: a fresh mount per open already reads the current preference once;
+  // the panel additionally re-reads it on every `checkPage()` below.
+  void refreshStampResultsVisibility();
 
   // ── fields probe (gated on trust) ──────────────────────────────────────
 
@@ -792,6 +868,7 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
   function checkPage(): void {
     if (!trusted) return;
     void runFieldsProbeCheck();
+    void refreshStampResultsVisibility();
   }
 
   // ── the trust gate ──────────────────────────────────────────────────────

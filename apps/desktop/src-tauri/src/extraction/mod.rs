@@ -6,6 +6,8 @@ pub mod pdf;
 pub mod plain;
 pub mod registry;
 pub mod rtf;
+/// Pure `match.live` salary-range extraction (PR3) — see its module doc.
+pub mod salary;
 pub mod structured;
 pub mod types;
 

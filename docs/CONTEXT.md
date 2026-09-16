@@ -644,6 +644,24 @@ programmatic assignment.
 _Avoid_: "upload" (nothing crosses a network boundary — the file moves from the local desktop app
 into the local page over the loopback bridge, then the browser's own DOM)
 
+**On-page badge**:
+The fixed, read-only pill the extension renders on the current page after a successful **Check-fit**
+gesture, expanding on click to a mini card. Opt-in, default OFF; no form action, ever
+(`apps/extension/src/lib/fit-badge.ts`, `apps/extension/src/lib/appearance.ts`). Shape, the
+closed-shadow-root privacy boundary and its limits are owned by
+[ADR 0009](knowledge/decision-records/0009-assisted-autofill.md)'s 2026-09-15 amendment.
+_Avoid_: "overlay" as a synonym for this specifically (that word is reserved for
+`renderSummaryOverlay`, the existing autofill fill-summary, a distinct surface)
+
+**Results stamp**:
+The small, read-only saved/applied marker the extension places next to each matched job-card link on
+a results-listing page, after its own gesture. Opt-in, default OFF
+(`apps/extension/src/lib/results-stamp.ts`, `apps/extension/src/lib/appearance.ts`). Verb, batching
+and the closed-shadow-root privacy boundary are owned by
+[ADR 0009](knowledge/decision-records/0009-assisted-autofill.md)'s 2026-09-15 amendment.
+_Avoid_: conflating with the **On-page badge** (that carries the score/gaps for the CURRENT job;
+this carries saved/applied only, for MANY cards on a listing page)
+
 ## Domain — Packaged builds
 
 **Flavour**:
