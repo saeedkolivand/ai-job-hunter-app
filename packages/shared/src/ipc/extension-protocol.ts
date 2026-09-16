@@ -29,6 +29,7 @@ import {
   type ExtensionAgentQueryResult,
   type ExtensionAnswerAssistRequest,
   type ExtensionAnswerAssistResult,
+  type ExtensionAnswerAssistTopic,
   type ExtensionAnswerPair,
   type ExtensionAnswersSaveRequest,
   type ExtensionAnswersSaveResult,
@@ -84,6 +85,7 @@ export {
   type ExtensionAgentQueryResult,
   type ExtensionAnswerAssistRequest,
   type ExtensionAnswerAssistResult,
+  type ExtensionAnswerAssistTopic,
   type ExtensionAnswerPair,
   type ExtensionAnswersSaveRequest,
   type ExtensionAnswersSaveResult,
@@ -363,6 +365,10 @@ export const ExtensionAnswerPairSchema = z.object({
 export const ExtensionAnswersSaveRequestSchema = z.object({
   url: z.string().min(1),
   answers: z.array(ExtensionAnswerPairSchema),
+  // Additive/optional (PR4) — marks an AUTOMATED save from the submit-watcher's
+  // OWN save-answers-on-submit opt-in. The desktop honors it only when that
+  // opt-in is on; absent/false is the ordinary user-clicked save.
+  auto: z.boolean().optional(),
 }) satisfies z.ZodType<ExtensionAnswersSaveRequest>;
 
 /**
@@ -437,6 +443,8 @@ export const ExtensionAnswerAssistRequestSchema = z.object({
   preset: z.enum(['shorten', 'expand', 'rephrase', 'impact', 'grammar']).optional(),
   instruction: z.string().optional(),
   maxChars: z.number().int().positive().optional(),
+  // Additive/optional (PR4) — see ExtensionAnswerAssistTopic's doc.
+  topic: z.enum(['company-brief', 'salary-answer']).optional(),
 }) satisfies z.ZodType<ExtensionAnswerAssistRequest>;
 
 /**
@@ -575,6 +583,7 @@ export const ExtensionSettingsKeySchema = z.enum([
   'autofill',
   'aiAssist',
   'autotrack',
+  'saveAnswersOnSubmit',
 ]) satisfies z.ZodType<ExtensionSettingsKey>;
 
 /** `settings.get` payload — no fields, and none allowed (`.strict()` rejects a
@@ -595,6 +604,7 @@ export const ExtensionSettingsValuesSchema = z.object({
   autofill: z.boolean(),
   aiAssist: z.boolean(),
   autotrack: z.boolean(),
+  saveAnswersOnSubmit: z.boolean(),
 }) satisfies z.ZodType<ExtensionSettingsValues>;
 
 /**

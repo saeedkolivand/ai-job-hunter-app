@@ -9,8 +9,10 @@
 //!     deep link; no id, no other settings sub-page),
 //!   - `ajh://generate?url=<percent-encoded http(s) job url>` (PR2 — documents
 //!     into ATS: "Generate in the app" from the extension's Documents tab
-//!     when no generation exists for a job yet), and
-//!   - `ajh://open?url=<percent-encoded http(s) job url>` (PR2: "Open in app").
+//!     when no generation exists for a job yet),
+//!   - `ajh://open?url=<percent-encoded http(s) job url>` (PR2: "Open in app"), and
+//!   - `ajh://prep?url=<percent-encoded http(s) job url>` (PR4 — the Prep tab's
+//!     "Prepare in the app" action, when nothing has been generated for a job yet).
 //!
 //! Everything else yields `None` (the caller then just focuses the window,
 //! navigating nowhere). Every target is navigation-only: it focuses the window
@@ -39,12 +41,16 @@ pub enum FocusTarget {
     /// term if no job exists for it (PR2). From `ajh://open?url=<canonical job
     /// url>` — the extension's "Open in app" action.
     OpenJob(String),
+    /// Land on the Prep tab's content for a job with no saved generation yet, the url prefilled
+    /// (PR4). From `ajh://prep?url=<canonical job url>` — the extension side panel's "Prepare in
+    /// the app" action. Same normalized form every other job-url target on this bridge carries.
+    PrepForJob(String),
 }
 
 const SCHEME: &str = "ajh://";
 
 /// Scan argv for the first valid `ajh://autopilot/<id>`, `ajh://settings/extension`,
-/// `ajh://generate?url=…`, or `ajh://open?url=…` URL. Returns `None` for any other scheme,
+/// `ajh://generate?url=…`, `ajh://open?url=…`, or `ajh://prep?url=…` URL. Returns `None` for any other scheme,
 /// host/action, extra path segments/params, unparseable/non-http(s)/oversized url, or a
 /// malformed id — the deny-by-default posture for an externally-controlled input.
 pub fn parse_focus_target(argv: &[String]) -> Option<FocusTarget> {
@@ -82,9 +88,9 @@ fn parse_one(arg: &str) -> Option<FocusTarget> {
 /// string, same "at most 2048 chars" posture the PR2 spec sets.
 const MAX_JOB_URL_LEN: usize = 2048;
 
-/// `ajh://generate?url=<percent-encoded job url>` / `ajh://open?url=<percent-encoded job url>` —
-/// `rest` is the scheme-stripped, backslash-checked tail. `None` for anything else: a
-/// non-`generate`/`open` action, a missing/extra query param, a url that fails to percent-decode,
+/// `ajh://generate?url=<percent-encoded job url>` / `ajh://open?url=<percent-encoded job url>` /
+/// `ajh://prep?url=<percent-encoded job url>` — `rest` is the scheme-stripped, backslash-checked
+/// tail. `None` for anything else: a non-`generate`/`open`/`prep` action, a missing/extra query param, a url that fails to percent-decode,
 /// isn't http(s), or is over [`MAX_JOB_URL_LEN`] — a malformed or hostile deep link degrades to
 /// "focus the window, navigate nowhere" like every other reject case in [`parse_one`]. Normalises
 /// through [`crate::applications::normalize_job_url`] — the SAME canonical form
@@ -92,7 +98,7 @@ const MAX_JOB_URL_LEN: usize = 2048;
 /// renderer's own job lookup by url agrees with every other surface.
 fn parse_job_url_target(rest: &str) -> Option<FocusTarget> {
     let (action, query) = rest.split_once('?')?;
-    if action != "generate" && action != "open" {
+    if action != "generate" && action != "open" && action != "prep" {
         return None;
     }
     let encoded = query.strip_prefix("url=")?;
@@ -123,6 +129,7 @@ fn parse_job_url_target(rest: &str) -> Option<FocusTarget> {
     match action {
         "generate" => Some(FocusTarget::GenerateForJob(normalized)),
         "open" => Some(FocusTarget::OpenJob(normalized)),
+        "prep" => Some(FocusTarget::PrepForJob(normalized)),
         _ => unreachable!("action is checked above"),
     }
 }

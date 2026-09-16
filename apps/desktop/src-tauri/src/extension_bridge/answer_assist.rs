@@ -104,6 +104,9 @@
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+use super::answer_assist_topic::{
+    parse_topic, research_company_brief, topic_question, topic_requires_draft, AssistTopic,
+};
 use super::msg;
 use crate::applications::{normalize_job_url, normalize_question, Application, ApplicationStore};
 use crate::documents::DocumentStore;
@@ -358,56 +361,6 @@ fn parse_mode(payload: &Value) -> AssistMode {
         Some("rewrite") => AssistMode::Rewrite,
         _ => AssistMode::Draft,
     }
-}
-
-/// The picked field's own character limit (`maxChars`, draft mode only —
-/// ADR-044 decision 6), read from the DOM by the extension's scan and
-/// therefore UNTRUSTED like every other field on this frame.
-///
-/// Two different bounds meet on this value and they are NOT the same thing.
-/// The WIRE bound (`ExtensionAnswerAssistRequestSchema` in
-/// `packages/shared/src/ipc/extension-protocol.ts`) pins the SHAPE only, so a
-/// well-behaved client cannot send a float or a negative — but a schema is a
-/// courtesy, never a guarantee, because this frame arrives over a socket the
-/// desktop does not author. The DESKTOP CLAMP is here: anything that is not a
-/// positive JSON integer (a float, a string, a negative, zero, a missing key,
-/// an older extension that never sends it) reads as "no limit" and leaves the
-/// draft path exactly as it was, and an over-large value is reduced to
-/// [`DRAFT_CAP`] — the char cap every returned draft is clamped to anyway, so
-/// a bigger number could never buy a longer answer. Never an error: a bad
-/// limit must degrade to today's behaviour, never refuse a legitimate draft,
-/// which is also why the shared TS constant
-/// (`EXTENSION_ANSWER_ASSIST_MAX_CHARS`, pinned to [`DRAFT_CAP`] by
-/// [`super::test`]) is advertised as a clamp rather than enforced on the wire.
-///
-/// `mode` is a parameter rather than a call-site `if` so the "rewrite mode
-/// IGNORES the field" rule is part of this pure, directly-testable function:
-/// a rewrite already carries its own instruction (which may itself ask for a
-/// length), and its returned text is never verified against a limit.
-///
-/// NOT YET WIRED INTO THE DRAFT PATH — hence the `dead_code` allow, which is
-/// narrowed to non-test builds so a genuinely orphaned helper still shows up
-/// once the caller lands. Stating the limit in the draft prompt and verifying
-/// the returned text against it in code (a single re-ask on overshoot) is
-/// spec item B1, deliberately deferred: it lands inside the very compose /
-/// registry / stream functions PR #1103 rewrites, so it is added on top of
-/// that branch's round machinery instead of forking a second copy. Until then
-/// the parser and the wire field ship on their own and the feature degrades
-/// gracefully — the extension counts the returned text itself.
-#[cfg_attr(not(test), allow(dead_code))]
-fn parse_max_chars(payload: &Value, mode: AssistMode) -> Option<usize> {
-    if mode != AssistMode::Draft {
-        return None;
-    }
-    let requested = payload.get("maxChars")?.as_u64()?;
-    if requested == 0 {
-        return None;
-    }
-    Some(
-        usize::try_from(requested)
-            .unwrap_or(DRAFT_CAP)
-            .min(DRAFT_CAP),
-    )
 }
 
 /// The field's CURRENT text to rewrite (rewrite mode only) — page/user-
@@ -717,7 +670,16 @@ pub(super) async fn resolve_answer_assist(
     check_ai_assist_gate(ai_assist_enabled)?;
 
     let mode = parse_mode(payload);
-    let question = clamp_bytes(parse_question(payload), MAX_QUESTION_BYTES);
+    let topic = parse_topic(payload)?;
+    topic_requires_draft(topic, mode)?;
+    // A topic-driven request composes its own `question` server-side (see
+    // `topic_question`'s doc) — any client-sent `question` is ignored, never
+    // merely preferred, so a caller can't smuggle a different question in
+    // under a topic's grounding.
+    let question = match topic {
+        Some(t) => topic_question(t).to_string(),
+        None => clamp_bytes(parse_question(payload), MAX_QUESTION_BYTES),
+    };
     if question.is_empty() {
         return Err(AppError::Validation("question is required".to_string()));
     }
@@ -803,16 +765,46 @@ pub(super) async fn resolve_answer_assist(
                 .as_ref()
                 .map(|a| a.job_description.clone())
                 .unwrap_or_default();
-            let company_brief = app_ctx
+            let mut company_brief = app_ctx
                 .as_ref()
                 .map(|a| a.brief.clone())
                 .filter(|b| !b.trim().is_empty())
                 .unwrap_or_default();
 
+            // The `company-brief` topic's grounding step — see
+            // `answer_assist_topic::research_company_brief`'s own doc for why this rides the
+            // existing `CompanyResearch` enricher rather than a second implementation. This runs
+            // BEFORE `compose_draft_stream`'s own `start_and_register` (the registry's first
+            // `register` call for this request), so an `assist.cancel` racing ahead of it would
+            // otherwise still pay for the grounding call (`charge_daily` + the provider round
+            // trip) even though the compose it was for never runs. `is_cancelled_early` is a
+            // non-consuming peek — `register` still reaches and consumes the SAME marker
+            // afterwards — so this is a spend guard, not a replacement for that ownership.
+            if topic == Some(AssistTopic::CompanyBrief) && company_brief.trim().is_empty() {
+                if registry.is_cancelled_early(req_id, r#gen) {
+                    return Err(AppError::Message("Job cancelled".to_string()));
+                }
+                company_brief =
+                    research_company_brief(&completer, &job_description, app_ctx.as_ref()).await;
+            }
+
             let is_salary =
                 super::answers_suggest::is_salary_question(&normalize_question(&question));
             let salary_range = if is_salary {
-                resolve_salary_range(&completer, &limiter, provider_id, app_ctx.as_ref()).await
+                // Resolved once here (the same wiring `ai_lookup_salary_reasoned` uses) so a
+                // repeat lookup for the same role/company/currency hits the SAME `salary_range`
+                // `KvCache` namespace — both the plain salary-question flow AND the `salary-answer`
+                // topic (which routes here too, via the SAME `is_salary_question` recognition) get
+                // the 7-day cache instead of re-spending on every request.
+                let cache = app.try_state::<crate::pipeline::cache::KvCache>();
+                resolve_salary_range(
+                    &completer,
+                    &limiter,
+                    provider_id,
+                    cache.as_deref(),
+                    app_ctx.as_ref(),
+                )
+                .await
             } else {
                 None
             };
@@ -1149,10 +1141,21 @@ impl DraftComposer for BridgeComposeRound<'_> {
 /// crate has no `tauri::test` mock-app harness (see `SalarySearcher`'s doc).
 /// `provider_id` is passed separately (the trait has no such method) — the
 /// sole production caller resolves it once off its own `Completer`.
+///
+/// `cache` is injected — same discipline as [`crate::commands::ai_salary::
+/// ai_lookup_salary_reasoned`], the other production caller of `enrich`, and
+/// the same reason `SalarySearcher` is injected above: this function stays
+/// `AppHandle`-free and testable. The sole production caller resolves it once
+/// via `app.try_state::<KvCache>()` — an `assist.cancel`-free lookup under the
+/// SAME `salary_range` namespace `ai_lookup_salary` uses, so a repeat
+/// role/company/currency query (a re-click of the Prep tab's salary-answer
+/// button, or a second salary-shaped question in the same session) hits the
+/// 7-day cache instead of re-spending a provider round trip.
 async fn resolve_salary_range<S: crate::salary_research::SalarySearcher>(
     searcher: &S,
     limiter: &crate::limits::Limiter,
     provider_id: &str,
+    cache: Option<&crate::pipeline::cache::KvCache>,
     app_ctx: Option<&Application>,
 ) -> Option<SalaryRange> {
     if let Some(range) = scraped_salary_range(app_ctx) {
@@ -1167,14 +1170,10 @@ async fn resolve_salary_range<S: crate::salary_research::SalarySearcher>(
         tracing::debug!("answer_assist: salary lookup skipped, daily budget exceeded: {e}");
         return None;
     }
-    // No `KvCache` handle threaded in here (no `AppHandle` at this call depth) —
-    // a cold lookup every time is an acceptable v1 cost for this opt-in,
-    // low-traffic path; `None` still lets `enrich` skip its cache-read branch
-    // cleanly rather than erroring.
     crate::salary_research::SalaryResearch
         .enrich(
             searcher,
-            None,
+            cache,
             role,
             company,
             "",
@@ -1348,10 +1347,3 @@ fn unregister_after_request(
 #[cfg(test)]
 #[path = "answer_assist_tests.rs"]
 mod tests;
-
-/// Unit tests for [`parse_max_chars`] — split into this sibling file (R8
-/// line-budget split) now that `answer_assist_tests.rs`'s rewrite has
-/// landed, mirroring the existing `#[path]` convention used above.
-#[cfg(test)]
-#[path = "answer_assist_max_chars_tests.rs"]
-mod parse_max_chars_tests;

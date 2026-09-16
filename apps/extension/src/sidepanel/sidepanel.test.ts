@@ -104,6 +104,8 @@ function buildPanelDom(): void {
     '<div id="connection-pill-host"><button id="btn-settings"></button></div></header>' +
     '<section id="view-connected" hidden>' +
     '<p id="trust-line" hidden></p>' +
+    '<div id="auto-save-notice" hidden><p id="auto-save-notice-text"></p>' +
+    '<button id="auto-save-notice-dismiss"></button></div>' +
     '<div id="tabs-host"></div>' +
     '</section>' +
     '<div id="connection-views-host"></div>';
@@ -403,22 +405,24 @@ describe('the gear button opens the Settings page', () => {
   });
 });
 
-describe('the tab bar (Job / Documents / Answers)', () => {
-  it('mounts three tabs, Job active by default', () => {
+describe('the tab bar (Job / Documents / Answers / Prep)', () => {
+  it('mounts four tabs, Job active by default', () => {
     const buttons = document.querySelectorAll<HTMLButtonElement>('.tab');
-    expect(buttons).toHaveLength(3);
+    expect(buttons).toHaveLength(4);
     expect(document.querySelector<HTMLButtonElement>('[data-tab="job"]')!.classList).toContain(
       'active'
     );
   });
 
-  it('mounts job-status + job-tools into the Job panel, the Documents host into the Documents panel, and answer-tools into the Answers panel', () => {
+  it('mounts job-status + job-tools into the Job panel, the Documents host into the Documents panel, answer-tools into the Answers panel, and the Prep host into the Prep panel', () => {
     const jobPanel = document.querySelector<HTMLElement>('[data-section="job"]')!;
     const documentsPanel = document.querySelector<HTMLElement>('[data-section="documents"]')!;
     const answersPanel = document.querySelector<HTMLElement>('[data-section="answers"]')!;
+    const prepPanel = document.querySelector<HTMLElement>('[data-section="prep"]')!;
     expect(jobPanel.querySelector('#job-tools-host')).not.toBeNull();
     expect(documentsPanel.querySelector('#documents-host')).not.toBeNull();
     expect(answersPanel.querySelector('#answer-tools-host')).not.toBeNull();
+    expect(prepPanel.querySelector('#prep-host')).not.toBeNull();
   });
 });
 
@@ -792,5 +796,68 @@ describe('active tab restore at load (storage.session + Appearance default, item
     await flush();
 
     expect(document.querySelector('[data-tab="job"]')!.classList.contains('active')).toBe(true);
+  });
+});
+
+// ── the one-shot save-answers-on-submit auto-save notice (PR4, decision 7) ──
+// `checkAutoSaveNotice()` fires unconditionally at module load, ahead of
+// every other `sendMessage` call sidepanel.ts makes — same
+// `vi.resetModules()` + fresh import discipline as the "active tab restore"
+// block above, since it too only runs once, at load.
+
+describe('the one-shot save-answers-on-submit auto-save notice (PR4)', () => {
+  afterEach(() => {
+    vi.mocked(browser.runtime.sendMessage).mockReset();
+  });
+
+  it('shows the notice text and reveals the banner when one is pending', async () => {
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'autoSaveNotice',
+      text: 'Saved 1 answer from this submit — change this in Settings.',
+    });
+    vi.resetModules();
+    buildPanelDom();
+
+    await import('./sidepanel');
+    await flush();
+
+    expect(document.getElementById('auto-save-notice')!.hidden).toBe(false);
+    expect(document.getElementById('auto-save-notice-text')!.textContent).toBe(
+      'Saved 1 answer from this submit — change this in Settings.'
+    );
+  });
+
+  it('leaves the banner hidden when nothing is pending', async () => {
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'autoSaveNotice',
+      text: null,
+    });
+    vi.resetModules();
+    buildPanelDom();
+
+    await import('./sidepanel');
+    await flush();
+
+    expect(document.getElementById('auto-save-notice')!.hidden).toBe(true);
+  });
+
+  it('the dismiss button hides the banner', async () => {
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'autoSaveNotice',
+      text: 'Saved 1 answer from this submit.',
+    });
+    vi.resetModules();
+    buildPanelDom();
+
+    await import('./sidepanel');
+    await flush();
+    expect(document.getElementById('auto-save-notice')!.hidden).toBe(false);
+
+    document.getElementById('auto-save-notice-dismiss')!.dispatchEvent(new Event('click'));
+
+    expect(document.getElementById('auto-save-notice')!.hidden).toBe(true);
   });
 });

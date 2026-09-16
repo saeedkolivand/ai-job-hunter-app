@@ -5,11 +5,13 @@
 //! `agent_read` itself are the two `limit` constants `agent_cli::mcp` derives
 //! its tool schema from (issue #1129). See that module's own doc for the
 //! resource-table picture this fits into. Reaches into `super::` for the
-//! shared allowlist plumbing (`project_value`, `fence_posting_display_fields`,
-//! `list_autopilots`) rather than duplicating any of it — a child module can
-//! see its parent's private items, so no visibility widening was needed for
-//! that half; only the three helper fns this module's own tests borrow from
-//! `agent_read::tests` needed `pub(super)` (see their own doc there).
+//! shared allowlist plumbing (`project_value`, `list_autopilots`) and into
+//! `super::best_matches::` for `fence_posting_display_fields` rather than
+//! duplicating any of it — a sibling module can see another sibling's
+//! `pub(super)` items via their shared parent, so no visibility widening was
+//! needed for that half; only the three helper fns this module's own tests
+//! borrow from `agent_read::tests` needed `pub(super)` (see their own doc
+//! there).
 //!
 //! ## Compact rows + server-side filters (issue #1167)
 //! A row is compact by default — `title`/`company`/`location`/`score`/
@@ -57,7 +59,8 @@ use crate::extension_bridge::paging;
 use crate::scraping::boards::common::canonical_job_key;
 use crate::scraping::engine::location_filter::REMOTE_MARKERS;
 
-use super::{fence_posting_display_fields, list_autopilots, project_value};
+use super::best_matches::fence_posting_display_fields;
+use super::{list_autopilots, project_value};
 
 /// `found-jobs` resource's per-row COMPACT payload — a SMALLER allowlist than
 /// `agent_read::AgentJob` over the same `autopilot::FoundJob` source.
@@ -656,7 +659,7 @@ fn found_jobs_cursor_issuer(autopilot_id: Option<&str>, filters: &FoundJobsFilte
 ///
 /// Directly unit-testable with hand-built `Autopilot` records, no
 /// `AppHandle` — same pure/impure split as `agent_read::resolve_job`/
-/// `agent_read::resolve_best_matches`. `pub(super)` because `agent_read`'s
+/// `agent_read::best_matches::resolve_best_matches`. `pub(super)` because `agent_read`'s
 /// own `no_resource_output_ever_carries_a_forbidden_key` test calls this
 /// directly to sweep every resource's output in one place.
 ///

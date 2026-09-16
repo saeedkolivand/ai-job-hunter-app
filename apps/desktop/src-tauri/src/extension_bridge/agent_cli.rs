@@ -178,7 +178,7 @@ enum Verb {
         /// changing which rows a traversal contains — the SAME per-list
         /// issuer ambiguity `found-jobs`' own cursor exists to close, this
         /// resource is no longer exempt from. See
-        /// `agent_read::best_matches_cursor_issuer`/`parse_best_matches_cursor`.
+        /// `agent_read::best_matches::best_matches_cursor_issuer`/`parse_best_matches_cursor`.
         cursor: Option<String>,
         /// Case-insensitive substring over title or company (issue #1168).
         query: Option<String>,

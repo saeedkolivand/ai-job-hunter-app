@@ -49,6 +49,7 @@ const mockClient = vi.hoisted(() => ({
   suggestAnswers: vi.fn(),
   matchLive: vi.fn(),
   answerAssist: vi.fn(),
+  cancelCurrent: vi.fn(),
   autotrackEnabled: vi.fn(),
   agentQuery: vi.fn(),
   settingsGet: vi.fn(),
@@ -601,6 +602,79 @@ describe('documentsList request', () => {
       result: { ok: false, resource: 'documents', error: 'Assisted autofill is off.' },
       url: '',
     });
+  });
+});
+
+describe('prepGet request (PR4)', () => {
+  it('resolves the active tab url server-side, calls agent.query(prep, {url}), and echoes the url back', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.agentQuery.mockResolvedValue({
+      ok: true,
+      resource: 'prep',
+      data: { generation: null },
+    });
+
+    const res = await send({ kind: 'prepGet' });
+
+    expect(mockClient.agentQuery).toHaveBeenCalledWith('prep', {
+      url: 'https://jobs.example.com/posting/9',
+    });
+    expect(res).toEqual({
+      ok: true,
+      kind: 'prepGet',
+      result: { ok: true, resource: 'prep', data: { generation: null } },
+      url: 'https://jobs.example.com/posting/9',
+    });
+  });
+
+  it('passes a desktop-side refusal straight through as result, never folds it (unlike trustLineJob)', async () => {
+    tabsQueryMock.mockResolvedValue([]);
+    mockClient.agentQuery.mockResolvedValue({
+      ok: false,
+      resource: 'prep',
+      error: 'Assisted autofill is off.',
+    });
+
+    const res = await send({ kind: 'prepGet' });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'prepGet',
+      result: { ok: false, resource: 'prep', error: 'Assisted autofill is off.' },
+      url: '',
+    });
+  });
+});
+
+describe('assistCancel request (PR4)', () => {
+  it('calls BridgeClient.cancelCurrent and always answers ok:true', async () => {
+    const res = await send({ kind: 'assistCancel' });
+
+    expect(mockClient.cancelCurrent).toHaveBeenCalled();
+    expect(res).toEqual({ ok: true, kind: 'assistCancel' });
+  });
+});
+
+describe('autoSaveNotice request (PR4)', () => {
+  it('returns null when no notice is pending', async () => {
+    const res = await send({ kind: 'autoSaveNotice' });
+    expect(res).toEqual({ ok: true, kind: 'autoSaveNotice', text: null });
+  });
+
+  it('returns and clears a pending notice — read-once', async () => {
+    await browser.storage.session.set({ autoSaveNotice: 'Saved 1 answer from this submit.' });
+
+    const first = await send({ kind: 'autoSaveNotice' });
+    expect(first).toEqual({
+      ok: true,
+      kind: 'autoSaveNotice',
+      text: 'Saved 1 answer from this submit.',
+    });
+
+    const second = await send({ kind: 'autoSaveNotice' });
+    expect(second).toEqual({ ok: true, kind: 'autoSaveNotice', text: null });
   });
 });
 
@@ -1886,6 +1960,41 @@ describe('answerAssist request', () => {
       ok: true,
       kind: 'answerAssist',
       result: { ok: false, error: 'AI answer drafting is off.' },
+    });
+  });
+
+  it('forwards the Prep tab topic field (PR4) — no rowId, so the no-row branch runs', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.answerAssist.mockResolvedValue({
+      ok: true,
+      question: 'Company brief',
+      draft: 'Acme makes widgets.',
+      sourced: {},
+    });
+
+    const res = await send({
+      kind: 'answerAssist',
+      question: 'Company brief',
+      searchWeb: false,
+      topic: 'company-brief',
+    });
+
+    expect(mockClient.answerAssist).toHaveBeenCalledWith(
+      {
+        question: 'Company brief',
+        searchWeb: false,
+        url: 'https://jobs.example.com/posting/9',
+        topic: 'company-brief',
+      },
+      expect.any(Function)
+    );
+    expect(res).toEqual({
+      ok: true,
+      kind: 'answerAssist',
+      result: { ok: true, question: 'Company brief', draft: 'Acme makes widgets.', sourced: {} },
     });
   });
 

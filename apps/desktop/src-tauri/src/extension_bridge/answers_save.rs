@@ -34,6 +34,55 @@ use crate::error::{AppError, AppResult};
 const MAX_QUESTION_BYTES: usize = 1_000;
 const MAX_ANSWER_BYTES: usize = 8_000;
 
+/// Refusal text for an AUTO-flagged `answers.save` (`auto: true`, the submit-watch injected
+/// entry's synchronous capture) while the dedicated `saveAnswersOnSubmit` opt-in is off — a fixed
+/// sentinel, mirrors `status_update::AUTOTRACK_OFF_MESSAGE`'s wording style.
+const SAVE_ANSWERS_ON_SUBMIT_OFF_MESSAGE: &str =
+    "Save answers on submit is off. Turn it on in AI Job Hunter → Settings → Accounts → Browser extension.";
+
+/// Refusal text when `auto` is PRESENT but not a JSON boolean — see
+/// [`auto_flag_is_malformed`]'s doc for why this must be a hard refusal, never a silent downgrade.
+const MALFORMED_AUTO_FLAG_MESSAGE: &str = "malformed answers.save request: auto must be a boolean";
+
+/// Whether the `auto` field is PRESENT on the payload but not a JSON boolean (a string, number,
+/// `null`, object, or array). A malformed `auto` must be a HARD refusal, never a silent downgrade
+/// to "manual" via [`is_auto_answers_save`]'s `Value::as_bool().unwrap_or(false)`: a manual save
+/// is gated ONLY on the (weaker) assisted-autofill opt-in, not on the dedicated
+/// `saveAnswersOnSubmit` opt-in this verb's AUTO path exists to require — so a malformed `auto`
+/// silently reading as `false` would let a would-be automated capture through on the wrong,
+/// weaker consent class, defeating the very gate [`auto_save_refused`] exists to enforce. `auto`
+/// absent is unaffected — byte-identical to today (still defaults to manual).
+///
+/// `status_update::is_auto_status_update` has the IDENTICAL `Value::as_bool().unwrap_or(false)`
+/// shape and is NOT hardened by a sibling of this function here — pre-existing, out of scope for
+/// this change.
+pub(super) fn auto_flag_is_malformed(payload: &Value) -> bool {
+    matches!(payload.get("auto"), Some(v) if !v.is_boolean())
+}
+
+/// The `auto` flag on an `answers.save` payload (default false when absent) — `true` marks the
+/// AUTOMATED submit-time capture from the `saveAnswersOnSubmit` opt-in, as opposed to the
+/// deliberate popup "Save my answers" click. Mirrors `status_update::is_auto_status_update`
+/// exactly, one write verb over. Callers MUST check [`auto_flag_is_malformed`] first — this
+/// function's own `unwrap_or(false)` treats a malformed value exactly like an absent one, which is
+/// correct ONLY once the malformed case has already been refused upstream.
+pub(super) fn is_auto_answers_save(payload: &Value) -> bool {
+    payload
+        .get("auto")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+/// Whether an AUTO `answers.save` must be REFUSED: an auto-flagged save is honored only while the
+/// dedicated `saveAnswersOnSubmit` opt-in is on — the decisive server-side boundary (PR4). A
+/// non-auto (deliberate popup click) save is never refused here — it keeps its existing behaviour,
+/// gated only by the pre-existing Autofill opt-in below. Mirrors
+/// `status_update::auto_write_refused` exactly: the extension's own client-side check (whether it
+/// even arms the submit-watch capture) is defense-in-depth only — this is the real gate.
+pub(super) fn auto_save_refused(payload: &Value, save_on_submit_enabled: bool) -> bool {
+    is_auto_answers_save(payload) && !save_on_submit_enabled
+}
+
 /// Hard cap on the number of `{question, answer}` entries a single
 /// `answers.save` call may carry — a pathological page (or a buggy/hostile
 /// collector) can't force an unbounded write; extra entries are silently
@@ -226,10 +275,37 @@ pub(super) fn resolve_answers_save(
 /// carries the only page-adjacent text the popup renders — fixed counts plus
 /// the already-trusted title/company snapshot).
 pub(super) fn handle_answers_save(app: &AppHandle, req_id: &str, payload: &Value) -> String {
+    // Hard refusal, BEFORE any opt-in check (PR4 hardening): a present-but-non-boolean `auto`
+    // must never silently degrade to "manual" — see `auto_flag_is_malformed`'s doc.
+    if auto_flag_is_malformed(payload) {
+        return answers_result_reply(
+            req_id,
+            Err(AppError::Validation(
+                MALFORMED_AUTO_FLAG_MESSAGE.to_string(),
+            )),
+        );
+    }
     let enabled = app
         .try_state::<super::BridgeState>()
         .map(|s| s.autofill_enabled())
         .unwrap_or(false);
+    // Defense-in-depth precedent (PR4, mirrors `status_update::auto_write_refused`): an
+    // AUTO-flagged save (fired synchronously by the submit-watch injected entry, not a user
+    // click) is honored ONLY while the dedicated `saveAnswersOnSubmit` opt-in is on. A non-auto
+    // save is unaffected — it keeps today's byte-identical behaviour, gated only by `enabled`
+    // above.
+    let save_on_submit_enabled = app
+        .try_state::<super::BridgeState>()
+        .map(|s| s.save_answers_on_submit_enabled())
+        .unwrap_or(false);
+    if auto_save_refused(payload, save_on_submit_enabled) {
+        return answers_result_reply(
+            req_id,
+            Err(AppError::Validation(
+                SAVE_ANSWERS_ON_SUBMIT_OFF_MESSAGE.to_string(),
+            )),
+        );
+    }
     let outcome = app
         .try_state::<ApplicationStore>()
         .ok_or_else(|| AppError::Config("applications store unavailable".to_string()))

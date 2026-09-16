@@ -631,8 +631,9 @@ function normalizeAgentCallResult(payload: unknown): ExtensionAgentCallResult {
 /**
  * Hand-written guard for a `settings.result` payload (PR1 — extension read
  * tier; extension stays zod-free). Mirrors `ExtensionSettingsResultSchema`'s
- * discriminated union: `ok:true` requires a `settings` object whose three
- * fields are all booleans; `ok:false` requires a string `error`.
+ * discriminated union: `ok:true` requires a `settings` object whose FOUR
+ * fields (incl. `saveAnswersOnSubmit`, PR4) are all booleans; `ok:false`
+ * requires a string `error`.
  */
 function isExtensionSettingsResult(v: unknown): v is ExtensionSettingsResult {
   if (typeof v !== 'object' || v === null) return false;
@@ -643,7 +644,8 @@ function isExtensionSettingsResult(v: unknown): v is ExtensionSettingsResult {
     return (
       typeof s.autofill === 'boolean' &&
       typeof s.aiAssist === 'boolean' &&
-      typeof s.autotrack === 'boolean'
+      typeof s.autotrack === 'boolean' &&
+      typeof s.saveAnswersOnSubmit === 'boolean'
     );
   }
   if (o.ok === false) return typeof o.error === 'string';
@@ -1483,11 +1485,13 @@ export class BridgeClient {
    * failure — like `updateStatus`, a well-formed `ok:false` reply is NOT
    * folded away here: this is a deliberate click action, so the caller
    * (background.ts) must pass the `error` straight through to the popup
-   * instead of swallowing it.
+   * instead of swallowing it. `auto` (PR4, default `false`) mirrors
+   * {@link updateStatus}'s own param.
    */
   async saveAnswers(
     url: string,
-    answers: ExtensionAnswerPair[]
+    answers: ExtensionAnswerPair[],
+    auto = false
   ): Promise<ExtensionAnswersSaveResult> {
     await this.ensureConnected();
     if (this.phase !== 'connected' || !this.transport) {
@@ -1499,7 +1503,10 @@ export class BridgeClient {
     const envelope: ExtensionEnvelope = {
       type: EXTENSION_MESSAGE_TYPES.answersSave,
       reqId,
-      payload: { url, answers },
+      // `auto: true` marks the automated save-answers-on-submit write (PR4);
+      // the desktop re-gates it on that opt-in. Omitted for the ordinary
+      // "Save my answers" click — mirrors `updateStatus`'s own `auto` param.
+      payload: auto ? { url, answers, auto: true } : { url, answers },
     };
 
     return new Promise<ExtensionAnswersSaveResult>((resolve, reject) => {
@@ -2000,6 +2007,18 @@ export class BridgeClient {
     } catch {
       // Best-effort — the transport may already be closing.
     }
+  }
+
+  /**
+   * Cancel whatever `answerAssist` stream is currently pending, if any — an
+   * explicit user "Cancel" click (PR4 — the Prep tab's on-demand drafts).
+   * A thin public wrapper over {@link supersedeAnyPendingAssist}: cancelling
+   * is "start nothing new", the exact same retirement a NEW overlapping
+   * `answerAssist` call already performs at its own start — no second
+   * cancellation code path. A no-op when nothing is pending.
+   */
+  cancelCurrent(): void {
+    this.supersedeAnyPendingAssist();
   }
 
   // ── internals ─────────────────────────────────────────────────────────────

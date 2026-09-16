@@ -56,6 +56,7 @@ fn schema_lists_every_known_resource() {
             "documents",
             "found-jobs",
             "job",
+            "prep",
             "profile",
             "schema"
         ]
@@ -784,7 +785,7 @@ fn full_best_match_row_json() -> Value {
 
 #[test]
 fn best_match_projection_has_exact_keys() {
-    let out = resolve_best_matches(&[full_best_match_row_json()], 0, 20, None);
+    let out = best_matches::resolve_best_matches(&[full_best_match_row_json()], 0, 20, None);
     let row = &out["matches"][0];
     let mut keys: Vec<String> = row.as_object().unwrap().keys().cloned().collect();
     keys.sort();
@@ -835,7 +836,7 @@ fn best_match_projection_has_exact_keys() {
 
 #[test]
 fn best_match_projection_never_carries_forbidden_keys() {
-    let out = resolve_best_matches(&[full_best_match_row_json()], 0, 20, None);
+    let out = best_matches::resolve_best_matches(&[full_best_match_row_json()], 0, 20, None);
     let text = out.to_string();
     for forbidden in [
         "assistantNotes",
@@ -849,7 +850,7 @@ fn best_match_projection_never_carries_forbidden_keys() {
 #[test]
 fn best_match_limit_is_honored_and_capped_server_side() {
     let rows: Vec<Value> = (0..5).map(|_| full_best_match_row_json()).collect();
-    let out = resolve_best_matches(&rows, 0, 2, None);
+    let out = best_matches::resolve_best_matches(&rows, 0, 2, None);
     assert_eq!(out["matches"].as_array().unwrap().len(), 2);
     assert_eq!(out["returned"], 2);
     assert_eq!(out["total"], 5, "total is the pre-limit qualifying count");
@@ -871,7 +872,7 @@ fn best_match_title_company_location_are_fenced_as_untrusted_data() {
         "applied": false,
         "isAgency": false,
     });
-    let out = resolve_best_matches(&[malicious], 0, 20, None);
+    let out = best_matches::resolve_best_matches(&[malicious], 0, 20, None);
     let row = &out["matches"][0];
     for field in ["title", "company", "location"] {
         let value = row[field].as_str().expect("still a string");
@@ -889,15 +890,18 @@ fn best_match_title_company_location_are_fenced_as_untrusted_data() {
 #[test]
 fn best_matches_limit_clamps_to_the_server_max() {
     let payload = json!({ "resource": "best-matches", "limit": 5_000 });
-    assert_eq!(clamp_best_matches_limit(&payload), MAX_BEST_MATCHES_LIMIT);
+    assert_eq!(
+        best_matches::clamp_best_matches_limit(&payload),
+        best_matches::MAX_BEST_MATCHES_LIMIT
+    );
 }
 
 #[test]
 fn best_matches_limit_defaults_when_absent() {
     let payload = json!({ "resource": "best-matches" });
     assert_eq!(
-        clamp_best_matches_limit(&payload),
-        DEFAULT_BEST_MATCHES_LIMIT
+        best_matches::clamp_best_matches_limit(&payload),
+        best_matches::DEFAULT_BEST_MATCHES_LIMIT
     );
 }
 
@@ -910,8 +914,8 @@ fn best_matches_limit_defaults_when_absent() {
 fn best_matches_limit_zero_falls_back_to_the_default_not_to_zero() {
     let payload = json!({ "resource": "best-matches", "limit": 0 });
     assert_eq!(
-        clamp_best_matches_limit(&payload),
-        DEFAULT_BEST_MATCHES_LIMIT
+        best_matches::clamp_best_matches_limit(&payload),
+        best_matches::DEFAULT_BEST_MATCHES_LIMIT
     );
 }
 
@@ -930,7 +934,8 @@ fn max_best_matches_limit_covers_the_full_capped_row_set_in_one_page() {
     // a literal pin, not an import; the two must be kept in sync by hand.
     const BEST_MATCHES_CAP: usize = 100;
     assert_eq!(
-        MAX_BEST_MATCHES_LIMIT, BEST_MATCHES_CAP,
+        best_matches::MAX_BEST_MATCHES_LIMIT,
+        BEST_MATCHES_CAP,
         "a max-limit page must cover the whole capped row set in one call"
     );
 
@@ -941,7 +946,8 @@ fn max_best_matches_limit_covers_the_full_capped_row_set_in_one_page() {
             row
         })
         .collect();
-    let out = resolve_best_matches(&rows, 0, MAX_BEST_MATCHES_LIMIT, None);
+    let out =
+        best_matches::resolve_best_matches(&rows, 0, best_matches::MAX_BEST_MATCHES_LIMIT, None);
     assert_eq!(
         out["matches"].as_array().unwrap().len(),
         BEST_MATCHES_CAP,
@@ -974,11 +980,11 @@ fn best_matches_cursor_walks_every_row_exactly_once_then_terminates_with_null() 
     let page_size = 10;
     let mut seen: Vec<String> = Vec::new();
     let mut cursor: Option<String> = None;
-    let issuer = best_matches_cursor_issuer(None);
+    let issuer = best_matches::best_matches_cursor_issuer(None);
     loop {
-        let offset =
-            parse_best_matches_cursor(&json!({ "cursor": cursor }), &issuer).expect("own cursor");
-        let out = resolve_best_matches(&rows, offset, page_size, None);
+        let offset = best_matches::parse_best_matches_cursor(&json!({ "cursor": cursor }), &issuer)
+            .expect("own cursor");
+        let out = best_matches::resolve_best_matches(&rows, offset, page_size, None);
         for row in out["matches"].as_array().unwrap() {
             seen.push(row["url"].as_str().unwrap().to_string());
         }
@@ -1012,17 +1018,20 @@ fn best_matches_cursor_issued_under_one_query_is_rejected_under_another() {
             row
         })
         .collect();
-    let issued = resolve_best_matches(&rows, 0, 10, Some("engineer"))["nextCursor"]
+    let issued = best_matches::resolve_best_matches(&rows, 0, 10, Some("engineer"))["nextCursor"]
         .as_str()
         .expect("more pages")
         .to_string();
 
-    let err = parse_best_matches_cursor(
+    let err = best_matches::parse_best_matches_cursor(
         &json!({ "cursor": issued }),
-        &best_matches_cursor_issuer(Some("designer")),
+        &best_matches::best_matches_cursor_issuer(Some("designer")),
     )
     .unwrap_err();
-    assert_eq!(err.to_string(), BEST_MATCHES_WRONG_QUERY_CURSOR_MESSAGE);
+    assert_eq!(
+        err.to_string(),
+        best_matches::BEST_MATCHES_WRONG_QUERY_CURSOR_MESSAGE
+    );
 }
 
 /// The pre-round-2 wire shape (a bare numeric offset) is rejected, not
@@ -1030,12 +1039,15 @@ fn best_matches_cursor_issued_under_one_query_is_rejected_under_another() {
 /// `found_jobs::found_jobs_rejects_a_bare_numeric_offset_cursor`.
 #[test]
 fn best_matches_rejects_a_bare_numeric_offset_cursor() {
-    let err = parse_best_matches_cursor(
+    let err = best_matches::parse_best_matches_cursor(
         &json!({ "cursor": "10" }),
-        &best_matches_cursor_issuer(None),
+        &best_matches::best_matches_cursor_issuer(None),
     )
     .unwrap_err();
-    assert_eq!(err.to_string(), BEST_MATCHES_MALFORMED_CURSOR_MESSAGE);
+    assert_eq!(
+        err.to_string(),
+        best_matches::BEST_MATCHES_MALFORMED_CURSOR_MESSAGE
+    );
 }
 
 /// `best-matches`' `query` must go through the SAME hardened parse
@@ -1053,13 +1065,13 @@ fn best_matches_rejects_a_bare_numeric_offset_cursor() {
 #[test]
 fn best_matches_query_filter_refuses_a_wrong_typed_or_blank_value() {
     for bad in [json!(true), json!(5), json!(""), json!("   ")] {
-        let err = parse_best_matches_args(&json!({ "query": bad })).unwrap_err();
+        let err = best_matches::parse_best_matches_args(&json!({ "query": bad })).unwrap_err();
         assert!(
             err.to_string().contains("query"),
             "refusal must name the key: {err}"
         );
     }
-    let (query, offset) = parse_best_matches_args(&json!({})).unwrap();
+    let (query, offset) = best_matches::parse_best_matches_args(&json!({})).unwrap();
     assert_eq!(query, None, "an OMITTED query must still mean no filter");
     assert_eq!(offset, 0, "no cursor means start at the first page");
 }
@@ -1099,7 +1111,7 @@ fn best_matches_query_filter_matches_title_or_company_case_insensitively() {
     // keeps mixed case — proving the match itself, not the caller's
     // normalization, is what makes this case-insensitive.
     let rows = vec![by_title, by_company, miss];
-    let out = resolve_best_matches(&rows, 0, 20, Some("roboto"));
+    let out = best_matches::resolve_best_matches(&rows, 0, 20, Some("roboto"));
     assert_eq!(
         out["total"], 1,
         "the query must exclude the two non-matching rows, not just narrow the page"
@@ -1140,17 +1152,19 @@ fn worst_permitted_best_match_row(n: usize) -> Value {
 #[test]
 fn best_matches_trims_an_oversized_page_and_keeps_the_cursor_correct() {
     const MCP_RESULT_MAX_BYTES: usize = 256 * 1024;
-    let total_rows = MAX_BEST_MATCHES_LIMIT * 2;
+    let total_rows = best_matches::MAX_BEST_MATCHES_LIMIT * 2;
     let rows: Vec<Value> = (0..total_rows)
         .map(worst_permitted_best_match_row)
         .collect();
 
-    let page1 = resolve_best_matches(&rows, 0, MAX_BEST_MATCHES_LIMIT, None);
+    let page1 =
+        best_matches::resolve_best_matches(&rows, 0, best_matches::MAX_BEST_MATCHES_LIMIT, None);
     let kept = page1["matches"].as_array().unwrap().len();
     assert!(
-        kept < MAX_BEST_MATCHES_LIMIT,
+        kept < best_matches::MAX_BEST_MATCHES_LIMIT,
         "worst-permitted content must actually trigger trimming, kept {kept} of \
-         {MAX_BEST_MATCHES_LIMIT} requested"
+         {} requested",
+        best_matches::MAX_BEST_MATCHES_LIMIT
     );
     assert!(kept > 0, "at least one row must always come back");
     let bytes = page1.to_string().len();
@@ -1158,7 +1172,7 @@ fn best_matches_trims_an_oversized_page_and_keeps_the_cursor_correct() {
         bytes < MCP_RESULT_MAX_BYTES,
         "a trimmed page must stay under the MCP cap, was {bytes} bytes"
     );
-    let issuer = best_matches_cursor_issuer(None);
+    let issuer = best_matches::best_matches_cursor_issuer(None);
     assert_eq!(
         page1["nextCursor"].as_str().unwrap(),
         format!("{issuer}:{kept}"),
@@ -1166,7 +1180,8 @@ fn best_matches_trims_an_oversized_page_and_keeps_the_cursor_correct() {
     );
 
     // The next page must start exactly at `kept` — no row skipped, none repeated.
-    let page2 = resolve_best_matches(&rows, kept, MAX_BEST_MATCHES_LIMIT, None);
+    let page2 =
+        best_matches::resolve_best_matches(&rows, kept, best_matches::MAX_BEST_MATCHES_LIMIT, None);
     let first_url_page2 = page2["matches"][0]["url"].as_str().unwrap();
     assert_eq!(
         first_url_page2,
@@ -1241,7 +1256,8 @@ fn best_matches_bucket_refills_slowly() {
 fn no_resource_output_ever_carries_a_forbidden_key() {
     let job = project_value::<_, AgentJob>(&full_found_job()).unwrap();
     let automations = resolve_automations(&[blank_autopilot("ap-1")]);
-    let best_matches = resolve_best_matches(&[full_best_match_row_json()], 0, 20, None);
+    let best_matches =
+        best_matches::resolve_best_matches(&[full_best_match_row_json()], 0, 20, None);
     let found_jobs_records = vec![Autopilot {
         found_jobs: vec![full_found_job()],
         ..blank_autopilot("ap-1")

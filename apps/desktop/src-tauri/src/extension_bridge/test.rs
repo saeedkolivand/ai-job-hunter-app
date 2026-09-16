@@ -10,6 +10,8 @@
 //! allowed to MATCH rather than merely display, so a one-sided reword of
 //! either string is caught the same way a renamed wire type is.
 
+use super::caller_gate::advance_authenticated;
+use super::req_id_cap::MAX_REQ_ID_BYTES;
 use super::revoke::{revoke_frames, token_revoked_reply, REVOKE_REQ_ID};
 use super::*;
 
@@ -1592,6 +1594,72 @@ fn is_auto_status_update_defaults_false_when_absent() {
     assert!(
         !is_auto_status_update(&serde_json::json!({ "url": "x" })),
         "absent `auto` → treated as a manual click"
+    );
+}
+
+/// A.4's decisive server-side gate (PR4): mirrors
+/// `auto_write_is_refused_only_when_flagged_auto_and_optin_off` above, one write verb over. Every
+/// combination of `auto` present/absent × the `saveAnswersOnSubmit` opt-in on/off, so a non-auto
+/// save is pinned as unaffected regardless of the opt-in.
+#[test]
+fn auto_save_is_refused_only_when_flagged_auto_and_optin_off() {
+    use super::answers_save::auto_save_refused;
+    let auto = serde_json::json!({ "url": "https://x.co/j", "answers": [], "auto": true });
+    let manual = serde_json::json!({ "url": "https://x.co/j", "answers": [] });
+
+    assert!(
+        auto_save_refused(&auto, false),
+        "auto + opt-in OFF → refuse"
+    );
+    assert!(
+        !auto_save_refused(&auto, true),
+        "auto + opt-in ON → allowed"
+    );
+
+    assert!(
+        !auto_save_refused(&manual, false),
+        "a manual (popup) save stays ungated by this flag even with the opt-in OFF"
+    );
+    assert!(!auto_save_refused(&manual, true));
+}
+
+#[test]
+fn is_auto_answers_save_defaults_false_when_absent() {
+    use super::answers_save::is_auto_answers_save;
+    assert!(is_auto_answers_save(&serde_json::json!({ "auto": true })));
+    assert!(!is_auto_answers_save(&serde_json::json!({ "auto": false })));
+    assert!(
+        !is_auto_answers_save(&serde_json::json!({ "url": "x" })),
+        "absent `auto` → treated as a manual (popup) save"
+    );
+}
+
+/// A present-but-non-boolean `auto` (a string, a number, `null`) must be flagged malformed — a
+/// silent downgrade to "manual" via `is_auto_answers_save`'s `unwrap_or(false)` would let a
+/// malformed automated capture through on the (weaker) autofill opt-in alone, bypassing the
+/// dedicated `saveAnswersOnSubmit` consent class this verb's AUTO path requires. A well-formed
+/// `auto: true`/`auto: false`, and an absent `auto`, are all byte-identical to today (unaffected).
+#[test]
+fn auto_flag_is_malformed_only_when_auto_is_present_and_not_a_boolean() {
+    use super::answers_save::auto_flag_is_malformed;
+    assert!(auto_flag_is_malformed(
+        &serde_json::json!({ "auto": "true" })
+    ));
+    assert!(auto_flag_is_malformed(&serde_json::json!({ "auto": 1 })));
+    assert!(auto_flag_is_malformed(&serde_json::json!({ "auto": null })));
+    assert!(auto_flag_is_malformed(
+        &serde_json::json!({ "auto": ["true"] })
+    ));
+
+    assert!(!auto_flag_is_malformed(
+        &serde_json::json!({ "auto": true })
+    ));
+    assert!(!auto_flag_is_malformed(
+        &serde_json::json!({ "auto": false })
+    ));
+    assert!(
+        !auto_flag_is_malformed(&serde_json::json!({ "url": "x" })),
+        "absent `auto` is unaffected — byte-identical to today"
     );
 }
 

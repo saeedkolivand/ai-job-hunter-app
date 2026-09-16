@@ -120,6 +120,17 @@
              rows themselves are edited; the popup only reports the count. -->
         <p id="answers-notice" class="msg msg--muted" role="status" aria-live="polite" hidden></p>
 
+        <!-- The one-shot "save-answers-on-submit just saved this" transparent
+             notice (PR4, decision 7 — read once, on whichever surface asks
+             first; see lib/auto-save-notice.ts's doc). Dismissible: it has
+             already done its job of not being silent once shown. -->
+        <div id="auto-save-notice" class="auto-save-notice" role="status" aria-live="polite" hidden>
+          <p id="auto-save-notice-text"></p>
+          <button id="auto-save-notice-dismiss" class="link" type="button" aria-label="Dismiss">
+            ×
+          </button>
+        </div>
+
         <p id="import-msg" class="msg" role="status" aria-live="polite" hidden></p>
       </section>
 

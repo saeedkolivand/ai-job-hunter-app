@@ -296,3 +296,62 @@ describe('armSubmitWatch — fire-once guard', () => {
     expect(post).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('armSubmitWatch — save-answers-on-submit capture (PR4)', () => {
+  it('does NOT capture answers when captureAnswers is absent (default false)', () => {
+    setBody(`
+      <form id="f">
+        ${APPLICATION_FIELDS}
+        <label for="q">Why this role?</label>
+        <textarea id="q">Because I love it.</textarea>
+        <button type="submit">Submit application</button>
+      </form>
+    `);
+    const post = vi.fn();
+    armSubmitWatch(document, post);
+
+    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true })
+    );
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0]?.[1]).toBeUndefined();
+  });
+
+  it('captures the currently-filled answers SYNCHRONOUSLY when armed with captureAnswers:true', () => {
+    setBody(`
+      <form id="f">
+        ${APPLICATION_FIELDS}
+        <label for="q">Why this role?</label>
+        <textarea id="q">Because I love it.</textarea>
+        <button type="submit">Submit application</button>
+      </form>
+    `);
+    const post = vi.fn();
+    armSubmitWatch(document, post, { captureAnswers: true });
+
+    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true })
+    );
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0]?.[0]).toEqual(expect.any(String));
+    expect(post.mock.calls[0]?.[1]).toEqual([
+      { question: 'Why this role?', answer: 'Because I love it.' },
+    ]);
+  });
+
+  it('omits answers (rather than an empty array) when armed but nothing is filled — present means "something to save"', () => {
+    setBody(
+      `<form id="f">${APPLICATION_FIELDS}<button type="submit">Submit application</button></form>`
+    );
+    const post = vi.fn();
+    armSubmitWatch(document, post, { captureAnswers: true });
+
+    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true })
+    );
+
+    expect(post.mock.calls[0]?.[1]).toBeUndefined();
+  });
+});

@@ -2103,6 +2103,39 @@ describe('BridgeClient – saveAnswers', () => {
     client.dispose();
   });
 
+  it('sends auto:true on the wire when the auto param is true (PR4)', async () => {
+    const { client, socket } = await connectedClient();
+    const url = 'https://jobs.example.com/posting/9';
+    const answers = [{ question: 'Why this role?', answer: 'Because I love it.' }];
+
+    void client.saveAnswers(url, answers, true);
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const frame = JSON.parse(raw) as { payload: unknown };
+    expect(frame.payload).toEqual({ url, answers, auto: true });
+
+    client.dispose();
+  });
+
+  it('omits auto entirely when the param is left at its default (byte-identical to before PR4)', async () => {
+    const { client, socket } = await connectedClient();
+    const url = 'https://jobs.example.com/posting/9';
+    const answers = [{ question: 'Why this role?', answer: 'Because I love it.' }];
+
+    void client.saveAnswers(url, answers);
+    await vi.waitFor(() => {
+      expect(socket.send).toHaveBeenCalled();
+    });
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const frame = JSON.parse(raw) as { payload: unknown };
+    expect(frame.payload).toEqual({ url, answers });
+    expect(frame.payload).not.toHaveProperty('auto');
+
+    client.dispose();
+  });
+
   it('rejects when not connected — every port fails and the ws probe exhausts', async () => {
     vi.useFakeTimers();
 
@@ -2818,7 +2851,10 @@ describe('BridgeClient – settingsGet / settingsSet', () => {
     expect(frame.type).toBe(EXTENSION_MESSAGE_TYPES.settingsGet);
     expect(frame.payload).toEqual({});
 
-    const payload = { ok: true, settings: { autofill: true, aiAssist: false, autotrack: false } };
+    const payload = {
+      ok: true,
+      settings: { autofill: true, aiAssist: false, autotrack: false, saveAnswersOnSubmit: false },
+    };
     socket.simulateMessage(makeSettingsResultEnvelope(frame.reqId, payload));
     expect(await resultPromise).toEqual(payload);
     client.dispose();
@@ -2833,9 +2869,35 @@ describe('BridgeClient – settingsGet / settingsSet', () => {
     expect(frame.type).toBe(EXTENSION_MESSAGE_TYPES.settingsSet);
     expect(frame.payload).toEqual({ key: 'autofill', enabled: true });
 
-    const payload = { ok: true, settings: { autofill: true, aiAssist: false, autotrack: false } };
+    const payload = {
+      ok: true,
+      settings: { autofill: true, aiAssist: false, autotrack: false, saveAnswersOnSubmit: false },
+    };
     socket.simulateMessage(makeSettingsResultEnvelope(frame.reqId, payload));
     expect(await resultPromise).toEqual(payload);
+    client.dispose();
+  });
+
+  it('treats a settings.result missing saveAnswersOnSubmit (the fourth key) as malformed rather than passing it through with the field undefined', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.settingsGet();
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const { reqId } = JSON.parse(raw) as { reqId: string };
+
+    // A desktop reply that dropped the fourth key — the guard must reject
+    // this rather than let `settings.saveAnswersOnSubmit` reach the caller
+    // as `undefined`.
+    socket.simulateMessage(
+      makeSettingsResultEnvelope(reqId, {
+        ok: true,
+        settings: { autofill: true, aiAssist: false, autotrack: false },
+      })
+    );
+    expect(await resultPromise).toEqual({
+      ok: false,
+      error: 'The desktop app sent a malformed settings result.',
+    });
     client.dispose();
   });
 
@@ -3114,6 +3176,32 @@ describe('BridgeClient – answerAssist', () => {
     // Settle the still-pending promise so it doesn't dangle across tests.
     socket.simulateMessage(makeAssistEnvelope(reqId, { ok: false, error: 'cancelled' }));
     await resultPromise;
+    client.dispose();
+  });
+
+  it('cancelCurrent (PR4) retires the pending answerAssist exactly like a superseding call does', async () => {
+    const { client, socket } = await connectedClient();
+    const resultPromise = client.answerAssist({ question: 'Why this role?' });
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalled());
+    const raw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const { reqId } = JSON.parse(raw) as { reqId: string };
+
+    client.cancelCurrent();
+
+    const result = await resultPromise;
+    expect(result).toEqual({ ok: false, error: 'Superseded by a newer request.' });
+    // Sends the same assist.cancel a direct cancelAssist(reqId) call would.
+    const cancelRaw = socket.send.mock.calls[socket.send.mock.calls.length - 1]?.[0] as string;
+    const cancelFrame = JSON.parse(cancelRaw) as { type: string; reqId: string };
+    expect(cancelFrame.type).toBe(EXTENSION_MESSAGE_TYPES.assistCancel);
+    expect(cancelFrame.reqId).toBe(reqId);
+
+    client.dispose();
+  });
+
+  it('cancelCurrent (PR4) is a no-op when nothing is pending', async () => {
+    const { client } = await connectedClient();
+    expect(() => client.cancelCurrent()).not.toThrow();
     client.dispose();
   });
 

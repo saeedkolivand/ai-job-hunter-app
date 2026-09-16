@@ -69,6 +69,10 @@ function buildPopupDom(): void {
     <div id="job-tools-host"></div>
     <button id="btn-open-panel">Open the panel →</button>
     <p id="answers-notice" hidden></p>
+    <div id="auto-save-notice" hidden>
+      <p id="auto-save-notice-text"></p>
+      <button id="auto-save-notice-dismiss"></button>
+    </div>
     <p id="import-msg"></p>
     <div id="unpair-group" hidden>
       <button id="btn-unpair"></button>
@@ -97,6 +101,7 @@ const {
   resolveMarkAppliedResponse,
   resolveAnswersNoticeLine,
   bootstrapNotice,
+  checkAutoSaveNotice,
 } = await import('./popup');
 
 const sendMessageMock = vi.mocked(browser.runtime.sendMessage);
@@ -909,5 +914,62 @@ describe('unpair (#btn-unpair, #unpair-group hasToken-gated)', () => {
 
     push(false, 'app_not_running');
     expect(byId<HTMLElement>('unpair-group').hidden).toBe(true);
+  });
+});
+
+// ── the one-shot save-answers-on-submit auto-save notice (PR4, decision 7) ──
+
+describe('checkAutoSaveNotice', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  beforeEach(() => {
+    sendMessageMock.mockReset();
+    byId<HTMLElement>('auto-save-notice').hidden = true;
+    byId<HTMLElement>('auto-save-notice-text').textContent = '';
+  });
+
+  it('shows the notice text and reveals the banner when one is pending', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'autoSaveNotice',
+      text: 'Saved 1 answer from this submit — change this in Settings.',
+    });
+
+    await checkAutoSaveNotice();
+
+    expect(byId<HTMLElement>('auto-save-notice').hidden).toBe(false);
+    expect(byId<HTMLElement>('auto-save-notice-text').textContent).toBe(
+      'Saved 1 answer from this submit — change this in Settings.'
+    );
+  });
+
+  it('leaves the banner hidden when nothing is pending', async () => {
+    sendMessageMock.mockResolvedValueOnce({ ok: true, kind: 'autoSaveNotice', text: null });
+
+    await checkAutoSaveNotice();
+
+    expect(byId<HTMLElement>('auto-save-notice').hidden).toBe(true);
+  });
+
+  it('leaves the banner hidden rather than throwing on a transport rejection', async () => {
+    sendMessageMock.mockRejectedValueOnce(new Error('message channel closed'));
+
+    await expect(checkAutoSaveNotice()).resolves.toBeUndefined();
+    expect(byId<HTMLElement>('auto-save-notice').hidden).toBe(true);
+  });
+
+  it('the dismiss button hides the banner', async () => {
+    sendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      kind: 'autoSaveNotice',
+      text: 'Saved 1 answer from this submit.',
+    });
+    await checkAutoSaveNotice();
+    expect(byId<HTMLElement>('auto-save-notice').hidden).toBe(false);
+
+    byId<HTMLButtonElement>('auto-save-notice-dismiss').click();
+    await flush();
+
+    expect(byId<HTMLElement>('auto-save-notice').hidden).toBe(true);
   });
 });

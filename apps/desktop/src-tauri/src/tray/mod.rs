@@ -311,6 +311,22 @@ pub fn dispatch_open_job(app: &AppHandle, url: &str) {
     );
 }
 
+/// Restore the window and deliver a `prep-for-job` navigation intent (PR4 deep link,
+/// `ajh://prep?url=…`) — the extension side panel's Prep tab's "Prepare in the app" action, when
+/// no generation exists for a job yet. Same shape convention + buffer-before-show discipline as
+/// [`dispatch_generate_for_job`].
+pub fn dispatch_prep_for_job(app: &AppHandle, url: &str) {
+    dispatch_menu(
+        app,
+        MENU_NAVIGATE,
+        serde_json::json!({
+            "route": "prep-for-job",
+            "section": serde_json::Value::Null,
+            "url": url,
+        }),
+    );
+}
+
 /// Restore the window and deliver an autopilot-focus intent so the renderer jumps
 /// to a specific autopilot's found-jobs panel.
 ///

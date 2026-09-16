@@ -7,6 +7,7 @@
 import type {
   ExtensionAgentQueryResult,
   ExtensionAnswerAssistResult,
+  ExtensionAnswerAssistTopic,
   ExtensionAnswersSaveResult,
   ExtensionAnswersSuggestResult,
   ExtensionAppliedCheckResult,
@@ -195,6 +196,15 @@ export type PopupRequest =
        * there. Page-derived, so it is clamped here AND again desktop-side.
        */
       maxChars?: number;
+      /**
+       * The Prep tab's two on-demand buttons (PR4) — see
+       * `ExtensionAnswerAssistTopic`'s doc. Mutually exclusive with `rowId`:
+       * a topic request never names a row (the background tags its stream
+       * buffer by `topic` instead — see `lib/answer-state.ts`'s
+       * `AnswerStream.topic`), so the dispatcher's row-vs-no-row branch keeps
+       * routing exactly as it did before this field existed.
+       */
+      topic?: ExtensionAnswerAssistTopic;
     }
   /**
    * Popup-open reattach: "what's the current/last streamed `answer.assist`
@@ -304,7 +314,30 @@ export type PopupRequest =
    * `stamped: 0` and an explanatory `status` line (see `PopupResponse`'s
    * `stampResults` doc) — never a partial lie.
    */
-  | { kind: 'stampResults' };
+  | { kind: 'stampResults' }
+  /**
+   * Prep tab (PR4): read this job's existing generations (company brief,
+   * interview questions, salary answer) through the curated `agent.query
+   * ('prep', {url})` read-tier resource (PR1) — the SAME zero-cost pattern
+   * `documentsList` uses. Unlike `trustLineJob`, a refusal is NOT folded
+   * away — the tab renders the desktop's own `error`.
+   */
+  | { kind: 'prepGet' }
+  /**
+   * Cancel whatever `answer.assist` stream is currently pending (PR4 — the
+   * Prep tab's on-demand drafts). A no-op when nothing is pending. Mirrors
+   * the SAME retirement a new overlapping `answerAssist` call already
+   * performs — see `BridgeClient.cancelCurrent`'s doc.
+   */
+  | { kind: 'assistCancel' }
+  /**
+   * Fire-and-forget "was there a transparent save-answers-on-submit notice
+   * waiting for me?" (PR4) — run once when the popup/panel opens. READ-ONCE:
+   * the background clears it after returning it, so it is shown exactly one
+   * time, on whichever surface asks first — the point is that the user must
+   * never discover the auto-save silently, not that every surface repeats it.
+   */
+  | { kind: 'autoSaveNotice' };
 
 /** background → popup responses (discriminated by the originating request). */
 export type PopupResponse =
@@ -478,4 +511,20 @@ export type PopupResponse =
    * mirroring `resolveAnswersSaveResponse`'s single-line-of-truth discipline.
    */
   | { ok: true; kind: 'stampResults'; stamped: number; status: string }
+  /**
+   * `ok:true` at the transport level; the desktop's own `ok`/`error` on
+   * `result` is what the Prep tab renders — this verb's failures are NOT
+   * folded away (unlike `trustLineJob`), mirroring `documentsList` exactly.
+   * `url` is echoed back the same way (the Prep tab has no `tabs` permission
+   * of its own).
+   */
+  | { ok: true; kind: 'prepGet'; result: ExtensionAgentQueryResult; url: string }
+  /** The `assistCancel` outcome — always `ok:true` (a no-op when nothing was
+   *  pending is not an error). */
+  | { ok: true; kind: 'assistCancel' }
+  /** The `autoSaveNotice` outcome — `text` is the pending notice, or `null`
+   *  when there is none (nothing saved since the last time any surface
+   *  asked). See `PopupRequest`'s `autoSaveNotice` doc for the read-once
+   *  discipline. */
+  | { ok: true; kind: 'autoSaveNotice'; text: string | null }
   | { ok: false; error: string };
