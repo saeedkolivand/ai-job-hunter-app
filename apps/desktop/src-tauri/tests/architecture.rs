@@ -133,6 +133,10 @@ const L3: &[&str] = &[
     "events",
     "main", // thin binary launcher
     "lib",  // shell entry point: holds the Tauri builder (`run()`); `main` just calls it
+    // The native app menu (build + click handler) — split out of `lib.rs` (R8 relief, PR4).
+    // Shell-role for the same reason `lib`/`tray` are: it builds a `tauri::menu::Menu` and
+    // dispatches through `tray::dispatch_menu`, never reached from a lower layer.
+    "app_menu",
     "updater",
     "tray",
     "deeplink",

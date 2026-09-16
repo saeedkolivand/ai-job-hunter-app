@@ -129,6 +129,9 @@ const els = {
   jobToolsHost: byId<HTMLDivElement>('job-tools-host'),
   btnOpenPanel: byId<HTMLButtonElement>('btn-open-panel'),
   answersNotice: byId<HTMLParagraphElement>('answers-notice'),
+  autoSaveNotice: byId<HTMLDivElement>('auto-save-notice'),
+  autoSaveNoticeText: byId<HTMLParagraphElement>('auto-save-notice-text'),
+  autoSaveNoticeDismiss: byId<HTMLButtonElement>('auto-save-notice-dismiss'),
   importMsg: byId<HTMLParagraphElement>('import-msg'),
   unpairGroup: byId<HTMLElement>('unpair-group'),
   btnUnpair: byId<HTMLButtonElement>('btn-unpair'),
@@ -209,6 +212,26 @@ function openAnswerPanel(): void {
  */
 function runAnswerScan(): void {
   void send({ kind: 'answerScan' }).catch(() => undefined);
+}
+
+/**
+ * The one-shot save-answers-on-submit auto-save notice (PR4, decision 7 —
+ * "the user must never discover this silently"). Read-once: whichever
+ * surface (popup or panel) asks first via `autoSaveNotice` gets it; a
+ * second ask (from either surface) sees nothing left to show. Fires
+ * unconditionally at load — this is local session storage, not a bridge
+ * call, so it needs no connection.
+ */
+export async function checkAutoSaveNotice(): Promise<void> {
+  try {
+    const res = await send({ kind: 'autoSaveNotice' });
+    if (res.ok && res.kind === 'autoSaveNotice' && res.text) {
+      els.autoSaveNoticeText.textContent = res.text;
+      els.autoSaveNotice.hidden = false;
+    }
+  } catch {
+    // Best-effort — a missed notice this once is better than a broken popup.
+  }
 }
 
 function setMsg(el: HTMLElement, text: string, tone: 'ok' | 'err' | 'muted'): void {
@@ -401,6 +424,9 @@ function wire(): void {
     void browser.runtime.openOptionsPage();
   });
   els.menuAbout.addEventListener('click', showAbout);
+  els.autoSaveNoticeDismiss.addEventListener('click', () => {
+    els.autoSaveNotice.hidden = true;
+  });
 
   // The streamed draft itself is NOT rendered from this push: the background
   // mirrors every chunk into the shared per-tab state, and the panel's
@@ -448,3 +474,4 @@ export async function bootstrapNotice(): Promise<void> {
 connectionStatus.start();
 wire();
 void bootstrapNotice();
+void checkAutoSaveNotice();

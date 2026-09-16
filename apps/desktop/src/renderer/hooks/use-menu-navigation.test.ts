@@ -367,6 +367,74 @@ describe('useMenuNavigation', () => {
       consoleError.mockRestore();
     });
   });
+
+  // ── `prep-for-job` deep link (PR4) — the extension side panel's Prep tab's
+  // "Prepare in the app" action, same buffered-intent + fetch-applications
+  // mechanics as the other two job deep links above.
+  describe('prep-for-job deep link', () => {
+    const URL = 'https://boards.greenhouse.io/acme/jobs/1';
+
+    it('prep-for-job with a matching application lands on its Interview-prep tab', async () => {
+      const list = vi.fn().mockResolvedValue([{ id: 'app-4', jobUrl: URL }]);
+      renderWithPending(
+        { event: 'menu:navigate', payload: { route: 'prep-for-job', section: null, url: URL } },
+        undefined,
+        { 'applications.list': list }
+      );
+
+      await waitFor(() =>
+        expect(navigate).toHaveBeenCalledWith({
+          to: '/applications/$id',
+          params: { id: 'app-4' },
+          search: { tab: 'interview' },
+        })
+      );
+      expect(setAIGenerate).not.toHaveBeenCalled();
+    });
+
+    it('prep-for-job with no matching application prefills the generate flow with the URL', async () => {
+      const list = vi.fn().mockResolvedValue([]);
+      renderWithPending(
+        { event: 'menu:navigate', payload: { route: 'prep-for-job', section: null, url: URL } },
+        undefined,
+        { 'applications.list': list }
+      );
+
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/ai-generate' }));
+      expect(setAIGenerate).toHaveBeenCalledExactlyOnceWith({ jobUrl: URL });
+      expect(setJobs).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when the prep-for-job intent carries no url', async () => {
+      const list = vi.fn().mockResolvedValue([]);
+      const { takePending } = renderWithPending(
+        { event: 'menu:navigate', payload: { route: 'prep-for-job', section: null } },
+        undefined,
+        { 'applications.list': list }
+      );
+
+      await waitFor(() => expect(takePending).toHaveBeenCalled());
+      expect(list).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('prep-for-job falls back to a prefilled generate session when applications.list rejects', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const list = vi.fn().mockRejectedValue(new Error('offline'));
+      renderWithPending(
+        { event: 'menu:navigate', payload: { route: 'prep-for-job', section: null, url: URL } },
+        undefined,
+        { 'applications.list': list }
+      );
+
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/ai-generate' }), {
+        timeout: 3000,
+      });
+      expect(setAIGenerate).toHaveBeenCalledExactlyOnceWith({ jobUrl: URL });
+      expect(consoleError).toHaveBeenCalled();
+      consoleError.mockRestore();
+    });
+  });
 });
 
 describe('resolveJobDeepLinkTarget', () => {
@@ -398,6 +466,21 @@ describe('resolveJobDeepLinkTarget', () => {
   it('falls back to a jobs-list search when no application matches', () => {
     expect(resolveJobDeepLinkTarget('open-job', URL, [])).toEqual({
       kind: 'jobs-search',
+      url: URL,
+    });
+  });
+
+  it('routes prep-for-job to the Interview-prep tab of a matching application', () => {
+    expect(resolveJobDeepLinkTarget('prep-for-job', URL, applications)).toEqual({
+      kind: 'application',
+      id: 'app-1',
+      tab: 'interview',
+    });
+  });
+
+  it('falls back to a prefilled generate session when no application matches prep-for-job', () => {
+    expect(resolveJobDeepLinkTarget('prep-for-job', URL, [])).toEqual({
+      kind: 'generate-prefill',
       url: URL,
     });
   });

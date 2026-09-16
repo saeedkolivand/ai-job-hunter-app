@@ -48,6 +48,7 @@ import {
   rememberHost,
 } from '../lib/site-memory';
 import { bootTheme } from '../lib/theme';
+import { mountPrep } from '../prep/prep';
 import { mountTabs } from '../tabs/tabs';
 
 /** The résumé-attach confirmation's own copy (PR2 §C.3) — reuses the SAME
@@ -75,6 +76,9 @@ const els = {
   btnSettings: byId<HTMLButtonElement>('btn-settings'),
   trustLine: byId<HTMLParagraphElement>('trust-line'),
   tabsHost: byId<HTMLDivElement>('tabs-host'),
+  autoSaveNotice: byId<HTMLDivElement>('auto-save-notice'),
+  autoSaveNoticeText: byId<HTMLParagraphElement>('auto-save-notice-text'),
+  autoSaveNoticeDismiss: byId<HTMLButtonElement>('auto-save-notice-dismiss'),
 };
 
 /** Send a typed request to the background — the same seam the popup uses. */
@@ -88,9 +92,31 @@ els.btnSettings.addEventListener('click', () => {
   void browser.runtime.openOptionsPage();
 });
 
-// ── the tab bar (PR0 §3) ──────────────────────────────────────────────────
-// Job + Answers today; Documents/Prep register through the same
-// `mountTabs`/`tabs.setCount` list in PR2/PR4, per the redesign record.
+els.autoSaveNoticeDismiss.addEventListener('click', () => {
+  els.autoSaveNotice.hidden = true;
+});
+
+/**
+ * The one-shot save-answers-on-submit auto-save notice (PR4, decision 7 —
+ * "the user must never discover this silently"). Read-once, same discipline
+ * as `popup.ts`'s own `checkAutoSaveNotice` — whichever surface asks first
+ * gets it. Local session storage, not a bridge call, so it fires
+ * unconditionally at load, needing no connection.
+ */
+async function checkAutoSaveNotice(): Promise<void> {
+  try {
+    const res = await send({ kind: 'autoSaveNotice' });
+    if (res.ok && res.kind === 'autoSaveNotice' && res.text) {
+      els.autoSaveNoticeText.textContent = res.text;
+      els.autoSaveNotice.hidden = false;
+    }
+  } catch {
+    // Best-effort — a missed notice this once is better than a broken panel.
+  }
+}
+void checkAutoSaveNotice();
+
+// ── the tab bar (PR0 §3, PR4 adds Prep) ─────────────────────────────────────
 
 const tabs = mountTabs(
   els.tabsHost,
@@ -98,6 +124,7 @@ const tabs = mountTabs(
     { id: 'job', label: 'Job' },
     { id: 'documents', label: 'Documents' },
     { id: 'answers', label: 'Answers' },
+    { id: 'prep', label: 'Prep' },
   ],
   { onSelect: (id) => selectTab(id) }
 );
@@ -147,6 +174,11 @@ const answerToolsHost = document.createElement('div');
 answerToolsHost.id = 'answer-tools-host';
 answerToolsHost.className = 'atools';
 answersPanel.append(answerToolsHost);
+
+const prepPanel = tabs.panel('prep');
+const prepHost = document.createElement('div');
+prepHost.id = 'prep-host';
+prepPanel.append(prepHost);
 
 // First-time Fill confirmation (PR0 §4) — mounted once into the Job tab, fed
 // the CURRENTLY-followed tab's origin (updated on every state push below).
@@ -214,6 +246,11 @@ const documents = mountDocuments(documentsHost, {
     openInAppLink.hidden = false;
   },
 });
+
+// Prep tab (PR4) — reads this job's existing generations through the read
+// tier; the two on-demand drafts ride the SAME `answer.assist` stream
+// Answer-tools rows use, correlated by `topic` instead of `rowId`.
+const prep = mountPrep(prepHost, { send, copy: copyText });
 
 /**
  * The one trust line under the header (ADR-045 of the redesign record). Only
@@ -339,6 +376,8 @@ function follow(tabId: number | null): void {
     jobTools.render(null);
     documents.render(null);
     documents.reset();
+    prep.render(null);
+    prep.reset();
     openInAppLink.hidden = true;
     jobStatus.reset();
     updateTrustLine(null);
@@ -353,6 +392,7 @@ function follow(tabId: number | null): void {
     answerTools.render(state);
     jobTools.render(state);
     documents.render(state);
+    prep.render(state);
     updateTrustLine(state);
     currentOrigin = state?.origin ?? null;
     tabs.setCount('answers', state?.rows.length ?? 0);
@@ -366,10 +406,12 @@ function follow(tabId: number | null): void {
         void jobStatus.refresh();
         void refreshTrustLineJob();
         documents.refresh();
+        prep.refresh();
       } else {
         jobStatus.reset();
         trustLineJobGeneration += 1; // invalidate any in-flight query — the page is no longer trusted
         documents.reset();
+        prep.reset();
         openInAppLink.hidden = true;
       }
     }
@@ -413,11 +455,13 @@ async function loadActiveTab(windowId: number): Promise<string> {
   try {
     const stored = await area.get(activeTabKey(windowId));
     const value = stored[activeTabKey(windowId)];
-    // 'documents' (PR2) is a valid per-window session choice even though it
-    // is not (yet) a `DefaultPanelTab` the Settings page can target — see
-    // that type's own doc for why the two are a deliberately narrower/wider
-    // pair.
-    if (value === 'answers' || value === 'job' || value === 'documents') return value;
+    // 'documents'/'prep' (PR2/PR4) are valid per-window session choices even
+    // though neither is (yet) a `DefaultPanelTab` the Settings page can
+    // target — see that type's own doc for why the two are a deliberately
+    // narrower/wider pair.
+    if (value === 'answers' || value === 'job' || value === 'documents' || value === 'prep') {
+      return value;
+    }
     return getDefaultPanelTab();
   } catch {
     return getDefaultPanelTab();

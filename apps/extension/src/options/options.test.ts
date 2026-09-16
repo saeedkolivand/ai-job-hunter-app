@@ -1,8 +1,8 @@
 /**
  * Unit tests for the Settings page controller: render, the theme segmented
  * control persisting + applying `data-theme`, the sites list (empty state +
- * Forget), and the LIVE "What the extension may do" toggles (PR1, R7 —
- * three switches today, the fourth lands in PR4; see options.ts's own doc).
+ * Forget), and the LIVE "What the extension may do" toggles (PR1/PR4, R7 —
+ * four switches; see options.ts's own doc).
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -196,17 +196,93 @@ describe('sites list', () => {
 });
 
 describe('what the extension may do', () => {
-  it('renders three toggles, all disabled/off while settings.get has not answered', async () => {
+  it('renders four toggles, all disabled/off while settings.get has not answered', async () => {
     await flush();
     const rows = byId('permissions-list').querySelectorAll('.set-row');
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(4);
     expect(byId('permissions-list').textContent).toContain('Unknown until connected');
     const toggles = byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle');
-    expect(toggles).toHaveLength(3);
+    expect(toggles).toHaveLength(4);
     for (const toggle of toggles) {
       expect(toggle.disabled).toBe(true);
       expect(toggle.getAttribute('aria-checked')).toBe('false');
     }
+  });
+
+  it('the fourth toggle (saveAnswersOnSubmit, PR4) round-trips through settings.get/settings.set, while auto-track is on', async () => {
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'settingsGet',
+      result: {
+        ok: true,
+        settings: {
+          autofill: false,
+          aiAssist: false,
+          autotrack: true,
+          saveAnswersOnSubmit: false,
+        },
+      },
+    });
+    const { mountConnectionStatus } = await import('../connection-status/connection-status');
+    const onConnected = vi.mocked(mountConnectionStatus).mock.calls[0]?.[2]?.onConnected;
+    onConnected!();
+    await flush();
+
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'settingsSet',
+      result: {
+        ok: true,
+        settings: { autofill: false, aiAssist: false, autotrack: true, saveAnswersOnSubmit: true },
+      },
+    });
+
+    const toggle = byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle')[3]!;
+    expect(toggle.classList.contains('on')).toBe(false);
+    expect(toggle.disabled).toBe(false);
+    toggle.click();
+    await flush();
+
+    expect(browser.runtime.sendMessage).toHaveBeenCalledWith({
+      kind: 'settingsSet',
+      key: 'saveAnswersOnSubmit',
+      enabled: true,
+    });
+    expect(toggle.classList.contains('on')).toBe(true);
+  });
+
+  it('disables saveAnswersOnSubmit and explains why when auto-track is off (it structurally cannot capture anything without it — the submit-watcher is armed off the same opt-in)', async () => {
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+    vi.mocked(browser.runtime.sendMessage).mockResolvedValueOnce({
+      ok: true,
+      kind: 'settingsGet',
+      result: {
+        ok: true,
+        settings: {
+          autofill: false,
+          aiAssist: false,
+          autotrack: false,
+          saveAnswersOnSubmit: true,
+        },
+      },
+    });
+    const { mountConnectionStatus } = await import('../connection-status/connection-status');
+    const onConnected = vi.mocked(mountConnectionStatus).mock.calls[0]?.[2]?.onConnected;
+    onConnected!();
+    await flush();
+
+    const toggle = byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle')[3]!;
+    expect(toggle.disabled).toBe(true);
+    // Reflects the real (stuck-on) value rather than lying about it.
+    expect(toggle.classList.contains('on')).toBe(true);
+    const row = toggle.closest('.set-row')!;
+    expect(row.textContent).toMatch(/turn on auto-track/i);
+
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+    toggle.click();
+    await flush();
+    expect(browser.runtime.sendMessage).not.toHaveBeenCalled();
   });
 
   it('fetches settings.get and renders the live values', async () => {
@@ -325,10 +401,11 @@ describe('what the extension may do', () => {
 
     await flush();
 
+    // Index 3 (saveAnswersOnSubmit) stays disabled on purpose — this fixture's
+    // autotrack is off, and that toggle is gated on it (see options.ts).
+    const toggles = [...byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle')];
     expect(browser.runtime.sendMessage).toHaveBeenCalledTimes(1);
-    for (const t of byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle')) {
-      expect(t.disabled).toBe(false);
-    }
+    toggles.forEach((t, i) => expect(t.disabled).toBe(i === 3));
   });
 
   it('re-enables all toggles after an error reply rolls the optimistic flip back', async () => {
@@ -358,9 +435,10 @@ describe('what the extension may do', () => {
 
     await flush();
 
-    for (const t of byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle')) {
-      expect(t.disabled).toBe(false);
-    }
+    // Index 3 (saveAnswersOnSubmit) stays disabled on purpose — this fixture's
+    // autotrack is off, and that toggle is gated on it (see options.ts).
+    const toggles = [...byId('permissions-list').querySelectorAll<HTMLButtonElement>('.toggle')];
+    toggles.forEach((t, i) => expect(t.disabled).toBe(i === 3));
   });
 
   it('re-runs settings.get and re-renders on a disconnected→connected transition (onConnected)', async () => {

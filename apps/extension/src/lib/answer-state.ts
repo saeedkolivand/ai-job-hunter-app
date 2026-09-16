@@ -31,6 +31,8 @@
 
 import { type Browser, browser } from '@wxt-dev/browser';
 
+import type { ExtensionAnswerAssistTopic } from '@ajh/shared/extension-protocol';
+
 import type { FilledField, ScannedQuestion } from './answers-capture';
 
 /** `storage.session` key prefix — one entry per tab. */
@@ -159,6 +161,14 @@ export interface AnswerStream {
   /** `rewrite` streams reshape; `draft` streams are grounded. Kept here so a
    *  view that attaches mid-stream can already say which it is watching. */
   kind: 'draft' | 'rewrite';
+  /**
+   * Present ONLY for a Prep tab on-demand draft (PR4) — a caller with no row
+   * model tags its stream with a `topic` instead of a `rowId` (which stays
+   * `''` for that caller, same as any other caller with no row model). The
+   * Prep tab matches on THIS field rather than `rowId`, so it never collides
+   * with — or is collided into by — any real Answer-tools row.
+   */
+  topic?: ExtensionAnswerAssistTopic;
 }
 
 /** The whole per-(tab, origin) state both surfaces render. */

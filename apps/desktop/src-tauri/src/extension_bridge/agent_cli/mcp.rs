@@ -174,8 +174,8 @@ use super::*;
 // The ENFORCING constants (issue #1129): both `limit` descriptions are `format!`ed from these,
 // never retyped — a hand-typed copy is how the advertised 50/100 drifted from the enforced 25/50.
 use crate::extension_bridge::agent_read::{
+    best_matches::{DEFAULT_BEST_MATCHES_LIMIT, MAX_BEST_MATCHES_LIMIT},
     found_jobs::{DEFAULT_FOUND_JOBS_LIMIT, MAX_FOUND_JOBS_LIMIT},
-    DEFAULT_BEST_MATCHES_LIMIT, MAX_BEST_MATCHES_LIMIT,
 };
 
 // ── Tool names (the hand-written literal list a drift test pins) ──────────

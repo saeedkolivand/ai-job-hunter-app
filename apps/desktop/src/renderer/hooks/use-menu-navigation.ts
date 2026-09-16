@@ -14,22 +14,23 @@ import { useUiStore } from '@/store/ui-store';
 
 import type { AppRoute } from './use-keyboard-shortcuts';
 
-/** The two symbolic `menu:navigate` destinations the `ajh://generate?url=`
- *  and `ajh://open?url=` deep links resolve to — see {@link MenuNavigateEvent.route}. */
-type JobDeepLinkDestination = 'generate-for-job' | 'open-job';
+/** The three symbolic `menu:navigate` destinations the `ajh://generate?url=`,
+ *  `ajh://open?url=`, and `ajh://prep?url=` deep links resolve to — see
+ *  {@link MenuNavigateEvent.route}. */
+type JobDeepLinkDestination = 'generate-for-job' | 'open-job' | 'prep-for-job';
 
 /** Where a job deep link actually lands, once resolved against the live
  *  Applications list. Exported (pure, no React) for direct unit testing. */
 export type JobDeepLinkTarget =
-  | { kind: 'application'; id: string; tab?: 'documents' }
+  | { kind: 'application'; id: string; tab?: 'documents' | 'interview' }
   | { kind: 'generate-prefill'; url: string }
   | { kind: 'jobs-search'; url: string };
 
 /**
- * Resolve a `generate-for-job` / `open-job` deep link against the applications
- * already fetched — an Application whose `jobUrl` normalizes to the same
- * canonical identity as the deep link's `url` (mirrors the dedup identity
- * `canonicalJobKey` uses elsewhere, via the same `normalizeJobUrl`).
+ * Resolve a `generate-for-job` / `open-job` / `prep-for-job` deep link against
+ * the applications already fetched — an Application whose `jobUrl` normalizes
+ * to the same canonical identity as the deep link's `url` (mirrors the dedup
+ * identity `canonicalJobKey` uses elsewhere, via the same `normalizeJobUrl`).
  *
  * `generate-for-job`: an existing job lands on its Documents tab (the
  * tailor/generate flow); no job lands on a fresh generate session prefilled
@@ -37,6 +38,14 @@ export type JobDeepLinkTarget =
  * runs in the renderer, per ADR-050 §PR2 decision 4).
  * `open-job`: an existing job lands on its detail page; no job falls back to
  * the jobs list with the URL as the search term.
+ * `prep-for-job`: an existing job lands on its Interview-prep tab (where
+ * `InterviewPrepTab` actually lives — `ApplicationDetailPage`'s `interview`
+ * tab); no job falls back to the same prefilled-generate target as
+ * `generate-for-job` — `InterviewPrepTab` sources its résumé + job
+ * description from the application/its generations, so without a matching
+ * application there is nothing to prep from yet, and generating is the step
+ * that creates one (mirrors the "no generation exists for a job yet"
+ * condition the Rust dispatcher's own doc comment uses for both).
  */
 export function resolveJobDeepLinkTarget(
   destination: JobDeepLinkDestination,
@@ -47,13 +56,15 @@ export function resolveJobDeepLinkTarget(
   const match = target ? applications.find((a) => normalizeJobUrl(a.jobUrl) === target) : undefined;
 
   if (match) {
-    return destination === 'generate-for-job'
-      ? { kind: 'application', id: match.id, tab: 'documents' }
-      : { kind: 'application', id: match.id };
+    if (destination === 'generate-for-job')
+      return { kind: 'application', id: match.id, tab: 'documents' };
+    if (destination === 'prep-for-job')
+      return { kind: 'application', id: match.id, tab: 'interview' };
+    return { kind: 'application', id: match.id };
   }
-  return destination === 'generate-for-job'
-    ? { kind: 'generate-prefill', url }
-    : { kind: 'jobs-search', url };
+  return destination === 'open-job'
+    ? { kind: 'jobs-search', url }
+    : { kind: 'generate-prefill', url };
 }
 
 /** Settings sub-sections we accept off the wire — mirrors the `SettingsSection`
@@ -93,10 +104,11 @@ export function useMenuNavigation() {
   const { t } = useTranslation();
   const { isMacos } = useWindowControls();
 
-  // `generate-for-job` / `open-job`: fetch the live applications list (fresh —
-  // a cold app has nothing warm yet) and land on whichever page
-  // `resolveJobDeepLinkTarget` resolves to. A malformed/missing `url` (should
-  // never happen — the shell validates it before dispatch) is a no-op.
+  // `generate-for-job` / `open-job` / `prep-for-job`: fetch the live
+  // applications list (fresh — a cold app has nothing warm yet) and land on
+  // whichever page `resolveJobDeepLinkTarget` resolves to. A malformed/missing
+  // `url` (should never happen — the shell validates it before dispatch) is a
+  // no-op.
   const goToJobDeepLink = useCallback(
     (destination: JobDeepLinkDestination, url: string | undefined) => {
       if (!url) return;
@@ -134,7 +146,7 @@ export function useMenuNavigation() {
 
   const onNavigate = useCallback(
     ({ route, section, focus, url }: MenuNavigateEvent) => {
-      if (route === 'generate-for-job' || route === 'open-job') {
+      if (route === 'generate-for-job' || route === 'open-job' || route === 'prep-for-job') {
         goToJobDeepLink(route, url);
         return;
       }

@@ -8,15 +8,16 @@
  * own "Unpair this device" and "Open app settings →" controls, since the
  * popup's own unpair lives inside its "?" menu instead.
  *
- * "What the extension may do" renders THREE live toggles (PR1, R7 of the
+ * "What the extension may do" renders FOUR live toggles (PR1/PR4, R7 of the
  * redesign record — resolved in favor of toggling from the extension, not
  * read-only mirrors): `settings.get`/`settings.set` cover `autofill` /
- * `aiAssist` / `autotrack` today; the fourth switch, `saveAnswersOnSubmit`,
- * lands in PR4. A toggle click is OPTIMISTIC (flips immediately) and rolls
- * back on a refusal or a failed request — the desktop is still the source
- * of truth and re-enforces every gate at use time regardless of what this
- * page shows; every change made from here also raises a Notification
- * Center entry in the app.
+ * `aiAssist` / `autotrack` / `saveAnswersOnSubmit` — the last one nested
+ * under auto-track ("also save the answers I typed"), default OFF. A toggle
+ * click is OPTIMISTIC (flips immediately) and rolls back on a refusal or a
+ * failed request — the desktop is still the source of truth and
+ * re-enforces every gate at use time regardless of what this page shows;
+ * every change made from here also raises a Notification Center entry in
+ * the app.
  */
 
 import { browser } from '@wxt-dev/browser';
@@ -161,6 +162,11 @@ const PERMISSION_ROWS: readonly PermissionRow[] = [
     title: 'Auto-track applied status',
     desc: 'Mark a job Applied automatically when its form submits.',
   },
+  {
+    key: 'saveAnswersOnSubmit',
+    title: '↳ Also save the answers I typed',
+    desc: 'Nested under Auto-track: when a form submits, save what you typed too. Default off.',
+  },
 ];
 
 /** The last known switch values, or `null` before the first `settings.get`
@@ -183,7 +189,17 @@ function renderPermissions(settings: ExtensionSettingsValues | null): void {
     title.textContent = row.title;
     const desc = document.createElement('p');
     desc.className = 'set-desc';
-    desc.textContent = settings ? row.desc : `${row.desc} (Unknown until connected.)`;
+    // saveAnswersOnSubmit is a REAL sub-switch, not just a visually-nested
+    // one: the submit-watcher that would capture answers is armed off the
+    // SAME auto-track opt-in (see `lib/auto-track.ts`'s `maybeArmSubmitWatch`
+    // doc) — with auto-track off, this switch cannot do anything regardless
+    // of its own value. Disable it (rather than let it look live) and say why.
+    const parentOff = row.key === 'saveAnswersOnSubmit' && settings?.autotrack === false;
+    desc.textContent = !settings
+      ? `${row.desc} (Unknown until connected.)`
+      : parentOff
+        ? `${row.desc} (Turn on Auto-track applied status first.)`
+        : row.desc;
     copy.append(title, desc);
 
     const known = settings ? settings[row.key] : null;
@@ -194,7 +210,7 @@ function renderPermissions(settings: ExtensionSettingsValues | null): void {
     toggle.setAttribute('aria-labelledby', titleId);
     toggle.classList.toggle('on', known === true);
     toggle.setAttribute('aria-checked', String(known === true));
-    toggle.disabled = known === null;
+    toggle.disabled = known === null || parentOff;
     toggle.addEventListener('click', () => void toggleSetting(row.key, toggle));
 
     el.append(copy, toggle);

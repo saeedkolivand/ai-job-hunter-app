@@ -1,6 +1,6 @@
 //! `settings.get` → `settings.result` / `settings.set` → `settings.result` (R7,
 //! ADR-0009 amendment) — the extension's own opt-in switches (autofill,
-//! aiAssist, autotrack), toggleable from the paired extension AND the app.
+//! aiAssist, autotrack, saveAnswersOnSubmit), toggleable from the paired extension AND the app.
 //! Extension caller ONLY: `settings.get` answers regardless of the
 //! Assisted-autofill gate (it is how the user turns it on), and both verbs
 //! are refused for the CLI (it already has the `Effect::Reversible` rows for
@@ -25,9 +25,8 @@
 //! [`SettingsSetThrottle`].
 //!
 //! [`SettingsKey`] is deliberately the ONE place that knows the wire
-//! name/getter/setter/label for each switch, so adding the fourth
-//! (`saveAnswersOnSubmit`, PR4) is one variant plus one arm per method here
-//! — never a second hand-typed mapping.
+//! name/getter/setter/label for each switch — `saveAnswersOnSubmit` (PR4) is
+//! one variant plus one arm per method here, never a second hand-typed mapping.
 //!
 //! [`resolve_settings_set`] takes no `AppHandle` (mirrors
 //! `status_update::resolve_status_update`'s split) so it stays directly
@@ -50,16 +49,23 @@ enum SettingsKey {
     Autofill,
     AiAssist,
     Autotrack,
+    SaveAnswersOnSubmit,
 }
 
 impl SettingsKey {
-    const ALL: [SettingsKey; 3] = [Self::Autofill, Self::AiAssist, Self::Autotrack];
+    const ALL: [SettingsKey; 4] = [
+        Self::Autofill,
+        Self::AiAssist,
+        Self::Autotrack,
+        Self::SaveAnswersOnSubmit,
+    ];
 
     fn from_wire(s: &str) -> Option<Self> {
         match s {
             "autofill" => Some(Self::Autofill),
             "aiAssist" => Some(Self::AiAssist),
             "autotrack" => Some(Self::Autotrack),
+            "saveAnswersOnSubmit" => Some(Self::SaveAnswersOnSubmit),
             _ => None,
         }
     }
@@ -69,6 +75,7 @@ impl SettingsKey {
             Self::Autofill => "autofill",
             Self::AiAssist => "aiAssist",
             Self::Autotrack => "autotrack",
+            Self::SaveAnswersOnSubmit => "saveAnswersOnSubmit",
         }
     }
 
@@ -77,6 +84,7 @@ impl SettingsKey {
             Self::Autofill => state.autofill_enabled(),
             Self::AiAssist => state.ai_assist_enabled(),
             Self::Autotrack => state.autotrack_enabled(),
+            Self::SaveAnswersOnSubmit => state.save_answers_on_submit_enabled(),
         }
     }
 
@@ -90,6 +98,7 @@ impl SettingsKey {
             Self::Autofill => state.set_autofill_enabled(enabled),
             Self::AiAssist => state.set_ai_assist(enabled),
             Self::Autotrack => state.set_autotrack_enabled(enabled),
+            Self::SaveAnswersOnSubmit => state.set_save_answers_on_submit_enabled(enabled),
         }
     }
 
@@ -99,6 +108,7 @@ impl SettingsKey {
             Self::Autofill => "Assisted autofill",
             Self::AiAssist => "AI answer assist",
             Self::Autotrack => "Auto-track",
+            Self::SaveAnswersOnSubmit => "Save answers on submit",
         }
     }
 }
@@ -313,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn settings_get_reports_all_three_defaults_off() {
+    fn settings_get_reports_all_four_defaults_off() {
         let (_dir, state) = state();
         let reply = handle_settings_get("req-1", &state);
         let v: Value = serde_json::from_str(&reply).unwrap();
@@ -322,6 +332,7 @@ mod tests {
         assert_eq!(v["payload"]["settings"]["autofill"], false);
         assert_eq!(v["payload"]["settings"]["aiAssist"], false);
         assert_eq!(v["payload"]["settings"]["autotrack"], false);
+        assert_eq!(v["payload"]["settings"]["saveAnswersOnSubmit"], false);
     }
 
     #[test]
@@ -334,6 +345,7 @@ mod tests {
         assert!(state.autofill_enabled(), "the same BridgeState setter ran");
         assert!(!state.ai_assist_enabled(), "only the named key changed");
         assert!(!state.autotrack_enabled());
+        assert!(!state.save_answers_on_submit_enabled());
     }
 
     /// Setting a key to its own current value is a no-op: no re-apply
@@ -367,6 +379,11 @@ mod tests {
             ),
             ("aiAssist", (|s: &BridgeState| s.ai_assist_enabled()), true),
             ("autotrack", (|s: &BridgeState| s.autotrack_enabled()), true),
+            (
+                "saveAnswersOnSubmit",
+                (|s: &BridgeState| s.save_answers_on_submit_enabled()),
+                true,
+            ),
         ] {
             resolve_settings_set(&state, &json!({ "key": wire, "enabled": enabled })).unwrap();
             assert!(get(&state), "key {wire} did not apply");
@@ -382,6 +399,7 @@ mod tests {
         assert!(!state.autofill_enabled());
         assert!(!state.ai_assist_enabled());
         assert!(!state.autotrack_enabled());
+        assert!(!state.save_answers_on_submit_enabled());
     }
 
     #[test]

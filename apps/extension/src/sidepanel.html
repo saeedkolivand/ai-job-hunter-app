@@ -53,11 +53,21 @@
              `JOB_TOOLS_GATED_LINE`, so this never duplicates that message. -->
         <p id="trust-line" class="trust-line" hidden></p>
 
-        <!-- Tab bar (`src/tabs/tabs.ts`) — Job / Answers today, Documents /
-             Prep register through the same list in PR2/PR4. The panels
-             themselves (job-status + job-tools host, answer-tools host) are
-             built into it by sidepanel.ts, not hardcoded here — see that
-             file's mount sequence. -->
+        <!-- The one-shot "save-answers-on-submit just saved this" transparent
+             notice (PR4, decision 7 — read once, on whichever surface asks
+             first; see lib/auto-save-notice.ts's doc). Dismissible: it has
+             already done its job of not being silent once shown. -->
+        <div id="auto-save-notice" class="auto-save-notice" role="status" aria-live="polite" hidden>
+          <p id="auto-save-notice-text"></p>
+          <button id="auto-save-notice-dismiss" class="link" type="button" aria-label="Dismiss">
+            ×
+          </button>
+        </div>
+
+        <!-- Tab bar (`src/tabs/tabs.ts`) — Job / Documents / Answers / Prep.
+             The panels themselves (job-status + job-tools host, answer-tools
+             host, prep host) are built into it by sidepanel.ts, not
+             hardcoded here — see that file's mount sequence. -->
         <div id="tabs-host"></div>
       </section>
 

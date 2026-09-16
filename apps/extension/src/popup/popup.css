@@ -525,6 +525,25 @@ details.group[open] > summary::before {
   font-weight: 600;
 }
 
+/* The one-shot save-answers-on-submit auto-save notice (PR4, decision 7) —
+   plain, quiet, dismissible: transparency without alarm. */
+.auto-save-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--pill-paired-bg);
+}
+
+.auto-save-notice p {
+  margin: 0;
+  flex: 1;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
 .link {
   align-self: flex-start;
   background: none;

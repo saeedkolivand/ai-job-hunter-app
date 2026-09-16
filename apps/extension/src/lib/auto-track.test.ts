@@ -9,7 +9,11 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import type { ExtensionAppliedCheckResult, ExtensionStatusUpdateResult } from '@ajh/shared';
+import type {
+  ExtensionAnswersSaveResult,
+  ExtensionAppliedCheckResult,
+  ExtensionStatusUpdateResult,
+} from '@ajh/shared';
 
 import {
   decideSubmitAction,
@@ -24,12 +28,21 @@ const OK_UPDATE: ExtensionStatusUpdateResult = {
   status: 'applied',
 };
 
+const OK_SAVE: ExtensionAnswersSaveResult = {
+  ok: true,
+  applicationId: 'app-1',
+  saved: 1,
+  skipped: 0,
+};
+
 function flowDeps(overrides: Partial<SubmitFlowDeps> = {}): SubmitFlowDeps {
   return {
     autotrackEnabled: vi.fn().mockResolvedValue(true),
     checkApplied: vi.fn().mockResolvedValue({ found: true, status: 'saved' }),
     updateStatusAuto: vi.fn().mockResolvedValue(OK_UPDATE),
     promptImport: vi.fn(),
+    saveAnswersAuto: vi.fn().mockResolvedValue(OK_SAVE),
+    notifyAutoSave: vi.fn(),
     ...overrides,
   };
 }
@@ -98,6 +111,70 @@ describe('handleSubmitDetected', () => {
     expect(deps.updateStatusAuto).not.toHaveBeenCalled();
     expect(deps.promptImport).not.toHaveBeenCalled();
   });
+
+  it('no answers argument → never saves, never notifies (PR4)', async () => {
+    const deps = flowDeps();
+    await handleSubmitDetected('https://x.co/j', deps);
+    expect(deps.saveAnswersAuto).not.toHaveBeenCalled();
+    expect(deps.notifyAutoSave).not.toHaveBeenCalled();
+  });
+
+  it('an empty captured-answers array → never saves (PR4)', async () => {
+    const deps = flowDeps();
+    await handleSubmitDetected('https://x.co/j', deps, []);
+    expect(deps.saveAnswersAuto).not.toHaveBeenCalled();
+  });
+
+  it('captured answers present → saves with auto:true and notifies on success (PR4)', async () => {
+    const deps = flowDeps();
+    const answers = [{ question: 'Why this role?', answer: 'Because I love it.' }];
+    await handleSubmitDetected('https://x.co/j', deps, answers);
+    expect(deps.saveAnswersAuto).toHaveBeenCalledWith('https://x.co/j', answers);
+    expect(deps.notifyAutoSave).toHaveBeenCalledWith(OK_SAVE);
+  });
+
+  it('a desktop refusal (e.g. the opt-in off server-side) degrades silently — no notice (PR4)', async () => {
+    const deps = flowDeps({
+      saveAnswersAuto: vi.fn().mockResolvedValue({ ok: false, error: 'auto_save_disabled' }),
+    });
+    const answers = [{ question: 'Why this role?', answer: 'Because I love it.' }];
+    await handleSubmitDetected('https://x.co/j', deps, answers);
+    expect(deps.notifyAutoSave).not.toHaveBeenCalled();
+  });
+
+  it('auto-track opt-in OFF also skips the answer save (nested, PR4)', async () => {
+    const deps = flowDeps({ autotrackEnabled: vi.fn().mockResolvedValue(false) });
+    const answers = [{ question: 'Why this role?', answer: 'Because I love it.' }];
+    await handleSubmitDetected('https://x.co/j', deps, answers);
+    expect(deps.saveAnswersAuto).not.toHaveBeenCalled();
+  });
+
+  it('a saveAnswersAuto failure is swallowed (best-effort, PR4)', async () => {
+    const deps = flowDeps({
+      saveAnswersAuto: vi.fn().mockRejectedValue(new Error('bridge down')),
+    });
+    const answers = [{ question: 'Why this role?', answer: 'Because I love it.' }];
+    await expect(handleSubmitDetected('https://x.co/j', deps, answers)).resolves.toBeUndefined();
+    expect(deps.notifyAutoSave).not.toHaveBeenCalled();
+  });
+
+  it('a checkApplied rejection does not lose the captured answers — the save runs as a SEPARATE best-effort step (PR-1209)', async () => {
+    const deps = flowDeps({ checkApplied: vi.fn().mockRejectedValue(new Error('bridge down')) });
+    const answers = [{ question: 'Why this role?', answer: 'Because I love it.' }];
+    await expect(handleSubmitDetected('https://x.co/j', deps, answers)).resolves.toBeUndefined();
+    expect(deps.saveAnswersAuto).toHaveBeenCalledWith('https://x.co/j', answers);
+    expect(deps.notifyAutoSave).toHaveBeenCalledWith(OK_SAVE);
+  });
+
+  it('an updateStatusAuto rejection does not lose the captured answers — the save runs as a SEPARATE best-effort step (PR-1209)', async () => {
+    const deps = flowDeps({
+      updateStatusAuto: vi.fn().mockRejectedValue(new Error('bridge down')),
+    });
+    const answers = [{ question: 'Why this role?', answer: 'Because I love it.' }];
+    await expect(handleSubmitDetected('https://x.co/j', deps, answers)).resolves.toBeUndefined();
+    expect(deps.saveAnswersAuto).toHaveBeenCalledWith('https://x.co/j', answers);
+    expect(deps.notifyAutoSave).toHaveBeenCalledWith(OK_SAVE);
+  });
 });
 
 describe('maybeArmSubmitWatch', () => {
@@ -126,5 +203,34 @@ describe('maybeArmSubmitWatch', () => {
         injectSubmitWatch: vi.fn().mockRejectedValue(new Error('restricted page')),
       })
     ).resolves.toBeUndefined();
+  });
+
+  it('no saveAnswersOnSubmitEnabled dep → arms WITHOUT capture (PR4, unchanged default)', async () => {
+    const injectSubmitWatch = vi.fn().mockResolvedValue(undefined);
+    await maybeArmSubmitWatch({
+      autotrackEnabled: vi.fn().mockResolvedValue(true),
+      injectSubmitWatch,
+    });
+    expect(injectSubmitWatch).toHaveBeenCalledWith(false);
+  });
+
+  it('saveAnswersOnSubmitEnabled true → arms WITH capture (PR4)', async () => {
+    const injectSubmitWatch = vi.fn().mockResolvedValue(undefined);
+    await maybeArmSubmitWatch({
+      autotrackEnabled: vi.fn().mockResolvedValue(true),
+      injectSubmitWatch,
+      saveAnswersOnSubmitEnabled: vi.fn().mockResolvedValue(true),
+    });
+    expect(injectSubmitWatch).toHaveBeenCalledWith(true);
+  });
+
+  it('saveAnswersOnSubmitEnabled failure → still arms, WITHOUT capture (PR4, best-effort)', async () => {
+    const injectSubmitWatch = vi.fn().mockResolvedValue(undefined);
+    await maybeArmSubmitWatch({
+      autotrackEnabled: vi.fn().mockResolvedValue(true),
+      injectSubmitWatch,
+      saveAnswersOnSubmitEnabled: vi.fn().mockRejectedValue(new Error('bridge down')),
+    });
+    expect(injectSubmitWatch).toHaveBeenCalledWith(false);
   });
 });

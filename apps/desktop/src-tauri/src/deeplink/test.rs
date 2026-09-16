@@ -134,6 +134,19 @@ fn accepts_a_valid_open_job_url() {
 }
 
 #[test]
+fn accepts_a_valid_prep_for_job_url() {
+    let input = "https://example.com/job/3";
+    let encoded = urlencoding::encode(input);
+    let target = parse_focus_target(&argv(&format!("ajh://prep?url={encoded}")));
+    assert_eq!(
+        target,
+        Some(FocusTarget::PrepForJob(
+            crate::applications::normalize_job_url(input)
+        ))
+    );
+}
+
+#[test]
 fn rejects_a_bare_scheme_with_no_authority() {
     // A scheme with nothing after it must not parse into a target — `normalize_job_url("https://")`
     // returns the non-empty literal `"https://"`, which the renderer would otherwise treat as a
@@ -147,6 +160,11 @@ fn rejects_a_bare_scheme_with_no_authority() {
         );
         assert_eq!(
             parse_focus_target(&argv(&format!("ajh://open?url={encoded}"))),
+            None,
+            "bare = {bare:?}"
+        );
+        assert_eq!(
+            parse_focus_target(&argv(&format!("ajh://prep?url={encoded}"))),
             None,
             "bare = {bare:?}"
         );
@@ -165,6 +183,11 @@ fn rejects_a_non_http_job_url() {
         parse_focus_target(&argv(&format!("ajh://open?url={encoded_ftp}"))),
         None
     );
+    let encoded_js = urlencoding::encode("javascript:alert(1)");
+    assert_eq!(
+        parse_focus_target(&argv(&format!("ajh://prep?url={encoded_js}"))),
+        None
+    );
 }
 
 #[test]
@@ -175,6 +198,10 @@ fn rejects_an_oversized_job_url() {
         parse_focus_target(&argv(&format!("ajh://generate?url={encoded}"))),
         None
     );
+    assert_eq!(
+        parse_focus_target(&argv(&format!("ajh://prep?url={encoded}"))),
+        None
+    );
 }
 
 #[test]
@@ -183,6 +210,8 @@ fn rejects_a_missing_or_malformed_url_param() {
     assert_eq!(parse_focus_target(&argv("ajh://generate?")), None);
     assert_eq!(parse_focus_target(&argv("ajh://generate?url=")), None);
     assert_eq!(parse_focus_target(&argv("ajh://open?foo=bar")), None);
+    assert_eq!(parse_focus_target(&argv("ajh://prep")), None);
+    assert_eq!(parse_focus_target(&argv("ajh://prep?url=")), None);
     // A second query param is rejected outright rather than silently ignored.
     let encoded = urlencoding::encode("https://example.com/job/1");
     assert_eq!(

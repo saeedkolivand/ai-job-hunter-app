@@ -32,14 +32,33 @@
  * it must carry ZERO `import` statements after the isolated Rollup pass
  * (`vite.config.mts`'s `injectedEntries`) inlines this module + its `field-signal`
  * dependency.
+ *
+ * PR4 (save answers on submit): when armed with `captureAnswers: true`, the
+ * `fire()` handler ALSO calls {@link collectAnswers} SYNCHRONOUSLY, in the
+ * same tick that decides to fire — before `post` returns control to the real
+ * submit/navigation. This is load-bearing: a full-page-navigation submit can
+ * unload the document before any async round trip (a message to the
+ * background, let alone a network call) completes, so capture cannot be
+ * deferred even by one microtask. The flag is a plain boolean the caller
+ * decides BEFORE arming (from the desktop-enforced `saveAnswersOnSubmit`
+ * opt-in) — this module never decides policy on its own, it only captures
+ * when told to.
  */
 
+import { type CapturedAnswer, collectAnswers } from './answers-capture';
 import { isHidden, textSignal } from './field-signal';
 
 /** Internal background message kind the injected watcher posts on a detected
  *  submit. Duplicated as a plain literal in `background.ts` (kept out of that
  *  bundle's import graph — same discipline as `AUTOFILL_GLOBAL`). */
 export const SUBMIT_DETECTED_MSG = 'submitDetected';
+
+/** Isolated-world global key under which `submit-watch.js` exposes its arm
+ *  runner (PR4 — same two-step files+func pattern as `fill.js`/
+ *  `AUTOFILL_GLOBAL`, needed here to pass the `captureAnswers` boolean at
+ *  injection time as a plain JSON-safe primitive arg). Duplicated as a local
+ *  literal in `background.ts`, same discipline as `AUTOFILL_GLOBAL`. */
+export const SUBMIT_WATCH_GLOBAL = '__ajhArmSubmitWatch';
 
 /** Visible text that marks a control as a real "send the application" action
  *  (an apply/submit/finish button), not a "save draft"/"add another" control.
@@ -173,19 +192,64 @@ function isApplyControl(el: Element): boolean {
   return STRICT_APPLY_TEXT_RE.test(text);
 }
 
+/** {@link armSubmitWatch}'s options — currently just the one PR4 flag, kept
+ *  as an object so a future arm-time option doesn't force every call site to
+ *  learn a new positional parameter. */
+export interface SubmitWatchOptions {
+  /** Capture the page's currently-filled answers (via {@link collectAnswers})
+   *  SYNCHRONOUSLY at fire time and pass them to `post` as its second
+   *  argument. Decided by the CALLER, from the desktop-enforced
+   *  `saveAnswersOnSubmit` opt-in — this module never reads or decides that
+   *  policy itself, it only reads the value it is given.
+   *
+   *  Either a plain boolean (evaluated once, at arm time — every existing
+   *  caller/test) or a getter READ AT FIRE TIME. The getter form is what
+   *  `submit-watch.ts` (the injected classic-script entry) arms with: the
+   *  watcher is registered AT MOST ONCE per frame (its own isolated-world
+   *  flag), but the desktop-enforced opt-in can change mid-frame (the user
+   *  flips the switch), so a plain boolean captured once would freeze the
+   *  FIRST value for the frame's whole life — toggling the switch OFF would
+   *  still capture on a later submit, and ON would do nothing until a
+   *  navigation (PR-1209 finding). The getter lets the entry point keep a
+   *  mutable value current across re-arm attempts while this module stays
+   *  policy-free either way. Defaults to `false`. */
+  captureAnswers?: boolean | (() => boolean);
+}
+
 /**
  * Arm the observe-only watcher on `doc`: a capture-phase `submit` listener (any
  * real form submit) PLUS a capture-phase click heuristic for apply-style
  * controls (for Easy-Apply/SPA flows that submit via JS without a native submit
  * event). The FIRST of either posts the page URL via `post` exactly once; every
  * later event is a no-op. Never blocks or alters the observed event.
+ *
+ * `post`'s second argument is PURELY ADDITIVE (PR4): every existing caller
+ * that only reads `post`'s first argument is unaffected.
  */
-export function armSubmitWatch(doc: Document, post: (url: string) => void): void {
+export function armSubmitWatch(
+  doc: Document,
+  post: (url: string, answers?: CapturedAnswer[]) => void,
+  opts: SubmitWatchOptions = {}
+): void {
   let fired = false;
-  const fire = (): void => {
+  // `form` is the application form to scope a capture to, if one is known —
+  // `null` means "no reliably-associated form": capture nothing rather than
+  // guess at the whole document (under-claim over mis-save, PR-1209 finding).
+  const fire = (form: HTMLFormElement | null): void => {
     if (fired) return;
     fired = true;
-    post(doc.defaultView?.location?.href ?? '');
+    const url = doc.defaultView?.location?.href ?? '';
+    const capture =
+      typeof opts.captureAnswers === 'function'
+        ? opts.captureAnswers()
+        : (opts.captureAnswers ?? false);
+    // Synchronous, same tick as the decision to fire — see this module's own
+    // doc for why capture cannot be deferred past a full-page-nav submit.
+    // Omit the field (rather than pass an empty array) when armed but
+    // nothing was captured — `answers` present means "something to save".
+    const collected = capture && form ? collectAnswers(form) : undefined;
+    const answers = collected && collected.length > 0 ? collected : undefined;
+    post(url, answers);
   };
 
   // Real form submit — but ONLY for a form that looks like the application form.
@@ -205,7 +269,7 @@ export function armSubmitWatch(doc: Document, post: (url: string) => void): void
       // as before.
       const submitter = (ev as Partial<SubmitEvent>).submitter ?? null;
       if (submitter && NON_SUBMIT_TEXT_RE.test(controlText(submitter))) return;
-      fire();
+      fire(form);
     },
     true
   );
@@ -214,13 +278,17 @@ export function armSubmitWatch(doc: Document, post: (url: string) => void): void
   // fire a native `submit`. The click can land on a child (an icon/span), so
   // walk up to the nearest candidate control and only fire for a VISIBLE one
   // (skip an off-screen/honeypot button — computed-style-only via `isHidden`).
+  // The application form (if any) is resolved via `applicationFormFor` so a
+  // capture here is scoped exactly like the submit path above.
   doc.addEventListener(
     'click',
     (ev) => {
       const start = ev.target;
       if (!(start instanceof Element)) return;
       const el = start.closest('button, input, [role="button"]');
-      if (el instanceof HTMLElement && isApplyControl(el) && !isHidden(el)) fire();
+      if (el instanceof HTMLElement && isApplyControl(el) && !isHidden(el)) {
+        fire(applicationFormFor(el));
+      }
     },
     true
   );

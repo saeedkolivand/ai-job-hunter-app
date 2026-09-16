@@ -268,6 +268,23 @@ impl AssistStreamRegistry {
         )
     }
 
+    /// Whether `req_id`'s entry was cancelled while still `Pending` (an `assist.cancel` — or the
+    /// whole connection closing via [`Self::cancel_all`] — that raced ahead of the FIRST
+    /// [`Self::register`] call). A non-consuming PEEK: unlike `register`'s own `CancelledEarly`
+    /// handling, this does NOT remove the marker, so `register` still reaches it afterwards and
+    /// consumes it exactly as before — this method changes nothing about that discipline. Exists
+    /// so a caller doing BILLABLE pre-register grounding (see
+    /// `answer_assist_topic::research_company_brief`) can skip the spend instead of running it
+    /// unconditionally and only discovering the cancel once `register` finally runs, deep inside
+    /// `compose_draft_stream` — the same "spend guard, not the correctness boundary" role
+    /// [`Self::holds_running_gen`] plays for a second attempt's retry charge.
+    pub(super) fn is_cancelled_early(&self, req_id: &str, r#gen: u64) -> bool {
+        matches!(
+            self.0.lock().entries.get(req_id),
+            Some(StreamEntry::CancelledEarly(g)) if *g == r#gen
+        )
+    }
+
     /// Remove `req_id`'s entry ONLY IF its stored generation equals `gen` —
     /// generation-scoped removal, the SOLE way any "end of request" cleanup
     /// may free an entry (see [`StreamEntry`]'s doc for the clobber this
@@ -567,6 +584,42 @@ mod tests {
         assert!(
             !r.holds_running_gen("req-1", r#gen),
             "a dropped connection must not buy a retry"
+        );
+    }
+
+    /// `is_cancelled_early` is the spend guard a caller doing pre-register billable grounding
+    /// (company-brief) checks before paying for it — a non-consuming peek, so `register` still
+    /// finds (and consumes) the SAME marker afterwards.
+    #[test]
+    fn is_cancelled_early_peeks_the_pending_cancel_without_consuming_it() {
+        let r = AssistStreamRegistry::default();
+        let canceller = RecordingCanceller::default();
+        let r#gen = r.begin("req-1").expect("a fresh reqId");
+        assert!(
+            !r.is_cancelled_early("req-1", r#gen),
+            "a fresh Pending entry was never cancelled"
+        );
+
+        r.cancel(&canceller, "req-1"); // still Pending (no job yet) -> CancelledEarly
+        assert!(r.is_cancelled_early("req-1", r#gen));
+        assert!(
+            !r.is_cancelled_early("req-1", r#gen + 1),
+            "another generation's marker is not this request's"
+        );
+        assert!(!r.is_cancelled_early("req-2", r#gen), "nor another reqId's");
+
+        // The peek must not have consumed the marker: `register` still sees it and refuses.
+        assert!(!r.register("req-1", r#gen, "job-1"));
+    }
+
+    #[test]
+    fn is_cancelled_early_is_false_for_a_running_or_never_cancelled_entry() {
+        let r = AssistStreamRegistry::default();
+        let r#gen = r.begin("req-1").expect("a fresh reqId");
+        assert!(r.register("req-1", r#gen, "job-1"));
+        assert!(
+            !r.is_cancelled_early("req-1", r#gen),
+            "a Running entry was never cancelled early"
         );
     }
 

@@ -296,3 +296,173 @@ describe('armSubmitWatch — fire-once guard', () => {
     expect(post).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('armSubmitWatch — save-answers-on-submit capture (PR4)', () => {
+  it('does NOT capture answers when captureAnswers is absent (default false)', () => {
+    setBody(`
+      <form id="f">
+        ${APPLICATION_FIELDS}
+        <label for="q">Why this role?</label>
+        <textarea id="q">Because I love it.</textarea>
+        <button type="submit">Submit application</button>
+      </form>
+    `);
+    const post = vi.fn();
+    armSubmitWatch(document, post);
+
+    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true })
+    );
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0]?.[1]).toBeUndefined();
+  });
+
+  it('captures the currently-filled answers SYNCHRONOUSLY when armed with captureAnswers:true', () => {
+    setBody(`
+      <form id="f">
+        ${APPLICATION_FIELDS}
+        <label for="q">Why this role?</label>
+        <textarea id="q">Because I love it.</textarea>
+        <button type="submit">Submit application</button>
+      </form>
+    `);
+    const post = vi.fn();
+    armSubmitWatch(document, post, { captureAnswers: true });
+
+    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true })
+    );
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0]?.[0]).toEqual(expect.any(String));
+    expect(post.mock.calls[0]?.[1]).toEqual([
+      { question: 'Why this role?', answer: 'Because I love it.' },
+    ]);
+  });
+
+  it('omits answers (rather than an empty array) when armed but nothing is filled — present means "something to save"', () => {
+    setBody(
+      `<form id="f">${APPLICATION_FIELDS}<button type="submit">Submit application</button></form>`
+    );
+    const post = vi.fn();
+    armSubmitWatch(document, post, { captureAnswers: true });
+
+    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true })
+    );
+
+    expect(post.mock.calls[0]?.[1]).toBeUndefined();
+  });
+});
+
+describe('armSubmitWatch — capture is scoped to the submitted application form (PR-1209)', () => {
+  it('does NOT include an unrelated filled form’s fields in the captured answers', () => {
+    setBody(`
+      <form id="app">
+        ${APPLICATION_FIELDS}
+        <label for="q">Why this role?</label>
+        <textarea id="q">Because I love it.</textarea>
+        <button type="submit">Submit application</button>
+      </form>
+      <form id="newsletter">
+        <label for="nlEmail">Newsletter email</label>
+        <input id="nlEmail" name="newsletter_email" value="me@example.com" />
+      </form>
+    `);
+    const post = vi.fn();
+    armSubmitWatch(document, post, { captureAnswers: true });
+
+    (document.getElementById('app') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true })
+    );
+
+    expect(post.mock.calls[0]?.[1]).toEqual([
+      { question: 'Why this role?', answer: 'Because I love it.' },
+    ]);
+  });
+
+  it('click-only detection resolves the associated form and scopes capture to it', () => {
+    setBody(`
+      <form id="app">
+        ${APPLICATION_FIELDS}
+        <label for="q">Why this role?</label>
+        <textarea id="q">Because I love it.</textarea>
+        <button type="submit">Apply now</button>
+      </form>
+    `);
+    const post = vi.fn();
+    armSubmitWatch(document, post, { captureAnswers: true });
+
+    document.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(post.mock.calls[0]?.[1]).toEqual([
+      { question: 'Why this role?', answer: 'Because I love it.' },
+    ]);
+  });
+
+  it('click-only detection with no resolvable form captures NOTHING rather than the whole document', () => {
+    setBody(`
+      <div role="button">Submit application</div>
+      <form id="newsletter">
+        <label for="nlEmail">Newsletter email</label>
+        <input id="nlEmail" name="newsletter_email" value="me@example.com" />
+      </form>
+    `);
+    const post = vi.fn();
+    armSubmitWatch(document, post, { captureAnswers: true });
+
+    document
+      .querySelector('[role="button"]')!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0]?.[1]).toBeUndefined();
+  });
+});
+
+describe('armSubmitWatch — captureAnswers is read at FIRE TIME, not arm time (PR-1209)', () => {
+  it('captures when the getter flips ON between arming and firing (no re-arm needed)', () => {
+    setBody(`
+      <form id="f">
+        ${APPLICATION_FIELDS}
+        <label for="q">Why this role?</label>
+        <textarea id="q">Because I love it.</textarea>
+        <button type="submit">Submit application</button>
+      </form>
+    `);
+    const post = vi.fn();
+    let capture = false;
+    armSubmitWatch(document, post, { captureAnswers: () => capture });
+
+    capture = true; // e.g. the desktop-enforced opt-in was turned ON mid-frame
+    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true })
+    );
+
+    expect(post.mock.calls[0]?.[1]).toEqual([
+      { question: 'Why this role?', answer: 'Because I love it.' },
+    ]);
+  });
+
+  it('does NOT capture when the getter flips OFF between arming and firing (no re-arm needed)', () => {
+    setBody(`
+      <form id="f">
+        ${APPLICATION_FIELDS}
+        <label for="q">Why this role?</label>
+        <textarea id="q">Because I love it.</textarea>
+        <button type="submit">Submit application</button>
+      </form>
+    `);
+    const post = vi.fn();
+    let capture = true;
+    armSubmitWatch(document, post, { captureAnswers: () => capture });
+
+    capture = false; // e.g. the desktop-enforced opt-in was turned OFF mid-frame
+    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true })
+    );
+
+    expect(post.mock.calls[0]?.[1]).toBeUndefined();
+  });
+});

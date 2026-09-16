@@ -75,6 +75,31 @@ fn parse_mode_recognizes_rewrite() {
     );
 }
 
+// ── topic validation (PR4) — the actual `resolve_answer_assist` call-site sequence:
+// `parse_topic(payload)?; topic_requires_draft(topic, mode)?;`. `parse_topic`/
+// `topic_requires_draft` each already have their own isolated unit tests in
+// `answer_assist_topic.rs`; this covers the composed branch as it is actually wired here.
+
+#[test]
+fn topic_validation_accepts_a_recognized_topic_in_draft_mode() {
+    let topic = parse_topic(&json!({ "topic": "salary-answer" })).unwrap();
+    assert_eq!(topic, Some(AssistTopic::SalaryAnswer));
+    assert!(topic_requires_draft(topic, AssistMode::Draft).is_ok());
+}
+
+#[test]
+fn topic_validation_refuses_a_recognized_topic_combined_with_rewrite_mode() {
+    let topic = parse_topic(&json!({ "topic": "company-brief" })).unwrap();
+    assert!(topic_requires_draft(topic, AssistMode::Rewrite).is_err());
+}
+
+#[test]
+fn topic_validation_refuses_a_malformed_topic_value_before_the_mode_check_ever_runs() {
+    // `mode: "rewrite"` here to prove the parse failure (`?`) wins independently of whichever
+    // mode the request also carries — the mode check never even runs.
+    assert!(parse_topic(&json!({ "topic": "bogus", "mode": "rewrite" })).is_err());
+}
+
 #[test]
 fn parse_existing_answer_defaults_to_empty() {
     assert_eq!(
@@ -660,13 +685,100 @@ async fn resolve_salary_range_skips_the_lookup_when_the_daily_budget_is_exhauste
         calls: std::sync::atomic::AtomicUsize::new(0),
     };
 
-    let range = resolve_salary_range(&searcher, &limiter, "openai", Some(&app_ctx)).await;
+    let range = resolve_salary_range(&searcher, &limiter, "openai", None, Some(&app_ctx)).await;
 
     assert!(range.is_none());
     assert_eq!(
         searcher.calls.load(std::sync::atomic::Ordering::SeqCst),
         0,
         "the market lookup must never run once the daily budget is exhausted"
+    );
+}
+
+/// The fix for the "salary-answer re-spends on every Prep click" finding: a `cache` handle now
+/// threads through to `SalaryResearch::enrich` (the SAME `salary_range` `KvCache` namespace
+/// `ai_lookup_salary_reasoned` uses), so a second lookup for the identical role/company reuses the
+/// 7-day cache instead of paying for a second provider round trip. `salary-answer` topic requests
+/// route through this exact function (its synthesized question is itself salary-shaped — see
+/// `answer_assist_topic`'s module doc), so this covers that path too.
+#[tokio::test]
+async fn resolve_salary_range_reuses_the_cache_instead_of_re_spending_on_a_repeat_lookup() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let cache = crate::pipeline::cache::KvCache::open(dir.path()).expect("open cache");
+    let limiter = crate::limits::Limiter::new();
+    let app_ctx = app_with_salary(None, None, None);
+    let searcher = FakeSalarySearcher {
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    };
+
+    let first =
+        resolve_salary_range(&searcher, &limiter, "openai", Some(&cache), Some(&app_ctx)).await;
+    assert!(
+        first.is_some(),
+        "the fresh (cache-miss) lookup must succeed"
+    );
+    assert_eq!(searcher.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+    let second =
+        resolve_salary_range(&searcher, &limiter, "openai", Some(&cache), Some(&app_ctx)).await;
+    assert_eq!(
+        second, first,
+        "a repeat lookup for the same role/company must return the SAME cached range"
+    );
+    assert_eq!(
+        searcher.calls.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "the second call must hit the 7-day cache, never a second provider round trip"
+    );
+}
+
+/// The exact regression the review flagged (PR #1209): quota used to be charged BEFORE the cache
+/// was consulted, so every cache HIT still burned the daily budget — and once it was exhausted, a
+/// value already sitting in the cache could no longer be read at all. Prime the cache with one
+/// real (cache-miss) lookup, THEN exhaust the daily budget, and assert the cached value still
+/// comes back — and that the second call never touches the searcher (so it can't be charging the
+/// now-exhausted quota either).
+#[tokio::test]
+async fn resolve_salary_range_reads_a_cache_hit_even_once_the_daily_budget_is_exhausted() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let cache = crate::pipeline::cache::KvCache::open(dir.path()).expect("open cache");
+    let limiter = crate::limits::Limiter::new();
+    let app_ctx = app_with_salary(None, None, None);
+    let searcher = FakeSalarySearcher {
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    };
+
+    // Prime: the one call in this test allowed to actually spend budget.
+    let primed =
+        resolve_salary_range(&searcher, &limiter, "openai", Some(&cache), Some(&app_ctx)).await;
+    assert!(primed.is_some(), "the priming lookup must succeed");
+    assert_eq!(searcher.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+    // Exhaust the rest of the SAME per-provider daily ceiling `resolve_salary_range` charges
+    // against (the priming call above already spent one unit of it).
+    for _ in 1..crate::limits::PROVIDER_DAILY_MAX {
+        limiter
+            .charge_provider_daily("openai", crate::limits::PROVIDER_DAILY_MAX)
+            .expect("charge within the daily ceiling");
+    }
+    assert!(
+        limiter
+            .charge_provider_daily("openai", crate::limits::PROVIDER_DAILY_MAX)
+            .is_err(),
+        "the daily budget must now be fully exhausted"
+    );
+
+    let cached =
+        resolve_salary_range(&searcher, &limiter, "openai", Some(&cache), Some(&app_ctx)).await;
+    assert_eq!(
+        cached, primed,
+        "a cache hit must still return the value, even with the daily budget fully exhausted"
+    );
+    assert_eq!(
+        searcher.calls.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "a cache hit must never touch the searcher — and, per the fix, must never need to \
+         charge the (already exhausted) quota either"
     );
 }
 

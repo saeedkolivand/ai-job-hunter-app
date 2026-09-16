@@ -321,16 +321,17 @@ export const EXTENSION_MESSAGE_TYPES = {
   agentCallResult: 'agent.call.result',
   /**
    * Extension → desktop: read the extension's opt-in switches (R7 of the
-   * redesign record — Assisted autofill / AI answer-assist / Auto-track;
-   * the fourth switch, `saveAnswersOnSubmit`, lands in PR4) — no payload.
-   * Allowed for the extension caller REGARDLESS of the Autofill gate (this
-   * is how the user turns it back on); refused for the CLI (it has the
-   * Reversible policy rows already) and any other caller.
+   * redesign record — Assisted autofill / AI answer-assist / Auto-track /
+   * Save answers on submit, PR4) — no payload. Allowed for the extension
+   * caller REGARDLESS of the Autofill gate (this is how the user turns it
+   * back on); refused for the CLI (it has the Reversible policy rows
+   * already) and any other caller.
    */
   settingsGet: 'settings.get',
   /** Desktop → extension: the outcome of BOTH `settings.get` and
-   *  `settings.set` — the current `{ autofill, aiAssist, autotrack }`
-   *  values, or a refusal. See {@link ExtensionSettingsResult}. */
+   *  `settings.set` — the current `{ autofill, aiAssist, autotrack,
+   *  saveAnswersOnSubmit }` values, or a refusal. See
+   *  {@link ExtensionSettingsResult}. */
   settingsResult: 'settings.result',
   /**
    * Extension → desktop: flip exactly one switch — `{ key, enabled }`.
@@ -658,6 +659,20 @@ export interface ExtensionAnswerPair {
 export interface ExtensionAnswersSaveRequest {
   url: string;
   answers: ExtensionAnswerPair[];
+  /**
+   * True marks this an AUTOMATED save from the gesture submit-watcher's
+   * save-answers-on-submit consent class (PR4 — a NEW, distinct opt-in from
+   * the ordinary click-triggered `answers.save`, nested under auto-track;
+   * see ADR-0009's Task #22 amendment). Mirrors
+   * {@link ExtensionStatusUpdateRequest.auto} exactly: the desktop honors an
+   * `auto` save ONLY when the `saveAnswersOnSubmit` opt-in is on — defense in
+   * depth, the extension also gates capture client-side, but a compromised
+   * extension must not auto-save captured page text without the user's
+   * opt-in. Absent/false is the ordinary user-clicked "Save my answers from
+   * this page", ungated exactly as before (still behind the existing
+   * assisted-autofill opt-in).
+   */
+  auto?: boolean;
 }
 
 /**
@@ -739,6 +754,26 @@ export type ExtensionAnswersSuggestResult =
 export type ExtensionRewritePreset = 'shorten' | 'expand' | 'rephrase' | 'impact' | 'grammar';
 
 /**
+ * `answer.assist`'s `topic` field (PR4 — Prep tab on-demand drafts). Names a
+ * DESKTOP-COMPOSED draft rather than a caller-supplied `question`: the
+ * desktop resolves the appropriate internal question/prompt itself
+ * (`company-brief` → the existing `CompanyResearch` path, `salary-answer` →
+ * the existing salary-shaped path consulting `SalaryResearch`) and streams
+ * the draft back through the SAME `answer.assist`/`assist.chunk` frames, the
+ * SAME AI-assist gate, the SAME `ai_research` bucket and the SAME
+ * cancellation registry as every other `answer.assist` call — no second
+ * billable verb. `question` is still REQUIRED on the wire even when `topic`
+ * is set (a caller-chosen label for display/echo only — the desktop ignores
+ * its content when `topic` is present). A narrow field rather than reusing
+ * `preset` (extension author's choice, PR4 §B.1 — `preset` is scoped to
+ * REWRITE mode's 5-value quick-action set and means something structurally
+ * different there; overloading it for a draft-mode topic selector would be
+ * the wrong reuse). Malformed/unknown topic → the same malformed-request
+ * sentinel every other opaque `answer.assist` validation failure uses.
+ */
+export type ExtensionAnswerAssistTopic = 'company-brief' | 'salary-answer';
+
+/**
  * `answer.assist` payload — a pasted/picked application question to draft an
  * answer for, OR (PR 11, `mode: 'rewrite'`) an existing answer to rewrite.
  *
@@ -791,6 +826,8 @@ export interface ExtensionAnswerAssistRequest {
   preset?: ExtensionRewritePreset;
   instruction?: string;
   maxChars?: number;
+  /** See {@link ExtensionAnswerAssistTopic}'s doc — PR4, draft mode only. */
+  topic?: ExtensionAnswerAssistTopic;
 }
 
 /**
@@ -981,12 +1018,13 @@ export type ExtensionAgentCallResult =
 
 /**
  * The extension's opt-in switches reachable through `settings.get`/
- * `settings.set` (R7 of the redesign record) — wire camelCase. The fourth
- * key, `saveAnswersOnSubmit`, lands in PR4; this union is designed so
- * adding it later is one more literal here plus one more setter
- * server-side, never a protocol bump.
+ * `settings.set` (R7 of the redesign record) — wire camelCase.
+ * `saveAnswersOnSubmit` (PR4) is the fourth key: the desktop-enforced
+ * save-answers-on-submit consent class nested under auto-track (see
+ * {@link ExtensionAnswersSaveRequest.auto}'s doc) — a NEW, distinct opt-in,
+ * default OFF, never a reuse of `autotrack`.
  */
-export type ExtensionSettingsKey = 'autofill' | 'aiAssist' | 'autotrack';
+export type ExtensionSettingsKey = 'autofill' | 'aiAssist' | 'autotrack' | 'saveAnswersOnSubmit';
 
 /** `settings.get` payload — no fields; the caller already knows its own `reqId`. */
 export type ExtensionSettingsGetRequest = Record<string, never>;
@@ -1002,6 +1040,7 @@ export interface ExtensionSettingsValues {
   autofill: boolean;
   aiAssist: boolean;
   autotrack: boolean;
+  saveAnswersOnSubmit: boolean;
 }
 
 /**

@@ -12,6 +12,7 @@ import { type Browser, browser } from '@wxt-dev/browser';
 
 import type {
   ExtensionAnswerAssistRequest,
+  ExtensionAnswersSaveResult,
   ExtensionDocumentSource,
   ExtensionImportRequest,
   ExtensionMatchLiveRequest,
@@ -57,6 +58,7 @@ import { getShowFitBadge, getStampResultsPages } from './lib/appearance';
 // global key is duplicated as a local literal below, same discipline as
 // `AUTOFILL_GLOBAL`.
 import type { AttachFileResult } from './lib/attach-file';
+import { setAutoSaveNotice, takeAutoSaveNotice } from './lib/auto-save-notice';
 import { handleSubmitDetected, maybeArmSubmitWatch } from './lib/auto-track';
 // TYPE-ONLY import from the autofill module. This is deliberate: `fill.js` is
 // injected via `executeScript({ files })`, which runs as a CLASSIC script (no ES
@@ -126,6 +128,12 @@ const OPEN_PANEL_FROM_BADGE_MSG = 'ajhOpenPanelFromBadge';
  *  literals for the same reason as `AUTOFILL_GLOBAL` above. */
 const RESULTS_COLLECT_GLOBAL = '__ajhCollectResultsCards';
 const RESULTS_STAMP_GLOBAL = '__ajhStampResultsCards';
+
+/** Isolated-world global key under which `submit-watch.js` exposes its arm
+ *  runner (PR4). MUST match `SUBMIT_WATCH_GLOBAL` in `lib/submit-watch.ts`.
+ *  Duplicated as a local literal for the same reason as `AUTOFILL_GLOBAL`
+ *  above. */
+const SUBMIT_WATCH_GLOBAL = '__ajhArmSubmitWatch';
 
 /** Internal message kind the injected `submit-watch.js` posts on a detected
  *  form submit (Task #22). Duplicated as a local literal — MUST match
@@ -360,12 +368,17 @@ let assistBuffer: {
    *  version). The UI says which is running rather than implying they are the
    *  same dial. */
   kind: 'draft' | 'rewrite';
+  /** Present ONLY for a Prep tab on-demand draft (PR4) — a caller with no row
+   *  model (empty `rowId`) tags its stream by `topic` instead. See
+   *  `lib/answer-state.ts`'s `AnswerStream.topic` doc. */
+  topic: ExtensionAnswerAssistRequest['topic'] | null;
 } = {
   text: '',
   done: true,
   interrupted: false,
   rowId: '',
   kind: 'draft',
+  topic: null,
 };
 
 /**
@@ -385,7 +398,10 @@ let assistTabId: number | null = null;
  */
 async function mirrorAssistToState(): Promise<void> {
   const tabId = assistTabId;
-  if (tabId === null || !assistBuffer.rowId) return;
+  // A caller with a row model tags by `rowId`; a Prep tab draft (PR4, no row
+  // model) tags by `topic` instead — either is enough to mirror, neither
+  // alone (a buffer with NEITHER belongs to no view and is never mirrored).
+  if (tabId === null || (!assistBuffer.rowId && !assistBuffer.topic)) return;
   const snapshot = { ...assistBuffer };
   await updateAnswerState(tabId, (state) => ({
     ...state,
@@ -395,6 +411,7 @@ async function mirrorAssistToState(): Promise<void> {
       done: snapshot.done,
       interrupted: snapshot.interrupted,
       kind: snapshot.kind,
+      ...(snapshot.topic ? { topic: snapshot.topic } : {}),
     },
   }));
 }
@@ -781,6 +798,41 @@ async function runDocumentsList(): Promise<PopupResponse> {
   return { ok: true, kind: 'documentsList', result, url };
 }
 
+// ── Prep tab (PR4) ───────────────────────────────────────────────────────────
+
+/**
+ * Prep tab: read this job's existing generations (company brief, interview
+ * questions, salary answer) — the curated `prep` read-tier resource (PR1,
+ * `agent.query`). Same shape as {@link runDocumentsList}: a refusal is NOT
+ * folded away (the tab renders the desktop's own `error`), and `url` is
+ * echoed back so the tab (no `tabs` permission of its own) can build the
+ * "Prepare in the app" deep link without a second round trip.
+ */
+async function runPrepGet(): Promise<PopupResponse> {
+  const url = await activeTabUrl().catch(() => '');
+  const result = await getClient().agentQuery('prep', { url });
+  return { ok: true, kind: 'prepGet', result, url };
+}
+
+/**
+ * Cancel whatever `answer.assist` stream is currently pending (PR4 — the
+ * Prep tab's Cancel button). Always `ok:true` — a no-op when nothing was
+ * pending is not an error, mirrors {@link BridgeClient.cancelCurrent}'s doc.
+ */
+function runAssistCancel(): PopupResponse {
+  getClient().cancelCurrent();
+  return { ok: true, kind: 'assistCancel' };
+}
+
+/**
+ * Fire-and-forget "was there a transparent save-answers-on-submit notice
+ * waiting for me?" (PR4) — read-once, see `lib/auto-save-notice.ts`'s doc.
+ */
+async function runAutoSaveNotice(): Promise<PopupResponse> {
+  const text = await takeAutoSaveNotice();
+  return { ok: true, kind: 'autoSaveNotice', text };
+}
+
 /**
  * Documents tab: export the picked source as DECODED plain text (cover
  * letter, TXT only — the picker's Copy/Paste actions both need text, never
@@ -1037,11 +1089,17 @@ async function runStampResults(): Promise<PopupResponse> {
 
 // ── Auto-track (Task #22, Layer A) ──────────────────────────────────────────────
 
-/** Guard for the injected submit-watcher's fire-and-forget message. */
-function isSubmitDetected(v: unknown): v is { kind: 'submitDetected'; url: string } {
+/** Guard for the injected submit-watcher's fire-and-forget message. `answers`
+ *  (PR4) is present only when the watcher was armed with `captureAnswers:
+ *  true` AND something was filled — validated with the SAME guard
+ *  `capture.js`'s completion value uses. */
+function isSubmitDetected(
+  v: unknown
+): v is { kind: 'submitDetected'; url: string; answers?: CapturedAnswer[] } {
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Record<string, unknown>;
-  return o.kind === SUBMIT_DETECTED_MSG && typeof o.url === 'string';
+  if (o.kind !== SUBMIT_DETECTED_MSG || typeof o.url !== 'string') return false;
+  return o.answers === undefined || isCapturedAnswers(o.answers);
 }
 
 /** Guard for the fit badge's fire-and-forget "Open the panel" click (PR3) —
@@ -1052,17 +1110,30 @@ function isOpenPanelFromBadge(v: unknown): v is { kind: typeof OPEN_PANEL_FROM_B
 }
 
 /**
- * Inject the auto-track submit watcher into the active tab (single-step, like
- * `captureActiveTabHtml`: the watcher self-arms on load and needs no argument).
- * Called only after a successful gesture + only when the opt-in is on (see
- * {@link maybeArmSubmitWatch}); the watcher's own isolated-world flag makes a
- * repeat injection on the same page a no-op.
+ * Inject the auto-track submit watcher into the active tab. Two-step (PR4),
+ * like `injectFill`: `files` registers {@link SUBMIT_WATCH_GLOBAL} on the
+ * page, then a self-contained `func` arms it with `captureAnswers` — the
+ * desktop-enforced `saveAnswersOnSubmit` opt-in value, resolved by
+ * {@link maybeArmSubmitWatch} BEFORE this call — passed as a plain
+ * JSON-safe boolean (only JSON-safe primitives ever cross this boundary).
+ * Called only after a successful gesture + only when the auto-track opt-in
+ * is on; the watcher's own isolated-world flag makes a repeat injection on
+ * the same page a no-op regardless of the flag value on that later call.
  */
-async function injectSubmitWatch(): Promise<void> {
+async function injectSubmitWatch(captureAnswers: boolean): Promise<void> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   const tabId = tab?.id;
   if (typeof tabId !== 'number') return;
   await browser.scripting.executeScript({ target: { tabId }, files: ['submit-watch.js'] });
+  await browser.scripting.executeScript({
+    target: { tabId },
+    func: (capture: boolean, key: string): void => {
+      const runner = (globalThis as Record<string, unknown>)[key] as
+        ((c: boolean) => void) | undefined;
+      runner?.(capture);
+    },
+    args: [captureAnswers, SUBMIT_WATCH_GLOBAL],
+  });
 }
 
 /**
@@ -1089,6 +1160,26 @@ function clearImportPrompt(): void {
   }
 }
 
+/**
+ * Read the desktop-enforced save-answers-on-submit opt-in (PR4) — resolves
+ * `true` only when `settings.get` replies with `saveAnswersOnSubmit: true`.
+ * Mirrors `BridgeClient.autotrackEnabled`/`autofillEnabled` exactly: NEVER
+ * rejects, any failure (not connected, a malformed reply) degrades to
+ * `false` (OFF, the safe default) — the two callers (`maybeArmSubmitWatch`
+ * via `submitFlowDeps`'s sibling call site) treat "unknown" exactly as "off".
+ * Rides `settings.get` rather than a dedicated wire verb (decision: the
+ * fourth switch is reachable ONLY through `settings.get`/`settings.set`,
+ * never a bespoke read like `autotrackCheck`).
+ */
+async function saveAnswersOnSubmitEnabled(): Promise<boolean> {
+  try {
+    const res = await getClient().settingsGet();
+    return res.ok && res.settings.saveAnswersOnSubmit === true;
+  } catch {
+    return false;
+  }
+}
+
 /** Auto-track dependencies wired to the live bridge client. */
 function submitFlowDeps() {
   return {
@@ -1096,6 +1187,14 @@ function submitFlowDeps() {
     checkApplied: (url: string) => getClient().checkApplied(url),
     updateStatusAuto: (url: string) => getClient().updateStatus(url, true),
     promptImport,
+    saveAnswersAuto: (url: string, answers: CapturedAnswer[]) =>
+      getClient().saveAnswers(url, answers, true),
+    notifyAutoSave: (result: Extract<ExtensionAnswersSaveResult, { ok: true }>) => {
+      const count = result.saved;
+      void setAutoSaveNotice(
+        `Saved ${count} answer${count === 1 ? '' : 's'} from this submit${result.title ? ` (${result.title})` : ''} — change this in Settings → What the extension may do.`
+      );
+    },
   };
 }
 
@@ -1393,7 +1492,8 @@ async function runAnswerAssist(
   preset?: ExtensionRewritePreset,
   instruction?: string,
   rowId?: string,
-  maxChars?: number
+  maxChars?: number,
+  topic?: ExtensionAnswerAssistRequest['topic']
 ): Promise<PopupResponse> {
   const gen = ++assistGeneration;
   const streamKind: 'draft' | 'rewrite' = mode === 'rewrite' ? 'rewrite' : 'draft';
@@ -1427,6 +1527,7 @@ async function runAnswerAssist(
     interrupted: false,
     rowId: rowId ?? '',
     kind: streamKind,
+    topic: topic ?? null,
   };
   void broadcastAssistProgress();
 
@@ -1436,6 +1537,7 @@ async function runAnswerAssist(
   if (existingAnswer !== undefined) payload.existingAnswer = existingAnswer;
   if (preset) payload.preset = preset;
   if (instruction) payload.instruction = instruction;
+  if (topic) payload.topic = topic;
   // DRAFT MODE ONLY (ADR-044 decision 6): the wire ignores the limit in
   // rewrite mode, so sending it there would be a claim the desktop does not
   // honour. The value is page-derived — clamp it to the shared bound before it
@@ -2020,7 +2122,8 @@ async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
               req.preset,
               req.instruction,
               undefined,
-              req.maxChars
+              req.maxChars,
+              req.topic
             );
       case 'answerAssistProgress':
         return {
@@ -2057,6 +2160,12 @@ async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
         return await runDocumentAttach(req.source, req.templateId, req.format);
       case 'stampResults':
         return await runStampResults();
+      case 'prepGet':
+        return await runPrepGet();
+      case 'assistCancel':
+        return runAssistCancel();
+      case 'autoSaveNotice':
+        return await runAutoSaveNotice();
       default: {
         // Exhaustiveness guard — a new PopupRequest variant must be handled.
         const _never: never = req;
@@ -2081,6 +2190,7 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
     void maybeArmSubmitWatch({
       autotrackEnabled: () => getClient().autotrackEnabled(),
       injectSubmitWatch,
+      saveAnswersOnSubmitEnabled,
     });
   }
   return response;
@@ -2102,7 +2212,7 @@ browser.runtime.onMessage.addListener(
       // this listener — but require the sender to be THIS extension anyway
       // before acting on it (defense-in-depth, costs nothing).
       if (sender.id === browser.runtime.id) {
-        void handleSubmitDetected(message.url, submitFlowDeps());
+        void handleSubmitDetected(message.url, submitFlowDeps(), message.answers);
       }
       return undefined;
     }
