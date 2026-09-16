@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.154.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.153.2...v0.154.0) (2026-09-16)
+
+### ✨ Features
+
+* **extension:** Check-fit on the page — fit badge, results stamps, salary facts ([#1205](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1205)) ([dbb36fe](https://github.com/saeedkolivand/ai-job-hunter-app/commit/dbb36fe20af0d7fac23e4dd0725c6f5360a497d0))
+* **extension:** documents into ATS — résumé attach, cover-letter paste, deep links, copy fallback ([#1204](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1204)) ([c594051](https://github.com/saeedkolivand/ai-job-hunter-app/commit/c5940511bbdef8704b64c30739f53311cfdc09fe))
+* **extension:** Prep tab and saving the answers you typed at submit ([#1209](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1209)) ([6d95b6b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/6d95b6bbcb1a5c66b10f6807b08113d19a5045c8))
+* **extension:** read-only agent tier + live settings switches (ADR-050) ([#1203](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1203)) ([dd5b0d9](https://github.com/saeedkolivand/ai-job-hunter-app/commit/dd5b0d9081c41905a70ab558d1668afc8f7219a5))
+
+### 🐛 Bug Fixes
+
+* **release:** create the xdg data dir before msstore runs; surface the snap store listing ([#1198](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1198)) ([fee1e5e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/fee1e5e2a806feb6552154399383e386c303f4bd)), closes [microsoft/msstore-cli#181](https://github.com/microsoft/msstore-cli/issues/181)
+
+### 🎨 UI/UX
+
+* **extension:** notebook redesign shell — launcher popup, tabbed panel, settings page ([#1201](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1201)) ([c9c9384](https://github.com/saeedkolivand/ai-job-hunter-app/commit/c9c93848a2489844323ed6e7427072072854645a))
+
 ## [0.153.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.153.1...v0.153.2) (2026-09-10)
 
 ### 🐛 Bug Fixes
