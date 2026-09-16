@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { MAX_APPLIED_CHECK_BATCH_URLS } from '@ajh/shared';
+
 import { NOTEBOOK_LIGHT } from './notebook-palette';
 import {
   collectResultsCards,
@@ -8,6 +10,16 @@ import {
   type StampInput,
   stampResultsCards,
 } from './results-stamp';
+
+// The three-way cap (Rust `MAX_BATCH_URLS`, the shared TS
+// `MAX_APPLIED_CHECK_BATCH_URLS`, and this collector's `MAX_STAMP_CARDS`) is
+// documented to mirror exactly, with nothing that enforces it. This test
+// pins the two copies THIS package owns; the Rust constant lives in another
+// package's file and is out of scope here (see the shared schema's own
+// `.max()` for the half of the parity that runs at validation time).
+it('MAX_STAMP_CARDS mirrors the shared MAX_APPLIED_CHECK_BATCH_URLS cap exactly', () => {
+  expect(MAX_STAMP_CARDS).toBe(MAX_APPLIED_CHECK_BATCH_URLS);
+});
 
 function card(href: string, text = 'A job'): string {
   return `<li><a href="${href}">${text}</a></li>`;

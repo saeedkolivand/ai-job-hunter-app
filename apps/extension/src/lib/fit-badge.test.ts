@@ -39,6 +39,26 @@ describe('renderFitBadge', () => {
     expect(pill.getAttribute('aria-label')).toContain('keyword coverage');
   });
 
+  it('initializes aria-expanded false and flips it true on expand, false again on collapse, updating the label so it is never stale', () => {
+    document.body.innerHTML = '';
+    const shadow = renderFitBadge(document, NOTEBOOK_LIGHT, VIEW);
+    const pill = shadow.querySelector('button')!;
+
+    expect(pill.getAttribute('aria-expanded')).toBe('false');
+    expect(pill.getAttribute('aria-label')).toContain('Expand for details.');
+
+    pill.click();
+    expect(pill.getAttribute('aria-expanded')).toBe('true');
+    // Stale-label regression: once expanded, the label must not still say
+    // "Expand for details" (there is nothing left to expand).
+    expect(pill.getAttribute('aria-label')).not.toContain('Expand for details.');
+    expect(pill.getAttribute('aria-label')).toContain('Collapse the details.');
+
+    pill.click();
+    expect(pill.getAttribute('aria-expanded')).toBe('false');
+    expect(pill.getAttribute('aria-label')).toContain('Expand for details.');
+  });
+
   it('shows the score-source qualifier in the mini card, matching the panel', () => {
     document.body.innerHTML = '';
     const shadow = renderFitBadge(document, NOTEBOOK_LIGHT, VIEW);
@@ -51,7 +71,14 @@ describe('renderFitBadge', () => {
     const shadow = renderFitBadge(document, NOTEBOOK_LIGHT, VIEW);
     const pill = shadow.querySelector('button')!;
     (pill as HTMLButtonElement).click();
-    const card = shadow.querySelectorAll('div')[1];
+    // The mini card itself is a DIRECT child of the shadow root — filtered
+    // from `shadow.children` rather than `querySelectorAll('div')[1]`, which
+    // would instead pick the nested missing-keyword chips container
+    // (appended INSIDE the card once populated), whose `hidden` is always
+    // `false` — that selector could never fail this assertion even if
+    // expansion broke.
+    const card = [...shadow.children].find((el) => el.tagName === 'DIV') as
+      HTMLDivElement | undefined;
     expect(card?.hidden).toBe(false);
     expect(card?.textContent).toContain('typescript');
   });
@@ -82,9 +109,17 @@ describe('renderFitBadge', () => {
       salary: { posting: '€70,000–€90,000', expectation: '€80,000' },
     });
     (shadow.querySelector('button') as HTMLButtonElement).click();
-    const text = shadow.textContent ?? '';
-    expect(text).toContain('Posting says €70,000–€90,000');
-    expect(text).toContain('You want €80,000');
+    const card = [...shadow.children].find((el) => el.tagName === 'DIV') as
+      HTMLDivElement | undefined;
+    // The salary paragraph's COMPLETE text must equal exactly the two
+    // factual strings joined — a `toContain` on the whole shadow root would
+    // still pass if a comparative/verdict string were appended to this same
+    // line (or anywhere else in the card), which is exactly what "never a
+    // verdict" must catch.
+    const salaryParagraph = [...(card?.querySelectorAll('p') ?? [])].find((p) =>
+      p.textContent?.startsWith('Posting says')
+    );
+    expect(salaryParagraph?.textContent).toBe('Posting says €70,000–€90,000 · You want €80,000');
   });
 
   it('omits the salary line entirely when absent', () => {

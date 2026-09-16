@@ -1,6 +1,6 @@
 # Extension domain (browser extension + desktop bridge)
 
-Last updated: 2026-09-15 (PR3 of the extension redesign: Check-fit on the page — on-page fit badge, results-page saved/applied stamps, `applied.check.batch`, salary facts on `match.live`; PR2: documents into ATS — résumé/cover-letter attach via `document.export`, the `documents` picker resource, `frame.rs` split, two deep-link routes; PR1: extension read tier + live settings verbs — ADR-050; PR0: popup is now a launcher, side panel is now a tabbed workspace, Settings page, first-Fill site memory — ADR-044 amendment; ADR-045: job-tools panel parity + the `isPageTrusted` gate; ADR-044: extension Answer tools side panel, shared per-tab state, draft-time `maxChars` field; `answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
+Last updated: 2026-09-16 (PR3 of the extension redesign: Check-fit on the page — on-page fit badge, results-page saved/applied stamps, `applied.check.batch`, salary facts on `match.live`; PR2: documents into ATS — résumé/cover-letter attach via `document.export`, the `documents` picker resource, `frame.rs` split, two deep-link routes; PR1: extension read tier + live settings verbs — ADR-050; PR0: popup is now a launcher, side panel is now a tabbed workspace, Settings page, first-Fill site memory — ADR-044 amendment; ADR-045: job-tools panel parity + the `isPageTrusted` gate; ADR-044: extension Answer tools side panel, shared per-tab state, draft-time `maxChars` field; `answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
 
 Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tauri-security-reviewer`.
 
@@ -105,16 +105,15 @@ file-upload disclosure this verb enables.
 
 Two read-only, gesture-bound renders onto the current page, both opt-in and default OFF
 (`getShowFitBadge`/`getStampResultsPages`, `apps/extension/src/lib/appearance.ts`): the on-page fit
-badge (`apps/extension/src/fit-badge.ts` → `apps/extension/src/lib/fit-badge.ts`) after a Check-fit
-gesture, and results-page saved/applied stamps (`apps/extension/src/results-stamp.ts` →
-`apps/extension/src/lib/results-stamp.ts`) after their own gesture, resolved via the new
-`applied.check.batch` verb (`extension_bridge/applied_check_batch.rs`, gate/cap/throttle owned by
-its own module doc). Both draw colors from the portable
-`apps/extension/src/lib/notebook-palette.ts` (a page-injected script cannot read the extension's own
-CSS custom properties) and render inside a **closed** shadow root so the page's own scripts cannot
-read the content back. `match.live`'s optional `salary` fact pair is extracted by
-`extension_bridge/salary_facts.rs`'s pure, posting-text-only extractor. See
-[ADR-0009](decision-records/0009-assisted-autofill.md)'s 2026-09-15 amendment for the full record.
+badge (`apps/extension/src/lib/fit-badge.ts`) after a Check-fit gesture, and results-page
+saved/applied stamps (`apps/extension/src/lib/results-stamp.ts`) after their own gesture, resolved
+via `extension_bridge/applied_check_batch.rs` (gate/cap/throttle owned by its own module doc). Both
+draw from the portable palette in `apps/extension/src/lib/notebook-palette.ts` and render their
+content inside a **closed** shadow root — content only, not presence: each host is a normal, visible
+DOM node, so a page script can observe that a fit was checked or a card was stamped, it just cannot
+read the label/score/gaps back. `match.live`'s optional salary fact is owned by
+`extension_bridge/salary_facts.rs`. See [ADR-0009](decision-records/0009-assisted-autofill.md)'s
+2026-09-15 amendment for the full record.
 
 ### Revocation reach — an inherent limitation
 

@@ -69,6 +69,7 @@ import {
   HANDSHAKE_TEST_VECTOR,
   handshakeMessage,
   type HandshakeRole,
+  MAX_APPLIED_CHECK_BATCH_URLS,
 } from './extension-protocol-constants.js';
 
 export {
@@ -123,6 +124,7 @@ export {
   HANDSHAKE_TEST_VECTOR,
   handshakeMessage,
   type HandshakeRole,
+  MAX_APPLIED_CHECK_BATCH_URLS,
 };
 
 export const ExtensionMessageTypeSchema = z.enum([
@@ -265,13 +267,15 @@ export const ExtensionAppliedCheckResultSchema = z.object({
 }) satisfies z.ZodType<ExtensionAppliedCheckResult>;
 
 /**
- * `applied.check.batch` payload (PR3, results-page stamps). Shape-only, like
- * every sibling request schema above — the desktop enforces the
- * `MAX_APPLIED_CHECK_BATCH_URLS` cap (refuse, never truncate). Mirrors
- * {@link ExtensionAppliedCheckBatchRequest}.
+ * `applied.check.batch` payload (PR3, results-page stamps). Enforces the same
+ * {@link MAX_APPLIED_CHECK_BATCH_URLS} cap the desktop's `parse_urls` refuses
+ * over (`too_many_urls`, never truncated) — unlike every sibling request
+ * schema above, an unbounded `urls` array here would let a caller pass shared
+ * validation with a request the Rust IPC handler is guaranteed to refuse.
+ * Mirrors {@link ExtensionAppliedCheckBatchRequest}.
  */
 export const ExtensionAppliedCheckBatchRequestSchema = z.object({
-  urls: z.array(z.string()),
+  urls: z.array(z.string()).max(MAX_APPLIED_CHECK_BATCH_URLS),
 }) satisfies z.ZodType<ExtensionAppliedCheckBatchRequest>;
 
 /** One url's outcome in an `applied.batch.result` reply. Mirrors

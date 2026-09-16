@@ -98,11 +98,14 @@ export function renderFitBadge(
   // ── the pill (always visible) ─────────────────────────────────────────
   const pill = doc.createElement('button');
   pill.type = 'button';
-  pill.setAttribute(
-    'aria-label',
-    `AI Job Hunter fit: ${view.score}% — ${bandLabel(view.band)}, ${view.scoreLabel}. ` +
-      'Expand for details.'
-  );
+  // The disclosure button controls `card`'s visibility — `aria-expanded` and
+  // the trailing clause of the label both track that state (set here for the
+  // initial collapsed render, updated together with `card.hidden` in the
+  // click handler below), so assistive tech is never told "Expand for
+  // details" once the details are already showing.
+  const pillAriaLabelBase = `AI Job Hunter fit: ${view.score}% — ${bandLabel(view.band)}, ${view.scoreLabel}.`;
+  pill.setAttribute('aria-label', `${pillAriaLabelBase} Expand for details.`);
+  pill.setAttribute('aria-expanded', 'false');
   pill.style.cssText = [
     'display:flex',
     'align-items:center',
@@ -248,6 +251,12 @@ export function renderFitBadge(
   pill.addEventListener('click', () => {
     populateCard();
     card.hidden = !card.hidden;
+    const expanded = !card.hidden;
+    pill.setAttribute('aria-expanded', String(expanded));
+    pill.setAttribute(
+      'aria-label',
+      `${pillAriaLabelBase} ${expanded ? 'Collapse the details.' : 'Expand for details.'}`
+    );
   });
 
   (doc.body ?? doc.documentElement).appendChild(root);

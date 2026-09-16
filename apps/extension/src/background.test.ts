@@ -1483,6 +1483,66 @@ describe('matchLive → on-page fit badge injection', () => {
     expect(res.ok).toBe(true);
     expect(res).toMatchObject({ kind: 'matchLive', result: { ok: true, combined: 82 } });
   });
+
+  it('binds the badge to the tab resolved BEFORE the desktop round trip and aborts it silently when a different tab is active afterwards (tab switch mid-request)', async () => {
+    await setShowFitBadge(true);
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock
+      // Resolved once, up front, together with the url used for the capture + payload.
+      .mockResolvedValueOnce([{ id: 7, url: 'https://jobs.example.com/posting/9' } as never])
+      // Re-verify right before injection: a DIFFERENT tab is now active.
+      .mockResolvedValueOnce([{ id: 9, url: 'https://other.example.com/' } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: '<html>job</html>' }] as never); // content.js capture
+    mockClient.matchLive.mockResolvedValue({
+      ok: true,
+      combined: 82,
+      ats: 60,
+      gaps: ['kubernetes'],
+      resumeName: 'My Resume',
+      scoreSource: 'keyword',
+    });
+
+    const res = await send({ kind: 'matchLive' });
+    await flush();
+
+    // The popup's own response is unaffected — only the best-effort badge aborts.
+    expect(res).toMatchObject({ kind: 'matchLive', result: { ok: true, combined: 82 } });
+    // The captured/sent url is the tab resolved BEFORE the switch, not the new one.
+    expect(mockClient.matchLive).toHaveBeenCalledWith({
+      url: 'https://jobs.example.com/posting/9',
+      html: '<html>job</html>',
+    });
+    expect(mockClient.checkApplied).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ files: ['fit-badge.js'] })
+    );
+  });
+
+  it('aborts the badge silently when the SAME tab navigated to a different url during the round trip (same-tab navigation)', async () => {
+    await setShowFitBadge(true);
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock
+      .mockResolvedValueOnce([{ id: 7, url: 'https://jobs.example.com/posting/9' } as never])
+      // Same tab id, but it has since navigated to a different posting.
+      .mockResolvedValueOnce([{ id: 7, url: 'https://jobs.example.com/posting/10' } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: '<html>job</html>' }] as never);
+    mockClient.matchLive.mockResolvedValue({
+      ok: true,
+      combined: 82,
+      ats: 60,
+      gaps: [],
+      resumeName: 'My Resume',
+      scoreSource: 'keyword',
+    });
+
+    await send({ kind: 'matchLive' });
+    await flush();
+
+    expect(mockClient.checkApplied).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ files: ['fit-badge.js'] })
+    );
+  });
 });
 
 // ── stampResults request — results-page batch stamping (PR3 §B.4) ──────────
@@ -3121,6 +3181,24 @@ describe('arming the submit watcher after a gesture request (Task #22 review clo
     await send({ kind: 'fieldsProbe' });
     await flush();
 
+    expect(mockClient.autotrackEnabled).not.toHaveBeenCalled();
+    expect(executeScriptMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ files: ['submit-watch.js'] })
+    );
+  });
+
+  it('a successful stampResults request never arms the watcher — it is read-only (no form interaction), so arming it would let a later, unrelated submit-like interaction on a results page auto-mark a saved application applied (PR review finding)', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    mockClient.autotrackEnabled.mockResolvedValue(true);
+    await setStampResultsPages(true);
+    tabsQueryMock.mockResolvedValue([{ id: 7 } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never); // results-stamp.js files
+    executeScriptMock.mockResolvedValueOnce([{ result: [] }] as never); // collect func — no cards
+
+    const res = await send({ kind: 'stampResults' });
+    await flush();
+
+    expect(res.ok).toBe(true);
     expect(mockClient.autotrackEnabled).not.toHaveBeenCalled();
     expect(executeScriptMock).not.toHaveBeenCalledWith(
       expect.objectContaining({ files: ['submit-watch.js'] })

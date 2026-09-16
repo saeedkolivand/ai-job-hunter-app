@@ -138,7 +138,11 @@ export const SUBMIT_DETECTED_MSG = 'submitDetected';
 
 /** Popup requests whose handling injects a script into the active page — after
  *  a SUCCESSFUL one we arm the auto-track submit watcher (opt-in gated,
- *  idempotent per page). */
+ *  idempotent per page). `stampResults` is deliberately EXCLUDED even though
+ *  it injects a script: it is read-only (annotates a results page with
+ *  saved/applied markers, no form interaction), so arming the watcher on a
+ *  results page would let a later, unrelated submit-like interaction there
+ *  auto-mark a saved application as applied (PR review finding). */
 const GESTURE_KINDS: ReadonlySet<PopupRequest['kind']> = new Set([
   'import',
   'fill',
@@ -151,7 +155,6 @@ const GESTURE_KINDS: ReadonlySet<PopupRequest['kind']> = new Set([
   'answerRestoreOriginal',
   'matchLive',
   'documentAttach',
-  'stampResults',
 ]);
 
 /** Client-side cap on the number of scanned question labels sent in one
@@ -440,7 +443,17 @@ async function captureActiveTabHtml(): Promise<string> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   const tabId = tab?.id;
   if (typeof tabId !== 'number') throw new Error('No active tab to scan.');
+  return captureTabHtml(tabId);
+}
 
+/**
+ * Same capture as {@link captureActiveTabHtml}, but against an ALREADY
+ * RESOLVED `tabId` instead of re-querying "the active tab" — used by callers
+ * (like `runMatchLive`) that must keep acting on the one tab they resolved at
+ * the start of a multi-step, possibly slow flow, not whichever tab happens to
+ * be active by the time this step runs.
+ */
+async function captureTabHtml(tabId: number): Promise<string> {
   const results = await browser.scripting.executeScript({
     target: { tabId },
     files: ['content.js'],
@@ -450,6 +463,22 @@ async function captureActiveTabHtml(): Promise<string> {
     throw new Error('Could not capture the page DOM.');
   }
   return html;
+}
+
+/**
+ * {@link activeTabUrl} and {@link activeTabId} combined into ONE
+ * `browser.tabs.query` call, so a caller that needs both gets a single
+ * consistent snapshot of "the active tab" rather than two separate queries
+ * that could straddle a tab switch.
+ */
+async function activeTabIdAndUrl(): Promise<{ tabId: number; url: string }> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tabId = tab?.id;
+  const url = tab?.url ?? '';
+  if (typeof tabId !== 'number' || !url) {
+    throw new Error('Could not read the current tab URL.');
+  }
+  return { tabId, url };
 }
 
 /** Run an import, always attempting to capture the rendered DOM first. */
@@ -836,6 +865,19 @@ async function tabStillConfirmed(tabId: number, origin: string): Promise<boolean
   } catch {
     return false;
   }
+}
+
+/**
+ * Same defect class as {@link tabStillConfirmed}, checked at EXACT-url
+ * granularity rather than origin: `runMatchLive` binds its badge to the tab
+ * + url it resolved before the (possibly slow) desktop round trip, and must
+ * re-verify both are unchanged right before painting the badge — a tab
+ * switch, or a same-tab navigation to a different posting on the same
+ * origin, must not paint one page's score onto another (PR review finding).
+ */
+async function tabStillOnExactUrl(tabId: number, url: string): Promise<boolean> {
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  return tab?.id === tabId && tab.url === url;
 }
 
 /**
@@ -1248,10 +1290,15 @@ async function runMatchLive(): Promise<PopupResponse> {
     return { ok: false, error: 'Not paired. Paste your pairing token first.' };
   }
 
-  const url = await activeTabUrl();
+  // Resolve the tab identity ONCE — the url, the html capture, and (after the
+  // round trip below) the badge injection must all target the SAME tab, not
+  // "whichever tab happens to be active" at each of three separate points in
+  // time (PR review finding: a tab switch mid-request could otherwise paint
+  // one page's score onto a different page).
+  const { tabId, url } = await activeTabIdAndUrl();
   let html: string;
   try {
-    html = await captureActiveTabHtml();
+    html = await captureTabHtml(tabId);
   } catch {
     return { ok: false, error: 'Could not read this page. Reload the job page and try again.' };
   }
@@ -1261,9 +1308,12 @@ async function runMatchLive(): Promise<PopupResponse> {
   if (result.ok) {
     // Fire-and-forget: the badge is a UI enhancement on top of an already-
     // resolved Check-fit, never something the popup's own response waits on.
+    // Re-verify the SAME tab still has the SAME url right before injecting —
+    // a tab switch or same-tab navigation during the (possibly slow) desktop
+    // round trip must abort the badge silently rather than mis-paint it.
     void (async () => {
       try {
-        const tabId = await activeTabId();
+        if (!(await tabStillOnExactUrl(tabId, url))) return;
         await maybeShowFitBadge(tabId, url, result);
       } catch {
         // No active tab to render into — skip silently.

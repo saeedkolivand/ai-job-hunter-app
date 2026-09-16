@@ -313,13 +313,23 @@ pub(super) async fn resolve_match_live(
     let result =
         score_or_timeout(score_keyword_only(app, store, resume, &job_id, job_text)).await?;
 
-    let mut ok = build_match_ok(&result, resume.title.clone());
-    // `expectation` rides ONLY alongside a found `posting` range — see `MatchLiveOk`'s doc.
-    if salary_posting.is_some() {
-        ok.salary_expectation = salary_expectation;
-    }
-    ok.salary_posting = salary_posting;
-    Ok(ok)
+    let ok = build_match_ok(&result, resume.title.clone());
+    Ok(attach_salary(ok, salary_posting, salary_expectation))
+}
+
+/// Attach the salary wire pair to `ok`, enforcing the "expectation rides ONLY alongside a found
+/// `posting` range" invariant (see [`MatchLiveOk`]'s doc): when `posting` is `None`, `expectation`
+/// is dropped too, never left attached alone — "two facts side by side, never a judgement" (design
+/// decision 5). Pure — no `AppHandle`, no I/O — so the gate itself is directly unit-testable
+/// without a scoring round-trip, unlike [`resolve_match_live`] (which calls it after scoring).
+fn attach_salary(
+    mut ok: MatchLiveOk,
+    posting: Option<String>,
+    expectation: Option<String>,
+) -> MatchLiveOk {
+    ok.salary_expectation = if posting.is_some() { expectation } else { None };
+    ok.salary_posting = posting;
+    ok
 }
 
 /// Build the `match.live` reply. Discriminated union: `ok:true` mirrors a
@@ -885,6 +895,49 @@ mod tests {
         let reply = match_result_reply("req-4", Ok(ok));
         let v: Value = serde_json::from_str(&reply).unwrap();
         assert!(v["payload"].get("salary").is_none());
+    }
+
+    // ── attach_salary (the "expectation rides only alongside posting" gate) ──
+
+    #[test]
+    fn attach_salary_keeps_both_when_posting_is_found() {
+        let ok = attach_salary(
+            base_ok(),
+            Some("$50,000 - $70,000".to_string()),
+            Some("€75,000".to_string()),
+        );
+        assert_eq!(ok.salary_posting.as_deref(), Some("$50,000 - $70,000"));
+        assert_eq!(ok.salary_expectation.as_deref(), Some("€75,000"));
+    }
+
+    #[test]
+    fn attach_salary_keeps_posting_alone_when_no_expectation_saved() {
+        let ok = attach_salary(base_ok(), Some("$50,000 - $70,000".to_string()), None);
+        assert_eq!(ok.salary_posting.as_deref(), Some("$50,000 - $70,000"));
+        assert!(ok.salary_expectation.is_none());
+    }
+
+    #[test]
+    fn attach_salary_drops_expectation_when_no_posting_range_was_found() {
+        // The invariant: a saved salary expectation must NEVER leave the desktop alone when the
+        // posting itself had no extractable range — locks in the gate at its actual source, not
+        // just at the reply-serialization layer.
+        let ok = attach_salary(base_ok(), None, Some("€75,000".to_string()));
+        assert!(
+            ok.salary_posting.is_none(),
+            "no posting range was found — must stay None"
+        );
+        assert!(
+            ok.salary_expectation.is_none(),
+            "expectation must be dropped, never attached without a posting range"
+        );
+    }
+
+    #[test]
+    fn attach_salary_leaves_both_none_when_neither_is_present() {
+        let ok = attach_salary(base_ok(), None, None);
+        assert!(ok.salary_posting.is_none());
+        assert!(ok.salary_expectation.is_none());
     }
 
     #[test]

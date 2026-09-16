@@ -72,29 +72,25 @@ gesture for the stamps), opt-in and **default OFF**
 form action — neither can submit anything, and neither offers a control beyond its own dismiss and
 (badge only) "Open the panel".
 
-- **On-page fit badge** (`apps/extension/src/lib/fit-badge.ts`): a fixed pill showing the Check-fit
-  score and a saved/applied chip, expanding on click to a mini card (missing keywords, the salary
-  facts line when present, one "Open the panel" action).
+- **On-page fit badge** (`apps/extension/src/lib/fit-badge.ts`): a fixed pill carrying the Check-fit
+  score, expanding on click to a mini card. Field-level shape is owned by that module's own doc.
 - **Results-page stamps** (`apps/extension/src/lib/results-stamp.ts`): a small saved/applied marker
-  placed next to each matched job-card link on a results-listing page, resolved in one round trip
-  through the new `applied.check.batch` verb
-  (`apps/desktop/src-tauri/src/extension_bridge/applied_check_batch.rs`) — the batch form of the
-  existing ungated, device-local `applied.check` lookup, with its own trust class and throttle, and
-  never a score.
+  placed next to each matched job-card link on a results-listing page, resolved through
+  `apps/desktop/src-tauri/src/extension_bridge/applied_check_batch.rs` — verb shape, trust class and
+  throttle are owned by that module's own doc.
 
-**Both render inside a `mode: 'closed'` shadow root** on the node they attach to `document` — so the
-page's own scripts (an ad, a tracker, a compromised board) cannot read the score, the missing
-keywords, or the salary text back off the shared DOM even though the host element itself lives in
-`doc.body`.
+**Both render their content inside a `mode: 'closed'` shadow root** — the page's own scripts (an ad,
+a tracker, a compromised board) cannot read the label, score, gaps or salary text back off the DOM.
+This hides **content only, not presence**: each host is itself an ordinary, visible DOM node (the
+badge is a fixed pill on the page; the stamp sits immediately next to the anchor it marks), so a page
+script can observe that a fit was checked or that a card got stamped — it just cannot read what the
+badge/stamp says, or tell a saved stamp from an applied one.
 
 **Salary is two facts, never a verdict** — matching design decision 5
-(`.claude/scratch/extension-round-design.md`): when `match.live`'s reply carries a `salary` object,
-the badge's mini card and the panel's own `why?` details show "Posting says …" (a verbatim RANGE
-substring extracted from the posting text by
-`apps/desktop/src-tauri/src/extension_bridge/salary_facts.rs`, never inferred, never a single number
-treated as a range) and, only when the user has one stored, "You want …"
-(`JobPreferences.salary_expectation`, shown verbatim) — side by side, with no comparison or computed
-verdict between them.
+(`.claude/scratch/extension-round-design.md`): when present, the badge's mini card and the panel's
+own `why?` details show the posting's own stated range side by side with the user's stored
+expectation, with no comparison or computed verdict between them. Extraction is owned by
+`apps/desktop/src-tauri/src/extension_bridge/salary_facts.rs`.
 
 ## Considered options
 

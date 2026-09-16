@@ -22,9 +22,16 @@ use regex::Regex;
 const MAX_SALARY_FACT_LEN: usize = 80;
 
 const CURRENCY: &str = r"(?:[$€£¥₹]|\b(?:USD|EUR|GBP|JPY|CAD|AUD|CHF|INR|SEK|NOK|DKK|PLN)\b)";
-/// Up to 3 thousands-groups is already far past any real salary figure — bounds the match length
-/// without rejecting anything a real posting would ever contain.
-const NUMBER: &str = r"\d{1,3}(?:[,.]\d{3}){0,3}(?:\.\d{1,2})?[kK]?";
+/// Two branches: thousands-GROUPED (`\d{1,3}` then 1-3 `,ddd`/`.ddd` groups — up to 3 groups is
+/// already far past any real salary figure) OR a bounded UNGROUPED run of up to 9 raw digits (same
+/// rationale — no real salary needs more). Grouped requires >=1 separator group so it only fires
+/// on text that actually has thousands separators; an ungrouped number like `120000` fails that
+/// branch (no comma/period to feed a group) and falls through to the ungrouped one instead, which
+/// consumes it whole. Both branches are still individually bounded, so a match can never run away —
+/// but the boundary between "matched everything" and "matched only the bounded prefix and left more
+/// digits dangling" still needs a Rust-side check (`regex` has no lookahead): see
+/// [`is_truncated_continuation`].
+const NUMBER: &str = r"(?:\d{1,3}(?:[,.]\d{3}){1,3}|\d{1,9})(?:\.\d{1,2})?[kK]?";
 const SEPARATOR: &str = r"(?:-|–|—|\bto\b)";
 const PERIOD_SUFFIX: &str = r"(?:/|per\s+)?(?:hour|hr|year|yr|annum|month|mo)\.?";
 
@@ -56,16 +63,37 @@ fn clamp(mut s: String) -> String {
     s
 }
 
+/// True when `rest` (the text immediately following a candidate match's end) starts with a digit,
+/// or a comma/period immediately followed by a digit — i.e. [`NUMBER`]'s bounded digit groups cut
+/// the real number short rather than the number genuinely ending there. Deliberately NOT
+/// whitespace-tolerant (unlike the `%` check below): a truncated continuation is always digit-
+/// adjacent with no space, since a space would start a new token (a unit, a word), not more of the
+/// same number.
+fn is_truncated_continuation(rest: &str) -> bool {
+    let mut chars = rest.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_digit() => true,
+        Some(',') | Some('.') => matches!(chars.next(), Some(d) if d.is_ascii_digit()),
+        _ => false,
+    }
+}
+
 /// Find the first candidate salary RANGE in `text`, normalized for whitespace only. `None` when
 /// nothing matches the conservative heuristic above — this function never guesses, never infers a
-/// single number as a range, and never returns anything but the matched substring verbatim. A
-/// candidate immediately followed (modulo whitespace) by `%` is a percentage, not a salary range
-/// (e.g. "$60,000 - 10% commission") — the `regex` crate has no lookahead, so that's rejected here
-/// as a post-match check, trying the next candidate instead of fabricating a truncated range.
+/// single number as a range, and never returns anything but the matched substring verbatim. The
+/// `regex` crate has no lookahead, so two conditions are rejected here as post-match checks, trying
+/// the next candidate instead of fabricating a bad range: a candidate immediately followed (modulo
+/// whitespace) by `%` is a percentage, not a salary range (e.g. "$60,000 - 10% commission"); a
+/// candidate whose match end is immediately followed by more digits (see
+/// [`is_truncated_continuation`]) means [`NUMBER`]'s bounded groups cut the real number short (e.g.
+/// "$100,000-$120000" must never yield "$100,000-$120").
 pub(super) fn extract_salary_range(text: &str) -> Option<String> {
     SALARY_RANGE_RE
         .find_iter(text)
-        .find(|m| !text[m.end()..].trim_start().starts_with('%'))
+        .find(|m| {
+            let rest = &text[m.end()..];
+            !rest.trim_start().starts_with('%') && !is_truncated_continuation(rest)
+        })
         .map(|m| clamp(normalize_whitespace(m.as_str())))
 }
 
@@ -185,5 +213,41 @@ mod tests {
         // exercised directly so a future looser pattern can't silently exceed it.
         let long = "$".to_string() + &"1".repeat(500);
         assert!(clamp(long).len() <= MAX_SALARY_FACT_LEN);
+    }
+
+    // ── ungrouped-bound / truncation fix (the "$120,000 -> $120" defect) ────────
+    // Table-driven: every case must resolve the SAME way regardless of whether the number is
+    // thousands-grouped, ungrouped, or spaced — never a truncated range.
+
+    #[test]
+    fn ungrouped_and_truncation_cases() {
+        let cases: &[(&str, Option<&str>)] = &[
+            // One side grouped, the other ungrouped — must match IN FULL, not truncate at "$120".
+            ("Salary: $100,000-$120000", Some("$100,000-$120000")),
+            // Both sides ungrouped — must match in full.
+            ("Salary: $100000-$120000", Some("$100000-$120000")),
+            // Grouped with spaces around the separator — must still match in full (regression).
+            ("Salary: $100,000 - $120,000", Some("$100,000 - $120,000")),
+            // A value followed by more digits than the bounded ungrouped run can hold (10 digits) —
+            // the candidate is cut short, so it must be rejected outright, not returned truncated.
+            ("Salary: $50,000-$1234567890 annually", None),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                extract_salary_range(input).as_deref(),
+                *expected,
+                "input: {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn is_truncated_continuation_detects_digit_comma_and_period_adjacency() {
+        assert!(is_truncated_continuation("000 more text"));
+        assert!(is_truncated_continuation(",000 more text"));
+        assert!(is_truncated_continuation(".5 more text"));
+        assert!(!is_truncated_continuation(" more text"));
+        assert!(!is_truncated_continuation("% commission"));
+        assert!(!is_truncated_continuation(""));
     }
 }

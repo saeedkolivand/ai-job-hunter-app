@@ -124,12 +124,16 @@ function clearStamp(anchor: HTMLAnchorElement): void {
   stampShadows.delete(anchor);
 }
 
-/** Place (or replace) a small inline stamp right after `anchor`. The
- *  saved/applied outcome renders inside a CLOSED shadow root on the host —
- *  the page's own scripts (the same ones that authored the card anchors)
- *  can't read it back off the shared DOM, same isolation `fit-badge.ts`'s
- *  `renderFitBadge` uses and for the same reason: this stamp is the direct
- *  result of a local-store lookup, not page content. */
+/** Place (or replace) a small inline stamp right after `anchor`. Only the
+ *  stamp's CONTENT — which label it shows, "Saved" vs "Applied" — renders
+ *  inside a CLOSED shadow root on the host, so the page's own scripts (the
+ *  same ones that authored the card anchors) can't read that text back off
+ *  the shared DOM, same isolation `fit-badge.ts`'s `renderFitBadge` uses and
+ *  for the same reason. The HOST element itself (`span[data-ajh-stamp]`) is
+ *  visible in the light DOM by design — the feature IS a marker the user can
+ *  see next to a matched card — so a page's own script can still observe
+ *  that a lookup matched this anchor (its presence + position), just never
+ *  which status it matched. */
 function placeStamp(
   doc: Document,
   palette: NotebookPalette,
@@ -178,10 +182,13 @@ function placeStamp(
 }
 
 /** Test-only escape hatch: the closed shadow root placed for `anchor`, if
- *  any. `stampResultsCards` itself only ever returns a COUNT — by design,
- *  since page script must never learn which card matched — so a test needs
- *  this side door (module-internal, never sent anywhere) to assert the
- *  isolated content actually rendered. */
+ *  any. `stampResultsCards` itself only ever returns a COUNT (to the
+ *  background, never to the page) — the per-anchor closed-root CONTENT it
+ *  built is otherwise unobservable outside this module, so a test needs this
+ *  side door (module-internal, never sent anywhere) to assert the isolated
+ *  content actually rendered. This says nothing about the visible HOST
+ *  element itself, which is deliberately observable — see {@link
+ *  placeStamp}'s doc. */
 export function peekStampShadow(anchor: HTMLAnchorElement): ShadowRoot | undefined {
   return stampShadows.get(anchor);
 }

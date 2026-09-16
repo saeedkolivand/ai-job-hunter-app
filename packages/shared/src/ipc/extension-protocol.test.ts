@@ -37,6 +37,7 @@ import {
   EXTENSION_NO_PROVIDER_MESSAGE,
   HANDSHAKE_TEST_VECTOR,
   handshakeMessage,
+  MAX_APPLIED_CHECK_BATCH_URLS,
 } from './extension-protocol-constants.js';
 
 // ---------------------------------------------------------------------------
@@ -334,6 +335,22 @@ describe('ExtensionAppliedCheckBatchRequestSchema', () => {
     expect(() =>
       ExtensionAppliedCheckBatchRequestSchema.parse({ urls: 'https://example.com/jobs/1' })
     ).toThrow();
+  });
+
+  it('accepts exactly MAX_APPLIED_CHECK_BATCH_URLS urls', () => {
+    const urls = Array.from(
+      { length: MAX_APPLIED_CHECK_BATCH_URLS },
+      (_, i) => `https://example.com/jobs/${i}`
+    );
+    expect(() => ExtensionAppliedCheckBatchRequestSchema.parse({ urls })).not.toThrow();
+  });
+
+  it('rejects one more than MAX_APPLIED_CHECK_BATCH_URLS urls — the Rust side refuses `too_many_urls`, so shared validation must not pass a request it is guaranteed to reject', () => {
+    const urls = Array.from(
+      { length: MAX_APPLIED_CHECK_BATCH_URLS + 1 },
+      (_, i) => `https://example.com/jobs/${i}`
+    );
+    expect(() => ExtensionAppliedCheckBatchRequestSchema.parse({ urls })).toThrow();
   });
 });
 
