@@ -51,7 +51,7 @@
   },
   "dependencies": {
     "franc": "^6.2.0",
-    "zod": "^4.5.4"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "tsx": "^4.23.13",
