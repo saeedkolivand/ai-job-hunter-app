@@ -131,6 +131,27 @@ fn answer_assist_max_chars_matches_ts() {
     );
 }
 
+/// Numeric companion to [`message_type_constants_match_ts`] for
+/// `applied.check.batch`'s (PR3) URL cap: the shared TS
+/// `MAX_APPLIED_CHECK_BATCH_URLS` doc claims to mirror
+/// [`super::applied_check_batch::MAX_BATCH_URLS`] "pinned by a parity test,
+/// same discipline as every other wire constant" — without this test that
+/// claim was false, so a one-sided change to either cap would silently drift
+/// from the extension's client-side pre-cap. The trailing `;` is in the
+/// needle so `= 50` can never prefix-match a future `= 500`, same discipline
+/// as [`answer_assist_max_chars_matches_ts`].
+#[test]
+fn max_batch_urls_matches_ts() {
+    let ts = ts_protocol_source();
+    let cap = super::applied_check_batch::MAX_BATCH_URLS;
+    let needle = format!("MAX_APPLIED_CHECK_BATCH_URLS = {cap};");
+    assert!(
+        ts.contains(&needle),
+        "Rust MAX_BATCH_URLS ({cap}) not found as `{needle}` in extension-protocol-constants.ts — \
+         the desktop's applied.check.batch URL cap drifted from the shared TS constant"
+    );
+}
+
 /// Numeric parity companion to [`message_type_constants_match_ts`]: the
 /// message-type test only pins the `msg::*` STRING literals — it says nothing
 /// about the handshake's numeric `PROTOCOL_VERSION`. A one-sided bump (Rust

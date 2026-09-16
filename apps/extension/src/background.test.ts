@@ -17,12 +17,13 @@
  * in-memory store.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type Browser, browser } from '@wxt-dev/browser';
 
 import type { AnswerRow } from './lib/answer-state';
 import { setShowFitBadge, setStampResultsPages } from './lib/appearance';
 import type { AutofillSummary } from './lib/autofill';
+import type { FitBadgeView } from './lib/fit-badge';
 import type { PopupRequest, PopupResponse } from './lib/messages';
 import { getToken } from './lib/storage';
 import { SUBMIT_DETECTED_MSG } from './lib/submit-watch';
@@ -1542,6 +1543,99 @@ describe('matchLive → on-page fit badge injection', () => {
     expect(executeScriptMock).not.toHaveBeenCalledWith(
       expect.objectContaining({ files: ['fit-badge.js'] })
     );
+  });
+
+  // ── PR review finding: the tab-and-url re-check above (tabStillOnExactUrl)
+  // runs BEFORE maybeShowFitBadge's own later awaits (getShowFitBadge,
+  // checkApplied) — a navigation during either of those isn't caught by it.
+  // injectFitBadge's injected `func` now re-checks `location.href` against the
+  // captured url as the LAST possible step, IN the page, immediately before
+  // the renderer runs. These three drive that `func` directly (extracted from
+  // the mocked `executeScript` call, exactly as the "background thinks
+  // everything still matches" case would invoke it), the same seam the
+  // existing badge tests above use.
+  describe('the final in-page url check inside the injected renderer', () => {
+    const postingUrl = 'https://jobs.example.com/posting/9';
+
+    async function driveMatchLiveAndExtractRenderCall(): Promise<{
+      func: (v: FitBadgeView, key: string, expectedUrl: string) => void;
+      args: [FitBadgeView, string, string];
+    }> {
+      getTokenMock.mockResolvedValue(FAKE_TOKEN);
+      tabsQueryMock.mockResolvedValue([{ id: 7, url: postingUrl } as never]);
+      executeScriptMock.mockResolvedValueOnce([{ result: '<html>job</html>' }] as never); // content.js capture
+      mockClient.matchLive.mockResolvedValue({
+        ok: true,
+        combined: 82,
+        ats: 60,
+        gaps: [],
+        resumeName: 'My Resume',
+        scoreSource: 'keyword',
+      });
+      mockClient.checkApplied.mockResolvedValue({ found: false });
+      executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never); // fit-badge.js files
+      executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never); // fit-badge.js func call
+
+      await send({ kind: 'matchLive' });
+      await flush();
+
+      const funcCall = executeScriptMock.mock.calls.find(
+        (c) => (c[0] as { args?: unknown[] }).args?.[1] === '__ajhRenderFitBadge'
+      );
+      const { func, args } = funcCall![0] as {
+        func: (v: FitBadgeView, key: string, expectedUrl: string) => void;
+        args: [FitBadgeView, string, string];
+      };
+      // The url captured before the round trip is threaded through as the
+      // renderer's third arg, unchanged.
+      expect(args[2]).toBe(postingUrl);
+      return { func, args };
+    }
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('still renders when the live page url matches the captured url (happy path)', async () => {
+      await setShowFitBadge(true);
+      const { func, args } = await driveMatchLiveAndExtractRenderCall();
+
+      const runnerSpy = vi.fn();
+      vi.stubGlobal('__ajhRenderFitBadge', runnerSpy);
+      vi.stubGlobal('location', { href: postingUrl } as Location);
+
+      func(...args);
+
+      expect(runnerSpy).toHaveBeenCalledWith(args[0]);
+    });
+
+    it('does not render after a full navigation between the desktop reply and the injection (a fresh document with a different url)', async () => {
+      await setShowFitBadge(true);
+      const { func, args } = await driveMatchLiveAndExtractRenderCall();
+
+      const runnerSpy = vi.fn();
+      vi.stubGlobal('__ajhRenderFitBadge', runnerSpy);
+      vi.stubGlobal('location', { href: 'https://jobs.example.com/posting/999' } as Location);
+
+      func(...args);
+
+      expect(runnerSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not render after an SPA-style url change with the fit-badge global already installed (same document, different url)', async () => {
+      await setShowFitBadge(true);
+      const { func, args } = await driveMatchLiveAndExtractRenderCall();
+
+      const runnerSpy = vi.fn();
+      vi.stubGlobal('__ajhRenderFitBadge', runnerSpy);
+      // Same origin/document, e.g. a client-side route change — still a
+      // different posting, so it must not match.
+      vi.stubGlobal('location', { href: `${postingUrl}?ref=nav` } as Location);
+
+      func(...args);
+
+      expect(runnerSpy).not.toHaveBeenCalled();
+    });
   });
 });
 

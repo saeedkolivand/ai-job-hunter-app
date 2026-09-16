@@ -59,7 +59,7 @@ pub const MATCH_LIVE: &str = "match.live";
 /// this verb's errors ARE user-facing (a deliberate click). PR3 (Check-fit on the page) adds an
 /// OPTIONAL `salary: { posting, expectation? }` field — two facts verbatim, never a verdict/
 /// comparison (design decision 5) — present ONLY when a range was found in the posting text; an
-/// older extension ignores the unrecognized field harmlessly. See `super::salary_facts`'s doc.
+/// older extension ignores the unrecognized field harmlessly. See `crate::extraction::salary`'s doc.
 pub const MATCH_RESULT: &str = "match.result";
 /// Extension → desktop: "have I already applied to this URL?" — a pure,
 /// read-only lookup against the local `ApplicationStore` keyed by the

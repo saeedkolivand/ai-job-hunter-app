@@ -297,8 +297,8 @@ pub(super) async fn resolve_match_live(
         .ok_or_else(|| AppError::Validation(NO_JOB_TEXT_MESSAGE.to_string()))?;
 
     // Extracted BEFORE `job_text` is moved into `score_keyword_only` below — pure, no scoring
-    // dependency (see `salary_facts`'s module doc: two facts, never a verdict).
-    let salary_posting = super::salary_facts::extract_salary_range(&job_text);
+    // dependency (see `extraction::salary`'s module doc: two facts, never a verdict).
+    let salary_posting = crate::extraction::salary::extract_salary_range(&job_text);
 
     let docs = store.list();
     let resume =

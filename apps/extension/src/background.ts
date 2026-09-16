@@ -1219,17 +1219,37 @@ const FIT_BADGE_SCORE_SOURCE_LABEL: Record<'keyword' | 'combined', string> = {
  * than through any stored/registered surface — mirrors `injectFill`'s
  * two-step register-then-invoke pattern exactly. Every value on `view` is a
  * JSON-safe primitive/array/plain-object (PR2 lesson).
+ *
+ * `url` is the SAME url `runMatchLive` captured before the desktop round
+ * trip (and that `tabStillOnExactUrl` already re-verified against `tabs.url`
+ * just before this call). It is threaded through as a third, JSON-safe
+ * string arg and re-checked ONE more time, IN the page, immediately before
+ * the renderer runs — the last possible point, catching a navigation during
+ * `maybeShowFitBadge`'s OWN later awaits (`getShowFitBadge`,
+ * `checkApplied`), which land after that background-side check and so
+ * aren't covered by it (PR review finding). A full navigation loads a fresh
+ * document that this call re-injects `fit-badge.js` into; an SPA navigation
+ * instead keeps the already-installed global alive on the SAME document
+ * with a new `location.href`. Either way `location.href` is the page's own
+ * live truth, so an exact match against the captured `url` — the same
+ * strictness `tabStillOnExactUrl` already applies one step earlier, both
+ * comparing the one full tab-url string end to end — is the only comparison
+ * that can never let a different posting through; a page rewriting its own
+ * `location.href` (an in-page fragment/route change) is exactly the
+ * different-posting risk this check exists to catch, not a false positive
+ * to relax away.
  */
-async function injectFitBadge(tabId: number, view: FitBadgeView): Promise<void> {
+async function injectFitBadge(tabId: number, url: string, view: FitBadgeView): Promise<void> {
   await browser.scripting.executeScript({ target: { tabId }, files: ['fit-badge.js'] });
   await browser.scripting.executeScript({
     target: { tabId },
-    func: (v: FitBadgeView, key: string): void => {
+    func: (v: FitBadgeView, key: string, expectedUrl: string): void => {
+      if (location.href !== expectedUrl) return;
       const runner = (globalThis as Record<string, unknown>)[key] as
         ((view: FitBadgeView) => void) | undefined;
       runner?.(v);
     },
-    args: [view, FIT_BADGE_GLOBAL],
+    args: [view, FIT_BADGE_GLOBAL, url],
   });
 }
 
@@ -1267,7 +1287,7 @@ async function maybeShowFitBadge(
     };
     if (result.salary) view.salary = result.salary;
 
-    await injectFitBadge(tabId, view);
+    await injectFitBadge(tabId, url, view);
   } catch {
     // Never let a badge-rendering failure surface anywhere — see this
     // function's own doc.

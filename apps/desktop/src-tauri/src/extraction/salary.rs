@@ -1,9 +1,13 @@
-//! Pure salary-range extraction from a job-posting text blob — `match.live`'s new `salary.posting`
+//! Pure salary-range extraction from a job-posting text blob — `match.live`'s `salary.posting`
 //! fact (PR3, design decision 5 / R4). Deliberately narrow: this module ONLY finds a candidate
 //! salary RANGE substring and normalizes its whitespace — it never guesses, never infers a single
 //! number as a range, and never produces any comparison/verdict. The `expectation` half of the
-//! wire pair (`JobPreferences.salary_expectation`) is assembled by `match_live.rs`, not here — this
-//! module knows nothing about the user's own preferences, only the posting text.
+//! wire pair (`JobPreferences.salary_expectation`) is assembled by `extension_bridge::match_live`,
+//! not here — this module knows nothing about the user's own preferences, only the posting text.
+//!
+//! Lives in `extraction` (L1) rather than `extension_bridge` (L3) because it is pure
+//! text-extraction domain logic, not wire mapping — `extension_bridge::match_live` calls
+//! [`extract_salary_range`] and does only the IPC/wire mapping itself.
 //!
 //! ## The heuristic (conservative, not exhaustive)
 //! A currency SYMBOL or ISO CODE, adjacent (modulo whitespace) to two numbers separated by a
@@ -87,7 +91,7 @@ fn is_truncated_continuation(rest: &str) -> bool {
 /// candidate whose match end is immediately followed by more digits (see
 /// [`is_truncated_continuation`]) means [`NUMBER`]'s bounded groups cut the real number short (e.g.
 /// "$100,000-$120000" must never yield "$100,000-$120").
-pub(super) fn extract_salary_range(text: &str) -> Option<String> {
+pub fn extract_salary_range(text: &str) -> Option<String> {
     SALARY_RANGE_RE
         .find_iter(text)
         .find(|m| {

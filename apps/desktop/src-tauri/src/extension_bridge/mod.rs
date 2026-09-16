@@ -121,8 +121,6 @@ pub mod register;
 mod req_id_cap;
 /// The `token.revoked` wire surface + its no-oracle gate — see its module doc.
 mod revoke;
-/// Pure `match.live` salary-range extraction (PR3).
-mod salary_facts;
 /// `settings.get`/`settings.set` (R7) — the extension's own opt-in switches, toggleable from the
 /// paired extension — see its own module doc.
 mod settings;
