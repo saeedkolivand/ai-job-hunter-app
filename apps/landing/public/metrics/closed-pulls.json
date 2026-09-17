@@ -1,55 +1,13 @@
 [
   {
-    "number": 1205,
-    "title": "feat(extension): Check-fit on the page — fit badge, results stamps, salary facts",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1205",
+    "number": 1198,
+    "title": "fix(release): create the xdg data dir before msstore runs; surface the snap store listing",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1198",
     "draft": false,
-    "created_at": "2026-09-15T21:12:01Z",
-    "updated_at": "2026-09-16T03:07:48Z",
-    "merged_at": "2026-09-16T02:50:28Z",
-    "closed_at": "2026-09-16T02:50:28Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1204,
-    "title": "feat(extension): documents into ATS — résumé attach, cover-letter paste, deep links, copy fallback",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1204",
-    "draft": false,
-    "created_at": "2026-09-15T10:30:37Z",
-    "updated_at": "2026-09-15T16:18:17Z",
-    "merged_at": "2026-09-15T16:18:15Z",
-    "closed_at": "2026-09-15T16:18:15Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1203,
-    "title": "feat(extension): read-only agent tier + live settings switches (ADR-050)",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1203",
-    "draft": false,
-    "created_at": "2026-09-14T20:54:08Z",
-    "updated_at": "2026-09-14T21:58:52Z",
-    "merged_at": "2026-09-14T21:45:38Z",
-    "closed_at": "2026-09-14T21:45:38Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1201,
-    "title": "ui(extension): notebook redesign shell — launcher popup, tabbed panel, settings page",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1201",
-    "draft": false,
-    "created_at": "2026-09-11T03:46:53Z",
-    "updated_at": "2026-09-11T04:48:19Z",
-    "merged_at": "2026-09-11T04:34:34Z",
-    "closed_at": "2026-09-11T04:34:34Z",
+    "created_at": "2026-09-10T13:09:15Z",
+    "updated_at": "2026-09-16T17:59:46Z",
+    "merged_at": "2026-09-10T13:15:27Z",
+    "closed_at": "2026-09-10T13:15:27Z",
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"
@@ -61,7 +19,7 @@
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1199",
     "draft": false,
     "created_at": "2026-09-10T13:37:55Z",
-    "updated_at": "2026-09-10T14:00:16Z",
+    "updated_at": "2026-09-16T17:59:43Z",
     "merged_at": "2026-09-10T13:39:02Z",
     "closed_at": "2026-09-10T13:39:02Z",
     "requested_reviewers": [],
@@ -75,7 +33,7 @@
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1200",
     "draft": false,
     "created_at": "2026-09-10T13:41:21Z",
-    "updated_at": "2026-09-10T13:44:55Z",
+    "updated_at": "2026-09-16T17:59:40Z",
     "merged_at": "2026-09-10T13:42:54Z",
     "closed_at": "2026-09-10T13:42:54Z",
     "requested_reviewers": [],
@@ -84,17 +42,157 @@
     }
   },
   {
-    "number": 1198,
-    "title": "fix(release): create the xdg data dir before msstore runs; surface the snap store listing",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1198",
+    "number": 1201,
+    "title": "ui(extension): notebook redesign shell — launcher popup, tabbed panel, settings page",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1201",
     "draft": false,
-    "created_at": "2026-09-10T13:09:15Z",
-    "updated_at": "2026-09-10T13:34:10Z",
-    "merged_at": "2026-09-10T13:15:27Z",
-    "closed_at": "2026-09-10T13:15:27Z",
+    "created_at": "2026-09-11T03:46:53Z",
+    "updated_at": "2026-09-16T17:59:37Z",
+    "merged_at": "2026-09-11T04:34:34Z",
+    "closed_at": "2026-09-11T04:34:34Z",
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1203,
+    "title": "feat(extension): read-only agent tier + live settings switches (ADR-050)",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1203",
+    "draft": false,
+    "created_at": "2026-09-14T20:54:08Z",
+    "updated_at": "2026-09-16T17:59:34Z",
+    "merged_at": "2026-09-14T21:45:38Z",
+    "closed_at": "2026-09-14T21:45:38Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1204,
+    "title": "feat(extension): documents into ATS — résumé attach, cover-letter paste, deep links, copy fallback",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1204",
+    "draft": false,
+    "created_at": "2026-09-15T10:30:37Z",
+    "updated_at": "2026-09-16T17:59:31Z",
+    "merged_at": "2026-09-15T16:18:15Z",
+    "closed_at": "2026-09-15T16:18:15Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1205,
+    "title": "feat(extension): Check-fit on the page — fit badge, results stamps, salary facts",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1205",
+    "draft": false,
+    "created_at": "2026-09-15T21:12:01Z",
+    "updated_at": "2026-09-16T17:59:28Z",
+    "merged_at": "2026-09-16T02:50:28Z",
+    "closed_at": "2026-09-16T02:50:28Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1209,
+    "title": "feat(extension): Prep tab and saving the answers you typed at submit",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1209",
+    "draft": false,
+    "created_at": "2026-09-16T16:09:38Z",
+    "updated_at": "2026-09-16T17:59:27Z",
+    "merged_at": "2026-09-16T17:06:46Z",
+    "closed_at": "2026-09-16T17:06:46Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1206,
+    "title": "chore: bump the codeql-action group with 3 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1206",
+    "draft": false,
+    "created_at": "2026-09-16T16:07:13Z",
+    "updated_at": "2026-09-16T17:59:26Z",
+    "merged_at": "2026-09-16T17:23:24Z",
+    "closed_at": "2026-09-16T17:23:24Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1207,
+    "title": "chore: bump the desktop-rust group in /apps/desktop/src-tauri with 4 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1207",
+    "draft": false,
+    "created_at": "2026-09-16T16:09:18Z",
+    "updated_at": "2026-09-16T17:59:25Z",
+    "merged_at": "2026-09-16T17:25:14Z",
+    "closed_at": "2026-09-16T17:25:14Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1208,
+    "title": "chore: bump lopdf from 0.44.0 to 0.45.0 in /apps/desktop/src-tauri",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1208",
+    "draft": false,
+    "created_at": "2026-09-16T16:09:28Z",
+    "updated_at": "2026-09-16T17:59:24Z",
+    "merged_at": "2026-09-16T17:25:42Z",
+    "closed_at": "2026-09-16T17:25:42Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1210,
+    "title": "chore: bump the ci-actions group with 3 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1210",
+    "draft": false,
+    "created_at": "2026-09-16T16:11:27Z",
+    "updated_at": "2026-09-16T17:59:23Z",
+    "merged_at": "2026-09-16T17:26:43Z",
+    "closed_at": "2026-09-16T17:26:43Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1211,
+    "title": "chore: bump actions/setup-dotnet from 4.3.1 to 6.0.0",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1211",
+    "draft": false,
+    "created_at": "2026-09-16T16:11:57Z",
+    "updated_at": "2026-09-16T17:59:22Z",
+    "merged_at": "2026-09-16T17:27:10Z",
+    "closed_at": "2026-09-16T17:27:10Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1212,
+    "title": "chore: bump the javascript group with 21 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1212",
+    "draft": false,
+    "created_at": "2026-09-16T16:23:19Z",
+    "updated_at": "2026-09-16T17:59:21Z",
+    "merged_at": "2026-09-16T17:28:30Z",
+    "closed_at": "2026-09-16T17:28:30Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
     }
   },
   {
@@ -596,104 +694,6 @@
     "updated_at": "2026-09-05T05:55:49Z",
     "merged_at": "2026-09-05T04:26:45Z",
     "closed_at": "2026-09-05T04:26:45Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1113,
-    "title": "feat: bring Import/Check fit/Fill form/Save answers into the side panel",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1113",
-    "draft": false,
-    "created_at": "2026-09-05T04:51:23Z",
-    "updated_at": "2026-09-05T05:55:48Z",
-    "merged_at": "2026-09-05T05:53:36Z",
-    "closed_at": "2026-09-05T05:53:36Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1110,
-    "title": "feat: open the answer panel from a plain right-click on the page",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1110",
-    "draft": false,
-    "created_at": "2026-09-04T22:57:47Z",
-    "updated_at": "2026-09-04T23:46:12Z",
-    "merged_at": "2026-09-04T23:29:59Z",
-    "closed_at": "2026-09-04T23:29:59Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1109,
-    "title": "fix: posting score, trust and agent-cli addressing integrity (#1104-#1107)",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1109",
-    "draft": false,
-    "created_at": "2026-09-04T18:37:13Z",
-    "updated_at": "2026-09-04T20:44:55Z",
-    "merged_at": "2026-09-04T20:33:25Z",
-    "closed_at": "2026-09-04T20:33:25Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1103,
-    "title": "fix: extension answer tools capture script and reasoning-aware draft budget",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1103",
-    "draft": false,
-    "created_at": "2026-09-03T08:57:43Z",
-    "updated_at": "2026-09-04T15:04:36Z",
-    "merged_at": "2026-09-04T13:26:19Z",
-    "closed_at": "2026-09-04T13:26:19Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1108,
-    "title": "fix: give extension answer tools a side panel; fix the inline rewrite popover",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1108",
-    "draft": false,
-    "created_at": "2026-09-04T13:13:20Z",
-    "updated_at": "2026-09-04T15:04:33Z",
-    "merged_at": "2026-09-04T14:51:43Z",
-    "closed_at": "2026-09-04T14:51:43Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1102,
-    "title": "feat: per-language help retrieval with cancellation, agent cli settings card, cross-os mcp smoke",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1102",
-    "draft": false,
-    "created_at": "2026-09-03T03:19:11Z",
-    "updated_at": "2026-09-03T04:28:05Z",
-    "merged_at": "2026-09-03T04:08:32Z",
-    "closed_at": "2026-09-03T04:08:32Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1090,
-    "title": "feat: hybrid search over the live postings cache",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1090",
-    "draft": false,
-    "created_at": "2026-09-01T22:37:28Z",
-    "updated_at": "2026-09-03T04:12:06Z",
-    "merged_at": "2026-09-01T23:25:46Z",
-    "closed_at": "2026-09-01T23:25:46Z",
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"

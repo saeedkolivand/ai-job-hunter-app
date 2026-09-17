@@ -1,5 +1,137 @@
 [
   {
+    "sha": "ba72ca298bfe99e05acbe3821b01c4ec0003b612",
+    "commit": {
+      "message": "chore: sync landing download version to v0.154.0",
+      "author": {
+        "date": "2026-09-16T18:43:46Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "35177b61bb967e90ff008ce4fe562fae40e6eb0f",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.154.0 [skip ci]",
+      "author": {
+        "date": "2026-09-16T18:43:24Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "dc0479486fe024f541aea6cd63eafe9bc373b416",
+    "commit": {
+      "message": "chore(release): 0.154.0 [skip ci]",
+      "author": {
+        "date": "2026-09-16T17:58:53Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "1f0ef98877555ebf0c20ebe90d8483df8b7a434a",
+    "commit": {
+      "message": "chore: bump the javascript group with 21 updates (#1212)",
+      "author": {
+        "date": "2026-09-16T17:28:30Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "472611a63245258acd2ea7231ca45aa395859389",
+    "commit": {
+      "message": "chore: bump actions/setup-dotnet from 4.3.1 to 6.0.0 (#1211)",
+      "author": {
+        "date": "2026-09-16T17:27:09Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "3b00733e48ad90a0d94a1cc679f1b93719ea0874",
+    "commit": {
+      "message": "chore: bump the ci-actions group with 3 updates (#1210)",
+      "author": {
+        "date": "2026-09-16T17:26:42Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "0f84c868757252d41de6db3f78b61365221d68da",
+    "commit": {
+      "message": "chore: bump lopdf from 0.44.0 to 0.45.0 in /apps/desktop/src-tauri (#1208)",
+      "author": {
+        "date": "2026-09-16T17:25:41Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "ddfb3d3d24dece98b05be9f92171d9e70d36cc08",
+    "commit": {
+      "message": "chore: bump the desktop-rust group (#1207)",
+      "author": {
+        "date": "2026-09-16T17:25:14Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "b18ca6c62261a2ffde24782030119aa134aab271",
+    "commit": {
+      "message": "chore: bump the codeql-action group with 3 updates (#1206)",
+      "author": {
+        "date": "2026-09-16T17:23:24Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "6d95b6bbcb1a5c66b10f6807b08113d19a5045c8",
+    "commit": {
+      "message": "feat(extension): Prep tab and saving the answers you typed at submit (#1209)",
+      "author": {
+        "date": "2026-09-16T17:06:45Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "2c2c93ca9b4f0409306e87d4ff1eeed8d57985fd",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-16T08:33:30Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "cea0e56b3ab4df74a5a9e61c3af3a7a82b708b29",
     "commit": {
       "message": "chore: update export benchmark data [skip ci]",
@@ -1065,138 +1197,6 @@
     },
     "author": {
       "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "1c97e3ddb3b9494edfbea7ec79078d112fd28796",
-    "commit": {
-      "message": "chore: bump @vitest/browser-playwright from 4.1.11 to 5.0.0 (#1124)",
-      "author": {
-        "date": "2026-09-07T11:54:55Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "7afbd9c71e3c6cd07bffadc3a1f5a98d32c928fe",
-    "commit": {
-      "message": "chore: bump the javascript group with 26 updates (#1123)",
-      "author": {
-        "date": "2026-09-07T11:51:24Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "97e10bddca3923acc093aa077861c2b3753ee2fa",
-    "commit": {
-      "message": "feat: add the terms of use page and link it from onboarding (#1120)",
-      "author": {
-        "date": "2026-09-07T11:51:01Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "b896c029a7ea785b9037851603fb9d331a073850",
-    "commit": {
-      "message": "chore: bump actions/download-artifact from 7.0.0 to 8.0.1 (#1122)",
-      "author": {
-        "date": "2026-09-07T11:35:50Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "81abc9a4b774ae8d3d760f78c88237b052f19336",
-    "commit": {
-      "message": "chore: bump the ci-actions group with 4 updates (#1121)",
-      "author": {
-        "date": "2026-09-07T11:35:27Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "94400be3a7b6c2dddb101a441230e0471f1953c4",
-    "commit": {
-      "message": "feat: apache-2.0 relicense, extension store auto-submission and a microsoft store msix flavour (#1119)",
-      "author": {
-        "date": "2026-09-07T11:24:25Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "8e8c8fa5920696f2cb232a853a50d8f028fccf4e",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-07T08:15:50Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "bcb6b303065e3ce442ea8626818cef7d126c7fc1",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-07T07:11:34Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "e5f41630b1898a1a2f244607f29fabb4d245b8e1",
-    "commit": {
-      "message": "feat: LinkedIn description enrichment + paginated found-jobs MCP resource (#1117)",
-      "author": {
-        "date": "2026-09-07T06:44:14Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "d46c2771a51c9ec3bd13b404a21945d29981f7c0",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-06T07:53:22Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "1bfe9353cc934e0151be2ed48fd8201bfc001b64",
-    "commit": {
-      "message": "feat: give the extension side panel connection-status awareness (#1116)",
-      "author": {
-        "date": "2026-09-05T18:20:21Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
     }
   }
 ]
