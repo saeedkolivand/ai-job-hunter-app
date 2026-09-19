@@ -1,5 +1,17 @@
 [
   {
+    "sha": "6e9a27a6b08b2f80f08b9a157b02b708ca0bc5ac",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-18T08:13:28Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "97976f9a332130b5e8ede01017fa908606023c78",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1185,18 +1197,6 @@
     },
     "author": {
       "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "b8b10bd888f3494d6140408ce66f5ae475c9dc8b",
-    "commit": {
-      "message": "ci: fix the chrome web store zip path and add per-store re-publish dispatches (#1125)",
-      "author": {
-        "date": "2026-09-07T12:13:32Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
     }
   }
 ]
