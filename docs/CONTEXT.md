@@ -662,6 +662,30 @@ and the closed-shadow-root privacy boundary are owned by
 _Avoid_: conflating with the **On-page badge** (that carries the score/gaps for the CURRENT job;
 this carries saved/applied only, for MANY cards on a listing page)
 
+**Prep tab**:
+The side panel's fourth tab, reading a job's existing per-job AI generations — company brief,
+interview questions, salary answer — through the **Extension read tier**, at zero additional AI
+spend (it is the user's own already-generated data, not fresh generation). Its two on-demand
+drafts (company brief, salary answer) ride the existing billable `answer.assist` verb under the
+separate AI-assist opt-in, never a new verb or spend bucket. "Prepare in the app" opens the
+`ajh://prep?url=` deep link when nothing has been generated yet
+(`apps/extension/src/prep/prep.ts`). See [ADR 0009](knowledge/decision-records/0009-assisted-autofill.md)'s
+2026-09-16 amendment.
+_Avoid_: "generate" as a synonym for what this tab does (it only reads existing generations and
+drafts through the existing assist verb; interview-question generation itself stays in-app)
+
+**Answer capture on submit**:
+The nested, desktop-enforced switch ("also save the answers I typed") under **Auto-track** that
+saves the answers a user filled into an application form at the moment a submit is detected —
+capture runs synchronously in the page, before navigation, and is refused server-side unless this
+opt-in (default OFF) is on. Its own consent class, distinct from auto-track's status write: the
+trigger is a detected event rather than a click, and it writes page-derived answer TEXT rather than
+flipping one status value, so it never shares auto-track's toggle. After an auto-save the user sees
+a transparent notice of what was saved. See [ADR 0009](knowledge/decision-records/0009-assisted-autofill.md)'s
+2026-09-16 amendment.
+_Avoid_: conflating with the deliberate "Save my answers" popup action (that is a direct click,
+ungated by this switch, and stays untouched)
+
 ## Domain — Packaged builds
 
 **Flavour**:

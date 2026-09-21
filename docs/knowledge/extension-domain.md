@@ -1,6 +1,6 @@
 # Extension domain (browser extension + desktop bridge)
 
-Last updated: 2026-09-16 (PR3 of the extension redesign: Check-fit on the page — on-page fit badge, results-page saved/applied stamps, `applied.check.batch`, salary facts on `match.live`; PR2: documents into ATS — résumé/cover-letter attach via `document.export`, the `documents` picker resource, `frame.rs` split, two deep-link routes; PR1: extension read tier + live settings verbs — ADR-050; PR0: popup is now a launcher, side panel is now a tabbed workspace, Settings page, first-Fill site memory — ADR-044 amendment; ADR-045: job-tools panel parity + the `isPageTrusted` gate; ADR-044: extension Answer tools side panel, shared per-tab state, draft-time `maxChars` field; `answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
+Last updated: 2026-09-21 (PR4 of the extension redesign: Prep tab — read-only `prep` resource + on-demand assist drafts; save-answers-on-submit — fourth settings key, `ajh://prep` deep link; PR3: Check-fit on the page — on-page fit badge, results-page saved/applied stamps, `applied.check.batch`, salary facts on `match.live`; PR2: documents into ATS — résumé/cover-letter attach via `document.export`, the `documents` picker resource, `frame.rs` split, two deep-link routes; PR1: extension read tier + live settings verbs — ADR-050; PR0: popup is now a launcher, side panel is now a tabbed workspace, Settings page, first-Fill site memory — ADR-044 amendment; ADR-045: job-tools panel parity + the `isPageTrusted` gate; ADR-044: extension Answer tools side panel, shared per-tab state, draft-time `maxChars` field; `answer.assist` reasoning-budget + one-retry rule; PR #895: `token.revoked` revocation frame + the `msg.rs`/`revoke.rs` module split; PR #889: autofill name-matcher hardening → store re-release needed)
 
 Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tauri-security-reviewer`.
 
@@ -114,6 +114,23 @@ DOM node, so a page script can observe that a fit was checked or a card was stam
 read the label/score/gaps back. `match.live`'s optional salary fact is owned by
 `extension_bridge/salary_facts.rs`. See [ADR-0009](decision-records/0009-assisted-autofill.md)'s
 2026-09-15 amendment for the full record.
+
+### Prep tab + save-answers-on-submit (PR4)
+
+The Prep tab (`apps/extension/src/prep/prep.ts`) reads a job's existing per-job AI generations —
+company brief, interview questions, salary answer — through a new curated resource on the extension
+read tier, `extension_bridge/agent_read/prep.rs` (own module doc owns the caps and the
+`truncated`-flag discipline); two on-demand drafts ride the existing `answer.assist` verb via an
+optional `topic` field (`extension_bridge/answer_assist_topic.rs`), gated by the existing AI-assist
+opt-in, never a second billable verb. Saving the answers the user typed at submit time is a fourth,
+nested consent switch (`saveAnswersOnSubmit`, `extension_bridge/settings.rs`'s `SettingsKey`) with
+its own persisted flag (`extension_bridge/save_answers_optin.rs`) and its own server-side
+enforcement on `answers.save`'s `auto` flag (`extension_bridge/answers_save.rs::auto_save_refused`),
+capture happening synchronously in `apps/extension/src/lib/submit-watch.ts` before navigation; the
+post-save transparency notice is `apps/extension/src/lib/auto-save-notice.ts`. "Prepare in the app"
+is a fourth deep-link route, `ajh://prep?url=` (`FocusTarget::PrepForJob`, `deeplink/mod.rs` +
+`tray::dispatch_prep_for_job`). Full record: [ADR-0009](decision-records/0009-assisted-autofill.md)'s
+2026-09-16 amendment.
 
 ### Revocation reach — an inherent limitation
 
