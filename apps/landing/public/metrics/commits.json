@@ -1,5 +1,17 @@
 [
   {
+    "sha": "377e6d21335798d3bd47e88510760951184ddf00",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-20T08:33:26Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "ca2ec856db8ce1132fd61091cf5c76c552f98248",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1185,18 +1197,6 @@
     },
     "author": {
       "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "804a011be90ba3da9fa1e60589d1946117138a67",
-    "commit": {
-      "message": "chore: sync landing download version to v0.149.0",
-      "author": {
-        "date": "2026-09-07T12:42:58Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
     }
   }
 ]
