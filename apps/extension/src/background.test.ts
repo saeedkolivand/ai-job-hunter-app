@@ -1442,7 +1442,7 @@ describe('matchLive request', () => {
 
     expect(res).toEqual({
       ok: false,
-      error: 'Could not read this page. Reload the job page and try again.',
+      error: 'Could not read this page. Reload it and try again.',
     });
     expect(mockClient.matchLive).not.toHaveBeenCalled();
   });
@@ -1463,6 +1463,88 @@ describe('matchLive request', () => {
       ok: false,
       error: 'Desktop app not reachable. Is AI Job Hunter running?',
     });
+  });
+});
+
+describe('matchLive request — permanently-unreadable pages (#1219)', () => {
+  it.each([
+    ['chrome://settings', 'chrome://settings'],
+    ['chrome://extensions', 'chrome://extensions/'],
+    [
+      'chrome-extension://abcdefghijklmnop/content/index.html',
+      'chrome-extension://abcdefghijklmnop/content/index.html',
+    ],
+    ['about:blank', 'about:blank'],
+    ['about:newtab', 'about:newtab'],
+    ['moz-extension://abcdefghijklmnop/page.html', 'moz-extension://abcdefghijklmnop/page.html'],
+    ['the built-in PDF viewer', 'resource://pdf.js/web/viewer.html'],
+    [
+      'the Chrome Web Store',
+      'https://chromewebstore.google.com/detail/some-extension/abcdefghijklmnop',
+    ],
+    ['a .pdf file', 'https://example.com/job-posting/attachment.pdf'],
+  ])(
+    'answers %s with the unreadable-page message, without capturing or calling matchLive',
+    async (_label, url) => {
+      getTokenMock.mockResolvedValue(FAKE_TOKEN);
+      tabsQueryMock.mockResolvedValue([{ id: 7, url } as never]);
+
+      const res = await send({ kind: 'matchLive' });
+
+      expect(res).toEqual({
+        ok: false,
+        error: "This page can't be read by the extension — there's nothing to work with here.",
+      });
+      expect(executeScriptMock).not.toHaveBeenCalled();
+      expect(mockClient.matchLive).not.toHaveBeenCalled();
+    }
+  );
+
+  it('answers the redacted-empty-url case (Chrome hides restricted tab urls without `tabs` permission)', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: '' } as never]);
+
+    const res = await send({ kind: 'matchLive' });
+
+    expect(res).toEqual({
+      ok: false,
+      error: "This page can't be read by the extension — there's nothing to work with here.",
+    });
+    expect(executeScriptMock).not.toHaveBeenCalled();
+    expect(mockClient.matchLive).not.toHaveBeenCalled();
+  });
+
+  it('answers the no-active-tab case with the same message', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([]);
+
+    const res = await send({ kind: 'matchLive' });
+
+    expect(res).toEqual({
+      ok: false,
+      error: "This page can't be read by the extension — there's nothing to work with here.",
+    });
+    expect(executeScriptMock).not.toHaveBeenCalled();
+    expect(mockClient.matchLive).not.toHaveBeenCalled();
+  });
+
+  it('keeps the transient reload hint for a capture failure on a NORMAL, readable page', async () => {
+    // The reversed assertion: on a page that CAN be read, a capture failure
+    // still gets the reload hint — never the shared unreadable-page message,
+    // which would be a lie.
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([{ result: null }] as never);
+
+    const res = await send({ kind: 'matchLive' });
+
+    expect(res).toEqual({
+      ok: false,
+      error: 'Could not read this page. Reload it and try again.',
+    });
+    expect(mockClient.matchLive).not.toHaveBeenCalled();
   });
 });
 
@@ -1740,7 +1822,7 @@ describe('stampResults request', () => {
   it('collects candidate cards, batch-checks them, stamps, and reports the count', async () => {
     getTokenMock.mockResolvedValue(FAKE_TOKEN);
     await setStampResultsPages(true);
-    tabsQueryMock.mockResolvedValue([{ id: 7 } as never]);
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://x/jobs?q=data' } as never]);
     executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never); // results-stamp.js files
     executeScriptMock.mockResolvedValueOnce([
       { result: [{ url: 'https://x/jobs/1', index: 0 }] },
@@ -1760,7 +1842,7 @@ describe('stampResults request', () => {
   it('degrades a desktop-side refusal (over-cap/throttle) to "no stamps", never a partial lie', async () => {
     getTokenMock.mockResolvedValue(FAKE_TOKEN);
     await setStampResultsPages(true);
-    tabsQueryMock.mockResolvedValue([{ id: 7 } as never]);
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://x/jobs?q=data' } as never]);
     executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never);
     executeScriptMock.mockResolvedValueOnce([
       { result: [{ url: 'https://x/jobs/1', index: 0 }] },
@@ -1777,7 +1859,7 @@ describe('stampResults request', () => {
   it('reports "no job cards" without ever calling the bridge when the page has none', async () => {
     getTokenMock.mockResolvedValue(FAKE_TOKEN);
     await setStampResultsPages(true);
-    tabsQueryMock.mockResolvedValue([{ id: 7 } as never]);
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://x/jobs?q=data' } as never]);
     executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never);
     executeScriptMock.mockResolvedValueOnce([{ result: [] }] as never);
 
@@ -1795,7 +1877,7 @@ describe('stampResults request', () => {
   it('degrades a transport rejection on the batch call to "no stamps" too', async () => {
     getTokenMock.mockResolvedValue(FAKE_TOKEN);
     await setStampResultsPages(true);
-    tabsQueryMock.mockResolvedValue([{ id: 7 } as never]);
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://x/jobs?q=data' } as never]);
     executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never);
     executeScriptMock.mockResolvedValueOnce([
       { result: [{ url: 'https://x/jobs/1', index: 0 }] },
@@ -1810,6 +1892,91 @@ describe('stampResults request', () => {
       stamped: 0,
       status: 'Could not reach the desktop app.',
     });
+  });
+});
+
+describe('stampResults request — permanently-unreadable pages (#1219)', () => {
+  it.each([
+    ['chrome://settings', 'chrome://settings'],
+    ['chrome://extensions', 'chrome://extensions/'],
+    [
+      'chrome-extension://abcdefghijklmnop/content/index.html',
+      'chrome-extension://abcdefghijklmnop/content/index.html',
+    ],
+    ['about:blank', 'about:blank'],
+    ['about:newtab', 'about:newtab'],
+    ['moz-extension://abcdefghijklmnop/page.html', 'moz-extension://abcdefghijklmnop/page.html'],
+    ['the built-in PDF viewer', 'resource://pdf.js/web/viewer.html'],
+    [
+      'the Chrome Web Store',
+      'https://chromewebstore.google.com/detail/some-extension/abcdefghijklmnop',
+    ],
+    ['a .pdf file', 'https://example.com/job-posting/attachment.pdf'],
+  ])(
+    'answers %s with the shared unreadable-page message, without collecting or calling the bridge',
+    async (_label, url) => {
+      getTokenMock.mockResolvedValue(FAKE_TOKEN);
+      await setStampResultsPages(true);
+      tabsQueryMock.mockResolvedValue([{ id: 7, url } as never]);
+
+      const res = await send({ kind: 'stampResults' });
+
+      expect(res).toEqual({
+        ok: false,
+        error: "This page can't be read by the extension — there's nothing to work with here.",
+      });
+      expect(executeScriptMock).not.toHaveBeenCalled();
+      expect(mockClient.checkAppliedBatch).not.toHaveBeenCalled();
+    }
+  );
+
+  it('answers the redacted-empty-url case (Chrome hides restricted tab urls without `tabs` permission) with the same message', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    await setStampResultsPages(true);
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: '' } as never]);
+
+    const res = await send({ kind: 'stampResults' });
+
+    expect(res).toEqual({
+      ok: false,
+      error: "This page can't be read by the extension — there's nothing to work with here.",
+    });
+    expect(executeScriptMock).not.toHaveBeenCalled();
+    expect(mockClient.checkAppliedBatch).not.toHaveBeenCalled();
+  });
+
+  it('answers the no-active-tab case with the same message', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    await setStampResultsPages(true);
+    tabsQueryMock.mockResolvedValue([] as never);
+
+    const res = await send({ kind: 'stampResults' });
+
+    expect(res).toEqual({
+      ok: false,
+      error: "This page can't be read by the extension — there's nothing to work with here.",
+    });
+    expect(executeScriptMock).not.toHaveBeenCalled();
+    expect(mockClient.checkAppliedBatch).not.toHaveBeenCalled();
+  });
+
+  it('keeps the transient reload hint for a collect failure on a NORMAL, readable page', async () => {
+    // The reversed assertion: on a page that CAN be read, a collect failure
+    // still gets the reload hint — never the shared unreadable-page message,
+    // which would be a lie.
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    await setStampResultsPages(true);
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://x/jobs?q=data' } as never]);
+    executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never); // results-stamp.js files
+    executeScriptMock.mockResolvedValueOnce([{ result: null }] as never); // collect func → null → throws
+
+    const res = await send({ kind: 'stampResults' });
+
+    expect(res).toEqual({
+      ok: false,
+      error: 'Could not read this page. Reload it and try again.',
+    });
+    expect(mockClient.checkAppliedBatch).not.toHaveBeenCalled();
   });
 });
 
@@ -3394,7 +3561,7 @@ describe('arming the submit watcher after a gesture request (Task #22 review clo
     getTokenMock.mockResolvedValue(FAKE_TOKEN);
     mockClient.autotrackEnabled.mockResolvedValue(true);
     await setStampResultsPages(true);
-    tabsQueryMock.mockResolvedValue([{ id: 7 } as never]);
+    tabsQueryMock.mockResolvedValue([{ id: 7, url: 'https://x/jobs?q=data' } as never]);
     executeScriptMock.mockResolvedValueOnce([{ result: undefined }] as never); // results-stamp.js files
     executeScriptMock.mockResolvedValueOnce([{ result: [] }] as never); // collect func — no cards
 

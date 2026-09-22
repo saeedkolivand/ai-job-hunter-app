@@ -632,6 +632,48 @@ const NAMED_KEY_PATTERNS: readonly NamedKeyPattern[] = [
     pattern:
       /(?:^|[^a-z])(?:home|work)?(?:city|town)|\blocation\b|\bort\b|stadt|wohnort|\bville\b|ciudad|citta|plaats|miasto|cidade|localidad/,
   },
+  // X/Twitter profile handle — the same identity-link family as `linkedin` /
+  // `github` / `website`, so answers-capture excludes it from AI-draftable
+  // questions instead of treating a bare "X" box as a genuine essay question
+  // (#1218). `twitter` matches as a plain substring (`twitter_url`,
+  // `twitter_handle`, "X / Twitter") — no common word CONTAINS "twitter", so
+  // it needs no anchor. The single letter `x` matches in TWO shapes:
+  //   1. the ENTIRE signal is one-or-more x tokens (`^(?:\s*x\s*)+$` — the
+  //      signal is `textSignal`, i.e. a bare-X field echoes its own x in
+  //      name/id, so the whole "label exactly x" idea has to mean "every
+  //      token of the signal is x");
+  //   2. an `x` immediately followed by a handle-ish qualifier
+  //      (`handle|username|profile|url|link|id` — the identity vocabulary this
+  //      file already uses): a labelText "X handle" / "X username" / "X
+  //      profile", or an attribute spelling `x_handle`/`x-handle`. Adjacency
+  //      is the whole rule: the field's own id echo (`id="xu"` beside a "X
+  //      username" label → `textSignal` " xu  x username") adds a
+  //      non-allowlist token, and adjacency ignores every other token in the
+  //      signal — so whole-signal allowlists can never work here.
+  // Deliberately NOT a plain `\bx\b`: a whole-word x inside an otherwise-named
+  // signal — "Mac OS X experience", "Do you use x?" — is PROSE, not an
+  // identity handle, and matching it would silently hide a genuine question
+  // from answers-capture. Requiring the qualifier immediately AFTER the x
+  // keeps each of those negative shapes unmatched: "x experience" has the
+  // wrong next word, "do you use x" has no qualifier at all, and "tax id"
+  // fails because the x inside "tax" is never a whole word.
+  //
+  // What this row actually DOES in autofill: it CLAIMS the field for the
+  // `twitter` key, but the Contact Profile wire shape has no twitter/x slot
+  // (it ends at `website`), so `valueForKey` yields '' — and the empty-value
+  // branch of `planAndFill` then falls through to the extra-link matcher
+  // exactly like the `website` key does (see `EXTRA_LINK_FALLBACK_KEYS` in
+  // autofill.ts). The net effect: an X/Twitter field is NEVER given a named
+  // value, and a matching X/Twitter extra link STILL fills it — the field is
+  // handed to Tier-2, not dropped (#1218 regression guard).
+  //
+  // The row sits LAST because it is the weakest-evidence key in the table — a
+  // signal that ALSO names a specific key (an `email` field whose id is
+  // literally `x`) must keep resolving to that key, not to the single letter.
+  {
+    key: 'twitter',
+    pattern: /twitter|^(?:\s*x\s*)+$|\bx[\s_-]+(?:handle|username|profile|url|link|id)\b/,
+  },
 ];
 
 /**

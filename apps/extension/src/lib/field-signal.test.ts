@@ -417,6 +417,95 @@ describe('matchNamedKey — first / last name', () => {
   });
 });
 
+describe('matchNamedKey — X / Twitter identity link (#1218)', () => {
+  it('matches X / Twitter profile fields (`twitter` substring; the whole-signal `x`)', () => {
+    for (const signal of [
+      'twitter',
+      'twitter handle',
+      'twitter_url',
+      'twitter_handle',
+      'twitterhandle',
+      'twitter/x',
+      'x / twitter',
+      // The single letter matches only when the ENTIRE signal is x tokens —
+      // including the realistic bare-X shape, where the field echoes its own
+      // x in the id/name (`<label for="x">X</label><input id="x">` →
+      // `textSignal` = " x  x").
+      'x',
+      ' x ',
+      'x x',
+      ' x  x ',
+    ]) {
+      expect(matchNamedKey(signal), signal).toBe('twitter');
+    }
+  });
+
+  it('matches an `x` immediately paired with a handle-ish qualifier', () => {
+    // The realistic longer-label shapes (#1218): a field can be labelled
+    // "X handle" / "X username" / "X profile" — matched through x + the
+    // qualifier rather than the whole-signal x above — plus the attribute
+    // spellings `x_handle`/`x-handle` an id may use.
+    for (const signal of [
+      'x handle',
+      'x username',
+      'x profile',
+      'x url',
+      'x link',
+      'x id',
+      'x-handle',
+      'x_handle',
+      'x username field',
+      'what is your x handle',
+    ]) {
+      expect(matchNamedKey(signal), signal).toBe('twitter');
+    }
+  });
+
+  it('never matches an `x` that has ANY company in the signal — prose, not a handle', () => {
+    // `\bx\b` would be wrong here: a whole-word x inside an otherwise-named
+    // signal is prose ("Mac OS X experience", "Do you use x?"), and matching
+    // it would silently hide a genuine application question from capture.
+    // The qualifier check is ADJACENCY-based, so an x followed by a word that
+    // is NOT a handle-ish qualifier, or by nothing at all, stays prose:
+    // "x experience" / "x ray" have the wrong next word, "do you use x" tails
+    // the signal, and "tax id" hides its x inside "tax" where the word
+    // boundary can never align.
+    for (const signal of [
+      'experience',
+      'years of experience',
+      'mac os x experience',
+      'x experience',
+      'x ray',
+      'xray',
+      'do you use x',
+      'list any x certifications',
+      'box',
+      'tax',
+      'tax id',
+      'next',
+      'text',
+      'xero',
+      'xavier',
+      'ex',
+      'expiration',
+      'external',
+      'axis',
+      'sexual orientation',
+    ]) {
+      expect(matchNamedKey(signal), signal).not.toBe('twitter');
+    }
+  });
+
+  it('sits LAST: a signal naming a more specific key keeps that key', () => {
+    // The twitter row is deliberately the weakest-evidence row, so a combined
+    // signal like `email x` resolves to the specific key, never to the letter.
+    expect(matchNamedKey('email x')).toBe('email');
+    expect(matchNamedKey('linkedin')).toBe('linkedin');
+    expect(matchNamedKey('github')).toBe('github');
+    expect(matchNamedKey('portfolio')).toBe('website');
+  });
+});
+
 describe('labelText', () => {
   afterEach(() => {
     document.body.innerHTML = '';

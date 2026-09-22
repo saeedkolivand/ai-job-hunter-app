@@ -224,12 +224,45 @@ describe('collectAnswers — excludes identity fields (contact-profile data, not
     expect(collectAnswers(document)).toEqual([]);
   });
 
+  it('does not capture a filled "X / Twitter" identity field (#1218)', () => {
+    // A bare "X" box is a profile-handle field, not an essay question — and
+    // #1218's bug was that its question text was fed to the AI as if it were
+    // one.
+    setForm(`
+      <label for="x">X / Twitter</label><input id="x" type="text" value="https://x.com/jane" />
+    `);
+    expect(collectAnswers(document)).toEqual([]);
+  });
+
+  it('does not capture a filled "X handle" identity field (#1218)', () => {
+    // The longer-label shape: a field labelled "X handle" resolves to the
+    // twitter identity row through the x+qualifier branch, so it is excluded
+    // from capture exactly like the bare "X / Twitter" box above.
+    setForm(`
+      <label for="xh">X handle</label><input id="xh" type="text" value="https://x.com/jane" />
+    `);
+    expect(collectAnswers(document)).toEqual([]);
+  });
+
   it('still captures a genuine application question', () => {
     setForm(
       `<label for="q">Why do you want to work here?</label><input id="q" type="text" value="Because I love it." />`
     );
     expect(collectAnswers(document)).toEqual([
       { question: 'Why do you want to work here?', answer: 'Because I love it.' },
+    ]);
+  });
+
+  it('still captures a genuine question whose text contains a standalone "x" — "Mac OS X experience"', () => {
+    // The twitter row's `x` matches only when the whole signal is x tokens OR
+    // an x immediately paired with a handle-ish qualifier, so a prose
+    // standalone-x inside an otherwise-named question is NOT identities and
+    // stays capturable (#1218 follow-up — `\bx\b` would have dropped it).
+    setForm(
+      `<label for="osx">Mac OS X experience</label><input id="osx" type="text" value="5 years daily" />`
+    );
+    expect(collectAnswers(document)).toEqual([
+      { question: 'Mac OS X experience', answer: '5 years daily' },
     ]);
   });
 });
@@ -348,6 +381,31 @@ describe('collectQuestions — scans EMPTY candidate fields, the mirror of colle
       <label for="q">Why this role?</label><input id="q" type="text" value="" />
     `);
     expect(collectQuestions(document)).toEqual([{ question: 'Why this role?', index: 0 }]);
+  });
+
+  it('excludes empty X / Twitter identity fields from the question list (#1218)', () => {
+    // #1218's actual bug was here: the Answers tab fed a bare "X" box (and any
+    // "Twitter handle" box) to the AI as a question. Identity fields must never
+    // appear — while genuine empty questions around them still do.
+    setForm(`
+      <label for="x">X</label><input id="x" type="text" value="" />
+      <label for="tw">Twitter handle</label><input id="tw" type="text" value="" />
+      <label for="more">Tell us more</label><input id="more" type="text" value="" />
+      <label for="why">Why this role?</label><input id="why" type="text" value="" />
+    `);
+    expect(collectQuestions(document)).toEqual([
+      { question: 'Tell us more', index: 0 },
+      { question: 'Why this role?', index: 0 },
+    ]);
+  });
+
+  it('still scans a genuine empty question whose text contains a standalone "x"', () => {
+    // Tightened `x` guard: prose-x in "Mac OS X experience" is a question, not
+    // an identity handle, so it must keep appearing in the Answers-tab list.
+    setForm(
+      `<label for="osxq">Mac OS X experience</label><input id="osxq" type="text" value="" />`
+    );
+    expect(collectQuestions(document)).toEqual([{ question: 'Mac OS X experience', index: 0 }]);
   });
 
   it('scans an empty select whose selected option has an empty value (placeholder)', () => {

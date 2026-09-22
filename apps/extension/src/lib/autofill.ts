@@ -348,19 +348,37 @@ function matchExtraLink(
 }
 
 /**
+ * Named keys whose EMPTY profile value is NOT a definitive "nothing to fill":
+ * a field mapped to one falls through to the extra-link matcher (Tier 2)
+ * instead of being claimed and dropped. Two members:
+ *
+ *   - `website` — a specific "Portfolio"-style extra link can equal the value
+ *     the generic `website` key can't produce; the portfolio→website heuristic
+ *     collision this grew from.
+ *   - `twitter` — the Contact Profile wire shape has NO twitter slot at all
+ *     (`valueForKey`'s default branch returns ''), so an X/Twitter-labelled
+ *     field can ONLY ever be satisfied by an extra link. Before the `twitter`
+ *     key existed such fields matched no named key and were filled from a
+ *     matching extra link; claiming-and-dropping them would silently STOP
+ *     filling X boxes that used to be filled (#1218 regression guard).
+ *
+ * Every OTHER named key (email, phone, linkedin, github, …) claims its field
+ * exclusively regardless of value — an empty profile value there is a
+ * legitimate "nothing to fill", not a signal to try the extra-link matcher, so
+ * those fields stay strictly additive.
+ */
+const EXTRA_LINK_FALLBACK_KEYS = new Set(['website', 'twitter']);
+
+/**
  * Scan `doc` for fillable inputs, fill each matching EMPTY field from `profile`,
  * and return a summary. Pure w.r.t. profile persistence — nothing is stored.
  *
  * A field a named key (Tier 1/2) matches WITH a value is filled from that key
- * exclusively — never additionally reconsidered against `extraLinks`. The ONE
- * exception is the `website` key: a field mapped to it but with NOTHING in
- * the profile (e.g. a "Portfolio" field maps to the generic `website` key,
- * but the profile's `website` is empty) falls through to the extra-link
- * matcher instead of being given up on — a specific "Portfolio" extra link is
- * a better answer than an empty guess. Every OTHER named key (email, phone,
- * linkedin, github, …) claims its field exclusively regardless of value — an
- * empty profile value there is a legitimate "nothing to fill", not a signal
- * to try the extra-link matcher, so those fields stay strictly additive.
+ * exclusively — never additionally reconsidered against `extraLinks`. A named
+ * key whose profile value is EMPTY falls through to the extra-link matcher
+ * only for the keys in {@link EXTRA_LINK_FALLBACK_KEYS} (website, twitter —
+ * see that constant's doc); every other named key claims the field regardless
+ * of value and skips it rather than reconsidering.
  */
 export function planAndFill(doc: Document, profile: AutofillProfile): AutofillSummary {
   const split = splitName(profile.fullName ?? '');
@@ -381,11 +399,11 @@ export function planAndFill(doc: Document, profile: AutofillProfile): AutofillSu
         if (key === 'firstName' || key === 'lastName') usedSplit = true;
         continue;
       }
-      // Named slot matched but empty — only `website` falls through to the
-      // extra-link matcher (the portfolio→website heuristic collision this
-      // was built for); every other named key claims the field regardless of
-      // value, so it stays skipped rather than reconsidered.
-      if (key !== 'website') continue;
+      // Named slot matched but empty — website/twitter fall through to the
+      // extra-link matcher (see {@link EXTRA_LINK_FALLBACK_KEYS} for why);
+      // every other named key claims the field regardless of value, so it
+      // stays skipped rather than reconsidered.
+      if (!EXTRA_LINK_FALLBACK_KEYS.has(key)) continue;
     }
 
     if (links.length === 0) continue;
