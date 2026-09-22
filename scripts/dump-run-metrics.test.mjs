@@ -32,8 +32,8 @@ try {
 }
 const describeSqlite = DatabaseSync ? describe : describe.skip;
 
-// Black-box test of the CLI (execFileSync), mirroring check-tech-radar.test.mjs /
-// ci-review-verdict.test.mjs.
+// Black-box test of the CLI (execFileSync), mirroring check-tech-radar.test.mjs and
+// bump-last-updated.test.mjs.
 //
 // The fixture DB is created with the PRODUCT's schema, READ OUT OF THE RUST
 // SOURCE at test time rather than hand-copied. A copy would have made this suite

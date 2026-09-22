@@ -1,9 +1,15 @@
 ---
-status: accepted
-amended: 2026-08-11
+status: superseded
+amended: 2026-09-22
 ---
 
 # Mandatory AI review enforcement via deterministic schema-1 verdicts across three active AI surfaces (pre-commit Stop gate, pre-PR agents/CodeRabbit, CI), plus retained deterministic pre-push gates
+
+> **Status update (2026-09-22):** The CI lane of this ADR is **retired**. `claude-review.yml` and its
+> `scripts/ci-review-verdict.mjs` verdict parser were deleted and `🤖 AI Review OK` was dropped from
+> `main`'s required checks per owner decision — no AI review runs automatically on a PR any more.
+> `✅ CI OK` (deterministic) is the only required check; AI review is what the agent chain does pre-PR,
+> plus CodeRabbit on demand (`@coderabbitai review`). The rest of this record is kept as history.
 
 > **Status update (2026-08-11):** The pre-push LLM review lane (`scripts/pre-push-review.mjs`) was removed per owner decision. The deterministic pre-push lanes (fmt/clippy/tests/deny/drift) remain. AI review now happens exclusively via the pre-PR internal agent chain + CodeRabbit + CI (`🤖 AI Review OK` required check). Sections describing the pre-push gate below are **historical reference only**; the active review surfaces are: Stop gate (deterministic), pre-PR agents/CodeRabbit (advisory), CI gate (required).
 

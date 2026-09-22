@@ -1,6 +1,6 @@
 # Development Setup — AI Job Hunter
 
-Last updated: 2026-09-07
+Last updated: 2026-09-22
 
 This guide gets you from zero to a running dev environment.
 
@@ -337,7 +337,7 @@ A deterministic review runs immediately before each push (LLM review was removed
 1. **Cache fast-path** — hunks already reviewed by a prior Stop gate pass through in <1s
 2. **ast-grep deterministic scan** — structural rules from `.claude/review-rules/` (zero false-positives); any HIGH/CRITICAL finding **blocks the push immediately**
 
-**(Removed)** — Layer 3 (One Sonnet schema-1 review in RATCHET warn mode, with REVIEW_MODE environment variable) was the pre-push LLM review, removed per owner decision. LLM review now happens at pre-PR via the internal agent chain, CodeRabbit, and CI (`🤖 AI Review OK` required check).
+**(Removed)** — Layer 3 (One Sonnet schema-1 review in RATCHET warn mode, with REVIEW_MODE environment variable) was the pre-push LLM review, removed per owner decision. LLM review now happens at pre-PR via the internal agent chain and CodeRabbit on demand; the automatic CI AI-review gate was retired on 2026-09-22 (ADR-0008).
 
 **Escape hatches:**
 
