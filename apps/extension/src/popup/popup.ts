@@ -153,8 +153,47 @@ const els = {
  */
 let activeTabId: number | null = null;
 
+/**
+ * This popup's own window — resolved once on bootstrap. An action popup never
+ * migrates windows, and the background cannot work this out for itself: a
+ * `currentWindow: true` query in a service worker means "the last-focused
+ * window", which is a DIFFERENT window whenever another one has focus. Sending
+ * it with every request is what keeps a gesture acting on the tab the user is
+ * looking at (#1215).
+ */
+let popupWindowId: number | null = null;
+
+/**
+ * Resolve {@link popupWindowId} once, lazily, on the first send. Deliberately
+ * NOT tied to `bootstrapNotice`: the popup issues `getStatus` (and the page
+ * card's `appliedCheck`) as soon as it opens, which can race a bootstrap that
+ * has not resolved yet, and a request without the id falls back to the
+ * last-focused window — the very mistarget this fixes.
+ */
+let popupWindowIdOnce: Promise<void> | null = null;
+
+function ensurePopupWindowId(): Promise<void> {
+  // ONE shared promise, not a per-send lookup: every in-flight `send` awaits
+  // this same promise, so concurrent requests resume in the order they were
+  // issued (a per-send lookup would let a later request overtake an earlier
+  // one — the popup's own stale-response guard is generation-based, but the
+  // background would still see the two requests reordered). It also means the
+  // window is looked up once per popup, and a failed lookup is not retried.
+  popupWindowIdOnce ??= (async () => {
+    try {
+      const win = await browser.windows.getCurrent();
+      if (typeof win.id === 'number') popupWindowId = win.id;
+    } catch {
+      // Best-effort: without an id the background keeps its previous behaviour.
+    }
+  })();
+  return popupWindowIdOnce;
+}
+
 /** Send a typed request to the background and return its typed response. */
 async function send(req: PopupRequest): Promise<PopupResponse> {
+  await ensurePopupWindowId();
+  if (popupWindowId !== null) req = { ...req, windowId: popupWindowId };
   const res = (await browser.runtime.sendMessage(req)) as PopupResponse | undefined;
   if (!res) return { ok: false, error: 'No response from the extension background.' };
   return res;

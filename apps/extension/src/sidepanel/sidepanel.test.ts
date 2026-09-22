@@ -483,7 +483,12 @@ describe('the trust line (ADR-045)', () => {
     // …then the async agentQuery answer upgrades it.
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(browser.runtime.sendMessage).toHaveBeenCalledWith({ kind: 'trustLineJob' });
+    // Carries the panel's own window id so the background reads THIS window's
+    // active tab rather than the last-focused window's (#1215).
+    expect(browser.runtime.sendMessage).toHaveBeenCalledWith({
+      kind: 'trustLineJob',
+      windowId: PANEL_WINDOW_ID,
+    });
     expect(trustLine.textContent).toBe('Reading: Senior Rust Engineer · Acme');
   });
 

@@ -444,9 +444,36 @@ async function broadcastAssistProgress(): Promise<void> {
   }
 }
 
+/**
+ * The active tab of the window a request came from — the single seam every
+ * "act on the current tab" lookup in this worker goes through.
+ *
+ * A service worker has NO window of its own, so `currentWindow: true` here
+ * resolves to whichever window the browser focused last, not the window whose
+ * popup or side panel sent the request. With a second window focused that is a
+ * different tab entirely: a read failed with a confusing error, and Import
+ * silently created an application from an unrelated page while reporting
+ * success (#1215). Surfaces therefore send their own `windowId`
+ * ({@link PopupRequest}), and this targets it.
+ *
+ * `undefined` keeps the old last-focused-window behaviour, which is the only
+ * thing available when no window is known (an older surface build, or a flow
+ * with no originating window at all). Anything acting on a resolved tab id
+ * afterwards must keep using THAT id rather than re-querying — see
+ * `captureTabHtml`'s doc.
+ */
+async function activeTabIn(windowId?: number): Promise<Browser.tabs.Tab | undefined> {
+  const query =
+    typeof windowId === 'number'
+      ? { active: true, windowId }
+      : { active: true, currentWindow: true };
+  const [tab] = await browser.tabs.query(query);
+  return tab;
+}
+
 /** Resolve the active tab's URL for an import. */
-async function activeTabUrl(): Promise<string> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+async function activeTabUrl(windowId?: number): Promise<string> {
+  const tab = await activeTabIn(windowId);
   const url = tab?.url ?? '';
   if (!url) throw new Error('Could not read the current tab URL.');
   return url;
@@ -456,8 +483,8 @@ async function activeTabUrl(): Promise<string> {
  * Scan mode: inject the capture script into the active tab and return its
  * `outerHTML`. Requires `scripting` + `activeTab` (granted on the click).
  */
-async function captureActiveTabHtml(): Promise<string> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+async function captureActiveTabHtml(windowId?: number): Promise<string> {
+  const tab = await activeTabIn(windowId);
   const tabId = tab?.id;
   if (typeof tabId !== 'number') throw new Error('No active tab to scan.');
   return captureTabHtml(tabId);
@@ -483,19 +510,19 @@ async function captureTabHtml(tabId: number): Promise<string> {
 }
 
 /** Run an import, always attempting to capture the rendered DOM first. */
-async function runImport(applied: boolean): Promise<PopupResponse> {
+async function runImport(applied: boolean, windowId?: number): Promise<PopupResponse> {
   const token = await getToken();
   if (!token) {
     return { ok: false, error: 'Not paired. Paste your pairing token first.' };
   }
 
-  const url = await activeTabUrl();
+  const url = await activeTabUrl(windowId);
   const payload: ExtensionImportRequest = { url, applied };
   // Always try to capture the authenticated DOM so the desktop can parse it
   // without re-fetching (which would hit bot-walls on LinkedIn/Indeed/Glassdoor).
   // Fall back to URL-only if executeScript is blocked (restricted pages).
   try {
-    payload.html = await captureActiveTabHtml();
+    payload.html = await captureActiveTabHtml(windowId);
   } catch {
     // ponytail: restricted page or scripting permission denied — URL-only fallback
   }
@@ -512,8 +539,8 @@ async function runImport(applied: boolean): Promise<PopupResponse> {
  *   2. a self-contained `func` (params + `globalThis` only) calls it with the
  *      profile and returns the summary.
  */
-async function injectFill(profile: AutofillProfile): Promise<AutofillSummary> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+async function injectFill(profile: AutofillProfile, windowId?: number): Promise<AutofillSummary> {
+  const tab = await activeTabIn(windowId);
   const tabId = tab?.id;
   if (typeof tabId !== 'number') throw new Error('No active tab to fill.');
 
@@ -541,7 +568,7 @@ async function injectFill(profile: AutofillProfile): Promise<AutofillSummary> {
  * the desktop's opt-in — a refusal surfaces as an error) and inject the filler.
  * The profile is held only for this call and never persisted client-side.
  */
-async function runFill(): Promise<PopupResponse> {
+async function runFill(windowId?: number): Promise<PopupResponse> {
   const token = await getToken();
   if (!token) {
     return { ok: false, error: 'Not paired. Paste your pairing token first.' };
@@ -564,7 +591,7 @@ async function runFill(): Promise<PopupResponse> {
     website: profile.website,
     extraLinks: profile.extraLinks,
   };
-  const summary = await injectFill(fields);
+  const summary = await injectFill(fields, windowId);
   return { ok: true, kind: 'fill', summary };
 }
 
@@ -601,9 +628,9 @@ async function runProfileGet(): Promise<PopupResponse> {
  * unrecognized message type, a malformed reply) folds into `{ found: false }`
  * so the popup renders nothing rather than an error.
  */
-async function runAppliedCheck(): Promise<PopupResponse> {
+async function runAppliedCheck(windowId?: number): Promise<PopupResponse> {
   try {
-    const url = await activeTabUrl();
+    const url = await activeTabUrl(windowId);
     const result = await getClient().checkApplied(url);
     return { ok: true, kind: 'appliedCheck', result };
   } catch {
@@ -633,8 +660,8 @@ function isFieldsProbeResult(v: unknown): v is FieldsProbeResult {
  * injections, this never needs a token check first: it never touches the
  * bridge/desktop at all, only the active tab's DOM.
  */
-async function captureActiveTabFieldsProbe(): Promise<FieldsProbeResult> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+async function captureActiveTabFieldsProbe(windowId?: number): Promise<FieldsProbeResult> {
+  const tab = await activeTabIn(windowId);
   const tabId = tab?.id;
   if (typeof tabId !== 'number') throw new Error('No active tab to scan.');
 
@@ -655,9 +682,9 @@ async function captureActiveTabFieldsProbe(): Promise<FieldsProbeResult> {
  * scripting permission denied) resolves BOTH signals `true` so a probe bug
  * can never hide either feature — only a CONFIRMED empty scan hides them.
  */
-async function runFieldsProbe(): Promise<PopupResponse> {
+async function runFieldsProbe(windowId?: number): Promise<PopupResponse> {
   try {
-    const { hasFormFields, hasAnswerFields } = await captureActiveTabFieldsProbe();
+    const { hasFormFields, hasAnswerFields } = await captureActiveTabFieldsProbe(windowId);
     return { ok: true, kind: 'fieldsProbe', hasFormFields, hasAnswerFields };
   } catch {
     return { ok: true, kind: 'fieldsProbe', hasFormFields: true, hasAnswerFields: true };
@@ -697,9 +724,9 @@ function readJobTitleCompany(data: unknown): { title: string | null; company: st
  * (Autofill off, throttled, an unknown job, no connection) resolves both
  * fields `null`, which the panel renders as its existing host-only line.
  */
-async function runTrustLineJob(): Promise<PopupResponse> {
+async function runTrustLineJob(windowId?: number): Promise<PopupResponse> {
   try {
-    const url = await activeTabUrl();
+    const url = await activeTabUrl(windowId);
     const res = await getClient().agentQuery('job', { url });
     if (!res.ok) return { ok: true, kind: 'trustLineJob', title: null, company: null };
     return { ok: true, kind: 'trustLineJob', ...readJobTitleCompany(res.data) };
@@ -739,8 +766,8 @@ async function runSettingsSet(key: ExtensionSettingsKey, enabled: boolean): Prom
  * status / unsupported transition) still passes straight through as `result`
  * — this is a deliberate click action, so the user must see why it failed.
  */
-async function runStatusUpdate(): Promise<PopupResponse> {
-  const url = await activeTabUrl();
+async function runStatusUpdate(windowId?: number): Promise<PopupResponse> {
+  const url = await activeTabUrl(windowId);
   const result = await getClient().updateStatus(url);
   return { ok: true, kind: 'statusUpdate', result };
 }
@@ -776,8 +803,8 @@ function base64ToBytes(b64: string): Uint8Array {
  * permission of its own) can build the `{kind:'generation', url}` source for
  * the job's own generation candidate without a second round trip.
  */
-async function runDocumentsList(): Promise<PopupResponse> {
-  const url = await activeTabUrl().catch(() => '');
+async function runDocumentsList(windowId?: number): Promise<PopupResponse> {
+  const url = await activeTabUrl(windowId).catch(() => '');
   const result = await getClient().agentQuery('documents', { url });
   return { ok: true, kind: 'documentsList', result, url };
 }
@@ -792,8 +819,8 @@ async function runDocumentsList(): Promise<PopupResponse> {
  * echoed back so the tab (no `tabs` permission of its own) can build the
  * "Prepare in the app" deep link without a second round trip.
  */
-async function runPrepGet(): Promise<PopupResponse> {
-  const url = await activeTabUrl().catch(() => '');
+async function runPrepGet(windowId?: number): Promise<PopupResponse> {
+  const url = await activeTabUrl(windowId).catch(() => '');
   const result = await getClient().agentQuery('prep', { url });
   return { ok: true, kind: 'prepGet', result, url };
 }
@@ -893,8 +920,12 @@ async function injectAttachFile(
  * the résumé would attach to whatever page happens to be active once the
  * export finally resolves, not the one the user confirmed.
  */
-async function tabStillConfirmed(tabId: number, origin: string): Promise<boolean> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+async function tabStillConfirmed(
+  tabId: number,
+  origin: string,
+  windowId?: number
+): Promise<boolean> {
+  const tab = await activeTabIn(windowId);
   if (tab?.id !== tabId || !tab.url) return false;
   try {
     return new URL(tab.url).origin === origin;
@@ -911,8 +942,8 @@ async function tabStillConfirmed(tabId: number, origin: string): Promise<boolean
  * switch, or a same-tab navigation to a different posting on the same
  * origin, must not paint one page's score onto another (PR review finding).
  */
-async function tabStillOnExactUrl(tabId: number, url: string): Promise<boolean> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+async function tabStillOnExactUrl(tabId: number, url: string, windowId?: number): Promise<boolean> {
+  const tab = await activeTabIn(windowId);
   return tab?.id === tabId && tab.url === url;
 }
 
@@ -926,7 +957,8 @@ async function tabStillOnExactUrl(tabId: number, url: string): Promise<boolean> 
 async function runDocumentAttach(
   source: ExtensionDocumentSource,
   templateId: string,
-  format: 'pdf' | 'docx'
+  format: 'pdf' | 'docx',
+  windowId?: number
 ): Promise<PopupResponse> {
   const token = await getToken();
   if (!token) {
@@ -935,11 +967,11 @@ async function runDocumentAttach(
   // Bind the attach to the tab + origin confirmed BEFORE the (possibly slow)
   // desktop export round trip — re-verified via `tabStillConfirmed` right
   // before injection (PR review round 2).
-  const tabId = await activeTabId();
-  const origin = await activeTabOriginAtGesture();
+  const tabId = await activeTabId(windowId);
+  const origin = await activeTabOriginAtGesture(windowId);
   const res = await getClient().documentExport({ source, kind: 'resume', format, templateId });
   if (!res.ok) return { ok: false, error: res.error };
-  if (!(await tabStillConfirmed(tabId, origin))) {
+  if (!(await tabStillConfirmed(tabId, origin, windowId))) {
     return { ok: false, error: 'The page changed while exporting — please retry.' };
   }
   const result = await injectAttachFile(tabId, res.data, res.filename, res.mimeType);
@@ -1002,7 +1034,7 @@ async function injectResultsStamp(tabId: number, entries: StampInput[]): Promise
  * that can never be read; the shared {@link CAPTURE_FAILED_MSG} reload hint
  * stays reserved for genuinely transient failures on readable pages (#1219).
  */
-async function runStampResults(): Promise<PopupResponse> {
+async function runStampResults(windowId?: number): Promise<PopupResponse> {
   const token = await getToken();
   if (!token) {
     return { ok: false, error: 'Not paired. Paste your pairing token first.' };
@@ -1019,7 +1051,7 @@ async function runStampResults(): Promise<PopupResponse> {
   // discipline as `runMatchLive`: everything below (the collect injection, the
   // batch check, the stamp injection) must target the SAME tab this gesture
   // started on, not "whatever is active" at each await point.
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tab = await activeTabIn(windowId);
   const tabId = tab?.id;
   const tabUrl = tab?.url ?? '';
   // No tab at all, a redacted url (no `tabs` permission), or a readable-but-
@@ -1120,8 +1152,8 @@ function isOpenPanelFromBadge(v: unknown): v is { kind: typeof OPEN_PANEL_FROM_B
  * is on; the watcher's own isolated-world flag makes a repeat injection on
  * the same page a no-op regardless of the flag value on that later call.
  */
-async function injectSubmitWatch(captureAnswers: boolean): Promise<void> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+async function injectSubmitWatch(captureAnswers: boolean, windowId?: number): Promise<void> {
+  const tab = await activeTabIn(windowId);
   const tabId = tab?.id;
   if (typeof tabId !== 'number') return;
   await browser.scripting.executeScript({ target: { tabId }, files: ['submit-watch.js'] });
@@ -1205,11 +1237,11 @@ function submitFlowDeps() {
  * pass in transiently, it only reads the page and returns data — same
  * pattern as `captureActiveTabHtml`.
  */
-async function captureActiveTabFormData(): Promise<{
+async function captureActiveTabFormData(windowId?: number): Promise<{
   answers: CapturedAnswer[];
   filled: FilledField[];
 }> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tab = await activeTabIn(windowId);
   const tabId = tab?.id;
   if (typeof tabId !== 'number') throw new Error('No active tab to capture.');
 
@@ -1236,14 +1268,14 @@ async function captureActiveTabFormData(): Promise<{
  * SAME capture so the popup can source its rewrite picker without a second
  * scan/injection.
  */
-async function runAnswersSave(): Promise<PopupResponse> {
+async function runAnswersSave(windowId?: number): Promise<PopupResponse> {
   const token = await getToken();
   if (!token) {
     return { ok: false, error: 'Not paired. Paste your pairing token first.' };
   }
 
-  const url = await activeTabUrl();
-  const { answers, filled } = await captureActiveTabFormData();
+  const url = await activeTabUrl(windowId);
+  const { answers, filled } = await captureActiveTabFormData(windowId);
   const result = await getClient().saveAnswers(url, answers);
   return { ok: true, kind: 'answersSave', result, filled };
 }
@@ -1253,8 +1285,8 @@ async function runAnswersSave(): Promise<PopupResponse> {
  * `{question, index}[]` scan-time correlation list. Single-step injection —
  * same pattern as `captureActiveTabAnswers`.
  */
-async function captureActiveTabQuestions(): Promise<ScannedQuestion[]> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+async function captureActiveTabQuestions(windowId?: number): Promise<ScannedQuestion[]> {
+  const tab = await activeTabIn(windowId);
   const tabId = tab?.id;
   if (typeof tabId !== 'number') throw new Error('No active tab to scan.');
 
@@ -1278,13 +1310,13 @@ async function captureActiveTabQuestions(): Promise<ScannedQuestion[]> {
  * `result` so the popup can decide, per suggestion, whether a live Fill
  * target still exists on the page.
  */
-async function runAnswersSuggest(): Promise<PopupResponse> {
+async function runAnswersSuggest(windowId?: number): Promise<PopupResponse> {
   const token = await getToken();
   if (!token) {
     return { ok: false, error: 'Not paired. Paste your pairing token first.' };
   }
 
-  const scanned = await captureActiveTabQuestions();
+  const scanned = await captureActiveTabQuestions(windowId);
   // Dedup by exact text (the desktop dedups by normalized text) and cap
   // client-side — untrusted page content, never send an unbounded array.
   const questions = [...new Set(scanned.map((q) => q.question))].slice(0, MAX_SUGGEST_QUESTIONS);
@@ -1462,7 +1494,7 @@ function isPermanentlyUnreadablePage(rawUrl: string): boolean {
  * CAPTURE_FAILED_MSG} reload hint is reserved for capture failures
  * on pages that genuinely CAN be read, where "reload" is truthful (#1219).
  */
-async function runMatchLive(): Promise<PopupResponse> {
+async function runMatchLive(windowId?: number): Promise<PopupResponse> {
   const token = await getToken();
   if (!token) {
     return { ok: false, error: 'Not paired. Paste your pairing token first.' };
@@ -1473,7 +1505,7 @@ async function runMatchLive(): Promise<PopupResponse> {
   // "whichever tab happens to be active" at each of three separate points in
   // time (PR review finding: a tab switch mid-request could otherwise paint
   // one page's score onto a different page).
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tab = await activeTabIn(windowId);
   const tabId = tab?.id;
   const url = tab?.url ?? '';
   // A restricted tab arrives with `tab.url` redacted to '' (no `tabs`
@@ -1501,7 +1533,7 @@ async function runMatchLive(): Promise<PopupResponse> {
     // round trip must abort the badge silently rather than mis-paint it.
     void (async () => {
       try {
-        if (!(await tabStillOnExactUrl(tabId, url))) return;
+        if (!(await tabStillOnExactUrl(tabId, url, windowId))) return;
         await maybeShowFitBadge(tabId, url, result);
       } catch {
         // No active tab to render into — skip silently.
@@ -1562,7 +1594,8 @@ async function runAnswerAssist(
   instruction?: string,
   rowId?: string,
   maxChars?: number,
-  topic?: ExtensionAnswerAssistRequest['topic']
+  topic?: ExtensionAnswerAssistRequest['topic'],
+  windowId?: number
 ): Promise<PopupResponse> {
   const gen = ++assistGeneration;
   const streamKind: 'draft' | 'rewrite' = mode === 'rewrite' ? 'rewrite' : 'draft';
@@ -1574,11 +1607,11 @@ async function runAnswerAssist(
 
   let url: string | undefined;
   try {
-    url = await activeTabUrl();
+    url = await activeTabUrl(windowId);
   } catch {
     url = undefined;
   }
-  const tabIdForRun = await activeTabId().catch(() => null);
+  const tabIdForRun = await activeTabId(windowId).catch(() => null);
 
   // A newer overlapping call already reset (and may have already finished)
   // the buffer while the awaits above were pending — this run must not reset
@@ -1739,9 +1772,10 @@ async function injectAnswerFill(
   question: string,
   index: number,
   count: number,
-  answer: string
+  answer: string,
+  windowId?: number
 ): Promise<FillAnswerResult> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tab = await activeTabIn(windowId);
   const tabId = tab?.id;
   if (typeof tabId !== 'number') throw new Error('No active tab to fill.');
 
@@ -1776,14 +1810,15 @@ async function runAnswerFill(
   question: string,
   index: number,
   count: number,
-  answer: string
+  answer: string,
+  windowId?: number
 ): Promise<PopupResponse> {
   const token = await getToken();
   if (!token) {
     return { ok: false, error: 'Not paired. Paste your pairing token first.' };
   }
 
-  const result = await injectAnswerFill(question, index, count, answer);
+  const result = await injectAnswerFill(question, index, count, answer, windowId);
   return { ok: true, kind: 'answerFill', result };
 }
 
@@ -1803,9 +1838,10 @@ async function injectAnswerReplace(
   index: number,
   count: number,
   text: string,
-  expectedValue: string
+  expectedValue: string,
+  windowId?: number
 ): Promise<FillAnswerResult> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tab = await activeTabIn(windowId);
   const tabId = tab?.id;
   if (typeof tabId !== 'number') throw new Error('No active tab to fill.');
 
@@ -1848,14 +1884,15 @@ async function runAnswerReplace(
   index: number,
   count: number,
   text: string,
-  expectedValue: string
+  expectedValue: string,
+  windowId?: number
 ): Promise<PopupResponse> {
   const token = await getToken();
   if (!token) {
     return { ok: false, error: 'Not paired. Paste your pairing token first.' };
   }
 
-  const result = await injectAnswerReplace(question, index, count, text, expectedValue);
+  const result = await injectAnswerReplace(question, index, count, text, expectedValue, windowId);
   return { ok: true, kind: 'answerReplace', result };
 }
 
@@ -1864,8 +1901,8 @@ async function runAnswerReplace(
 /** The active tab's id. Available WITHOUT the `tabs` permission (only a tab's
  *  url/title are gated behind it), which is what lets the state be keyed per
  *  tab while `tabs` stays on the manifest denylist. */
-async function activeTabId(): Promise<number> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+async function activeTabId(windowId?: number): Promise<number> {
+  const tab = await activeTabIn(windowId);
   const tabId = tab?.id;
   if (typeof tabId !== 'number') throw new Error('No active tab.');
   return tabId;
@@ -1879,9 +1916,9 @@ async function activeTabId(): Promise<number> {
  * denylist. Degrades to `''` rather than throwing: an unreadable origin costs
  * the state its "same page?" check, never the scan.
  */
-async function activeTabOriginAtGesture(): Promise<string> {
+async function activeTabOriginAtGesture(windowId?: number): Promise<string> {
   try {
-    return new URL(await activeTabUrl()).origin;
+    return new URL(await activeTabUrl(windowId)).origin;
   } catch {
     return '';
   }
@@ -1942,9 +1979,9 @@ async function savedAnswersFor(
  * running this on every popup open — and on the panel's Rescan for a
  * multi-step form — never costs the user work.
  */
-async function runAnswerScan(): Promise<PopupResponse> {
-  const tabId = await activeTabId();
-  const origin = await activeTabOriginAtGesture();
+async function runAnswerScan(windowId?: number): Promise<PopupResponse> {
+  const tabId = await activeTabId(windowId);
+  const origin = await activeTabOriginAtGesture(windowId);
   const scan = await captureActiveTabRows(tabId);
   const previous = await readAnswerState(tabId);
   const savedFor = await savedAnswersFor([...new Set(scan.questions.map((q) => q.question))]);
@@ -1971,12 +2008,16 @@ async function runAnswerScan(): Promise<PopupResponse> {
  *  context-menu gesture) pin the row to it directly — falls back to the
  *  active-tab query only when absent, so a focus change between the gesture
  *  and this call can't land the row in the wrong tab's record. */
-async function runAnswerAddRow(question: string, explicitTabId?: number): Promise<PopupResponse> {
-  const tabId = explicitTabId ?? (await activeTabId());
+async function runAnswerAddRow(
+  question: string,
+  explicitTabId?: number,
+  windowId?: number
+): Promise<PopupResponse> {
+  const tabId = explicitTabId ?? (await activeTabId(windowId));
   const existing = await readAnswerState(tabId);
   const state: AnswerState = existing ?? {
     tabId,
-    origin: await activeTabOriginAtGesture(),
+    origin: await activeTabOriginAtGesture(windowId),
     scannedAt: Date.now(),
     rows: [],
     stream: null,
@@ -1991,8 +2032,12 @@ async function runAnswerAddRow(question: string, explicitTabId?: number): Promis
 
 /** Show a different version of a row. Pure state — Restore in decision 5's
  *  sense; it writes nothing to the page until the user presses Accept. */
-async function runAnswerSelectVersion(rowId: string, version: number): Promise<PopupResponse> {
-  const tabId = await activeTabId();
+async function runAnswerSelectVersion(
+  rowId: string,
+  version: number,
+  windowId?: number
+): Promise<PopupResponse> {
+  const tabId = await activeTabId(windowId);
   const state = await updateAnswerState(tabId, (current) => ({
     ...current,
     rows: current.rows.map((row) =>
@@ -2020,13 +2065,17 @@ function requireRow(state: AnswerState | null, rowId: string): AnswerRow {
  * we believe is in the field). On success the row's `currentText` moves to
  * what was written, so a second Accept still knows what it is replacing.
  */
-async function writeRowText(rowId: string, text: string): Promise<PopupResponse> {
+async function writeRowText(
+  rowId: string,
+  text: string,
+  windowId?: number
+): Promise<PopupResponse> {
   const token = await getToken();
   if (!token) {
     return { ok: false, error: 'Not paired. Paste your pairing token first.' };
   }
 
-  const tabId = await activeTabId();
+  const tabId = await activeTabId(windowId);
   const state = await readAnswerState(tabId);
   if (state?.pageChanged) {
     return {
@@ -2042,8 +2091,15 @@ async function writeRowText(rowId: string, text: string): Promise<PopupResponse>
 
   const result =
     field.kind === 'empty'
-      ? await injectAnswerFill(row.question, field.index, field.count, text)
-      : await injectAnswerReplace(row.question, field.index, field.count, text, field.currentText);
+      ? await injectAnswerFill(row.question, field.index, field.count, text, windowId)
+      : await injectAnswerReplace(
+          row.question,
+          field.index,
+          field.count,
+          text,
+          field.currentText,
+          windowId
+        );
 
   if (result.filled) {
     await updateAnswerState(tabId, (current) => ({
@@ -2057,17 +2113,17 @@ async function writeRowText(rowId: string, text: string): Promise<PopupResponse>
 }
 
 /** Accept: write the version currently on screen into the field. */
-async function runAnswerAccept(rowId: string): Promise<PopupResponse> {
-  const tabId = await activeTabId();
+async function runAnswerAccept(rowId: string, windowId?: number): Promise<PopupResponse> {
+  const tabId = await activeTabId(windowId);
   const row = requireRow(await readAnswerState(tabId), rowId);
-  return writeRowText(rowId, selectedText(row));
+  return writeRowText(rowId, selectedText(row), windowId);
 }
 
 /** Restore original: put the field's FROZEN scan-time text back. */
-async function runAnswerRestoreOriginal(rowId: string): Promise<PopupResponse> {
-  const tabId = await activeTabId();
+async function runAnswerRestoreOriginal(rowId: string, windowId?: number): Promise<PopupResponse> {
+  const tabId = await activeTabId(windowId);
   const row = requireRow(await readAnswerState(tabId), rowId);
-  return writeRowText(rowId, row.field?.originalText ?? '');
+  return writeRowText(rowId, row.field?.originalText ?? '', windowId);
 }
 
 /**
@@ -2083,16 +2139,28 @@ async function runAnswerRowAssist(
   searchWeb: boolean,
   mode: 'draft' | 'rewrite',
   preset?: ExtensionRewritePreset,
-  instruction?: string
+  instruction?: string,
+  windowId?: number
 ): Promise<PopupResponse> {
-  const tabId = await activeTabId();
+  const tabId = await activeTabId(windowId);
   const row = requireRow(await readAnswerState(tabId), rowId);
   if (mode === 'rewrite') {
     const base = rewriteBaseText(row);
     if (!base.trim()) {
       return { ok: false, error: 'There is nothing to reshape yet — draft an answer first.' };
     }
-    return runAnswerAssist(row.question, false, 'rewrite', base, preset, instruction, rowId);
+    return runAnswerAssist(
+      row.question,
+      false,
+      'rewrite',
+      base,
+      preset,
+      instruction,
+      rowId,
+      undefined,
+      undefined,
+      windowId
+    );
   }
   return runAnswerAssist(
     row.question,
@@ -2102,7 +2170,9 @@ async function runAnswerRowAssist(
     undefined,
     instruction,
     rowId,
-    row.field?.maxChars
+    row.field?.maxChars,
+    undefined,
+    windowId
   );
 }
 
@@ -2144,33 +2214,33 @@ async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
         return { ok: true, kind: 'status', status: await computeStatus() };
       }
       case 'import':
-        return await runImport(req.applied);
+        return await runImport(req.applied, req.windowId);
       case 'fill':
-        return await runFill();
+        return await runFill(req.windowId);
       case 'profileGet':
         return await runProfileGet();
       case 'appliedCheck':
-        return await runAppliedCheck();
+        return await runAppliedCheck(req.windowId);
       case 'fieldsProbe':
-        return await runFieldsProbe();
+        return await runFieldsProbe(req.windowId);
       case 'autofillCheck':
         return await runAutofillCheck();
       case 'trustLineJob':
-        return await runTrustLineJob();
+        return await runTrustLineJob(req.windowId);
       case 'settingsGet':
         return await runSettingsGet();
       case 'settingsSet':
         return await runSettingsSet(req.key, req.enabled);
       case 'statusUpdate':
-        return await runStatusUpdate();
+        return await runStatusUpdate(req.windowId);
       case 'answersSave':
-        return await runAnswersSave();
+        return await runAnswersSave(req.windowId);
       case 'answersSuggest':
-        return await runAnswersSuggest();
+        return await runAnswersSuggest(req.windowId);
       case 'answerFill':
-        return await runAnswerFill(req.question, req.index, req.count, req.answer);
+        return await runAnswerFill(req.question, req.index, req.count, req.answer, req.windowId);
       case 'matchLive':
-        return await runMatchLive();
+        return await runMatchLive(req.windowId);
       case 'answerAssist':
         // A request that names a ROW is resolved against that row's own state
         // (its latest version, its field's limit) rather than trusting the
@@ -2181,7 +2251,8 @@ async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
               req.searchWeb,
               req.mode === 'rewrite' ? 'rewrite' : 'draft',
               req.preset,
-              req.instruction
+              req.instruction,
+              req.windowId
             )
           : await runAnswerAssist(
               req.question,
@@ -2192,7 +2263,8 @@ async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
               req.instruction,
               undefined,
               req.maxChars,
-              req.topic
+              req.topic,
+              req.windowId
             );
       case 'answerAssistProgress':
         return {
@@ -2204,33 +2276,34 @@ async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
           rowId: assistBuffer.rowId,
         };
       case 'answerScan':
-        return await runAnswerScan();
+        return await runAnswerScan(req.windowId);
       case 'answerAddRow':
-        return await runAnswerAddRow(req.question);
+        return await runAnswerAddRow(req.question, undefined, req.windowId);
       case 'answerSelectVersion':
-        return await runAnswerSelectVersion(req.rowId, req.version);
+        return await runAnswerSelectVersion(req.rowId, req.version, req.windowId);
       case 'answerAccept':
-        return await runAnswerAccept(req.rowId);
+        return await runAnswerAccept(req.rowId, req.windowId);
       case 'answerRestoreOriginal':
-        return await runAnswerRestoreOriginal(req.rowId);
+        return await runAnswerRestoreOriginal(req.rowId, req.windowId);
       case 'answerReplace':
         return await runAnswerReplace(
           req.question,
           req.index,
           req.count,
           req.text,
-          req.expectedValue
+          req.expectedValue,
+          req.windowId
         );
       case 'documentsList':
-        return await runDocumentsList();
+        return await runDocumentsList(req.windowId);
       case 'documentExportText':
         return await runDocumentExportText(req.source, req.templateId, req.letterLayoutId);
       case 'documentAttach':
-        return await runDocumentAttach(req.source, req.templateId, req.format);
+        return await runDocumentAttach(req.source, req.templateId, req.format, req.windowId);
       case 'stampResults':
-        return await runStampResults();
+        return await runStampResults(req.windowId);
       case 'prepGet':
-        return await runPrepGet();
+        return await runPrepGet(req.windowId);
       case 'assistCancel':
         return runAssistCancel();
       case 'autoSaveNotice':
@@ -2258,7 +2331,13 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
   if (response.ok && GESTURE_KINDS.has(req.kind)) {
     void maybeArmSubmitWatch({
       autotrackEnabled: () => getClient().autotrackEnabled(),
-      injectSubmitWatch,
+      // Bind the requesting surface's window id into the dep so the ARM (a
+      // fire-and-forget step that runs after this request settles) targets
+      // the tab the gesture actually happened on, not whichever window the
+      // browser focused last (#1215) — `maybeArmSubmitWatch`'s own signature
+      // stays untouched: every request is concurrent in a service worker, so
+      // the window has to ride the dep closure, never module state.
+      injectSubmitWatch: (captureAnswers) => injectSubmitWatch(captureAnswers, req.windowId),
       saveAnswersOnSubmitEnabled,
     });
   }
