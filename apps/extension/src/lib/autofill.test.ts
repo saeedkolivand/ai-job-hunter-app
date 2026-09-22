@@ -275,6 +275,23 @@ describe('planAndFill – skips ambiguous / sensitive / hidden / filled', () => 
     planAndFill(document, { email: 'x@y.z' }); // no github in profile
     expect(val('gh')).toBe('');
   });
+
+  it('does not fill an X / Twitter field when the profile has no extra links (no twitter slot — #1218)', () => {
+    // `valueForKey` yields '' for the twitter key (no profile slot), so an
+    // X/Twitter handle box is never given a NAMED value. With no extraLinks in
+    // the profile the field is left untouched (with a matching extra link it
+    // IS filled — see the Tier-2 extra-link describe). Email still fills.
+    setForm(`
+      <label for="x">X / Twitter</label><input id="x" type="text" />
+      <label for="tw">Twitter handle</label><input id="tw" type="text" />
+      <label for="email">Email</label><input id="email" type="email" />
+    `);
+    const summary = planAndFill(document, PROFILE);
+    expect(val('x')).toBe('');
+    expect(val('tw')).toBe('');
+    expect(val('email')).toBe('saeed@example.com');
+    expect(summary.filledNothing).toBe(false);
+  });
 });
 
 describe('planAndFill – name-split flag', () => {
@@ -1000,6 +1017,57 @@ describe('planAndFill – Tier-2 extra-link matching', () => {
       label: 'Überprofil',
       count: 1,
     });
+  });
+
+  it('falls through to the extra-link matcher for an X / Twitter field with a matching link (#1218)', () => {
+    // The `twitter` key has NO profile slot (valueForKey's default branch → ''),
+    // so unlike linkedin/github the field must NOT be claimed-and-dropped: it
+    // falls through to Tier 2 exactly like `website`, and a matching X/Twitter
+    // extra link fills it — preserving the pre-#1218 fill behavior the
+    // NAMED_KEY_PATTERNS row must not regress.
+    setForm(`
+      <label for="x">X</label><input id="x" type="url" />
+      <label for="tw">Twitter handle</label><input id="tw" type="text" />
+    `);
+    const summary = planAndFill(document, {
+      ...PROFILE,
+      extraLinks: [
+        { label: 'X', url: 'https://x.com/saeed' },
+        { label: 'Twitter', url: 'https://twitter.com/saeed' },
+      ],
+    });
+    expect(val('x')).toBe('https://x.com/saeed');
+    expect(val('tw')).toBe('https://twitter.com/saeed');
+    expect(summary.filled).toContainEqual({ key: 'extraLink:X', label: 'X', count: 1 });
+    expect(summary.filled).toContainEqual({ key: 'extraLink:Twitter', label: 'Twitter', count: 1 });
+    expect(summary.filledNothing).toBe(false);
+  });
+
+  it('leaves an X / Twitter field untouched and unreported when no extra link matches (#1218)', () => {
+    setForm(`<label for="x">X</label><input id="x" type="url" />`);
+    const summary = planAndFill(document, {
+      ...PROFILE,
+      extraLinks: [{ label: 'Portfolio', url: 'https://saeed.dev/work' }],
+    });
+    expect(val('x')).toBe('');
+    expect(summary.filledNothing).toBe(true);
+    expect(summary.filled).toHaveLength(0);
+  });
+
+  it('fills an "X handle" field from a matching extra link (#1218)', () => {
+    // An "X handle" label now resolves to the `twitter` key through the
+    // x+qualifier branch of the same row — and like the bare "X" field above,
+    // the empty twitter slot falls through to the extra-link matcher, so the
+    // field fills from a link labelled "X" (token-based matching: the {x,
+    // handle} field tokens line up with the label's `x`).
+    setForm(`<label for="xh">X handle</label><input id="xh" type="text" />`);
+    const summary = planAndFill(document, {
+      ...PROFILE,
+      extraLinks: [{ label: 'X', url: 'https://x.com/saeed' }],
+    });
+    expect(val('xh')).toBe('https://x.com/saeed');
+    expect(summary.filled).toContainEqual({ key: 'extraLink:X', label: 'X', count: 1 });
+    expect(summary.filledNothing).toBe(false);
   });
 });
 

@@ -63,7 +63,7 @@ export interface FirstFillConfirmDeps {
  *  can pass its own, while every existing Fill call site keeps this text
  *  unchanged by omitting the override. */
 export const DEFAULT_FILL_CONFIRM_COPY =
-  "This will fill: name, email, phone, résumé file. Nothing is submitted — you review and press the site's own button.";
+  "This will fill: name, email, phone, location, and your profile links. Nothing is submitted — you review and press the site's own button.";
 
 export interface FirstFillConfirmView {
   /**

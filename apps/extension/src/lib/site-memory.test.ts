@@ -10,6 +10,7 @@ vi.mock('@wxt-dev/browser', () => ({
 }));
 
 const {
+  DEFAULT_FILL_CONFIRM_COPY,
   getRememberedHosts,
   rememberHost,
   forgetHost,
@@ -46,6 +47,23 @@ describe('hostOf (pure)', () => {
     expect(hostOf('not a url')).toBeNull();
     expect(hostOf(null)).toBeNull();
     expect(hostOf(undefined)).toBeNull();
+  });
+});
+
+describe('DEFAULT_FILL_CONFIRM_COPY (#1226)', () => {
+  it('names exactly the profile slots autofill fills — no résumé/attach/file mention', () => {
+    // A résumé/attach mention would promise a gesture that goes through the
+    // Documents tab's own (separate) ATTACH_CONFIRM_COPY — never here.
+    expect(DEFAULT_FILL_CONFIRM_COPY).not.toMatch(/r[eé]sum[eé]|attach|\bfile\b/i);
+    expect(DEFAULT_FILL_CONFIRM_COPY).toContain('name');
+    expect(DEFAULT_FILL_CONFIRM_COPY).toContain('email');
+    expect(DEFAULT_FILL_CONFIRM_COPY).toContain('phone');
+    expect(DEFAULT_FILL_CONFIRM_COPY).toContain('location');
+  });
+
+  it('still promises nothing is submitted and that the site button is pressed by the user', () => {
+    expect(DEFAULT_FILL_CONFIRM_COPY).toContain('Nothing is submitted');
+    expect(DEFAULT_FILL_CONFIRM_COPY).toContain("press the site's own button");
   });
 });
 
@@ -107,7 +125,7 @@ describe('mountFirstFillConfirm', () => {
     await Promise.resolve();
 
     expect(host.textContent).toContain('this will attach your résumé file — nothing is submitted');
-    expect(host.textContent).not.toContain('This will fill: name, email, phone');
+    expect(host.textContent).not.toContain('This will fill: name, email, phone, location');
 
     host.querySelector<HTMLButtonElement>('.btn--primary')!.click();
     await expect(pending).resolves.toBe(true);

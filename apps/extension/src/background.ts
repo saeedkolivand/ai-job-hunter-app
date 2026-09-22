@@ -482,22 +482,6 @@ async function captureTabHtml(tabId: number): Promise<string> {
   return html;
 }
 
-/**
- * {@link activeTabUrl} and {@link activeTabId} combined into ONE
- * `browser.tabs.query` call, so a caller that needs both gets a single
- * consistent snapshot of "the active tab" rather than two separate queries
- * that could straddle a tab switch.
- */
-async function activeTabIdAndUrl(): Promise<{ tabId: number; url: string }> {
-  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-  const tabId = tab?.id;
-  const url = tab?.url ?? '';
-  if (typeof tabId !== 'number' || !url) {
-    throw new Error('Could not read the current tab URL.');
-  }
-  return { tabId, url };
-}
-
 /** Run an import, always attempting to capture the rendered DOM first. */
 async function runImport(applied: boolean): Promise<PopupResponse> {
   const token = await getToken();
@@ -1011,7 +995,12 @@ async function injectResultsStamp(tabId: number, entries: StampInput[]): Promise
  * beyond "not paired" (over-cap, throttled, a malformed batch reply, a
  * collect/stamp injection failure) degrades to a `stamped: 0` + explanatory
  * `status` line rather than `ok:false` — "respect the refusals… degrade to
- * no stamps, never a partial lie" (PR3 §B.4).
+ * no stamps, never a partial lie" (PR3 §B.4). Restricted pages are caught
+ * EARLY by {@link isPermanentlyUnreadablePage} (or a redacted empty url, no
+ * `tabs` permission) and answered with the shared {@link UNREADABLE_PAGE_MSG}
+ * — never `ok:false` from the reload hint, which would be a lie on a page
+ * that can never be read; the shared {@link CAPTURE_FAILED_MSG} reload hint
+ * stays reserved for genuinely transient failures on readable pages (#1219).
  */
 async function runStampResults(): Promise<PopupResponse> {
   const token = await getToken();
@@ -1026,18 +1015,29 @@ async function runStampResults(): Promise<PopupResponse> {
     return { ok: false, error: 'Results-page stamps are off. Turn them on in Settings.' };
   }
 
-  let tabId: number;
-  try {
-    tabId = await activeTabId();
-  } catch {
-    return { ok: false, error: 'No active tab to scan.' };
+  // Resolve the active tab ONCE, capturing its url too — the same snapshot
+  // discipline as `runMatchLive`: everything below (the collect injection, the
+  // batch check, the stamp injection) must target the SAME tab this gesture
+  // started on, not "whatever is active" at each await point.
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tabId = tab?.id;
+  const tabUrl = tab?.url ?? '';
+  // No tab at all, a redacted url (no `tabs` permission), or a readable-but-
+  // restricted kind are all permanent: there is nothing to stamp and a reload
+  // hint would be a lie, so both fold into the shared unreadable-page message
+  // exactly like `runMatchLive`.
+  if (typeof tabId !== 'number' || tabUrl === '' || isPermanentlyUnreadablePage(tabUrl)) {
+    return { ok: false, error: UNREADABLE_PAGE_MSG };
   }
 
   let collected: CollectedCard[];
   try {
     collected = await injectResultsCollect(tabId);
   } catch {
-    return { ok: false, error: 'Could not read this page. Reload and try again.' };
+    // Genuinely transient failure on a readable page — the reload hint is
+    // truthful here, so reuse the shared capture-failed message (never the
+    // unreadable-page one, which would be a lie on a page we CAN reach).
+    return { ok: false, error: CAPTURE_FAILED_MSG };
   }
   if (collected.length === 0) {
     return {
@@ -1394,6 +1394,59 @@ async function maybeShowFitBadge(
 }
 
 /**
+ * A tab the extension can NEVER read, so "reload the job page" would be a lie.
+ * SHARED by the match-live ("Check fit") and stamp-results ("Stamp this
+ * results page") gestures: the wording is deliberately gesture-neutral —
+ * "there's nothing to work with here" rather than "nothing to score", which
+ * would be wrong copy to answer a Stamp-results tap with (#1219).
+ * Chrome redacts the url of restricted tabs (chrome://, about:*, the built-in
+ * PDF viewer, the Web Store) to an EMPTY string unless the extension holds
+ * `tabs` permission — which it deliberately does not (least-privilege; it
+ * relies on `activeTab` instead). So both an empty url AND a readable-but-
+ * restricted one fold into this message. Kinds:
+ *   - browser-internal schemes: `chrome://`, `about:*`, `chrome-extension://`,
+ *     `moz-extension://`
+ *   - the built-in PDF viewer (`resource://pdf.js/`)
+ *   - the Chrome Web Store host (a storefront, never a posting)
+ *   - any pathname ending `.pdf` (a file download, never a live page)
+ * Lowercased so scheme/host matching is case-insensitive without a `URL` parse
+ * (some restricted urls — `about:blank` — parse fine, but a raw prefix check
+ * keeps this robust for every scheme the browser hands out).
+ */
+const UNREADABLE_PAGE_MSG =
+  "This page can't be read by the extension — there's nothing to work with here.";
+/** Transient capture failure on a NORMAL url — the reload hint is truthful here.
+ *  Shared by both gestures (match-live and stamp-results, #1219). */
+const CAPTURE_FAILED_MSG = 'Could not read this page. Reload it and try again.';
+
+/**
+ * Is `url` a permanently-unreadable page kind (see {@link UNREADABLE_PAGE_MSG})?
+ * Pure and side-effect-free so the popup copy that answers a match-live or
+ * stamp-results tap on one can be unit-tested directly.
+ */
+function isPermanentlyUnreadablePage(rawUrl: string): boolean {
+  const trimmed = rawUrl.trim().toLowerCase();
+  if (
+    trimmed.startsWith('chrome://') ||
+    trimmed.startsWith('about:') ||
+    trimmed.startsWith('chrome-extension://') ||
+    trimmed.startsWith('moz-extension://') ||
+    trimmed.startsWith('resource://pdf.js/')
+  ) {
+    return true;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.hostname === 'chromewebstore.google.com') return true;
+    if (parsed.pathname.toLowerCase().endsWith('.pdf')) return true;
+  } catch {
+    // Unparsable, scheme-less strings are NOT restricted here — the caller's
+    // `url === ''` check and `captureTabHtml`'s own failure cover those.
+  }
+  return false;
+}
+
+/**
  * User-clicked "Check fit". Mirrors `runAnswersSuggest`'s not-paired
  * short-circuit (token checked BEFORE the capture injection) and its
  * never-fold-errors discipline — a deliberate click, so failures propagate to
@@ -1401,7 +1454,13 @@ async function maybeShowFitBadge(
  * fallback: `match.live` requires the captured DOM (no URL-mode network fetch
  * on the desktop side — see `extension_bridge::match_live`'s doc), so a
  * capture failure (restricted page, scripting permission denied) surfaces as
- * a user-facing error instead of silently degrading.
+ * a user-facing error instead of silently degrading. Restricted pages are
+ * caught EARLY by {@link isPermanentlyUnreadablePage} (querying the tab
+ * itself, so the redacted empty url Chrome hands us for chrome://, about:* and
+ * the PDF viewer folds in) and answered with {@link
+ * UNREADABLE_PAGE_MSG} — the transient {@link
+ * CAPTURE_FAILED_MSG} reload hint is reserved for capture failures
+ * on pages that genuinely CAN be read, where "reload" is truthful (#1219).
  */
 async function runMatchLive(): Promise<PopupResponse> {
   const token = await getToken();
@@ -1414,12 +1473,22 @@ async function runMatchLive(): Promise<PopupResponse> {
   // "whichever tab happens to be active" at each of three separate points in
   // time (PR review finding: a tab switch mid-request could otherwise paint
   // one page's score onto a different page).
-  const { tabId, url } = await activeTabIdAndUrl();
+  const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const tabId = tab?.id;
+  const url = tab?.url ?? '';
+  // A restricted tab arrives with `tab.url` redacted to '' (no `tabs`
+  // permission — the url is only visible while `activeTab` is granted), or as
+  // a readable clickable-restricted kind. Both mean there is nothing to score:
+  // answer truthfully instead of the transient reload hint, which is a lie on
+  // a page that can never be read.
+  if (typeof tabId !== 'number' || url === '' || isPermanentlyUnreadablePage(url)) {
+    return { ok: false, error: UNREADABLE_PAGE_MSG };
+  }
   let html: string;
   try {
     html = await captureTabHtml(tabId);
   } catch {
-    return { ok: false, error: 'Could not read this page. Reload the job page and try again.' };
+    return { ok: false, error: CAPTURE_FAILED_MSG };
   }
 
   const payload: ExtensionMatchLiveRequest = { url, html };
