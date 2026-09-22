@@ -47,7 +47,9 @@ pub enum FocusTarget {
     PrepForJob(String),
 }
 
-const SCHEME: &str = "ajh://";
+/// The deep-link URI scheme (`ajh://`) — shared with `lib.rs`' rejected-argv
+/// diagnostics so the two can never drift.
+pub(crate) const SCHEME: &str = "ajh://";
 
 /// Scan argv for the first valid `ajh://autopilot/<id>`, `ajh://settings/extension`,
 /// `ajh://generate?url=…`, `ajh://open?url=…`, or `ajh://prep?url=…` URL. Returns `None` for any other scheme,
@@ -90,14 +92,23 @@ const MAX_JOB_URL_LEN: usize = 2048;
 
 /// `ajh://generate?url=<percent-encoded job url>` / `ajh://open?url=<percent-encoded job url>` /
 /// `ajh://prep?url=<percent-encoded job url>` — `rest` is the scheme-stripped, backslash-checked
-/// tail. `None` for anything else: a non-`generate`/`open`/`prep` action, a missing/extra query param, a url that fails to percent-decode,
-/// isn't http(s), or is over [`MAX_JOB_URL_LEN`] — a malformed or hostile deep link degrades to
-/// "focus the window, navigate nowhere" like every other reject case in [`parse_one`]. Normalises
-/// through [`crate::applications::normalize_job_url`] — the SAME canonical form
-/// `import.request`/`applied.check`/`document.export`'s `generation` source key on — so the
-/// renderer's own job lookup by url agrees with every other surface.
+/// tail. Each action also accepts AT MOST ONE trailing `/` (`ajh://open/?url=…`): Windows
+/// protocol activation inserts the slash when the URL's path is empty, so that IS the argv a
+/// relaunched app actually receives. `None` for anything else: a non-`generate`/`open`/`prep`
+/// action (after the optional slash), a missing/extra query param, a url that fails to
+/// percent-decode, isn't http(s), or is over [`MAX_JOB_URL_LEN`] — a malformed or hostile deep
+/// link degrades to "focus the window, navigate nowhere" like every other reject case in
+/// [`parse_one`]. Normalises through [`crate::applications::normalize_job_url`] — the SAME
+/// canonical form `import.request`/`applied.check`/`document.export`'s `generation` source key
+/// on — so the renderer's own job lookup by url agrees with every other surface.
 fn parse_job_url_target(rest: &str) -> Option<FocusTarget> {
     let (action, query) = rest.split_once('?')?;
+    // Windows protocol activation inserts a trailing `/` after the action when
+    // the URL's path is empty, so the relaunched argv arrives as
+    // `ajh://open/?url=…`. Strip AT MOST ONE such slash before matching —
+    // `open//` (two slashes) and `open/x` (a real extra segment) still fail
+    // the allowlist below.
+    let action = action.strip_suffix('/').unwrap_or(action);
     if action != "generate" && action != "open" && action != "prep" {
         return None;
     }
@@ -142,6 +153,48 @@ fn is_valid_id(id: &str) -> bool {
         && id
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Hard cap on the action segment that may reach the log — a multi-kilobyte
+/// hostile argv run must not balloon a log file.
+const MAX_LOGGED_ACTION_LEN: usize = 32;
+
+/// Bound a deep-link action segment before it reaches the log. The argv is
+/// attacker-controlled (`ajh://\x00…`), so this is not cosmetics: keep at most
+/// [`MAX_LOGGED_ACTION_LEN`] characters, collapse runs of anything that is not
+/// ASCII alphanumeric / `-` / `_` to a single `?`, and return `None` (the caller
+/// skips the log line) when no allowlisted character remains at all. Kept OUT of
+/// [`parse_focus_target`] so the parse layer stays pure — only the diagnostics
+/// in `lib.rs` consume this.
+pub(crate) fn sanitize_action_for_log(action: &str) -> Option<String> {
+    let mut out = String::with_capacity(MAX_LOGGED_ACTION_LEN);
+    let mut pending_question = false;
+    let mut has_safe_char = false;
+    for c in action.chars() {
+        if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+            has_safe_char = true;
+            if pending_question {
+                if out.len() == MAX_LOGGED_ACTION_LEN {
+                    break;
+                }
+                out.push('?');
+                pending_question = false;
+            }
+            if out.len() == MAX_LOGGED_ACTION_LEN {
+                break;
+            }
+            out.push(c);
+        } else {
+            pending_question = true;
+        }
+    }
+    if pending_question && out.len() < MAX_LOGGED_ACTION_LEN {
+        out.push('?');
+    }
+    if !has_safe_char {
+        return None;
+    }
+    Some(out)
 }
 
 #[cfg(test)]
