@@ -233,20 +233,23 @@ fn accepts_one_trailing_slash_after_the_action() {
     // path is empty, so `ajh://open/?url=…` IS the argv a relaunch actually
     // arrives with — it must parse exactly like the canonical `ajh://open?url=…`
     // (#1237).
-    let cases: [(&str, fn(String) -> FocusTarget); 3] = [
-        ("generate", FocusTarget::GenerateForJob),
-        ("open", FocusTarget::OpenJob),
-        ("prep", FocusTarget::PrepForJob),
-    ];
-    for (action, make_target) in cases {
+    for action in ["generate", "open", "prep"] {
         let input = "https://example.com/job/1?ref=abc";
         let encoded = urlencoding::encode(input);
         let target = parse_focus_target(&argv(&format!("ajh://{action}/?url={encoded}")));
-        assert_eq!(
-            target,
-            Some(make_target(crate::applications::normalize_job_url(input))),
-            "action = {action:?}"
-        );
+        let expected = match action {
+            "generate" => Some(FocusTarget::GenerateForJob(
+                crate::applications::normalize_job_url(input),
+            )),
+            "open" => Some(FocusTarget::OpenJob(
+                crate::applications::normalize_job_url(input),
+            )),
+            "prep" => Some(FocusTarget::PrepForJob(
+                crate::applications::normalize_job_url(input),
+            )),
+            _ => unreachable!("only allowlisted actions are looped"),
+        };
+        assert_eq!(target, expected, "action = {action:?}");
     }
     // The canonical no-slash form still parses (regression guard for #1237).
     let encoded = urlencoding::encode("https://example.com/job/1");
