@@ -81,8 +81,28 @@ const els = {
   autoSaveNoticeDismiss: byId<HTMLButtonElement>('auto-save-notice-dismiss'),
 };
 
-/** Send a typed request to the background — the same seam the popup uses. */
+/** This panel's own window — resolved once, since a panel never migrates
+ *  windows. Every tab lookup below is pinned to it, so an activation or focus
+ *  change in an UNRELATED window can never hijack this panel's subscription.
+ *
+ *  Declared HERE, above {@link send}: `checkAutoSaveNotice()` sends at module
+ *  load, long before the resolver below runs, and a `let` read before its own
+ *  declaration is evaluated throws (temporal dead zone) — which that function's
+ *  catch would swallow, silently killing the notice. */
+let panelWindowId: number | null = null;
+
+/**
+ * Send a typed request to the background — the same seam the popup uses.
+ *
+ * Every request carries this panel's own {@link panelWindowId} so the
+ * background targets THIS window's active tab. Its `currentWindow: true`
+ * fallback resolves to the last-focused window, which is a different window
+ * whenever the user has focused another one — the mistarget behind #1215. The
+ * id is resolved once during `init()`; a request issued before that (or in the
+ * rare case the lookup failed) simply omits it and keeps the old behaviour.
+ */
 async function send(req: PopupRequest): Promise<PopupResponse> {
+  if (panelWindowId !== null) req = { ...req, windowId: panelWindowId };
   const res = (await browser.runtime.sendMessage(req)) as PopupResponse | undefined;
   if (!res) return { ok: false, error: 'No response from the extension background.' };
   return res;
@@ -467,11 +487,6 @@ async function loadActiveTab(windowId: number): Promise<string> {
     return getDefaultPanelTab();
   }
 }
-
-/** This panel's own window — resolved once, since a panel never migrates
- *  windows. Every tab lookup below is pinned to it, so an activation or focus
- *  change in an UNRELATED window can never hijack this panel's subscription. */
-let panelWindowId: number | null = null;
 
 async function resolvePanelWindowId(): Promise<number | null> {
   try {

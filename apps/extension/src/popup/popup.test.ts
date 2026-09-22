@@ -570,17 +570,29 @@ describe('appliedCheck auto-check', () => {
     const pendingA = new Promise((resolve) => {
       resolveA = resolve;
     });
-    sendMessageMock.mockReturnValueOnce(pendingA);
+    // Answer by request KIND, not by call order: entering `connected` fires
+    // `appliedCheck` + `fieldsProbe` + `answerScan` together, so an
+    // order-queued mock silently hands check B's response to whichever sibling
+    // request happens to be issued second. Keying on the kind pins what this
+    // test is actually about — the FIRST appliedCheck stays in flight, the
+    // SECOND one resolves for job B.
+    let appliedChecks = 0;
+    sendMessageMock.mockImplementation((req: unknown) => {
+      const kind = (req as { kind: string }).kind;
+      if (kind !== 'appliedCheck') return Promise.resolve({ ok: false, error: 'not under test' });
+      appliedChecks += 1;
+      if (appliedChecks === 1) return pendingA;
+      return Promise.resolve({
+        ok: true,
+        kind: 'appliedCheck',
+        result: { found: true, status: 'saved', title: 'Job B' },
+      });
+    });
     push('connected');
 
     // Disconnect → reconnect: a fresh, edge-triggered check B starts for job B
     // and resolves before A does.
     push('app_not_running');
-    sendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      kind: 'appliedCheck',
-      result: { found: true, status: 'saved', title: 'Job B' },
-    });
     push('connected');
     await flush();
 

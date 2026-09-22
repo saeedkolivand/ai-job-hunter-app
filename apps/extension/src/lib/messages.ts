@@ -55,289 +55,315 @@ export interface ConnectionStatus {
   hasToken: boolean;
 }
 
+/**
+ * Which browser window the requesting surface belongs to, carried on EVERY
+ * popup/panel request.
+ *
+ * The background is a service worker, so it has no window of its own: a
+ * `tabs.query({ active: true, currentWindow: true })` there resolves to
+ * whichever window the browser focused LAST, not the window whose popup or
+ * side panel sent the request. With a second window focused, a gesture in the
+ * first window's panel then acted on the other window's tab — for a read that
+ * surfaced as a confusing error, and for Import it silently created an
+ * application from an unrelated page while reporting success (#1215).
+ *
+ * Both surfaces know their own window (the popup is bound to the window it
+ * opened over; the panel already pins `panelWindowId` for its own tab
+ * following), so they send it and the background targets
+ * `{ active: true, windowId }` instead. Optional because a request can also
+ * originate where no window is known (a context-menu click carries its own tab
+ * instead, and older builds of a surface omit it); the background falls back to
+ * its previous behaviour then.
+ */
+export interface SurfaceWindow {
+  windowId?: number;
+}
+
 /** popup → background requests. */
-export type PopupRequest =
-  | { kind: 'getStatus' }
-  | { kind: 'setToken'; token: string }
-  | { kind: 'clearToken' }
-  | { kind: 'reconnect' }
-  | { kind: 'import'; applied: boolean }
-  /** Assisted autofill: fetch the profile fresh + inject the filler on this tab. */
-  | { kind: 'fill' }
-  /**
-   * Job tab copy-field fallback (decision 8): when a `fill` result comes
-   * back `filledNothing`, fetch the Contact Profile fresh (same desktop
-   * source + Autofill opt-in gate `fill` itself uses) so the panel can show
-   * each field with a Copy button instead of nothing. Read-only — the
-   * profile is held only for this call, same as `fill`'s own fetch, and is
-   * never persisted client-side.
-   */
-  | { kind: 'profileGet' }
-  /**
-   * Fire-and-forget "have I already applied to this URL?" check for the
-   * active tab, run once when the popup shows the connected view. Read-only;
-   * never blocks the import controls.
-   */
-  | { kind: 'appliedCheck' }
-  /**
-   * Fire-and-forget "does this page have any fillable form fields?" probe,
-   * run once when the popup shows the connected view — gates the Form group
-   * and the Answer-tools disclosure (a page with no form, e.g. a plain job
-   * listing, shows only the Job group). Read-only (counts candidate fields,
-   * reads no values); like `appliedCheck`, never blocks the import controls.
-   * Two independent signals come back — see `PopupResponse`'s `fieldsProbe`
-   * doc for why they can't be one boolean.
-   */
-  | { kind: 'fieldsProbe' }
-  /**
-   * Fire-and-forget "is assisted autofill on?" read (Task #30), run
-   * alongside `fieldsProbe` on entering the connected view — gates whether
-   * the popup auto-runs "Suggest answers for this form" without a click.
-   * Read-only, mirrors `fieldsProbe`'s never-blocks-the-import-controls
-   * discipline exactly.
-   */
-  | { kind: 'autofillCheck' }
-  /**
-   * Fire-and-forget "what does the read tier say about this page's job?"
-   * lookup (PR1 — extension read tier), run once per Job-tab follow to
-   * upgrade the trust line from the host-only fallback to "Reading: <title>
-   * · <company>" (see `sidepanel.ts`'s `updateTrustLine`). Read-only; ANY
-   * refusal (Autofill off, throttled, unknown job) is folded away here —
-   * mirrors `appliedCheck`'s never-blocks discipline exactly, never
-   * surfaced as an error.
-   */
-  | { kind: 'trustLineJob' }
-  /**
-   * Settings page: read the extension's opt-in switches (R7 of the
-   * redesign record). Unlike `autofillCheck`, this verb's errors ARE
-   * user-facing — the page must show why the toggles couldn't load.
-   */
-  | { kind: 'settingsGet' }
-  /**
-   * Settings page: flip one switch. Like `statusUpdate`, this is a
-   * deliberate action — its failures are surfaced to the user (the page
-   * rolls its optimistic toggle back on one).
-   */
-  | { kind: 'settingsSet'; key: ExtensionSettingsKey; enabled: boolean }
-  /**
-   * User-clicked "Mark as applied" for the active tab's URL. Unlike
-   * `appliedCheck`, this is a deliberate WRITE action — its failures are
-   * surfaced to the user, never folded away.
-   */
-  | { kind: 'statusUpdate' }
-  /**
-   * User-clicked "Save my answers from this page": capture the active tab's
-   * filled form fields and send them on as `answers.save`. Like
-   * `statusUpdate`, this is a deliberate WRITE action — its failures are
-   * surfaced to the user, never folded away.
-   */
-  | { kind: 'answersSave' }
-  /**
-   * User-clicked "Suggest answers for this form": scan the active tab's
-   * EMPTY candidate fields (questions mode) and send their labels on as
-   * `answers.suggest`. Like `statusUpdate`, this is a deliberate action —
-   * its failures are surfaced to the user, never folded away.
-   */
-  | { kind: 'answersSuggest' }
-  /**
-   * Per-row "Fill this field" click on one suggested answer. `question` +
-   * `index` are the SAME scan-time correlation `answersSuggest` returned
-   * (see `ScannedQuestion`); `count` is the total number of live fields that
-   * shared this exact question text AT SCAN TIME. The filler re-locates the
-   * exact field they name and fails safe if it can no longer find it OR if
-   * the CURRENT same-question field count no longer matches `count` (e.g. a
-   * same-labelled field inserted earlier in DOM order since the scan). Never
-   * bulk, never submits the form.
-   */
-  | { kind: 'answerFill'; question: string; index: number; count: number; answer: string }
-  /**
-   * User-clicked "Check fit": capture the active tab's DOM (same Scan-mode
-   * capture the import button uses) and send it as `match.live`. Explicit —
-   * never runs automatically. Like `statusUpdate`, this is a deliberate
-   * action — its failures are surfaced to the user, never folded away.
-   */
-  | { kind: 'matchLive' }
-  /**
-   * User-clicked "Help me answer…" (`mode` omitted/`'draft'`): draft a
-   * paste-ready answer for a pasted or picked application question — the
-   * first BILLABLE-AI verb on the bridge, gated on the SEPARATE AI-assist
-   * opt-in (never the assisted-autofill one). `searchWeb` mirrors the in-app
-   * toggle (default OFF).
-   *
-   * OR (extension PR 11) user-clicked a rewrite preset/submit
-   * (`mode: 'rewrite'`): transform `existingAnswer` (the picked FILLED
-   * field's current text) per `preset` or a free-text `instruction` — the
-   * SAME billable opt-in, the SAME streaming path, but a PURE TEXT TRANSFORM
-   * (never résumé/job/company-grounded, `searchWeb` is ignored). Like
-   * `statusUpdate`, both modes are a deliberate action — failures are
-   * surfaced to the user, never folded away.
-   */
-  | {
-      kind: 'answerAssist';
-      question: string;
-      searchWeb: boolean;
-      mode?: 'draft' | 'rewrite';
-      existingAnswer?: string;
-      preset?: ExtensionRewritePreset;
-      instruction?: string;
-      /**
-       * Which answer ROW this stream belongs to (ADR-044 decision 1). The
-       * background tags its single-flight buffer with it, so both surfaces
-       * can render the stream against the right question instead of against
-       * "the last thing anyone asked for". Absent = a caller with no row
-       * model; the buffer is then tagged with the empty string and the views
-       * render it nowhere.
-       */
-      rowId?: string;
-      /**
-       * The picked field's own `maxlength`, forwarded as the wire's optional
-       * character limit (ADR-044 decision 6). DRAFT MODE ONLY — the desktop
-       * ignores it in rewrite mode, and the background does not send it
-       * there. Page-derived, so it is clamped here AND again desktop-side.
-       */
-      maxChars?: number;
-      /**
-       * The Prep tab's two on-demand buttons (PR4) — see
-       * `ExtensionAnswerAssistTopic`'s doc. Mutually exclusive with `rowId`:
-       * a topic request never names a row (the background tags its stream
-       * buffer by `topic` instead — see `lib/answer-state.ts`'s
-       * `AnswerStream.topic`), so the dispatcher's row-vs-no-row branch keeps
-       * routing exactly as it did before this field existed.
-       */
-      topic?: ExtensionAnswerAssistTopic;
-    }
-  /**
-   * Popup-open reattach: "what's the current/last streamed `answer.assist`
-   * text?" — the background OWNS the accumulation buffer (see
-   * `PopupResponse`'s `answerAssistProgress` doc) so a popup that closed
-   * mid-stream and reopens can immediately show what already arrived
-   * instead of a blank view. Also pushed proactively (unsolicited, same
-   * pattern as the `status` push) while a stream is running, live-updating
-   * an OPEN popup.
-   */
-  | { kind: 'answerAssistProgress' }
-  /**
-   * Rewrite mode's Accept (write the AI-rewritten draft) / Restore original
-   * (write the frozen pre-rewrite text) — SAME request, just a different
-   * `text`; there is no separate "restore" kind. Mirrors `answerFill`'s
-   * shape exactly: `question`/`index`/`count` are the picked field's OWN
-   * scan-time correlation (from the SAME filled-fields scan
-   * `answersSave`'s `filled` list carries — see `PopupResponse`), never
-   * anything the background remembers on its own. `expectedValue` is what
-   * the popup believes the field CURRENTLY holds (the frozen original at
-   * pick time, or whatever a prior successful Accept/Restore wrote) —
-   * `replaceFilledField` refuses (never clobbers) when the field's ACTUAL
-   * current text no longer matches, i.e. the user edited it manually since
-   * the pick. Locates + replaces via the same fail-safe re-scan `answerFill`
-   * uses; never submits.
-   */
-  /**
-   * Rescan the active tab into the shared answer state (ADR-044 decision 1).
-   * A GESTURE request: it injects `capture-rows.js`, so it is only ever sent
-   * from a real click (the popup opening its connected view, the panel's
-   * Rescan, the context-menu entry). It also captures the tab's ORIGIN at
-   * that moment — the half of the state key that must never come from a
-   * `tabs` lookup.
-   */
-  | { kind: 'answerScan' }
-  /**
-   * Add a free-text row for a question the scan missed (the manual entry) or
-   * for a context-menu selection. Content-keyed, so sending the same question
-   * twice reuses the row instead of stacking duplicates.
-   */
-  | { kind: 'answerAddRow'; question: string }
-  /** Show version `version` of a row (`-1` = the page's own text). Pure state,
-   *  no page access — this is Restore in ADR-044 decision 5's sense. */
-  | { kind: 'answerSelectVersion'; rowId: string; version: number }
-  /**
-   * Write the version currently on screen into the row's field — the quiet
-   * action beside Copy. Routed to `answerFill` or `answerReplace` by the
-   * row's own field kind, so it keeps their fail-safe correlation exactly:
-   * never a different field than the one scanned, never over a manual edit
-   * made since. A row with no field on the page has no Accept at all.
-   */
-  | { kind: 'answerAccept'; rowId: string }
-  /** Put the field's frozen scan-time text back (filled rows only). Same
-   *  fail-safe write path as {@link PopupRequest} `answerAccept`. */
-  | { kind: 'answerRestoreOriginal'; rowId: string }
-  | {
-      kind: 'answerReplace';
-      question: string;
-      index: number;
-      count: number;
-      text: string;
-      expectedValue: string;
-    }
-  /**
-   * Documents tab (PR2): list this job's generation + saved base résumés —
-   * the curated `agent.query('documents', {url})` read-tier resource
-   * (PR1). Unlike `trustLineJob`, a refusal is NOT folded away — the tab
-   * renders the desktop's own `error` (Autofill opt-in off, throttled) so
-   * the user can act on it.
-   */
-  | { kind: 'documentsList' }
-  /**
-   * Documents tab: export the picked source as DECODED text (cover-letter
-   * TXT only — the picker's Copy/Paste actions both need plain text, never
-   * base64). The background is what decodes (`bridge.ts` stays base64-
-   * agnostic) — see `PopupResponse`'s `documentExportText` doc.
-   */
-  | {
-      kind: 'documentExportText';
-      source: ExtensionDocumentSource;
-      templateId: string;
-      letterLayoutId?: string;
-    }
-  /**
-   * Documents tab: "Attach résumé to this page" — export as pdf/docx,
-   * decode to bytes, and inject via the same `type=file` DataTransfer
-   * assignment `lib/attach-file.ts` implements, then verify. The caller
-   * (`documents/documents.ts`) is responsible for the first-time-per-site
-   * confirmation (reuses the panel's existing Fill confirmation) BEFORE
-   * sending this — a deliberate page-touching gesture, so it joins
-   * `GESTURE_KINDS` in `background.ts`.
-   */
-  | {
-      kind: 'documentAttach';
-      source: ExtensionDocumentSource;
-      templateId: string;
-      format: 'pdf' | 'docx';
-    }
-  /**
-   * User-clicked "Stamp this results page" (PR3): collect the active
-   * results-listing tab's candidate job-card links, resolve them in one
-   * `applied.check.batch` round trip, and stamp each known card
-   * saved/applied. Like `statusUpdate`, this is a deliberate action — its
-   * refusals (not paired, no active tab, a read/collect failure) surface as
-   * `ok:false`; a desktop-side refusal (over-cap, throttled, malformed) or a
-   * page with nothing to stamp instead degrades to `ok:true` with
-   * `stamped: 0` and an explanatory `status` line (see `PopupResponse`'s
-   * `stampResults` doc) — never a partial lie.
-   */
-  | { kind: 'stampResults' }
-  /**
-   * Prep tab (PR4): read this job's existing generations (company brief,
-   * interview questions, salary answer) through the curated `agent.query
-   * ('prep', {url})` read-tier resource (PR1) — the SAME zero-cost pattern
-   * `documentsList` uses. Unlike `trustLineJob`, a refusal is NOT folded
-   * away — the tab renders the desktop's own `error`.
-   */
-  | { kind: 'prepGet' }
-  /**
-   * Cancel whatever `answer.assist` stream is currently pending (PR4 — the
-   * Prep tab's on-demand drafts). A no-op when nothing is pending. Mirrors
-   * the SAME retirement a new overlapping `answerAssist` call already
-   * performs — see `BridgeClient.cancelCurrent`'s doc.
-   */
-  | { kind: 'assistCancel' }
-  /**
-   * Fire-and-forget "was there a transparent save-answers-on-submit notice
-   * waiting for me?" (PR4) — run once when the popup/panel opens. READ-ONCE:
-   * the background clears it after returning it, so it is shown exactly one
-   * time, on whichever surface asks first — the point is that the user must
-   * never discover the auto-save silently, not that every surface repeats it.
-   */
-  | { kind: 'autoSaveNotice' };
+export type PopupRequest = SurfaceWindow &
+  (
+    | { kind: 'getStatus' }
+    | { kind: 'setToken'; token: string }
+    | { kind: 'clearToken' }
+    | { kind: 'reconnect' }
+    | { kind: 'import'; applied: boolean }
+    /** Assisted autofill: fetch the profile fresh + inject the filler on this tab. */
+    | { kind: 'fill' }
+    /**
+     * Job tab copy-field fallback (decision 8): when a `fill` result comes
+     * back `filledNothing`, fetch the Contact Profile fresh (same desktop
+     * source + Autofill opt-in gate `fill` itself uses) so the panel can show
+     * each field with a Copy button instead of nothing. Read-only — the
+     * profile is held only for this call, same as `fill`'s own fetch, and is
+     * never persisted client-side.
+     */
+    | { kind: 'profileGet' }
+    /**
+     * Fire-and-forget "have I already applied to this URL?" check for the
+     * active tab, run once when the popup shows the connected view. Read-only;
+     * never blocks the import controls.
+     */
+    | { kind: 'appliedCheck' }
+    /**
+     * Fire-and-forget "does this page have any fillable form fields?" probe,
+     * run once when the popup shows the connected view — gates the Form group
+     * and the Answer-tools disclosure (a page with no form, e.g. a plain job
+     * listing, shows only the Job group). Read-only (counts candidate fields,
+     * reads no values); like `appliedCheck`, never blocks the import controls.
+     * Two independent signals come back — see `PopupResponse`'s `fieldsProbe`
+     * doc for why they can't be one boolean.
+     */
+    | { kind: 'fieldsProbe' }
+    /**
+     * Fire-and-forget "is assisted autofill on?" read (Task #30), run
+     * alongside `fieldsProbe` on entering the connected view — gates whether
+     * the popup auto-runs "Suggest answers for this form" without a click.
+     * Read-only, mirrors `fieldsProbe`'s never-blocks-the-import-controls
+     * discipline exactly.
+     */
+    | { kind: 'autofillCheck' }
+    /**
+     * Fire-and-forget "what does the read tier say about this page's job?"
+     * lookup (PR1 — extension read tier), run once per Job-tab follow to
+     * upgrade the trust line from the host-only fallback to "Reading: <title>
+     * · <company>" (see `sidepanel.ts`'s `updateTrustLine`). Read-only; ANY
+     * refusal (Autofill off, throttled, unknown job) is folded away here —
+     * mirrors `appliedCheck`'s never-blocks discipline exactly, never
+     * surfaced as an error.
+     */
+    | { kind: 'trustLineJob' }
+    /**
+     * Settings page: read the extension's opt-in switches (R7 of the
+     * redesign record). Unlike `autofillCheck`, this verb's errors ARE
+     * user-facing — the page must show why the toggles couldn't load.
+     */
+    | { kind: 'settingsGet' }
+    /**
+     * Settings page: flip one switch. Like `statusUpdate`, this is a
+     * deliberate action — its failures are surfaced to the user (the page
+     * rolls its optimistic toggle back on one).
+     */
+    | { kind: 'settingsSet'; key: ExtensionSettingsKey; enabled: boolean }
+    /**
+     * User-clicked "Mark as applied" for the active tab's URL. Unlike
+     * `appliedCheck`, this is a deliberate WRITE action — its failures are
+     * surfaced to the user, never folded away.
+     */
+    | { kind: 'statusUpdate' }
+    /**
+     * User-clicked "Save my answers from this page": capture the active tab's
+     * filled form fields and send them on as `answers.save`. Like
+     * `statusUpdate`, this is a deliberate WRITE action — its failures are
+     * surfaced to the user, never folded away.
+     */
+    | { kind: 'answersSave' }
+    /**
+     * User-clicked "Suggest answers for this form": scan the active tab's
+     * EMPTY candidate fields (questions mode) and send their labels on as
+     * `answers.suggest`. Like `statusUpdate`, this is a deliberate action —
+     * its failures are surfaced to the user, never folded away.
+     */
+    | { kind: 'answersSuggest' }
+    /**
+     * Per-row "Fill this field" click on one suggested answer. `question` +
+     * `index` are the SAME scan-time correlation `answersSuggest` returned
+     * (see `ScannedQuestion`); `count` is the total number of live fields that
+     * shared this exact question text AT SCAN TIME. The filler re-locates the
+     * exact field they name and fails safe if it can no longer find it OR if
+     * the CURRENT same-question field count no longer matches `count` (e.g. a
+     * same-labelled field inserted earlier in DOM order since the scan). Never
+     * bulk, never submits the form.
+     */
+    | { kind: 'answerFill'; question: string; index: number; count: number; answer: string }
+    /**
+     * User-clicked "Check fit": capture the active tab's DOM (same Scan-mode
+     * capture the import button uses) and send it as `match.live`. Explicit —
+     * never runs automatically. Like `statusUpdate`, this is a deliberate
+     * action — its failures are surfaced to the user, never folded away.
+     */
+    | { kind: 'matchLive' }
+    /**
+     * User-clicked "Help me answer…" (`mode` omitted/`'draft'`): draft a
+     * paste-ready answer for a pasted or picked application question — the
+     * first BILLABLE-AI verb on the bridge, gated on the SEPARATE AI-assist
+     * opt-in (never the assisted-autofill one). `searchWeb` mirrors the in-app
+     * toggle (default OFF).
+     *
+     * OR (extension PR 11) user-clicked a rewrite preset/submit
+     * (`mode: 'rewrite'`): transform `existingAnswer` (the picked FILLED
+     * field's current text) per `preset` or a free-text `instruction` — the
+     * SAME billable opt-in, the SAME streaming path, but a PURE TEXT TRANSFORM
+     * (never résumé/job/company-grounded, `searchWeb` is ignored). Like
+     * `statusUpdate`, both modes are a deliberate action — failures are
+     * surfaced to the user, never folded away.
+     */
+    | {
+        kind: 'answerAssist';
+        question: string;
+        searchWeb: boolean;
+        mode?: 'draft' | 'rewrite';
+        existingAnswer?: string;
+        preset?: ExtensionRewritePreset;
+        instruction?: string;
+        /**
+         * Which answer ROW this stream belongs to (ADR-044 decision 1). The
+         * background tags its single-flight buffer with it, so both surfaces
+         * can render the stream against the right question instead of against
+         * "the last thing anyone asked for". Absent = a caller with no row
+         * model; the buffer is then tagged with the empty string and the views
+         * render it nowhere.
+         */
+        rowId?: string;
+        /**
+         * The picked field's own `maxlength`, forwarded as the wire's optional
+         * character limit (ADR-044 decision 6). DRAFT MODE ONLY — the desktop
+         * ignores it in rewrite mode, and the background does not send it
+         * there. Page-derived, so it is clamped here AND again desktop-side.
+         */
+        maxChars?: number;
+        /**
+         * The Prep tab's two on-demand buttons (PR4) — see
+         * `ExtensionAnswerAssistTopic`'s doc. Mutually exclusive with `rowId`:
+         * a topic request never names a row (the background tags its stream
+         * buffer by `topic` instead — see `lib/answer-state.ts`'s
+         * `AnswerStream.topic`), so the dispatcher's row-vs-no-row branch keeps
+         * routing exactly as it did before this field existed.
+         */
+        topic?: ExtensionAnswerAssistTopic;
+      }
+    /**
+     * Popup-open reattach: "what's the current/last streamed `answer.assist`
+     * text?" — the background OWNS the accumulation buffer (see
+     * `PopupResponse`'s `answerAssistProgress` doc) so a popup that closed
+     * mid-stream and reopens can immediately show what already arrived
+     * instead of a blank view. Also pushed proactively (unsolicited, same
+     * pattern as the `status` push) while a stream is running, live-updating
+     * an OPEN popup.
+     */
+    | { kind: 'answerAssistProgress' }
+    /**
+     * Rewrite mode's Accept (write the AI-rewritten draft) / Restore original
+     * (write the frozen pre-rewrite text) — SAME request, just a different
+     * `text`; there is no separate "restore" kind. Mirrors `answerFill`'s
+     * shape exactly: `question`/`index`/`count` are the picked field's OWN
+     * scan-time correlation (from the SAME filled-fields scan
+     * `answersSave`'s `filled` list carries — see `PopupResponse`), never
+     * anything the background remembers on its own. `expectedValue` is what
+     * the popup believes the field CURRENTLY holds (the frozen original at
+     * pick time, or whatever a prior successful Accept/Restore wrote) —
+     * `replaceFilledField` refuses (never clobbers) when the field's ACTUAL
+     * current text no longer matches, i.e. the user edited it manually since
+     * the pick. Locates + replaces via the same fail-safe re-scan `answerFill`
+     * uses; never submits.
+     */
+    /**
+     * Rescan the active tab into the shared answer state (ADR-044 decision 1).
+     * A GESTURE request: it injects `capture-rows.js`, so it is only ever sent
+     * from a real click (the popup opening its connected view, the panel's
+     * Rescan, the context-menu entry). It also captures the tab's ORIGIN at
+     * that moment — the half of the state key that must never come from a
+     * `tabs` lookup.
+     */
+    | { kind: 'answerScan' }
+    /**
+     * Add a free-text row for a question the scan missed (the manual entry) or
+     * for a context-menu selection. Content-keyed, so sending the same question
+     * twice reuses the row instead of stacking duplicates.
+     */
+    | { kind: 'answerAddRow'; question: string }
+    /** Show version `version` of a row (`-1` = the page's own text). Pure state,
+     *  no page access — this is Restore in ADR-044 decision 5's sense. */
+    | { kind: 'answerSelectVersion'; rowId: string; version: number }
+    /**
+     * Write the version currently on screen into the row's field — the quiet
+     * action beside Copy. Routed to `answerFill` or `answerReplace` by the
+     * row's own field kind, so it keeps their fail-safe correlation exactly:
+     * never a different field than the one scanned, never over a manual edit
+     * made since. A row with no field on the page has no Accept at all.
+     */
+    | { kind: 'answerAccept'; rowId: string }
+    /** Put the field's frozen scan-time text back (filled rows only). Same
+     *  fail-safe write path as {@link PopupRequest} `answerAccept`. */
+    | { kind: 'answerRestoreOriginal'; rowId: string }
+    | {
+        kind: 'answerReplace';
+        question: string;
+        index: number;
+        count: number;
+        text: string;
+        expectedValue: string;
+      }
+    /**
+     * Documents tab (PR2): list this job's generation + saved base résumés —
+     * the curated `agent.query('documents', {url})` read-tier resource
+     * (PR1). Unlike `trustLineJob`, a refusal is NOT folded away — the tab
+     * renders the desktop's own `error` (Autofill opt-in off, throttled) so
+     * the user can act on it.
+     */
+    | { kind: 'documentsList' }
+    /**
+     * Documents tab: export the picked source as DECODED text (cover-letter
+     * TXT only — the picker's Copy/Paste actions both need plain text, never
+     * base64). The background is what decodes (`bridge.ts` stays base64-
+     * agnostic) — see `PopupResponse`'s `documentExportText` doc.
+     */
+    | {
+        kind: 'documentExportText';
+        source: ExtensionDocumentSource;
+        templateId: string;
+        letterLayoutId?: string;
+      }
+    /**
+     * Documents tab: "Attach résumé to this page" — export as pdf/docx,
+     * decode to bytes, and inject via the same `type=file` DataTransfer
+     * assignment `lib/attach-file.ts` implements, then verify. The caller
+     * (`documents/documents.ts`) is responsible for the first-time-per-site
+     * confirmation (reuses the panel's existing Fill confirmation) BEFORE
+     * sending this — a deliberate page-touching gesture, so it joins
+     * `GESTURE_KINDS` in `background.ts`.
+     */
+    | {
+        kind: 'documentAttach';
+        source: ExtensionDocumentSource;
+        templateId: string;
+        format: 'pdf' | 'docx';
+      }
+    /**
+     * User-clicked "Stamp this results page" (PR3): collect the active
+     * results-listing tab's candidate job-card links, resolve them in one
+     * `applied.check.batch` round trip, and stamp each known card
+     * saved/applied. Like `statusUpdate`, this is a deliberate action — its
+     * refusals (not paired, no active tab, a read/collect failure) surface as
+     * `ok:false`; a desktop-side refusal (over-cap, throttled, malformed) or a
+     * page with nothing to stamp instead degrades to `ok:true` with
+     * `stamped: 0` and an explanatory `status` line (see `PopupResponse`'s
+     * `stampResults` doc) — never a partial lie.
+     */
+    | { kind: 'stampResults' }
+    /**
+     * Prep tab (PR4): read this job's existing generations (company brief,
+     * interview questions, salary answer) through the curated `agent.query
+     * ('prep', {url})` read-tier resource (PR1) — the SAME zero-cost pattern
+     * `documentsList` uses. Unlike `trustLineJob`, a refusal is NOT folded
+     * away — the tab renders the desktop's own `error`.
+     */
+    | { kind: 'prepGet' }
+    /**
+     * Cancel whatever `answer.assist` stream is currently pending (PR4 — the
+     * Prep tab's on-demand drafts). A no-op when nothing is pending. Mirrors
+     * the SAME retirement a new overlapping `answerAssist` call already
+     * performs — see `BridgeClient.cancelCurrent`'s doc.
+     */
+    | { kind: 'assistCancel' }
+    /**
+     * Fire-and-forget "was there a transparent save-answers-on-submit notice
+     * waiting for me?" (PR4) — run once when the popup/panel opens. READ-ONCE:
+     * the background clears it after returning it, so it is shown exactly one
+     * time, on whichever surface asks first — the point is that the user must
+     * never discover the auto-save silently, not that every surface repeats it.
+     */
+    | { kind: 'autoSaveNotice' }
+  );
 
 /** background → popup responses (discriminated by the originating request). */
 export type PopupResponse =
