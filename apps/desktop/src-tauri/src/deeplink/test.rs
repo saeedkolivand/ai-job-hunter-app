@@ -224,3 +224,93 @@ fn rejects_a_missing_or_malformed_url_param() {
         None
     );
 }
+
+// ── #1237 — Windows inserts one trailing slash: `ajh://open/?url=…` ─────────
+
+#[test]
+fn accepts_one_trailing_slash_after_the_action() {
+    // Windows protocol activation appends a `/` after the action when the URL's
+    // path is empty, so `ajh://open/?url=…` IS the argv a relaunch actually
+    // arrives with — it must parse exactly like the canonical `ajh://open?url=…`
+    // (#1237).
+    for action in ["generate", "open", "prep"] {
+        let input = "https://example.com/job/1?ref=abc";
+        let encoded = urlencoding::encode(input);
+        let target = parse_focus_target(&argv(&format!("ajh://{action}/?url={encoded}")));
+        let expected = match action {
+            "generate" => Some(FocusTarget::GenerateForJob(
+                crate::applications::normalize_job_url(input),
+            )),
+            "open" => Some(FocusTarget::OpenJob(
+                crate::applications::normalize_job_url(input),
+            )),
+            "prep" => Some(FocusTarget::PrepForJob(
+                crate::applications::normalize_job_url(input),
+            )),
+            _ => unreachable!("only allowlisted actions are looped"),
+        };
+        assert_eq!(target, expected, "action = {action:?}");
+    }
+    // The canonical no-slash form still parses (regression guard for #1237).
+    let encoded = urlencoding::encode("https://example.com/job/1");
+    assert_eq!(
+        parse_focus_target(&argv(&format!("ajh://open?url={encoded}"))),
+        Some(FocusTarget::OpenJob(
+            crate::applications::normalize_job_url("https://example.com/job/1")
+        ))
+    );
+}
+
+#[test]
+fn rejects_more_than_one_trailing_slash_or_a_real_path_segment() {
+    // Only ONE optional trailing slash is accepted: `ajh://open//?url=…` (two
+    // slashes) and `ajh://open/x?url=…` (a real extra path segment) both still
+    // parse to `None` (#1237).
+    let encoded = urlencoding::encode("https://example.com/job/1");
+    for action in ["generate", "open", "prep"] {
+        assert_eq!(
+            parse_focus_target(&argv(&format!("ajh://{action}//?url={encoded}"))),
+            None,
+            "two trailing slashes, action = {action:?}"
+        );
+        assert_eq!(
+            parse_focus_target(&argv(&format!("ajh://{action}/x?url={encoded}"))),
+            None,
+            "extra path segment, action = {action:?}"
+        );
+    }
+    // A non-allowlisted action with the same query shape stays denied.
+    assert_eq!(
+        parse_focus_target(&argv(&format!("ajh://opened?url={encoded}"))),
+        None
+    );
+}
+
+// ── log sanitiser (`sanitize_action_for_log`) ───────────────────────────────
+
+#[test]
+fn sanitize_action_for_log_collapses_control_chars_and_newlines() {
+    // A hostile argv can carry control characters / newlines straight into the
+    // action segment (`ajh://open\x00?url=…`) — the log line must never receive
+    // them: the run collapses to a single `?`.
+    assert_eq!(
+        sanitize_action_for_log("open\x00\n\u{1b}evil"),
+        Some("open?evil".to_string())
+    );
+    // Allowlisted separators survive untouched.
+    assert_eq!(
+        sanitize_action_for_log("auto_pilot-1"),
+        Some("auto_pilot-1".to_string())
+    );
+    // Nothing safe at all → no log line.
+    assert_eq!(sanitize_action_for_log("\x00\n\x01"), None);
+    assert_eq!(sanitize_action_for_log(""), None);
+}
+
+#[test]
+fn sanitize_action_for_log_caps_an_over_long_action_at_32_chars() {
+    let long = format!("open{}", "x".repeat(1000));
+    let logged = sanitize_action_for_log(&long).expect("the safe prefix must survive");
+    assert_eq!(logged.len(), 32);
+    assert_eq!(logged, format!("open{}", "x".repeat(28)));
+}
