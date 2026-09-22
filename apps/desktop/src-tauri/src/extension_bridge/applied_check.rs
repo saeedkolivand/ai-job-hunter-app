@@ -66,9 +66,28 @@ pub(super) fn applied_result_reply(req_id: &str, outcome: AppResult<AppliedCheck
 /// then looks up any existing Application for it. Pure read-only store lookup: no fetch, no SSRF
 /// host gate (there is nothing to fetch), and it never creates, merges, or advances a row.
 ///
+/// Two-stage resolution (issue #1214). The pre-existing exact normalized-key lookup
+/// ([`ApplicationStore::find_by_job_url`], `WHERE job_url = ?`) stays the FAST PATH, unchanged.
+/// When it misses, a fallback matches by posting identity
+/// ([`crate::scraping::scrape_url::job_identity`]) — the SAME identity compare
+/// `agent_read::job_is_applied` runs — so a posting stored under
+/// `de.linkedin.com/jobs/view/<id>` is found when checked as `www.linkedin.com/jobs/view/<id>/`,
+/// and a slugged `/jobs/view/<slug>-<id>` matches a bare numeric one, on any board
+/// `job_identity` covers (linkedin and indeed today). The stored half of that compare lives in
+/// [`ApplicationStore::find_by_job_identity`]; both halves unreserved-decode before extracting,
+/// exactly the symmetric leniency `job_is_applied` applies. Both paths return the identical
+/// [`AppliedCheckOk`]; there is no behaviour change when the exact lookup hits, and none at all
+/// for a board `job_identity` does not cover.
+///
 /// Shared by [`resolve_applied_check`] (single `applied.check`, url read from the JSON payload)
 /// and `applied_check_batch::resolve_applied_check_batch` (many urls in one `applied.check.batch`
-/// request) so the two verbs can never drift — see that module's doc.
+/// request) so the two verbs can never drift — see that module's doc. The fallback is a
+/// deliberately un-indexed scan of a LIGHT projection (see `find_by_job_identity`'s own doc for
+/// why), run at most once per url; the batch form bounds how many such scans one request can
+/// trigger at [`super::applied_check_batch::MAX_BATCH_URLS`] (50) per call. The honest cost shape:
+/// one light projection scan per missed url, bounded per request by that cap — fine for a typical
+/// applications table; only a very large table scanned repeatedly per batch url would justify
+/// caching or an index (not measured, not added until then).
 pub(super) fn resolve_applied_check_url(
     store: &ApplicationStore,
     url: &str,
@@ -87,7 +106,19 @@ pub(super) fn resolve_applied_check_url(
         ));
     }
 
-    Ok(match store.find_by_job_url(&normalized) {
+    let app = store.find_by_job_url(&normalized).or_else(|| {
+        // Identity fallback (issue #1214): the exact normalized-key lookup missed, but the store
+        // may still hold the same posting under a different host/path spelling — fold the
+        // caller-side url onto its `(board, id)` first (unreserved-decoded, the same caller-side
+        // discipline `agent_read::job_caller_identity` uses), then let the store scan for the
+        // most recent Application whose OWN stored url folds onto the same identity. `None` (a
+        // board with no stable id space) means no fallback — behaviour is exactly as before.
+        let decoded = crate::applications::decode_unreserved(effective_url);
+        crate::scraping::scrape_url::job_identity(&decoded)
+            .and_then(|identity| store.find_by_job_identity(&identity))
+    });
+
+    Ok(match app {
         Some(app) => AppliedCheckOk {
             found: true,
             application_id: Some(app.id),
