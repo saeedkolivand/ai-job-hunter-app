@@ -130,6 +130,29 @@ fn handle_deep_link(app: &AppHandle, target: Option<deeplink::FocusTarget>) {
     }
 }
 
+/// Warn about a rejected `ajh://` deep-link argv so a hostile/malformed deep
+/// link is diagnosable — today nothing on the deep-link path logs a rejection
+/// (the tray info line only fires for an ACCEPTED target). Called by each
+/// delivery path (single-instance relaunch, `on_open_url`, cold start) exactly
+/// when [`deeplink::parse_focus_target`] returns `None`, so the parser stays
+/// pure. Path privacy: logs only the ACTION segment (the first path segment
+/// after [`deeplink::SCHEME`]), bounded and allowlist-filtered by
+/// [`deeplink::sanitize_action_for_log`] — never the full URL, never the `url=`
+/// query value (a job URL is user data), no raw control characters.
+fn log_rejected_deep_link(argv: &[String]) {
+    let Some(rest) = argv
+        .iter()
+        .find_map(|arg| arg.trim().strip_prefix(deeplink::SCHEME))
+    else {
+        return;
+    };
+    let action = rest.split(['/', '?', '#', '\\']).next().unwrap_or("");
+    let Some(action) = deeplink::sanitize_action_for_log(action) else {
+        return; // nothing allowlisted survived — skip the log line entirely
+    };
+    log::warn!("[deeplink] rejected ajh://{action} — not an allowlisted deep-link target");
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 /// Detect a browser native-messaging launch from argv and, if so, run the stdio
@@ -355,7 +378,11 @@ pub fn run() {
             // Route through `show_focus` so a second launch also restores the Dock
             // icon (macOS) if the window was hidden to the tray.
             tray::show_focus(app);
-            handle_deep_link(app, deeplink::parse_focus_target(&argv));
+            let target = deeplink::parse_focus_target(&argv);
+            if target.is_none() {
+                log_rejected_deep_link(&argv);
+            }
+            handle_deep_link(app, target);
         }))
         .plugin(
             tauri_plugin_log::Builder::new()
@@ -389,6 +416,11 @@ pub fn run() {
                 // bridged to `log` by the `tracing` crate's `log` feature) in the
                 // terminal/logs.
                 .level_for("ajh_tauri::cover_letter::research", log::LevelFilter::Info)
+                // `tray::dispatch_menu`'s "[menu] dispatch …" line is a plain
+                // `log::info!` (not routed through `Span`), so the tray target
+                // needs its own entry to reach the file for a deep-link diagnosis
+                // — it sits below the global `Warn` otherwise.
+                .level_for("ajh_tauri::tray", log::LevelFilter::Info)
                 // Renderer `console.*` forwarded by `src/log-bridge.ts`. The
                 // plugin's `log` command targets these records at
                 // `tauri_plugin_log::WEBVIEW_TARGET` ("webview"), which is NOT a
@@ -456,13 +488,18 @@ pub fn run() {
 
             let handle = app.handle();
 
-            // Buffer for an autopilot-focus intent (cold-start `ajh://autopilot/<id>`)
-            // managed HERE, before the cold-start deep-link block below — that block
-            // runs during setup, well before `tray::build` (which manages the sibling
-            // `PendingMenu`). `dispatch_focus` writes the id into this buffer BEFORE
-            // emitting, so it must already be in state when the cold-start deep link
-            // is handled, or the write silently no-ops and the intent is lost.
+            // Buffers for the cold-start deep-link intents (autopilot-focus
+            // `ajh://autopilot/<id>` and menu-intent `ajh://settings/extension` /
+            // `ajh://open?url=…` etc.), managed HERE — before the cold-start
+            // deep-link block below, which runs during setup, well before
+            // `tray::build`. `dispatch_focus` writes the id into `PendingFocus`
+            // and `dispatch_menu` writes its intent into `PendingMenu` BEFORE
+            // emitting, so both must already be in state when the cold-start
+            // deep link is handled — a `try_state` miss silently no-ops the
+            // write and drops the intent on a cold launch (the window focuses,
+            // nothing navigates).
             app.manage(tray::PendingFocus(Mutex::new(None)));
+            app.manage(tray::PendingMenu(Mutex::new(None)));
 
             // `ajh://` deep links. The OS routes a cold/click-launched URL here
             // (macOS via `on_open_url`; Windows/Linux a second instance forwards
@@ -504,7 +541,11 @@ pub fn run() {
                     // `dispatch_menu` calls `show_focus` itself, so calling it
                     // first here is a harmless no-op for that target.)
                     tray::show_focus(&dl_handle);
-                    handle_deep_link(&dl_handle, deeplink::parse_focus_target(&urls));
+                    let target = deeplink::parse_focus_target(&urls);
+                    if target.is_none() {
+                        log_rejected_deep_link(&urls);
+                    }
+                    handle_deep_link(&dl_handle, target);
                 });
 
                 // Cold start: when the app was NOT already running, the OS launches
@@ -513,19 +554,30 @@ pub fn run() {
                 // Linux that first-instance URL arrives on argv; on macOS the plugin
                 // surfaces it via `get_current()`. Parse both so a not-running launch
                 // (the primary case for `ajh://settings/extension`) still routes.
-                let initial = deeplink::parse_focus_target(
-                    &std::env::args_os()
-                        .filter_map(|a| a.into_string().ok())
-                        .collect::<Vec<String>>(),
-                )
-                .or_else(|| {
-                    app.deep_link()
-                        .get_current()
-                        .ok()
-                        .flatten()
-                        .map(|urls| urls.iter().map(|u| u.to_string()).collect::<Vec<_>>())
-                        .and_then(|urls| deeplink::parse_focus_target(&urls))
+                let cold_argv: Vec<String> = std::env::args_os()
+                    .filter_map(|a| a.into_string().ok())
+                    .collect();
+                let current_urls = app
+                    .deep_link()
+                    .get_current()
+                    .ok()
+                    .flatten()
+                    .map(|urls| urls.iter().map(|u| u.to_string()).collect::<Vec<_>>());
+                let initial = deeplink::parse_focus_target(&cold_argv).or_else(|| {
+                    current_urls
+                        .as_deref()
+                        .and_then(deeplink::parse_focus_target)
                 });
+                if initial.is_none() {
+                    // The URL may have arrived via the plugin (`get_current`, macOS
+                    // cold start) rather than argv — log a rejected action from
+                    // either source once.
+                    let mut candidates = cold_argv;
+                    if let Some(urls) = &current_urls {
+                        candidates.extend(urls.iter().cloned());
+                    }
+                    log_rejected_deep_link(&candidates);
+                }
                 if initial.is_some() {
                     // Cold start with a deep link: the main window is visible from
                     // boot (config `visible: true`), so just show+focus it before

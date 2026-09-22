@@ -139,11 +139,11 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         new_jobs_item: new_jobs,
         inner: Mutex::new(NewJobs::default()),
     });
-    // Buffer for a menu intent missed by a backgrounded webview (see `dispatch_menu`).
-    app.manage(PendingMenu(Mutex::new(None)));
-    // NOTE: the sibling `PendingFocus` buffer (autopilot-focus deep links) is
-    // managed earlier in `lib.rs` setup — BEFORE the cold-start deep-link block,
-    // which runs well before this `tray::build`. See the comment there.
+    // NOTE: the `PendingMenu` buffer (menu-intent deep links — see
+    // `dispatch_menu`) and its sibling `PendingFocus` (autopilot-focus deep
+    // links) are BOTH managed earlier, in `lib.rs` setup — before the
+    // cold-start deep-link block, which runs well before this `tray::build`.
+    // See the comment there.
     Ok(())
 }
 
