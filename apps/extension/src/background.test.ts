@@ -3597,8 +3597,16 @@ const REQUESTING_WINDOW_ID = 1001;
  *  how Import silently created an application from an unrelated page while
  *  reporting success. */
 const FOCUSED_WINDOW_ID = 2002;
-const REQUESTING_WINDOW_TAB = { id: 7, url: 'https://jobs.example.com/posting/9' } as never;
-const FOCUSED_WINDOW_TAB = { id: 8, url: 'https://unrelated.example.com/page' } as never;
+const REQUESTING_WINDOW_TAB = {
+  id: 7,
+  windowId: REQUESTING_WINDOW_ID,
+  url: 'https://jobs.example.com/posting/9',
+} as never;
+const FOCUSED_WINDOW_TAB = {
+  id: 8,
+  windowId: FOCUSED_WINDOW_ID,
+  url: 'https://unrelated.example.com/page',
+} as never;
 
 /**
  * Fake `tabs.query` that distinguishes the two query shapes a real browser
