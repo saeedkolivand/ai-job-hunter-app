@@ -1,5 +1,29 @@
 [
   {
+    "sha": "f09d55a1e9121887899a62ab6dc7d09764a67f4d",
+    "commit": {
+      "message": "docs(extension): record the prep tab and answer capture on submit",
+      "author": {
+        "date": "2026-09-21T18:49:55Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "531b9ca25663eee4dcbfc1811e11875e40fc0e69",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-21T08:54:09Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "377e6d21335798d3bd47e88510760951184ddf00",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1169,30 +1193,6 @@
       "message": "test: keep import-time mock history under vitest 5 (#1148)",
       "author": {
         "date": "2026-09-07T20:31:02Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "a6272003b4c51ecd3f3b3705588729fe110e5c3d",
-    "commit": {
-      "message": "chore: bump the vitest group with 3 updates (#1127)",
-      "author": {
-        "date": "2026-09-07T18:50:36Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "eb1d85b1108abd04739e38f0517a3d87b03b3828",
-    "commit": {
-      "message": "fix: vitest lockstep pin, firefox add-on links and a conventionalcommits dependabot ignore (#1126)",
-      "author": {
-        "date": "2026-09-07T14:51:12Z"
       }
     },
     "author": {
