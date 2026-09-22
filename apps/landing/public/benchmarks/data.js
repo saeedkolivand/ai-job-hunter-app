@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1789528463098,
+  "lastUpdate": 1790113520672,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "167cc5a6a5e043a0a5044b4cde9246a3cdf1d7d2",
-          "message": "feat: page-bounded aggregator fetch loop with amount-derived search budget (#896)\n\n* feat: page the aggregator by requested amount\n\nAdzuna and JSearch previously issued exactly one request per search\nregardless of how many jobs the user asked for, so any amount above one\npage silently under-filled.\n\nAdzuna now loops `page in 1..=ceil(amount/50).min(2)`, stops early on a\nshort page, de-dupes across pages by posting id, fails open mid-loop\n(page 1 still propagates its error so primary_chain can fall through to\nJSearch), and re-checks cancellation between pages. JSearch maps the same\namount onto `num_pages = min(ceil(amount/10), 3)`.\n\nThe budget is driven by the requested AMOUNT, never by\nBoardSearchInput::pages: the manual search path hardcodes\npages = MAX_PAGE_BUDGET and Adzuna's free tier is a daily call quota, so a\npages-driven loop would multiply the spend of every search. An amount that\nfits in one page still costs exactly one request. The near-empty broaden\nretry stays single-page.\n\nBecause `pages` is inert for the aggregator, the autopilot wizard now\ndisables the \"Pages to scrape\" field (with a hint, en+de) when the\naggregator is the only selected board; a mixed selection keeps it live.\n\nThe Adzuna provider moves to its own module — providers.rs crossed the R8\nmodule-size cap.\n\nRiders from the #884 re-verify: name commands::agent::agent_run as the\nthird cancel-token owner in ScraperEngine::cancel's rustdoc; scope the\ncancel-idempotence test comment to idempotence; pin LocationInput's\nonChange-before-onSelectSuggestion ordering at the source.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: bound aggregator spend by an explicit budget, not the amount sentinel\n\nThe page loop derived its upstream budget from BoardSearchInput::amount, but\nthat field is sentinel-prone: autopilot_helpers sets amount = 100 to mean\n\"don't cap me\" (it expresses its target in pages), not \"fetch 100 postings\".\nRouting it into the loop bought 2 Adzuna calls and 3 billed JSearch pages on\nevery scheduled run — an hourly autopilot goes 24 to 48 calls/day against a\nhard DAILY quota, and exhaustion compounds because an Adzuna error falls\nthrough to the 3x-billed JSearch tier.\n\nAdd BoardSearchInput::provider_amount (Option<u32>, default None = cheapest\nsingle-request form) as the only signal that buys upstream calls, and set it\nsolely in commands::scrape, where the amount is a count the user actually\ntyped. amount keeps its meaning as the output cap. SearchBudget carries the\ntwo independently through the aggregator's orchestration.\n\nGuarded by a differential pair of wiremock tests through search_with_providers:\nan autopilot-shaped input (amount 100, no provider budget) issues exactly one\nAdzuna request even when page 1 comes back full, while a manual-shaped input\npages. Verified by reintroducing the bug: the guard fails.\n\nAlso give AdzunaProvider the same base_url injection the page request has, and\ncover the post-loop policy that reads the loop's post-dedup count (the\ncountry-wide broaden retry and the guessed-market note) through search itself.\n\nCorrect three comments: the broaden retry's worst case is ADZUNA_MAX_PAGES + 1\nfetches (a full page 1 that all dedupes away keeps the loop going); the\nper-host limiter is nominal at this budget; and the in-loop cancellation check\nis load-bearing, since without it a Stop is logged as a page failure.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test: pin the aggregator request-to-budget mapping against mutation\n\nThe wiremock spend guards hand-construct SearchBudget, so they never observe\nthe request -> budget translation — rewriting it to spend `amount` kept all\n126 aggregator tests green, i.e. the guards had a hole exactly on the original\nbug's line.\n\nExtract that hop into SearchBudget::from_input, now the only production\nconstruction site (new() is #[cfg(test)]), and pin it with a pure test\nasserting an autopilot-shaped input yields no provider spend while a\nmanual-shaped one maps its user-typed count through. Re-ran the mutation:\nit now fails that test instead of passing everything.\n\nAlso correct the SearchBudget::amount docstring — the additive LinkedIn tier\nis the paid opt-in one with its own spend caps (ADR-028), not \"the free side\"\n— and the de hint, since Adzuna's free tier is quota-metered per call\n(kontingentiert), not billed (abgerechnet).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: gate the paid apify tier on provider_amount and stop retrying metered 429s\n\nThe Apify LinkedIn gate read `budget.amount`, which a scheduled run passes as the\nsentinel 100 — so it always opened and every autopilot run bought a full 50-item\nactor run, contradicting the three doc claims that `provider_amount` is the only\nthing buying upstream calls. The decision now lives in one `apify_cap` fn that\nrides `provider_amount`: None means no paid run at all, Some(spend) buys only the\nunmet remainder clamped to APIFY_MAX_ITEMS. Deliberate behavior change: an\nApify-enabled user's SCHEDULED runs no longer buy LinkedIn results; manual\nsearches, which carry a real user-typed spend target, are unchanged.\n\nAdzuna and JSearch are metered, and fetch_text re-sends on 429/503, so the default\nretries=2 made one search cost up to 9 quota calls and answered \"you are over\nquota\" by spending more of it. Both now pin retries=0 through a shared\nFetchOptions builder, mirroring the existing APIFY_RETRIES precedent so the\ninvariant is assertable rather than inline.\n\nCancellation is now a clean stop on the page-1 path too: a cancel observed\nmid-flight surfaced as Err and made primary_chain log a jsearch fallback its own\ncancel guard would never run, and the broaden retry could still spend one more\nquota call on the way out.\n\nAlso hoists the double `req.amount.clamp(1, 100)` into one `requested_amount`.\n\n* fix: unblock the inert autopilot page budget and announce its hint\n\nA persisted out-of-range or non-integer `pages` still failed the wizard schema\nwhile the aggregator-only selection had the control DISABLED — the wizard refused\nto advance with no reachable way to comply. It is now normalized into the schema\nrange as soon as the field goes inert (the same round+clamp NumberField applies on\nblur), so re-adding a pages-aware board hands back a sane, editable number.\n\nThe \"why is this disabled\" hint was a bare span no screen-reader user reached.\nWizardField now gives its hint and error stable ids and wires them onto the\nlabelled control via aria-describedby, so every usage benefits.\n\n`pagesInert` derives from the deduplicated board set rather than raw array length,\nmatching `aggregatorSelected` right above it.\n\nTests: replace the fixed 350ms sleeps in the LocationInput typeahead with\nrender-aware waits on a concrete suggestion, so keyboard nav can't silently pass\nthrough the free-text fallback.\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-          "timestamp": "2026-07-28T07:34:07+02:00",
-          "tree_id": "2c163d262999b167ea584106b08a7e67dde99752",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/167cc5a6a5e043a0a5044b4cde9246a3cdf1d7d2"
-        },
-        "date": 1785218076025,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2115712,
-            "range": "± 16716",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2550226,
-            "range": "± 22218",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 276220,
-            "range": "± 6336",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 299027,
             "range": "± 8711",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c8722079dbf926289b24e48dc733b3a9b093ec82",
+          "message": "fix(bridge): match a tracked job by posting identity when applied.check misses (#1242)\n\napplied.check resolved a url by exact normalized-key equality, and\nnormalize_job_url strips only a leading www. from the host. A posting saved\nunder de.linkedin.com/jobs/view/<id> therefore never matched the same posting\nopened as www.linkedin.com/jobs/view/<id>/, and a slugged /jobs/view/<slug>-<id>\nnever matched a bare numeric one, so the popup card, the side-panel stage strip\nand the results-page stamps all showed a genuinely tracked job as untracked.\n\nThe exact lookup stays the fast path. On a miss, the url now folds onto its\n(board, id) posting identity through scrape_url::job_identity and the store\nlooks for the most recent application whose own url folds onto the same\nidentity. This is the matcher agent_read::job_is_applied already used to close\nthe same gap for the agent read surface, which applied_check never picked up.\nBoth halves decode unreserved escapes before extracting, matching that\nfunction's symmetric leniency. A board job_identity does not cover behaves\nexactly as before.\n\nThe store side scans a light id/job_url/created_at projection and loads only the\nwinning row, rather than materialising every application with its description\nand answers to answer the question — the batch verb reuses this resolver per\nurl, so a results-page stamp of mostly untracked cards takes the miss path\nalmost every time.\n\nCloses #1214\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-09-22T23:28:11+02:00",
+          "tree_id": "5a1e25f3fd075fae669afc30b92f8085f5ff3b89",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/c8722079dbf926289b24e48dc733b3a9b093ec82"
+        },
+        "date": 1790113519520,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2003004,
+            "range": "± 25851",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2366421,
+            "range": "± 55796",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 210013,
+            "range": "± 8117",
             "unit": "ns/iter"
           }
         ]
