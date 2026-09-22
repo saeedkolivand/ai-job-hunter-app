@@ -62,7 +62,7 @@ export function computeVerdict(s: VerdictSignals): Verdict {
 // A conclusion string counts as "red" only if the run finished in a genuine
 // failure state. Null (never ran) is not red — see `gatingKnown`. `success`,
 // `neutral`, and `skipped` are success-equivalent for dependent checks per
-// GitHub's semantics — and this repo's claude-review self-skips on concurrency,
+// GitHub's semantics — and a skipped-on-concurrency run is not a failure,
 // so treating `skipped` as red would falsely redden the verdict.
 export function isRedConclusion(conclusion: string | null): boolean {
   return (

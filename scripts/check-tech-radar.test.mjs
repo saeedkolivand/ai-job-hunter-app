@@ -13,7 +13,7 @@ const scriptPath = join(__dirname, 'check-tech-radar.mjs');
 // test writes its own tech-radar.ts into this tree and runs the real script
 // against it via execFileSync (cwd: repoDir) — this is a black-box test of
 // the CLI, not of an internal export, mirroring
-// scripts/ci-review-verdict.test.mjs / scripts/bump-last-updated.test.mjs.
+// scripts/bump-last-updated.test.mjs.
 const repoDir = join(tmpdir(), `check-tech-radar-test-${Date.now()}`);
 
 function writeBaseRepo() {

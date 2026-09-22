@@ -3,7 +3,7 @@
 
 # ⚙️ GitHub Actions — workflow catalog
 
-12 workflows, grouped by role. Descriptions come from each workflow's own header comment.
+11 workflows, grouped by role. Descriptions come from each workflow's own header comment.
 **✅ Required** is the only role that gates merge (CI Pipeline → its `✅ CI OK` umbrella);
 **advisory** never blocks; **security** reports to the Security tab; **deploy** publishes on push to `main`.
 
@@ -12,7 +12,6 @@
 ### ✅ Required — gates merge
 
 [![🚀 CI Pipeline](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml)
-[![🤖 Claude Review (required gate + advisory deep dive)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml)
 
 ### 🔒 Security — reports to the Security tab
 
@@ -37,10 +36,9 @@
 
 ### ✅ Required — gates merge
 
-| Workflow                                                                   | Triggers    | What it does                                                               |
-| -------------------------------------------------------------------------- | ----------- | -------------------------------------------------------------------------- |
-| [🚀 CI Pipeline](ci-pipeline.yml)                                          | PR, manual  | Validate code quality, type safety, test coverage, and secrets on every PR |
-| [🤖 Claude Review (required gate + advisory deep dive)](claude-review.yml) | PR, comment | AI review gate, REQUIRED ON EVERY PR (unless draft).                       |
+| Workflow                          | Triggers   | What it does                                                               |
+| --------------------------------- | ---------- | -------------------------------------------------------------------------- |
+| [🚀 CI Pipeline](ci-pipeline.yml) | PR, manual | Validate code quality, type safety, test coverage, and secrets on every PR |
 
 ### 🔒 Security — reports to the Security tab
 
