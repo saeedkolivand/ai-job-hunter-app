@@ -494,6 +494,89 @@ impl ApplicationStore {
         .and_then(|mut stmt| stmt.query_row(params![normalized], row_to_application).ok())
     }
 
+    /// Most-recent Application whose stored `job_url` resolves to the same
+    /// [`crate::scraping::scrape_url::job_identity`] as `identity` (issue
+    /// #1214) — the identity-aware sibling of [`Self::find_by_job_url`], for a
+    /// lookup whose exact normalized-key match misses but whose url still names
+    /// the same posting (a regional LinkedIn host vs `www.linkedin.com`, a
+    /// slugged `/jobs/view/` path vs a bare numeric one, a `currentJobId=`
+    /// query form — every host/path variant `job_identity` folds onto one
+    /// `(board, id)`). `pub(crate)` so `extension_bridge`'s `applied.check`
+    /// handler can run it as the read-only fallback beside
+    /// [`Self::find_by_job_url`] (it never fetches or writes — see
+    /// `resolve_applied_check_url`).
+    ///
+    /// Mirrors [`Self::find_by_job_url`]'s "most recent wins" ordering
+    /// (`created_at DESC`). The stored half decodes unreserved escapes first
+    /// ([`decode_unreserved`]) so a percent-encoded stored spelling compares
+    /// equal to its literal — exactly the symmetric leniency
+    /// `extension_bridge::agent_read::job_is_applied` applies to its applied-url
+    /// set (issues #1128/#1166); both halves of the compare must run it or the
+    /// mirror-image direction breaks.
+    ///
+    /// Deliberately a scan over a LIGHT projection — one prepared query
+    /// selecting only `id, job_url, created_at`, the `created_at` max tracked
+    /// in Rust, then the winner loaded whole via [`Self::get`] — NOT
+    /// [`Self::list`]'s whole-row select: answering "does any stored url carry
+    /// this posting's identity?" must not materialise every heavy column
+    /// (`job_description`, `job_summary`, `brief`, `notes`) or parse every
+    /// row's `answers` JSON to do so. The matching key is `job_identity`'s
+    /// per-board id extraction, computed in Rust, so there is no
+    /// SQL-expressible predicate an index (or `WHERE` clause) could speed up,
+    /// and an index over every conceivable identity is not worth its write
+    /// cost for a read-only fallback.
+    ///
+    /// The honest cost shape: ONE light projection scan per missed url,
+    /// bounded per request by the `applied.check.batch` form's own
+    /// `MAX_BATCH_URLS` cap on how many urls one call can carry — so even a
+    /// fully-missing 50-url batch is at most 50 such scans. Fine for a typical
+    /// applications table; a very LARGE table scanned repeatedly per batch url
+    /// is the case that would justify caching or an index — not measured
+    /// today, and not added until then.
+    pub(crate) fn find_by_job_identity(
+        &self,
+        identity: &(&'static str, String),
+    ) -> Option<Application> {
+        // The identity compare is per-board id extraction (Rust), so this is a
+        // plain scan of the light projection — deliberate, see the doc above.
+        let winner_id = {
+            let conn = self.conn.lock();
+            let mut stmt = conn
+                .prepare("SELECT id, job_url, created_at FROM applications WHERE job_url != ''")
+                .ok()?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                })
+                .ok()?;
+            // "Most recent wins" mirrors `find_by_job_url`'s
+            // `ORDER BY created_at DESC LIMIT 1`; tracked here so the
+            // projection needs no ORDER BY.
+            let mut winner: Option<(String, i64)> = None;
+            for row in rows.flatten() {
+                let (id, job_url, created_at) = row;
+                let decoded = decode_unreserved(&job_url);
+                if crate::scraping::scrape_url::job_identity(&decoded).as_ref() != Some(identity) {
+                    continue;
+                }
+                let newer = match &winner {
+                    Some((_, at)) => created_at > *at,
+                    None => true,
+                };
+                if newer {
+                    winner = Some((id, created_at));
+                }
+            }
+            winner.map(|(id, _)| id)
+        };
+        // The scan's lock guard dropped with the block above; `get` re-locks.
+        winner_id.and_then(|id| self.get(&id))
+    }
+
     /// Normalized non-empty urls of Applications that are NOT `saved` — the set
     /// that derives a found job's `applied` flag (was: "a generation exists").
     /// Best-effort: a query failure collapses to empty, same as "applied to
