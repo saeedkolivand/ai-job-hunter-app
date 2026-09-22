@@ -593,7 +593,6 @@ a verdict-first, full-repo dashboard (delivery, work, quality, community) update
 ### ✅ Required — gates merge
 
 [![🚀 CI Pipeline](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml)
-[![🤖 Claude Review (required gate + advisory deep dive)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/claude-review.yml)
 
 ### 🔒 Security — reports to the Security tab
 
