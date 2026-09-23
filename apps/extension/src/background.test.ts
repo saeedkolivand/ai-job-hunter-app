@@ -263,16 +263,14 @@ describe('fill request — desktop refusal', () => {
   it('surfaces the profile.result refusal payload (opt-in off) and never injects the filler', async () => {
     getTokenMock.mockResolvedValue(FAKE_TOKEN);
     mockClient.getProfile.mockResolvedValue({
-      error:
-        'Autofill is off. Turn it on in AI Job Hunter → Settings → Accounts → Browser extension.',
+      error: 'Autofill is off. Turn it on in AI Job Hunter → Settings → Browser extension.',
     });
 
     const res = await send({ kind: 'fill' });
 
     expect(res).toEqual({
       ok: false,
-      error:
-        'Autofill is off. Turn it on in AI Job Hunter → Settings → Accounts → Browser extension.',
+      error: 'Autofill is off. Turn it on in AI Job Hunter → Settings → Browser extension.',
     });
     expect(executeScriptMock).not.toHaveBeenCalled();
   });

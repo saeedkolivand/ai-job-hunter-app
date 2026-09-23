@@ -1011,7 +1011,7 @@ pub(super) fn origin_refused_reply(req_id: &str, payload: &Value) -> String {
 /// `super::AUTOFILL_OFF_MESSAGE` (that one names `profile.get`/`answers.save` specifically; this
 /// one is the generic agent surface).
 const EXTENSION_READ_GATE_DETAIL: &str =
-    "Turn on Assisted autofill in AI Job Hunter → Settings → Accounts → Browser extension to let \
+    "Turn on Assisted autofill in AI Job Hunter → Settings → Browser extension to let \
      the paired browser extension read your data.";
 
 /// Reply for an `agent.query` from the paired EXTENSION caller while Assisted autofill is off

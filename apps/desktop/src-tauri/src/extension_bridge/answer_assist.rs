@@ -126,7 +126,7 @@ use crate::salary_research::SalaryRange;
 /// Fixed sentinel — the SEPARATE ai-assist opt-in is off. Never the
 /// `AUTOFILL_OFF_MESSAGE` text — these are two distinct consent gates.
 pub(crate) const AI_ASSIST_OFF_MESSAGE: &str =
-    "AI answer drafting is off. Turn it on in AI Job Hunter → Settings → Accounts → Browser extension.";
+    "AI answer drafting is off. Turn it on in AI Job Hunter → Settings → Browser extension.";
 
 /// Fixed sentinel — the opt-in is on but no usable provider was ever
 /// snapshotted (never configured, or resolution otherwise fails).
@@ -142,8 +142,8 @@ pub(crate) const AI_ASSIST_OFF_MESSAGE: &str =
 /// `ok:false` error stays opaque and is rendered verbatim.
 pub(super) const NO_PROVIDER_MESSAGE: &str =
     "No AI provider is set up for answer drafting. Open AI Job \
-     Hunter → Settings → AI, choose a provider, then turn AI answer drafting back on in Settings \
-     → Accounts → Browser extension.";
+     Hunter → Settings → AI, choose a provider, then turn AI answer drafting back on in \
+     Settings → Browser extension.";
 
 /// Fixed sentinel — no résumé to ground the draft in.
 const NO_RESUME_MESSAGE: &str = "Add a resume in AI Job Hunter first, then try again.";

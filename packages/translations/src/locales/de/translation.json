@@ -498,6 +498,10 @@
         "label": "Lebenslauf",
         "description": "Lebenslaufdateien verwalten"
       },
+      "extension": {
+        "label": "Browser-Erweiterung",
+        "description": "Kopplung, Berechtigungen & Funktionen"
+      },
       "accounts": {
         "label": "Konten",
         "description": "Verbundene Boards & Sitzungen"

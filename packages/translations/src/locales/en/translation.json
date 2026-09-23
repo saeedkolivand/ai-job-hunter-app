@@ -498,6 +498,10 @@
         "label": "Resume",
         "description": "Manage your CV files"
       },
+      "extension": {
+        "label": "Browser extension",
+        "description": "Pairing, permissions & features"
+      },
       "accounts": {
         "label": "Accounts",
         "description": "Connected boards & sessions"

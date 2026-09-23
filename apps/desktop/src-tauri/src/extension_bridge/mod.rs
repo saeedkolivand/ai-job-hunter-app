@@ -153,7 +153,7 @@ use self::frame::{advance_frame_from, ConnState, FrameDecision};
 /// mirror pair riding the SAME consent gate. A single constant (not two
 /// copies) so the two can never drift.
 pub(crate) const AUTOFILL_OFF_MESSAGE: &str =
-    "Autofill is off. Turn it on in AI Job Hunter → Settings → Accounts → Browser extension.";
+    "Autofill is off. Turn it on in AI Job Hunter → Settings → Browser extension.";
 
 /// Native-messaging host name — the registered identifier the browser uses to
 /// spawn our relay (our exe in `--native-host` mode). MUST match the extension

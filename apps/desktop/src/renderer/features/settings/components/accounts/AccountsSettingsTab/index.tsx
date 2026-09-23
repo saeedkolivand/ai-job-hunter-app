@@ -8,7 +8,6 @@ import { useCredentialsAvailable } from '@/services';
 
 import { BoardSessionRow } from '../BoardSessionRow';
 import { EmailWatchSection } from '../EmailWatchSection';
-import { ExtensionBridgeSection } from '../ExtensionBridgeSection';
 
 export function AccountsSettingsTab() {
   const { t } = useTranslation();
@@ -30,10 +29,6 @@ export function AccountsSettingsTab() {
             ))}
           </div>
         </SettingsSection>
-      </div>
-
-      <div data-settings-anchor="accounts-extension">
-        <ExtensionBridgeSection />
       </div>
 
       <div data-settings-anchor="accounts-email-watch">

@@ -265,7 +265,7 @@ vi.mock('@/features/settings/components/ai-settings/PromptQualitySettings', () =
 vi.mock('@/features/settings/components/accounts/BoardSessionRow', () => ({
   BoardSessionRow: () => null,
 }));
-vi.mock('@/features/settings/components/accounts/ExtensionBridgeSection', () => ({
+vi.mock('@/features/settings/components/extension/ExtensionBridgeSection', () => ({
   ExtensionBridgeSection: () => <div data-settings-anchor="accounts-extension" />,
 }));
 vi.mock('@/features/settings/components/accounts/EmailWatchSection', () => ({
@@ -299,6 +299,7 @@ vi.mock('@/lib/doc-record', () => ({
 // Sections rendered directly (not through SettingsContent):
 import { AccountsSettingsTab } from '@/features/settings/components/accounts/AccountsSettingsTab';
 import { ContactProfileTab } from '@/features/settings/components/contact/ContactProfileTab';
+import { ExtensionSettingsTab } from '@/features/settings/components/extension/ExtensionSettingsTab';
 import { GeneralSection } from '@/features/settings/components/general-section';
 import { AppearanceCard } from '@/features/settings/components/general-section/AppearanceCard';
 import { PrivacySettingsTab } from '@/features/settings/components/privacy/PrivacySettingsTab';
@@ -380,6 +381,7 @@ describe('SEARCH_INDEX — manifest integrity', () => {
       'job',
       'resume',
       'accounts',
+      'extension',
       'privacy',
       'performance',
       'developer',
@@ -477,6 +479,24 @@ describe('anchor drift guard — accounts (AccountsSettingsTab)', () => {
   )('anchor "%s" (entry "%s") is present in the rendered DOM', (anchor) => {
     const { container } = render(<AccountsSettingsTab />);
     assertAnchor(container, anchor);
+  });
+});
+
+describe('anchor drift guard — extension (ExtensionSettingsTab)', () => {
+  it.each(
+    SEARCH_INDEX.filter((e) => e.section === 'extension').map(
+      (e) => [e.anchor, e.id] as [string, string]
+    )
+  )('anchor "%s" (entry "%s") is present in the rendered DOM', (anchor) => {
+    const { container } = render(<ExtensionSettingsTab />);
+    assertAnchor(container, anchor);
+  });
+
+  // `it.each` over an empty array silently registers NO tests, so the guard
+  // above would pass vacuously if the section lost its entries (#1213 moved
+  // them here from `accounts`). Pin the count so that cannot go unnoticed.
+  it('indexes at least one entry under the extension section', () => {
+    expect(SEARCH_INDEX.filter((e) => e.section === 'extension').length).toBeGreaterThan(0);
   });
 });
 

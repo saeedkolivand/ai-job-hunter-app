@@ -7,6 +7,7 @@ import { AboutTab } from '@/features/settings/components/about/AboutTab';
 import { AccountsSettingsTab } from '@/features/settings/components/accounts/AccountsSettingsTab';
 import { AISettingsTab } from '@/features/settings/components/ai-settings/AISettingsTab';
 import { ContactProfileTab } from '@/features/settings/components/contact/ContactProfileTab';
+import { ExtensionSettingsTab } from '@/features/settings/components/extension/ExtensionSettingsTab';
 import { GeneralSection } from '@/features/settings/components/general-section';
 import { AppearanceCard } from '@/features/settings/components/general-section/AppearanceCard';
 import { AgencyCompaniesPreferences } from '@/features/settings/components/preferences/AgencyCompaniesPreferences';
@@ -62,6 +63,7 @@ export function SettingsContent({
       />
     ),
     appearance: () => <AppearanceCard />,
+    extension: () => <ExtensionSettingsTab />,
     contact: () => <ContactProfileTab />,
     ai: () => (
       <>

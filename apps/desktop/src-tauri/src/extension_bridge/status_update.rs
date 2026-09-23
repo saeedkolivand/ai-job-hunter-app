@@ -21,7 +21,7 @@ use crate::events::{emit_event, APPLICATIONS_CHANGED};
 /// no-op (an auto write is a passive background action, not a user click), but
 /// the desktop still returns a clear reason for its own log.
 const AUTOTRACK_OFF_MESSAGE: &str =
-    "Auto-track is off. Turn it on in AI Job Hunter → Settings → Accounts → Browser extension.";
+    "Auto-track is off. Turn it on in AI Job Hunter → Settings → Browser extension.";
 
 /// The `auto` flag on a `status.update` payload (default false when absent) —
 /// true marks the AUTOMATED Task-#22 write from the gesture submit-watcher, as

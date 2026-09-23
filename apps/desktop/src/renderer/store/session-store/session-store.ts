@@ -161,6 +161,7 @@ export type SettingsSection =
   | 'job'
   | 'resume'
   | 'accounts'
+  | 'extension'
   | 'privacy'
   | 'performance'
   | 'developer'

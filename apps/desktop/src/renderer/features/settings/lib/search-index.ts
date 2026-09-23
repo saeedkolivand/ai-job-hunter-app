@@ -302,7 +302,10 @@ export const SEARCH_INDEX: SearchEntry[] = [
   },
   {
     id: 'accounts-extension',
-    section: 'accounts',
+    // Moved to its own nav section (#1213). The id/anchor deliberately keep
+    // their `accounts-` prefix: the tray deep link and any link already handed
+    // out address this panel by that anchor.
+    section: 'extension',
     titleKey: 'settings.accounts.extension.title',
     keywords: [
       'extension',
