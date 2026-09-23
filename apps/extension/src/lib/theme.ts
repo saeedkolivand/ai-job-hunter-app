@@ -9,7 +9,7 @@
  * and the options page each call {@link bootTheme} once at load.
  */
 
-import { browser } from '@wxt-dev/browser';
+import { type Browser, browser } from '@wxt-dev/browser';
 
 export type Theme = 'system' | 'light' | 'dark';
 
@@ -46,4 +46,26 @@ export async function bootTheme(): Promise<void> {
   } catch {
     // Best-effort — system default stands.
   }
+}
+
+/**
+ * Live-sync the Theme choice (#1236 Half A): repaint THIS surface when the
+ * Settings → Appearance → Theme choice changes in another surface's write
+ * (the options page), instead of waiting for this surface to be reopened.
+ * Mirrors `subscribeAnswerState`'s shape — a `storage.onChanged` listener
+ * filtered to `storage.local`'s `theme` key only (an unrelated key, or
+ * another area such as the per-tab answer state in `storage.session`, never
+ * repaints) — and returns the same unsubscribe-for-teardown.
+ */
+export function subscribeThemeChanges(): () => void {
+  const listener = (
+    changes: Record<string, Browser.storage.StorageChange>,
+    areaName: string
+  ): void => {
+    if (areaName !== 'local' || !(THEME_KEY in changes)) return;
+    const value = changes[THEME_KEY]?.newValue;
+    applyTheme(value === 'light' || value === 'dark' ? value : 'system');
+  };
+  browser.storage.onChanged.addListener(listener);
+  return () => browser.storage.onChanged.removeListener(listener);
 }

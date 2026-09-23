@@ -73,6 +73,13 @@ export interface SubmitFlowDeps {
    *  refusal (nothing was saved, so nothing to announce; see this module's
    *  own doc for why the desktop's own gate can still refuse silently here). */
   notifyAutoSave: (result: Extract<ExtensionAnswersSaveResult, { ok: true }>) => void;
+  /** Push "this tracked application just flipped to applied" to the side
+   *  panel so it refreshes THAT job's card without polling. Called ONLY on
+   *  `updateStatusAuto`'s `ok:true` (a refused auto-write — the desktop's
+   *  own gate off, or the job already applied elsewhere — changed nothing,
+   *  so there is nothing to announce). Mirrors {@link notifyAutoSave}'s
+   *  notify-only-on-success discipline. */
+  notifyJobStatusChanged: (url: string) => void;
 }
 
 /**
@@ -110,7 +117,12 @@ export async function handleSubmitDetected(
     const applied = await deps.checkApplied(url);
     const action = decideSubmitAction(true, applied);
     if (action.kind === 'promptImport') deps.promptImport();
-    else if (action.kind === 'autoApply') await deps.updateStatusAuto(url);
+    else if (action.kind === 'autoApply') {
+      const result = await deps.updateStatusAuto(url);
+      // ONLY a confirmed flip is announced to the panel — a refused
+      // auto-write changed nothing, so refreshing would only churn it.
+      if (result.ok) deps.notifyJobStatusChanged(url);
+    }
     // 'noop' → already applied / non-saved status → do nothing (silent).
   } catch {
     // Best-effort — never surface an error for a passive, page-triggered check.

@@ -1176,3 +1176,34 @@ describe('popup Fill first-time confirmation (#1227)', () => {
     expect(sendMessageMock).not.toHaveBeenCalledWith({ kind: 'fill' });
   });
 });
+
+// ── theme live-sync (#1236 Half A) ───────────────────────────────────────────
+// popup.ts calls `subscribeThemeChanges()` at module load (right after
+// `bootTheme()`), so a `storage.local` change to `theme` — e.g. from the
+// options page — repaints the ALREADY-OPEN popup instead of waiting for the
+// next open. Registered listeners (theme + answer-state's session-only one)
+// are fired at; only the theme listener is allowed to repaint.
+
+describe('theme live-sync (#1236 Half A)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it('repaints the open popup on a local theme change', async () => {
+    delete document.documentElement.dataset.theme;
+    // popup.ts only runs its module-load wiring once, at file scope — and
+    // Vitest 5's clearMocks (default ON in this file) wipes that history
+    // before each test. Re-import fresh so `subscribeThemeChanges()` registers
+    // its listener during THIS test, captured below.
+    vi.resetModules();
+    await import('./popup');
+    await flush();
+
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+    const listeners = vi
+      .mocked(browser.storage.onChanged.addListener)
+      .mock.calls.map((call) => call[0] as (changes: unknown, areaName: string) => void);
+    expect(listeners.length).toBeGreaterThan(0);
+    for (const listener of listeners) listener({ theme: { newValue: 'dark' } }, 'local');
+
+    expect(document.documentElement.dataset.theme).toBe('dark');
+  });
+});
