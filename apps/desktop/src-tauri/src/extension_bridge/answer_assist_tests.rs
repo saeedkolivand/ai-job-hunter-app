@@ -1789,3 +1789,51 @@ fn abort_if_cancelled_early_stops_the_spend_once_a_cancel_raced_ahead() {
     assert!(abort_if_cancelled_early(&registry, "req-1", r#gen + 1).is_ok());
     assert!(abort_if_cancelled_early(&registry, "req-2", r#gen).is_ok());
 }
+
+// ── until_cancelled (#1232 — abandon a grounding step mid-flight) ───────
+// The pre-flight peek only fires if the cancel beats the step's START. Each
+// grounding helper makes several provider calls internally, so a cancel that
+// lands a few hundred ms in used to pay for the rest. Dropping the future is
+// what actually stops the spend.
+
+#[tokio::test]
+async fn until_cancelled_returns_the_value_when_no_cancel_arrives() {
+    let registry = crate::extension_bridge::stream::AssistStreamRegistry::default();
+    let r#gen = registry.begin("req-ok").expect("a fresh reqId");
+
+    let out = until_cancelled(&registry, "req-ok", r#gen, async {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        "finished"
+    })
+    .await;
+
+    assert_eq!(out, Some("finished"));
+}
+
+#[tokio::test]
+async fn until_cancelled_abandons_a_long_step_once_a_cancel_lands() {
+    let registry = crate::extension_bridge::stream::AssistStreamRegistry::default();
+    let r#gen = registry.begin("req-cancel").expect("a fresh reqId");
+
+    // A future that would "spend" if it were ever allowed to finish.
+    let spent = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = std::sync::Arc::clone(&spent);
+
+    let cancelling = async {
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+        registry.cancel(&NoopCanceller, "req-cancel");
+    };
+    let watched = until_cancelled(&registry, "req-cancel", r#gen, async move {
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        "should never finish"
+    });
+
+    let (out, ()) = tokio::join!(watched, cancelling);
+
+    assert_eq!(out, None, "a cancelled step must be abandoned, not awaited");
+    assert!(
+        !spent.load(std::sync::atomic::Ordering::SeqCst),
+        "the abandoned future must never have run to completion"
+    );
+}
