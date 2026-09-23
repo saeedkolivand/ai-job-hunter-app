@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.155.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.155.0...v0.155.1) (2026-09-23)
+
+### 🐛 Bug Fixes
+
+* **extension:** run the pairing handshake when a token is saved on an open socket ([#1268](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1268)) ([fe942ff](https://github.com/saeedkolivand/ai-job-hunter-app/commit/fe942ffab4f4ef53eaef0ebf684bb2c38098d431)), closes [#1267](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1267)
+
 ## [0.155.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.154.0...v0.155.0) (2026-09-23)
 
 ### ✨ Features
