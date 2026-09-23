@@ -12,10 +12,18 @@
 //! ## The heuristic (conservative, not exhaustive)
 //! A currency SYMBOL or ISO CODE, adjacent (modulo whitespace) to two numbers separated by a
 //! dash/en-dash/em-dash/"to", each number optionally carrying thousands separators and a `k`/`K`
-//! suffix, with an optional trailing per-hour/per-year period. Requiring the currency marker is
-//! what keeps this from ever matching a bare date range ("2020 - 2021"), a bare percentage
-//! ("10-15%"), or "401k" alone (no second number/separator) — under-claim over mis-claim, the same
-//! discipline as every other extraction in this codebase.
+//! suffix, with an optional trailing per-hour/per-year period. The currency may LEAD the range —
+//! the classic "$50,000 - $70,000" — or TRAIL each number, the German convention
+//! ("60.000 € – 75.000 €", issue #1222). Requiring ONE currency marker is what keeps this from
+//! ever matching a bare date range ("2020 - 2021"), a bare percentage ("10-15%"), or "401k"
+//! alone (no second number/separator) — under-claim over mis-claim, the same discipline as every
+//! other extraction in this codebase. A magnitude floor ([`MIN_SALARY_VALUE`]) additionally
+//! rejects trailing-currency noise whose larger endpoint can't be a salary ("3 € – 5 €",
+//! issue #1222), while trailing ranges carrying a per-hour/per-year period are exempt ("25 € –
+//! 35 € per hour" is a real range with small, intentional endpoints). The pre-existing
+//! leading-currency branch is never floored — "£2,500 - £3,500 a month" is an ordinary
+//! sub-10k MONTHLY range that must keep matching (round-2 scoping fix; see
+//! [`is_below_salary_floor`]).
 
 use std::sync::LazyLock;
 
@@ -39,9 +47,32 @@ const NUMBER: &str = r"(?:\d{1,3}(?:[,.]\d{3}){1,3}|\d{1,9})(?:\.\d{1,2})?[kK]?"
 const SEPARATOR: &str = r"(?:-|–|—|\bto\b)";
 const PERIOD_SUFFIX: &str = r"(?:/|per\s+)?(?:hour|hr|year|yr|annum|month|mo)\.?";
 
+/// The smallest LARGER endpoint that can plausibly be an annual full-time salary in any currency
+/// this module recognizes — a full-time minimum wage annualizes well above this in every one of
+/// them (the German statutory minimum alone is ≈ 25,800 €/yr). Ranges below it are numeric noise
+/// ("3 € – 5 €"), not salaries. Applies ONLY to the trailing-currency branch (see
+/// [`is_below_salary_floor`]) — the leading branch predates the floor and is never floored, so
+/// ordinary sub-10k monthly ranges ("£2,500 - £3,500 a month") still match. Exemption, on the
+/// trailing branch: a match carrying the per-hour/per-year period ([`PERIOD_SUFFIX`]) is never
+/// floored — "25 € – 35 € per hour" is a real range whose endpoints are small on purpose, and
+/// the period is exactly the text that says so.
+const MIN_SALARY_VALUE: f64 = 10_000.0;
+
+/// Two branches, alternated at each scan position — the currency LEADING the range (the classic
+/// "$50,000 - $70,000", second-side currency optional) or TRAILING each number (the German
+/// "60.000 € – 75.000 €", issue #1222). The split is mutually exclusive by construction: the
+/// leading branch needs a currency BEFORE the first number (so it can never absorb the German
+/// shape, where the first number has no prefix) and the trailing branch needs a currency AFTER
+/// the first number (so it can never absorb a bare year range "2024 – 2025" — no currency at
+/// all — nor "10 € – 15 €" preceded by plain digits). Both hand the two raw numbers to named
+/// captures (`lead_a`/`lead_b`, `trail_a`/`trail_b`) and the optional period suffix to `period`,
+/// so the Rust side can apply the magnitude floor to the trailing branch only, and then only
+/// when no period is present. Digit groups
+/// are individually bounded (see [`NUMBER`]) and each position's match attempt is a small
+/// fixed-cost alternation — a linear scan, never catastrophic backtracking.
 static SALARY_RANGE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
-        r"(?i){CURRENCY}\s*{NUMBER}\s*{SEPARATOR}\s*{CURRENCY}?\s*{NUMBER}(?:\s*{PERIOD_SUFFIX})?"
+        r"(?i)(?:(?:{CURRENCY})\s*(?P<lead_a>{NUMBER})\s*{SEPARATOR}\s*(?:{CURRENCY})?\s*(?P<lead_b>{NUMBER})|(?P<trail_a>{NUMBER})\s*(?:{CURRENCY})\s*{SEPARATOR}\s*(?P<trail_b>{NUMBER})\s*(?:{CURRENCY})?)(?P<period>\s*{PERIOD_SUFFIX})?"
     ))
     .expect("salary range regex must compile — pattern is a fixed literal")
 });
@@ -82,23 +113,107 @@ fn is_truncated_continuation(rest: &str) -> bool {
     }
 }
 
+/// Parse a bounded salary figure (as produced by [`NUMBER`]) to a `f64` for the magnitude floor:
+/// strip commas and thousands-separator dots (a `.` glued to exactly 3 digits at the token end —
+/// the German `60.000` convention, `/60.000/` → 60_000) while keeping a trailing `.d`/`.dd`
+/// decimal, then apply the `k`/`K` suffix. Never panics: the regex only feeds bounded
+/// digit-or-separator runs, and a parse failure (unreachable) falls back to `0.0`.
+fn salary_number_value(s: &str) -> f64 {
+    let (digits, scale) = match s.strip_suffix(['k', 'K']) {
+        Some(rest) => (rest, 1_000.0),
+        None => (s, 1.0),
+    };
+    let bytes = digits.as_bytes();
+    let mut out = String::with_capacity(digits.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b',' {
+            i += 1;
+            continue;
+        }
+        if b == b'.' {
+            let rest = &bytes[i + 1..];
+            if rest.len() == 3 && rest.iter().all(u8::is_ascii_digit) {
+                i += 1; // thousands-separator dot — drop it
+                continue;
+            }
+        }
+        out.push(b as char);
+        i += 1;
+    }
+    out.parse::<f64>().unwrap_or(0.0) * scale
+}
+
+/// The two endpoint values of a candidate range, from whichever branch matched.
+fn range_endpoints(caps: &regex::Captures<'_>) -> Option<(f64, f64)> {
+    if let (Some(a), Some(b)) = (caps.name("lead_a"), caps.name("lead_b")) {
+        Some((
+            salary_number_value(a.as_str()),
+            salary_number_value(b.as_str()),
+        ))
+    } else {
+        let (a, b) = (caps.name("trail_a"), caps.name("trail_b"));
+        Some((
+            salary_number_value(a?.as_str()),
+            salary_number_value(b?.as_str()),
+        ))
+    }
+}
+
+/// True when the range's larger endpoint is below [`MIN_SALARY_VALUE`] — numeric noise ("3 € –
+/// 5 €"), not a salary. Applies ONLY to the trailing-currency branch: a leading-currency match
+/// (`lead_a`/`lead_b` fired) is the pre-existing HEAD behavior and is never floored — re-flooring
+/// it silently dropped ordinary sub-10k MONTHLY ranges ("£2,500 - £3,500 a month") whose period
+/// words the conservative [`PERIOD_SUFFIX`] never recognizes (round-2 scoping fix). On the
+/// trailing branch, skipped when the match carries a per-hour/per-year period
+/// ([`PERIOD_SUFFIX`]): "25 € – 35 € per hour" is exempt by design, and the period is exactly the
+/// text that says so. `None` from [`range_endpoints`] (impossible by construction — one branch
+/// always fires) is treated as below the floor: reject rather than fabricate a range.
+fn is_below_salary_floor(caps: &regex::Captures<'_>) -> bool {
+    if caps.name("lead_a").is_some() || caps.name("lead_b").is_some() {
+        return false; // leading-currency branch is never floored
+    }
+    if caps.name("period").is_some() {
+        return false;
+    }
+    match range_endpoints(caps) {
+        Some((a, b)) => a.max(b) < MIN_SALARY_VALUE,
+        None => true,
+    }
+}
+
 /// Find the first candidate salary RANGE in `text`, normalized for whitespace only. `None` when
 /// nothing matches the conservative heuristic above — this function never guesses, never infers a
 /// single number as a range, and never returns anything but the matched substring verbatim. The
-/// `regex` crate has no lookahead, so two conditions are rejected here as post-match checks, trying
-/// the next candidate instead of fabricating a bad range: a candidate immediately followed (modulo
-/// whitespace) by `%` is a percentage, not a salary range (e.g. "$60,000 - 10% commission"); a
-/// candidate whose match end is immediately followed by more digits (see
-/// [`is_truncated_continuation`]) means [`NUMBER`]'s bounded groups cut the real number short (e.g.
-/// "$100,000-$120000" must never yield "$100,000-$120").
+/// `regex` crate has no lookahead, so three conditions are rejected here as post-match checks,
+/// trying the next candidate instead of fabricating a bad range:
+/// - a candidate immediately followed (modulo whitespace) by `%` is a percentage, not a salary
+///   range (e.g. "$60,000 - 10% commission");
+/// - a candidate whose match end is immediately followed by more digits (see
+///   [`is_truncated_continuation`]) means [`NUMBER`]'s bounded groups cut the real number short
+///   (e.g. "$100,000-$120000" must never yield "$100,000-$120");
+/// - a trailing-currency candidate whose larger endpoint is below [`MIN_SALARY_VALUE`] and has no
+///   period suffix is numeric noise, not a range (e.g. "3 € – 5 €", issue #1222; see
+///   [`is_below_salary_floor`] — the leading-currency branch is never floored).
 pub fn extract_salary_range(text: &str) -> Option<String> {
     SALARY_RANGE_RE
-        .find_iter(text)
-        .find(|m| {
-            let rest = &text[m.end()..];
-            !rest.trim_start().starts_with('%') && !is_truncated_continuation(rest)
+        .captures_iter(text)
+        .find(|caps| {
+            let range = caps
+                .get(0)
+                .expect("capture 0 is the whole match — always present");
+            let rest = &text[range.end()..];
+            !rest.trim_start().starts_with('%')
+                && !is_truncated_continuation(rest)
+                && !is_below_salary_floor(caps)
         })
-        .map(|m| clamp(normalize_whitespace(m.as_str())))
+        .map(|caps| {
+            let range = caps
+                .get(0)
+                .expect("capture 0 is the whole match — always present");
+            clamp(normalize_whitespace(range.as_str()))
+        })
 }
 
 #[cfg(test)]
@@ -253,5 +368,84 @@ mod tests {
         assert!(!is_truncated_continuation(" more text"));
         assert!(!is_truncated_continuation("% commission"));
         assert!(!is_truncated_continuation(""));
+    }
+
+    // ── trailing-currency (German) shape + magnitude floor (issue #1222) ───────
+
+    #[test]
+    fn matches_german_trailing_currency_range() {
+        // The exact issue #1222 repro: German postings put the currency AFTER each number,
+        // and the German thousands separator is the `.` (60.000 = 60,000).
+        assert_eq!(
+            extract_salary_range("Gehalt: 60.000 € – 75.000 €").as_deref(),
+            Some("60.000 € – 75.000 €")
+        );
+        // A trailing word after the range must not prevent the match.
+        assert_eq!(
+            extract_salary_range("Gehalt: 60.000 € – 75.000 € brutto").as_deref(),
+            Some("60.000 € – 75.000 €")
+        );
+    }
+
+    #[test]
+    fn does_not_match_a_bare_year_range() {
+        // No currency on either side — neither branch can fire. Both the en-dash (issue
+        // repro) and hyphen spellings are covered.
+        assert!(extract_salary_range("Contract term: 2024 – 2025").is_none());
+        assert!(extract_salary_range("Contract term: 2024 - 2025").is_none());
+    }
+
+    #[test]
+    fn does_not_match_a_trailing_non_currency_unit() {
+        // "10.000" is a NUMBER and "Schritte" follows it, but "Schritte" (steps) is not a
+        // currency — the trailing branch's required post-number currency rejects it
+        // (issue #1222's "10.000 Schritte" negative).
+        assert!(extract_salary_range("Täglich 10.000 Schritte gehen").is_none());
+    }
+
+    #[test]
+    fn rejects_ranges_too_small_to_be_a_salary() {
+        // Both endpoints far below the floor — numeric noise, not a salary range.
+        assert!(extract_salary_range("Honorar: 3 € – 5 €").is_none());
+        // A small lower bound is fine as long as the LARGER endpoint clears the floor.
+        assert_eq!(
+            extract_salary_range("Honorar: 9.000 € – 12.000 €").as_deref(),
+            Some("9.000 € – 12.000 €")
+        );
+    }
+
+    #[test]
+    fn per_hour_ranges_are_exempt_from_the_floor() {
+        // The floor must NOT swallow real per-hour ranges whose endpoints are small on
+        // purpose — "$25 - $35 per hour" keeps matching. The same magnitude with no
+        // period exercises the floor where it applies, the TRAILING branch, and is
+        // rejected there as noise ("25 € – 35 €"). (A leading-currency "$25-$35" with
+        // no period is NOT floored — see `leading_currency_ranges_are_never_floored`.)
+        assert_eq!(
+            extract_salary_range("$25-$35 per hour").as_deref(),
+            Some("$25-$35 per hour")
+        );
+        assert!(extract_salary_range("Honorar: 25 € – 35 €").is_none());
+    }
+
+    #[test]
+    fn leading_currency_ranges_are_never_floored() {
+        // Round-2 no-regression guard: the floor is scoped to the trailing-currency
+        // branch and must not regress the pre-existing leading-currency path. These are
+        // ordinary sub-10k MONTHLY ranges whose period words the conservative
+        // `PERIOD_SUFFIX` never recognizes ("a month" is neither `/` nor `per `, "pro
+        // Monat" is German) — flooring the leading branch silently dropped them. HEAD
+        // matched all three byte-for-byte; so must we.
+        assert_eq!(
+            extract_salary_range("Salary: £2,500 - £3,500 a month").as_deref(),
+            Some("£2,500 - £3,500")
+        );
+        assert_eq!(
+            extract_salary_range("Gehalt: €4.500 - €6.000 pro Monat").as_deref(),
+            Some("€4.500 - €6.000")
+        );
+        // No period at all: a small leading-currency range is still never floored
+        // (HEAD returned "$25-$35" too).
+        assert_eq!(extract_salary_range("$25-$35").as_deref(), Some("$25-$35"));
     }
 }
