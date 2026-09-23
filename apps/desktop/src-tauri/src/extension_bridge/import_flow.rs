@@ -270,7 +270,26 @@ pub(super) async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<
     // Never lose an import click: if nothing usable parsed, persist a stub the user
     // can complete later (title empty → flagged partial), instead of erroring out.
     let (posting, partial) = if posting.as_ref().is_some_and(usable) {
-        (posting.unwrap(), false)
+        // #1238: a cross-origin-iframe-embedded ATS board is unreachable from
+        // the extension's top-level-only capture, so the generic parser
+        // describes the WRAPPER page and `usable` (a non-empty title) is
+        // happily true — a confident success naming the company's own careers
+        // heading. Two signals together, never either alone: we extracted NO
+        // description AND the captured document embeds a third-party frame.
+        // The description half is what keeps this off the analytics/consent/
+        // video frames on ordinary pages; a page that parsed a real
+        // description is never flagged.
+        let p = posting.unwrap();
+        let no_description = p
+            .description
+            .as_deref()
+            .map(str::trim)
+            .is_none_or(str::is_empty);
+        let embedded = no_description
+            && html.as_deref().is_some_and(|h| {
+                crate::scraping::scrape_url::has_cross_origin_iframe(h, effective_url)
+            });
+        (p, embedded)
     } else {
         let host = reqwest::Url::parse(effective_url)
             .ok()
