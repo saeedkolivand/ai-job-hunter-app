@@ -96,8 +96,12 @@ export interface PrepView {
    *  the followed tab is trusted (mirrors `documents.ts`'s `refresh`). */
   refresh: () => void;
   /** Clear data + any in-flight draft — call on an untrusted tab / a tab
-   *  switch (mirrors `documents.ts`'s `reset`). */
-  reset: () => void;
+   *  switch (mirrors `documents.ts`'s `reset`). `reason` renders in place of
+   *  the loading/status line when there is nothing to show — the caller's
+   *  shared {@link ../job-tools/job-tools.ts#JOB_TOOLS_GATED_LINE} for an
+   *  untrusted page (#1225), '' (nothing) for a plain clear. Also disables
+   *  the on-demand draft buttons (`pageReadable` → false, #1234). */
+  reset: (reason?: string) => void;
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(
@@ -130,6 +134,22 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
   let lastUrl = '';
   let statusText = '';
   let statusTone: 'ok' | 'err' | 'muted' = 'muted';
+  /** Whether a `refresh()` is genuinely in flight — TRUE only between a
+   *  refresh's start and its terminal render, cleared in EVERY terminal
+   *  branch (a resolved reply, a desktop refusal, a kind mismatch, a thrown
+   *  error). The generation-guarded early `return`s deliberately leave it
+   *  untouched — the newer refresh/reset owns it now. Drives the empty
+   *  state's "Loading…" line, so the mount alone and a settled refresh can
+   *  never show a phantom one (#1225). */
+  let loading = false;
+  /** Whether the followed page is currently REFRESHED/readable — true from
+   *  the moment a refresh() starts (the caller only refreshes on a trusted
+   *  tab), false after a reset() and at the initial mount. Kept SEPARATE
+   *  from `loading` on purpose: the on-demand draft buttons must stay
+   *  DISABLED on an untrusted/no-page state even though nothing is in
+   *  flight (#1234), while a refresh that ERRORS (failing prepGet) still
+   *  leaves the page readable — the drafts don't need prep data. */
+  let pageReadable = false;
   /** Draft text finalized by a completed on-demand request, kept SEPARATE
    *  from the live `state.stream` mirror so the copy-ready text survives a
    *  later, unrelated stream (e.g. an Answer-tools row draft) clobbering
@@ -188,10 +208,14 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
       return wrap;
     }
     const draftBtn = button('btn btn--small', `Draft ${TOPIC_LABEL[topic].toLowerCase()}`);
-    // Disabled while unknown, OR while the OTHER topic is streaming — a click
+    // Disabled while unknown, while the OTHER topic is streaming (a click
     // here would silently supersede that in-flight draft with no visible
-    // explanation (the two share one `answer.assist` slot; see `doDraft`).
-    draftBtn.disabled = aiAssistEnabled === null || pendingTopic !== null;
+    // explanation — the two share one `answer.assist` slot; see `doDraft`),
+    // or while the page isn't readable — an untrusted/no-page reset must not
+    // leave a draft button armed (#1234). `pageReadable` is separate from
+    // `loading` so an errored refresh still leaves the buttons usable: the
+    // drafts don't need the prep data.
+    draftBtn.disabled = aiAssistEnabled === null || pendingTopic !== null || !pageReadable;
     draftBtn.addEventListener('click', () => void doDraft(topic));
     wrap.append(draftBtn);
     return wrap;
@@ -202,14 +226,23 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
 
     const hasContent = prepHasContent(data);
     if (!hasContent && !finishedDrafts['company-brief'] && !finishedDrafts['salary-answer']) {
-      host.append(el('p', 'msg msg--muted', statusText || 'Loading…'));
-      if (statusText && statusTone === 'muted' && lastUrl) {
-        const link = button('btn btn--quiet', 'Prepare in the app');
-        link.addEventListener('click', () => void openPrepLink());
-        host.append(link);
+      if (loading) {
+        // "Loading…" ONLY while a refresh is genuinely in flight — never at
+        // mount, never after a settled refresh (its terminal branch clears
+        // `loading`), never after a reset (#1225).
+        host.append(el('p', 'msg msg--muted', 'Loading…'));
+      } else if (statusText) {
+        host.append(el('p', 'msg msg--muted', statusText));
+        if (statusTone === 'muted' && lastUrl) {
+          const link = button('btn btn--quiet', 'Prepare in the app');
+          link.addEventListener('click', () => void openPrepLink());
+          host.append(link);
+        }
       }
       // The two on-demand buttons are still offered on an otherwise-empty job
       // — a fresh job has no generation yet, but the drafts don't need one.
+      // They render DISABLED on an untrusted/no-page state (`pageReadable`)
+      // and stay enabled on an errored refresh (#1234).
       host.append(renderDraftButton('company-brief'));
       host.append(renderDraftButton('salary-answer'));
       return;
@@ -309,6 +342,8 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
   async function refresh(): Promise<void> {
     generation += 1;
     const myGeneration = generation;
+    loading = true;
+    pageReadable = true;
     setStatus('', 'muted');
     render();
     try {
@@ -317,6 +352,7 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
         deps.send({ kind: 'settingsGet' }),
       ]);
       if (myGeneration !== generation) return;
+      loading = false;
       if (settingsRes.ok && settingsRes.kind === 'settingsGet' && settingsRes.result.ok) {
         aiAssistEnabled = settingsRes.result.settings.aiAssist;
       }
@@ -326,7 +362,14 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
         render();
         return;
       }
-      if (prepRes.kind !== 'prepGet') return;
+      if (prepRes.kind !== 'prepGet') {
+        // A kind mismatch is a terminal outcome too — clear `loading` so the
+        // empty state can never sit on a phantom "Loading…" (#1225).
+        data = EMPTY_PREP_DATA;
+        setStatus('Unexpected response — please retry.', 'err');
+        render();
+        return;
+      }
       lastUrl = prepRes.url;
       if (!prepRes.result.ok) {
         data = EMPTY_PREP_DATA;
@@ -339,14 +382,19 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
       render();
     } catch (err) {
       if (myGeneration !== generation) return;
+      loading = false;
       data = EMPTY_PREP_DATA;
       setStatus(err instanceof Error ? err.message : String(err), 'err');
       render();
     }
   }
 
-  function reset(): void {
+  function reset(reason = ''): void {
     generation += 1;
+    loading = false;
+    // No readable page anymore — the on-demand draft buttons must disable
+    // even though nothing is in flight (#1234).
+    pageReadable = false;
     // Cancel a draft in flight BEFORE clearing `pendingTopic` — otherwise a
     // tab switch/trust loss leaves the provider request running (still
     // billable) for a result nobody will see (PR-1209 finding). Best-effort,
@@ -359,7 +407,7 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
     pendingTopic = null;
     delete finishedDrafts['company-brief'];
     delete finishedDrafts['salary-answer'];
-    setStatus('', 'muted');
+    setStatus(reason, 'muted');
     render();
   }
 

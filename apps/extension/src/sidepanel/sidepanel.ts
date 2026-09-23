@@ -37,7 +37,7 @@ import { copyText, mountAnswerTools } from '../answer-tools/answer-tools';
 import { mountConnectionStatus } from '../connection-status/connection-status';
 import { mountDocuments } from '../documents/documents';
 import { mountJobStatus } from '../job-status/job-status';
-import { isPageTrusted, mountJobTools } from '../job-tools/job-tools';
+import { isPageTrusted, JOB_TOOLS_GATED_LINE, mountJobTools } from '../job-tools/job-tools';
 import { type AnswerState, subscribeAnswerState } from '../lib/answer-state';
 import { getDefaultPanelTab } from '../lib/appearance';
 import type { PopupRequest, PopupResponse } from '../lib/messages';
@@ -203,10 +203,16 @@ const prepHost = document.createElement('div');
 prepHost.id = 'prep-host';
 prepPanel.append(prepHost);
 
-// First-time Fill confirmation (PR0 §4) — mounted once into the Job tab, fed
-// the CURRENTLY-followed tab's origin (updated on every state push below).
+// First-time Fill confirmation (PR0 §4) — mounted ONCE into #view-connected
+// (a SIBLING of the tab bar, OUTSIDE every `[data-section]` panel — #1224:
+// inside a tab panel the inset was hidden by `tabs.ts`'s `setActive`
+// whenever that tab wasn't active, so from the Documents tab the Attach
+// confirmation was invisible and its promise never resolved). Appended AFTER
+// `mountTabs`, so it sits below the tab content and can never intercept a
+// tab click. Fed the CURRENTLY-followed tab's origin (updated on every
+// state push below).
 const fillConfirmHost = document.createElement('div');
-jobPanel.append(fillConfirmHost);
+els.viewConnected.append(fillConfirmHost);
 const fillConfirm = mountFirstFillConfirm(fillConfirmHost, { getRememberedHosts, rememberHost });
 
 let currentOrigin: string | null = null;
@@ -427,9 +433,9 @@ function follow(tabId: number | null): void {
     answerTools.render(null);
     jobTools.render(null);
     documents.render(null);
-    documents.reset();
+    documents.reset(JOB_TOOLS_GATED_LINE);
     prep.render(null);
-    prep.reset();
+    prep.reset(JOB_TOOLS_GATED_LINE);
     openInAppLink.hidden = true;
     jobStatus.reset();
     updateTrustLine(null);
@@ -462,8 +468,8 @@ function follow(tabId: number | null): void {
       } else {
         jobStatus.reset();
         trustLineJobGeneration += 1; // invalidate any in-flight query — the page is no longer trusted
-        documents.reset();
-        prep.reset();
+        documents.reset(JOB_TOOLS_GATED_LINE);
+        prep.reset(JOB_TOOLS_GATED_LINE);
         openInAppLink.hidden = true;
       }
     }

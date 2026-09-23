@@ -23,6 +23,12 @@ import { resolveJobStatusView } from '../job-status/job-status';
 import { IMPORT_LABEL_DEFAULT, IMPORT_LABEL_FOUND, mountJobTools } from '../job-tools/job-tools';
 import { type AnswerState, subscribeAnswerState } from '../lib/answer-state';
 import type { PopupRequest, PopupResponse } from '../lib/messages';
+import {
+  getRememberedHosts,
+  hostOf,
+  mountFirstFillConfirm,
+  rememberHost,
+} from '../lib/site-memory';
 import { bootTheme, subscribeThemeChanges } from '../lib/theme';
 
 import './popup.css';
@@ -207,8 +213,75 @@ async function send(req: PopupRequest): Promise<PopupResponse> {
  * mounts (see `job-tools.ts`'s doc), with `hideSaveAnswers` so the popup
  * shows exactly the three gesture actions PR0 §2 asks for; "Save my answers"
  * lives only in the panel's Answers tab now.
+ *
+ * Mounted AFTER the first-time-Fill confirmation below — `confirmFill` is the
+ * SAME first-time-per-site inset the panel uses (one shared remembered-host
+ * set, `fillConfirmDontAskHosts`, both directions), so the popup's very first
+ * Fill asks too (#1227), instead of confirming only once the panel does.
  */
-const jobTools = mountJobTools(els.jobToolsHost, { send, hideSaveAnswers: true });
+
+// The first-time Fill confirmation (PR0 §4) — the SAME inset + remembered-host
+// set the side panel mounts (site-memory.ts's own "reuses the R6 Fill
+// confirmation" contract), hosted INSIDE #view-import so it rides that view's
+// connected-only `[hidden]` gate (a popup can only Fill while connected) and
+// sized as a viewport-fixed overlay (popup.css) so it is never squashed by the
+// import view's tight no-scroll budget (#1227). Fed the origin `confirmFill`
+// resolves ON DEMAND below — never a stored push.
+const fillConfirmHost = document.createElement('div');
+fillConfirmHost.id = 'popup-fill-confirm-host';
+els.views.import.append(fillConfirmHost);
+const fillConfirm = mountFirstFillConfirm(fillConfirmHost, { getRememberedHosts, rememberHost });
+
+/**
+ * The origin of the page this popup faces, resolved ON DEMAND at Fill-click
+ * time via `tabs.query` — the SAME read `background.ts`'s
+ * `activeTabOriginAtGesture` performs: opening the popup IS the toolbar-click
+ * gesture that grants `activeTab`, which is what makes the active tab's url
+ * readable (it is NOT a `tabs`-permission lookup — `tabs` stays on the
+ * manifest denylist). No stored answer-state origin is consulted: a pushed
+ * `origin` can be stale the moment the page navigates, and round-1's `null`
+ * default silently approved the very FIRST Fill (the #1227 regression this
+ * on-demand read kills). Returns `null` when the tab's url is unreadable (no
+ * grant / an internal page / the query itself failing): the caller then
+ * FAILS SAFE — never fills a page it could not identify.
+ */
+async function activeTabOriginOnDemand(): Promise<string | null> {
+  try {
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    const url = tab?.url;
+    if (!url) return null;
+    const parsed = new URL(url);
+    // http(s) only — a Fill cannot act on an internal page, and approving one
+    // for e.g. chrome:// would be the same silent-assume this function exists
+    // to prevent.
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
+const jobTools = mountJobTools(els.jobToolsHost, {
+  send,
+  hideSaveAnswers: true,
+  // Resolve the origin AT CLICK TIME (never from a stored push — see
+  // `activeTabOriginOnDemand`'s doc) and snapshot it for the confirmation,
+  // then RE-resolve after it settles: if the page navigated while the user
+  // was deciding, the approval belongs to the page they confirmed, never to
+  // whatever the popup now faces (#1227). An unreadable origin REFUSES
+  // visibly on the shared status line — the popup must never fill a page it
+  // could not identify, with or without a confirmation inset.
+  confirmFill: async () => {
+    const capturedOrigin = await activeTabOriginOnDemand();
+    if (!capturedOrigin) {
+      setMsg(els.importMsg, 'Could not read this page — open the popup again and retry.', 'err');
+      return false;
+    }
+    const ok = await fillConfirm.confirm(hostOf(capturedOrigin));
+    if (!ok) return false;
+    return (await activeTabOriginOnDemand()) === capturedOrigin;
+  },
+});
 
 /**
  * Open the side panel. Called SYNCHRONOUSLY from the click handler on both

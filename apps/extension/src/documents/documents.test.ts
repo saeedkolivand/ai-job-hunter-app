@@ -8,6 +8,7 @@ vi.mock('@wxt-dev/browser', () => ({
   browser: { tabs: { create: vi.fn() } },
 }));
 
+import { JOB_TOOLS_GATED_LINE } from '../job-tools/job-tools';
 import { buildCandidates, mountDocuments, parseDocumentsResourceData } from './documents';
 
 // ---------------------------------------------------------------------------
@@ -151,9 +152,16 @@ describe('mountDocuments', () => {
     host = document.getElementById('host')!;
   });
 
-  it('shows a loading state before refresh() resolves', () => {
+  it('mounts showing nothing, and shows "Loading…" only while refresh() is genuinely in flight (#1225)', () => {
     const deps = makeDeps(vi.fn(() => new Promise<PopupResponse>(() => {})));
-    mountDocuments(host, deps);
+    const view = mountDocuments(host, deps);
+    // The mount alone is NOT a fetch — no phantom "Loading…" (#1225).
+    expect(host.textContent).not.toContain('Loading…');
+    expect(host.textContent).toBe('');
+
+    view.refresh();
+    // Only now, with an unanswered request in flight, does the empty state
+    // say "Loading…".
     expect(host.textContent).toContain('Loading…');
   });
 
@@ -452,13 +460,41 @@ describe('mountDocuments', () => {
     expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'answerFill' }));
   });
 
-  it('reset() clears candidates and any open picker', async () => {
+  it('reset() clears candidates and any open picker, leaving no phantom "Loading…" (#1225)', async () => {
     const send = vi.fn(async () => GENERATION_RESULT);
     const view = mountDocuments(host, makeDeps(send));
     view.refresh();
     await vi.waitFor(() => expect(host.textContent).toContain('Attach résumé to this page'));
 
     view.reset();
-    expect(host.textContent).toContain('Loading…');
+    expect(host.textContent).not.toContain('Loading…');
+    expect(host.textContent).not.toContain('Attach résumé to this page');
+  });
+
+  it('reset(reason) renders the caller line and never a deep link (#1225)', async () => {
+    const send = vi.fn(async () => GENERATION_RESULT);
+    const view = mountDocuments(host, makeDeps(send));
+    view.refresh();
+    await vi.waitFor(() => expect(host.textContent).toContain('Attach résumé to this page'));
+
+    // sidepanel.ts resets with the SHARED gated line on an untrusted tab.
+    view.reset(JOB_TOOLS_GATED_LINE);
+    expect(host.textContent).toContain(JOB_TOOLS_GATED_LINE);
+    // A gated reset is untrusted — `lastUrl` is cleared, so the "Generate in
+    // the app" deep link must never appear alongside the line.
+    expect(host.querySelector('button.btn--quiet')).toBeNull();
+  });
+
+  it('kind-mismatch: surfaces an error instead of sitting on a phantom "Loading…" (#1225)', async () => {
+    const send = vi.fn(
+      async () =>
+        ({ ok: true, kind: 'appliedCheck', result: { found: false } }) satisfies PopupResponse
+    );
+    const view = mountDocuments(host, makeDeps(send));
+    view.refresh();
+    await vi.waitFor(() =>
+      expect(host.textContent).toContain('Unexpected response — please retry.')
+    );
+    expect(host.textContent).not.toContain('Loading…');
   });
 });
