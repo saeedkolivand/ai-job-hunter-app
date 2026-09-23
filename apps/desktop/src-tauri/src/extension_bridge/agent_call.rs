@@ -482,7 +482,7 @@ impl Refusal {
 /// (compare `CLI_ONLY_MESSAGE` in each), while the SENTINEL is what both actually reuse
 /// ([`ERR_EXTENSION_READ_GATE`]).
 const EXTENSION_READ_GATE_MESSAGE: &str =
-    "Turn on Assisted autofill in AI Job Hunter → Settings → Accounts → Browser extension to let \
+    "Turn on Assisted autofill in AI Job Hunter → Settings → Browser extension to let \
      the paired browser extension read your data.";
 /// [`Refusal::EffectNotAllowedForExtension`]'s detail.
 const EFFECT_NOT_ALLOWED_FOR_EXTENSION_MESSAGE: &str =

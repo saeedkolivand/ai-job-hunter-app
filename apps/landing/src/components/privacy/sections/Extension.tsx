@@ -41,13 +41,12 @@ export function Extension() {
           </li>
           <li>
             <b>Fill this form (assisted autofill: opt-in, off by default).</b> If you turn on{' '}
-            <i>Assisted form autofill</i> in the desktop app (
-            <i>Settings → Accounts → Browser extension</i>), clicking <b>Fill this form</b> asks the
-            desktop for your saved contact details (name, email, phone, location,
-            LinkedIn/GitHub/website) over the same loopback connection and fills matching{' '}
-            <b>empty</b> fields on the current page, then shows an in-page summary. Your details are
-            your <b>own data</b>, come from your <b>own paired desktop</b>, are used only for that
-            one fill, are <b>never stored in the browser</b>, and{' '}
+            <i>Assisted form autofill</i> in the desktop app (<i>Settings → Browser extension</i>),
+            clicking <b>Fill this form</b> asks the desktop for your saved contact details (name,
+            email, phone, location, LinkedIn/GitHub/website) over the same loopback connection and
+            fills matching <b>empty</b> fields on the current page, then shows an in-page summary.
+            Your details are your <b>own data</b>, come from your <b>own paired desktop</b>, are
+            used only for that one fill, are <b>never stored in the browser</b>, and{' '}
             <b>never leave your computer except into the page you chose to fill</b>. It{' '}
             <b>never submits the form for you</b>. When the toggle is off, the desktop declines the
             request. This is why the extension collects no data and its Firefox data-collection

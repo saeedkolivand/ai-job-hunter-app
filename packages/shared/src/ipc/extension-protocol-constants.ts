@@ -872,11 +872,11 @@ export const EXTENSION_ANSWER_ASSIST_MAX_CHARS = 4000;
  * `ok:false` error stays opaque to the client and is rendered verbatim.
  */
 export const EXTENSION_AI_ASSIST_OFF_MESSAGE =
-  'AI answer drafting is off. Turn it on in AI Job Hunter → Settings → Accounts → Browser extension.';
+  'AI answer drafting is off. Turn it on in AI Job Hunter → Settings → Browser extension.';
 
 /** @see {@link EXTENSION_AI_ASSIST_OFF_MESSAGE} */
 export const EXTENSION_NO_PROVIDER_MESSAGE =
-  'No AI provider is set up for answer drafting. Open AI Job Hunter → Settings → AI, choose a provider, then turn AI answer drafting back on in Settings → Accounts → Browser extension.';
+  'No AI provider is set up for answer drafting. Open AI Job Hunter → Settings → AI, choose a provider, then turn AI answer drafting back on in Settings → Browser extension.';
 
 /**
  * `answer.assist` payload — a discriminated union so a reply can never mix

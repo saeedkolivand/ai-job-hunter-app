@@ -58,7 +58,7 @@ const ERR_EXPORT_FAILED: &str = "export_failed";
 /// literal; see `agent_call.rs`'s `EXTENSION_READ_GATE_MESSAGE` doc for why — the SENTINEL is
 /// what all three actually reuse, never the prose).
 const EXTENSION_READ_GATE_DETAIL: &str =
-    "Turn on Assisted autofill in AI Job Hunter → Settings → Accounts → Browser extension to let \
+    "Turn on Assisted autofill in AI Job Hunter → Settings → Browser extension to let \
      the paired browser extension read your data.";
 
 /// `document.export` from a non-extension caller (the CLI, or any other origin) — unlike

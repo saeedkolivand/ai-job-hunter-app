@@ -8,22 +8,20 @@ import {
   Languages,
   Lock,
   Palette,
+  Puzzle,
   Shield,
   Terminal,
 } from 'lucide-react';
 
-export type SectionId =
-  | 'general'
-  | 'appearance'
-  | 'contact'
-  | 'ai'
-  | 'job'
-  | 'resume'
-  | 'accounts'
-  | 'privacy'
-  | 'performance'
-  | 'developer'
-  | 'about';
+import type { SettingsSection } from '@/store/session-store/session-store';
+
+/**
+ * Alias, not a second copy. This union used to be spelled out here AND in the
+ * session store, and adding a section to one without the other typechecked
+ * everywhere except the single line that assigns between them (#1213 hit
+ * exactly that). One definition, one place to update.
+ */
+export type SectionId = SettingsSection;
 
 export interface NavItem {
   id: SectionId;
@@ -82,6 +80,12 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'settings.groups.system',
     items: [
+      {
+        id: 'extension',
+        label: 'settings.sections.extension.label',
+        icon: Puzzle,
+        description: 'settings.sections.extension.description',
+      },
       {
         id: 'accounts',
         label: 'settings.sections.accounts.label',

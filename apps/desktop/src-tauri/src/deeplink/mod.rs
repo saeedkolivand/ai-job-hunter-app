@@ -27,7 +27,7 @@
 pub enum FocusTarget {
     /// Focus a specific autopilot's found-jobs panel.
     Autopilot(String),
-    /// Navigate to Settings → Accounts → Browser extension and focus the
+    /// Navigate to Settings → Browser extension and focus the
     /// pairing token. From `ajh://settings/extension` (the popup's pair button).
     ExtensionPairing,
     /// Land on the generate flow for a job with no saved generation yet, the

@@ -254,7 +254,7 @@ pub fn on_new_jobs(
     }
 }
 
-/// Restore the window and route the renderer to Settings → Accounts → Browser
+/// Restore the window and route the renderer to Settings → Browser
 /// extension, signalling it to focus the pairing token (`focus:
 /// "extension-token"`). Shared by every `ajh://settings/extension` delivery path
 /// (single-instance relaunch, `on_open_url`, cold first-instance launch).
@@ -269,7 +269,7 @@ pub fn dispatch_extension_pairing(app: &AppHandle) {
         MENU_NAVIGATE,
         serde_json::json!({
             "route": "/settings",
-            "section": "accounts",
+            "section": "extension",
             "focus": "extension-token",
         }),
     );

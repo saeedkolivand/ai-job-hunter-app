@@ -67,7 +67,7 @@ const MAX_ANSWER_BYTES: usize = 8_000;
 /// entry's synchronous capture) while the dedicated `saveAnswersOnSubmit` opt-in is off — a fixed
 /// sentinel, mirrors `status_update::AUTOTRACK_OFF_MESSAGE`'s wording style.
 const SAVE_ANSWERS_ON_SUBMIT_OFF_MESSAGE: &str =
-    "Save answers on submit is off. Turn it on in AI Job Hunter → Settings → Accounts → Browser extension.";
+    "Save answers on submit is off. Turn it on in AI Job Hunter → Settings → Browser extension.";
 
 /// Refusal text when `auto` is PRESENT but not a JSON boolean — see
 /// [`auto_flag_is_malformed`]'s doc for why this must be a hard refusal, never a silent downgrade.
