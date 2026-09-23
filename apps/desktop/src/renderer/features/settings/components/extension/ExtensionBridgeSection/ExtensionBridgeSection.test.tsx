@@ -36,7 +36,12 @@ vi.mock('@/services', async (importOriginal) => {
 // ---------------------------------------------------------------------------
 
 function renderSection(
-  statusPayload: ExtensionBridgeStatus = { port: 9712, connected: true, token: 'tok-abc123' },
+  statusPayload: ExtensionBridgeStatus = {
+    port: 9712,
+    connected: true,
+    lastSeenMs: null,
+    token: 'tok-abc123',
+  },
   regenerateImpl: () => Promise<unknown> = () => Promise.resolve({ token: 'tok-new' }),
   autofillEnabled = false,
   setAutofill = vi.fn().mockImplementation((enabled: boolean) => Promise.resolve({ enabled })),
@@ -92,7 +97,7 @@ beforeEach(() => {
 
 describe('ExtensionBridgeSection', () => {
   it('displays the pairing token value from the hook', async () => {
-    renderSection({ port: 9712, connected: true, token: 'tok-abc123' });
+    renderSection({ port: 9712, connected: true, lastSeenMs: null, token: 'tok-abc123' });
 
     // The token is rendered in a read-only Input — query by its value attribute.
     await waitFor(() => {
@@ -102,7 +107,7 @@ describe('ExtensionBridgeSection', () => {
   });
 
   it('displays the port number from the hook', async () => {
-    renderSection({ port: 9712, connected: true, token: 'tok-abc123' });
+    renderSection({ port: 9712, connected: true, lastSeenMs: null, token: 'tok-abc123' });
 
     await waitFor(() => {
       expect(screen.getByText('9712')).toBeInTheDocument();
@@ -110,7 +115,7 @@ describe('ExtensionBridgeSection', () => {
   });
 
   it('shows the connected pill when status.connected is true', async () => {
-    renderSection({ port: 9712, connected: true, token: 'tok-abc123' });
+    renderSection({ port: 9712, connected: true, lastSeenMs: null, token: 'tok-abc123' });
 
     // The translated "Connected" label (not the raw key).
     await waitFor(() => {
@@ -119,11 +124,38 @@ describe('ExtensionBridgeSection', () => {
   });
 
   it('shows the disconnected pill when status.connected is false', async () => {
-    renderSection({ port: 9712, connected: false, token: 'tok-abc123' });
+    renderSection({ port: 9712, connected: false, lastSeenMs: null, token: 'tok-abc123' });
 
     await waitFor(() => {
       expect(screen.getByText('Not connected')).toBeInTheDocument();
     });
+  });
+
+  // #1258: an MV3 service worker is evicted when idle and drops its socket, so
+  // `connected: false` is the NORMAL state for a healthy pairing. Reporting
+  // "Not connected" there reads as a fault and pushes the user toward
+  // Regenerate, which is exactly the wrong move.
+  it('shows paired — not disconnected — when the socket is idle but seen recently', async () => {
+    renderSection({
+      port: 9712,
+      connected: false,
+      lastSeenMs: Date.now() - 60_000,
+      token: 'tok-abc123',
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Paired')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Not connected')).not.toBeInTheDocument();
+  });
+
+  it('still shows disconnected when the extension has never paired', async () => {
+    renderSection({ port: 9712, connected: false, lastSeenMs: null, token: 'tok-abc123' });
+
+    await waitFor(() => {
+      expect(screen.getByText('Not connected')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Paired')).not.toBeInTheDocument();
   });
 
   it('renders translated labels — not raw i18n key strings', async () => {
@@ -140,7 +172,7 @@ describe('ExtensionBridgeSection', () => {
   });
 
   it('calls navigator.clipboard.writeText with the token when Copy is clicked', async () => {
-    renderSection({ port: 9712, connected: true, token: 'tok-abc123' });
+    renderSection({ port: 9712, connected: true, lastSeenMs: null, token: 'tok-abc123' });
 
     await waitFor(() => screen.getByRole('button', { name: /copy/i }));
     await userEvent.click(screen.getByRole('button', { name: /copy/i }));
@@ -149,7 +181,7 @@ describe('ExtensionBridgeSection', () => {
   });
 
   it('does not call clipboard.writeText when the token is empty', async () => {
-    renderSection({ port: null, connected: false, token: '' });
+    renderSection({ port: null, connected: false, lastSeenMs: null, token: '' });
 
     await waitFor(() => screen.getByRole('button', { name: /copy/i }));
     // The Copy button is disabled when token is empty — click should be a no-op.
@@ -167,7 +199,7 @@ describe('ExtensionBridgeSection', () => {
     let resolvePending: (v: ExtensionBridgeStatus) => void = () => {};
     const statusFn = vi
       .fn()
-      .mockResolvedValueOnce({ port: 9712, connected: true, token: 'tok-abc123' })
+      .mockResolvedValueOnce({ port: 9712, connected: true, lastSeenMs: null, token: 'tok-abc123' })
       .mockImplementationOnce(
         () =>
           new Promise<ExtensionBridgeStatus>((resolve) => {
@@ -200,7 +232,7 @@ describe('ExtensionBridgeSection', () => {
     expect(statusFn).toHaveBeenCalledTimes(2);
     expect(refreshBtn.querySelector('svg')).toHaveClass('animate-spin');
 
-    resolvePending({ port: 9712, connected: true, token: 'tok-abc123' });
+    resolvePending({ port: 9712, connected: true, lastSeenMs: null, token: 'tok-abc123' });
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument();
@@ -226,6 +258,7 @@ describe('ExtensionBridgeSection', () => {
       'extensionBridge.status': vi.fn().mockResolvedValue({
         port: 9712,
         connected: true,
+        lastSeenMs: null,
         token: 'tok-abc123',
       }),
       'extensionBridge.regenerateToken': regenerateToken,
@@ -265,7 +298,11 @@ describe('ExtensionBridgeSection', () => {
   });
 
   it('renders the assisted-autofill switch reflecting the persisted opt-in (default off)', async () => {
-    renderSection({ port: 9712, connected: true, token: 'tok-abc123' }, undefined, false);
+    renderSection(
+      { port: 9712, connected: true, lastSeenMs: null, token: 'tok-abc123' },
+      undefined,
+      false
+    );
 
     await waitFor(() => {
       const sw = screen.getByRole('switch', { name: /assisted form autofill/i });
@@ -274,7 +311,11 @@ describe('ExtensionBridgeSection', () => {
   });
 
   it('reflects an enabled opt-in as a checked switch', async () => {
-    renderSection({ port: 9712, connected: true, token: 'tok-abc123' }, undefined, true);
+    renderSection(
+      { port: 9712, connected: true, lastSeenMs: null, token: 'tok-abc123' },
+      undefined,
+      true
+    );
 
     await waitFor(() => {
       const sw = screen.getByRole('switch', { name: /assisted form autofill/i });
@@ -287,7 +328,7 @@ describe('ExtensionBridgeSection', () => {
       .fn()
       .mockImplementation((enabled: boolean) => Promise.resolve({ enabled }));
     renderSection(
-      { port: 9712, connected: true, token: 'tok-abc123' },
+      { port: 9712, connected: true, lastSeenMs: null, token: 'tok-abc123' },
       undefined,
       false,
       setAutofill
@@ -304,7 +345,7 @@ describe('ExtensionBridgeSection', () => {
   it('shows the toggleFailed notification when setAutofillEnabled rejects', async () => {
     const setAutofill = vi.fn().mockRejectedValue(new Error('store write failed'));
     renderSection(
-      { port: 9712, connected: true, token: 'tok-abc123' },
+      { port: 9712, connected: true, lastSeenMs: null, token: 'tok-abc123' },
       undefined,
       false,
       setAutofill
@@ -327,6 +368,7 @@ describe('ExtensionBridgeSection', () => {
       'extensionBridge.status': vi.fn().mockResolvedValue({
         port: 9712,
         connected: true,
+        lastSeenMs: null,
         token: 'tok-abc123',
       }),
       'extensionBridge.regenerateToken': regenerateToken,

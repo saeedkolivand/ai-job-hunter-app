@@ -37,6 +37,14 @@ function providerModelLabel(provider: string, model?: string): string {
   return model ? `${label} · ${model}` : label;
 }
 
+/**
+ * How long after the last authenticated socket the pairing still counts as
+ * healthy-but-idle. Chrome evicts an MV3 service worker after ~30s of
+ * inactivity, and the extension reconnects on demand, so anything inside this
+ * window is the NORMAL state rather than a fault (#1258).
+ */
+const EXTENSION_IDLE_GRACE_MS = 24 * 60 * 60 * 1000;
+
 export function ExtensionBridgeSection() {
   const { t } = useTranslation();
   const notify = useNotification();
@@ -108,6 +116,13 @@ export function ExtensionBridgeSection() {
   const token = status?.token ?? '';
   const port = status?.port ?? null;
   const connected = status?.connected ?? false;
+  // An MV3 service worker is evicted when idle and drops its socket, so
+  // `connected` is false almost all the time for a perfectly healthy pairing
+  // (#1258). Treat a recent authenticated socket as paired-and-idle rather
+  // than reporting a fault the user would try to "fix" with Regenerate.
+  const lastSeenMs = status?.lastSeenMs ?? null;
+  const idlePaired =
+    !connected && lastSeenMs !== null && Date.now() - lastSeenMs < EXTENSION_IDLE_GRACE_MS;
 
   // Deep-link focus: the `ajh://settings/extension` link routes here and sets a
   // one-shot ui-store flag. We consume it on mount / flip — scroll the token
@@ -176,6 +191,14 @@ export function ExtensionBridgeSection() {
                 <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
                   <Check size={9} strokeWidth={2.5} />
                   {t('settings.accounts.extension.connected')}
+                </span>
+              ) : idlePaired ? (
+                <span
+                  className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400/80"
+                  title={t('settings.accounts.extension.pairedIdleHint')}
+                >
+                  <Check size={9} strokeWidth={2.5} />
+                  {t('settings.accounts.extension.pairedIdle')}
                 </span>
               ) : (
                 <span className="flex items-center gap-1 rounded-full bg-foreground/[0.06] px-2 py-0.5 text-[10px] font-medium text-foreground/45">

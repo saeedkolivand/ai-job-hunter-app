@@ -891,7 +891,9 @@
           "description": "Nachdem Sie die Erweiterung auf einer Bewerbungsseite verwendet haben, markiert sie den passenden gespeicherten Job als beworben, wenn Sie das Formular absenden.",
           "disclosure": "Wenn aktiviert, erkennt die Erweiterung – nachdem Sie sie auf einer Bewerbungsseite verwendet haben – das Absenden des Formulars (lokal, nur auf dieser Seite) und markiert über die Loopback-Verbindung den passenden gespeicherten Job als beworben. Ist der Job noch nicht erfasst, werden Sie nur zum Import aufgefordert; es wird nie selbst ein Job angelegt, nie ein Formular abgesendet oder blockiert, und nichts verlässt Ihren Computer.",
           "toggleFailed": "Die Auto-Tracking-Einstellung konnte nicht aktualisiert werden."
-        }
+        },
+        "pairedIdle": "Gekoppelt",
+        "pairedIdleHint": "Gekoppelt und einsatzbereit. Der Browser versetzt die Erweiterung im Leerlauf in den Ruhezustand, daher besteht bis zur nächsten Nutzung keine aktive Verbindung."
       },
       "emailWatch": {
         "title": "E-Mail-Verfolgung",

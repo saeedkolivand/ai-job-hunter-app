@@ -25,9 +25,20 @@ pub async fn extension_bridge_status(app: AppHandle) -> Value {
         Some(state) => json!({
             "port": state.port(),
             "connected": state.is_connected(),
+            // Unix-ms of the last authenticated socket, or null. `connected`
+            // alone is a live-socket flag, and an MV3 service worker drops its
+            // socket whenever it is evicted — so a healthy pairing reads
+            // `connected: false` almost always (#1258). The UI needs both to
+            // tell "idle" from "never paired".
+            "lastSeenMs": state.last_authenticated_ms(),
             "token": state.token(),
         }),
-        None => json!({ "port": Value::Null, "connected": false, "token": "" }),
+        None => json!({
+            "port": Value::Null,
+            "connected": false,
+            "lastSeenMs": Value::Null,
+            "token": "",
+        }),
     }
 }
 

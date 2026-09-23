@@ -2759,7 +2759,21 @@ Declared in `packages/shared/src/ipc/contracts/extensionBridge.ts`.
 /** Current bridge status. `port` is `null` when the server failed to bind. */
 export interface ExtensionBridgeStatus {
   port: number | null;
+  /**
+   * Whether an authenticated socket is live RIGHT NOW. On its own this is a
+   * poor health signal: an MV3 service worker is evicted when idle and drops
+   * its socket, so a perfectly healthy pairing reads `false` almost all the
+   * time. Pair it with {@link ExtensionBridgeStatus.lastSeenMs} before showing
+   * anything to a user.
+   */
   connected: boolean;
+  /**
+   * Unix-ms of the most recent authenticated socket, or `null` if there has
+   * never been one. `connected: false` with a recent `lastSeenMs` is the
+   * normal idle state, not a fault; `connected: false` with `null` means the
+   * extension has never paired.
+   */
+  lastSeenMs: number | null;
   token: string;
 }
 

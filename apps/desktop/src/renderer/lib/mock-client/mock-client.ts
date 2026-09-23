@@ -206,7 +206,12 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     },
 
     extensionBridge: {
-      status: async () => ({ port: 47615, connected: false, token: 'mock-token' }),
+      status: async () => ({
+        port: 47615,
+        connected: false,
+        lastSeenMs: null,
+        token: 'mock-token',
+      }),
       regenerateToken: async () => ({ token: 'mock-token' }),
       autofillEnabled: async () => ({ enabled: false }),
       setAutofillEnabled: async (enabled: boolean) => ({ enabled }),

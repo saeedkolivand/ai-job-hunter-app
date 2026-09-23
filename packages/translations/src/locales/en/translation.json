@@ -891,7 +891,9 @@
           "description": "After you use the extension on an application page, mark the matched saved job as applied when you submit the form.",
           "disclosure": "When on, after you have used the extension on an application page, it watches for you submitting the form (locally, on that page only) and — over the loopback connection — marks the matching saved job as applied. If the job isn't tracked yet, it just nudges you to import it; it never creates a job on its own, never submits or blocks a form, and nothing leaves your computer.",
           "toggleFailed": "Could not update the auto-track setting."
-        }
+        },
+        "pairedIdle": "Paired",
+        "pairedIdleHint": "Paired and working. The browser puts the extension to sleep when idle, so there is no live connection until you use it."
       },
       "emailWatch": {
         "title": "Email tracking",

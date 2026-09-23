@@ -237,6 +237,15 @@ pub struct BridgeState {
     /// "disconnected" while Firefox is still paired). [`Self::is_connected`]
     /// is `count > 0`.
     connected: AtomicUsize,
+    /// Unix-ms of the most recent socket to reach `Authenticated`, or 0 when
+    /// none ever has.
+    ///
+    /// The live COUNT above is the wrong thing to show a user on its own: an
+    /// MV3 service worker is evicted when idle, so a perfectly healthy pairing
+    /// sits at zero sockets almost all the time and the UI read "Not
+    /// connected" permanently (#1258). Pairing health is "did an authenticated
+    /// socket exist recently", which this records and the count cannot.
+    last_authenticated_ms: AtomicU64,
     /// Assisted-autofill opt-in (default OFF, persisted to [`AUTOFILL_OPTIN_FILE`]).
     /// A `profile.get` returns the contact profile only while this is on; off ⇒
     /// the desktop replies with a clear refusal (never silently). This is the
@@ -316,6 +325,16 @@ pub struct BridgeState {
     data_dir: PathBuf,
 }
 
+/// Wall-clock unix-ms. Used only to stamp the last authenticated socket for
+/// the UI's "paired but idle" state (#1258) — never for ordering or security,
+/// so a clock adjustment can make it look stale at worst, never unsafe.
+fn now_unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 impl BridgeState {
     /// Load (or first-run create + persist) the pairing token, returning a state
     /// with no port yet (the server sets it once bound). The autofill opt-in is
@@ -326,6 +345,7 @@ impl BridgeState {
             port: Mutex::new(None),
             token: Mutex::new(token),
             connected: AtomicUsize::new(0),
+            last_authenticated_ms: AtomicU64::new(0),
             autofill_enabled: AtomicBool::new(load_autofill_optin(data_dir)),
             ai_assist_enabled: AtomicBool::new(load_ai_assist_optin(data_dir)),
             autotrack_enabled: AtomicBool::new(autotrack::load_autotrack_optin(data_dir)),
@@ -359,6 +379,17 @@ impl BridgeState {
     /// paired (the live-connection count is non-zero — see `connected`'s doc).
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::Relaxed) > 0
+    }
+
+    /// Unix-ms of the last authenticated socket, or `None` if there has never
+    /// been one. Paired with [`Self::is_connected`] so the UI can tell "idle,
+    /// worker asleep" (the normal MV3 state) apart from "never paired"
+    /// (#1258).
+    pub fn last_authenticated_ms(&self) -> Option<u64> {
+        match self.last_authenticated_ms.load(Ordering::Relaxed) {
+            0 => None,
+            ms => Some(ms),
+        }
     }
 
     /// The current pairing token.
@@ -541,6 +572,8 @@ impl BridgeState {
     /// emit [`crate::events::EXTENSION_BRIDGE_CHANGED`] only on a real
     /// transition, not on every additional pairing.
     fn inc_connected(&self) -> bool {
+        self.last_authenticated_ms
+            .store(now_unix_ms(), Ordering::Relaxed);
         self.connected.fetch_add(1, Ordering::Relaxed) == 0
     }
 
