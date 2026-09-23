@@ -1054,6 +1054,59 @@ describe('BridgeClient – v2 mutual handshake', () => {
     client.dispose();
   });
 
+  // #1216: the desktop accepts the socket BEFORE it judges our HMAC proof, so a
+  // stale token produces connect-then-silent-close forever. Resetting the ladder
+  // on attach pinned that loop to BACKOFF_MS[0] (one probe every 500ms).
+  it('escalates the backoff across consecutive connect-then-fail handshakes', async () => {
+    vi.useFakeTimers();
+    let socketCount = 0;
+    restoreWS();
+    restoreWS = installFakeWS((ws) => {
+      socketCount += 1;
+      latestSocket = ws;
+    });
+
+    const getStoredToken = vi.fn<[], Promise<string | null>>().mockResolvedValue(FAKE_TOKEN);
+    const client = new BridgeClient(vi.fn(), getStoredToken);
+    void client.ensureConnected();
+
+    /**
+     * Open the newest socket and run the handshake as far as our `auth` proof,
+     * then close silently — exactly what the Rust `Unauthorized` path does for a
+     * stale token (close, no reply).
+     */
+    const connectThenFail = async (): Promise<void> => {
+      await vi.waitFor(() => {
+        expect(latestSocket).toBeDefined();
+      });
+      const socket = latestSocket!;
+      socket.simulateOpen();
+      const { helloReqId } = await awaitHello(socket);
+      sendChallenge(socket, helloReqId);
+      await awaitAuth(socket);
+      latestSocket = undefined;
+      socket.simulateClose();
+      await vi.advanceTimersByTimeAsync(0);
+    };
+
+    // Cycle 1 → reconnect armed at BACKOFF_MS[0] = 500ms.
+    await connectThenFail();
+    expect(client.status().phase).toBe('app_not_running');
+    let before = socketCount;
+    await vi.advanceTimersByTimeAsync(600);
+    expect(socketCount).toBeGreaterThan(before);
+
+    // Cycle 2 must wait at BACKOFF_MS[1] = 1000ms, NOT the floor again.
+    await connectThenFail();
+    before = socketCount;
+    await vi.advanceTimersByTimeAsync(600);
+    expect(socketCount).toBe(before); // still waiting — the ladder escalated
+    await vi.advanceTimersByTimeAsync(500);
+    expect(socketCount).toBeGreaterThan(before);
+
+    client.dispose();
+  });
+
   it('resetForNewToken() clears bad_token so ensureConnected() attempts a fresh socket', async () => {
     vi.useFakeTimers();
     let socketCount = 0;
