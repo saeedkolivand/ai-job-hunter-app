@@ -1652,3 +1652,144 @@ async fn try_named_boards_returns_none_when_url_unchanged_after_no_redirect() {
          (try_named_boards must be idempotent — the skip optimization is safe)"
     );
 }
+
+// ── #1239: generic-fallback title branding + company from a logo alt ───────
+// Scan-mode Import parses the extension's captured DOM through the generic
+// path, which kept LinkedIn's whole `<title>` (site branding and all) and fell
+// back to the URL host as the employer.
+
+#[test]
+fn strip_site_suffix_drops_only_a_real_site_name() {
+    // The #1239 repro: the trailing segment IS the host's own label.
+    assert_eq!(
+        strip_site_suffix(
+            "Javascript Developer | Digital Waffle | LinkedIn",
+            None,
+            "www.linkedin.com"
+        ),
+        "Javascript Developer | Digital Waffle"
+    );
+    // og:site_name is honoured even when it does not match the host.
+    assert_eq!(
+        strip_site_suffix(
+            "Staff Engineer - Acme Careers",
+            Some("Acme Careers"),
+            "jobs.example.com"
+        ),
+        "Staff Engineer"
+    );
+}
+
+#[test]
+fn strip_site_suffix_keeps_titles_that_merely_contain_a_separator() {
+    // A pipe inside a real job title must survive — this is what a
+    // "drop everything after the last separator" rule would destroy.
+    assert_eq!(
+        strip_site_suffix("Engineer | Payments", None, "www.linkedin.com"),
+        "Engineer | Payments"
+    );
+    // An internal dash, likewise.
+    assert_eq!(
+        strip_site_suffix("Full-Stack Developer", None, "www.linkedin.com"),
+        "Full-Stack Developer"
+    );
+    assert_eq!(
+        strip_site_suffix("Senior Engineer - Platform", None, "www.linkedin.com"),
+        "Senior Engineer - Platform"
+    );
+    // Never strip the whole title, even when it IS just the site name.
+    assert_eq!(
+        strip_site_suffix("LinkedIn", None, "www.linkedin.com"),
+        "LinkedIn"
+    );
+}
+
+#[test]
+fn parse_generic_company_reads_a_logo_alt_when_nothing_else_names_the_employer() {
+    let html = r#"<html><body>
+        <img alt="Company logo for, Digital Waffle" src="/x.png">
+        <h1>Javascript Developer</h1>
+    </body></html>"#;
+    assert_eq!(
+        parse_generic_company(html).as_deref(),
+        Some("Digital Waffle")
+    );
+}
+
+#[test]
+fn parse_generic_company_prefers_json_ld_over_the_logo_heuristic() {
+    let html = r#"<html><head>
+        <script type="application/ld+json">
+        {"@type":"JobPosting","hiringOrganization":{"name":"Real Employer Ltd"}}
+        </script>
+        </head><body><img alt="Company logo for, Wrong Name" src="/x.png"></body></html>"#;
+    assert_eq!(
+        parse_generic_company(html).as_deref(),
+        Some("Real Employer Ltd")
+    );
+}
+
+#[test]
+fn parse_generic_company_stays_none_on_a_page_with_no_employer_signal() {
+    // The caller's host fallback must still be reachable — a page with ordinary
+    // images must not be mined for a fake employer name.
+    let html = r#"<html><body><img alt="A photo of the office" src="/x.png"></body></html>"#;
+    assert_eq!(parse_generic_company(html), None);
+}
+
+#[test]
+fn parse_from_html_cleans_a_linkedin_shaped_capture_end_to_end() {
+    let html = r#"<html><head><title>Javascript Developer | Digital Waffle | LinkedIn</title></head>
+        <body><img alt="Company logo for, Digital Waffle" src="/x.png">
+        <main><p>We are hiring a javascript developer.</p></main></body></html>"#;
+    let posting = parse_from_html("https://www.linkedin.com/jobs/view/123", html)
+        .expect("a parseable document");
+    assert_eq!(posting.title, "Javascript Developer | Digital Waffle");
+    assert_eq!(posting.company, "Digital Waffle");
+}
+
+// ── #1238: a cross-origin-iframe-embedded ATS board ───────────────────────
+// The corroborating half of the two-part partial-import test. On its own this
+// predicate must NOT be read as "the posting was missed" — the caller pairs it
+// with "no description was extracted", because analytics/consent/video frames
+// are cross-origin on almost every page.
+
+#[test]
+fn has_cross_origin_iframe_spots_an_embedded_third_party_board() {
+    let html =
+        r#"<html><body><iframe src="https://jobs.ashbyhq.com/acme/embed"></iframe></body></html>"#;
+    assert!(has_cross_origin_iframe(
+        html,
+        "https://www.happyhotel.io/karriere"
+    ));
+}
+
+#[test]
+fn has_cross_origin_iframe_ignores_same_origin_and_non_document_frames() {
+    let page = "https://careers.example.com/jobs/1";
+    // Relative src — same origin by definition.
+    assert!(!has_cross_origin_iframe(
+        r#"<html><body><iframe src="/widget.html"></iframe></body></html>"#,
+        page
+    ));
+    // Absolute, but the same host.
+    assert!(!has_cross_origin_iframe(
+        r#"<html><body><iframe src="https://careers.example.com/w.html"></iframe></body></html>"#,
+        page
+    ));
+    // Non-document schemes carry no host at all.
+    assert!(!has_cross_origin_iframe(
+        r#"<html><body><iframe src="about:blank"></iframe><iframe src="data:text/html,x"></iframe></body></html>"#,
+        page
+    ));
+    // No iframes whatsoever.
+    assert!(!has_cross_origin_iframe(
+        r#"<html><body><p>Just a posting.</p></body></html>"#,
+        page
+    ));
+    // An unparseable page url must not be treated as embedding anything.
+    assert!(!has_cross_origin_iframe(
+        r#"<html><body><iframe src="https://jobs.ashbyhq.com/x"></iframe></body></html>"#,
+        "not a url"
+    ));
+}
