@@ -1762,7 +1762,9 @@ describe('matchLive → on-page fit badge injection', () => {
 
       func(...args);
 
-      expect(runnerSpy).toHaveBeenCalledWith(args[0]);
+      // Issue #1221: the runner is handed the captured url as its second arg —
+      // the badge then keeps watching `location.href` against it after render.
+      expect(runnerSpy).toHaveBeenCalledWith(args[0], args[2]);
     });
 
     it('does not render after a full navigation between the desktop reply and the injection (a fresh document with a different url)', async () => {

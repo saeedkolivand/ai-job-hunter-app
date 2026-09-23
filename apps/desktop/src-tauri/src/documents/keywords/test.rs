@@ -1095,6 +1095,55 @@ fn pure_numeric_tokens_dropped_alphanumeric_tech_tokens_survive() {
     assert!(!kw.contains("s3"));
 }
 
+/// Issue #1223: slash-shaped tokens that the tokenizer's slash-tolerant split keeps as ONE
+/// token (`/company/harvey`) are scraped-chrome noise and must NOT surface as fake skills —
+/// while the slashed SYNONYMS (`ci/cd` → `cicd`, `c/c++` → `cpp`) must still survive.
+///
+/// Mutation check (performed, not hypothetical): removing the
+/// `!has_path_separator(s)` clause from `normalize_list_with_stopwords` turns
+/// this red (`/company/harvey` survives). Reverted after confirming.
+#[test]
+fn path_separator_tokens_dropped_slashed_synonyms_survive() {
+    let kw = keywords_normalized("Skills: ci/cd and C/C++. More at /company/harvey");
+    assert!(
+        kw.contains("cicd"),
+        "ci/cd synonym must survive; got {kw:?}"
+    );
+    assert!(kw.contains("cpp"), "c/c++ synonym must survive; got {kw:?}");
+    assert!(
+        !kw.iter().any(|w| w.contains('/')),
+        "no slash-token may survive; got {kw:?}"
+    );
+}
+
+/// Issue #1223: chart/axis date labels from scraped job-ad chrome (`1sep`, `2025mar`,
+/// `2026sep` — 1-4 digits glued to a 3-letter month abbreviation, either order) must not
+/// surface as fake skills — while real version tokens with a digit run glued to a NON-month
+/// core (`es2015`, `oauth2`) stay untouched.
+///
+/// Mutation check (performed, not hypothetical): removing the
+/// `!is_chart_date_label(s)` clause from `normalize_list_with_stopwords` turns
+/// this red (`2026sep`/`1sep` survive). Reverted after confirming.
+#[test]
+fn chart_date_labels_dropped_tech_version_tokens_survive() {
+    let kw =
+        keywords_normalized("2026sep hiring push, 1sep chart, skills: es2015 and oauth2, react17");
+    assert!(
+        !kw.contains("2026sep"),
+        "digit-then-month chart label must be dropped; got {kw:?}"
+    );
+    assert!(
+        !kw.contains("1sep"),
+        "digit-then-month chart label must be dropped; got {kw:?}"
+    );
+    for tech in ["es2015", "oauth2", "react17"] {
+        assert!(
+            kw.contains(tech),
+            "real tech token {tech:?} must survive; got {kw:?}"
+        );
+    }
+}
+
 /// Light coverage of the other five Snowball languages: at least one
 /// curated stopword per language is dropped, while a shared tech token
 /// (docker) survives — full parity with German is out of scope (German is

@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { type FitBadgeView, renderFitBadge } from './fit-badge';
+import { type FitBadgeView, renderFitBadge, STALE_URL_POLL_MS } from './fit-badge';
 import { NOTEBOOK_LIGHT } from './notebook-palette';
 
 const VIEW: FitBadgeView = {
@@ -158,5 +158,106 @@ describe('renderFitBadge', () => {
     // JSON round trip would silently corrupt.
     const shadow = renderFitBadge(document, NOTEBOOK_LIGHT, roundTripped);
     expect(shadow.textContent).toContain('82%');
+  });
+});
+
+// ── staleness watcher (issue #1221) — the badge must clear itself when the
+//    page moves to a DIFFERENT posting (an SPA job→job navigation), keyed off
+//    job identity (location.href), never re-run on individual mutations.
+
+describe('fit badge staleness watcher', () => {
+  const postingUrl = 'https://jobs.linkedin.com/jobs/view/123';
+  const otherUrl = 'https://jobs.linkedin.com/jobs/view/456';
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('removes the badge the next poll tick after an SPA-style url change (pushState fires no event in any world)', () => {
+    document.body.innerHTML = '';
+    vi.stubGlobal('location', { href: postingUrl } as Location);
+    const shadow = renderFitBadge(document, NOTEBOOK_LIGHT, VIEW, postingUrl);
+    expect(document.getElementById('ajh-fit-badge')).not.toBeNull();
+    expect(shadow.textContent).toContain('82%');
+
+    // pushState-style navigation: `location.href` changes, NO popstate/
+    // hashchange fires (they never fire for pushState) — only the poll sees it.
+    vi.stubGlobal('location', { href: otherUrl } as Location);
+    vi.advanceTimersByTime(STALE_URL_POLL_MS);
+
+    expect(document.getElementById('ajh-fit-badge')).toBeNull();
+  });
+
+  it('keeps the badge while the url stays unchanged across several poll ticks', () => {
+    document.body.innerHTML = '';
+    vi.stubGlobal('location', { href: postingUrl } as Location);
+    renderFitBadge(document, NOTEBOOK_LIGHT, VIEW, postingUrl);
+    expect(document.getElementById('ajh-fit-badge')).not.toBeNull();
+
+    vi.advanceTimersByTime(STALE_URL_POLL_MS * 3);
+    expect(document.getElementById('ajh-fit-badge')).not.toBeNull();
+  });
+
+  it('removes the badge on the immediate first check when the page already moved on', () => {
+    // The background's pre-render in-page check and this render can straddle a
+    // same-tick navigation — the already-stale badge must never be left up.
+    document.body.innerHTML = '';
+    vi.stubGlobal('location', { href: otherUrl } as Location);
+    renderFitBadge(document, NOTEBOOK_LIGHT, VIEW, postingUrl);
+    expect(document.getElementById('ajh-fit-badge')).toBeNull();
+  });
+
+  it('a popstate (back/forward) removes the badge without waiting for a poll tick', () => {
+    document.body.innerHTML = '';
+    vi.stubGlobal('location', { href: postingUrl } as Location);
+    renderFitBadge(document, NOTEBOOK_LIGHT, VIEW, postingUrl);
+    expect(document.getElementById('ajh-fit-badge')).not.toBeNull();
+
+    vi.stubGlobal('location', { href: `${postingUrl}?tab=2` } as Location);
+    window.dispatchEvent(new Event('popstate'));
+
+    expect(document.getElementById('ajh-fit-badge')).toBeNull();
+  });
+
+  it('does not start a watcher when expectedUrl is omitted — a badge with no captured url stays put', () => {
+    document.body.innerHTML = '';
+    vi.stubGlobal('location', { href: postingUrl } as Location);
+    renderFitBadge(document, NOTEBOOK_LIGHT, VIEW);
+    expect(document.getElementById('ajh-fit-badge')).not.toBeNull();
+
+    vi.stubGlobal('location', { href: otherUrl } as Location);
+    vi.advanceTimersByTime(STALE_URL_POLL_MS * 3);
+    expect(document.getElementById('ajh-fit-badge')).not.toBeNull();
+  });
+
+  it('dismiss stops the watcher — no interval or listener survives the badge it watched', () => {
+    document.body.innerHTML = '';
+    vi.stubGlobal('location', { href: postingUrl } as Location);
+    const shadow = renderFitBadge(document, NOTEBOOK_LIGHT, VIEW, postingUrl);
+    expect(vi.getTimerCount()).toBe(1);
+
+    const dismiss = shadow.querySelector('button[aria-label="Dismiss the fit badge"]');
+    (dismiss as HTMLButtonElement).click();
+
+    // The tear-down disconnected the interval (and would the listeners).
+    expect(vi.getTimerCount()).toBe(0);
+    expect(document.getElementById('ajh-fit-badge')).toBeNull();
+  });
+
+  it('a re-render replaces the previous watcher rather than stacking intervals', () => {
+    document.body.innerHTML = '';
+    vi.stubGlobal('location', { href: postingUrl } as Location);
+    renderFitBadge(document, NOTEBOOK_LIGHT, VIEW, postingUrl);
+    expect(vi.getTimerCount()).toBe(1);
+
+    renderFitBadge(document, NOTEBOOK_LIGHT, { ...VIEW, score: 40 }, postingUrl);
+
+    expect(vi.getTimerCount()).toBe(1);
+    expect(document.querySelectorAll('#ajh-fit-badge').length).toBe(1);
   });
 });
