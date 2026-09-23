@@ -87,6 +87,7 @@ mod agent_read;
 pub(crate) mod answer_assist;
 /// `maxChars` parsing for `answer.assist` (R8 relief, PR4) — see its own module doc.
 mod answer_assist_max_chars;
+mod answer_assist_parse;
 /// The two on-demand Prep-tab `topic`s on `answer.assist` (PR4) — see its own module doc.
 mod answer_assist_topic;
 mod answer_rewrite;

@@ -14,6 +14,12 @@
 //! filename check) and from R3/R6's non-test scans.
 
 use super::*;
+// Moved into the `answer_assist_parse` split (R8 LOC cap) — `use super::*`
+// only re-exports what the parent itself imports, and the parent has no
+// non-test caller for these four.
+use super::super::answer_assist_parse::{
+    parse_existing_answer, parse_instruction, parse_preset, resolve_rewrite_instruction,
+};
 
 // ── check_ai_assist_gate ──────────────────────────────────────────────
 
