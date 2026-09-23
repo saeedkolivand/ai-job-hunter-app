@@ -270,25 +270,23 @@ pub(super) async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<
     // Never lose an import click: if nothing usable parsed, persist a stub the user
     // can complete later (title empty → flagged partial), instead of erroring out.
     let (posting, partial) = if posting.as_ref().is_some_and(usable) {
-        // #1238: a cross-origin-iframe-embedded ATS board is unreachable from
-        // the extension's top-level-only capture, so the generic parser
+        // #1238: an ATS board embedded in a cross-origin iframe is unreachable
+        // from the extension's top-level-only capture, so the generic parser
         // describes the WRAPPER page and `usable` (a non-empty title) is
         // happily true — a confident success naming the company's own careers
-        // heading. Two signals together, never either alone: we extracted NO
-        // description AND the captured document embeds a third-party frame.
-        // The description half is what keeps this off the analytics/consent/
-        // video frames on ordinary pages; a page that parsed a real
-        // description is never flagged.
+        // heading, at a single-digit fit. Keyed on RECOGNISING the board (see
+        // `embeds_ats_board`), which is what keeps this off the analytics,
+        // consent and video frames that are cross-origin on nearly every page.
         let p = posting.unwrap();
-        let no_description = p
-            .description
+        // The captured document embeds a recognised ATS board in a cross-origin
+        // frame, so the posting itself was unreachable and whatever parsed came
+        // from the WRAPPER page. Deliberately NOT also requiring "we extracted
+        // no description": a careers page has plenty of prose, so that extra
+        // condition made this miss the reported case entirely — the description
+        // was non-empty, just not the job's.
+        let embedded = html
             .as_deref()
-            .map(str::trim)
-            .is_none_or(str::is_empty);
-        let embedded = no_description
-            && html.as_deref().is_some_and(|h| {
-                crate::scraping::scrape_url::has_cross_origin_iframe(h, effective_url)
-            });
+            .is_some_and(|h| crate::scraping::scrape_url::embeds_ats_board(h, effective_url));
         (p, embedded)
     } else {
         let host = reqwest::Url::parse(effective_url)

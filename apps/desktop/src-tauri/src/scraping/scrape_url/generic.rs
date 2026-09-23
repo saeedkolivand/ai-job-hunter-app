@@ -113,41 +113,45 @@ pub(super) fn parse_generic_html(html: &str) -> (String, Option<String>) {
 /// may be unbounded; a real job title or employer name is far under this.
 pub(super) const GENERIC_FIELD_CAP: usize = 200;
 
-/// Whether `html` embeds a CROSS-ORIGIN `<iframe>` relative to `page_url` —
-/// the shape an ATS board takes when a company embeds it in its own careers
-/// page (issue #1238).
+/// Whether `html` embeds a recognised ATS job board in a CROSS-ORIGIN
+/// `<iframe>` — the shape a company careers page takes when it hosts its
+/// postings on Ashby, Greenhouse, Lever and friends (issue #1238).
 ///
 /// The extension captures the TOP-LEVEL document only (no `allFrames`, by
 /// deliberate permission design — see `apps/extension/README.md`), so a posting
-/// living inside such a frame is simply unreachable, and the generic parser
-/// then describes the WRAPPER page instead. This predicate does not prove that
-/// happened; it is the corroborating half of a two-part test, and the caller
-/// pairs it with "we also failed to extract any description". On its own it
-/// would fire on the analytics, video and consent frames that sit on almost
-/// every page.
+/// living inside such a frame is unreachable and whatever the parser found came
+/// from the WRAPPER page instead.
 ///
-/// Same-origin frames, relative `src`s, and the non-document schemes
-/// (`about:`/`data:`/`javascript:`) are all ignored — none of them is a
-/// third-party board.
-pub(crate) fn has_cross_origin_iframe(html: &str, page_url: &str) -> bool {
-    let Some(page_host) = reqwest::Url::parse(page_url)
+/// Keyed on [`crate::scraping::ats_ref::extract_ats_ref`] rather than on "is
+/// this frame cross-origin", because the latter is true of the analytics,
+/// consent and video frames on almost every page. An earlier version paired a
+/// bare cross-origin test with "and we extracted no description"; that missed
+/// the reported case outright, because a careers page has plenty of prose — the
+/// description was non-empty, just not the job's. Recognising the BOARD is the
+/// signal that actually distinguishes the two.
+///
+/// A frame pointing at the page's own host is ignored, so an ATS page that
+/// embeds itself is never flagged.
+pub(crate) fn embeds_ats_board(html: &str, page_url: &str) -> bool {
+    let page_host = reqwest::Url::parse(page_url)
         .ok()
-        .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
-    else {
-        return false;
-    };
+        .and_then(|u| u.host_str().map(str::to_ascii_lowercase));
     let doc = Html::parse_document(html);
     let Ok(sel) = Selector::parse("iframe[src]") else {
         return false;
     };
     doc.select(&sel).any(|el| {
-        el.value()
-            .attr("src")
-            // A relative src resolves to this same origin, so only an
-            // absolute URL can be cross-origin.
-            .and_then(|src| reqwest::Url::parse(src).ok())
-            .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
-            .is_some_and(|h| h != page_host)
+        let Some(src) = el.value().attr("src") else {
+            return false;
+        };
+        let Ok(u) = reqwest::Url::parse(src) else {
+            return false; // relative src = same origin, never a third-party board
+        };
+        let host = u.host_str().map(str::to_ascii_lowercase);
+        if host.is_none() || host == page_host {
+            return false;
+        }
+        crate::scraping::ats_ref::extract_ats_ref(src).is_some()
     })
 }
 
