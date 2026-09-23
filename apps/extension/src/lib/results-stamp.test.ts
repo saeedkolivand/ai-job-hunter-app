@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { MAX_APPLIED_CHECK_BATCH_URLS } from '@ajh/shared';
 
@@ -165,5 +165,101 @@ describe('stampResultsCards', () => {
     const dismiss = peekStampShadow(anchor)?.querySelector('button');
     (dismiss as HTMLButtonElement).click();
     expect(document.querySelectorAll('[data-ajh-stamp]')).toHaveLength(0);
+  });
+});
+
+// ── #1220: dedup must survive a FRESH injection ──────────────────────────────
+// The file is injected as a fresh classic script on EVERY Stamp click, so the
+// module-level WeakMaps are empty each time while the DOM still holds the
+// hosts earlier instances placed — the dedup guard therefore has to read the
+// DOM, not the maps. `vi.resetModules()` re-evaluates the module (fresh,
+// empty maps) while the jsdom document keeps whatever was stamped before it,
+// which is exactly the real injection shape.
+
+describe('stamp dedup survives a fresh injection (#1220)', () => {
+  const STAMP: StampInput = { url: 'http://localhost:3000/jobs/1', found: true, status: 'saved' };
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('a re-stamp from a FRESH injected instance replaces the previous host instead of appending another (empty WeakMaps, DOM already stamped)', async () => {
+    document.body.innerHTML = `<ul>${card('/jobs/1')}</ul>`;
+    // First injection: collect + stamp normally (the WeakMap works in-instance).
+    const first = await import('./results-stamp');
+    first.collectResultsCards(document);
+    first.stampResultsCards(document, NOTEBOOK_LIGHT, [STAMP]);
+    expect(document.querySelectorAll('[data-ajh-stamp]')).toHaveLength(1);
+
+    // Second Stamp click = a fresh classic-script evaluation: module state is
+    // gone (empty WeakMaps) but the host from the first injection is still on
+    // the page. The DOM-based scan must find and replace it.
+    vi.resetModules();
+    const fresh = await import('./results-stamp');
+    fresh.collectResultsCards(document);
+    fresh.stampResultsCards(document, NOTEBOOK_LIGHT, [STAMP]);
+
+    expect(document.querySelectorAll('[data-ajh-stamp]')).toHaveLength(1);
+  });
+
+  it('heals PRE-FIX accumulated duplicates (a contiguous run of stale hosts right after one anchor)', async () => {
+    document.body.innerHTML = `<ul>${card('/jobs/1')}</ul>`;
+    // Reconstruct the old #1220 state by hand: three hosts stacked after the
+    // anchor, the exact light-DOM shape repeated placement produced.
+    const anchor = document.querySelectorAll('a')[0] as HTMLAnchorElement;
+    for (let i = 0; i < 3; i += 1) {
+      const host = document.createElement('span');
+      host.setAttribute('data-ajh-stamp', 'true');
+      host.style.cssText = 'display:inline-flex;vertical-align:middle;margin-left:6px';
+      anchor.insertAdjacentElement('afterend', host);
+    }
+    expect(document.querySelectorAll('[data-ajh-stamp]')).toHaveLength(3);
+
+    vi.resetModules();
+    const fresh = await import('./results-stamp');
+    fresh.collectResultsCards(document);
+    fresh.stampResultsCards(document, NOTEBOOK_LIGHT, [STAMP]);
+
+    expect(document.querySelectorAll('[data-ajh-stamp]')).toHaveLength(1);
+  });
+
+  it('never removes a page-authored element carrying only the marker attribute (attacker-controlled page)', async () => {
+    // A hostile page node with our marker but none of the host's style
+    // signature sits right where our scan starts; it must survive unchanged.
+    document.body.innerHTML = `<ul>${card('/jobs/1')}<span data-ajh-stamp="true">page decor</span></ul>`;
+
+    vi.resetModules();
+    const fresh = await import('./results-stamp');
+    fresh.collectResultsCards(document);
+    fresh.stampResultsCards(document, NOTEBOOK_LIGHT, [STAMP]);
+
+    // Our own host + the page node both remain — nothing arbitrary was removed.
+    expect(document.querySelectorAll('[data-ajh-stamp]')).toHaveLength(2);
+    // The host carries the signature inline-style attribute and renders its
+    // content in a closed shadow root (textContent ''), so target the page
+    // node by the absence of that style — the exact thing that kept it alive.
+    const decor = document.querySelector('span[data-ajh-stamp]:not([style])') as HTMLElement;
+    expect(decor.textContent).toBe('page decor');
+  });
+
+  it("never sweeps up an ADJACENT card's stamp when clearing this card's (scan stops at the first non-stamp sibling)", async () => {
+    // Cards whose anchor wraps the card directly: `afterend` puts each host
+    // between anchors, so anchor1's sibling chain is [host1, anchor2, host2].
+    document.body.innerHTML = `<a href="/jobs/1">Card one</a><a href="/jobs/2">Card two</a>`;
+    vi.resetModules();
+    const fresh = await import('./results-stamp');
+    fresh.collectResultsCards(document);
+    const results: StampInput[] = [
+      { url: 'http://localhost:3000/jobs/1', found: true, status: 'saved' },
+      { url: 'http://localhost:3000/jobs/2', found: true, status: 'saved' },
+    ];
+    fresh.stampResultsCards(document, NOTEBOOK_LIGHT, results);
+    // Re-run ONLY card one from a fresh instance: card two's stamp must stay.
+    vi.resetModules();
+    const again = await import('./results-stamp');
+    again.collectResultsCards(document);
+    again.stampResultsCards(document, NOTEBOOK_LIGHT, [STAMP]);
+
+    expect(document.querySelectorAll('[data-ajh-stamp]')).toHaveLength(2);
   });
 });

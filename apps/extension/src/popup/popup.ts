@@ -29,13 +29,16 @@ import {
   mountFirstFillConfirm,
   rememberHost,
 } from '../lib/site-memory';
-import { bootTheme } from '../lib/theme';
+import { bootTheme, subscribeThemeChanges } from '../lib/theme';
 
 import './popup.css';
 
 // Apply the Settings → Appearance → Theme choice before anything else renders
 // (best-effort — see `lib/theme.ts`'s doc for the system-default fallback).
 void bootTheme();
+// Live-sync it (#1236 Half A): a theme change made in the options page
+// repaints this ALREADY-OPEN popup instead of waiting for the next open.
+subscribeThemeChanges();
 
 // ── pure view-decision helpers (exported for unit tests) ─────────────────────
 

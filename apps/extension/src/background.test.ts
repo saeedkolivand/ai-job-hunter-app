@@ -496,6 +496,64 @@ describe('trustLineJob request', () => {
 
     expect(res).toEqual({ ok: true, kind: 'trustLineJob', title: null, company: null });
   });
+
+  it('strips the desktop fence wrapper off title/company (#1229 — the render layer must never show `<job_posting>…</job_posting>`)', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.agentQuery.mockResolvedValue({
+      ok: true,
+      resource: 'job',
+      data: {
+        title: '<job_posting>\nSenior Rust Engineer\n</job_posting>',
+        company: '<job_posting>\nAcme\n</job_posting>',
+      },
+    });
+
+    const res = await send({ kind: 'trustLineJob' });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'trustLineJob',
+      title: 'Senior Rust Engineer',
+      company: 'Acme',
+    });
+  });
+
+  it('degrades an EMPTY fenced value to null via the strip-then-trim guard, never the raw wrapper', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.agentQuery.mockResolvedValue({
+      ok: true,
+      resource: 'job',
+      data: { title: '<job_posting>\n\n</job_posting>', company: 'Acme' },
+    });
+
+    const res = await send({ kind: 'trustLineJob' });
+
+    expect(res).toEqual({ ok: true, kind: 'trustLineJob', title: null, company: 'Acme' });
+  });
+
+  it('leaves a title that merely contains angle brackets alone — only the EXACT fence wrapper is stripped', async () => {
+    tabsQueryMock.mockResolvedValue([
+      { id: 7, url: 'https://jobs.example.com/posting/9' } as never,
+    ]);
+    mockClient.agentQuery.mockResolvedValue({
+      ok: true,
+      resource: 'job',
+      data: { title: '<b>Senior</b> Rust Engineer', company: 'Acme & Sons' },
+    });
+
+    const res = await send({ kind: 'trustLineJob' });
+
+    expect(res).toEqual({
+      ok: true,
+      kind: 'trustLineJob',
+      title: '<b>Senior</b> Rust Engineer',
+      company: 'Acme & Sons',
+    });
+  });
 });
 
 // ── settingsGet / settingsSet requests (PR1 — extension read tier) — errors
@@ -3539,6 +3597,15 @@ describe('submitDetected message — not a popup request (Task #22 review closur
       'https://jobs.example.com/posting/9',
       true
     );
+    // The confirmed flip is PUSHED to the side panel over the shared channel —
+    // exactly one broadcast, carrying the flipped application's url (#1233).
+    const pushes = vi
+      .mocked(browser.runtime.sendMessage)
+      .mock.calls.map((call) => call[0] as PopupResponse)
+      .filter((m) => m.ok && m.kind === 'jobStatusChanged');
+    expect(pushes).toEqual([
+      { ok: true, kind: 'jobStatusChanged', url: 'https://jobs.example.com/posting/9' },
+    ]);
   });
 
   it('is ignored when the sender is not this extension (belt-and-braces MV3 hygiene)', async () => {

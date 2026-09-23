@@ -43,6 +43,7 @@ function flowDeps(overrides: Partial<SubmitFlowDeps> = {}): SubmitFlowDeps {
     promptImport: vi.fn(),
     saveAnswersAuto: vi.fn().mockResolvedValue(OK_SAVE),
     notifyAutoSave: vi.fn(),
+    notifyJobStatusChanged: vi.fn(),
     ...overrides,
   };
 }
@@ -174,6 +175,39 @@ describe('handleSubmitDetected', () => {
     await expect(handleSubmitDetected('https://x.co/j', deps, answers)).resolves.toBeUndefined();
     expect(deps.saveAnswersAuto).toHaveBeenCalledWith('https://x.co/j', answers);
     expect(deps.notifyAutoSave).toHaveBeenCalledWith(OK_SAVE);
+  });
+
+  it('a CONFIRMED saved→applied flip notifies the panel with the application url (#1233)', async () => {
+    const deps = flowDeps();
+    await handleSubmitDetected('https://x.co/j', deps);
+    expect(deps.notifyJobStatusChanged).toHaveBeenCalledTimes(1);
+    expect(deps.notifyJobStatusChanged).toHaveBeenCalledWith('https://x.co/j');
+  });
+
+  it('a REFUSED auto-write (ok:false) notifies NOTHING — nothing changed, so nothing to refresh (#1233)', async () => {
+    const deps = flowDeps({
+      updateStatusAuto: vi.fn().mockResolvedValue({ ok: false, error: 'auto_status_refused' }),
+    });
+    await handleSubmitDetected('https://x.co/j', deps);
+    expect(deps.updateStatusAuto).toHaveBeenCalled();
+    expect(deps.notifyJobStatusChanged).not.toHaveBeenCalled();
+  });
+
+  it('an already-applied noop never writes and never notifies (#1233)', async () => {
+    const deps = flowDeps({
+      checkApplied: vi.fn().mockResolvedValue({ found: true, status: 'applied' }),
+    });
+    await handleSubmitDetected('https://x.co/j', deps);
+    expect(deps.updateStatusAuto).not.toHaveBeenCalled();
+    expect(deps.notifyJobStatusChanged).not.toHaveBeenCalled();
+  });
+
+  it('an updateStatusAuto rejection is swallowed without notifying (best-effort, #1233)', async () => {
+    const deps = flowDeps({
+      updateStatusAuto: vi.fn().mockRejectedValue(new Error('bridge down')),
+    });
+    await expect(handleSubmitDetected('https://x.co/j', deps)).resolves.toBeUndefined();
+    expect(deps.notifyJobStatusChanged).not.toHaveBeenCalled();
   });
 });
 

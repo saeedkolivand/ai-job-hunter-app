@@ -47,7 +47,7 @@ import {
   mountFirstFillConfirm,
   rememberHost,
 } from '../lib/site-memory';
-import { bootTheme } from '../lib/theme';
+import { bootTheme, subscribeThemeChanges } from '../lib/theme';
 import { mountPrep } from '../prep/prep';
 import { mountTabs } from '../tabs/tabs';
 
@@ -62,6 +62,9 @@ import '../popup/popup.css';
 
 // Apply the Settings → Appearance → Theme choice before anything else renders.
 void bootTheme();
+// Live-sync it (#1236 Half A): a theme change made in the options page
+// repaints this ALREADY-OPEN panel instead of waiting for it to be reopened.
+subscribeThemeChanges();
 
 function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -233,6 +236,35 @@ let followGeneration = 0;
 const answerTools = mountAnswerTools(answerToolsHost, { send, copy: copyText });
 
 const jobStatus = mountJobStatus(jobStatusHost, { send });
+
+/**
+ * Auto-track's pushed "this tracked application just flipped to applied"
+ * (Task #1233) — the panel's ONLY event-driven refresh. The background
+ * broadcasts over the SAME `runtime.sendMessage` channel the popup uses, so
+ * this listener is registered at MODULE scope (like `follow`'s window/tab
+ * listeners, never inside a component): it must survive the panel's tab
+ * switches, and a panel with nothing open is a no-op, never an error.
+ *
+ * Scoped by origin: only a flip for the FOLLOWED page's own origin refreshes
+ * `jobStatus` — a job changed in another window/tab must not re-render (or
+ * churn) what's on screen. A malformed url from our own background is
+ * dropped rather than compared.
+ */
+browser.runtime.onMessage.addListener((message: unknown) => {
+  // The shared channel also carries replies and other pushes (a `status`
+  // push, an `ok:false` reply) — a runtime message is untrusted input, so
+  // narrow with checks the compiler can see, exactly like the
+  // `status`-push consumers on the same channel (`connection-status.ts`,
+  // `popup.ts`): the `!res`/`!res.ok` guards fail closed on any shape that
+  // is not a well-formed `jobStatusChanged` push.
+  const res = message as PopupResponse;
+  if (!res || !res.ok || res.kind !== 'jobStatusChanged') return;
+  try {
+    if (new URL(res.url).origin === currentOrigin) jobStatus.refresh();
+  } catch {
+    // Malformed url — not worth refreshing on.
+  }
+});
 
 // No `onAnswerToolsVisibility` here: the panel's Answer-tools section has no
 // disclosure to gate on the fields probe today (unlike the popup's), and
@@ -524,6 +556,19 @@ browser.tabs.onActivated.addListener((info) => {
 // scoped to `panelWindowId`, never to whichever window just gained focus.
 browser.windows?.onFocusChanged.addListener(() => {
   void activeTabId().then(follow);
+});
+
+// A window's session memory is only meaningful while that window exists —
+// `storage.session` outlives windows AND window ids get reused, so a stale
+// `sidepanelActiveTab:<id>` left behind by a closed window would silently
+// mask a NEWER Appearance default for the next window that reuses the id
+// (#1236 Half B). Clearing the key here bounds the masking to the window's
+// own lifetime: within it, the user's last explicit tab choice keeps winning
+// (this is the only place the entry is removed — never on a default change).
+browser.windows?.onRemoved.addListener((windowId) => {
+  const area = sessionArea();
+  if (!area) return;
+  void area.remove(activeTabKey(windowId)).catch(() => undefined);
 });
 
 void resolvePanelWindowId().then((id) => {

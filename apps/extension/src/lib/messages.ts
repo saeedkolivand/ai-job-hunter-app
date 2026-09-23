@@ -553,4 +553,15 @@ export type PopupResponse =
    *  asked). See `PopupRequest`'s `autoSaveNotice` doc for the read-once
    *  discipline. */
   | { ok: true; kind: 'autoSaveNotice'; text: string | null }
+  /**
+   * PUSHED by the background (never a reply to a request): auto-track just
+   * flipped a tracked application to `applied` — the side panel should
+   * refresh THAT job's card. `url` is the application's own canonical url;
+   * the panel matches it against the followed page's origin so a change for
+   * a job in another window/tab never re-renders what's on screen.
+   * Piggybacks the SAME `runtime.sendMessage` channel `broadcastStatus`
+   * already uses, so a panel with no listener open is a no-op, never an
+   * error.
+   */
+  | { ok: true; kind: 'jobStatusChanged'; url: string }
   | { ok: false; error: string };

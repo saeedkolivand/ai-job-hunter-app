@@ -70,6 +70,7 @@ import { handleSubmitDetected, maybeArmSubmitWatch } from './lib/auto-track';
 // bits the background needs (the global key + a result guard) are defined below.
 import type { AutofillProfile, AutofillSummary } from './lib/autofill';
 import { BridgeClient } from './lib/bridge';
+import { stripFenceWrapper } from './lib/fence-strip';
 // TYPE-ONLY import — same rationale as the autofill.ts import above:
 // `fit-badge.js` is a classic-script injection target (see
 // `injected-entries.mjs`), so its runtime code (`runRenderFitBadge`) must be
@@ -319,6 +320,21 @@ async function broadcastStatus(): Promise<void> {
     await browser.runtime.sendMessage(message);
   } catch {
     // No popup open / port closed — fine.
+  }
+}
+
+/** Push "a tracked application just flipped to applied" to any listening
+ *  side panel (no-op if none is open). Sent by auto-track ONLY on a
+ *  confirmed `saved → applied` write — see `PopupResponse`'s
+ *  `jobStatusChanged` doc. Mirrors {@link broadcastStatus}'s try/catch and
+ *  its use of the shared send channel: a panel that closed mid-flight, or
+ *  one still on the content page with no listener, is never an error. */
+async function broadcastJobStatusChanged(url: string): Promise<void> {
+  try {
+    const message: PopupResponse = { ok: true, kind: 'jobStatusChanged', url };
+    await browser.runtime.sendMessage(message);
+  } catch {
+    // No panel open / port closed — fine.
   }
 }
 
@@ -711,9 +727,19 @@ async function runAutofillCheck(): Promise<PopupResponse> {
 function readJobTitleCompany(data: unknown): { title: string | null; company: string | null } {
   if (typeof data !== 'object' || data === null) return { title: null, company: null };
   const o = data as Record<string, unknown>;
+  // The Rust BE fences `title`/`company` on every curated read
+  // (`fence_posting_display_fields`, tag `job_posting` — see
+  // `extension_bridge/agent_read/best_matches.rs`), so undo the exact
+  // wrapper BEFORE the trim-guard: the trust line must render
+  // "Senior Engineer", not the literal `<job_posting>…</job_posting>`
+  // markup, and an empty wrapped value must degrade to `null` just like
+  // a missing one.
+  const title = typeof o.title === 'string' ? stripFenceWrapper('job_posting', o.title) : null;
+  const company =
+    typeof o.company === 'string' ? stripFenceWrapper('job_posting', o.company) : null;
   return {
-    title: typeof o.title === 'string' && o.title.trim() ? o.title : null,
-    company: typeof o.company === 'string' && o.company.trim() ? o.company : null,
+    title: title && title.trim() ? title : null,
+    company: company && company.trim() ? company : null,
   };
 }
 
@@ -1253,6 +1279,12 @@ function submitFlowDeps() {
       void setAutoSaveNotice(
         `Saved ${count} answer${count === 1 ? '' : 's'} from this submit${result.title ? ` (${result.title})` : ''} — change this in Settings → What the extension may do.`
       );
+    },
+    // The side panel's ONLY event-driven refresh: push the flipped
+    // application's url so it re-reads just that job (never polls). Fires
+    // inside `handleSubmitDetected` only on an `updateStatusAuto` ok:true.
+    notifyJobStatusChanged: (url: string) => {
+      void broadcastJobStatusChanged(url);
     },
   };
 }
