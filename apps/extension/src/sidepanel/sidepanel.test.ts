@@ -1309,3 +1309,80 @@ describe('the one-shot save-answers-on-submit auto-save notice (PR4)', () => {
     expect(document.getElementById('auto-save-notice')!.hidden).toBe(true);
   });
 });
+
+// ── #1249: no confirmation bypass before the first state delivery ──────────
+// The panel's `currentOrigin` is fed only by `follow()`'s answer-state
+// subscription, so it is `null` until the first push lands. `confirm(null)`
+// used to resolve TRUE, so a Fill or Attach clicked in that window wrote into
+// a page the panel could not name, with no dialog shown. The popup's fix
+// (resolve the origin on demand) does not transfer here: the panel follows
+// arbitrary tabs and `activeTab` is gesture-scoped, so there is no grant to
+// read a followed tab's url from.
+
+describe('first-time confirmation with no origin yet (#1249)', () => {
+  const deps = vi.mocked(mountJobTools).mock.calls[0]?.[1] as
+    { confirmFill?: () => Promise<boolean> } | undefined;
+  if (!deps) throw new Error('mountJobTools was not called at module load');
+
+  const docDeps = vi.mocked(mountDocuments).mock.calls[0]?.[1] as
+    | {
+        confirmAttach?: (host: string | null) => Promise<boolean>;
+        currentHost?: () => string | null;
+      }
+    | undefined;
+  if (!docDeps) throw new Error('mountDocuments was not called at module load');
+
+  /**
+   * Drive the panel into the real pre-first-delivery state: follow a fresh
+   * tab, then deliver `null` (no answer state for it yet) — which is exactly
+   * what `follow()`'s subscription hands the panel before a scan lands.
+   * Module state persists across tests in this file, so the precondition is
+   * established explicitly rather than assumed.
+   */
+  function followTabWithNoState(tabId: number): void {
+    let deliver: ((state: unknown) => void) | undefined;
+    vi.mocked(subscribeAnswerState).mockImplementationOnce((_tabId, onState) => {
+      deliver = onState as (state: unknown) => void;
+      return vi.fn();
+    });
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+    onActivated({ tabId, windowId: PANEL_WINDOW_ID } as never);
+    if (!deliver) throw new Error('subscribeAnswerState callback not captured');
+    deliver(null);
+  }
+
+  it('refuses Fill rather than approving a page it cannot name', async () => {
+    followTabWithNoState(901);
+    await expect(deps.confirmFill?.()).resolves.toBe(false);
+  });
+
+  it('refuses Attach for the same unknown host', async () => {
+    followTabWithNoState(902);
+    expect(docDeps.currentHost?.()).toBeNull();
+    await expect(docDeps.confirmAttach?.(docDeps.currentHost?.() ?? null)).resolves.toBe(false);
+  });
+
+  it('still asks normally once an origin IS known', async () => {
+    // The guard must not have turned into "never confirm" — with a real
+    // origin the inset is shown and the promise stays pending until answered.
+    let deliver: ((state: unknown) => void) | undefined;
+    vi.mocked(subscribeAnswerState).mockImplementationOnce((_tabId, onState) => {
+      deliver = onState as (state: unknown) => void;
+      return vi.fn();
+    });
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+    onActivated({ tabId: 903, windowId: PANEL_WINDOW_ID } as never);
+    if (!deliver) throw new Error('subscribeAnswerState callback not captured');
+    deliver({
+      tabId: 903,
+      origin: 'https://jobs.example.com',
+      scannedAt: 1,
+      rows: [],
+      stream: null,
+      pageChanged: false,
+    });
+    expect(docDeps.currentHost?.()).toBe('jobs.example.com');
+  });
+});

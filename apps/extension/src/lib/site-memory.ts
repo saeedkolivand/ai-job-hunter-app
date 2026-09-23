@@ -121,7 +121,14 @@ export function mountFirstFillConfirm(
     copy = DEFAULT_FILL_CONFIRM_COPY,
     label = 'Fill'
   ): Promise<boolean> {
-    if (!siteHost) return true;
+    // Fail CLOSED on an unknown host (#1249). This used to resolve `true`,
+    // which quietly turned "we don't know what page this is" into
+    // "approved": the side panel's `currentOrigin` is null until its first
+    // state push, so a Fill/Attach in that window wrote into a page the
+    // surface could not name, with no confirmation shown. Every caller
+    // (popup + panel, the only two) wants the refusal — the popup already
+    // checks for this itself and says so visibly before it ever gets here.
+    if (!siteHost) return false;
     const remembered = await deps.getRememberedHosts();
     if (!shouldConfirmFill(siteHost, remembered)) return true;
 
