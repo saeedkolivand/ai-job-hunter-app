@@ -22,7 +22,7 @@
 //                    downloads-history.json,downloads.svg,stars.svg}
 // Run locally: GITHUB_TOKEN=$(gh auth token) node scripts/build-repo-charts.mjs
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -150,3 +150,54 @@ process.stderr.write(
     `stars: ${stargazers.length} stargazers, ${stars.length} dated points\n` +
     `installs: ${installs} (github ${total} + stores msStore ${stores.msStore} snap ${stores.snap} chrome ${stores.chrome} firefox ${stores.firefox})\n`
 );
+
+// ── Job summary ──────────────────────────────────────────────────────────────
+
+/**
+ * Render the same numbers as a table on the workflow's summary page, so a run
+ * can be read at a glance instead of by opening the step log.
+ *
+ * Gated on `GITHUB_STEP_SUMMARY`, so a local run is unaffected. Built from the
+ * values already in memory rather than by re-reading `badge-out/` — one source
+ * of truth, and no second place to keep in step when an output changes.
+ *
+ * An unavailable store renders as "unavailable", never 0: `collectStoreCounts`
+ * deliberately preserves `null` all the way into `store-counts.json` so an
+ * outage stays visible, and flattening it to a zero here would undo that in the
+ * one place people actually look.
+ */
+function writeJobSummary() {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (!summaryPath) return;
+
+  const num = (n) =>
+    typeof n === 'number' && Number.isFinite(n) ? n.toLocaleString('en-US') : '_unavailable_';
+  const row = (label, n) => `| ${label} | ${num(n)} |`;
+  const span = `${history[0]?.date ?? '—'} → ${history.at(-1)?.date ?? '—'}`;
+
+  const lines = [
+    `### 📈 Repo charts — ${today}`,
+    '',
+    `Badge: **installs ${humanize(installs)}**`,
+    '',
+    '| Source | Count |',
+    '| --- | ---: |',
+    row('GitHub installers', total),
+    row('Microsoft Store', stores.msStore),
+    row('Snap Store', stores.snap),
+    row('Chrome Web Store', stores.chrome),
+    row('Firefox AMO', stores.firefox),
+    `| **Total** | **${num(installs)}** |`,
+    '',
+    '| Chart | This run |',
+    '| --- | --- |',
+    `| \`downloads.svg\` | rebuilt — ${history.length} daily points (${span}) |`,
+    stars.length
+      ? `| \`stars.svg\` | rebuilt — ${stars.length} dated points from ${stargazers.length} stargazers |`
+      : '| `stars.svg` | not rebuilt — no dated stargazers, the previous chart is kept |',
+    '',
+  ];
+  appendFileSync(summaryPath, `${lines.join('\n')}\n`);
+}
+
+writeJobSummary();
