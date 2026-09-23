@@ -1,5 +1,145 @@
 [
   {
+    "number": 1250,
+    "title": "fix(extension): stop stale stamps, fences and settings reaching the user",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1250",
+    "draft": false,
+    "created_at": "2026-09-23T08:21:34Z",
+    "updated_at": "2026-09-23T08:25:25Z",
+    "merged_at": "2026-09-23T08:25:23Z",
+    "closed_at": "2026-09-23T08:25:24Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1248,
+    "title": "fix(extension): make the panel's trust and confirmation states honest",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1248",
+    "draft": false,
+    "created_at": "2026-09-23T06:47:53Z",
+    "updated_at": "2026-09-23T06:51:22Z",
+    "merged_at": "2026-09-23T06:51:21Z",
+    "closed_at": "2026-09-23T06:51:21Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1247,
+    "title": "fix(extension): clear a stale fit badge, read trailing-currency salaries, drop junk chips",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1247",
+    "draft": false,
+    "created_at": "2026-09-23T05:16:58Z",
+    "updated_at": "2026-09-23T05:34:54Z",
+    "merged_at": "2026-09-23T05:34:53Z",
+    "closed_at": "2026-09-23T05:34:53Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1246,
+    "title": "fix(extension): tell a dead api key apart from a retriable draft failure",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1246",
+    "draft": false,
+    "created_at": "2026-09-23T04:12:48Z",
+    "updated_at": "2026-09-23T04:38:13Z",
+    "merged_at": "2026-09-23T04:38:12Z",
+    "closed_at": "2026-09-23T04:38:12Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1245,
+    "title": "fix(extension): escalate bridge backoff after a failed handshake",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1245",
+    "draft": false,
+    "created_at": "2026-09-23T03:55:13Z",
+    "updated_at": "2026-09-23T03:59:06Z",
+    "merged_at": "2026-09-23T03:59:05Z",
+    "closed_at": "2026-09-23T03:59:05Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1244,
+    "title": "fix(extension): act on the requesting window's tab, not the last-focused one",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1244",
+    "draft": false,
+    "created_at": "2026-09-22T22:48:28Z",
+    "updated_at": "2026-09-22T22:49:08Z",
+    "merged_at": "2026-09-22T22:48:38Z",
+    "closed_at": "2026-09-22T22:48:38Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1243,
+    "title": "fix(extension): stop offering x/twitter fields as questions, correct two misleading messages",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1243",
+    "draft": false,
+    "created_at": "2026-09-22T22:06:39Z",
+    "updated_at": "2026-09-22T22:09:02Z",
+    "merged_at": "2026-09-22T22:07:21Z",
+    "closed_at": "2026-09-22T22:07:21Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1242,
+    "title": "fix(bridge): match a tracked job by posting identity when applied.check misses",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1242",
+    "draft": false,
+    "created_at": "2026-09-22T21:28:09Z",
+    "updated_at": "2026-09-22T21:53:02Z",
+    "merged_at": "2026-09-22T21:28:12Z",
+    "closed_at": "2026-09-22T21:28:12Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1241,
+    "title": "fix(deeplink): accept the trailing slash windows adds to job deep links",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1241",
+    "draft": false,
+    "created_at": "2026-09-22T21:05:37Z",
+    "updated_at": "2026-09-22T21:28:58Z",
+    "merged_at": "2026-09-22T21:05:45Z",
+    "closed_at": "2026-09-22T21:05:45Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1240,
+    "title": "chore: retire the automatic ai review gate on pull requests",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1240",
+    "draft": false,
+    "created_at": "2026-09-22T20:32:11Z",
+    "updated_at": "2026-09-22T20:55:51Z",
+    "merged_at": "2026-09-22T20:32:32Z",
+    "closed_at": "2026-09-22T20:32:32Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
     "number": 1198,
     "title": "fix(release): create the xdg data dir before msstore runs; surface the snap store listing",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1198",
@@ -554,146 +694,6 @@
     "updated_at": "2026-09-08T01:05:21Z",
     "merged_at": "2026-09-08T00:56:24Z",
     "closed_at": "2026-09-08T00:56:24Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1122,
-    "title": "chore: bump actions/download-artifact from 7.0.0 to 8.0.1",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1122",
-    "draft": false,
-    "created_at": "2026-09-07T11:33:06Z",
-    "updated_at": "2026-09-07T12:14:22Z",
-    "merged_at": "2026-09-07T11:35:51Z",
-    "closed_at": "2026-09-07T11:35:51Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1121,
-    "title": "chore: bump the ci-actions group with 4 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1121",
-    "draft": false,
-    "created_at": "2026-09-07T11:32:56Z",
-    "updated_at": "2026-09-07T12:04:12Z",
-    "merged_at": "2026-09-07T11:35:28Z",
-    "closed_at": "2026-09-07T11:35:28Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1116,
-    "title": "feat: give the extension side panel connection-status awareness",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1116",
-    "draft": false,
-    "created_at": "2026-09-05T18:01:56Z",
-    "updated_at": "2026-09-07T11:58:40Z",
-    "merged_at": "2026-09-05T18:20:21Z",
-    "closed_at": "2026-09-05T18:20:21Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1117,
-    "title": "feat: LinkedIn description enrichment + paginated found-jobs MCP resource",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1117",
-    "draft": false,
-    "created_at": "2026-09-06T01:44:20Z",
-    "updated_at": "2026-09-07T11:58:37Z",
-    "merged_at": "2026-09-07T06:44:14Z",
-    "closed_at": "2026-09-07T06:44:14Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1119,
-    "title": "feat: apache-2.0 relicense, extension store auto-submission and a microsoft store msix flavour",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1119",
-    "draft": false,
-    "created_at": "2026-09-07T10:22:03Z",
-    "updated_at": "2026-09-07T11:58:34Z",
-    "merged_at": "2026-09-07T11:24:25Z",
-    "closed_at": "2026-09-07T11:24:26Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1120,
-    "title": "feat: add the terms of use page and link it from onboarding",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1120",
-    "draft": false,
-    "created_at": "2026-09-07T11:30:56Z",
-    "updated_at": "2026-09-07T11:58:30Z",
-    "merged_at": "2026-09-07T11:51:02Z",
-    "closed_at": "2026-09-07T11:51:02Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1123,
-    "title": "chore: bump the javascript group with 26 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1123",
-    "draft": false,
-    "created_at": "2026-09-07T11:41:51Z",
-    "updated_at": "2026-09-07T11:58:29Z",
-    "merged_at": "2026-09-07T11:51:25Z",
-    "closed_at": "2026-09-07T11:51:25Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1124,
-    "title": "chore: bump @vitest/browser-playwright from 4.1.11 to 5.0.0",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1124",
-    "draft": false,
-    "created_at": "2026-09-07T11:42:37Z",
-    "updated_at": "2026-09-07T11:58:28Z",
-    "merged_at": "2026-09-07T11:54:56Z",
-    "closed_at": "2026-09-07T11:54:56Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1111,
-    "title": "ui: rename the open-panel control to \"Open AI Job Hunter answer tool\"",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1111",
-    "draft": false,
-    "created_at": "2026-09-05T00:58:50Z",
-    "updated_at": "2026-09-05T05:55:52Z",
-    "merged_at": "2026-09-05T01:14:39Z",
-    "closed_at": "2026-09-05T01:14:39Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1112,
-    "title": "fix: make tray pause/resume-all autopilots actually work",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1112",
-    "draft": false,
-    "created_at": "2026-09-05T04:21:55Z",
-    "updated_at": "2026-09-05T05:55:49Z",
-    "merged_at": "2026-09-05T04:26:45Z",
-    "closed_at": "2026-09-05T04:26:45Z",
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"
