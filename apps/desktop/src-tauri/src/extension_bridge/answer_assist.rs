@@ -199,6 +199,46 @@ fn to_draft_failed(context: &str, e: AppError) -> AppError {
     AppError::Provider(DRAFT_FAILED_MESSAGE.to_string())
 }
 
+/// Await `fut`, ABANDONING it the moment an `assist.cancel` for this request
+/// lands. Returns `None` when it was abandoned.
+///
+/// The pre-flight peek below is not enough on its own, and end-to-end testing
+/// showed exactly why: each grounding helper makes SEVERAL provider calls
+/// internally (the salary lookup does a web search and then a completion), so a
+/// cancel arriving a few hundred milliseconds in — after the peek passed but
+/// before the helper finished — still paid for every remaining call (#1232).
+/// Observed live: a cancel acknowledged at +260ms, then a completion request
+/// *started* afterwards and billed in full.
+///
+/// Dropping the future is what actually stops the spend: an in-flight reqwest
+/// future cancels its HTTP request when dropped. Polling at
+/// [`CANCEL_POLL_MS`] rather than plumbing a signal through
+/// `salary_research`/`commands::ai` keeps this contained — those are shared by
+/// callers that have nothing to do with the extension's cancel.
+async fn until_cancelled<T>(
+    registry: &super::stream::AssistStreamRegistry,
+    req_id: &str,
+    r#gen: u64,
+    fut: impl std::future::Future<Output = T>,
+) -> Option<T> {
+    tokio::pin!(fut);
+    loop {
+        tokio::select! {
+            out = &mut fut => return Some(out),
+            () = tokio::time::sleep(std::time::Duration::from_millis(CANCEL_POLL_MS)) => {
+                if registry.is_cancelled_early(req_id, r#gen) {
+                    return None;
+                }
+            }
+        }
+    }
+}
+
+/// How often [`until_cancelled`] re-checks the cancel marker. Small enough that
+/// a cancelled grounding step is abandoned well inside one provider round trip,
+/// large enough to be free next to the network wait it runs alongside.
+const CANCEL_POLL_MS: u64 = 150;
+
 /// Peek the cancel marker before a BILLABLE grounding step that runs BEFORE
 /// `compose_draft_stream`'s own `start_and_register` (the registry's first
 /// real `register` for this request).
@@ -721,28 +761,46 @@ pub(super) async fn resolve_answer_assist(
                 // topic (which routes here too, via the SAME `is_salary_question` recognition) get
                 // the 7-day cache instead of re-spending on every request.
                 let cache = app.try_state::<crate::pipeline::cache::KvCache>();
-                resolve_salary_range(
-                    &completer,
-                    &limiter,
-                    provider_id,
-                    cache.as_deref(),
-                    app_ctx.as_ref(),
+                match until_cancelled(
+                    registry,
+                    req_id,
+                    r#gen,
+                    resolve_salary_range(
+                        &completer,
+                        &limiter,
+                        provider_id,
+                        cache.as_deref(),
+                        app_ctx.as_ref(),
+                    ),
                 )
                 .await
+                {
+                    Some(v) => v,
+                    None => return Err(AppError::Message("Job cancelled".to_string())),
+                }
             } else {
                 None
             };
             let web_notes = if search_web {
                 // Third billable grounding step, same guard, same reason (#1232).
                 abort_if_cancelled_early(registry, req_id, r#gen)?;
-                fetch_web_notes(
-                    &completer,
-                    &limiter,
-                    provider_id,
-                    &question,
-                    app_ctx.as_ref(),
+                match until_cancelled(
+                    registry,
+                    req_id,
+                    r#gen,
+                    fetch_web_notes(
+                        &completer,
+                        &limiter,
+                        provider_id,
+                        &question,
+                        app_ctx.as_ref(),
+                    ),
                 )
                 .await
+                {
+                    Some(v) => v,
+                    None => return Err(AppError::Message("Job cancelled".to_string())),
+                }
             } else {
                 String::new()
             };
