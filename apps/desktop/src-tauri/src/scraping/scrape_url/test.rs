@@ -1748,48 +1748,81 @@ fn parse_from_html_cleans_a_linkedin_shaped_capture_end_to_end() {
     assert_eq!(posting.company, "Digital Waffle");
 }
 
-// ── #1238: a cross-origin-iframe-embedded ATS board ───────────────────────
-// The corroborating half of the two-part partial-import test. On its own this
-// predicate must NOT be read as "the posting was missed" — the caller pairs it
-// with "no description was extracted", because analytics/consent/video frames
-// are cross-origin on almost every page.
+// ── #1238: an ATS board embedded in a cross-origin iframe ─────────────
+// Keyed on RECOGNISING the board, not on "is this frame cross-origin" — the
+// latter is true of the analytics, consent and video frames on nearly every
+// page. The fixtures below are the real shapes seen live.
 
 #[test]
-fn has_cross_origin_iframe_spots_an_embedded_third_party_board() {
-    let html =
-        r#"<html><body><iframe src="https://jobs.ashbyhq.com/acme/embed"></iframe></body></html>"#;
-    assert!(has_cross_origin_iframe(
-        html,
-        "https://www.happyhotel.io/karriere"
+fn embeds_ats_board_spots_a_real_embedded_careers_page() {
+    // The exact frame set captured from a live company careers page: the Ashby
+    // board alongside an ordinary consent frame.
+    let html = r#"<html><body>
+        <iframe src="https://jobs.ashbyhq.com/happyhotel?embed=js"></iframe>
+        <iframe src="https://consentcdn.cookiebot.com/sdk/bc-v4.min.html"></iframe>
+        <h1>Jobs &amp; Karriere</h1><p>Lots of careers-page prose.</p>
+    </body></html>"#;
+    assert!(embeds_ats_board(html, "https://www.happyhotel.io/karriere"));
+}
+
+#[test]
+fn embeds_ats_board_spots_the_other_common_boards() {
+    for src in [
+        "https://boards.greenhouse.io/acme",
+        "https://job-boards.greenhouse.io/acme",
+        "https://jobs.lever.co/acme",
+        "https://jobs.smartrecruiters.com/acme",
+    ] {
+        let html = format!(r#"<html><body><iframe src="{src}"></iframe></body></html>"#);
+        assert!(
+            embeds_ats_board(&html, "https://careers.example.com/jobs"),
+            "{src} must be recognised as an embedded board"
+        );
+    }
+}
+
+#[test]
+fn embeds_ats_board_ignores_ordinary_third_party_frames() {
+    let page = "https://careers.example.com/jobs/1";
+    // The frames that sit on nearly every page — the reason a bare
+    // cross-origin test is useless as a signal.
+    for src in [
+        "https://consentcdn.cookiebot.com/sdk/bc-v4.min.html",
+        "https://www.youtube.com/embed/abc123",
+        "https://www.googletagmanager.com/ns.html?id=GTM-XYZ",
+        "/widget.html",
+        "about:blank",
+    ] {
+        let html = format!(r#"<html><body><iframe src="{src}"></iframe></body></html>"#);
+        assert!(
+            !embeds_ats_board(&html, page),
+            "{src} must NOT be treated as an embedded board"
+        );
+    }
+    // No frames at all.
+    assert!(!embeds_ats_board(
+        r#"<html><body><p>Just a posting.</p></body></html>"#,
+        page
     ));
 }
 
 #[test]
-fn has_cross_origin_iframe_ignores_same_origin_and_non_document_frames() {
-    let page = "https://careers.example.com/jobs/1";
-    // Relative src — same origin by definition.
-    assert!(!has_cross_origin_iframe(
-        r#"<html><body><iframe src="/widget.html"></iframe></body></html>"#,
-        page
+fn embeds_ats_board_ignores_a_board_embedding_its_own_host() {
+    // An ATS page that frames itself is the posting, not a wrapper around one.
+    let html =
+        r#"<html><body><iframe src="https://jobs.ashbyhq.com/acme/embed"></iframe></body></html>"#;
+    assert!(!embeds_ats_board(
+        html,
+        "https://jobs.ashbyhq.com/acme/some-job"
     ));
-    // Absolute, but the same host.
-    assert!(!has_cross_origin_iframe(
-        r#"<html><body><iframe src="https://careers.example.com/w.html"></iframe></body></html>"#,
-        page
-    ));
-    // Non-document schemes carry no host at all.
-    assert!(!has_cross_origin_iframe(
-        r#"<html><body><iframe src="about:blank"></iframe><iframe src="data:text/html,x"></iframe></body></html>"#,
-        page
-    ));
-    // No iframes whatsoever.
-    assert!(!has_cross_origin_iframe(
-        r#"<html><body><p>Just a posting.</p></body></html>"#,
-        page
-    ));
-    // An unparseable page url must not be treated as embedding anything.
-    assert!(!has_cross_origin_iframe(
-        r#"<html><body><iframe src="https://jobs.ashbyhq.com/x"></iframe></body></html>"#,
-        "not a url"
-    ));
+}
+
+#[test]
+fn embeds_ats_board_still_warns_when_the_page_url_is_unparseable() {
+    // With no parseable page url the same-origin check cannot run, but a
+    // recognised board frame is still the signal. The safe direction for this
+    // feature is to WARN: a needless "couldn't read the description" costs the
+    // user a second look, while staying silent writes a wrong record.
+    let html = r#"<html><body><iframe src="https://jobs.ashbyhq.com/x"></iframe></body></html>"#;
+    assert!(embeds_ats_board(html, "not a url"));
 }

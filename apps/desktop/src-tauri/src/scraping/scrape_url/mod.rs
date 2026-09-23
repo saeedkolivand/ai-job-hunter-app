@@ -1253,7 +1253,7 @@ async fn try_personio(url: &str) -> Result<Option<JobPosting>> {
 }
 
 mod generic;
-pub(crate) use generic::has_cross_origin_iframe;
+pub(crate) use generic::embeds_ats_board;
 
 #[cfg(test)]
 mod test;
