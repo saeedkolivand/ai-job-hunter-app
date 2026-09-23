@@ -787,19 +787,31 @@ export type ExtensionAnswerAssistTopic = 'company-brief' | 'salary-answer';
  * web-search reference notes for the question BEFORE drafting; the answer
  * still generates (without web grounding) if that lookup is unavailable or
  * fails — this can never block the draft.
+ * `instruction` (OPTIONAL) is honored in draft mode too (issue 1231): the
+ * extension's per-row instruction input and its chip/typed merge ride this
+ * same field. Like `question` it is page/user-derived and UNTRUSTED — the
+ * desktop byte-bounds it (see `extension_bridge::answer_assist`'s
+ * `MAX_INSTRUCTION_BYTES`) and fences it into the draft prompt's
+ * `<candidate_instruction>` block, so a hostile value can never escalate
+ * into a real directive: bounded, boundary-neutralized, and subordinate to
+ * the honesty rules. Absent → draft composed without it (never a refusal —
+ * instruction is optional in draft mode).
  *
  * **Rewrite mode** (`mode: 'rewrite'`): a PURE TEXT TRANSFORM of
  * `existingAnswer` (the text already typed into a picked form field) per
  * `preset` (one of {@link ExtensionRewritePreset}, server-resolved to its
- * instruction) or a free-text `instruction` — mirrors the in-app
+ * instruction) and/or a free-text `instruction` — mirrors the in-app
  * `RewritePopover`, which transforms a selection, not a document-grounded
- * generation. Unlike draft mode, this NEVER pulls résumé/job/company/salary
- * grounding and NEVER routes through the web-search lookup (`searchWeb` is
- * ignored). `existingAnswer`/`instruction` are page/user-derived and
- * UNTRUSTED (fenced the same way as `question`) — `existingAnswer` is
- * additionally PII-adjacent (the user's own past answer): sent transiently,
- * never persisted. `question` is still required/echoed for reply
- * correlation but is NOT fed into the rewrite prompt itself.
+ * generation. When BOTH are present the desktop COMBINES them instead of
+ * letting one silently win, so a chip's directive and typed free text both
+ * apply (issue 1231); each side is optional alone. Unlike draft mode, this
+ * NEVER pulls résumé/job/company/salary grounding and NEVER routes through
+ * the web-search lookup (`searchWeb` is ignored). `existingAnswer`/
+ * `instruction` are page/user-derived and UNTRUSTED (fenced the same way as
+ * `question`) — `existingAnswer` is additionally PII-adjacent (the user's
+ * own past answer): sent transiently, never persisted. `question` is still
+ * required/echoed for reply correlation but is NOT fed into the rewrite
+ * prompt itself.
  *
  * **`maxChars`** (draft mode only, ADR-044 decision 6) carries the picked
  * field's own length limit, read from the DOM by the extension's scan and

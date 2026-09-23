@@ -131,6 +131,13 @@ static FENCE_TAG_PATTERNS: std::sync::LazyLock<
         // neutralization would otherwise miss.
         "existing_answer",
         "rewrite_instruction",
+        // #1231 Half B — `extension_bridge::answer_assist::build_user_message`
+        // composes the draft-mode Regenerate instruction as one more fenced
+        // block; without registering the tag, a crafted `question` (or résumé)
+        // could forge a sibling `<candidate_instruction>` that this cross-tag
+        // neutralization would otherwise miss (same reasoning as the PR 11
+        // pair directly above).
+        "candidate_instruction",
         // HIGH-1 fix — the three (now-deleted) `agent::tools_quality` result tags. Without
         // these, a JOB-POSTING (or résumé) body carrying a forged
         // `<validate_resume_result>…</validate_resume_result>` block would

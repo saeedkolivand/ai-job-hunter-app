@@ -855,8 +855,35 @@ async function runPrepGet(windowId?: number): Promise<PopupResponse> {
  * Cancel whatever `answer.assist` stream is currently pending (PR4 — the
  * Prep tab's Cancel button). Always `ok:true` — a no-op when nothing was
  * pending is not an error, mirrors {@link BridgeClient.cancelCurrent}'s doc.
+ *
+ * Two things make the cancel stick to a run instead of racing past it:
+ *  1. The generation bump. `runAnswerAssist` awaits `getToken` /
+ *     `activeTabUrl` / `activeTabId` BEFORE it sends the (billable) streaming
+ *     request. A cancel that lands during those awaits used to call
+ *     `cancelCurrent()` on an EMPTY `pendingAssist` — a no-op — and the run
+ *     then sent the request anyway. Raising `assistGeneration` makes that run
+ *     fail its own post-await guard and bail with "Superseded by a newer
+ *     request." before any byte is sent (a NEW run re-bumps the counter on
+ *     entry, so ordering stays sound).
+ *  2. The terminal buffer mark. Without it a cancel that arrives mid-stream
+ *     left `done:false` until the (now-cancelled) request settled — surfaces
+ *     showing a live stream had to keep animating with no settlement in
+ *     sight. `done:true` + `interrupted` (true only when some text already
+ *     accumulated) is delivered through {@link broadcastAssistProgress} so
+ *     every surface settles immediately. The `!done` guard keeps a cancel
+ *     after a finish (or a second cancel) a pure generation bump: a finished
+ *     buffer does not flip back to `interrupted`.
  */
 function runAssistCancel(): PopupResponse {
+  assistGeneration += 1;
+  if (!assistBuffer.done) {
+    assistBuffer = {
+      ...assistBuffer,
+      done: true,
+      interrupted: assistBuffer.text.length > 0,
+    };
+    void broadcastAssistProgress();
+  }
   getClient().cancelCurrent();
   return { ok: true, kind: 'assistCancel' };
 }
@@ -2104,7 +2131,10 @@ function requireRow(state: AnswerState | null, rowId: string): AnswerRow {
  * same-question EMPTY field count still matches), a `filled` one through
  * `answer-replace.js` (which refuses that AND any text that is no longer what
  * we believe is in the field). On success the row's `currentText` moves to
- * what was written, so a second Accept still knows what it is replacing.
+ * what was written, so a second Accept still knows what it is replacing, and
+ * an `empty` field flips to `filled` — after the FIRST accept the field is
+ * factually filled, so the next accept must go through the replace path (and
+ * the rescan row model rebuilds on the `filled` id, see `buildRows`).
  */
 async function writeRowText(
   rowId: string,
@@ -2143,10 +2173,15 @@ async function writeRowText(
         );
 
   if (result.filled) {
+    // A FAILED fill must not flip the kind (`result.filled` is the guard): a
+    // refused write leaves the field empty, so the next Accept must still take
+    // the fill path and the row model must still key on the `empty` id.
     await updateAnswerState(tabId, (current) => ({
       ...current,
       rows: current.rows.map((r) =>
-        r.id === rowId && r.field ? { ...r, field: { ...r.field, currentText: text } } : r
+        r.id === rowId && r.field
+          ? { ...r, field: { ...r.field, kind: 'filled', currentText: text } }
+          : r
       ),
     }));
   }

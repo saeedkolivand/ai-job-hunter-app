@@ -675,6 +675,11 @@ const EXPECTED_FENCE_TAGS: &[&str] = &[
     "salary_context",
     "existing_answer",
     "rewrite_instruction",
+    // #1231 — the draft-mode Regenerate instruction's own block, mirroring the
+    // registry entry beside `rewrite_instruction`. Added here deliberately, not
+    // reflexively: the loop below now probes it with all three forgery shapes,
+    // so a crafted `question` cannot forge a `<candidate_instruction>` sibling.
+    "candidate_instruction",
     "validate_resume_result",
     "search_candidate_evidence_result",
     "get_trim_suggestions_result",

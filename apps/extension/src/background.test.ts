@@ -3244,6 +3244,58 @@ describe('answerAccept / answerRestoreOriginal requests (ADR-044)', () => {
     expect(res).toEqual({ ok: true, kind: 'answerAccept', result: { filled: true } });
   });
 
+  // #1230: a successful write into an EMPTY field flips `field.kind` to
+  // 'filled'. Without that flip the SECOND write still takes the fill path,
+  // whose locator only searches EMPTY candidates — so it cannot find the field
+  // it just filled and returns the fixed NOT_FOUND ("the page may have
+  // changed"), which is false: the field is right there, holding our own text.
+  it('takes the REPLACE path on a second write, because the first flipped the field to filled', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    tabsQueryMock.mockResolvedValue([
+      { id: 207, url: 'https://jobs.example.com/posting/8' } as never,
+    ]);
+    executeScriptMock.mockResolvedValueOnce([
+      { result: { questions: [{ question: 'Why this role?', index: 0 }], filled: [] } },
+    ] as never);
+    mockClient.suggestAnswers.mockResolvedValue({ ok: false, error: 'not paired' });
+    const scanned = await send({ kind: 'answerScan' });
+    if (!scanned.ok || scanned.kind !== 'answerState' || !scanned.state) {
+      throw new Error('expected an answerState response');
+    }
+    const rowId = scanned.state.rows[0]?.id;
+    if (!rowId) throw new Error('expected a row');
+
+    // First write — the field is still empty, so this is the fill path.
+    executeScriptMock.mockResolvedValueOnce([{}] as never); // answer-fill.js registration
+    executeScriptMock.mockResolvedValueOnce([{ result: { filled: true } }] as never);
+    const first = await send({ kind: 'answerRestoreOriginal', rowId });
+    expect(first).toEqual({ ok: true, kind: 'answerAccept', result: { filled: true } });
+    expect(executeScriptMock).toHaveBeenNthCalledWith(2, {
+      target: { tabId: 207 },
+      files: ['answer-fill.js'],
+    });
+
+    // Second write on the SAME row — the field is now genuinely filled, so it
+    // must go through answer-replace.js, carrying the previous text as the
+    // expected current value.
+    executeScriptMock.mockResolvedValueOnce([{}] as never); // answer-replace.js registration
+    executeScriptMock.mockResolvedValueOnce([{ result: { filled: true } }] as never);
+    const second = await send({ kind: 'answerRestoreOriginal', rowId });
+
+    expect(second).toEqual({ ok: true, kind: 'answerAccept', result: { filled: true } });
+    expect(executeScriptMock).toHaveBeenNthCalledWith(4, {
+      target: { tabId: 207 },
+      files: ['answer-replace.js'],
+    });
+    expect(executeScriptMock).toHaveBeenNthCalledWith(
+      5,
+      expect.objectContaining({
+        target: { tabId: 207 },
+        args: ['Why this role?', 0, 1, '', '', '__ajhRunAnswerReplace'],
+      })
+    );
+  });
+
   it('refuses to write once the page has changed, without touching the tab at all', async () => {
     getTokenMock.mockResolvedValue(FAKE_TOKEN);
     tabsQueryMock.mockResolvedValue([
