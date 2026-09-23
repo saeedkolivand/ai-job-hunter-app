@@ -102,10 +102,18 @@ describe('mountFirstFillConfirm', () => {
     return { host, view, rememberHostMock, getRememberedHostsMock };
   }
 
-  it('resolves true immediately, with no UI shown, for a null host', async () => {
+  // #1249: an unknown host must REFUSE, not approve. "We cannot name this
+  // page" is not consent — the side panel reaches here with a null origin
+  // until its first state push lands.
+  it('resolves false immediately, with no UI shown, for a null host', async () => {
     const { view, host } = mount();
-    await expect(view.confirm(null)).resolves.toBe(true);
+    await expect(view.confirm(null)).resolves.toBe(false);
     expect(host.querySelector('.inset')?.hasAttribute('hidden')).toBe(true);
+  });
+
+  it('resolves false for an empty-string host too', async () => {
+    const { view } = mount();
+    await expect(view.confirm('')).resolves.toBe(false);
   });
 
   it('resolves true immediately for an already-remembered host, without rendering', async () => {

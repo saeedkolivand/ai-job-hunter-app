@@ -284,6 +284,13 @@ const jobTools = mountJobTools(jobToolsHost, {
   confirmFill: async () => {
     const capturedGeneration = followGeneration;
     const capturedOrigin = currentOrigin;
+    // Fail closed while the origin is still unknown (#1249). `currentOrigin`
+    // is fed only by `follow()`'s subscription, so it is null until the first
+    // state push lands — and "we cannot name this page" is not consent. The
+    // shared `confirm()` refuses a null host too; this is the deliberate
+    // second latch, because a consent gate should not depend on a primitive
+    // two surfaces share to stay fail-closed for it.
+    if (!capturedOrigin) return false;
     const ok = await fillConfirm.confirm(hostOf(capturedOrigin));
     if (!ok) return false;
     return followGeneration === capturedGeneration && currentOrigin === capturedOrigin;
@@ -296,7 +303,10 @@ const jobTools = mountJobTools(jobToolsHost, {
 const documents = mountDocuments(documentsHost, {
   send,
   copy: copyText,
-  confirmAttach: (host) => fillConfirm.confirm(host, ATTACH_CONFIRM_COPY, 'Attach'),
+  // Same unknown-host refusal as `confirmFill` above (#1249) — Attach writes
+  // a file into the page, so it gets the identical latch.
+  confirmAttach: (host) =>
+    host ? fillConfirm.confirm(host, ATTACH_CONFIRM_COPY, 'Attach') : Promise.resolve(false),
   currentHost: () => hostOf(currentOrigin),
   getFollowGeneration: () => followGeneration,
   onUrlResolved: (url) => {
