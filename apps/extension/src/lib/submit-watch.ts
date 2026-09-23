@@ -130,6 +130,31 @@ export function isResumeFileInput(el: HTMLElement): boolean {
   return RESUME_FILE_TEXT_RE.test(textSignal(el)) || RESUME_FILE_ACCEPT_RE.test(accept);
 }
 
+/** A file input whose own text names a COVER LETTER rather than a résumé. */
+const COVER_LETTER_TEXT_RE = /cover.?letter|anschreiben|motivation/;
+
+/**
+ * True when `el`'s own name/id/label NAMES it a résumé — the strict half of
+ * [`isResumeFileInput`]'s two signals, with a cover-letter field excluded
+ * outright.
+ *
+ * Deliberately NOT folded into `isResumeFileInput`, whose permissiveness is
+ * correct for its own caller: `looksLikeApplicationForm` only asks "does this
+ * form take a document upload", and a cover-letter field answers that just as
+ * well as a résumé one. Tightening the shared predicate would make the watcher
+ * miss real application forms — the two consumers want opposite safe
+ * directions, so the narrowing lives here and is applied only by the caller
+ * that needs to pick exactly ONE field (issue #1228: Greenhouse ships
+ * `id="resume"` and `id="cover_letter"` with byte-identical `accept` lists, so
+ * the accept-only signal matched both and Attach refused as ambiguous).
+ */
+export function isNamedResumeFileInput(el: HTMLElement): boolean {
+  if (!isResumeFileInput(el)) return false;
+  const text = textSignal(el);
+  if (COVER_LETTER_TEXT_RE.test(text)) return false;
+  return RESUME_FILE_TEXT_RE.test(text);
+}
+
 /**
  * Whether `form` looks like the application form rather than incidental page
  * furniture (search box, filter, newsletter signup, login).

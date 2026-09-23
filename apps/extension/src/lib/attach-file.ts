@@ -28,7 +28,7 @@
  */
 
 import { type AutofillSummary, renderSummaryOverlay } from './autofill';
-import { isResumeFileInput } from './submit-watch';
+import { isNamedResumeFileInput, isResumeFileInput } from './submit-watch';
 
 /** Isolated-world global key `attach-file.ts` exposes the runner under. MUST
  *  match the literal duplicated in `background.ts` (kept a plain literal
@@ -101,8 +101,17 @@ export function attachResumeFile(
   filename: string,
   mimeType: string
 ): AttachFileResult {
-  const candidates = Array.from(doc.querySelectorAll('input')).filter(isResumeFileInput);
-  if (candidates.length === 0) return NO_FIELD;
+  const loose = Array.from(doc.querySelectorAll('input')).filter(isResumeFileInput);
+  if (loose.length === 0) return NO_FIELD;
+  // When the permissive signal matches several fields, let the ones that NAME
+  // themselves a résumé break the tie (#1228). A cover-letter upload sitting
+  // beside the résumé one — same `accept` list, unambiguous id — is the common
+  // real case, and refusing there sent the user to do by hand what the page
+  // labelled plainly. Still fails closed: if the narrowing leaves zero, or
+  // still leaves more than one, this refuses exactly as before rather than
+  // guessing which of several résumé-named fields was meant.
+  const named = loose.filter(isNamedResumeFileInput);
+  const candidates = loose.length > 1 && named.length === 1 ? named : loose;
   if (candidates.length > 1) return AMBIGUOUS;
   const [input] = candidates;
   if (!input) return NO_FIELD;
