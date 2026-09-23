@@ -105,6 +105,47 @@ describe('attachResumeFile', () => {
     expect(result.reason).toMatch(/more than one/i);
   });
 
+  // #1228: Greenhouse ships `id="resume"` and `id="cover_letter"` with
+  // byte-identical `accept` lists, so the accept-only signal matched BOTH and
+  // Attach refused as ambiguous — on a page where the right field names itself.
+  it('picks the résumé field when a cover-letter upload shares its accept list', () => {
+    document.body.innerHTML =
+      '<input type="file" id="resume" accept=".pdf,.doc,.docx,.txt,.rtf">' +
+      '<input type="file" id="cover_letter" accept=".pdf,.doc,.docx,.txt,.rtf">';
+    const bytes = bytesOf('%PDF-1.4 fake');
+    const result = attachResumeFile(document, bytes, 'resume.pdf', 'application/pdf');
+
+    expect(result.attached).toBe(true);
+    // ...and it landed on the résumé field, not the cover-letter one.
+    const resume = document.querySelector<HTMLInputElement>('#resume')!;
+    const cover = document.querySelector<HTMLInputElement>('#cover_letter')!;
+    expect(resume.files?.[0]?.name).toBe('resume.pdf');
+    expect(cover.files?.length ?? 0).toBe(0);
+  });
+
+  it('still refuses when SEVERAL fields name themselves a résumé', () => {
+    // The narrowing breaks a tie; it never guesses between two equally-named
+    // fields, so this keeps failing closed exactly as before.
+    document.body.innerHTML =
+      '<input type="file" id="resume_en" accept=".pdf">' +
+      '<input type="file" id="resume_de" accept=".pdf">';
+    const result = attachResumeFile(document, bytesOf('x'), 'resume.pdf', 'application/pdf');
+    expect(result.attached).toBe(false);
+    expect(result.reason).toMatch(/more than one/i);
+  });
+
+  it('still refuses when NO candidate names itself a résumé', () => {
+    // Two generic document uploads, neither identifiable — the narrowing
+    // leaves zero, so the original ambiguous refusal stands rather than
+    // silently attaching to whichever came first.
+    document.body.innerHTML =
+      '<input type="file" id="attachment_one" accept=".pdf">' +
+      '<input type="file" id="attachment_two" accept=".pdf">';
+    const result = attachResumeFile(document, bytesOf('x'), 'resume.pdf', 'application/pdf');
+    expect(result.attached).toBe(false);
+    expect(result.reason).toMatch(/more than one/i);
+  });
+
   it('fails closed on a disabled résumé field', () => {
     document.body.innerHTML = '<input type="file" name="resume" accept=".pdf" disabled>';
     const result = attachResumeFile(document, bytesOf('x'), 'resume.pdf', 'application/pdf');
