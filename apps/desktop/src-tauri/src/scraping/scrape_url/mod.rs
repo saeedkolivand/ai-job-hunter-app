@@ -15,6 +15,11 @@ use anyhow::Result;
 use scraper::{Html, Selector};
 use std::collections::HashMap;
 
+use generic::{
+    main_content_text, og_site_name, parse_generic_company, parse_generic_html,
+    readability_content_text, strip_site_suffix, GENERIC_FIELD_CAP,
+};
+
 /// Byte cap for a generic-HTML body read here — the same 8 MB the board fetch
 /// path applies. A job page that legitimately exceeds this is not something the
 /// generic extractor could make sense of anyway.
@@ -551,7 +556,16 @@ pub fn parse_from_html(url: &str, html: &str) -> Option<JobPosting> {
         .ok()
         .and_then(|u| u.host_str().map(str::to_string))
         .unwrap_or_default();
-    // Prefer a real employer name (JSON-LD / og:site_name) over the bare host.
+    // Drop a site-branding suffix the generic <title> carries (#1239). Done
+    // here rather than in `parse_generic_html` because it needs the host, and
+    // only AFTER the hint/JSON-LD passes above have had their say — a title
+    // they supplied is already clean.
+    let site_name = og_site_name(html);
+    title = strip_site_suffix(&title, site_name.as_deref(), &host);
+    title = title.chars().take(GENERIC_FIELD_CAP).collect();
+
+    // Prefer a real employer name (JSON-LD / og:site_name / logo alt) over the
+    // bare host.
     let company = parse_generic_company(html).unwrap_or(host);
 
     Some(JobPosting {
@@ -836,162 +850,6 @@ fn next_data_job(html: &str) -> Option<JsonLdJob> {
     let raw = doc.select(&sel).next()?.text().collect::<String>();
     let json = serde_json::from_str::<serde_json::Value>(&raw).ok()?;
     find(&json, 0)
-}
-
-/// Real-readability last-resort description: run `dom_smoothie` (a faithful
-/// Rust port of Mozilla's Readability.js) over the whole document, so nav/
-/// footer/boilerplate get scored out instead of surviving a naive
-/// largest-block guess. `is_probably_readable()` must run before `parse()`
-/// (it inspects the un-mutated document; `parse()` mutates it) and gates
-/// documents too thin to trust — e.g. a nav-only shell with no real article.
-/// Both the pre-check and `parse()` are best-effort: any `Err` (bad URL,
-/// `max_elements_to_parse` exceeded, no candidate found) falls through to
-/// `None` — the caller then tries `main_content_text` — rather than
-/// propagating, since this is an enrichment, not a hard requirement.
-// TODO(perf): this runs synchronous CPU parsing on the async executor with no
-// `spawn_blocking` (same as every other rung of `parse_from_html`'s generic-HTML
-// fallback — all use `Html::parse_document`). Deferred: wrap the whole generic
-// fallback in `spawn_blocking` at its async call sites (including the
-// extension-bridge Scan path) — a broader refactor, out of scope here.
-fn readability_content_text(url: &str, html: &str) -> Option<String> {
-    // Host only — never log the raw dom_smoothie error, which can embed the
-    // scraped `url` (see the `host`-only convention at parse_from_html's own
-    // `reqwest::Url::parse` call and the `linkedin` job-id log above).
-    let host = reqwest::Url::parse(url)
-        .ok()
-        .and_then(|u| u.host_str().map(str::to_string))
-        .unwrap_or_default();
-    let cfg = dom_smoothie::Config {
-        // `text_content` becomes ready-to-use markdown straight off the
-        // cleaned readability DOM — skips a second html_to_markdown pass over
-        // `article.content` (which would re-parse already-cleaned HTML).
-        text_mode: dom_smoothie::TextMode::Markdown,
-        // Defense-in-depth against a hostile/huge page: default `0` means
-        // UNLIMITED, letting an attacker-sized document drive an unbounded
-        // multi-pass scoring parse (CPU/peak-memory amplification). 4000 is
-        // comfortably above any real job posting page (dom_smoothie's own
-        // test suite parses a full Wikipedia article — far denser than a job
-        // page — under 10,000 with no false-positive `TooManyElements`)
-        // while still bounding abuse. Tripping the cap returns
-        // `Err(TooManyElements)`, handled by the `Err ⇒ None` arm below —
-        // clean fall-through to `main_content_text`.
-        max_elements_to_parse: 4000,
-        ..Default::default()
-    };
-    let mut readability = match dom_smoothie::Readability::new(html, Some(url), Some(cfg)) {
-        Ok(r) => r,
-        Err(_) => {
-            log::debug!(
-                "[scraping::scrape_url] dom_smoothie::Readability::new failed for host {host}"
-            );
-            return None;
-        }
-    };
-    if !readability.is_probably_readable() {
-        return None;
-    }
-    match readability.parse() {
-        Ok(article) => {
-            let text = article.text_content.trim().to_string();
-            (!text.is_empty()).then_some(text)
-        }
-        Err(_) => {
-            log::debug!("[scraping::scrape_url] dom_smoothie parse failed for host {host}");
-            None
-        }
-    }
-}
-
-/// Largest main-content text block as a FINAL last-resort description (below
-/// `readability_content_text`): pick the longest rendered text among `main` /
-/// `[role="main"]` / `article`. Kept as the floor for when readability's own
-/// pre-check or `parse()` comes back empty — a naive guess beats nothing.
-fn main_content_text(html: &str) -> Option<String> {
-    let doc = Html::parse_document(html);
-    let sel = Selector::parse(r#"main, [role="main"], article"#).ok()?;
-    doc.select(&sel)
-        .map(|el| crate::scraping::http::html_to_markdown(&el.inner_html()))
-        .filter(|t| !t.trim().is_empty())
-        .max_by_key(|t| t.len())
-}
-
-fn parse_generic_html(html: &str) -> (String, Option<String>) {
-    let doc = Html::parse_document(html);
-    let title_sel = Selector::parse("title, h1").unwrap();
-    let title = doc
-        .select(&title_sel)
-        .next()
-        .map(|e| e.text().collect::<String>().trim().to_string())
-        .unwrap_or_default();
-    let meta_sel =
-        Selector::parse("meta[name=\"description\"], meta[property=\"og:description\"]").unwrap();
-    let description = doc
-        .select(&meta_sel)
-        .next()
-        .and_then(|e| e.value().attr("content").map(str::to_string));
-    (title, description)
-}
-
-/// Best-effort real employer name for the generic fallback. Tries JSON-LD
-/// (`JobPosting.hiringOrganization.name`, incl. an `@graph` array), then
-/// `og:site_name`. Returns `None` when neither is present so the caller can
-/// fall back to the host.
-fn parse_generic_company(html: &str) -> Option<String> {
-    let doc = Html::parse_document(html);
-
-    if let Ok(sel) = Selector::parse(r#"script[type="application/ld+json"]"#) {
-        for node in doc.select(&sel) {
-            let raw = node.text().collect::<String>();
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
-                if let Some(name) = json_ld_company(&json) {
-                    let name = name.trim();
-                    if !name.is_empty() {
-                        return Some(name.to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    if let Ok(sel) = Selector::parse(r#"meta[property="og:site_name"]"#) {
-        if let Some(name) = doc
-            .select(&sel)
-            .next()
-            .and_then(|e| e.value().attr("content"))
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        {
-            return Some(name.to_string());
-        }
-    }
-
-    None
-}
-
-/// Pull `hiringOrganization.name` from a JSON-LD value at any depth, tolerating a
-/// single object, a string org, an `@graph` array, and arbitrary nesting.
-// ponytail: same depth-12 cap as `find_job` — cyclic/pathological-nesting guard.
-fn json_ld_company(json: &serde_json::Value) -> Option<String> {
-    fn org_name(node: &serde_json::Value, depth: u8) -> Option<String> {
-        match node.get("hiringOrganization") {
-            Some(serde_json::Value::String(s)) => return Some(s.clone()),
-            Some(org @ serde_json::Value::Object(_)) => {
-                if let Some(name) = org.get("name").and_then(|n| n.as_str()) {
-                    return Some(name.to_string());
-                }
-            }
-            _ => {}
-        }
-        if depth >= 12 {
-            return None;
-        }
-        match node {
-            serde_json::Value::Array(arr) => arr.iter().find_map(|n| org_name(n, depth + 1)),
-            serde_json::Value::Object(map) => map.values().find_map(|n| org_name(n, depth + 1)),
-            _ => None,
-        }
-    }
-    org_name(json, 0)
 }
 
 // ── LinkedIn ────────────────────────────────────────────────────────────────
@@ -1393,6 +1251,9 @@ async fn try_personio(url: &str) -> Result<Option<JobPosting>> {
 
     Ok(None)
 }
+
+mod generic;
+pub(crate) use generic::has_cross_origin_iframe;
 
 #[cfg(test)]
 mod test;
