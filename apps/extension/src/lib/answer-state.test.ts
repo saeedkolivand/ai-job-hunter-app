@@ -104,20 +104,140 @@ describe('buildRows', () => {
     expect(rows.map((r) => r.field?.count)).toEqual([2, 2]);
   });
 
-  it('carries drafted versions through a rescan', () => {
+  it('migrates drafted versions onto the filled row a kind-flipped field rescans as', () => {
     const first = buildRows(scan({ questions: [{ question: 'Why us?', index: 0 }] }), NO_SAVED);
     const drafted = appendVersion(first, first[0]!.id, 'A draft.', 'draft');
 
     // The field flipped from empty to filled — a rescan sees it in the OTHER
-    // candidate set, so the empty row disappears and must survive as free text.
+    // candidate set under a DIFFERENT row id (`empty:0:Why us?` ->
+    // `filled:0:Why us?`). The (question,index) migration must move the
+    // drafted versions onto the row that NOW owns the field, as a REAL field
+    // row the user can still accept into — not strand them as free text.
     const rescanned = buildRows(
       scan({ filled: [{ question: 'Why us?', index: 0, answer: 'A draft.' }] }),
       NO_SAVED,
       drafted
     );
 
-    const carried = rescanned.find((r) => r.versions.length > 0);
-    expect(carried?.versions[0]?.text).toBe('A draft.');
+    expect(rescanned).toHaveLength(1);
+    const migrated = rescanned[0]!;
+    expect(migrated.id).toBe('filled:0:Why us?');
+    expect(migrated.field?.kind).toBe('filled');
+    expect(migrated.versions[0]?.text).toBe('A draft.');
+    expect(canAccept(migrated, false)).toBe(true);
+    // The migrated row must not ALSO re-emerge as a free-text orphan with the
+    // same versions (that is the `claimed` set's job).
+    expect(rescanned.filter((r) => r.field === null)).toHaveLength(0);
+  });
+
+  it('lets an exact-id carry-over win over migration onto a second row', () => {
+    // One scan can yield BOTH `empty:0:Why us?` AND `filled:0:Why us?` (two
+    // fields, identical question text — see the first test above). The prior
+    // `empty` row is still reachable by its OWN id, so it must be carried
+    // exactly once, onto the empty row, and the kind-flip migration must not
+    // ALSO adopt it onto the filled row (duplicated versions on two rows).
+    const first = buildRows(scan({ questions: [{ question: 'Why us?', index: 0 }] }), NO_SAVED);
+    const drafted = appendVersion(first, first[0]!.id, 'A draft.', 'draft');
+
+    const rescanned = buildRows(
+      scan({
+        questions: [{ question: 'Why us?', index: 0 }],
+        filled: [{ question: 'Why us?', index: 0, answer: 'A draft.' }],
+      }),
+      NO_SAVED,
+      drafted
+    );
+
+    const withVersions = rescanned.filter((r) => r.versions.length > 0);
+    expect(withVersions).toHaveLength(1);
+    expect(withVersions[0]?.id).toBe('empty:0:Why us?');
+  });
+
+  it('does not migrate when the prior row matches but holds no drafts', () => {
+    // A versionless prior row has nothing to salvage — the field flips and the
+    // scan finds it under a new id as a plain empty-of-versions row.
+    const previous: AnswerRow[] = [
+      {
+        id: 'empty:0:Why us?',
+        question: 'Why us?',
+        field: { kind: 'empty', index: 0, count: 1, currentText: '', originalText: '' },
+        status: 'empty',
+        versions: [],
+        selected: -1,
+      },
+    ];
+
+    const rescanned = buildRows(
+      scan({ filled: [{ question: 'Why us?', index: 0, answer: 'Typed on the page.' }] }),
+      NO_SAVED,
+      previous
+    );
+
+    expect(rescanned).toHaveLength(1);
+    expect(rescanned[0]?.field?.kind).toBe('filled');
+    expect(rescanned[0]?.versions).toEqual([]);
+    // And the versionless prior row is dropped, not kept as a free-text row.
+    expect(rescanned.filter((r) => r.field === null)).toHaveLength(0);
+  });
+
+  it('never migrates a free-text row, which stays free text on its own', () => {
+    const previous: AnswerRow[] = [
+      {
+        id: 'free: Tell me about yourself',
+        question: 'Tell me about yourself',
+        field: null,
+        status: 'drafted',
+        versions: [{ label: 'v1', text: 'A manual draft.', kind: 'draft' }],
+        selected: 0,
+      },
+    ];
+
+    const rescanned = buildRows(
+      scan({ questions: [{ question: 'Tell me about yourself', index: 0 }] }),
+      NO_SAVED,
+      previous
+    );
+
+    // The scanned row is fresh (no adoption — the prior is free text), and the
+    // free-text row keeps its own versions as itself.
+    expect(rescanned[0]?.versions).toEqual([]);
+    expect(rescanned[1]?.id).toBe('free: Tell me about yourself');
+    expect(rescanned[1]?.versions[0]?.text).toBe('A manual draft.');
+  });
+
+  it('adopts each flipped field once and free-texts nothing (`claimed` set)', () => {
+    const first = buildRows(
+      scan({
+        questions: [
+          { question: 'Why us?', index: 0 },
+          { question: 'Notice period', index: 0 },
+        ],
+      }),
+      NO_SAVED
+    );
+    const drafted = appendVersion(
+      appendVersion(first, first[0]!.id, 'Why us answer.', 'draft'),
+      first[1]!.id,
+      'Two weeks.',
+      'draft'
+    );
+
+    const rescanned = buildRows(
+      scan({
+        filled: [
+          { question: 'Why us?', index: 0, answer: 'Why us answer.' },
+          { question: 'Notice period', index: 0, answer: 'Two weeks.' },
+        ],
+      }),
+      NO_SAVED,
+      drafted
+    );
+
+    expect(rescanned).toHaveLength(2);
+    const migrated = rescanned.filter((r) => r.versions.length > 0);
+    expect(migrated).toHaveLength(2);
+    // Neither migrated row re-emerges as an orphan free-text duplicate.
+    expect(rescanned.filter((r) => r.field === null)).toHaveLength(0);
   });
 
   it('drops a vanished scanned row that carried no work, and keeps one that did', () => {

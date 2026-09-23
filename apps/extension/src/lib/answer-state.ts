@@ -239,10 +239,13 @@ function rowStatus(
  * A rescan is a mid-form event (a multi-step form advanced, a field got
  * filled) — dropping a drafted answer because its field flipped from empty to
  * filled would throw away exactly the work the user asked for. So versions,
- * selection and error are preserved BY ROW ID, and only the field reference
- * and status are re-derived. A row whose field disappeared entirely survives
- * as a FREE-TEXT row when it holds versions (its drafts are still worth
- * copying) and is dropped when it holds none.
+ * selection and error are preserved BY ROW ID when the id persists; a field
+ * that changed KIND (the Accept action flips `empty` to `filled`) gets its
+ * drafts migrated by (question,index) onto the row that now owns the field
+ * (see `push`), and only the field reference and status are re-derived. A row
+ * whose field disappeared entirely survives as a FREE-TEXT row when it holds
+ * versions (its drafts are still worth copying) and is dropped when it holds
+ * none.
  *
  * `savedFor` maps a question text to the answer a PAST application already
  * has for it — the `saved-available` status. An empty map is fine; the status
@@ -259,8 +262,20 @@ export function buildRows(
   const carried = new Map(previous.map((r) => [r.id, r]));
   const emptyCounts = countsByQuestion(scan.questions);
   const filledCounts = countsByQuestion(scan.filled);
+  // Every row id THIS scan will produce. Exact-id carry-over always wins, so
+  // a prior row the scan still reaches by its own id must never ALSO be
+  // adopted by the kind-flip migration below — one scan can produce BOTH
+  // `empty:0:Q` and `filled:0:Q` (two fields, same question text), and
+  // adopting the same prior row onto both would duplicate its versions.
+  const scannedIds = new Set<string>();
+  for (const q of scan.questions) scannedIds.add(fieldRowId('empty', q.question, q.index));
+  for (const f of scan.filled) scannedIds.add(fieldRowId('filled', f.question, f.index));
   const rows: AnswerRow[] = [];
   const seen = new Set<string>();
+  // Rows whose versions got adopted under a NEW id this scan (see `push`).
+  // They must not then be re-emitted by the free-text orphan pass below, or
+  // their drafts would appear on TWO rows.
+  const claimed = new Set<string>();
 
   const push = (
     kind: AnswerFieldKind,
@@ -273,7 +288,40 @@ export function buildRows(
     const id = fieldRowId(kind, question, index);
     if (seen.has(id)) return;
     seen.add(id);
-    const prior = carried.get(id);
+    let prior = carried.get(id);
+    if (prior === undefined) {
+      // The scan still finds THIS field, but under a different id than last
+      // time: the Accept action (or the user typing) flipped its kind, and a
+      // field's row id embeds its kind — `empty:0:Q` != `filled:0:Q` (see
+      // `fieldRowId`). Without a (question,index) fallback the just-accepted
+      // row would rescan as a fresh row with NO versions: Accept would be the
+      // one action that discards the drafted work it just created. Exact-id
+      // matches above still win (a prior row whose id THIS scan still produces
+      // is skipped — its own push will carry it); migration only ever adopts a
+      // prior row that (a) has a field at all (free-text rows never carry
+      // one), (b) is the same question at the same index in ITS kind's index
+      // space, and (c) actually holds drafts — a versionless prior row has
+      // nothing to salvage. A MIGRATED row gets `claimed` for the orphan pass
+      // (its old id is not in this scan, so `seen` could not stop the
+      // duplicate).
+      //
+      // Weakness, accepted: index spaces are per-kind counts, so when the
+      // SAME question appears as several fields that flip indiscriminately,
+      // (question,index) alignment can shift and a draft could be left behind
+      // (wrong-kind match guarded by the kind in the id, over-conservative —
+      // never onto the WRONG row, occasionally NOT adopted). Pre-fix rows a
+      // user already stranded (kind flipped while the bug was live, so the
+      // previous state holds `field:null` with no recoverable index) are not
+      // salvageable and are out of scope.
+      for (const prev of previous) {
+        if (prev.field === null || claimed.has(prev.id) || scannedIds.has(prev.id)) continue;
+        if (prev.question !== question || prev.field.index !== index) continue;
+        if (prev.versions.length === 0) continue;
+        prior = prev;
+        claimed.add(prev.id);
+        break;
+      }
+    }
     const field: AnswerFieldRef = { kind, index, count, currentText, originalText: currentText };
     if (maxChars !== undefined) field.maxChars = maxChars;
     const versions = prior?.versions ?? [];
@@ -307,7 +355,7 @@ export function buildRows(
   // because the page never had a field for it. Everything else is a scanned
   // row that is simply gone, and keeping it would be inventing a question.
   for (const prior of previous) {
-    if (seen.has(prior.id)) continue;
+    if (seen.has(prior.id) || claimed.has(prior.id)) continue;
     if (prior.versions.length === 0 && !prior.id.startsWith(FREE_ROW_PREFIX)) continue;
     rows.push({ ...prior, field: null, status: prior.versions.length > 0 ? 'drafted' : 'empty' });
   }

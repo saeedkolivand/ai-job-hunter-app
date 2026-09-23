@@ -155,8 +155,11 @@ export interface RewriteChip {
 /**
  * TONE chips. Every one is a REWRITE of the latest version through the wire's
  * existing rewrite mode — no protocol change (decision 5). Two of them map to
- * a server-side preset; the rest carry a free instruction, because a preset
- * always beats free text server-side and there is no preset for "warmer".
+ * a server-side preset; the rest carry a free instruction, because there is no
+ * preset for "warmer". The server-side resolver COMBINES a preset with typed
+ * free text (or combines the chip instruction with typed text client-side for
+ * instruction chips — `renderChipRow`), so neither side of the pair discards
+ * the other (issue 1231).
  *
  * The leading "As is" is deliberate and does nothing: without an explicit
  * neutral the chip row reads as a required choice, and a user who likes the
@@ -390,14 +393,25 @@ export function mountAnswerTools(host: HTMLElement, deps: AnswerToolsDeps): Answ
         // (Finding 5).
         b.disabled = busy || streaming;
         b.addEventListener('click', () => {
+          // Issue 1231 (Half A): a typed free instruction must never be
+          // discarded by a chip. An instruction chip COMBINES both into one
+          // instruction (chip directive first, then the typed text); a preset
+          // chip sends its preset PLUS the typed text as `instruction` — the
+          // server's resolver merges the pair, whereas a combined client-side
+          // instruction string would reach the same model as unbounded
+          // free-form text and lose the preset's fixed semantics.
+          const typed = instructions.get(row.id)?.trim() ?? '';
           void run({
             kind: 'answerAssist',
             question: row.question,
             searchWeb: false,
             mode: 'rewrite',
             rowId: row.id,
-            ...(chip.preset ? { preset: chip.preset } : {}),
-            ...(chip.instruction ? { instruction: chip.instruction } : {}),
+            ...(chip.preset
+              ? { preset: chip.preset, ...(typed ? { instruction: typed } : {}) }
+              : chip.instruction
+                ? { instruction: [chip.instruction, typed].filter(Boolean).join(' ') }
+                : {}),
           });
         });
       }
