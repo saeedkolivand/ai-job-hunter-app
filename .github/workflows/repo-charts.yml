@@ -143,6 +143,10 @@ jobs:
           if [ "$tree" = "$(git rev-parse FETCH_HEAD^{tree} 2>/dev/null || echo none)" ]; then
             echo "Charts unchanged — skipping publish."
             echo "published=false" >> "$GITHUB_OUTPUT"
+            # The counts table is written by the build step; this line closes it
+            # off with what actually happened, so the summary answers "did
+            # anything ship?" without opening the log.
+            echo "**Publish:** nothing to do — the published tree is byte-identical." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
@@ -150,6 +154,7 @@ jobs:
           git push --force origin "$commit:refs/heads/badges"
           echo "published=true" >> "$GITHUB_OUTPUT"
           echo "Published repo charts to the badges branch."
+          echo "**Publish:** pushed \`${commit:0:8}\` to the \`badges\` branch." >> "$GITHUB_STEP_SUMMARY"
 
       # The home page embeds these charts, and pages.yml copies them out of the
       # `badges` branch at build time — so a fresh chart is not live until the
