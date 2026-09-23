@@ -79,11 +79,18 @@ vi.mock('@wxt-dev/browser', () => ({
       session: {
         get: vi.fn(() => Promise.resolve({})),
         set: vi.fn(() => Promise.resolve(undefined)),
+        // Resolves (never `undefined`) so the #1236 Half B cleanup's
+        // `.catch(() => undefined)` chain is well-formed.
+        remove: vi.fn(() => Promise.resolve(undefined)),
       },
+      // `lib/theme.ts`'s `subscribeThemeChanges()` registers on `onChanged`
+      // at panel load (#1236 Half A).
+      onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
     },
     windows: {
       getCurrent: vi.fn(() => Promise.resolve({ id: PANEL_WINDOW_ID })),
       onFocusChanged: { addListener: vi.fn() },
+      onRemoved: { addListener: vi.fn() },
     },
     tabs: {
       query: vi.fn(({ windowId }: { windowId: number }) =>
@@ -731,6 +738,181 @@ describe('job-status refresh is keyed by transition, not every state push (item 
     deliver({ ...base, scannedAt: 4 }); // streamed chunk 3
 
     expect(jobStatus.refresh).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── auto-track's pushed jobStatusChanged (#1233) ────────────────────────────
+// The background broadcasts a CONFIRMED saved→applied flip over the shared
+// `runtime.sendMessage` channel (the same one `broadcastStatus` uses); the
+// panel's ONE module-scope listener must refresh ONLY the followed page's own
+// job, never another window's, and never on a malformed url. Registered at
+// module load — `mock.calls[0]` on `runtime.onMessage.addListener` is this
+// listener (connection-status's own listener lives in `connection-status.ts`,
+// which this file mocks out, so nothing else registers one here).
+
+describe('auto-track pushed jobStatusChanged (#1233)', () => {
+  /** Follow a trusted tab and let `currentOrigin` settle to `origin` BEFORE
+   *  the push under test fires. follow()'s first-delivery key-change path
+   *  itself calls `jobStatus.refresh()`, so the mock is cleared right after
+   *  delivery — the assertions below then count ONLY the push-driven calls. */
+  async function followWithOrigin(origin: string, tabId = 701): Promise<void> {
+    const jobStatus = vi.mocked(mountJobStatus).mock.results[0]?.value;
+    if (!jobStatus) throw new Error('mountJobStatus was not called at module load');
+    vi.mocked(subscribeAnswerState).mockImplementationOnce((_tabId, onState) => {
+      queueMicrotask(() =>
+        onState({
+          tabId,
+          origin,
+          scannedAt: 1,
+          rows: [],
+          stream: null,
+          pageChanged: false,
+        } as never)
+      );
+      return vi.fn();
+    });
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+    onActivated({ tabId, windowId: PANEL_WINDOW_ID } as never);
+    await new Promise((r) => setTimeout(r, 0));
+    vi.mocked(jobStatus.refresh).mockClear();
+  }
+
+  function pushedListener(): (message: unknown) => void {
+    const listener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0];
+    if (!listener) throw new Error('jobStatusChanged listener not registered');
+    return listener;
+  }
+
+  it('refreshes the job-status card for a flip on the FOLLOWED page origin', async () => {
+    await followWithOrigin('https://jobs.example.com');
+    pushedListener()({
+      ok: true,
+      kind: 'jobStatusChanged',
+      url: 'https://jobs.example.com/posting/1',
+    } as never);
+    expect(vi.mocked(mountJobStatus).mock.results[0]?.value.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a flip for a DIFFERENT origin — another window/tab, never on screen', async () => {
+    await followWithOrigin('https://jobs.example.com');
+    pushedListener()({
+      ok: true,
+      kind: 'jobStatusChanged',
+      url: 'https://other.example.com/posting/2',
+    } as never);
+    expect(vi.mocked(mountJobStatus).mock.results[0]?.value.refresh).not.toHaveBeenCalled();
+  });
+
+  it('ignores a malformed url — never refreshes on garbage from our own background', async () => {
+    await followWithOrigin('https://jobs.example.com');
+    pushedListener()({ ok: true, kind: 'jobStatusChanged', url: 'not a url' } as never);
+    expect(vi.mocked(mountJobStatus).mock.results[0]?.value.refresh).not.toHaveBeenCalled();
+  });
+
+  it('ignores non-jobStatusChanged pushes (status, ok:false replies) on the shared channel', async () => {
+    await followWithOrigin('https://jobs.example.com');
+    const listener = pushedListener();
+    listener({
+      ok: true,
+      kind: 'status',
+      status: { phase: 'connected', port: 1, hasToken: true },
+    } as never);
+    listener({ ok: false, error: 'no such request' } as never);
+    expect(vi.mocked(mountJobStatus).mock.results[0]?.value.refresh).not.toHaveBeenCalled();
+  });
+});
+
+// ── theme live-sync (#1236 Half A) ─────────────────────────────────────────
+// `subscribeThemeChanges()` runs at panel load in sidepanel.ts (next to
+// `bootTheme()`); a `storage.local` change to `theme` must repaint the OPEN
+// panel. Only the theme listener is registered here after a fresh import —
+// `subscribeAnswerState`/`connection-status` are mocked out — so every
+// listener on the mock is the theme one.
+
+describe('theme live-sync (#1236 Half A)', () => {
+  afterEach(() => {
+    delete document.documentElement.dataset.theme;
+  });
+
+  it('repaints this open panel on a local theme change', async () => {
+    vi.mocked(browser.storage.onChanged.addListener).mockClear();
+    vi.resetModules();
+    buildPanelDom();
+
+    await import('./sidepanel');
+    await flush();
+
+    const listeners = vi
+      .mocked(browser.storage.onChanged.addListener)
+      .mock.calls.map((call) => call[0] as (changes: unknown, areaName: string) => void);
+    expect(listeners.length).toBeGreaterThan(0);
+    for (const listener of listeners) listener({ theme: { newValue: 'dark' } }, 'local');
+    expect(document.documentElement.dataset.theme).toBe('dark');
+  });
+
+  it('ignores changes to unrelated keys and other areas while open', async () => {
+    vi.mocked(browser.storage.onChanged.addListener).mockClear();
+    vi.resetModules();
+    buildPanelDom();
+
+    await import('./sidepanel');
+    await flush();
+
+    const listeners = vi
+      .mocked(browser.storage.onChanged.addListener)
+      .mock.calls.map((call) => call[0] as (changes: unknown, areaName: string) => void);
+    // A same-area change to an unrelated key must not recalibrate the
+    // current theme to system…
+    document.documentElement.dataset.theme = 'dark';
+    for (const listener of listeners)
+      listener({ defaultPanelTab: { newValue: 'answers' } }, 'local');
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    // …and the theme key changing in ANOTHER area must not repaint.
+    for (const listener of listeners) listener({ theme: { newValue: 'light' } }, 'session');
+    expect(document.documentElement.dataset.theme).toBe('dark');
+  });
+});
+
+// ── window-removed session cleanup (#1236 Half B) ──────────────────────────
+// `storage.session` outlives windows (and window ids get reused), so a
+// closed window's `sidepanelActiveTab:<id>` must be cleared when the window
+// is removed — otherwise it would mask a newer Appearance default for the
+// next window that reuses the id. The user's own explicit choice still wins
+// within that window's lifetime (the entry is only removed here).
+
+describe('window-removed session cleanup (#1236 Half B)', () => {
+  it('clears the remembered active tab for the window that was removed', async () => {
+    vi.mocked(browser.storage.session.remove).mockClear();
+    vi.mocked(browser.windows.onRemoved.addListener).mockClear();
+    vi.resetModules();
+    buildPanelDom();
+
+    await import('./sidepanel');
+    await flush();
+
+    const onRemoved = vi.mocked(browser.windows.onRemoved.addListener).mock.calls[0]?.[0];
+    if (!onRemoved) throw new Error('windows.onRemoved listener not registered');
+    onRemoved(PANEL_WINDOW_ID);
+
+    expect(browser.storage.session.remove).toHaveBeenCalledWith('sidepanelActiveTab:100');
+  });
+
+  it('leaves a DIFFERENT window key untouched when another window is removed', async () => {
+    vi.mocked(browser.storage.session.remove).mockClear();
+    vi.mocked(browser.windows.onRemoved.addListener).mockClear();
+    vi.resetModules();
+    buildPanelDom();
+
+    await import('./sidepanel');
+    await flush();
+
+    const onRemoved = vi.mocked(browser.windows.onRemoved.addListener).mock.calls[0]?.[0];
+    if (!onRemoved) throw new Error('windows.onRemoved listener not registered');
+    onRemoved(999);
+
+    expect(browser.storage.session.remove).toHaveBeenCalledWith('sidepanelActiveTab:999');
+    expect(browser.storage.session.remove).not.toHaveBeenCalledWith('sidepanelActiveTab:100');
   });
 });
 

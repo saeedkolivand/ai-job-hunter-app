@@ -57,10 +57,11 @@ export interface CollectedCard {
  *  injected once per gesture and both entry-points share it. */
 let candidateAnchors: HTMLAnchorElement[] = [];
 /** The stamp HOST most recently placed for a given anchor (if any) — lets a
- *  re-run REPLACE rather than duplicate (idempotent stamping). Keyed by the
- *  anchor itself so it also survives a re-collect of the SAME page (a fresh
- *  `WeakMap` per injected instance is fine: a page navigation always tears
- *  down the isolated world anyway). */
+ *  re-run REPLACE rather than duplicate within THIS injected instance.
+ *  Keyed by the anchor itself. Not the only dedup guard: a fresh injection
+ *  starts with empty maps while the previous instance's hosts are still on
+ *  the page, so {@link clearStamp} also does the DOM-based sibling scan —
+ *  the map is the fast path, the scan is the correctness path (#1220). */
 const stampNodes = new WeakMap<HTMLAnchorElement, HTMLElement>();
 /** The closed shadow root placed inside a given anchor's stamp host — a
  *  page's own scripts can't reach this (`host.shadowRoot` is null, `open`
@@ -117,11 +118,74 @@ export interface StampInput {
   status?: string;
 }
 
-/** Remove any stamp this module previously placed for `anchor`. */
+/** Upper bound on forward siblings examined per card while hunting stale
+ *  hosts — see {@link clearStamp}. */
+const MAX_STAMP_DEDUP_SCAN = 8;
+
+/**
+ * Is `node` one of OUR stamp hosts? The page is attacker-controlled, so a
+ * `data-ajh-stamp` attribute alone is not proof — a page-authored span may
+ * carry it. The check requires the full placement signature: the marker
+ * attribute AND the exact inline-style triplet `placeStamp` writes
+ * (`display: inline-flex`, `vertical-align: middle`, `margin-left: 6px`).
+ * `node instanceof HTMLSpanElement` narrows to the concrete element type
+ * that actually has a `.style` map before any style property is read
+ * (`Element` has none, and a `tagName` string check would not narrow for
+ * the compiler); it also deliberately leaves a foreign-realm (XML/SVG)
+ * `span` alone — such a node cannot be a host this module created.
+ */
+function isStampHost(node: Element): boolean {
+  // `Element` has no style map — narrow to the concrete element type that
+  // has one BEFORE reading style (a tagName check alone never narrows for
+  // the compiler). The realm check also under-claims a little more than a
+  // tagName-only read: a foreign-realm `span` (XML/SVG) is left alone
+  // rather than probed for properties it may not carry.
+  if (!(node instanceof HTMLSpanElement)) return false;
+  if (node.getAttribute('data-ajh-stamp') !== 'true') return false;
+  const style = node.style;
+  return (
+    style.display === 'inline-flex' &&
+    style.verticalAlign === 'middle' &&
+    style.marginLeft === '6px'
+  );
+}
+
+/**
+ * Remove any stamp previously placed for `anchor` — including stamps placed
+ * by an EARLIER injected instance of this file.
+ *
+ * The in-memory {@link stampNodes} map only knows this instance's hosts; the
+ * file is injected fresh on every Stamp click, so the map is re-created
+ * empty while the previous instance's hosts are still in the page. The maps
+ * therefore earn their place within a single injection (fast path, shadow
+ * lookup) but cannot be the only guard, so after consulting the map this
+ * does a DOM-based, bounded forward-sibling scan from the anchor: at most
+ * {@link MAX_STAMP_DEDUP_SCAN} `nextElementSibling` steps, removing each
+ * node that matches {@link isStampHost}'s exact signature and STOPPING at
+ * the first node that does not.
+ *
+ * Attacker-controlled page: a page node is only removed if it sits in that
+ * bounded run directly after this anchor AND carries our exact placement
+ * signature — a lone page-owned marker elsewhere (or the first sibling,
+ * which halts the scan) is never touched. Cost shape: at most
+ * {@link MAX_STAMP_DEDUP_SCAN} signature checks per card, no
+ * whole-document query.
+ */
 function clearStamp(anchor: HTMLAnchorElement): void {
-  stampNodes.get(anchor)?.remove();
+  // This instance's own host, if any: drop the map entries first so the
+  // sibling scan below can never re-find and double-handle it.
+  const known = stampNodes.get(anchor);
   stampNodes.delete(anchor);
   stampShadows.delete(anchor);
+  known?.remove();
+
+  let node = anchor.nextElementSibling;
+  for (let checked = 0; node && checked < MAX_STAMP_DEDUP_SCAN; checked += 1) {
+    if (!isStampHost(node)) break; // first non-stamp sibling ends the run
+    const stale = node;
+    node = node.nextElementSibling; // advance before removal
+    stale.remove();
+  }
 }
 
 /** Place (or replace) a small inline stamp right after `anchor`. Only the
