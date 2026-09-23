@@ -11,8 +11,9 @@
 
 import { FIT_BADGE_GLOBAL, type FitBadgeView, runRenderFitBadge } from './lib/fit-badge';
 
-(globalThis as unknown as Record<string, (v: FitBadgeView) => void>)[FIT_BADGE_GLOBAL] =
-  runRenderFitBadge;
+(globalThis as unknown as Record<string, (v: FitBadgeView, expectedUrl?: string) => void>)[
+  FIT_BADGE_GLOBAL
+] = runRenderFitBadge;
 
 // Ensure this file is treated as an ES module (see fill.ts's identical note).
 export {};

@@ -864,6 +864,47 @@ pub fn keywords_normalized_list_for_lang(text: &str, lang: &str) -> Vec<String> 
     normalize_list_with_stopwords(text, stopwords_for_lang(lang))
 }
 
+/// 3-letter English month abbreviations that scraped chart/axis labels glue to a short digit run
+/// ("1sep", "2025mar") — see [`is_chart_date_label`] (issue #1223).
+const CHART_MONTHS: [&str; 12] = [
+    "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+];
+
+/// True when the token contains a `/`. The tokenizer's slash-tolerant split keeps URL/selector
+/// crumbs like "/company/harvey" as ONE token, which is scraped-chrome noise, not a skill. Safe
+/// to reject here: the slashed [`SYNONYMS`] entries ("ci/cd" → "cicd", "c/c++" → "cpp") are
+/// canonicalized one pipeline step above this filter, so no real keyword is lost (issue #1223).
+fn has_path_separator(s: &str) -> bool {
+    s.contains('/')
+}
+
+/// Split a token into leading digit run, core, and trailing digit run ("2025mar" →
+/// ("2025", "mar", ""); "es2015" → ("", "es", "2015")). An all-digit token (prefix_len ≥ end)
+/// yields `(s, "", "")` — the pure-numeric filter above already drops those, but this never
+/// index-panics on them regardless.
+fn split_digit_runs(s: &str) -> (&str, &str, &str) {
+    let prefix_len = s.len() - s.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    let suffix_len = s.len() - s.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+    let end = s.len() - suffix_len;
+    if prefix_len >= end {
+        return (s, "", "");
+    }
+    (&s[..prefix_len], &s[prefix_len..end], &s[end..])
+}
+
+/// True for tokens shaped like scraped chart/axis date labels: 1-4 ASCII digits glued to one of
+/// [`CHART_MONTHS`], in either order ("1sep", "2025mar", "mar2026") — the rotate-graph/chart
+/// chrome some job-ads' embedded salary/hiring charts put in the DOM, which the tokenizer keeps
+/// as single alphanumeric tokens and which would otherwise surface as made-up skills on the
+/// missing-keyword chips ("1sep" reads as a skill). Tokens with no digit run, a digit run longer
+/// than 4 (a real version token like "es2015" has exactly 4 — but its core "es" is not a month),
+/// or a non-month core are untouched (oauth2, es2015, react17 all survive).
+fn is_chart_date_label(s: &str) -> bool {
+    let (prefix, core, suffix) = split_digit_runs(s);
+    let digit_chars = prefix.len() + suffix.len();
+    digit_chars > 0 && digit_chars <= 4 && CHART_MONTHS.contains(&core)
+}
+
 fn normalize_list_with_stopwords(text: &str, stopwords: &[&str]) -> Vec<String> {
     text.split(|c: char| !c.is_alphanumeric() && c != '+' && c != '#' && c != '/')
         .map(|w| w.to_lowercase())
@@ -888,6 +929,16 @@ fn normalize_list_with_stopwords(text: &str, stopwords: &[&str]) -> Vec<String> 
                 // signal on either side. Mixed alphanumeric tech tokens (c4, s3,
                 // oauth2, es2015) are untouched - at least one char isn't a digit.
                 && !s.chars().all(|c| c.is_ascii_digit())
+                // Issue #1223: missing-keyword chips must come from
+                // job-description CONTENT only, so scraped-chrome noise is a
+                // defensive floor here. Slash-shaped tokens (`/company/harvey`
+                // survives the tokenizer's slash-tolerant split as one token)
+                // and chart/axis date labels (`1sep`, `2025mar`) are DOM chrome,
+                // not skills. Safe to reject slash-tokens here because the
+                // slashed synonyms (`ci/cd` → `cicd`, `c/c++` → `cpp`) were
+                // canonicalized one step above, so no real keyword is lost.
+                && !has_path_separator(s)
+                && !is_chart_date_label(s)
         })
         .collect()
 }

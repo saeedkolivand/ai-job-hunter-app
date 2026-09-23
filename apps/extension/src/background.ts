@@ -1369,6 +1369,15 @@ const FIT_BADGE_SCORE_SOURCE_LABEL: Record<'keyword' | 'combined', string> = {
  * `location.href` (an in-page fragment/route change) is exactly the
  * different-posting risk this check exists to catch, not a false positive
  * to relax away.
+ *
+ * The badge does not stop verifying here. The rendered badge keeps watching
+ * `location.href` on a `STALE_URL_POLL_MS` poll plus popstate/hashchange (see
+ * `lib/fit-badge.ts`'s {@link renderFitBadge}) and clears itself the moment
+ * the page moves to a different url — the SPA job→job navigation (issue
+ * #1221) that can happen AFTER this call, with the badge already on screen,
+ * is what that in-badge watcher catches. The captured `expectedUrl` is what
+ * the watcher compares against, so this seam stays the single source of
+ * truth for "which posting is the badge about".
  */
 async function injectFitBadge(tabId: number, url: string, view: FitBadgeView): Promise<void> {
   await browser.scripting.executeScript({ target: { tabId }, files: ['fit-badge.js'] });
@@ -1377,8 +1386,8 @@ async function injectFitBadge(tabId: number, url: string, view: FitBadgeView): P
     func: (v: FitBadgeView, key: string, expectedUrl: string): void => {
       if (location.href !== expectedUrl) return;
       const runner = (globalThis as Record<string, unknown>)[key] as
-        ((view: FitBadgeView) => void) | undefined;
-      runner?.(v);
+        ((view: FitBadgeView, expectedUrl?: string) => void) | undefined;
+      runner?.(v, expectedUrl);
     },
     args: [view, FIT_BADGE_GLOBAL, url],
   });

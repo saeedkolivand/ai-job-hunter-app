@@ -54,6 +54,25 @@ export interface FitBadgeView {
  *  a glance, not a second full report. */
 const MAX_BADGE_GAPS = 5;
 
+/** How often the staleness watcher re-checks `location.href` while a badge is
+ *  on screen (issue #1221). An SPA route change — the LinkedIn job→job
+ *  navigation that left the badge stale — is a `history.pushState`, which
+ *  fires NO event in any world (not pushstate, not popstate, not hashchange),
+ *  and this isolated world cannot observe the page world's own `pushState`
+ *  calls (separate JS contexts), so a poll of the page's live `location.href`
+ *  is the only mechanism that never misses one. Cost: one O(1) string compare
+ *  per badge per second — deliberately published; that smallness is exactly
+ *  why the poll wins here over every event-based scheme. */
+export const STALE_URL_POLL_MS = 1000;
+
+/** Stop function of the currently-active staleness watcher, or `null` when no
+ *  badge is being watched. Only one badge is ever on screen — a re-render
+ *  replaces the previous badge, so it must ALSO replace its watcher, or the
+ *  old interval would outlive its badge and keep holding a detached subtree
+ *  (the issue #1221 review constraint: teardown must disconnect, never hold a
+ *  detached DOM subtree). The dismiss control stops it too. */
+let activeBadgeStop: (() => void) | null = null;
+
 function bandLabel(band: FitBadgeView['band']): string {
   return band;
 }
@@ -62,6 +81,16 @@ function bandLabel(band: FitBadgeView['band']): string {
  * Render (or replace) the fit badge on `doc`. Idempotent: a second call
  * removes any prior badge first, so a repeat Check-fit never stacks two.
  *
+ * When `expectedUrl` (the url captured before the match round trip) is
+ * provided, the badge arms a staleness watcher (see
+ * {@link watchBadgeStaleness}): the moment the page's live `location.href` no
+ * longer equals it — an SPA job→job navigation, the issue #1221 scenario —
+ * the badge removes itself, so a stale score is never left on screen. The
+ * default stale behavior is INVALIDATE/clear, never a re-run of the fit check
+ * (a re-check needs the desktop round trip, and the job the user navigated
+ * away from is gone anyway). Omit `expectedUrl` and no watcher is created —
+ * a badge rendered without a captured url stays put until dismissed.
+ *
  * Returns the closed `ShadowRoot` — only this caller's own closure keeps
  * that reference (used by tests to inspect content); `root.shadowRoot` is
  * `null` to everyone else, including the page's own main-world scripts.
@@ -69,8 +98,13 @@ function bandLabel(band: FitBadgeView['band']): string {
 export function renderFitBadge(
   doc: Document,
   palette: NotebookPalette,
-  view: FitBadgeView
+  view: FitBadgeView,
+  expectedUrl?: string
 ): ShadowRoot {
+  // A re-render replaces the previous badge, so it must replace that badge's
+  // staleness watcher too — never let the old interval outlive its badge.
+  activeBadgeStop?.();
+  activeBadgeStop = null;
   doc.getElementById(BADGE_ID)?.remove();
 
   const root = doc.createElement('div');
@@ -163,6 +197,10 @@ export function renderFitBadge(
   ].join(';');
   dismiss.addEventListener('click', (e) => {
     e.stopPropagation();
+    // Dismissing removes the element, so it must also stand down its staleness
+    // watcher — a gone badge never leaves a poll/event listener behind.
+    activeBadgeStop?.();
+    activeBadgeStop = null;
     root.remove();
   });
   shadow.append(dismiss);
@@ -260,17 +298,89 @@ export function renderFitBadge(
   });
 
   (doc.body ?? doc.documentElement).appendChild(root);
+  if (expectedUrl !== undefined) {
+    // Watcher armed AFTER the badge is on the page, so an already-stale
+    // immediate check removes an attached element (same synchronous tick — the
+    // browser paints nothing in between, so there is no flash of a stale
+    // badge).
+    activeBadgeStop = watchBadgeStaleness(root, expectedUrl);
+  }
   return shadow;
 }
 
 /**
+ * Watch `location.href` for a move away from `expectedUrl` and, the moment it
+ * happens, tear the badge down: stop this watcher, clear
+ * {@link activeBadgeStop}, and remove `root`. The default stale behavior is
+ * INVALIDATE/clear — never a re-run of the fit check (a re-check needs the
+ * desktop, a full round trip, and the job the user navigated away from is
+ * gone anyway).
+ *
+ * Three triggers, all feeding one stale path:
+ * - an immediate first check — the page may already have moved on between the
+ *   background's own in-page pre-render check and this render (a same-tick
+ *   navigation), so a full poll tick must not be waited out;
+ * - `popstate`/`hashchange` — cheap same-tick accelerators for the
+ *   back/forward button and hash edits (the only two cases they fire for);
+ * - a `STALE_URL_POLL_MS` interval poll of `location.href` — required because
+ *   SPA `history.pushState` navigation (the issue #1221 scenario) fires no
+ *   event in any world and is unobservable from this isolated world.
+ *
+ * Keys off JOB IDENTITY (the full tab-url string), never off individual
+ * mutations: the badge is invalidated/cleared when the posting changes, it is
+ * never re-checked per DOM mutation.
+ *
+ * Returns a stop function that disconnects everything (interval + listeners)
+ * — the dismiss control and a badge re-render both call it, so a gone badge
+ * never leaves a watcher behind and never holds a detached subtree.
+ */
+function watchBadgeStaleness(root: HTMLElement, expectedUrl: string): () => void {
+  let stopped = false;
+
+  const stop = (): void => {
+    if (stopped) return;
+    stopped = true;
+    window.clearInterval(intervalId);
+    window.removeEventListener('popstate', onNav);
+    window.removeEventListener('hashchange', onNav);
+  };
+
+  const onStale = (): void => {
+    stop();
+    activeBadgeStop = null;
+    root.remove();
+  };
+
+  const onNav = (): void => {
+    // Bare global `location`, not `doc.defaultView.location`: this isolated
+    // world's global IS the page's location, and reading it through the same
+    // seam the background's pre-render check uses keeps the comparison
+    // strictness identical (and the tests stub it the same way).
+    if (location.href !== expectedUrl) onStale();
+  };
+
+  // `stop`/`onNav` reference `intervalId`, but only ever EXECUTE at call time
+  // (an interval tick or a nav/stale event) — never during the declarations
+  // above — so declaring the const here, after them, is TDZ-safe.
+  const intervalId = window.setInterval(onNav, STALE_URL_POLL_MS);
+  window.addEventListener('popstate', onNav);
+  window.addEventListener('hashchange', onNav);
+  onNav(); // immediate first check — don't wait a full tick (see above).
+
+  return stop;
+}
+
+/**
  * The injected entry-point: pick the palette from the page's own preference
- * and render. Kept side-effect-first so `executeScript` gets a serializable
- * (here, `void`/`undefined`) completion value — this entry communicates by
+ * and render. `expectedUrl` (when present) is the captured url threaded from
+ * the background — the badge then watches `location.href` and clears itself
+ * the moment the page moves to a different posting (issue #1221). Kept
+ * side-effect-first so `executeScript` gets a serializable (here,
+ * `void`/`undefined`) completion value — this entry communicates by
  * installing a global, not a completion value (see `build-output.test.ts`'s
  * `GLOBAL_INSTALLING_ENTRIES`).
  */
-export function runRenderFitBadge(view: FitBadgeView): void {
+export function runRenderFitBadge(view: FitBadgeView, expectedUrl?: string): void {
   const palette = currentNotebookPalette(window);
-  renderFitBadge(document, palette, view);
+  renderFitBadge(document, palette, view, expectedUrl);
 }
