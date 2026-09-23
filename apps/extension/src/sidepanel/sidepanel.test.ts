@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { browser } from '@wxt-dev/browser';
 
 import type * as JobToolsModule from '../job-tools/job-tools';
+import { JOB_TOOLS_GATED_LINE } from '../job-tools/job-tools';
 
 vi.mock('../answer-tools/answer-tools', () => ({
   mountAnswerTools: vi.fn(() => ({ render: vi.fn() })),
@@ -33,6 +34,10 @@ vi.mock('../job-status/job-status', () => ({
 
 vi.mock('../documents/documents', () => ({
   mountDocuments: vi.fn(() => ({ render: vi.fn(), refresh: vi.fn(), reset: vi.fn() })),
+}));
+
+vi.mock('../prep/prep', () => ({
+  mountPrep: vi.fn(() => ({ render: vi.fn(), refresh: vi.fn(), reset: vi.fn() })),
 }));
 
 vi.mock('../lib/site-memory', () => ({
@@ -130,6 +135,8 @@ const { mountJobTools } = await import('../job-tools/job-tools');
 const { mountJobStatus } = await import('../job-status/job-status');
 const { mountFirstFillConfirm } = await import('../lib/site-memory');
 const { mountConnectionStatus } = await import('../connection-status/connection-status');
+const { mountDocuments } = await import('../documents/documents');
+const { mountPrep } = await import('../prep/prep');
 await import('./sidepanel');
 
 /** Flush the module-load `resolvePanelWindowId().then(...)` chain. */
@@ -731,6 +738,127 @@ describe('job-status refresh is keyed by transition, not every state push (item 
     deliver({ ...base, scannedAt: 4 }); // streamed chunk 3
 
     expect(jobStatus.refresh).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── #1224: the first-time Fill confirmation host lives OUTSIDE the tab
+// panels ─────────────────────────────────────────────────────────────────────
+// Inside a panel the inset was hidden by `tabs.ts`'s `setActive` whenever
+// that tab wasn't active (Chrome sets `[hidden]` on the other panels), so
+// from the Documents tab the Attach confirmation was invisible and its
+// promise never resolved. The fix moves the host to a SIBLING of the tab
+// bar inside #view-connected — outside every `[data-section]` panel.
+
+describe('the Fill confirmation host is mounted outside the tab panels (#1224)', () => {
+  it('hangs off #view-connected (never a [data-section] panel) and stays visible from the Documents tab', async () => {
+    await flush();
+    const host = vi.mocked(mountFirstFillConfirm).mock.calls[0]?.[0];
+    if (!host) throw new Error('mountFirstFillConfirm host not captured');
+
+    expect(host.parentElement?.id).toBe('view-connected');
+    expect(host.closest('[data-section]')).toBeNull();
+
+    // Connected + Documents tab active: the host (and the inset it owns)
+    // must not be hidden by the tab machinery.
+    const onStatus = vi.mocked(mountConnectionStatus).mock.calls[0]?.[2]?.onStatus;
+    if (!onStatus) throw new Error('onStatus dep not captured');
+    onStatus({ phase: 'connected', port: 1, hasToken: true });
+    document.querySelector<HTMLButtonElement>('[data-tab="documents"]')!.click();
+
+    expect(host.closest('[hidden]')).toBeNull();
+  });
+});
+
+// ── #1225/#1234: documents + prep get the caller's shared gated line on an
+// untrusted/no-tab state, and refresh only on a trusted delivery ─────────────
+
+describe('documents/prep follow() trust gating (#1225, #1234)', () => {
+  const documents = vi.mocked(mountDocuments).mock.results[0]?.value as
+    | {
+        render: ReturnType<typeof vi.fn>;
+        refresh: ReturnType<typeof vi.fn>;
+        reset: ReturnType<typeof vi.fn>;
+      }
+    | undefined;
+  const prep = vi.mocked(mountPrep).mock.results[0]?.value as
+    | {
+        render: ReturnType<typeof vi.fn>;
+        refresh: ReturnType<typeof vi.fn>;
+        reset: ReturnType<typeof vi.fn>;
+      }
+    | undefined;
+  if (!documents || !prep) {
+    throw new Error('mountDocuments/mountPrep was not called at module load');
+  }
+
+  it('refreshes documents + prep only on a trusted delivery; an untrusted (pageChanged) push resets both with the shared line', async () => {
+    let deliver: ((state: unknown) => void) | undefined;
+    vi.mocked(subscribeAnswerState).mockImplementationOnce((_tabId, onState) => {
+      deliver = onState as (state: unknown) => void;
+      return vi.fn();
+    });
+    documents.refresh.mockClear();
+    documents.reset.mockClear();
+    prep.refresh.mockClear();
+    prep.reset.mockClear();
+
+    const onActivated = vi.mocked(browser.tabs.onActivated.addListener).mock.calls[0]?.[0];
+    if (!onActivated) throw new Error('tabs.onActivated listener not registered');
+    onActivated({ tabId: 701, windowId: PANEL_WINDOW_ID } as never);
+    await flush();
+
+    const base = {
+      tabId: 701,
+      origin: 'https://jobs.example.com',
+      scannedAt: 1,
+      rows: [],
+      stream: null,
+      pageChanged: false,
+    };
+    if (!deliver) throw new Error('subscribeAnswerState callback not captured');
+    deliver(base);
+    await flush();
+
+    expect(documents.refresh).toHaveBeenCalledTimes(1);
+    expect(prep.refresh).toHaveBeenCalledTimes(1);
+    expect(documents.reset).not.toHaveBeenCalled();
+    expect(prep.reset).not.toHaveBeenCalled();
+
+    documents.refresh.mockClear();
+    prep.refresh.mockClear();
+
+    deliver({ ...base, pageChanged: true });
+    await flush();
+
+    expect(documents.refresh).not.toHaveBeenCalled();
+    expect(prep.refresh).not.toHaveBeenCalled();
+    expect(documents.reset).toHaveBeenCalledTimes(1);
+    expect(prep.reset).toHaveBeenCalledTimes(1);
+    expect(documents.reset).toHaveBeenCalledWith(JOB_TOOLS_GATED_LINE);
+    expect(prep.reset).toHaveBeenCalledWith(JOB_TOOLS_GATED_LINE);
+  });
+
+  it('a no-tab follow (unresolved focus-change query) resets documents + prep with the shared line and never refreshes', async () => {
+    documents.refresh.mockClear();
+    documents.reset.mockClear();
+    prep.refresh.mockClear();
+    prep.reset.mockClear();
+
+    // `activeTabId()` reads the window's active tab — an empty query (no
+    // active tab) drives follow(null), whose reset branch is the tabId-null
+    // path (#1225's other reset site).
+    vi.mocked(browser.tabs.query).mockResolvedValueOnce([]);
+    const onFocusChanged = vi.mocked(browser.windows.onFocusChanged.addListener).mock.calls[0]?.[0];
+    if (!onFocusChanged) throw new Error('windows.onFocusChanged listener not registered');
+    onFocusChanged();
+    await flush();
+
+    expect(documents.reset).toHaveBeenCalledTimes(1);
+    expect(prep.reset).toHaveBeenCalledTimes(1);
+    expect(documents.reset).toHaveBeenCalledWith(JOB_TOOLS_GATED_LINE);
+    expect(prep.reset).toHaveBeenCalledWith(JOB_TOOLS_GATED_LINE);
+    expect(documents.refresh).not.toHaveBeenCalled();
+    expect(prep.refresh).not.toHaveBeenCalled();
   });
 });
 

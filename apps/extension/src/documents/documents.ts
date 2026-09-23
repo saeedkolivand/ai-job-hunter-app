@@ -12,11 +12,12 @@
  * the SAME `isPageTrusted` gate `job-tools.ts` uses (its own doc explains
  * why a panel-button click alone never re-grants `activeTab`); the caller
  * (`sidepanel.ts`) calls them only when the followed tab is trusted, exactly
- * where it already calls `jobStatus.refresh()`/`refreshTrustLineJob()`. This
- * module renders no SECOND gated line of its own — an untrusted tab simply
- * shows nothing (via `reset()`), and the existing trust line under the panel
- * header already says why (`trustLineJob`'s own doc explains why a second,
- * identical sentence would be worse than none).
+ * where it already calls `jobStatus.refresh()`/`refreshTrustLineJob()`. On an
+ * untrusted tab the caller passes the shared {@link
+ * ../job-tools/job-tools.ts#JOB_TOOLS_GATED_LINE} to `reset()` — the SAME one
+ * line `job-tools.ts` renders under the Job controls, so both surfaces get a
+ * single, shared "grant access" sentence instead of per-tab duplicates
+ * (job-tools.ts's own doc explains why ONE shared line beats more than one).
  *
  * `mountX(host, deps)` — same pattern as `job-tools.ts`/`answer-tools.ts`.
  */
@@ -152,8 +153,11 @@ export interface DocumentsView {
    *  tab is trusted (mirrors `job-tools.ts`'s `checkPage`). */
   refresh: () => void;
   /** Clear candidates + any open picker — call on an untrusted tab / a tab
-   *  switch (mirrors `job-status.ts`'s `reset`). */
-  reset: () => void;
+   *  switch (mirrors `job-status.ts`'s `reset`). `reason` renders in place of
+   *  the loading/status line when there is nothing to show — the caller's
+   *  shared {@link ../job-tools/job-tools.ts#JOB_TOOLS_GATED_LINE} for an
+   *  untrusted page (#1225), '' (nothing) for a plain clear. */
+  reset: (reason?: string) => void;
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(
@@ -191,6 +195,15 @@ export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): Document
 
   let statusText = '';
   let statusTone: 'ok' | 'err' | 'muted' = 'muted';
+  /** Whether a `refresh()` is genuinely in flight — TRUE only between a
+   *  refresh's start and its terminal render, cleared in EVERY terminal
+   *  branch (a resolved reply, a desktop refusal, a kind mismatch, a thrown
+   *  error). The generation-guarded early `return`s (a newer refresh/reset
+   *  has superseded this one) deliberately leave it untouched — the newer
+   *  call owns `loading` now. Drives the empty-state's "Loading…" line, so
+   *  the mount alone and a settled refresh can never show a phantom one
+   *  (#1225). */
+  let loading = false;
   const setStatus = (text: string, tone: 'ok' | 'err' | 'muted'): void => {
     statusText = text;
     statusTone = tone;
@@ -213,17 +226,24 @@ export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): Document
     host.replaceChildren();
 
     if (candidates.length === 0) {
-      host.append(el('p', 'msg msg--muted', statusText || 'Loading…'));
-      if (statusText && statusTone === 'muted' && lastUrl) {
-        // A button, not an `<a href="ajh://…">` — mirrors the already-verified
-        // deep-link trigger the rest of the extension uses (connection-
-        // status.ts's PAIRING_DEEP_LINK/GET_APP_URL, options.ts's
-        // `openDeepLink`): `browser.tabs.create` in a click handler, wrapped
-        // in try/catch. A raw custom-scheme anchor is unverified cross-
-        // browser and can silently no-op.
-        const link = button('btn btn--quiet', 'Generate in the app');
-        link.addEventListener('click', () => void openGenerateLink());
-        host.append(link);
+      if (loading) {
+        // "Loading…" ONLY while a refresh is genuinely in flight — never at
+        // mount, never after a settled refresh (its terminal branch clears
+        // `loading`), never after a reset (#1225).
+        host.append(el('p', 'msg msg--muted', 'Loading…'));
+      } else if (statusText) {
+        host.append(el('p', 'msg msg--muted', statusText));
+        if (statusTone === 'muted' && lastUrl) {
+          // A button, not an `<a href="ajh://…">` — mirrors the already-verified
+          // deep-link trigger the rest of the extension uses (connection-
+          // status.ts's PAIRING_DEEP_LINK/GET_APP_URL, options.ts's
+          // `openDeepLink`): `browser.tabs.create` in a click handler, wrapped
+          // in try/catch. A raw custom-scheme anchor is unverified cross-
+          // browser and can silently no-op.
+          const link = button('btn btn--quiet', 'Generate in the app');
+          link.addEventListener('click', () => void openGenerateLink());
+          host.append(link);
+        }
       }
       return;
     }
@@ -516,18 +536,27 @@ export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): Document
   async function refresh(): Promise<void> {
     generation += 1;
     const myGeneration = generation;
+    loading = true;
     setStatus('', 'muted');
     render();
     try {
       const res = await deps.send({ kind: 'documentsList' });
       if (myGeneration !== generation) return;
+      loading = false;
       if (!res.ok) {
         candidates = [];
         setStatus(res.error, 'err');
         render();
         return;
       }
-      if (res.kind !== 'documentsList') return;
+      if (res.kind !== 'documentsList') {
+        // A kind mismatch is a terminal outcome too — clear `loading` so the
+        // empty state can never sit on a phantom "Loading…" (#1225).
+        candidates = [];
+        setStatus('Unexpected response — please retry.', 'err');
+        render();
+        return;
+      }
       lastUrl = res.url;
       if (lastUrl) deps.onUrlResolved?.(lastUrl);
       if (!res.result.ok) {
@@ -548,19 +577,21 @@ export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): Document
       render();
     } catch (err) {
       if (myGeneration !== generation) return;
+      loading = false;
       candidates = [];
       setStatus(err instanceof Error ? err.message : String(err), 'err');
       render();
     }
   }
 
-  function reset(): void {
+  function reset(reason = ''): void {
     generation += 1;
+    loading = false;
     candidates = [];
     pastePickerOpen = false;
     busy = false;
     lastUrl = '';
-    setStatus('', 'muted');
+    setStatus(reason, 'muted');
     render();
   }
 
