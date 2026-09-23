@@ -2100,7 +2100,11 @@ export class BridgeClient {
   /** Wire an opened transport, then run the v2 handshake if a token is stored. */
   private async attach(transport: BridgeTransport): Promise<void> {
     this.transport = transport;
-    this.backoffIndex = 0;
+    // NOT reset here: an open transport proves nothing. The desktop bridge
+    // accepts the socket before it judges our HMAC proof, so resetting on
+    // attach pins a connect-then-fail loop to the ladder's floor forever.
+    // Only a genuinely usable connection (below, and on handshake success)
+    // clears the ladder.
     this.authRejected = false;
     this.outdated = false;
     // A fresh transport has proven nothing yet — including the no-token attach
@@ -2173,6 +2177,7 @@ export class BridgeClient {
     // socket is open but unpaired — computeStatus() surfaces that as 'not_paired'.
     const token = this.getStoredToken ? await this.getStoredToken() : null;
     if (!token) {
+      this.backoffIndex = 0;
       this.setPhase('connected');
       return;
     }
@@ -2292,6 +2297,7 @@ export class BridgeClient {
     // that may set `authenticated`: everything before it (including a peer that
     // sent a well-formed `challenge`) has proven nothing about the token.
     this.authenticated = true;
+    this.backoffIndex = 0;
     this.handshakeFrame = null;
     this.handshakeClosed = null;
     this.setPhase('connected');
