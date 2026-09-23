@@ -153,6 +153,19 @@ const NO_RESUME_MESSAGE: &str = "Add a resume in AI Job Hunter first, then try a
 /// act on directly) — this one is a generic "something downstream failed".
 const DRAFT_FAILED_MESSAGE: &str = "Could not draft an answer. Please retry.";
 
+/// Fixed sentinel — the compose failed for a reason retrying cannot fix: the
+/// provider rejected our credentials. A 401/403 is mapped to
+/// [`AppError::Config`] by `commands::ai_provider::friendly_api_error`, and
+/// `AppError::retriable()` already classifies that as false, so collapsing it
+/// into [`DRAFT_FAILED_MESSAGE`]'s "Please retry." told the user to do the one
+/// thing guaranteed to fail — and, because the daily provider budget is
+/// charged before every attempt, to spend a unit of that quota each time.
+///
+/// Same no-dynamic-content discipline as its sibling: a fixed string, so the
+/// provider's raw error text still never reaches the wire.
+const DRAFT_CONFIG_FAILED_MESSAGE: &str =
+    "Your AI provider rejected the request — check the API key in AI Job Hunter → Settings → AI.";
+
 /// Fixed sentinel — `req_id` already names an ACTIVE (`Pending`/`Running`)
 /// stream on this connection (see [`super::stream::AssistStreamRegistry::begin`]).
 /// A client reusing an in-flight reqId is rejected outright rather than
@@ -168,7 +181,13 @@ pub(super) const DUPLICATE_REQUEST_MESSAGE: &str = "This request is already in p
 /// itself carries no PII). Pure — directly unit-testable without a live
 /// `AppHandle`/network call.
 fn to_draft_failed(context: &str, e: AppError) -> AppError {
+    // Decided BEFORE the log line so the branch reads off the typed error, not
+    // its rendered text.
+    let non_retriable_config = matches!(e, AppError::Config(_));
     tracing::warn!("answer_assist: {context}: {e}");
+    if non_retriable_config {
+        return AppError::Provider(DRAFT_CONFIG_FAILED_MESSAGE.to_string());
+    }
     AppError::Provider(DRAFT_FAILED_MESSAGE.to_string())
 }
 
@@ -620,7 +639,8 @@ pub(super) fn answer_assist_reply(req_id: &str, outcome: AppResult<AnswerAssistO
         }),
         // Wire-error discipline: `outcome`'s `Err` is ALWAYS one of the fixed
         // sentinel consts (`AI_ASSIST_OFF_MESSAGE`/`NO_PROVIDER_MESSAGE`/
-        // `NO_RESUME_MESSAGE`/`DRAFT_FAILED_MESSAGE`/the validation strings
+        // `NO_RESUME_MESSAGE`/`DRAFT_FAILED_MESSAGE`/
+        // `DRAFT_CONFIG_FAILED_MESSAGE`/the validation strings
         // above) by the time it reaches here — every call in
         // `resolve_answer_assist` that could carry dynamic content (a rate
         // limit, a daily-budget charge, the compose call itself) is mapped
