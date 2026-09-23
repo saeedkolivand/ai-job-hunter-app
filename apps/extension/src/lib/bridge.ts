@@ -134,6 +134,14 @@ function readHexField(payload: unknown, key: string): string | null {
 export interface BridgeStatus {
   phase: BridgePhase;
   port: number | null;
+  /**
+   * Whether the v2 mutual handshake actually completed on the CURRENT
+   * transport — distinct from `phase === 'connected'`, which is ALSO reached
+   * with zero handshake when no token is stored (see `attach`'s no-token
+   * branch). `background.ts`'s `computeStatus()` gates the "Connected" popup
+   * state on this, not on `phase` alone (#1267).
+   */
+  authenticated: boolean;
 }
 
 /** A short id for `reqId` correlation. `crypto.randomUUID` exists in SW + DOM. */
@@ -1076,7 +1084,7 @@ export class BridgeClient {
   ) {}
 
   status(): BridgeStatus {
-    return { phase: this.phase, port: this.port };
+    return { phase: this.phase, port: this.port, authenticated: this.authenticated };
   }
 
   /** Whether a transport is currently live. */
@@ -1085,9 +1093,15 @@ export class BridgeClient {
   }
 
   /**
-   * Ensure a connection: if already open (authenticated), no-op; otherwise try
-   * native then ws — INCLUDING the full v2 handshake. Safe to call repeatedly
-   * (popup-open wake, reconnect button, a concurrent `importJob`/`getProfile`).
+   * Ensure a connection: no-op if already open; otherwise try native then ws
+   * — INCLUDING the full v2 handshake. Safe to call repeatedly (popup-open
+   * wake, reconnect button, a concurrent `importJob`/`getProfile`).
+   *
+   * "Already open" here is always either authenticated or genuinely unpaired
+   * (no token ever stored) — an open-but-never-authenticated transport (the
+   * no-token attach branch below) is force-replaced by `resetForNewToken()`
+   * the moment a token is actually stored (#1267), so this check never sits on
+   * a stale unauthenticated socket once a token exists.
    *
    * A concurrent call while a connection attempt is already running AWAITS the
    * SAME promise rather than short-circuiting — critical because `attach()` sets
@@ -1100,7 +1114,7 @@ export class BridgeClient {
   async ensureConnected(): Promise<void> {
     if (this.disposed || this.phase === 'bad_token') return;
     if (this.connectPromise) return this.connectPromise;
-    if (this.isOpen()) return; // already open + past a settled handshake
+    if (this.isOpen()) return; // already open — see the doc comment above
     this.connectPromise = this.doConnect();
     try {
       await this.connectPromise;
@@ -1160,6 +1174,27 @@ export class BridgeClient {
     this.outdated = false;
     if (this.phase === 'bad_token' || this.phase === 'outdated') {
       this.setPhase('searching');
+    }
+    // `phase === 'connected'` is reached with ZERO handshake by `attach()`'s
+    // no-token branch — an open transport that has proven nothing. Pasting a
+    // token onto that transport must not sit there forever unauthenticated
+    // (#1267): force a fresh connect by dropping it, so the next
+    // `ensureConnected()` opens a NEW transport and runs the full v2 handshake
+    // with the new token. Gated on `phase === 'connected'` (not `isOpen()`
+    // generally) so this never interrupts an in-flight handshake — only the
+    // no-token-attach case reaches `connected` while `authenticated` is false.
+    // An ALREADY-authenticated transport is left alone: re-pasting the same
+    // token on a healthy session must not drop it.
+    if (this.transport && this.phase === 'connected' && !this.authenticated) {
+      const stale = this.transport;
+      this.transport = null;
+      this.setPhase('searching');
+      // `stale`'s `onClose` (wired in `attach()`) is a no-op for this close:
+      // `this.transport` is already cleared above, so its identity check
+      // (`this.transport !== transport`) short-circuits before it can surface
+      // `app_not_running`, arm the backoff reconnect, or null out whatever
+      // `ensureConnected()` attaches next.
+      stale.close();
     }
   }
 
@@ -2119,6 +2154,12 @@ export class BridgeClient {
 
     transport.onMessage((env) => this.onMessage(env));
     transport.onClose(() => {
+      // Stale transport: something (a later `attach()`, or `resetForNewToken()`
+      // replacing an unauthenticated one — #1267) already moved `this.transport`
+      // on. This late close must not null out / clobber whatever is now live —
+      // same identity-check pattern `performHandshake` uses after its own
+      // awaits, for the same reason.
+      if (this.transport !== transport) return;
       this.transport = null;
       // The session dies with the socket. Not merely belt-and-braces with the
       // `attach` reset: a late/queued frame can still be delivered on the dead
