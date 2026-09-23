@@ -305,8 +305,16 @@ async function computeStatus(): Promise<ConnectionStatus> {
   } else if (!hasToken) {
     // Bridge reachable but we have no secret yet → show the pairing screen.
     phase = 'not_paired';
+  } else if (!bridge.authenticated) {
+    // bridge.phase === 'connected' but this transport never actually ran the
+    // v2 handshake — the no-token attach path also reaches 'connected', and a
+    // freshly-pasted token briefly sits on that same unauthenticated transport
+    // until `resetForNewToken()`'s forced reconnect completes (#1267). Never
+    // report "Connected" before the desktop has verified us.
+    phase = 'searching';
   } else {
-    // bridge.phase === 'connected' AND hasToken → the mutual handshake succeeded.
+    // bridge.phase === 'connected' AND hasToken AND bridge.authenticated → the
+    // mutual handshake actually succeeded.
     phase = 'connected';
   }
   return { phase, port: bridge.port, hasToken };

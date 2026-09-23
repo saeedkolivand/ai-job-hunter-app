@@ -37,7 +37,7 @@ const EXTENSION_ID = 'test-extension-id';
 // ONE client and caches it for the worker's lifetime — every test drives this
 // SAME mock instance, reset in beforeEach) ────────────────────────────────────
 const mockClient = vi.hoisted(() => ({
-  status: vi.fn(() => ({ phase: 'connected' as const, port: 47615 })),
+  status: vi.fn(() => ({ phase: 'connected' as const, port: 47615, authenticated: true })),
   ensureConnected: vi.fn().mockResolvedValue(undefined),
   resetForNewToken: vi.fn(),
   importJob: vi.fn(),
@@ -3700,6 +3700,41 @@ describe('getStatus clears the import/badge prompt (Task #22 review closure)', (
     await send({ kind: 'getStatus' });
 
     expect(setBadgeTextMock).toHaveBeenCalledWith({ text: '' });
+  });
+});
+
+// ── #1267 — computeStatus() must reflect AUTHENTICATION, not the raw bridge
+// phase: `bridge.phase === 'connected'` is also reached with zero handshake
+// (the no-token attach path, and briefly right after a fresh token is saved,
+// before the forced re-handshake settles) ──────────────────────────────────
+
+describe('computeStatus folds bridge.authenticated into the popup phase (#1267)', () => {
+  it('reports "searching" (never "connected") while a token is stored but the transport has not authenticated', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    mockClient.status.mockReturnValueOnce({
+      phase: 'connected',
+      port: 47615,
+      authenticated: false,
+    });
+
+    const res = await send({ kind: 'getStatus' });
+
+    if (!res.ok || res.kind !== 'status') throw new Error('expected a status response');
+    expect(res.status.phase).toBe('searching');
+  });
+
+  it('reports "connected" once the same phase is actually authenticated', async () => {
+    getTokenMock.mockResolvedValue(FAKE_TOKEN);
+    mockClient.status.mockReturnValueOnce({
+      phase: 'connected',
+      port: 47615,
+      authenticated: true,
+    });
+
+    const res = await send({ kind: 'getStatus' });
+
+    if (!res.ok || res.kind !== 'status') throw new Error('expected a status response');
+    expect(res.status.phase).toBe('connected');
   });
 });
 

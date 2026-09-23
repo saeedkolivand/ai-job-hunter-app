@@ -1144,6 +1144,129 @@ describe('BridgeClient – v2 mutual handshake', () => {
     client.dispose();
   });
 
+  // ── #1267 — an already-open, unauthenticated transport (the no-token attach
+  // path) must be replaced when a token is finally saved, so the next connect
+  // actually runs the v2 handshake instead of sitting "connected" forever ────
+
+  it('re-handshakes on an already-open UNAUTHENTICATED transport once a token is saved (#1267)', async () => {
+    let stored: string | null = null;
+    const getStoredToken = vi.fn(() => Promise.resolve(stored));
+    const client = new BridgeClient(vi.fn(), getStoredToken);
+
+    // Step 1: attach with NO token stored — reaches 'connected' with zero
+    // handshake (attach()'s no-token branch).
+    const firstConnect = client.ensureConnected();
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const firstSocket = latestSocket!;
+    firstSocket.simulateOpen();
+    await firstConnect;
+    expect(client.status().phase).toBe('connected');
+    expect(firstSocket.send).not.toHaveBeenCalled();
+
+    // Step 2: the user pastes a token — mirrors background.ts's `setToken`
+    // handler exactly (`resetForNewToken()` then `ensureConnected()`).
+    stored = FAKE_TOKEN;
+    client.resetForNewToken();
+    void client.ensureConnected();
+
+    // A NEW transport must be opened — on unmodified code `ensureConnected()`
+    // no-ops on the already-open transport and this never happens.
+    await vi.waitFor(() => {
+      expect(latestSocket).not.toBe(firstSocket);
+    });
+    const secondSocket = latestSocket!;
+    secondSocket.simulateOpen();
+
+    // ...and the full v2 handshake runs on it, with the NEW token.
+    const { helloReqId, clientNonce } = await awaitHello(secondSocket);
+    sendChallenge(secondSocket, helloReqId);
+    const { authReqId, proof } = await awaitAuth(secondSocket);
+    expect(proof).toBe(await computeProof(FAKE_TOKEN, 'client', SERVER_NONCE, clientNonce));
+    await sendAuthOk(secondSocket, authReqId, FAKE_TOKEN, clientNonce, 'valid');
+
+    await vi.waitFor(() => {
+      expect(client.status().phase).toBe('connected');
+    });
+    client.dispose();
+  });
+
+  it('a late close on the REPLACED transport does not clobber the new one, set app_not_running, or arm a reconnect', async () => {
+    vi.useFakeTimers();
+    let socketCount = 0;
+    restoreWS();
+    restoreWS = installFakeWS((ws) => {
+      socketCount += 1;
+      latestSocket = ws;
+    });
+
+    let stored: string | null = null;
+    const getStoredToken = vi.fn(() => Promise.resolve(stored));
+    const client = new BridgeClient(vi.fn(), getStoredToken);
+
+    const firstConnect = client.ensureConnected();
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const firstSocket = latestSocket!;
+    firstSocket.simulateOpen();
+    await firstConnect;
+    expect(client.status().phase).toBe('connected');
+
+    stored = FAKE_TOKEN;
+    client.resetForNewToken();
+    void client.ensureConnected();
+
+    await vi.waitFor(() => {
+      expect(latestSocket).not.toBe(firstSocket);
+    });
+    const secondSocket = latestSocket!;
+    secondSocket.simulateOpen();
+
+    const { helloReqId, clientNonce } = await awaitHello(secondSocket);
+    sendChallenge(secondSocket, helloReqId);
+    const { authReqId } = await awaitAuth(secondSocket);
+    await sendAuthOk(secondSocket, authReqId, FAKE_TOKEN, clientNonce, 'valid');
+    await vi.waitFor(() => {
+      expect(client.status().phase).toBe('connected');
+    });
+
+    const socketsBeforeLateClose = socketCount;
+
+    // A LATE close event on the already-replaced, stale first socket (mirrors
+    // the real-world race where the actual close arrives well after
+    // `resetForNewToken()` already moved on) must be a total no-op.
+    firstSocket.simulateClose();
+
+    expect(client.status().phase).toBe('connected');
+    expect(client.isOpen()).toBe(true);
+
+    // No reconnect got armed for the stale close — advance well past every
+    // backoff rung; no new socket should ever appear.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(socketCount).toBe(socketsBeforeLateClose);
+
+    client.dispose();
+  });
+
+  it('does NOT close an ALREADY-authenticated transport on the new-token path (re-pasting a token while connected keeps the session)', async () => {
+    const { client, socket, connectPromise } = await clientWithToken(FAKE_TOKEN);
+    const { helloReqId, clientNonce } = await awaitHello(socket);
+    sendChallenge(socket, helloReqId);
+    const { authReqId } = await awaitAuth(socket);
+    await sendAuthOk(socket, authReqId, FAKE_TOKEN, clientNonce, 'valid');
+    await connectPromise;
+    expect(client.status().phase).toBe('connected');
+
+    client.resetForNewToken();
+
+    expect(socket.close).not.toHaveBeenCalled();
+    expect(client.isOpen()).toBe(true);
+    expect(client.status().phase).toBe('connected');
+    client.dispose();
+  });
+
   it('does NOT send any frame when no token is stored, and stays not-paired', async () => {
     const { client, socket, connectPromise } = await clientWithToken(null);
     await connectPromise;
