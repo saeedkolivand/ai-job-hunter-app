@@ -8,6 +8,7 @@ vi.mock('@wxt-dev/browser', () => ({
   browser: { tabs: { create: vi.fn() }, runtime: { openOptionsPage: vi.fn() } },
 }));
 
+import { JOB_TOOLS_GATED_LINE } from '../job-tools/job-tools';
 import { mountPrep, parsePrepResourceData, prepHasContent } from './prep';
 
 // ---------------------------------------------------------------------------
@@ -164,9 +165,22 @@ describe('mountPrep', () => {
     vi.mocked(browser.runtime.openOptionsPage).mockClear();
   });
 
-  it('shows a loading state before refresh() resolves', () => {
+  it('mounts showing nothing, and shows "Loading…" only while refresh() is genuinely in flight (#1225)', () => {
     const deps = makeDeps(() => new Promise<PopupResponse>(() => {}));
-    mountPrep(host, deps);
+    const view = mountPrep(host, deps);
+    // The mount alone is NOT a fetch — no phantom "Loading…" (#1225).
+    expect(host.textContent).not.toContain('Loading…');
+    expect(host.textContent).not.toContain('Prepare in the app');
+    // The draft buttons render at mount (an empty job still offers them), but
+    // DISABLED — nothing has declared the page readable yet (#1234).
+    const draftBtns = Array.from(host.querySelectorAll<HTMLButtonElement>('button'));
+    expect(draftBtns.some((b) => b.textContent === 'Draft company brief')).toBe(true);
+    expect(draftBtns.some((b) => b.textContent === 'Draft salary answer')).toBe(true);
+    expect(draftBtns.every((b) => b.disabled)).toBe(true);
+
+    view.refresh();
+    // Only now, with an unanswered request in flight, does the empty state
+    // say "Loading…".
     expect(host.textContent).toContain('Loading…');
   });
 
@@ -423,5 +437,52 @@ describe('mountPrep', () => {
     send.mockClear();
     view.reset();
     expect(send).not.toHaveBeenCalledWith({ kind: 'assistCancel' });
+  });
+
+  it('reset(reason) renders the shared gated line with BOTH draft buttons disabled (#1225, #1234)', async () => {
+    const send = vi.fn(
+      router({
+        prepGet: prepResult({ hasCompanyBrief: false, interviewQuestions: [] }),
+        settingsGet: AI_ASSIST_ON,
+      })
+    );
+    const view = mountPrep(host, makeDeps(send));
+    view.refresh();
+    // AI assist is ON and the page is readable — both drafts are armed.
+    const briefBtn = await waitForEnabledButton(host, 'Draft company brief');
+    const salaryBtn = await waitForEnabledButton(host, 'Draft salary answer');
+    expect(briefBtn.disabled).toBe(false);
+    expect(salaryBtn.disabled).toBe(false);
+
+    // sidepanel.ts resets with the SHARED gated line on an untrusted tab —
+    // the page is no longer readable, so the drafts must disable (#1234) and
+    // the line renders instead of a phantom "Loading…" (#1225).
+    view.reset(JOB_TOOLS_GATED_LINE);
+    expect(host.textContent).toContain(JOB_TOOLS_GATED_LINE);
+    expect(host.textContent).not.toContain('Loading…');
+    const after = Array.from(host.querySelectorAll<HTMLButtonElement>('button'));
+    const briefAfter = after.find((b) => b.textContent === 'Draft company brief');
+    const salaryAfter = after.find((b) => b.textContent === 'Draft salary answer');
+    expect(briefAfter?.disabled).toBe(true);
+    expect(salaryAfter?.disabled).toBe(true);
+    // A gated reset is untrusted — `lastUrl` is cleared, so the "Prepare in
+    // the app" deep link must never appear alongside the line.
+    expect(host.querySelector('button.btn--quiet')).toBeNull();
+  });
+
+  it('kind-mismatch: surfaces an error instead of sitting on a phantom "Loading…" (#1225)', async () => {
+    const send = vi.fn(async (req: PopupRequest) => {
+      if (req.kind === 'prepGet') {
+        return { ok: true, kind: 'appliedCheck', result: { found: false } } satisfies PopupResponse;
+      }
+      if (req.kind === 'settingsGet') return AI_ASSIST_ON;
+      return { ok: false, error: `unhandled: ${req.kind}` };
+    });
+    const view = mountPrep(host, makeDeps(send));
+    view.refresh();
+    await vi.waitFor(() =>
+      expect(host.textContent).toContain('Unexpected response — please retry.')
+    );
+    expect(host.textContent).not.toContain('Loading…');
   });
 });

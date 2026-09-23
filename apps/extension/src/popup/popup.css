@@ -345,6 +345,23 @@ body:has(#view-import) .head {
   margin-bottom: 10px;
 }
 
+/* The first-time Fill confirmation rides INSIDE #view-import (so it inherits
+ * that view's connected-only [hidden] gate) but must be a viewport-fixed
+ * overlay, not an in-flow block: the import view is held to the 360×≤520
+ * no-scroll budget (PR0 §2) and a full confirmation embedded there would be
+ * clipped/squashed (#1227). Fixed to the popup's own 10px frame — it is
+ * anchored to the document (no transformed/overflowing ancestor in this
+ * file's own tree), sized by the same 10px inset on both sides, and layered
+ * above the card. `z-index` (the only one in this file) keeps the inset over
+ * the card's own padding/page bleed. */
+#popup-fill-confirm-host {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 30;
+}
+
 details.group {
   /* Reset the UA default marker/indent — replaced by the ::before chevron below. */
   margin: 0;
