@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790142729880,
+  "lastUpdate": 1790161567869,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "820ceef7f53e6164318518e5b31bc31210ade043",
-          "message": "feat: diagnose the role a cover letter answers before drafting it (#926)\n\n* feat: diagnose the role a cover letter answers before drafting it\n\nFold a company-and-vacancy intelligence pass into the existing single-pass\ncover-letter generation — no extra AI calls, no new IPC.\n\nCompany brief (opt-in \"Research company\", already provider-native web search):\nnow also covers competitors and the challenges/strategic priorities the company\nis working on, hedges anything inferred rather than stating it as fact, and runs\n150-200 words. The `<company_research>` fence cap moves 1200 -> 1600 chars so the\nlonger brief is not cut mid-sentence, and the Ollama search query asks for\ncompetitors/strategy too.\n\nCover letter: a private diagnosis before drafting — why the role is open, the 3\noutcomes the hire is judged on in the first 6-12 months, and which real résumé\nachievements make the candidate part of that solution. Every step is bound to\nevidence in the job ad, the brief, or the résumé; thin evidence keeps the\ndiagnosis broad instead of guessing, and the letter voices it as the candidate's\nreading of the role, never insider knowledge. The same one-liner goes into the\nagent-mode draft_cover_letter prompt.\n\nAlso drops the hardcoded \"200 to 300 words\" from four places: it contradicted\n<market_conventions>, which already carries the per-market band.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: harden the company brief and bound the role diagnosis to employer evidence\n\nReview findings from CodeRabbit + the claude PR review on #926.\n\n- Prompt injection (major): search results are attacker-reachable text and the\n  brief is the one stage that reads them unfenced, so VERIFIED_ONLY now tells\n  the model to treat every page and snippet as untrusted data, ignore\n  directives inside them, and never let them add claims about a candidate.\n- Diagnosis evidence (major): a résumé says what the candidate has done, never\n  why an employer opened a role or what they will measure. Steps 1 and 2 now\n  stand only on <job_ad> (+ <company_research> when fenced); <candidate_resume>\n  is reserved for step 3, the through-line.\n- Test coverage (high): the brief-present branch of the diagnosis was never\n  asserted. Both branches are now covered, including the negative case.\n- Localization: the hedge exemplars were English strings injected into every\n  target language; the prompt now asks for hedging in the target language.\n- Competitors are their own required facet, no longer an \"or\" the model may skip.\n- Reuse hasBrief instead of recomputing companyBrief.trim(), and restore the\n  role-context comment to the code it documents.\n- Record why the agent-path length band is deliberately market-agnostic.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-08-02T00:46:38+02:00",
-          "tree_id": "aa061e14aceed1b3d9bfec4252ece5b2e60b518c",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/820ceef7f53e6164318518e5b31bc31210ade043"
-        },
-        "date": 1785625733292,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2206555,
-            "range": "± 63837",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2594150,
-            "range": "± 48597",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 301023,
-            "range": "± 3674",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 155374,
             "range": "± 3365",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9bd91fefa972b854cd187e0db19b1b1fd16055ec",
+          "message": "fix(extension): keep accepted answers writable, honour instructions, stop cancelled spend (#1251)\n\n* fix(extension): keep accepted answers writable, honour instructions, stop cancelled spend\n\nAccept into field worked exactly once per row. A successful write into an\nempty field never flipped the field's kind, so the next accept still took the\nfill path, whose locator only searches empty candidates — it could not find\nthe field it had just filled and claimed the page had changed. The kind now\nflips on a confirmed write, and a rescan migrates drafts onto the row that\nowns the field instead of orphaning them.\n\nThe free-text instruction was sent and then dropped: chips ignored the typed\nbox, and the draft compose path never read the field at all. Both now reach\nthe model. The instruction is user-typed and untrusted, so it is byte-capped\nand fenced as its own block, with the tag registered so a crafted question\ncannot forge a sibling.\n\nCancelling a Prep draft reverted the UI but still paid for the request. Only\nthe company-brief grounding checked for a cancel that raced ahead of\nregistration; the salary lookup and the web-search notes did not, which is\nexactly the path the report hit. All three now share one named guard.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01MoNkcapcQph3CR4mx2nzGc\n\n* test(extension): register the new fence tag with the drift guard\n\n`every_registered_fence_tag_is_load_bearing` keeps an independent copy of the\nfence vocabulary so a tag added to the registry cannot go silently untested.\nAdding `candidate_instruction` without updating that copy failed the guard,\nexactly as designed. With it listed, the shared loop now probes the new tag\nwith all three forgery shapes too.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01MoNkcapcQph3CR4mx2nzGc\n\n* refactor(extension): split answer_assist's payload parsing into its own module\n\nThe instruction work pushed answer_assist.rs to 1471 LOC, past R8's hard cap\nof 1400. The pure, AppHandle-free half lifts out cleanly: clamping, every\npayload parser, the mode enum, and rewrite-field validation are total\nfunctions of the incoming wire value, touching no network, store or registry.\n\n1471 down to 1282. No behaviour change; the architecture test passes on its\nown terms rather than through an allowlist entry.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01MoNkcapcQph3CR4mx2nzGc\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-09-23T10:42:35Z",
+          "tree_id": "368caef11a8083b9596744e466fa555d23730687",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/9bd91fefa972b854cd187e0db19b1b1fd16055ec"
+        },
+        "date": 1790161566891,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2227905,
+            "range": "± 21541",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2675077,
+            "range": "± 58470",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 251787,
+            "range": "± 1534",
             "unit": "ns/iter"
           }
         ]
