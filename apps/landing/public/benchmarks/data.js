@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790165953233,
+  "lastUpdate": 1790175906751,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "82d244477cb8d63fdc6064ccf3c199ff8b4bb1a3",
-          "message": "feat: offer reasoning effort per model and fix embedding re-indexing (#933)\n\n* feat: offer reasoning effort per model and fix embedding re-indexing\n\nRe-indexing embeddings reported success while writing nothing. The input was\ntruncated to a fixed character budget that overflows a dense language's token\nwindow, every provider error was swallowed, and the batch completed regardless,\nso the status strip correctly read 0 indexed under two success toasts. Input is\nnow chunked and mean-pooled so the whole document is embedded, the working size\nis learned once per document and bounded, and a run that embeds nothing fails.\n\nGemini's default embedding model had been retired by Google, and changing the\ncode default fixed nothing because the resolved name is persisted, so a\nmigration rewrites it and evicts the caches keyed on it. Stored vectors carry a\nformat version, since pooled vectors are not comparable with the truncated\nones written before this change.\n\nThe effort setting reached only the Codex agent; every HTTP adapter dropped it.\nIt is now gated on the per-model reasoning capability, and the levels a picker\noffers come from the backend per model, because providers publish different\nvocabularies per model and an unsupported value is rejected outright. Parameter\nshapes were taken from current provider documentation rather than assumed.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: keep the learned chunk size and validate the effort level per model\n\nThe size learned for a document was clamped to each chunk's leftover tail and\nthen carried into the next chunk, so one short remainder shrank the working\nsize for the rest of the document. A long resume then spent its whole call\nbudget and failed with a misleading message after embedding a few percent of\nits text. The learned size is now lowered only by a real rejection from the\nprovider.\n\nThe level a gemini model accepts varies by model, and the setting is stored per\nprovider, so switching models within gemini carried a level the new model\nrejects straight to the api. The request builder now checks the level against\nthe model's own table rather than only against the model generation.\n\nUsage is accumulated as work happens rather than returned only on success, so\ncalls already billed before a partial failure still reach the spend ledger.\n\nAlso removes a model from the one click list that the vendor has since shut\ndown, which this branch had added, and records against each hardcoded model\nlist which vendor page it was checked against and when, since all three stale\nmodel defects on this branch came from lists that were correct when written.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* refactor: give the adaptive embedding path its own module\n\nAdding the chunking and pooling work nearly doubled the provider module, which\nis meant to be the trait, registry and shared types rather than a home for a\nsubsystem. The adaptive path moves to its own file unchanged, and the two\nadapter modules that also crossed the size limit move their tests to sibling\nfiles, matching the pattern anthropic already used.\n\nNo behaviour changes and no test lost: the same three thousand and ten tests\npass, and the architecture rules pass without adding a single exemption, since\nan allowlist entry here would only have hidden the thing the rule exists to\nreport.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: replace the retired gemini models and validate anthropic effort per model\n\nThree of the four curated gemini entries were dead: the first one, which is the\nonboarding default, had been shut down, and two others no longer appear on the\nvendor's model page at all. A previous round replaced only the single dead id it\nalready knew about and left its neighbours unchecked, so the note in that file\nnow says to verify every entry when re-checking, not just the one being changed.\n\nAnthropic's effort levels turned out not to be uniform either: the vocabulary\nhas five values and the top two exclude different model sets, so the send path\nnow checks the level against the model's own table the same way gemini does.\nOpenai's enum has grown too, but its guide defers the per model breakdown to\nindividual model pages rather than one table, so only the values verified as\nuniversal are offered and the gate is there for when that changes.\n\nA re-index whose job finished before react committed the state holding its id\nleft the panel stuck, because the event handler read the id from a closure that\nhad not updated yet. The id is now held in a ref written before the state.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: stop injecting a temperature gemini 3 asks us not to set\n\nThe request builders substituted a default temperature whenever the caller had\nnot chosen one, and that substituted value is below the figure google asks for\non gemini 3, where lowering it risks looping and degraded output on exactly the\nreasoning heavy work this app does. Moving the onboarding default onto a gemini\n3 model made that the path every new user takes, so the fix belongs with it.\n\nA value the user actually chose is still sent on any model. Only the invented\none is dropped, and only where the vendor asks for its own default. Applied at\nall four call sites rather than the one reported, including company research,\nwhere the hardcoded figure was furthest from what is recommended.\n\nThe re-index test now asserts the panel leaves its working state rather than\nonly that a toast fired, so dropping the clear would fail it.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: let the chunker own length policy instead of the ollama adapter\n\nThe chunker grows its per chunk size for a long document so the number of\nchunks stays bounded, and the ollama adapter still cut anything over eight\nthousand characters before sending it. A long resume was therefore silently\ntruncated again, by a different route, inside the change whose purpose was to\nstop that, while the log line beside it claimed no text is dropped.\n\nThe adapter no longer rewrites what it is given. Its own over length error is\nalready recognised, so a chunk that really is too large now comes back as a\nfailure the halving ladder handles, which is what that ladder is for. The body\nbuilder is now a pure function so a grown chunk can be asserted to arrive whole\nwithout a network mock.\n\nAlso gates the ollama thinking parameter against the levels it accepts, the way\nthe other three adapters already do, and checks the embedding dimension the api\nactually returns rather than trusting the request shape, since two careful\nreadings of the vendor reference disagreed about it.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-08-04T23:19:28+02:00",
-          "tree_id": "88a63cfd15d172de3f9fe476595f1cb14ed8148a",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/82d244477cb8d63fdc6064ccf3c199ff8b4bb1a3"
-        },
-        "date": 1785879773312,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2249847,
-            "range": "± 57683",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2680229,
-            "range": "± 36027",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 323373,
-            "range": "± 7712",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 252414,
             "range": "± 6847",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5bd90be1510f1c236850728fb495747c41afac43",
+          "message": "fix(extension): recognise the embedded board, not just any third-party frame (#1256)\n\nEnd-to-end testing against a real careers page showed the #1238 fix never\nfired. It required that no description was extracted AND that the page\nembedded a cross-origin frame. A careers page has plenty of prose, so a\ndescription WAS extracted - just not the job's - and the import still reported\na confident success naming the company's own heading at a single-digit fit.\n\nThe unit test passed because its fixture was written to match that assumption\nrather than the page.\n\nKey the signal on recognising the BOARD instead, through the existing ATS\nregistry, and drop the description condition. Recognising the board is what\nseparates a wrapper careers page from the analytics, consent and video frames\nthat are cross-origin on nearly every page, so the extra condition was not\nearning its place - it was suppressing the finding.\n\n\nClaude-Session: https://claude.ai/code/session_01MoNkcapcQph3CR4mx2nzGc\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-09-23T14:43:59Z",
+          "tree_id": "96ec10a8d7071b839155ea636bb2eba0bcb60eb1",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/5bd90be1510f1c236850728fb495747c41afac43"
+        },
+        "date": 1790175905543,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1776430,
+            "range": "± 34021",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2106609,
+            "range": "± 48133",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 246639,
+            "range": "± 7519",
             "unit": "ns/iter"
           }
         ]
