@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.155.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.154.0...v0.155.0) (2026-09-23)
+
+### ✨ Features
+
+* **settings:** give the browser extension its own nav section ([#1253](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1253)) ([fce2463](https://github.com/saeedkolivand/ai-job-hunter-app/commit/fce24632a740741f5a9d90722d082b1a6f17652c))
+
+### 🐛 Bug Fixes
+
+* **bridge:** match a tracked job by posting identity when applied.check misses ([#1242](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1242)) ([c872207](https://github.com/saeedkolivand/ai-job-hunter-app/commit/c8722079dbf926289b24e48dc733b3a9b093ec82)), closes [#1214](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1214)
+* **deeplink:** accept the trailing slash windows adds to job deep links ([#1241](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1241)) ([ba0f8b5](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ba0f8b5795e3b2a1baf9c42a771cccba7667aa0d)), closes [#1237](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1237)
+* **extension:** abandon a cancelled grounding step instead of paying for it ([#1257](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1257)) ([d59cd03](https://github.com/saeedkolivand/ai-job-hunter-app/commit/d59cd036d0a601ca68889b9a1b4ef63b35842d09))
+* **extension:** act on the requesting window's tab, not the last-focused one ([#1244](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1244)) ([c4c268a](https://github.com/saeedkolivand/ai-job-hunter-app/commit/c4c268a78e68efc6f7c23314349f67626ab53d72)), closes [#1215](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1215)
+* **extension:** attach to the résumé field when a cover letter sits beside it ([#1254](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1254)) ([fed7297](https://github.com/saeedkolivand/ai-job-hunter-app/commit/fed7297549a24047d0afbf6ed9e7b5d88e83ac61))
+* **extension:** clear a stale fit badge, read trailing-currency salaries, drop junk chips ([#1247](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1247)) ([9aa17ab](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9aa17ab1b86bba99865965b5d6240740d26416b5))
+* **extension:** escalate bridge backoff after a failed handshake ([#1245](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1245)) ([cc05ec0](https://github.com/saeedkolivand/ai-job-hunter-app/commit/cc05ec0d414bc581f7985edcfdc0ea001aea3b84))
+* **extension:** keep accepted answers writable, honour instructions, stop cancelled spend ([#1251](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1251)) ([9bd91fe](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9bd91fefa972b854cd187e0db19b1b1fd16055ec))
+* **extension:** make the panel's trust and confirmation states honest ([#1248](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1248)) ([27a6793](https://github.com/saeedkolivand/ai-job-hunter-app/commit/27a679358ee722b1dd80d17c7e7874cb2d9126c7))
+* **extension:** never treat an unnamed page as consent to fill ([#1255](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1255)) ([5e27be3](https://github.com/saeedkolivand/ai-job-hunter-app/commit/5e27be3c4880a923147e9736d5e32836740fb049))
+* **extension:** recognise the embedded board, not just any third-party frame ([#1256](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1256)) ([5bd90be](https://github.com/saeedkolivand/ai-job-hunter-app/commit/5bd90be1510f1c236850728fb495747c41afac43))
+* **extension:** stop import claiming success it did not earn ([#1252](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1252)) ([4d3244b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/4d3244b3c1770e8855b50651893548a4da914aa5))
+* **extension:** stop offering x/twitter fields as questions, correct two misleading messages ([#1243](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1243)) ([0516a4d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0516a4dc81fa4231229ec10bdad37406081cf429)), closes [#1218](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1218) [#1219](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1219) [#1226](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1226)
+* **extension:** stop stale stamps, fences and settings reaching the user ([#1250](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1250)) ([51830a7](https://github.com/saeedkolivand/ai-job-hunter-app/commit/51830a78f4bb48997d166236d7428342edd38c96))
+* **extension:** tell a dead api key apart from a retriable draft failure ([#1246](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1246)) ([c92785b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/c92785b43daae7293043e38db952ff50efb36e20))
+* **settings:** stop reporting a sleeping extension as not connected ([#1264](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1264)) ([5068d1e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/5068d1eefaec09ff7bda641fff74e9f0c8fd0601))
+
+### 📚 Documentation
+
+* **extension:** record the prep tab and answer capture on submit ([f09d55a](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f09d55a1e9121887899a62ab6dc7d09764a67f4d)), closes [#1209](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1209)
+
 ## [0.154.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.153.2...v0.154.0) (2026-09-16)
 
 ### ✨ Features
