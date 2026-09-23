@@ -555,6 +555,20 @@ fn to_draft_failed_collapses_a_provider_error_carrying_an_endpoint_to_the_generi
     assert!(!mapped.to_string().contains("https://"));
 }
 
+// #1217: a 401/403 becomes `AppError::Config` (see
+// `commands::ai_provider::friendly_api_error`). Retrying it fails identically
+// every time AND charges the daily budget again, so it must NOT collapse into
+// the generic "Please retry." sentinel.
+#[test]
+fn to_draft_failed_maps_a_provider_auth_error_to_the_config_sentinel() {
+    let dynamic = AppError::Config("openai: invalid or unauthorized API key.".to_string());
+    let mapped = to_draft_failed("compose failed", dynamic);
+    assert_eq!(mapped.to_string(), DRAFT_CONFIG_FAILED_MESSAGE);
+    assert_ne!(mapped.to_string(), DRAFT_FAILED_MESSAGE);
+    // Still a fixed string — the provider's own text never reaches the wire.
+    assert!(!mapped.to_string().contains("openai"));
+}
+
 // ── fetch_web_notes (delegates to commands::ai::research_answer_core —
 // same fake-searcher pattern as that function's own tests) ─────────────
 
