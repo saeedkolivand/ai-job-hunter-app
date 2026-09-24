@@ -504,15 +504,6 @@ impl AutopilotStore {
         }
     }
 
-    fn set_block_save(&self, block: bool) {
-        self.block_save
-            .store(block, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    fn is_block_save(&self) -> bool {
-        self.block_save.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
     // ── CRUD ──────────────────────────────────────────────────────────────────
 
     pub fn list(&self) -> Vec<Autopilot> {

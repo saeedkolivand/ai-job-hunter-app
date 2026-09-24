@@ -100,6 +100,15 @@ fn parse_records(raw: Vec<serde_json::Value>) -> HashMap<String, Autopilot> {
 }
 
 impl AutopilotStore {
+    pub(super) fn set_block_save(&self, block: bool) {
+        self.block_save
+            .store(block, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub(super) fn is_block_save(&self) -> bool {
+        self.block_save.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub(super) fn load_with_corrupt_handling(&self) -> LoadOutcome {
         let empty = |block_save| LoadOutcome {
             map: HashMap::new(),
