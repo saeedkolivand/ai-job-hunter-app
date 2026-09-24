@@ -1,5 +1,341 @@
 [
   {
+    "sha": "3501dc7eec0308d0c0ddb5573f5421b5ce236517",
+    "commit": {
+      "message": "chore: sync landing download version to v0.155.1",
+      "author": {
+        "date": "2026-09-23T20:13:36Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "02402d34018508d51cc318eb521da3acd0651086",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.155.1 [skip ci]",
+      "author": {
+        "date": "2026-09-23T20:13:09Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "726a8305744ce3b2518fd8087fe458b8081e47a4",
+    "commit": {
+      "message": "chore(release): 0.155.1 [skip ci]",
+      "author": {
+        "date": "2026-09-23T19:12:13Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "fe942ffab4f4ef53eaef0ebf684bb2c38098d431",
+    "commit": {
+      "message": "fix(extension): run the pairing handshake when a token is saved on an open socket (#1268)",
+      "author": {
+        "date": "2026-09-23T19:05:16Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "3d7a8b2f3eb7fb6328d2bb8c1be623e6623f481f",
+    "commit": {
+      "message": "chore: sync landing download version to v0.155.0",
+      "author": {
+        "date": "2026-09-23T17:48:31Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "138b89c3e3d08006f5909e4e555087d48013dc03",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.155.0 [skip ci]",
+      "author": {
+        "date": "2026-09-23T17:48:08Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "35937f2dac0386af8ffe2df9dde50eca9ca2c47c",
+    "commit": {
+      "message": "ci(charts): summarise the repo-charts run as a table (#1266)",
+      "author": {
+        "date": "2026-09-23T17:06:36Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "14cbdd919e7403232bed00260fb4a534536da099",
+    "commit": {
+      "message": "chore(release): 0.155.0 [skip ci]",
+      "author": {
+        "date": "2026-09-23T16:54:01Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "5172e385f13606a2d25df428e7669c72e0d4b39c",
+    "commit": {
+      "message": "chore: bump the vitest group across 1 directory with 3 updates (#1261)",
+      "author": {
+        "date": "2026-09-23T16:40:11Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "b27f9cf29ba564f441d9c99c4c22df9a173e8e5b",
+    "commit": {
+      "message": "chore: bump the ci-actions group with 2 updates (#1263)",
+      "author": {
+        "date": "2026-09-23T16:33:57Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "fe3a8a06c5b98d9ca58308f8829f1bf80f2cbb8a",
+    "commit": {
+      "message": "chore: bump the codeql-action group with 3 updates (#1260)",
+      "author": {
+        "date": "2026-09-23T16:33:49Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "528f756942fac314281bd27296406eabac4efe30",
+    "commit": {
+      "message": "chore: bump the javascript group with 20 updates (#1265)",
+      "author": {
+        "date": "2026-09-23T16:31:58Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "ecddd4d0284e5f378a4b030a1ed800c2dc5155c4",
+    "commit": {
+      "message": "chore: bump the desktop-rust group (#1262)",
+      "author": {
+        "date": "2026-09-23T16:30:21Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "d77db576025f32dfad3ef8dc0a0a9c29201d14d6",
+    "commit": {
+      "message": "chore: bump web-ext from 10.6.0 to 10.7.0 in /apps/extension/tools/amo (#1259)",
+      "author": {
+        "date": "2026-09-23T16:29:34Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "5068d1eefaec09ff7bda641fff74e9f0c8fd0601",
+    "commit": {
+      "message": "fix(settings): stop reporting a sleeping extension as not connected (#1264)",
+      "author": {
+        "date": "2026-09-23T16:25:16Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "45e294d0f2ad592f261d7d6615c988191d4324c4",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-23T16:15:42Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "d59cd036d0a601ca68889b9a1b4ef63b35842d09",
+    "commit": {
+      "message": "fix(extension): abandon a cancelled grounding step instead of paying for it (#1257)",
+      "author": {
+        "date": "2026-09-23T16:03:49Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "9cc8a0c25f46bbd7a5cbfb4a2f3cc4d840ea3c71",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-23T15:05:06Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "5bd90be1510f1c236850728fb495747c41afac43",
+    "commit": {
+      "message": "fix(extension): recognise the embedded board, not just any third-party frame (#1256)",
+      "author": {
+        "date": "2026-09-23T14:43:59Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "5e27be3c4880a923147e9736d5e32836740fb049",
+    "commit": {
+      "message": "fix(extension): never treat an unnamed page as consent to fill (#1255)",
+      "author": {
+        "date": "2026-09-23T12:21:56Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "04a9af89b8c714c7a332f29e2348a7b97d1e7097",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-23T12:19:13Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "fce24632a740741f5a9d90722d082b1a6f17652c",
+    "commit": {
+      "message": "feat(settings): give the browser extension its own nav section (#1253)",
+      "author": {
+        "date": "2026-09-23T11:54:16Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "fed7297549a24047d0afbf6ed9e7b5d88e83ac61",
+    "commit": {
+      "message": "fix(extension): attach to the résumé field when a cover letter sits beside it (#1254)",
+      "author": {
+        "date": "2026-09-23T11:41:55Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "c52d367a38464766bc64a3e753e1464c6b0905ad",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-23T11:20:15Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "4d3244b3c1770e8855b50651893548a4da914aa5",
+    "commit": {
+      "message": "fix(extension): stop import claiming success it did not earn (#1252)",
+      "author": {
+        "date": "2026-09-23T11:08:58Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "ea199ccf8bae74b93658af1f8efbadfbf6db1426",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-23T11:06:07Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "9bd91fefa972b854cd187e0db19b1b1fd16055ec",
+    "commit": {
+      "message": "fix(extension): keep accepted answers writable, honour instructions, stop cancelled spend (#1251)",
+      "author": {
+        "date": "2026-09-23T10:42:35Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "07406959124beea3c5c61fbb3fac53777924807f",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-23T08:32:40Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "51830a78f4bb48997d166236d7428342edd38c96",
     "commit": {
       "message": "fix(extension): stop stale stamps, fences and settings reaching the user (#1250)",
@@ -857,342 +1193,6 @@
       "message": "chore(release): default the dispatch action to release, not build-installers",
       "author": {
         "date": "2026-09-10T09:34:30Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "8a5e86ae3d817f2853a844427cfe4b47e51969e1",
-    "commit": {
-      "message": "chore(release): list release before build-installers in dispatch options",
-      "author": {
-        "date": "2026-09-10T09:33:11Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "9c1adc77bcadbb161bb099705866d317e1f4f53a",
-    "commit": {
-      "message": "ci(repo-charts): scope permissions to job level (#1196)",
-      "author": {
-        "date": "2026-09-10T09:28:21Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "44828c9457f35fe3283b8c8f0a56cecd405973b3",
-    "commit": {
-      "message": "feat(release): remove flatpak distribution, add standalone msstore re-run (#1195)",
-      "author": {
-        "date": "2026-09-10T09:22:01Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "0d63d1e77688c3bf10761616844904deea264662",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-10T08:06:22Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "406cb2b0fbac7d12545400783f483df207beb4af",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-10T07:31:12Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "728c1ce8d9a8589b73ef2ac2d3887505e034595c",
-    "commit": {
-      "message": "fix(release): correct flathub app id and two linter-blocking manifest bugs (#1194)",
-      "author": {
-        "date": "2026-09-10T07:11:32Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "870982b92867ae6dc500a088011e4e17c0dc3f75",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-10T07:05:28Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "22b21751377c9f20b9ec59c2a19d1a7078794fd6",
-    "commit": {
-      "message": "feat(release): automate microsoft store submission via msstore cli (#1193)",
-      "author": {
-        "date": "2026-09-10T06:41:13Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "d5de2a9f30aef83b4fc5cfc53c2d0f3733a92039",
-    "commit": {
-      "message": "chore: bump the javascript group with 7 updates (#1192)",
-      "author": {
-        "date": "2026-09-09T18:26:49Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "172863fafd129198edac6de0e1746d4f5b92f426",
-    "commit": {
-      "message": "chore: bump the ci-actions group with 3 updates (#1191)",
-      "author": {
-        "date": "2026-09-09T18:26:37Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "a48bf76190c9c713a3d1589953e4bcda2daf27b1",
-    "commit": {
-      "message": "chore: bump the desktop-rust group (#1190)",
-      "author": {
-        "date": "2026-09-09T18:26:28Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "18ee008ea965560e432d92e3dd4c780960abbaa5",
-    "commit": {
-      "message": "chore: sync landing download version to v0.152.0",
-      "author": {
-        "date": "2026-09-09T13:02:47Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "d125f5cba76d905ba0be07012b315132b2753ee9",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.152.0 [skip ci]",
-      "author": {
-        "date": "2026-09-09T13:02:21Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "ee1f6f91bd3cce1dfb1b32b90cd3411a8f657d42",
-    "commit": {
-      "message": "chore(release): 0.152.0 [skip ci]",
-      "author": {
-        "date": "2026-09-09T12:18:25Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "f0c00630e18431411c0e61e78c85dde1d452d01f",
-    "commit": {
-      "message": "feat(landing): link the microsoft store from the download page and release notes (#1189)",
-      "author": {
-        "date": "2026-09-09T12:13:29Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "be47baaeaf54f9e8c98f909b74f39e29a7aeb070",
-    "commit": {
-      "message": "fix(ai): parse current codex exec events and stop pinning a stale codex model list (#1187)",
-      "author": {
-        "date": "2026-09-09T12:12:17Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "e1507f07814ae75c90c4efdc477a5d9685a6eed6",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-09T08:07:13Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "f398fcf5489c3e042ea1c34333b64f408b9a6ef0",
-    "commit": {
-      "message": "docs(adr): record the loopback http transport, resources and prompts (#1186)",
-      "author": {
-        "date": "2026-09-09T06:22:31Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "95799bc8364b4de367a42f74a99074ebb845b1cf",
-    "commit": {
-      "message": "chore(release): 0.151.0 [skip ci]",
-      "author": {
-        "date": "2026-09-09T06:12:30Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "f93dc916c268b04bac48d04558ed64bf133b03f6",
-    "commit": {
-      "message": "feat(agent): photo-safe read tier, mcp polish, loopback http transport, resources and prompts (#1184)",
-      "author": {
-        "date": "2026-09-09T06:06:10Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "c623b2ba04d1043f003fb38cb2e4ecf77f49cd9d",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-09T02:10:39Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "2be376971d60a0859d73af47d6e499d51ab80fe2",
-    "commit": {
-      "message": "fix(agent): generated command catalogue, argument validation and one refusal contract (#1183)",
-      "author": {
-        "date": "2026-09-09T01:46:53Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "aaa457b62b8773bb66aa062761bcc62bae7cb609",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-09T00:25:49Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "7777b9d487cd9e8d90a9d4bf9d6f8d5bd91488c2",
-    "commit": {
-      "message": "fix(agent): honest policy rows, job identity by board id, and a usable found-jobs read (#1182)",
-      "author": {
-        "date": "2026-09-09T00:12:46Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "9b021333a458fdf2c2425fae042b24a4ba49a822",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-08T23:17:40Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "607c995c2121f5bb4a80cf6311fb2db9d290fd5b",
-    "commit": {
-      "message": "fix(commands): label the health model probe and make the spend summary complete (#1178)",
-      "author": {
-        "date": "2026-09-08T22:53:51Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "37e6ef4d0bcdf5ebd27a6e6843e2ed7388aa6f36",
-    "commit": {
-      "message": "test(settings): pin the agent-cli generic mcp hint against silent regression (#1177)",
-      "author": {
-        "date": "2026-09-08T11:39:49Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "18fefdf97390126f6131e4a2cf424274f418a918",
-    "commit": {
-      "message": "docs(settings): drop vs code from the mcpservers roster and refresh two-snippet comments (#1176)",
-      "author": {
-        "date": "2026-09-08T10:58:55Z"
       }
     },
     "author": {
