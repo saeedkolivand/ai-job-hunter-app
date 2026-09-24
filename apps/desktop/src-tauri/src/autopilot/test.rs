@@ -3363,3 +3363,84 @@ fn a_failed_restore_keeps_the_old_rows() {
         2
     );
 }
+
+// ── Found-jobs cap (#1277) ────────────────────────────────────────────────────
+
+/// `n` jobs with distinct titles (so clustering never merges them), found at
+/// times `first_at`, `first_at + 1`, … in list order.
+fn jobs_found_from(first_at: u64, n: usize) -> Vec<FoundJob> {
+    (0..n)
+        .map(|i| {
+            found_job_full(
+                &format!("https://jobs.example/{}", first_at + i as u64),
+                &format!("Role {}", first_at + i as u64),
+                "Acme",
+                first_at + i as u64,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn the_cap_keeps_the_newest_jobs_in_their_existing_order() {
+    // Oldest first in the list, so "newest" and "last in the list" coincide.
+    let mut jobs = jobs_found_from(1, cap::MAX_FOUND_JOBS + 7);
+    cap::cap_found_jobs(&mut jobs);
+
+    assert_eq!(jobs.len(), cap::MAX_FOUND_JOBS);
+    assert_eq!(jobs.first().unwrap().found_at, 8, "the 7 oldest are gone");
+    assert!(
+        jobs.windows(2).all(|w| w[0].found_at < w[1].found_at),
+        "order kept"
+    );
+}
+
+#[test]
+fn the_cap_leaves_a_list_under_the_limit_alone() {
+    let mut jobs = jobs_found_from(1, 3);
+    let before: Vec<String> = jobs.iter().map(|j| j.url.clone()).collect();
+    cap::cap_found_jobs(&mut jobs);
+    let after: Vec<String> = jobs.iter().map(|j| j.url.clone()).collect();
+    assert_eq!(after, before);
+}
+
+/// The owner's decision on #1277, written out by hand: a test that only read the
+/// constant would pass whatever it was changed to.
+#[test]
+fn the_cap_is_the_500_newest() {
+    assert_eq!(cap::MAX_FOUND_JOBS, 500);
+}
+
+#[test]
+fn a_run_trims_found_jobs_to_the_cap_dropping_the_oldest() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
+    let store = AutopilotStore::new(&dir);
+    let ap = store.create(fj_input("Capped"));
+
+    // An earlier run already holds the cap's worth of older jobs...
+    let old = jobs_found_from(1_000, cap::MAX_FOUND_JOBS);
+    store.record_run(&ap.id, 0, 0, old, vec![], &HashSet::new(), &[]);
+    // ...and a new run finds 10 more, all newer.
+    let new = jobs_found_from(9_000, 10);
+    store.record_run(&ap.id, 0, 0, new, vec![], &HashSet::new(), &[]);
+
+    let reopened = AutopilotStore::new(&dir);
+    let jobs = reopened.get(&ap.id).unwrap().found_jobs;
+    assert_eq!(jobs.len(), cap::MAX_FOUND_JOBS);
+    assert!(jobs.iter().any(|j| j.found_at == 9_009), "newest kept");
+    assert!(
+        jobs.iter().all(|j| j.found_at >= 1_010),
+        "the 10 oldest dropped"
+    );
+    assert_eq!(
+        reopened
+            .found_jobs_db
+            .as_ref()
+            .unwrap()
+            .lock()
+            .row_count(&ap.id),
+        cap::MAX_FOUND_JOBS,
+        "the table was trimmed too"
+    );
+}

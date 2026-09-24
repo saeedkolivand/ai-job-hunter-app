@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+mod cap;
 mod corrupt;
 mod found_jobs_db;
 mod persist;
@@ -747,6 +748,8 @@ impl AutopilotStore {
             ap.total_found = total_found;
             ap.total_applied = total_applied;
             ap.found_jobs = merge_found_jobs(&ap.found_jobs, found_jobs);
+            // Before clustering, so no cluster points at a job that's dropped.
+            cap::cap_found_jobs(&mut ap.found_jobs);
             // Cross-board cluster the FULL merged list, write cluster annotations
             // onto each row, and count clusters whose members are ALL first-seen
             // this run (ADR-029 §f) — a known job resurfacing on another board no
