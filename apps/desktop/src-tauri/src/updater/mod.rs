@@ -30,6 +30,8 @@ use crate::events::{emit_event, UPDATER_STATUS};
 use crate::platform::PackageFlavour;
 use tauri_plugin_updater::{Update, UpdaterExt};
 
+mod pre_update_backup;
+
 /// Holds the pending Update and downloaded bytes between commands.
 #[derive(Default)]
 pub struct UpdaterState {
@@ -356,6 +358,40 @@ pub async fn updater_download(app: AppHandle) -> Value {
     }
 }
 
+/// Copy the user's data to `backups/` before the new version can touch it
+/// (#1278). Never blocks the update: a failure is logged and the install goes
+/// ahead, because holding back an update also holds back its security fixes.
+/// Only logged, not shown: the app restarts right after, so nobody would see it.
+async fn back_up_before_install(app: &AppHandle) {
+    let app = app.clone();
+    // Reading every store can take a while (one has been seen at 41 MB), so it
+    // runs off the async runtime.
+    let result = tokio::task::spawn_blocking(move || {
+        let bundle = crate::commands::data::build_bundle(&app);
+        pre_update_backup::write_pre_update_backup(
+            &crate::platform::config::data_dir(),
+            env!("CARGO_PKG_VERSION"),
+            &crate::commands::data::date_stamp(),
+            &bundle,
+        )
+    })
+    .await;
+    match result {
+        Ok(Ok(path)) => log::info!(
+            "[updater] pre-update backup written: {}",
+            path.file_name().unwrap_or_default().to_string_lossy()
+        ),
+        Ok(Err(e)) => log::warn!(
+            "[updater] pre-update backup failed, installing anyway: {}",
+            crate::observability::sanitize_reason(&e.to_string())
+        ),
+        Err(e) => log::warn!(
+            "[updater] pre-update backup task failed, installing anyway: {}",
+            crate::observability::sanitize_reason(&e.to_string())
+        ),
+    }
+}
+
 /// Install the downloaded update and relaunch.
 /// Uses the Update object and bytes stored by earlier commands — no re-fetch.
 #[tauri::command]
@@ -374,6 +410,8 @@ pub async fn updater_install(app: AppHandle) -> Value {
             }
         }
     };
+
+    back_up_before_install(&app).await;
 
     match update.install(bytes) {
         Ok(()) => {
