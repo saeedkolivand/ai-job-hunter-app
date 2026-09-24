@@ -4,10 +4,12 @@
 //! Text arrives as `{"type":"text",...,"part":{...,"type":"text","text":"OK",...}}`.
 //! One-shot uses the same flags; the last `text` part is the answer.
 //!
-//! **Security (tools off): a workspace file `.opencode/opencode.json` (v2 config)
-//! defining an agent `ajh` with `"permissions": [{ "action": "*", "resource": "*", "effect": "deny" }]`,
-//! run with `--agent ajh`. Docs: https://opencode.ai/v2/docs/agents and https://opencode.ai/v2/docs/permissions.
-//! Project config merges OVER the user's global config, so the deny applies.
+//! **Security (every tool call refused):** a workspace file `.opencode/opencode.json`
+//! sets one top-level rule, `{ "action": "*", "resource": "*", "effect": "ask" }`.
+//! `opencode run` is headless with nobody to answer, so every tool call is
+//! declined, and the app never passes `--auto` (which would approve `ask`).
+//! See [`OPENCODE_CONFIG`] for why this is `ask` and not `deny`.
+//! Docs: https://opencode.ai/v2/docs/permissions
 //!
 //! The (untrusted, JD-bearing) prompt is delivered on **stdin**
 //! ([`PromptDelivery::Stdin`]): `opencode run` reads the prompt from stdin, so
@@ -24,35 +26,33 @@ use super::{CliAgentBackend, CliEvent, CliInvocation, PromptDelivery};
 
 const MODELS: &[&str] = &[]; // No static fallback — rely on `discover_models` entirely.
 
-/// The v2 config that denies every tool action. Written to `.opencode/opencode.json`
-/// in the private per-agent workspace (see [`super::mod::workspace_files`]).
-// `agents` (plural) is the v2 key. Verified live against opencode 2.0.16: with the
-// v1-style `"agent"` key plus a v2 `"permissions"` array, the definition is not
-// applied and `--agent ajh` runs with every tool, including shell (a prompted
-// `echo … > file` really wrote the file). With `"agents"` the model has no tools.
-// Side effect: OpenCode's free Zen tier refuses requests from a custom agent, so
-// Zen free models don't work through this provider; OpenRouter etc. do.
-const OPENCODE_AGENT_CONFIG: &str = r#"{
+/// Written to `.opencode/opencode.json` in the private per-agent workspace.
+///
+/// `ask`, not `deny`, both verified live on opencode 2.0.16 with a
+/// prompt-injection probe ("use your shell tool to write a file", "read
+/// secret.txt"):
+/// - `ask` headless: every tool call is declined ("The user declined this tool
+///   call"), no file written or read, and a normal prompt still answers with
+///   exit 0. OpenCode Zen's FREE models accept the request.
+/// - `deny` (any form, even denying shell alone) removes tools from what the
+///   model is offered, and Zen's free tier then refuses the request outright
+///   ("free tier can only be used from within OpenCode"). Free Zen models are a
+///   core reason to support opencode, so `deny` is not an option.
+/// - With no config at all, the shell tool really runs. Never ship without this.
+///
+/// This relies on `--auto` NEVER being passed: `--auto` approves every
+/// permission that is not explicitly denied. Pinned by `argv_never_auto_approves`.
+const OPENCODE_CONFIG: &str = r#"{
   "$schema": "https://opencode.ai/config.json",
-  "agents": {
-    "ajh": {
-      "permissions": [
-        { "action": "*", "resource": "*", "effect": "deny" }
-      ]
-    }
-  }
+  "permissions": [
+    { "action": "*", "resource": "*", "effect": "ask" }
+  ]
 }"#;
 
 /// Map opencode's own error text to what the user can act on. Shared by the
 /// streaming and one-shot paths so both say the same thing.
 fn friendly_error(message: &str) -> String {
     let lower = message.to_ascii_lowercase();
-    if lower.contains("free tier can only be used from within opencode") {
-        // The tool-denying custom agent (see OPENCODE_AGENT_CONFIG) is what
-        // triggers this on OpenCode Zen's free models.
-        return "opencode: OpenCode's free Zen models can't be used by other apps.                 Pick a model from another provider (for example OpenRouter)."
-            .to_string();
-    }
     if lower.contains("rate limit") || lower.contains("quota") {
         return "opencode: rate limit exceeded. Please try again later.".to_string();
     }
@@ -239,18 +239,16 @@ impl CliAgentBackend for OpencodeAgent {
     }
 
     fn workspace_files(&self) -> Vec<(&'static str, String)> {
-        vec![(".opencode/opencode.json", OPENCODE_AGENT_CONFIG.to_string())]
+        vec![(".opencode/opencode.json", OPENCODE_CONFIG.to_string())]
     }
 }
 
-/// `opencode run --format json -m <model> --agent ajh` — the prompt is piped on stdin.
+/// `opencode run --format json -m <model>`: the prompt is piped on stdin.
 fn run_args(model: &str) -> Vec<String> {
     let mut args = vec![
         "run".to_string(),
         "--format".to_string(),
         "json".to_string(),
-        "--agent".to_string(),
-        "ajh".to_string(),
     ];
     if let Some(model) = super::arg_token(model) {
         args.push("-m".to_string());
@@ -336,8 +334,6 @@ mod tests {
         assert!(inv.args.iter().any(|a| a == "run"));
         assert!(inv.args.iter().any(|a| a == "--format"));
         assert!(inv.args.iter().any(|a| a == "json"));
-        assert!(inv.args.iter().any(|a| a == "--agent"));
-        assert!(inv.args.iter().any(|a| a == "ajh"));
         assert!(inv
             .args
             .windows(2)
@@ -348,8 +344,6 @@ mod tests {
     fn argv_no_model_omits_flag() {
         let inv = OpencodeAgent.stream_invocation("", "", None);
         assert!(!inv.args.iter().any(|a| a == "-m"));
-        assert!(inv.args.iter().any(|a| a == "--agent"));
-        assert!(inv.args.iter().any(|a| a == "ajh"));
         assert_eq!(inv.prompt, PromptDelivery::Stdin);
     }
 
@@ -359,16 +353,13 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].0, ".opencode/opencode.json");
         let config: Value = serde_json::from_str(&files[0].1).unwrap();
-        // The whole rule set, exactly: one deny-everything rule under the v2
-        // `agents` key. The v1 `agent` key silently leaves every tool enabled.
+        // The whole rule set, exactly: one top-level ask-everything rule and
+        // nothing else (see OPENCODE_CONFIG for why ask and not deny).
         assert_eq!(
-            config["agents"]["ajh"]["permissions"],
-            json!([{ "action": "*", "resource": "*", "effect": "deny" }])
+            config["permissions"],
+            json!([{ "action": "*", "resource": "*", "effect": "ask" }])
         );
-        assert!(
-            config.get("agent").is_none(),
-            "v1 `agent` key must not be used"
-        );
+        assert!(config.get("agent").is_none() && config.get("agents").is_none());
     }
 
     #[test]
@@ -423,10 +414,17 @@ mod tests {
         assert_eq!(OpencodeAgent.parse_complete(out).unwrap(), "Hello, world");
     }
 
+    /// `ask` only refuses tools while nobody approves them: an auto-approve flag
+    /// would turn every `ask` into `allow`.
     #[test]
-    fn free_zen_refusal_gets_an_actionable_message() {
-        let out = r#"{"type":"error","error":{"message":"Error from provider (Console): OpenCode's free tier can only be used from within OpenCode"}}"#;
-        let msg = format!("{}", OpencodeAgent.parse_complete(out).unwrap_err());
-        assert!(msg.contains("another provider"), "{msg}");
+    fn argv_never_auto_approves() {
+        for inv in [
+            OpencodeAgent.stream_invocation("openai/gpt-4o", "", None),
+            OpencodeAgent.complete_invocation("openai/gpt-4o", "", None),
+        ] {
+            for flag in ["--auto", "--yolo", "-y", "--dangerously-skip-permissions"] {
+                assert!(!inv.args.iter().any(|a| a == flag), "{flag} present");
+            }
+        }
     }
 }

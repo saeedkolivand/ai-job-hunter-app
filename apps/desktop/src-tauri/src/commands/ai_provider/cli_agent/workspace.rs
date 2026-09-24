@@ -65,12 +65,16 @@ pub fn prepare_workspace(
         fs::create_dir_all(&workspace_root)?;
     }
 
-    // Check and create provider dir
+    // Start from an EMPTY provider dir on every spawn: the CLI may also load files
+    // this writer doesn't own (opencode reads `.opencode/agent/*.md`, plugins, …),
+    // and a stale one could override the tool-refusing config. `remove_dir_all`
+    // does not follow symlinks. `create_dir` (not `_all`) fails if anything
+    // reappeared at the path between the removal and the creation.
     if provider_dir.exists() {
         refuse_link(&provider_dir)?;
-    } else {
-        fs::create_dir_all(&provider_dir)?;
+        fs::remove_dir_all(&provider_dir)?;
     }
+    fs::create_dir(&provider_dir)?;
 
     // Write each file, checking every intermediate directory
     for (rel_path, contents) in workspace_files {
@@ -131,6 +135,22 @@ mod tests {
 
         let content = fs::read_to_string(ws.join(".opencode/opencode.json")).unwrap();
         assert_eq!(content, "new");
+    }
+
+    /// A file the writer doesn't own (e.g. a planted opencode agent definition)
+    /// must not survive into the next run.
+    #[test]
+    fn files_the_writer_does_not_own_are_removed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let files = [(".opencode/opencode.json", "{}".to_string())];
+        let ws = prepare_workspace(tmp.path(), "opencode", &files).unwrap();
+        let planted = ws.join(".opencode/agent/evil.md");
+        fs::create_dir_all(planted.parent().unwrap()).unwrap();
+        fs::write(&planted, "permission: allow").unwrap();
+
+        prepare_workspace(tmp.path(), "opencode", &files).unwrap();
+        assert!(!planted.exists(), "stale file survived");
+        assert!(ws.join(".opencode/opencode.json").exists());
     }
 
     #[cfg(unix)]
@@ -203,20 +223,26 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn junctioned_intermediate_dir_is_refused() {
+    fn junction_planted_inside_the_workspace_is_wiped_without_following_it() {
         let tmp = tempfile::tempdir().unwrap();
         let real = tmp.path().join("elsewhere");
         fs::create_dir_all(&real).unwrap();
+        fs::write(real.join("keep.txt"), "target data").unwrap();
         let provider = tmp.path().join("cli-workspaces").join("opencode");
         fs::create_dir_all(&provider).unwrap();
         junction(&provider.join(".opencode"), &real);
 
         let files = [(".opencode/opencode.json", "{}".to_string())];
-        let err = prepare_workspace(tmp.path(), "opencode", &files).unwrap_err();
-        assert!(err.to_string().contains("reparse point"), "{err}");
-        assert!(
-            !real.join("opencode.json").exists(),
-            "nothing written through the junction"
+        let ws = prepare_workspace(tmp.path(), "opencode", &files).unwrap();
+
+        // The junction's target is untouched: nothing deleted, nothing written.
+        assert_eq!(
+            fs::read_to_string(real.join("keep.txt")).unwrap(),
+            "target data"
         );
+        assert!(!real.join("opencode.json").exists());
+        // The config landed in a real directory, not through a link.
+        refuse_link(&ws.join(".opencode")).unwrap();
+        assert!(ws.join(".opencode/opencode.json").exists());
     }
 }
