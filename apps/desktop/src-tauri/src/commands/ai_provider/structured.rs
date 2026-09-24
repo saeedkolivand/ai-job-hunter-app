@@ -398,6 +398,37 @@ pub(super) fn openai_response_format(schema: Option<&Value>) -> Value {
     }
 }
 
+/// Anthropic's `output_config.format` for `schema`, or `None` when there is
+/// nothing it can constrain against — the caller then stays on [`prompt_only`].
+/// Same gate as [`openai_response_format`]'s strict branch: both vendors take a
+/// closed (`additionalProperties: false`, all-`required`) object schema.
+pub(super) fn anthropic_output_format(schema: Option<&Value>) -> Option<Value> {
+    schema
+        .filter(|s| s.get("type").and_then(Value::as_str) == Some("object"))
+        .filter(|s| !has_untranslatable_keyword(s, 0))
+        .filter(|s| openai_strict_keywords_only(s, 0))
+        .and_then(|schema| strictify(schema, 0))
+        .map(|schema| json!({ "type": "json_schema", "schema": schema }))
+}
+
+/// Anthropic's `output_config` body field: [`anthropic_output_format`]
+/// wrapped under `"format"`, plus `"effort"` when the caller passes one —
+/// already gated against this model's tier by the caller
+/// (`anthropic::AnthropicClient::complete_structured`), since that gate needs
+/// the model id this shape-only translator deliberately doesn't take.
+/// `None` — the same "stay on [`prompt_only`]" signal as
+/// [`anthropic_output_format`] — when there is no usable schema at all.
+pub(super) fn anthropic_output_config(
+    schema: Option<&Value>,
+    effort: Option<&str>,
+) -> Option<Value> {
+    let mut output_config = json!({ "format": anthropic_output_format(schema)? });
+    if let Some(effort) = effort {
+        output_config["effort"] = json!(effort);
+    }
+    Some(output_config)
+}
+
 /// Add OpenAI strict-mode's two structural requirements to `schema`,
 /// recursively (a flat schema bottoms out immediately; nesting is handled so a
 /// slightly-less-flat caller can't silently 400): every object gets
@@ -1143,5 +1174,66 @@ mod tests {
         let schema = json!({ "type": "object", "properties": {} });
         assert_eq!(ollama_format(Some(&schema)), schema);
         assert_eq!(ollama_format(None), json!("json"));
+    }
+
+    #[test]
+    fn anthropic_output_format_is_none_without_a_usable_schema() {
+        assert_eq!(anthropic_output_format(None), None);
+        // A root array can't be closed into an object schema.
+        assert_eq!(
+            anthropic_output_format(Some(&json!({ "type": "array" }))),
+            None
+        );
+        // A composition keyword neither `strictify` nor `openai_strict_keywords_only`
+        // walks into — same degrade as the OpenAI side.
+        let anyof = json!({
+            "type": "object",
+            "properties": {
+                "note": {
+                    "anyOf": [
+                        { "type": "object", "properties": { "text": { "type": "string" } } },
+                        { "type": "string" },
+                    ],
+                },
+            },
+        });
+        assert_eq!(anthropic_output_format(Some(&anyof)), None);
+    }
+
+    #[test]
+    fn anthropic_output_format_closes_a_flat_object_schema() {
+        let schema = json!({
+            "type": "object",
+            "properties": { "score": { "type": "integer" }, "notes": { "type": "string" } },
+        });
+        let format = anthropic_output_format(Some(&schema)).expect("translatable");
+        assert_eq!(format["type"], json!("json_schema"));
+        let out = &format["schema"];
+        assert_eq!(out["additionalProperties"], json!(false));
+        let mut required: Vec<&str> = out["required"]
+            .as_array()
+            .expect("required array")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
+        required.sort_unstable();
+        assert_eq!(required, ["notes", "score"]);
+    }
+
+    #[test]
+    fn anthropic_output_config_wraps_the_format_and_adds_effort_only_when_given() {
+        let schema = json!({ "type": "object", "properties": { "score": { "type": "integer" } } });
+        let format = anthropic_output_config(Some(&schema), None).expect("translatable");
+        assert_eq!(format["format"]["type"], json!("json_schema"));
+        assert!(format.get("effort").is_none());
+
+        let with_effort =
+            anthropic_output_config(Some(&schema), Some("xhigh")).expect("translatable");
+        assert_eq!(with_effort["effort"], json!("xhigh"));
+    }
+
+    #[test]
+    fn anthropic_output_config_is_none_without_a_usable_schema() {
+        assert_eq!(anthropic_output_config(None, Some("xhigh")), None);
     }
 }

@@ -178,41 +178,8 @@ For each experience bullet in the resume, check:
 - Does it follow CAR format (Context/Action/Result)?
 - Score the experience section based on achievement quality, not just keyword presence.
 
-STEP 6 — WEIGHTED SCORING (CRITICAL - BE BRUTALLY HONEST)
-
-Calculate each score using the weighted formula:
-
-**ATS Score Calculation:**
-1. Count exact keyword matches from job ad (max 35 points)
-2. Check section completeness: all 5 standard sections present? (max 25 points)
-3. Format compliance audit: single column, no tables, consistent dates (max 20 points)
-4. Parsing safety check: no ATS-killer issues (max 20 points)
-Total = sum of above (0-100)
-
-**Keyword Coverage Calculation:**
-1. Extract ALL required skills/technologies from job ad (make a list)
-2. Count matches in resume (exact, semantic, or related terms)
-Total = (matches / total_required) * 100
-RULE: Missing 5+ critical keywords = automatic score <65
-
-**Job Match Calculation:**
-1. Experience relevance: do past roles match requirements? (40 points max)
-2. Seniority alignment: right level for this role? (25 points max)
-3. Domain match: same industry/sector? (20 points max)
-4. Requirement coverage: % of job requirements met (15 points max)
-Total = sum of above (0-100)
-
-**Readability Calculation:**
-1. Scannability: bullet format, white space (30 points max)
-2. Achievement quality: quantified results, CAR format (30 points max)
-3. Action verbs: strong verbs, active voice (20 points max)
-4. Length: appropriate for experience level (20 points max)
-Total = sum of above (0-100)
-
-**Language Alignment:**
-Use the scale defined in system prompt (0-100)
-
-Do NOT round up. Be strict. A score of 64.5 is 64, not 65.
+STEP 6 — SCORING
+Score every dimension honestly using the DIMENSION DEFINITIONS and SCORING RULES in your instructions. Scores are integers; round down.
 
 STEP 7 — REWRITE EXAMPLES
 Pick the 2 weakest bullet points from the experience section.
