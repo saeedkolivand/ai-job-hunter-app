@@ -104,11 +104,11 @@ impl Budget {
     /// starts calling tools should have to justify raising this.
     ///
     /// **`max_tokens` = 200_000, over-provisioned by design.** The Phase-3
-    /// derivation: 3 JSON stages (~3k + ~6k + ~5k tokens, each doubled by the
-    /// one allowed re-ask ⇒ ~28k) + the draft (~7.5k) + ≤2 repair rounds × ≤4
+    /// derivation: 2 JSON stages (~3k + ~6k tokens, each doubled by the one
+    /// allowed re-ask ⇒ ~18k) + the draft (~7.5k) + ≤2 repair rounds × ≤4
     /// sections × ~6k (~37k) + (PR-2) the letter (~7.5k, the same order as the
     /// draft) + `humanize`'s ≤2 flagged-document rewrites (~6k each ⇒ ~12k) ≈
-    /// **92k**. The 200k ceiling over-provisions this by ~2.2× — a since-removed
+    /// **82k**. The 200k ceiling over-provisions this by ~2.4× — a since-removed
     /// second, section-wise depth was what it was originally sized for, and it
     /// is left as is rather than tightened for no live effect: it is NOT the
     /// live bound, the per-provider daily ceiling and the run deadline are, and
@@ -118,22 +118,22 @@ impl Budget {
     /// **`step_timeout` = 360s**, but read its field doc first: it is INERT
     /// for this flow — `Pipeline::run_hooked` does not enforce it.
     ///
-    /// **`run_timeout` = 90 min**, raised from an unvalidated 30 (via a wrong
-    /// 45, then 75) and now DERIVED from the fan-out that actually runs: it is
-    /// the effort-blind FLOOR that must agree with
+    /// **`run_timeout` = 80 min (4800 s)**, raised from an unvalidated 30 (via
+    /// a wrong 45, then 75) and now DERIVED from the fan-out that actually
+    /// runs: it is the effort-blind FLOOR that must agree with
     /// `timeouts::quality_run_deadline(None)`, which is `flat + jsonStages ×
     /// ollamaCompletionDeadline(None) + baseline × passes × 1.0` = 3000 s +
-    /// 1800 s + 600 s = 5400 s. Two of the three terms are FLAT ONLY at this
+    /// 1200 s + 600 s = 4800 s. Two of the three terms are FLAT ONLY at this
     /// bottom tier (multiplier 1.0) and SCALE above it — see
     /// `timeouts::ollama_completion_deadline`'s doc for why only 10 of the
-    /// run's 16 non-streamed calls stay flat at every effort:
+    /// run's 14 non-streamed calls stay flat at every effort:
     ///
     /// * the flat term — the repair fan-out (`max_repair_attempts` (2) rounds
     ///   × `MAX_SECTIONS_PER_ROUND` (4) sections, 2400 s) and `humanize`'s
     ///   worst case (≤2 flagged documents, 600 s), always at the 300 s
     ///   `OLLAMA_COMPLETION_BASELINE` bound — `Completer::complete` carries no
     ///   effort to scale by;
-    /// * the JSON-stage term — 3 JSON stages × 2 round-trips (1800 s at this
+    /// * the JSON-stage term — 2 JSON stages × 2 round-trips (1200 s at this
     ///   tier), now scaled by `ollama_completion_deadline` the same way the
     ///   next term already was;
     /// * the scaled term — TWO streamed calls, the draft and the cover letter
@@ -164,7 +164,7 @@ impl Budget {
         max_sections: DEFAULT_MAX_SECTIONS,
         max_repair_attempts: DEFAULT_MAX_REPAIR_ATTEMPTS,
         step_timeout: Duration::from_secs(360),
-        run_timeout: Duration::from_secs(90 * 60),
+        run_timeout: Duration::from_secs(4_800),
         confirm_timeout: Duration::from_secs(300),
     };
 }

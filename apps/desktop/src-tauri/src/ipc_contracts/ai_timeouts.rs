@@ -18,10 +18,12 @@ pub const OLLAMA_COMPLETION_BASELINE_SECS: u64 = 300;
 pub const EFFORT_TIMEOUT_MULTIPLIER: &[(&str, f64)] =
     &[("medium", 1.5), ("high", 2.0), ("xhigh", 2.5), ("max", 3.0)];
 
-/// How many non-streaming round-trips `analyze_job`/`match_evidence`/
-/// `strategy` make in the WORST case: 3 stages × (1 call + 1 allowed
-/// re-ask), each through `Completer::complete_json`.
-pub const QUALITY_RUN_JSON_STAGE_CALLS: u64 = 6;
+/// How many non-streaming round-trips `analyze_job`/`strategy` make in the
+/// WORST case: 2 stages × (1 call + 1 allowed re-ask), each through
+/// `Completer::complete_json`. `match_evidence` is deliberately absent: it
+/// selects evidence from the source résumé in pure Rust and makes no
+/// provider call.
+pub const QUALITY_RUN_JSON_STAGE_CALLS: u64 = 4;
 
 /// The part of one quality-depth run's deadline that does NOT scale with
 /// effort: the repair fan-out (`max_repair_attempts` rounds ×
@@ -30,7 +32,7 @@ pub const QUALITY_RUN_JSON_STAGE_CALLS: u64 = 6;
 /// `OLLAMA_COMPLETION_BASELINE_SECS` — `Completer::complete` carries no
 /// `effort` to scale by. See `qualityRunDeadlineSecs` in
 /// packages/shared/src/ai-timeouts.ts for the full derivation, including
-/// why the three JSON stages are NOT in this term any more.
+/// why the two JSON stages are NOT in this term any more.
 pub const QUALITY_RUN_FIXED_SECS: u64 = 3000;
 
 /// Effort-SCALED whole-document passes one quality run may make: two — the

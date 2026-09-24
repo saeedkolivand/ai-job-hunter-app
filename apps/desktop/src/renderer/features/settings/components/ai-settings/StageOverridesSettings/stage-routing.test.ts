@@ -19,14 +19,15 @@ const allConfigured = () => true;
 describe('OVERRIDABLE_PIPELINE_STAGES', () => {
   it('is the generated vocabulary minus the stages that make no provider call', () => {
     expect(OVERRIDABLE_PIPELINE_STAGES).toEqual(PIPELINE_STAGES.filter(isPayingPipelineStage));
-    // The one the backend refuses an override for.
+    // The stages the backend refuses an override for — neither makes a provider
+    // call.
     expect(OVERRIDABLE_PIPELINE_STAGES).not.toContain('validate');
+    expect(OVERRIDABLE_PIPELINE_STAGES).not.toContain('match_evidence');
   });
 
   it('keeps every stage that DOES call a provider, in pipeline order', () => {
     expect([...OVERRIDABLE_PIPELINE_STAGES]).toEqual([
       'analyze_job',
-      'match_evidence',
       'strategy',
       'draft',
       'cover_letter',
@@ -114,7 +115,7 @@ describe('resolveStageRouting', () => {
     });
 
     // One global problem is reported once, by `resolveActiveProblem` — not as
-    // seven identical warnings offering advice ("put this step back on the
+    // six identical warnings offering advice ("put this step back on the
     // default") that a row already on the default cannot follow.
     expect(rows.every((r) => r.problem === undefined)).toBe(true);
   });

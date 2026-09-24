@@ -1,5 +1,5 @@
-//! The quality-depth stages, one module each, plus the two pure primitives
-//! more than one of them needs ([`sections`] and [`verbatim`]).
+//! The quality-depth stages, one module each, plus the pure primitives shared
+//! between them ([`sections`] and [`verbatim`]).
 //!
 //! Every stage is a [`Stage<QualityCtx>`](crate::pipeline::Stage) so the run
 //! goes through `Pipeline::run_hooked` — which is what gives the L3 shell its
@@ -27,11 +27,12 @@ pub use self::repair::{regenerate_one_section, Repair, SectionOutcome, MAX_SECTI
 pub use self::strategy::{seed_company_roster, Strategy, MAX_COMPANY_PLANS};
 pub use self::validate::{validate_documents, Validate};
 
-// The PURE decisions the stages take away from the model — the verbatim drop +
-// status overwrite, the roster re-seed, and the repair loop's own arithmetic.
-// Re-exported for the sibling test module only: they are stage internals, and a
-// production caller reaching for one would be doing the grounding a second
-// time, in a second place.
+// The PURE decisions the stages take away from the model — the roster re-seed,
+// the repair loop's own arithmetic, and the rest. Re-exported for the sibling
+// test module only: they are stage internals, and a production caller reaching
+// for one would be duplicating a decision the owning stage already makes.
+// `evidence` keeps its own tests in its own module, so nothing from it is
+// re-exported here.
 #[cfg(test)]
 pub(crate) use self::cover_letter::research_company_brief;
 #[cfg(test)]
@@ -39,8 +40,6 @@ pub(crate) use self::draft::{
     apply_projects_normalization, draft_with_language_retry, run_draft_attempt, DraftEnv,
     LanguageRetryOutcome,
 };
-#[cfg(test)]
-pub(crate) use self::evidence::ground;
 #[cfg(test)]
 pub(crate) use self::humanize::{
     exceeds_humanize_cap, humanize_is_worse, humanize_one, is_usable_rewrite,

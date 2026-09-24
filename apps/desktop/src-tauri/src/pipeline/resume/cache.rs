@@ -3,7 +3,7 @@
 //!
 //! ## What is cached, and what is deliberately not
 //!
-//! Only the three JSON stages (`analyze_job`, `match_evidence`, `strategy`).
+//! Only the two JSON stages (`analyze_job`, `strategy`).
 //! They are pure functions of their inputs, they are the expensive part of a
 //! re-run against the same posting, and their artifacts are small.
 //!

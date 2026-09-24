@@ -16,17 +16,17 @@ use tempfile::TempDir;
 use super::cache::{StageCacheKey, StageIdentity, PIPELINE_PROMPT_VERSION};
 use super::prompts::{
     company_roster_block, draft_language_retry_note, draft_system, draft_user, humanize_system,
-    humanize_user, language_name, letter_system, letter_user, match_evidence_system,
-    match_evidence_user, repair_system, repair_user, section_order_prompt_list, strategy_system,
-    strategy_user, HumanizeTier, ANALYZE_JOB_SYSTEM, HUMANIZE_DOCUMENT_CAP, SIBLING_CONTEXT_CAP,
+    humanize_user, language_name, letter_system, letter_user, repair_system, repair_user,
+    section_order_prompt_list, strategy_system, strategy_user, HumanizeTier, ANALYZE_JOB_SYSTEM,
+    HUMANIZE_DOCUMENT_CAP, SIBLING_CONTEXT_CAP,
 };
 use super::stages::sections;
 use super::stages::verbatim::is_verbatim;
 use super::stages::{
-    criticals_by_section, exceeds_humanize_cap, ground, humanize_is_worse, humanize_one,
-    is_usable_rewrite, research_company_brief, reseed, round_is_worse, run_draft_attempt,
-    seed_company_roster, should_humanize_letter, validate_documents, voice_count, voice_findings,
-    DraftEnv, LanguageRetryOutcome, MAX_COMPANY_PLANS,
+    criticals_by_section, exceeds_humanize_cap, humanize_is_worse, humanize_one, is_usable_rewrite,
+    research_company_brief, reseed, round_is_worse, run_draft_attempt, seed_company_roster,
+    should_humanize_letter, validate_documents, voice_count, voice_findings, DraftEnv,
+    LanguageRetryOutcome, MAX_COMPANY_PLANS,
 };
 use super::types::{
     CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, JobAnalysis, ResumeStrategy,
@@ -221,13 +221,15 @@ fn cache_key_field_boundaries_are_unambiguous() {
 // ── End to end: a retry after a mid-run failure does not re-spend what already
 //    succeeded ──────────────────────────────────────────────────────────────
 //
-// The incident this proves the fix for: `analyze_job` (3 min) and
-// `match_evidence` (2 min) succeeded, `strategy` then timed out, and the run
-// failed. A retry with UNCHANGED inputs must not re-charge the two stages
-// that already answered — `StageCacheKey` + `KvCache::get`/`set` is the
-// mechanism (`cache::get`/`cache::put` below are the same two functions
-// `analyze.rs`/`evidence.rs`/`strategy.rs` call). Key derivation is pinned in
-// isolation above (`cache_key_discipline_misses_on_version_provider_model_and_window`,
+// The incident this proves the fix for: `analyze_job` (3 min) succeeded,
+// `strategy` then timed out, and the run failed. A retry with UNCHANGED inputs
+// must not re-charge the stage that already answered — `StageCacheKey` +
+// `KvCache::get`/`set` is the mechanism (`cache::get`/`cache::put` below are
+// the same two functions `analyze.rs`/`strategy.rs` call). `match_evidence`
+// makes no provider call anymore (see its module doc), so it is deliberately
+// absent here: a retry has nothing to re-spend for it. Key derivation is
+// pinned in isolation above
+// (`cache_key_discipline_misses_on_version_provider_model_and_window`,
 // `effort_is_part_of_the_cache_key`, …) and the KvCache read/write path is
 // pinned in `pipeline::cache::test` — NEITHER on its own proves a retry
 // actually skips a provider call; this is the one place that does, against a
@@ -241,7 +243,7 @@ fn cache_key_field_boundaries_are_unambiguous() {
 // `AppHandle` (keychain lookup, event emission) this crate cannot construct
 // in a test. `cached_stage_call` below copies the cache-then-call-else-and-
 // extend SEQUENCE verbatim from each real stage's `run()` — see
-// analyze.rs/evidence.rs/strategy.rs — so a drift between it and them could
+// analyze.rs/strategy.rs — so a drift between it and them could
 // only ever make this test prove MORE reuse than a real run gets, never less;
 // it cannot hide the failure mode it exists to catch (a retry that re-spends).
 
@@ -290,7 +292,6 @@ fn a_retry_after_a_mid_run_failure_does_not_re_spend_the_stages_that_already_suc
     let cache = KvCache::open(dir.path()).expect("open cache");
 
     let analyze_calls = Cell::new(0u32);
-    let evidence_calls = Cell::new(0u32);
     let strategy_calls = Cell::new(0u32);
 
     // The run's own inputs — identical between the failed attempt and the
@@ -299,16 +300,12 @@ fn a_retry_after_a_mid_run_failure_does_not_re_spend_the_stages_that_already_suc
     let seed = "the candidate's résumé\u{1f}the job ad\u{1f}en";
     let baseline = id_with_effort("ollama", "qwen3-vl-32k:latest", Some("baseline"));
 
-    // ── First attempt: analyze_job and match_evidence succeed, strategy times out ──
+    // ── First attempt: analyze_job succeeds, strategy times out ──
     let mut key = StageCacheKey::new(baseline, seed);
     cached_stage_call(&cache, "analyze_job", &mut key, &analyze_calls, || {
         Ok(json!({ "mustHave": ["Rust"], "niceToHave": [], "redFlags": [] }))
     })
     .expect("analyze_job answers on the first attempt");
-    cached_stage_call(&cache, "match_evidence", &mut key, &evidence_calls, || {
-        Ok(json!({ "items": [] }))
-    })
-    .expect("match_evidence answers on the first attempt");
     let first_attempt = cached_stage_call(&cache, "strategy", &mut key, &strategy_calls, || {
         Err(AppError::Timeout("no response within 300s".to_string()))
     });
@@ -318,7 +315,6 @@ fn a_retry_after_a_mid_run_failure_does_not_re_spend_the_stages_that_already_suc
         "the premise: strategy fails on the first attempt"
     );
     assert_eq!(analyze_calls.get(), 1);
-    assert_eq!(evidence_calls.get(), 1);
     assert_eq!(
         strategy_calls.get(),
         1,
@@ -336,14 +332,6 @@ fn a_retry_after_a_mid_run_failure_does_not_re_spend_the_stages_that_already_suc
         || panic!("must not re-ask analyze_job — it already answered"),
     )
     .expect("analyze_job reuses its cached answer");
-    cached_stage_call(
-        &cache,
-        "match_evidence",
-        &mut retry_key,
-        &evidence_calls,
-        || panic!("must not re-ask match_evidence — it already answered"),
-    )
-    .expect("match_evidence reuses its cached answer");
     cached_stage_call(&cache, "strategy", &mut retry_key, &strategy_calls, || {
         Ok(json!({ "companies": [] }))
     })
@@ -351,11 +339,6 @@ fn a_retry_after_a_mid_run_failure_does_not_re_spend_the_stages_that_already_suc
 
     assert_eq!(
         analyze_calls.get(),
-        1,
-        "a retry with unchanged inputs must not re-spend a stage that already succeeded"
-    );
-    assert_eq!(
-        evidence_calls.get(),
         1,
         "a retry with unchanged inputs must not re-spend a stage that already succeeded"
     );
@@ -444,106 +427,6 @@ fn verbatim_allows_only_whitespace_and_case_normalization() {
     ));
     // Not allowed: a bare word that is a substring of anything.
     assert!(!is_verbatim(source, "Kubernetes"));
-}
-
-/// A non-verbatim quote is BLANKED and its attribution goes with it, the status
-/// is overwritten from the source, and the requirement survives — an honest gap
-/// beats a deleted requirement.
-///
-/// Mutation check: return the model's `status` unchanged and the `missing`
-/// assertion fails; keep `source_company` and the attribution assertion fails.
-#[test]
-fn evidence_grounding_drops_a_paraphrase_and_overwrites_the_status() {
-    let source = "EXPERIENCE\nAcme Payments\n- Migrated 40 services to Kubernetes in 2023";
-    let model = EvidenceMap {
-        items: vec![
-            EvidenceItem {
-                requirement: "Kubernetes".to_string(),
-                // A paraphrase: the words are the model's, not the candidate's.
-                source_quote: "Moved dozens of services onto Kubernetes".to_string(),
-                source_company: "Acme Payments".to_string(),
-                status: EvidenceStatus::Covered,
-                strength: 9,
-            },
-            EvidenceItem {
-                requirement: "Terraform".to_string(),
-                source_quote: String::new(),
-                source_company: String::new(),
-                // The model claims coverage for something the résumé never says.
-                status: EvidenceStatus::Covered,
-                strength: 3,
-            },
-        ],
-    };
-
-    let (grounded, dropped) = ground(
-        source,
-        "We need Kubernetes and Terraform experience.",
-        "en",
-        &["Kubernetes".to_string(), "Terraform".to_string()],
-        model,
-    );
-
-    assert_eq!(dropped, 1, "the paraphrase must be counted as dropped");
-    let k8s = &grounded.items[0];
-    assert!(k8s.source_quote.is_empty(), "a paraphrase must not survive");
-    assert!(
-        k8s.source_company.is_empty(),
-        "the attribution must go with the quote it belonged to"
-    );
-    assert_eq!(
-        k8s.status,
-        EvidenceStatus::Covered,
-        "the source does say Kubernetes"
-    );
-    assert!(k8s.strength <= 3, "strength must be clamped");
-
-    let terraform = &grounded.items[1];
-    assert_eq!(
-        terraform.status,
-        EvidenceStatus::Missing,
-        "the kernel, not the model, decides status — the résumé never says Terraform"
-    );
-}
-
-/// A requirement the model skipped entirely still appears, with an honest
-/// status. Mutation check: build the list from `model.items` instead of the
-/// Rust-owned requirement set and this fails.
-#[test]
-fn evidence_grounding_keeps_a_requirement_the_model_ignored() {
-    let (grounded, _) = ground(
-        "EXPERIENCE\n- Built payment rails",
-        "We need Rust.",
-        "en",
-        &["Rust".to_string(), "Kafka".to_string()],
-        EvidenceMap::default(),
-    );
-    assert_eq!(grounded.items.len(), 2);
-    assert!(grounded
-        .items
-        .iter()
-        .all(|item| item.status == EvidenceStatus::Missing));
-}
-
-/// A requirement the model INVENTED contributes nothing: the requirement set is
-/// Rust-owned. Mutation check: append unmatched model items and this fails.
-#[test]
-fn evidence_grounding_ignores_a_requirement_the_model_invented() {
-    let (grounded, _) = ground(
-        "EXPERIENCE\n- Built payment rails",
-        "We need Rust.",
-        "en",
-        &["Rust".to_string()],
-        EvidenceMap {
-            items: vec![EvidenceItem {
-                requirement: "Executive sponsorship".to_string(),
-                status: EvidenceStatus::Covered,
-                ..EvidenceItem::default()
-            }],
-        },
-    );
-    assert_eq!(grounded.items.len(), 1);
-    assert_eq!(grounded.items[0].requirement, "Rust");
 }
 
 // ── Strategy never drops a role ─────────────────────────────────────────────
@@ -1462,26 +1345,11 @@ fn every_untrusted_block_is_fenced_and_forgery_resistant() {
         ..JobAnalysis::default()
     };
 
-    let user = match_evidence_user(hostile, &analysis);
-    assert!(user.contains("<candidate_resume>"));
-    assert!(user.contains("<job_analysis>"));
-    // Exactly one real closing tag per block: the forged ones are broken.
-    assert_eq!(user.matches("</candidate_resume>").count(), 1);
-    assert_eq!(user.matches("</job_analysis>").count(), 1);
-    assert!(
-        user.contains("< /job_posting>"),
-        "a forged sibling must be broken"
-    );
-    assert!(
-        !user.contains("[tool_result:"),
-        "a forged marker must be broken"
-    );
-
-    // …and for the strategy turn, which shares the same two untrusted blocks
-    // (`candidate_resume`, `job_analysis`) with the match-evidence turn above,
-    // through the SAME `fenced`/`fenced_artifact` primitive
-    // (`prompts.rs::strategy_user`) — the one résumé-consuming stage prompt
-    // this sweep had missed.
+    // The only résumé-consuming STAGE prompt left is the strategy turn, which
+    // fences the same two untrusted blocks (`candidate_resume`,
+    // `job_analysis`) through the SAME `fenced`/`fenced_artifact` primitive
+    // (`prompts.rs::strategy_user`). (`match_evidence` no longer composes any
+    // prompt — see its module doc.)
     let strategy = strategy_user(hostile, &analysis, &EvidenceMap::default());
     assert_eq!(strategy.matches("</candidate_resume>").count(), 1);
     assert_eq!(strategy.matches("</job_analysis>").count(), 1);
@@ -1573,11 +1441,9 @@ fn stage_prompts_interpolate_the_generated_blocks() {
         ATS_PRECEDENCE, FACTUAL_GROUNDING_RULES, HUMANIZE_LEXICAL, HUMANIZE_PROSE,
     };
 
-    let evidence = match_evidence_system();
     let strategy = strategy_system();
     let draft = draft_system("en", "us");
 
-    assert!(evidence.contains(FACTUAL_GROUNDING_RULES));
     assert!(strategy.contains(FACTUAL_GROUNDING_RULES));
     assert!(strategy.contains(ATS_PRECEDENCE));
     assert!(draft.contains(FACTUAL_GROUNDING_RULES));
@@ -3625,10 +3491,10 @@ async fn the_repair_loop_reverts_a_round_that_adds_criticals() {
 ///
 /// `Completer::complete_json` is allowed exactly one re-ask, and it decides on
 /// that second call by itself — between two `ollama_completion_deadline`-bounded
-/// round trips, with no stage boundary in between. `analyze_job`, `match_evidence` and
-/// `strategy` each go through it, so before this guard a run whose deadline
+/// round trips, with no stage boundary in between. `analyze_job` and `strategy`
+/// each go through it, so before this guard a run whose deadline
 /// expired during the first call paid for a second one nothing would look at
-/// (three stages × 300 s of it, worst case) and only THEN hit the boundary check.
+/// (two stages × 300 s of it, worst case) and only THEN hit the boundary check.
 ///
 /// Driven through the real [`complete_json_with`] seam with the real
 /// `guard_deadline`, and with a deadline that is LIVE at the first charge and

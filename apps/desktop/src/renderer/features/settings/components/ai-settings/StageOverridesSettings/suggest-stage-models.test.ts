@@ -42,7 +42,7 @@ describe('parseParameterSizeB', () => {
 describe('isChatCapable', () => {
   it('rejects an embedding model by its reported family, not its name', () => {
     // `all-minilm` contains no "embed" substring — the name check alone let it
-    // through and it was recommended for three JSON chat stages.
+    // through and it was recommended for two JSON chat stages.
     expect(isChatCapable('all-minilm', INSPECTIONS['all-minilm'])).toBe(false);
   });
 
@@ -178,7 +178,7 @@ describe('suggestExtractionModel', () => {
       overrides: { analyze_job: { provider: 'ollama', model: 'llama3.2:1b' } },
     });
 
-    expect(suggestion?.stages).toEqual(['match_evidence', 'strategy']);
+    expect(suggestion?.stages).toEqual(['strategy']);
   });
 
   it('is silent once every extraction stage is pinned', () => {

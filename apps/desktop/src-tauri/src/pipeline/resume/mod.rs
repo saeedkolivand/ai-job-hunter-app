@@ -6,7 +6,7 @@
 //! | stage            | calls  | what it produces                              |
 //! | ---------------- | ------ | ---------------------------------------------- |
 //! | `analyze_job`    | 1      | [`JobAnalysis`] — what the posting asks         |
-//! | `match_evidence` | 1      | [`EvidenceMap`] — what the RÉSUMÉ backs         |
+//! | `match_evidence` | 0      | [`EvidenceMap`] — what the RÉSUMÉ backs         |
 //! | `strategy`       | 1      | [`ResumeStrategy`] — how to present it          |
 //! | `draft`          | 0 or 1 | the résumé body, streamed — 0 unless `includeResume` |
 //! | `cover_letter`   | 0 or 1 | the letter body, streamed — 0 unless `includeCoverLetter` |
@@ -27,8 +27,8 @@
 //!
 //! The model decides HOW to present verified evidence, never WHAT the candidate
 //! has done. Each stage re-anchors to the SOURCE résumé rather than to the
-//! previous stage's output: `match_evidence` drops a quote that is not
-//! literally in the source, `strategy` has its company identities re-seeded
+//! previous stage's output: `match_evidence` copies its quotes straight out of
+//! the source, `strategy` has its company identities re-seeded
 //! from the parsed source after the model answers, and every Critical in the
 //! report comes from a deterministic comparison against the source — never from
 //! a model. A chain where each step trusted the last is exactly how a single
