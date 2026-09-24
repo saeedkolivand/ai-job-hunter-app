@@ -145,7 +145,7 @@ const SRC_REL = 'apps/desktop/src-tauri/src';
  */
 const ALLOWLIST = {
   // ── safe: provably cannot carry a path/URL/host/credential ────────────────
-  'autopilot/mod.rs:817': {
+  'autopilot/corrupt.rs:68': {
     status: 'safe',
     reason:
       "serde_json::from_value type-mismatch parsing the app's own Autopilot " +

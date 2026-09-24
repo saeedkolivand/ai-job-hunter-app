@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::observability::sanitize_reason;
+use crate::platform::fs::write_atomic;
 
 pub const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 pub const POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -355,7 +356,7 @@ pub(crate) fn write_cookies(
         std::fs::create_dir_all(parent)?;
     }
     let json = serde_json::to_string_pretty(cookies)?;
-    std::fs::write(&path, json)?;
+    write_atomic(&path, json.as_bytes())?;
     Ok(())
 }
 
@@ -378,7 +379,7 @@ pub(crate) fn write_auth_status(app_data_dir: &Path, board_id: &str, connected: 
         },
     };
     if let Ok(json) = serde_json::to_string(&status) {
-        std::fs::write(&path, json).ok();
+        let _ = write_atomic(&path, json.as_bytes());
     }
 }
 

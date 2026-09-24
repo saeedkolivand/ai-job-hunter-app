@@ -11,6 +11,10 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::platform::fs::write_atomic;
+
+mod corrupt;
+
 use crate::scraping::cluster::{
     assign_clusters, new_cluster_count, ClusterAssignment, ClusterInput, ClusterMemberRef,
 };
@@ -481,6 +485,13 @@ pub struct Autopilot {
 pub struct AutopilotStore {
     data_file: PathBuf,
     cache: Mutex<Option<HashMap<String, Autopilot>>>,
+    /// Set true only when a corrupt `autopilots.json` was detected but the
+    /// backup rename FAILED (file locked / cross-device / permissions). While it
+    /// is set, `write_to_disk` refuses to write — overwriting the path would
+    /// clobber the un-backed-up corrupt original and lose the user's recoverable
+    /// data. A successful backup leaves this false so `write_to_disk` proceeds
+    /// normally.
+    block_save: std::sync::atomic::AtomicBool,
 }
 
 impl AutopilotStore {
@@ -489,6 +500,7 @@ impl AutopilotStore {
         Self {
             data_file: data_dir.join("autopilots.json"),
             cache: Mutex::new(None),
+            block_save: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -869,43 +881,17 @@ impl AutopilotStore {
         if let Some(ref c) = *guard {
             return c.clone();
         }
-        // Per-record tolerant parse: deserialize the file as a `Vec<Value>` first,
-        // then each record individually, so ONE record carrying an unknown/future
-        // field value (e.g. a `runStatus` variant a downgraded build doesn't know,
-        // like `completedWithErrors`) drops only that record instead of failing
-        // the whole-`Vec<Autopilot>` parse — which previously produced an empty
-        // map, and a later `save()` would silently overwrite the file, losing
-        // every OTHER record too. Errors are counted and logged, never panicked.
-        let raw: Vec<serde_json::Value> = std::fs::read_to_string(&self.data_file)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
-        let mut dropped = 0usize;
-        let mut map: HashMap<String, Autopilot> = raw
-            .into_iter()
-            .filter_map(|v| match serde_json::from_value::<Autopilot>(v) {
-                Ok(ap) => Some((ap.id.clone(), ap)),
-                Err(e) => {
-                    dropped += 1;
-                    log::warn!("[autopilot] dropping unparseable record: {e}");
-                    None
-                }
-            })
-            .collect();
-        if dropped > 0 {
-            log::warn!("[autopilot] load: dropped {dropped} unparseable record(s)");
+
+        // See `corrupt.rs` for what can go wrong and what each outcome means.
+        let outcome = self.load_with_corrupt_handling();
+        self.set_block_save(outcome.block_save);
+        // A blocked outcome (file unreadable, or corrupt with no backup slot) is
+        // never cached, so the next load reads the file again instead of serving
+        // this empty stand-in for the rest of the session.
+        if !outcome.block_save {
+            *guard = Some(outcome.map.clone());
         }
-        // Scrub a THIRD sink for the Track B1 board-health verdict (see
-        // `strip_board_health`'s doc): an on-disk file from an intermediate
-        // build predating the `record_run`/`export`/`import` strips, or a
-        // hand-edited one. This cache is a `save()`'s worth of one round trip
-        // away from `record_run`'s own strip too — any OTHER mutation
-        // (`set_run_status`, `stamp_last_run`, …) re-serializes this map
-        // untouched, so a record that entered here with stale health would
-        // otherwise keep re-persisting it forever instead of aging out.
-        strip_board_health(map.values_mut());
-        *guard = Some(map.clone());
-        map
+        outcome.map
     }
 
     fn save(&self, map: HashMap<String, Autopilot>) {
@@ -920,6 +906,13 @@ impl AutopilotStore {
                 "[autopilot] failed to persist autopilots.json: {}",
                 sanitize_reason(&e.to_string())
             );
+            // Blocked because the file on disk couldn't be loaded safely: don't
+            // cache this change either. The UI then shows it didn't stick right
+            // away (instead of it vanishing on restart), and the next load
+            // re-reads the file once it's readable again.
+            if self.is_block_save() {
+                return;
+            }
         }
         *self.cache.lock() = Some(map);
     }
@@ -929,6 +922,16 @@ impl AutopilotStore {
     /// done-marker). Does NOT update the in-memory cache — that's `save`'s job.
     /// `Ok(())` is also returned on the no-op-write path (state already on disk).
     fn write_to_disk(&self, map: &HashMap<String, Autopilot>) -> std::io::Result<()> {
+        // The file on disk couldn't be loaded safely (unreadable, or corrupt with
+        // no backup slot to move it to): writing now could replace the only copy
+        // of the user's data with this session's empty map. The new state stays in
+        // memory (lost on restart); preserving the on-disk file wins. `save` logs it.
+        if self.is_block_save() {
+            return Err(std::io::Error::other(
+                "autopilots.json could not be loaded safely; not overwriting it",
+            ));
+        }
+
         let list: Vec<&Autopilot> = {
             let mut v: Vec<&Autopilot> = map.values().collect();
             v.sort_by(|a, b| cmp_autopilot_newest_first(a, b));
@@ -954,7 +957,7 @@ impl AutopilotStore {
         if unchanged {
             return Ok(()); // desired state already persisted
         }
-        std::fs::write(&self.data_file, json)
+        write_atomic(&self.data_file, json.as_bytes())
     }
 
     /// Replace all autopilots with the given set (preserving their ids). Used by

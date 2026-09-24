@@ -1,6 +1,7 @@
 use crate::commands::ai_provider::cli_agent;
 use crate::documents::DocumentStore;
 use crate::error::{AppError, AppResult};
+use crate::platform::fs::write_atomic;
 use crate::scraping::ScraperEngine;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -101,7 +102,8 @@ fn write_locale_file(app: &AppHandle, locale: &str) {
         std::fs::create_dir_all(parent).ok();
     }
     let content = serde_json::json!({ "locale": locale });
-    std::fs::write(path, serde_json::to_string(&content).unwrap_or_default()).ok();
+    let json = serde_json::to_string(&content).unwrap_or_default();
+    let _ = write_atomic(&path, json.as_bytes());
 }
 
 #[tauri::command]
