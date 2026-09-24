@@ -16,6 +16,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use super::{Autopilot, AutopilotStore};
+use crate::observability::sanitize_reason;
 
 /// Backup slots: `.corrupt`, then `.corrupt.1` … `.corrupt.9`. An older backup
 /// is never overwritten; with every slot taken, saves are blocked instead.
@@ -47,7 +48,8 @@ fn back_up_corrupt(data_file: &Path, reason: &str) -> bool {
         .and_then(Path::file_name)
         .map(|n| n.to_string_lossy().into_owned());
     log::error!(
-        "[autopilot] autopilots.json is corrupt ({reason}); backed_up_as={}",
+        "[autopilot] autopilots.json is corrupt ({}); backed_up_as={}",
+        sanitize_reason(reason),
         backup_name.as_deref().unwrap_or("NONE, saves blocked")
     );
     moved_to.is_some()
@@ -89,9 +91,11 @@ impl AutopilotStore {
                 return empty(!back_up_corrupt(&self.data_file, &e.to_string()));
             }
             Err(e) => {
+                // An io::Error can carry the absolute path: keep only the safe part.
                 log::error!(
-                    "[autopilot] autopilots.json could not be read ({e}); left in place, \
-                     saves blocked for this session"
+                    "[autopilot] autopilots.json could not be read ({}); left in place, \
+                     saves blocked for this session",
+                    sanitize_reason(&e.to_string())
                 );
                 return empty(true);
             }
