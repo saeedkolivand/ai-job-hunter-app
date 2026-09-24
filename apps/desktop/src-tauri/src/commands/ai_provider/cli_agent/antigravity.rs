@@ -81,8 +81,10 @@ impl CliAgentBackend for AntigravityAgent {
     // this and it must match the shell-capability allowlist entry. Correct it once
     // `agy`'s real distribution channel is confirmed (it may not be an npm package
     // at all, in which case the guide/docs path is the real install route).
-    fn install_package(&self) -> &'static str {
-        "@google/antigravity"
+    fn install_package(&self) -> Option<&'static str> {
+        // UNVERIFIED npm package name — correct once `agy`'s real distribution
+        // channel is confirmed. If not an npm package, return None.
+        Some("@google/antigravity")
     }
 
     fn docs_url(&self) -> &'static str {

@@ -58,6 +58,18 @@
           "cmd": "npm",
           "args": ["install", "-g", "@google/antigravity"],
           "sidecar": false
+        },
+        {
+          "name": "install-opencode",
+          "cmd": "npm",
+          "args": ["install", "-g", "@opencode/cli"],
+          "sidecar": false
+        },
+        {
+          "name": "install-qwen-code",
+          "cmd": "npm",
+          "args": ["install", "-g", "@qwen-code/qwen-code"],
+          "sidecar": false
         }
       ]
     }

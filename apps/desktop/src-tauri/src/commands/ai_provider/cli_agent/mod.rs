@@ -38,12 +38,20 @@ use super::{
 mod antigravity;
 mod claude_code;
 mod codex;
+mod cursor;
 mod gemini_cli;
+mod opencode;
+mod qwen_code;
+mod workspace;
 
 use antigravity::AntigravityAgent;
 use claude_code::ClaudeCodeAgent;
 use codex::CodexAgent;
+use cursor::CursorAgent;
 use gemini_cli::GeminiCliAgent;
+use opencode::OpencodeAgent;
+use qwen_code::QwenCodeAgent;
+use workspace::{prepare_workspace, Workspace};
 
 /// Max wall-clock time for a single CLI generation before we kill the child.
 const TIMEOUT: Duration = Duration::from_secs(300);
@@ -132,7 +140,9 @@ pub trait CliAgentBackend: Send + Sync {
     /// (#22). The one-click install runs `npm install -g <this>` — and that exact
     /// command MUST also be present in the shell capability allowlist
     /// (`capabilities/default.json`); a test asserts the two agree.
-    fn install_package(&self) -> &'static str;
+    /// Returns `None` if the agent is not distributed via npm (no one-click install,
+    /// only the docs/guide path).
+    fn install_package(&self) -> Option<&'static str>;
 
     /// Official install / setup docs, opened by the "guide" path.
     fn docs_url(&self) -> &'static str;
@@ -189,6 +199,33 @@ pub trait CliAgentBackend: Send + Sync {
     fn inline_system(&self) -> bool {
         false
     }
+
+    /// Config files (e.g. the tool-refusing config) written before every spawn, as
+    /// `(relative_path, contents)`. The harness writes them into a fresh per-spawn
+    /// directory (see `workspace.rs`) and uses it as `current_dir`. Default: no
+    /// files, and the CLI runs in `temp_dir()`.
+    fn workspace_files(&self) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
+
+    /// Environment variables that point the CLI at one of its
+    /// [`workspace_files`](Self::workspace_files), as `(variable, relative_path)`;
+    /// the harness sets each to that file's absolute path in the spawn's
+    /// workspace. For config a CLI only honours from a fixed scope (Qwen's
+    /// system settings). Default: none.
+    fn workspace_env(&self) -> Vec<(&'static str, &'static str)> {
+        Vec::new()
+    }
+}
+
+/// The text of every `{"type":"text","text":…}` block in a message's `content`
+/// array, in order. Shared by the Cursor and Qwen parsers (same message shape).
+pub(super) fn text_blocks(content: &[Value]) -> String {
+    content
+        .iter()
+        .filter(|c| c.get("type").and_then(|t| t.as_str()) == Some("text"))
+        .filter_map(|c| c.get("text").and_then(|t| t.as_str()))
+        .collect()
 }
 
 /// Combine system + user per the backend's [`inline_system`](CliAgentBackend::inline_system).
@@ -210,6 +247,9 @@ pub fn all() -> Vec<Box<dyn CliAgentBackend>> {
         Box::new(CodexAgent),
         Box::new(GeminiCliAgent),
         Box::new(AntigravityAgent),
+        Box::new(OpencodeAgent),
+        Box::new(CursorAgent),
+        Box::new(QwenCodeAgent),
     ]
 }
 
@@ -586,8 +626,10 @@ async fn run_stream(
     let prompt = effective_prompt(backend, system, prompt);
     let trace = RequestTrace::begin(backend.id(), model, "cli:stream", &binary, true);
 
-    let mut child = match spawn(&binary, &inv, &prompt) {
-        Ok(c) => c,
+    // `_workspace` (not `_`) keeps the per-spawn config dir alive until this
+    // function returns, i.e. until the child has exited.
+    let (mut child, _workspace) = match spawn(&binary, &inv, &prompt, backend) {
+        Ok(spawned) => spawned,
         Err(e) => {
             trace.end(None, false);
             return Err(spawn_error(label, &binary, e));
@@ -853,8 +895,10 @@ async fn run_one_shot(
     let prompt = effective_prompt(backend, system, user);
     let trace = RequestTrace::begin(backend.id(), model, "cli:complete", &binary, false);
 
-    let mut child = match spawn(&binary, &inv, &prompt) {
-        Ok(c) => c,
+    // `_workspace` (not `_`) keeps the per-spawn config dir alive until this
+    // function returns, i.e. until the child has exited.
+    let (mut child, _workspace) = match spawn(&binary, &inv, &prompt, backend) {
+        Ok(spawned) => spawned,
         Err(e) => {
             trace.end(None, false);
             return Err(spawn_error(label, &binary, e));
@@ -919,11 +963,15 @@ fn fallback_models(aliases: &[&str]) -> Vec<Value> {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────
 
+/// Spawn the CLI. The returned [`Workspace`] (if the backend has config files)
+/// must be held until the child exits: dropping it deletes the config the child
+/// reads.
 fn spawn(
     binary: &str,
     inv: &CliInvocation,
     prompt: &str,
-) -> std::io::Result<tokio::process::Child> {
+    backend: &dyn CliAgentBackend,
+) -> std::io::Result<(tokio::process::Child, Option<Workspace>)> {
     let mut args = inv.args.clone();
     // Untrusted prompt text enters argv ONLY for `PromptDelivery::Arg`, which no
     // backend constructs — every agent uses `Stdin` (see `PromptDelivery` docs for
@@ -932,15 +980,37 @@ fn spawn(
     if matches!(inv.prompt, PromptDelivery::Arg) {
         args.push(prompt.to_string());
     }
-    cli_command(binary, &args)
-        // Neutral cwd: we only want text generation, never side effects in the
-        // user's project (backends also disable tools where the CLI supports it).
-        .current_dir(std::env::temp_dir())
+
+    let files = backend.workspace_files();
+    let workspace = if files.is_empty() {
+        None
+    } else {
+        Some(prepare_workspace(
+            &crate::platform::config::data_dir(),
+            backend.id().as_str(),
+            &files,
+        )?)
+    };
+
+    let mut cmd = cli_command(binary, &args);
+    match &workspace {
+        Some(ws) => {
+            cmd.current_dir(ws.path());
+            for (var, rel_path) in backend.workspace_env() {
+                cmd.env(var, ws.path().join(rel_path));
+            }
+        }
+        None => {
+            cmd.current_dir(std::env::temp_dir());
+        }
+    }
+    let child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
-        .spawn()
+        .spawn()?;
+    Ok((child, workspace))
 }
 
 /// Feed the prompt to the child's stdin on a **detached task** so the caller can
@@ -985,14 +1055,20 @@ fn write_prompt_stdin(
 /// (`[A-Za-z0-9._:-]+`, trimmed): anything with a shell metacharacter, whitespace,
 /// or control char is dropped (the flag is simply omitted, so the CLI falls back to
 /// its default) and a warning is logged. Every real model id / effort level passes
-/// unchanged.
+/// unchanged. Also reject values starting with `-` or `/` so a settings value can
+/// never be read as a flag or a cmd switch.
 fn arg_token(value: &str) -> Option<&str> {
     let v = value.trim();
     if v.is_empty() {
         return None;
     }
+    // Reject leading `-` (looks like a flag) or `/` (cmd switch on Windows)
+    if v.starts_with('-') || v.starts_with('/') {
+        tracing::warn!("[cli_agent] dropping CLI arg value with leading flag/switch: {v:?}");
+        return None;
+    }
     if v.bytes()
-        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-'))
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-' | b'/'))
     {
         Some(v)
     } else {
