@@ -2775,24 +2775,18 @@ fn relax_legacy_filters_once_skips_when_marker_present() {
 fn relax_legacy_filters_once_does_not_write_marker_when_persist_fails() {
     use tempfile::TempDir;
 
-    // Force write_to_disk to fail: create a DIRECTORY at the temp file path
-    // (autopilots.json.tmp). write_atomic creates the temp file first, so a
-    // directory at that path makes File::create fail on every platform. The
+    // Force write_to_disk to fail: `autopilots.json` is a non-empty DIRECTORY, so
+    // it can be neither read nor replaced on any platform (the load treats it as
+    // unreadable and blocks saves; a rename onto it would fail anyway). The
     // marker's parent dir remains writable, so the only thing that can gate the
     // marker write is whether write_to_disk returned Ok.
     let temp = TempDir::new().unwrap();
     let dir = temp.path().to_path_buf();
+    let data_path = dir.join("autopilots.json");
+    std::fs::create_dir_all(&data_path).unwrap();
+    std::fs::write(data_path.join("keep"), b"x").unwrap();
 
-    // Create <dir>/autopilots.json.tmp as a directory, not a file.
-    // This matches write_atomic's naming: for X.json the temp is X.json.tmp.
-    let tmp_file = dir.join("autopilots.json.tmp");
-    std::fs::create_dir_all(&tmp_file).unwrap();
-
-    // AutopilotStore::new expects the *parent* dir to exist, which it does (temp).
     let store = AutopilotStore::new(&dir);
-
-    // load() will return an empty map (no file exists yet), which is fine —
-    // we just need write_to_disk to fail so the marker is NOT written.
     store.relax_legacy_filters_once();
 
     let marker = dir.join(RELAX_MARKER_FILE);
@@ -2983,7 +2977,7 @@ fn a_second_corruption_uses_the_next_backup_slot_and_saves_resume() {
     let data_dir = temp.path().to_path_buf();
     let data_file = data_dir.join("autopilots.json");
     std::fs::write(data_dir.join("autopilots.json.corrupt"), b"first incident").unwrap();
-    std::fs::write(&data_file, b"    ").unwrap();
+    std::fs::write(&data_file, b"\0\0\0\0").unwrap();
 
     let store = AutopilotStore::new(&data_dir);
     assert!(store.list().is_empty());
@@ -2995,7 +2989,7 @@ fn a_second_corruption_uses_the_next_backup_slot_and_saves_resume() {
     );
     assert_eq!(
         std::fs::read(data_dir.join("autopilots.json.corrupt.1")).unwrap(),
-        b"    "
+        b"\0\0\0\0"
     );
 }
 
@@ -3018,5 +3012,98 @@ fn an_unreadable_file_is_left_in_place_and_blocks_saves() {
     assert!(
         !data_dir.join("autopilots.json.corrupt").exists(),
         "not treated as corrupt"
+    );
+}
+
+/// Bytes that aren't UTF-8 are damaged content: backed up like bad JSON, not
+/// mistaken for an unreadable file (which would block saves instead).
+#[test]
+fn a_non_utf8_file_is_backed_up_as_corrupt() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let data_dir = temp.path().to_path_buf();
+    let data_file = data_dir.join("autopilots.json");
+    let original = [b'[', 0xff, 0xfe, b']'];
+    std::fs::write(&data_file, original).unwrap();
+
+    let store = AutopilotStore::new(&data_dir);
+    assert!(store.list().is_empty());
+    assert!(
+        !store.is_block_save(),
+        "a backed-up corrupt file must not block saves"
+    );
+    assert_eq!(
+        std::fs::read(data_dir.join("autopilots.json.corrupt")).unwrap(),
+        original
+    );
+}
+
+fn seed_autopilots_file(data_file: &std::path::Path) {
+    use tempfile::TempDir;
+
+    let seed = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&seed.path().to_path_buf());
+    store.create(serde_json::json!({
+        "name": "Seeded AP",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+    }));
+    std::fs::copy(seed.path().join("autopilots.json"), data_file).unwrap();
+}
+
+/// A momentarily unreadable file must not cost the user their autopilots for
+/// the rest of the session: once it's readable, the next load sees it.
+#[test]
+fn an_unreadable_file_is_read_again_once_it_becomes_readable() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let data_dir = temp.path().to_path_buf();
+    let data_file = data_dir.join("autopilots.json");
+    std::fs::create_dir(&data_file).unwrap();
+
+    let store = AutopilotStore::new(&data_dir);
+    assert!(store.list().is_empty());
+
+    std::fs::remove_dir(&data_file).unwrap();
+    seed_autopilots_file(&data_file);
+
+    let list = store.list();
+    assert_eq!(
+        list.len(),
+        1,
+        "the empty stand-in must not have been cached"
+    );
+    assert!(!store.is_block_save());
+}
+
+/// A change made while saves are blocked must not look saved: it isn't written
+/// (the file stays as it was) and it isn't kept in memory either.
+#[test]
+fn a_blocked_save_is_not_shown_as_saved() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let data_dir = temp.path().to_path_buf();
+    let data_file = data_dir.join("autopilots.json");
+    std::fs::create_dir(&data_file).unwrap();
+
+    let store = AutopilotStore::new(&data_dir);
+    store.create(serde_json::json!({
+        "name": "Not persisted",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+    }));
+
+    assert!(
+        data_file.is_dir(),
+        "nothing was written over the unreadable file"
+    );
+    assert!(
+        store.list().is_empty(),
+        "the unsaved change is not served from memory"
     );
 }

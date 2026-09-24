@@ -571,9 +571,9 @@ fn test_interaction_record_serialization() {
     assert_eq!(deserialized.interaction_type, record.interaction_type);
 }
 
-/// `save` writes to `interactions.json.tmp` and renames it over the real file,
-/// so the on-disk copy is replaced atomically instead of being truncated in
-/// place. The temp file must never be left behind on the happy path.
+/// `save` writes a sibling temp file and renames it over the real file (see
+/// `platform::fs::write_atomic`), so the on-disk copy is replaced atomically
+/// instead of being truncated in place. No temp file is left on the happy path.
 #[test]
 fn save_replaces_the_file_atomically_and_leaves_no_temp_file() {
     let dir = TempDir::new().unwrap();
@@ -585,8 +585,13 @@ fn save_replaces_the_file_atomically_and_leaves_no_temp_file() {
 
     let data_file = data_dir.join("interactions.json");
     assert!(data_file.exists(), "the interactions file must be written");
+    let leftovers: Vec<_> = std::fs::read_dir(&data_dir)
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+        .collect();
     assert!(
-        !data_dir.join("interactions.json.tmp").exists(),
+        leftovers.is_empty(),
         "the temp file must be renamed away, not left behind"
     );
 

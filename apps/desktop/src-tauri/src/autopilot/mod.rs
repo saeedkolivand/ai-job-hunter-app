@@ -891,10 +891,15 @@ impl AutopilotStore {
             return c.clone();
         }
 
-        // Delegate to corrupt handling module (keeps this module under R8 cap).
+        // See `corrupt.rs` for what can go wrong and what each outcome means.
         let outcome = self.load_with_corrupt_handling();
         self.set_block_save(outcome.block_save);
-        *guard = Some(outcome.map.clone());
+        // A blocked outcome (file unreadable, or corrupt with no backup slot) is
+        // never cached, so the next load reads the file again instead of serving
+        // this empty stand-in for the rest of the session.
+        if !outcome.block_save {
+            *guard = Some(outcome.map.clone());
+        }
         outcome.map
     }
 
@@ -910,6 +915,13 @@ impl AutopilotStore {
                 "[autopilot] failed to persist autopilots.json: {}",
                 sanitize_reason(&e.to_string())
             );
+            // Blocked because the file on disk couldn't be loaded safely: don't
+            // cache this change either. The UI then shows it didn't stick right
+            // away (instead of it vanishing on restart), and the next load
+            // re-reads the file once it's readable again.
+            if self.is_block_save() {
+                return;
+            }
         }
         *self.cache.lock() = Some(map);
     }

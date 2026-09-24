@@ -55,6 +55,28 @@ fn back_up_corrupt(data_file: &Path, reason: &str) -> bool {
     moved_to.is_some()
 }
 
+/// Read the file, retrying a few times on errors that are usually momentary
+/// (a sharing violation while antivirus or a backup tool holds the file).
+/// Missing and non-UTF-8 files are final answers and return at once. The
+/// caller holds the store's cache lock, so the retries are short and bounded.
+fn read_with_retry(path: &Path) -> std::io::Result<String> {
+    const ATTEMPTS: u32 = 3;
+    const PAUSE: std::time::Duration = std::time::Duration::from_millis(100);
+    let mut attempt = 1;
+    loop {
+        match std::fs::read_to_string(path) {
+            Err(e)
+                if attempt < ATTEMPTS
+                    && !matches!(e.kind(), ErrorKind::NotFound | ErrorKind::InvalidData) =>
+            {
+                attempt += 1;
+                std::thread::sleep(PAUSE);
+            }
+            result => return result,
+        }
+    }
+}
+
 fn parse_records(raw: Vec<serde_json::Value>) -> HashMap<String, Autopilot> {
     // Per-record tolerant parse: one record with an unknown/future field value
     // drops only itself instead of failing the whole file.
@@ -83,7 +105,7 @@ impl AutopilotStore {
             map: HashMap::new(),
             block_save,
         };
-        let contents = match std::fs::read_to_string(&self.data_file) {
+        let contents = match read_with_retry(&self.data_file) {
             Ok(contents) => contents,
             Err(e) if e.kind() == ErrorKind::NotFound => return empty(false),
             // Bytes that aren't UTF-8 are damaged content, same as bad JSON.
@@ -94,7 +116,7 @@ impl AutopilotStore {
                 // An io::Error can carry the absolute path: keep only the safe part.
                 log::error!(
                     "[autopilot] autopilots.json could not be read ({}); left in place, \
-                     saves blocked for this session",
+                     saves blocked until it can be",
                     sanitize_reason(&e.to_string())
                 );
                 return empty(true);
