@@ -90,7 +90,7 @@ describe('StageSuggestionBanner', () => {
 
     expect(
       screen.getByText(
-        'settings.ai.stages.suggest.appliesTo settings.ai.stages.names.analyze_job, settings.ai.stages.names.match_evidence, settings.ai.stages.names.strategy'
+        'settings.ai.stages.suggest.appliesTo settings.ai.stages.names.analyze_job, settings.ai.stages.names.strategy'
       )
     ).toBeVisible();
   });
@@ -102,8 +102,8 @@ describe('StageSuggestionBanner', () => {
 
     await user.click(screen.getByText('settings.ai.stages.suggest.apply'));
 
-    expect(setStageOverrideAsync).toHaveBeenCalledTimes(3);
-    for (const stage of ['analyze_job', 'match_evidence', 'strategy']) {
+    expect(setStageOverrideAsync).toHaveBeenCalledTimes(2);
+    for (const stage of ['analyze_job', 'strategy']) {
       expect(setStageOverrideAsync).toHaveBeenCalledWith({
         stage,
         provider: 'ollama',
@@ -112,7 +112,7 @@ describe('StageSuggestionBanner', () => {
     }
     expect(mockNotify.success).toHaveBeenCalled();
     // The accepted banner unmounts; focus has to go somewhere deliberate.
-    expect(onApplied).toHaveBeenCalledWith(['analyze_job', 'match_evidence', 'strategy']);
+    expect(onApplied).toHaveBeenCalledWith(['analyze_job', 'strategy']);
   });
 
   it('reports how far it got when a write fails mid-way', async () => {
@@ -128,7 +128,7 @@ describe('StageSuggestionBanner', () => {
 
     // "Failed" alone would hide that one stage IS pinned now.
     expect(mockNotify.error).toHaveBeenCalledWith({
-      message: 'settings.ai.stages.suggest.partial 1 3 daily cap reached',
+      message: 'settings.ai.stages.suggest.partial 1 2 daily cap reached',
     });
     expect(onApplied).toHaveBeenCalledWith(['analyze_job']);
     setStageOverrideAsync.mockResolvedValue({});

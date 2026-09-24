@@ -1142,7 +1142,7 @@ fn the_run_kind_the_budget_floor_and_the_run_depth_are_pinned() {
     assert_eq!(super::RUN_DEPTH, "quality");
     assert_eq!(
         Budget::RESUME_QUALITY.run_timeout,
-        Duration::from_secs(90 * 60)
+        Duration::from_secs(4_800)
     );
 }
 
@@ -1311,8 +1311,7 @@ fn a_deadline_that_still_saved_a_document_is_not_a_failure() {
 
 /// **Only `RunTimeout` gets the "still usable" leniency `terminal_state`
 /// grants above — `Timeout` never does**, even when a document was somehow
-/// persisted. A per-call deadline inside `analyze_job`/`match_evidence`/
-/// `strategy` means that stage's own JSON never parsed — there is no partial
+/// persisted. A per-call deadline inside `analyze_job`/`strategy` means that stage's own JSON never parsed — there is no partial
 /// artifact the way a WHOLE-run deadline caught at a later stage boundary
 /// always has a real document from every stage that already finished. Reusing
 /// `timed_out_with_document`'s leniency for `Timeout` would report
@@ -2688,7 +2687,6 @@ fn paying_stages_never_includes_a_stage_that_makes_no_ai_call() {
     // user sets, Settings shows, and nothing ever resolves.
     let expected = [
         "analyze_job",
-        "match_evidence",
         "strategy",
         "draft",
         "cover_letter",

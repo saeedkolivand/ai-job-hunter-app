@@ -51,8 +51,8 @@ const TIERS = [undefined, 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as
  * fan-out and `humanize` stay at exactly this baseline, always.
  */
 const OLLAMA_COMPLETION_SECS = 300;
-/** `analyze_job`, `match_evidence`, `strategy`. */
-const JSON_STAGES = 3;
+/** `analyze_job` and `strategy` (the only JSON stages left). */
+const JSON_STAGES = 2;
 /** `Completer::complete_json` allows exactly one re-ask. */
 const ROUND_TRIPS_PER_JSON_STAGE = 2;
 /** `Budget::max_repair_attempts`. */
@@ -70,18 +70,18 @@ describe('qualityRunDeadlineSecs', () => {
     // has to be re-argued against the derivation in the source doc, and so the
     // Rust twin (`timeouts::quality_run_deadline`) has a table to match.
     //
-    // The bottom tier (5_400 s) is UNCHANGED from before the JSON-stage term
-    // started scaling — `multiplier` is 1.0 there regardless of which term it
-    // applies to. Every tier above it moved: this is the incident fix, not a
-    // cosmetic rename — a run at `medium` effort now gets 6_600 s instead of
-    // 5_700 s, because its JSON stages legitimately may take longer too.
-    expect(qualityRunDeadlineSecs(undefined)).toBe(5_400);
-    expect(qualityRunDeadlineSecs('minimal')).toBe(5_400);
-    expect(qualityRunDeadlineSecs('low')).toBe(5_400);
-    expect(qualityRunDeadlineSecs('medium')).toBe(6_600);
-    expect(qualityRunDeadlineSecs('high')).toBe(7_800);
-    expect(qualityRunDeadlineSecs('xhigh')).toBe(9_000);
-    expect(qualityRunDeadlineSecs('max')).toBe(10_200);
+    // The bottom tier (4_800 s) moved DOWN with the stage change:
+    // `match_evidence` stopped making provider calls, so the worst case lost
+    // one per-call bound (300 s at multiplier 1.0). Every tier above it moved
+    // down by that stage's scaled share too — the derivation is re-pinned
+    // against the source doc, not just recomputed.
+    expect(qualityRunDeadlineSecs(undefined)).toBe(4_800);
+    expect(qualityRunDeadlineSecs('minimal')).toBe(4_800);
+    expect(qualityRunDeadlineSecs('low')).toBe(4_800);
+    expect(qualityRunDeadlineSecs('medium')).toBe(5_700);
+    expect(qualityRunDeadlineSecs('high')).toBe(6_600);
+    expect(qualityRunDeadlineSecs('xhigh')).toBe(7_500);
+    expect(qualityRunDeadlineSecs('max')).toBe(8_400);
   });
 
   it('clears the inner per-call bounds it wraps at every tier', () => {

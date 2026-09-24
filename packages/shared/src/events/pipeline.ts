@@ -54,7 +54,8 @@ export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 
 /**
  * The stages that make NO provider call: `validate` is a deterministic
- * comparison against the source résumé.
+ * comparison against the source résumé, and `match_evidence` selects its
+ * evidence map in pure Rust (no model, no cache — see the stage's module doc).
  *
  * Derived from the Rust `Pipeline::free_stage_names()` and pinned against it
  * (`pipeline::resume::test`).
@@ -65,7 +66,10 @@ export type PipelineStage = (typeof PIPELINE_STAGES)[number];
  * free stage could still fail a whole run at resolve time. Filter these out of
  * any per-stage model UI.
  */
-export const PIPELINE_STAGES_FREE = ['validate'] as const satisfies readonly PipelineStage[];
+export const PIPELINE_STAGES_FREE = [
+  'validate',
+  'match_evidence',
+] as const satisfies readonly PipelineStage[];
 
 /**
  * A stage that spends a provider call — the overridable subset, as a TYPE.

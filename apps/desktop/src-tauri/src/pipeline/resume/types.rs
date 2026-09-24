@@ -124,15 +124,18 @@ impl EvidenceStatus {
 #[serde(rename_all = "camelCase", default)]
 pub struct EvidenceItem {
     pub requirement: String,
-    /// Overwritten by the kernel after parsing — see [`EvidenceStatus`].
+    /// Decided by the kernel against the whole source résumé — see
+    /// [`EvidenceStatus`].
     pub status: EvidenceStatus,
-    /// A span the model claims to have copied out of the source résumé.
-    /// **Dropped (emptied), never repaired, when it is not verbatim** — see
-    /// `stages::match_evidence`.
+    /// The single best-supporting résumé line, selected deterministically by
+    /// `stages::match_evidence` — verbatim by construction, empty when no line
+    /// supports the requirement.
     pub source_quote: String,
+    /// The role the quote line sits under, or empty for a project line.
     pub source_company: String,
-    /// 0–3, the model's own ranking of how strongly the quote supports the
-    /// requirement. Clamped on parse; advisory only.
+    /// 0–3, derived by `stages::match_evidence`: 3 = the quote covers every
+    /// requirement token and carries an ASCII digit, 2 = full coverage without
+    /// one, 1 = partial coverage, 0 = no quote. Advisory only.
     pub strength: u8,
 }
 
@@ -143,41 +146,6 @@ pub struct EvidenceItem {
 #[serde(rename_all = "camelCase", default)]
 pub struct EvidenceMap {
     pub items: Vec<EvidenceItem>,
-}
-
-impl EvidenceMap {
-    pub const EXAMPLE: &'static str = r#"{
-  "items": [
-    {
-      "requirement": "Kubernetes",
-      "status": "covered",
-      "sourceQuote": "Migrated 40 services to Kubernetes, cutting deploy time from 25 to 4 minutes",
-      "sourceCompany": "Acme Payments",
-      "strength": 3
-    }
-  ]
-}"#;
-
-    pub fn schema() -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "requirement": { "type": "string" },
-                            "status": { "type": "string", "enum": ["covered", "partial", "missing"] },
-                            "sourceQuote": { "type": "string" },
-                            "sourceCompany": { "type": "string" },
-                            "strength": { "type": "integer", "minimum": 0, "maximum": 3 },
-                        },
-                    },
-                },
-            },
-        })
-    }
 }
 
 /// How ONE employment entry should be presented. The identity fields

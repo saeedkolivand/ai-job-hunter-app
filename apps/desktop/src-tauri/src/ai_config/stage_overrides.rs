@@ -25,8 +25,9 @@
 //!
 //! ## Only stages that spend a call
 //!
-//! `assemble` and `validate` are live stages that make no provider call, so an
-//! override on either would be a control the user can set and never observe.
+//! `validate` and `match_evidence` are live stages that make no provider call
+//! (`match_evidence` selects evidence from the source résumé in pure Rust), so
+//! an override on either would be a control the user can set and never observe.
 //! Both are refused ([`is_overridable_stage`]) — which also closes a sharper
 //! edge: `Completer::for_stages` resolves every stored override BEFORE the run
 //! starts and propagates a failure, so one malformed row on a stage that never
@@ -115,8 +116,9 @@ pub fn is_pipeline_stage(stage: &str) -> bool {
 /// Whether `stage` can carry a model override at all: a live stage name that
 /// also SPENDS a provider call.
 ///
-/// `validate` is a live stage that asks no model anything
-/// ([`PIPELINE_STAGES_FREE`]), so an override on it is a control with no
+/// `validate` (turns paid answers into a saved document) and `match_evidence`
+/// (pure Rust evidence selection) are live stages that ask no model anything
+/// ([`PIPELINE_STAGES_FREE`]), so an override on either is a control with no
 /// effect — and, before this refused it, a malformed row could still
 /// fail a whole run when `Completer::for_stages` resolved it up front.
 pub fn is_overridable_stage(stage: &str) -> bool {

@@ -55,7 +55,7 @@ pub const PIPELINE_STAGES: &[&str] = &[
 /// choose (the stage asks none), so the setting would be inert — and a
 /// malformed row on a stage that never calls a provider must not be able to
 /// fail a whole run at resolve time.
-pub const PIPELINE_STAGES_FREE: &[&str] = &["validate"];
+pub const PIPELINE_STAGES_FREE: &[&str] = &["validate", "match_evidence"];
 
 /// Longest a `pipeline:stage` event's `sectionKey` may be, in UTF-16 code
 /// units (the unit the TS guard counts). Every LEGAL key is ASCII, so bytes,

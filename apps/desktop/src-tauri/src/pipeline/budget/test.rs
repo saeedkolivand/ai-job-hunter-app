@@ -156,10 +156,10 @@ fn every_budget_timeout_is_pinned_to_its_documented_literal() {
         "RESUME_QUALITY.step_timeout sits above the 300s OLLAMA_COMPLETION_BASELINE timeout on \
          purpose (INERT for this flow — see the field's own doc)"
     );
-    // 90 min, and DERIVED rather than chosen: it is the effort-blind floor that
+    // 80 min, and DERIVED rather than chosen: it is the effort-blind floor that
     // must equal `timeouts::quality_run_deadline(None)` — at this bottom tier
     // ONLY (multiplier 1.0), every non-streamed call is still effectively flat:
-    // 3000 s (repair fan-out + `humanize`, always flat) + 1800 s (3 JSON
+    // 3000 s (repair fan-out + `humanize`, always flat) + 1200 s (2 JSON
     // stages × 2 round-trips, now SCALED above this tier) + 600 s for the two
     // streamed passes (draft + PR-2's `cover_letter`). The
     // 45-minute version counted the repair fan-out as one effort-scaled
@@ -171,7 +171,7 @@ fn every_budget_timeout_is_pinned_to_its_documented_literal() {
     // which is the guard that keeps the two from drifting apart again.
     assert_eq!(
         Budget::RESUME_QUALITY.run_timeout,
-        Duration::from_secs(90 * 60)
+        Duration::from_secs(4_800)
     );
     assert_eq!(
         Budget::RESUME_QUALITY.confirm_timeout,

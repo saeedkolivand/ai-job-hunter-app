@@ -49,10 +49,10 @@ export const STREAM_BASELINE_SECS = 300;
  * drift independently later.
  *
  * **Why this exists at all — the incident this fixes.** Before it, EVERY
- * non-streaming call (`analyze_job`/`match_evidence`/`strategy`, each one
- * `Completer::complete_json`'s only round-trip) was pinned to this same 300 s
+ * non-streaming completion call (`analyze_job`/`strategy`; `match_evidence`
+ * too, while it was still a JSON stage) was pinned to this same 300 s
  * regardless of the run's chosen effort — a local model running at a HIGHER
- * effort got no more time on these three calls than the baseline did, so
+ * effort got no more time on these calls than the baseline did, so
  * raising effort could not have saved a run that legitimately needed longer
  * on a slow local model. `chat_stream`'s deadline (`STREAM_BASELINE_SECS`)
  * scaled; this one didn't, silently.
@@ -90,17 +90,17 @@ export function ollamaCompletionDeadlineSecs(effort?: string): number {
 }
 
 /**
- * How many non-streaming round-trips `analyze_job`/`match_evidence`/
- * `strategy` make in the WORST case: 3 stages × (1 call + 1 allowed re-ask).
- * Each goes through `Completer::complete_json`, which re-asks exactly once on
- * a parse failure.
+ * How many non-streaming round-trips `analyze_job`/`strategy` make in the
+ * WORST case: 2 stages × (1 call + 1 allowed re-ask). Each goes through
+ * `Completer::complete_json`, which re-asks exactly once on a parse failure.
+ * `match_evidence` is NOT counted: it makes no provider call at all.
  *
  * Named so {@link qualityRunDeadlineSecs}'s formula reads as the derivation it
- * is rather than a bare `6`, and so the Rust-side lock test
+ * is rather than a bare `4`, and so the Rust-side lock test
  * (`quality_run_deadline_clears_the_inner_per_call_bounds`) has one shared
- * name to read instead of re-deriving `3 × 2` from a comment.
+ * name to read instead of re-deriving `2 × 2` from a comment.
  */
-export const QUALITY_RUN_JSON_STAGE_CALLS = 6;
+export const QUALITY_RUN_JSON_STAGE_CALLS = 4;
 
 /**
  * The part of one quality-depth pipeline run's deadline that does NOT scale
@@ -124,15 +124,16 @@ export const QUALITY_RUN_JSON_STAGE_CALLS = 6;
  * `complete` call PER FLAGGED DOCUMENT (résumé + letter), so at most 2.
  *
  * **`analyze_job`/`match_evidence`/`strategy` used to live in this same flat
- * term too** (making it 4 800 s — {@link QUALITY_RUN_JSON_STAGE_CALLS} (6) +
- * 8 + 2 = 16 calls, all at a flat 300 s). That was the bug this split exists
- * to fix: those three stages run FIRST, on the SAME local model as
- * everything else, and a flat per-call bound meant no effort setting could
- * give a slow local model more time on them — even though the exact same
- * model legitimately got more time on the STREAMED `draft`/`cover_letter`
- * calls right after. They now scale in {@link qualityRunDeadlineSecs}'s own
- * formula via {@link ollamaCompletionDeadlineSecs} ×
- * {@link QUALITY_RUN_JSON_STAGE_CALLS} instead of living in this flat term.
+ * term too** (making it 4 800 s — 6 + 8 + 2 = 16 calls, all at a flat 300 s).
+ * That was the bug this split exists to fix: those three JSON stages ran
+ * FIRST, on the SAME local model as everything else, and a flat per-call
+ * bound meant no effort setting could give a slow local model more time on
+ * them — even though the exact same model legitimately got more time on the
+ * STREAMED `draft`/`cover_letter` calls right after. `analyze_job` and
+ * `strategy` still scale in {@link qualityRunDeadlineSecs}'s own formula via
+ * {@link ollamaCompletionDeadlineSecs} × {@link QUALITY_RUN_JSON_STAGE_CALLS}
+ * instead of living in this flat term; `match_evidence` stopped calling a
+ * provider at all, so it is billed nowhere in this file.
  *
  * **"300 s per call" is a statement about the RETRY LOOP, not just the
  * `.timeout()`.** `commands::ai_provider::retry::send_with_retry` re-sends a
@@ -181,20 +182,22 @@ export const QUALITY_RUN_GENERATION_PASSES = 2;
  * since the non-streaming JSON-stage bound scales the same way the streamed
  * one does (see {@link ollamaCompletionDeadlineSecs}):
  *
- * | effort            | m   | flat (repair+humanize) | 6 JSON-stage calls | 2 generation passes | deadline          |
+ * | effort            | m   | flat (repair+humanize) | 4 JSON-stage calls | 2 generation passes | deadline          |
  * | ----------------- | --- | ------------------------ | -------------------- | -------------------- | ----------------- |
- * | none/minimal/low  | 1.0 | 3000 s                   | 1800 s                | 600 s                 | 5400 s (90 min)   |
- * | medium            | 1.5 | 3000 s                   | 2700 s                | 900 s                 | 6600 s (110 min)  |
- * | high              | 2.0 | 3000 s                   | 3600 s                | 1200 s                | 7800 s (130 min)  |
- * | xhigh             | 2.5 | 3000 s                   | 4500 s                | 1500 s                | 9000 s (150 min)  |
- * | max               | 3.0 | 3000 s                   | 5400 s                | 1800 s                | 10200 s (170 min) |
+ * | none/minimal/low  | 1.0 | 3000 s                   | 1200 s                | 600 s                 | 4800 s (80 min)   |
+ * | medium            | 1.5 | 3000 s                   | 1800 s                | 900 s                 | 5700 s (95 min)   |
+ * | high              | 2.0 | 3000 s                   | 2400 s                | 1200 s                | 6600 s (110 min)  |
+ * | xhigh             | 2.5 | 3000 s                   | 3000 s                | 1500 s                | 7500 s (125 min)  |
+ * | max               | 3.0 | 3000 s                   | 3600 s                | 1800 s                | 8400 s (140 min)  |
  *
- * The bottom tier is UNCHANGED (still 5400 s / 90 min — `multiplier` is 1.0
- * there regardless of which term it applies to), which is what keeps this the
- * same floor `Budget::RESUME_QUALITY.run_timeout` pins. Every tier above it
- * moved: raising the per-call ceiling on 6 of the run's 16 calls without
- * re-deriving this deadline would have made THIS the new silent cap on the
- * exact stages it was just raised to unblock.
+ * The floor moved DOWN with the stage change: `match_evidence` makes no
+ * provider call anymore, so the worst case lost one per-call bound (300 s at
+ * multiplier 1.0) — 4 800 s / 80 min, which is what
+ * `Budget::RESUME_QUALITY.run_timeout` pins. Every tier above it moved down
+ * by that stage's scaled share too. Raising the per-call ceiling for the two
+ * surviving JSON stages only counts calls that still exist: leaving the old
+ * deadline in place would have made IT the silent cap on the exact stages it
+ * was just raised to unblock.
  *
  * Still deliberately not a single `baseline × multiplier`: the repair fan-out
  * and `humanize` (see {@link QUALITY_RUN_FIXED_SECS}) stay flat-bounded — a

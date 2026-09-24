@@ -138,9 +138,9 @@ pub const OLLAMA_COMPLETION_BASELINE: Duration =
 /// [`effort_multiplier`] — exactly how [`stream_deadline`] scales [`STREAM`].
 ///
 /// **Not every non-streaming call site has an `effort` to pass here.**
-/// `analyze_job`/`match_evidence`/`strategy` go through
+/// `analyze_job`/`strategy` go through
 /// `Completer::complete_json` → `complete_structured`, which carries the
-/// run's `AiGenerateRequest.effort` — those three now scale, closing the gap
+/// run's `AiGenerateRequest.effort` — those two now scale, closing the gap
 /// this function exists to fix (a per-call deadline that no effort setting
 /// could raise, even though the exact same run's STREAMED calls already
 /// scaled). The `repair`/`humanize` stages and `chat_with_tools` go through
@@ -262,10 +262,10 @@ pub fn research_deadline(effort: Option<&str>) -> Duration {
 ///   × `MAX_SECTIONS_PER_ROUND` (4) sections + `humanize`'s ≤2 flagged-document
 ///   rewrites, i.e. 10 calls × [`OLLAMA_COMPLETION_BASELINE`] = 3000 s, always
 ///   (no effort to raise it).
-/// * **jsonStages** ([`QUALITY_RUN_JSON_STAGE_CALLS`], 6) — 3 stages × 2
+/// * **jsonStages** ([`QUALITY_RUN_JSON_STAGE_CALLS`], 4) — 2 stages × 2
 ///   round-trips (`complete_json` allows exactly one re-ask), each now scaled
 ///   by [`ollama_completion_deadline`] — the fix this function exists to
-///   carry: these three stages run FIRST, on the same model as everything
+///   carry: these two stages run FIRST, on the same model as everything
 ///   else, and used to be flat-bounded even though the STREAMED calls right
 ///   after them already scaled.
 /// * **the scaling term** — TWO streamed calls, the résumé draft and the
@@ -505,7 +505,7 @@ mod tests {
     // Same contract as `stream_deadline` — this is the fix for the incident
     // where a per-call non-streaming deadline stayed flat regardless of
     // effort, so a local model at a HIGHER effort got no more time on
-    // `analyze_job`/`match_evidence`/`strategy` than the baseline did.
+    // `analyze_job`/`strategy` than the baseline did.
 
     #[test]
     fn ollama_completion_deadline_matches_the_baseline_for_no_or_low_effort() {
@@ -743,13 +743,13 @@ mod tests {
     #[test]
     fn quality_run_deadline_pins_the_derived_table() {
         for (effort, secs) in [
-            (None, 5_400),
-            (Some("minimal"), 5_400),
-            (Some("low"), 5_400),
-            (Some("medium"), 6_600),
-            (Some("high"), 7_800),
-            (Some("xhigh"), 9_000),
-            (Some("max"), 10_200),
+            (None, 4_800),
+            (Some("minimal"), 4_800),
+            (Some("low"), 4_800),
+            (Some("medium"), 5_700),
+            (Some("high"), 6_600),
+            (Some("xhigh"), 7_500),
+            (Some("max"), 8_400),
         ] {
             assert_eq!(
                 quality_run_deadline(effort),
@@ -789,13 +789,13 @@ mod tests {
     /// sees `elapsed >= quality_run_deadline`, headroom or not.
     ///
     /// **Why it matters that this is exact rather than generous.** The stages
-    /// whose own timeout is user-facing — `analyze_job`/`match_evidence`/
-    /// `strategy` (their `complete_json`'s `?` propagates) and `draft`/
-    /// `cover_letter` (their streamed call's `?` propagates) — run FIRST and
-    /// together spend at most `json_half + generation`, strictly less than
-    /// this deadline by exactly `QUALITY_RUN_FIXED_SECS`: the share reserved
-    /// for `repair`/`humanize`, which run AFTER and have not spent it yet. So
-    /// none of those five stages' pre-dispatch checks can ever fire early.
+    /// whose own timeout is user-facing — `analyze_job`/`strategy` (their
+    /// `complete_json`'s `?` propagates) and `draft`/`cover_letter` (their
+    /// streamed call's `?` propagates) — run FIRST and together spend at most
+    /// `json_half + generation`, strictly less than this deadline by exactly
+    /// `QUALITY_RUN_FIXED_SECS`: the share reserved for `repair`/`humanize`,
+    /// which run AFTER and have not spent it yet. So none of those four
+    /// stages' pre-dispatch checks can ever fire early.
     /// `repair`/`humanize`, which run last, do the opposite by design (see
     /// their own module docs: "No error here fails the run" / a per-call
     /// timeout there is a FAILED ATTEMPT) — a hung call is swallowed and
@@ -804,7 +804,7 @@ mod tests {
     /// one place this deadline's own margin is genuinely zero.
     ///
     /// The inner bounds are computed from the FAN-OUT CONSTANTS themselves, not
-    /// from the deadline's own terms: three JSON stages each allowed one
+    /// from the deadline's own terms: two JSON stages each allowed one
     /// re-ask (now bounded by [`ollama_completion_deadline`], scaled), plus
     /// `max_repair_attempts × MAX_SECTIONS_PER_ROUND` section rewrites and
     /// `humanize`'s allowance — both still bounded by the FLAT
@@ -831,7 +831,7 @@ mod tests {
     /// above the bottom fails.
     #[test]
     fn quality_run_deadline_equals_the_inner_per_call_bounds() {
-        const JSON_STAGES: u32 = 3;
+        const JSON_STAGES: u32 = 2;
         const ROUND_TRIPS_PER_JSON_STAGE: u32 = 2; // the one budgeted re-ask
                                                    // `humanize` makes at most one flat `complete` call per FLAGGED
                                                    // document (résumé, letter) — the worst case this deadline has to

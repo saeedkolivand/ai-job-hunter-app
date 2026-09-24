@@ -14,7 +14,7 @@ The **quality pipeline** is the sole production path for apply-flow generation. 
 
 **Location:** [`apps/desktop/src-tauri/src/pipeline/resume/stages/evidence.rs`](../../apps/desktop/src-tauri/src/pipeline/resume/stages/evidence.rs)
 
-The `match_evidence` stage extracts and ranks candidate evidence (experiences, projects, skills) from the source résumé. The `draft` stage uses this ranked list as its input. The core rule is enforced at the boundary: [`ground()`](../../apps/desktop/src-tauri/src/pipeline/resume/stages/evidence.rs) validates that every quote in the model's output appears verbatim in the source. Non-verbatim quotes are dropped, never repaired.
+The `match_evidence` stage is deterministic and makes no provider call (#1269). For each requirement from `analyze_job`, [`build_evidence()`](../../apps/desktop/src-tauri/src/pipeline/resume/stages/evidence.rs) picks the best-supporting bullet from the source résumé (parsed by `documents::evidence::extract_evidence`), so a quote is always résumé text and never model prose. `status` comes from the keywords kernel. `strategy` is the only consumer: it reads `status` to decide what may be emphasized, and receives the map as prompt context.
 
 This guarantee is load-bearing: Autopilot's own job-matching score is computed over the same evidence kernel, so the generated document's coverage claim cannot drift from the Jobs page's match score.
 

@@ -24,7 +24,6 @@ fn paying_stages_matches_the_pipelines_own_paid_stages() {
         paying_stages(),
         vec![
             "analyze_job",
-            "match_evidence",
             "strategy",
             "draft",
             "cover_letter",
@@ -35,6 +34,10 @@ fn paying_stages_matches_the_pipelines_own_paid_stages() {
     assert!(
         !paying_stages().contains(&"validate"),
         "validate makes no provider call and must never be resolved"
+    );
+    assert!(
+        !paying_stages().contains(&"match_evidence"),
+        "match_evidence is pure Rust now and must never be resolved"
     );
 }
 
@@ -49,8 +52,8 @@ fn the_run_uses_the_backend_owned_quality_budget() {
     assert_eq!(budget(), Budget::RESUME_QUALITY);
     assert_eq!(
         crate::pipeline::resume::quality_pipeline().free_stage_names(),
-        vec!["validate"],
-        "the check is the one stage that turns paid answers into a saved document for free"
+        vec!["match_evidence", "validate"],
+        "validate turns paid answers into a saved document for free, and match_evidence is pure Rust — neither may ever be resolved as a paying stage"
     );
     for stage in paying_stages() {
         assert!(

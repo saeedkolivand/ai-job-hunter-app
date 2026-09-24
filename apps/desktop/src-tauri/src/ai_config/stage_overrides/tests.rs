@@ -445,33 +445,43 @@ fn a_stage_that_makes_no_ai_call_cannot_be_overridden() {
 /// distinguish its presence, so none claims to.
 #[test]
 fn a_free_stage_row_already_in_the_table_is_not_read_back() {
+    use crate::ipc_contracts::events::PIPELINE_STAGES_FREE;
+
     let (_dir, store) = new_store();
-    store
-        .conn
-        .lock()
-        .execute(
-            "INSERT INTO ai_stage_overrides
-                 (stage, provider, model, context_window, updated_at)
-             VALUES ('validate', 'ollama', 'inert', NULL, 0)",
-            [],
-        )
-        .unwrap();
+    // Both free stages, written through the raw table rather than through
+    // `set_stage_override`, which would refuse them: the point is rows that
+    // are already there — from an older release whose vocabulary still paid
+    // for one of these stages.
+    for stage in PIPELINE_STAGES_FREE {
+        store
+            .conn
+            .lock()
+            .execute(
+                "INSERT INTO ai_stage_overrides
+                     (stage, provider, model, context_window, updated_at)
+                 VALUES (?1, 'ollama', 'inert', NULL, 0)",
+                [stage],
+            )
+            .unwrap();
+    }
 
     // Present in the table…
     let raw: i64 = store
         .conn
         .lock()
-        .query_row(
-            "SELECT COUNT(*) FROM ai_stage_overrides WHERE stage = 'validate'",
-            [],
-            |r| r.get(0),
-        )
+        .query_row("SELECT COUNT(*) FROM ai_stage_overrides", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(raw, 1, "the fixture must actually be in the table");
+    assert_eq!(
+        raw,
+        PIPELINE_STAGES_FREE.len() as i64,
+        "the fixtures must actually be in the table"
+    );
 
-    // …and invisible to both readers, so nothing can resolve it.
-    assert!(store.stage_override("validate").is_none());
-    assert!(!store.stage_overrides().contains_key("validate"));
+    // …and invisible to both readers, so nothing can resolve them.
+    assert!(store.stage_overrides().is_empty());
+    for stage in PIPELINE_STAGES_FREE {
+        assert!(store.stage_override(stage).is_none());
+    }
 }
 
 /// The same refusal on the import path, where the row arrives from an untrusted

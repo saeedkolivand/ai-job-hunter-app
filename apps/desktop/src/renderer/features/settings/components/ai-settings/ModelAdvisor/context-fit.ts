@@ -27,7 +27,6 @@ const SECTION = 4_000; // prompts.rs SECTION_CAP
  * own fenced blocks:
  *
  * - `analyze_job`    job_posting
- * - `match_evidence` candidate_resume + job_analysis
  * - `strategy`       candidate_resume + job_analysis + evidence_map
  * - `draft`          candidate_resume + job_posting + resume_strategy (the
  *                    ~32 k figure the Rust doc comment states)
@@ -42,13 +41,12 @@ const SECTION = 4_000; // prompts.rs SECTION_CAP
  */
 export const STAGE_WORST_CASE_CHARS: Partial<Record<PipelineStage, number>> = {
   analyze_job: JOB,
-  match_evidence: RESUME + ARTIFACT,
   strategy: RESUME + ARTIFACT * 2,
   draft: RESUME + JOB + ARTIFACT,
   repair: RESUME + SECTION + ARTIFACT + NOTE,
-  // PARTIAL on purpose: the free stage (`validate`) sends no prompt at all.
-  // Keyed by `PipelineStage` all the same, so a stage renamed upstream is a
-  // compile error here rather than a silently dead entry.
+  // PARTIAL on purpose: the free stages (`validate`, `match_evidence`) send no
+  // prompt at all. Keyed by `PipelineStage` all the same, so a stage renamed
+  // upstream is a compile error here rather than a silently dead entry.
 };
 
 /**

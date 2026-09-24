@@ -9,7 +9,7 @@
  * **Both sides must be MEASURED.** An earlier version ranked models with
  * `getModelTier`, whose name heuristic answers `small` for anything it cannot
  * parse — so it recommended `llama3.3:latest` (70B) as "smaller" than an 8B
- * model, and `all-minilm` (an embedding model) for three JSON chat stages.
+ * model, and `all-minilm` (an embedding model) for two JSON chat stages.
  * Silence is the correct output when the data is missing: this suggestion is
  * unsolicited advice, and unsolicited advice has to be right.
  */
@@ -17,14 +17,16 @@
 import type { AiStageOverride, ModelInspectResult, PipelineStage } from '@ajh/shared';
 
 /**
- * The three stages that only READ (the posting, the résumé) and answer in
- * strict JSON — no prose is written here, so model size buys much less than it
- * does in `draft`. Deliberately not derived from the pipeline's own stage
- * list: it is a claim about what these stages DO, which is why each is named.
+ * The two stages still backed by a provider call that only READ (the posting,
+ * the résumé) and answer in strict JSON — no prose is written here, so model
+ * size buys much less than it does in `draft`. `match_evidence` is deliberately
+ * absent: it selects evidence from the source résumé in pure Rust and makes no
+ * provider call, so a smaller model would change nothing there.
+ * Deliberately not derived from the pipeline's own stage list: it is a claim
+ * about what these stages DO, which is why each is named.
  */
 export const EXTRACTION_STAGES = [
   'analyze_job',
-  'match_evidence',
   'strategy',
 ] as const satisfies readonly PipelineStage[];
 
@@ -96,7 +98,7 @@ export function parseParameterSizeB(size: string | undefined): number | null {
  * Answered from the INSPECTION where possible — an embedding model reports an
  * embedding family (`bert`, `nomic-bert`, …) — because the name is not
  * reliable: `all-minilm` contains no "embed" substring at all, which is exactly
- * how it got recommended for three chat stages.
+ * how it got recommended for two chat stages.
  */
 export function isChatCapable(model: string, info: ModelInspectResult | null | undefined): boolean {
   const family = info?.family?.toLowerCase() ?? '';
@@ -115,7 +117,7 @@ export function isChatCapable(model: string, info: ModelInspectResult | null | u
  * `null` when: the active provider is not local Ollama, either side has no
  * MEASURED parameter size, no candidate is at least {@link MIN_SIZE_RATIO}×
  * smaller, the only candidates are embedding models or below
- * {@link MIN_CANDIDATE_B}, or all three stages are already pinned.
+ * {@link MIN_CANDIDATE_B}, or both extraction stages are already pinned.
  */
 export function suggestExtractionModel(input: StageSuggestionInput): StageSuggestion | null {
   const { activeProvider, activeModel, installedModels, inspections, overrides } = input;
