@@ -92,6 +92,9 @@ const EGRESS: &[Egress] = &[
     Egress { host: "developers.openai.com", public_name: None, note: "CLI install-help link (Codex CLI); rendered only, never fetched. commands/ai_provider/cli_agent/codex.rs." },
     Egress { host: "geminicli.com", public_name: None, note: "CLI install-help link (Gemini CLI); rendered only, never fetched. commands/ai_provider/cli_agent/gemini_cli.rs." },
     Egress { host: "antigravity.google", public_name: None, note: "CLI install-help link (Antigravity CLI); rendered only, never fetched. commands/ai_provider/cli_agent/antigravity.rs." },
+    Egress { host: "opencode.ai", public_name: None, note: "CLI install-help link (opencode); rendered only, never fetched. commands/ai_provider/cli_agent/opencode.rs." },
+    Egress { host: "cursor.com", public_name: None, note: "CLI install-help link (Cursor CLI); rendered only, never fetched. commands/ai_provider/cli_agent/cursor.rs." },
+    Egress { host: "qwenlm.github.io", public_name: None, note: "CLI install-help link (Qwen Code); rendered only, never fetched. commands/ai_provider/cli_agent/qwen_code.rs." },
 
     // ── Web search (ADR-0005 class 3, ADR-0023) — opt-in.
     Egress { host: "api.exa.ai", public_name: Some("Exa"), note: "Opt-in web-search backend for AI company research (ADR-0023), off unless a provider needing it is configured. commands/ai_provider/search/mod.rs." },

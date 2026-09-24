@@ -77,8 +77,8 @@ impl CliAgentBackend for CodexAgent {
         parse_debug_models(&String::from_utf8_lossy(&out.stdout))
     }
 
-    fn install_package(&self) -> &'static str {
-        "@openai/codex"
+    fn install_package(&self) -> Option<&'static str> {
+        Some("@openai/codex")
     }
 
     fn docs_url(&self) -> &'static str {

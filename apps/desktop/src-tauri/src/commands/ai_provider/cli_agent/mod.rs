@@ -38,12 +38,20 @@ use super::{
 mod antigravity;
 mod claude_code;
 mod codex;
+mod cursor;
 mod gemini_cli;
+mod opencode;
+mod qwen_code;
+mod workspace;
 
 use antigravity::AntigravityAgent;
 use claude_code::ClaudeCodeAgent;
 use codex::CodexAgent;
+use cursor::CursorAgent;
 use gemini_cli::GeminiCliAgent;
+use opencode::OpencodeAgent;
+use qwen_code::QwenCodeAgent;
+use workspace::prepare_workspace;
 
 /// Max wall-clock time for a single CLI generation before we kill the child.
 const TIMEOUT: Duration = Duration::from_secs(300);
@@ -132,7 +140,9 @@ pub trait CliAgentBackend: Send + Sync {
     /// (#22). The one-click install runs `npm install -g <this>` — and that exact
     /// command MUST also be present in the shell capability allowlist
     /// (`capabilities/default.json`); a test asserts the two agree.
-    fn install_package(&self) -> &'static str;
+    /// Returns `None` if the agent is not distributed via npm (no one-click install,
+    /// only the docs/guide path).
+    fn install_package(&self) -> Option<&'static str>;
 
     /// Official install / setup docs, opened by the "guide" path.
     fn docs_url(&self) -> &'static str;
@@ -189,6 +199,15 @@ pub trait CliAgentBackend: Send + Sync {
     fn inline_system(&self) -> bool {
         false
     }
+
+    /// Private per-agent workspace files (e.g. tool-deny config) written before every spawn.
+    /// Returned as `(relative_path, contents)` pairs. The harness writes these into a
+    /// private directory under the app's data dir (`<data_dir>/cli-workspaces/<provider id>/`)
+    /// and spawns the CLI with that as `current_dir`. Default: no files (uses `temp_dir()`).
+    /// Backends that return files MUST ensure they deny all tools (see security rules).
+    fn workspace_files(&self) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
 }
 
 /// Combine system + user per the backend's [`inline_system`](CliAgentBackend::inline_system).
@@ -210,6 +229,9 @@ pub fn all() -> Vec<Box<dyn CliAgentBackend>> {
         Box::new(CodexAgent),
         Box::new(GeminiCliAgent),
         Box::new(AntigravityAgent),
+        Box::new(OpencodeAgent),
+        Box::new(CursorAgent),
+        Box::new(QwenCodeAgent),
     ]
 }
 
@@ -586,7 +608,7 @@ async fn run_stream(
     let prompt = effective_prompt(backend, system, prompt);
     let trace = RequestTrace::begin(backend.id(), model, "cli:stream", &binary, true);
 
-    let mut child = match spawn(&binary, &inv, &prompt) {
+    let mut child = match spawn(&binary, &inv, &prompt, backend) {
         Ok(c) => c,
         Err(e) => {
             trace.end(None, false);
@@ -853,7 +875,7 @@ async fn run_one_shot(
     let prompt = effective_prompt(backend, system, user);
     let trace = RequestTrace::begin(backend.id(), model, "cli:complete", &binary, false);
 
-    let mut child = match spawn(&binary, &inv, &prompt) {
+    let mut child = match spawn(&binary, &inv, &prompt, backend) {
         Ok(c) => c,
         Err(e) => {
             trace.end(None, false);
@@ -923,6 +945,7 @@ fn spawn(
     binary: &str,
     inv: &CliInvocation,
     prompt: &str,
+    backend: &dyn CliAgentBackend,
 ) -> std::io::Result<tokio::process::Child> {
     let mut args = inv.args.clone();
     // Untrusted prompt text enters argv ONLY for `PromptDelivery::Arg`, which no
@@ -932,10 +955,19 @@ fn spawn(
     if matches!(inv.prompt, PromptDelivery::Arg) {
         args.push(prompt.to_string());
     }
+
+    // Determine working directory: private workspace if backend provides files, else temp dir.
+    let workspace_files = backend.workspace_files();
+    let cwd = if workspace_files.is_empty() {
+        std::env::temp_dir()
+    } else {
+        let data_dir = crate::platform::config::data_dir();
+        let provider_id = backend.id().as_str();
+        prepare_workspace(&data_dir, provider_id, &workspace_files)?
+    };
+
     cli_command(binary, &args)
-        // Neutral cwd: we only want text generation, never side effects in the
-        // user's project (backends also disable tools where the CLI supports it).
-        .current_dir(std::env::temp_dir())
+        .current_dir(cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -985,14 +1017,20 @@ fn write_prompt_stdin(
 /// (`[A-Za-z0-9._:-]+`, trimmed): anything with a shell metacharacter, whitespace,
 /// or control char is dropped (the flag is simply omitted, so the CLI falls back to
 /// its default) and a warning is logged. Every real model id / effort level passes
-/// unchanged.
+/// unchanged. Also reject values starting with `-` or `/` so a settings value can
+/// never be read as a flag or a cmd switch.
 fn arg_token(value: &str) -> Option<&str> {
     let v = value.trim();
     if v.is_empty() {
         return None;
     }
+    // Reject leading `-` (looks like a flag) or `/` (cmd switch on Windows)
+    if v.starts_with('-') || v.starts_with('/') {
+        tracing::warn!("[cli_agent] dropping CLI arg value with leading flag/switch: {v:?}");
+        return None;
+    }
     if v.bytes()
-        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-'))
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-' | b'/'))
     {
         Some(v)
     } else {

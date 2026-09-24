@@ -452,12 +452,20 @@ impl DataStore for SpendStore {
 
 /// Providers with no metered API — local inference (Ollama) or a CLI agent
 /// authenticated via the user's own tool login (Claude Code/Codex/Gemini
-/// CLI/Antigravity). Always $0 real cost regardless of token volume — never
-/// estimated. Deliberately excludes `ollama-cloud` (a paid hosted service).
+/// CLI/Antigravity/Opencode/Cursor/Copilot/Qwen Code). Always $0 real cost
+/// regardless of token volume — never estimated. Deliberately excludes
+/// `ollama-cloud` (a paid hosted service).
 fn is_free_provider(provider: &str) -> bool {
     matches!(
         provider,
-        "ollama" | "claude-code" | "codex" | "gemini-cli" | "antigravity"
+        "ollama"
+            | "claude-code"
+            | "codex"
+            | "gemini-cli"
+            | "antigravity"
+            | "opencode"
+            | "cursor"
+            | "qwen-code"
     )
 }
 

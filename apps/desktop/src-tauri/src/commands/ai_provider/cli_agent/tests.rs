@@ -150,12 +150,23 @@ fn arg_token_accepts_ids_and_rejects_shell_metacharacters() {
     assert_eq!(arg_token("o4-mini"), Some("o4-mini"));
     assert_eq!(arg_token("high"), Some("high"));
     assert_eq!(arg_token("  gemini-2.5-flash  "), Some("gemini-2.5-flash"));
+    // opencode uses provider/model format (e.g. "openai/gpt-4o")
+    assert_eq!(arg_token("openai/gpt-4o"), Some("openai/gpt-4o"));
+    assert_eq!(
+        arg_token("anthropic/claude-3-5-sonnet"),
+        Some("anthropic/claude-3-5-sonnet")
+    );
+    // Leading `-` (flag-like) and `/` (Windows cmd switch) are rejected.
+    assert_eq!(arg_token("-malicious"), None);
+    assert_eq!(arg_token("/malicious"), None);
+    assert_eq!(arg_token("-m"), None);
+    assert_eq!(arg_token("/c"), None);
     // Shell metacharacters / whitespace-splitting / empties are rejected, so the
     // flag is omitted rather than smuggling text through `cmd.exe` on Windows
     // (the CVE-2024-24576 argv invariant, defended in depth).
     for bad in [
         "", "   ", "a b", "m&calc", "a|b", "a>b", "a<b", "a^b", "%PATH%", "a\"b", "a(b)", "a\r\nb",
-        "$(x)", "`x`", "a;b", "a/b",
+        "$(x)", "`x`", "a;b",
     ] {
         assert_eq!(arg_token(bad), None, "{bad:?} must be rejected");
     }

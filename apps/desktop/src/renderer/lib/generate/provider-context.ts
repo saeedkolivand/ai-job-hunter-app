@@ -28,7 +28,15 @@ import { usePreferencesStore } from '@/store/preferences-store';
 // ─── Provider kind mapping ────────────────────────────────────────────────────
 
 /** CLI agents: locally-installed headless tools (no API key). */
-const CLI_PROVIDERS = new Set<AiProvider>(['claude-code', 'codex', 'gemini-cli', 'antigravity']);
+const CLI_PROVIDERS = new Set<AiProvider>([
+  'claude-code',
+  'codex',
+  'gemini-cli',
+  'antigravity',
+  'opencode',
+  'cursor',
+  'qwen-code',
+]);
 
 /** Cloud API providers (no local inference). */
 const CLOUD_PROVIDERS = new Set<AiProvider>([

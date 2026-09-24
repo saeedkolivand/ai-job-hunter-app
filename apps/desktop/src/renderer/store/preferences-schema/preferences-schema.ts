@@ -65,6 +65,9 @@ const AiProviderSchema = z.enum([
   // Antigravity (`agy`) — UNVERIFIED CLI-agent backend (documented contract, not
   // runtime-tested); see src-tauri cli_agent/antigravity.rs.
   'antigravity',
+  'opencode',
+  'cursor',
+  'qwen-code',
 ]);
 
 // Per-local-model generation limits (Ollama only). Keyed by model name so each
