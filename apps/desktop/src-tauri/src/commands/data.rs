@@ -26,7 +26,7 @@ use crate::spend::SpendStore;
 
 const BUNDLE_VERSION: u32 = 1;
 
-fn date_stamp() -> String {
+pub(crate) fn date_stamp() -> String {
     // YYYY-MM-DD from the system clock (UTC-ish, good enough for a filename).
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
@@ -105,7 +105,7 @@ fn validate_sections(stores: &Value) -> crate::error::AppResult<()> {
 }
 
 /// Collect a bundle of every store's exported data.
-fn build_bundle(app: &AppHandle) -> Value {
+pub(crate) fn build_bundle(app: &AppHandle) -> Value {
     let mut stores = serde_json::Map::new();
 
     if let Some(s) = app.try_state::<DocumentStore>() {
