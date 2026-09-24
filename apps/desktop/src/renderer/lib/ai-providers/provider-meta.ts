@@ -129,6 +129,30 @@ export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
     color: 'text-blue-400',
     models: ['gemini-3-pro', 'gemini-2.5-pro'],
   },
+  opencode: {
+    kind: 'cli-agent',
+    label: 'opencode',
+    description: 'Use your installed opencode CLI — your existing opencode login, no API key.',
+    docsUrl: 'https://opencode.ai/docs',
+    color: 'text-indigo-400',
+    models: [], // Live discovery via `opencode models`
+  },
+  cursor: {
+    kind: 'cli-agent',
+    label: 'Cursor',
+    description: 'Use your installed Cursor CLI — your existing Cursor login, no API key.',
+    docsUrl: 'https://cursor.com/docs/cli',
+    color: 'text-sky-400',
+    models: [], // Live discovery via `cursor-agent --list-models`
+  },
+  'qwen-code': {
+    kind: 'cli-agent',
+    label: 'Qwen Code',
+    description: 'Use your installed Qwen Code CLI — your existing Qwen login, no API key.',
+    docsUrl: 'https://qwenlm.github.io/qwen-code-docs/en/users/features/headless/',
+    color: 'text-amber-400',
+    models: ['qwen3-coder-plus'], // Mirrors `MODELS` in qwen_code.rs; none picked = the CLI default
+  },
 };
 
 export const PROVIDER_ORDER: AiProvider[] = [
@@ -142,6 +166,9 @@ export const PROVIDER_ORDER: AiProvider[] = [
   'codex',
   'gemini-cli',
   'antigravity',
+  'opencode',
+  'cursor',
+  'qwen-code',
 ];
 
 /**

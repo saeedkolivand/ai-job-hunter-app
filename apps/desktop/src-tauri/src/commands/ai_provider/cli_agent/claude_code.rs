@@ -64,8 +64,8 @@ impl CliAgentBackend for ClaudeCodeAgent {
         MODELS
     }
 
-    fn install_package(&self) -> &'static str {
-        "@anthropic-ai/claude-code"
+    fn install_package(&self) -> Option<&'static str> {
+        Some("@anthropic-ai/claude-code")
     }
 
     fn docs_url(&self) -> &'static str {

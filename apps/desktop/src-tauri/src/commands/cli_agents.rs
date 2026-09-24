@@ -45,18 +45,25 @@ async fn build_status() -> CliAgentsStatus {
         let binary = backend.binary();
         let (installed, version) = cli_agent::detect_cached(&binary).await;
         let id = backend.id().as_str().to_string();
+        let install_package = backend.install_package();
+        let (install_command_name, install_args, package) = if let Some(pkg) = install_package {
+            (
+                format!("install-{id}"),
+                vec!["install".to_string(), "-g".to_string(), pkg.to_string()],
+                pkg.to_string(),
+            )
+        } else {
+            // No npm package — no one-click install, only guide path.
+            (String::new(), Vec::new(), String::new())
+        };
         agents.push(CliAgentStatus {
-            install_command_name: format!("install-{id}"),
-            install_args: vec![
-                "install".to_string(),
-                "-g".to_string(),
-                backend.install_package().to_string(),
-            ],
+            install_command_name,
+            install_args,
             id,
             binary,
             installed,
             version,
-            package: backend.install_package().to_string(),
+            package,
             docs_url: backend.docs_url().to_string(),
         });
     }
@@ -89,9 +96,8 @@ mod tests {
 
     /// Security invariant: the static shell-capability allowlist must contain
     /// EXACTLY the `npm install -g <package>` command for every registered agent
-    /// (matching `CliAgentBackend::install_package`). If the registry and the
-    /// allowlist drift, one-click install silently breaks (or, worse, an
-    /// unintended command becomes runnable) — this catches both.
+    /// that has an npm package (matching `CliAgentBackend::install_package`).
+    /// Agents without an npm package (e.g. Cursor) have no allowlist entry.
     #[test]
     fn capability_allowlist_matches_the_registry() {
         let caps: Value =
@@ -106,7 +112,12 @@ mod tests {
             .and_then(|a| a.as_array())
             .expect("allow scope present");
 
-        for backend in cli_agent::all() {
+        let npm_agents: Vec<_> = cli_agent::all()
+            .into_iter()
+            .filter(|b| b.install_package().is_some())
+            .collect();
+
+        for backend in &npm_agents {
             let name = format!("install-{}", backend.id().as_str());
             let entry = allow
                 .iter()
@@ -121,15 +132,15 @@ mod tests {
                 .collect();
             assert_eq!(
                 args,
-                vec!["install", "-g", backend.install_package()],
+                vec!["install", "-g", backend.install_package().unwrap()],
                 "{name} args must be the fixed global install for its package"
             );
         }
 
-        // And nothing BEYOND the registered agents is allowed to run.
+        // And nothing BEYOND the npm-installable agents is allowed to run.
         assert_eq!(
             allow.len(),
-            cli_agent::all().len(),
+            npm_agents.len(),
             "allowlist has entries with no matching agent"
         );
     }
@@ -138,21 +149,35 @@ mod tests {
     async fn status_lists_every_registered_agent_with_install_metadata() {
         let status = build_status().await;
         let ids: Vec<&str> = status.agents.iter().map(|a| a.id.as_str()).collect();
-        for expected in ["claude-code", "codex", "gemini-cli", "antigravity"] {
+        for expected in [
+            "claude-code",
+            "codex",
+            "gemini-cli",
+            "antigravity",
+            "opencode",
+            "cursor",
+            "qwen-code",
+        ] {
             assert!(ids.contains(&expected), "{expected} missing from status");
         }
         for agent in &status.agents {
-            // The one-click command is always `npm install -g <package>`, fixed.
-            assert_eq!(agent.install_command_name, format!("install-{}", agent.id));
-            assert_eq!(
-                agent.install_args,
-                vec![
-                    "install".to_string(),
-                    "-g".to_string(),
-                    agent.package.clone()
-                ]
-            );
-            assert!(agent.package.starts_with('@'), "scoped package expected");
+            if !agent.package.is_empty() {
+                // Only npm-installable agents have a package and install command.
+                assert_eq!(agent.install_command_name, format!("install-{}", agent.id));
+                assert_eq!(
+                    agent.install_args,
+                    vec![
+                        "install".to_string(),
+                        "-g".to_string(),
+                        agent.package.clone()
+                    ]
+                );
+                assert!(agent.package.starts_with('@'), "scoped package expected");
+            } else {
+                // Non-npm agents have no install command or package.
+                assert!(agent.install_command_name.is_empty());
+                assert!(agent.install_args.is_empty());
+            }
             assert!(agent.docs_url.starts_with("https://"));
         }
     }
