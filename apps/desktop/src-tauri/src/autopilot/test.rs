@@ -3292,3 +3292,74 @@ fn a_restore_replaces_the_stored_found_jobs() {
         0
     );
 }
+
+/// The rows could not be read this session: the empty stand-ins must never be
+/// synced, or every stored found job would be trimmed away (CodeRabbit, #1281).
+#[test]
+fn a_failed_read_never_lets_a_save_delete_the_stored_rows() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
+    let (_store, id) = store_with_found_jobs(&dir);
+
+    let store = AutopilotStore::new(&dir);
+    store.found_jobs_db.as_ref().unwrap().lock().fail_load = true;
+    assert!(store.get(&id).unwrap().found_jobs.is_empty(), "read failed");
+    store.set_status(&id, AutopilotStatus::Paused);
+
+    assert_eq!(
+        store.found_jobs_db.as_ref().unwrap().lock().row_count(&id),
+        2,
+        "rows survive the save"
+    );
+    let reopened = AutopilotStore::new(&dir);
+    assert_eq!(reopened.get(&id).unwrap().found_jobs.len(), 2);
+    assert_eq!(reopened.get(&id).unwrap().status, AutopilotStatus::Paused);
+}
+
+/// Writing the rows failed: the JSON keeps carrying the found jobs, and the next
+/// load moves them into the table again.
+#[test]
+fn a_failed_row_write_keeps_found_jobs_in_the_json() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
+    let store = AutopilotStore::new(&dir);
+    let ap = store.create(fj_input("FJ"));
+    store.found_jobs_db.as_ref().unwrap().lock().fail_sync = true;
+    store.record_run(&ap.id, 2, 0, two_jobs(), vec![], &HashSet::new(), &[]);
+
+    let json = std::fs::read_to_string(dir.join("autopilots.json")).unwrap();
+    assert!(
+        json.contains("jobs.example"),
+        "the JSON carries them instead"
+    );
+
+    let reopened = AutopilotStore::new(&dir);
+    assert_eq!(reopened.get(&ap.id).unwrap().found_jobs.len(), 2);
+    assert_eq!(
+        reopened
+            .found_jobs_db
+            .as_ref()
+            .unwrap()
+            .lock()
+            .row_count(&ap.id),
+        2,
+        "migrated into the table on the next load"
+    );
+}
+
+/// A restore that fails writes nothing: the old rows are all still there
+/// (the delete and the inserts share one transaction).
+#[test]
+fn a_failed_restore_keeps_the_old_rows() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
+    let (store, id) = store_with_found_jobs(&dir);
+
+    store.found_jobs_db.as_ref().unwrap().lock().fail_sync = true;
+    store.replace_found_jobs(&HashMap::new());
+
+    assert_eq!(
+        store.found_jobs_db.as_ref().unwrap().lock().row_count(&id),
+        2
+    );
+}

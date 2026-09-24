@@ -52,9 +52,19 @@ pub(super) struct FoundJobsDb {
     conn: Connection,
     /// Hash of every row as it is on disk, keyed like the table.
     written: HashMap<(String, i64), u64>,
+    /// Set when reading the rows failed this session. The in-memory found jobs
+    /// are then empty stand-ins, so syncing them would trim every stored row;
+    /// sync stays off (found jobs ride in the JSON instead) until a restore
+    /// rewrites the table or the next session reads it cleanly.
+    unreadable: bool,
     /// Test-only: rows this instance has written, to prove what a save costs.
     #[cfg(test)]
     pub(super) rows_written: usize,
+    /// Test-only fault switches for the read and the write path.
+    #[cfg(test)]
+    pub(super) fail_load: bool,
+    #[cfg(test)]
+    pub(super) fail_sync: bool,
 }
 
 fn row_hash(json: &str) -> u64 {
@@ -70,8 +80,13 @@ impl FoundJobsDb {
         Ok(Self {
             conn,
             written: HashMap::new(),
+            unreadable: false,
             #[cfg(test)]
             rows_written: 0,
+            #[cfg(test)]
+            fail_load: false,
+            #[cfg(test)]
+            fail_sync: false,
         })
     }
 
@@ -89,6 +104,10 @@ impl FoundJobsDb {
 
     /// Every stored row, grouped per autopilot in position order.
     fn load_all(&mut self) -> AppResult<HashMap<String, Vec<FoundJob>>> {
+        #[cfg(test)]
+        if self.fail_load {
+            return Err(AppError::Storage("injected load failure (test)".into()));
+        }
         let rows: Vec<(String, i64, String)> = {
             let mut stmt = self.conn.prepare(
                 "SELECT autopilot_id, position, json FROM found_jobs
@@ -116,9 +135,18 @@ impl FoundJobsDb {
     /// Persist the found jobs of every autopilot in `map`, writing only rows
     /// whose content changed and trimming rows past each list's end. Autopilots
     /// not in `map` are left alone (see the module doc).
-    fn sync(&mut self, map: &HashMap<String, Autopilot>) -> AppResult<()> {
+    ///
+    /// `replace` (restore) first deletes EVERY row, in the same transaction as
+    /// the writes: a crash can leave the old rows or the new ones, never neither.
+    fn sync(&mut self, map: &HashMap<String, Autopilot>, replace: bool) -> AppResult<()> {
+        if replace {
+            self.written.clear();
+        }
         let mut changed: Vec<((String, i64), u64)> = Vec::new();
         let tx = self.conn.transaction()?;
+        if replace {
+            tx.execute("DELETE FROM found_jobs", [])?;
+        }
         {
             let mut upsert = tx.prepare_cached(
                 "INSERT INTO found_jobs (autopilot_id, position, json) VALUES (?1, ?2, ?3)
@@ -140,6 +168,13 @@ impl FoundJobsDb {
                 }
                 trim.execute(params![id, ap.found_jobs.len() as i64])?;
             }
+        }
+        // Test fault injected AFTER the delete and the writes ran, just before the
+        // commit: dropping `tx` rolls them all back, which is what a restore
+        // test uses to prove the delete can't land without the inserts.
+        #[cfg(test)]
+        if std::mem::take(&mut self.fail_sync) {
+            return Err(AppError::Storage("injected sync failure (test)".into()));
         }
         tx.commit()?;
         #[cfg(test)]
@@ -179,16 +214,19 @@ impl AutopilotStore {
         let Some(db) = &self.found_jobs_db else {
             return false; // no database: found jobs simply stay in the JSON
         };
-        let mut rows = match db.lock().load_all() {
+        let mut db = db.lock();
+        let mut rows = match db.load_all() {
             Ok(rows) => rows,
             Err(e) => {
                 log::error!(
-                    "[autopilot] could not read found jobs: {}",
+                    "[autopilot] could not read found jobs; leaving them untouched this session: {}",
                     sanitize_reason(&e.to_string())
                 );
+                db.unreadable = true;
                 HashMap::new()
             }
         };
+        drop(db);
         let mut legacy = false;
         for (id, ap) in map.iter_mut() {
             if ap.found_jobs.is_empty() {
@@ -219,7 +257,11 @@ impl AutopilotStore {
         let Some(db) = &self.found_jobs_db else {
             return false;
         };
-        match db.lock().sync(map) {
+        let mut db = db.lock();
+        if db.unreadable {
+            return false; // see `FoundJobsDb::unreadable`
+        }
+        match db.sync(map, false) {
             Ok(()) => true,
             Err(e) => {
                 log::error!(
@@ -228,6 +270,22 @@ impl AutopilotStore {
                 );
                 false
             }
+        }
+    }
+
+    /// Restore: make the table exactly `map`'s found jobs, in one transaction.
+    pub(super) fn replace_found_jobs(&self, map: &HashMap<String, Autopilot>) {
+        let Some(db) = &self.found_jobs_db else {
+            return;
+        };
+        let mut db = db.lock();
+        match db.sync(map, true) {
+            // The table now holds exactly what we have in memory.
+            Ok(()) => db.unreadable = false,
+            Err(e) => log::error!(
+                "[autopilot] could not replace found jobs: {}",
+                sanitize_reason(&e.to_string())
+            ),
         }
     }
 

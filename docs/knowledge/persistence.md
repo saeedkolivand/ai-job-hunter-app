@@ -201,22 +201,21 @@ pub trait DataStore {
 
 ### Implementations
 
-| Store                    | Location                              | Responsibility                                     |
-| ------------------------ | ------------------------------------- | -------------------------------------------------- |
-| `DocumentStore`          | `documents/mod.rs`                    | Resumes, embeddings, keyword caches                |
-| `ApplicationStore`       | `applications/mod.rs`                 | Applied jobs, status, activity                     |
-| `AiGenerationStore`      | `ai_generations/mod.rs`               | Generated cover letters, summaries                 |
-| `JobPreferencesStore`    | `job_preferences/mod.rs`              | Saved filters, board preferences                   |
-| `ContactProfileStore`    | `contact_profile/mod.rs`              | Saved address, phone, contact info                 |
-| `ReferralStore`          | `referrals/mod.rs`                    | Referral tracking                                  |
-| `AiConfigStore`          | `ai_config/mod.rs`                    | AI provider config (base_url provenance, ADR-0012) |
-| `SpendStore`             | `spend/mod.rs`                        | AI spend records                                   |
-| `DedupStore`             | `dedup/mod.rs`                        | Dedup tombstones                                   |
-| `DiscoveredCompanyStore` | `discovered/mod.rs`                   | Discovered companies                               |
-| `PipelineRunStore`       | `pipeline/runs/mod.rs`                | Résumé pipeline runs + their stage events          |
-| `AutopilotStore`         | `autopilot/mod.rs`                    | Autopilot records + run status (JSON file)         |
-| found jobs (SQLite)      | `autopilot/found_jobs_db.rs`          | Each autopilot's found jobs, one row per job       |
-| `InteractionStore`       | Exported inline by `commands/data.rs` | Generated autopilot interactions (JSON file)       |
+| Store                    | Location                              | Responsibility                                                                                                                     |
+| ------------------------ | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `DocumentStore`          | `documents/mod.rs`                    | Resumes, embeddings, keyword caches                                                                                                |
+| `ApplicationStore`       | `applications/mod.rs`                 | Applied jobs, status, activity                                                                                                     |
+| `AiGenerationStore`      | `ai_generations/mod.rs`               | Generated cover letters, summaries                                                                                                 |
+| `JobPreferencesStore`    | `job_preferences/mod.rs`              | Saved filters, board preferences                                                                                                   |
+| `ContactProfileStore`    | `contact_profile/mod.rs`              | Saved address, phone, contact info                                                                                                 |
+| `ReferralStore`          | `referrals/mod.rs`                    | Referral tracking                                                                                                                  |
+| `AiConfigStore`          | `ai_config/mod.rs`                    | AI provider config (base_url provenance, ADR-0012)                                                                                 |
+| `SpendStore`             | `spend/mod.rs`                        | AI spend records                                                                                                                   |
+| `DedupStore`             | `dedup/mod.rs`                        | Dedup tombstones                                                                                                                   |
+| `DiscoveredCompanyStore` | `discovered/mod.rs`                   | Discovered companies                                                                                                               |
+| `PipelineRunStore`       | `pipeline/runs/mod.rs`                | Résumé pipeline runs + their stage events                                                                                          |
+| `AutopilotStore`         | `autopilot/mod.rs`                    | Autopilot records + run status (JSON file); found jobs in SQLite (`autopilot/found_jobs_db.rs`), still exported under `autopilots` |
+| `InteractionStore`       | Exported inline by `commands/data.rs` | Generated autopilot interactions (JSON file)                                                                                       |
 
 Persisted but **not** `DataStore` implementations, so they are outside the backup
 bundle: `NotificationStore` (`notifications/mod.rs`), `EmailWatchStore`

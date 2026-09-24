@@ -937,7 +937,7 @@ impl AutopilotStore {
     pub fn replace_all(&self, items: Vec<Autopilot>) {
         let map: HashMap<String, Autopilot> =
             items.into_iter().map(|ap| (ap.id.clone(), ap)).collect();
-        self.forget_found_jobs(None);
+        self.replace_found_jobs(&map); // one transaction: old rows out, new rows in
         self.save(map);
     }
 
