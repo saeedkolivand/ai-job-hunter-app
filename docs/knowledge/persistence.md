@@ -1,6 +1,6 @@
 # Persistence Layer — State Ownership, SQLite, Transactions, Atomicity
 
-Last updated: 2026-09-07
+Last updated: 2026-09-24
 
 Canonical sources:
 
@@ -109,11 +109,11 @@ They are written down because an accepted exception is a decision, while an
 undocumented one is indistinguishable from a bug. What they are inconsistent
 _about_ is not only SQLite — it is each other:
 
-| File                 | On write                                                   | On a corrupt file                                                                                                       | Failure surfaces as | In the backup bundle                                              |
-| -------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------- |
-| `autopilots.json`    | `fs::write` in place, skipped when the bytes are unchanged | Per record — unparseable records are dropped and counted                                                                | `log::error`        | Yes (`autopilots`)                                                |
-| `interactions.json`  | Temp file + rename, so the replace is atomic               | Moved aside to `interactions.json.corrupt`; if that rename fails, saves are blocked rather than overwrite the only copy | `log::error`        | Yes (`interactions`, exported inline rather than via `DataStore`) |
-| `notifications.json` | `fs::write` in place                                       | Swallowed — a parse failure reads as an empty list, which the next save then writes over                                | `log::warn`         | **No**                                                            |
+| File                 | On write                                                                                                       | On a corrupt file                                                                                                       | Failure surfaces as | In the backup bundle                                              |
+| -------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------- |
+| `autopilots.json`    | `platform::fs::write_atomic`, skipped when unchanged; found jobs live in SQLite (`autopilot/found_jobs_db.rs`) | Per record; a corrupt file is moved aside (`autopilot/corrupt.rs`)                                                      | `log::error`        | Yes (`autopilots`)                                                |
+| `interactions.json`  | Temp file + rename, so the replace is atomic                                                                   | Moved aside to `interactions.json.corrupt`; if that rename fails, saves are blocked rather than overwrite the only copy | `log::error`        | Yes (`interactions`, exported inline rather than via `DataStore`) |
+| `notifications.json` | `fs::write` in place                                                                                           | Swallowed — a parse failure reads as an empty list, which the next save then writes over                                | `log::warn`         | **No**                                                            |
 
 The last column is the one worth knowing. Notifications are wiped by factory reset
 (the store is `Resettable`) but are not carried by backup/restore, because
@@ -215,6 +215,7 @@ pub trait DataStore {
 | `DiscoveredCompanyStore` | `discovered/mod.rs`                   | Discovered companies                               |
 | `PipelineRunStore`       | `pipeline/runs/mod.rs`                | Résumé pipeline runs + their stage events          |
 | `AutopilotStore`         | `autopilot/mod.rs`                    | Autopilot records + run status (JSON file)         |
+| found jobs (SQLite)      | `autopilot/found_jobs_db.rs`          | Each autopilot's found jobs, one row per job       |
 | `InteractionStore`       | Exported inline by `commands/data.rs` | Generated autopilot interactions (JSON file)       |
 
 Persisted but **not** `DataStore` implementations, so they are outside the backup

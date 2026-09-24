@@ -454,6 +454,7 @@ const R3_ALLOW: &[&str] = &[
     "ai_config/stage_overrides.rs",
     "referrals/mod.rs",
     "dedup/mod.rs",
+    "autopilot/found_jobs_db.rs",
     "discovered/mod.rs",
     "email_watch/mod.rs",
     "jobs/mod.rs",
