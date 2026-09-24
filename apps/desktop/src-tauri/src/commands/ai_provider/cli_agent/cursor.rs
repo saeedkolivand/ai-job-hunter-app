@@ -122,20 +122,7 @@ impl CliAgentBackend for CursorAgent {
                 let message = v.get("message")?;
                 let content = message.get("content")?.as_array()?;
                 // Extract text from content array
-                let text: String = content
-                    .iter()
-                    .filter_map(|c| {
-                        c.get("type")
-                            .and_then(|t| t.as_str())
-                            .filter(|t| *t == "text")
-                    })
-                    .filter_map(|_| {
-                        content
-                            .iter()
-                            .find(|c| c.get("type").and_then(|t| t.as_str()) == Some("text"))
-                            .and_then(|c| c.get("text").and_then(|t| t.as_str()))
-                    })
-                    .collect();
+                let text = super::text_blocks(content);
 
                 let has_timestamp = v.get("timestamp_ms").is_some();
                 let has_model_call_id = v.get("model_call_id").is_some();

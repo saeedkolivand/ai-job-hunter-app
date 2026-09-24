@@ -31,7 +31,9 @@ export function CliAgentInstall({ provider, label, onGuide, onRecheck }: Props) 
 
   const agent = status?.agents.find((a) => a.id === provider);
   const npmAvailable = status?.npmAvailable ?? false;
-  const canOneClick = Boolean(agent) && npmAvailable && !install.isPending;
+  // Agents that aren't on npm (Cursor) have no install command: guide link only.
+  const hasInstallCommand = Boolean(agent?.installCommandName);
+  const canOneClick = hasInstallCommand && npmAvailable && !install.isPending;
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [output, setOutput] = useState('');
@@ -75,7 +77,7 @@ export function CliAgentInstall({ provider, label, onGuide, onRecheck }: Props) 
         {t('settings.cliInstall.notDetected', { label })}
       </p>
 
-      {!npmAvailable && (
+      {hasInstallCommand && !npmAvailable && (
         <p className="text-xs text-amber-200/70">{t('settings.cliInstall.npmMissing')}</p>
       )}
 

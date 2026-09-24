@@ -151,7 +151,7 @@ export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
     description: 'Use your installed Qwen Code CLI — your existing Qwen login, no API key.',
     docsUrl: 'https://qwenlm.github.io/qwen-code-docs/en/users/features/headless/',
     color: 'text-amber-400',
-    models: [], // Live discovery not available, rely on static list if needed
+    models: ['qwen3-coder-plus'], // Mirrors `MODELS` in qwen_code.rs; none picked = the CLI default
   },
 };
 

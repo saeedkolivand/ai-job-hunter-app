@@ -51,7 +51,7 @@ use cursor::CursorAgent;
 use gemini_cli::GeminiCliAgent;
 use opencode::OpencodeAgent;
 use qwen_code::QwenCodeAgent;
-use workspace::prepare_workspace;
+use workspace::{prepare_workspace, Workspace};
 
 /// Max wall-clock time for a single CLI generation before we kill the child.
 const TIMEOUT: Duration = Duration::from_secs(300);
@@ -200,14 +200,32 @@ pub trait CliAgentBackend: Send + Sync {
         false
     }
 
-    /// Private per-agent workspace files (e.g. tool-deny config) written before every spawn.
-    /// Returned as `(relative_path, contents)` pairs. The harness writes these into a
-    /// private directory under the app's data dir (`<data_dir>/cli-workspaces/<provider id>/`)
-    /// and spawns the CLI with that as `current_dir`. Default: no files (uses `temp_dir()`).
-    /// Backends that return files MUST ensure they deny all tools (see security rules).
+    /// Config files (e.g. the tool-refusing config) written before every spawn, as
+    /// `(relative_path, contents)`. The harness writes them into a fresh per-spawn
+    /// directory (see `workspace.rs`) and uses it as `current_dir`. Default: no
+    /// files, and the CLI runs in `temp_dir()`.
     fn workspace_files(&self) -> Vec<(&'static str, String)> {
         Vec::new()
     }
+
+    /// Environment variables that point the CLI at one of its
+    /// [`workspace_files`](Self::workspace_files), as `(variable, relative_path)`;
+    /// the harness sets each to that file's absolute path in the spawn's
+    /// workspace. For config a CLI only honours from a fixed scope (Qwen's
+    /// system settings). Default: none.
+    fn workspace_env(&self) -> Vec<(&'static str, &'static str)> {
+        Vec::new()
+    }
+}
+
+/// The text of every `{"type":"text","text":…}` block in a message's `content`
+/// array, in order. Shared by the Cursor and Qwen parsers (same message shape).
+pub(super) fn text_blocks(content: &[Value]) -> String {
+    content
+        .iter()
+        .filter(|c| c.get("type").and_then(|t| t.as_str()) == Some("text"))
+        .filter_map(|c| c.get("text").and_then(|t| t.as_str()))
+        .collect()
 }
 
 /// Combine system + user per the backend's [`inline_system`](CliAgentBackend::inline_system).
@@ -608,8 +626,10 @@ async fn run_stream(
     let prompt = effective_prompt(backend, system, prompt);
     let trace = RequestTrace::begin(backend.id(), model, "cli:stream", &binary, true);
 
-    let mut child = match spawn(&binary, &inv, &prompt, backend) {
-        Ok(c) => c,
+    // `_workspace` (not `_`) keeps the per-spawn config dir alive until this
+    // function returns, i.e. until the child has exited.
+    let (mut child, _workspace) = match spawn(&binary, &inv, &prompt, backend) {
+        Ok(spawned) => spawned,
         Err(e) => {
             trace.end(None, false);
             return Err(spawn_error(label, &binary, e));
@@ -875,8 +895,10 @@ async fn run_one_shot(
     let prompt = effective_prompt(backend, system, user);
     let trace = RequestTrace::begin(backend.id(), model, "cli:complete", &binary, false);
 
-    let mut child = match spawn(&binary, &inv, &prompt, backend) {
-        Ok(c) => c,
+    // `_workspace` (not `_`) keeps the per-spawn config dir alive until this
+    // function returns, i.e. until the child has exited.
+    let (mut child, _workspace) = match spawn(&binary, &inv, &prompt, backend) {
+        Ok(spawned) => spawned,
         Err(e) => {
             trace.end(None, false);
             return Err(spawn_error(label, &binary, e));
@@ -941,12 +963,15 @@ fn fallback_models(aliases: &[&str]) -> Vec<Value> {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────
 
+/// Spawn the CLI. The returned [`Workspace`] (if the backend has config files)
+/// must be held until the child exits: dropping it deletes the config the child
+/// reads.
 fn spawn(
     binary: &str,
     inv: &CliInvocation,
     prompt: &str,
     backend: &dyn CliAgentBackend,
-) -> std::io::Result<tokio::process::Child> {
+) -> std::io::Result<(tokio::process::Child, Option<Workspace>)> {
     let mut args = inv.args.clone();
     // Untrusted prompt text enters argv ONLY for `PromptDelivery::Arg`, which no
     // backend constructs — every agent uses `Stdin` (see `PromptDelivery` docs for
@@ -956,23 +981,36 @@ fn spawn(
         args.push(prompt.to_string());
     }
 
-    // Determine working directory: private workspace if backend provides files, else temp dir.
-    let workspace_files = backend.workspace_files();
-    let cwd = if workspace_files.is_empty() {
-        std::env::temp_dir()
+    let files = backend.workspace_files();
+    let workspace = if files.is_empty() {
+        None
     } else {
-        let data_dir = crate::platform::config::data_dir();
-        let provider_id = backend.id().as_str();
-        prepare_workspace(&data_dir, provider_id, &workspace_files)?
+        Some(prepare_workspace(
+            &crate::platform::config::data_dir(),
+            backend.id().as_str(),
+            &files,
+        )?)
     };
 
-    cli_command(binary, &args)
-        .current_dir(cwd)
+    let mut cmd = cli_command(binary, &args);
+    match &workspace {
+        Some(ws) => {
+            cmd.current_dir(ws.path());
+            for (var, rel_path) in backend.workspace_env() {
+                cmd.env(var, ws.path().join(rel_path));
+            }
+        }
+        None => {
+            cmd.current_dir(std::env::temp_dir());
+        }
+    }
+    let child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
-        .spawn()
+        .spawn()?;
+    Ok((child, workspace))
 }
 
 /// Feed the prompt to the child's stdin on a **detached task** so the caller can

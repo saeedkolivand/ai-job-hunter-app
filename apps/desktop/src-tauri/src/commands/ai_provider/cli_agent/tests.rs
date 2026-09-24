@@ -327,3 +327,13 @@ async fn detect_cached_serves_cached_result_within_ttl() {
     );
     assert_eq!(detect_cached(bin).await, (true, Some("9.9.9".to_string())));
 }
+
+#[test]
+fn text_blocks_keeps_every_text_block_in_order() {
+    let content = vec![
+        json!({ "type": "text", "text": "A" }),
+        json!({ "type": "tool_use", "name": "x" }),
+        json!({ "type": "text", "text": "B" }),
+    ];
+    assert_eq!(text_blocks(&content), "AB");
+}

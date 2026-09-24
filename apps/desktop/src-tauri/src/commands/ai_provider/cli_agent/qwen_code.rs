@@ -5,16 +5,20 @@
 //! One-shot: `--output-format json` → a JSON **array** of messages; the final
 //! element is `{"type":"result","subtype":"success","result":"...",…}`.
 //!
-//! Tools off: `--approval-mode plan` (read-only) is the floor. Also look for a
-//! documented way to exclude ALL tools (Qwen Code is a Gemini CLI fork: check
-//! `--exclude-tools`/settings) and add `-e none` / an MCP allow-list sentinel if
-//! supported, as `gemini_cli.rs` does. Never `--yolo`. Bound runs with
-//! `--max-session-turns 1` if that doesn't break a plain answer.
+//! **Tools off:** a settings file written into the per-spawn workspace and loaded
+//! as Qwen's SYSTEM settings via `QWEN_CODE_SYSTEM_SETTINGS_PATH`. System
+//! settings override user and project settings, and they are an operator scope
+//! that still applies in an untrusted folder, where Qwen ignores project
+//! `.qwen/settings.json`. It denies every built-in tool in [`QWEN_TOOLS`] through
+//! `permissions.deny` (deny beats ask and allow) and repeats them in
+//! `tools.exclude` for versions that only know that key. MCP tools are exempt
+//! from deny rules, so `--allowed-mcp-server-names` with a sentinel keeps every
+//! MCP server off, and `--approval-mode plan` stays as a last layer. Never
+//! `--yolo`. Docs only: not yet verified against a live Qwen Code.
+//! Docs: https://github.com/QwenLM/qwen-code/blob/main/docs/users/configuration/settings.md
 //!
-//! Native schema: Qwen has `--json-schema` (https://qwenlm.github.io/qwen-code-docs/en/users/features/structured-output/).
-//! Implement `native_json_schema_invocation`/`parse_structured_complete` the way
-//! `claude_code.rs` does, with the same argv cap approach, IF the docs give the
-//! output shape; otherwise leave the default.
+//! `--json-schema` is used for structured calls
+//! (https://qwenlm.github.io/qwen-code-docs/en/users/features/structured-output/).
 //!
 //! The (untrusted, JD-bearing) prompt is delivered on **stdin**
 //! ([`PromptDelivery::Stdin`]): `echo "task" | qwen` is documented, so we pipe
@@ -30,31 +34,53 @@ use crate::error::{AppError, AppResult};
 
 use super::{CliAgentBackend, CliEvent, CliInvocation, PromptDelivery};
 
-const MODELS: &[&str] = &[]; // Rely on `discover_models` entirely.
+/// Fallback when discovery finds nothing: the model the Qwen Code docs use in
+/// their own examples. Picking none runs the CLI's configured default.
+const MODELS: &[&str] = &["qwen3-coder-plus"];
 
 /// Argv cap for `--json-schema` (UTF-16 code units, same as Claude Code).
 const MAX_JSON_SCHEMA_ARG_CHARS: usize = 16_384;
 
-/// Workspace file `.qwen/settings.json` that excludes ALL built-in tools.
-/// Project settings override user settings per Qwen Code docs:
-/// https://qwenlm.github.io/qwen-code-docs/configuration
-/// The `tools.exclude` list includes every built-in tool the docs reference.
-const QWEN_SETTINGS: &str = r#"{
-  "tools": {
-    "exclude": [
-      "run_shell_command",
-      "read_file",
-      "read_many_files",
-      "write_file",
-      "edit",
-      "grep",
-      "glob",
-      "web_fetch",
-      "google_web_search",
-      "save_memory"
-    ]
-  }
-}"#;
+/// Every built-in Qwen Code tool name the docs reference, plus the bridge tools
+/// (`tool_search`, `tool_call`) that can reach other tools. A name Qwen doesn't
+/// know is harmless in a deny list; a missing one is a tool left enabled.
+const QWEN_TOOLS: &[&str] = &[
+    "run_shell_command",
+    "read_file",
+    "read_many_files",
+    "write_file",
+    "edit",
+    "replace",
+    "grep",
+    "grep_search",
+    "search_file_content",
+    "glob",
+    "list_directory",
+    "web_fetch",
+    "web_search",
+    "google_web_search",
+    "save_memory",
+    "todo_write",
+    "task",
+    "skill",
+    "exit_plan_mode",
+    "lsp",
+    "tool_search",
+    "tool_call",
+];
+
+/// Where the system settings file goes in the workspace, and the variable
+/// that points Qwen at it.
+const SYSTEM_SETTINGS_FILE: &str = "qwen-system-settings.json";
+const SYSTEM_SETTINGS_ENV: &str = "QWEN_CODE_SYSTEM_SETTINGS_PATH";
+
+fn system_settings() -> String {
+    serde_json::json!({
+        "permissions": { "deny": QWEN_TOOLS },
+        "tools": { "exclude": QWEN_TOOLS },
+    })
+    .to_string()
+}
 
 pub struct QwenCodeAgent;
 
@@ -91,7 +117,11 @@ impl CliAgentBackend for QwenCodeAgent {
     }
 
     fn workspace_files(&self) -> Vec<(&'static str, String)> {
-        vec![(".qwen/settings.json", QWEN_SETTINGS.to_string())]
+        vec![(SYSTEM_SETTINGS_FILE, system_settings())]
+    }
+
+    fn workspace_env(&self) -> Vec<(&'static str, &'static str)> {
+        vec![(SYSTEM_SETTINGS_ENV, SYSTEM_SETTINGS_FILE)]
     }
 
     fn inline_system(&self) -> bool {
@@ -129,20 +159,7 @@ impl CliAgentBackend for QwenCodeAgent {
             "assistant" => {
                 let message = v.get("message")?;
                 let content = message.get("content")?.as_array()?;
-                let text: String = content
-                    .iter()
-                    .filter_map(|c| {
-                        c.get("type")
-                            .and_then(|t| t.as_str())
-                            .filter(|t| *t == "text")
-                    })
-                    .filter_map(|_| {
-                        content
-                            .iter()
-                            .find(|c| c.get("type").and_then(|t| t.as_str()) == Some("text"))
-                            .and_then(|c| c.get("text").and_then(|t| t.as_str()))
-                    })
-                    .collect();
+                let text = super::text_blocks(content);
                 if !text.is_empty() {
                     Some(CliEvent::Delta(text))
                 } else {
@@ -248,10 +265,8 @@ impl CliAgentBackend for QwenCodeAgent {
 /// Build args for qwen: `--approval-mode plan --max-session-turns 1
 /// --allowed-mcp-server-names __ajh_none__ [--json-schema <schema>] -m <model>`
 /// with prompt on stdin.
-/// Tool exclusion is handled by the workspace file `.qwen/settings.json`
-/// (`tools.exclude` with all built-in tools), not by `-e none` (which only
-/// disables extensions, not tools). `--approval-mode plan` provides a
-/// read-only floor; the workspace file is the primary tool-denial mechanism.
+/// Tools are refused by the system settings file (see the module doc);
+/// `--approval-mode plan` is only a last layer.
 fn build_args(model: &str, streaming: bool, json_schema: Option<&str>) -> Vec<String> {
     let mut args = vec![
         "--approval-mode".to_string(),
@@ -403,40 +418,37 @@ mod tests {
     }
 
     #[test]
-    fn workspace_files_returns_exclude_all_tools_config() {
+    fn system_settings_deny_every_tool_and_are_wired_through_the_env_var() {
         let files = QwenCodeAgent.workspace_files();
         assert_eq!(files.len(), 1);
-        assert_eq!(files[0].0, ".qwen/settings.json");
+        assert_eq!(
+            QwenCodeAgent.workspace_env(),
+            vec![("QWEN_CODE_SYSTEM_SETTINGS_PATH", files[0].0)]
+        );
         let config: Value = serde_json::from_str(&files[0].1).unwrap();
-        let exclude = config["tools"]["exclude"].as_array().unwrap();
-        // All these tools must be excluded
-        assert!(exclude
-            .iter()
-            .any(|v| v.as_str() == Some("run_shell_command")));
-        assert!(exclude.iter().any(|v| v.as_str() == Some("read_file")));
-        assert!(exclude
-            .iter()
-            .any(|v| v.as_str() == Some("read_many_files")));
-        assert!(exclude.iter().any(|v| v.as_str() == Some("write_file")));
-        assert!(exclude.iter().any(|v| v.as_str() == Some("edit")));
-        assert!(exclude.iter().any(|v| v.as_str() == Some("grep")));
-        assert!(exclude.iter().any(|v| v.as_str() == Some("glob")));
-        assert!(exclude.iter().any(|v| v.as_str() == Some("web_fetch")));
-        assert!(exclude
-            .iter()
-            .any(|v| v.as_str() == Some("google_web_search")));
-        assert!(exclude.iter().any(|v| v.as_str() == Some("save_memory")));
-    }
-
-    /// Mutation check: removing `web_fetch` from the exclude list must be caught.
-    /// This test will fail if `web_fetch` is not in the exclude list.
-    #[test]
-    fn workspace_files_excludes_web_fetch_mutation_check() {
-        let files = QwenCodeAgent.workspace_files();
-        let config: Value = serde_json::from_str(&files[0].1).unwrap();
-        let exclude = config["tools"]["exclude"].as_array().unwrap();
-        assert!(exclude.iter().any(|v| v.as_str() == Some("web_fetch")),
-            "MUTATION: web_fetch must be in tools.exclude — if this fails, the mutation check caught it");
+        // Written out by hand on purpose: a check driven off QWEN_TOOLS itself
+        // would still pass after a tool was deleted from it.
+        for tool in [
+            "run_shell_command",
+            "read_file",
+            "read_many_files",
+            "write_file",
+            "edit",
+            "glob",
+            "web_fetch",
+            "web_search",
+            "google_web_search",
+            "save_memory",
+            "tool_search",
+            "tool_call",
+        ] {
+            for key in [&config["permissions"]["deny"], &config["tools"]["exclude"]] {
+                assert!(
+                    key.as_array().unwrap().iter().any(|v| v == tool),
+                    "{tool} missing from {key}"
+                );
+            }
+        }
     }
 
     #[test]
