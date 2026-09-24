@@ -11,9 +11,9 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::platform::fs::write_atomic;
-
 mod corrupt;
+mod found_jobs_db;
+mod persist;
 
 use crate::scraping::cluster::{
     assign_clusters, new_cluster_count, ClusterAssignment, ClusterInput, ClusterMemberRef,
@@ -492,6 +492,9 @@ pub struct AutopilotStore {
     /// data. A successful backup leaves this false so `write_to_disk` proceeds
     /// normally.
     block_save: std::sync::atomic::AtomicBool,
+    /// Where found jobs are persisted; `None` if the database couldn't be opened
+    /// (found jobs then stay inside `autopilots.json`). See `found_jobs_db.rs`.
+    found_jobs_db: Option<Mutex<found_jobs_db::FoundJobsDb>>,
 }
 
 impl AutopilotStore {
@@ -501,6 +504,7 @@ impl AutopilotStore {
             data_file: data_dir.join("autopilots.json"),
             cache: Mutex::new(None),
             block_save: std::sync::atomic::AtomicBool::new(false),
+            found_jobs_db: found_jobs_db::open_for_store(data_dir),
         }
     }
 
@@ -639,10 +643,12 @@ impl AutopilotStore {
         let mut map = self.load();
         map.remove(id);
         self.save(map);
+        self.forget_found_jobs(Some(id));
     }
 
     /// Remove every autopilot and its found-jobs history (factory reset).
     pub fn clear_all(&self) {
+        self.forget_found_jobs(None);
         self.save(HashMap::new());
     }
 
@@ -888,10 +894,19 @@ impl AutopilotStore {
         // A blocked outcome (file unreadable, or corrupt with no backup slot) is
         // never cached, so the next load reads the file again instead of serving
         // this empty stand-in for the rest of the session.
+        let mut map = outcome.map;
         if !outcome.block_save {
-            *guard = Some(outcome.map.clone());
+            // Found jobs live in SQLite (`found_jobs_db.rs`); a legacy file that
+            // still carries them is migrated by this one persist.
+            if self.hydrate_found_jobs(&mut map) {
+                if let Err(e) = self.write_to_disk(&map) {
+                    let reason = sanitize_reason(&e.to_string());
+                    log::error!("[autopilot] found-jobs migration write failed: {reason}");
+                }
+            }
+            *guard = Some(map.clone());
         }
-        outcome.map
+        map
     }
 
     fn save(&self, map: HashMap<String, Autopilot>) {
@@ -917,54 +932,12 @@ impl AutopilotStore {
         *self.cache.lock() = Some(map);
     }
 
-    /// Serialize + flush the map to `autopilots.json`, returning the IO outcome so
-    /// a caller can gate on a successful persist (e.g. the one-shot migration's
-    /// done-marker). Does NOT update the in-memory cache — that's `save`'s job.
-    /// `Ok(())` is also returned on the no-op-write path (state already on disk).
-    fn write_to_disk(&self, map: &HashMap<String, Autopilot>) -> std::io::Result<()> {
-        // The file on disk couldn't be loaded safely (unreadable, or corrupt with
-        // no backup slot to move it to): writing now could replace the only copy
-        // of the user's data with this session's empty map. The new state stays in
-        // memory (lost on restart); preserving the on-disk file wins. `save` logs it.
-        if self.is_block_save() {
-            return Err(std::io::Error::other(
-                "autopilots.json could not be loaded safely; not overwriting it",
-            ));
-        }
-
-        let list: Vec<&Autopilot> = {
-            let mut v: Vec<&Autopilot> = map.values().collect();
-            v.sort_by(|a, b| cmp_autopilot_newest_first(a, b));
-            v
-        };
-        let Ok(json) = serde_json::to_string_pretty(&list) else {
-            // Serialization can't fail for this shape, but if it ever did there's
-            // nothing on disk to trust — surface it as an IO-style error so the
-            // migration won't mark itself done on un-persisted data.
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "failed to serialize autopilots",
-            ));
-        };
-        // No-op-write skip: many mutations (set_run_status, stamp_last_run, …)
-        // re-serialize identical state. Skip the disk write when the bytes
-        // match what's already persisted — a pure dirty check, NOT debouncing,
-        // so state is still flushed synchronously the instant it changes (no
-        // crash-loss window). A missing/unreadable file never matches → write.
-        let unchanged = std::fs::read_to_string(&self.data_file)
-            .map(|existing| existing == json)
-            .unwrap_or(false);
-        if unchanged {
-            return Ok(()); // desired state already persisted
-        }
-        write_atomic(&self.data_file, json.as_bytes())
-    }
-
     /// Replace all autopilots with the given set (preserving their ids). Used by
     /// backup restore.
     pub fn replace_all(&self, items: Vec<Autopilot>) {
         let map: HashMap<String, Autopilot> =
             items.into_iter().map(|ap| (ap.id.clone(), ap)).collect();
+        self.replace_found_jobs(&map); // one transaction: old rows out, new rows in
         self.save(map);
     }
 

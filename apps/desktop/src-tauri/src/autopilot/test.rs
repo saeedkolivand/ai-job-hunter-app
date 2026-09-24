@@ -3107,3 +3107,259 @@ fn a_blocked_save_is_not_shown_as_saved() {
         "the unsaved change is not served from memory"
     );
 }
+
+// ── Found jobs persisted in SQLite (#1277) ────────────────────────────────────
+
+fn fj_input(name: &str) -> serde_json::Value {
+    serde_json::json!({
+        "name": name,
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+    })
+}
+
+fn two_jobs() -> Vec<FoundJob> {
+    vec![
+        found_job_full("https://jobs.example/one", "Backend Engineer", "Acme", 1),
+        found_job_full("https://jobs.example/two", "Data Engineer", "Globex", 2),
+    ]
+}
+
+fn sorted_urls(ap: &Autopilot) -> Vec<String> {
+    let mut urls: Vec<String> = ap.found_jobs.iter().map(|j| j.url.clone()).collect();
+    urls.sort();
+    urls
+}
+
+/// A store whose autopilot has two found jobs, recorded through a real run.
+fn store_with_found_jobs(dir: &std::path::PathBuf) -> (AutopilotStore, String) {
+    let store = AutopilotStore::new(dir);
+    let ap = store.create(fj_input("FJ"));
+    store.record_run(&ap.id, 2, 0, two_jobs(), vec![], &HashSet::new(), &[]);
+    (store, ap.id)
+}
+
+#[test]
+fn found_jobs_survive_a_restart_and_stay_out_of_autopilots_json() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
+    let (_store, id) = store_with_found_jobs(&dir);
+
+    let json = std::fs::read_to_string(dir.join("autopilots.json")).unwrap();
+    assert!(
+        !json.contains("jobs.example"),
+        "found jobs are not in autopilots.json"
+    );
+
+    let reopened = AutopilotStore::new(&dir);
+    assert_eq!(
+        sorted_urls(&reopened.get(&id).unwrap()),
+        vec!["https://jobs.example/one", "https://jobs.example/two"]
+    );
+}
+
+/// The point of #1277: a status change used to rewrite every found job.
+#[test]
+fn a_status_change_writes_no_found_job_rows() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
+    let (store, id) = store_with_found_jobs(&dir);
+    let written = || store.found_jobs_db.as_ref().unwrap().lock().rows_written;
+    let before = written();
+
+    store.set_status(&id, AutopilotStatus::Paused);
+
+    assert_eq!(written(), before, "no found-job row rewritten");
+    assert_eq!(store.get(&id).unwrap().status, AutopilotStatus::Paused);
+}
+
+/// A legacy `autopilots.json` with found jobs inside, as every existing
+/// install has, produced by a store whose database can't open (that fallback
+/// keeps found jobs in the JSON, exactly as before this change).
+fn legacy_file(scratch: &std::path::Path) -> (Vec<u8>, String) {
+    let legacy_dir = scratch.to_path_buf();
+    std::fs::create_dir_all(legacy_dir.join("autopilot_found_jobs.db")).unwrap();
+    let (store, id) = store_with_found_jobs(&legacy_dir);
+    assert!(store.found_jobs_db.is_none(), "database blocked on purpose");
+    let bytes = std::fs::read(legacy_dir.join("autopilots.json")).unwrap();
+    assert!(
+        String::from_utf8_lossy(&bytes).contains("jobs.example"),
+        "without a database, found jobs stay in autopilots.json"
+    );
+    (bytes, id)
+}
+
+#[test]
+fn a_legacy_file_migrates_its_found_jobs_into_the_database() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let (legacy, id) = legacy_file(&temp.path().join("legacy"));
+    let dir = temp.path().join("app");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("autopilots.json"), &legacy).unwrap();
+
+    let store = AutopilotStore::new(&dir);
+    assert_eq!(sorted_urls(&store.get(&id).unwrap()).len(), 2);
+
+    let json = std::fs::read_to_string(dir.join("autopilots.json")).unwrap();
+    assert!(
+        !json.contains("jobs.example"),
+        "stripped from the JSON after migrating"
+    );
+    assert_eq!(
+        std::fs::read(dir.join("autopilots.json.pre-sqlite")).unwrap(),
+        legacy,
+        "the original file is kept once"
+    );
+    let reopened = AutopilotStore::new(&dir);
+    assert_eq!(sorted_urls(&reopened.get(&id).unwrap()).len(), 2);
+}
+
+/// A crash after the rows were committed but before the JSON was rewritten
+/// leaves both copies: the next load must not double them.
+#[test]
+fn an_interrupted_migration_reruns_without_duplicating_jobs() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let (legacy, id) = legacy_file(&temp.path().join("legacy"));
+    let dir = temp.path().join("app");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("autopilots.json"), &legacy).unwrap();
+    drop(AutopilotStore::new(&dir).list()); // migrate once
+    std::fs::write(dir.join("autopilots.json"), &legacy).unwrap(); // "crash": JSON back
+
+    let store = AutopilotStore::new(&dir);
+    assert_eq!(store.get(&id).unwrap().found_jobs.len(), 2);
+    assert_eq!(
+        store.found_jobs_db.as_ref().unwrap().lock().row_count(&id),
+        2
+    );
+}
+
+/// A corrupt `autopilots.json` loads empty; saving that must not wipe the found
+/// jobs, which may be the only surviving copy.
+#[test]
+fn saving_after_a_corrupt_load_keeps_other_autopilots_found_jobs() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
+    let (store, id) = store_with_found_jobs(&dir);
+    drop(store);
+    std::fs::write(dir.join("autopilots.json"), b"\0\0\0\0").unwrap();
+
+    let store = AutopilotStore::new(&dir);
+    assert!(store.list().is_empty());
+    store.create(fj_input("after the corruption"));
+
+    assert_eq!(
+        store.found_jobs_db.as_ref().unwrap().lock().row_count(&id),
+        2
+    );
+}
+
+#[test]
+fn deleting_an_autopilot_deletes_its_found_jobs() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
+    let (store, id) = store_with_found_jobs(&dir);
+    store.remove(&id);
+    assert_eq!(
+        store.found_jobs_db.as_ref().unwrap().lock().row_count(&id),
+        0
+    );
+}
+
+#[test]
+fn a_restore_replaces_the_stored_found_jobs() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
+    let (store, id) = store_with_found_jobs(&dir);
+    let mut restored = store.get(&id).unwrap();
+    restored.found_jobs.truncate(1);
+    store.replace_all(vec![restored]);
+
+    assert_eq!(
+        store.found_jobs_db.as_ref().unwrap().lock().row_count(&id),
+        1
+    );
+    assert_eq!(
+        AutopilotStore::new(&dir).get(&id).unwrap().found_jobs.len(),
+        1
+    );
+
+    // A backup without this autopilot at all: its found jobs must go too.
+    store.replace_all(vec![]);
+    assert_eq!(
+        store.found_jobs_db.as_ref().unwrap().lock().row_count(&id),
+        0
+    );
+}
+
+/// The rows could not be read this session: the empty stand-ins must never be
+/// synced, or every stored found job would be trimmed away (CodeRabbit, #1281).
+#[test]
+fn a_failed_read_never_lets_a_save_delete_the_stored_rows() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
+    let (_store, id) = store_with_found_jobs(&dir);
+
+    let store = AutopilotStore::new(&dir);
+    store.found_jobs_db.as_ref().unwrap().lock().fail_load = true;
+    assert!(store.get(&id).unwrap().found_jobs.is_empty(), "read failed");
+    store.set_status(&id, AutopilotStatus::Paused);
+
+    assert_eq!(
+        store.found_jobs_db.as_ref().unwrap().lock().row_count(&id),
+        2,
+        "rows survive the save"
+    );
+    let reopened = AutopilotStore::new(&dir);
+    assert_eq!(reopened.get(&id).unwrap().found_jobs.len(), 2);
+    assert_eq!(reopened.get(&id).unwrap().status, AutopilotStatus::Paused);
+}
+
+/// Writing the rows failed: the JSON keeps carrying the found jobs, and the next
+/// load moves them into the table again.
+#[test]
+fn a_failed_row_write_keeps_found_jobs_in_the_json() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
+    let store = AutopilotStore::new(&dir);
+    let ap = store.create(fj_input("FJ"));
+    store.found_jobs_db.as_ref().unwrap().lock().fail_sync = true;
+    store.record_run(&ap.id, 2, 0, two_jobs(), vec![], &HashSet::new(), &[]);
+
+    let json = std::fs::read_to_string(dir.join("autopilots.json")).unwrap();
+    assert!(
+        json.contains("jobs.example"),
+        "the JSON carries them instead"
+    );
+
+    let reopened = AutopilotStore::new(&dir);
+    assert_eq!(reopened.get(&ap.id).unwrap().found_jobs.len(), 2);
+    assert_eq!(
+        reopened
+            .found_jobs_db
+            .as_ref()
+            .unwrap()
+            .lock()
+            .row_count(&ap.id),
+        2,
+        "migrated into the table on the next load"
+    );
+}
+
+/// A restore that fails writes nothing: the old rows are all still there
+/// (the delete and the inserts share one transaction).
+#[test]
+fn a_failed_restore_keeps_the_old_rows() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path().to_path_buf();
+    let (store, id) = store_with_found_jobs(&dir);
+
+    store.found_jobs_db.as_ref().unwrap().lock().fail_sync = true;
+    store.replace_found_jobs(&HashMap::new());
+
+    assert_eq!(
+        store.found_jobs_db.as_ref().unwrap().lock().row_count(&id),
+        2
+    );
+}
