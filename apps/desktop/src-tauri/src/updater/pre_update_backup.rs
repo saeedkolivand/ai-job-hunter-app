@@ -17,9 +17,10 @@ use crate::platform::fs::write_atomic;
 const KEEP: usize = 3;
 const PREFIX: &str = "pre-update-";
 
-/// Write `bundle` to `<data_dir>/backups/pre-update-<version>-<date>.json` and
-/// prune older pre-update backups down to [`KEEP`]. Files the user put in
-/// `backups/` themselves are never touched: only `pre-update-*.json` is pruned.
+/// Write `bundle` to `<data_dir>/backups/pre-update/pre-update-<version>-<date>.json`
+/// and prune older pre-update backups down to [`KEEP`]. The `pre-update/` folder
+/// belongs to the updater alone, so pruning can never reach a file the user put
+/// in `backups/`, whatever it is named.
 ///
 /// Compact JSON on purpose: one store alone has been seen at 41 MB, and three
 /// pretty-printed copies of that would cost real disk space.
@@ -29,7 +30,7 @@ pub(crate) fn write_pre_update_backup(
     date: &str,
     bundle: &Value,
 ) -> io::Result<PathBuf> {
-    let dir = data_dir.join("backups");
+    let dir = data_dir.join("backups").join("pre-update");
     fs::create_dir_all(&dir)?;
     // The version comes from our own build metadata, but it lands in a file name:
     // keep it to characters that are safe there.
@@ -75,7 +76,7 @@ mod tests {
     use serde_json::json;
 
     fn backup_names(data_dir: &Path) -> Vec<String> {
-        let mut names: Vec<String> = fs::read_dir(data_dir.join("backups"))
+        let mut names: Vec<String> = fs::read_dir(data_dir.join("backups").join("pre-update"))
             .unwrap()
             .flatten()
             .map(|e| e.file_name().to_string_lossy().into_owned())
@@ -100,11 +101,12 @@ mod tests {
     }
 
     #[test]
-    fn keeps_only_the_newest_three_and_leaves_other_files_alone() {
+    fn keeps_only_the_newest_three_and_never_touches_the_users_files() {
         let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("backups");
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("my-own-export.json"), b"{}").unwrap();
+        let user_dir = tmp.path().join("backups");
+        fs::create_dir_all(&user_dir).unwrap();
+        // Named like a backup on purpose: it still isn't the updater's to prune.
+        fs::write(user_dir.join("pre-update-notes.json"), b"{}").unwrap();
 
         for (i, version) in ["0.150.0", "0.151.0", "0.152.0", "0.153.0"]
             .iter()
@@ -119,12 +121,12 @@ mod tests {
         assert_eq!(
             backup_names(tmp.path()),
             vec![
-                "my-own-export.json",
                 "pre-update-0.151.0-2026-09-01.json",
                 "pre-update-0.152.0-2026-09-02.json",
                 "pre-update-0.153.0-2026-09-03.json",
             ]
         );
+        assert!(user_dir.join("pre-update-notes.json").exists());
     }
 
     #[test]
@@ -132,7 +134,10 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let path =
             write_pre_update_backup(tmp.path(), "../../evil", "2026-09-24", &json!({})).unwrap();
-        assert_eq!(path.parent().unwrap(), tmp.path().join("backups"));
+        assert_eq!(
+            path.parent().unwrap(),
+            tmp.path().join("backups").join("pre-update")
+        );
         assert_eq!(
             path.file_name().unwrap().to_string_lossy(),
             "pre-update-....evil-2026-09-24.json"
