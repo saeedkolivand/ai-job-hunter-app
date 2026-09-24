@@ -12,7 +12,7 @@ Prepare release: **$ARGUMENTS**
    - **Impact sanity** — `codegraph impact <changed-symbol>` for changed public symbols → flag callers not updated in the range.
    - **Over-engineering** — `ponytail:ponytail-review` over the range.
    - **Correctness** — the built-in `/code-review` (`code-review ultra` is a user-triggered option for high-stakes releases).
-3. Spawn the `project-steward` subagent (Task) to verify release readiness:
+3. Spawn the `project-steward` subagent (Agent) to verify release readiness:
    - Conventional commits since last release are well-formed (commitlint) and the implied bump (`feat`→minor, `fix`/`perf`→patch, `BREAKING CHANGE`→minor while 0.x) is correct.
    - Version files are in sync (`scripts/sync-tauri-version.cjs`) — a mismatch is CRITICAL.
    - Changelog/notes accurate; updater manifest (`latest.json`) + signing integrity (defer the security lens to `tauri-security-reviewer`).

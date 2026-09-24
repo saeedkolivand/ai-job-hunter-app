@@ -22,7 +22,7 @@ Authoritative: `docs/DESIGN_SYSTEM.md`, `docs/PATTERNS.md`.
 
 - **Tokens** — `text-brand`/`bg-brand`/`border-brand`/`ring-brand`; CSS vars `var(--color-brand)`. No `[#RRGGBB]` in className.
 - **Motion** — `import { transition } from '@ajh/ui'` (`.fast/.normal/.relaxed/.slow/.spring/.modal/.overlay`); no inline `{ duration, ease }`.
-- **Primitives** — `@ajh/ui` (`Button`, `Input`, `TextArea`, `SelectDropdown`, `ModalShell`, `GlassCard`, `EmptyState`, …). No raw `<button>/<select>/<textarea>` (exception: `<input type="range|file|checkbox|radio|hidden">`).
+- **Primitives** — `@ajh/ui` (`Button`, `Input`, `TextArea`, `Dropdown`, `ModalShell`, `GlassCard`, `EmptyState`, …). No raw `<button>/<select>/<textarea>` (exception: `<input type="range|file|checkbox|radio|hidden">`).
 - **Imports** — import `@ajh/ui` directly, not `@/components/ui/*` (except `UpdateBanner`).
 
 ## i18n (HIGH if user-facing text is unwrapped)
@@ -43,7 +43,7 @@ Import `useTranslation` / `TFunction` from `@ajh/translations`, never `react-i18
 
 - `features/*` own one route — never import across feature dirs.
 - 3+ states → a state machine in `lib/machines/` via `useMachine`.
-- File placement per `CLAUDE.md` §9.
+- File placement per `AGENTS.md` rule 9.
 
 ## External standards & best-practices (verified 2026-06-19)
 
