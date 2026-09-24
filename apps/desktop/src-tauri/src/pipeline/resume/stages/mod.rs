@@ -1,5 +1,5 @@
 //! The quality-depth stages, one module each, plus the pure primitives shared
-//! between them ([`sections`] and [`verbatim`]).
+//! between them ([`sections`]).
 //!
 //! Every stage is a [`Stage<QualityCtx>`](crate::pipeline::Stage) so the run
 //! goes through `Pipeline::run_hooked` — which is what gives the L3 shell its
@@ -15,7 +15,6 @@ mod repair;
 pub mod sections;
 mod strategy;
 mod validate;
-pub mod verbatim;
 
 pub use self::analyze::AnalyzeJob;
 pub use self::cover_letter::CoverLetter;

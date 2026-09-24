@@ -32,7 +32,7 @@ use crate::platform::NoWindow;
 
 use super::research;
 use super::{
-    AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace, TokenParam,
+    AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace, TokenParam, Usage,
 };
 
 mod antigravity;
@@ -149,6 +149,33 @@ pub trait CliAgentBackend: Send + Sync {
     /// Extract the final assistant text from a one-shot invocation's full stdout.
     fn parse_complete(&self, stdout: &str) -> AppResult<String>;
 
+    /// Native constrained-output invocation for this backend, if it can decode
+    /// a JSON Schema at the CLI level: `Some(invocation)` routes
+    /// [`AiProvider::complete_structured`]'s native path; `None` (the default —
+    /// every backend but Claude Code) keeps the shared prompt-discipline
+    /// fallback (`structured::prompt_only`) byte-identical. Backends that do
+    /// opt in must bound the schema's argv length themselves (it rides argv,
+    /// even though it comes from OUR `json!` literals, not user input) and must
+    /// forward `effort` — it reaches this path exactly like the stream/complete
+    /// invocations.
+    fn native_json_schema_invocation(
+        &self,
+        _model: &str,
+        _system: &str,
+        _effort: Option<&str>,
+        _schema: &Value,
+    ) -> Option<CliInvocation> {
+        None
+    }
+
+    /// Parse a native structured invocation's full stdout. DEFAULT:
+    /// [`parse_complete`](Self::parse_complete) — a backend whose native path
+    /// is "the same output, constrained" needs nothing more. Claude Code
+    /// overrides this to read its schema-validated `structured_output` field.
+    fn parse_structured_complete(&self, stdout: &str) -> AppResult<String> {
+        self.parse_complete(stdout)
+    }
+
     /// Resolved binary path: env override, else [`default_binary`](Self::default_binary).
     fn binary(&self) -> String {
         crate::platform::config::env_override(self.env_override())
@@ -219,9 +246,10 @@ impl AiProvider for CliAgentClient {
             // Every CLI coding agent reasons internally regardless of
             // backend — `true` uniformly. This is DELIBERATELY not mirrored
             // by `effort_levels()` below, which is empty for every backend
-            // except Codex (the app has no lever into the others' effort,
-            // even though they still reason) — see `AiProvider::effort_levels`'s
-            // doc comment for the full distinction.
+            // except Codex and Claude Code (the app has no lever into the
+            // others' effort, even though they still reason) — see
+            // `AiProvider::effort_levels`'s doc comment for the full
+            // distinction.
             supports_reasoning: true,
             supports_tools: false,
             supports_json_mode: false,
@@ -232,15 +260,16 @@ impl AiProvider for CliAgentClient {
         }
     }
 
-    /// Only Codex actually reads `effort` (`codex::exec_args`'s
-    /// `-c model_reasoning_effort=…` override) — every other CLI agent's
-    /// `stream_invocation`/`complete_invocation` accepts the `effort`
-    /// parameter but ignores it, so the picker must not appear for them.
+    /// Only Codex (`codex::exec_args`'s `-c model_reasoning_effort=…` override)
+    /// and Claude Code (`claude_code::push_effort`'s `--effort` flag) actually
+    /// read `effort` — every other CLI agent's `stream_invocation`/
+    /// `complete_invocation` accepts the `effort` parameter but ignores it, so
+    /// the picker must not appear for them.
     fn effort_levels(&self, _model: &str) -> Vec<&'static str> {
-        if self.backend.id() == ProviderId::Codex {
-            vec!["low", "medium", "high"]
-        } else {
-            Vec::new()
+        match self.backend.id() {
+            ProviderId::Codex => vec!["low", "medium", "high"],
+            ProviderId::ClaudeCode => claude_code::EFFORT_LEVELS.to_vec(),
+            _ => Vec::new(),
         }
     }
 
@@ -273,6 +302,42 @@ impl AiProvider for CliAgentClient {
         _temperature: Option<f64>,
     ) -> AppResult<String> {
         run_complete(app, self.backend.as_ref(), model, system, user).await
+    }
+
+    async fn complete_structured(
+        &self,
+        app: &AppHandle,
+        req: &AiGenerateRequest,
+        schema_hint: &str,
+        schema: Option<&Value>,
+    ) -> AppResult<(String, Usage)> {
+        // No schema → nothing to constrain the CLI decoding with: the shared
+        // prompt-discipline fallback, byte-identical to the trait default.
+        let Some(schema) = schema else {
+            return super::structured::prompt_only(self, app, req, schema_hint).await;
+        };
+        // The filled example rides in the prompt on the native path too —
+        // exactly like `structured.rs`'s HTTP providers (the CLI constrains
+        // decoding, the prompt still describes the shape).
+        let (system, user) = super::structured::structured_prompt(req, schema_hint);
+        let Some(inv) = self.backend.native_json_schema_invocation(
+            &req.model,
+            &system,
+            req.effort.as_deref(),
+            schema,
+        ) else {
+            // Backend has no native constrained-output invocation (or the
+            // schema exceeded its argv cap) — unchanged fallback.
+            return super::structured::prompt_only(self, app, req, schema_hint).await;
+        };
+        let text =
+            run_structured_complete(app, self.backend.as_ref(), &req.model, &system, &user, inv)
+                .await?;
+        // Same spend contract as every other CLI path: the agent reports no
+        // usage, `Usage::default()` is honest, and the caller
+        // (`pipeline::Completer`) records spend — never `record_usage` here
+        // (see the `(String, Usage)` signature on `prompt_only`).
+        Ok((text, Usage::default()))
     }
 
     async fn research(
@@ -741,12 +806,50 @@ async fn run_complete(
     system: &str,
     user: &str,
 ) -> AppResult<String> {
-    let _ = app; // CLI agents resolve everything from the binary; no managed state needed.
-    let binary = backend.binary();
-    let label = backend.id().as_str();
     // The non-streaming path runs at the agent's default effort (the request
     // carries no effort for `complete`).
     let inv = backend.complete_invocation(model, system, None);
+    run_one_shot(app, backend, model, system, user, inv, |b, stdout| {
+        b.parse_complete(stdout)
+    })
+    .await
+}
+
+/// One-shot STRUCTURED completion — the native half of
+/// [`CliAgentClient::complete_structured`]: the backend's prebuilt
+/// [`CliAgentBackend::native_json_schema_invocation`], parsed with
+/// [`CliAgentBackend::parse_structured_complete`]. Returns plain text — the
+/// caller pairs it with [`Usage::default`], because a CLI agent reports no
+/// usage (same contract as `prompt_only`/`run_complete`).
+async fn run_structured_complete(
+    app: &AppHandle,
+    backend: &dyn CliAgentBackend,
+    model: &str,
+    system: &str,
+    user: &str,
+    inv: CliInvocation,
+) -> AppResult<String> {
+    run_one_shot(app, backend, model, system, user, inv, |b, stdout| {
+        b.parse_structured_complete(stdout)
+    })
+    .await
+}
+
+/// The spawn → stdin → timeout → [`friendly_cli_error`] → parse flow both
+/// one-shot paths share; they differ only in the invocation and in how stdout
+/// is parsed.
+async fn run_one_shot(
+    app: &AppHandle,
+    backend: &dyn CliAgentBackend,
+    model: &str,
+    system: &str,
+    user: &str,
+    inv: CliInvocation,
+    parse: fn(&dyn CliAgentBackend, &str) -> AppResult<String>,
+) -> AppResult<String> {
+    let _ = app; // CLI agents resolve everything from the binary; no managed state needed.
+    let binary = backend.binary();
+    let label = backend.id().as_str();
     let prompt = effective_prompt(backend, system, user);
     let trace = RequestTrace::begin(backend.id(), model, "cli:complete", &binary, false);
 
@@ -786,7 +889,7 @@ async fn run_complete(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let text = backend.parse_complete(&stdout)?;
+    let text = parse(backend, &stdout)?;
     trace.end(output.status.code().map(|c| c as u16), true);
     Ok(text)
 }
@@ -949,6 +1052,20 @@ fn friendly_cli_error(agent: &str, code: Option<i32>, stderr: &str) -> AppError 
             "{agent} is installed but not signed in. Run it once in a terminal to log in."
         ));
     }
+    // An old Codex build that predates the isolation flags (Part 1d) rejects
+    // them via clap: "error: unexpected argument '--ignore-user-config' found".
+    // That is out-of-band CLI drift, not a config problem — say so instead of
+    // dumping the raw clap text. Scoped to codex (`agent` is
+    // `ProviderId::as_str`) so another agent's genuine "unexpected argument"
+    // can't be mislabeled as an update prompt.
+    if agent == "codex" && s.contains("unexpected argument") {
+        return AppError::Provider(
+            "codex CLI is too old for this app's isolation flags (it rejected one as \
+             an \"unexpected argument\"). Update the Codex CLI (npm install -g \
+             @openai/codex) and try again."
+                .to_string(),
+        );
+    }
     let detail: String = stderr.trim().chars().take(300).collect();
     let code_str = code.map(|c| format!(" (exit {c})")).unwrap_or_default();
     if detail.is_empty() {
@@ -1095,17 +1212,27 @@ mod tests {
         assert!(backend_for(ProviderId::Anthropic).is_none());
     }
 
+    /// Codex (3 tiers) and Claude Code (5 tiers) actually read `effort`; every
+    /// other CLI agent accepts the parameter but ignores it, so the picker must
+    /// not appear for them. Claude Code's five tiers are written out by hand on
+    /// purpose (same reasoning as `TIER_ORDER`'s in
+    /// commands/ai_provider/tests.rs): a pin driven off the same
+    /// `claude_code::EFFORT_LEVELS` const it guards would pass no matter how
+    /// the allowlist is reordered or renamed — and
+    /// `every_providers_effort_levels_list_its_lowest_tier_first`
+    /// (commands/ai_provider/tests.rs) separately pins that entry ZERO of each
+    /// list is its lowest tier.
     #[test]
-    fn effort_levels_only_populated_for_codex() {
+    fn effort_levels_only_populated_for_codex_and_claude_code() {
         assert_eq!(
             CliAgentClient::new(backend_for(ProviderId::Codex).unwrap()).effort_levels(""),
             vec!["low", "medium", "high"]
         );
-        for id in [
-            ProviderId::ClaudeCode,
-            ProviderId::GeminiCli,
-            ProviderId::Antigravity,
-        ] {
+        assert_eq!(
+            CliAgentClient::new(backend_for(ProviderId::ClaudeCode).unwrap()).effort_levels(""),
+            vec!["low", "medium", "high", "xhigh", "max"]
+        );
+        for id in [ProviderId::GeminiCli, ProviderId::Antigravity] {
             assert!(
                 CliAgentClient::new(backend_for(id).unwrap())
                     .effort_levels("")
@@ -1164,6 +1291,26 @@ mod tests {
         assert!(
             format!("{err}").contains("no answer content"),
             "a clean exit must keep the empty-answer message, got {err:?}"
+        );
+    }
+
+    /// Real clap v4 shape from an old Codex that doesn't know the Part 1d
+    /// isolation flags: the raw dump must become a readable "update the CLI"
+    /// error, not leak the argument parser text.
+    #[test]
+    fn codex_unexpected_argument_maps_to_an_update_the_cli_error() {
+        let stderr = "error: unexpected argument '--ignore-user-config' found\n\n\
+                      Usage: codex exec [OPTIONS] [PROMPT]...\n\n\
+                      For more information, try '--help'.\n";
+        let err = friendly_cli_error("codex", Some(2), stderr);
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("Update the Codex CLI"),
+            "expected the update instruction, got {msg}"
+        );
+        assert!(
+            !msg.contains("Usage: codex exec"),
+            "the raw clap dump must not leak through: {msg}"
         );
     }
 

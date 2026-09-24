@@ -35,7 +35,7 @@ const TIERS = [undefined, 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as
 /**
  * These five are HARD LITERALS, deliberately: they are Rust-side facts, and the
  * live guard against them drifting is the RUST twin
- * (`timeouts::quality_run_deadline_clears_the_inner_per_call_bounds`), which
+ * (`timeouts::quality_run_deadline_equals_the_inner_per_call_bounds`), which
  * reads `Budget::max_repair_attempts` / `MAX_SECTIONS_PER_ROUND` /
  * `OLLAMA_COMPLETION_BASELINE` from the source. This side pins the same
  * arithmetic so a TS-only edit to the deadline formula cannot pass alone.

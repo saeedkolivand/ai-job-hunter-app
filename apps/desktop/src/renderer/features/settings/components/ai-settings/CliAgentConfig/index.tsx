@@ -30,7 +30,7 @@ interface Props {
  * Config UI for a `cli-agent` provider: a locally-installed headless tool with no
  * API key. Model options come from the provider's live catalogue when the CLI can
  * enumerate one, else its curated aliases (labelled below when that's the case).
- * Agents that support a reasoning effort (Codex) also get an effort dropdown.
+ * Agents whose backend reports effort levels (`AiProvider::effort_levels`) also get an effort dropdown.
  */
 export function CliAgentConfig({
   provider,

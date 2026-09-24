@@ -257,6 +257,57 @@ fn exec_args(model: &str, effort: Option<&str>) -> Vec<String> {
         // this, `codex exec` refuses to run ("Not inside a trusted directory…") or
         // blocks on an approval prompt. Read-only sandbox already bars side effects.
         "--skip-git-repo-check".to_string(),
+        // Isolation: don't load the user's global/project config or AGENTS.md rule
+        // files, don't persist session state, and disable every agentic feature flag
+        // that could pull in extra context or run extra machinery (hooks, plugins,
+        // apps, memories, goals, multi-agent, workspace deps). `project_doc_max_bytes=0`
+        // drops the auto-loaded project doc. Isolation is defense-in-depth: JD text
+        // must not mix with whatever the user's own codex setup injects.
+        //
+        // WHY `--ignore-user-config` specifically: verified that `-c mcp_servers={}`
+        // MERGES with the user's config.toml rather than clearing it, so without this
+        // flag every generation call would start every MCP server in the user's
+        // config.toml (on the owner's machine that includes this app's own binary in
+        // `agent mcp` mode). Known trade-off: a user whose config.toml sets a custom
+        // `model_provider` (Azure, OSS) loses it for app calls — acceptable, because
+        // the app passes `--model` explicitly, so the model choice is unaffected.
+        //
+        // We use the `-c key=value` config-override form for feature flags — NOT
+        // `--disable <flag>`: `--disable` hard-errors on an unknown feature name on
+        // older/newer CLI builds, which would break every call (out-of-band CLI
+        // drift is the exact failure mode `friendly_cli_error` maps to a friendly
+        // "unexpected argument" message, but we'd rather never hit it).
+        //
+        // ponytail: the GLOBAL `$CODEX_HOME/AGENTS.md` memory file is still loaded
+        // even with `--ignore-user-config` + `--ignore-rules` (upstream reads it
+        // through a separate path those flags don't gate). The only fix is a
+        // temporary `CODEX_HOME` with the auth file linked in, which means handling
+        // credentials — out of scope. Upgrade path: a per-install `CODEX_HOME`
+        // scaffold if this ever becomes a real leak.
+        //
+        // We do NOT pass `--bare`: it forces `ANTHROPIC_API_KEY`-style env auth and
+        // breaks the user's ChatGPT subscription login.
+        "--ignore-user-config".to_string(),
+        "--ignore-rules".to_string(),
+        "--ephemeral".to_string(),
+        "-c".to_string(),
+        "features.hooks=false".to_string(),
+        "-c".to_string(),
+        "features.plugins=false".to_string(),
+        "-c".to_string(),
+        "features.remote_plugin=false".to_string(),
+        "-c".to_string(),
+        "features.apps=false".to_string(),
+        "-c".to_string(),
+        "features.memories=false".to_string(),
+        "-c".to_string(),
+        "features.goals=false".to_string(),
+        "-c".to_string(),
+        "features.multi_agent=false".to_string(),
+        "-c".to_string(),
+        "features.workspace_dependencies=false".to_string(),
+        "-c".to_string(),
+        "project_doc_max_bytes=0".to_string(),
     ];
     // `arg_token` upholds the CVE-2024-24576 argv invariant defensively: model/effort
     // are user settings (not scraped), but still ride argv through `cmd.exe` on
@@ -687,11 +738,60 @@ mod tests {
                 "--sandbox",
                 "read-only",
                 "--skip-git-repo-check",
+                "--ignore-user-config",
+                "--ignore-rules",
+                "--ephemeral",
+                "-c",
+                "features.hooks=false",
+                "-c",
+                "features.plugins=false",
+                "-c",
+                "features.remote_plugin=false",
+                "-c",
+                "features.apps=false",
+                "-c",
+                "features.memories=false",
+                "-c",
+                "features.goals=false",
+                "-c",
+                "features.multi_agent=false",
+                "-c",
+                "features.workspace_dependencies=false",
+                "-c",
+                "project_doc_max_bytes=0",
                 "--model",
                 "o4-mini",
             ]
         );
         assert_eq!(inv.prompt, PromptDelivery::Stdin);
+    }
+
+    /// Isolation flags must use the `-c key=value` override form — never `--disable`,
+    /// which hard-errors on an unknown feature name and would break every call on out-
+    /// of-band CLI drift. Also assert the full disable set is present.
+    #[test]
+    fn isolation_flags_use_the_c_form_and_never_disable() {
+        let inv = CodexAgent.stream_invocation("o4-mini", "", None);
+        assert!(!inv.args.iter().any(|a| a == "--disable"));
+        for flag in ["--ignore-user-config", "--ignore-rules", "--ephemeral"] {
+            assert!(inv.args.iter().any(|a| a == flag), "missing {flag}");
+        }
+        for key in [
+            "features.hooks=false",
+            "features.plugins=false",
+            "features.remote_plugin=false",
+            "features.apps=false",
+            "features.memories=false",
+            "features.goals=false",
+            "features.multi_agent=false",
+            "features.workspace_dependencies=false",
+            "project_doc_max_bytes=0",
+        ] {
+            assert!(
+                inv.args.windows(2).any(|w| w[0] == "-c" && w[1] == key),
+                "missing {key}"
+            );
+        }
     }
 
     #[test]

@@ -21,7 +21,6 @@ use super::prompts::{
     HUMANIZE_DOCUMENT_CAP, SIBLING_CONTEXT_CAP,
 };
 use super::stages::sections;
-use super::stages::verbatim::is_verbatim;
 use super::stages::{
     criticals_by_section, exceeds_humanize_cap, humanize_is_worse, humanize_one, is_usable_rewrite,
     research_company_brief, reseed, round_is_worse, run_draft_attempt, seed_company_roster,
@@ -398,35 +397,6 @@ fn job_analysis_never_reaches_match_scoring() {
              stay a statement about the posting's own text"
         );
     }
-}
-
-// ── The verbatim filter ─────────────────────────────────────────────────────
-
-/// The two allowed normalizations, and the four that are not.
-///
-/// Mutation check: delete the `MIN_QUOTE_CHARS` gate and the "a bare word is
-/// not evidence" case fails; delete the whitespace collapse and the wrapped
-/// case fails; make the comparison case-sensitive and the casing case fails.
-#[test]
-fn verbatim_allows_only_whitespace_and_case_normalization() {
-    let source = "Migrated 40 services to Kubernetes,  cutting deploy\ntime from 25 to 4 minutes";
-
-    // Allowed: collapsed whitespace across a hard wrap, and different casing.
-    assert!(is_verbatim(
-        source,
-        "Migrated 40 services to Kubernetes, cutting deploy time from 25 to 4 minutes"
-    ));
-    assert!(is_verbatim(source, "MIGRATED 40 SERVICES TO KUBERNETES"));
-
-    // Not allowed: a changed number, a dropped qualifier, an added claim.
-    assert!(!is_verbatim(source, "Migrated 400 services to Kubernetes"));
-    assert!(!is_verbatim(source, "Migrated services to Kubernetes"));
-    assert!(!is_verbatim(
-        source,
-        "Migrated 40 services to Kubernetes, saving $2M"
-    ));
-    // Not allowed: a bare word that is a substring of anything.
-    assert!(!is_verbatim(source, "Kubernetes"));
 }
 
 // ── Strategy never drops a role ─────────────────────────────────────────────

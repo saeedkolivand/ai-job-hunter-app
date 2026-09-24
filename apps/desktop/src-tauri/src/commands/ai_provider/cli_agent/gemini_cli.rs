@@ -10,7 +10,15 @@
 //! ([`PromptDelivery::Stdin`]): with a piped, non-TTY stdin `gemini` runs
 //! non-interactively and treats the piped text as the prompt — so we pass NO `-p`
 //! and nothing prompt-derived ever reaches argv (or, on Windows, `cmd.exe` — see the
-//! CVE-2024-24576 note on [`PromptDelivery`]). argv holds only the optional model flag.
+//! CVE-2024-24576 note on [`PromptDelivery`]). argv holds only the optional model flag
+//! plus the isolation flags below.
+//!
+//! Isolation: `-e none` (no agentic/execution mode) and
+//! `--allowed-mcp-server-names __ajh_none__` (no MCP server can attach) keep a
+//! prompt-injected JD from driving tool use. KNOWN CEILING: the CLI still reads the
+//! user's global `~/.gemini/GEMINI.md` file, which is merged into every session — we
+//! cannot suppress it from argv (there's no `--skip-global` flag); accepted for now,
+//! see spec "Gemini CLI isolation ceilings".
 
 use async_trait::async_trait;
 
@@ -108,10 +116,19 @@ impl CliAgentBackend for GeminiCliAgent {
     }
 }
 
-/// `gemini [-m <model>]` — the prompt is piped on stdin (non-interactive mode), so
-/// there is no `-p` value flag: argv is only the optional, trusted model selector.
+/// `gemini [-e none] [--allowed-mcp-server-names __ajh_none__] [-m <model>]` — the
+/// prompt is piped on stdin (non-interactive mode), so there is no `-p` value flag:
+/// argv is only the trusted isolation flags plus the optional model selector.
 fn model_args(model: &str) -> Vec<String> {
-    let mut args = Vec::new();
+    let mut args = vec![
+        // Isolation: no agentic/execution mode and no MCP attachments. `__ajh_none__`
+        // is an impossible server name, so the allowlist can never match a real one —
+        // a prompt-injected JD cannot drive tool use (see module docs).
+        "-e".to_string(),
+        "none".to_string(),
+        "--allowed-mcp-server-names".to_string(),
+        "__ajh_none__".to_string(),
+    ];
     // `arg_token` upholds the CVE-2024-24576 argv invariant defensively: `model` is a
     // user setting (not scraped), but still rides argv through `cmd.exe` on Windows,
     // so reject anything that isn't a plain identifier (drops the flag → CLI default).
@@ -168,21 +185,36 @@ mod tests {
     }
 
     #[test]
-    fn argv_has_model_only_no_prompt_flag_prompt_on_stdin() {
+    fn argv_has_isolation_and_model_only_prompt_on_stdin() {
         let inv = GeminiCliAgent.stream_invocation("gemini-2.5-flash", "system text", None);
         // Prompt delivered on stdin — the CVE-2024-24576 fix: no untrusted JD text
         // in argv / `cmd.exe`.
         assert_eq!(inv.prompt, PromptDelivery::Stdin);
-        // The `-p` value flag is gone; argv is exactly the trusted model selector.
+        // The `-p` value flag is gone; argv is the trusted isolation flags plus the
+        // model selector.
         assert!(!inv.args.iter().any(|a| a == "-p"));
-        assert_eq!(inv.args, vec!["-m", "gemini-2.5-flash"]);
+        assert_eq!(
+            inv.args,
+            vec![
+                "-e",
+                "none",
+                "--allowed-mcp-server-names",
+                "__ajh_none__",
+                "-m",
+                "gemini-2.5-flash",
+            ]
+        );
     }
 
     #[test]
-    fn argv_is_empty_when_no_model() {
-        // No model → no flags at all; the entire prompt still goes on stdin.
+    fn argv_is_isolation_only_when_no_model() {
+        // No model → the isolation flags remain, model flag dropped; the entire
+        // prompt still goes on stdin.
         let inv = GeminiCliAgent.stream_invocation("", "", None);
-        assert!(inv.args.is_empty());
+        assert_eq!(
+            inv.args,
+            vec!["-e", "none", "--allowed-mcp-server-names", "__ajh_none__"]
+        );
         assert_eq!(inv.prompt, PromptDelivery::Stdin);
     }
 }
