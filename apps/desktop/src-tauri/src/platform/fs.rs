@@ -10,6 +10,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// file, so one writer can never truncate the temp another is about to rename
 /// into place. The last rename wins with a complete file.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    #[cfg(test)]
+    if FAIL_NEXT_WRITE.with(|f| f.replace(false)) {
+        return Err(io::Error::other("injected write failure (test)"));
+    }
     let tmp = temp_path(path)?;
     let result = (|| {
         let mut file = fs::File::create(&tmp)?;
@@ -30,6 +34,20 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
         let _ = fs::remove_file(&tmp);
     }
     result
+}
+
+#[cfg(test)]
+thread_local! {
+    static FAIL_NEXT_WRITE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Test-only: make the next `write_atomic` on THIS thread fail before touching
+/// the disk, so a caller's failure path can be tested while the real file stays
+/// readable. (Blocking a fixed temp name no longer works: temp names are unique
+/// per call.) Thread-local, so parallel tests can't trip each other.
+#[cfg(test)]
+pub fn fail_next_write_on_this_thread() {
+    FAIL_NEXT_WRITE.with(|f| f.set(true));
 }
 
 /// A sibling temp path unique to this call: `<name>.<pid>.<n>.tmp`, in the same

@@ -100,10 +100,9 @@ mod tests {
     }
 
     /// The regression the review flagged (PR #1209): a persist failure must never leave memory
-    /// MORE permissive than disk. Sabotage the next write (a directory sitting at the `.tmp`
-    /// rename source makes `std::fs::write` fail there, never touching the real, already-`"1"`
-    /// file) and disable — the flip must be refused, with memory left exactly where disk still
-    /// is, not flipped to the requested (unpersisted) value.
+    /// MORE permissive than disk. Make the next write fail (never touching the real,
+    /// already-`"1"` file) and disable — the flip must be refused, with memory left exactly
+    /// where disk still is, not flipped to the requested (unpersisted) value.
     #[test]
     fn a_persist_failure_leaves_memory_matching_what_is_still_on_disk() {
         let dir = tempfile::tempdir().unwrap();
@@ -111,11 +110,7 @@ mod tests {
         assert!(state.set_save_answers_on_submit_enabled(true));
         assert!(state.save_answers_on_submit_enabled());
 
-        let tmp_path = dir
-            .path()
-            .join(SAVE_ANSWERS_ON_SUBMIT_OPTIN_FILE)
-            .with_extension("tmp");
-        std::fs::create_dir(&tmp_path).unwrap();
+        crate::platform::fs::fail_next_write_on_this_thread();
 
         assert!(
             !state.set_save_answers_on_submit_enabled(false),
