@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790285229279,
+  "lastUpdate": 1790286828804,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "ce9000a4d70fe2f9709011c5c601b7d09b408af5",
-          "message": "fix: map local Ollama's stop reason, and stop presuming an OpenAI embedding model (#950)\n\n* fix: map local ollama's stop reason and stop presuming an openai embedding model\n\nTwo follow-ups from #948, both verified against the code first.\n\n**Local Ollama never reported a stop reason.** `parse_ollama_frames` set `usage`\non the final sentinel but skipped `done_reason`, which rides on that same object\n— so `stream::finish` could not tell \"the model burned its whole output budget\nreasoning and never answered\" from \"the provider silently returned nothing\" for\nlocal Ollama. That is the exact ambiguity that made an empty generation\nunexplainable in the macOS report.\n\nThe non-streaming agent path (`parse_ollama_turn`) already read the field, so the\nmapping is extracted to `ollama_done_reason` and shared rather than copied — a\nsecond hand-written copy is the duplicated-heuristic defect this codebase keeps\nre-learning. Callers keep their own precedence on top (a turn still lets Length\noutrank a tool call).\n\n**`text-embedding-3-small` was offered as the default for providers that have\nnever heard of it.** It is an OpenAI model id, and every OpenAI-compatible client\nis built on `OpenAiClient`: Ollama Cloud delegates `default_embedding_model`\nstraight through, and `OpenAiCompatible` covers LM Studio, vLLM and OpenRouter.\nEmbedding with any of those and no explicit model posted an OpenAI model to a\ngateway that does not host it, and the model-not-found came back reading as\n\"embeddings are broken\" rather than \"choose an embedding model\".\n\nGated on `id == OpenAi`, the same way `supports_web_search` already is.\n\nDeliberately NOT flipping `supports_embeddings` to false for those providers,\ndespite that being how I had recorded this: the boolean is provider-level (the\nerror text says so, and Anthropic is the only false), the `/v1/embeddings`\nendpoint may genuinely exist on a given gateway, and an explicit model the user\nknows works must still go through. A per-model allowlist would also break the\nzero-code-change rule for new models and risk false negatives that block working\nsetups. Only the presumed DEFAULT was ever wrong.\n\nAlso split the two embedding errors that were identical strings: \"no default\nmodel for X, choose one\" is fixable by picking a model; \"X does not support\nembeddings\" is not.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: point local ollama at the output cap it can actually raise\n\nThe AI review caught that this branch invalidated my own reasoning from #948.\n\nThere, EMPTY_ANSWER_LENGTH_MESSAGE deliberately dropped its \"raise max output\ntokens in Settings\" pointer, because the only such control (LocalModelLimits)\nrenders solely for the LOCAL ollama provider — and local Ollama was the one\nprovider that could never reach the length branch, having reported no stop\nreason at all. Sending an OpenAI user to a field they cannot see is worse than\nno advice.\n\nMapping done_reason in this same PR is exactly what makes local Ollama reach\nthat branch. So the doc comment became false, and the users who CAN act on the\nadvice are now the only ones not getting it.\n\nSplit the message: local Ollama gets wording naming the real control\n(\"Max output tokens\" under Generation limits), every other provider keeps the\ngeneric one. Pinned with the differential — five other providers must still get\nthe generic message.\n\nAlso dropped the CLI-agent call sites' use of this helper: emit_done's own doc\nsays CLI agents have no finish_reason, so the call could only ever return the\ngeneric constant. Use it directly rather than passing a provider that does not\ninform the result.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-08-06T08:48:50+02:00",
-          "tree_id": "34d520571674a5afa11662c96e0000751ea5d210",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/ce9000a4d70fe2f9709011c5c601b7d09b408af5"
-        },
-        "date": 1785999645826,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2219062,
-            "range": "± 77176",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2747318,
-            "range": "± 76104",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 303881,
-            "range": "± 5808",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 210098,
             "range": "± 3742",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "65dfb7a3c75b9be76fc5724cb948fdc7f67e266e",
+          "message": "perf(autopilot): store found jobs in sqlite instead of rewriting them into autopilots.json (#1281)\n\n* perf(autopilot): store found jobs in sqlite instead of rewriting them into autopilots.json\n\nFound jobs were over 99% of autopilots.json (34 MB of about 6,700 job\ndescriptions on one machine), rewritten on every autopilot change after a\nfull re-read. They now live in autopilot_found_jobs.db, one row per job keyed\nby (autopilot id, position), and autopilots.json holds only the autopilots.\n\n- Autopilot::found_jobs keeps its in-memory and IPC shape: no reader changes.\n- Saves are diffed against a per-row hash kept in memory, so a status change\n  writes no found-job rows.\n- A sync never deletes rows of an autopilot it wasn't given: a corrupt\n  autopilots.json that loads empty can't wipe the found jobs. Rows go only via\n  delete, restore and factory reset.\n- Legacy files migrate on load: rows are committed before the JSON is\n  rewritten without them, so a crash reruns it; the original is kept once as\n  autopilots.json.pre-sqlite. If the database can't open or a write fails,\n  found jobs stay in the JSON as before.\n- write_to_disk moves to autopilot/persist.rs; the new store is registered\n  under R3.\n\nRefs #1277\n\nCo-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>\n\n* fix(autopilot): never let a failed found-jobs read wipe the stored rows\n\nIf reading autopilot_found_jobs.db failed, the autopilots hydrated with empty\nfound jobs and the next save synced those, trimming every stored row: one\nread error became a permanent wipe. A failed read now marks the table\nunreadable for the session, so found jobs ride in autopilots.json instead and\nthe untouched rows hydrate on the next clean load.\n\nRestore now deletes the old rows and writes the new ones in one transaction,\nso a crash can't leave neither. Tests for the failed read, a failed row write\n(JSON keeps the jobs and the next load migrates them) and a failed restore\n(fault injected after the delete, before the commit). The persistence doc no\nlonger lists the found-jobs table as its own DataStore.\n\nRefs #1277\n\nCo-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-09-24T23:43:30+02:00",
+          "tree_id": "5d796b2f3c06b6df6acb84ff786b1195840937fd",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/65dfb7a3c75b9be76fc5724cb948fdc7f67e266e"
+        },
+        "date": 1790286827896,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1422900,
+            "range": "± 96673",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 1685377,
+            "range": "± 69181",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 180796,
+            "range": "± 12816",
             "unit": "ns/iter"
           }
         ]
