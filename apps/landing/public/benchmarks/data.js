@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790252103730,
+  "lastUpdate": 1790262470418,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "49699333+dependabot[bot]@users.noreply.github.com",
-            "name": "dependabot[bot]",
-            "username": "dependabot[bot]"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "9557b1f0e72cc9201b0c2b78162916bfba33abc5",
-          "message": "chore: bump aes from 0.9.1 to 0.9.2 in /apps/desktop/src-tauri (#943)\n\nBumps [aes](https://github.com/RustCrypto/block-ciphers) from 0.9.1 to 0.9.2.\n- [Commits](https://github.com/RustCrypto/block-ciphers/compare/aes-v0.9.1...aes-v0.9.2)\n\n---\nupdated-dependencies:\n- dependency-name: aes\n  dependency-version: 0.9.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-          "timestamp": "2026-08-05T18:58:44+02:00",
-          "tree_id": "c74e3d178ac94857496f3da61cff85fa427d15b9",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/9557b1f0e72cc9201b0c2b78162916bfba33abc5"
-        },
-        "date": 1785950546021,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2154401,
-            "range": "± 54057",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2597384,
-            "range": "± 44559",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 293313,
-            "range": "± 7326",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4199,6 +4157,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 301390,
             "range": "± 2325",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f4a5f35ae087832b0a6d18be6774f649aad2f048",
+          "message": "perf(ai): isolate cli-agent calls from user config, schema-constrain claude code (#1273)\n\n* perf(ai): isolate cli-agent calls from user config, schema-constrain claude code\n\nEvery CLI-agent call loaded the user's own agent setup (settings, hooks,\nplugins, MCP servers) into the app's prompts, which leaked the user's\nconfiguration into generation and slowed startup.\n\n- claude code: --strict-mcp-config --setting-sources= --disable-slash-commands\n  (not --bare, which forces API-key auth); --effort from a fixed allowlist\n  with an effort picker; structured calls pass --json-schema and read the\n  validated structured_output, falling back to prompt-only above an argv cap\n- codex: --ignore-user-config --ignore-rules --ephemeral, feature disables\n  via -c features.<x>=false (--disable hard-errors on unknown names) and\n  project_doc_max_bytes=0; an old codex rejecting a flag gets an update hint\n- gemini cli: -e none plus a sentinel mcp allow-list; antigravity has no\n  isolation flags and is unchanged\n- the two one-shot runners share one spawn/parse core\n- cleanup after #1270: drop the unused verbatim module, fix stale stage\n  names in validate/budget docs, the misnamed lock test in ai-timeouts, and\n  docs still describing model-ranked evidence\n\nKnown ceiling: the global ~/.codex/AGENTS.md and ~/.gemini/GEMINI.md still\nload; only a temporary agent home with linked credentials would stop that.\n\nCloses #1271\n\nCo-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>\n\n* refactor(ai): move cli-agent tests into their own file under the module loc cap\n\nThe isolation work pushed cli_agent/mod.rs to 1509 lines, over the R8 hard\ncap of 1400. The test module moves to cli_agent/tests.rs unchanged.\n\nCo-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-09-24T16:47:45+02:00",
+          "tree_id": "a4fc989e1f830ccf36a614a49db4b78ea09e6e1e",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/f4a5f35ae087832b0a6d18be6774f649aad2f048"
+        },
+        "date": 1790262469393,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2010385,
+            "range": "± 22983",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2387620,
+            "range": "± 43953",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 211522,
+            "range": "± 892",
             "unit": "ns/iter"
           }
         ]
