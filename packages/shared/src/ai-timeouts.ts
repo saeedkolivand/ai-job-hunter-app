@@ -97,7 +97,7 @@ export function ollamaCompletionDeadlineSecs(effort?: string): number {
  *
  * Named so {@link qualityRunDeadlineSecs}'s formula reads as the derivation it
  * is rather than a bare `4`, and so the Rust-side lock test
- * (`quality_run_deadline_clears_the_inner_per_call_bounds`) has one shared
+ * (`quality_run_deadline_equals_the_inner_per_call_bounds`) has one shared
  * name to read instead of re-deriving `2 × 2` from a comment.
  */
 export const QUALITY_RUN_JSON_STAGE_CALLS = 4;

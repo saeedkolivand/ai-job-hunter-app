@@ -686,7 +686,7 @@ pub trait AiProvider: Send + Sync {
     /// `true` uniformly across every backend, see
     /// `cli_agent::CliAgentClient::capabilities`), while `effort_levels`
     /// says whether THIS APP can steer that effort via a request parameter
-    /// — a CLI agent's `effort` field is honored only by Codex
+    /// — a CLI agent's `effort` field is honored by Codex and Claude Code
     /// (`cli_agent::CliAgentClient::effort_levels`), so every other backend
     /// has `supports_reasoning: true` but `effort_levels()` empty. A
     /// property of the provider's wire API otherwise: for a provider whose

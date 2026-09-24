@@ -155,6 +155,14 @@ impl CliAgentBackend for AntigravityAgent {
 /// with no sandbox is the HIGH the reviewer flagged. No model flag either (see the
 /// module docs). Kept as a named helper so both invocations stay in lockstep and the
 /// "no `--yes`, no `-p`" invariant has one place to assert against.
+///
+/// Isolation: there are NO isolation flags in `agy` 1.0.16 (verified against the
+/// published CLI reference — no equivalent of codex's `--ignore-user-config` /
+/// `--ephemeral` or gemini's `-e none` exists), so the arg-free invocation IS the
+/// isolation: no config auto-load, no MCP attach, no session persistence, and the
+/// missing `--yes` keeps every tool action unapproved. Re-check the flag surface
+/// whenever `agy` ships a new minor — this module and its tests should mirror
+/// `codex`/`gemini` the moment a real isolation flag exists.
 fn headless_args() -> Vec<String> {
     Vec::new()
 }

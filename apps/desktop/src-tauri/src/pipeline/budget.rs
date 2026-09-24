@@ -183,11 +183,14 @@ impl Budget {
 // deleted along with `agent/` (PR-5 step 2) — see git history for the
 // prep/improve step-and-tool-call arithmetic if it is ever needed again.
 
-/// The résumé pipeline's fixed non-section stages: plan, header, assemble,
-/// validate. Named so the `max_steps` relation below asserts the arithmetic
-/// [`Budget::RESUME_QUALITY`]'s doc actually states (12 + 4 = 16) rather than
-/// merely "more than the section count" — which 13 would have satisfied,
-/// leaving a run to die at [`StoppedReason::MaxSteps`] three stages from the end.
+/// The non-section stages `max_steps` makes room for on top of the section
+/// count — a COUNT only, deliberately never a stage-name list: the names live
+/// in [`pipeline::resume::QUALITY_STAGES`](crate::pipeline::resume::QUALITY_STAGES),
+/// and repeating them here is exactly the drift that bit the old "plan,
+/// header, assemble, validate" enumeration (all deleted). `max_steps` itself
+/// is UNENFORCED (see the field doc on [`Budget`]) — this relation is the
+/// compile-time guard that the documented 20-step ceiling at least fits one
+/// step per section plus these framing stages (12 + 4 = 16).
 const RESUME_FRAMING_STAGES: usize = 4;
 
 const _: () = assert!(

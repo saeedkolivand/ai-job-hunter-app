@@ -8,8 +8,7 @@
 //!
 //! 1. **The quote is résumé text by construction** — it is one bullet text copied
 //!    out of `documents::evidence::extract_evidence`, never model prose, so
-//!    there is nothing to blank afterwards (`super::verbatim` stays for any
-//!    stage that still needs to prove a quote came from the source).
+//!    there is nothing to blank afterwards.
 //! 2. **The status is kernel-decided** against the whole source résumé, as
 //!    before, so the pipeline's coverage claim can never disagree with the
 //!    match percentage the user already sees on the Jobs page.

@@ -87,10 +87,14 @@ impl<'a> Stage<QualityCtx<'a>> for Validate {
         "validate"
     }
 
-    /// Deterministic — the module title's "ZERO provider calls", as something
-    /// the run can act on. A document nothing checked is a document nothing may
-    /// present as reviewed, so this has to survive the same deadline `assemble`
-    /// does.
+    /// Deterministic — this stage's "ZERO provider calls" contract, as something
+    /// the run can act on. Against the default-true
+    /// [`Stage::costs_a_provider_call`] safety (the safe direction to be wrong
+    /// is refusing to run), a FREE stage still runs after the boundary deadline
+    /// has passed — and that is what conserves the prior paid stages' work
+    /// instead of discarding it, because `validate` is the stage that turns
+    /// their output into a usable document (see the trait doc for the full
+    /// rationale).
     fn costs_a_provider_call(&self) -> bool {
         false
     }

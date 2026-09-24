@@ -32,7 +32,7 @@ use crate::platform::NoWindow;
 
 use super::research;
 use super::{
-    AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace, TokenParam,
+    AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, RequestTrace, TokenParam, Usage,
 };
 
 mod antigravity;
@@ -149,6 +149,33 @@ pub trait CliAgentBackend: Send + Sync {
     /// Extract the final assistant text from a one-shot invocation's full stdout.
     fn parse_complete(&self, stdout: &str) -> AppResult<String>;
 
+    /// Native constrained-output invocation for this backend, if it can decode
+    /// a JSON Schema at the CLI level: `Some(invocation)` routes
+    /// [`AiProvider::complete_structured`]'s native path; `None` (the default —
+    /// every backend but Claude Code) keeps the shared prompt-discipline
+    /// fallback (`structured::prompt_only`) byte-identical. Backends that do
+    /// opt in must bound the schema's argv length themselves (it rides argv,
+    /// even though it comes from OUR `json!` literals, not user input) and must
+    /// forward `effort` — it reaches this path exactly like the stream/complete
+    /// invocations.
+    fn native_json_schema_invocation(
+        &self,
+        _model: &str,
+        _system: &str,
+        _effort: Option<&str>,
+        _schema: &Value,
+    ) -> Option<CliInvocation> {
+        None
+    }
+
+    /// Parse a native structured invocation's full stdout. DEFAULT:
+    /// [`parse_complete`](Self::parse_complete) — a backend whose native path
+    /// is "the same output, constrained" needs nothing more. Claude Code
+    /// overrides this to read its schema-validated `structured_output` field.
+    fn parse_structured_complete(&self, stdout: &str) -> AppResult<String> {
+        self.parse_complete(stdout)
+    }
+
     /// Resolved binary path: env override, else [`default_binary`](Self::default_binary).
     fn binary(&self) -> String {
         crate::platform::config::env_override(self.env_override())
@@ -219,9 +246,10 @@ impl AiProvider for CliAgentClient {
             // Every CLI coding agent reasons internally regardless of
             // backend — `true` uniformly. This is DELIBERATELY not mirrored
             // by `effort_levels()` below, which is empty for every backend
-            // except Codex (the app has no lever into the others' effort,
-            // even though they still reason) — see `AiProvider::effort_levels`'s
-            // doc comment for the full distinction.
+            // except Codex and Claude Code (the app has no lever into the
+            // others' effort, even though they still reason) — see
+            // `AiProvider::effort_levels`'s doc comment for the full
+            // distinction.
             supports_reasoning: true,
             supports_tools: false,
             supports_json_mode: false,
@@ -232,15 +260,16 @@ impl AiProvider for CliAgentClient {
         }
     }
 
-    /// Only Codex actually reads `effort` (`codex::exec_args`'s
-    /// `-c model_reasoning_effort=…` override) — every other CLI agent's
-    /// `stream_invocation`/`complete_invocation` accepts the `effort`
-    /// parameter but ignores it, so the picker must not appear for them.
+    /// Only Codex (`codex::exec_args`'s `-c model_reasoning_effort=…` override)
+    /// and Claude Code (`claude_code::push_effort`'s `--effort` flag) actually
+    /// read `effort` — every other CLI agent's `stream_invocation`/
+    /// `complete_invocation` accepts the `effort` parameter but ignores it, so
+    /// the picker must not appear for them.
     fn effort_levels(&self, _model: &str) -> Vec<&'static str> {
-        if self.backend.id() == ProviderId::Codex {
-            vec!["low", "medium", "high"]
-        } else {
-            Vec::new()
+        match self.backend.id() {
+            ProviderId::Codex => vec!["low", "medium", "high"],
+            ProviderId::ClaudeCode => claude_code::EFFORT_LEVELS.to_vec(),
+            _ => Vec::new(),
         }
     }
 
@@ -273,6 +302,42 @@ impl AiProvider for CliAgentClient {
         _temperature: Option<f64>,
     ) -> AppResult<String> {
         run_complete(app, self.backend.as_ref(), model, system, user).await
+    }
+
+    async fn complete_structured(
+        &self,
+        app: &AppHandle,
+        req: &AiGenerateRequest,
+        schema_hint: &str,
+        schema: Option<&Value>,
+    ) -> AppResult<(String, Usage)> {
+        // No schema → nothing to constrain the CLI decoding with: the shared
+        // prompt-discipline fallback, byte-identical to the trait default.
+        let Some(schema) = schema else {
+            return super::structured::prompt_only(self, app, req, schema_hint).await;
+        };
+        // The filled example rides in the prompt on the native path too —
+        // exactly like `structured.rs`'s HTTP providers (the CLI constrains
+        // decoding, the prompt still describes the shape).
+        let (system, user) = super::structured::structured_prompt(req, schema_hint);
+        let Some(inv) = self.backend.native_json_schema_invocation(
+            &req.model,
+            &system,
+            req.effort.as_deref(),
+            schema,
+        ) else {
+            // Backend has no native constrained-output invocation (or the
+            // schema exceeded its argv cap) — unchanged fallback.
+            return super::structured::prompt_only(self, app, req, schema_hint).await;
+        };
+        let text =
+            run_structured_complete(app, self.backend.as_ref(), &req.model, &system, &user, inv)
+                .await?;
+        // Same spend contract as every other CLI path: the agent reports no
+        // usage, `Usage::default()` is honest, and the caller
+        // (`pipeline::Completer`) records spend — never `record_usage` here
+        // (see the `(String, Usage)` signature on `prompt_only`).
+        Ok((text, Usage::default()))
     }
 
     async fn research(
@@ -741,12 +806,50 @@ async fn run_complete(
     system: &str,
     user: &str,
 ) -> AppResult<String> {
-    let _ = app; // CLI agents resolve everything from the binary; no managed state needed.
-    let binary = backend.binary();
-    let label = backend.id().as_str();
     // The non-streaming path runs at the agent's default effort (the request
     // carries no effort for `complete`).
     let inv = backend.complete_invocation(model, system, None);
+    run_one_shot(app, backend, model, system, user, inv, |b, stdout| {
+        b.parse_complete(stdout)
+    })
+    .await
+}
+
+/// One-shot STRUCTURED completion — the native half of
+/// [`CliAgentClient::complete_structured`]: the backend's prebuilt
+/// [`CliAgentBackend::native_json_schema_invocation`], parsed with
+/// [`CliAgentBackend::parse_structured_complete`]. Returns plain text — the
+/// caller pairs it with [`Usage::default`], because a CLI agent reports no
+/// usage (same contract as `prompt_only`/`run_complete`).
+async fn run_structured_complete(
+    app: &AppHandle,
+    backend: &dyn CliAgentBackend,
+    model: &str,
+    system: &str,
+    user: &str,
+    inv: CliInvocation,
+) -> AppResult<String> {
+    run_one_shot(app, backend, model, system, user, inv, |b, stdout| {
+        b.parse_structured_complete(stdout)
+    })
+    .await
+}
+
+/// The spawn → stdin → timeout → [`friendly_cli_error`] → parse flow both
+/// one-shot paths share; they differ only in the invocation and in how stdout
+/// is parsed.
+async fn run_one_shot(
+    app: &AppHandle,
+    backend: &dyn CliAgentBackend,
+    model: &str,
+    system: &str,
+    user: &str,
+    inv: CliInvocation,
+    parse: fn(&dyn CliAgentBackend, &str) -> AppResult<String>,
+) -> AppResult<String> {
+    let _ = app; // CLI agents resolve everything from the binary; no managed state needed.
+    let binary = backend.binary();
+    let label = backend.id().as_str();
     let prompt = effective_prompt(backend, system, user);
     let trace = RequestTrace::begin(backend.id(), model, "cli:complete", &binary, false);
 
@@ -786,7 +889,7 @@ async fn run_complete(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let text = backend.parse_complete(&stdout)?;
+    let text = parse(backend, &stdout)?;
     trace.end(output.status.code().map(|c| c as u16), true);
     Ok(text)
 }
@@ -949,6 +1052,20 @@ fn friendly_cli_error(agent: &str, code: Option<i32>, stderr: &str) -> AppError 
             "{agent} is installed but not signed in. Run it once in a terminal to log in."
         ));
     }
+    // An old Codex build that predates the isolation flags (Part 1d) rejects
+    // them via clap: "error: unexpected argument '--ignore-user-config' found".
+    // That is out-of-band CLI drift, not a config problem — say so instead of
+    // dumping the raw clap text. Scoped to codex (`agent` is
+    // `ProviderId::as_str`) so another agent's genuine "unexpected argument"
+    // can't be mislabeled as an update prompt.
+    if agent == "codex" && s.contains("unexpected argument") {
+        return AppError::Provider(
+            "codex CLI is too old for this app's isolation flags (it rejected one as \
+             an \"unexpected argument\"). Update the Codex CLI (npm install -g \
+             @openai/codex) and try again."
+                .to_string(),
+        );
+    }
     let detail: String = stderr.trim().chars().take(300).collect();
     let code_str = code.map(|c| format!(" (exit {c})")).unwrap_or_default();
     if detail.is_empty() {
@@ -1070,293 +1187,4 @@ fn is_cli_stdout_noise(line: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn registry_includes_all_cli_agents() {
-        for id in [
-            ProviderId::ClaudeCode,
-            ProviderId::Codex,
-            ProviderId::GeminiCli,
-            ProviderId::Antigravity,
-        ] {
-            assert!(
-                backend_for(id).is_some(),
-                "{} should be registered",
-                id.as_str()
-            );
-        }
-        assert!(all().iter().all(|b| b.id().is_cli_agent()));
-    }
-
-    #[test]
-    fn non_cli_provider_has_no_backend() {
-        assert!(backend_for(ProviderId::Anthropic).is_none());
-    }
-
-    #[test]
-    fn effort_levels_only_populated_for_codex() {
-        assert_eq!(
-            CliAgentClient::new(backend_for(ProviderId::Codex).unwrap()).effort_levels(""),
-            vec!["low", "medium", "high"]
-        );
-        for id in [
-            ProviderId::ClaudeCode,
-            ProviderId::GeminiCli,
-            ProviderId::Antigravity,
-        ] {
-            assert!(
-                CliAgentClient::new(backend_for(id).unwrap())
-                    .effort_levels("")
-                    .is_empty(),
-                "{} must not offer an effort picker",
-                id.as_str()
-            );
-        }
-    }
-
-    /// Regression: an agent that emits `Done` (or a whitespace-only delta) and
-    /// THEN exits non-zero used to report the generic empty-answer message and
-    /// discard the stderr explaining the real cause. That path skips
-    /// `run_stream`'s earlier `!emitted_done && !success` guard entirely.
-    #[test]
-    fn a_nonzero_exit_after_done_prefers_the_stderr_diagnosis() {
-        let empty = AppError::Provider(super::super::stream::EMPTY_ANSWER_MESSAGE.to_string());
-        let err = terminal_error(
-            empty,
-            false,
-            "codex",
-            Some(1),
-            "Error: not logged in. Run `codex login`.",
-        );
-        // `friendly_cli_error` recognises the auth shape and upgrades it to the
-        // actionable Config error — the whole point of preferring stderr.
-        assert!(
-            matches!(err, AppError::Config(ref m) if m.contains("not signed in")),
-            "expected the sign-in diagnosis, got {err:?}"
-        );
-    }
-
-    /// Even with unrecognised stderr, a non-zero exit must surface the exit code
-    /// rather than claim the model simply returned nothing.
-    #[test]
-    fn a_nonzero_exit_with_opaque_stderr_still_beats_the_empty_answer_message() {
-        let empty = AppError::Provider(super::super::stream::EMPTY_ANSWER_MESSAGE.to_string());
-        let err = terminal_error(empty, false, "codex", Some(3), "segfault at 0x0");
-        let msg = format!("{err}");
-        assert!(
-            msg.contains("segfault") || msg.contains("exit 3"),
-            "got {msg}"
-        );
-        assert!(
-            !msg.contains("no answer content"),
-            "the generic empty-answer message must not win over a real failure: {msg}"
-        );
-    }
-
-    /// The differential: a CLEAN exit that produced nothing has no stderr
-    /// diagnosis to prefer, so the empty-answer message must survive untouched.
-    #[test]
-    fn a_clean_exit_keeps_the_empty_answer_message() {
-        let empty = AppError::Provider(super::super::stream::EMPTY_ANSWER_MESSAGE.to_string());
-        let err = terminal_error(empty, true, "codex", Some(0), "some harmless warning");
-        assert!(
-            format!("{err}").contains("no answer content"),
-            "a clean exit must keep the empty-answer message, got {err:?}"
-        );
-    }
-
-    #[test]
-    fn stdout_noise_filter_drops_only_operational_lines() {
-        // Known operational noise is dropped…
-        assert!(is_cli_stdout_noise("Loaded cached credentials."));
-        assert!(is_cli_stdout_noise("  Data collection is disabled.  "));
-        assert!(is_cli_stdout_noise(
-            "[dotenv@17.0.0] injecting env (2) from .env"
-        ));
-        assert!(is_cli_stdout_noise("(node:12345) Warning: something"));
-        // …while real answer text (even mentioning credentials) is kept, and blank
-        // lines survive as paragraph breaks.
-        assert!(!is_cli_stdout_noise("Dear Hiring Manager,"));
-        assert!(!is_cli_stdout_noise(
-            "I loaded cached credentials into the pipeline as described."
-        ));
-        assert!(!is_cli_stdout_noise(""));
-    }
-
-    #[test]
-    fn arg_token_accepts_ids_and_rejects_shell_metacharacters() {
-        // Real model ids / effort levels pass unchanged (trimmed).
-        assert_eq!(arg_token("gpt-5-codex"), Some("gpt-5-codex"));
-        assert_eq!(arg_token("gemini-2.5-pro"), Some("gemini-2.5-pro"));
-        assert_eq!(arg_token("o4-mini"), Some("o4-mini"));
-        assert_eq!(arg_token("high"), Some("high"));
-        assert_eq!(arg_token("  gemini-2.5-flash  "), Some("gemini-2.5-flash"));
-        // Shell metacharacters / whitespace-splitting / empties are rejected, so the
-        // flag is omitted rather than smuggling text through `cmd.exe` on Windows
-        // (the CVE-2024-24576 argv invariant, defended in depth).
-        for bad in [
-            "", "   ", "a b", "m&calc", "a|b", "a>b", "a<b", "a^b", "%PATH%", "a\"b", "a(b)",
-            "a\r\nb", "$(x)", "`x`", "a;b", "a/b",
-        ] {
-            assert_eq!(arg_token(bad), None, "{bad:?} must be rejected");
-        }
-    }
-
-    #[tokio::test]
-    async fn cancel_poll_breaks_a_stalled_line_read() {
-        use std::io;
-        use std::sync::atomic::{AtomicBool, Ordering};
-        use std::sync::Arc;
-
-        // Models `run_stream`'s read loop: the line read stalls forever while the
-        // cancel flag flips. The `biased` select must reach the poll branch and
-        // yield `ReadOutcome::Cancelled` instead of hanging on the read.
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let flag = cancelled.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-            flag.store(true, Ordering::SeqCst);
-        });
-
-        let outcome = async {
-            loop {
-                tokio::select! {
-                    biased;
-                    // A stalled stream: the next line never arrives.
-                    next = std::future::pending::<io::Result<Option<String>>>() => {
-                        break match next {
-                            Ok(Some(l)) => ReadOutcome::Line(l),
-                            Ok(None) => ReadOutcome::Eof,
-                            Err(e) => ReadOutcome::Err(e),
-                        };
-                    }
-                    _ = tokio::time::sleep(CANCEL_POLL) => {
-                        if cancelled.load(Ordering::SeqCst) {
-                            break ReadOutcome::Cancelled;
-                        }
-                    }
-                }
-            }
-        }
-        .await;
-
-        // Cancel observed within a bounded number of polls — no hang, and it is a
-        // *cancel*, distinct from a natural EOF.
-        assert!(matches!(outcome, ReadOutcome::Cancelled));
-    }
-
-    #[tokio::test]
-    async fn eof_without_cancel_is_clean_completion_not_a_cancel() {
-        use std::io;
-        use std::sync::atomic::{AtomicBool, Ordering};
-        use std::sync::Arc;
-
-        // A natural EOF that coincides with *no* cancellation must resolve to
-        // `Eof` (clean break), never `Cancelled`. The biased line read wins over
-        // the poll, so even if a cancel were racing the EOF still takes priority —
-        // here cancel never fires, so the only correct outcome is `Eof`.
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let flag = cancelled.clone();
-
-        let outcome = async {
-            loop {
-                tokio::select! {
-                    biased;
-                    // Stream end: the read is immediately ready with `Ok(None)`.
-                    next = async { io::Result::Ok(None::<String>) } => {
-                        break match next {
-                            Ok(Some(l)) => ReadOutcome::Line(l),
-                            Ok(None) => ReadOutcome::Eof,
-                            Err(e) => ReadOutcome::Err(e),
-                        };
-                    }
-                    _ = tokio::time::sleep(CANCEL_POLL) => {
-                        if flag.load(Ordering::SeqCst) {
-                            break ReadOutcome::Cancelled;
-                        }
-                    }
-                }
-            }
-        }
-        .await;
-
-        // A real EOF is never misreported as a cancellation.
-        assert!(matches!(outcome, ReadOutcome::Eof));
-    }
-
-    #[test]
-    fn resolve_models_prefers_live_discovery_over_the_curated_fallback() {
-        let live = vec![json!({ "name": "gpt-6-astra", "displayName": "GPT-6 Astra" })];
-        let out = resolve_models(Some(live.clone()), &["gpt-5-codex", "o4-mini"]);
-        assert_eq!(out, live);
-    }
-
-    #[test]
-    fn resolve_models_falls_back_and_labels_the_source_when_discovery_is_none() {
-        let out = resolve_models(None, &["gpt-5-codex", "o4-mini"]);
-        assert_eq!(
-            out,
-            vec![
-                json!({ "name": "gpt-5-codex", "source": "fallback" }),
-                json!({ "name": "o4-mini", "source": "fallback" }),
-            ]
-        );
-    }
-
-    /// Discovery running and finding nothing usable is not "the CLI has zero
-    /// models" — it's the same "no live source available" case as `None`.
-    #[test]
-    fn resolve_models_treats_an_empty_discovery_result_as_no_discovery() {
-        let out = resolve_models(Some(Vec::new()), &["gpt-5-codex"]);
-        assert_eq!(
-            out,
-            vec![json!({ "name": "gpt-5-codex", "source": "fallback" })]
-        );
-    }
-
-    /// PR #1187 review: `ProviderModelInfo.source` in the TS contract
-    /// (`packages/shared/src/ipc/contracts/ai.ts`) is `?: 'fallback'` — present
-    /// with that exact value on a curated entry, ABSENT (not `null`) on a live
-    /// one. `.get("source")` pins that field-presence contract directly, rather
-    /// than relying on whole-value equality alone.
-    #[test]
-    fn fallback_entries_carry_source_and_live_entries_omit_the_key_entirely() {
-        let fallback_out = resolve_models(None, &["gpt-5-codex"]);
-        assert_eq!(
-            fallback_out[0].get("source").and_then(Value::as_str),
-            Some("fallback")
-        );
-
-        let live = vec![json!({ "name": "gpt-6-astra" })];
-        let live_out = resolve_models(Some(live), &["gpt-5-codex"]);
-        assert!(live_out[0].get("source").is_none());
-    }
-
-    #[tokio::test]
-    async fn detect_missing_binary_is_false() {
-        let (ok, version) = detect("ajh-definitely-not-a-real-binary-x9z").await;
-        assert!(!ok);
-        assert!(version.is_none());
-    }
-
-    #[tokio::test]
-    async fn detect_cached_serves_cached_result_within_ttl() {
-        let bin = "ajh-cache-probe-binary-not-real-q7w";
-        // First call probes (binary missing) and caches the negative result.
-        assert_eq!(detect_cached(bin).await, (false, None));
-        // Poison the cache with a value a real probe could never produce, then
-        // confirm the next call returns it — proving it read the cache, not the
-        // binary (i.e. no re-spawn within the TTL).
-        detect_cache().lock().insert(
-            bin.to_string(),
-            Detected {
-                ok: true,
-                version: Some("9.9.9".into()),
-                at: Instant::now(),
-            },
-        );
-        assert_eq!(detect_cached(bin).await, (true, Some("9.9.9".to_string())));
-    }
-}
+mod tests;
