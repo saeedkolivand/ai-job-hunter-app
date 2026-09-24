@@ -27,6 +27,7 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use crate::db::now_ms;
+use crate::platform::fs::write_atomic;
 
 /// Maximum notifications retained. Newest-first; pushing past the cap drops the
 /// oldest. Enforced on `push` **and** defensively on load (in case the on-disk
@@ -221,7 +222,7 @@ impl NotificationStore {
         // running session stays consistent even if the disk write failed.
         match serde_json::to_string_pretty(&notifications) {
             Ok(json) => {
-                if let Err(e) = std::fs::write(&self.data_file, &json) {
+                if let Err(e) = write_atomic(&self.data_file, json.as_bytes()) {
                     log::warn!(
                         "failed to persist notifications to disk: {}",
                         crate::observability::sanitize_reason(&e.to_string())

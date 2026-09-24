@@ -16,6 +16,7 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 
 use super::BridgeState;
+use crate::platform::fs::write_atomic;
 
 /// File under the app data dir holding the `saveAnswersOnSubmit` opt-in flag (`"1"` = on,
 /// anything else / absent = off), persisted beside `AUTOTRACK_OPTIN_FILE`. Default OFF: an
@@ -68,27 +69,16 @@ pub(super) fn load_save_answers_on_submit_optin(data_dir: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Write-then-rename (mirrors `postings::PostingStore::save`): the target file is only ever
-/// REPLACED, never truncated in place, so a write that fails partway (disk full, a crash) leaves
-/// the previous persisted value intact rather than a corrupt or empty one — required for
-/// [`BridgeState::set_save_answers_on_submit_enabled`]'s persist-before-publish order to actually
-/// mean something (an `Ok` here must be trustworthy before memory ever moves).
+/// Atomic write using the shared helper: writes to a sibling `.tmp` file,
+/// syncs it, then renames — so a crash or kill at any point leaves either the
+/// old file or the new one, never a truncated or zero-filled one.
 pub(super) fn persist_save_answers_on_submit_optin(
     data_dir: &Path,
     enabled: bool,
 ) -> std::io::Result<()> {
     std::fs::create_dir_all(data_dir)?;
     let path = data_dir.join(SAVE_ANSWERS_ON_SUBMIT_OPTIN_FILE);
-    let tmp = path.with_extension("tmp");
-    if let Err(e) = std::fs::write(&tmp, if enabled { "1" } else { "0" }) {
-        std::fs::remove_file(&tmp).ok();
-        return Err(e);
-    }
-    if let Err(e) = std::fs::rename(&tmp, &path) {
-        std::fs::remove_file(&tmp).ok();
-        return Err(e);
-    }
-    Ok(())
+    write_atomic(&path, if enabled { b"1" } else { b"0" })
 }
 
 #[cfg(test)]

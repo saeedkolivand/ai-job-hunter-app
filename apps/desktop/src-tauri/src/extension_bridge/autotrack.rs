@@ -14,6 +14,7 @@ use std::sync::atomic::Ordering;
 use serde_json::json;
 
 use super::{msg, BridgeState};
+use crate::platform::fs::write_atomic;
 
 /// File under the app data dir holding the auto-track opt-in flag (`"1"` = on,
 /// anything else / absent = off), persisted beside `AUTOFILL_OPTIN_FILE`.
@@ -64,9 +65,9 @@ pub(super) fn load_autotrack_optin(data_dir: &Path) -> bool {
 
 pub(super) fn persist_autotrack_optin(data_dir: &Path, enabled: bool) -> std::io::Result<()> {
     std::fs::create_dir_all(data_dir)?;
-    std::fs::write(
-        data_dir.join(AUTOTRACK_OPTIN_FILE),
-        if enabled { "1" } else { "0" },
+    write_atomic(
+        &data_dir.join(AUTOTRACK_OPTIN_FILE),
+        if enabled { b"1" } else { b"0" },
     )
 }
 

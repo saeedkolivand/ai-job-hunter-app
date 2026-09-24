@@ -122,6 +122,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::support::redact_lines;
 use crate::observability::sanitize_reason;
+use crate::platform::fs::write_atomic;
 
 mod transport;
 
@@ -244,7 +245,7 @@ fn save_to(data_dir: &Path, settings: Settings) {
         std::fs::create_dir_all(data_dir)?;
         let json = serde_json::to_string_pretty(&settings)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        std::fs::write(data_dir.join(FILE_NAME), json)
+        write_atomic(&data_dir.join(FILE_NAME), json.as_bytes())
     };
     if let Err(e) = write() {
         log::warn!(

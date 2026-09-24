@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 
 use crate::commands::ai_provider::EmbeddingVector;
 use crate::observability::sanitize_reason;
+use crate::platform::fs::write_atomic;
 
 // ── PostingsCache ─────────────────────────────────────────────────────────────
 
@@ -519,31 +520,16 @@ impl InteractionStore {
                 return;
             }
         };
-        // Write-then-rename, so the file is replaced atomically. `fs::write`
-        // truncates the target in place, so a crash mid-write left
-        // `interactions.json` truncated — and the discarded `Result` meant a
-        // failed write (disk full, read-only volume) still looked like a success
-        // to `upsert`/`import_bundle`, with the record living only in memory and
-        // silently lost on the next restart.
-        let tmp = self.data_file.with_extension("json.tmp");
-        if let Err(e) = std::fs::write(&tmp, &json) {
+        // Use the shared atomic write helper so we gain `sync_all` and a
+        // single, tested code path. The helper writes to a sibling `.tmp` file,
+        // syncs it, then renames — preserving the "no .tmp left behind" test
+        // contract.
+        if let Err(e) = write_atomic(&self.data_file, json.as_bytes()) {
             log::error!(
                 "[postings] failed to write {}: {} — interaction NOT persisted",
-                file_name_label(&tmp),
-                sanitize_reason(&e.to_string())
-            );
-            std::fs::remove_file(&tmp).ok();
-            return;
-        }
-        if let Err(e) = std::fs::rename(&tmp, &self.data_file) {
-            log::error!(
-                "[postings] failed to move {} onto {}: {} — interaction NOT persisted \
-                 (the previous file is intact)",
-                file_name_label(&tmp),
                 file_name_label(&self.data_file),
                 sanitize_reason(&e.to_string())
             );
-            std::fs::remove_file(&tmp).ok();
         }
     }
 }

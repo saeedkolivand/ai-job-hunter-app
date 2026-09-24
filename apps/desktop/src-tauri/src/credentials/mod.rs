@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::now_ms;
 use crate::error::{AppError, AppResult};
 use crate::observability::sanitize_reason;
+use crate::platform::fs::write_atomic;
 
 pub(crate) const SERVICE: &str = "com.ajh.tauri";
 
@@ -213,7 +214,7 @@ impl CredentialStore {
         f(&mut meta);
         let json = serde_json::to_string_pretty(&meta)
             .map_err(|e| AppError::Parse(format!("serialize credential metadata: {e}")))?;
-        std::fs::write(&self.meta_file, json)
+        write_atomic(&self.meta_file, json.as_bytes())
             .map_err(|e| AppError::Storage(format!("write credential metadata: {e}")))?;
         guard.0 = Some(meta);
         Ok(())

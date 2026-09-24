@@ -2775,22 +2775,23 @@ fn relax_legacy_filters_once_skips_when_marker_present() {
 fn relax_legacy_filters_once_does_not_write_marker_when_persist_fails() {
     use tempfile::TempDir;
 
-    // Force write_to_disk to fail: create a DIRECTORY at the data_file path
-    // (autopilots.json). std::fs::write() to a path that is a directory fails
-    // on every platform. The marker's parent dir remains writable, so the only
-    // thing that can gate the marker write is whether write_to_disk returned Ok.
+    // Force write_to_disk to fail: create a DIRECTORY at the temp file path
+    // (autopilots.json.tmp). write_atomic creates the temp file first, so a
+    // directory at that path makes File::create fail on every platform. The
+    // marker's parent dir remains writable, so the only thing that can gate the
+    // marker write is whether write_to_disk returned Ok.
     let temp = TempDir::new().unwrap();
     let dir = temp.path().to_path_buf();
 
-    // Create <dir>/autopilots.json as a directory, not a file.
-    let data_file = dir.join("autopilots.json");
-    std::fs::create_dir_all(&data_file).unwrap();
+    // Create <dir>/autopilots.json.tmp as a directory, not a file.
+    // This matches write_atomic's naming: for X.json the temp is X.json.tmp.
+    let tmp_file = dir.join("autopilots.json.tmp");
+    std::fs::create_dir_all(&tmp_file).unwrap();
 
     // AutopilotStore::new expects the *parent* dir to exist, which it does (temp).
-    // Passing `dir` means data_file = dir/autopilots.json — already a dir above.
     let store = AutopilotStore::new(&dir);
 
-    // load() will return an empty map (can't read a dir as JSON), which is fine —
+    // load() will return an empty map (no file exists yet), which is fine —
     // we just need write_to_disk to fail so the marker is NOT written.
     store.relax_legacy_filters_once();
 
@@ -2798,5 +2799,224 @@ fn relax_legacy_filters_once_does_not_write_marker_when_persist_fails() {
     assert!(
         !marker.exists(),
         "marker must NOT be written when write_to_disk fails (retry guarantee)"
+    );
+}
+
+// ── Corrupt autopilots.json handling (issue #1274) ─────────────────────────────
+//
+// These tests mirror `postings/test.rs`'s corrupt-interaction-file tests:
+// (a) a NUL-filled autopilots.json → load returns empty, autopilots.json.corrupt
+//     exists with the original bytes, and a following save writes a fresh valid
+//     autopilots.json without touching the .corrupt file;
+// (b) a missing file → empty, no .corrupt file created;
+// (c) a file with one bad record among good ones still loads the good ones
+//     (existing behavior), and no .corrupt file is created;
+// (d) if the backup rename fails, the corrupt original survives a save.
+
+#[test]
+fn corrupt_autopilots_file_is_preserved_not_overwritten() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let data_dir = temp.path().to_path_buf();
+    let data_file = data_dir.join("autopilots.json");
+
+    // Simulate a file that exists on disk but is malformed (e.g. all NUL bytes:
+    // the incident that triggered this fix). The old loader swallowed the parse
+    // error and started from an empty map, so the next save would wipe the file.
+    std::fs::write(&data_file, b"\0\0\0\0").unwrap();
+
+    let store = AutopilotStore::new(&data_dir);
+    // First access hydrates the cache; the corrupt file is moved aside.
+    let list = store.list();
+    assert!(list.is_empty(), "corrupt file loads as empty in-memory");
+
+    // The original bytes are preserved in the backup, NOT silently discarded.
+    let backup = data_dir.join("autopilots.json.corrupt");
+    assert!(backup.exists(), "corrupt file is backed up");
+    assert_eq!(
+        std::fs::read(&backup).unwrap(),
+        b"\0\0\0\0",
+        "backup keeps the original corrupt bytes"
+    );
+
+    // A subsequent mutation rewrites the primary file (now valid), but the
+    // backup still holds the recoverable original.
+    store.create(serde_json::json!({
+        "name": "New AP",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+    }));
+    assert!(backup.exists(), "backup survives the next save");
+    let on_disk = std::fs::read_to_string(&data_file).unwrap();
+    assert!(on_disk.contains("New AP"), "fresh valid file was written");
+}
+
+#[test]
+fn missing_autopilots_file_loads_empty_without_backup() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let data_dir = temp.path().to_path_buf();
+    // No autopilots.json written — first run.
+    let store = AutopilotStore::new(&data_dir);
+    assert!(store.list().is_empty());
+    // A missing file is normal, not corruption: no .corrupt backup is created.
+    assert!(
+        !data_dir.join("autopilots.json.corrupt").exists(),
+        "missing file must not be treated as corrupt"
+    );
+}
+
+#[test]
+fn autopilots_file_with_one_bad_record_loads_the_good_ones() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let data_dir = temp.path().to_path_buf();
+    let data_file = data_dir.join("autopilots.json");
+
+    // One good record + one record with an unknown runStatus variant (simulating
+    // a downgrade after a future release added one). The per-record tolerant
+    // parse must drop only the bad record, not the whole file.
+    let mixed = r#"[
+        {
+            "_id": "ap-good",
+            "name": "Good AP",
+            "status": "active",
+            "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+            "filter": { "minMatchScore": 0.0 },
+            "schedule": "daily",
+            "totalFound": 0,
+            "totalApplied": 0,
+            "createdAt": 1,
+            "updatedAt": 1
+        },
+        {
+            "_id": "ap-future",
+            "name": "Future AP",
+            "status": "active",
+            "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+            "filter": { "minMatchScore": 0.0 },
+            "schedule": "daily",
+            "runStatus": "someFutureStatus",
+            "totalFound": 0,
+            "totalApplied": 0,
+            "createdAt": 1,
+            "updatedAt": 1
+        }
+    ]"#;
+    std::fs::write(&data_file, mixed).unwrap();
+
+    let store = AutopilotStore::new(&data_dir);
+    let list = store.list();
+    assert_eq!(
+        list.len(),
+        1,
+        "the good record loads; only the unparseable one is dropped"
+    );
+    assert_eq!(list[0].id, "ap-good");
+
+    // No .corrupt file should be created — this is a valid JSON array with one
+    // bad record, not a corrupt file.
+    assert!(
+        !data_dir.join("autopilots.json.corrupt").exists(),
+        "valid JSON array with one bad record must not create .corrupt backup"
+    );
+}
+
+#[test]
+fn corrupt_file_with_failed_backup_blocks_save_keeping_original() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let data_dir = temp.path().to_path_buf();
+    let data_file = data_dir.join("autopilots.json");
+    let backup = data_dir.join("autopilots.json.corrupt");
+
+    // Corrupt primary file on disk (NUL-filled, like the incident).
+    let original = b"\0\0\0\0";
+    std::fs::write(&data_file, original).unwrap();
+
+    // Every backup slot is already taken (an older backup is never
+    // overwritten), so there is nowhere to move the corrupt file.
+    let _ = &backup;
+    for slot in std::iter::once("autopilots.json.corrupt".to_string())
+        .chain((1..10).map(|n| format!("autopilots.json.corrupt.{n}")))
+    {
+        std::fs::write(data_dir.join(slot), b"older backup").unwrap();
+    }
+
+    let store = AutopilotStore::new(&data_dir);
+    // Hydrating sees the corrupt file, attempts the backup, and the rename fails.
+    let list = store.list();
+    assert!(list.is_empty(), "corrupt file loads as empty in-memory");
+    assert!(
+        store.is_block_save(),
+        "no free backup slot arms the save guard"
+    );
+
+    // A mutation would normally rewrite the primary file. With the guard armed,
+    // save MUST skip the write so the un-backed-up corrupt original is preserved.
+    store.create(serde_json::json!({
+        "name": "New AP",
+        "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+    }));
+
+    assert_eq!(
+        std::fs::read(&data_file).unwrap(),
+        original,
+        "save did not overwrite the un-backed-up corrupt original"
+    );
+}
+
+/// A second corruption must not lock the store: the older backup is kept and
+/// the new corrupt file goes to the next free slot, so saves carry on.
+#[test]
+fn a_second_corruption_uses_the_next_backup_slot_and_saves_resume() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let data_dir = temp.path().to_path_buf();
+    let data_file = data_dir.join("autopilots.json");
+    std::fs::write(data_dir.join("autopilots.json.corrupt"), b"first incident").unwrap();
+    std::fs::write(&data_file, b"    ").unwrap();
+
+    let store = AutopilotStore::new(&data_dir);
+    assert!(store.list().is_empty());
+    assert!(!store.is_block_save(), "a taken slot must not block saves");
+    assert_eq!(
+        std::fs::read(data_dir.join("autopilots.json.corrupt")).unwrap(),
+        b"first incident",
+        "the older backup is never overwritten"
+    );
+    assert_eq!(
+        std::fs::read(data_dir.join("autopilots.json.corrupt.1")).unwrap(),
+        b"    "
+    );
+}
+
+/// A file that merely can't be READ (here: it's a directory; in the wild, a
+/// sharing violation while antivirus holds it) is not corrupt: it stays where it
+/// is, nothing is renamed, and saves are blocked so it can't be overwritten.
+#[test]
+fn an_unreadable_file_is_left_in_place_and_blocks_saves() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().unwrap();
+    let data_dir = temp.path().to_path_buf();
+    let data_file = data_dir.join("autopilots.json");
+    std::fs::create_dir(&data_file).unwrap();
+
+    let store = AutopilotStore::new(&data_dir);
+    assert!(store.list().is_empty());
+    assert!(store.is_block_save());
+    assert!(data_file.is_dir(), "left in place");
+    assert!(
+        !data_dir.join("autopilots.json.corrupt").exists(),
+        "not treated as corrupt"
     );
 }

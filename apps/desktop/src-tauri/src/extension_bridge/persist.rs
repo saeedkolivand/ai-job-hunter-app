@@ -10,6 +10,7 @@ use std::path::Path;
 use serde_json::{json, Value};
 
 use crate::observability::sanitize_reason;
+use crate::platform::fs::write_atomic;
 
 use super::{AI_ASSIST_OPTIN_FILE, AUTOFILL_OPTIN_FILE, TOKEN_FILE};
 
@@ -49,9 +50,9 @@ pub(super) fn load_autofill_optin(data_dir: &Path) -> bool {
 
 pub(super) fn persist_autofill_optin(data_dir: &Path, enabled: bool) -> std::io::Result<()> {
     std::fs::create_dir_all(data_dir)?;
-    std::fs::write(
-        data_dir.join(AUTOFILL_OPTIN_FILE),
-        if enabled { "1" } else { "0" },
+    write_atomic(
+        &data_dir.join(AUTOFILL_OPTIN_FILE),
+        if enabled { b"1" } else { b"0" },
     )
 }
 
@@ -73,10 +74,8 @@ pub(super) fn load_ai_assist_optin(data_dir: &Path) -> bool {
 
 pub(super) fn persist_ai_assist_optin(data_dir: &Path, enabled: bool) -> std::io::Result<()> {
     std::fs::create_dir_all(data_dir)?;
-    std::fs::write(
-        data_dir.join(AI_ASSIST_OPTIN_FILE),
-        json!({ "enabled": enabled }).to_string(),
-    )
+    let json = json!({ "enabled": enabled }).to_string();
+    write_atomic(&data_dir.join(AI_ASSIST_OPTIN_FILE), json.as_bytes())
 }
 
 /// Persist the pairing token to `data_dir` — the single write path both
@@ -135,7 +134,7 @@ pub(super) fn persist_token(data_dir: &Path, token: &str) -> std::io::Result<()>
 
     #[cfg(not(unix))]
     {
-        std::fs::write(&path, token)?;
+        write_atomic(&path, token.as_bytes())?;
     }
 
     Ok(())
