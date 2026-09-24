@@ -398,15 +398,96 @@ pub(super) fn openai_response_format(schema: Option<&Value>) -> Value {
     }
 }
 
+/// `format` values Anthropic's structured-outputs schema subset documents
+/// (`platform.claude.com/docs/en/build-with-claude/structured-outputs`).
+/// Anything else must fail the schema — raw HTTP, no SDK transform to strip it.
+const ANTHROPIC_ACCEPTED_FORMATS: &[&str] = &[
+    "date-time",
+    "time",
+    "date",
+    "duration",
+    "email",
+    "hostname",
+    "uri",
+    "ipv4",
+    "ipv6",
+    "uuid",
+];
+
+/// The Anthropic-side mirror of [`openai_strict_keywords_only`] — same walk
+/// (root, `properties` values, `items`) and the same
+/// [`OPENAI_STRICT_KEYWORDS`] allowlist, PLUS extra rejections for value
+/// constraints Anthropic's schema subset doesn't document at all: `minimum`,
+/// `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`,
+/// `pattern`, `maxItems` (any value); `minItems` outside `{0, 1}`; `format`
+/// outside [`ANTHROPIC_ACCEPTED_FORMATS`]. A separate, stricter check rather
+/// than a shared one because — unlike Anthropic's own SDKs, which strip
+/// unsupported constraints client-side — this adapter builds `output_config`
+/// by hand over raw HTTP, so a schema valid for OpenAI strict mode (e.g.
+/// `"minimum": 0`) would otherwise 400 the whole Anthropic generation.
+fn anthropic_strict_keywords_only(schema: &Value, depth: usize) -> bool {
+    if depth > MAX_SCHEMA_DEPTH {
+        return false;
+    }
+    let Some(obj) = schema.as_object() else {
+        return false;
+    };
+    if !obj
+        .keys()
+        .all(|key| OPENAI_STRICT_KEYWORDS.contains(&key.as_str()))
+    {
+        return false;
+    }
+    const REJECTED_UNCONDITIONALLY: &[&str] = &[
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "multipleOf",
+        "pattern",
+        "maxItems",
+    ];
+    if obj
+        .keys()
+        .any(|key| REJECTED_UNCONDITIONALLY.contains(&key.as_str()))
+    {
+        return false;
+    }
+    if let Some(min_items) = obj.get("minItems") {
+        if !matches!(min_items.as_u64(), Some(0) | Some(1)) {
+            return false;
+        }
+    }
+    if let Some(format) = obj.get("format") {
+        let accepted = format
+            .as_str()
+            .is_some_and(|f| ANTHROPIC_ACCEPTED_FORMATS.contains(&f));
+        if !accepted {
+            return false;
+        }
+    }
+    obj.get("properties")
+        .and_then(Value::as_object)
+        .is_none_or(|props| {
+            props
+                .values()
+                .all(|value| anthropic_strict_keywords_only(value, depth + 1))
+        })
+        && obj
+            .get("items")
+            .is_none_or(|items| anthropic_strict_keywords_only(items, depth + 1))
+}
+
 /// Anthropic's `output_config.format` for `schema`, or `None` when there is
 /// nothing it can constrain against — the caller then stays on [`prompt_only`].
-/// Same gate as [`openai_response_format`]'s strict branch: both vendors take a
-/// closed (`additionalProperties: false`, all-`required`) object schema.
+/// Same object-rooted-and-closed gate as [`openai_response_format`]'s strict
+/// branch, PLUS [`anthropic_strict_keywords_only`]'s narrower value-constraint
+/// check — Anthropic's schema subset accepts fewer constraints than OpenAI's.
 pub(super) fn anthropic_output_format(schema: Option<&Value>) -> Option<Value> {
     schema
         .filter(|s| s.get("type").and_then(Value::as_str) == Some("object"))
         .filter(|s| !has_untranslatable_keyword(s, 0))
-        .filter(|s| openai_strict_keywords_only(s, 0))
+        .filter(|s| anthropic_strict_keywords_only(s, 0))
         .and_then(|schema| strictify(schema, 0))
         .map(|schema| json!({ "type": "json_schema", "schema": schema }))
 }
@@ -1235,5 +1316,75 @@ mod tests {
     #[test]
     fn anthropic_output_config_is_none_without_a_usable_schema() {
         assert_eq!(anthropic_output_config(None, Some("xhigh")), None);
+    }
+
+    #[test]
+    fn anthropic_output_format_rejects_value_constraints_its_schema_subset_does_not_document() {
+        // Nested at least one level deep (properties/items) so the recursive
+        // walk is exercised, not just the root. Mutation check: drop
+        // `anthropic_strict_keywords_only`'s extra rejections and every
+        // assertion below fails.
+        let cases = [
+            (
+                "a `minimum` nested in properties",
+                json!({
+                    "type": "object",
+                    "properties": { "score": { "type": "integer", "minimum": 0 } },
+                }),
+            ),
+            (
+                "a `pattern` nested in properties",
+                json!({
+                    "type": "object",
+                    "properties": { "id": { "type": "string", "pattern": "^[A-Z]+$" } },
+                }),
+            ),
+            (
+                "a `maxItems` nested under an array property",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "tags": { "type": "array", "maxItems": 3, "items": { "type": "string" } },
+                    },
+                }),
+            ),
+            (
+                "a `minItems` outside {0, 1}",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "tags": { "type": "array", "minItems": 2, "items": { "type": "string" } },
+                    },
+                }),
+            ),
+            (
+                "an unsupported `format`",
+                json!({
+                    "type": "object",
+                    "properties": { "note": { "type": "string", "format": "regex" } },
+                }),
+            ),
+        ];
+        for (label, schema) in cases {
+            assert_eq!(
+                anthropic_output_format(Some(&schema)),
+                None,
+                "{label} must degrade to prompt_only, not ship inside output_config"
+            );
+        }
+    }
+
+    #[test]
+    fn anthropic_output_format_accepts_its_documented_min_items_and_format_values() {
+        // The other half of the allowlist: degrading is only honest if the
+        // values Anthropic's docs DO accept still reach the decoder.
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "tags": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+                "seen": { "type": "string", "format": "email" },
+            },
+        });
+        assert!(anthropic_output_format(Some(&schema)).is_some());
     }
 }

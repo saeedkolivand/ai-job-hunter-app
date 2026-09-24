@@ -203,16 +203,16 @@ BULLET QUALITY — CAR FORMAT mandatory (Context → Action → Result):
 
 Why weak: Passive voice, no metrics, vague, no specific technologies.
 
-**STRONG Examples (illustrative — each uses only what its source bullet states):**
-Source: "Responsible for API work in Node.js, cut response times by 45%"
-✓ "Developed backend APIs in **Node.js**, cutting response times by 45%"
-Source: "Worked on React projects"
-✓ "Developed **React** applications" — the source has no number, so the rewrite has none
+**STRONG Examples (illustrative — each rewrite states no more than its source bullet):**
+Source: "Built REST APIs in Node.js that cut response times by 45%"
+✓ "Built **Node.js** REST APIs that cut response times by 45%"
+Source: "Maintained the React dashboard"
+✓ "Maintained the **React** dashboard" — the source has no number, so the rewrite has none
 
 **Keyword Naturalization:**
 
-Instead of: "Built frontend applications" (when the résumé ties React and TypeScript to that role)
-Write: "Built frontend applications in **React** and **TypeScript**"
+Instead of: "Built frontend applications using React and TypeScript"
+Write: "Built frontend applications with **React** and **TypeScript**"
 
 Weave keywords into the sentence, and only name a technology the résumé already connects to that work.
 
