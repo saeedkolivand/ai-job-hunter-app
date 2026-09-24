@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.156.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.155.1...v0.156.0) (2026-09-24)
+
+### ✨ Features
+
+* **ai:** opencode, cursor and qwen code as cli-agent providers ([#1275](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1275)) ([dc3556b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/dc3556bb941f5957848004f14a4fe4f033a974e3)), closes [#1272](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1272) [#1272](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1272) [#1272](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1272)
+* **updater:** back up user data before installing an update ([#1279](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1279)) ([14be1f0](https://github.com/saeedkolivand/ai-job-hunter-app/commit/14be1f08d555d6d47d3ca53103fee98ce7b83e92)), closes [#1276](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1276) [#1278](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1278) [#1278](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1278)
+
+### 🐛 Bug Fixes
+
+* **data:** write json stores atomically and never overwrite a corrupt autopilots file ([#1276](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1276)) ([ae11891](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ae118911f35631beec7e21409a21b6a90846479d)), closes [#775](https://github.com/saeedkolivand/ai-job-hunter-app/issues/775) [#1274](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1274) [#1274](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1274) [#1274](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1274) [#1274](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1274) [#1274](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1274)
+
+### ⚡ Performance
+
+* **ai:** isolate cli-agent calls from user config, schema-constrain claude code ([#1273](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1273)) ([f4a5f35](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f4a5f35ae087832b0a6d18be6774f649aad2f048)), closes [#1271](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1271)
+* **autopilot:** keep only the 500 newest found jobs per autopilot ([#1282](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1282)) ([da93b1f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/da93b1f5efaf1cd771e09582fc3028dd06c66b3a)), closes [#1277](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1277) [#1277](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1277)
+* **autopilot:** store found jobs in sqlite instead of rewriting them into autopilots.json ([#1281](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1281)) ([65dfb7a](https://github.com/saeedkolivand/ai-job-hunter-app/commit/65dfb7a3c75b9be76fc5724cb948fdc7f67e266e)), closes [#1277](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1277) [#1277](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1277)
+* **pipeline:** make match_evidence deterministic, with no provider call ([#1270](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1270)) ([c42211c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/c42211c7c4d50c2f5970e4ea8a58fbec6353cc39)), closes [#1269](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1269)
+
 ## [0.155.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.155.0...v0.155.1) (2026-09-23)
 
 ### 🐛 Bug Fixes
