@@ -324,16 +324,24 @@ try {
         'use AppError/AppResult',
       ],
     ];
+    // Match the ast-grep rules: `files:` is src-tauri/src/** (integration tests under tests/ are
+    // out), and ast-grep never matches inside comments, so comment lines are dropped before testing.
+    const code = (s) =>
+      s
+        .split('\n')
+        .map((l) => (/^\s*(\/\/|\*|\/\*)/.test(l) ? '' : l))
+        .join('\n');
     for (const f of nonSkipped) {
       if (!f.endsWith('.rs')) continue;
+      if (!path.resolve(cwd, f).replace(/\\/g, '/').includes('/src-tauri/src/')) continue;
       let content = '';
       try {
-        content = fs.readFileSync(path.join(cwd, f), 'utf8');
+        content = code(fs.readFileSync(path.join(cwd, f), 'utf8'));
       } catch {
         continue;
       }
       const p = '/' + f;
-      const added = addedByFile.get(f) || '';
+      const added = code(addedByFile.get(f) || '');
       // true = introduced by the diff, false = pre-existing, null = absent
       const hit = (re) => (re.test(added) ? true : re.test(content) ? false : null);
       for (const [re, exemptRe, summary, fix] of ARCH_RULES) {
