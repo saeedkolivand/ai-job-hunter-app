@@ -1,5 +1,117 @@
 [
   {
+    "number": 1283,
+    "title": "feat(ai): prompt audit — native anthropic structured output, de-dated prompts and agent config",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1283",
+    "draft": false,
+    "created_at": "2026-09-24T23:18:49Z",
+    "updated_at": "2026-09-25T03:29:24Z",
+    "merged_at": "2026-09-25T03:29:23Z",
+    "closed_at": "2026-09-25T03:29:23Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1282,
+    "title": "perf(autopilot): keep only the 500 newest found jobs per autopilot",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1282",
+    "draft": false,
+    "created_at": "2026-09-24T21:51:31Z",
+    "updated_at": "2026-09-24T22:16:55Z",
+    "merged_at": "2026-09-24T21:53:08Z",
+    "closed_at": "2026-09-24T21:53:08Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1281,
+    "title": "perf(autopilot): store found jobs in sqlite instead of rewriting them into autopilots.json",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1281",
+    "draft": false,
+    "created_at": "2026-09-24T21:00:41Z",
+    "updated_at": "2026-09-24T21:55:09Z",
+    "merged_at": "2026-09-24T21:43:31Z",
+    "closed_at": "2026-09-24T21:43:31Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1270,
+    "title": "perf(pipeline): make match_evidence deterministic, with no provider call",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1270",
+    "draft": false,
+    "created_at": "2026-09-24T11:33:40Z",
+    "updated_at": "2026-09-24T21:55:00Z",
+    "merged_at": "2026-09-24T11:51:17Z",
+    "closed_at": "2026-09-24T11:51:17Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1273,
+    "title": "perf(ai): isolate cli-agent calls from user config, schema-constrain claude code",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1273",
+    "draft": false,
+    "created_at": "2026-09-24T14:04:22Z",
+    "updated_at": "2026-09-24T21:54:59Z",
+    "merged_at": "2026-09-24T14:47:45Z",
+    "closed_at": "2026-09-24T14:47:45Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1275,
+    "title": "feat(ai): opencode, cursor and qwen code as cli-agent providers",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1275",
+    "draft": false,
+    "created_at": "2026-09-24T17:32:53Z",
+    "updated_at": "2026-09-24T21:54:57Z",
+    "merged_at": "2026-09-24T18:30:21Z",
+    "closed_at": "2026-09-24T18:30:21Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1279,
+    "title": "feat(updater): back up user data before installing an update",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1279",
+    "draft": false,
+    "created_at": "2026-09-24T20:14:47Z",
+    "updated_at": "2026-09-24T21:54:56Z",
+    "merged_at": "2026-09-24T21:05:37Z",
+    "closed_at": "2026-09-24T21:05:37Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1276,
+    "title": "fix(data): write json stores atomically and never overwrite a corrupt autopilots file",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1276",
+    "draft": false,
+    "created_at": "2026-09-24T18:32:35Z",
+    "updated_at": "2026-09-24T21:54:56Z",
+    "merged_at": "2026-09-24T19:58:44Z",
+    "closed_at": "2026-09-24T19:58:44Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
     "number": 1266,
     "title": "ci(charts): summarise the repo-charts run as a table",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1266",
@@ -582,118 +694,6 @@
     "updated_at": "2026-09-10T09:45:32Z",
     "merged_at": "2026-09-10T09:22:02Z",
     "closed_at": "2026-09-10T09:22:02Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1190,
-    "title": "chore: bump the desktop-rust group in /apps/desktop/src-tauri with 2 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1190",
-    "draft": false,
-    "created_at": "2026-09-09T16:09:44Z",
-    "updated_at": "2026-09-10T09:35:58Z",
-    "merged_at": "2026-09-09T18:26:28Z",
-    "closed_at": "2026-09-09T18:26:28Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1191,
-    "title": "chore: bump the ci-actions group with 3 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1191",
-    "draft": false,
-    "created_at": "2026-09-09T16:12:02Z",
-    "updated_at": "2026-09-10T09:35:55Z",
-    "merged_at": "2026-09-09T18:26:38Z",
-    "closed_at": "2026-09-09T18:26:38Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1192,
-    "title": "chore: bump the javascript group with 7 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1192",
-    "draft": false,
-    "created_at": "2026-09-09T16:12:58Z",
-    "updated_at": "2026-09-10T09:35:52Z",
-    "merged_at": "2026-09-09T18:26:50Z",
-    "closed_at": "2026-09-09T18:26:50Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1193,
-    "title": "feat(release): automate microsoft store submission via msstore cli",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1193",
-    "draft": false,
-    "created_at": "2026-09-09T18:37:10Z",
-    "updated_at": "2026-09-10T09:35:49Z",
-    "merged_at": "2026-09-10T06:41:14Z",
-    "closed_at": "2026-09-10T06:41:14Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1194,
-    "title": "fix(release): correct flathub app id and two linter-blocking manifest bugs",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1194",
-    "draft": false,
-    "created_at": "2026-09-10T07:11:16Z",
-    "updated_at": "2026-09-10T09:35:48Z",
-    "merged_at": "2026-09-10T07:11:32Z",
-    "closed_at": "2026-09-10T07:11:32Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1189,
-    "title": "feat(landing): link the microsoft store from the download page and release notes",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1189",
-    "draft": false,
-    "created_at": "2026-09-09T12:12:03Z",
-    "updated_at": "2026-09-09T12:35:23Z",
-    "merged_at": "2026-09-09T12:13:30Z",
-    "closed_at": "2026-09-09T12:13:30Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1187,
-    "title": "fix(ai): parse current codex exec events and stop pinning a stale codex model list",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1187",
-    "draft": false,
-    "created_at": "2026-09-09T07:39:48Z",
-    "updated_at": "2026-09-09T12:23:03Z",
-    "merged_at": "2026-09-09T12:12:18Z",
-    "closed_at": "2026-09-09T12:12:18Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1186,
-    "title": "docs(adr): record the loopback http transport, resources and prompts",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1186",
-    "draft": false,
-    "created_at": "2026-09-09T06:16:41Z",
-    "updated_at": "2026-09-09T12:18:39Z",
-    "merged_at": "2026-09-09T06:22:32Z",
-    "closed_at": "2026-09-09T06:22:32Z",
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"

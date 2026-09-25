@@ -1,5 +1,233 @@
 [
   {
+    "sha": "f0ece8600ea8566dd7deb1a701caff304477e71f",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-25T03:54:02Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "76986bf37a46734f7214dcb4f0c33b56ee83be0b",
+    "commit": {
+      "message": "feat(ai): prompt audit — native anthropic structured output, de-dated prompts and agent config (#1283)",
+      "author": {
+        "date": "2026-09-25T03:29:22Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "9ece73fb91f36e4723ea609ce7f902e1d0322b95",
+    "commit": {
+      "message": "chore: sync landing download version to v0.156.0",
+      "author": {
+        "date": "2026-09-24T22:41:37Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "8d829299cd29d1b9db21cd21d61f07c72c821599",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.156.0 [skip ci]",
+      "author": {
+        "date": "2026-09-24T22:41:09Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "cd76b66d9e1c2392a75bf3e9e13eb4f90c343a2e",
+    "commit": {
+      "message": "chore(release): 0.156.0 [skip ci]",
+      "author": {
+        "date": "2026-09-24T21:54:34Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "f0a3b3b656ee7082b71a5d8c3a88b7f0c4f7022d",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-24T21:53:48Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "da93b1f5efaf1cd771e09582fc3028dd06c66b3a",
+    "commit": {
+      "message": "perf(autopilot): keep only the 500 newest found jobs per autopilot (#1282)",
+      "author": {
+        "date": "2026-09-24T21:53:07Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "65dfb7a3c75b9be76fc5724cb948fdc7f67e266e",
+    "commit": {
+      "message": "perf(autopilot): store found jobs in sqlite instead of rewriting them into autopilots.json (#1281)",
+      "author": {
+        "date": "2026-09-24T21:43:30Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "7a0606d6d7bcee2ec98c565ce417b659cc56090a",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-24T21:27:09Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "14be1f08d555d6d47d3ca53103fee98ce7b83e92",
+    "commit": {
+      "message": "feat(updater): back up user data before installing an update (#1279)",
+      "author": {
+        "date": "2026-09-24T21:05:36Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "6d862509a19862f820916e3d30205d33036fbd46",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-24T20:16:42Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "ae118911f35631beec7e21409a21b6a90846479d",
+    "commit": {
+      "message": "fix(data): write json stores atomically and never overwrite a corrupt autopilots file (#1276)",
+      "author": {
+        "date": "2026-09-24T19:58:44Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "373cbdd6ada30fa1007187da123d0d809c083014",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-24T18:55:06Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "dc3556bb941f5957848004f14a4fe4f033a974e3",
+    "commit": {
+      "message": "feat(ai): opencode, cursor and qwen code as cli-agent providers (#1275)",
+      "author": {
+        "date": "2026-09-24T18:30:20Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "feefce7abe4f86b41feea42b56afd28a022c8ce8",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-24T15:07:50Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "f4a5f35ae087832b0a6d18be6774f649aad2f048",
+    "commit": {
+      "message": "perf(ai): isolate cli-agent calls from user config, schema-constrain claude code (#1273)",
+      "author": {
+        "date": "2026-09-24T14:47:45Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "ecfb432c33f5c92e30ff99df092ffa390c40c44c",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-24T12:15:03Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "c42211c7c4d50c2f5970e4ea8a58fbec6353cc39",
+    "commit": {
+      "message": "perf(pipeline): make match_evidence deterministic, with no provider call (#1270)",
+      "author": {
+        "date": "2026-09-24T11:51:16Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "730e44bf09c64058a400c11eb5f5f575a50943ee",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-24T08:25:16Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "3501dc7eec0308d0c0ddb5573f5421b5ce236517",
     "commit": {
       "message": "chore: sync landing download version to v0.155.1",
@@ -965,234 +1193,6 @@
       "message": "fix(ci): pre-install snap build-snaps individually with independent retries",
       "author": {
         "date": "2026-09-10T11:39:20Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "cabd8e86db7a749238a850f19e1eb91ce23b2570",
-    "commit": {
-      "message": "fix(release): retry snapcraft pack on transient build-snap install failures",
-      "author": {
-        "date": "2026-09-10T11:33:45Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "b3d9931e7cff083d3362801179e785d0ee90227d",
-    "commit": {
-      "message": "fix(release): fix root ownership before snapcraft pack",
-      "author": {
-        "date": "2026-09-10T11:25:41Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "a18ec6dccaf9b0b9dffce9619ea9891483ce683f",
-    "commit": {
-      "message": "fix(release): pack the snap in destructive mode",
-      "author": {
-        "date": "2026-09-10T11:12:32Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "41c357246b1b293b2046ee292db8d1fddf83ca75",
-    "commit": {
-      "message": "chore: sync landing download version to v0.153.1",
-      "author": {
-        "date": "2026-09-10T11:10:50Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "472ab8dffffc508432867bc2f8a0b4e4c79fd14e",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.153.1 [skip ci]",
-      "author": {
-        "date": "2026-09-10T11:10:12Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "bd1ccdb95231c86f4041d5787afd28f6c4eb9798",
-    "commit": {
-      "message": "chore(release): 0.153.1 [skip ci]",
-      "author": {
-        "date": "2026-09-10T10:28:58Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "2963464775e628b25cbc1435d45a2cd943f5ea75",
-    "commit": {
-      "message": "ci(release): park publish-msstore, strip debug cruft, link upstream bug",
-      "author": {
-        "date": "2026-09-10T10:24:25Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "19ae00cb28882ddc2eb2649e7382773a6a9c2d93",
-    "commit": {
-      "message": "ci(release): run msstore from a short fixed cwd, not the job workspace",
-      "author": {
-        "date": "2026-09-10T10:19:10Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "bf342806167a624f0f8058961ccb60abb6f9274e",
-    "commit": {
-      "message": "ci(release): use msstore info to see its own resolved config path",
-      "author": {
-        "date": "2026-09-10T10:13:24Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "fe822c742793fd3dac932d1fbbb155e510c5da19",
-    "commit": {
-      "message": "ci(release): check publish's own working directory right before it runs",
-      "author": {
-        "date": "2026-09-10T10:08:39Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "a47474be032fd3300aac38d28f6363fc8e51fb5c",
-    "commit": {
-      "message": "ci(release): read the real settings.json instead of a broken find",
-      "author": {
-        "date": "2026-09-10T10:04:29Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "ab1eda86a6a6837be8cc0befadf785a7fa48dbff",
-    "commit": {
-      "message": "fix(release): pin xdg_data_home so msstore-cli's config path is stable",
-      "author": {
-        "date": "2026-09-10T10:01:03Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "ac24f566ce9f601cb9476de80dd71aa30a1f9f2e",
-    "commit": {
-      "message": "ci(release): search for msstore-cli's real settings.json location",
-      "author": {
-        "date": "2026-09-10T09:58:21Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "c4669f2dc410ea5f1dab03da020d0f066229e0fb",
-    "commit": {
-      "message": "ci(release): add verbose logging + apt caching to publish-msstore",
-      "author": {
-        "date": "2026-09-10T09:55:34Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "99df738260e338333887873fe016ba1fc1352580",
-    "commit": {
-      "message": "fix(release): bootstrap a keyring for msstore-cli on the headless runner",
-      "author": {
-        "date": "2026-09-10T09:48:29Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "5c08bd08edfaa234f165eee5223726b345180d25",
-    "commit": {
-      "message": "fix(release): decode msstore-cli's utf-16le checksum file before verifying",
-      "author": {
-        "date": "2026-09-10T09:40:17Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "3b39492919c067f1a59f40aaf8d945feaaa8bf76",
-    "commit": {
-      "message": "ci(release): group publish-snap under build in the actions graph",
-      "author": {
-        "date": "2026-09-10T09:37:32Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "6839bd62da5b1d63d684ff9ea0c5b2eb7bc28465",
-    "commit": {
-      "message": "chore(release): 0.153.0 [skip ci]",
-      "author": {
-        "date": "2026-09-10T09:35:31Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "6fbba242f005eb401f4594846477ac89f0a66606",
-    "commit": {
-      "message": "chore(release): default the dispatch action to release, not build-installers",
-      "author": {
-        "date": "2026-09-10T09:34:30Z"
       }
     },
     "author": {
