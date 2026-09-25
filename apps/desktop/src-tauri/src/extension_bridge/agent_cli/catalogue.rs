@@ -4,7 +4,7 @@
 // Generator: packages/shared/scripts/gen-agent-catalogue.ts. Run `pnpm gen:agent-catalogue`.
 // CI runs `pnpm gen:agent-catalogue:check` to catch drift.
 //
-// 162 commands catalogued across 3 shard file(s) (catalogue/shard_*.rs),
+// 162 commands catalogued across 5 shard file(s) (catalogue/shard_*.rs),
 // 1 uncatalogued (see UNCATALOGUED below).
 //
 // Sharded rather than one big const array — this crate's own R8 hard LOC cap
@@ -22,6 +22,8 @@ use std::sync::LazyLock;
 mod shard_1;
 mod shard_2;
 mod shard_3;
+mod shard_4;
+mod shard_5;
 
 /// One declared argument of a [`CatalogueEntry`] — a top-level `--input`/`input` key exactly
 /// as the tauri-client sends it, whether it is required, and — for a wrapper key typed as a
@@ -57,6 +59,8 @@ pub(crate) static CATALOGUE: LazyLock<Vec<CatalogueEntry>> = LazyLock::new(|| {
     entries.extend_from_slice(shard_1::ENTRIES);
     entries.extend_from_slice(shard_2::ENTRIES);
     entries.extend_from_slice(shard_3::ENTRIES);
+    entries.extend_from_slice(shard_4::ENTRIES);
+    entries.extend_from_slice(shard_5::ENTRIES);
     entries
 });
 
