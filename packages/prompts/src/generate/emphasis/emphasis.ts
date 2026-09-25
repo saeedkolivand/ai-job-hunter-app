@@ -460,7 +460,7 @@ export function buildEmphasisBlock(keywords: string[]): string {
     .map((k) => `**${k}**`)
     .join(', ');
   return `
-KEYWORD EMPHASIS — CRITICAL:
+KEYWORD EMPHASIS:
 Wrap the following job-ad keywords in **double asterisks** when they appear naturally in your output:
 ${list}
 
@@ -474,5 +474,5 @@ Emphasis rules:
 
 Example:
   WEAK:  Built frontend applications with React and TypeScript
-  GOOD:  Built scalable **React** and **TypeScript** frontend applications integrated with **REST APIs**`;
+  GOOD:  Built frontend applications with **React** and **TypeScript**`;
 }

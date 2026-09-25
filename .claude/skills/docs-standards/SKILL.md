@@ -17,11 +17,11 @@ description: Documentation maintenance rules — which docs map to which code ar
 
 ## No-drift rule (thin pointers)
 
-Applies to **everything under `docs/`**, not only `docs/knowledge/` — that is the scope reviewers enforce, so it is the scope to write to.
+Applies to **everything under `docs/`**.
 
 Describe **shape and contracts**; **never copy drift-prone literals** (scoring weights, thresholds, template/board/applier counts, function signatures, enum members, file lists). Point at the owning source symbol instead (weights → `commands/match_resume.rs`; templates → `export/templates/mod.rs`; registries → `scraping/boards/mod.rs` (SCRAPERS)).
 
-The ~150-line cap is narrower than the rule around it: it applies to `docs/knowledge/` files only, not to every page under `docs/`.
+Files in `docs/knowledge/` are capped at ~150 lines.
 
 **Self-check before saving a doc edit:** for every number, name or signature on the page, ask "if someone changed this in the code tomorrow, would this page silently become a lie?" If yes, replace it with a pointer to where it lives.
 
@@ -50,6 +50,6 @@ When an **Architecture-decision** lesson becomes an ADR, **remove it from `lesso
 
 - **Diátaxis** — keep the four types distinct, never mixed in one page: **Tutorial** (learning), **How-to** (task), **Reference** (lookup/spec), **Explanation** (the "why"). Axes: action↔cognition, acquisition↔application. https://diataxis.fr/
 - **Docs-as-code** — docs in-repo, versioned, reviewed in PRs, built/linted in CI. https://www.writethedocs.org/guide/docs-as-code/
-- **Thin-pointer / no-drift** — see §No-drift rule above for the scope and the self-check; it is the whole of `docs/`, not just `docs/knowledge/`. After code changes, re-sync docs + run `graphify update .`.
+- **Thin-pointer / no-drift** — see §No-drift rule above. After code changes, re-sync docs + run `graphify update .`.
 
 **Common mistakes:** a "reference" page drifting into tutorial prose (split it — one need per page); pasting code values/signatures into docs instead of pointing at the source (guaranteed drift).

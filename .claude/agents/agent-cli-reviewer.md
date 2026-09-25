@@ -71,7 +71,7 @@ bypass; credential or token leakage. **HIGH**: PII on the wire that a projection
 (incl. nested); unfenced untrusted text reaching the agent; a spend or rate limit bypassed by a new
 path; a hang or unbounded resource cost; an output-contract break; an untested destructive path.
 **MEDIUM**: missing edge-case test, weak assertion, drift risk without a current divergence.
-**LOW**: naming, docs, style. Tie-break **down**, except data/irreversibility → **up**.
+**LOW**: naming, docs, style. Tie-break per `token-efficiency` (round **up** for test-coverage, error/edge-path, i18n, security and data; **down** for style/docs); also **up** for irreversibility.
 
 Verify runtime claims by execution where you can — this surface's worst defects (a 30-second hang, a
 silently empty payload) were all invisible to reading and obvious to one real run.

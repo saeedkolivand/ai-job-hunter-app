@@ -35,7 +35,7 @@ Authoritative: `docs/knowledge/security-rules.md`. Severity bias for security/da
 
 > **Re-baseline to current editions:** OWASP Top 10 **2025** (was 2021), ASVS **5.0** (was 4.x), SLSA **v1.2** (was v1.0), LLM Top 10 **2025**, CWE Top 25 **2025**. Cite these, not older ones.
 
-- **OWASP Top 10:2025** (RC Nov 2025 — confirm final before locking ranks) https://owasp.org/Top10/2025/ — **new vs 2021:** `A03 Software Supply-Chain Failures` (expands old A06) and `A10 Mishandling of Exceptional Conditions`; SSRF folded into A01; A02 Security Misconfiguration rose to #2.
+- **OWASP Top 10:2025** (final, released Jan 2026; verified 2026-09-25) https://owasp.org/Top10/2025/ — **new vs 2021:** `A03 Software Supply-Chain Failures` (expands old A06) and `A10 Mishandling of Exceptional Conditions`; SSRF folded into A01; A02 Security Misconfiguration rose to #2.
 - **OWASP ASVS 5.0.0** (2025-05-30) — verify against L1/L2/L3. https://github.com/OWASP/ASVS
 - **OWASP LLM Top 10 (2025)** — LLM01 Prompt Injection · LLM02 Sensitive-Info · LLM05 Improper Output Handling · LLM06 Excessive Agency · LLM07 System-Prompt Leakage. https://genai.owasp.org/llm-top-10/
 - **Supply chain (now OWASP A03):** target **SLSA Build L3** (https://slsa.dev/spec/v1.2/); commit `pnpm-lock.yaml` + CI `--frozen-lockfile`; `cargo audit`/`cargo deny` vs RUSTSEC daily. ⚠️ **Provenance ≠ safety** — the 2025–26 **Shai-Hulud** npm worm shipped malware with _valid_ SLSA L3 provenance via hijacked OIDC tokens → pin exact versions, `--ignore-scripts`, scope-lock publish tokens. https://unit42.paloaltonetworks.com/npm-supply-chain-attack/

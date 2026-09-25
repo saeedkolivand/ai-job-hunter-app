@@ -11,9 +11,9 @@ description: Tauri shell standards — the IPC 5-step capability flow, command i
 2. `apps/desktop/src-tauri/src/commands/` — implement the Tauri command (typed `AppResult`, no `Result<_,String>`).
 3. `apps/desktop/src/tauri-client/index.ts` — wire the `invoke` call.
 4. `apps/desktop/src/renderer/services/` — add the React Query service hook (no `window.api` in UI).
-5. `services/query-client.ts` — add the query key.
+5. `apps/desktop/src/renderer/services/query-client/` — add the query key.
 
-Missing any step = an incomplete capability (HIGH). The contract in `packages/shared` is the single source of truth.
+Then run `pnpm gen:api` — `docs/API.md` is generated from the contracts and CI fails on drift. Missing any step = an incomplete capability (HIGH). The contract in `packages/shared` is the single source of truth.
 
 ## Capabilities & permissions
 

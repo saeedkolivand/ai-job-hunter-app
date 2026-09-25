@@ -36,7 +36,7 @@ Domain pairs: a write-capable **author** implements, an independent **critic** a
 | Dead-code removal (on-demand, whole monorepo)               | `cleanup` (report-first)        | the owning domain critic                         |
 | Docs / knowledge / ADRs / lessons / release                 | `project-steward` (sole writer) | `project-steward`                                |
 
-Cross-cutting critics (no author; fixes route to the owning domain author): `tauri-security-reviewer` (Secondary on risk-bearing changes), `performance-profiler` (perf-sensitive only), `pr-reviewer` (strict pre-PR gate), `finding-verifier` (per-finding judge for /review, ≤5 spawns). The dormant GL fleet + skills live in `.claude/dormant/` (no GL surface since ADR-0017). Every critic loads `.claude/skills/critic-contract/SKILL.md`; every author loads `author-contract` — an agent holding `Edit`/`Write` is an author for this rule regardless of where it sits in the table (`cleanup` was grouped with the critics and so loaded neither).
+Cross-cutting critics (no author; fixes route to the owning domain author): `tauri-security-reviewer` (Secondary on risk-bearing changes), `performance-profiler` (perf-sensitive only), `pr-reviewer` (strict pre-PR gate), `finding-verifier` (per-finding judge for /review, ≤5 spawns). The dormant GL fleet + skills live in `.claude/dormant/` (no GL surface since ADR-0017). Every critic loads `.claude/skills/critic-contract/SKILL.md`; every author loads `author-contract` — an agent holding `Edit`/`Write` is an author for this rule regardless of where it sits in the table.
 
 **Per-change defaults (cost-tiered, ADR-025):**
 

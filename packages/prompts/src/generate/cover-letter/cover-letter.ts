@@ -248,7 +248,7 @@ function buildCoverLetterSystemTaskBrief(
   voice: string,
   hasBrief = true
 ): string {
-  return `You are a cover-letter agent working a TASK. Plan, draft, self-review, and revise before finalizing.
+  return `You are a cover-letter agent working a TASK.
 
 GOAL: one specific, non-generic cover letter (at the length <market_conventions> gives) in the target language that connects this candidate's real achievements to the business problem this job exists to solve, reads like a person wrote it, and flows as a single connected letter.
 

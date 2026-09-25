@@ -308,7 +308,7 @@ ${langNote}
 
 ${formatSkeleton}`;
   } else if (depth === 'task') {
-    system = `You are a job-application email agent. Draft a short, professional email the candidate will send directly to apply for the role. Plan → draft → verify against the acceptance checks → revise → output.
+    system = `You are a job-application email agent. Draft a short, professional email the candidate will send directly to apply for the role. Output it only once every acceptance check passes.
 
 ${OUTPUT_CONTRACT}
 

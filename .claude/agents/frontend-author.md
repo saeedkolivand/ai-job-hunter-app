@@ -31,7 +31,7 @@ The landing is **Next.js 16 (App Router) as a STATIC EXPORT** (`output: 'export'
 - **i18n** — import from `@ajh/translations`, never `react-i18next` (init shim `@/i18n`); all user-facing text localized.
 - **Design tokens** — `text-brand`/`bg-brand`/`border-brand`/`ring-brand`; no `[#RRGGBB]` in className.
 - **Motion** — `import { transition } from '@ajh/ui'`; no inline `{ duration, ease }`.
-- **Primitives** — `@ajh/ui` (`Button`/`Input`/`TextArea`/`SelectDropdown`/…); no raw `<button>/<select>/<textarea>`.
+- **Primitives** — `@ajh/ui` (`Button`/`Input`/`TextArea`/`Dropdown`/…); no raw `<button>/<select>/<textarea>`.
 - **Feature isolation** — never import across `features/*`. **a11y** — keyboard-reachable + labeled controls, focus management, contrast via tokens.
 
 Validate (`pnpm -F <pkg> typecheck` + `test`) before done, write the handoff, hand the diff to `frontend-reviewer` + `ui-ux-expert`.

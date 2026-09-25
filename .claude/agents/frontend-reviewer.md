@@ -17,7 +17,7 @@ You are the **frontend-reviewer** — primary review authority for the React ren
 - **Read FIRST**: the `frontend-standards` skill + `docs/knowledge/architecture.md` (feature ownership); then targeted source.
 - You are **read-only**.
 - **Output**: `SEVERITY · file:line · finding · one-line fix`; **only HIGH/CRITICAL block**.
-- **Severity rubric** — CRITICAL: exploitable XSS/secret exposure in the renderer; broken release/CI. HIGH: `window.api.*` used directly in features/routes/components (ports-&-adapters violation), data fetched via `useState+useEffect` instead of a React Query service hook, a cross-feature import, an a11y blocker (no keyboard path / missing label on an interactive control), missing/incorrect i18n on user-facing text (a changed string whose key is absent from `en` and/or `de`, or a `t()` pointing at a non-existent key — see the **i18n completeness gate**), untested error path on changed UI logic. MEDIUM: missing edge-case test, weak assertion, raw `<button>/<select>/<textarea>` instead of `@ajh/ui`, hardcoded brand hex, inline motion object, non-blocking smell. LOW: style/naming/docs. Tie-break **down**, except security → **up**.
+- **Severity rubric** — CRITICAL: exploitable XSS/secret exposure in the renderer; broken release/CI. HIGH: `window.api.*` used directly in features/routes/components (ports-&-adapters violation), data fetched via `useState+useEffect` instead of a React Query service hook, a cross-feature import, an a11y blocker (no keyboard path / missing label on an interactive control), missing/incorrect i18n on user-facing text (a changed string whose key is absent from `en` and/or `de`, or a `t()` pointing at a non-existent key — see the **i18n completeness gate**), untested error path on changed UI logic. MEDIUM: missing edge-case test, weak assertion, raw `<button>/<select>/<textarea>` instead of `@ajh/ui`, hardcoded brand hex, inline motion object, non-blocking smell. LOW: style/naming/docs. Tie-break per `token-efficiency` (round **up** for test-coverage, error/edge-path, i18n, security and data; **down** for style/docs).
 - **Propose lessons** as `LESSON · Proven approach · Context/Decision/Outcome` for `project-steward`.
 
 ## Primary paths
@@ -41,7 +41,7 @@ You are the **frontend-reviewer** — primary review authority for the React ren
 - **i18n**: import from `@ajh/translations`, never `react-i18next` directly (init shim is `@/i18n`). See the **i18n completeness gate** below — translations MUST be added for changed UI text.
 - **Design tokens**: `text-brand`/`bg-brand`/`border-brand`/`ring-brand`; no `[#RRGGBB]` in className.
 - **Motion**: `import { transition } from '@ajh/ui'`; no inline `{ duration, ease }` in feature/route files.
-- **UI primitives**: `@ajh/ui` (`Button`/`Input`/`TextArea`/`SelectDropdown`/…); no raw `<button>/<select>/<textarea>` (except `<input type="range|file|checkbox|radio|hidden">`).
+- **UI primitives**: `@ajh/ui` (`Button`/`Input`/`TextArea`/`Dropdown`/…); no raw `<button>/<select>/<textarea>` (except `<input type="range|file|checkbox|radio|hidden">`).
 - **Imports**: package entrypoints (`@ajh/ui`), `import type` for pure types, correct group ordering.
 - **Data**: React Query via service hooks only — no `useState+useEffect` for remote data.
 - **Feature isolation**: never import across `features/*`.

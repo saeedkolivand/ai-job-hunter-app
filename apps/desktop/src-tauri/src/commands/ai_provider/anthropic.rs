@@ -11,6 +11,7 @@ use crate::error::{AppError, AppResult};
 use super::research;
 use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
+use super::structured;
 use super::timeouts;
 use super::{
     bounded, friendly_api_error, map_completion_transport_error, model_entry, pagination_step,
@@ -19,6 +20,10 @@ use super::{
     RequestTrace, SamplingProfile, StopReason, TokenParam, ToolCall, ToolSpec, Usage,
     DETERMINISTIC_TEMPERATURE, PROSE_GROUNDED_TEMPERATURE, PROSE_TEMPERATURE, PROSE_TOP_P,
 };
+
+#[path = "anthropic_wire.rs"]
+mod wire;
+use wire::*;
 
 const BASE: &str = "https://api.anthropic.com/v1";
 const VERSION: &str = "2023-06-01";
@@ -383,17 +388,10 @@ fn anthropic_effort_levels(model: &str) -> Vec<&'static str> {
 /// (prompt discipline in [`AiProvider::complete_structured`]'s default) always
 /// works and a wrongly-claimed capability cannot.
 ///
-/// **This adapter does not send a structured-output request yet.**
-/// `complete_structured` deliberately stays on the trait default here: the
-/// beta's exact wire shape (the request field carrying the schema and the
-/// `anthropic-beta` header value that enables it) is **pending verification
-/// against Anthropic's live docs**, and guessing a wire format 400s every
-/// generation on the affected models. This predicate is the verified half —
-/// wiring it up is a field name and a header away, and needs no change to any
-/// caller. Consequently NO caller may read
-/// `capabilities().supports_json_mode` as "this call will be natively
-/// constrained": it describes the MODEL's API, not what this adapter sends,
-/// and `complete_structured` works on every model either way.
+/// Gates [`AnthropicClient::complete_structured`]'s native path
+/// (`output_config.format`, GA — no beta header). A model outside this set,
+/// or a schema [`structured::anthropic_output_format`] can't close, falls
+/// back to prompt discipline, so `complete_structured` works on every model.
 fn anthropic_supports_structured_outputs(model: &str) -> bool {
     let m = normalize_model_id(model);
     // The 4.5 generation (the first with structured outputs) plus Opus 4.1.
@@ -413,169 +411,6 @@ fn anthropic_supports_structured_outputs(model: &str) -> bool {
         || contains_version_needle(&m, "fable-5")
         || contains_version_needle(&m, "mythos-5")
         || contains_version_needle(&m, "mythos-preview")
-}
-
-/// Concatenate every `type:"text"` block in an Anthropic Messages `content` array
-/// into one string (web-search responses interleave `server_tool_use` /
-/// `web_search_tool_result` blocks, which have no `text` field and are skipped).
-/// Pure + unit-tested.
-fn join_text_blocks(data: &Value) -> String {
-    data.get("content")
-        .and_then(|c| c.as_array())
-        .map(|blocks| {
-            blocks
-                .iter()
-                .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
-                .collect::<Vec<_>>()
-                .join("")
-        })
-        .unwrap_or_default()
-}
-
-/// Parse a non-streaming Anthropic Messages response into an [`AgentTurn`]:
-/// concatenate the `type:"text"` blocks for the visible text, map every
-/// `type:"tool_use"` block to a [`ToolCall`] (`id`, `name`, `input`→`args`), and
-/// map `stop_reason` (`tool_use`→ToolUse, `end_turn`→End, `max_tokens`→Length,
-/// else Other). Pure + unit-tested — this is the error-prone per-vendor shape, so
-/// it lives here with no I/O.
-fn parse_anthropic_turn(data: &Value) -> AgentTurn {
-    let text = join_text_blocks(data);
-    let tool_calls = data
-        .get("content")
-        .and_then(|c| c.as_array())
-        .map(|blocks| {
-            blocks
-                .iter()
-                .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_use"))
-                .filter_map(|b| {
-                    let name = b.get("name").and_then(|n| n.as_str())?.to_string();
-                    Some(ToolCall {
-                        id: b
-                            .get("id")
-                            .and_then(|i| i.as_str())
-                            .unwrap_or_default()
-                            .to_string(),
-                        name,
-                        args: b.get("input").cloned().unwrap_or_else(|| json!({})),
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    let stop = match data.get("stop_reason").and_then(|s| s.as_str()) {
-        Some("tool_use") => StopReason::ToolUse,
-        Some("end_turn") => StopReason::End,
-        Some("max_tokens") => StopReason::Length,
-        _ => StopReason::Other,
-    };
-    AgentTurn {
-        text,
-        tool_calls,
-        stop,
-        usage: parse_anthropic_usage(data),
-    }
-}
-
-/// Drain complete SSE lines from the accumulated stream buffer into
-/// [`StreamPiece`]s. Anthropic emits paired `event:`/`data:` lines; we track the
-/// most recent `event:` in `last_event` (carried across chunk boundaries by the
-/// caller). `message_stop` (by event name or embedded `type`) yields a terminal
-/// sentinel; `thinking_delta` / `text_delta` map to reasoning / answer pieces.
-///
-/// Real token usage (`crate::spend`) arrives split across two events:
-/// `message_start` carries `message.usage.input_tokens` (once, at the top of
-/// the stream) and each `message_delta` carries a running `usage.output_tokens`
-/// total (the LAST one is authoritative). `usage` is caller-carried mutable
-/// state (like `last_event`) so the two halves combine into one [`Usage`]; a
-/// [`StreamPiece::usage`] piece is emitted whenever either half updates.
-///
-/// Pure + unit-tested; this is the OpenAI-style `parse` closure for Anthropic, so
-/// its SSE framing lives here only.
-fn parse_anthropic_frames(
-    buf: &mut String,
-    last_event: &mut String,
-    usage: &mut Usage,
-) -> Vec<StreamPiece> {
-    let mut out = Vec::new();
-    // Walk the buffer by a `consumed` offset and `drain(..consumed)` once at the end,
-    // instead of reallocating the whole tail per line (O(n²) on a big frame).
-    let mut consumed = 0;
-    while let Some(rel) = buf[consumed..].find('\n') {
-        let nl = consumed + rel;
-        let line = buf[consumed..nl].trim().to_string();
-        consumed = nl + 1;
-
-        if let Some(event) = line.strip_prefix("event: ") {
-            *last_event = event.trim().to_string();
-            continue;
-        }
-        let data = match line.strip_prefix("data: ") {
-            Some(d) => d.trim(),
-            None => continue,
-        };
-        if last_event == "message_stop" || data.contains("\"type\":\"message_stop\"") {
-            buf.drain(..consumed);
-            out.push(StreamPiece::done(""));
-            return out;
-        }
-        let event: Value = match serde_json::from_str(data) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        match last_event.as_str() {
-            "message_start" => {
-                if let Some(input) = event
-                    .get("message")
-                    .and_then(|m| m.get("usage"))
-                    .and_then(|u| u.get("input_tokens"))
-                    .and_then(|v| v.as_u64())
-                {
-                    usage.input_tokens = input as u32;
-                    out.push(StreamPiece::usage(*usage));
-                }
-            }
-            "message_delta" => {
-                if let Some(output) = event
-                    .get("usage")
-                    .and_then(|u| u.get("output_tokens"))
-                    .and_then(|v| v.as_u64())
-                {
-                    usage.output_tokens = output as u32;
-                    out.push(StreamPiece::usage(*usage));
-                }
-            }
-            _ => {}
-        }
-        let delta_obj = event.get("delta");
-        let delta_type = delta_obj
-            .and_then(|d| d.get("type"))
-            .and_then(|t| t.as_str())
-            .unwrap_or("");
-        match delta_type {
-            "thinking_delta" => {
-                let thinking = delta_obj
-                    .and_then(|d| d.get("thinking"))
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("");
-                if !thinking.is_empty() {
-                    out.push(StreamPiece::thinking(thinking));
-                }
-            }
-            "text_delta" => {
-                let text = delta_obj
-                    .and_then(|d| d.get("text"))
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("");
-                if !text.is_empty() {
-                    out.push(StreamPiece::text(text));
-                }
-            }
-            _ => {}
-        }
-    }
-    // Drop the fully-parsed prefix once; the partial trailing line stays buffered.
-    buf.drain(..consumed);
-    out
 }
 
 /// Build the `/messages` streaming request body for a given
@@ -740,18 +575,65 @@ fn build_complete_body(model: &str, system: &str, user: &str, temperature: Optio
     body
 }
 
+/// [`build_complete_body`] plus an optional `output_config` merge — the one
+/// extra field the structured path adds. Pure + unit-tested without HTTP;
+/// shared by `complete_impl` itself, so an absent `output_config` behaves
+/// exactly like [`build_complete_body`] alone.
+fn build_structured_body(
+    model: &str,
+    system: &str,
+    user: &str,
+    temperature: Option<f64>,
+    output_config: Option<Value>,
+) -> Value {
+    let mut body = build_complete_body(model, system, user, temperature);
+    if let Some(oc) = output_config {
+        body["output_config"] = oc;
+    }
+    body
+}
+
+/// The `effort` [`AnthropicClient::complete_structured`] actually sends:
+/// `raw` trimmed, checked non-empty, and kept only for a level THIS model's
+/// tier accepts ([`anthropic_effort_levels`]) — `effort` is stored PER
+/// PROVIDER, so a saved `xhigh` from Sonnet 5 must not survive a switch to a
+/// model whose tier rejects it (same guard [`build_chat_stream_body`]
+/// already applies to its own `effort` field). Pure + unit-tested.
+fn anthropic_structured_effort<'a>(model: &str, raw: Option<&'a str>) -> Option<&'a str> {
+    raw.map(str::trim)
+        .filter(|e| !e.is_empty())
+        .filter(|e| anthropic_effort_levels(model).contains(e))
+}
+
 /// Build the non-streaming `/messages` body shared by every `research*`
 /// facet (native `web_search` tool). Pure + unit-tested — same
 /// [`anthropic_supports_temperature`] gate as [`build_complete_body`]; the
 /// hardcoded `0.2` (favor precision over creativity for a research brief) is
-/// simply skipped instead of overridden on adaptive models.
+/// simply skipped instead of overridden on adaptive models. Tool version per
+/// model: `web_search_20260209` where documented, else `web_search_20250305`.
 fn build_web_search_body(model: &str, system: &str, user: &str) -> Value {
+    let m = normalize_model_id(model);
+    let newer_tool = [
+        "opus-5",
+        "opus-4-8",
+        "opus-4-7",
+        "opus-4-6",
+        "sonnet-5",
+        "sonnet-4-6",
+    ]
+    .iter()
+    .any(|needle| contains_version_needle(&m, needle));
+    let tool_type = if newer_tool {
+        "web_search_20260209"
+    } else {
+        "web_search_20250305"
+    };
     let mut body = json!({
         "model": model,
         "max_tokens": adaptive_max_tokens(model, 1024),
         "system": system,
         "messages": [{ "role": "user", "content": user }],
-        "tools": [{ "type": "web_search_20250305", "name": "web_search", "max_uses": 3 }],
+        "tools": [{ "type": tool_type, "name": "web_search", "max_uses": 3 }],
     });
     if anthropic_supports_temperature(model) {
         body["temperature"] = json!(0.2);
@@ -784,28 +666,6 @@ fn build_tools_body(
     body
 }
 
-/// Extract `usage.{input_tokens,output_tokens}` from a non-streaming Anthropic
-/// Messages response — always present on a successful response. Pure +
-/// unit-tested.
-fn parse_anthropic_usage(data: &Value) -> Usage {
-    let usage = data.get("usage");
-    Usage {
-        input_tokens: usage
-            .and_then(|u| u.get("input_tokens"))
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32,
-        output_tokens: usage
-            .and_then(|u| u.get("output_tokens"))
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32,
-        // Anthropic does NOT report a separate thinking count — extended /
-        // adaptive thinking tokens are billed and counted inside
-        // `output_tokens`. `None` says exactly that; a 0 would claim the model
-        // did no reasoning.
-        thinking_tokens: None,
-    }
-}
-
 pub struct AnthropicClient;
 
 impl AnthropicClient {
@@ -819,12 +679,13 @@ impl AnthropicClient {
         system: &str,
         user: &str,
         temperature: Option<f64>,
+        output_config: Option<Value>,
     ) -> AppResult<(String, Usage)> {
         let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
         let endpoint = format!("{BASE}/messages");
         let trace = RequestTrace::begin(ProviderId::Anthropic, model, "/messages", BASE, false);
 
-        let body = build_complete_body(model, system, user, temperature);
+        let body = build_structured_body(model, system, user, temperature, output_config);
 
         let resp = send_with_retry(
             || {
@@ -1203,7 +1064,7 @@ impl AiProvider for AnthropicClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
-        self.complete_impl(app, model, system, user, temperature)
+        self.complete_impl(app, model, system, user, temperature, None)
             .await
             .map(|(text, _)| text)
     }
@@ -1216,8 +1077,41 @@ impl AiProvider for AnthropicClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<(String, Usage)> {
-        self.complete_impl(app, model, system, user, temperature)
+        self.complete_impl(app, model, system, user, temperature, None)
             .await
+    }
+
+    /// Native structured output via `output_config.format` (GA — no beta
+    /// header). `effort` is gated per-model ([`anthropic_structured_effort`])
+    /// before it ever reaches [`structured::anthropic_output_config`]. Off
+    /// the supported-model list, or without a schema
+    /// [`structured::anthropic_output_format`] can close, this falls back to
+    /// the trait default (prompt discipline) — mirrors the shape of
+    /// [`super::openai::OpenAiClient::complete_structured`].
+    async fn complete_structured(
+        &self,
+        app: &AppHandle,
+        req: &AiGenerateRequest,
+        schema_hint: &str,
+        schema: Option<&Value>,
+    ) -> AppResult<(String, Usage)> {
+        if !anthropic_supports_structured_outputs(&req.model) {
+            return structured::prompt_only(self, app, req, schema_hint).await;
+        }
+        let effort = anthropic_structured_effort(&req.model, req.effort.as_deref());
+        let Some(output_config) = structured::anthropic_output_config(schema, effort) else {
+            return structured::prompt_only(self, app, req, schema_hint).await;
+        };
+        let (system, user) = structured::structured_prompt(req, schema_hint);
+        self.complete_impl(
+            app,
+            &req.model,
+            &system,
+            &user,
+            structured::structured_temperature(self, req),
+            Some(output_config),
+        )
+        .await
     }
 
     async fn research(

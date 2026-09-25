@@ -153,9 +153,9 @@ QUICK WIN IDENTIFICATION:
 - Which section header needs standardization?
 - Which achievement needs a number added?
 
-SCORING — BE HONEST AND STRICT:
+SCORING — honest scores help the candidate more than flattering ones.
 
-SCORING RULES (NEVER BREAK):
+SCORING RULES (hard caps):
 1. **Keyword Coverage**: Missing 5+ critical keywords = automatic score <65
 2. **ATS Score**: Any ATS-killer issue (tables, multi-column) = automatic score <60
 3. **Job Match**: Wrong seniority level (junior for senior role) = automatic score <70
@@ -214,14 +214,14 @@ FORMATTING ANALYSIS — check for these specific ATS killers:
 REWRITE QUALITY STANDARDS:
 Each rewrite must demonstrate the CAR principle: Context → Action → Result
 - BAD: "Responsible for backend development"
-- GOOD: "Architected and deployed REST API serving 50k daily users, reducing response time by 35%"
-The improved version must include: what you built/did + how/with what + the measurable outcome.
+- GOOD (when the résumé elsewhere says they built the REST API and cut latency 35%): "Built the REST API backend, cutting response time by 35%"
+The improved version combines what they did + how/with what + the measurable outcome — using only facts present in the résumé.
 
 RECRUITER PERSPECTIVE — write as internal monologue:
 Think like a recruiter reading this resume for the first time. Be honest: what's your gut reaction?
 Would you move this forward? What specific things make you hesitate or excite you?
 
-ANTI-HALLUCINATION RULES (CRITICAL):
+GROUNDING RULES (users act on this feedback, so it must describe their real résumé):
 1. NEVER mention skills, technologies, or experiences not present in the resume text
 2. NEVER fabricate company names, job titles, or dates
 3. Only list keywords as "missing" if they explicitly appear in the job ad
