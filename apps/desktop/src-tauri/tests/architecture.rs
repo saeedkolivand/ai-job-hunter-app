@@ -17,7 +17,7 @@
 //!
 //! Run: `cargo test --test architecture`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -695,41 +695,189 @@ fn r7_allowlist_has_no_dead_entries() {
     );
 }
 
-// ── R8: oversized-module watch (hard cap prevents new mega-files) ────────────────────
-const HARD_CAP_LOC: usize = 1400; // current ceiling: export/typst_engine/letter.rs (1400 — exactly at the cap,
-                                  // split it before growing it). agent_cli/policy.rs was split at 1399 (its
-                                  // types + classification rules moved to agent_cli/policy/types.rs) so the
-                                  // POLICY table has room for new rows again.
-const SOFT_LOC: usize = 600;
+// ── R8: a hard LOC cap per file, ratcheted from a baseline ──────────────────────────
+// Every `.rs` file `sources()` finds counts, test files included. Files already over the cap
+// are ratcheted in `tests/r8_baseline.txt`: they may shrink or be deleted, never grow.
+const HARD_CAP_LOC: usize = 300;
+
+const R8_BASELINE_FILE: &str = "r8_baseline.txt";
+
+const R8_BASELINE_HEADER: &str = "\
+# R8 size baseline — one line per file over HARD_CAP_LOC: `<loc>\t<rel>`, `rel` = path under src/.
+# A baselined file may shrink or be deleted, never grow; a new over-cap file is not baselined.
+# Regenerate after a split with: R8_BLESS=1 cargo test --test architecture
+";
+
+// ── R8b: tests live in a sibling file, not inline ───────────────────────────────────
+// The wired form is `#[cfg(test)] #[path = "foo_tests.rs"] mod tests;` (a sibling `tests.rs`
+// for a `mod.rs`). Files still carrying an inline body are ratcheted in the baseline below.
+const R8B_BASELINE_FILE: &str = "r8b_inline_tests_baseline.txt";
+
+const R8B_BASELINE_HEADER: &str = "\
+# R8b inline-test baseline — one `src/`-relative path per line, sorted, for files that still
+# carry an inline `#[cfg(test)] mod … { … }` body. A listed file must still have one.
+# Regenerate with: R8_BLESS=1 cargo test --test architecture
+";
+
+const R8B_INLINE_MSG: &str = "inline `#[cfg(test)]` test body — move it to a sibling file";
+const R8B_STALE_MSG: &str = "no inline `#[cfg(test)]` test body left";
+
+/// `tests/<name>` next to the crate root, so a run does not depend on the process's cwd.
+fn tests_path(name: &str) -> PathBuf {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    dir.join(name)
+}
+
+/// Write `rows` under `header` into `name`; only reachable from an `R8_BLESS=1` run.
+fn bless(name: &str, header: &str, rows: impl Iterator<Item = String>) {
+    let mut body = String::from(header);
+    for row in rows {
+        body.push_str(&row);
+        body.push('\n');
+    }
+    fs::write(tests_path(name), &body).expect("blessing run must write the baseline");
+}
+
+/// Read a baseline into `rel -> loc`: `<loc>\t<rel>` per line when `counted`, else one path
+/// per line. `#` and blank lines are skipped; anything unparsable fails, naming the line.
+fn read_baseline(name: &str, counted: bool) -> BTreeMap<String, usize> {
+    let raw = fs::read_to_string(tests_path(name)).unwrap_or_else(|e| {
+        panic!("tests/{name} could not be read ({e}) — restore it, or re-run with R8_BLESS=1")
+    });
+    let (mut out, mut bad) = (BTreeMap::new(), Vec::new());
+    for (i, line) in raw.lines().enumerate() {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with('#') {
+            continue;
+        }
+        let entry = match (counted, t.split_once('\t')) {
+            (true, Some((c, r))) => c.trim().parse::<usize>().ok().map(|n| (r.trim(), n)),
+            (false, None) if !t.contains(char::is_whitespace) => Some((t, 0)),
+            _ => None,
+        };
+        match entry {
+            Some((r, loc)) if !r.is_empty() && !out.contains_key(r) => {
+                out.insert(r.into(), loc);
+            }
+            _ => bad.push(format!("  tests/{name}:{}  {t}", i + 1)),
+        }
+    }
+    assert!(bad.is_empty(), "malformed lines:\n{}", bad.join("\n"));
+    out
+}
+
+/// True when `line` opens an inline `mod <ident> {` body, behind any visibility prefix.
+fn opens_inline_test_mod(line: &str) -> bool {
+    let head = line.trim();
+    let head = head.strip_prefix("pub").map_or(head, |rest| {
+        let rest = rest.trim_start();
+        rest.strip_prefix('(')
+            .and_then(|p| p.split_once(')'))
+            .map_or(rest, |(_, t)| t.trim_start())
+    });
+    // One identifier then the brace: `mod a::b {` and the wired `mod tests;` both fail here.
+    head.strip_prefix("mod ").is_some_and(|r| {
+        let rest = r.split("//").next().unwrap_or(r).trim_end();
+        let ident = rest.strip_suffix('{').unwrap_or("").trim();
+        let one_word = !ident.is_empty() && !ident.starts_with(|c: char| c.is_ascii_digit());
+        one_word && ident.chars().all(|c| c.is_alphanumeric() || c == '_')
+    })
+}
+
+/// 1-indexed line of the first inline `#[cfg(test)] mod … { … }` body, if any. Only the
+/// literal marker is matched; attributes, comments and blank lines may follow it.
+fn inline_test_mod_line(content: &str) -> Option<usize> {
+    let lines: Vec<&str> = content.lines().collect();
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim() != "#[cfg(test)]" {
+            continue;
+        }
+        let mut j = i + 1;
+        while lines.get(j).is_some_and(|l| {
+            let t = l.trim();
+            t.is_empty() || t.starts_with("#[") || is_comment_line(l)
+        }) {
+            j += 1;
+        }
+        if lines.get(j).is_some_and(|next| opens_inline_test_mod(next)) {
+            return Some(j + 1);
+        }
+    }
+    None
+}
 
 #[test]
 fn r8_no_oversized_modules() {
-    let mut over_hard = Vec::new();
-    let mut watch = Vec::new();
-    for f in sources().iter().filter(|f| !f.is_test) {
-        let loc = f.content.lines().count();
-        if loc > HARD_CAP_LOC {
-            over_hard.push((
-                f.rel.clone(),
-                loc,
-                format!("{loc} LOC > hard cap {HARD_CAP_LOC}"),
-            ));
-        } else if loc > SOFT_LOC {
-            watch.push((f.rel.clone(), loc));
+    let files = sources();
+    let over: BTreeMap<&str, usize> = files
+        .iter()
+        .map(|f| (f.rel.as_str(), f.content.lines().count()))
+        .filter(|(_, loc)| *loc > HARD_CAP_LOC)
+        .collect();
+
+    if std::env::var("R8_BLESS").is_ok_and(|v| v == "1") {
+        let rows = over.iter().map(|(rel, &loc)| format!("{loc}\t{rel}"));
+        bless(R8_BASELINE_FILE, R8_BASELINE_HEADER, rows);
+        return;
+    }
+
+    let baseline = read_baseline(R8_BASELINE_FILE, true);
+    let present: BTreeSet<&str> = files.iter().map(|f| f.rel.as_str()).collect();
+    let mut v: Vec<(String, usize, String)> = Vec::new();
+    for (rel, &loc) in &over {
+        // No entry → a new file over the cap. A lower recorded count → it grew. Otherwise it
+        // shrank, or sits exactly at its baseline, and the ratchet is satisfied.
+        let msg = match baseline.get(*rel) {
+            None => format!("{loc} LOC — new file over the {HARD_CAP_LOC}-line cap, split it"),
+            Some(&r) if loc > r => format!("{loc} LOC — grew past its baseline of {r}"),
+            _ => continue,
+        };
+        let line = baseline.get(*rel).map_or(HARD_CAP_LOC + 1, |&r| r + 1);
+        v.push(((*rel).to_string(), line, msg));
+    }
+    for (rel, &r) in &baseline {
+        if over.contains_key(rel.as_str()) {
+            continue;
+        }
+        let why = if present.contains(rel.as_str()) {
+            "now fits"
+        } else {
+            "no longer exists"
+        };
+        let msg = format!("{why} — remove it from tests/{R8_BASELINE_FILE}");
+        v.push((rel.clone(), r, msg));
+    }
+    fail_if_any("R8", "over the LOC cap, or a stale baseline entry", &v);
+}
+
+#[test]
+fn r8b_tests_in_sibling_files() {
+    let files = sources();
+    let inline: BTreeMap<&str, usize> = files
+        .iter()
+        .filter_map(|f| inline_test_mod_line(&f.content).map(|line| (f.rel.as_str(), line)))
+        .collect();
+
+    if std::env::var("R8_BLESS").is_ok_and(|v| v == "1") {
+        let rows = inline.keys().copied().map(String::from);
+        bless(R8B_BASELINE_FILE, R8B_BASELINE_HEADER, rows);
+        return;
+    }
+
+    let listed = read_baseline(R8B_BASELINE_FILE, false);
+    let mut v: Vec<(String, usize, String)> = Vec::new();
+    for (rel, &line) in &inline {
+        if !listed.contains_key(*rel) {
+            v.push(((*rel).to_string(), line, R8B_INLINE_MSG.to_string()));
         }
     }
-    watch.sort_by_key(|&(_, loc)| std::cmp::Reverse(loc));
-    if !watch.is_empty() {
-        eprintln!("R8 watchlist (>{SOFT_LOC} LOC — split candidates, not a failure):");
-        for (rel, loc) in &watch {
-            eprintln!("  src/{rel}: {loc}");
+    for rel in listed.keys() {
+        if !inline.contains_key(rel.as_str()) {
+            let msg = format!("{R8B_STALE_MSG} — remove it from tests/{R8B_BASELINE_FILE}");
+            v.push((rel.clone(), 0, msg));
         }
     }
-    fail_if_any(
-        "R8",
-        "module exceeds the hard LOC cap — split it before it grows further",
-        &over_hard,
-    );
+    fail_if_any("R8B", "tests must live in a sibling file", &v);
 }
 
 // ── R15: no `.display()` inside a `log::*!`/`tracing::*!` call ───────────────────────
