@@ -7,34 +7,21 @@ use crate::autopilot::FoundJob;
 use crate::error::{AppError, AppResult};
 use crate::scraping::engine::location_filter::REMOTE_MARKERS;
 
-/// Server-side filters for `found-jobs` (issue #1167). Every predicate here
-/// is the app's OWN, already-established one — never a fresh matcher invented
-/// for this surface:
-/// - `remote` is THREE-valued, matching
-///   [`remote_determination`]'s truth table, not a plain boolean read of
-///   `location` text: `job.board_remote` (the board's own per-posting
-///   classification), [`crate::scraping::boards::is_all_remote_board`] (the
-///   board's REGISTRY-level "every posting is remote" declaration —
-///   retroactive for a `FoundJob` persisted before `board_remote` existed,
-///   round-4 fix T1), or a
-///   [`REMOTE_MARKERS`](crate::scraping::engine::location_filter::REMOTE_MARKERS)
-///   hit in `location` text all decide `true`; a non-empty `location` with
-///   none of those decides `false`; an empty/absent `location` with none of
-///   those is UNDECIDED and matches neither `remote: true` nor
-///   `remote: false` (round-4 fix T2 — the old two-valued read reported an
-///   unknown row as a confident `false`).
-/// - `country` is a case-insensitive substring match against `location` —
-///   the SAME predicate the Jobs page's own free-text filter applies to a
-///   posting's location (`(p.location ?? '').toLowerCase().includes(q)` in
-///   `JobsPage`), not a structured country-code compare: `FoundJob` carries
-///   no `countryCode` field, and `commands::match_resume::constraints`
-///   documents that a bare country code "contributes nothing to the
-///   matchable token" for this exact reason — only place text does.
-/// - `query` mirrors that same JobsPage substring filter's title/company
-///   half (its location half becomes the separate `country` filter above).
-/// - `applied` reads the SAME derived-at-read-time set
-///   [`crate::commands::autopilot::applied_job_urls`] produces for
-///   `best-matches`/`autopilot_list`, never the stale stored bit.
+/// Server-side filters for `found-jobs` (issue #1167). Every predicate here is the app's OWN,
+/// already-established one — never a fresh matcher invented for this surface:
+/// - `remote` is THREE-valued, matching [`remote_determination`]'s truth table, not a plain
+///   boolean read of `location` text: `job.board_remote`,
+///   [`crate::scraping::boards::is_all_remote_board`], or a
+///   [`REMOTE_MARKERS`](crate::scraping::engine::location_filter::REMOTE_MARKERS) hit all decide
+///   `true`; a non-empty `location` with none decides `false`; an empty/absent `location` with
+///   none is UNDECIDED and matches neither direction (round-4 fix T2 — the old two-valued read
+///   reported an unknown row as a confident `false`).
+/// - `country` is a case-insensitive substring match against `location`, the SAME predicate the
+///   Jobs page's own free-text filter applies, not a structured country-code compare (`FoundJob`
+///   carries no `countryCode` field).
+/// - `query` mirrors that same JobsPage substring filter's title/company half.
+/// - `applied` reads the SAME derived-at-read-time set [`crate::commands::autopilot::
+///   applied_job_urls`] produces for `best-matches`/`autopilot_list`, never the stale stored bit.
 // `pub(super)` — `agent_read::tests`' `no_resource_output_ever_carries_a_forbidden_key` and
 // `automations_found_jobs_total_matches_found_jobs_own_total` build a `FoundJobsFilters` to call
 // `resolve_found_jobs` directly (a sibling module, not a descendant of this one, needs the same
@@ -51,39 +38,27 @@ pub(in crate::extension_bridge::agent_read) struct FoundJobsFilters {
     pub(super) include_description: bool,
 }
 
-/// One shared refusal for every filter argument below that is PRESENT but
-/// not readable as its declared shape (B3-r1-F3 — a wrong-typed value, e.g.
-/// `{"minScore": "70"}` off the raw `agent.query` payload path, used to
-/// vanish silently through `.and_then(Value::as_*)` returning `None` for a
-/// mismatch exactly like it does for "absent") — and, for the two string
-/// filters, also PRESENT-but-blank (B3-r2-F2, see
-/// [`trimmed_lowercase_filter`]'s own doc). The caller got an UNFILTERED
-/// page back with a `total` it read as filtered. Refusing here instead means
-/// the filter this call asked for either applies or the call fails loudly —
-/// never a third, silent option. Names the KEY, not the caller's value
-/// (never echoed) — the key is this resource's own static schema, not
-/// caller data.
+/// One shared refusal for every filter argument below that is PRESENT but not readable as its
+/// declared shape (B3-r1-F3 — a wrong-typed value used to vanish silently through
+/// `.and_then(Value::as_*)` returning `None` for a mismatch exactly like "absent") — and, for the
+/// two string filters, also PRESENT-but-blank (B3-r2-F2). Refusing means the filter either applies
+/// or the call fails loudly, never a silent unfiltered page with a `total` read as filtered. Names
+/// the KEY, not the caller's value (never echoed).
 fn unreadable_filter_message(key: &str) -> AppError {
     AppError::Validation(format!(
         "{key} was present but not usable as its declared type — remove it or fix its value"
     ))
 }
 
-/// `payload.get(key)`, refusing anything present that is neither absent/
-/// `null` nor a non-blank JSON string. A PRESENT-but-blank/whitespace-only
-/// string now refuses too (round 2 fix, B3-r2-F2 — it used to read as
-/// "filter not set", silently widening the call to the entire corpus with a
-/// `total` the caller reads as the filtered count; the canonical repro is a
-/// shell caller forwarding an unset variable, e.g. `--query "$ROLE"` with
-/// `ROLE` empty). There is no legitimate caller that types an explicitly
-/// empty filter, so this now mirrors `parse_autopilot_id_arg`'s blank-must-
-/// refuse rule even though `query`/`country` are additive filters, not
-/// selectors — only the OMITTED key still means "no filter".
+/// `payload.get(key)`, refusing anything present that is neither absent/`null` nor a non-blank
+/// JSON string. A PRESENT-but-blank/whitespace-only string now refuses too (round 2 fix, B3-r2-F2
+/// — it used to silently widen the call to the entire corpus; the canonical repro is a shell
+/// caller forwarding an unset variable, e.g. `--query "$ROLE"` with `ROLE` empty). Only the
+/// OMITTED key still means "no filter".
 ///
-/// `pub(super)` (round 2 fix, B3-r2-F1) so `agent_read::best_matches_resource`
-/// reuses this SAME fallible parse for its own `query` argument rather than
-/// the bare `.and_then(Value::as_str)` combinator that let a wrong-typed or
-/// blank `query` collapse silently to "absent" on that resource too.
+/// `pub(super)` (B3-r2-F1) so `best_matches_resource` reuses this SAME fallible parse for its own
+/// `query` argument rather than a bare combinator that let it collapse silently to "absent" there
+/// too.
 pub(in crate::extension_bridge::agent_read) fn trimmed_lowercase_filter(
     payload: &Value,
     key: &str,
@@ -113,22 +88,14 @@ fn bool_filter(payload: &Value, key: &str) -> AppResult<Option<bool>> {
 }
 
 impl FoundJobsFilters {
-    /// Fallible (B3-r1-F3) — a filter key that IS present must either parse
-    /// as its declared shape or refuse the whole call; it can no longer
-    /// silently collapse to "no filter" the way `.and_then(Value::as_*)`
-    /// alone would for a wrong-typed value.
+    /// Fallible (B3-r1-F3) — a filter key that IS present must either parse as its declared shape
+    /// or refuse the whole call; never silently collapse to "no filter" for a wrong-typed value.
     ///
-    /// `minScore`'s `is_finite()` guard is defense-in-depth, not the fix for
-    /// the non-finite `--min-score` repro (`1e400`/`inf`/`nan`): RFC 8259
-    /// has no `Infinity`/`NaN` token, so `json!(non_finite_f64)` collapses
-    /// to `null` BEFORE this ever runs, and `None | Some(Value::Null) =>
-    /// None` below already treats that the same as "absent" — the
-    /// established, intentional convention for every filter/cursor here,
-    /// not a bug. The load-bearing half of that fix is upstream, at the
-    /// CLI's own `--min-score` parse (`agent_cli::parse_found_jobs`), which
-    /// refuses the non-finite value before it is ever handed to `json!` —
-    /// see that fn's own doc and
-    /// `found_jobs::tests::found_jobs_filters_from_payload_treats_a_null_min_score_as_absent`.
+    /// `minScore`'s `is_finite()` guard is defense-in-depth, not the fix for the non-finite
+    /// `--min-score` repro: RFC 8259 has no `Infinity`/`NaN` token, so `json!(non_finite_f64)`
+    /// collapses to `null` BEFORE this ever runs, already treated as "absent" — an established
+    /// convention, not a bug. The load-bearing half of that fix is upstream, at the CLI's own
+    /// `--min-score` parse, which refuses the non-finite value before it reaches `json!`.
     pub(in crate::extension_bridge::agent_read) fn from_payload(
         payload: &Value,
     ) -> AppResult<Self> {
@@ -151,21 +118,14 @@ impl FoundJobsFilters {
     }
 }
 
-/// THREE-valued remote determination for `job` (round-4 fix T1/T2— advisory
-/// findings on PR #1182). `Some(true)`: `job.board_remote` (the board's own
-/// per-posting classification, set at scrape time — see `build_found_job`),
-/// [`crate::scraping::boards::is_all_remote_board`] (the board's
-/// REGISTRY-level "every posting is remote" declaration, checked against the
-/// stored `board` id — retroactive, so a `FoundJob` persisted before
-/// `board_remote` existed, or scraped from a board that only started
-/// setting the flag later, still resolves correctly), or a
-/// [`REMOTE_MARKERS`] hit in `location` text. `Some(false)`: a non-empty
-/// `location` with none of the above — a real place, stated. `None`
-/// ("undecided"): an empty/absent `location` with none of the above —
-/// genuinely unknown, not a negative. [`passes_filters`]'s `remote` filter
-/// matches NEITHER `true` nor `false` for `None`, so an unknown row is
-/// excluded from both directions rather than silently counted as "not
-/// remote".
+/// THREE-valued remote determination for `job` (round-4 fix T1/T2). `Some(true)`:
+/// `job.board_remote`, [`crate::scraping::boards::is_all_remote_board`] (the board's
+/// REGISTRY-level declaration — retroactive, so a `FoundJob` persisted before `board_remote`
+/// existed still resolves correctly), or a [`REMOTE_MARKERS`] hit in `location` text. `Some(false)`:
+/// a non-empty `location` with none of the above. `None` ("undecided"): an empty/absent `location`
+/// with none of the above — genuinely unknown, not a negative. [`passes_filters`]'s `remote`
+/// filter matches NEITHER for `None`, so an unknown row is excluded from both directions rather
+/// than silently counted as "not remote".
 fn remote_determination(job: &FoundJob) -> Option<bool> {
     let loc = job.location.as_deref().unwrap_or("").trim().to_lowercase();
     if job.board_remote

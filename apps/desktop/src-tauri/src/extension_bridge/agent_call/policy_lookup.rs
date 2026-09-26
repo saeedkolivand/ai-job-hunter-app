@@ -7,22 +7,15 @@ use serde_json::Value;
 use super::super::agent_cli::policy::{Effect, PolicyEntry, ProofSource, POLICY};
 use super::{proof, validate, Refusal};
 
-/// Split a [`PolicyEntry::path`] (e.g. `"commands::jobs::jobs_list"`, always
-/// `module::fn` — at least one `::`) into `(namespace, command)`. `command`
-/// is the bare trailing segment — the wire `cmd` Tauri actually registers
-/// (confirmed against the TS client, `invoke('jobs_list', ...)`, never the
-/// qualified path); `namespace` is the segment immediately before it.
-/// Uniform across every row's shape (`commands::ai::ai_generate`,
-/// `export::commands::documents_export_document`, `updater::updater_check`)
-/// with no per-module special-casing — the SAME derivation both parses a
-/// CLI token's expected shape and looks a row up, never two copies.
+/// Split a [`PolicyEntry::path`] (e.g. `"commands::jobs::jobs_list"`, always `module::fn`) into
+/// `(namespace, command)`. `command` is the bare trailing segment — the wire `cmd` Tauri actually
+/// registers, never the qualified path; `namespace` is the segment immediately before it. Uniform
+/// across every row's shape with no per-module special-casing — the SAME derivation parses a CLI
+/// token's expected shape and looks a row up.
 ///
-/// `pub(super)` — the `agent_cli::mcp` MCP server (a sibling module reached
-/// via `extension_bridge`, not a descendant of THIS module) needs the exact
-/// same `(namespace, command)` split to route a `call-*` tool locally
-/// against its own bundled `POLICY` copy, and to build `commands`' rows —
-/// never a second hand-typed `rsplit("::")`. Same anti-copy reasoning that
-/// widened [`ERR_CONFIRMATION_REQUIRED`] below.
+/// `pub(super)` — `agent_cli::mcp` (a sibling, not a descendant) needs the identical split to
+/// route a `call-*` tool locally against its own bundled `POLICY` copy, and to build `commands`'
+/// rows, never a second hand-typed `rsplit("::")`.
 pub(in crate::extension_bridge) fn split_path(path: &str) -> (&str, &str) {
     let mut segments = path.rsplit("::");
     let command = segments.next().unwrap_or(path);
@@ -43,16 +36,12 @@ pub(super) fn find_policy(namespace: &str, command: &str) -> Option<&'static Pol
 }
 
 /// The real namespace for `command`, when EXACTLY ONE [`POLICY`] row's own bare command name
-/// matches it — never a fuzzy match on a mistyped COMMAND name (issue #1163's `unknown_command`
-/// naming request is scoped to "the bare command name matches exactly one row": this is an EXACT
-/// string match on the trailing segment, the same equality [`find_policy`] itself uses, not a
-/// distance/prefix heuristic). `None` when zero rows match (the command name itself is wrong, not
-/// just its namespace) or — defensively, since `generate_handler!` requires globally-unique
-/// command names, so this can't happen for a real row — more than one does; guessing between two
-/// would be exactly the "typo to a destructive neighbour" path this surface never takes.
-/// `pub(super)` — the MCP server's own LOCAL `unknown_command` refusal
-/// ([`super::agent_cli::mcp::local_call_refusal`]) needs the identical suggestion, never a second
-/// hand-typed scan of [`POLICY`].
+/// matches it — never a fuzzy match on a mistyped COMMAND name: an EXACT string match on the
+/// trailing segment, same equality [`find_policy`] uses, not a distance/prefix heuristic. `None`
+/// when zero rows match, or — defensively, since command names are globally unique — more than
+/// one does; guessing between two would be exactly the "typo to a destructive neighbour" path this
+/// surface never takes. `pub(super)` — the MCP server's own LOCAL `unknown_command` refusal needs
+/// the identical suggestion, never a second hand-typed scan of [`POLICY`].
 pub(in crate::extension_bridge) fn namespace_suggestion(command: &str) -> Option<&'static str> {
     let mut matches = POLICY
         .iter()
@@ -90,18 +79,13 @@ pub(in crate::extension_bridge) fn proof_kind_for(source: ProofSource) -> &'stat
 }
 
 /// Re-export of [`validate::check_input`] + [`validate::check_no_empty_required_wrapper`] for
-/// MCP's `local_call_refusal` (A1-r1-SEC-1 HIGH, widened for A1-r1-AC-1/SEC-2-round-2 MEDIUM):
-/// `local_call_refusal` used to refuse only `unknown_command`/`not_exposed`/`wrong_tool` locally
-/// and forward every other body straight to the PEER app process for catalogue validation — a
-/// SEPARATE, possibly OLDER process (e.g. an updater-staged newer exe still paired with it), so
-/// relying on its gate left a mis-keyed `call-*` body dispatching silently on an older running app
-/// even though this server's own `initialize` instructions promise `invalid_input` is refused
-/// before dispatch. Mirroring only `check_input` and not its sibling left the OTHER half of that
-/// same gap open: an empty required wrapper (`{"req":{}}`, issue #1158's headline symptom) still
-/// depended on the peer app to refuse it. Both checks run here, in [`dispatch_plan::plan`]'s own
-/// order, so the local mirror matches the app-side gate exactly rather than half of it. Returns
-/// the detail string (never the full [`Refusal`], to keep `validate`'s enum-construction private
-/// to this module).
+/// MCP's `local_call_refusal` (A1-r1-SEC-1 HIGH, widened round 2): `local_call_refusal` used to
+/// forward every uncaught body straight to the PEER app process for catalogue validation — a
+/// SEPARATE, possibly OLDER process, so a mis-keyed `call-*` body could dispatch silently on an
+/// older running app even though `initialize`'s own instructions promise `invalid_input` is
+/// refused before dispatch. Both checks run here, in [`dispatch_plan::plan`]'s own order, so the
+/// local mirror matches the app-side gate exactly. Returns the detail string (never the full
+/// [`Refusal`], to keep `validate`'s enum-construction private to this module).
 pub(in crate::extension_bridge) fn invalid_input_detail(
     command: &str,
     effect: Effect,

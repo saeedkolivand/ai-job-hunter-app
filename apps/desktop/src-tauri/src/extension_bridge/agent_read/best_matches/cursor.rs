@@ -5,26 +5,17 @@ use serde_json::Value;
 
 use crate::error::AppResult;
 
-/// Server-side default/cap for `best-matches`' `limit` — applied BEFORE
-/// serialization (never trust an unbounded client-supplied number), well
-/// under `MAX_FRAME_BYTES` even at the max.
+/// Server-side default/cap for `best-matches`' `limit` — applied BEFORE serialization, well under
+/// `MAX_FRAME_BYTES` even at the max.
 ///
-/// `pub(in crate::extension_bridge)` — same reason `found_jobs`'
-/// `DEFAULT_FOUND_JOBS_LIMIT`/`MAX_FOUND_JOBS_LIMIT` pair carries the identical
-/// visibility: `agent_cli::mcp` (a sibling of `agent_read`, not a descendant) derives the
-/// `best-matches` tool schema's advertised default/cap from THESE numbers, reached via the fully
-/// qualified `agent_read::best_matches::{DEFAULT,MAX}_BEST_MATCHES_LIMIT`, rather than a
-/// hand-typed copy that can silently drift out of sync.
+/// `pub(in crate::extension_bridge)` — same reason `found_jobs`' own limit pair carries this
+/// visibility: `agent_cli::mcp` derives the tool schema's advertised default/cap from THESE
+/// numbers rather than a hand-typed copy that can drift.
 ///
-/// `MAX_BEST_MATCHES_LIMIT` equals
-/// `commands::autopilot::best_matches::BEST_MATCHES_CAP` (round 3 fix,
-/// B3-r3-F2 — it used to be half that cap, so a full traversal took 2–5
-/// calls, each one re-running the command's own real clustering pass with
-/// no cache; the 30s-refill throttle bucket sized for exactly one call per
-/// traversal turned that into 30–120s of forced stalls). Equal to the cap
-/// means one max-limit page always reaches the whole reachable set in a
-/// SINGLE call — see
-/// `agent_read::tests::max_best_matches_limit_covers_the_full_capped_row_set_in_one_page`.
+/// `MAX_BEST_MATCHES_LIMIT` equals `BEST_MATCHES_CAP` (round 3 fix, B3-r3-F2 — it used to be half
+/// that cap, so a full traversal took 2–5 calls against a 30s-refill bucket sized for one, i.e.
+/// 30–120s of forced stalls). Equal to the cap means one max-limit page always reaches the whole
+/// reachable set in a SINGLE call.
 pub(in crate::extension_bridge) const DEFAULT_BEST_MATCHES_LIMIT: usize = 20;
 pub(in crate::extension_bridge) const MAX_BEST_MATCHES_LIMIT: usize = 100;
 
@@ -73,12 +64,9 @@ pub(in crate::extension_bridge::agent_read) fn best_matches_cursor_issuer(
     crate::extension_bridge::paging::fingerprint(&[query.unwrap_or("")])
 }
 
-/// Parse `payload`'s `cursor` against `issuer` (see
-/// [`best_matches_cursor_issuer`]) — mirrors
-/// `found_jobs::parse_found_jobs_cursor`'s own shape-then-issuer contract
-/// and never-echo discipline, one resource over (round 2 fix, B3-r1-F4:
-/// `best-matches` used to accept a bare numeric offset via
-/// `extension_bridge::paging::parse_offset_cursor`, which carried no
+/// Parse `payload`'s `cursor` against `issuer` (see [`best_matches_cursor_issuer`]) — mirrors
+/// `found_jobs::parse_found_jobs_cursor`'s own shape-then-issuer contract and never-echo
+/// discipline (round 2 fix, B3-r1-F4: `best-matches` used to accept a bare numeric offset with no
 /// evidence of which `query` produced it).
 pub(in crate::extension_bridge::agent_read) fn parse_best_matches_cursor(
     payload: &Value,
@@ -104,18 +92,12 @@ pub(in crate::extension_bridge::agent_read) fn parse_best_matches_cursor(
     }
 }
 
-/// The payload-only half of `best-matches`' argument parsing — `query`
-/// (round 2 fix, B3-r2-F1 — MUST go through `found_jobs::trimmed_lowercase_filter`,
-/// never a raw `.and_then(Value::as_str)`, which silently read a non-string
-/// or present-but-blank `query` as absent and handed back the unfiltered
-/// ranked list with a `total` the caller read as filtered) plus the cursor
-/// offset it feeds. No `AppHandle` needed — unlike [`super::best_matches_resource`]
-/// itself, which only adds the `commands::autopilot::autopilot_best_matches`
-/// call this can't reach — so THIS delegation is directly unit-testable
-/// (round 3 fix, B3-r3-F7: the previous guard tested
-/// `found_jobs::trimmed_lowercase_filter` directly, which pinned nothing
-/// about `best_matches_resource` actually calling it — reverting the call
-/// site back to the old combinator left that guard green).
+/// The payload-only half of `best-matches`' argument parsing — `query` (round 2 fix, B3-r2-F1 —
+/// MUST go through `found_jobs::trimmed_lowercase_filter`, never a raw `.and_then(Value::as_str)`,
+/// which silently read a blank/wrong-typed `query` as absent) plus the cursor offset it feeds. No
+/// `AppHandle` needed, so THIS delegation is directly unit-testable (round 3 fix, B3-r3-F7: testing
+/// `trimmed_lowercase_filter` directly pinned nothing about `best_matches_resource` actually
+/// calling it).
 pub(in crate::extension_bridge::agent_read) fn parse_best_matches_args(
     payload: &Value,
 ) -> AppResult<(Option<String>, usize)> {

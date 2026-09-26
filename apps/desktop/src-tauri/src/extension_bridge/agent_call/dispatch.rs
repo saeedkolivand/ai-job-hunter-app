@@ -29,16 +29,13 @@ use super::reshape::{
 pub(super) enum InvokeOutcome {
     /// The command body ran and returned its success payload.
     Success(Value),
-    /// `InvokeResponse::Err` (HIGH fix — security review): the command body
-    /// either legitimately ran and returned a typed `Err` (e.g.
-    /// `documents_export_document` failing validation), OR Tauri rejected
-    /// the call before the body ever ran at all — a missing/mistyped arg
-    /// (`applications_delete` called without `keepDocuments`), an ACL
-    /// denial, or an unregistered command name. Both cases serialize to the
-    /// SAME shape (a bare string — `AppError::serialize` and Tauri's own
-    /// ACL-rejection string are wire-indistinguishable), so this crate
-    /// cannot tell them apart from the response alone — but BOTH must never
-    /// be reported as `dispatched: true`; see [`Refusal::InvokeError`].
+    /// `InvokeResponse::Err` (HIGH fix — security review): the command body either legitimately
+    /// ran and returned a typed `Err` (e.g. `documents_export_document` failing validation), OR
+    /// Tauri rejected the call before the body ran at all (a missing/mistyped arg, an ACL denial,
+    /// an unregistered command). Both serialize to the SAME bare-string shape
+    /// (`AppError::serialize` and Tauri's own ACL-rejection string are wire-indistinguishable), so
+    /// this crate cannot tell them apart — but BOTH must never report `dispatched: true`; see
+    /// [`Refusal::InvokeError`].
     CommandErr(Value),
 }
 
@@ -157,16 +154,11 @@ async fn dispatch_direct(
 ) -> Result<Value, Refusal> {
     let page_args = take_list_page_args(command, &mut input)?;
     unfence_named_fields_recursive(&mut input);
-    // The CRITICAL fix for issue #1180's round-1 review, generalised in
-    // round 2 (P-r2-R2-F2): a `contact_profile_set` whose payload omits a
-    // local-only field (the only shape a `contact_profile_get` caller can
-    // ever produce, since that reply already strips every such field) must
-    // not silently delete it on this whole-row-replace write — for `photo`
-    // today, and for whatever field is added to `ContactProfile` next
-    // without a matching `CONTACT_PROFILE_AGENT_FIELDS` entry. Reads current
-    // app state here via `stored_profile_value` (the impure half) and hands
-    // the whole stored profile to the pure `restore_local_only_contact_fields`,
-    // which does the actual merge.
+    // Issue #1180 (CRITICAL, generalised round 2): a `contact_profile_set` payload omitting a
+    // local-only field (the only shape a `contact_profile_get` caller can produce, since that
+    // reply already strips every such field) must not silently delete it on this whole-row-replace
+    // write. Reads current app state via `stored_profile_value` (impure) and hands it to the pure
+    // `restore_local_only_contact_fields`, which does the actual merge.
     if command == CONTACT_PROFILE_SET_COMMAND {
         let stored_profile = stored_profile_value(
             app.try_state::<crate::contact_profile::ContactProfileStore>()
@@ -195,26 +187,16 @@ async fn dispatch_direct(
     Ok(data)
 }
 
-/// The whole decision [`dispatch_irreversible_confirmed`] makes, with the
-/// `AppHandle` factored out — the impure wrapper below only resolves the
-/// proof and hands the result here, so the ceremony's two refusal paths are
-/// directly testable (the crate has no Tauri mock, so nothing taking a
-/// concrete `&AppHandle` can be).
+/// The whole decision [`dispatch_irreversible_confirmed`] makes, with the `AppHandle` factored out
+/// so the ceremony's two refusal paths are directly testable (no Tauri mock in this crate). `run`
+/// is called at most ONCE and ONLY on an accepted `confirm`, never before the comparison
+/// (mutation-checked: comparing after running would dispatch on a wrong `confirm`).
 ///
-/// `run` is called at most ONCE and ONLY on an accepted `confirm` — never
-/// before the comparison, which is the property the tests mutation-check: a
-/// version that ran first and compared after would dispatch an
-/// irreversible command on a wrong `confirm`. It returns whatever the
-/// caller's own run step produces (the async wrapper returns the UNAWAITED
-/// future, so this core stays sync and pure).
-///
-/// The comparison itself is [`proof::accepted`] (issue #1162), not a bare `==`: an exact match on
-/// the FRESH `resolved` value is still the ordinary case, but for a [`proof::grace_window_key`]-
-/// eligible `source` (today, ONLY `ai_spend_summary`-backed rows — security review round A3-r1,
-/// AC-1/SEC-1 CRITICAL), `confirm` may also match a snapshot [`super::dispatch`]/[`dispatch_direct`]
-/// recorded, provided that snapshot's grace window hasn't closed — see that fn's own doc for why a
-/// spend-based proof can legitimately move between disclosure and confirm. Every other row's
-/// `source` has no grace window at all: only the exact fresh value is ever accepted.
+/// The comparison is [`proof::accepted`] (issue #1162), not a bare `==`: an exact match on the
+/// FRESH `resolved` value is the ordinary case, but a [`proof::grace_window_key`]-eligible `source`
+/// (today, only `ai_spend_summary`-backed rows — AC-1/SEC-1 CRITICAL) may also match a snapshot
+/// recorded earlier, within its grace window — see that fn's own doc. Every other row has no grace
+/// window: only the fresh value is ever accepted.
 pub(in crate::extension_bridge::agent_call) fn confirm_and_run<T>(
     source: ProofSource,
     resolved: Option<String>,
@@ -267,16 +249,11 @@ pub(super) async fn dispatch(
         Ok(Dispatch::Confirmed { source, confirm }) => {
             dispatch_irreversible_confirmed(app, command, input, source, confirm).await
         }
-        // Issue #1162 — snapshot the CURRENT proof value right NOW, at the moment this
-        // `confirmation_required` refusal is issued: this is the earliest point a grace window
-        // can start, and doing it here (rather than lazily on the retry) means a caller that
-        // reads the disclosed field and pastes it straight back is comparing against a value
-        // this process itself resolved, never one it could have influenced. Best-effort — a
-        // `None` (the target record doesn't exist yet, or its own read failed) changes nothing
-        // about the refusal the caller already gets; it just means no snapshot lands. Only for a
-        // [`proof::grace_window_key`]-eligible `source` (security review round A3-r1, AC-1/SEC-1
-        // CRITICAL) — every per-target row never gets a snapshot at all, so it can never be
-        // satisfied by anything but the fresh, just-resolved value.
+        // Issue #1162 — snapshot the CURRENT proof value right now, at the earliest point a grace
+        // window can start, so a caller pasting the disclosed field back is compared against a
+        // value this process itself resolved. Best-effort (a `None` changes nothing about the
+        // refusal). Only for a [`proof::grace_window_key`]-eligible `source` (AC-1/SEC-1
+        // CRITICAL) — every per-target row never gets a snapshot at all.
         Err(Refusal::ConfirmationRequired(hint)) => {
             if let Effect::Irreversible(source) = entry.effect {
                 if let Some(key) = proof::grace_window_key(source) {

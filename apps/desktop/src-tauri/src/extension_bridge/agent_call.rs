@@ -1,54 +1,35 @@
 //! `agent.call` → `agent.call.result` — ADR-038 §2's generic dispatch tier
-//! (`agent call <namespace>:<command> --input '<json>'`). [`Effect::Read`]
-//! AND [`Effect::Reversible`] rows dispatch directly through
-//! [`tauri::Webview::on_message`] (Phase 4) — the caller can undo either
-//! through the app, which is what those two classes mean. An
-//! [`Effect::Irreversible`] row dispatches only after a `--confirm` ceremony
-//! (Phase 3, ADR-038 §4): a call with no `confirm` refuses with
-//! [`Refusal::ConfirmationRequired`], naming WHICH other read surface the
-//! proof value comes from and NEVER the value itself; a wrong `confirm`
-//! refuses with [`Refusal::ConfirmationMismatch`], which likewise never
-//! discloses the expected value. [`Effect::NotExposed`] always refuses. A
-//! dispatched command that comes back as `InvokeResponse::Err` — the body
-//! ran and returned a typed `Err`, or Tauri rejected the call before the
-//! body ran at all (bad args, ACL denial, unknown command) — ALSO refuses,
-//! with [`Refusal::InvokeError`]: it is never folded into `dispatched: true`
-//! (see that variant's own doc for why the two causes are indistinguishable
-//! on the wire and both must refuse).
+//! (`agent call <namespace>:<command> --input '<json>'`). [`Effect::Read`] AND [`Effect::Reversible`]
+//! rows dispatch directly through [`tauri::Webview::on_message`] (Phase 4) — the caller can undo
+//! either through the app. An [`Effect::Irreversible`] row dispatches only after a `--confirm`
+//! ceremony (Phase 3, ADR-038 §4): no `confirm` refuses with [`Refusal::ConfirmationRequired`],
+//! naming WHICH other read surface the proof comes from and NEVER the value; a wrong `confirm`
+//! refuses with [`Refusal::ConfirmationMismatch`], likewise never disclosing the expected value.
+//! [`Effect::NotExposed`] always refuses. `InvokeResponse::Err` (body ran and returned a typed
+//! `Err`, OR Tauri rejected the call before the body ran) ALSO refuses, with
+//! [`Refusal::InvokeError`] — never folded into `dispatched: true` (see that variant's own doc for
+//! why the two causes are wire-indistinguishable and both must refuse).
 //!
-//! ## Dispatch mechanism (verified against the vendored tauri 2.11.5
-//! source, not docs.rs — ADR-038's own "verified" note)
-//! `Webview::on_message` is `pub`; every `InvokeRequest` field is `pub`;
-//! `AppHandle::invoke_key` is `pub` and its own doc names this EXACT use
-//! ("Gets the invoke key that must be referenced when using
-//! `crate::webview::InvokeRequest`"). Driving it this way runs the REAL,
-//! registered command body in the app's own process against its single
-//! managed state — so `limits::Limiter`/`charge_provider_daily` (which live
-//! INSIDE command bodies, never in a wrapper — `commands/ai/mod.rs`) still
-//! apply exactly as they do for the renderer. No codegen, no second copy of
-//! any command's logic, no call-the-Rust-fn-directly shortcut that would
-//! bypass those limits. The SAME mechanism resolves an `Irreversible` row's
-//! proof value too (`proof::resolve` dispatches its `read_command` through
-//! this exact path) — never a second implementation of a command's logic.
+//! ## Dispatch mechanism (verified against the vendored tauri 2.11.5 source, not docs.rs)
+//! `Webview::on_message`/`InvokeRequest`'s fields/`AppHandle::invoke_key` are all `pub`, the last
+//! naming this EXACT use in its own doc. Driving it this way runs the REAL, registered command
+//! body in the app's own process against its single managed state — so `limits::Limiter`/
+//! `charge_provider_daily` (which live INSIDE command bodies, never a wrapper) still apply exactly
+//! as they do for the renderer. No codegen, no second copy of any command's logic — the SAME
+//! mechanism resolves an `Irreversible` row's proof value too (`proof::resolve`).
 //!
-//! `url` is the running app's OWN "main" `WebviewWindow`'s CURRENT url
-//! (`WebviewWindow::url()`), never a guessed/hardcoded literal —
-//! `on_message`'s private `is_local_url` only compares scheme+domain against
-//! the app's own protocol origin, so reading the real webview's real address
-//! is what makes this genuinely mirror what the renderer itself sends, on
-//! every platform and dev-vs-prod combination, rather than hardcoding one of
-//! `tauri://localhost` / `https://tauri.localhost` and silently breaking on
-//! the other. `invoke_key` is read fresh off `AppHandle::invoke_key()` on
-//! every call and NEVER logged/echoed/returned — its own doc: "DO NOT expose
-//! this key to third party scripts as might grant access to the backend
-//! from external URLs and iframes."
+//! `url` is the running app's OWN "main" `WebviewWindow`'s CURRENT url, never a guessed/hardcoded
+//! literal — `on_message`'s private `is_local_url` only compares scheme+domain against the app's
+//! own protocol origin, so reading the real address mirrors what the renderer sends on every
+//! platform/dev-vs-prod combination rather than hardcoding `tauri://localhost` /
+//! `https://tauri.localhost` and breaking on the other. `invoke_key` is read fresh on every call
+//! and NEVER logged/echoed/returned.
 //!
-//! R8 LOC-cap split (`docs/architecture-rules.md`): this file keeps the module doc, the `mod`
-//! table and [`handle_agent_call`] itself (the one entry point); everything else moved to a
-//! sibling file by concern — namespace/command lookup ([`policy_lookup`]), the `Refusal`
-//! vocabulary (`refusal`), the reply builders (`reply`), and the real dispatch machinery
-//! (`dispatch`) — alongside the pre-existing `proof`/`reshape`/`validate`/`dispatch_plan`/`fence`
-//! splits.
+//! R8 LOC-cap split: this file keeps the module doc, the `mod` table and [`handle_agent_call`]
+//! itself; everything else moved to a sibling file by concern — namespace/command lookup
+//! ([`policy_lookup`]), the `Refusal` vocabulary (`refusal`), the reply builders (`reply`), and the
+//! real dispatch machinery (`dispatch`) — alongside the pre-existing
+//! `proof`/`reshape`/`validate`/`dispatch_plan`/`fence` splits.
 
 use serde_json::{json, Value};
 use tauri::AppHandle;
@@ -110,31 +91,20 @@ pub(super) use reply::{
 use fence::fence_scraped_fields;
 mod fence;
 
-/// Substitute a [`Refusal::ResultTooLarge`] reply for any `reply` the bridge
-/// could not actually deliver — over [`super::MAX_FRAME_BYTES`], the cap both
-/// ends of this socket configure (issue #1135; see that variant's own doc for
-/// why an outgoing frame is otherwise unchecked and what the caller saw
-/// instead). Pure, and returns the RECOMPUTED `dispatched` alongside the
-/// reply so the observability span records what actually went on the wire
-/// rather than what dispatch alone decided — measuring the built reply is the
-/// only way to know, so this cannot live any earlier.
+/// Substitute a [`Refusal::ResultTooLarge`] reply for any `reply` the bridge could not actually
+/// deliver — over [`super::MAX_FRAME_BYTES`] (issue #1135). Pure, and returns the RECOMPUTED
+/// `dispatched` alongside the reply so the observability span records what actually went on the
+/// wire — measuring the built reply is the only way to know.
 ///
-/// Note the asymmetry it deliberately preserves: `dispatched` on the wire
-/// becomes `false` (no result was delivered, and every consumer — including
-/// `agent_cli::exit_code_for_reply`'s exit-2 mapping — reads it that way),
-/// while the refusal's own `detail` states plainly that the command RAN.
+/// Note the asymmetry it deliberately preserves: `dispatched` becomes `false` on the wire, while
+/// the refusal's own `detail` states plainly that the command RAN.
 ///
-/// The substitute is NOT "always far smaller than the original" — that was
-/// the false absolute this doc used to claim (HIGH, security review). Its
-/// `data` is gone, but it still echoes `reqId`/`namespace`/`command`, and all
-/// three are caller-supplied and bounded only by the 8 MiB INCOMING frame: a
-/// ~8.38 MB `command` produced a substitute of 8,389,135 B against an
-/// 8,388,608 B ceiling, i.e. a refusal that reproduced the failure it
-/// reports. What holds instead is a BOUNDED argument, and it lives in
-/// [`refusal_reply`]: the identifiers are clamped to [`REFUSAL_IDENT_CAP`],
-/// every `detail` is bounded by construction, and the built reply is
-/// re-measured with a minimal-envelope fallback. Hence this fn no longer
-/// builds the substitute itself.
+/// The substitute is NOT "always far smaller than the original" (HIGH, security review — a false
+/// absolute this doc used to claim): it still echoes `reqId`/`namespace`/`command`, bounded only
+/// by the 8 MiB incoming frame, so a ~8.38 MB `command` once produced a substitute that itself blew
+/// the cap it reports. What holds instead is a BOUNDED argument in [`refusal_reply`]: identifiers
+/// clamped to [`REFUSAL_IDENT_CAP`], every `detail` bounded by construction, and the built reply
+/// re-measured with a minimal-envelope fallback. Hence this fn no longer builds the substitute itself.
 fn enforce_frame_cap(
     req_id: &str,
     namespace: &str,

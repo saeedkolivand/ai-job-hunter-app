@@ -1,18 +1,11 @@
-//! ADR-038 §4, Phase 3 — resolving an [`Effect::Irreversible`] row's
-//! `--confirm` value. Split out of `agent_call.rs` to keep that file under
-//! R8's LOC cap (the same reason `documents/sql.rs`/`applications/reminders.rs`
-//! exist) — this is real logic, not tests, so it earns its own file rather
-//! than living in `agent_call/tests.rs`.
+//! ADR-038 §4, Phase 3 — resolving an [`Effect::Irreversible`] row's `--confirm` value. Split out
+//! of `agent_call.rs` under R8's LOC cap.
 //!
-//! Every fn here is split pure/impure: [`resolve`] is the ONLY one that
-//! touches [`AppHandle`] — it dispatches `source.read_command()` through
-//! [`super::invoke_command`], the SAME real command body every other row
-//! already uses, never a second implementation of that command's logic.
-//! [`extract`]/[`build_input`]/[`hint`] are pure `Value`-in,
-//! `Value`/`String`-out — directly unit-testable with hand-built fixtures,
-//! no live app, mirroring this crate's standing pure-core/impure-shell split
-//! (`agent_read::resolve_job`/`job_resource`, `resolve_best_matches`/
-//! `best_matches_resource`).
+//! Split pure/impure: [`resolve`] is the ONLY fn touching [`AppHandle`] — it dispatches
+//! `source.read_command()` through [`super::invoke_command`], the SAME real command body every
+//! other row uses. [`extract`]/[`build_input`]/[`hint`] are pure `Value`-in, `Value`/`String`-out —
+//! directly unit-testable with hand-built fixtures, mirroring this crate's standing
+//! pure-core/impure-shell split (`agent_read::resolve_job`/`job_resource`).
 
 use serde_json::Value;
 use tauri::AppHandle;
@@ -116,16 +109,14 @@ pub(super) fn extract(
 }
 
 /// Fence `response` the SAME way [`super::dispatch_direct`] fences every other response this
-/// dispatcher hands to a caller, then [`extract`] (HIGH fix, security review round 4): before this,
-/// `resolve` extracted from the RAW response while a caller could only ever read the FENCED one
-/// (`FENCE_FIELD_NAMES`), making a proof bound to a fenced field permanently unsatisfiable —
-/// `applications_delete`/`notifications_remove`'s `title` proof both hit this the moment `title`
-/// joined the fence list.
+/// dispatcher hands to a caller, then [`extract`] (HIGH fix, security review round 4): otherwise a
+/// proof bound to a fenced field (`FENCE_FIELD_NAMES`) is permanently unsatisfiable, since a caller
+/// can only ever read the FENCED value back — hit `applications_delete`/`notifications_remove`'s
+/// `title` proof the moment `title` joined the fence list.
 ///
 /// Calls [`super::reshape::reshape_pre_fence`] then [`super::reshape::fence_reply`] — the SAME
 /// composition [`super::reshape::reshape_reply`] runs up to (not including) paging/base64, never a
-/// hand-rolled subset (review rounds 6/8) — so a FUTURE fenced/pre-fenced field or bare-scalar
-/// command added there is covered here automatically.
+/// hand-rolled subset — so a FUTURE fenced/pre-fenced field is covered here automatically.
 fn extract_from_fenced_response(
     source: ProofSource,
     caller_input: &Value,

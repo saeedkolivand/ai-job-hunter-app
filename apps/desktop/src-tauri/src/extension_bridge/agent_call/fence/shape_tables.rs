@@ -3,28 +3,16 @@
 
 use serde_json::Value;
 
-/// `ai_generations::ApplicationAnswer`'s own always-present sibling key —
-/// used to detect an `ApplicationAnswer`-shaped object (`{id, question,
-/// answer}`, reachable through `applications_list`/`applications_get`/
-/// `ai_generations_list`) so its [`APPLICATION_ANSWER_QUESTION_FIELD`] — a
-/// THIRD-PARTY ATS form's own question label, captured from the page by
-/// `extension_bridge::answers_save` — is fenced by SHAPE rather than by
-/// name.
+/// `ai_generations::ApplicationAnswer`'s own always-present sibling key — used to detect an
+/// `ApplicationAnswer`-shaped object (`{id, question, answer}`) so its
+/// [`APPLICATION_ANSWER_QUESTION_FIELD`] — a THIRD-PARTY ATS form's own question label — is fenced
+/// by SHAPE rather than by name.
 ///
-/// Deliberately NOT a [`FENCE_FIELD_NAMES`] entry: a flat name entry would
-/// ALSO re-fence `ai_generations::InterviewQuestion.question` (`{id,
-/// question, why, audience}`), which serializes under the EXACT same wire
-/// key, rides the SAME command's response, and is this app's own AI
-/// coaching output — the one thing that const's own doc says it excludes on
-/// purpose (ADR-038 §5's separate axis). `answer` is the discriminator: an
-/// `ApplicationAnswer` always carries one, an `InterviewQuestion` never
-/// does.
-///
-/// Note `extension_bridge::answers_suggest::answers_suggest_reply` builds a
-/// sibling `{question, answer}` object too, but it is a BRIDGE frame, not a
-/// dispatched command response, so it never reaches this walk; were that
-/// shape ever to move onto this surface it would simply be fenced the same
-/// way — the safe direction.
+/// Deliberately NOT a [`FENCE_FIELD_NAMES`] entry: a flat name entry would ALSO re-fence
+/// `ai_generations::InterviewQuestion.question` (`{id, question, why, audience}`), which
+/// serializes under the EXACT same wire key on the SAME command's response and is this app's own
+/// AI coaching output. `answer` is the discriminator: an `ApplicationAnswer` always carries one,
+/// an `InterviewQuestion` never does.
 pub(in crate::extension_bridge::agent_call) const APPLICATION_ANSWER_ANCHOR_FIELDS: [&str; 1] =
     ["answer"];
 
@@ -34,35 +22,25 @@ pub(in crate::extension_bridge::agent_call) const APPLICATION_ANSWER_ANCHOR_FIEL
 pub(in crate::extension_bridge::agent_call) const APPLICATION_ANSWER_QUESTION_FIELD: &str =
     "question";
 
-/// `jobs::JobRecord`'s own always-present, distinctively-named fields
-/// (`kind`, `progress`, `max_retries` → `maxRetries` under that struct's
-/// `#[serde(rename_all = "camelCase")]`) — used to detect a
-/// `JobRecord`-shaped object (`jobs_get`, `jobs_list`) so
+/// `jobs::JobRecord`'s own always-present, distinctively-named fields (`kind`, `progress`,
+/// `maxRetries`) — used to detect a `JobRecord`-shaped object (`jobs_get`, `jobs_list`) so
 /// [`JOB_RECORD_RESULT_FIELD`] can be EXEMPTED from the name-keyed walk.
 ///
-/// A completed job's `result` is the app's OWN output — a generated draft or
-/// a model answer under `{"done": true, "text": …}`
-/// (`commands::ai_provider::stream`, `commands::resume_pipeline`) — while
-/// `text` is on [`FENCE_FIELD_NAMES`] for `documents::DocumentRecord.text`,
-/// so before this exemption every generation read back through `jobs_get`
-/// reached the caller wrapped as a scraped posting. Verified no other struct
-/// on this dispatch surface serializes all three anchors together
-/// (`maxRetries` has exactly one producer in the crate).
+/// A completed job's `result` is the app's OWN output — a generated draft under
+/// `{"done": true, "text": …}` — while `text` is on [`FENCE_FIELD_NAMES`] for
+/// `documents::DocumentRecord.text`, so before this exemption every generation read back through
+/// `jobs_get` reached the caller wrapped as a scraped posting. Verified no other struct on this
+/// dispatch surface serializes all three anchors together.
 ///
-/// The exemption is WHOLESALE for the NAME-keyed walk and audited, not
-/// shape-inspected per value: no [`FENCE_FIELD_NAMES`] entry fires anywhere
-/// under `result`, so a job kind that starts putting THIRD-PARTY text there
-/// must fence it itself. The warning that says so lives on
-/// `commands::jobs::job_complete` — the single mutator every completion
-/// funnels through — rather than on each producer.
+/// The exemption is WHOLESALE for the NAME-keyed walk and audited, not shape-inspected per value:
+/// a job kind that starts putting THIRD-PARTY text under `result` must fence it itself (warning on
+/// `commands::jobs::job_complete`, the single mutator every completion funnels through).
 ///
-/// The scrape-diagnostics shapes are carved back out, because auditing the
-/// producer list turned up a completion that already carried third-party
-/// text: [`SCRAPE_SUMMARY_ANCHOR_FIELDS`] and [`BOARD_HEALTH_ANCHOR_FIELDS`]
-/// fence a `BoardScrapeSummary`'s board-written strings wherever they sit
-/// inside `result`. Those are shape rules with enumerated field sets, not a
-/// reopening of the name walk — see [`fence_scrape_summaries_recursive`] for
-/// why the distinction is load-bearing.
+/// The scrape-diagnostics shapes are carved back out, since auditing turned up a completion that
+/// already carried third-party text: [`SCRAPE_SUMMARY_ANCHOR_FIELDS`] and
+/// [`BOARD_HEALTH_ANCHOR_FIELDS`] fence a `BoardScrapeSummary`'s board-written strings wherever
+/// they sit inside `result` — shape rules with enumerated field sets, not a reopening of the name
+/// walk (see [`fence_scrape_summaries_recursive`]).
 pub(in crate::extension_bridge::agent_call) const JOB_RECORD_ANCHOR_FIELDS: [&str; 3] =
     ["kind", "progress", "maxRetries"];
 
@@ -71,24 +49,13 @@ pub(in crate::extension_bridge::agent_call) const JOB_RECORD_ANCHOR_FIELDS: [&st
 /// CAN carry a scraped posting.
 pub(in crate::extension_bridge::agent_call) const JOB_RECORD_RESULT_FIELD: &str = "result";
 
-/// `scraping::engine::BoardScrapeSummary`'s own always-present field pair
-/// (`board`, `count` — both non-`Option`, and single words that its
-/// `#[serde(rename_all = "camelCase")]` leaves unchanged) — used to detect a
-/// summary-shaped object so [`SCRAPE_SUMMARY_UNTRUSTED_FIELDS`] can be fenced
-/// by SHAPE.
-///
-/// Shape and never a [`FENCE_FIELD_NAMES`] row, for the same reason
-/// [`APPLICATION_ANSWER_ANCHOR_FIELDS`] is: `error` is one of the most
-/// generic keys on this whole surface — `jobs::JobRecord.error` itself, plus
-/// every refusal envelope — and a flat name entry would wrap this app's own
-/// already-sanitized error strings as though a job board had written them.
-///
-/// Verified distinctive on this dispatch surface: `board` occurs WITHOUT a
-/// sibling `count` on `board_health::BoardHealthEntry` (`{board, health}`)
-/// and on a cluster member (`{key, board?, url}`), and `count` occurs
-/// without a `board` on the `scrape_*` completion envelopes themselves
-/// (`{count, boards}` / `{count}`) — no other struct in the crate
-/// serializes both together.
+/// `scraping::engine::BoardScrapeSummary`'s own always-present field pair (`board`, `count`) —
+/// used to detect a summary-shaped object so [`SCRAPE_SUMMARY_UNTRUSTED_FIELDS`] can be fenced by
+/// SHAPE, never a [`FENCE_FIELD_NAMES`] row for the same reason [`APPLICATION_ANSWER_ANCHOR_FIELDS`]
+/// is: `error` is one of the most generic keys on this surface (`jobs::JobRecord.error`, every
+/// refusal envelope), and a flat name entry would wrap this app's own sanitized errors as though a
+/// job board had written them. Verified distinctive: no other struct in the crate serializes both
+/// `board` and `count` together.
 pub(in crate::extension_bridge::agent_call) const SCRAPE_SUMMARY_ANCHOR_FIELDS: [&str; 2] =
     ["board", "count"];
 
@@ -110,20 +77,13 @@ pub(in crate::extension_bridge::agent_call) const SCRAPE_SUMMARY_ANCHOR_FIELDS: 
 pub(in crate::extension_bridge::agent_call) const SCRAPE_SUMMARY_UNTRUSTED_FIELDS: [&str; 3] =
     ["error", "skipped", "truncated"];
 
-/// `scraping::board_health::BoardHealth`'s own always-present field pair
-/// (`status`, `consecutive_failures` → `consecutiveFailures`) — the SECOND
-/// shape carrying board-written text in the same payload, because
-/// `board_health::fold` copies `BoardScrapeSummary.error` FORWARD into
-/// `BoardHealth.last_error`. That copy runs through `clean_error`, which
-/// redacts paths/hosts and caps the length — a redactor, not a controlled
-/// vocabulary — so the board's own prose survives it intact and is exactly
-/// as untrusted as the `error` it came from. Fencing one and not the other
-/// would leave the same sentence reachable one level deeper, under
-/// `summary.health.lastError`, and standalone on a `BoardHealthEntry.health`.
-///
-/// `consecutiveFailures` is the distinctive half: it is the only serialized
-/// field of that name in the crate (verified), so no other struct on this
-/// surface can be mistaken for this shape.
+/// `scraping::board_health::BoardHealth`'s own always-present field pair (`status`,
+/// `consecutiveFailures`) — the SECOND shape carrying board-written text, because
+/// `board_health::fold` copies `BoardScrapeSummary.error` FORWARD into `BoardHealth.last_error`
+/// through `clean_error`, a redactor (not a controlled vocabulary), so the board's own prose
+/// survives intact. Fencing one and not the other would leave the same sentence reachable one
+/// level deeper. `consecutiveFailures` is the distinctive half — the only serialized field of that
+/// name in the crate.
 pub(in crate::extension_bridge::agent_call) const BOARD_HEALTH_ANCHOR_FIELDS: [&str; 2] =
     ["status", "consecutiveFailures"];
 

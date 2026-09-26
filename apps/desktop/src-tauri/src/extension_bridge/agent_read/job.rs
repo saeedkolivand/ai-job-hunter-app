@@ -93,11 +93,9 @@ pub(in crate::extension_bridge::agent_read) struct AgentJob {
     posted_at: Option<i64>,
     found_at: u64,
     is_new: bool,
-    /// NOT a plain passthrough of the stored `FoundJob::applied` (issue
-    /// #1166/#1169) — that field's own doc says the stored value is ALWAYS
-    /// `false`. [`resolve_job`] overwrites this with a value derived off
-    /// `commands::autopilot::applied_job_urls`, the same set
-    /// `found_jobs::project_found_job_row` and `best_matches::mark_applied`
+    /// NOT a plain passthrough of the stored `FoundJob::applied` (issue #1166/#1169) — that
+    /// field's own doc says the stored value is ALWAYS `false`. [`resolve_job`] overwrites this
+    /// with a value derived off `applied_job_urls`, the same set `found_jobs`/`best_matches`
     /// derive theirs from.
     applied: bool,
     is_agency: bool,
@@ -107,33 +105,23 @@ pub(in crate::extension_bridge::agent_read) struct AgentJob {
     cluster_members: Vec<AgentClusterMember>,
 }
 
-/// The CALLER side of `job`'s identity pipeline, extracted from
-/// [`job_resource`] so it is unit-testable without an `AppHandle` — the
-/// counterpart to [`resolve_job`]'s stored side, and the only place the two
-/// halves can be compared for symmetry (issue #1128). Empty means "not a
-/// usable http(s) url", exactly as `normalize_job_url` reports it.
+/// The CALLER side of `job`'s identity pipeline, extracted from [`job_resource`] so it is
+/// unit-testable without an `AppHandle` — the counterpart to [`resolve_job`]'s stored side (issue
+/// #1128). Empty means "not a usable http(s) url", exactly as `normalize_job_url` reports it.
 ///
-/// Same canonicalize-then-normalize pipeline `applied.check`/`answers.save`
-/// use, plus an unreserved-only decode FIRST, so the canonicalizer reads the
-/// real path: a `%2D`-spelled LinkedIn slug is byte-different but
-/// semantically identical (RFC 3986 §6.2.2.2), and neither
-/// `canonical_job_url` nor `normalize_job_url` decodes anything. The scheme
-/// guard still runs AFTER the decode, inside `normalize_job_url`, so
-/// `%6Aavascript:…` is caught rather than smuggled past a raw-byte check.
+/// Same canonicalize-then-normalize pipeline `applied.check`/`answers.save` use, plus an
+/// unreserved-only decode FIRST, so the canonicalizer reads the real path: a `%2D`-spelled
+/// LinkedIn slug is byte-different but semantically identical (RFC 3986 §6.2.2.2). The scheme
+/// guard still runs AFTER the decode, inside `normalize_job_url`, so `%6Aavascript:…` is caught
+/// rather than smuggled past a raw-byte check.
 ///
-/// That decode makes this READ deliberately more lenient than the WRITES
-/// (MEDIUM fix, security review round 4 — this doc used to claim the lookup
-/// "resolves to the exact identity an import would", which it does not).
-/// `answers.save`, `answer_assist` and `applied.check` all key on the
-/// UNDECODED spelling, and widening them is out of scope here: their keys are
-/// already-stored identities, so decoding at the write boundary would split
-/// existing rows off from their own history. The consequence is a caller-side
-/// rule, stated on the `job` verb's own `--help`/tool description
-/// (`agent_cli::VERB_TABLE`): reuse the `url` this resource RETURNS rather
-/// than a re-encoded spelling of your own, and every surface agrees on which
-/// posting you mean. Both HALVES of this lookup decode (see [`resolve_job`]
-/// for the stored side) — the leniency is symmetric within the read, never a
-/// one-sided rewrite.
+/// That decode makes this READ deliberately more lenient than the WRITES (MEDIUM fix, round 4):
+/// `answers.save`/`answer_assist`/`applied.check` all key on the UNDECODED spelling — their keys
+/// are already-stored identities, so decoding at the write boundary would split existing rows off
+/// from their own history. The consequence is a caller-side rule stated on the `job` verb's own
+/// `--help`: reuse the `url` this resource RETURNS rather than a re-encoded spelling of your own.
+/// Both HALVES of this lookup decode (see [`resolve_job`] for the stored side) — symmetric within
+/// the read, never a one-sided rewrite.
 pub(in crate::extension_bridge::agent_read) fn job_lookup_key(raw_url: &str) -> String {
     let decoded = crate::applications::decode_unreserved(raw_url);
     let canonical = crate::scraping::scrape_url::canonical_job_url(&decoded);

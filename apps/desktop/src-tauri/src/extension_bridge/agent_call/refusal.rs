@@ -18,8 +18,8 @@ mod detail;
 /// visible, regardless of whether a caller actually names a variant.
 pub(in crate::extension_bridge) enum Refusal {
     /// No policy row matches this `(namespace, command)` pair at all. Carries
-    /// [`namespace_suggestion`]'s own output — the real namespace, when the bare command name
-    /// itself is real and unambiguous — so the refusal can name it without a second lookup.
+    /// [`namespace_suggestion`]'s own output so the refusal can name the real namespace, when the
+    /// bare command name is real and unambiguous, without a second lookup.
     UnknownCommand(Option<&'static str>),
     /// The caller's `input` failed the generated catalogue's declared contract (issues #1163,
     /// #1158, #1160): an unknown top-level or nested key, or a missing required top-level key.
@@ -48,16 +48,13 @@ pub(in crate::extension_bridge) enum Refusal {
     /// [`Refusal::DispatchFailed`], whose doc guarantees a fixed,
     /// framework-only string, making that guarantee false.
     StateUnreadable(String),
-    /// `InvokeResponse::Err` (HIGH fix — security review): the target
-    /// command's OWN dispatch produced a Tauri-level error rather than a
-    /// success payload — distinct from [`Refusal::DispatchFailed`], which is
-    /// a framework failure that never reaches the target command at all
-    /// (no "main" webview, its url unreadable, no reply). This is the fix
-    /// for the defect where `InvokeResponse::Err` used to be folded straight
-    /// into `Ok`, reporting `dispatched: true` for a call whose command body
-    /// either failed validation or never ran (bad args, ACL denial, unknown
-    /// command) — see [`InvokeOutcome::CommandErr`]'s own doc for why the
-    /// two cannot be told apart here, and why both must refuse.
+    /// `InvokeResponse::Err` (HIGH fix — security review): the target command's OWN dispatch
+    /// produced a Tauri-level error rather than a success payload — distinct from
+    /// [`Refusal::DispatchFailed`], a framework failure that never reaches the target command at
+    /// all. Fixes the defect where this used to fold straight into `Ok`, reporting
+    /// `dispatched: true` for a call whose body either failed validation or never ran; see
+    /// [`InvokeOutcome::CommandErr`]'s own doc for why the two can't be told apart, and why both
+    /// must refuse.
     InvokeError(String),
     /// [`Effect::Irreversible`] with no `confirm` supplied — exit 4 (see
     /// `agent_cli::exit_code_for_reply`), distinct from every other refusal
@@ -80,31 +77,20 @@ pub(in crate::extension_bridge) enum Refusal {
     /// wrong-value mismatch so a caller can tell "you guessed wrong" apart
     /// from "the thing you're trying to act on isn't there".
     ProofUnavailable,
-    /// The command RAN, but its reply is larger than the bridge's own
-    /// [`super::MAX_FRAME_BYTES`] frame cap and was discarded (issue #1135).
-    /// Carries the MEASURED byte count, never an estimate.
+    /// The command RAN, but its reply is larger than the bridge's own [`super::MAX_FRAME_BYTES`]
+    /// frame cap and was discarded (issue #1135). Carries the MEASURED byte count, never an
+    /// estimate.
     ///
-    /// Why this variant exists at all: `max_message_size` in tungstenite
-    /// 0.30 (what `tokio-tungstenite = "0.30"` resolves to) is checked on the
-    /// READ path only — `WebSocketContext`'s `check_max_size` runs while
-    /// reassembling an INCOMING message, and nothing checks an outgoing one.
-    /// So the app happily wrote an over-cap frame, the CLI's own read loop
-    /// collapsed the resulting `Error::Capacity(MessageTooLong)` into "this
-    /// port gave us nothing usable" (`agent_cli::next_json` returns `None` on
-    /// every transport error alike), and the caller got a content-free
-    /// `connection_lost` — a sentinel whose own `--help` text and the MCP
-    /// server's `instructions` both group with TRANSIENT failures, so a
-    /// client burned its one permitted retry on a call that can never
-    /// succeed. Refusing HERE, at the one place that has both the reply and
-    /// its length, turns a deterministic failure into a deterministic,
-    /// self-describing refusal.
+    /// Exists because tungstenite's `max_message_size` is checked on the READ path only — nothing
+    /// checks an outgoing frame — so the app happily wrote an over-cap frame, the CLI's read loop
+    /// collapsed the resulting transport error into a content-free `connection_lost`, and a client
+    /// burned its one permitted retry on a call that can never succeed. Refusing HERE, at the one
+    /// place that has both the reply and its length, turns that into a self-describing refusal.
     ///
-    /// Deliberately checked against [`super::MAX_FRAME_BYTES`] and not
-    /// against the MCP server's own much smaller `MCP_RESULT_MAX_BYTES`: the
-    /// two caps sit on different transports and the smaller one already
-    /// refuses (with this same `result_too_large` sentinel) one hop further
-    /// out. Adopting it here would newly refuse payloads that reach a plain
-    /// `agent call` caller perfectly well today.
+    /// Checked against [`super::MAX_FRAME_BYTES`], not the MCP server's own smaller
+    /// `MCP_RESULT_MAX_BYTES` — the two caps sit on different transports and the smaller one
+    /// already refuses one hop further out; adopting it here would newly refuse payloads that
+    /// reach a plain `agent call` caller fine today.
     ResultTooLarge(usize),
     /// A caller-supplied `cursor` on one of
     /// [`reshape::PAGINATED_LIST_COMMANDS`] that isn't a plain non-negative

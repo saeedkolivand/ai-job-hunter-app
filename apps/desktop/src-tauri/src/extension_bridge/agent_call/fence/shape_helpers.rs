@@ -8,31 +8,18 @@ use super::shape_tables::{
     SCRAPE_SUMMARY_UNTRUSTED_FIELDS,
 };
 
-/// Fence the board-written strings on `map` when its keys match either
-/// scrape-diagnostics shape — [`SCRAPE_SUMMARY_ANCHOR_FIELDS`] →
-/// [`SCRAPE_SUMMARY_UNTRUSTED_FIELDS`], [`BOARD_HEALTH_ANCHOR_FIELDS`] →
-/// [`BOARD_HEALTH_UNTRUSTED_FIELDS`] — and nothing at all on any other
-/// object. The two shapes are checked independently rather than nested: a
-/// `BoardHealth` also reaches this surface standalone, on a
-/// `BoardHealthEntry`, not only under a summary's `health`.
+/// Fence the board-written strings on `map` when its keys match either scrape-diagnostics shape —
+/// [`SCRAPE_SUMMARY_ANCHOR_FIELDS`] → [`SCRAPE_SUMMARY_UNTRUSTED_FIELDS`],
+/// [`BOARD_HEALTH_ANCHOR_FIELDS`] → [`BOARD_HEALTH_UNTRUSTED_FIELDS`] — and nothing on any other
+/// object. Checked independently, not nested: a `BoardHealth` also reaches this surface standalone.
 ///
-/// Shared by [`fence_named_fields_recursive`] (diagnostics anywhere OUTSIDE
-/// a job result) and [`fence_scrape_summaries_recursive`] (the copies INSIDE
-/// the otherwise-exempt one), so the two walks can never disagree about
-/// either shape or either field set.
+/// Shared by [`fence_named_fields_recursive`] (diagnostics OUTSIDE a job result) and
+/// [`fence_scrape_summaries_recursive`] (the copies INSIDE the otherwise-exempt one).
 ///
-/// Fencing happens on this READ path rather than at the producer
-/// (`commands::scrape::scrape_boards`, before `job_complete`) on purpose:
-/// the very same strings are what the renderer's per-board chip strip
-/// displays — `BoardSummaryChips` matches `skipped` against a controlled
-/// vocabulary to pick a localized label, and renders `error`, `truncated`
-/// and `health.lastError` as chip detail — reached both by the
-/// `job.completed` event and, on remount, by the watchdog's own `jobs_get`.
-/// A fence baked into the stored result would put `<job_posting>` markup on
-/// screen and knock `skipped` out of every arm of that match; stripping it
-/// back off in the renderer would mean a second, hand-maintained copy of
-/// these field lists in TypeScript, on a path where a miss is visible to the
-/// user.
+/// Fencing happens on this READ path, not at the producer, on purpose: the same strings back the
+/// renderer's own per-board chip strip (`BoardSummaryChips` matches `skipped` against a controlled
+/// vocabulary for its label) — a fence baked into the stored result would put `<job_posting>`
+/// markup on screen and break that match.
 pub(in crate::extension_bridge::agent_call) fn fence_board_derived_strings(
     map: &mut serde_json::Map<String, Value>,
 ) {

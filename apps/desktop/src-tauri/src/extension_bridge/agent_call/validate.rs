@@ -1,17 +1,13 @@
 //! Dispatch-time input-key validation against the generated
 //! [`super::super::agent_cli::catalogue::CATALOGUE`] (issues #1163, #1158, #1160). Called as
-//! [`dispatch`]'s own FIRST check, before [`gate`] — the ordering fix for #1160: a missing
-//! required key must refuse before `confirmation_required` is ever emitted, so an approved
-//! irreversible delete can never die on a missing arg afterwards (a wrong wrapper guess or a
-//! stray key used to reach the real command's own deserializer instead, or worse — for an
-//! `Option<T>` field, simply vanish and report `success: true`, issues #1158's whole point).
+//! [`dispatch`]'s own FIRST check, before [`gate`] — a missing required key must refuse before
+//! `confirmation_required` is ever emitted, so an approved irreversible delete can never die on a
+//! missing arg afterwards, or — for an `Option<T>` field — simply vanish and report `success: true`
+//! (#1158's whole point).
 //!
-//! A command absent from the catalogue (an `invoke()` call the generator could not parse with
-//! confidence, or one with no call site at all) is left UNCHECKED — this is the generator's own
-//! documented contract (`catalogue.rs`'s module doc), not a gap this file papers over: nothing
-//! here can validate a shape it was never told, and a command this generator could not resolve
-//! stays exactly as permissive as it was before this pass. `policy::tests`' own catalogue-coverage
-//! test is what keeps that allowlist from growing silently.
+//! A command absent from the catalogue is left UNCHECKED — the generator's own documented
+//! contract (`catalogue.rs`'s module doc), not a gap this file papers over. `policy::tests`' own
+//! catalogue-coverage test keeps that allowlist from growing silently.
 
 use serde_json::{Map, Value};
 
@@ -136,31 +132,21 @@ pub(super) fn check_input(command: &str, input: &Value) -> Result<(), Refusal> {
 }
 
 /// A required wrapper key whose value is an empty object `{}` — refused on a mutating row
-/// (A1-r1-SEC-2 MEDIUM, A1-r2-AC-1 HIGH). [`CatalogueArg::fields`] carries no per-nested-field
-/// required marker (the underlying Zod schema knows it; threading it through is a larger
-/// follow-up than this fix), so this cannot tell "every field inside is legitimately optional"
-/// from "the caller sent nothing at all" — but on a `Reversible`/`Irreversible` row, an empty
-/// required wrapper reaching an all-`Option` request struct is almost always the #1158 symptom
-/// (an empty `applications_save_from_posting` row answering `success: true`), never a deliberate
-/// no-op, so this refuses it outright rather than letting `check_input`'s membership-only walk
-/// wave it through.
+/// (A1-r1-SEC-2 MEDIUM, A1-r2-AC-1 HIGH). On a `Reversible`/`Irreversible` row, an empty required
+/// wrapper reaching an all-`Option` request struct is almost always the #1158 symptom (an empty
+/// `applications_save_from_posting` row answering `success: true`), never a deliberate no-op.
 ///
-/// This check is deliberately keyed on `arg.fields.is_some()` alone, NOT `.filter(|f|
-/// !f.is_empty())` — unlike [`check_input`]'s nested-membership walk, which genuinely has nothing
-/// to check an unknown key against when the wrapper's shape is unresolved. An empty `{}` is empty
-/// regardless of whether the generator could resolve the type's field names: `Some(&[])` (e.g.
-/// `autopilot_update`'s `req`) is exactly `#1158`'s shape and the round-2 gap this closes — the
-/// old filter treated "shape unresolved" as license to skip the emptiness check entirely, so
+/// Keyed on `arg.fields.is_some()` alone, NOT `.filter(|f| !f.is_empty())` like [`check_input`]'s
+/// nested walk: an empty `{}` is empty regardless of whether the generator resolved the type's
+/// field names, and `Some(&[])` (e.g. `autopilot_update`'s `req`) is exactly #1158's shape — the
+/// old filter treated "shape unresolved" as license to skip the check, so
 /// `{"autopilotId":"ap-1","req":{}}` dispatched and only bumped `updatedAt`. When `fields` is the
-/// unresolved `Some(&[])`, the refusal detail omits the field list (there is none to name) rather
-/// than printing a content-free `declared keys under \`req\`: ` tail.
+/// unresolved `Some(&[])`, the refusal detail omits the field list rather than printing a
+/// content-free tail.
 ///
-/// Never applied to a `Read` row (a filter-shaped wrapper, e.g. `scrape_list_interactions`'s
-/// `filter`, can legitimately be sent empty to mean "no filter") or an uncatalogued command
-/// (nothing here to check — see this module's own doc). Deliberately a SEPARATE fn from
-/// [`check_input`], not folded into its loop: the two are independent refusal reasons a mutation
-/// test can target one at a time, and every existing `check_input` call site keeps its
-/// two-argument shape.
+/// Never applied to a `Read` row (a filter-shaped wrapper can legitimately be sent empty) or an
+/// uncatalogued command. A SEPARATE fn from [`check_input`], not folded into its loop: the two are
+/// independent refusal reasons a mutation test can target one at a time.
 pub(super) fn check_no_empty_required_wrapper(
     command: &str,
     effect: Effect,

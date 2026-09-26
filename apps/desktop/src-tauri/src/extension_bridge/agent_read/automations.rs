@@ -8,16 +8,11 @@ use crate::error::AppResult;
 
 use super::list_autopilots;
 
-/// `automations` resource's per-row payload — projected off `autopilot::Autopilot`.
-/// Excludes `resumeText`/`coverLetter`/`assistant`/`assistantProvider`/
-/// `assistantModel`/`assistantBaseUrl`/`foundJobs`/`lastRunSummaries`/
-/// `totalApplied` — the first four forbidden outright, the next two out of
-/// scope for a status listing (`best-matches` and `job` already cover
-/// found-jobs detail), and `totalApplied` dropped (issue #1171): the field
-/// is dead on the source struct too (`docs/ARCHITECTURE_STATUS.md`'s own
-/// "Drop dead `totalApplied` counter" row) — nothing in this codebase ever
-/// writes it past its zero default, so exposing it here promised a real
-/// applied-count that never existed.
+/// `automations` resource's per-row payload — projected off `autopilot::Autopilot`. Excludes
+/// `resumeText`/`coverLetter`/`assistant`/`assistantProvider`/`assistantModel`/`assistantBaseUrl`/
+/// `foundJobs`/`lastRunSummaries`/`totalApplied` — the first four forbidden outright, the next two
+/// out of scope for a status listing, and `totalApplied` dropped (issue #1171): the field is dead
+/// on the source struct too — nothing ever writes it past its zero default.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(in crate::extension_bridge::agent_read) struct AgentAutomation {
@@ -58,23 +53,13 @@ pub(in crate::extension_bridge::agent_read) struct AgentAutomationTarget {
     location: Option<String>,
 }
 
-/// Direct field-by-field projection — NOT [`project_value`]'s
-/// serialize-then-deserialize round trip (MEDIUM fix, "the cheap bucket's
-/// premise is false" — security review). `project_value` round-trips the
-/// WHOLE source through JSON first; for `Autopilot` that means serializing
-/// `found_jobs` (every entry's full description) and
-/// `resume_text`/`cover_letter` just to discard the result and keep a
-/// handful of small fields. **Measured** (debug build, 50 autopilots × 1000 found jobs
-/// each — an extreme but reachable scale, since `found_jobs` is never
-/// truncated, see `commands/autopilot.rs`'s own doc): the round trip cost
-/// ~320ms against ~1ms for this direct construction; the store's own
-/// `list()` clone (shared with `job`, not owned by this module) adds another
-/// ~50ms at that scale. Both are trivial against the 1-req/sec refill this
-/// bucket already enforces, so no third bucket is warranted — but the round
-/// trip was pure waste for a resource that already knows exactly which
-/// fields it wants, so it's removed. `job`'s own `project_value` call stays
-/// unchanged: it projects ONE already-found `FoundJob`, never the whole
-/// store, so it was never the expensive half.
+/// Direct field-by-field projection — NOT [`project_value`]'s serialize-then-deserialize round
+/// trip (MEDIUM fix, security review): that round-trips the WHOLE source through JSON, serializing
+/// `found_jobs`/`resume_text`/`cover_letter` just to discard the result. **Measured** (debug build,
+/// 50 autopilots × 1000 found jobs each): the round trip cost ~320ms against ~1ms for this direct
+/// construction. Trivial against the 1-req/sec refill this bucket already enforces, but pure waste
+/// for a resource that already knows exactly which fields it wants. `job`'s own `project_value`
+/// call stays unchanged — it projects ONE already-found `FoundJob`, never the whole store.
 pub(in crate::extension_bridge::agent_read) fn project_automation(
     ap: &crate::autopilot::Autopilot,
 ) -> AgentAutomation {

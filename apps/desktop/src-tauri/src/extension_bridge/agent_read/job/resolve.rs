@@ -19,53 +19,36 @@ pub(in crate::extension_bridge::agent_read) const JOB_NOT_FOUND_MESSAGE: &str =
 pub(in crate::extension_bridge::agent_read) const JOB_NOT_FOUND_DETAIL: &str =
     "the stored url for a posting can be read from the `best-matches` or `found-jobs` resource";
 
-/// Pure core of the `job` resource: find the first `FoundJob` across every
-/// (non-filtered — every status, not just active) autopilot record whose
-/// identity matches, then project it. Mirrors `applied_check::
-/// resolve_applied_check`'s pure/impure split — directly unit-testable with
-/// hand-built `Autopilot` records, no `AppHandle`.
+/// Pure core of the `job` resource: find the first `FoundJob` across every autopilot record whose
+/// identity matches, then project it. Directly unit-testable with hand-built `Autopilot` records,
+/// no `AppHandle`.
 ///
 /// Two independent compares, either one wins (issue #1166):
 ///
-/// 1. **Identity** — `caller_identity` (already extracted from the raw
-///    caller url by [`job_resource`] via
-///    [`crate::scraping::scrape_url::job_identity`]) against the SAME
-///    extraction run on each stored url. This is what makes
-///    `de.linkedin.com/jobs/view/<id>`, `www.linkedin.com/jobs/view/<id>`,
-///    the numeric-only and slugged `/jobs/view/` forms, and the
-///    `currentJobId=<id>` query form all resolve to one posting — none of
-///    that is a byte-for-byte url difference the string compare below could
-///    ever bridge.
-/// 2. **Normalized string** — the pre-#1166 fallback, unchanged, for boards
-///    with no stable id space.
+/// 1. **Identity** — `caller_identity` (already extracted from the raw caller url via
+///    [`crate::scraping::scrape_url::job_identity`]) against the SAME extraction on each stored
+///    url. This is what makes `de.linkedin.com/jobs/view/<id>`, `www.linkedin.com/jobs/view/<id>`,
+///    the numeric-only/slugged `/jobs/view/` forms, and the `currentJobId=<id>` query form all
+///    resolve to one posting — none of that is a byte-for-byte difference the string compare
+///    below could ever bridge.
+/// 2. **Normalized string** — the pre-#1166 fallback, for boards with no stable id space.
 ///
 /// Both sides of BOTH compares run through
-/// [`decode_unreserved`](crate::applications::decode_unreserved) first (issue
-/// #1128): a STORED url can carry the percent-encoded spelling just as easily
-/// as a caller-supplied one, so decoding only the caller's half would fix the
-/// reported direction and leave the mirror image broken. `normalized_url` is
-/// pre-decoded by [`job_resource`]; this is the stored half.
+/// [`decode_unreserved`](crate::applications::decode_unreserved) first (issue #1128): a STORED url
+/// can carry the percent-encoded spelling just as easily as a caller-supplied one, so decoding
+/// only the caller's half would leave the mirror image broken.
 ///
-/// `applied_urls` is [`crate::commands::autopilot::applied_job_urls`]'s
-/// output (issue #1166/#1169, HIGH — before this fix `AgentJob::applied` was
-/// a plain passthrough of `FoundJob::applied`, whose own doc says the stored
-/// value is ALWAYS `false` and only the read path ever fills it in; the two
-/// read paths that DO fill it in — `commands::autopilot::enrich_applied` and
-/// `found_jobs::project_found_job_row` — never ran on this one, so `job`
-/// reported every posting as not-applied even after a real application
-/// existed, the exact duplicate-application hazard this surface exists to
-/// prevent). Derived here through [`job_is_applied`], the SAME identity-aware
-/// helper `found_jobs::candidate_jobs` derives its own `applied` from (round-4
-/// fix T4 — before this, the two surfaces disagreed the moment an
-/// application was recorded under a different host/path spelling than the
-/// one currently stored on the found job), off the SAME set, so `job` and
+/// `applied_urls` is [`crate::commands::autopilot::applied_job_urls`]'s output (issue #1166/#1169,
+/// HIGH — before this fix `AgentJob::applied` was a plain passthrough of `FoundJob::applied`,
+/// whose own doc says the stored value is ALWAYS `false`, so `job` reported every posting as
+/// not-applied even after a real application existed, the exact duplicate-application hazard this
+/// surface exists to prevent). Derived through [`job_is_applied`], the SAME identity-aware helper
+/// `found_jobs::candidate_jobs` derives its own `applied` from, off the SAME set, so `job` and
 /// `found-jobs` agree by construction on one url.
 ///
-/// Assumes the applications store is present; see
-/// [`resolve_job_for_store`] for the store-unavailable path (round-4 fix T3).
-/// `job_resource` calls [`resolve_job_for_store`] directly (it always knows
-/// whether the store is present) — this default-store wrapper exists only so
-/// the many existing store-present tests keep their original call shape.
+/// Assumes the applications store is present; see [`resolve_job_for_store`] for the
+/// store-unavailable path (round-4 fix T3) — this default-store wrapper exists only so existing
+/// store-present tests keep their original call shape.
 #[cfg(test)]
 pub(in crate::extension_bridge::agent_read) fn resolve_job(
     records: &[crate::autopilot::Autopilot],
@@ -76,17 +59,13 @@ pub(in crate::extension_bridge::agent_read) fn resolve_job(
     resolve_job_for_store(records, caller_identity, normalized_url, applied_urls, true)
 }
 
-/// Whether `job_url` (a `FoundJob`'s own RAW, never-normalized url) counts as
-/// applied against `applied_urls` (`commands::autopilot::applied_job_urls`'s
-/// already-normalized set) — round-4 fix T4. Byte-comparing two normalized
-/// strings misses a LinkedIn regional host (`de.linkedin.com` vs a stored
-/// `linkedin.com`) or a slugged `/jobs/view/` path against a bare numeric
-/// one, the SAME identity gap #1166 closed for `resolve_job`'s own posting
-/// lookup. Tries [`crate::scraping::scrape_url::job_identity`] first (a board
-/// with a stable id space folds every host/path variant onto one id) and
-/// falls back to the plain normalized-string compare for a board with none.
-/// Shared by [`resolve_job_for_store`] and `found_jobs::candidate_jobs` so
-/// the two surfaces can never disagree about the same job.
+/// Whether `job_url` (a `FoundJob`'s own RAW, never-normalized url) counts as applied against
+/// `applied_urls` (already-normalized set) — round-4 fix T4. Byte-comparing two normalized strings
+/// misses a LinkedIn regional host or a slugged path against a bare numeric one, the SAME identity
+/// gap #1166 closed for `resolve_job`. Tries [`crate::scraping::scrape_url::job_identity`] first
+/// and falls back to the plain normalized-string compare for a board with no stable id space.
+/// Shared by [`resolve_job_for_store`] and `found_jobs::candidate_jobs` so the two surfaces can
+/// never disagree about the same job.
 pub(in crate::extension_bridge::agent_read) fn job_is_applied(
     job_url: &str,
     applied_urls: &std::collections::HashSet<String>,
@@ -113,16 +92,12 @@ pub(in crate::extension_bridge::agent_read) fn job_is_applied(
     })
 }
 
-/// Precompute [`job_identity`](crate::scraping::scrape_url::job_identity) for
-/// every entry in `applied_urls`, once — round-4 perf fix (PR #1182 round-5):
-/// [`found_jobs::candidate_jobs`] calls the identity fallback below once per
-/// STORED row, and re-decoding + re-parsing the whole `applied_urls` set on
-/// every one of those calls was O(found jobs × applications) `Url::parse` +
-/// allocation, ahead of `limit` ever applying. [`job_is_applied_indexed`]
-/// takes this index instead of re-deriving it; [`job_is_applied`] (the
-/// single-lookup `job` resource path, called once per call, never in a loop)
-/// keeps its own inline scan — building an index there would cost the same
-/// as the scan it replaces.
+/// Precompute [`job_identity`](crate::scraping::scrape_url::job_identity) for every entry in
+/// `applied_urls`, once — round-4 perf fix: [`found_jobs::candidate_jobs`] calls the identity
+/// fallback once per STORED row, and re-decoding the whole set on every call was O(found jobs ×
+/// applications), ahead of `limit` ever applying. [`job_is_applied_indexed`] takes this index
+/// instead of re-deriving it; [`job_is_applied`] (called once per call, never in a loop) keeps its
+/// own inline scan — building an index there would cost the same as the scan it replaces.
 pub(in crate::extension_bridge::agent_read) fn applied_url_identities(
     applied_urls: &std::collections::HashSet<String>,
 ) -> std::collections::HashSet<(&'static str, String)> {

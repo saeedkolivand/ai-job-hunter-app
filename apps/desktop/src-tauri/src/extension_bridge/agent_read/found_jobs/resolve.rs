@@ -18,25 +18,16 @@ use super::{
     FoundJobSlice,
 };
 
-/// The ordered, filtered candidate list across every autopilot in `scoped` —
-/// ready to be sliced `[offset, offset + limit)`. `dedupe_across_autopilots`
-/// (issue #1168) additionally collapses rows sharing the same
-/// [`canonical_job_key`] to their FIRST occurrence THAT ALSO PASSES this
-/// call's filters (round 2 fix, B3-r1-F1 — filtering runs before dedup, not
-/// after, so a copy that fails a filter never consumes the dedup slot a
-/// later, passing copy needed) — needed ONLY for a spanning traversal
-/// (`autopilot_id: None`), where the same posting can legitimately surface
-/// in more than one autopilot's own list, each scored against that
-/// autopilot's own resume. Scoped to
-/// exactly one autopilot, `false`: that list is already deduped at merge
-/// time (`autopilot::merge_found_jobs`), and `automations`' own
-/// `foundJobsTotal` promises `total` here equals that list's plain
-/// `found_jobs.len()` (pinned by
-/// `agent_read::tests::automations_found_jobs_total_matches_found_jobs_own_total`)
-/// — re-deduping would silently break that promise the moment a caller's
-/// stored data isn't ALREADY deduped for some other reason (a legacy/
-/// migrated record, a hand-built test fixture), so the single-autopilot path
-/// stays a byte-for-byte passthrough of the stored list's own count.
+/// The ordered, filtered candidate list across every autopilot in `scoped` — ready to be sliced
+/// `[offset, offset + limit)`. `dedupe_across_autopilots` (issue #1168) additionally collapses
+/// rows sharing the same [`canonical_job_key`] to their FIRST occurrence THAT ALSO PASSES this
+/// call's filters (round 2 fix, B3-r1-F1 — filtering before dedup, or a copy that fails a filter
+/// could consume the slot a later, passing copy needed) — needed ONLY for a spanning traversal,
+/// where the same posting can legitimately surface in more than one autopilot's own list. Scoped
+/// to exactly one autopilot, `false`: that list is already deduped at merge time, and
+/// `automations`' own `foundJobsTotal` promises `total` here equals that list's plain
+/// `found_jobs.len()` — re-deduping would silently break that promise the moment stored data isn't
+/// ALREADY deduped for some other reason.
 fn candidate_jobs<'a>(
     scoped: &[&'a Autopilot],
     filters: &FoundJobsFilters,
@@ -81,39 +72,25 @@ fn candidate_jobs<'a>(
     out
 }
 
-/// Project one row: [`FoundJobSlice`]'s allowlist round trip, plus the three
-/// fields that round trip can't carry (see that struct's own doc) —
-/// `applied` (precomputed), `autopilotId`/`autopilotName` (the PARENT
-/// record's, fenced), and `description` (only when `include_description`).
+/// Project one row: [`FoundJobSlice`]'s allowlist round trip, plus the three fields it can't carry
+/// — `applied` (precomputed), `autopilotId`/`autopilotName` (the PARENT record's, fenced), and
+/// `description` (only when `include_description`).
 ///
-/// `is_applied` is `None` when the applications store is unavailable
-/// (round-4 fix T3) — the row OMITS the `applied` key entirely rather than
-/// shipping a confident `false` derived from what `applied_job_urls`'s own
-/// doc says is an empty-by-construction set in that case (absent ≠ false;
-/// the unsafe direction for an autonomous caller deciding whether to
-/// re-apply). [`resolve_found_jobs_for_store`]'s envelope carries the
-/// matching `appliedUnavailable: true` marker.
+/// `is_applied` is `None` when the applications store is unavailable (round-4 fix T3) — the row
+/// OMITS the `applied` key entirely rather than shipping a confident `false` (absent ≠ false; the
+/// unsafe direction for an autonomous caller deciding whether to re-apply).
+/// [`resolve_found_jobs_for_store`]'s envelope carries the matching `appliedUnavailable: true`.
 ///
-/// INFALLIBLE, never `Option<Value>` (round-4 fix T5 — the prior fallible
-/// signature fed a `filter_map` that silently dropped a "failure" while
-/// still counting it in `total`, and a page whose every candidate failed
-/// would return `returned == 0` with `nextCursor` equal to the cursor just
-/// sent, a non-terminating traversal for a client that keeps retrying it).
-/// [`FoundJobSlice`]'s required fields (`title`/`company`/`url`/
-/// `scoreProvisional`/`foundAt`/`isAgency`) are a same-typed subset of
-/// `FoundJob`'s own required fields, so there is no `FoundJob` value for
-/// which this projection can actually fail — recovering from an
-/// unreachable failure only hid a class of bug behind untestable dead code;
-/// removing the `Option` removes the class instead.
+/// INFALLIBLE, never `Option<Value>` (round-4 fix T5 — the prior fallible signature fed a
+/// `filter_map` that silently dropped a "failure" while still counting it in `total`, so a page
+/// whose every candidate failed returned a non-terminating cursor). [`FoundJobSlice`]'s required
+/// fields are a same-typed subset of `FoundJob`'s own, so there is no value for which this
+/// projection can actually fail.
 ///
-/// The infallibility argument holds TODAY but is a type-shape claim, not one
-/// the compiler enforces — a release build is `panic = "abort"`, so an
-/// `.expect()` here would turn a future accidental field-type drift between
-/// `FoundJob`/`FoundJobSlice` into the whole app dying with no crash report,
-/// not merely one dropped row (round-4 fix T5-cont, PR #1182 round-5). A
-/// `debug_assert!` still catches the drift in every dev/test run; a release
-/// build instead degrades to a minimal row (bare `url`) so ONE malformed
-/// projection can never take the rest of a page down with it.
+/// The infallibility argument is a type-shape claim, not one the compiler enforces — release is
+/// `panic = "abort"`, so an `.expect()` here would turn a future field-type drift into the whole
+/// app dying with no crash report, not merely one dropped row. A `debug_assert!` catches the drift
+/// in dev/test; release degrades to a minimal row (bare `url`) instead.
 fn project_found_job_row(
     job: &FoundJob,
     autopilot: &Autopilot,
@@ -142,17 +119,13 @@ fn project_found_job_row(
     value
 }
 
-/// Directly unit-testable with hand-built `Autopilot` records, no
-/// `AppHandle` — same pure/impure split as `agent_read::resolve_job`/
-/// `agent_read::best_matches::resolve_best_matches`. `pub(super)` because `agent_read`'s
-/// own `no_resource_output_ever_carries_a_forbidden_key` test calls this
-/// directly to sweep every resource's output in one place.
+/// Directly unit-testable with hand-built `Autopilot` records, no `AppHandle` — same pure/impure
+/// split as `agent_read::resolve_job`. `pub(super)` because `agent_read`'s own
+/// `no_resource_output_ever_carries_a_forbidden_key` test calls this directly.
 ///
-/// Assumes the applications store is present; see
-/// [`resolve_found_jobs_for_store`] for the store-unavailable path (round-4
-/// fix T3) — `found_jobs_resource` calls that directly (it always knows
-/// whether the store is present), so this wrapper exists only so the many
-/// existing store-present tests keep their original call shape.
+/// Assumes the applications store is present; see [`resolve_found_jobs_for_store`] for the
+/// store-unavailable path (round-4 fix T3) — this wrapper exists only so existing store-present
+/// tests keep their original call shape.
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(in crate::extension_bridge::agent_read) fn resolve_found_jobs(

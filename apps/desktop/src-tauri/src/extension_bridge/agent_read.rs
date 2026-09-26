@@ -1,51 +1,34 @@
-//! `agent.query` → `agent.result` — the read-only agent/CLI surface (issue
-//! #1084, PR 1). One dispatch table ([`RESOURCES`]):
-//! `best-matches` (optional `limit`/`cursor`/`query`, issue #1146 P11),
-//! `job` (`url` required), `profile`, `automations`, `schema`, `found-jobs`
-//! (issue #1115 — optional `autopilotId`/`limit`/`cursor` plus the
-//! `minScore`/`country`/`remote`/`applied`/`query` filters, issues
-//! #1167/#1168), `documents` (PR2), `prep` (PR4). `url` is the CROSS-RESOURCE KEY for `job` — not an id (a
-//! `best-matches` row's own `key` is a cluster id, never echoed here);
-//! `found-jobs` instead keys its cursor off `autopilotId` (or a fixed
-//! all-autopilots sentinel when omitted) since it must survive across
-//! autopilots that legitimately share a posting.
+//! `agent.query` → `agent.result` — the read-only agent/CLI surface (issue #1084, PR 1). One
+//! dispatch table ([`RESOURCES`]): `best-matches` (optional `limit`/`cursor`/`query`), `job` (`url`
+//! required), `profile`, `automations`, `schema`, `found-jobs` (issue #1115 — optional
+//! `autopilotId`/`limit`/`cursor` plus `minScore`/`country`/`remote`/`applied`/`query` filters),
+//! `documents` (PR2), `prep` (PR4). `url` is the CROSS-RESOURCE KEY for `job`, not an id;
+//! `found-jobs` keys its cursor off `autopilotId` (or an all-autopilots sentinel) since it must
+//! survive across autopilots that legitimately share a posting.
 //!
 //! ## Allowlist projections, absent by construction
-//! Every payload below is built by [`project`]: round-trip the SOURCE value
-//! through JSON into an allowlist struct (`AgentJob`, `AgentAutomation`,
-//! `AgentBestMatch`, …). `serde`'s default "ignore unknown fields" behavior
-//! on `Deserialize` means any field the source carries that the target
-//! struct doesn't declare a slot for is silently dropped in that second
-//! step — so `resume_text` / `cover_letter` / `assistant_notes` /
-//! `assistant_provider` / `assistant_model` / `assistant_base_url` (and a
-//! cluster's opaque `key`) are absent BY CONSTRUCTION: there is no field to
-//! remember to omit. `profile` is the one exception — it reuses
-//! `super::resolve_profile`/`super::AutofillProfile::from_contact` VERBATIM
-//! (the exact function `profile.get` calls), so there is exactly one
-//! profile projection in this crate, never two.
+//! Every payload below is built by [`project`]: round-trip the SOURCE value through JSON into an
+//! allowlist struct. `serde`'s default "ignore unknown fields" `Deserialize` behavior means any
+//! field the target struct doesn't declare is silently dropped — so `resume_text`/`cover_letter`/
+//! `assistant_notes`/`assistant_provider`/`assistant_model`/`assistant_base_url` (and a cluster's
+//! opaque `key`) are absent BY CONSTRUCTION. `profile` is the one exception — it reuses
+//! `super::resolve_profile` VERBATIM, so there is exactly one profile projection in this crate.
 //!
 //! ## Untrusted text still crosses one boundary: [`prompt_fence`](crate::prompt_fence)
-//! An allowlist projection stops a FORBIDDEN FIELD from crossing; it says
-//! nothing about a field that IS on the allowlist but carries raw,
-//! third-party-authored scraped text into a consumer whose entire purpose is
-//! "an AI agent reads this". `job`'s `description` is [`fence_description`]d
-//! the same way `answer_assist::build_user_message` fences the identical
-//! string before it reaches a model (ADR-010).
+//! An allowlist projection stops a FORBIDDEN FIELD; it says nothing about an allowlisted field
+//! carrying raw scraped text. `job`'s `description` is [`fence_description`]d the same way
+//! `answer_assist::build_user_message` fences the identical string before it reaches a model.
 //!
 //! ## Ungated, but not un-gated where it matters
-//! Every agent verb is ungated by explicit owner decision (issue #1084) — no
-//! new opt-in file. [`AgentQueryThrottle`] is the DoS bound, not a consent
-//! gate. `profile` is the one resource that still refuses when autofill is
-//! OFF, because it rides `profile.get`'s OWN pre-existing consent gate
-//! (reusing that handling, not adding a second one) — that gate was never
-//! about the agent surface, so "ungated" doesn't touch it.
+//! Every agent verb is ungated by explicit owner decision — no new opt-in file.
+//! [`AgentQueryThrottle`] is the DoS bound, not a consent gate. `profile` still refuses when
+//! autofill is OFF, riding `profile.get`'s OWN pre-existing consent gate rather than adding a
+//! second one.
 //!
 //! ## Throttle, not a compute cap
-//! `best-matches` calls the already-public
-//! `commands::autopilot::autopilot_best_matches` unmodified rather than
-//! re-wrapping its private blocking fn or duplicating its clustering — see
-//! [`AgentQueryThrottle`]'s doc for why that leaves the underlying compute
-//! itself un-truncated and how the throttle compensates.
+//! `best-matches` calls the already-public `autopilot_best_matches` unmodified rather than
+//! re-wrapping its private blocking fn — see [`AgentQueryThrottle`]'s doc for why that leaves the
+//! compute itself un-truncated and how the throttle compensates.
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
@@ -170,6 +153,17 @@ pub(super) const RESOURCES: &[(&str, &str)] = &[
          `answer.assist`'s optional `topic` field (billable, its own opt-in).",
     ),
 ];
+
+/// A placeholder-envelope's serialized length minus its empty-array placeholder's own two bytes
+/// (`[]`) — shared by `found_jobs`/`best_matches`'s otherwise-identical base-cost measurement:
+/// each builds its own envelope shape with a `total`-sized stand-in for a not-yet-known cursor
+/// string (a real offset can never exceed `total`, so this can only over-count and thus only trim
+/// MORE than strictly required, never less), then hands it here to measure.
+fn envelope_cost_estimate(base_envelope: &Value) -> usize {
+    serde_json::to_string(base_envelope)
+        .map_or(usize::MAX, |s| s.len())
+        .saturating_sub(2)
+}
 
 fn schema_value() -> Value {
     json!({

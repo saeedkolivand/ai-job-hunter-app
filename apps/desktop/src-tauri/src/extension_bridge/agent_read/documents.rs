@@ -1,7 +1,6 @@
 //! `documents` resource (PR2 — documents into ATS) — the extension's document-picker candidate
-//! list: whether this job has a saved generation (résumé/cover-letter TEXT PRESENCE only, never
-//! the text itself — that only ever crosses the wire through `document.export`) and the base
-//! résumés on file, newest first. New file (R8 relief), same pattern as `found_jobs.rs`.
+//! list: whether this job has a saved generation (TEXT PRESENCE only, never the text itself) and
+//! the base résumés on file, newest first. New file (R8 relief), same pattern as `found_jobs.rs`.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};

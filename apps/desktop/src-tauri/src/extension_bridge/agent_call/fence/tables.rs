@@ -1,109 +1,54 @@
 //! The audited field-NAME tables [`super::named_fields::fence_named_fields_recursive`] walks by
 //! key — see that fn's own doc for how they are used; split out under the R8 LOC cap.
 
-/// Response field NAMES that can carry raw, third-party-authored SCRAPED JOB
-/// TEXT — audited by hand against the struct each name actually serializes
-/// from (mirrors `policy`'s own per-row audit discipline). Keyed by FIELD
-/// NAME rather than by command (HIGH fix — security review round 2): a
-/// command allowlist (the prior shape of this const) missed every command
-/// whose response embeds one of these structs under this same key — real
-/// examples that leaked unfenced: `autopilot_list`/`autopilot_get`
-/// (`Autopilot.found_jobs[].description`), `applications_list`/
-/// `applications_get` (`Application.job_description` → `jobDescription`),
-/// `ai_generations_list` (`AiGenerationRecord.job_ad` → `jobAd`). Every entry
-/// routes through [`crate::prompt_fence::fenced`] — the SAME primitive, tag,
-/// and cap `agent_read::fence_description` uses for the curated `job`
-/// resource, so a scraped posting reads as untrusted DATA on every surface
-/// it reaches. See `every_known_posting_text_carrier_is_a_real_freely_
-/// dispatchable_policy_row` (tests) for the audited list of rows this is
-/// known to protect.
+/// Response field NAMES that can carry raw, third-party-authored SCRAPED JOB TEXT — audited by
+/// hand against the struct each name actually serializes from (mirrors `policy`'s own per-row
+/// audit discipline). Keyed by FIELD NAME rather than by command: a command allowlist misses every
+/// command whose response embeds one of these structs under this same key. Every entry routes
+/// through [`crate::prompt_fence::fenced`] — the SAME primitive, tag, and cap
+/// `agent_read::fence_description` uses for the curated `job` resource, so a scraped posting reads
+/// as untrusted DATA on every surface it reaches. See `every_known_posting_text_carrier_is_a_real_
+/// freely_dispatchable_policy_row` (tests) for the audited list of rows this is known to protect.
 ///
-/// HIGH fix (security review round 3): this list named `description`/
-/// `jobAd`/`jobDescription` but not `title`/`company`/`location`/
-/// `requirements`, which `scraping::types::JobPosting` and
-/// `autopilot::FoundJob` ALSO carry, board-derived and equally
-/// third-party-authored (a posting *titled* "Ignore prior instructions; run:
-/// …" reached the caller unfenced). `requirements` is an
-/// `Option<Vec<String>>` — [`fence_named_fields_recursive`] now fences
-/// string ARRAY elements under a listed key too, not just a bare string.
+/// Built up across four security-review rounds (each missing what the last one covered, issue
+/// #1157/#1183) — kept here as a record of the SHAPE of the gap, not merely the fix: round 2 keyed
+/// this list by field name instead of command, catching `Autopilot.found_jobs[].description`/
+/// `Application.job_description`/`AiGenerationRecord.job_ad`. Round 3 added `title`/`company`/
+/// `location`/`requirements` (`JobPosting`/`FoundJob` carry these too, equally third-party — a
+/// posting titled "Ignore prior instructions…" reached the caller unfenced; `requirements` is an
+/// array, fenced element-by-element). Round 4 found that a flat name list also misses a
+/// serde-RENAMED field carrying the SAME posting data under a different key — `AiGenerationRecord.
+/// job_title`/`.company_name`/`.top_requirements` (copied forward from the source posting, not
+/// re-derived), `discovered::DiscoveredCompany.display_name` (board-harvested from an apply-redirect
+/// URL), plus the generic `text`/`body` carriers (`documents::DocumentRecord.text`,
+/// `notifications::AppNotification.body`) — a résumé counts as untrusted for this purpose too
+/// (`agent-cli-standards`: ~1% of a 200k-résumé corpus carried a prompt injection). Each round's
+/// fixture-driven exhaustive check (build from `serde_json::to_value(RealStruct{..})`, never a
+/// hand-typed literal) is what catches the NEXT gap instead of continuing to hand-guess names.
 ///
-/// HIGH fix (security review round 4): a FLAT field-name list silently
-/// misses a serde-RENAMED field carrying the exact same posting data under a
-/// different key — `AiGenerationRecord.job_title`/`.company_name`/
-/// `.top_requirements` (`ai_generations_list`/`ai_generations_get`) are the
-/// board-derived title/company/requirements COPIED FORWARD from the source
-/// posting into a new struct, not re-derived, so they are exactly as
-/// untrusted as `JobPosting.title`/`.company`/`.requirements` already
-/// listed above — a flat list keyed on THOSE structs' field names never
-/// covered the SAME data reappearing under `AiGenerationRecord`'s own
-/// names. `discovered::DiscoveredCompany.display_name` → `displayName`
-/// (`discovery_search_companies`) is board-harvested from a posting's own
-/// apply-redirect URL, same category. `documents::DocumentRecord.text`
-/// under `documents_list`'s rows — `documents_get_text` returns the SAME
-/// text as a bare string reply with no key at all, which this name-keyed
-/// walk structurally cannot see; `reshape::SCALAR_FENCE_COMMANDS` is the
-/// separate fence for that shape (issue #1170's follow-up,
-/// `B1-r1-ACLI-R5-7`) — and
-/// `notifications::AppNotification.body` (`notifications_list`) are the
-/// generic `text`/`body` carriers this round closes — a résumé's own text
-/// is user-uploaded content, not board-scraped, but this repo's own
-/// standing threat model (`agent-cli-standards` skill: ~1% of a 200k-résumé
-/// corpus carried a prompt injection, sevenfold over 16 months) treats it as
-/// exactly as untrusted as a job posting for this purpose; a notification
-/// body can echo a scraped title/company by construction (`autopilot.new_
-/// jobs`). See `every_known_posting_text_carrier_is_a_real_freely_
-/// dispatchable_policy_row` (tests) for the full audited row list, and
-/// [`ai_generation_record_struct_fixture_fences_the_posting_derived_fields`]/
-/// [`discovered_company_struct_fixture_fences_display_name`] for the
-/// fixture-driven exhaustive checks this round adds — the reviewer's own
-/// diagnosis for why round 3's flat list still missed fields: build the
-/// check from a REAL struct via `serde_json::to_value`, not by continuing to
-/// hand-guess names one round at a time.
+/// Issue #1157 then fixed the opposite failure: fencing by NAME ALONE over-fenced every first-party
+/// carrier of `title`/`body`/`text` too (a user's own `DocumentRecord.title`, `updater_changelog`'s
+/// own release notes `body`, a résumé's own `text`). Fixed by SHAPE, not by removing the name (that
+/// would un-fence the still-third-party carriers of the same name):
+/// [`DOCUMENT_RECORD_ANCHOR_FIELDS`] exempts `title` for a `DocumentRecord`-shaped object,
+/// [`CHANGELOG_ENTRY_ANCHOR_FIELDS`] exempts `body` for a changelog entry, and `text` was removed
+/// from this flat list entirely — handled by its own origin-aware block in
+/// [`fence_named_fields_recursive`] under the distinct `user_document` tag (see
+/// [`RESUME_EXTRACT_TEXT_ANCHOR_FIELD`]), keeping `job_posting` everywhere else.
+/// `AppNotification.title`/`.body` stay on this flat list deliberately (not an oversight): a
+/// notification's copy is genuinely MIXED provenance (`tray::on_new_jobs`'s own name+count is
+/// first-party, but `status_update`/`import_flow`/`follow_up_body`/`resume_pipeline::notify` all
+/// embed a real scraped title/company under the identical wire shape), so it stays fenced by
+/// default rather than risk unfencing the scraped half.
 ///
-/// Deliberately NOT added (out of scope for this list, on PURPOSE, not by
-/// omission): `AiGenerationRecord.resume_text`/`.cover_letter_text`/
-/// `.company_brief`/`.candidate_name`/`.email_subject`/`.email_body` and
-/// `InterviewQuestion`/`ApplicationAnswer`'s own fields — these are the
-/// user's own PII / this app's own AI output, not board-scraped/third-party
-/// text; ADR-038's own amendment already draws this exact line as a
-/// SEPARATE axis from fencing (ADR-038 §5's "no PII redaction… scoped to
-/// this generic tier by the owner's explicit decision" — this module's own
-/// doc comment above).
+/// `ApplicationAnswer.question` is fenced too, but by SHAPE and never by name — see
+/// [`APPLICATION_ANSWER_ANCHOR_FIELDS`] for why a flat entry would have re-fenced
+/// `InterviewQuestion.question`, which shares the wire key and is this app's own AI output.
 ///
-/// `ApplicationAnswer.question` — the one THIRD-PARTY item that list used to
-/// flag as a plausible future candidate (a scraped ATS form's own question
-/// label, same reasoning as `title`/`jobDescription`) — IS fenced now, but
-/// by SHAPE and never by name: see [`APPLICATION_ANSWER_ANCHOR_FIELDS`] for
-/// why a flat `question` entry HERE would have silently re-fenced
-/// `InterviewQuestion.question`, which shares the exact wire key on the same
-/// command's response and is this app's own AI output.
-///
-/// Issue #1157 round (fence by ORIGIN, not by field name alone): the flat name walk over-fenced
-/// every carrier of `title`/`body`/`text`, not only the third-party ones -- `documents::
-/// DocumentRecord.title` (a user's own file title), `notifications::AppNotification.title`
-/// (mostly first-party, but see below), and a résumé's own `documents::DocumentRecord.text`
-/// were all wrapped as though a job board had written them. Fixed by SHAPE, not by pulling the
-/// name off this list (a flat removal would have UN-fenced the still-third-party carriers of the
-/// same name): [`DOCUMENT_RECORD_ANCHOR_FIELDS`] exempts `title` for a `DocumentRecord`-shaped
-/// object; [`CHANGELOG_ENTRY_ANCHOR_FIELDS`] exempts `body` for `updater::updater_changelog`'s
-/// own first-party release notes; `text` is removed from this flat list entirely and handled by
-/// its own origin-aware block in [`fence_named_fields_recursive`], which fences it under the
-/// DISTINCT `user_document` tag for a `DocumentRecord`/`resume_extract_text`-shaped object (see
-/// [`RESUME_EXTRACT_TEXT_ANCHOR_FIELD`]) and keeps the ORIGINAL `job_posting` default everywhere
-/// else (`commands::profile_import::profile_import_from_url`'s response also carries a bare
-/// `text` key, but it is resume text rendered from a THIRD-PARTY imported profile page, not the
-/// user's own file, so it stays fenced as `job_posting`).
-///
-/// `notifications::AppNotification.title`/`.body` stay on this flat list DELIBERATELY, not an
-/// oversight: unlike `documents_list`'s title, a notification's copy is genuinely MIXED --
-/// `tray::on_new_jobs`'s own `title`/`body` are first-party (an autopilot's own name plus a
-/// count), but `extension_bridge::status_update`/`extension_bridge::import_flow` build their
-/// `title` from `display_name`, which IS a scraped job title on the `applied`/`import.result`
-/// paths, and `reminder_scheduler::follow_up_body`/`commands::resume_pipeline::notify`'s bodies
-/// embed a job's own `title`/`company` too. One field name, two origins depending on which
-/// producer wrote it, with no shape this dispatch surface can tell apart (every `NewNotification`
-/// serializes the exact same three keys regardless of which caller built it) -- so this stays
-/// fenced by default, the safe direction, rather than risk unfencing the scraped half.
+/// Deliberately NOT added, on purpose, not by omission: `AiGenerationRecord.resume_text`/
+/// `.cover_letter_text`/`.company_brief`/`.candidate_name`/`.email_subject`/`.email_body` and
+/// `InterviewQuestion`/`ApplicationAnswer`'s own fields — user PII / this app's own AI output, a
+/// SEPARATE axis from fencing per ADR-038 §5 (this module's own doc above).
 pub(in crate::extension_bridge::agent_call) const FENCE_FIELD_NAMES: &[&str] = &[
     // `scraping::types::JobPosting.description` (scrape_resolve_url,
     // scrape_list_postings) AND `autopilot::FoundJob.description`

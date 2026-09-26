@@ -1,29 +1,19 @@
-//! Agent-layer payload reshaping — everything the generic tier does to a
-//! payload that the renderer's own `commands/**` wire shape must not see, and
-//! nothing else. Outbound: [`reshape_reply`] owns the ONE order the fence,
-//! page and byte-encode steps run in; inbound:
-//! [`unfence_named_fields_recursive`] is that fence's mirror, stripping a
-//! wrapper a caller echoed back before any command body sees it. Both are
-//! pure, and both are applied at the single `super::dispatch_direct`
-//! chokepoint.
+//! Agent-layer payload reshaping — everything the generic tier does to a payload that the
+//! renderer's own `commands/**` wire shape must not see, and nothing else. Outbound:
+//! [`reshape_reply`] owns the ONE order the fence, page and byte-encode steps run in; inbound:
+//! [`unfence_named_fields_recursive`] is that fence's mirror, stripping a wrapper a caller echoed
+//! back before any command body sees it. Both pure, both applied at the single
+//! `super::dispatch_direct` chokepoint.
 //!
-//! R8 LOC-cap split (`docs/architecture-rules.md`), the same move `agent_read`
-//! made for `found_jobs` and `agent_cli::mcp` for `instructions`: this is the
-//! RESHAPING unit, so nothing about policy, refusal vocabulary, dispatch or
-//! the frame-size ceiling travelled with it — those stay in `agent_call.rs`,
-//! which names in one `use` the three items it calls.
+//! R8 LOC-cap split: nothing about policy, refusal vocabulary, dispatch or the frame-size ceiling
+//! travelled with it — those stay in `agent_call.rs`. The fencing tables/walk are the same
+//! chokepoint's safety property read from BOTH directions and live in the sibling
+//! `agent_call/fence.rs`, reached here as `super::fence_scraped_fields` unchanged.
 //!
-//! The fencing TABLES and the outbound fence walk itself are a safety property of that same
-//! chokepoint read from BOTH directions (`super::fence_scraped_fields` on the way out, the
-//! mirror here on the way in) — moved to their own `agent_call/fence.rs` under this SAME R8
-//! reasoning, a sibling this module still reaches as `super::fence_scraped_fields` unchanged
-//! (re-exported at `agent_call.rs`'s top, same as this module's own three items are).
-//!
-//! Split further under this same cap, by concern: list paging (`paging`), the raw-byte-array
-//! base64 re-encode (`base64`), the `contact_profile_get`/`_set` projection (`contact_profile`),
-//! dropping a dead field (`drop_fields`), the inbound unfence mirror (`unfence`), and the
-//! bare-string reply fence plus its truncation marker (`scalar_fence`). The ordering orchestrators
-//! ([`reshape_reply`], [`reshape_pre_fence`], [`fence_reply`]) stay here, at the entry point.
+//! Split further, by concern: list paging (`paging`), base64 re-encode (`base64`), the
+//! `contact_profile_get`/`_set` projection (`contact_profile`), dropping a dead field
+//! (`drop_fields`), the inbound unfence mirror (`unfence`), and the bare-string reply fence plus
+//! its truncation marker (`scalar_fence`). The ordering orchestrators stay here.
 
 use serde_json::Value;
 
@@ -59,37 +49,22 @@ pub(in crate::extension_bridge) use scalar_fence::EMITTED_FENCE_TAGS;
 pub(super) use scalar_fence::{reserve_truncation_marker, TRUNCATION_MARKER};
 pub(super) use unfence::unfence_named_fields_recursive;
 
-/// Step 1 of [`reshape_reply`] ("fence first"), factored out so
-/// `proof::extract_from_fenced_response` can fence a confirm-proof
-/// read the EXACT SAME way [`super::dispatch_direct`] fences every reply a
-/// caller actually reads (MEDIUM fix, review round 6 —
-/// `B1-r2-ACLI-R6-4`). Before this fn existed, the proof path called only
-/// `fence_scraped_fields` directly, one call short of what a real dispatch
-/// does — latent today only because no `ProofSource::read_command` is on
-/// [`SCALAR_FENCE_COMMANDS`], but the two lists were never asserted disjoint
-/// either, so a future row landing on both would have silently reintroduced
-/// the "permanently unsatisfiable confirm" bug security review round 4 fixed
-/// once already (a caller reading a fenced string, `--confirm` checked
-/// against the raw one).
+/// Step 3 of [`reshape_reply`], factored out so `proof::extract_from_fenced_response` can fence a
+/// confirm-proof read the EXACT SAME way `dispatch_direct` fences every reply a caller actually
+/// reads (MEDIUM fix, review round 6): the two must never diverge, or a future command on both
+/// [`SCALAR_FENCE_COMMANDS`] and a `ProofSource::read_command` would reintroduce the "permanently
+/// unsatisfiable confirm" bug round 4 already fixed once (a caller reading a fenced string,
+/// `--confirm` checked against the raw one).
 pub(super) fn fence_reply(command: &str, data: &mut Value) {
     fence_scalar_reply(command, data);
     fence_scraped_fields(data);
 }
 
-/// Step 0 of [`reshape_reply`] ("drop dead fields, then reserve the
-/// truncation marker"), factored out for the SAME reason [`fence_reply`] was
-/// (MEDIUM fix, review round 8 — `B2-r1-ACLI-R8-1`): `proof::extract_from_
-/// fenced_response` must run the identical pre-fence transform a real
-/// dispatch runs, not a hand-rolled subset that stops at fencing. Before this
-/// fn existed, [`reshape_reply`] ran [`drop_dead_fields`]/
-/// [`mark_truncated_document_text`] inline and the proof path skipped both —
-/// latent only because both `documents_list`-backed `ListMatch` proofs read
-/// `name` (untouched by either step) and both `autopilot_get`-backed
-/// `Lookup` proofs read `name` (`totalApplied` is the only field
-/// `drop_dead_fields` touches on that command) — a future proof row reading
-/// `text` or `totalApplied` would make its confirm ceremony permanently
-/// unsatisfiable the moment either list grows, exactly like the fencing gap
-/// this mirrors.
+/// Step 2 of [`reshape_reply`], factored out for the SAME reason [`fence_reply`] was (MEDIUM fix,
+/// review round 8): `proof::extract_from_fenced_response` must run the identical pre-fence
+/// transform a real dispatch runs — a future proof row reading `text` or `totalApplied` would
+/// otherwise make its confirm ceremony permanently unsatisfiable the moment either list grows,
+/// exactly like the fencing gap this mirrors.
 pub(super) fn reshape_pre_fence(command: &str, data: &mut Value) {
     drop_dead_fields(command, data);
     if command == "documents_list" {
@@ -97,51 +72,30 @@ pub(super) fn reshape_pre_fence(command: &str, data: &mut Value) {
     }
 }
 
-/// Every reshape a dispatched reply gets before it goes on the wire, in the
-/// ONE order they are allowed to run in. Pure — no `AppHandle`, no I/O — so
-/// the ordering itself is testable, which is the reason it is a fn at all
-/// (as three statements inline, nothing failed when they were reordered).
+/// Every reshape a dispatched reply gets before it goes on the wire, in the ONE order they are
+/// allowed to run in. Pure — no `AppHandle`, no I/O — so the ordering itself is testable (as three
+/// statements inline, nothing failed when they were reordered; this fn is why it now does).
 ///
-/// 1. **Project first.** [`project_contact_profile_get`] is the other
-///    unconditional-over-the-whole-reply safety property (privacy, not
-///    injection) — it only ever touches its own one command, so its position
-///    relative to the other steps cannot change any of their output; placed
-///    first as the same class of "runs no matter what else happens" step
-///    fencing is.
-/// 2. **Drop dead fields, then reserve the truncation marker.**
-///    [`reshape_pre_fence`] removes a [`DROP_FIELDS`] key before anything else
-///    looks at the payload — it carries no scraped text to fence, no byte
-///    array to re-encode, and dropping it first means the later steps'
-///    byte-budget math (paging) never accounts for a key about to disappear
-///    anyway. It then reserves [`TRUNCATION_MARKER`] room on `documents_list`
-///    only, and this must run BEFORE fencing — it needs the ORIGINAL text
-///    length to decide whether the marker applies, which fencing's own
-///    truncation would otherwise have already destroyed. This is the SAME fn
-///    [`super::proof::extract_from_fenced_response`] calls, so the
-///    confirm-proof path and the read path can never run a different
-///    pre-fence transform.
-/// 3. **Then fence.** [`fence_reply`] ([`fence_scraped_fields`] plus
-///    [`fence_scalar_reply`] for the one bare-string reply it structurally
-///    cannot reach) is the security property and is unconditional over the
-///    WHOLE reply; narrowing it to "only the rows we are about to return"
-///    would make its coverage depend on a paging decision. `fence_reply` is
-///    the SAME fn [`super::proof::extract_from_fenced_response`] calls, so
-///    the confirm-proof path and the read path can never fence differently.
-/// 4. **Then page.** [`paginate_list_reply`]'s byte budget must measure the
-///    FENCED bytes that will really ship: fencing rewrites every field it
-///    touches (`crate::prompt_fence::JOB_CAP` truncates a long one, the
-///    wrapper adds to a short one), so a budget applied first would be
-///    measuring a payload that no longer exists by the time it ships. This is
-///    the step the test mutation-checks: reorder 3 and 4 and the page's row
-///    count changes.
-/// 5. **Then base64.** [`base64_byte_fields`] must see the raw `Vec<u8>`
-///    array rather than something a later step rewrote, and it writes a
-///    TOP-LEVEL key — after paging, "top level" means the paged envelope. No
-///    command is in both [`PAGINATED_LIST_COMMANDS`] and
-///    [`BASE64_BYTE_FIELDS`] today, so no payload can currently observe
-///    4-vs-5 ordering; that disjointness is itself asserted in the tests, so
-///    the day it stops holding, the guard fires instead of the ordering
-///    silently starting to matter unnoticed.
+/// 1. **Project first.** [`project_contact_profile_get`] only ever touches its own one command, so
+///    its position relative to the other steps cannot change their output; placed first as the
+///    same "runs no matter what else happens" class of step fencing is.
+/// 2. **Drop dead fields, then reserve the truncation marker.** [`reshape_pre_fence`] removes a
+///    [`DROP_FIELDS`] key before anything else looks at the payload, so later byte-budget math
+///    never accounts for a key about to disappear. It then reserves [`TRUNCATION_MARKER`] room on
+///    `documents_list` only, BEFORE fencing — it needs the ORIGINAL text length, which fencing's
+///    own truncation would otherwise have destroyed. The SAME fn [`super::proof::
+///    extract_from_fenced_response`] calls, so the proof and read paths can never diverge here.
+/// 3. **Then fence.** [`fence_reply`] is the security property and unconditional over the WHOLE
+///    reply — narrowing it to "only the rows about to return" would make coverage depend on a
+///    paging decision. Same fn the proof path calls, for the same reason as step 2.
+/// 4. **Then page.** [`paginate_list_reply`]'s byte budget must measure the FENCED bytes that will
+///    really ship — fencing rewrites every field it touches, so a budget applied first would
+///    measure a payload that no longer exists by the time it ships (mutation-checked: reorder 3
+///    and 4 and the page's row count changes).
+/// 5. **Then base64.** [`base64_byte_fields`] must see the raw `Vec<u8>` array rather than
+///    something a later step rewrote, and writes a TOP-LEVEL key (post-paging, that means the
+///    paged envelope). No command is in both [`PAGINATED_LIST_COMMANDS`] and [`BASE64_BYTE_FIELDS`]
+///    today (asserted in the tests), so no payload can currently observe 4-vs-5 ordering.
 pub(super) fn reshape_reply(
     command: &str,
     mut data: Value,

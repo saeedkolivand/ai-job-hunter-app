@@ -35,19 +35,13 @@ use super::tables::{
 pub(in crate::extension_bridge::agent_call) fn fence_named_fields_recursive(value: &mut Value) {
     match value {
         Value::Object(map) => {
-            // Issue #1157 -- origin shape checks, computed up front (read-only) so the loop
-            // below and the dedicated `text` block after it can both use them without
-            // re-deriving or risking the two disagreeing. See `DOCUMENT_RECORD_ANCHOR_FIELDS`/
-            // `RESUME_EXTRACT_TEXT_ANCHOR_FIELD`/`CHANGELOG_ENTRY_ANCHOR_FIELDS`'s own docs.
-            //
-            // `job_posting_shaped` is hoisted up here too (security review round A3-r1, AC-3
-            // MEDIUM) rather than computed only later where the `extra`-catch-all needs it: a
-            // board-controlled `JobPosting.extra` map (`#[serde(flatten)]`) could otherwise ALSO
-            // satisfy `document_record_shaped` by forging `isDefault`+`indexed` keys into it, and
-            // nothing before this fix stopped a real `JobPosting` from taking the DocumentRecord
-            // exemption below. ANDing every DocumentRecord-shaped check with `!job_posting_shaped`
-            // makes that impossible: a real `JobPosting` always fails the AND, so its `title`
-            // fences exactly as it always did.
+            // Issue #1157 — origin shape checks, computed up front (read-only) so the loop below
+            // and the dedicated `text` block after it share one derivation. Every flag below is
+            // ANDed with `!job_posting_shaped` (rounds A3-r1/2, issue #1183 F1): a board-controlled
+            // `JobPosting.extra` (`#[serde(flatten)]`) could otherwise forge the anchor keys of any
+            // OTHER shape (`confidence`, `publishedAt`+`prerelease`, `createdAt`+`read`) and steal
+            // that shape's exemption/relabelling for board-authored text — a real `JobPosting`
+            // always fails the AND, so its own fields fence exactly as they always did.
             let job_posting_shaped = JOB_POSTING_ANCHOR_FIELDS
                 .iter()
                 .all(|f| map.contains_key(*f));
@@ -55,30 +49,12 @@ pub(in crate::extension_bridge::agent_call) fn fence_named_fields_recursive(valu
                 && DOCUMENT_RECORD_ANCHOR_FIELDS
                     .iter()
                     .all(|f| map.contains_key(*f));
-            // AC-2 fix (round 2 security review): ANDed with `!job_posting_shaped`, same as
-            // `document_record_shaped` just above -- without it, a real `JobPosting` whose
-            // board-controlled `extra` (`#[serde(flatten)]`) happens to carry a `confidence` key
-            // satisfied this disjunct on its own, relabelling board-authored `text` from
-            // `<job_posting>` to `<user_document>` (a tag the server instructions define as
-            // first-party). `document_record_shaped` already excludes `job_posting_shaped`, so
-            // the AND only changes the second disjunct's behavior.
             let user_document_shaped = !job_posting_shaped
                 && (document_record_shaped || map.contains_key(RESUME_EXTRACT_TEXT_ANCHOR_FIELD));
-            // Issue #1183 F1 -- ANDed with `!job_posting_shaped`, same discipline as every
-            // other shape flag above. Without this, a board-controlled `JobPosting.extra`
-            // (`#[serde(flatten)]`) forging `publishedAt`+`prerelease` made this disjunct true
-            // on its own, so the loop below skipped fencing `body` as the changelog exemption,
-            // AND the `extra` catch-all still excludes `body` (it's a `FENCE_FIELD_NAMES` key),
-            // AND the trailing recursion ignores string leaves -- board-authored `body` text
-            // reached the agent completely unfenced.
             let changelog_entry_shaped = !job_posting_shaped
                 && CHANGELOG_ENTRY_ANCHOR_FIELDS
                     .iter()
                     .all(|f| map.contains_key(*f));
-            // A3-r2-AC-7 -- ANDed with `!job_posting_shaped`, same discipline as every other
-            // shape flag above (a real `JobPosting`'s `extra` forging `createdAt`+`read` is no
-            // more plausible than forging the others, but the AND is free and keeps the
-            // invariant uniform).
             let notification_shaped = !job_posting_shaped
                 && NOTIFICATION_ANCHOR_FIELDS
                     .iter()
@@ -153,32 +129,21 @@ pub(in crate::extension_bridge::agent_call) fn fence_named_fields_recursive(valu
                     }
                 }
             }
-            // TR-02 fix (test-author round): keys the `extra` catch-all below already fenced
-            // leaf-by-leaf, so the trailing name-keyed recursion further down must skip them --
-            // otherwise an Array/Object-valued `extra` key whose OWN inner key is also on
-            // [`FENCE_FIELD_NAMES`] (e.g. `"salaryDetail": { "description": … }`) gets its leaf
-            // fenced twice: once here via `fence_all_string_leaves`, and again when the trailing
-            // `fence_named_fields_recursive(v)` walk reaches the same subtree and matches
-            // `description` by name. `unfence_named_fields_recursive` only strips ONE layer, so a
-            // double-wrap would leave a `<job_posting>` wrapper behind after unfencing.
+            // Keys the `extra` catch-all above already fenced leaf-by-leaf (test-author round,
+            // TR-02) — the trailing recursion below must skip them, or an Array/Object `extra` key
+            // whose OWN inner key is ALSO on `FENCE_FIELD_NAMES` (e.g. `"salaryDetail":
+            // {"description": …}`) gets double-wrapped, leaving a stray wrapper after
+            // `unfence_named_fields_recursive`'s single strip.
             let mut extra_fenced_keys: std::collections::HashSet<String> =
                 std::collections::HashSet::new();
             if job_posting_shaped {
-                // ADVISORY fix (security review round 4): used to filter on
-                // `v.is_string()` alone, so a board-chosen `extra` key whose
-                // value is an ARRAY or OBJECT (not reachable today — every
-                // `extra.insert` call site writes a scalar, verified — but
-                // not reachable is not the same as impossible for the FIRST
-                // board that adds one) skipped this catch-all entirely: not
-                // a listed field name, not string-typed, so neither this
-                // block nor the array-only handling above touches it, and
-                // the generic recursive walk below only fences NAMED fields,
-                // never "every string inside an unclassified value". Every
-                // non-null, non-safe, non-listed key is now collected
-                // regardless of shape; a String is fenced directly as
-                // before, an Array/Object is fenced leaf-by-leaf via
-                // `fence_all_string_leaves` (untrusted board data all the
-                // way down, not just at the top level).
+                // Collects every non-null, non-safe, non-listed `extra` key regardless of shape —
+                // not `v.is_string()` alone (security review round 4): an Array/Object-valued
+                // board-chosen key (not reachable today — every `extra.insert` call site writes a
+                // scalar, verified — but not reachable isn't impossible for the first board that
+                // adds one) would otherwise skip every fencing path here, since the generic
+                // recursion below only fences NAMED fields. A String fences directly; an
+                // Array/Object fences leaf-by-leaf via `fence_all_string_leaves`.
                 let extra_keys: Vec<String> = map
                     .iter()
                     .filter(|(k, v)| {
@@ -231,16 +196,10 @@ pub(in crate::extension_bridge::agent_call) fn fence_named_fields_recursive(valu
                     map.insert(APPLICATION_ANSWER_QUESTION_FIELD.to_string(), json!(fenced));
                 }
             }
-            // The scrape-diagnostics shape rules, under the same
-            // `!job_posting_shaped` guard and for the same reason: on a
-            // `JobPosting`-shaped object the
-            // `extra` catch-all above already fenced every unclassified
-            // string, and `fenced` does NOT guard against double-wrapping
-            // (nor does `fence_all_string_leaves`), so a second pass would
-            // leave a wrapper behind after
-            // [`unfence_named_fields_recursive`]'s single strip. Reached by
-            // `Autopilot.last_run_summaries`; the copies inside a
-            // `JobRecord`'s exempt `result` are handled below.
+            // Same `!job_posting_shaped` guard, same double-wrap reason as above (`fenced`/
+            // `fence_all_string_leaves` don't guard against it). Reached by
+            // `Autopilot.last_run_summaries`; the copies inside a `JobRecord`'s exempt `result`
+            // are handled below.
             if !job_posting_shaped {
                 fence_board_derived_strings(map);
             }

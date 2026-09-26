@@ -54,34 +54,23 @@ impl TokenBucket {
 /// refilling one token/second — generous for a scripted CLI polling loop.
 pub(in crate::extension_bridge::agent_read) const AGENT_CHEAP_BURST: f64 = 10.0;
 pub(in crate::extension_bridge::agent_read) const AGENT_CHEAP_REFILL_SECS: f64 = 1.0;
-/// `best-matches` bucket: burst 1, refilling one token every 30s. Sized off
-/// the measured worst case in `commands::autopilot::autopilot_best_matches`'s
-/// own doc (3.03s at 2000 found-jobs, 12.3s at 4000) — this PR calls that
-/// command UNMODIFIED (issue #1084's own preference: prefer the already-public
-/// fn over re-wrapping its private blocking half or duplicating its
-/// clustering, both of which either widen visibility across a domain
-/// boundary this PR doesn't own — `commands::autopilot` — or fork a second
-/// copy of `compute_best_matches`'s logic). That leaves the compute itself
-/// UN-truncated per call; this bucket is what stops repeated invocation from
-/// stacking that cost, not a pre-clustering cap on `found_jobs`. A follow-up
-/// in the matching domain could add a real compute-side cap if that's not
-/// enough — flagged in the PR1 handoff.
+/// `best-matches` bucket: burst 1, refilling one token every 30s. Sized off the measured worst
+/// case in `autopilot_best_matches`'s own doc (3.03s at 2000 found-jobs, 12.3s at 4000) — this PR
+/// calls that command UNMODIFIED rather than re-wrapping its private blocking half or duplicating
+/// its clustering, which leaves the compute itself UN-truncated per call; this bucket stops
+/// repeated invocation from stacking that cost, not a pre-clustering cap.
 const AGENT_BEST_MATCHES_BURST: f64 = 1.0;
 // `pub(super)` (issue #1155) — `extension_bridge::test`'s
 // `bridge_state_agent_retry_after_ms_reads_the_same_bucket_try_acquire_agent_drew_from` anchors to
 // this value directly, so a `BridgeState`-level test can't be satisfied by any hardcoded constant.
 pub(in crate::extension_bridge) const AGENT_BEST_MATCHES_REFILL_SECS: f64 = 30.0;
 
-/// Token-bucket throttle for `agent.query`, shared across EVERY connection for
-/// this pairing (lives on `BridgeState`, not per-connection) for the same
-/// reason as `match_live::MatchLiveThrottle`: a CLI invocation is a fresh
-/// process + fresh socket every time, so a per-connection bucket would be
-/// bypassed by construction. A SEPARATE struct from `MatchLiveThrottle` (not
-/// a generic shared one) — that struct's own doc reserves exactly this
-/// scenario ("a future compute-heavy verb") for its own instance, since
-/// per-verb cost profiles differ; `best-matches` alone does real CPU work
-/// while the other five resources are cheap in-memory reads, so this struct
-/// carries TWO independently-sized buckets rather than one shared bucket.
+/// Token-bucket throttle for `agent.query`, shared across EVERY connection for this pairing (lives
+/// on `BridgeState`, not per-connection): a CLI invocation is a fresh process + fresh socket every
+/// time, so a per-connection bucket would be bypassed by construction. A SEPARATE struct from
+/// `match_live::MatchLiveThrottle`, since per-verb cost profiles differ: `best-matches` alone does
+/// real CPU work while the other five resources are cheap in-memory reads, so this struct carries
+/// TWO independently-sized buckets rather than one shared bucket.
 pub(in crate::extension_bridge) struct AgentQueryThrottle {
     cheap: TokenBucket,
     best_matches: TokenBucket,

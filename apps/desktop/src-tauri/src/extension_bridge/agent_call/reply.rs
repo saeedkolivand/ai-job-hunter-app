@@ -55,13 +55,11 @@ pub(super) fn call_result_reply(
     .to_string()
 }
 
-/// Longest caller-supplied `reqId`/`namespace`/`command` a REFUSAL reply echoes back, in bytes.
-/// All three arrive bounded only by the incoming frame cap ([`super::super::MAX_FRAME_BYTES`], 8
-/// MiB), so a refusal echoing them verbatim could itself exceed the cap it exists to enforce (HIGH
-/// — security review: a ~8.38 MB `command` blew [`enforce_frame_cap`]'s own substitute measure).
-/// 256 is far above the real [`POLICY`] table's longest command name and far below anything that
-/// could threaten a frame — pinned against the TABLE, not a copy of this number; see
-/// `the_identifier_clamp_leaves_every_real_identifier_untouched`.
+/// Longest caller-supplied `reqId`/`namespace`/`command` a REFUSAL reply echoes back, in bytes —
+/// all three arrive bounded only by the incoming frame cap (8 MiB), so echoing them verbatim could
+/// itself exceed the cap it exists to enforce (HIGH — security review: a ~8.38 MB `command` blew
+/// [`enforce_frame_cap`]'s own substitute measure). 256 is far above the real [`POLICY`] table's
+/// longest command name; pinned against the TABLE, not a copy of this number.
 pub(super) const REFUSAL_IDENT_CAP: usize = 256;
 
 /// A [`REFUSAL_IDENT_CAP`]-bounded prefix of a caller-supplied identifier,
@@ -187,11 +185,10 @@ pub(in crate::extension_bridge) fn effect_not_allowed_reply(
     )
 }
 
-/// The extension caller's own reply cap ([`super::super::EXTENSION_RESULT_MAX_BYTES`], MCP
-/// precedent), enforced ON TOP of [`enforce_frame_cap`]'s generic check — an ordinary CLI reply
-/// legitimately runs larger, so [`stream::spawn_agent_call`] applies this only for
-/// `CallerClass::Extension`. Built directly (not via [`refusal_reply`]) so `detail` names the
-/// SMALLER cap actually enforced; still bounded the same way (`clamp_ident` on every identifier).
+/// The extension caller's own reply cap, enforced ON TOP of [`enforce_frame_cap`]'s generic check
+/// — an ordinary CLI reply legitimately runs larger, so `stream::spawn_agent_call` applies this
+/// only for `CallerClass::Extension`. Built directly (not via [`refusal_reply`]) so `detail` names
+/// the SMALLER cap actually enforced; still bounded the same way (`clamp_ident` on every identifier).
 pub(in crate::extension_bridge) fn extension_capped_reply(
     req_id: &str,
     payload: &Value,

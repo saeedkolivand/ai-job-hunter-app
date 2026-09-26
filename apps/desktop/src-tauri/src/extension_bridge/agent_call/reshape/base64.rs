@@ -4,24 +4,15 @@
 
 use serde_json::{json, Value};
 
-/// `(command, field)` pairs whose value is a RAW BYTE ARRAY that `serde_json`
-/// renders as ~3.2–4× its own size in decimal digits and commas (issue
-/// #1138: an ordinary one-page résumé exported to PDF came back at 259,841 B,
-/// 99.1% of the MCP result cap, and a two-page one exceeded it — with no
-/// `limit`/`cursor` to narrow and no other exposed export path). Re-encoded
-/// base64 (~1.33×) HERE, never on the struct: `ExportResult.data` is the
-/// RENDERER's own wire shape (`data: number[]`, consumed by the export
-/// service hooks through `AppClient`), and `#[serde(with = …)]` on that field
-/// would change it for them too.
+/// `(command, field)` pairs whose value is a RAW BYTE ARRAY that `serde_json` renders as ~3.2–4×
+/// its own size in decimal digits and commas (issue #1138: a one-page résumé PDF came back at
+/// 259,841 B, 99.1% of the MCP result cap). Re-encoded base64 (~1.33×) HERE, never on the struct:
+/// `ExportResult.data` is the RENDERER's own wire shape too, and `#[serde(with = …)]` would change
+/// it for them.
 ///
-/// Audited by hand against the struct each pair actually serializes from:
-/// - `documents_export_document` → `export::types::ExportResult.data:
-///   Vec<u8>` (camelCase-renamed struct; `data` is already its wire key).
-///
-/// `documents_render_preview_images` is the other payload the MCP cap's own
-/// comment names, and it is deliberately NOT here: `PreviewResult.pages` is
-/// `Vec<String>` of SVG source, already text, and base64ing it would make it
-/// bigger and unreadable.
+/// Audited: `documents_export_document` → `export::types::ExportResult.data: Vec<u8>`.
+/// `documents_render_preview_images` is deliberately NOT here — `PreviewResult.pages` is already
+/// SVG text, and base64ing it would only make it bigger and unreadable.
 pub(in crate::extension_bridge::agent_call) const BASE64_BYTE_FIELDS: &[(&str, &str)] =
     &[("documents_export_document", "data")];
 
@@ -31,31 +22,22 @@ pub(in crate::extension_bridge::agent_call) const BASE64_BYTE_FIELDS: &[(&str, &
 pub(in crate::extension_bridge::agent_call) const ENCODING_KEY_SUFFIX: &str = "Encoding";
 pub(in crate::extension_bridge::agent_call) const BASE64_ENCODING: &str = "base64";
 
-/// Re-encode every [`BASE64_BYTE_FIELDS`] array-of-bytes on `command`'s reply
-/// as a base64 STRING, and add the sibling `<field>Encoding: "base64"` key
-/// that says so. A payload that describes its own encoding survives a caller
-/// that never read the server `instructions` or the tool description — the
-/// reason this is a wire key and not documentation.
+/// Re-encode every [`BASE64_BYTE_FIELDS`] array-of-bytes on `command`'s reply as a base64 STRING,
+/// and add the sibling `<field>Encoding: "base64"` key that says so — a payload describing its own
+/// encoding survives a caller that never read the tool description.
 ///
-/// Top-level only, and by exact `(command, field)` pair — the opposite of
-/// `fence_named_fields_recursive`'s unconditional recursive walk, on
-/// purpose: fencing is a SAFETY property that must cover a field wherever it
-/// appears, while this is a lossy-looking representation change that must
-/// only ever hit the one field whose type was audited. A recursive
-/// "any array of small integers is bytes" rule would eventually rewrite a
-/// legitimate array of scores or ids into gibberish.
+/// Top-level only, by exact `(command, field)` pair — the opposite of
+/// `fence_named_fields_recursive`'s unconditional walk, on purpose: this is a lossy-looking
+/// representation change that must only ever hit the one field whose type was audited, never a
+/// "any array of small integers is bytes" heuristic that could rewrite a legitimate score/id array
+/// into gibberish.
 ///
-/// A non-array value (or a `data` that is not entirely bytes) is left exactly
-/// as it was and gets NO marker key — the marker is only ever added on a
-/// value this actually re-encoded, so the two can never disagree.
+/// A non-array value (or a `data` not entirely bytes) is left as-is with NO marker key, so the two
+/// can never disagree.
 ///
-/// Visible to the whole `extension_bridge` tree for ONE reason: the test that
-/// proves this actually solves #1138 has to compare against
-/// `agent_cli::mcp::MCP_RESULT_MAX_BYTES`, the
-/// cap it exists to get under, and that constant is private to the `mcp`
-/// module — so the test lives THERE, beside the cap, rather than here beside
-/// a hand-copied literal of it that could silently drift (same
-/// cross-module-test reasoning as [`gate`]'s own `pub(super)`).
+/// Visible to the whole `extension_bridge` tree: the test proving this solves #1138 compares
+/// against `agent_cli::mcp::MCP_RESULT_MAX_BYTES`, private to that module — so the test lives
+/// THERE, beside the cap, rather than beside a hand-copied literal that could drift.
 pub(in crate::extension_bridge) fn base64_byte_fields(command: &str, data: &mut Value) {
     let Some(map) = data.as_object_mut() else {
         return;

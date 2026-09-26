@@ -7,17 +7,16 @@
 //! ordinary page over what a real MCP client accepts in-band; `description` is opt-in via
 //! `includeDescription: true`. Five server-side filters (`minScore`/`country`/`remote`/`applied`/
 //! `query`) apply BEFORE paging, so `total` always means "rows this call's filters actually
-//! match", never the whole unfiltered store.
+//! match".
 //!
 //! ## Spanning every autopilot (issue #1168)
 //! `autopilotId` is optional; omitted, the traversal spans every autopilot in store order. Rows
 //! sharing the same [`canonical_job_key`](crate::scraping::boards::common::canonical_job_key)
-//! across autopilots collapse to the FIRST occurrence that also PASSES this call's filters (B3-r1-F1
-//! — filtering must run before dedup, or a posting failing a filter under one autopilot could
-//! consume the dedup slot a later, passing copy needed). The cursor is `<issuer>:<offset>`, where
-//! `issuer` is `<autopilotId or __all__>|<filter fingerprint>` (B3-r1-F4) — see
-//! [`found_jobs_cursor_issuer`] — so a cursor is only valid for a later call with the SAME scope
-//! AND filters.
+//! collapse to the FIRST occurrence that also PASSES this call's filters (B3-r1-F1 — filtering
+//! before dedup, or a posting failing one autopilot's filter could consume the slot a later,
+//! passing copy needed). The cursor is `<issuer>:<offset>`, `issuer` being
+//! `<autopilotId or __all__>|<filter fingerprint>` (B3-r1-F4, see [`found_jobs_cursor_issuer`]) —
+//! valid only for a later call with the SAME scope AND filters.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -30,15 +29,13 @@ use crate::extension_bridge::paging;
 /// `found-jobs` resource's per-row COMPACT payload — a SMALLER allowlist than `agent_read::AgentJob`
 /// over the same `autopilot::FoundJob` source: also excludes `board`/`salaryMin`/`salaryMax`/
 /// `salaryCurrency`/`scoreSource`/`postedAt`/`trust`/`clusterMembers` (issue #1167 — a caller
-/// wanting full detail for one job already has `job`, keyed by this same `url`). `applied`/
-/// `autopilotId`/`autopilotName`/`description` are NOT part of this struct's serde round trip —
-/// [`project_found_job_row`] injects them afterward, since none is a plain passthrough (`applied`
-/// is derived at read time; the autopilot fields belong to the PARENT record; `description` is
-/// opt-in).
+/// wanting full detail already has `job`, keyed by this same `url`). `applied`/`autopilotId`/
+/// `autopilotName`/`description` are NOT part of this struct's serde round trip —
+/// [`project_found_job_row`] injects them afterward, since none is a plain passthrough.
 ///
-/// `score_provisional` stays IN (B3-r1-F5) — this is the one resource that FILTERS by `score`
-/// (`minScore`), and a title-only/aggregator-snippet score is flagged provisional precisely so a
-/// `minScore`-filtered caller doesn't treat it as fully trusted.
+/// `score_provisional` stays IN (B3-r1-F5) — this is the one resource that FILTERS by `minScore`,
+/// and a title-only/aggregator-snippet score is flagged provisional so a filtered caller doesn't
+/// treat it as fully trusted.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct FoundJobSlice {
@@ -93,17 +90,15 @@ pub(super) const ALL_AUTOPILOTS_CURSOR_ISSUER: &str = "__all__";
 
 /// Cap `name` to [`AUTOPILOT_NAME_CAP`] chars, char-boundary safe, and neutralize any forged
 /// transcript boundary (issue #1157 — an autopilot name is the CALLER'S OWN first-party data,
-/// never board-scraped text, so it no longer goes through [`crate::prompt_fence::fenced`]'s
-/// `job_posting` wrapper the way a scraped display field does — unlike a `job` row's own
-/// `title`/`company`/`location`, which really are third-party board text). `.chars().take(n)`
-/// rather than a byte slice — `str`-slicing at an arbitrary byte offset can land mid-codepoint and
-/// panic, and this crate is `panic = "abort"` in release.
+/// never board-scraped, so it no longer gets [`crate::prompt_fence::fenced`]'s `job_posting`
+/// wrapper the way a `job` row's real third-party `title`/`company`/`location` does).
+/// `.chars().take(n)` rather than a byte slice — slicing at an arbitrary byte offset can land
+/// mid-codepoint and panic (`panic = "abort"` in release).
 ///
-/// Security review round A3-r1, AC-5 MEDIUM: dropping the `fenced` wrapper also dropped its
-/// boundary defence, not only its label — this resource's `jobs[].description` fields carry real
-/// `<job_posting>` fences in the SAME response, so a name containing `</job_posting>` or
-/// `[tool_result` would have been a forged boundary in that same document. Neutralizing here
-/// restores that half without re-adding the label the issue asked to remove.
+/// AC-5 MEDIUM: dropping the `fenced` wrapper also dropped its boundary defence, not only its
+/// label — `jobs[].description` carries real `<job_posting>` fences in the SAME response, so a
+/// name containing `</job_posting>` would be a forged boundary. Neutralizing restores that half
+/// without re-adding the label the issue asked to remove.
 pub(super) fn cap_autopilot_name(name: &str) -> String {
     let capped: String = name.chars().take(AUTOPILOT_NAME_CAP).collect();
     crate::prompt_fence::neutralize_transcript_boundaries(&capped)
@@ -129,9 +124,9 @@ pub(super) fn trim_page_to_budget(candidates: Vec<Value>, base_cost: usize) -> V
 /// Every envelope byte OTHER than the `jobs` array itself, measured (not assumed) against the REAL
 /// `autopilotId`/[`cap_autopilot_name`]-capped `autopilotName` — the `base_cost`
 /// [`trim_page_to_budget`] subtracts from [`PAGE_BYTE_BUDGET`]. `None` when spanning every
-/// autopilot (issue #1168), which carries neither envelope field. `nextCursor` isn't known yet, so
-/// it's measured with `total` standing in for the offset — a real offset can never exceed `total`,
-/// so this can only OVER-count and thus only trim MORE than strictly required, never less.
+/// autopilot (issue #1168), which carries neither envelope field. Via
+/// [`super::envelope_cost_estimate`] — see that fn's own doc for why `nextCursor`'s placeholder is
+/// safe to over-count against.
 pub(super) fn base_envelope_cost(
     cursor_issuer: &str,
     single: Option<(&str, &str)>,
@@ -146,9 +141,7 @@ pub(super) fn base_envelope_cost(
         base_envelope["autopilotId"] = json!(id);
         base_envelope["autopilotName"] = json!(name);
     }
-    serde_json::to_string(&base_envelope)
-        .map_or(usize::MAX, |s| s.len())
-        .saturating_sub(2)
+    super::envelope_cost_estimate(&base_envelope)
 }
 pub(super) fn fence_found_jobs_description(value: &mut Value) {
     let Some(desc) = value.get("description").and_then(Value::as_str) else {

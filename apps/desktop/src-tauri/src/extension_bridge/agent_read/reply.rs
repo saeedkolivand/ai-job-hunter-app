@@ -41,13 +41,9 @@ pub(in crate::extension_bridge::agent_read) fn agent_result_reply(
 ) -> String {
     let payload = match outcome {
         Ok(data) => json!({ "ok": true, "resource": resource, "data": data }),
-        // Wire-error discipline: `AppError`'s `Display` here is always a fixed
-        // sentinel or an echo of the CALLER'S OWN `resource`/`url` input
-        // (never path/PII content) — mirrors `advance_authenticated`'s
-        // "unknown message type" reply. `detail` (issue #1166) is looked up
-        // off the SAME fixed sentinel — never dynamic content either — and
-        // omitted entirely when there is none, same shape as every other
-        // resource's success-only payload.
+        // Wire-error discipline: `AppError`'s `Display` here is always a fixed sentinel or an echo
+        // of the CALLER'S OWN `resource`/`url` input, never path/PII content. `detail` (issue
+        // #1166) is looked up off that SAME fixed sentinel and omitted when there is none.
         Err(e) => {
             let error = e.to_string();
             let mut payload = json!({ "ok": false, "resource": resource, "error": error });
@@ -65,18 +61,16 @@ pub(in crate::extension_bridge::agent_read) fn agent_result_reply(
     .to_string()
 }
 
-// ── Bounded refusals (issue #1151 — this tier had no equivalent to
-// `agent_call::refusal_reply`/`enforce_frame_cap`, so a refusal built from a near-cap `resource`/
-// `reqId` could itself exceed the frame cap on the way out, and a legitimately oversized SUCCESS
-// reply — an uncapped `job`/`best-matches` payload — closed the socket with no refusal at all) ──
+// ── Bounded refusals (issue #1151 — this tier had no equivalent to `agent_call::refusal_reply`/
+// `enforce_frame_cap`, so a refusal built from a near-cap `resource`/`reqId` could itself exceed
+// the frame cap, and an uncapped `job`/`best-matches` success reply closed the socket with no
+// refusal at all) ──
 
-/// A [`super::super::agent_call::clamp_ident`]-bounded, sentinel+detail refusal — the shape
-/// `agent_call::refusal_reply` uses, for the MACHINE-READABLE refusals this tier gained from
-/// issues #1151/#1155 (`rate_limited`, `result_too_large`, the extension read gate). Every OTHER
-/// refusal (unrecognized `resource`, `origin_refused`, a resource fn's own validation error) keeps
-/// its existing bare-`error` shape via [`bounded_result_reply`] instead. `extra` merges additional
-/// fields onto the payload; `json!({})` for none. Re-measures the built reply and degrades to a
-/// minimal envelope if it still doesn't fit — measured, not assumed.
+/// A [`super::super::agent_call::clamp_ident`]-bounded, sentinel+detail refusal — the shape `agent_call::refusal_reply` uses,
+/// for the MACHINE-READABLE refusals this tier gained from issues #1151/#1155. Every OTHER refusal
+/// keeps its existing bare-`error` shape via [`bounded_result_reply`] instead. `extra` merges
+/// additional fields onto the payload. Re-measures the built reply and degrades to a minimal
+/// envelope if it still doesn't fit.
 fn sentinel_refusal_reply(
     req_id: &str,
     resource: &str,
@@ -118,11 +112,10 @@ fn sentinel_refusal_reply(
 }
 
 /// [`agent_result_reply`], with `resource`/`reqId` pre-clamped and the built reply re-measured
-/// against [`super::super::MAX_FRAME_BYTES`] (issue #1151), applied to EVERY reply this tier
-/// builds (success included, mirroring `agent_call::handle_agent_call`'s single
-/// `enforce_frame_cap` call site): an oversized reply of any kind is substituted with a
-/// [`sentinel_refusal_reply`] `result_too_large` refusal rather than closing the socket with
-/// nothing (the #1135 failure mode this mirrors from the generic tier).
+/// against [`super::super::MAX_FRAME_BYTES`] (issue #1151), applied to EVERY reply this tier builds
+/// (success included, mirroring `agent_call::handle_agent_call`'s single `enforce_frame_cap` call
+/// site): an oversized reply is substituted with a `result_too_large` refusal rather than closing
+/// the socket with nothing (the #1135 failure mode this mirrors).
 pub(super) fn bounded_result_reply(
     req_id: &str,
     resource: &str,
@@ -157,10 +150,9 @@ pub(in crate::extension_bridge) const THROTTLED_MESSAGE: &str =
     "Too many requests — try again shortly.";
 
 /// The caller-supplied argument that names WHICH request a throttle refusal belongs to, beyond
-/// `resource` alone (issue #1155 — a throttled `job` lookup used to echo only
-/// `"resource":"job"`, never which of several in-flight urls was refused). `job` keys on `url`,
-/// `found-jobs` on `autopilotId`; every other resource takes no per-request identifier. Clamped
-/// like every other echoed identifier here — caller-supplied, bounded only by the incoming frame.
+/// `resource` alone (issue #1155 — a throttled `job` lookup used to echo only `"resource":"job"`,
+/// never which of several in-flight urls was refused). `job` keys on `url`, `found-jobs` on
+/// `autopilotId`. Clamped like every other echoed identifier here.
 fn identity_arg<'a>(resource: &str, payload: &'a Value) -> Option<(&'static str, &'a str)> {
     let field = match resource {
         RES_JOB => "url",
@@ -175,11 +167,9 @@ fn identity_arg<'a>(resource: &str, payload: &'a Value) -> Option<(&'static str,
 
 /// The read tier's own `rate_limited` refusal (issue #1155) — the SAME sentinel+detail shape,
 /// SAME `retryAfterMs`, as `agent_call::throttled_reply`'s: `retry_after_ms` is computed by the
-/// ONE caller (`mod.rs`) from the shared `AgentQueryThrottle` bucket right after the failed
-/// acquire, never invented here. Adds the refused request's identity — `resource` plus, where the
-/// resource takes one, [`identity_arg`] — so a caller juggling several in-flight lookups can tell
-/// WHICH one was blocked (the gap issue #1155 reports: three throttled `job` lookups previously
-/// looked identical).
+/// ONE caller (`mod.rs`) right after the failed acquire, never invented here. Adds the refused
+/// request's identity via [`identity_arg`] so a caller juggling several in-flight lookups can tell
+/// WHICH one was blocked.
 pub(in crate::extension_bridge) fn throttled_reply(
     req_id: &str,
     payload: &Value,
@@ -238,10 +228,10 @@ pub(in crate::extension_bridge) fn extension_gate_reply(req_id: &str, payload: &
     )
 }
 
-/// The extension caller's own reply cap ([`super::super::EXTENSION_RESULT_MAX_BYTES`], MCP
-/// precedent) — enforced ON TOP of the generic [`super::super::MAX_FRAME_BYTES`] cap
-/// [`bounded_result_reply`] already applies, since an ordinary CLI reply legitimately runs larger
-/// (the one caller, `stream::spawn_agent_query`, applies this only for `CallerClass::Extension`).
+/// The extension caller's own reply cap, enforced ON TOP of the generic
+/// [`super::super::MAX_FRAME_BYTES`] cap [`bounded_result_reply`] already applies, since an
+/// ordinary CLI reply legitimately runs larger (`stream::spawn_agent_query` applies this only for
+/// `CallerClass::Extension`).
 pub(in crate::extension_bridge) fn extension_capped_reply(
     req_id: &str,
     payload: &Value,
