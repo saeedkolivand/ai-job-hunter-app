@@ -1,10 +1,11 @@
-# R8b inline-test baseline — one `src/`-relative path per line, sorted, for files that still
-# carry an inline `#[cfg(test)] mod … { … }` body. A listed file must still have one.
+# R8b test-layout baseline — one `src/`-relative path per line, sorted, for files that still
+# carry an inline `#[cfg(test)] mod … { … }` body or `#[path]`-wired tests; a listed file must still have one.
 # Regenerate with: R8_BLESS=1 cargo test --test architecture
 applications/reminders.rs
 applications/status_events.rs
 autopilot_scheduler.rs
 commands/ai/spend.rs
+commands/ai_provider/anthropic.rs
 commands/ai_provider/cli_agent/antigravity.rs
 commands/ai_provider/cli_agent/claude_code.rs
 commands/ai_provider/cli_agent/codex.rs
@@ -13,10 +14,16 @@ commands/ai_provider/cli_agent/gemini_cli.rs
 commands/ai_provider/cli_agent/opencode.rs
 commands/ai_provider/cli_agent/qwen_code.rs
 commands/ai_provider/cli_agent/workspace.rs
+commands/ai_provider/embed.rs
+commands/ai_provider/gemini.rs
+commands/ai_provider/ollama.rs
 commands/ai_provider/ollama_cloud.rs
 commands/ai_provider/ollama_local_chat.rs
+commands/ai_provider/openai.rs
 commands/ai_provider/research.rs
 commands/ai_provider/retry.rs
+commands/ai_provider/search/mod.rs
+commands/ai_provider/stream.rs
 commands/ai_provider/structured.rs
 commands/ai_provider/timeouts.rs
 commands/ai_provider/trace.rs
@@ -63,6 +70,8 @@ export/typst_engine/letter.rs
 export/typst_engine/letterhead.rs
 export/typst_engine/photo.rs
 export/typst_engine/render.rs
+extension_bridge/answer_assist.rs
+extension_bridge/answer_assist_max_chars.rs
 extension_bridge/answer_assist_topic.rs
 extension_bridge/answer_rewrite.rs
 extension_bridge/applied_check_batch.rs
@@ -76,6 +85,7 @@ extension_bridge/persist.rs
 extension_bridge/register.rs
 extension_bridge/save_answers_optin.rs
 extension_bridge/settings.rs
+extension_bridge/stream.rs
 extraction/clean.rs
 extraction/confidence.rs
 extraction/docx.rs

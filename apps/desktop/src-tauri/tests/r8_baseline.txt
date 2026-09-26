@@ -126,13 +126,6 @@
 342	export/typst_engine/photo.rs
 495	export/typst_engine/render.rs
 7393	export/typst_engine/test.rs
-1107	extension_bridge/agent_call.rs
-760	extension_bridge/agent_call/fence.rs
-427	extension_bridge/agent_call/proof.rs
-1183	extension_bridge/agent_call/proof/tests.rs
-839	extension_bridge/agent_call/reshape.rs
-3782	extension_bridge/agent_call/tests.rs
-525	extension_bridge/agent_call/validate/tests.rs
 1400	extension_bridge/agent_cli.rs
 505	extension_bridge/agent_cli/catalogue/shard_1.rs
 503	extension_bridge/agent_cli/catalogue/shard_2.rs
@@ -144,11 +137,6 @@
 1294	extension_bridge/agent_cli/policy.rs
 1220	extension_bridge/agent_cli/policy/tests.rs
 1485	extension_bridge/agent_cli/tests.rs
-1090	extension_bridge/agent_read.rs
-335	extension_bridge/agent_read/best_matches.rs
-914	extension_bridge/agent_read/found_jobs.rs
-1458	extension_bridge/agent_read/found_jobs/tests.rs
-1603	extension_bridge/agent_read/tests.rs
 1348	extension_bridge/answer_assist.rs
 1839	extension_bridge/answer_assist_tests.rs
 349	extension_bridge/answers_save.rs

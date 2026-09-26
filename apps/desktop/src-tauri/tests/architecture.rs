@@ -211,7 +211,9 @@ fn collect(dir: &Path, root: &Path, out: &mut Vec<RsFile>) {
                 Some((head, _)) => head.to_string(),
                 None => rel.trim_end_matches(".rs").to_string(),
             };
-            let is_test = rel.ends_with("test.rs") || rel.ends_with("tests.rs");
+            // `<stem>/tests.rs`, or a topic file under `<stem>/tests/` (R8b layout)
+            let is_test =
+                rel.ends_with("test.rs") || rel.ends_with("tests.rs") || rel.contains("/tests/");
             let content = fs::read_to_string(&path).unwrap_or_default();
             out.push(RsFile {
                 rel,
@@ -700,6 +702,14 @@ fn r7_allowlist_has_no_dead_entries() {
 // are ratcheted in `tests/r8_baseline.txt`: they may shrink or be deleted, never grow.
 const HARD_CAP_LOC: usize = 300;
 
+// The cap is a forcing function, not a goal in itself: a file that genuinely reads worse split
+// (one cohesive state machine, one table) may go up to `R8_EXCEPTION_CEILING` if listed here with
+// the reason. Never past the ceiling; an entry whose file is back under the cap is stale.
+const R8_EXCEPTION_CEILING: usize = 400;
+const R8_EXCEPTIONS: &[(&str, &str)] = &[
+    // ("path/under/src.rs", "why splitting it would hurt readability"),
+];
+
 const R8_BASELINE_FILE: &str = "r8_baseline.txt";
 
 const R8_BASELINE_HEADER: &str = "\
@@ -708,19 +718,20 @@ const R8_BASELINE_HEADER: &str = "\
 # Regenerate after a split with: R8_BLESS=1 cargo test --test architecture
 ";
 
-// ── R8b: tests live in a sibling file, not inline ───────────────────────────────────
-// The wired form is `#[cfg(test)] #[path = "foo_tests.rs"] mod tests;` (a sibling `tests.rs`
-// for a `mod.rs`). Files still carrying an inline body are ratcheted in the baseline below.
+// ── R8b: tests live out of line, in Rust's standard layout ──────────────────────────
+// The tests of `foo.rs` live in `foo/tests.rs`, declared with a plain `#[cfg(test)] mod tests;`.
+// An inline body or `#[path]` wiring is a violation; existing ones are ratcheted below.
 const R8B_BASELINE_FILE: &str = "r8b_inline_tests_baseline.txt";
 
 const R8B_BASELINE_HEADER: &str = "\
-# R8b inline-test baseline — one `src/`-relative path per line, sorted, for files that still
-# carry an inline `#[cfg(test)] mod … { … }` body. A listed file must still have one.
+# R8b test-layout baseline — one `src/`-relative path per line, sorted, for files that still
+# carry an inline `#[cfg(test)] mod … { … }` body or `#[path]`-wired tests; a listed file must still have one.
 # Regenerate with: R8_BLESS=1 cargo test --test architecture
 ";
 
-const R8B_INLINE_MSG: &str = "inline `#[cfg(test)]` test body — move it to a sibling file";
-const R8B_STALE_MSG: &str = "no inline `#[cfg(test)]` test body left";
+const R8B_INLINE_MSG: &str =
+    "inline or `#[path]`-wired `#[cfg(test)]` module — move it to `<stem>/tests.rs`, declare `mod tests;`";
+const R8B_STALE_MSG: &str = "no inline or `#[path]`-wired test module left";
 
 /// `tests/<name>` next to the crate root, so a run does not depend on the process's cwd.
 fn tests_path(name: &str) -> PathBuf {
@@ -784,8 +795,8 @@ fn opens_inline_test_mod(line: &str) -> bool {
     })
 }
 
-/// 1-indexed line of the first inline `#[cfg(test)] mod … { … }` body, if any. Only the
-/// literal marker is matched; attributes, comments and blank lines may follow it.
+/// 1-indexed line of the first inline `#[cfg(test)] mod … { … }` body or `#[path]`-wired test
+/// module, if any. Only the literal marker is matched; attributes, comments and blank lines may follow it.
 fn inline_test_mod_line(content: &str) -> Option<usize> {
     let lines: Vec<&str> = content.lines().collect();
     for (i, line) in lines.iter().enumerate() {
@@ -799,7 +810,10 @@ fn inline_test_mod_line(content: &str) -> Option<usize> {
         }) {
             j += 1;
         }
-        if lines.get(j).is_some_and(|next| opens_inline_test_mod(next)) {
+        let path_wired = lines[i + 1..j]
+            .iter()
+            .any(|l| l.trim_start().starts_with("#[path"));
+        if path_wired || lines.get(j).is_some_and(|next| opens_inline_test_mod(next)) {
             return Some(j + 1);
         }
     }
@@ -809,10 +823,17 @@ fn inline_test_mod_line(content: &str) -> Option<usize> {
 #[test]
 fn r8_no_oversized_modules() {
     let files = sources();
-    let over: BTreeMap<&str, usize> = files
+    let loc_of: BTreeMap<&str, usize> = files
         .iter()
         .map(|f| (f.rel.as_str(), f.content.lines().count()))
-        .filter(|(_, loc)| *loc > HARD_CAP_LOC)
+        .collect();
+    let excepted = |rel: &str| R8_EXCEPTIONS.iter().any(|(r, _)| *r == rel);
+    let over: BTreeMap<&str, usize> = loc_of
+        .iter()
+        .filter(|(rel, loc)| {
+            **loc > HARD_CAP_LOC && !(excepted(rel) && **loc <= R8_EXCEPTION_CEILING)
+        })
+        .map(|(&rel, &loc)| (rel, loc))
         .collect();
 
     if std::env::var("R8_BLESS").is_ok_and(|v| v == "1") {
@@ -821,9 +842,24 @@ fn r8_no_oversized_modules() {
         return;
     }
 
+    let mut v: Vec<(String, usize, String)> = Vec::new();
+    for &(rel, why) in R8_EXCEPTIONS {
+        let msg = match loc_of.get(rel) {
+            _ if why.trim().is_empty() => "R8_EXCEPTIONS entry needs a reason".to_string(),
+            None => "no longer exists — remove it from R8_EXCEPTIONS".to_string(),
+            Some(&loc) if loc <= HARD_CAP_LOC => {
+                format!("{loc} LOC now fits — remove it from R8_EXCEPTIONS")
+            }
+            Some(&loc) if loc > R8_EXCEPTION_CEILING => {
+                format!("{loc} LOC — over the {R8_EXCEPTION_CEILING}-line exception ceiling")
+            }
+            Some(_) => continue,
+        };
+        v.push((rel.to_string(), 0, msg));
+    }
+
     let baseline = read_baseline(R8_BASELINE_FILE, true);
     let present: BTreeSet<&str> = files.iter().map(|f| f.rel.as_str()).collect();
-    let mut v: Vec<(String, usize, String)> = Vec::new();
     for (rel, &loc) in &over {
         // No entry → a new file over the cap. A lower recorded count → it grew. Otherwise it
         // shrank, or sits exactly at its baseline, and the ratchet is satisfied.
@@ -877,7 +913,7 @@ fn r8b_tests_in_sibling_files() {
             v.push((rel.clone(), 0, msg));
         }
     }
-    fail_if_any("R8B", "tests must live in a sibling file", &v);
+    fail_if_any("R8B", "tests must live in <stem>/tests.rs", &v);
 }
 
 // ── R15: no `.display()` inside a `log::*!`/`tracing::*!` call ───────────────────────
