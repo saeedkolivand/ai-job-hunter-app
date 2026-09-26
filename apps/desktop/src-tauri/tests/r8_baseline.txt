@@ -126,12 +126,7 @@
 342	export/typst_engine/photo.rs
 495	export/typst_engine/render.rs
 7393	export/typst_engine/test.rs
-1348	extension_bridge/answer_assist.rs
-1839	extension_bridge/answer_assist_tests.rs
-349	extension_bridge/answers_save.rs
-521	extension_bridge/answers_suggest.rs
 488	extension_bridge/applied_check_batch.rs
-1022	extension_bridge/assist_registry.rs
 581	extension_bridge/auth.rs
 491	extension_bridge/document_export.rs
 496	extension_bridge/document_export/tests.rs

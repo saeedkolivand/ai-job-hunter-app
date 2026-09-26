@@ -1,22 +1,16 @@
-//! The two on-demand Prep-tab drafts (PR4, `extension-round-design.md` decision 6/spec §A.2) — an
-//! optional `topic` on an otherwise-normal DRAFT-mode `answer.assist` request. Split out of
-//! `answer_assist.rs` (R8 relief) the same way `answer_rewrite.rs` already carries rewrite mode's
-//! own prompt/parsing: a second, narrow extension to the one verb, not a parallel compose path.
-//!
-//! Chosen over reusing `preset` (rewrite-only quick-action ids with their own, unrelated meaning)
-//! so the two surfaces can never collide. When present, `answer_assist::resolve_answer_assist`
-//! composes the `question` SERVER-SIDE (any client-sent `question` is ignored) via
-//! [`topic_question`] and grounds it through the EXACT SAME draft pipeline every other
-//! `answer.assist` call uses — same gate, same `ai_research` bucket/limiter, same registry, same
-//! streaming frames — rather than a parallel compose path:
+//! The two on-demand Prep-tab drafts — an optional `topic` on an otherwise-normal DRAFT-mode
+//! `answer.assist` request. Chosen over reusing `preset` (rewrite-only quick-action ids with their
+//! own, unrelated meaning) so the two surfaces can never collide. When present,
+//! `answer_assist::resolve_answer_assist` composes the `question` SERVER-SIDE (any client-sent
+//! `question` is ignored) via [`topic_question`] and grounds it through the EXACT SAME draft
+//! pipeline every other `answer.assist` call uses — same gate, limiter, registry, streaming frames:
 //!
 //! * `salary-answer`'s wording is not incidental — it is a whole token
-//!   `answers_suggest::is_salary_question` recognizes ("salary"), which is what routes it through
-//!   the EXISTING salary-shaped grounding (`resolve_answer_assist`'s `is_salary` branch: scraped
-//!   range, then a `SalaryResearch` market lookup) with no topic-specific salary code at all.
+//!   `answers_suggest::is_salary_question` recognizes ("salary"), routing it through the EXISTING
+//!   salary-shaped grounding with no topic-specific salary code at all.
 //! * `company-brief` rides [`research_company_brief`] below when the matched Application has no
-//!   cached brief yet — the EXACT `CompanyResearch` enricher `ai_research_company` uses (its own
-//!   7-day cache, its own `admit_research`/`charge_daily`), never a second implementation.
+//!   cached brief yet — the EXACT `CompanyResearch` enricher `ai_research_company` uses, never a
+//!   second implementation.
 
 use serde_json::Value;
 
@@ -51,8 +45,7 @@ pub(super) fn parse_topic(payload: &Value) -> AppResult<Option<AssistTopic>> {
 
 /// Reject a `topic` outside draft mode (see [`TOPIC_REQUIRES_DRAFT_MESSAGE`]) — extracted out of
 /// `answer_assist::resolve_answer_assist`'s inline `if` so this branch is directly unit-testable
-/// without the `tauri::test` mock-app harness `resolve_answer_assist` itself needs (the crate has
-/// none), mirroring [`parse_topic`]'s own pure/testable shape.
+/// (the crate has no `tauri::test` mock-app harness), mirroring [`parse_topic`]'s own shape.
 pub(super) fn topic_requires_draft(topic: Option<AssistTopic>, mode: AssistMode) -> AppResult<()> {
     if topic.is_some() && mode != AssistMode::Draft {
         Err(AppError::Validation(
@@ -109,45 +102,4 @@ pub(super) async fn research_company_brief(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_topic_recognizes_both_literals_and_rejects_anything_else() {
-        assert_eq!(
-            parse_topic(&serde_json::json!({ "topic": "company-brief" })).unwrap(),
-            Some(AssistTopic::CompanyBrief)
-        );
-        assert_eq!(
-            parse_topic(&serde_json::json!({ "topic": "salary-answer" })).unwrap(),
-            Some(AssistTopic::SalaryAnswer)
-        );
-        assert_eq!(parse_topic(&serde_json::json!({})).unwrap(), None);
-        assert!(parse_topic(&serde_json::json!({ "topic": "bogus" })).is_err());
-    }
-
-    #[test]
-    fn topic_question_for_salary_is_recognized_as_a_salary_question() {
-        // The whole reason this can reuse the existing salary-shaped grounding with zero new
-        // code: the synthesized question must itself be a whole-token match for
-        // `answers_suggest::is_salary_question`'s keyword set.
-        let q = topic_question(AssistTopic::SalaryAnswer).to_lowercase();
-        assert!(q
-            .split(|c: char| !c.is_alphanumeric())
-            .any(|t| t == "salary"));
-    }
-
-    #[test]
-    fn topic_requires_draft_refuses_a_topic_outside_draft_mode() {
-        let err =
-            topic_requires_draft(Some(AssistTopic::CompanyBrief), AssistMode::Rewrite).unwrap_err();
-        assert_eq!(err.to_string(), TOPIC_REQUIRES_DRAFT_MESSAGE);
-    }
-
-    #[test]
-    fn topic_requires_draft_admits_a_topic_in_draft_mode_and_no_topic_in_either_mode() {
-        assert!(topic_requires_draft(Some(AssistTopic::SalaryAnswer), AssistMode::Draft).is_ok());
-        assert!(topic_requires_draft(None, AssistMode::Draft).is_ok());
-        assert!(topic_requires_draft(None, AssistMode::Rewrite).is_ok());
-    }
-}
+mod tests;

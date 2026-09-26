@@ -1,9 +1,7 @@
 //! `answer.assist` payload parsing, clamping and validation — the pure,
-//! `AppHandle`-free half of [`super::answer_assist`], split out when that
-//! module crossed the R8 hard LOC cap. Nothing here touches the network, the
-//! store or the registry: every function is a total function of the incoming
-//! wire `Value`, which is exactly why these are the pieces that lift out
-//! cleanly.
+//! `AppHandle`-free half of [`super::answer_assist`]. Nothing here touches
+//! the network, the store or the registry: every function is a total
+//! function of the incoming wire `Value`.
 //!
 //! Every value these parse is UNTRUSTED (page-derived or user-typed), so the
 //! byte caps and the trims are the boundary, not a convenience.
@@ -14,19 +12,10 @@ use crate::error::{AppError, AppResult};
 
 use super::answer_assist::{ANSWER_ASSIST_MAX_TOKENS, ANSWER_ASSIST_SYSTEM, MAX_INSTRUCTION_BYTES};
 
-/// Clamp `s` to at most `max` BYTES, cutting on a UTF-8 char boundary — same
-/// discipline as `answers_save::clamp_bytes`/`answers_suggest::clamp_bytes`
-/// (duplicated here as a tiny pure helper rather than exported cross-module;
-/// each verb's cap is its own concern).
+/// Clamp `s` to at most `max` BYTES, cutting on a UTF-8 char boundary so the result stays
+/// valid UTF-8. Truncates, never rejects. Shared by every bridge verb that caps page text.
 pub(super) fn clamp_bytes(mut s: String, max: usize) -> String {
-    if s.len() <= max {
-        return s;
-    }
-    let mut end = max;
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    s.truncate(end);
+    s.truncate(s.floor_char_boundary(max));
     s
 }
 
@@ -109,10 +98,9 @@ pub(super) fn parse_preset(payload: &Value) -> Option<String> {
 }
 
 /// The free-text instruction — user-typed and untrusted, in BOTH modes: the
-/// rewrite-mode instruction ("reshape the existing answer per this") and the
-/// draft-mode Regenerate instruction ("shape the grounded draft per this",
-/// see [`parse_draft_instruction`] which adds the boundary clamp). Trimmed
-/// here, fenced the same way `existingAnswer`/`question` are.
+/// rewrite-mode instruction and the draft-mode Regenerate instruction (see
+/// [`parse_draft_instruction`] which adds the boundary clamp). Trimmed here,
+/// fenced the same way `existingAnswer`/`question` are.
 pub(super) fn parse_instruction(payload: &Value) -> String {
     payload
         .get("instruction")
@@ -123,27 +111,24 @@ pub(super) fn parse_instruction(payload: &Value) -> String {
 }
 
 /// The DRAFT-mode instruction at the resolve boundary: [`parse_instruction`]'s
-/// trim (the SAME parse the rewrite path validates through — no second,
-/// looser one) bounded by [`clamp_bytes`] to [`MAX_INSTRUCTION_BYTES`] before
-/// it is ever carried into the prompt builder. Unlike the rewrite path there
-/// is no required-field refusal to reuse — `instruction` is OPTIONAL for a
-/// draft (Regenerate sends none when the box is empty), so an absent or
-/// malformed field degrades to "no instruction block" rather than an error.
-/// Pure — directly unit-testable.
+/// trim (the SAME parse the rewrite path validates through) bounded by
+/// [`clamp_bytes`] to [`MAX_INSTRUCTION_BYTES`]. Unlike the rewrite path
+/// there is no required-field refusal — `instruction` is OPTIONAL for a
+/// draft, so an absent or malformed field degrades to "no instruction block"
+/// rather than an error.
 pub(super) fn parse_draft_instruction(payload: &Value) -> String {
     clamp_bytes(parse_instruction(payload), MAX_INSTRUCTION_BYTES)
 }
 
 /// Resolve the rewrite instruction to actually send: a recognized `preset`
 /// COMBINED with a non-empty free-text `instruction` (`"{preset text} {free
-/// text}"`) — since #1231 Half A the extension sends both for a preset chip
-/// pressed with a typed instruction in the box, and the preset must no longer
+/// text}"`) — since #1231 the extension sends both for a preset chip pressed
+/// with a typed instruction in the box, so the preset must no longer
 /// silently discard the user's typing (the chip names the coarse move, the
-/// typed text the specifics; both intents survive). The preset map stays the
-/// server-side source of truth for the preset's OWN wording — never a client
-/// copy. Falls back to whichever single side is present (preset text, else
-/// free text), and refuses with a fixed sentinel when neither yields any
-/// text.
+/// typed text the specifics). The preset map stays the server-side source of
+/// truth for the preset's OWN wording — never a client copy. Falls back to
+/// whichever single side is present, and refuses with a fixed sentinel when
+/// neither yields any text.
 pub(super) fn resolve_rewrite_instruction(
     preset: Option<&str>,
     instruction: &str,
@@ -166,15 +151,10 @@ pub(super) fn resolve_rewrite_instruction(
 /// [`super::stream::compose_draft_stream`] for `mode` — draft always selects
 /// [`ANSWER_ASSIST_SYSTEM`]/[`ANSWER_ASSIST_MAX_TOKENS`], rewrite always
 /// selects [`super::answer_rewrite::REWRITE_SYSTEM`] (same token cap — no
-/// in-app precedent to size a distinct one for rewrite, see
-/// `ANSWER_ASSIST_MAX_TOKENS`'s own doc). A PURE function (no
-/// `AppHandle`/`Limiter`/`Completer`) so this MODE → PROMPT mapping is
-/// directly unit-testable even though `resolve_answer_assist` itself cannot
-/// be driven end-to-end in this crate (no `tauri::test` mock-app harness) —
-/// the grounding differences (the `user` message / salary / web-notes) are
-/// covered separately by `build_user_message`'s and
-/// `answer_rewrite::build_rewrite_user_message`'s own tests, which already
-/// prove rewrite mode fences no résumé/job/company/salary block.
+/// in-app precedent to size a distinct one). A PURE function so this MODE →
+/// PROMPT mapping is directly unit-testable even though
+/// `resolve_answer_assist` itself cannot be driven end-to-end in this crate
+/// (no `tauri::test` mock-app harness).
 pub(super) fn assist_prompt_for_mode(mode: AssistMode) -> (&'static str, u32) {
     match mode {
         AssistMode::Draft => (ANSWER_ASSIST_SYSTEM, ANSWER_ASSIST_MAX_TOKENS),
@@ -188,12 +168,11 @@ pub(super) fn assist_prompt_for_mode(mode: AssistMode) -> (&'static str, u32) {
 /// Validate rewrite mode's required fields — `existingAnswer` non-empty and
 /// a usable preset-or-instruction (via [`resolve_rewrite_instruction`]) —
 /// and return `(existing_answer, instruction)` on success. A PURE function:
-/// it takes only `payload`, no `Limiter`/`AppHandle`/`Completer`, so it is
-/// structurally INCAPABLE of touching the `ai_research` limiter — calling it
-/// before `resolve_answer_assist` ever acquires that limiter is what closes
-/// the "malformed rewrite frame burns a rate-window slot at zero provider
-/// spend" gap (`limits::Limiter` never releases a slot early on a guard
-/// drop, so a rejection AFTER acquire would otherwise still cost one).
+/// it takes only `payload`, so it is structurally INCAPABLE of touching the
+/// `ai_research` limiter — calling it before `resolve_answer_assist` ever
+/// acquires that limiter closes the "malformed rewrite frame burns a
+/// rate-window slot at zero provider spend" gap (`limits::Limiter` never
+/// releases a slot early, so a rejection AFTER acquire would still cost one).
 pub(super) fn validate_rewrite_fields(payload: &Value) -> AppResult<(String, String)> {
     let existing_answer = parse_existing_answer(payload);
     if existing_answer.trim().is_empty() {

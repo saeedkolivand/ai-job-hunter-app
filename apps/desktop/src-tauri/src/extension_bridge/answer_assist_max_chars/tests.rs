@@ -1,7 +1,5 @@
-//! Unit tests for [`parse_max_chars`] only, split out of `answer_assist.rs`
-//! into this sibling file for the same R8 line-budget reason as
-//! `answer_assist_tests.rs` (the sibling file's rewrite has since landed, so
-//! this no longer needs to stay inline).
+//! Unit tests for [`parse_max_chars`] — the standard out-of-line test layout
+//! for the parent `answer_assist_max_chars.rs` module.
 
 use super::*;
 
