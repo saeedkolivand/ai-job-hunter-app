@@ -1,24 +1,17 @@
-//! `prep` resource (PR4 — Prep tab, extension-round-design.md decision 6) — the extension side
-//! panel's read of a job's existing per-job AI generations: the company brief, the AI-suggested
-//! interview questions, and the salary answer, all stored on the SAME `AiGenerationRecord`
-//! (`ai_generations/mod.rs`, keyed by normalized `job_url`) `documents` (PR2) already looks up via
-//! `AiGenerationStore::find_for_job`. New file, same pattern as `documents.rs` (R8 relief).
+//! `prep` resource (PR4 — Prep tab) — the extension side panel's read of a job's existing per-job
+//! AI generations: the company brief, AI-suggested interview questions, and salary answer, all on
+//! the SAME `AiGenerationRecord` `documents` (PR2) already looks up via `find_for_job`. New file,
+//! same pattern as `documents.rs` (R8 relief).
 //!
-//! Unlike `documents` (presence-only — the actual bytes only ever cross the wire through
-//! `document.export`), this resource returns the TEXT itself: it is the whole point of the tab,
-//! it is the user's own already-generated data (not fresh AI spend), and it rides the same read
-//! tier, the same Autofill gate (checked one hop up, in `handle_agent_query`'s caller) and the
-//! same 256 KiB extension reply cap every other resource does.
+//! Unlike `documents` (presence-only), this resource returns the TEXT itself: it's the user's own
+//! already-generated data (not fresh AI spend), riding the same read tier, Autofill gate and 256
+//! KiB extension reply cap every other resource does.
 //!
-//! ## Caps — truncate-with-a-flag, not refuse, not silent (decision)
-//! Every generated field here is already token-bounded at WRITE time by the prompts that produced
-//! it (a handful of interview questions, one ~150-word brief, one short salary line) — these caps
-//! are a defensive backstop, not a routine truncation path, the same "audited constant on a small
-//! picker list" reasoning `documents.rs`'s `MAX_DOCUMENTS` uses. Unlike that silent `.take()`
-//! though, a cap hit here sets `truncated: true` on the reply: this is the user's OWN prep
-//! content, so silently dropping part of it (a question, or the tail of a brief) must be visible
-//! rather than merely policy — the caller can always fetch the rest in-app. Never refuse the whole
-//! call over one long field, which would hide everything ELSE that fits.
+//! ## Caps — truncate-with-a-flag, not refuse, not silent
+//! Every generated field is already token-bounded at WRITE time by the prompts that produced it;
+//! these caps are a defensive backstop. A cap hit sets `truncated: true` on the reply — silently
+//! dropping part of the user's own prep content must be visible rather than merely policy, and the
+//! caller can always fetch the rest in-app. Never refuse the whole call over one long field.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};

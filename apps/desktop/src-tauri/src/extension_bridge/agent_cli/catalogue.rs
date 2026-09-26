@@ -4,7 +4,7 @@
 // Generator: packages/shared/scripts/gen-agent-catalogue.ts. Run `pnpm gen:agent-catalogue`.
 // CI runs `pnpm gen:agent-catalogue:check` to catch drift.
 //
-// 162 commands catalogued across 5 shard file(s) (catalogue/shard_*.rs),
+// 162 commands catalogued across 30 file(s), one per command-name prefix (catalogue/<prefix>.rs),
 // 1 uncatalogued (see UNCATALOGUED below).
 //
 // Sharded rather than one big const array — this crate's own R8 hard LOC cap
@@ -19,11 +19,36 @@
 
 use std::sync::LazyLock;
 
-mod shard_1;
-mod shard_2;
-mod shard_3;
-mod shard_4;
-mod shard_5;
+mod ai;
+mod applications;
+mod autopilot;
+mod boards;
+mod cli;
+mod contact;
+mod credentials;
+mod data;
+mod dedup;
+mod discovery;
+mod documents;
+mod email;
+mod extension;
+mod generate;
+mod geocode;
+mod github;
+mod help;
+mod job;
+mod jobs;
+mod r#match;
+mod menu;
+mod notifications;
+mod privacy;
+mod profile;
+mod referrals;
+mod resume;
+mod scrape;
+mod support;
+mod system;
+mod updater;
 
 /// One declared argument of a [`CatalogueEntry`] — a top-level `--input`/`input` key exactly
 /// as the tauri-client sends it, whether it is required, and — for a wrapper key typed as a
@@ -56,11 +81,36 @@ pub(crate) struct CatalogueEntry {
 /// file's own header comment for why a `LazyLock<Vec<_>>` and not a plain `const` slice.
 pub(crate) static CATALOGUE: LazyLock<Vec<CatalogueEntry>> = LazyLock::new(|| {
     let mut entries = Vec::with_capacity(162);
-    entries.extend_from_slice(shard_1::ENTRIES);
-    entries.extend_from_slice(shard_2::ENTRIES);
-    entries.extend_from_slice(shard_3::ENTRIES);
-    entries.extend_from_slice(shard_4::ENTRIES);
-    entries.extend_from_slice(shard_5::ENTRIES);
+    entries.extend_from_slice(ai::ENTRIES);
+    entries.extend_from_slice(applications::ENTRIES);
+    entries.extend_from_slice(autopilot::ENTRIES);
+    entries.extend_from_slice(boards::ENTRIES);
+    entries.extend_from_slice(cli::ENTRIES);
+    entries.extend_from_slice(contact::ENTRIES);
+    entries.extend_from_slice(credentials::ENTRIES);
+    entries.extend_from_slice(data::ENTRIES);
+    entries.extend_from_slice(dedup::ENTRIES);
+    entries.extend_from_slice(discovery::ENTRIES);
+    entries.extend_from_slice(documents::ENTRIES);
+    entries.extend_from_slice(email::ENTRIES);
+    entries.extend_from_slice(extension::ENTRIES);
+    entries.extend_from_slice(generate::ENTRIES);
+    entries.extend_from_slice(geocode::ENTRIES);
+    entries.extend_from_slice(github::ENTRIES);
+    entries.extend_from_slice(help::ENTRIES);
+    entries.extend_from_slice(job::ENTRIES);
+    entries.extend_from_slice(jobs::ENTRIES);
+    entries.extend_from_slice(r#match::ENTRIES);
+    entries.extend_from_slice(menu::ENTRIES);
+    entries.extend_from_slice(notifications::ENTRIES);
+    entries.extend_from_slice(privacy::ENTRIES);
+    entries.extend_from_slice(profile::ENTRIES);
+    entries.extend_from_slice(referrals::ENTRIES);
+    entries.extend_from_slice(resume::ENTRIES);
+    entries.extend_from_slice(scrape::ENTRIES);
+    entries.extend_from_slice(support::ENTRIES);
+    entries.extend_from_slice(system::ENTRIES);
+    entries.extend_from_slice(updater::ENTRIES);
     entries
 });
 

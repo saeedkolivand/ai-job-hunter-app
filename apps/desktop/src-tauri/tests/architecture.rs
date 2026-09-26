@@ -702,6 +702,14 @@ fn r7_allowlist_has_no_dead_entries() {
 // are ratcheted in `tests/r8_baseline.txt`: they may shrink or be deleted, never grow.
 const HARD_CAP_LOC: usize = 300;
 
+// The cap is a forcing function, not a goal in itself: a file that genuinely reads worse split
+// (one cohesive state machine, one table) may go up to `R8_EXCEPTION_CEILING` if listed here with
+// the reason. Never past the ceiling; an entry whose file is back under the cap is stale.
+const R8_EXCEPTION_CEILING: usize = 400;
+const R8_EXCEPTIONS: &[(&str, &str)] = &[
+    // ("path/under/src.rs", "why splitting it would hurt readability"),
+];
+
 const R8_BASELINE_FILE: &str = "r8_baseline.txt";
 
 const R8_BASELINE_HEADER: &str = "\
@@ -815,10 +823,17 @@ fn inline_test_mod_line(content: &str) -> Option<usize> {
 #[test]
 fn r8_no_oversized_modules() {
     let files = sources();
-    let over: BTreeMap<&str, usize> = files
+    let loc_of: BTreeMap<&str, usize> = files
         .iter()
         .map(|f| (f.rel.as_str(), f.content.lines().count()))
-        .filter(|(_, loc)| *loc > HARD_CAP_LOC)
+        .collect();
+    let excepted = |rel: &str| R8_EXCEPTIONS.iter().any(|(r, _)| *r == rel);
+    let over: BTreeMap<&str, usize> = loc_of
+        .iter()
+        .filter(|(rel, loc)| {
+            **loc > HARD_CAP_LOC && !(excepted(rel) && **loc <= R8_EXCEPTION_CEILING)
+        })
+        .map(|(&rel, &loc)| (rel, loc))
         .collect();
 
     if std::env::var("R8_BLESS").is_ok_and(|v| v == "1") {
@@ -827,9 +842,24 @@ fn r8_no_oversized_modules() {
         return;
     }
 
+    let mut v: Vec<(String, usize, String)> = Vec::new();
+    for &(rel, why) in R8_EXCEPTIONS {
+        let msg = match loc_of.get(rel) {
+            _ if why.trim().is_empty() => "R8_EXCEPTIONS entry needs a reason".to_string(),
+            None => "no longer exists — remove it from R8_EXCEPTIONS".to_string(),
+            Some(&loc) if loc <= HARD_CAP_LOC => {
+                format!("{loc} LOC now fits — remove it from R8_EXCEPTIONS")
+            }
+            Some(&loc) if loc > R8_EXCEPTION_CEILING => {
+                format!("{loc} LOC — over the {R8_EXCEPTION_CEILING}-line exception ceiling")
+            }
+            Some(_) => continue,
+        };
+        v.push((rel.to_string(), 0, msg));
+    }
+
     let baseline = read_baseline(R8_BASELINE_FILE, true);
     let present: BTreeSet<&str> = files.iter().map(|f| f.rel.as_str()).collect();
-    let mut v: Vec<(String, usize, String)> = Vec::new();
     for (rel, &loc) in &over {
         // No entry → a new file over the cap. A lower recorded count → it grew. Otherwise it
         // shrank, or sits exactly at its baseline, and the ratchet is satisfied.

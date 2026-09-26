@@ -1,18 +1,11 @@
-//! ADR-038 §4, Phase 3 — resolving an [`Effect::Irreversible`] row's
-//! `--confirm` value. Split out of `agent_call.rs` to keep that file under
-//! R8's LOC cap (the same reason `documents/sql.rs`/`applications/reminders.rs`
-//! exist) — this is real logic, not tests, so it earns its own file rather
-//! than living in `agent_call/tests.rs`.
+//! ADR-038 §4, Phase 3 — resolving an [`Effect::Irreversible`] row's `--confirm` value. Split out
+//! of `agent_call.rs` under R8's LOC cap.
 //!
-//! Every fn here is split pure/impure: [`resolve`] is the ONLY one that
-//! touches [`AppHandle`] — it dispatches `source.read_command()` through
-//! [`super::invoke_command`], the SAME real command body every other row
-//! already uses, never a second implementation of that command's logic.
-//! [`extract`]/[`build_input`]/[`hint`] are pure `Value`-in,
-//! `Value`/`String`-out — directly unit-testable with hand-built fixtures,
-//! no live app, mirroring this crate's standing pure-core/impure-shell split
-//! (`agent_read::resolve_job`/`job_resource`, `resolve_best_matches`/
-//! `best_matches_resource`).
+//! Split pure/impure: [`resolve`] is the ONLY fn touching [`AppHandle`] — it dispatches
+//! `source.read_command()` through [`super::invoke_command`], the SAME real command body every
+//! other row uses. [`extract`]/[`build_input`]/[`hint`] are pure `Value`-in, `Value`/`String`-out —
+//! directly unit-testable with hand-built fixtures, mirroring this crate's standing
+//! pure-core/impure-shell split (`agent_read::resolve_job`/`job_resource`).
 
 use serde_json::Value;
 use tauri::AppHandle;
@@ -53,7 +46,7 @@ fn build_input(source: ProofSource, caller_input: &Value) -> Value {
 /// [`LookupInput::FromCaller`]/`ProofSource::ListMatch`'s `id_field`/
 /// `ProofSource::MatchCount`'s `ids_field` path into the CALLER's `--input`
 /// — never two copies of the same walk that could silently diverge.
-fn walk<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
+pub(super) fn walk<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
     path.iter().try_fold(value, |v, key| v.get(key))
 }
 
@@ -62,7 +55,7 @@ fn walk<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
 /// null is a resolution failure (nothing to confirm against), never
 /// stringified as `"null"`/`"{}"` (which would make an ABSENT record
 /// satisfiable by typing a literal word).
-fn stringify(value: &Value) -> Option<String> {
+pub(super) fn stringify(value: &Value) -> Option<String> {
     match value {
         Value::String(s) => Some(s.clone()),
         Value::Number(n) => Some(n.to_string()),
@@ -115,49 +108,20 @@ pub(super) fn extract(
     }
 }
 
-/// Fence `response` the SAME way [`super::dispatch_direct`] fences every
-/// other response this dispatcher hands to a caller, then [`extract`] —
-/// split out of [`resolve`] as its own pure fn (HIGH fix — security review
-/// round 4) so this composition is directly unit-testable without an
-/// `AppHandle`, mirroring every other pure/impure split in this file. Before
-/// this fix, `resolve` extracted from the RAW response, while every read a
-/// caller could actually run to learn the same value went through
-/// `dispatch_direct` first, which fences `title`/`company`/`location`/etc
-/// (`FENCE_FIELD_NAMES`). A confirm ceremony whose proof field is one of
-/// those names was permanently unsatisfiable: the caller only ever sees the
-/// FENCED string (`<job_posting>...\n</job_posting>`), but `--confirm` was
-/// checked against the RAW one — `applications_delete`'s `title` proof and
-/// `notifications_remove`'s `title` proof both hit this the moment `title`
-/// joined the fence list. Fencing here too makes both sides agree: the value
-/// a caller reads through this dispatcher and the value `--confirm` is
-/// checked against are now the exact same transform of the exact same read,
-/// never two different views of one record.
+/// Fence `response` the SAME way [`super::dispatch_direct`] fences every other response this
+/// dispatcher hands to a caller, then [`extract`] (HIGH fix, security review round 4): otherwise a
+/// proof bound to a fenced field (`FENCE_FIELD_NAMES`) is permanently unsatisfiable, since a caller
+/// can only ever read the FENCED value back — hit `applications_delete`/`notifications_remove`'s
+/// `title` proof the moment `title` joined the fence list.
 ///
-/// Calls [`super::reshape::reshape_pre_fence`] then
-/// [`super::reshape::fence_reply`] — the SAME composition
-/// [`super::reshape::reshape_reply`] runs up to (but not including) paging/
-/// base64, not a hand-rolled subset (MEDIUM fix, review round 6 —
-/// `B1-r2-ACLI-R6-4`; extended review round 8 — `B2-r1-ACLI-R8-1`, when
-/// `reshape_reply` grew a pre-fence step this fn did not mirror). This used
-/// to call `fence_scraped_fields` alone, one step short of what a real
-/// dispatch does: any FUTURE bare-string command added to `reshape`'s
-/// `SCALAR_FENCE_COMMANDS`, or any FUTURE proof reading a field
-/// `reshape_pre_fence` touches (`documents_list`'s `text`,
-/// `autopilot_get`/`autopilot_list`'s `totalApplied`), that was also a
-/// `ProofSource::read_command` would have recreated the exact bug this fn's
-/// own doc above already describes, silently.
+/// Calls [`super::reshape::reshape_pre_fence`] then [`super::reshape::fence_reply`] — the SAME
+/// composition [`super::reshape::reshape_reply`] runs up to (not including) paging/base64, never a
+/// hand-rolled subset — so a FUTURE fenced/pre-fenced field is covered here automatically.
 fn extract_from_fenced_response(
     source: ProofSource,
     caller_input: &Value,
     mut response: Value,
 ) -> Option<String> {
-    // A3-r1-AC-6: mirror `reshape_reply`'s pre-fence AND fence steps, not just the second half —
-    // a `read_command` whose whole reply is a bare scalar string (`documents_get_text`,
-    // `ai_research_answer`) is fenced by `fence_reply`'s `fence_scalar_reply` arm, never by
-    // `fence_scraped_fields` (named-field only). Without this, a proof bound to such a command
-    // would compare the raw value against the fenced one a caller actually reads. No real
-    // `Irreversible` row proves on one today (verified against every `read_command:` in
-    // `policy.rs`) — a latent-bug close, not live.
     let command = source.read_command();
     super::reshape::reshape_pre_fence(command, &mut response);
     super::reshape::fence_reply(command, &mut response);
@@ -251,17 +215,9 @@ pub(super) fn hint(source: ProofSource) -> String {
                 format!("its own `{}` field", path.join("."))
             }
         }
-        // The three list-shaped sources below all name a read command that
-        // MAY be one of `super::PAGINATED_LIST_COMMANDS`
-        // (`applications_list` backs `privacy_reset_app`'s Count,
-        // `ai_generations_list` backs both `ai_generations_remove` and
-        // `ai_generations_remove_bulk`). Those replies are no longer a bare
-        // array: issue #1136 wrapped them in `{items,total,nextCursor}`, so a
-        // hint that still said "its own array length" pointed a caller at a
-        // key that is not there and at a page that may not hold the record.
-        // Worded generically rather than per-command — the wording stays
-        // correct for an unpaged row too, and a second copy of the paged-row
-        // list here would be exactly the drift this module avoids elsewhere.
+        // These three may read a paginated list command (issue #1136 wrapped such replies in
+        // `{items,total,nextCursor}`); worded generically so it stays correct whether or not the
+        // read command is paged, rather than a second per-command list to drift from the first.
         ProofSource::ListMatch { value_field, .. } => format!(
             "the matching record's own `{value_field}` field (paging with `cursor` if it is \
              not on the first page)"
@@ -280,148 +236,16 @@ pub(super) fn hint(source: ProofSource) -> String {
     format!("read {target} and pass {field} as --confirm")
 }
 
-// ── Grace window for a proof value disclosed via `confirmation_required` (issue #1162) ──────
-//
-// `ai_spend_summary`'s `today.inputTokens` backs ten `Irreversible` rows and advances under
-// ORDINARY background AI activity between the moment a caller reads it and the moment it presents
-// that same value as `--confirm`. Fix: remember the value CURRENT at `confirmation_required` time
-// and accept a presented value matching that snapshot for a short window after.
-//
-// Deliberately narrow (security review round A3-r1, AC-1/SEC-1 CRITICAL): the window applies ONLY
-// to [`GRACE_WINDOW_READ_COMMAND`]. Every other row's proof is bound to a caller-chosen target (a
-// document id, a run id…) and only an exact match on the FRESH value is ever accepted — no
-// snapshot, no window, so a value disclosed for one target can never authorise a different one.
-// `ai_spend_summary`'s `Scalar` proof is the one shape with NO per-target caller input at all
-// (`build_input` always resolves it with `{}`), so there is no target to confuse in the first
-// place. Widening this to every `Scalar` row (`ai_active_config`/`system_get_version`, neither of
-// which has a background-drift problem to solve) would reopen that risk for no benefit.
+mod grace_window;
 
-/// The ONE read command whose `Irreversible` rows get a grace window. `Scalar`'s `path` is
-/// identical on every real row naming this read command (verified in `policy.rs`), so one shared
-/// snapshot is exactly as precise as one per irreversible command name, and lets
-/// [`refresh_from_read`] update it from a single place regardless of which of the ten commands the
-/// caller is about to confirm.
-// `pub(super)` (A3-r2-AC-6) -- `agent_call::tests`' POLICY-scanning regression test names both.
-pub(super) const GRACE_WINDOW_READ_COMMAND: &str = "ai_spend_summary";
-pub(super) const GRACE_WINDOW_PATH: &[&str] = &["today", "inputTokens"];
-
-/// How long a snapshot stays acceptable even after the CURRENT value has moved. ~120s: generous
-/// enough for "read the proof, paste it back", short enough not to become a standing credential.
-const PROOF_SNAPSHOT_TTL: std::time::Duration = std::time::Duration::from_secs(120);
-
-/// One remembered proof value. `at` is [`std::time::Instant`] — monotonic, immune to a clock
-/// adjustment reviving an expired snapshot.
-struct ProofSnapshot {
-    value: String,
-    at: std::time::Instant,
-}
-
-/// Keyed by [`GRACE_WINDOW_READ_COMMAND`] alone (the map holds at most one entry in practice).
-static PROOF_SNAPSHOTS: std::sync::LazyLock<
-    std::sync::Mutex<std::collections::HashMap<&'static str, ProofSnapshot>>,
-> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
-
-/// Whether `source`'s `Irreversible` row gets a grace window at all — `Some(key)` when it does,
-/// `None` for every other row, which [`accepted_at`] then never consults the snapshot map for.
-pub(super) fn grace_window_key(source: ProofSource) -> Option<&'static str> {
-    (source.read_command() == GRACE_WINDOW_READ_COMMAND).then_some(GRACE_WINDOW_READ_COMMAND)
-}
-
-/// Record `value` as the current grace-window snapshot — called right after a
-/// `confirmation_required` refusal for a [`grace_window_key`]-eligible row, BEFORE the caller
-/// could have read this value any other way. Split from [`remember_at`] so a test can drive the
-/// pure core against a manufactured `now`.
-pub(super) fn remember(key: &'static str, value: String) {
-    remember_at(key, value, std::time::Instant::now());
-}
-
-fn remember_at(key: &'static str, value: String, now: std::time::Instant) {
-    let mut map = PROOF_SNAPSHOTS.lock().unwrap_or_else(|e| e.into_inner());
-    map.insert(key, ProofSnapshot { value, at: now });
-}
-
-/// Refresh the grace-window snapshot from a response the caller just read DIRECTLY through
-/// [`super::dispatch_direct`] (never one `resolve` fetched on the caller's own behalf). Closes the
-/// double-drift gap security review round A3-r1's AC-7 flagged: the t0 snapshot and the value the
-/// caller actually reads before retrying (t1) can differ if the counter moves in both intervals,
-/// so this keeps the snapshot current with whichever value the caller most recently saw. A no-op
-/// for every other command.
-pub(super) fn refresh_from_read(command: &str, response: &Value) {
-    if command != GRACE_WINDOW_READ_COMMAND {
-        return;
-    }
-    if let Some(value) = walk(response, GRACE_WINDOW_PATH).and_then(stringify) {
-        remember(GRACE_WINDOW_READ_COMMAND, value);
-    }
-}
-
-/// Why a presented `--confirm` value was refused when it isn't the FRESH proof (issue #1162):
-/// [`Mismatch`] is an ordinary wrong guess; [`Expired`] matches a real, remembered snapshot whose
-/// window has closed, telling the caller to re-read rather than "you guessed wrong".
-///
-/// [`Mismatch`]: SnapshotOutcome::Mismatch
-/// [`Expired`]: SnapshotOutcome::Expired
-pub(super) enum SnapshotOutcome {
-    Mismatch,
-    Expired,
-}
-
-/// Whether `presented` is acceptable, given the FRESH `current` value and `key` —
-/// [`grace_window_key`]'s verdict for the row being confirmed. An exact match on `current` always
-/// succeeds first, so this still works for a `None`-key row too. Otherwise only a `Some` key may
-/// match the snapshot [`remember`]/[`refresh_from_read`] last recorded for it within
-/// [`PROOF_SNAPSHOT_TTL`] — `None` refuses immediately, never touching the map (AC-1/SEC-1
-/// CRITICAL: no snapshot can ever authorise a different target's ceremony). A matching snapshot is
-/// consumed on accept (SEC-2 HIGH): one disclosure buys exactly one dispatch. Never discloses
-/// `current` or the snapshot value — only yes/no.
-pub(super) fn accepted(
-    key: Option<&'static str>,
-    current: &str,
-    presented: &str,
-) -> Result<(), SnapshotOutcome> {
-    accepted_at(key, current, presented, std::time::Instant::now())
-}
-
-fn accepted_at(
-    key: Option<&'static str>,
-    current: &str,
-    presented: &str,
-    now: std::time::Instant,
-) -> Result<(), SnapshotOutcome> {
-    if presented == current {
-        // A3-r2-AC-3 HIGH -- consume any snapshot for `key` here too, or it survives to
-        // authorise a second dispatch once the live counter moves back onto the disclosed value.
-        if let Some(key) = key {
-            let mut map = PROOF_SNAPSHOTS.lock().unwrap_or_else(|e| e.into_inner());
-            map.remove(key);
-        }
-        return Ok(());
-    }
-    let Some(key) = key else {
-        return Err(SnapshotOutcome::Mismatch);
-    };
-    let mut map = PROOF_SNAPSHOTS.lock().unwrap_or_else(|e| e.into_inner());
-    let outcome = match map.get(key) {
-        Some(snap)
-            if snap.value == presented
-                && now.saturating_duration_since(snap.at) <= PROOF_SNAPSHOT_TTL =>
-        {
-            Ok(())
-        }
-        Some(snap) if snap.value == presented => Err(SnapshotOutcome::Expired),
-        _ => Err(SnapshotOutcome::Mismatch),
-    };
-    if outcome.is_ok() {
-        map.remove(key);
-    }
-    outcome
-}
-
-/// A3-r2-AC-4: serializes every test touching [`PROOF_SNAPSHOTS`] under the literal
-/// [`GRACE_WINDOW_READ_COMMAND`] key -- the one key that isn't test-choosable, so two tests on
-/// the real grace-window path race on the shared map without this lock.
+pub(super) use grace_window::{
+    accepted, grace_window_key, refresh_from_read, remember, SnapshotOutcome,
+};
 #[cfg(test)]
-pub(super) static GRACE_WINDOW_KEY_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+pub(super) use grace_window::{
+    accepted_at, remember_at, GRACE_WINDOW_KEY_TEST_LOCK, GRACE_WINDOW_PATH,
+    GRACE_WINDOW_READ_COMMAND, PROOF_SNAPSHOT_TTL,
+};
 
 #[cfg(test)]
 mod tests;

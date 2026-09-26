@@ -16,8 +16,8 @@
  *     interface, that type's own field names.
  *
  * Emits `apps/desktop/src-tauri/src/extension_bridge/agent_cli/catalogue.rs` (the aggregator —
- * struct defs, the `CATALOGUE`/`UNCATALOGUED` consts) plus its sibling `catalogue/shard_*.rs`
- * files (the actual entry data, split to stay under this crate's R8 hard LOC cap — see
+ * struct defs, the `CATALOGUE`/`UNCATALOGUED` consts) plus its sibling `catalogue/<prefix>.rs`
+ * files (the actual entry data, one file per command-name prefix to stay under this crate's R8 hard LOC cap — see
  * `renderAggregator`'s own doc). Read by `agent_call.rs`'s dispatch-time key validation and by the
  * MCP `commands` tool (`args`/`description`). A construct this generator does not understand (a
  * computed key, a spread, a non-literal command name, a non-object second argument) is listed in
@@ -739,7 +739,7 @@ function rustFieldsOption(fields: string[] | null | undefined): string {
 }
 
 /** One `CatalogueEntry` struct literal's own Rust lines — used both to RENDER a shard file and to
- *  MEASURE how many lines an entry costs while packing shards (`shardEntries`), so the two can
+ *  MEASURE how many lines an entry costs while packing shards (`packByBudget`), so the two can
  *  never disagree about an entry's size. */
 function renderEntryLines(entry: CatalogueEntry): string[] {
   const lines: string[] = ['    CatalogueEntry {'];
@@ -760,7 +760,52 @@ function renderEntryLines(entry: CatalogueEntry): string[] {
   return lines;
 }
 
-/** Greedily pack `entries` (already sorted) into shards, each capped at [`SHARD_LINE_BUDGET`]
+/** One generated `catalogue/<name>.rs` file: every entry whose command starts `<prefix>_`. */
+interface Shard {
+  prefix: string;
+  /** File/module name: the prefix, or `<prefix>_2`, `_3`, … when one prefix spills over the budget. */
+  name: string;
+  entries: CatalogueEntry[];
+}
+
+/** Rust keywords a command prefix could collide with — such a module is declared `r#<name>`
+ *  (its file stays `<name>.rs`). */
+const RUST_KEYWORDS = new Set(
+  (
+    'as async await break const continue crate dyn else enum extern false fn for gen if impl in ' +
+    'let loop match mod move mut pub ref return self static struct super trait true try type ' +
+    'unsafe use where while abstract become box do final macro override priv typeof unsized ' +
+    'virtual yield'
+  ).split(' ')
+);
+
+function modIdent(name: string): string {
+  return RUST_KEYWORDS.has(name) ? `r#${name}` : name;
+}
+
+/** One shard per command-name prefix (`ai_embed` → `ai.rs`), so each file is named for what it
+ *  holds and stays stable as commands are added. `entries` is sorted, which keeps every prefix
+ *  contiguous, so concatenating the shards in order reproduces the sorted table. A prefix whose
+ *  entries exceed [`SHARD_LINE_BUDGET`] spills into `<prefix>_2`, `<prefix>_3`, … */
+function shardEntries(entries: CatalogueEntry[]): Shard[] {
+  const byPrefix = new Map<string, CatalogueEntry[]>();
+  for (const entry of entries) {
+    const prefix = entry.command.split('_')[0] ?? '';
+    if (!/^[a-z][a-z0-9]*$/.test(prefix)) {
+      fail(`command \`${entry.command}\` has no usable snake_case prefix to name its shard by`);
+    }
+    byPrefix.set(prefix, [...(byPrefix.get(prefix) ?? []), entry]);
+  }
+  return [...byPrefix].flatMap(([prefix, group]) =>
+    packByBudget(group).map((part, i) => ({
+      prefix,
+      name: i === 0 ? prefix : `${prefix}_${i + 1}`,
+      entries: part,
+    }))
+  );
+}
+
+/** Greedily pack `entries` (already sorted) into parts, each capped at [`SHARD_LINE_BUDGET`]
  *  rendered lines — never a fixed shard COUNT, which would need bumping by hand as the catalogue
  *  grows, and never a fixed entries-per-shard count, which a few arg-heavy commands could blow
  *  past the LOC cap despite looking "even" by entry count. This is pure DATA (a `CatalogueEntry`/
@@ -772,10 +817,9 @@ function renderEntryLines(entry: CatalogueEntry): string[] {
  *  a nested `CatalogueArg` the same way (short ones stay one line inside `args: &[...]`); those
  *  wrap instead when the rendered LINE exceeds `max_width` — the pre-rustfmt line count this
  *  function packs on can undercount that case, which is why the caller re-verifies the REAL
- *  rustfmt line count per shard (issue #1183 O1). Mirrors `ipc_contracts`' own per-domain file
- *  split (`gen-ipc-rust.ts`'s `MODULES`), sized by LINE BUDGET instead of by domain since this
- *  table has no natural per-domain boundary of its own. */
-function shardEntries(entries: CatalogueEntry[]): CatalogueEntry[][] {
+ *  rustfmt line count per shard (issue #1183 O1). Only reached for a single prefix too big for
+ *  one file — [`shardEntries`] splits by prefix first. */
+function packByBudget(entries: CatalogueEntry[]): CatalogueEntry[][] {
   const shards: CatalogueEntry[][] = [];
   let current: CatalogueEntry[] = [];
   let currentLines = 0;
@@ -793,23 +837,15 @@ function shardEntries(entries: CatalogueEntry[]): CatalogueEntry[][] {
   return shards;
 }
 
-function shardFileName(shardNumber: number): string {
-  return `shard_${shardNumber}.rs`;
-}
-
-function renderShardFile(
-  shardNumber: number,
-  shardCount: number,
-  entries: CatalogueEntry[]
-): string {
-  const body = entries.flatMap(renderEntryLines);
+function renderShardFile(shard: Shard): string {
+  const body = shard.entries.flatMap(renderEntryLines);
   // A shard whose entries all take no arguments never names `CatalogueArg` (unused import).
   const imports = body.some((l) => l.includes('CatalogueArg'))
     ? '{CatalogueArg, CatalogueEntry}'
     : 'CatalogueEntry';
   const lines: string[] = [
     '// @generated by `pnpm gen:agent-catalogue` — DO NOT EDIT BY HAND.',
-    `// Shard ${shardNumber} of ${shardCount} of the sharded command catalogue — see`,
+    `// The \`${shard.prefix}_*\` commands of the sharded command catalogue — see`,
     "// `../catalogue.rs`'s own doc for why this table is split at all.",
     '',
     `use super::${imports};`,
@@ -823,7 +859,7 @@ function renderShardFile(
 }
 
 function renderAggregator(
-  shardCount: number,
+  shards: Shard[],
   totalEntries: number,
   uncataloguedNames: string[]
 ): string {
@@ -834,7 +870,7 @@ function renderAggregator(
     '// Generator: packages/shared/scripts/gen-agent-catalogue.ts. Run `pnpm gen:agent-catalogue`.',
     '// CI runs `pnpm gen:agent-catalogue:check` to catch drift.',
     '//',
-    `// ${totalEntries} commands catalogued across ${shardCount} shard file(s) (catalogue/shard_*.rs),`,
+    `// ${totalEntries} commands catalogued across ${shards.length} file(s), one per command-name prefix (catalogue/<prefix>.rs),`,
     `// ${uncataloguedNames.length} uncatalogued (see UNCATALOGUED below).`,
     '//',
     "// Sharded rather than one big const array — this crate's own R8 hard LOC cap",
@@ -850,7 +886,7 @@ function renderAggregator(
     'use std::sync::LazyLock;',
     '',
   ];
-  for (let n = 1; n <= shardCount; n++) lines.push(`mod shard_${n};`);
+  for (const shard of shards) lines.push(`mod ${modIdent(shard.name)};`);
   lines.push('');
   lines.push(
     '/// One declared argument of a [`CatalogueEntry`] — a top-level `--input`/`input` key exactly',
@@ -889,8 +925,8 @@ function renderAggregator(
     'pub(crate) static CATALOGUE: LazyLock<Vec<CatalogueEntry>> = LazyLock::new(|| {',
     `    let mut entries = Vec::with_capacity(${totalEntries});`
   );
-  for (let n = 1; n <= shardCount; n++) {
-    lines.push(`    entries.extend_from_slice(shard_${n}::ENTRIES);`);
+  for (const shard of shards) {
+    lines.push(`    entries.extend_from_slice(${modIdent(shard.name)}::ENTRIES);`);
   }
   lines.push('    entries', '});', '');
   lines.push(
@@ -1001,12 +1037,11 @@ export async function main() {
   const outputs: [string, string][] = [
     [
       OUT_FILE,
-      formatWithRustfmt(renderAggregator(shards.length, sortedEntries.length, uncataloguedNames)),
+      formatWithRustfmt(renderAggregator(shards, sortedEntries.length, uncataloguedNames)),
     ],
   ];
-  shards.forEach((shard, i) => {
-    const shardNumber = i + 1;
-    const formatted = formatWithRustfmt(renderShardFile(shardNumber, shards.length, shard));
+  for (const shard of shards) {
+    const formatted = formatWithRustfmt(renderShardFile(shard));
     // Issue #1183 O1: `shardEntries` packs on the PRE-rustfmt, entries-ONLY line count
     // (`renderEntryLines`'s own JS rendering, excluding the fixed header/`use`/footer
     // boilerplate `renderShardFile` wraps it in) — real rustfmt output can still exceed that
@@ -1022,23 +1057,22 @@ export async function main() {
     const entryLineCount = closeLine - declLine - 1;
     if (entryLineCount > SHARD_LINE_BUDGET) {
       fail(
-        `shard_${shardNumber}.rs's entries render to ${entryLineCount} lines after rustfmt, over ` +
+        `${shard.name}.rs's entries render to ${entryLineCount} lines after rustfmt, over ` +
           `SHARD_LINE_BUDGET (${SHARD_LINE_BUDGET}) — rustfmt wrapped an entry further than the ` +
           `pre-format estimate; lower SHARD_LINE_BUDGET or shrink the offending entry's rendering.`
       );
     }
-    outputs.push([join(SHARD_DIR, shardFileName(shardNumber)), formatted]);
-  });
+    outputs.push([join(SHARD_DIR, `${shard.name}.rs`), formatted]);
+  }
 
-  // Shard files left over from a run that produced MORE shards than this one (the catalogue
-  // shrank) — deleted rather than left as stale, since a `mod shard_N;` that no longer exists in
-  // the aggregator would otherwise leave an orphaned, unreferenced file behind forever.
+  // Shard files this run no longer produces (a prefix disappeared, or the old `shard_N.rs`
+  // naming) — deleted rather than left as stale, since a `mod` that no longer exists in the
+  // aggregator would otherwise leave an orphaned, unreferenced file behind forever. The directory
+  // holds generated shards only.
   const shardDirAbs = abs(SHARD_DIR);
   const currentShardFileNames = new Set(outputs.map(([p]) => basename(p)));
   const staleShardFiles = existsSync(shardDirAbs)
-    ? readdirSync(shardDirAbs).filter(
-        (f) => f.startsWith('shard_') && f.endsWith('.rs') && !currentShardFileNames.has(f)
-      )
+    ? readdirSync(shardDirAbs).filter((f) => f.endsWith('.rs') && !currentShardFileNames.has(f))
     : [];
 
   const check = process.argv.includes('--check');

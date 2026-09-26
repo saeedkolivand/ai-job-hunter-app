@@ -278,13 +278,15 @@ fn src_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
 }
 
-/// True for a file whose path component (in practice, always the filename —
-/// no `test`/`tests` DIRECTORY exists in this tree) is exactly `test.rs` /
-/// `tests.rs`, or whose stem ends in `_test`/`_tests`. Matched as a path
-/// component / filename suffix, **never** a bare `ends_with("test.rs")` —
-/// that would also eat a future `latest.rs`/`contest.rs`.
+/// True for a file named `test.rs` / `tests.rs`, one under a `tests/` directory
+/// (R8b's `<stem>/tests/<topic>.rs` layout), or whose stem ends in
+/// `_test`/`_tests`. Matched as a path component / filename suffix, **never** a
+/// bare `ends_with("test.rs")` — that would also eat a future `latest.rs`/`contest.rs`.
 fn is_test_file(rel: &str) -> bool {
-    if rel.split('/').any(|c| c == "test.rs" || c == "tests.rs") {
+    if rel
+        .split('/')
+        .any(|c| c == "test.rs" || c == "tests.rs" || c == "tests")
+    {
         return true;
     }
     let filename = rel.rsplit('/').next().unwrap_or(rel);
