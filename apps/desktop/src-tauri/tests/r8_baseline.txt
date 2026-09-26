@@ -126,17 +126,6 @@
 342	export/typst_engine/photo.rs
 495	export/typst_engine/render.rs
 7393	export/typst_engine/test.rs
-1400	extension_bridge/agent_cli.rs
-505	extension_bridge/agent_cli/catalogue/shard_1.rs
-503	extension_bridge/agent_cli/catalogue/shard_2.rs
-1178	extension_bridge/agent_cli/mcp.rs
-423	extension_bridge/agent_cli/mcp/http.rs
-326	extension_bridge/agent_cli/mcp/http/tests.rs
-331	extension_bridge/agent_cli/mcp/stdio.rs
-4600	extension_bridge/agent_cli/mcp/tests.rs
-1294	extension_bridge/agent_cli/policy.rs
-1220	extension_bridge/agent_cli/policy/tests.rs
-1485	extension_bridge/agent_cli/tests.rs
 1348	extension_bridge/answer_assist.rs
 1839	extension_bridge/answer_assist_tests.rs
 349	extension_bridge/answers_save.rs
