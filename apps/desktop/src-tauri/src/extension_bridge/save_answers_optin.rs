@@ -1,16 +1,12 @@
-//! `saveAnswersOnSubmit` opt-in (PR4) — persistence + the `BridgeState` accessors. Split into its
-//! own file per the established one-file-per-flag pattern (mirrors `autotrack.rs`'s split): the
-//! `BridgeState` field itself and its initialization stay in `mod.rs` (part of the struct/state
-//! machine), while this module holds the opt-in's persistence and the accessors' bodies (another
-//! `impl BridgeState` block — legal since a private field stays visible to the defining module's
-//! descendants).
+//! `saveAnswersOnSubmit` opt-in — persistence + the `BridgeState` accessors. The `BridgeState`
+//! field itself and its initialization stay in `mod.rs`; this module holds the opt-in's
+//! persistence and the accessors' bodies (another `impl BridgeState` block).
 //!
-//! This is its OWN consent class — a further amendment to 0009's Task #22 auto-track amendment:
-//! saving the answers a user typed at submit time is a distinct decision from auto-marking
-//! `applied`, because the trigger is a detected event rather than a click and it writes
+//! This is its OWN consent class, distinct from auto-marking `applied`: saving the answers a user
+//! typed at submit time is triggered by a detected event rather than a click, and writes
 //! page-derived answer TEXT rather than flipping one status value. Server-side enforcement lives
-//! in `answers_save::auto_save_refused` (mirrors `status_update::auto_write_refused` exactly) —
-//! the extension's own client-side check is defense-in-depth only.
+//! in `answers_save::auto_save_refused` — the extension's own client-side check is defense-in-depth
+//! only.
 
 use std::path::Path;
 use std::sync::atomic::Ordering;
@@ -35,15 +31,13 @@ impl BridgeState {
     /// Set (and persist) the `saveAnswersOnSubmit` opt-in; returns `true` iff this call actually
     /// changed the value.
     ///
-    /// **Persist-before-publish** (PR #1209 review — unlike the three sibling opt-in setters,
-    /// which still swap-then-persist; see this method's own doc note below for why THIS one
-    /// diverges): the disk write happens FIRST, via [`persist_save_answers_on_submit_optin`]'s
+    /// **Persist-before-publish** (unlike the sibling opt-in setters, which swap-then-persist):
+    /// the disk write happens FIRST, via [`persist_save_answers_on_submit_optin`]'s
     /// write-then-rename, and the in-memory atomic is only updated once that succeeds. A failed
-    /// write leaves memory matching whatever is STILL on disk, never ahead of it — so a write
-    /// failure while disabling can never leave a MORE permissive value on disk than what this
-    /// session's memory (and the caller's reply) reports. The previous swap-first order let a
-    /// disable that failed to persist flip memory to `false` while the file still read `"1"`;
-    /// restart then re-enabled automatic saving with no further action from the user.
+    /// write leaves memory matching whatever is STILL on disk, never ahead of it. The previous
+    /// swap-first order let a disable that failed to persist flip memory to `false` while the file
+    /// still read `"1"`; restart then re-enabled automatic saving with no further action from the
+    /// user.
     pub fn set_save_answers_on_submit_enabled(&self, enabled: bool) -> bool {
         let _guard = self.optin_write_lock.lock();
         let prev = self.save_answers_on_submit_enabled.load(Ordering::Relaxed);
@@ -82,47 +76,4 @@ pub(super) fn persist_save_answers_on_submit_optin(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn defaults_off_and_round_trips_through_the_setter() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = BridgeState::load(dir.path());
-        assert!(!state.save_answers_on_submit_enabled());
-
-        assert!(state.set_save_answers_on_submit_enabled(true));
-        assert!(state.save_answers_on_submit_enabled());
-        assert!(load_save_answers_on_submit_optin(dir.path()));
-
-        // Re-setting the same value reports no change, mirrors every sibling flag's setter.
-        assert!(!state.set_save_answers_on_submit_enabled(true));
-    }
-
-    /// The regression the review flagged (PR #1209): a persist failure must never leave memory
-    /// MORE permissive than disk. Make the next write fail (never touching the real,
-    /// already-`"1"` file) and disable — the flip must be refused, with memory left exactly
-    /// where disk still is, not flipped to the requested (unpersisted) value.
-    #[test]
-    fn a_persist_failure_leaves_memory_matching_what_is_still_on_disk() {
-        let dir = tempfile::tempdir().unwrap();
-        let state = BridgeState::load(dir.path());
-        assert!(state.set_save_answers_on_submit_enabled(true));
-        assert!(state.save_answers_on_submit_enabled());
-
-        crate::platform::fs::fail_next_write_on_this_thread();
-
-        assert!(
-            !state.set_save_answers_on_submit_enabled(false),
-            "a persist failure must report no change"
-        );
-        assert!(
-            state.save_answers_on_submit_enabled(),
-            "memory must stay in sync with the still-persisted (\"1\") value on a failed write"
-        );
-        assert!(
-            load_save_answers_on_submit_optin(dir.path()),
-            "the on-disk file must be untouched by the failed write"
-        );
-    }
-}
+mod tests;

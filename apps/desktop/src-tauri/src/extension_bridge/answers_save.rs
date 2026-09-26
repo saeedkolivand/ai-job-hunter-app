@@ -1,147 +1,55 @@
 //! "Save my answers from this page" (`answers.save` → `answers.result`) —
 //! append newly-captured application-form answers onto the matched
-//! Application's answer list. Split out of `mod.rs` per the R8 LOC cap
-//! (mirrors `status_update.rs`'s module split); `resolve_*`/`handle_*` pure/
-//! impure split mirrors `resolve_applied_check`/`handle_applied_check` and
-//! `resolve_status_update`/`handle_status_update`.
+//! Application's answer list.
 //!
 //! **Consent-gate boundary**: this verb WRITES freshly-captured page-derived
 //! text into the local store, so — unlike `applied.check`/`status.update`
-//! (read-only / an exact-match write to the user's OWN existing metadata, no
-//! fresh page content) — it rides the SAME assisted-autofill opt-in as
-//! `profile.get`/`fill` (`BridgeState::autofill_enabled`): capture and fill
-//! are the two directions of the one PII-adjacent consent gate (extension
-//! roadmap PR-5, plan decision 4).
+//! (read-only / an exact-match write to the user's OWN existing metadata) —
+//! it rides the SAME assisted-autofill opt-in as `profile.get`/`fill`
+//! (`BridgeState::autofill_enabled`): capture and fill are the two
+//! directions of the one PII-adjacent consent gate.
 //!
 //! **Never auto-creates**: a `url` with no matching Application is a fixed
 //! refusal telling the user to import the job first — this verb only
-//! appends onto an existing pursuit, exactly like `status.update` never
-//! creates a row for a `saved → applied` click.
+//! appends onto an existing pursuit.
+//!
+//! Split into [`consent`] (the `BridgeState` consent-lock helper) and
+//! [`auto_flag`] (the `auto` field's validation + gate).
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+use super::answer_assist_parse::clamp_bytes;
 use super::{msg, BridgeState};
 use crate::ai_generations::ApplicationAnswer;
 use crate::applications::{normalize_job_url, ApplicationStore};
 use crate::error::{AppError, AppResult};
 
-impl BridgeState {
-    /// Read both `answers.save` consent gates — the assisted-autofill opt-in
-    /// (`autofill_enabled`) and the AUTO-only `saveAnswersOnSubmit` opt-in
-    /// (`save_answers_on_submit_enabled`) — and run `f` with them, all under ONE hold of
-    /// `optin_write_lock`: the SAME lock every consent setter (`set_autofill_enabled`/
-    /// `set_ai_assist`/`set_autotrack_enabled`/`set_save_answers_on_submit_enabled`) already
-    /// shares.
-    ///
-    /// Closes a TOCTOU the plain "read `save_on_submit_enabled`, then merge" order left open
-    /// (PR #1209 review): a `settings.set` disabling the switch could land between the check and
-    /// [`crate::applications::ApplicationStore::merge_answers`], so an AUTO-flagged capture could
-    /// still be persisted after the user turned the switch off. Holding the setters' own lock
-    /// across `f` forces that `settings.set` to BLOCK until this whole check-and-merge finishes,
-    /// rather than reaching for a second, verb-local lock (a second lock would need its own
-    /// ordering argument against this one; reusing the existing one needs none).
-    ///
-    /// Safe against deadlock with the setters: they only ever touch `optin_write_lock` — never
-    /// [`ApplicationStore`]'s own `conn` mutex, which `f`'s merge acquires internally — so
-    /// `optin_write_lock → conn` is the only nesting order either side ever takes. No path
-    /// acquires `conn` first and `optin_write_lock` second to invert it.
-    pub(super) fn with_answers_save_consent_locked<T>(&self, f: impl FnOnce(bool, bool) -> T) -> T {
-        let _guard = self.optin_write_lock.lock();
-        f(
-            self.autofill_enabled(),
-            self.save_answers_on_submit_enabled(),
-        )
-    }
-}
+mod auto_flag;
+mod consent;
 
-/// Per-question / per-answer byte caps, char-boundary safe (mirrors
-/// `applications::clamp_job_description`'s discipline) — untrusted
+#[cfg(test)]
+pub(in crate::extension_bridge) use self::auto_flag::is_auto_answers_save;
+pub(in crate::extension_bridge) use self::auto_flag::{auto_flag_is_malformed, auto_save_refused};
+use self::auto_flag::{MALFORMED_AUTO_FLAG_MESSAGE, SAVE_ANSWERS_ON_SUBMIT_OFF_MESSAGE};
+
+/// Per-question / per-answer byte caps, char-boundary safe — untrusted
 /// page-derived text is clamped at this store boundary, never dropped
 /// wholesale. A question/label is short (a form label); an answer can run to
 /// a paragraph but not a full essay.
 const MAX_QUESTION_BYTES: usize = 1_000;
 const MAX_ANSWER_BYTES: usize = 8_000;
 
-/// Refusal text for an AUTO-flagged `answers.save` (`auto: true`, the submit-watch injected
-/// entry's synchronous capture) while the dedicated `saveAnswersOnSubmit` opt-in is off — a fixed
-/// sentinel, mirrors `status_update::AUTOTRACK_OFF_MESSAGE`'s wording style.
-const SAVE_ANSWERS_ON_SUBMIT_OFF_MESSAGE: &str =
-    "Save answers on submit is off. Turn it on in AI Job Hunter → Settings → Browser extension.";
-
-/// Refusal text when `auto` is PRESENT but not a JSON boolean — see
-/// [`auto_flag_is_malformed`]'s doc for why this must be a hard refusal, never a silent downgrade.
-const MALFORMED_AUTO_FLAG_MESSAGE: &str = "malformed answers.save request: auto must be a boolean";
-
-/// Whether the `auto` field is PRESENT on the payload but not a JSON boolean (a string, number,
-/// `null`, object, or array). A malformed `auto` must be a HARD refusal, never a silent downgrade
-/// to "manual" via [`is_auto_answers_save`]'s `Value::as_bool().unwrap_or(false)`: a manual save
-/// is gated ONLY on the (weaker) assisted-autofill opt-in, not on the dedicated
-/// `saveAnswersOnSubmit` opt-in this verb's AUTO path exists to require — so a malformed `auto`
-/// silently reading as `false` would let a would-be automated capture through on the wrong,
-/// weaker consent class, defeating the very gate [`auto_save_refused`] exists to enforce. `auto`
-/// absent is unaffected — byte-identical to today (still defaults to manual).
-///
-/// `status_update::is_auto_status_update` has the IDENTICAL `Value::as_bool().unwrap_or(false)`
-/// shape and is NOT hardened by a sibling of this function here — pre-existing, out of scope for
-/// this change.
-pub(super) fn auto_flag_is_malformed(payload: &Value) -> bool {
-    matches!(payload.get("auto"), Some(v) if !v.is_boolean())
-}
-
-/// The `auto` flag on an `answers.save` payload (default false when absent) — `true` marks the
-/// AUTOMATED submit-time capture from the `saveAnswersOnSubmit` opt-in, as opposed to the
-/// deliberate popup "Save my answers" click. Mirrors `status_update::is_auto_status_update`
-/// exactly, one write verb over. Callers MUST check [`auto_flag_is_malformed`] first — this
-/// function's own `unwrap_or(false)` treats a malformed value exactly like an absent one, which is
-/// correct ONLY once the malformed case has already been refused upstream.
-pub(super) fn is_auto_answers_save(payload: &Value) -> bool {
-    payload
-        .get("auto")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-}
-
-/// Whether an AUTO `answers.save` must be REFUSED: an auto-flagged save is honored only while the
-/// dedicated `saveAnswersOnSubmit` opt-in is on — the decisive server-side boundary (PR4). A
-/// non-auto (deliberate popup click) save is never refused here — it keeps its existing behaviour,
-/// gated only by the pre-existing Autofill opt-in below. Mirrors
-/// `status_update::auto_write_refused` exactly: the extension's own client-side check (whether it
-/// even arms the submit-watch capture) is defense-in-depth only — this is the real gate.
-pub(super) fn auto_save_refused(payload: &Value, save_on_submit_enabled: bool) -> bool {
-    is_auto_answers_save(payload) && !save_on_submit_enabled
-}
-
 /// Hard cap on the number of `{question, answer}` entries a single
-/// `answers.save` call may carry — a pathological page (or a buggy/hostile
-/// collector) can't force an unbounded write; extra entries are silently
-/// dropped, not rejected (mirrors the `MAX_EXTRA_LINKS` cap-not-reject style
-/// in `mod.rs`).
+/// `answers.save` call may carry — a pathological page (or a hostile
+/// collector) can't force an unbounded write; extras are silently dropped,
+/// not rejected.
 const MAX_ANSWERS_PER_CALL: usize = 50;
 
-/// Clamp `s` to at most `max` bytes, cutting on a UTF-8 char boundary so the
-/// stored text is always valid UTF-8. Truncate (never reject) — same
-/// discipline as `applications::clamp_job_description`, duplicated here as a
-/// tiny pure helper rather than exported cross-module (that cap is a
-/// distinct constant/concern owned by `applications`).
-fn clamp_bytes(mut s: String, max: usize) -> String {
-    if s.len() <= max {
-        return s;
-    }
-    let mut end = max;
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    s.truncate(end);
-    s
-}
-
-/// The `answers.save` outcome — see [`msg::ANSWERS_SAVE`] docs. `title`/
-/// `company` ride the WIRE reply (unlike `status.update`'s `StatusUpdateOk`,
-/// which keeps them notification-only): the handler already loaded the
-/// Application row for this verb, so surfacing them here is the smaller
-/// change than threading the popup's separately-fetched `applied.check`
-/// state through to this confirmation — see the PR-5 handoff.
+/// The `answers.save` outcome — see [`msg::ANSWERS_RESULT`] docs. `title`/
+/// `company` ride the WIRE reply: the handler already loaded the Application
+/// row for this verb, so surfacing them here is smaller than threading the
+/// popup's separately-fetched `applied.check` state through.
 #[derive(Debug)]
 pub(super) struct AnswersSaveOk {
     pub(super) application_id: String,
@@ -187,16 +95,11 @@ pub(super) fn answers_result_reply(req_id: &str, outcome: AppResult<AnswersSaveO
 /// Parse + clamp the incoming `answers` array off the payload, then cap at
 /// [`MAX_ANSWERS_PER_CALL`] entries. Returns `(capped_list, raw_len)` where
 /// `raw_len` is the count of well-formed entries BEFORE the per-call cap —
-/// the caller derives `skipped` from it so an overflow past
-/// `MAX_ANSWERS_PER_CALL` is counted as skipped instead of vanishing
-/// silently (the cap used to apply via `.take()` before this count was
-/// taken, so entries beyond it appeared in neither `saved` nor `skipped`).
-/// A malformed entry (missing/non-string `question`/`answer`) is dropped,
-/// not rejected — a blank question or answer (after trimming) is dropped
-/// too, since the collector should never send one but the store boundary
-/// re-validates independently rather than trusting the page-derived input.
-/// Neither of these drops counts toward `raw_len`/`skipped`: they were never
-/// well-formed captures to begin with.
+/// the caller derives `skipped` from it so an overflow past the cap counts
+/// as skipped instead of vanishing silently. A malformed entry
+/// (missing/non-string, or blank after trimming) is dropped, not rejected,
+/// and never counts toward `raw_len`/`skipped` — it was never a well-formed
+/// capture to begin with.
 fn parse_answers(payload: &Value) -> (Vec<ApplicationAnswer>, usize) {
     let well_formed: Vec<ApplicationAnswer> = payload
         .get("answers")
@@ -226,17 +129,15 @@ fn parse_answers(payload: &Value) -> (Vec<ApplicationAnswer>, usize) {
     (capped, raw_len)
 }
 
-/// Core `answers.save`: gate on the autofill opt-in (refusal mirrors
-/// `resolve_profile`'s fixed sentinel — see [`super::AUTOFILL_OFF_MESSAGE`]),
-/// normalize + match `url` the SAME way `resolve_applied_check`/
-/// `resolve_status_update` do, then merge the (clamped, capped) captured
-/// answers onto the matched Application via
-/// [`ApplicationStore::merge_answers`] — NEVER `upsert_internal`'s meta path
-/// (`ApplicationStore::merge_answers_by_question`), which lets `incoming`
-/// win for a matching question; that's right for an in-app rewrite but wrong
-/// here, where a stray re-capture must never clobber an answer the user
-/// already reviewed. No match → a fixed sentinel telling the user to import
-/// the job first; this verb never auto-creates.
+/// Core `answers.save`: gate on the autofill opt-in (see
+/// [`super::AUTOFILL_OFF_MESSAGE`]), normalize + match `url` the SAME way
+/// `resolve_applied_check`/`resolve_status_update` do, then merge the
+/// (clamped, capped) captured answers onto the matched Application via
+/// [`ApplicationStore::merge_answers`] — NEVER `merge_answers_by_question`,
+/// which lets `incoming` win for a matching question; that's right for an
+/// in-app rewrite but wrong here, where a stray re-capture must never
+/// clobber an answer the user already reviewed. No match → a fixed sentinel
+/// telling the user to import the job first; this verb never auto-creates.
 pub(super) fn resolve_answers_save(
     store: &ApplicationStore,
     autofill_enabled: bool,
@@ -333,11 +234,9 @@ pub(super) fn handle_answers_save(app: &AppHandle, req_id: &str, payload: &Value
     // separate read-then-merge left open.
     let outcome =
         state.with_answers_save_consent_locked(|autofill_enabled, save_on_submit_enabled| {
-            // Defense-in-depth precedent (PR4, mirrors `status_update::auto_write_refused`): an
-            // AUTO-flagged save (fired synchronously by the submit-watch injected entry, not a user
-            // click) is honored ONLY while the dedicated `saveAnswersOnSubmit` opt-in is on. A
-            // non-auto save is unaffected — it keeps today's byte-identical behaviour, gated only by
-            // `autofill_enabled` below.
+            // An AUTO-flagged save (the submit-watch injected entry, not a user click) is
+            // honored ONLY while the dedicated `saveAnswersOnSubmit` opt-in is on. A non-auto
+            // save is unaffected, gated only by `autofill_enabled` below.
             if auto_save_refused(payload, save_on_submit_enabled) {
                 return Err(AppError::Validation(
                     SAVE_ANSWERS_ON_SUBMIT_OFF_MESSAGE.to_string(),

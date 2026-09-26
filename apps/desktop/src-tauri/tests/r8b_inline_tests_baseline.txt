@@ -70,12 +70,7 @@ export/typst_engine/letter.rs
 export/typst_engine/letterhead.rs
 export/typst_engine/photo.rs
 export/typst_engine/render.rs
-extension_bridge/answer_assist.rs
-extension_bridge/answer_assist_max_chars.rs
-extension_bridge/answer_assist_topic.rs
-extension_bridge/answer_rewrite.rs
 extension_bridge/applied_check_batch.rs
-extension_bridge/assist_registry.rs
 extension_bridge/auth.rs
 extension_bridge/handshake.rs
 extension_bridge/match_live.rs
@@ -83,7 +78,6 @@ extension_bridge/native_host.rs
 extension_bridge/paging.rs
 extension_bridge/persist.rs
 extension_bridge/register.rs
-extension_bridge/save_answers_optin.rs
 extension_bridge/settings.rs
 extension_bridge/stream.rs
 extraction/clean.rs

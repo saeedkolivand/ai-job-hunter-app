@@ -1,36 +1,37 @@
 //! "Suggest answers for this form" (`answers.suggest` → `answers.suggest.result`)
-//! — the headline replay verb (extension roadmap PR 6). Fuzzy-match each EMPTY
-//! question label the popup's questions-mode collector scanned against EVERY
-//! stored [`ApplicationAnswer`] across ALL applications, and return the best
-//! per-question match. Split out of `mod.rs` per the R8 LOC cap (mirrors
-//! `answers_save.rs`/`status_update.rs`'s module split); `resolve_*`/`handle_*`
-//! pure/impure split mirrors those siblings.
+//! — the headline replay verb. Fuzzy-match each EMPTY question label the
+//! popup's questions-mode collector scanned against EVERY stored
+//! [`ApplicationAnswer`] across ALL applications, and return the best
+//! per-question match.
 //!
 //! **Consent-gate boundary**: a suggestion carries the user's OWN past answer
 //! text desktop→extension — the same PII-adjacent consent class as
 //! `profile.get`'s contact fields — so it rides the SAME assisted-autofill
 //! opt-in (`BridgeState::autofill_enabled`), never a separate gate.
 //!
-//! **Read-only, no new store method**: `applications/mod.rs` sits at the R8
-//! hard LOC cap, so this module reads via the ALREADY-public, read-only
-//! `ApplicationStore::list()` rather than adding a store method there — the
-//! read lives here, in the bridge module, exactly as the PR-6 handoff flagged.
+//! **Read-only**: reads via the already-public `ApplicationStore::list()`
+//! rather than adding a store method.
 //!
-//! **Pure matcher**: [`match_questions`] takes plain [`AnswerCandidate`]
-//! literals (no store, no `AppHandle`, no timing) — normalize
-//! ([`crate::applications::normalize_question`], shared with `answers.save`'s
-//! dedup) + token-Jaccard similarity, thresholded, tied-break by score then
-//! most-recent `updated_at`. Deterministic: the same inputs always produce the
-//! same outputs — no AI, no egress, no randomness.
-
-use std::collections::HashSet;
+//! Split into [`matcher`] (the pure token-Jaccard matching engine) and
+//! [`salary_match`] (salary-shaped-question recognition + the synthetic
+//! salary-expectation suggestion).
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+use self::salary_match::append_salary_expectation_suggestions;
+use super::answer_assist_parse::clamp_bytes;
 use super::msg;
-use crate::applications::{normalize_question, ApplicationStore};
+use crate::applications::ApplicationStore;
 use crate::error::{AppError, AppResult};
+
+mod matcher;
+mod salary_match;
+
+// Re-exports so `answer_assist` (salary-shaped question routing) and `import_tests.rs` keep
+// resolving `answers_suggest::X` unchanged now that these live one module deeper.
+pub(in crate::extension_bridge) use self::matcher::{match_questions, AnswerCandidate, Suggestion};
+pub(super) use self::salary_match::is_salary_question;
 
 /// Hard cap on the number of questions a single `answers.suggest` call may
 /// carry (mirrors `answers_save::MAX_ANSWERS_PER_CALL`) — extras are silently
@@ -41,296 +42,6 @@ const MAX_QUESTIONS_PER_CALL: usize = 50;
 /// `MAX_QUESTION_BYTES`) — untrusted page-derived label text is clamped at
 /// this boundary, never dropped wholesale.
 const MAX_QUESTION_BYTES: usize = 1_000;
-
-/// Overall cap on the number of suggestions returned in one reply — a
-/// pathological form (or a hostile collector) can't force an unbounded list.
-const MAX_SUGGESTIONS: usize = 20;
-
-/// Minimum token-Jaccard similarity for a candidate to be suggested at all.
-/// Tuned empirically against the regression pairs in `import_tests.rs`: 0.4 is
-/// the highest threshold that still matches short-vs-verbose paraphrases like
-/// "Notice period" vs "What is your notice period?" (score 0.4 — 2 shared
-/// tokens over a 5-token union) and "Why do you want to work here?" vs "Why
-/// do you want this role?" (score 0.44 — {why,do,you,want} over a 9-token
-/// union), while unrelated questions like "What is your salary expectation?"
-/// vs "Do you have a driver's license?" still score 0.0 and never match.
-///
-/// **Chosen mitigation for the cross-question footgun (review fix), NOT
-/// stopword filtering or a lower/higher threshold**: two structurally
-/// unrelated questions can still share enough filler words ("what is your")
-/// to cross this threshold (e.g. "What is your current location?" vs "What
-/// is your current salary?"). Stopword-stripping the tokenizer risks
-/// silently breaking the short-paraphrase matches this value was tuned
-/// against, so instead: (1) [`Suggestion::source_question`] always carries
-/// the matched candidate's ORIGINAL question text so a cross-question match
-/// is visually self-evident to the user, and (2) [`match_questions`] flags
-/// `salary` when EITHER side of the match is salary-shaped (see there) — a
-/// stored salary answer can never slip out as fillable just because it
-/// happened to match on filler words.
-const MIN_SCORE: f64 = 0.4;
-
-/// Salary-ish keyword denylist for the Copy-only rule: a suggestion whose
-/// (normalized) INPUT question OR matched candidate's SOURCE question
-/// contains any of these must never offer "Fill this field" — pasting a
-/// stored salary figure into the wrong context on a live form is exactly the
-/// kind of silent mistake this feature must never make. Checked against
-/// question text on both sides of the match, never the stored answer.
-/// "rate" is deliberately NEVER listed bare — only as a salary-shaped
-/// multi-token phrase ("day rate"/"hourly rate"/"pay rate") — because a bare
-/// "rate" would false-positive an unrelated "Rate your TypeScript skills"
-/// question.
-///
-/// **DACH (German) shapes** (Task #30) — the desktop's largest non-English
-/// user base. Each is its own token (German compounds nouns rather than
-/// phrases), so a bare `"gehalt"` does NOT catch `"gehaltsvorstellung"` etc. —
-/// every compound actually seen on DACH application forms is listed
-/// explicitly, same discipline as the English list not listing bare "rate".
-/// Umlauts need no ASCII-folded variant: `normalize_question` lowercases with
-/// `str::to_lowercase` (Unicode-aware — "Ü" → "ü") and the matcher-local
-/// [`tokenize_ordered`]/[`tokenize`] split on `!char::is_alphanumeric`, which
-/// (per Rust's Unicode-aware `char` methods) keeps "ü" IN the token rather
-/// than splitting on it — "vergütung" tokenizes to one token, matching this
-/// list's entry byte-for-byte. Not adding a "verguetung" ASCII-folded variant
-/// (YAGNI): no real DACH form has been seen spelling it that way, and Rust
-/// never needs it to match the umlaut form. A near-miss is deliberately left
-/// UNFLAGGED: "Gehaltsabrechnung hochladen" ("upload payslip") tokenizes to
-/// `{gehaltsabrechnung, hochladen}` — neither an exact-token match for any
-/// entry below — which is correct: it asks for a file upload, not a stated
-/// figure, so it must never receive the synthetic salary-expectation fill.
-const SALARY_KEYWORDS: &[&str] = &[
-    "salary",
-    "compensation",
-    "comp expectation",
-    "pay expectation",
-    "expected pay",
-    "desired pay",
-    "wage",
-    "remuneration",
-    "ctc",
-    "income",
-    "day rate",
-    "hourly rate",
-    "pay rate",
-    "how much",
-    "paid",
-    "gehalt",
-    "gehaltsvorstellung",
-    "gehaltsvorstellungen",
-    "gehaltswunsch",
-    "bruttojahresgehalt",
-    "jahresgehalt",
-    "vergütung",
-    "salärvorstellung",
-];
-
-/// Clamp `s` to at most `max` bytes, cutting on a UTF-8 char boundary — same
-/// discipline as `answers_save::clamp_bytes` (duplicated here as a tiny pure
-/// helper rather than exported cross-module; that cap is this verb's own).
-fn clamp_bytes(mut s: String, max: usize) -> String {
-    if s.len() <= max {
-        return s;
-    }
-    let mut end = max;
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    s.truncate(end);
-    s
-}
-
-/// Order-preserving counterpart of [`tokenize`], used ONLY by
-/// [`is_salary_question`]'s multi-word phrase check: `tokenize`'s `HashSet`
-/// can't tell you "day" was immediately followed by "rate", so it can't back
-/// a substring check like `"day rate"`. Same split boundary (any
-/// non-alphanumeric char), kept in sequence.
-fn tokenize_ordered(s: &str) -> Vec<&str> {
-    s.split(|c: char| !c.is_alphanumeric())
-        .filter(|t| !t.is_empty())
-        .collect()
-}
-
-/// True when `normalized` (already `normalize_question`-lowercased/
-/// whitespace-collapsed) contains a salary-ish keyword. Re-tokenized on any
-/// non-alphanumeric boundary before the check — `normalize_question` only
-/// collapses WHITESPACE, so a hyphen/slash question like "Day-rate"/
-/// "day/rate" would otherwise still carry the literal punctuation and
-/// silently miss the "day rate" phrase. A single-word keyword (e.g. "paid")
-/// must match a WHOLE token — a substring check would false-positive inside
-/// an unrelated word ("unpaid"); a multi-word keyword (e.g. "day rate") has
-/// no single token to match against, so it stays a substring-of-rejoined
-/// check on the already space-normalized token stream.
-///
-/// `pub(super)` — shared with [`super::answer_assist`], which routes a
-/// salary-shaped `answer.assist` question through the salary machinery
-/// instead of a generic grounded draft (rather than duplicating this
-/// keyword/tokenization logic a second time).
-pub(super) fn is_salary_question(normalized: &str) -> bool {
-    let tokens = tokenize_ordered(normalized);
-    let rejoined = tokens.join(" ");
-    SALARY_KEYWORDS.iter().any(|kw| {
-        if kw.contains(' ') {
-            rejoined.contains(kw)
-        } else {
-            tokens.contains(kw)
-        }
-    })
-}
-
-/// Matcher-LOCAL tokenizer (NOT `normalize_question` — that stays untouched
-/// since `answers.save`'s dedup depends on its exact output): split on any
-/// non-alphanumeric character rather than whitespace, so trailing/embedded
-/// punctuation never fractures a token from its bare form elsewhere — "notice
-/// period?" tokenizes to the SAME `"period"` token as "notice period", where a
-/// naive whitespace split would leave a dangling `"period?"` that can never
-/// match. Empty splits (consecutive punctuation) are dropped. Returns OWNED
-/// strings (not `&str` borrows) so the result can be cached on
-/// [`AnswerCandidate`] past the lifetime of the `String` it was tokenized
-/// from — see the perf note on that struct.
-fn tokenize(s: &str) -> HashSet<String> {
-    s.split(|c: char| !c.is_alphanumeric())
-        .filter(|t| !t.is_empty())
-        .map(str::to_string)
-        .collect()
-}
-
-/// Token-Jaccard similarity between two ALREADY-TOKENIZED sets (see
-/// [`tokenize`]): the size of their token-set intersection over their union.
-/// `0.0` when either side is empty (no tokens) or they share no token; `1.0`
-/// for two token-identical non-empty strings. Takes sets rather than raw
-/// strings so a batch of questions scored against many candidates tokenizes
-/// each side exactly once, not once per (question, candidate) pair.
-fn jaccard(a: &HashSet<String>, b: &HashSet<String>) -> f64 {
-    if a.is_empty() || b.is_empty() {
-        return 0.0;
-    }
-    let inter = a.intersection(b).count();
-    let union = a.union(b).count();
-    inter as f64 / union as f64
-}
-
-/// One matchable candidate — the flat projection this module needs from a
-/// stored `Application` + `ApplicationAnswer`, decoupled from both so
-/// [`match_questions`] is unit-testable with plain literals (no SQLite store,
-/// no `updated_at` timing race). `tokens` is normalized + tokenized ONCE here
-/// (not per comparison), so matching a batch of questions against many
-/// candidates tokenizes each candidate O(candidates) times, not O(questions ×
-/// candidates) — [`match_questions`] tokenizes its side of the pair the same
-/// way, once per question, so [`jaccard`] only ever does set-vs-set scoring.
-pub(super) struct AnswerCandidate<'a> {
-    /// The RAW (un-normalized) question text this answer was originally
-    /// stored under — kept so a match can surface it verbatim as
-    /// [`Suggestion::source_question`] and so the salary guard can check it
-    /// independently of the scanned input question (see `MIN_SCORE`'s doc).
-    question: &'a str,
-    answer: &'a str,
-    tokens: HashSet<String>,
-    company: &'a str,
-    title: &'a str,
-    updated_at: u64,
-}
-
-impl<'a> AnswerCandidate<'a> {
-    pub(super) fn new(
-        question: &'a str,
-        answer: &'a str,
-        company: &'a str,
-        title: &'a str,
-        updated_at: u64,
-    ) -> Self {
-        Self {
-            question,
-            answer,
-            tokens: tokenize(&normalize_question(question)),
-            company,
-            title,
-            updated_at,
-        }
-    }
-}
-
-/// One matched suggestion — see [`msg::ANSWERS_SUGGEST_RESULT`] docs.
-#[derive(Debug, PartialEq)]
-pub(super) struct Suggestion {
-    pub(super) question: String,
-    pub(super) answer: String,
-    pub(super) source_company: Option<String>,
-    pub(super) source_title: Option<String>,
-    /// The matched candidate's ORIGINAL (raw, un-normalized) question text —
-    /// always present, never the scanned `question` above. Surfaced by the
-    /// popup as "answered as: '…'" so a cross-question match (two questions
-    /// similar enough on filler words to cross [`MIN_SCORE`] but about
-    /// different things) is visually self-evident rather than silent.
-    pub(super) source_question: String,
-    pub(super) score: f64,
-    /// Copy-only when true — see [`SALARY_KEYWORDS`]. True when EITHER the
-    /// scanned input question OR the matched candidate's own
-    /// `source_question` is salary-shaped, so a stored salary answer can
-    /// never surface as fillable just because it matched under an unrelated
-    /// label (see the mitigation note on [`MIN_SCORE`]).
-    pub(super) salary: bool,
-}
-
-/// Pure matcher: for each (deduped-by-normalized-text) entry of `questions`,
-/// find the best-scoring `candidates` entry at/above [`MIN_SCORE`] — ties
-/// broken by score desc, then `updated_at` desc (the most recently updated
-/// application wins) — and emit at most one [`Suggestion`] per question,
-/// capped overall at [`MAX_SUGGESTIONS`]. Deterministic: the same
-/// `questions`/`candidates` always produce the same output.
-pub(super) fn match_questions(
-    questions: &[String],
-    candidates: &[AnswerCandidate],
-) -> Vec<Suggestion> {
-    let mut seen_normalized: HashSet<String> = HashSet::new();
-    let mut out = Vec::new();
-
-    for q in questions {
-        if out.len() >= MAX_SUGGESTIONS {
-            break;
-        }
-        let norm_q = normalize_question(q);
-        if norm_q.is_empty() || !seen_normalized.insert(norm_q.clone()) {
-            continue; // blank, or an effective duplicate of an earlier question
-        }
-        let q_tokens = tokenize(&norm_q);
-
-        let mut best: Option<(&AnswerCandidate, f64)> = None;
-        for c in candidates {
-            let score = jaccard(&q_tokens, &c.tokens);
-            if score < MIN_SCORE {
-                continue;
-            }
-            best = match best {
-                None => Some((c, score)),
-                Some((_, best_score)) if score > best_score => Some((c, score)),
-                Some((prev, best_score))
-                    if score == best_score && c.updated_at > prev.updated_at =>
-                {
-                    Some((c, score))
-                }
-                other => other,
-            };
-        }
-
-        if let Some((c, score)) = best {
-            // Either side salary-shaped forces Copy-only — a stored salary
-            // answer must never surface as fillable just because it matched
-            // under an unrelated scanned label (see MIN_SCORE's doc).
-            let salary =
-                is_salary_question(&norm_q) || is_salary_question(&normalize_question(c.question));
-            out.push(Suggestion {
-                question: q.clone(),
-                answer: c.answer.to_string(),
-                source_company: (!c.company.trim().is_empty()).then(|| c.company.to_string()),
-                source_title: (!c.title.trim().is_empty()).then(|| c.title.to_string()),
-                source_question: c.question.to_string(),
-                score,
-                salary,
-            });
-        }
-    }
-
-    out
-}
 
 /// Parse + clamp the incoming `questions` array off the payload, capped at
 /// [`MAX_QUESTIONS_PER_CALL`] (mirrors `answers_save::parse_answers`). A
@@ -351,70 +62,17 @@ fn parse_questions(payload: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Fixed source label for a synthetic salary suggestion — see
-/// [`append_salary_expectation_suggestions`]'s doc for why `sourceCompany`
-/// (not a new field) carries it.
-const SAVED_EXPECTATION_SOURCE: &str = "Saved expectation";
-
-/// After the real (stored-answer) matches, append one synthetic suggestion
-/// per remaining salary-shaped question — the backend-readable
-/// `job_preferences.salary_expectation` (Task #30) filling a gap NO stored
-/// `ApplicationAnswer` covers. **Stored answer wins**: a question already
-/// present in `existing` (by normalized text) is skipped here entirely —
-/// this only fills questions `match_questions` left unanswered, never a
-/// second, competing suggestion for the same question. Mutates `existing` in
-/// place and respects [`MAX_SUGGESTIONS`] jointly with what's already there.
-///
-/// Fields: `answer` is the saved expectation string VERBATIM (never
-/// reformatted); `source_company` carries the fixed
-/// [`SAVED_EXPECTATION_SOURCE`] label (reusing the existing "from your X
-/// application" wire field rather than adding a new one — see
-/// `buildSuggestionRow` on the popup side); `source_question` echoes the
-/// scanned question itself (there is no distinct stored question to name);
-/// `score: 1.0` (not matcher-derived — a direct, deliberate fill); `salary:
-/// true` always — copy-only forever, the same flag every stored salary match
-/// already forces.
-fn append_salary_expectation_suggestions(
-    existing: &mut Vec<Suggestion>,
-    questions: &[String],
-    expectation: &str,
-) {
-    let mut covered: HashSet<String> = existing
-        .iter()
-        .map(|s| normalize_question(&s.question))
-        .collect();
-    for q in questions {
-        if existing.len() >= MAX_SUGGESTIONS {
-            break;
-        }
-        let norm_q = normalize_question(q);
-        if norm_q.is_empty() || !covered.insert(norm_q.clone()) || !is_salary_question(&norm_q) {
-            continue;
-        }
-        existing.push(Suggestion {
-            question: q.clone(),
-            answer: expectation.to_string(),
-            source_company: Some(SAVED_EXPECTATION_SOURCE.to_string()),
-            source_title: None,
-            source_question: q.clone(),
-            score: 1.0,
-            salary: true,
-        });
-    }
-}
-
-/// Core `answers.suggest`: gate on the autofill opt-in (same fixed sentinel as
-/// `profile.get`/`answers.save` — see [`super::AUTOFILL_OFF_MESSAGE`]), then
-/// fuzzy-match the (clamped, capped) incoming `questions` against EVERY
-/// answer on EVERY stored Application via [`ApplicationStore::list`] — pure
-/// local Rust, no AI, no egress. Read-only: never writes.
+/// Core `answers.suggest`: gate on the autofill opt-in (see
+/// [`super::AUTOFILL_OFF_MESSAGE`]), then fuzzy-match the (clamped, capped)
+/// incoming `questions` against EVERY answer on EVERY stored Application via
+/// [`ApplicationStore::list`] — pure local Rust, no AI, no egress, never
+/// writes.
 ///
 /// `salary_expectation` is the backend-readable
-/// `job_preferences.salary_expectation` (Task #30, may be absent/blank — the
-/// renderer-only value most users have not synced yet). When present it
-/// appends a synthetic suggestion for each remaining salary-shaped question
-/// no stored answer already covers — see
-/// [`append_salary_expectation_suggestions`].
+/// `job_preferences.salary_expectation` (may be absent/blank). When present
+/// it appends a synthetic suggestion for each remaining salary-shaped
+/// question no stored answer already covers — see
+/// [`salary_match::append_salary_expectation_suggestions`].
 pub(super) fn resolve_answers_suggest(
     store: &ApplicationStore,
     autofill_enabled: bool,
