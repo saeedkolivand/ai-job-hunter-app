@@ -1,5 +1,89 @@
 [
   {
+    "sha": "cea335eaf1fbf2f0ea984b0333312717acc0ae63",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-26T06:23:21Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "56972bb1ad7075be90107123a61ce49bb7687963",
+    "commit": {
+      "message": "refactor(agent-call): split agent_call and agent_read into modules under 300 lines (#1286)",
+      "author": {
+        "date": "2026-09-26T05:59:29Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "a53de3c0d3b8d083576609f3ad1b147b93043bcf",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-25T22:03:49Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "177c12e4c039ea42820c204384c483611355dce3",
+    "commit": {
+      "message": "refactor(agent-cli): split agent_cli into modules under 300 lines (#1285)",
+      "author": {
+        "date": "2026-09-25T21:39:12Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "c34728bbd83bb91864a87b449282ccab5a62761a",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-25T17:59:57Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "40b66e90c9dba20eedb0dd90f0757c0e7aff6e4b",
+    "commit": {
+      "message": "chore(arch): cap rust files at 300 lines and require sibling test files (#1284)",
+      "author": {
+        "date": "2026-09-25T17:35:59Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "593219e263ab21e3939ae1967c5ce54fcab9ace0",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-25T08:47:31Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "f0ece8600ea8566dd7deb1a701caff304477e71f",
     "commit": {
       "message": "chore: update export benchmark data [skip ci]",
@@ -1109,90 +1193,6 @@
       "message": "fix(release): create the xdg data dir before msstore runs; surface the snap store listing (#1198)",
       "author": {
         "date": "2026-09-10T13:15:26Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "3e4c3220a014cd6ae19a2672d8f8e930e8ce13a0",
-    "commit": {
-      "message": "chore: sync landing download version to v0.153.2",
-      "author": {
-        "date": "2026-09-10T12:34:20Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "588eb3a702de0a23e93bae6010b0ed37528344e9",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.153.2 [skip ci]",
-      "author": {
-        "date": "2026-09-10T12:33:36Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "1b5ea8ec9e3bea97c45b5bb45ec215be06cee22d",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-10T12:14:59Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "cb7f0ba2634adbd2dbf0c8865eb83114fb9e62bf",
-    "commit": {
-      "message": "chore(release): 0.153.2 [skip ci]",
-      "author": {
-        "date": "2026-09-10T11:52:34Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "89d84df1ca998a1a69f6136df0b706f2f78f2cf3",
-    "commit": {
-      "message": "fix(desktop): pin autostart app_name to kebab-case slug",
-      "author": {
-        "date": "2026-09-10T11:50:42Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "ab3bc7e515eacafe0d28b80cffa6748c848323f6",
-    "commit": {
-      "message": "fix(ci): pre-install missing gnome-42-2204-sdk build-snap for snap pack",
-      "author": {
-        "date": "2026-09-10T11:42:10Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "59376675afcb4a96d69d57b04950d10999286498",
-    "commit": {
-      "message": "fix(ci): pre-install snap build-snaps individually with independent retries",
-      "author": {
-        "date": "2026-09-10T11:39:20Z"
       }
     },
     "author": {
