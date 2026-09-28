@@ -78,10 +78,80 @@ describe('DownloadCounts', () => {
     expect(unitFor('winMsi')).toBe(' download');
     expect(unitFor('linuxRpm')).toBe(' downloads');
 
-    // The visible pill must carry only the number; the unit is for the reader.
+    // The visible number lives in its own node; the icon comes first, the
+    // unit is for the reader only.
     expect(
-      container.querySelector('.dl-btn[data-platform="macArm"] .dl-count')?.firstChild?.textContent
+      container.querySelector('.dl-btn[data-platform="macArm"] .dl-count-number')?.textContent
     ).toBe('21');
+  });
+
+  it('opens every dl-count pill with the download icon, GitHub and store alike', async () => {
+    stubFetch((url) =>
+      url.includes('store-counts')
+        ? ok({ total: 12345, github: 12000, msStore: 25, snap: 14, chrome: 37, firefox: 2 })
+        : ok(COUNTS)
+    );
+    const { container } = renderPage();
+
+    // 7 GitHub pills + 4 store pills.
+    await waitFor(() => expect(container.querySelectorAll('.dl-count')).toHaveLength(11));
+
+    for (const pill of Array.from(container.querySelectorAll('.dl-count'))) {
+      const icon = pill.querySelector('svg.dl-icon');
+      expect(icon, `pill "${pill.textContent}" has no icon`).not.toBeNull();
+      expect(icon?.getAttribute('aria-hidden')).toBe('true');
+      // The icon must precede the number, not follow it.
+      expect(icon?.nextElementSibling?.classList.contains('dl-count-number')).toBe(true);
+    }
+  });
+
+  it("puts each store's count on its own button, keyed by data-store, naming its own unit", async () => {
+    stubFetch((url) =>
+      url.includes('store-counts')
+        ? ok({ total: 78, github: 0, msStore: 25, snap: 14, chrome: 37, firefox: 2 })
+        : ok({})
+    );
+    const { container } = renderPage();
+
+    await waitFor(() =>
+      expect(container.querySelectorAll('[data-store] .dl-count')).toHaveLength(4)
+    );
+
+    const badge = (store: string) => container.querySelector(`[data-store="${store}"] .dl-count`);
+
+    expect(badge('msStore')?.querySelector('.dl-count-number')?.textContent).toBe('25');
+    expect(badge('msStore')?.querySelector('.sr-only')?.textContent).toBe(' acquisitions');
+
+    expect(badge('snap')?.querySelector('.dl-count-number')?.textContent).toBe('14');
+    expect(badge('snap')?.querySelector('.sr-only')?.textContent).toBe(' installs');
+
+    expect(badge('chrome')?.querySelector('.dl-count-number')?.textContent).toBe('37');
+    expect(badge('chrome')?.querySelector('.sr-only')?.textContent).toBe(' users');
+
+    expect(badge('firefox')?.querySelector('.dl-count-number')?.textContent).toBe('2');
+    expect(badge('firefox')?.querySelector('.sr-only')?.textContent).toBe(' daily users');
+
+    // Never call a store number a "download" — that unit belongs to GitHub only.
+    for (const store of ['msStore', 'snap', 'chrome', 'firefox']) {
+      expect(badge(store)?.querySelector('.sr-only')?.textContent).not.toMatch(/download/i);
+    }
+  });
+
+  it('hides a store badge when its figure is null, missing, or zero — never stale or zero', async () => {
+    stubFetch((url) =>
+      url.includes('store-counts')
+        ? ok({ total: 2, github: 0, msStore: null, snap: 0, chrome: 2 /* firefox absent */ })
+        : ok({})
+    );
+    const { container } = renderPage();
+
+    await waitFor(() =>
+      expect(container.querySelector('[data-store="chrome"] .dl-count')).not.toBeNull()
+    );
+    expect(container.querySelector('[data-store="msStore"] .dl-count')).toBeNull();
+    expect(container.querySelector('[data-store="snap"] .dl-count')).toBeNull();
+    expect(container.querySelector('[data-store="firefox"] .dl-count')).toBeNull();
+    expect(container.querySelectorAll('[data-store] .dl-count')).toHaveLength(1);
   });
 
   it('leaves a button alone when its platform is absent or not a number', async () => {
@@ -147,7 +217,9 @@ describe('DownloadCounts', () => {
 
     const el = () => container.querySelector<HTMLElement>('[data-installs-total]');
     await waitFor(() => expect(el()?.hidden).toBe(false));
-    expect(el()?.textContent).toContain('12,345 installs so far');
+    expect(el()?.textContent).toBe(
+      '12,345 installs so far, counting GitHub downloads and the app and extension stores.'
+    );
   });
 
   it('keeps the installs total hidden when store-counts.json 404s, without touching the pills', async () => {
@@ -158,7 +230,7 @@ describe('DownloadCounts', () => {
     expect(container.querySelector<HTMLElement>('[data-installs-total]')?.hidden).toBe(true);
   });
 
-  it('renders the installs total when downloads-by-platform.json 404s, without any pills', async () => {
+  it('renders the installs total and store badges when downloads-by-platform.json 404s, without any GitHub pills', async () => {
     stubFetch((url) =>
       url.includes('store-counts')
         ? ok({ total: 999, github: 900, msStore: 50, snap: 30, chrome: 15, firefox: 4 })
@@ -169,7 +241,10 @@ describe('DownloadCounts', () => {
     const el = () => container.querySelector<HTMLElement>('[data-installs-total]');
     await waitFor(() => expect(el()?.hidden).toBe(false));
     expect(el()?.textContent).toContain('999 installs so far');
-    expect(container.querySelectorAll('.dl-count')).toHaveLength(0);
+    // The two fetches are independent: a GitHub-side 404 must not cost the
+    // store badges, which come from the store-counts fetch alone.
+    expect(container.querySelectorAll('.dl-btn .dl-count')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-store] .dl-count')).toHaveLength(4);
   });
 
   it('keeps the installs total hidden when `total` is malformed', async () => {

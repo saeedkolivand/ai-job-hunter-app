@@ -214,24 +214,38 @@ h2 {
   border-radius: 12px;
 }
 
-/* Download-count pill, appended into each .dl-btn by DownloadCounts.tsx once
-   the static /downloads-by-platform.json lands. It is absent on first paint and
-   absent entirely when the fetch fails, so nothing here may change the button's
-   resting size — margin-left only, no padding on the button itself. */
+/* Download-count pill, appended into each .dl-btn AND each store button
+   (.store-btn/.ext-btn, via [data-store]) by DownloadCounts.tsx once the
+   relevant JSON lands. It is absent on first paint and absent entirely when
+   the fetch fails (or, for a store, when its figure is null/missing/0), so
+   nothing here may change the button's resting size — margin-left only, no
+   padding on the button itself. */
 .dl-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   margin-left: 8px;
   font-family: var(--mono);
   font-size: 12px;
   padding: 1px 7px;
   border-radius: 999px;
   /* inherit, so the pill rides whichever button colour it lands on: cream text
-     on .dl-btn's ink, ink text on .dl-btn.alt's transparent card. */
+     on .dl-btn/.ext-btn's ink fill, ink text on .dl-btn.alt/.store-btn's
+     transparent card. */
   color: inherit;
   background: rgba(244, 236, 220, 0.18);
   white-space: nowrap;
 }
-.dl-btn.alt .dl-count {
+.dl-btn.alt .dl-count,
+.store-btn .dl-count {
   background: rgba(28, 24, 18, 0.1);
+}
+/* The icon that opens every pill (GitHub and store alike) — sized to the
+   number beside it, never wider than the text. */
+.dl-icon {
+  width: 10px;
+  height: 10px;
+  flex: none;
 }
 
 /* The pill's unit, spoken but not shown: "Intel · .dmg 5" reads as though the

@@ -117,6 +117,10 @@ describe('DownloadBody', () => {
     const storeBtns = Array.from(container.querySelectorAll('a.store-btn'));
     expect(storeBtns).toHaveLength(2);
     expect(storeBtns.map((a) => a.getAttribute('href'))).toEqual([MS_STORE, SNAP_STORE]);
+    // DownloadCounts keys its store badges off this, not off data-platform —
+    // the separate hook that keeps DownloadFreshness's positional .dl-btn
+    // indexing untouched.
+    expect(storeBtns.map((a) => a.getAttribute('data-store'))).toEqual(['msStore', 'snap']);
 
     for (const storeBtn of storeBtns) {
       expect(storeBtn.classList.contains('dl-btn')).toBe(false);
@@ -134,6 +138,7 @@ describe('DownloadBody', () => {
     const extBtns = Array.from(container.querySelectorAll('.ext-grid a.ext-btn'));
     expect(extBtns).toHaveLength(2);
     expect(extBtns.map((a) => a.getAttribute('href'))).toEqual([CHROME_EXT, FIREFOX_EXT]);
+    expect(extBtns.map((a) => a.getAttribute('data-store'))).toEqual(['chrome', 'firefox']);
 
     for (const a of extBtns) {
       expect(a.getAttribute('target')).toBe('_blank');

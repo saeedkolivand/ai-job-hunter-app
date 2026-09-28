@@ -29,6 +29,73 @@ const COUNTS_URL = '/downloads-by-platform.json';
 // above and vice versa.
 const STORE_COUNTS_URL = '/store-counts.json';
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/**
+ * Builds the inline "download" glyph shared by every badge on the page — the
+ * GitHub per-platform pills and the four store pills alike, so there is one
+ * badge mechanism, not two. `currentColor` so it always matches whatever text
+ * colour the pill inherits (cream on .dl-btn/.ext-btn's dark fill, ink on
+ * .dl-btn.alt/.store-btn's light one). Built via `createElementNS`, not
+ * `innerHTML`, so nothing here is ever an HTML-injection sink even though the
+ * markup is a fixed constant.
+ */
+function buildDownloadIcon(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'dl-icon');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute('d', 'M8 1.5v8M4.3 6.2 8 9.9l3.7-3.7M2.5 13.5h11');
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', 'currentColor');
+  path.setAttribute('stroke-width', '1.6');
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linejoin', 'round');
+  svg.appendChild(path);
+
+  return svg;
+}
+
+/**
+ * Builds one `.dl-count` pill — icon, the formatted number, and an sr-only
+ * unit word — the one badge shape every count on the page uses. `title`
+ * repeats the same pairing as a hover tooltip, so a store's unit is stated
+ * honestly even for someone who never reaches the sr-only text.
+ */
+function buildCountPill(formatted: string, unitWord: string): HTMLSpanElement {
+  const pill = document.createElement('span');
+  pill.className = 'dl-count';
+  pill.title = `${formatted} ${unitWord}`;
+  pill.appendChild(buildDownloadIcon());
+
+  const number = document.createElement('span');
+  number.className = 'dl-count-number';
+  number.textContent = formatted;
+  pill.appendChild(number);
+
+  const unit = document.createElement('span');
+  unit.className = 'sr-only';
+  unit.textContent = ` ${unitWord}`;
+  pill.appendChild(unit);
+
+  return pill;
+}
+
+// Each store's own unit — never "downloads", because a store figure isn't one
+// (see scripts/lib/store-counts.mjs for the caveat). Keyed by the
+// store-counts.json field name, which is also the `data-store` value
+// DownloadCards (msStore, snap) and DownloadBody (chrome, firefox) put on
+// that store's button.
+const STORE_UNITS: Record<string, { one: string; many: string }> = {
+  msStore: { one: 'acquisition', many: 'acquisitions' },
+  snap: { one: 'install', many: 'installs' },
+  chrome: { one: 'user', many: 'users' },
+  firefox: { one: 'daily user', many: 'daily users' },
+};
+
 export function DownloadCounts() {
   useEffect(() => {
     let cancelled = false;
@@ -52,18 +119,9 @@ export function DownloadCounts() {
           const n = key === undefined ? undefined : byPlatform[key];
           if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return;
 
-          const pill = document.createElement('span');
-          pill.className = 'dl-count';
-          pill.textContent = format.format(n);
-
           // Without this the link announces as "Intel · .dmg 5", where the 5
           // reads as part of the file description. The unit has to be spoken.
-          const unit = document.createElement('span');
-          unit.className = 'sr-only';
-          unit.textContent = n === 1 ? ' download' : ' downloads';
-          pill.appendChild(unit);
-
-          btn.appendChild(pill);
+          btn.appendChild(buildCountPill(format.format(n), n === 1 ? 'download' : 'downloads'));
         });
       } catch {
         // Silent, like DownloadFreshness: a missing count must never cost
@@ -86,22 +144,40 @@ export function DownloadCounts() {
         const data: unknown = await res.json();
         if (cancelled || typeof data !== 'object' || data === null) return;
 
-        const total = (data as Record<string, unknown>).total;
-        if (typeof total !== 'number' || !Number.isFinite(total) || total < 0) return;
-
-        const el = document.querySelector<HTMLElement>('[data-installs-total]');
-        // StrictMode-safe: a second run must not re-fill an already-filled node.
-        if (!el || el.textContent) return;
-
+        const store = data as Record<string, unknown>;
         const format = new Intl.NumberFormat('en-US');
-        // Un-hide BEFORE filling the text: aria-live only announces mutations
-        // of a region that is already rendered, so setting textContent first
-        // would speak to nobody.
-        el.hidden = false;
-        el.textContent = `${format.format(total)} installs so far — GitHub downloads plus the app and extension stores.`;
+
+        const total = store.total;
+        if (typeof total === 'number' && Number.isFinite(total) && total >= 0) {
+          const el = document.querySelector<HTMLElement>('[data-installs-total]');
+          // StrictMode-safe: a second run must not re-fill an already-filled node.
+          if (el && !el.textContent) {
+            // Un-hide BEFORE filling the text: aria-live only announces
+            // mutations of a region that is already rendered, so setting
+            // textContent first would speak to nobody.
+            el.hidden = false;
+            el.textContent = `${format.format(total)} installs so far, counting GitHub downloads and the app and extension stores.`;
+          }
+        }
+
+        // Per-store badges — same `.dl-count` pill as the per-platform ones
+        // above, one `[data-store]` host per button (DownloadCards for MS
+        // Store/Snap Store, DownloadBody for Chrome/Firefox). A null, missing,
+        // or zero figure leaves the badge off rather than showing a stale or
+        // zero number.
+        document.querySelectorAll<HTMLElement>('[data-store]').forEach((host) => {
+          if (host.querySelector('.dl-count')) return;
+
+          const key = host.dataset.store;
+          const unit = key === undefined ? undefined : STORE_UNITS[key];
+          const n = key === undefined ? undefined : store[key];
+          if (!unit || typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return;
+
+          host.appendChild(buildCountPill(format.format(n), n === 1 ? unit.one : unit.many));
+        });
       } catch {
         // Silent, same contract as the per-platform fetch above: a missing or
-        // malformed total must never break the page, just leave it hidden.
+        // malformed payload must never break the page, just leave badges off.
       }
     })();
 

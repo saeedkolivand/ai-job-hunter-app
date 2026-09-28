@@ -12,7 +12,7 @@ import type { VersionData } from '@/lib/version';
 export const metadata: Metadata = {
   title: 'AI Job Hunter — Download for macOS, Windows, Linux',
   description:
-    'Download the AI Job Hunter desktop app for macOS, Windows, and Linux. A local-first, AI-native job-hunting assistant. Free for personal use, source-available, unsigned, and unemployed.',
+    'Download the AI Job Hunter desktop app for macOS, Windows, and Linux. A local-first, AI-native job-hunting assistant. Open source under Apache-2.0, unsigned, and unemployed.',
   robots: { index: true, follow: true },
   alternates: { canonical: 'https://aijobhunter.app/download' },
   openGraph: {

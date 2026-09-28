@@ -16,6 +16,11 @@ import type { Installers } from '@/lib/version';
 // its download pills off — an explicit identifier rather than the positional
 // index above. DownloadFreshness could be moved onto it too; that swap is not
 // this change's to make, so the positional contract stands as written.
+//
+// The two `.store-btn` anchors below carry `data-store` instead — a separate
+// hook so DownloadCounts can badge them from store-counts.json without ever
+// touching the `.dl-btn[data-platform]` selector DownloadFreshness's
+// positional indexing and the per-platform pills both depend on.
 export function DownloadCards({
   version,
   installers,
@@ -100,7 +105,13 @@ export function DownloadCards({
               `.dl-btn[data-platform]` — an 8th `.dl-btn` here would shift
               every installer URL over by one. This links straight to the
               Store listing, nothing to swap or count. */}
-          <a className="store-btn" href={MS_STORE} target="_blank" rel="noopener noreferrer">
+          <a
+            className="store-btn"
+            data-store="msStore"
+            href={MS_STORE}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             Microsoft Store
           </a>
         </div>
@@ -127,7 +138,13 @@ export function DownloadCards({
           </a>
           {/* Same rationale as the Windows card's store-btn: no dl-btn, no
               data-platform — this links straight to the Store listing. */}
-          <a className="store-btn" href={SNAP_STORE} target="_blank" rel="noopener noreferrer">
+          <a
+            className="store-btn"
+            data-store="snap"
+            href={SNAP_STORE}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             Snap Store
           </a>
         </div>

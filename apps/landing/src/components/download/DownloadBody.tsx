@@ -17,11 +17,11 @@ export function DownloadBody({ version, installers }: { version: string; install
         <h1>Take the app</h1>
 
         <p className="lede">
-          A <b>local-first desktop app</b> — it scrapes the job boards, ranks the matches, and
-          writes the whole application on your own machine.{' '}
-          <b>Free for personal use. Source-available.</b> No accounts, no upsell, no tracking. It is
-          also <b>unsigned</b>, because code-signing certificates cost money and I, famously, do not
-          have a job. Your operating system will fret. The notes under each button tell you how to
+          A <b>local-first desktop app</b>. It scrapes the job boards, ranks the matches, and writes
+          the whole application on your own machine. <b>Open source under Apache-2.0</b>, so you can
+          use it for anything, work included. No accounts, no upsell, no tracking. It is also{' '}
+          <b>unsigned</b>, because code-signing certificates cost money and I, famously, do not have
+          a job. Your operating system will fret; the notes under each button tell you how to
           reassure it.
         </p>
 
@@ -111,7 +111,13 @@ export function DownloadBody({ version, installers }: { version: string; install
             </div>
             <h2>Chrome</h2>
             <p className="sub">also Edge, Brave, and other Chromium browsers</p>
-            <a className="ext-btn" href={CHROME_EXT} target="_blank" rel="noopener noreferrer">
+            <a
+              className="ext-btn"
+              data-store="chrome"
+              href={CHROME_EXT}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               Chrome Web Store →
             </a>
           </div>
@@ -121,7 +127,13 @@ export function DownloadBody({ version, installers }: { version: string; install
             </div>
             <h2>Firefox</h2>
             <p className="sub">on Mozilla Add-ons (AMO)</p>
-            <a className="ext-btn" href={FIREFOX_EXT} target="_blank" rel="noopener noreferrer">
+            <a
+              className="ext-btn"
+              data-store="firefox"
+              href={FIREFOX_EXT}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               Add to Firefox →
             </a>
           </div>

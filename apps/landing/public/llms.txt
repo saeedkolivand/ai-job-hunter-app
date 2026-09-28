@@ -1,6 +1,6 @@
 # AI Job Hunter
 
-> A local-first, AI-native desktop app that finds jobs across 24 boards, tailors your resume and cover letter to each one, and does everything except hit submit. Free for personal use, source-available, no accounts, no tracking. Built by one unemployed engineer — the site is also, openly, a job application.
+> A local-first, AI-native desktop app that finds jobs across 24 boards, tailors your resume and cover letter to each one, and does everything except hit submit. Open source (Apache-2.0), no accounts, no tracking. Built by one unemployed engineer — the site is also, openly, a job application.
 
 - Tauri 2 shell, React renderer, Rust backend, pnpm monorepo. Ships for macOS, Windows and Linux; unsigned.
 - Everything runs on your machine: resume, job data and API keys never leave it. You bring your own AI provider key (Anthropic, OpenAI, Google, Ollama and others).
