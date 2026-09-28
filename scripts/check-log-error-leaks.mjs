@@ -236,7 +236,7 @@ const ALLOWLIST = {
       'building a runtime touches no filesystem path.',
     sig: '[native_host] failed to build runtime: {e}',
   },
-  'extension_bridge/mod.rs:510': {
+  'extension_bridge/server.rs:52': {
     status: 'safe',
     reason:
       'TcpListener::accept() failure is a local socket-resource error (e.g. EMFILE); it ' +
