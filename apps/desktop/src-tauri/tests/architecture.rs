@@ -245,6 +245,15 @@ fn is_comment_line(line: &str) -> bool {
     t.starts_with("//") || t.starts_with('*') || t.starts_with("/*")
 }
 
+/// Code-line count for R8: every line that is neither blank nor comment-only
+/// (`is_comment_line`). Blank and comment lines are free under the LOC cap.
+fn code_loc(content: &str) -> usize {
+    content
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !is_comment_line(l))
+        .count()
+}
+
 /// First-segment idents from `crate::<ident>` references (covers `use` + inline paths),
 /// ignoring comment lines.
 fn crate_refs(content: &str) -> BTreeSet<String> {
@@ -698,8 +707,9 @@ fn r7_allowlist_has_no_dead_entries() {
 }
 
 // ── R8: a hard LOC cap per file, ratcheted from a baseline ──────────────────────────
-// Every `.rs` file `sources()` finds counts, test files included. Files already over the cap
-// are ratcheted in `tests/r8_baseline.txt`: they may shrink or be deleted, never grow.
+// Every `.rs` file `sources()` finds counts, test files included. The count is CODE lines
+// (blank and comment lines excluded — see `code_loc`). Files already over the cap are
+// ratcheted in `tests/r8_baseline.txt`: they may shrink or be deleted, never grow.
 const HARD_CAP_LOC: usize = 300;
 
 // The cap is a forcing function, not a goal in itself: a file that genuinely reads worse split
@@ -714,6 +724,7 @@ const R8_BASELINE_FILE: &str = "r8_baseline.txt";
 
 const R8_BASELINE_HEADER: &str = "\
 # R8 size baseline — one line per file over HARD_CAP_LOC: `<loc>\t<rel>`, `rel` = path under src/.
+# `<loc>` is CODE lines (blank and comment lines excluded).
 # A baselined file may shrink or be deleted, never grow; a new over-cap file is not baselined.
 # Regenerate after a split with: R8_BLESS=1 cargo test --test architecture
 ";
@@ -825,7 +836,7 @@ fn r8_no_oversized_modules() {
     let files = sources();
     let loc_of: BTreeMap<&str, usize> = files
         .iter()
-        .map(|f| (f.rel.as_str(), f.content.lines().count()))
+        .map(|f| (f.rel.as_str(), code_loc(&f.content)))
         .collect();
     let excepted = |rel: &str| R8_EXCEPTIONS.iter().any(|(r, _)| *r == rel);
     let over: BTreeMap<&str, usize> = loc_of
