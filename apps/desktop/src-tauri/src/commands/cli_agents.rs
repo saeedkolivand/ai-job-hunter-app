@@ -81,11 +81,14 @@ pub async fn cli_agents_status() -> CliAgentsStatus {
     build_status().await
 }
 
-/// Clear the detection cache and re-probe — call after an in-app install so a
-/// freshly-installed agent shows as available immediately.
+/// Clear the detection cache and re-probe — call after an in-app install, or
+/// from a "Re-check" action, so a freshly-installed agent (or one that only
+/// just finished a slow login-shell probe on macOS/Linux) shows as available
+/// without an app restart.
 #[tauri::command]
 pub async fn cli_agents_redetect() -> CliAgentsStatus {
     cli_agent::clear_detect_cache();
+    crate::platform::reset_cli_path_cache();
     build_status().await
 }
 

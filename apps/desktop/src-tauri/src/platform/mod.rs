@@ -11,7 +11,7 @@ pub mod windows_console;
 pub use chrome::{
     detect_chromium_user_data_roots, detect_system_chrome, BrowserLaunch, ChromiumBrowser,
 };
-pub use process::{cli_path, NoWindow};
+pub use process::{cli_path, reset_cli_path_cache, NoWindow};
 #[cfg(windows)]
 pub use process::{resolve_cli_binary, ResolvedCli};
 
