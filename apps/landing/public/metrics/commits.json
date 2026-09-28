@@ -1,5 +1,53 @@
 [
   {
+    "sha": "c03abaca6df48502528fe6dcba78941c2a426a4d",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-27T09:13:35Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "dbc911bbc27fb514fa38e751cf309f6d3a5c2575",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-26T11:34:06Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "ec6ea39cf94549a5e796ba36e327c0e94a86a718",
+    "commit": {
+      "message": "refactor(extension-bridge): split and shrink the answer/assist family (#1287)",
+      "author": {
+        "date": "2026-09-26T11:14:10Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "fbd751ad7afa897128f4e4d7643dff84d943f534",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-26T08:34:07Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "cea335eaf1fbf2f0ea984b0333312717acc0ae63",
     "commit": {
       "message": "chore: update export benchmark data [skip ci]",
@@ -1149,54 +1197,6 @@
     },
     "author": {
       "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "c9c93848a2489844323ed6e7427072072854645a",
-    "commit": {
-      "message": "ui(extension): notebook redesign shell — launcher popup, tabbed panel, settings page (#1201)",
-      "author": {
-        "date": "2026-09-11T04:34:33Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "bf2aa39dbb0932be3264523bd220593c16ad4823",
-    "commit": {
-      "message": "ci(charts): count store installs in the public installs badge (#1200)",
-      "author": {
-        "date": "2026-09-10T13:42:54Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "435c4634b112007d8bcd43a36d9fbbdd8ac853b3",
-    "commit": {
-      "message": "ci(release): pin msstore-cli to v0.4.2 and verify against a committed sha256 (#1199)",
-      "author": {
-        "date": "2026-09-10T13:39:02Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "fee1e5e2a806feb6552154399383e386c303f4bd",
-    "commit": {
-      "message": "fix(release): create the xdg data dir before msstore runs; surface the snap store listing (#1198)",
-      "author": {
-        "date": "2026-09-10T13:15:26Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
     }
   }
 ]

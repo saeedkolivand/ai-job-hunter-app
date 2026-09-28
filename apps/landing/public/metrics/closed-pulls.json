@@ -1,5 +1,19 @@
 [
   {
+    "number": 1287,
+    "title": "refactor(extension-bridge): split and shrink the answer/assist family",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1287",
+    "draft": false,
+    "created_at": "2026-09-26T10:48:33Z",
+    "updated_at": "2026-09-26T11:14:13Z",
+    "merged_at": "2026-09-26T11:14:11Z",
+    "closed_at": "2026-09-26T11:14:11Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
     "number": 1286,
     "title": "refactor(agent-call): split agent_call and agent_read into modules under 300 lines",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1286",
@@ -680,20 +694,6 @@
     "updated_at": "2026-09-16T17:59:23Z",
     "merged_at": "2026-09-16T17:26:43Z",
     "closed_at": "2026-09-16T17:26:43Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1211,
-    "title": "chore: bump actions/setup-dotnet from 4.3.1 to 6.0.0",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1211",
-    "draft": false,
-    "created_at": "2026-09-16T16:11:57Z",
-    "updated_at": "2026-09-16T17:59:22Z",
-    "merged_at": "2026-09-16T17:27:10Z",
-    "closed_at": "2026-09-16T17:27:10Z",
     "requested_reviewers": [],
     "user": {
       "login": "dependabot[bot]"
