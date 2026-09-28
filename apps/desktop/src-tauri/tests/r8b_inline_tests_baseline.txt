@@ -104,11 +104,7 @@ profile_import/linkedin.rs
 profile_import/mod.rs
 reminder_scheduler.rs
 salary_research/mod.rs
-scraping/ats_ref.rs
 scraping/boards/mod.rs
-scraping/cluster/mod.rs
-scraping/cluster/normalize.rs
-scraping/engine/location_filter.rs
 scraping/engine/work_type_filter.rs
 scraping/rate_limiter/mod.rs
 theme/mod.rs

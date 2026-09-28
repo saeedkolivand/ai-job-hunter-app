@@ -354,7 +354,7 @@ const ALLOWLIST = {
       'a path/URL/host/credential.',
     sig: '[scraping::http] htmd conversion failed ({e}); falling back to html_to_text',
   },
-  'scraping/engine/mod.rs:1198': {
+  'scraping/engine/health_record.rs:66': {
     status: 'safe',
     reason:
       'tokio::task::JoinError from the record_health spawn_blocking handle (the task ' +

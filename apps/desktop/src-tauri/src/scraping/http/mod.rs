@@ -447,4 +447,4 @@ pub fn html_to_markdown(html: &str) -> String {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

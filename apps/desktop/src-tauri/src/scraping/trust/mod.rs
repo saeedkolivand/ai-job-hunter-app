@@ -499,4 +499,4 @@ pub(crate) fn company_matches_host(company: &str, host: &str) -> bool {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

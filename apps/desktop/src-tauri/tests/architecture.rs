@@ -483,18 +483,18 @@ const R3_ALLOW: &[&str] = &[
     // under `scraping/` rather than at the top level because the thing it
     // remembers IS a scraping concern and the engine that writes it is its only
     // producer.
-    "scraping/board_health/mod.rs",
+    "scraping/board_health/store.rs",
     // Reads the installed browser's EXTERNAL Cookies SQLite (read-only, copied to
     // temp) for session import — not our app DB, so it has no domain store. R3
     // confines OUR persistence; reading a foreign SQLite legitimately needs
-    // rusqlite at the read site. See scraping::board_login::import.
-    "scraping/board_login/import.rs",
+    // rusqlite at the read site. See scraping::board_login::import::decrypt.
+    "scraping/board_login/import/decrypt.rs",
     // FTS5 full-text ranking over an EPHEMERAL `Connection::open_in_memory()`
     // rebuilt fresh per hybrid search and dropped with it — not a domain
     // store (nothing survives the call, nothing is opened from `data_dir()`),
     // so it has no `db::open`/migrations/`DataStore` shape to fit. Same
-    // posture as `scraping/board_login/import.rs`'s exception just above: R3
-    // confines OUR PERSISTENCE, and this holds none.
+    // posture as `scraping/board_login/import/decrypt.rs`'s exception just
+    // above: R3 confines OUR PERSISTENCE, and this holds none.
     "retrieval/lexical.rs",
 ];
 
@@ -716,9 +716,7 @@ const HARD_CAP_LOC: usize = 300;
 // (one cohesive state machine, one table) may go up to `R8_EXCEPTION_CEILING` if listed here with
 // the reason. Never past the ceiling; an entry whose file is back under the cap is stale.
 const R8_EXCEPTION_CEILING: usize = 400;
-const R8_EXCEPTIONS: &[(&str, &str)] = &[
-    // ("path/under/src.rs", "why splitting it would hurt readability"),
-];
+const R8_EXCEPTIONS: &[(&str, &str)] = &[];
 
 const R8_BASELINE_FILE: &str = "r8_baseline.txt";
 
