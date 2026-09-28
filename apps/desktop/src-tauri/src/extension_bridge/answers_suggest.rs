@@ -177,3 +177,6 @@ pub(super) fn handle_answers_suggest(app: &AppHandle, req_id: &str, payload: &Va
         });
     answers_suggest_reply(req_id, outcome)
 }
+
+#[cfg(test)]
+mod tests;

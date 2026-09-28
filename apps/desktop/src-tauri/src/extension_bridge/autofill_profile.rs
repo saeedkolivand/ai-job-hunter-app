@@ -197,3 +197,6 @@ pub(super) fn profile_outcome(app: &AppHandle) -> AppResult<AutofillProfile> {
 pub(super) fn handle_profile(app: &AppHandle, req_id: &str) -> String {
     profile_result_reply(req_id, profile_outcome(app))
 }
+
+#[cfg(test)]
+mod tests;

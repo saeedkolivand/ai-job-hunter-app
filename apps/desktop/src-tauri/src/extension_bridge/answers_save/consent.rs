@@ -30,3 +30,6 @@ impl BridgeState {
         )
     }
 }
+
+#[cfg(test)]
+mod tests;

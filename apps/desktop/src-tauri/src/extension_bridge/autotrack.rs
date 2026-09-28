@@ -82,3 +82,6 @@ pub(super) fn autotrack_result_reply(req_id: &str, enabled: bool) -> String {
     })
     .to_string()
 }
+
+#[cfg(test)]
+mod tests;

@@ -20,6 +20,7 @@ mod fence_shape_scrape;
 mod fence_tags;
 mod fence_unfence;
 mod policy_lookup;
+mod policy_matrix;
 mod refusal;
 mod reply_clamp;
 mod reply_core;

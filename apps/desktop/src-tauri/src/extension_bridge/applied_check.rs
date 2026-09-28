@@ -159,3 +159,6 @@ pub(super) fn handle_applied_check(app: &AppHandle, req_id: &str, payload: &Valu
         .and_then(|store| resolve_applied_check(store.inner(), payload));
     applied_result_reply(req_id, outcome)
 }
+
+#[cfg(test)]
+mod tests;

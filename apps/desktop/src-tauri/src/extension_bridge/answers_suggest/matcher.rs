@@ -180,3 +180,6 @@ pub(in crate::extension_bridge) fn match_questions(
 
     out
 }
+
+#[cfg(test)]
+mod tests;

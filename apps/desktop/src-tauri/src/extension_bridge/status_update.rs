@@ -249,3 +249,6 @@ pub(super) fn handle_status_update(app: &AppHandle, req_id: &str, payload: &Valu
 
     status_result_reply(req_id, outcome)
 }
+
+#[cfg(test)]
+mod tests;

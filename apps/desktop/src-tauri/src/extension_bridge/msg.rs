@@ -241,3 +241,6 @@ pub const APPLIED_CHECK_BATCH: &str = "applied.check.batch";
 /// duplicates included; each entry carries ONLY `status` (no `applicationId`/`title`/`appliedAt` —
 /// a results-page stamp needs nothing else). See [`APPLIED_CHECK_BATCH`]'s doc.
 pub const APPLIED_BATCH_RESULT: &str = "applied.batch.result";
+
+#[cfg(test)]
+mod tests;

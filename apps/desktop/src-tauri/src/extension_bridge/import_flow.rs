@@ -6,16 +6,18 @@
 //! `matchScore`. Split out of `mod.rs` to keep that module under the R8 hard
 //! LOC cap (`tests/architecture.rs`) — the same relocation as
 //! `status_update.rs`/`match_live.rs`; behavior-identical, no logic changes.
+//! The pure posting-resolution helpers (persist/usable/merge) live in the sibling
+//! `import_flow_resolve`, and the post-persist event/notification push in
+//! `import_flow_notify` (both R8 relief) — see each module's own doc.
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+use super::import_flow_notify::notify_import_result;
+use super::import_flow_resolve::{merge_resolve_with_hint, persist_import_application, usable};
 use super::{auth, match_live, msg};
-use crate::applications::{
-    normalize_job_url, ApplicationMeta, ApplicationOrigin, ApplicationStore,
-};
+use crate::applications::{normalize_job_url, ApplicationStore};
 use crate::error::{AppError, AppResult};
-use crate::events::{emit_event, APPLICATIONS_CHANGED};
 
 /// The successful import outcome: the created/merged application id, its status,
 /// and the parsed title/company (so the popup can name the imported job).
@@ -62,90 +64,6 @@ pub(super) fn result_reply(req_id: &str, outcome: AppResult<ImportOk>) -> String
         "payload": payload,
     })
     .to_string()
-}
-
-/// Persist a parsed [`crate::scraping::types::JobPosting`] from an import as a
-/// Saved Application and return `(application_id, status_id)`. This is the
-/// *entire* persistence side effect of an import: it touches the
-/// [`ApplicationStore`] only and has **no access to the `PostingsCache`**, so
-/// an import can never enter the Jobs/discovery feed. Split out of
-/// [`handle_import`] (which needs an `AppHandle` for event/notification
-/// plumbing) so the import → Application contract is unit-testable without a
-/// Tauri app — see `import_tests.rs`.
-pub(super) fn persist_import_application(
-    store: &ApplicationStore,
-    normalized_url: &str,
-    posting: &crate::scraping::types::JobPosting,
-    applied: Option<bool>,
-) -> AppResult<(String, String)> {
-    let meta = ApplicationMeta {
-        company: posting.company.clone(),
-        title: posting.title.clone(),
-        job_description: posting.description.clone().unwrap_or_default(),
-        ..Default::default()
-    };
-    let id = store.upsert_for_origin(
-        normalized_url,
-        &posting.source,
-        &meta,
-        ApplicationOrigin::Saved,
-        applied,
-    )?;
-    let status = store
-        .get(&id)
-        .map(|a| a.status.as_id().to_string())
-        .unwrap_or_else(|| "saved".to_string());
-    Ok((id, status))
-}
-
-/// A posting is usable for an import only if it carries a real title; an
-/// empty-title parse means the extractor degraded (blocked fetch / unknown page).
-pub(super) fn usable(p: &crate::scraping::types::JobPosting) -> bool {
-    !p.title.trim().is_empty()
-}
-
-/// Fill `resolve`'s title/description from the extension's `[data-ajh-job-root]`
-/// HINT ONLY — used by the SPA/list-view (canonical) import branch when the
-/// resolve came back unusable or description-less (LinkedIn's anonymous-fetch
-/// authwall is the common trigger).
-///
-/// Deliberately narrower than a full DOM/`parse_from_html` merge: a list-shell
-/// page (LinkedIn search/collections) commonly carries its OWN SEO
-/// `JobPosting` JSON-LD for an unrelated job (the first list result), and
-/// `parse_from_html`'s precedence lets JSON-LD override the hint — so calling
-/// it on the whole shell document risks silently importing the wrong job. The
-/// caller extracts via [`crate::scraping::scrape_url::job_root_generic_html`]
-/// instead, which reads ONLY the hinted subtree, never the document's JSON-LD
-/// /`__NEXT_DATA__`/whole-page heuristics.
-///
-/// `resolve`'s non-empty title/description win; a field it left empty is
-/// filled from the hint — never the other way around. `company`/`location`
-/// are untouched (the hint doesn't extract them — they stay whatever `resolve`
-/// produced, including its own host-based company fallback). Returns `None`
-/// when `resolve` is `None` — there is no base posting's identity
-/// (id/url/source/company) to attach the hint to, so the stub/partial path
-/// covers that case instead of synthesizing a whole posting from a
-/// list-shell's hint alone. Pure — no `AppHandle`/network — so it's directly
-/// unit-testable.
-pub(super) fn merge_resolve_with_hint(
-    resolve: Option<crate::scraping::types::JobPosting>,
-    hint_title: String,
-    hint_description: Option<String>,
-) -> Option<crate::scraping::types::JobPosting> {
-    let mut base = resolve?;
-    if base.title.trim().is_empty() && !hint_title.trim().is_empty() {
-        base.title = hint_title;
-    }
-    if base
-        .description
-        .as_deref()
-        .map(str::trim)
-        .unwrap_or("")
-        .is_empty()
-    {
-        base.description = hint_description;
-    }
-    Some(base)
 }
 
 /// Core import: parse the posting (Scan mode from provided HTML, else URL mode
@@ -337,54 +255,7 @@ pub(super) async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<
         .ok_or_else(|| AppError::Config("applications store unavailable".to_string()))?;
     let (id, status) = persist_import_application(store.inner(), &normalized, &posting, applied)?;
 
-    // A partial stub has an empty title — fall back to the company (host) so the
-    // event payload and toast still name something the user recognizes.
-    let title_is_blank = posting.title.trim().is_empty();
-    let display_name = if title_is_blank {
-        posting.company.clone()
-    } else {
-        posting.title.clone()
-    };
-    let body = if title_is_blank {
-        posting.company.clone()
-    } else {
-        format!("{} · {}", posting.title, posting.company)
-    };
-
-    // Tell the renderer to refresh (Applications + Jobs views) and surface a
-    // live toast. Carry the title/company/status so the toast can name the job
-    // without a refetch race.
-    emit_event(
-        app,
-        APPLICATIONS_CHANGED,
-        json!({
-            "applicationId": id.clone(),
-            "title": display_name.clone(),
-            "company": posting.company.clone(),
-            "status": status.clone(),
-        }),
-    );
-
-    // Also drop a Notification Center record. Best-effort and additive — the
-    // lists still refresh via the `applications:changed` emit above; this only
-    // adds the inbox entry + a focused-window toast, with an OS banner only when
-    // the window is unfocused (the import UX intent). Route → the Applications
-    // view, highlighting the just-imported row.
-    let mut search = serde_json::Map::new();
-    search.insert("highlight".to_string(), Value::String(id.clone()));
-    crate::commands::notifications::push_and_notify(
-        app,
-        crate::notifications::NewNotification {
-            kind: "import.result".to_string(),
-            title: format!("Imported {display_name}"),
-            body,
-            route: Some(crate::notifications::NotificationRoute {
-                to: "/applications".to_string(),
-                search: Some(search),
-            }),
-        },
-        crate::commands::notifications::OsBanner::WhenUnfocused,
-    );
+    notify_import_result(app, &id, &status, &posting);
 
     // Best-effort, TIME-BOUNDED keyword-only score for `matchScore` — the
     // Application above already persisted, so a failure OR a timeout only
@@ -410,3 +281,6 @@ pub(super) async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<
         partial,
     })
 }
+
+#[cfg(test)]
+mod tests;

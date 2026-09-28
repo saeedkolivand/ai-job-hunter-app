@@ -246,3 +246,6 @@ pub(super) fn handle_answers_save(app: &AppHandle, req_id: &str, payload: &Value
         });
     answers_result_reply(req_id, outcome)
 }
+
+#[cfg(test)]
+mod tests;

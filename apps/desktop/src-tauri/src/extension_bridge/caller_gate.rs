@@ -235,3 +235,6 @@ pub(super) fn advance_authenticated(
         )),
     }
 }
+
+#[cfg(test)]
+mod tests;

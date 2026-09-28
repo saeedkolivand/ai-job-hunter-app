@@ -43,3 +43,6 @@ pub(super) fn token_revoked_reply() -> String {
     })
     .to_string()
 }
+
+#[cfg(test)]
+mod tests;
