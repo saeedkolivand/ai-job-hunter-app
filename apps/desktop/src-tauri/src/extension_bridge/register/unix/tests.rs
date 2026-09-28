@@ -1,9 +1,16 @@
+//! Every test below is Linux-only (Flatpak per-app guard dirs + the native
+//! browser config paths registered only in `register_unix`'s Linux arm), so
+//! the whole module is gated rather than each import: `super::*` (the
+//! Linux-gated `write_manifest_if_app_dir_exists`) and `PathBuf`/`manifest_json`
+//! would otherwise sit unused on macOS.
+#![cfg(target_os = "linux")]
+
 use super::*;
 use std::path::PathBuf;
 
+use super::super::super::NATIVE_HOST_NAME;
 use super::super::manifest::manifest_json;
 
-#[cfg(target_os = "linux")]
 #[test]
 fn linux_flatpak_paths_written_only_for_installed_apps() {
     // The table must match what register.rs writes. If the table in
@@ -95,7 +102,6 @@ fn linux_flatpak_paths_written_only_for_installed_apps() {
     }
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn linux_native_browser_paths_are_writable() {
     let exe = PathBuf::from("/opt/aijobhunter/app");

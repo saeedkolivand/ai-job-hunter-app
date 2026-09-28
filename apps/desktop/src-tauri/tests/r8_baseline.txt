@@ -20,7 +20,6 @@
 411	commands/ai_provider/cli_agent/claude_code.rs
 559	commands/ai_provider/cli_agent/codex.rs
 817	commands/ai_provider/cli_agent/mod.rs
-338	commands/ai_provider/cli_agent/opencode.rs
 381	commands/ai_provider/cli_agent/qwen_code.rs
 424	commands/ai_provider/embed_tests.rs
 866	commands/ai_provider/gemini.rs

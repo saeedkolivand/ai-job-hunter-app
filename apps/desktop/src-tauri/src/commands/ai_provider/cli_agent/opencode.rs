@@ -18,6 +18,8 @@
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
+use std::path::Path;
+use std::process::Stdio;
 
 use crate::commands::ai_provider::ProviderId;
 use crate::error::{AppError, AppResult};
@@ -80,20 +82,22 @@ impl CliAgentBackend for OpencodeAgent {
     }
 
     /// Live discovery via `opencode models` — prints one `provider/model` per line.
+    ///
+    /// stdout is captured through a **file** in the agent's private workspace, not a
+    /// pipe: opencode v2's Windows build writes this command's stdout asynchronously
+    /// and the process exits before it flushes — measured on 2.0.16, this command's
+    /// stdout arrives as 0 lines through a pipe vs. ~400 through a file. A file has
+    /// no such race, so it is the one code path on every OS.
+    ///
+    /// One retry (no sleep loop) if the first attempt exits successfully but the
+    /// file reads back blank: seen live on a cold `opencode.exe` start — 0 models on
+    /// the very first invocation this session, ~400 on every one after — so without
+    /// this a new user's very first picker load is exactly the bug this fixes.
     async fn discover_models(&self) -> Option<Vec<Value>> {
         let binary = self.binary();
         let args = vec!["models".to_string()];
-        let out = tokio::time::timeout(
-            super::super::timeouts::LIST_MODELS_TOTAL,
-            super::cli_command(&binary, &args).output(),
-        )
-        .await
-        .ok()?
-        .ok()?;
-        if !out.status.success() {
-            return None;
-        }
-        parse_models_output(&String::from_utf8_lossy(&out.stdout))
+        let provider_id = self.id().as_str();
+        retry_once_on_none(|| run_models_once(&binary, &args, provider_id)).await
     }
 
     fn install_package(&self) -> Option<&'static str> {
@@ -269,162 +273,49 @@ fn parse_models_output(stdout: &str) -> Option<Vec<Value>> {
     (!entries.is_empty()).then_some(entries)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Read the model list a completed `opencode models` run wrote to `path`, then
+/// parse it. Split out from [`OpencodeAgent::discover_models`] so the file read
+/// is unit-testable without spawning the real CLI.
+fn read_models_file(path: &Path) -> Option<Vec<Value>> {
+    parse_models_output(&std::fs::read_to_string(path).ok()?)
+}
 
-    #[test]
-    fn parses_text_part_as_delta() {
-        let line = r#"{"type":"text","part":{"type":"text","text":"Hello"}}"#;
-        assert_eq!(
-            OpencodeAgent.parse_stream_line(line),
-            Some(CliEvent::Delta("Hello".to_string()))
-        );
-    }
+/// One `opencode models` attempt: a fresh private workspace (see
+/// [`OpencodeAgent::discover_models`]), stdout captured to a file there, bounded by
+/// [`super::super::timeouts::LIST_MODELS_TOTAL`], then parsed. `None` covers a
+/// failed spawn, a non-zero exit, and a blank/unparsable file alike — the caller
+/// can't (and needn't) tell them apart.
+async fn run_models_once(binary: &str, args: &[String], provider_id: &str) -> Option<Vec<Value>> {
+    let workspace =
+        super::workspace::prepare_workspace(&crate::platform::config::data_dir(), provider_id, &[])
+            .ok()?;
+    let out_path = workspace.path().join("models.out");
+    let out_file = std::fs::File::create(&out_path).ok()?;
 
-    #[test]
-    fn ignores_non_text_parts() {
-        let line = r#"{"type":"text","part":{"type":"tool_call","tool":"bash"}}"#;
-        assert_eq!(OpencodeAgent.parse_stream_line(line), None);
-    }
+    let mut cmd = super::cli_command(binary, args);
+    cmd.stdout(out_file).stderr(Stdio::null());
 
-    #[test]
-    fn result_success_is_done() {
-        let line = r#"{"type":"result","is_error":false}"#;
-        assert_eq!(OpencodeAgent.parse_stream_line(line), Some(CliEvent::Done));
+    let status = tokio::time::timeout(super::super::timeouts::LIST_MODELS_TOTAL, cmd.status())
+        .await
+        .ok()?
+        .ok()?;
+    if !status.success() {
+        return None;
     }
+    read_models_file(&out_path)
+}
 
-    #[test]
-    fn result_error_is_error() {
-        let line = r#"{"type":"result","is_error":true,"error":{"message":"boom"}}"#;
-        assert_eq!(
-            OpencodeAgent.parse_stream_line(line),
-            Some(CliEvent::Error("boom".to_string()))
-        );
-    }
-
-    #[test]
-    fn complete_replaces_an_updated_part_instead_of_duplicating_it() {
-        let out = concat!(
-            r#"{"type":"text","part":{"id":"p1","type":"text","text":"draft"}}"#,
-            "\n",
-            r#"{"type":"text","part":{"id":"p1","type":"text","text":"final answer"}}"#,
-            "\n",
-        );
-        assert_eq!(OpencodeAgent.parse_complete(out).unwrap(), "final answer");
-    }
-
-    #[test]
-    fn complete_surfaces_result_error() {
-        let out = r#"{"type":"result","is_error":true,"error":{"message":"Rate limit exceeded"}}"#;
-        let err = OpencodeAgent.parse_complete(out).unwrap_err();
-        assert!(format!("{err}").contains("rate limit"));
-    }
-
-    #[test]
-    fn complete_errors_on_empty() {
-        let out = "{}";
-        assert!(OpencodeAgent.parse_complete(out).is_err());
-    }
-
-    #[test]
-    fn argv_has_isolation_flags_and_model_only_prompt_on_stdin() {
-        let inv = OpencodeAgent.stream_invocation("openai/gpt-4o", "system text", None);
-        assert_eq!(inv.prompt, PromptDelivery::Stdin);
-        assert!(inv.args.iter().any(|a| a == "run"));
-        assert!(inv.args.iter().any(|a| a == "--format"));
-        assert!(inv.args.iter().any(|a| a == "json"));
-        assert!(inv
-            .args
-            .windows(2)
-            .any(|w| w[0] == "-m" && w[1] == "openai/gpt-4o"));
-    }
-
-    #[test]
-    fn argv_no_model_omits_flag() {
-        let inv = OpencodeAgent.stream_invocation("", "", None);
-        assert!(!inv.args.iter().any(|a| a == "-m"));
-        assert_eq!(inv.prompt, PromptDelivery::Stdin);
-    }
-
-    #[test]
-    fn workspace_files_returns_deny_config() {
-        let files = OpencodeAgent.workspace_files();
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].0, ".opencode/opencode.json");
-        let config: Value = serde_json::from_str(&files[0].1).unwrap();
-        // The whole rule set, exactly: one top-level ask-everything rule and
-        // nothing else (see OPENCODE_CONFIG for why ask and not deny).
-        assert_eq!(
-            config["permissions"],
-            json!([{ "action": "*", "resource": "*", "effect": "ask" }])
-        );
-        assert!(config.get("agent").is_none() && config.get("agents").is_none());
-    }
-
-    #[test]
-    fn parse_models_output_handles_provider_model_lines() {
-        let out = "openai/gpt-4o\nanthropic/claude-3-5-sonnet\n";
-        let entries = parse_models_output(out).unwrap();
-        assert_eq!(
-            entries,
-            vec![
-                json!({ "name": "openai/gpt-4o" }),
-                json!({ "name": "anthropic/claude-3-5-sonnet" }),
-            ]
-        );
-    }
-
-    #[test]
-    fn parse_models_output_empty_returns_none() {
-        assert_eq!(parse_models_output(""), None);
-        assert_eq!(parse_models_output("   \n  \n"), None);
-    }
-
-    #[test]
-    fn quota_error_maps_to_friendly_message() {
-        let out = r#"{"type":"result","is_error":true,"error":{"type":"provider.quota","message":"Rate limit exceeded. Please try again later.","status":429}}"#;
-        let err = OpencodeAgent.parse_complete(out).unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("rate limit exceeded"));
-        assert!(msg.contains("try again later"));
-    }
-    #[test]
-    fn stream_maps_the_real_error_event() {
-        let line = r#"{"type":"error","timestamp":1,"sessionID":"s","error":{"type":"provider.quota","message":"Rate limit exceeded. Please try again later.","status":429}}"#;
-        match OpencodeAgent.parse_stream_line(line) {
-            Some(CliEvent::Error(m)) => assert!(m.contains("rate limit exceeded"), "{m}"),
-            other => panic!("expected an error event, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn one_shot_joins_every_text_part() {
-        let out = concat!(
-            r#"{"type":"step_start","part":{"type":"step-start"}}"#,
-            "
-",
-            r#"{"type":"text","part":{"type":"text","text":"Hello, "}}"#,
-            "
-",
-            r#"{"type":"text","part":{"type":"text","text":"world"}}"#,
-            "
-",
-        );
-        assert_eq!(OpencodeAgent.parse_complete(out).unwrap(), "Hello, world");
-    }
-
-    /// `ask` only refuses tools while nobody approves them: an auto-approve flag
-    /// would turn every `ask` into `allow`.
-    #[test]
-    fn argv_never_auto_approves() {
-        for inv in [
-            OpencodeAgent.stream_invocation("openai/gpt-4o", "", None),
-            OpencodeAgent.complete_invocation("openai/gpt-4o", "", None),
-        ] {
-            for flag in ["--auto", "--yolo", "-y", "--dangerously-skip-permissions"] {
-                assert!(!inv.args.iter().any(|a| a == flag), "{flag} present");
-            }
-        }
+/// Call `attempt` once; if it returns `None`, call it exactly one more time (no
+/// sleep loop) and return that result. Pulled out of [`OpencodeAgent::discover_models`]
+/// so the retry decision is unit-testable with a fake `attempt` — no real CLI spawn.
+async fn retry_once_on_none<T, Fut: std::future::Future<Output = Option<T>>>(
+    mut attempt: impl FnMut() -> Fut,
+) -> Option<T> {
+    match attempt().await {
+        Some(v) => Some(v),
+        None => attempt().await,
     }
 }
+
+#[cfg(test)]
+mod tests;
