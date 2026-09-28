@@ -190,7 +190,6 @@ fn login_shell_path() -> Option<String> {
 fn last_non_empty_line(s: &str) -> Option<String> {
     s.lines()
         .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .next_back()
+        .rfind(|l| !l.is_empty())
         .map(str::to_string)
 }

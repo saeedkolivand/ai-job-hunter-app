@@ -8,7 +8,12 @@
 use std::path::Path;
 
 use super::super::NATIVE_HOST_MANIFEST;
-use super::manifest::{write_manifest, write_manifest_if_app_dir_exists};
+use super::manifest::write_manifest;
+// Linux-only (Flatpak per-app guard) — matches the item's own gate at its
+// only call site below, so this import doesn't exist (and doesn't need to)
+// on macOS.
+#[cfg(target_os = "linux")]
+use super::manifest::write_manifest_if_app_dir_exists;
 
 /// Write both host manifests to every well-known browser config dir this OS supports.
 pub(super) fn register_unix(data_dir: &Path, firefox_json: &[u8], chrome_json: &[u8]) {
@@ -26,8 +31,8 @@ pub(super) fn register_unix(data_dir: &Path, firefox_json: &[u8], chrome_json: &
         let chrome_path = home
             .join("Library/Application Support/Google/Chrome/NativeMessagingHosts")
             .join(NATIVE_HOST_MANIFEST);
-        write_manifest("firefox", &firefox_path, &firefox_json);
-        write_manifest("chrome", &chrome_path, &chrome_json);
+        write_manifest("firefox", &firefox_path, firefox_json);
+        write_manifest("chrome", &chrome_path, chrome_json);
     }
 
     #[cfg(target_os = "linux")]
@@ -51,12 +56,12 @@ pub(super) fn register_unix(data_dir: &Path, firefox_json: &[u8], chrome_json: &
         let vivaldi_path = home
             .join(".config/vivaldi/NativeMessagingHosts")
             .join(NATIVE_HOST_MANIFEST);
-        write_manifest("firefox", &firefox_path, &firefox_json);
-        write_manifest("chrome", &chrome_path, &chrome_json);
-        write_manifest("chromium", &chromium_path, &chrome_json);
-        write_manifest("brave", &brave_path, &chrome_json);
-        write_manifest("edge", &edge_path, &chrome_json);
-        write_manifest("vivaldi", &vivaldi_path, &chrome_json);
+        write_manifest("firefox", &firefox_path, firefox_json);
+        write_manifest("chrome", &chrome_path, chrome_json);
+        write_manifest("chromium", &chromium_path, chrome_json);
+        write_manifest("brave", &brave_path, chrome_json);
+        write_manifest("edge", &edge_path, chrome_json);
+        write_manifest("vivaldi", &vivaldi_path, chrome_json);
 
         // ── Flatpak per-app config dirs ───────────────────────────────────
         // Sandboxed Flatpak browsers cannot read ~/.config; they read their

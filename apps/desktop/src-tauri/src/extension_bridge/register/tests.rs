@@ -1,5 +1,10 @@
 use super::*;
 
+// Only used by the Linux-only test below (the native-manifest path is a
+// Linux-only registration branch).
+#[cfg(target_os = "linux")]
+use super::super::NATIVE_HOST_MANIFEST;
+
 /// `#[serial]`: mutates the process-global `USERPROFILE`/`HOME` that
 /// `platform::config::home_dir` (and therefore `agent_pointer_path`)
 /// reads — same discipline as `platform::config`'s own env tests.
