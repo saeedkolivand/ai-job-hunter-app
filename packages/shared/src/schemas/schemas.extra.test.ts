@@ -210,8 +210,8 @@ describe('ResumePipelineRunSchema', () => {
   });
 
   // Matches the Rust twin (`resume_source_is_none_when_both_are_empty_or_whitespace`
-  // in `commands/resume_pipeline/test.rs`) — whitespace counts as empty on
-  // both refine rules, not just `''`.
+  // in `commands/resume_pipeline/tests/resolve_source.rs`) — whitespace counts as
+  // empty on both refine rules, not just `''`.
   it('rejects a whitespace-only résumé side and a whitespace-only job side', () => {
     expect(() =>
       ResumePipelineRunSchema.parse({ resumeId: '   ', resumeText: '\n\t', jobId: 'job-9' })

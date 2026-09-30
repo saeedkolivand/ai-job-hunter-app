@@ -30,8 +30,6 @@
 601	commands/match_resume/constraints.rs
 1446	commands/match_resume/test.rs
 491	commands/privacy.rs
-701	commands/resume_pipeline/mod.rs
-2091	commands/resume_pipeline/test.rs
 740	commands/scrape.rs
 415	commands/support.rs
 429	commands/system/mod.rs
@@ -78,13 +76,6 @@
 786	model/adapter/tests.rs
 573	model/rich.rs
 456	net/http.rs
-305	pipeline/resume/mod.rs
-703	pipeline/resume/projects.rs
-403	pipeline/resume/prompts.rs
-361	pipeline/resume/stages/evidence.rs
-406	pipeline/resume/stages/humanize.rs
-327	pipeline/resume/stages/repair.rs
-3285	pipeline/resume/test.rs
 336	platform/chrome/mod.rs
 318	platform/linux_appimage.rs
 410	platform/msix.rs

@@ -63,7 +63,7 @@ pub(super) const PIPELINE_RESUME_AND_DOCUMENTS: &[PolicyEntry] = &[
     // already been bitten by once (`reference_documentrecord_id_is_not_the_
     // wire_shape`), walked into again here.
     PolicyEntry {
-        path: "commands::resume_pipeline::resume_pipeline_run",
+        path: "commands::resume_pipeline::run::resume_pipeline_run",
         effect: Effect::Irreversible(ProofSource::ListMatch {
             read_command: "documents_list",
             id_field: &["req", "resumeId"],
@@ -72,11 +72,11 @@ pub(super) const PIPELINE_RESUME_AND_DOCUMENTS: &[PolicyEntry] = &[
         }),
     },
     PolicyEntry {
-        path: "commands::resume_pipeline::resume_pipeline_get",
+        path: "commands::resume_pipeline::read::resume_pipeline_get",
         effect: Effect::Read,
     },
     PolicyEntry {
-        path: "commands::resume_pipeline::resume_pipeline_list_for_job",
+        path: "commands::resume_pipeline::read::resume_pipeline_list_for_job",
         effect: Effect::Read,
     },
     // Same charged AI-regenerate path as `resume_pipeline_run`, scoped to a
@@ -97,7 +97,7 @@ pub(super) const PIPELINE_RESUME_AND_DOCUMENTS: &[PolicyEntry] = &[
     // wrapped_path` (the hand-typed pure-logic pin) for the regression
     // guards.
     PolicyEntry {
-        path: "commands::resume_pipeline::resume_pipeline_regenerate_section",
+        path: "commands::resume_pipeline::regenerate::resume_pipeline_regenerate_section",
         effect: Effect::Irreversible(ProofSource::Lookup {
             read_command: "resume_pipeline_get",
             key: "runId",
@@ -108,7 +108,7 @@ pub(super) const PIPELINE_RESUME_AND_DOCUMENTS: &[PolicyEntry] = &[
     // Records a keep/remove verdict on the saved quality report — a
     // decision that can be re-recorded, nothing deleted.
     PolicyEntry {
-        path: "commands::resume_pipeline::resume_pipeline_resolve_fabrication",
+        path: "commands::resume_pipeline::regenerate::resume_pipeline_resolve_fabrication",
         effect: Effect::Reversible,
     },
     // commands/documents.rs

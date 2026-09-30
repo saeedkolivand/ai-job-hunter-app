@@ -135,7 +135,7 @@ fn the_real_documents_remove_policy_row_resolves_a_document_record_by_its_wire_i
 fn the_real_resume_pipeline_run_policy_row_resolves_a_wrapped_resume_id() {
     let entry = POLICY
         .iter()
-        .find(|e| e.path == "commands::resume_pipeline::resume_pipeline_run")
+        .find(|e| e.path == "commands::resume_pipeline::run::resume_pipeline_run")
         .expect("resume_pipeline_run is a real POLICY row");
     let Effect::Irreversible(source) = entry.effect else {
         panic!(
@@ -161,7 +161,9 @@ fn the_real_resume_pipeline_run_policy_row_resolves_a_wrapped_resume_id() {
 fn the_real_resume_pipeline_regenerate_section_policy_row_ignores_a_decoy_top_level_run_id() {
     let entry = POLICY
         .iter()
-        .find(|e| e.path == "commands::resume_pipeline::resume_pipeline_regenerate_section")
+        .find(|e| {
+            e.path == "commands::resume_pipeline::regenerate::resume_pipeline_regenerate_section"
+        })
         .expect("resume_pipeline_regenerate_section is a real POLICY row");
     let Effect::Irreversible(source) = entry.effect else {
         panic!(

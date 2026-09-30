@@ -44,7 +44,7 @@ const describeSqlite = DatabaseSync ? describe : describe.skip;
 const REPO_ROOT = join(__dirname, '..');
 const RUNS_MOD = join(REPO_ROOT, 'apps/desktop/src-tauri/src/pipeline/runs/store.rs');
 const LEDGER_MOD = join(REPO_ROOT, 'apps/desktop/src-tauri/src/pipeline/resume/mod.rs');
-const PIPELINE_CMD = join(REPO_ROOT, 'apps/desktop/src-tauri/src/commands/resume_pipeline/mod.rs');
+const PIPELINE_CMD = join(REPO_ROOT, 'apps/desktop/src-tauri/src/commands/resume_pipeline/run.rs');
 
 /**
  * Extract a `const NAME: &str = "…";` string literal from a Rust source file.

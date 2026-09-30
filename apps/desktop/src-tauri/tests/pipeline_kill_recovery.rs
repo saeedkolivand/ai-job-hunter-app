@@ -88,7 +88,7 @@ const CHILD_SELF_EXIT: i32 = 97;
 const JOB_URL: &str = "https://boards.example/jobs/pipeline-kill";
 /// Mirrors `commands::resume_pipeline::RUN_KIND` / `RUN_DEPTH`, which are
 /// private. `the_run_kind_the_budget_floor_and_the_run_depth_are_pinned` in
-/// `src/commands/resume_pipeline/test.rs` asserts those consts against these
+/// `src/commands/resume_pipeline/tests/wire.rs` asserts those consts against these
 /// same two LITERALS, so a changed production value fails there rather than
 /// silently making this fixture unrealistic. (A test that reads the consts
 /// through `super::` cannot catch that — it moves with them.)
@@ -371,7 +371,7 @@ fn a_killed_run_is_left_running_while_its_job_row_is_swept() {
 /// command module and unreachable from an integration test); the refusal
 /// itself is asserted against the real function by
 /// `a_crashed_running_run_locks_out_the_last_good_runs_report` in
-/// `src/commands/resume_pipeline/test.rs`.
+/// `src/commands/resume_pipeline/tests/run_store_roundtrip.rs`.
 #[test]
 fn the_orphaned_running_row_outranks_the_last_good_run() {
     let dir = tempfile::tempdir().expect("temp data dir");

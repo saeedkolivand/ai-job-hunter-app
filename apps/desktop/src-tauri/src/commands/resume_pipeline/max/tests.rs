@@ -8,8 +8,8 @@
 
 use serde_json::json;
 
-use super::hooks::DETAIL_KEY;
-use super::max::{budget, deadline_for, paying_stages};
+use super::super::hooks::DETAIL_KEY;
+use super::{budget, deadline_for, paying_stages};
 use crate::pipeline::budget::Budget;
 use crate::pipeline::resume::QUALITY_STAGES;
 
@@ -97,7 +97,7 @@ fn the_wire_strips_a_detail_key_an_old_row_might_still_carry() {
     );
     let row = artifact.to_string();
 
-    let wire = super::wire_artifact(&row);
+    let wire = super::super::wire_artifact(&row);
     assert_eq!(wire.get("companies"), Some(&json!(3)));
     assert_eq!(
         wire.get(DETAIL_KEY),
@@ -109,7 +109,7 @@ fn the_wire_strips_a_detail_key_an_old_row_might_still_carry() {
     // large enough to be clamped — so the old "ship the raw string" arm was the
     // same leak with a truncation marker on the end.
     let clamped = crate::pipeline::runs::clamp_artifact(&row.repeat(2_000));
-    let wire = super::wire_artifact(&clamped);
+    let wire = super::super::wire_artifact(&clamped);
     assert_eq!(wire, json!({ "truncated": true }));
     assert!(
         !wire.to_string().contains("Acme Payments"),
@@ -162,11 +162,11 @@ fn a_document_that_lost_the_sources_whole_work_history_may_not_overwrite_it() {
     //     The run returns Ok — nothing converts `Budgeted` into an error — so
     //     only the documents can tell that everything was lost.
     assert!(
-        !super::save::is_persistable(SOURCE_WITH_WORK, NO_WORK),
+        !super::super::save::is_persistable(SOURCE_WITH_WORK, NO_WORK),
         "a document that dropped the source's entire work history must not overwrite it"
     );
     assert!(
-        !super::save::is_persistable(SOURCE_WITH_WORK, EMPTY_SECTION),
+        !super::super::save::is_persistable(SOURCE_WITH_WORK, EMPTY_SECTION),
         "a heading with nothing under it is not work history"
     );
 
@@ -175,22 +175,31 @@ fn a_document_that_lost_the_sources_whole_work_history_may_not_overwrite_it() {
     //     is the case a stop-reason gate silently refused — `completed` status,
     //     unchanged document, no explanation anywhere.
     assert!(
-        super::save::is_persistable(SOURCE_NO_WORK, NO_WORK),
+        super::super::save::is_persistable(SOURCE_NO_WORK, NO_WORK),
         "a source with no work history is a real input, not a truncated run"
     );
-    assert!(super::save::is_persistable(SOURCE_NO_WORK, EMPTY_SECTION));
+    assert!(super::super::save::is_persistable(
+        SOURCE_NO_WORK,
+        EMPTY_SECTION
+    ));
 
     // A document that KEPT its work history is always fine, however short.
-    assert!(super::save::is_persistable(SOURCE_WITH_WORK, WITH_WORK));
-    assert!(super::save::is_persistable(SOURCE_NO_WORK, WITH_WORK));
+    assert!(super::super::save::is_persistable(
+        SOURCE_WITH_WORK,
+        WITH_WORK
+    ));
+    assert!(super::super::save::is_persistable(
+        SOURCE_NO_WORK,
+        WITH_WORK
+    ));
 
     // Both sides read through the SAME seam, so an undated entry — which is not
     // a `LineKind::JobEntry` — counts as work history on both, and a source
     // full of them cannot make every run unsaveable.
     const UNDATED: &str =
         "Work Experience\n\nStaff Engineer, Acme\n- Owned the settlement service\n";
-    assert!(super::save::is_persistable(UNDATED, UNDATED));
-    assert!(!super::save::is_persistable(UNDATED, NO_WORK));
+    assert!(super::super::save::is_persistable(UNDATED, UNDATED));
+    assert!(!super::super::save::is_persistable(UNDATED, NO_WORK));
 }
 
 /// **A REFUSED save is not a successful run.**
@@ -207,7 +216,7 @@ fn a_document_that_lost_the_sources_whole_work_history_may_not_overwrite_it() {
 /// run gains a second, contradictory explanation.
 #[test]
 fn a_refused_save_is_distinguishable_from_having_nothing_to_save() {
-    use super::SaveVerdict;
+    use super::super::SaveVerdict;
 
     const SOURCE_WITH_WORK: &str = "Work Experience\n\nStaff Engineer, Acme  2021 - Present\n\
                                     - Owned the settlement service\n";
@@ -215,12 +224,12 @@ fn a_refused_save_is_distinguishable_from_having_nothing_to_save() {
     const URL: &str = "https://boards.example/jobs/1";
 
     assert_eq!(
-        super::save_verdict(SOURCE_WITH_WORK, SOURCE_WITH_WORK, "", URL, true),
+        super::super::save_verdict(SOURCE_WITH_WORK, SOURCE_WITH_WORK, "", URL, true),
         SaveVerdict::Save
     );
     assert!(
         matches!(
-            super::save_verdict(SOURCE_WITH_WORK, NO_WORK, "", URL, true),
+            super::super::save_verdict(SOURCE_WITH_WORK, NO_WORK, "", URL, true),
             SaveVerdict::Refused(_)
         ),
         "a document that lost the source's work history is REFUSED, not skipped"
@@ -229,16 +238,16 @@ fn a_refused_save_is_distinguishable_from_having_nothing_to_save() {
     // Benign non-saves stay benign: an unlinked run is session-only by design,
     // and an empty draft is a run that already failed on its own terms.
     assert_eq!(
-        super::save_verdict(SOURCE_WITH_WORK, NO_WORK, "", "", true),
+        super::super::save_verdict(SOURCE_WITH_WORK, NO_WORK, "", "", true),
         SaveVerdict::Nothing
     );
     assert_eq!(
-        super::save_verdict(SOURCE_WITH_WORK, "   ", "", URL, true),
+        super::super::save_verdict(SOURCE_WITH_WORK, "   ", "", URL, true),
         SaveVerdict::Nothing
     );
     // …and a source with no work history of its own is never refused.
     assert_eq!(
-        super::save_verdict(NO_WORK, NO_WORK, "", URL, true),
+        super::super::save_verdict(NO_WORK, NO_WORK, "", URL, true),
         SaveVerdict::Save
     );
 }
@@ -260,7 +269,7 @@ fn a_refused_save_is_distinguishable_from_having_nothing_to_save() {
 /// still passes (proving THAT test alone cannot catch this regression).
 #[test]
 fn a_leaked_fence_tag_in_either_document_refuses_the_save() {
-    use super::SaveVerdict;
+    use super::super::SaveVerdict;
 
     const SOURCE: &str = "Work Experience\n\nStaff Engineer, Acme  2021 - Present\n\
                           - Owned the settlement service\n";
@@ -279,27 +288,28 @@ fn a_leaked_fence_tag_in_either_document_refuses_the_save() {
 
     // A clean draft + no letter still saves.
     assert_eq!(
-        super::save_verdict(SOURCE, CLEAN_DRAFT, "", URL, true),
+        super::super::save_verdict(SOURCE, CLEAN_DRAFT, "", URL, true),
         SaveVerdict::Save
     );
 
     // The draft itself leaked.
     assert!(matches!(
-        super::save_verdict(SOURCE, LEAKED_DRAFT, "", URL, true),
+        super::super::save_verdict(SOURCE, LEAKED_DRAFT, "", URL, true),
         SaveVerdict::Refused(_)
     ));
 
     // The draft is clean but the LETTER leaked — must still refuse; this is
     // exactly the gap a draft-only check would miss.
     assert!(matches!(
-        super::save_verdict(SOURCE, CLEAN_DRAFT, LEAKED_LETTER, URL, true),
+        super::super::save_verdict(SOURCE, CLEAN_DRAFT, LEAKED_LETTER, URL, true),
         SaveVerdict::Refused(_)
     ));
 
     // The refusal must be ACTIONABLE, not a bare tag — and distinguishable
     // from the work-history refusal so the two defects don't share a
     // (potentially misleading) message.
-    let SaveVerdict::Refused(reason) = super::save_verdict(SOURCE, LEAKED_DRAFT, "", URL, true)
+    let SaveVerdict::Refused(reason) =
+        super::super::save_verdict(SOURCE, LEAKED_DRAFT, "", URL, true)
     else {
         panic!("expected Refused");
     };
@@ -307,7 +317,7 @@ fn a_leaked_fence_tag_in_either_document_refuses_the_save() {
         !reason.is_empty(),
         "the user must get an actionable message, not a silent empty result"
     );
-    let SaveVerdict::Refused(work_history_reason) = super::save_verdict(
+    let SaveVerdict::Refused(work_history_reason) = super::super::save_verdict(
         SOURCE,
         "Professional Summary\n\nA payments engineer.\n",
         "",
@@ -356,8 +366,8 @@ fn the_quality_pipeline_matches_its_pinned_stage_list() {
 /// from `produced_nothing` and it flips to `Nothing`.
 #[test]
 fn a_cover_letter_only_run_saves_its_letter_and_is_never_refused_for_a_missing_resume() {
-    use super::save::LOST_WORK_HISTORY_MESSAGE;
-    use super::SaveVerdict;
+    use super::super::save::LOST_WORK_HISTORY_MESSAGE;
+    use super::super::SaveVerdict;
 
     const SOURCE_WITH_WORK: &str = "Work Experience\n\nStaff Engineer, Acme  2021 - Present\n\
                                     - Owned the settlement service\n";
@@ -368,25 +378,25 @@ fn a_cover_letter_only_run_saves_its_letter_and_is_never_refused_for_a_missing_r
     // The CONTROL: for a run that asked for a résumé, this source still refuses
     // a draft that lost its work history — the absolute the case below hangs on.
     assert_eq!(
-        super::save_verdict(SOURCE_WITH_WORK, NO_WORK, "", URL, true),
+        super::super::save_verdict(SOURCE_WITH_WORK, NO_WORK, "", URL, true),
         SaveVerdict::Refused(LOST_WORK_HISTORY_MESSAGE)
     );
 
     // …and an ABSENT résumé is not a lost work history. The letter saves.
     assert_eq!(
-        super::save_verdict(SOURCE_WITH_WORK, "", LETTER, URL, false),
+        super::super::save_verdict(SOURCE_WITH_WORK, "", LETTER, URL, false),
         SaveVerdict::Save
     );
 
     // A cover-only run that produced no letter either really has nothing.
     assert_eq!(
-        super::save_verdict(SOURCE_WITH_WORK, "", "", URL, false),
+        super::super::save_verdict(SOURCE_WITH_WORK, "", "", URL, false),
         SaveVerdict::Nothing
     );
 
     // Unlinked stays session-only, whichever documents were asked for.
     assert_eq!(
-        super::save_verdict(SOURCE_WITH_WORK, "", LETTER, "", false),
+        super::super::save_verdict(SOURCE_WITH_WORK, "", LETTER, "", false),
         SaveVerdict::Nothing
     );
 }
@@ -407,7 +417,7 @@ fn a_cover_letter_only_run_saves_its_letter_and_is_never_refused_for_a_missing_r
 /// assertion fails.
 #[test]
 fn save_verdict_is_unchanged_for_a_run_that_asked_for_a_resume() {
-    use super::SaveVerdict;
+    use super::super::SaveVerdict;
 
     const SOURCE_WITH_WORK: &str = "Work Experience\n\nStaff Engineer, Acme  2021 - Present\n\
                                     - Owned the settlement service\n";
@@ -417,16 +427,16 @@ fn save_verdict_is_unchanged_for_a_run_that_asked_for_a_resume() {
     // An empty draft is still "nothing to save" for a run that wanted one —
     // even when the letter succeeded.
     assert_eq!(
-        super::save_verdict(SOURCE_WITH_WORK, "", LETTER, URL, true),
+        super::super::save_verdict(SOURCE_WITH_WORK, "", LETTER, URL, true),
         SaveVerdict::Nothing
     );
     assert_eq!(
-        super::save_verdict(SOURCE_WITH_WORK, "", "", URL, true),
+        super::super::save_verdict(SOURCE_WITH_WORK, "", "", URL, true),
         SaveVerdict::Nothing
     );
     // …and a real draft still saves.
     assert_eq!(
-        super::save_verdict(SOURCE_WITH_WORK, SOURCE_WITH_WORK, LETTER, URL, true),
+        super::super::save_verdict(SOURCE_WITH_WORK, SOURCE_WITH_WORK, LETTER, URL, true),
         SaveVerdict::Save
     );
 }
@@ -441,8 +451,8 @@ fn save_verdict_is_unchanged_for_a_run_that_asked_for_a_resume() {
 /// `if resume_in_run` and the leaked case flips to `Save`.
 #[test]
 fn save_verdict_still_refuses_a_leaked_fence_tag_in_a_cover_only_runs_letter() {
-    use super::save::LEAKED_FENCE_TAG_MESSAGE;
-    use super::SaveVerdict;
+    use super::super::save::LEAKED_FENCE_TAG_MESSAGE;
+    use super::super::SaveVerdict;
 
     const SOURCE: &str = "Work Experience\n\nStaff Engineer, Acme  2021 - Present\n\
                           - Owned the settlement service\n";
@@ -453,11 +463,11 @@ fn save_verdict_still_refuses_a_leaked_fence_tag_in_a_cover_only_runs_letter() {
     // The control: the same shape without a tag saves, so this cannot pass by
     // refusing every cover-only run.
     assert_eq!(
-        super::save_verdict(SOURCE, "", CLEAN_LETTER, URL, false),
+        super::super::save_verdict(SOURCE, "", CLEAN_LETTER, URL, false),
         SaveVerdict::Save
     );
     assert_eq!(
-        super::save_verdict(SOURCE, "", LEAKED_LETTER, URL, false),
+        super::super::save_verdict(SOURCE, "", LEAKED_LETTER, URL, false),
         SaveVerdict::Refused(LEAKED_FENCE_TAG_MESSAGE)
     );
 }

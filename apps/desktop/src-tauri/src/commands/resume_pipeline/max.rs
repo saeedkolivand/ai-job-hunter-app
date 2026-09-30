@@ -49,3 +49,6 @@ pub(super) fn budget() -> Budget {
 pub(super) fn deadline_for(effort: Option<&str>) -> Duration {
     run_deadline(budget(), timeouts::quality_run_deadline(effort))
 }
+
+#[cfg(test)]
+mod tests;

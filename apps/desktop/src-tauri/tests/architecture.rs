@@ -1158,8 +1158,8 @@ const JOB_COMPLETE_PRODUCERS: &[(&str, &str)] = &[
     ("commands/ai_provider/cli_agent/stream.rs", "emit_done"),
     ("commands/ai_provider/stream/finish.rs", "finish"),
     ("commands/autopilot.rs", "autopilot_run"),
-    ("commands/resume_pipeline/mod.rs", "execute"),
-    ("commands/resume_pipeline/mod.rs", "execute"),
+    ("commands/resume_pipeline/run.rs", "execute"),
+    ("commands/resume_pipeline/run.rs", "execute"),
     ("commands/scrape.rs", "scrape_boards"),
     ("commands/scrape.rs", "scrape_url"),
 ];

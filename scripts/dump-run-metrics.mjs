@@ -21,7 +21,7 @@
 // wrong trade here.
 //
 // Source of truth for the shape: apps/desktop/src-tauri/src/pipeline/runs/store.rs
-// (the table) and apps/desktop/src-tauri/src/commands/resume_pipeline/mod.rs
+// (the table) and apps/desktop/src-tauri/src/commands/resume_pipeline/run.rs
 // (the `metrics_json` keys, written at the one terminal-update site).
 //
 // Usage:  node scripts/dump-run-metrics.mjs --help
