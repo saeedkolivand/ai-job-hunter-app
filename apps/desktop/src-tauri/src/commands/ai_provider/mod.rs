@@ -8,14 +8,27 @@
 //! Adding a provider = new client module + one `ProviderId` arm + one `resolve`
 //! arm. This keeps OpenRouter / DeepSeek / Azure / Groq / Together / LM Studio /
 //! vLLM (all OpenAI-compatible) and future native APIs cheap to add.
+//!
+//! This file is the trait/registry hub (R8 line-budget split): model
+//! capabilities + sampling intent live in [`sampling`], the agentic
+//! tool-calling vocabulary + transcript helpers in [`chat`], AI-spend
+//! [`usage::Usage`]/[`usage::record_usage`] in [`usage`], the `list_models`
+//! projection helpers in [`catalogue`], the embedding vector types +
+//! [`embeddings::embed_text`] in [`embeddings`], and HTTP/transport error
+//! mapping in [`error_map`] — each re-exported here so every existing call
+//! site (`super::X`) keeps compiling unchanged.
 
 use async_trait::async_trait;
-use serde::Serialize;
-use serde_json::{json, Value};
-use tauri::{AppHandle, Manager};
+use serde_json::Value;
+use tauri::AppHandle;
 
-use crate::error::{AppError, AppResult};
-use crate::events::{emit_event, AiStreamChunk, AiStreamChunkError, AI_STREAM};
+use crate::error::AppResult;
+// `AppError` isn't referenced by this module's own (production) code, but
+// `anthropic::tests::{list_models, transport}` (batch-3a files, out of this
+// split's scope) reach it via `super::super::super::AppError` — keep this
+// private re-export test-only so a non-test build never sees it as unused.
+#[cfg(test)]
+use crate::error::AppError;
 pub use crate::ipc_contracts::ai::{AiGenerateRequest, AiGenerateRequestMessage};
 
 mod anthropic;
@@ -36,9 +49,32 @@ pub(crate) mod stream; // shared streaming loop (cancel-check + chunk read + emi
 mod structured; // `complete_structured`'s prompt-discipline default + the per-provider JSON wire shapes
 pub(crate) mod timeouts; // semantically-named per-request HTTP timeouts (pure extraction of the magic-number literals)
 
+mod catalogue;
+mod chat;
+mod embeddings;
+mod error_map;
+mod sampling;
+mod usage;
+
+pub use catalogue::{model_entry, parse_rfc3339_millis};
+pub(crate) use chat::{flatten_messages, single_shot_turn, split_system};
+pub use chat::{AgentTurn, ChatMsg, Role, StopReason, ToolCall, ToolSpec};
+pub use embeddings::{
+    compare, embed_text, EmbeddingSpace, EmbeddingVector, EMBEDDING_VECTOR_VERSION,
+};
+pub use error_map::{
+    emit_stream_error, extract_error_message, friendly_api_error, map_completion_transport_error,
+};
+pub use sampling::{
+    resolve_intent, Intent, ModelCapabilities, SamplingProfile, TokenParam,
+    DETERMINISTIC_TEMPERATURE, PROSE_FREQUENCY_PENALTY, PROSE_GROUNDED_TEMPERATURE,
+    PROSE_PRESENCE_PENALTY, PROSE_REPEAT_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
+};
+pub(crate) use usage::record_usage;
+pub use usage::Usage;
+
 use anthropic::AnthropicClient;
 use cli_agent::CliAgentClient;
-use embed::{embed_adaptive, MeteredAttempt, ProviderEmbedAttempt};
 use gemini::GeminiClient;
 use ollama::OllamaClient;
 use ollama_cloud::OllamaCloudClient;
@@ -46,497 +82,6 @@ use openai::OpenAiClient;
 
 // Re-export ProviderId for public API
 pub use provider_id::ProviderId;
-
-// ── Model capabilities ─────────────────────────────────────────────────────────
-
-/// Which token-limit field a model's API expects.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TokenParam {
-    MaxTokens,
-    MaxCompletionTokens,
-    NumPredict,
-    MaxOutputTokens,
-}
-
-/// Per-model feature matrix. All provider/model-specific behavior lives here so
-/// the request builders never special-case providers inline. Some flags are
-/// declared ahead of their consumers (tools / JSON mode / embeddings) to keep
-/// adding capability-gated features cheap.
-#[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
-pub struct ModelCapabilities {
-    pub supports_temperature: bool,
-    pub supports_system_role: bool,
-    pub supports_streaming: bool,
-    pub supports_reasoning: bool,
-    pub supports_tools: bool,
-    pub supports_json_mode: bool,
-    pub supports_embeddings: bool,
-    /// Whether this provider/model can attempt a `research*` web search at
-    /// all — a static, network-free check distinct from whether a search
-    /// actually succeeds (which also depends on a configured account key,
-    /// checked at call time). Lets callers that fan out a research call per
-    /// item (e.g. `ai_research_answer`, one call per selected question) skip
-    /// the daily-budget charge entirely for a provider that can never search,
-    /// instead of charging N times for N guaranteed-empty results.
-    pub supports_web_search: bool,
-    pub token_param: TokenParam,
-}
-
-// ── Sampling intent (renderer owns intent, adapter owns numbers) ───────────────
-//
-// The renderer states WHAT a generation step is — exact/deterministic or
-// creative prose — never a raw sampling number. Each provider adapter maps
-// `(model, intent)` to its OWN numbers via [`AiProvider::sampling_profile`].
-//
-// THE RULE: preserve this app's pre-fix EFFECTIVE sampling wherever the
-// provider accepts it; omit ONLY where sending is forbidden or
-// documented-harmful. This fix's whole purpose is to stop sending values
-// where they break things (Claude 4.7+/5 400s on ANY non-default sampling
-// param; OpenAI's reasoning models reject `temperature`; Gemini 3.x is
-// documented to loop/degrade below its 1.0 default) — it is NOT license to
-// change register everywhere else. "Omit by default" is a category error:
-// omitting a wire field does not hand control to a safe general default, it
-// hands control to whatever the endpoint does with an absent field, which is
-// frequently NOT what this app shipped before. Confirmed empirically against
-// a live local Ollama install (not vendor docs): `qwen3.6:27b-q4_K_M`'s own
-// Modelfile defaults to `temperature: 1, presence_penalty: 1.5, top_p: 0.95`;
-// `gemma4:31b-it-q4_K_M` defaults to `temperature: 1`. Omitting on Ollama
-// therefore does not mean "sane default" — it means "whatever this
-// particular model's Modelfile says", which can be a materially WORSE
-// determinism/fabrication risk than anything this app used to send. See
-// [`DETERMINISTIC_TEMPERATURE`] and `OllamaClient::sampling_profile`.
-//
-// So every adapter's `sampling_profile` declares REAL values reproducing
-// this app's pre-fix shipped numbers for every intent, EXCEPT the four
-// documented-unsafe cases: Anthropic adaptive/frontier models, OpenAI
-// reasoning models, Gemini 3.x, and an unknown/unclassifiable model on any
-// provider (the fail-safe — an id this app cannot positively classify
-// defaults to neutral, the direction that can never 400 or trigger a
-// documented degradation).
-//
-// See `AiGenerateRequestSchema.intent` (`packages/shared/src/schemas/index.ts`)
-// for the wire contract this mirrors.
-
-/// The renderer's declared intent for one generation step. Parsed from the
-/// wire `AiGenerateRequest.intent` string via [`resolve_intent`] —
-/// unrecognized/absent always fails toward [`Intent::Default`], never a
-/// guess. On every adapter, `Default` resolves to the SAME numbers as
-/// [`Intent::Deterministic`] — the corrected rule is "declare real values for
-/// every intent" on an accepting model, and among the three registers,
-/// exact/non-creative is the conservative one to fall back to for a caller
-/// with no declared opinion (no creative-writing penalty knobs applied to an
-/// unknown-purpose call). The FOUR documented-unsafe classification cases
-/// (Anthropic adaptive/frontier, OpenAI reasoning, Gemini 3.x, an
-/// unrecognized/unclassifiable model) still fail toward neutral regardless of
-/// intent, `Default` included — see the module doc comment above.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Intent {
-    /// Analysis/résumé/job-ad-summary/GitHub-projects: exact, non-creative
-    /// output. Every adapter treats [`Intent::Default`] identically to this
-    /// variant (see this enum's own doc comment).
-    Deterministic,
-    /// Interview questions, likely questions, STAR feedback: creative,
-    /// detector-resistant prose with no traceability requirement.
-    Prose,
-    /// Cover letter, application answers, referral messages, application
-    /// email: the SAME detector-resistant register as [`Intent::Prose`], but
-    /// the output makes factual claims about the candidate — a real résumé
-    /// achievement, a real reason for applying — that must stay traceable to
-    /// the résumé/job ad. Concretely `Prose` minus the presence-penalty knob
-    /// (it pushes a model toward new topics, i.e. invented candidate facts).
-    /// Never collapse this back into `Prose`.
-    ProseGrounded,
-    /// No declared intent — see this enum's own doc comment: resolves to the
-    /// SAME numbers as [`Intent::Deterministic`] on an accepting model, never
-    /// a genuinely separate "let the provider fully decide" state (that
-    /// would repeat the "omission is neutral" mistake this fix corrects).
-    #[default]
-    Default,
-}
-
-/// Parse `req.intent` into the typed [`Intent`] every adapter's
-/// `sampling_profile` consumes. Pure so it needs no `AppHandle`/mock harness.
-pub fn resolve_intent(req: &AiGenerateRequest) -> Intent {
-    match req.intent.as_deref() {
-        Some("deterministic") => Intent::Deterministic,
-        Some("prose") => Intent::Prose,
-        Some("prose_grounded") => Intent::ProseGrounded,
-        _ => Intent::Default,
-    }
-}
-
-// ── Shared target numbers (the values being preserved, not invented) ──────────
-//
-// These reproduce the pre-fix renderer's hardcoded numbers — sent uniformly
-// to every provider before this fix, which is exactly the defect being
-// corrected (not the numbers themselves). Each adapter's `sampling_profile`
-// references these directly rather than re-typing them, so the historical
-// value survives as one auditable source instead of N silently-drifting
-// copies. App choices inside documented "reasonable" ranges where a vendor
-// publishes one — never vendor-published numbers themselves.
-
-/// `Intent::Deterministic`'s temperature — reproduces this app's pre-fix
-/// shipped default for exact/near-JSON output (analysis 0.15, résumé/
-/// job-ad-summary/inline-rewrite 0.3, GitHub-projects 0.4). Determinism on
-/// the strictest surface (analysis — `runAnalysis` hard-throws
-/// "malformed output" on a JSON parse failure) leans primarily on the
-/// analyze prompt's explicit JSON-only output contract
-/// (`packages/prompts/src/analyze/system-prompt.ts`), the vendor-recommended
-/// lever — but omitting this value is NOT a safe fallback on a provider that
-/// accepts it: see the empirical Ollama Modelfile defaults in the module doc
-/// comment above (`temperature: 1` on both currently-default local models).
-pub const DETERMINISTIC_TEMPERATURE: f64 = 0.3;
-/// `Intent::Prose`'s temperature (interview questions 0.5, likely questions
-/// 0.5, STAR feedback 0.4 — the cover letter's 0.58/0.8 moved to
-/// `Intent::ProseGrounded`, see below).
-pub const PROSE_TEMPERATURE: f64 = 0.5;
-/// `Intent::ProseGrounded`'s temperature (application answers 0.5, referral
-/// 0.7, application email 0.7, cover letter 0.58 small-tier / 0.8
-/// large-tier).
-///
-/// This is HIGHER than [`PROSE_TEMPERATURE`], which reads backwards until you
-/// see why: grounding is enforced by withholding `presence_penalty` (the knob
-/// that rewards new topics), NOT by cooling the sampler. The ordering is an
-/// accident of which surfaces carry which intent — the grounded ones are
-/// long-form letters and emails, the ungrounded ones are STAR feedback (0.4)
-/// and interview questions (0.5). Do not read a semantic claim into it, and do
-/// not "fix" it by swapping the values: both preserve the per-surface
-/// temperatures this app shipped before sampling moved into the adapters.
-pub const PROSE_GROUNDED_TEMPERATURE: f64 = 0.6;
-/// Shared prose penalty knobs — RAID (ACL 2024) detector-resistance,
-/// unchanged from the pre-fix renderer's `PROSE_SAMPLING` constant.
-/// `Intent::Prose` gets the full set; `Intent::ProseGrounded` gets
-/// `top_p`/`frequency_penalty` (and, on Ollama, `repeat_penalty`) but NEVER
-/// `presence_penalty` — see [`PROSE_PRESENCE_PENALTY`]'s own doc.
-pub const PROSE_TOP_P: f64 = 0.95;
-pub const PROSE_FREQUENCY_PENALTY: f64 = 0.3;
-/// `Intent::Prose`-only — pushes a model toward new topics; deliberately
-/// never applied to `Intent::ProseGrounded` (see [`Intent::ProseGrounded`]'s
-/// own doc for why). Declaring this app-side value is a request to NOT use
-/// an aggressive one — it is not a guarantee against a provider whose own
-/// server-side default disagrees when this app omits the field entirely
-/// (e.g. a local Ollama Modelfile can set its own `presence_penalty`, as
-/// high as `1.5` on a currently-default model — see the module doc comment).
-pub const PROSE_PRESENCE_PENALTY: f64 = 0.2;
-/// Ollama's own repetition knob (distinct semantics from
-/// `frequency_penalty` — never a remap). Applied wherever `Intent::Prose`/
-/// `Intent::ProseGrounded` apply `PROSE_TOP_P`, on Ollama native + Ollama
-/// Cloud native-shaped requests only (OpenAI/Gemini have no such field).
-pub const PROSE_REPEAT_PENALTY: f64 = 1.15;
-
-/// A provider's own sampling NUMBERS for a `(model, intent)` pair — the
-/// adapter's half of the intent/numbers split. A `None` field means "omit
-/// this wire parameter entirely" — reserved for the four documented-unsafe
-/// cases (see the module doc comment above): Claude 4.7+/5, OpenAI's
-/// reasoning models, Gemini 3.x, and an unrecognized/unclassifiable model on
-/// any provider. Everywhere else, a provider's `sampling_profile` declares
-/// the real [`DETERMINISTIC_TEMPERATURE`]/[`PROSE_TEMPERATURE`]/
-/// [`PROSE_GROUNDED_TEMPERATURE`] + penalty constants — [`Default`] being the
-/// derived zero value is a type-system convenience for the NEUTRAL case, not
-/// a claim that neutral is the general answer.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct SamplingProfile {
-    pub temperature: Option<f64>,
-    pub top_p: Option<f64>,
-    pub frequency_penalty: Option<f64>,
-    pub presence_penalty: Option<f64>,
-    pub repeat_penalty: Option<f64>,
-}
-
-impl SamplingProfile {
-    /// Merge this provider-declared profile with the request's explicit
-    /// numeric fields — explicit ALWAYS wins, per field. The Ollama
-    /// per-model/per-step temperature slider (`LocalModelLimits.tsx`) is the
-    /// only value in the system a human actually chose; every other numeric
-    /// field is currently never sent by the renderer at all, but the same
-    /// override contract applies to any of them the moment one is. A field
-    /// absent on both sides stays `None` — omitted from the wire body.
-    ///
-    /// Whether an explicit value can reach a model that would reject it
-    /// depends on WHERE each adapter reads the merged result, and is NOT
-    /// uniform across adapters — this method does not itself enforce a
-    /// safety gate:
-    ///
-    /// - OpenAI (`build_chat_stream_body`) and Anthropic
-    ///   (`build_chat_stream_body`) both read `.temperature`/`.top_p` from
-    ///   the merged result ONLY inside a `caps.supports_temperature` /
-    ///   `anthropic_supports_temperature` gate, so an explicit value
-    ///   genuinely never reaches a model that 400s on it there.
-    ///   `sampling_profile` ALSO already returns a neutral (`None`) profile
-    ///   for those same gated models, so in practice the explicit value is
-    ///   blocked twice.
-    /// - Gemini's `build_chat_stream_body` gates `top_p` the same way
-    ///   (unconditionally omitted on a v3+ model, even when explicit — it's
-    ///   the renderer's own anti-detection knob, not a user dial), but does
-    ///   **NOT** gate `temperature` at the send site: an explicit
-    ///   `temperature` intentionally reaches a Gemini 3.x model even though
-    ///   `sampling_profile` itself would have returned neutral (a
-    ///   deliberate, pre-existing, tested choice — "a deliberate user value
-    ///   must still be honored on a v3+ model" — safe because Google
-    ///   documents this as a quality recommendation, not a 400).
-    pub fn resolve(self, req: &AiGenerateRequest) -> SamplingProfile {
-        SamplingProfile {
-            temperature: req.temperature.or(self.temperature),
-            top_p: req.top_p.or(self.top_p),
-            frequency_penalty: req.frequency_penalty.or(self.frequency_penalty),
-            presence_penalty: req.presence_penalty.or(self.presence_penalty),
-            repeat_penalty: req.repeat_penalty.or(self.repeat_penalty),
-        }
-    }
-}
-
-// ── Agentic tool-calling (Phase 1 foundation) ───────────────────────────────
-//
-// Shared vocabulary for multi-turn tool-calling. A `ToolSpec` is the schema handed
-// to the model; a `ToolCall` is what the model asks to run; an `AgentTurn` is one
-// assistant response (text + any tool calls + why it stopped); `ChatMsg` is the
-// running transcript.
-//
-// SECURITY INVARIANT: only `Role::System` carries trusted, fixed instructions.
-// The user's question and (untrusted) tool results ride in `User`/`Tool` turns and
-// must never be merged into the system prompt or a tool description. The
-// agentic controller that enforced this was deleted (PR-5 step 2) along with
-// its only caller of `chat_with_tools`/`ToolSpec` below — this Phase-1
-// tool-calling surface currently has no live caller in the crate.
-
-/// A tool offered to the model: name, a natural-language description, and a
-/// JSON-Schema object describing its arguments. Provider-agnostic; each adapter
-/// maps it to that vendor's function/tool shape.
-#[derive(Debug, Clone)]
-pub struct ToolSpec {
-    pub name: String,
-    pub description: String,
-    pub schema: Value,
-}
-
-/// One tool invocation the model asked for. `args` is already-decoded JSON — each
-/// adapter parses the vendor's string/object argument form into a `Value`.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ToolCall {
-    pub id: String,
-    pub name: String,
-    pub args: Value,
-}
-
-/// Why a provider ended a turn. `ToolUse` means the model wants tool results back.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StopReason {
-    End,
-    ToolUse,
-    Length,
-    Other,
-}
-
-/// One assistant turn: visible text, any tool calls, the stop reason, and the
-/// provider's REAL reported token usage for this turn (zero when a provider
-/// genuinely reports none — a CLI agent, or a `single_shot_turn` fallback
-/// against one that does). Consumed by `pipeline::Completer::chat_with_tools`
-/// to record AI spend for the agent controller's tool-calling turns —
-/// plausibly the biggest paid-token consumer, since one agent run fans out
-/// into several turns.
-#[derive(Debug, Clone, PartialEq)]
-pub struct AgentTurn {
-    pub text: String,
-    pub tool_calls: Vec<ToolCall>,
-    pub stop: StopReason,
-    pub usage: Usage,
-}
-
-/// Transcript role. `System` is trusted + fixed; every other role is untrusted data.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Role {
-    System,
-    User,
-    Assistant,
-    Tool,
-}
-
-impl Role {
-    /// Wire role string shared by the OpenAI / Ollama chat shapes. `Tool` results
-    /// fold into a `user` turn (already fenced by the caller) so no adapter
-    /// needs native tool-call-id linkage in Phase 1. `pub(crate)` (wider than
-    /// this module's descendants) — the now-deleted agentic controller's own
-    /// tests used to assert wire-alternation against this mapping instead of a
-    /// duplicate.
-    pub(crate) fn wire(self) -> &'static str {
-        match self {
-            Role::System => "system",
-            Role::User | Role::Tool => "user",
-            Role::Assistant => "assistant",
-        }
-    }
-}
-
-/// One message in the running agent transcript.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ChatMsg {
-    pub role: Role,
-    pub content: String,
-}
-
-impl ChatMsg {
-    pub fn system(content: impl Into<String>) -> Self {
-        Self {
-            role: Role::System,
-            content: content.into(),
-        }
-    }
-    pub fn user(content: impl Into<String>) -> Self {
-        Self {
-            role: Role::User,
-            content: content.into(),
-        }
-    }
-    pub fn assistant(content: impl Into<String>) -> Self {
-        Self {
-            role: Role::Assistant,
-            content: content.into(),
-        }
-    }
-    pub fn tool(content: impl Into<String>) -> Self {
-        Self {
-            role: Role::Tool,
-            content: content.into(),
-        }
-    }
-}
-
-// ── Spend visibility (real token usage) ─────────────────────────────────────
-
-/// Real per-call token usage as reported by the provider's own response —
-/// never estimated. Zero on both fields when a provider genuinely reports no
-/// usage (e.g. a CLI agent — see `cli_agent`, which relies on the
-/// [`AiProvider::complete_with_usage`] default rather than fabricating a
-/// number). Consumed by `crate::spend` to compute an estimated dollar cost.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Usage {
-    pub input_tokens: u32,
-    pub output_tokens: u32,
-    /// Reasoning/"thinking" tokens, **only when the provider reports them as a
-    /// distinct number**. `None` is not zero: it means this provider does not
-    /// separate them, and recording a zero would read as "this model did no
-    /// reasoning" — the opposite of the truth for a reasoning model.
-    ///
-    /// Who reports what, as of the adapters in this module:
-    ///
-    /// * OpenAI — `usage.completion_tokens_details.reasoning_tokens`. Current
-    ///   Chat Completions models send the details object with a **`0`** here
-    ///   when they did no reasoning, rather than omitting it, so a
-    ///   non-reasoning OpenAI model records `Some(0)` — a measured zero, which
-    ///   is a fact and not a fabrication. `None` is reserved for "the field was
-    ///   not there at all" (an older/compatible gateway).
-    /// * Gemini — `usageMetadata.thoughtsTokenCount`, which this app already
-    ///   opts into by sending `thinkingConfig.includeThoughts`.
-    /// * Anthropic — NOT reported separately; thinking tokens are counted
-    ///   inside `output_tokens`.
-    /// * Ollama — NOT reported separately; `eval_count` includes the thinking
-    ///   channel. (The renderer measures the thinking/answer split in CHARS off
-    ///   the live stream — see `GeneratingPanel` — which is a different unit
-    ///   and is deliberately not written here as if it were tokens.)
-    /// * CLI agents — report no usage at all.
-    ///
-    /// Where reported, it is a SUBSET of `output_tokens`, not an addition to
-    /// it, so cost estimation is unaffected.
-    pub thinking_tokens: Option<u32>,
-}
-
-/// Record one AI call's REAL token usage against today's spend via the
-/// managed [`crate::spend::SpendStore`], if one is present. Best-effort:
-/// spend tracking never blocks or fails a generation — a missing store (e.g.
-/// it failed to open at startup) is silently skipped, exactly like the other
-/// `try_state`-gated convenience writers in this crate (see
-/// `commands::notifications::push_and_notify`). `base_url` is whatever base
-/// URL the caller resolved the request against — passed straight through to
-/// [`crate::spend::SpendStore::record`]'s free/paid cost gate, which only
-/// ever consults it for the `openai-compatible` provider id (every other
-/// provider ignores it), so a local LM Studio/llama.cpp/vLLM server never
-/// shows a fake dollar figure. Pass `None` when no base URL was resolved
-/// (every non-`openai-compatible` provider).
-///
-/// Lives HERE (the command/shell layer, L3) rather than in `crate::spend`
-/// (a data-layer store, L1) because it needs `AppHandle`/`Manager` to resolve
-/// the managed state — the architecture boundary test (R2: no Tauri below the
-/// shell layer) forbids a store module from importing `tauri::*` itself.
-/// `crate::spend::SpendStore` stays Tauri-free; this is the AppHandle→
-/// `try_state`→`record` hop every call site (streaming, `Completer`, CLI
-/// agents, `embed_text`) goes through.
-///
-/// Takes the whole [`Usage`] rather than loose token counts so a field the
-/// providers report (today `thinking_tokens`) cannot be parsed at the adapter
-/// and then dropped on the way to the store — which is exactly what a widening
-/// parameter list invites.
-pub(crate) fn record_usage(
-    app: &AppHandle,
-    provider: &str,
-    model: &str,
-    usage: Usage,
-    base_url: Option<&str>,
-) {
-    if let Some(store) = app.try_state::<crate::spend::SpendStore>() {
-        store.record(crate::spend::SpendRecord {
-            provider: provider.to_string(),
-            model: model.to_string(),
-            input_tokens: usage.input_tokens,
-            output_tokens: usage.output_tokens,
-            thinking_tokens: usage.thinking_tokens,
-            run_id: None,
-            base_url: base_url.map(str::to_string),
-        });
-    }
-}
-
-// ── Model catalogue (`list_models`) ─────────────────────────────────────────────
-
-/// Build one `list_models` entry: `{name, displayName?, createdAt?,
-/// contextLength?}`. `name` is the canonical id everything selects on — a
-/// stored model preference matches against it, so its shape/value must never
-/// change here. Every other field is `None`-able because no single provider
-/// endpoint returns all of them (see each adapter's `list_models`/
-/// `parse_model_page` for exactly which it supplies) — a provider that omits
-/// a field passes `None`, which is skipped entirely from the JSON, never a
-/// fabricated zero/empty-string/"unknown" sentinel. The renderer treats
-/// absent as absent.
-///
-/// `created_at_ms` is unix epoch MILLISECONDS — the SAME convention every
-/// other timestamp field in this codebase already uses (`captured_at`,
-/// `last_updated`, …: `chrono::Utc::now().timestamp_millis()`), not any
-/// provider's native wire format (Anthropic ships an RFC3339 string, OpenAI a
-/// unix-epoch-SECONDS integer, Ollama an RFC3339-with-offset string) — see
-/// [`parse_rfc3339_millis`] for the RFC3339 → millis half of that
-/// normalization. Chosen over keeping each provider's native representation
-/// so the renderer sorts numerically with zero per-provider branching.
-pub fn model_entry(
-    name: &str,
-    display_name: Option<&str>,
-    created_at_ms: Option<i64>,
-    context_length: Option<i64>,
-) -> Value {
-    let mut entry = json!({ "name": name });
-    if let Some(d) = display_name {
-        entry["displayName"] = json!(d);
-    }
-    if let Some(c) = created_at_ms {
-        entry["createdAt"] = json!(c);
-    }
-    if let Some(l) = context_length {
-        entry["contextLength"] = json!(l);
-    }
-    entry
-}
-
-/// Parse an RFC3339 timestamp (Anthropic's `created_at`, Ollama's
-/// `modified_at` — both may carry a non-UTC offset, e.g. Ollama's
-/// `-07:00`) into unix epoch milliseconds. `None` on any parse failure —
-/// never a fabricated/zero timestamp; a parse failure is treated exactly
-/// like the field being absent.
-pub fn parse_rfc3339_millis(s: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(s)
-        .ok()
-        .map(|dt| dt.timestamp_millis())
-}
-
-// ── Cursor-paginated `list_models` (shared by every adapter that paginates) ─────
 
 mod pagination;
 /// The shared cursor-pagination control flow. Lives in its own module (this
@@ -781,9 +326,9 @@ pub trait AiProvider: Send + Sync {
     async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>>;
 
     /// [`embed`](Self::embed) plus the provider's REAL reported token usage
-    /// (never estimated) — consumed by [`embed_text`], the shared chokepoint
-    /// for AI-spend visibility on every embedding call (manual embed,
-    /// match-score resolution, and `ai_reembed_all`'s batch re-index).
+    /// (never estimated) — consumed by [`embeddings::embed_text`], the shared
+    /// chokepoint for AI-spend visibility on every embedding call (manual
+    /// embed, match-score resolution, and `ai_reembed_all`'s batch re-index).
     /// DEFAULT: wraps `embed` and reports [`Usage::default`] (zero) — correct
     /// for a provider whose embeddings response carries no usage field
     /// (Ollama's local embeddings cost $0 anyway; CLI agents have no
@@ -856,69 +401,6 @@ pub trait AiProvider: Send + Sync {
     }
 }
 
-/// Flatten a transcript to a `(system, user)` pair for the single-shot fallback:
-/// `system` is every `Role::System` message concatenated (trusted, fixed);
-/// everything else — the user question plus any prior assistant/tool turns
-/// (already fenced) — is concatenated with role labels into the user prompt, so
-/// untrusted content never lands in the system slot. Pure + unit-tested.
-pub(crate) fn flatten_messages(messages: &[ChatMsg]) -> (String, String) {
-    let system = messages
-        .iter()
-        .filter(|m| m.role == Role::System)
-        .map(|m| m.content.as_str())
-        .collect::<Vec<_>>()
-        .join("\n");
-    let user = messages
-        .iter()
-        .filter(|m| m.role != Role::System)
-        .map(|m| match m.role {
-            Role::Assistant => format!("Assistant: {}", m.content),
-            Role::Tool => format!("Tool result: {}", m.content),
-            _ => m.content.clone(),
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n");
-    (system, user)
-}
-
-/// Split a transcript into `(system, non-system messages)` for the providers
-/// (Anthropic, Gemini) that carry the system prompt in a dedicated field. Pure.
-pub(crate) fn split_system(messages: &[ChatMsg]) -> (String, Vec<&ChatMsg>) {
-    let system = messages
-        .iter()
-        .filter(|m| m.role == Role::System)
-        .map(|m| m.content.as_str())
-        .collect::<Vec<_>>()
-        .join("\n");
-    let rest = messages.iter().filter(|m| m.role != Role::System).collect();
-    (system, rest)
-}
-
-/// The single-shot tool-calling fallback: run `complete_with_usage` and return
-/// an [`AgentTurn`] carrying no tool calls but the real reported usage (zero
-/// for a provider that genuinely reports none, e.g. a CLI agent). Used by the
-/// trait default and by any adapter whose model doesn't support tools.
-/// Generic over `?Sized` so it works from both the trait default (`&Self`) and
-/// a concrete adapter.
-pub(crate) async fn single_shot_turn<P: AiProvider + ?Sized>(
-    provider: &P,
-    app: &AppHandle,
-    model: &str,
-    messages: &[ChatMsg],
-    temperature: Option<f64>,
-) -> AppResult<AgentTurn> {
-    let (system, user) = flatten_messages(messages);
-    let (text, usage) = provider
-        .complete_with_usage(app, model, &system, &user, temperature)
-        .await?;
-    Ok(AgentTurn {
-        text,
-        tool_calls: Vec::new(),
-        stop: StopReason::End,
-        usage,
-    })
-}
-
 /// Single routing point. `base_url` only applies to OpenAI-compatible servers.
 pub fn resolve(id: ProviderId, base_url: Option<String>) -> Box<dyn AiProvider> {
     // CLI agents are routed entirely by the registry — adding one never touches
@@ -978,301 +460,18 @@ pub fn resolve_by_name(name: &str, base_url: Option<String>) -> AppResult<Box<dy
     Ok(resolve(provider_id, base_url))
 }
 
-// ── Embeddings ────────────────────────────────────────────────────────────────
-
-/// Vector-FORMAT version — bumped whenever the ALGORITHM that produces a
-/// stored vector's VALUES changes for the same `(provider, model, dim)`, even
-/// though the provider/model IDENTITY is unchanged (e.g. replacing a naive
-/// single truncation with chunk-and-mean-pool — same tag, semantically
-/// different vector). `EmbeddingConfig::matches` checks this so a vector
-/// persisted before a bump is treated as stale and re-embedded, instead of
-/// being silently compared against a new-format vector under the identical
-/// `(provider, model, dim)` tag.
-pub const EMBEDDING_VECTOR_VERSION: i64 = 2;
-
-/// The identity of an embedding "space": vectors are only comparable when they
-/// share the same `(provider, model, dim)` AND the same [`EMBEDDING_VECTOR_VERSION`]
-/// they were produced under. Stored alongside every vector so incompatible —
-/// or differently-produced — vectors can never be silently mixed. `version`
-/// is a storage-format detail, not part of the wire shape (`#[serde(skip)]`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EmbeddingSpace {
-    pub provider: String,
-    pub model: String,
-    pub dim: usize,
-    #[serde(skip)]
-    pub version: i64,
-}
-
-impl std::fmt::Display for EmbeddingSpace {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}@{}", self.provider, self.model, self.dim)
-    }
-}
-
-/// A vector tagged with the space it was produced in.
-#[derive(Debug, Clone)]
-pub struct EmbeddingVector {
-    pub values: Vec<f64>,
-    pub space: EmbeddingSpace,
-}
-
-/// Embed `text` with an explicit provider/model, returning a space-tagged vector.
-/// Routes through the same `resolve` + capability + auth flow as chat, so there
-/// are no Ollama assumptions and no silent fallback.
-///
-/// This is the shared chokepoint for AI-spend visibility on embedding calls —
-/// every caller (`ai_embed`, `posting_vector_or_embed`'s match-score
-/// resolution, `ai_reembed_all`'s batch re-index) routes through here, so
-/// each records the provider's REAL reported token usage (zero when a
-/// provider genuinely reports none) with no changes needed at any call site.
-///
-/// `charge` metes the per-provider daily budget once per ACTUAL round-trip
-/// via [`MeteredAttempt`] — see its doc. `None` (every caller but `ai_embed`)
-/// is unaffected, unchanged from before this parameter existed.
-pub async fn embed_text(
-    app: &AppHandle,
-    provider: ProviderId,
-    model: &str,
-    base_url: Option<String>,
-    text: &str,
-    charge: Option<&(dyn Fn() -> AppResult<()> + Send + Sync)>,
-) -> AppResult<EmbeddingVector> {
-    let client = resolve(provider, base_url.clone());
-    let model = if model.trim().is_empty() {
-        client
-            .default_embedding_model()
-            .ok_or_else(|| {
-                // Distinct from the capability message below on purpose: these
-                // are two different problems and used to be indistinguishable.
-                // This one means "we don't presume a default model for this
-                // provider" (every OpenAI-compatible gateway — its catalog is
-                // its own), which the user fixes by PICKING one. The other
-                // means the provider has no embeddings API at all, which they
-                // can't fix by choosing anything.
-                AppError::Config(format!(
-                    "No default embedding model for {}. Choose one in Settings → AI → Embeddings.",
-                    provider.as_str()
-                ))
-            })?
-            .to_string()
-    } else {
-        model.to_string()
-    };
-    if !client.capabilities(&model).supports_embeddings {
-        return Err(AppError::Config(format!(
-            "{} does not support embeddings.",
-            provider.as_str()
-        )));
-    }
-    // Cap the input to the provider's real limit, char-boundary-safe, then
-    // adaptively retry on a context-length overflow — see `embed_adaptive`.
-    // Applied here so every provider is consistent and a new one inherits a
-    // safe default — see `AiProvider::max_embedding_input_chars`.
-    let initial_cap = client.max_embedding_input_chars();
-    let attempt = ProviderEmbedAttempt {
-        app,
-        client: client.as_ref(),
-        model: &model,
-    };
-    // `usage` accumulates as `embed_adaptive` runs, even if it ultimately
-    // errors (a multi-chunk document can bill several real provider calls
-    // before failing on a later one) — record whatever was actually billed
-    // BEFORE propagating the error, so a partial failure never silently
-    // drops already-spent tokens from the ledger.
-    let metered = MeteredAttempt {
-        inner: &attempt,
-        charge,
-    };
-    let mut usage = Usage::default();
-    let result = embed_adaptive(&metered, text, initial_cap, &mut usage).await;
-    record_usage(app, provider.as_str(), &model, usage, base_url.as_deref());
-    let values = result?;
-    if values.is_empty() {
-        return Err(AppError::Provider(format!(
-            "{} returned an empty embedding.",
-            provider.as_str()
-        )));
-    }
-    let dim = values.len();
-    Ok(EmbeddingVector {
-        values,
-        space: EmbeddingSpace {
-            provider: provider.as_str().to_string(),
-            model,
-            dim,
-            version: EMBEDDING_VECTOR_VERSION,
-        },
-    })
-}
-
-/// Cosine similarity between two vectors that MUST share an embedding space.
-/// Returns `Err` on a space mismatch — incomparable vectors are never silently
-/// scored (the old behavior returned 0.0 and hid the bug).
-pub fn compare(a: &EmbeddingVector, b: &EmbeddingVector) -> AppResult<f64> {
-    if a.space != b.space {
-        return Err(AppError::Validation(format!(
-            "refusing to compare embeddings from different spaces: {} vs {}",
-            a.space, b.space
-        )));
-    }
-    Ok(cosine(&a.values, &b.values))
-}
-
 /// Raw cosine similarity — re-exported from the shared L0 [`crate::vector`]
-/// module so `compare` and every existing `ai_provider::cosine` caller keep the
-/// same path, while `scraping::cluster` reuses the SAME implementation for
-/// cross-board dedup without an upward layer import (architecture rule R7).
-/// Prefer [`compare`] for stored vectors so embedding spaces are checked first.
+/// module so [`embeddings::compare`] and every existing `ai_provider::cosine`
+/// caller keep the same path, while `scraping::cluster` reuses the SAME
+/// implementation for cross-board dedup without an upward layer import
+/// (architecture rule R7). Prefer [`embeddings::compare`] for stored vectors
+/// so embedding spaces are checked first.
 pub use crate::vector::cosine;
-
-// ── Request tracing ─────────────────────────────────────────────────────────────
 
 mod trace;
 /// Per-request `[ai] → / ←` tracing. Lives in its own module (this one is at its
 /// LOC cap) but keeps its path here, so no call site moves.
 pub use trace::RequestTrace;
-
-// ── Error mapping ───────────────────────────────────────────────────────────────
-
-/// Pull a human-readable message out of a provider's JSON error body.
-pub fn extract_error_message(body: &str) -> String {
-    if let Ok(v) = serde_json::from_str::<Value>(body) {
-        if let Some(msg) = v
-            .get("error")
-            .and_then(|e| e.get("message"))
-            .and_then(|m| m.as_str())
-            .or_else(|| v.get("message").and_then(|m| m.as_str()))
-            .or_else(|| {
-                v.get("error")
-                    .and_then(|e| e.get(0))
-                    .and_then(|e| e.get("message"))
-                    .and_then(|m| m.as_str())
-            })
-        {
-            return msg.to_string();
-        }
-    }
-    body.trim().chars().take(200).collect()
-}
-
-/// Map a provider HTTP error to a clear, actionable message.
-pub fn friendly_api_error(
-    provider: ProviderId,
-    status: reqwest::StatusCode,
-    body: &str,
-) -> AppError {
-    let name = provider.as_str();
-    let code = status.as_u16();
-    let detail = extract_error_message(body);
-    match code {
-        401 | 403 => AppError::Config(format!("{name}: invalid or unauthorized API key.")),
-        404 => AppError::Provider(format!("{name}: model or endpoint not found — {detail}")),
-        413 => AppError::Provider(format!(
-            "{name}: request too large — try a smaller resume/job ad."
-        )),
-        422 => AppError::Provider(format!(
-            "{name}: this model rejected the request — {detail}"
-        )),
-        429 => AppError::Network(format!(
-            "{name}: rate limit or quota reached. Wait a moment or check your plan."
-        )),
-        400 => AppError::Provider(format!("{name}: request rejected — {detail}")),
-        500..=599 => AppError::Network(format!(
-            "{name}: service error ({code}). Try again shortly."
-        )),
-        _ => AppError::Provider(format!("{name} {code}: {detail}")),
-    }
-}
-
-/// Map a *transport* failure (the `send()` that raced an HTTP call never got a
-/// response at all) to `AppError::Timeout` or `AppError::Network`. Distinct
-/// from [`friendly_api_error`], which maps a response the server DID send
-/// back.
-///
-/// Named for its original completion call sites but equally correct for any
-/// other request against the same pooled client (list-models, model-pull,
-/// embeddings, tool-calling): the classification below depends only on
-/// `is_timeout()`, never on what the request was *for*. Ollama's embed path
-/// (`ollama::embed_with`) once mapped every transport failure — including a
-/// real embed-timeout while the daemon was up and busy — to "unreachable",
-/// which sent two separate investigations to the wrong root cause; it now
-/// routes through here too.
-///
-/// `is_timeout()` walks `e`'s WHOLE source chain, not just this crate's own
-/// `.timeout()` call: it also matches an inner `hyper::Error::is_timeout()`
-/// and a raw `io::ErrorKind::TimedOut` — so it is reqwest's general "gave up
-/// waiting" signal, not narrowly "the client's own configured deadline
-/// fired". That is still the right classification here: `net::http::shared`
-/// (the sole pooled client every adapter uses) sets no separate
-/// connect/read timeout of its own — see its module doc, "no global
-/// timeout" — so every request's ONLY timing bound is the SAME per-call
-/// `.timeout()` these call sites set, and that bound covers connect through
-/// the last streamed byte. Whichever inner layer is the one that actually
-/// noticed the wait (reqwest's own timer, hyper's, or the OS socket's) is
-/// noticing the SAME deadline elapsing, so `is_timeout() == true` reliably
-/// means this call's own `deadline` is why it stopped waiting, and a retry
-/// against that same deadline would time out again — `AppError::Timeout`,
-/// not `Network`, either way.
-///
-/// `label` names the provider in the message — a fixed string for a
-/// single-provider adapter (Anthropic/Gemini/Ollama), or `self.id.as_str()`
-/// for [`crate::commands::ai_provider::openai::OpenAiClient`], which serves
-/// several [`ProviderId`]s from one client. `deadline` is the per-call bound
-/// that just expired — not read off a shared table here because it varies by
-/// call (Ollama's non-streaming completion scales it by the request's
-/// reasoning effort; see `timeouts::ollama_completion_deadline`).
-pub fn map_completion_transport_error(
-    e: reqwest::Error,
-    label: &str,
-    deadline: std::time::Duration,
-) -> AppError {
-    if e.is_timeout() {
-        AppError::Timeout(format!(
-            "{label}: no response within {}s",
-            deadline.as_secs()
-        ))
-    } else {
-        AppError::Network(format!("{label} unreachable: {e}"))
-    }
-}
-
-/// Redact a generation-failure message before it reaches the renderer.
-///
-/// This is the choke point every generation-failure path funnels through
-/// (`ai_generate` in `commands/ai.rs`, `generate_pipeline` in
-/// `commands/pipeline.rs` — both call [`emit_stream_error`] on their `Err`
-/// branch with a raw `AppError`/`e.to_string()`). A provider or transport
-/// error can carry a `base_url` with query-string auth (the #935 shape), an
-/// absolute filesystem path, or a bare host — none of which may reach the
-/// screen. Reuses the diagnostics-bundle redactor (`commands::support::redact_lines`,
-/// ADR-027) rather than a second one: both are "text about to reach outside
-/// the machine's trust boundary" and must not drift into differing strength.
-/// Deliberately conservative (URL/path/host/credential/email shapes only) so
-/// an ordinary message like `"429 Too Many Requests"` or `"model not found"`
-/// survives byte-for-byte. Pure + unit-tested (see `mod tests`).
-fn redact_stream_error_message(message: &str) -> String {
-    crate::commands::support::redact_lines(message)
-}
-
-/// Emit the terminal `ai:stream` error event the renderer's stream reader expects.
-pub fn emit_stream_error(app: &AppHandle, job_id: &str, message: &str) {
-    emit_event(
-        app,
-        AI_STREAM,
-        AiStreamChunk {
-            job_id: job_id.to_string(),
-            delta: String::new(),
-            done: true,
-            error: Some(AiStreamChunkError {
-                code: "GENERATION_FAILED".to_string(),
-                message: redact_stream_error_message(message),
-            }),
-            thinking: None,
-        },
-    );
-}
 
 #[cfg(test)]
 mod tests;

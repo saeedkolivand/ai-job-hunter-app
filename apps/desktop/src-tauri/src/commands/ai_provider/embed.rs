@@ -9,9 +9,9 @@
 //! `pub(super)` so `mod.rs` can construct/call them — everything else here
 //! is a private implementation detail.
 //!
-//! Tests live in the sibling `embed_tests.rs` (same pattern as
-//! `anthropic.rs`/`anthropic_tests.rs`) so they stay excluded from R8's LOC
-//! cap regardless of how large this subsystem's test suite grows.
+//! Tests live in `embed/tests/` (topic files under the standard out-of-line
+//! layout) so they stay excluded from R8's LOC cap regardless of how large
+//! this subsystem's test suite grows.
 
 use async_trait::async_trait;
 use tauri::AppHandle;
@@ -424,5 +424,4 @@ pub(super) async fn embed_adaptive<A: EmbedAttempt>(
 }
 
 #[cfg(test)]
-#[path = "embed_tests.rs"]
 mod tests;

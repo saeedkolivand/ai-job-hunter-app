@@ -3,6 +3,7 @@
 
 use serde_json::json;
 
+use super::exa::parse_exa_results;
 use super::*;
 
 // ── resolve_search_backend ───────────────────────────────────────────────────

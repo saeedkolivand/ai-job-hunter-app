@@ -12,14 +12,6 @@ commands/ai_provider/cli_agent/cursor.rs
 commands/ai_provider/cli_agent/gemini_cli.rs
 commands/ai_provider/cli_agent/qwen_code.rs
 commands/ai_provider/cli_agent/workspace.rs
-commands/ai_provider/embed.rs
-commands/ai_provider/research.rs
-commands/ai_provider/retry.rs
-commands/ai_provider/search/mod.rs
-commands/ai_provider/stream.rs
-commands/ai_provider/structured.rs
-commands/ai_provider/timeouts.rs
-commands/ai_provider/trace.rs
 commands/applications.rs
 commands/autopilot/best_matches.rs
 commands/cli_agents.rs

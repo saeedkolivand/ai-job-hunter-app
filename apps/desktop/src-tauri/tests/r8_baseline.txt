@@ -19,16 +19,6 @@
 559	commands/ai_provider/cli_agent/codex.rs
 817	commands/ai_provider/cli_agent/mod.rs
 381	commands/ai_provider/cli_agent/qwen_code.rs
-424	commands/ai_provider/embed_tests.rs
-585	commands/ai_provider/mod.rs
-438	commands/ai_provider/research.rs
-382	commands/ai_provider/retry.rs
-306	commands/ai_provider/search/mod.rs
-444	commands/ai_provider/stream.rs
-644	commands/ai_provider/stream_tests.rs
-894	commands/ai_provider/structured.rs
-608	commands/ai_provider/tests.rs
-349	commands/ai_provider/timeouts.rs
 777	commands/applications.rs
 679	commands/autopilot.rs
 1105	commands/autopilot/best_matches.rs

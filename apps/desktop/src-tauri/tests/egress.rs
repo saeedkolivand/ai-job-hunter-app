@@ -349,10 +349,13 @@ fn rust_sources() -> Vec<RustSource> {
 /// to the next standalone `}`" approach would delete real declarations.
 /// Dozens of column-0 `#[cfg(test)]` attributes in this tree sit on something
 /// other than a `mod … {` block (e.g. `validate/content/mod.rs:66` on a
-/// `use`, `commands/ai_provider/stream.rs:528` on `enum StreamSink {`,
-/// `commands/ai_provider/embed.rs:426` on a `#[path] mod tests;`
-/// external-file reference) — `egress_cfg_test_stripper_never_swallows_a_non_mod_attribute_target`
-/// pins exactly those three as regression cases.
+/// `use`, `commands/ai_provider/stream.rs:528` on `enum StreamSink {`) — plus
+/// a `#[path] mod name;` external-file reference, which no real file under
+/// `src/` carries anymore since the R8b split of
+/// `commands/ai_provider/embed.rs`, so that shape is pinned against a small
+/// inline fixture instead.
+/// `egress_cfg_test_stripper_never_swallows_a_non_mod_attribute_target` pins
+/// exactly these as regression cases.
 ///
 /// Only matches at column 0 (`lines[i] == "#[cfg(test)]"` exactly, no
 /// indentation, no trailing content) — an indented or otherwise-decorated
@@ -1003,11 +1006,14 @@ mod egress_4_detection_logic {
 /// total region count — that would redden every time anyone anywhere in the
 /// tree adds an unrelated `#[cfg(test)] mod tests { … }` (a routine,
 /// desirable change; this repo has explicitly rejected checks that cry wolf
-/// on maintenance activity). Instead this pins the three known-tricky
-/// survivors the extraction rule was measured against: an attribute on a
-/// `use` (`validate/content/mod.rs`), on an `enum`
-/// (`commands/ai_provider/stream.rs`), and on a `#[path] mod name;`
-/// external-file reference (`commands/ai_provider/embed.rs`).
+/// on maintenance activity). Instead this pins the known-tricky survivors the
+/// extraction rule was measured against: an attribute on a `use`
+/// (`validate/content/mod.rs`), on an `enum`
+/// (`commands/ai_provider/stream.rs`), on a plain `mod tests;`
+/// (`commands/ai_provider/anthropic.rs`), and on a `#[path] mod name;`
+/// external-file reference — pinned against a small INLINE fixture rather
+/// than a real file, since the R8b split of `commands/ai_provider/embed.rs`
+/// (its own former real-world example) removed the last one under `src/`.
 /// Each line must be found, byte-for-byte, in the stripped output. This is what
 /// mutation-tests the stripper: swap it for a naive "strip anything after
 /// `#[cfg(test)]` to the next standalone `}`" implementation and this test
@@ -1015,6 +1021,7 @@ mod egress_4_detection_logic {
 /// from a real `mod … {` block.
 #[test]
 fn egress_cfg_test_stripper_never_swallows_a_non_mod_attribute_target() {
+    const PATH_MOD_FIXTURE: &str = "<inline #[path] mod fixture>";
     let cases: &[(&str, &str)] = &[
         (
             "validate/content/mod.rs",
@@ -1025,16 +1032,20 @@ fn egress_cfg_test_stripper_never_swallows_a_non_mod_attribute_target() {
             "pub use self::language::document_language_mismatch;",
         ),
         ("commands/ai_provider/stream.rs", "enum StreamSink {"),
-        (
-            "commands/ai_provider/embed.rs",
-            "#[path = \"embed_tests.rs\"]",
-        ),
+        (PATH_MOD_FIXTURE, "#[path = \"embed_tests.rs\"]"),
         ("commands/ai_provider/anthropic.rs", "mod tests;"),
     ];
-    let sources: BTreeMap<String, String> = rust_sources()
+    let mut sources: BTreeMap<String, String> = rust_sources()
         .into_iter()
         .map(|f| (f.rel, f.content))
         .collect();
+    // No real `#[cfg(test)] #[path = "…"] mod name;` remains under `src/`
+    // (the R8b split retired the last one) — a small inline source keeps
+    // this exact stripper shape under regression without depending on one.
+    sources.insert(
+        PATH_MOD_FIXTURE.to_string(),
+        "#[cfg(test)]\n#[path = \"embed_tests.rs\"]\nmod tests;\n".to_string(),
+    );
     let mut missing = Vec::new();
     for (rel, needle) in cases {
         let Some(content) = sources.get(*rel) else {
