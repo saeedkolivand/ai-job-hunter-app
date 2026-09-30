@@ -3,410 +3,34 @@
 //! `ProviderId` and an optional base URL.
 
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::Value;
 use tauri::AppHandle;
 
 use crate::commands::ai::get_provider_key;
-
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 
 use super::research;
-use super::retry::send_with_retry;
-use super::stream::{stream_response, StreamPiece};
 use super::structured;
-use super::timeouts;
 use super::{
-    friendly_api_error, map_completion_transport_error, model_entry, resolve_intent,
-    single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, Intent, ModelCapabilities,
-    ProviderId, RequestTrace, SamplingProfile, StopReason, TokenParam, ToolCall, ToolSpec, Usage,
-    DETERMINISTIC_TEMPERATURE, PROSE_FREQUENCY_PENALTY, PROSE_GROUNDED_TEMPERATURE,
-    PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
+    AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, Intent, ModelCapabilities, ProviderId,
+    SamplingProfile, TokenParam, ToolSpec, Usage,
 };
+
+mod body;
+mod capabilities;
+mod chat;
+mod tools;
+mod transport;
+mod web_search;
+mod wire;
+
+use body::StructuredCall;
 
 const DEFAULT_BASE: &str = "https://api.openai.com/v1";
 
-/// Concatenate the assistant text from a Responses API result. The `output`
-/// array interleaves `web_search_call` items with the final `message`; we take
-/// the `output_text` blocks of message items. Pure + unit-tested.
-fn join_responses_text(data: &Value) -> String {
-    data.get("output")
-        .and_then(|o| o.as_array())
-        .map(|items| {
-            items
-                .iter()
-                .filter(|it| it.get("type").and_then(|t| t.as_str()) == Some("message"))
-                .filter_map(|it| it.get("content").and_then(|c| c.as_array()))
-                .flatten()
-                .filter_map(|c| c.get("text").and_then(|t| t.as_str()))
-                .collect::<Vec<_>>()
-                .join("")
-        })
-        .unwrap_or_default()
-}
-
-/// Parse a non-streaming Chat Completions response into an [`AgentTurn`]:
-/// `choices[0].message.content` is the text (may be null when tool calls are
-/// present), each `choices[0].message.tool_calls[]` maps to a [`ToolCall`] (its
-/// `function.arguments` is a JSON *string* — decoded here; malformed → `{}`), and
-/// `finish_reason` maps to the stop reason (`tool_calls`→ToolUse, `stop`→End,
-/// `length`→Length, else Other). Pure + unit-tested.
-fn parse_openai_turn(data: &Value) -> AgentTurn {
-    let choice = data.get("choices").and_then(|c| c.get(0));
-    let message = choice.and_then(|c| c.get("message"));
-    let text = message
-        .and_then(|m| m.get("content"))
-        .and_then(|t| t.as_str())
-        .unwrap_or_default()
-        .to_string();
-    let tool_calls = message
-        .and_then(|m| m.get("tool_calls"))
-        .and_then(|c| c.as_array())
-        .map(|calls| {
-            calls
-                .iter()
-                .filter_map(|c| {
-                    let func = c.get("function")?;
-                    let name = func.get("name").and_then(|n| n.as_str())?.to_string();
-                    let args = func
-                        .get("arguments")
-                        .and_then(|a| a.as_str())
-                        .and_then(|s| serde_json::from_str::<Value>(s).ok())
-                        .unwrap_or_else(|| json!({}));
-                    Some(ToolCall {
-                        id: c
-                            .get("id")
-                            .and_then(|i| i.as_str())
-                            .unwrap_or_default()
-                            .to_string(),
-                        name,
-                        args,
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    let stop = match choice
-        .and_then(|c| c.get("finish_reason"))
-        .and_then(|f| f.as_str())
-    {
-        Some("tool_calls") => StopReason::ToolUse,
-        Some("stop") => StopReason::End,
-        Some("length") => StopReason::Length,
-        _ => StopReason::Other,
-    };
-    AgentTurn {
-        text,
-        tool_calls,
-        stop,
-        usage: parse_openai_usage(data).unwrap_or_default(),
-    }
-}
-
-/// Strip the query string / fragment from a failed request's URL before it
-/// reaches an error message or log line. Some OpenAI-compatible gateways put
-/// the API key in the base URL's own query string (see
-/// [`OpenAiClient::endpoint_url`]'s doc comment) — `reqwest::Error`'s own
-/// `Display` embeds the request URL verbatim and only ever strips userinfo,
-/// never query or fragment; confirmed via `reqwest::Error::without_url`'s own
-/// doc: "If the URL contains sensitive information (e.g. an API key as a
-/// query parameter), be sure to remove it." Verified empirically (see
-/// `openai_tests.rs`) that even a CORRECTLY built [`OpenAiClient::endpoint_url`]
-/// still carries the secret into a genuine transport-failure `Display` —
-/// fixing the URL construction alone does not stop the leak. Clears only the
-/// query/fragment (via `url_mut`), not the whole URL, so scheme/host/path
-/// stay visible for diagnosing a wrong-path bug.
-fn scrub_url_secret(mut e: reqwest::Error) -> reqwest::Error {
-    if let Some(url) = e.url_mut() {
-        url.set_query(None);
-        url.set_fragment(None);
-    }
-    e
-}
-
-/// Whether a model id returned by `/v1/models` should be offered in the picker.
-/// Native OpenAI exposes a large non-chat catalog (embeddings, audio, image,
-/// moderation…), so restrict it to chat-capable families. Every *other*
-/// OpenAI-compatible backend (custom gateways, Ollama Cloud, …) returns a curated
-/// catalog of its own models under arbitrary names, so pass those through
-/// unfiltered — that way a new composed provider lists its full catalog with no
-/// code change here.
-fn should_list_model(provider: ProviderId, id: &str) -> bool {
-    provider != ProviderId::OpenAi
-        || id.starts_with("gpt-")
-        || id.starts_with("o1")
-        || id.starts_with("o3")
-        || id.starts_with("o4")
-        || id.starts_with("chatgpt")
-}
-
-/// Resolve the stored key for `list_models`/`test_key`, TRIMMING the value it
-/// returns — not just checking the trimmed form is non-empty and handing back
-/// the original padded string. A pasted key with a trailing space/newline
-/// would otherwise reach `bearer_auth` as-is: a trailing space just 401s; an
-/// embedded `\n` makes the header value invalid and the request never builds
-/// at all.
-///
-/// Missing/blank errors for every provider EXCEPT `OpenAiCompatible`: its
-/// keyless self-hosted deployments (LM Studio, vLLM, …) are an explicitly
-/// supported configuration (`mod.rs`'s `ProviderId::OpenAiCompatible` doc)
-/// that already generates fine with no key — `chat_stream`/`chat_with_tools`
-/// default a missing key to `""` and send it regardless — so hard-requiring
-/// one here would cement "generates fine, listing/testing always errors" for
-/// a working setup. `Ok(None)` means "build the request with no bearer
-/// header" (never an empty `Authorization: Bearer` value — some gateways
-/// reject a malformed header rather than ignoring it). Shared by
-/// `list_models` and `test_key` so the two structurally agree on what counts
-/// as "no key" (previously `test_key` alone accepted a whitespace-only key
-/// and burned a round-trip on it). Pure (no `AppHandle`) so it's
-/// unit-testable without a mock-app harness.
-fn resolve_openai_key(provider: ProviderId, stored: Option<String>) -> AppResult<Option<String>> {
-    let trimmed = stored
-        .as_deref()
-        .map(str::trim)
-        .filter(|k| !k.is_empty())
-        .map(str::to_string);
-    if trimmed.is_some() || provider == ProviderId::OpenAiCompatible {
-        Ok(trimmed)
-    } else {
-        Err(AppError::Config("No API key found".to_string()))
-    }
-}
-
-/// Parse the `/models` response body into `{name, createdAt?}` entries,
-/// applying [`should_list_model`]'s per-provider filter. Pure so it's
-/// unit-testable without a network mock.
-///
-/// OpenAI's `/v1/models` (and every OpenAI-compatible gateway that mirrors
-/// its schema — Ollama Cloud included) reports `created` as unix epoch
-/// SECONDS — verified against the live docs, normalized to epoch millis (the
-/// convention every `createdAt` field in this codebase uses) via a
-/// `checked_mul`, never a bare `* 1000`: `created` is provider-controlled, so
-/// an unchecked multiply can overflow `i64` (panics in debug, silently wraps
-/// in release). Omit `createdAt` entirely on overflow — never a fabricated
-/// timestamp. Neither `displayName` nor `contextLength` is ever populated:
-/// OpenAI's catalogue endpoint doesn't return either.
-fn parse_model_list(provider: ProviderId, body: &Value) -> AppResult<Vec<Value>> {
-    let data = body.get("data").and_then(|d| d.as_array()).ok_or_else(|| {
-        AppError::Provider(format!(
-            "{}: response missing `data` array",
-            provider.as_str()
-        ))
-    })?;
-    Ok(data
-        .iter()
-        .filter_map(|m| {
-            let id = m.get("id").and_then(|v| v.as_str())?;
-            if !should_list_model(provider, id) {
-                return None;
-            }
-            let created_at_ms = m
-                .get("created")
-                .and_then(|v| v.as_i64())
-                .and_then(|secs| secs.checked_mul(1000));
-            Some(model_entry(id, None, created_at_ms, None))
-        })
-        .collect())
-}
-
-/// OpenAI reasoning families (the `o`-series: o1, o3, o4, … and future `o`N)
-/// reject `temperature` and require `max_completion_tokens` instead of
-/// `max_tokens`. Matched by the `o`+digit convention so new o-series models are
-/// handled without a code change.
-///
-/// This predicate is the `supports_temperature`/`token_param` gate ONLY — it
-/// does NOT cover OpenAI's current gpt-5.x reasoning line (see
-/// [`is_gpt5_or_later_reasoning_family`]), which accepts a normal
-/// `temperature`/`max_tokens` unlike the o-series. Reusing this for the
-/// `reasoning_effort` gate would silently exclude gpt-5.x — the two gates
-/// answer different questions and must stay separate.
-fn is_reasoning_model(model: &str) -> bool {
-    let m = model.to_ascii_lowercase();
-    let mut bytes = m.bytes();
-    matches!((bytes.next(), bytes.next()), (Some(b'o'), Some(d)) if d.is_ascii_digit())
-}
-
-/// OpenAI's CURRENT reasoning-model line — gpt-5 and later (verified against
-/// the live reasoning guide, `platform.openai.com/docs/guides/reasoning`,
-/// fetched 2026-08-04: "Start with `gpt-5.6` for most reasoning workloads");
-/// `docs/models/gpt-5.6.md`-style model pages confirm `reasoning_effort`
-/// support on `/v1/chat/completions`. Distinct from (and additive to)
-/// [`is_reasoning_model`]'s legacy o-series gate — a REQUEST SCHEMA
-/// (`CreateChatCompletionRequest`) never carries a model list, so this is
-/// verified against the provider's model/capability docs, not the schema.
-///
-/// Matches any `gpt-`+digit-major≥5 id (`gpt-5`, `gpt-5-mini`, `gpt-5.4`,
-/// `gpt-5.5`, `gpt-5.6` and its `-sol`/`-terra`/`-luna` aliases) so a NEW
-/// gpt-5.x variant — or a later numbered major line, should OpenAI keep this
-/// convention — is picked up with no code change, EXCEPT the `-chat-latest`
-/// family (`gpt-5-chat-latest`, `gpt-5.1-chat-latest`, …): OpenAI's
-/// non-reasoning conversational variant of each gpt-5.x generation (mirrors
-/// the older `chatgpt-4o-latest` naming), confirmed in the live
-/// `ModelIdsShared` enum — explicitly excluded.
-fn is_gpt5_or_later_reasoning_family(model: &str) -> bool {
-    let m = model.to_ascii_lowercase();
-    if m.contains("chat-latest") {
-        return false;
-    }
-    let Some(rest) = m.strip_prefix("gpt-") else {
-        return false;
-    };
-    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-    digits.parse::<u32>().is_ok_and(|major| major >= 5)
-}
-
-/// Split one streaming chunk into `(reasoning, content)` deltas.
-///
-/// OpenAI-compatible servers that expose chain-of-thought put it on
-/// `delta.reasoning_content` (DeepSeek-R1, vLLM, LM Studio, Ollama's OpenAI
-/// shim) or `delta.reasoning` (OpenRouter); the visible answer stays on
-/// `delta.content`. Either may be empty/absent. Pure + unit-tested so the
-/// streaming loop stays a thin emitter.
-///
-/// Honest limitation: OpenAI's own o-series hide their reasoning text over Chat
-/// Completions, so there is nothing to surface there — only the answer streams.
-/// Extract `usage.{prompt_tokens,completion_tokens}` from an OpenAI Chat
-/// Completions response/chunk — always present on the non-streaming response,
-/// and (with `stream_options.include_usage: true`, set by
-/// [`build_chat_stream_body`]) on ONE extra streamed chunk carrying no delta,
-/// emitted right before `[DONE]`. `None` on every other streamed chunk. Pure +
-/// unit-tested.
-fn parse_openai_usage(data: &Value) -> Option<Usage> {
-    let usage = data.get("usage")?;
-    Some(Usage {
-        input_tokens: usage
-            .get("prompt_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32,
-        output_tokens: usage
-            .get("completion_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32,
-        // `usage.completion_tokens_details.reasoning_tokens`. Current models
-        // send the details object even when they did no reasoning, with a `0`
-        // here — so a non-reasoning model records a measured zero, and `None`
-        // means the field was genuinely absent (an older model, or an
-        // openai-compatible gateway that omits it). Both are honest; neither is
-        // invented. It is a SUBSET of `completion_tokens`, so it must not be
-        // added to anything.
-        thinking_tokens: usage
-            .get("completion_tokens_details")
-            .and_then(|d| d.get("reasoning_tokens"))
-            .and_then(|v| v.as_u64())
-            // `try_from`, not `as`: `as` WRAPS, so an absurd or hostile count
-            // would land as a small plausible number in the spend ledger. An
-            // unrepresentable count is no measurement at all.
-            .and_then(|v| u32::try_from(v).ok()),
-    })
-}
-
-/// Extract real token usage from an OpenAI `/embeddings` response:
-/// `usage.prompt_tokens` (falling back to `usage.total_tokens`, which some
-/// OpenAI-compatible servers send instead), and `output_tokens: 0` — an
-/// embedding call has no completion tokens. Zero on both fields when `usage`
-/// is entirely absent (never fabricated). Pure + unit-tested.
-fn parse_openai_embed_usage(data: &Value) -> Usage {
-    let usage = data.get("usage");
-    let input_tokens = usage
-        .and_then(|u| u.get("prompt_tokens").or_else(|| u.get("total_tokens")))
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0) as u32;
-    Usage {
-        input_tokens,
-        output_tokens: 0,
-        // An embedding call does no reasoning; "not reported" is the truth.
-        thinking_tokens: None,
-    }
-}
-
-fn parse_openai_delta(event: &Value) -> (&str, &str) {
-    let delta = event
-        .get("choices")
-        .and_then(|c| c.get(0))
-        .and_then(|c| c.get("delta"));
-    let reasoning = delta
-        .and_then(|d| d.get("reasoning_content").or_else(|| d.get("reasoning")))
-        .and_then(|c| c.as_str())
-        .unwrap_or("");
-    let content = delta
-        .and_then(|d| d.get("content"))
-        .and_then(|c| c.as_str())
-        .unwrap_or("");
-    (reasoning, content)
-}
-
-/// Extract a streamed chunk's `finish_reason`, when present and non-null.
-/// Most streamed chunks carry `finish_reason: null`; only the terminal
-/// content-bearing chunk (typically right before `data: [DONE]`) sets it.
-/// Ollama Cloud (routed through this same client, see `ollama_cloud.rs`) uses
-/// the identical Chat Completions streaming shape. Reuses the SAME mapping
-/// [`parse_openai_turn`] already uses for the non-streaming path, so callers
-/// never need a second vocabulary. Pure + unit-tested.
-fn parse_openai_finish_reason(event: &Value) -> Option<StopReason> {
-    let reason = event
-        .get("choices")
-        .and_then(|c| c.get(0))
-        .and_then(|c| c.get("finish_reason"))
-        .and_then(|f| f.as_str())?;
-    Some(match reason {
-        "tool_calls" => StopReason::ToolUse,
-        "stop" => StopReason::End,
-        "length" => StopReason::Length,
-        _ => StopReason::Other,
-    })
-}
-
-/// Drain complete `data:`-prefixed SSE lines from the accumulated stream buffer
-/// into [`StreamPiece`]s, leaving any partial trailing line for the next chunk.
-/// `data: [DONE]` yields a terminal sentinel; other lines split into reasoning +
-/// content via [`parse_openai_delta`], plus a `stop_reason` piece whenever a
-/// chunk carries a non-null `finish_reason` (see
-/// [`parse_openai_finish_reason`]). Pure + unit-tested; this is the `parse`
-/// closure handed to [`stream_response`], so OpenAI's SSE framing lives here only.
-fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
-    let mut out = Vec::new();
-    // Walk by a `consumed` offset and `drain(..consumed)` once at the end, instead
-    // of reallocating the whole tail per line (O(n²) on a big frame).
-    let mut consumed = 0;
-    while let Some(rel) = buf[consumed..].find('\n') {
-        let nl = consumed + rel;
-        let line = buf[consumed..nl].trim().to_string();
-        consumed = nl + 1;
-
-        let data = match line.strip_prefix("data: ") {
-            Some(d) => d.trim(),
-            None => continue,
-        };
-        if data == "[DONE]" {
-            buf.drain(..consumed);
-            out.push(StreamPiece::done(""));
-            return out;
-        }
-        let event: Value = match serde_json::from_str(data) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        if let Some(usage) = parse_openai_usage(&event) {
-            out.push(StreamPiece::usage(usage));
-        }
-        if let Some(reason) = parse_openai_finish_reason(&event) {
-            out.push(StreamPiece::stop_reason(reason));
-        }
-        let (reasoning, delta) = parse_openai_delta(&event);
-        if !reasoning.is_empty() {
-            out.push(StreamPiece::thinking(reasoning));
-        }
-        if !delta.is_empty() {
-            out.push(StreamPiece::text(delta));
-        }
-    }
-    // Drop the fully-parsed prefix once; the partial trailing line stays buffered.
-    buf.drain(..consumed);
-    out
-}
-
 /// Levels `reasoning_effort` accepts on every reasoning-capable model this
 /// adapter recognizes (native OpenAI's o-series + gpt-5.x, and Ollama
-/// Cloud's thinking family — see [`OpenAiClient::supports_reasoning_effort`]).
+/// Cloud's thinking family — see `OpenAiClient::supports_reasoning_effort`).
 /// Verified against the live OpenAPI schema
 /// (`raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml`,
 /// `ReasoningEffort` schema, checked 2026-08-04): the real wire enum has
@@ -421,7 +45,7 @@ fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
 /// reasoning model accepts with no further per-model check. Unlike
 /// Gemini/Anthropic, OpenAI's guide has no single closed table mapping value
 /// -> supporting models — it defers to each individual model's own page, and
-/// [`is_gpt5_or_later_reasoning_family`] deliberately matches ANY `gpt-5.x`+
+/// `is_gpt5_or_later_reasoning_family` deliberately matches ANY `gpt-5.x`+
 /// id (including snapshots that predate `xhigh`/`max`, which the guide
 /// frames as a recent addition alongside GPT-5.6's reasoning-mode overhaul).
 /// Enumerating a real per-model-id table here would mean checking each
@@ -437,78 +61,6 @@ fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
 /// PER PROVIDER, not per model — `preferences-store.ts`).
 const OPENAI_EFFORT_LEVELS: [&str; 3] = ["low", "medium", "high"];
 
-/// Non-reasoning profile shared by native OpenAI AND `OpenAiCompatible`
-/// gateways (LM Studio/vLLM/OpenRouter/custom endpoints — same wire
-/// protocol): real values reproducing this app's pre-fix shipped numbers
-/// for every intent — see the shared constants' doc comments
-/// (`commands/ai_provider/mod.rs`) for the exact per-surface history each
-/// one preserves. `frequency_penalty`/`presence_penalty` both sit inside
-/// OpenAI's own documented "reasonable" band
-/// (`platform.openai.com/docs/api-reference/chat/create`: "Number between
-/// -2.0 and 2.0 ... reasonable values are between 0 and 1").
-fn openai_sampling_profile(intent: Intent) -> SamplingProfile {
-    match intent {
-        // `Default` (no declared intent) resolves the same as `Deterministic`
-        // — see `Intent`'s own doc comment (`commands/ai_provider/mod.rs`).
-        Intent::Deterministic | Intent::Default => SamplingProfile {
-            temperature: Some(DETERMINISTIC_TEMPERATURE),
-            ..SamplingProfile::default()
-        },
-        Intent::Prose => SamplingProfile {
-            temperature: Some(PROSE_TEMPERATURE),
-            top_p: Some(PROSE_TOP_P),
-            frequency_penalty: Some(PROSE_FREQUENCY_PENALTY),
-            presence_penalty: Some(PROSE_PRESENCE_PENALTY),
-            ..SamplingProfile::default()
-        },
-        // Same register as `Prose`, MINUS presence_penalty (see
-        // `Intent::ProseGrounded`'s own doc comment for why).
-        Intent::ProseGrounded => SamplingProfile {
-            temperature: Some(PROSE_GROUNDED_TEMPERATURE),
-            top_p: Some(PROSE_TOP_P),
-            frequency_penalty: Some(PROSE_FREQUENCY_PENALTY),
-            ..SamplingProfile::default()
-        },
-    }
-}
-
-/// Ollama Cloud's `/v1` layer hardcodes `temperature: 1.0, top_p: 1.0` when
-/// the caller omits them — overriding the model's own Modelfile defaults —
-/// so, unlike every OTHER OpenAI-compatible gateway (an unknown, arbitrary
-/// catalog this app never assumes anything about), omitting is NEVER neutral
-/// here for ANY family: every intent must declare real values, or the
-/// consequence is a forced 1.0/1.0 regardless of what this app intended.
-/// `gpt-oss` gets its own vendor-recommended values (source:
-/// `github.com/openai/gpt-oss` README, "Recommended Sampling Parameters":
-/// temperature 1.0, top_p 1.0 — which happen to coincide with `/v1`'s own
-/// hardcoded default, so this is declared for auditability, not because
-/// omission would behave differently for gpt-oss specifically). Every other
-/// family reuses the SAME per-intent targets native OpenAI does — this app's
-/// pre-fix renderer sent the identical numbers to every cloud provider,
-/// Ollama Cloud included. `repeat_penalty`/`num_ctx` can't be reached at all
-/// via `/v1` (Ollama-native-only fields), so `Prose`/`ProseGrounded` never
-/// set them here even though local Ollama does. `Intent::Default` resolves
-/// to `Intent::Deterministic`'s numbers (see `Intent`'s own doc comment) —
-/// deliberately NOT left neutral here specifically, since neutral would mean
-/// the forced 1.0/1.0 this whole function exists to avoid.
-fn ollama_cloud_sampling_profile(model: &str, intent: Intent) -> SamplingProfile {
-    if model.to_ascii_lowercase().contains("gpt-oss") {
-        return SamplingProfile {
-            temperature: Some(1.0),
-            top_p: Some(1.0),
-            ..SamplingProfile::default()
-        };
-    }
-    openai_sampling_profile(intent)
-}
-
-// The pure request-body builders live in a sibling file (this one is at its
-// R8 LOC cap) — same `#[path]` convention as `openai_tests.rs`, so they stay
-// child items of this module and no call site or test import moves.
-#[path = "openai_body.rs"]
-mod body;
-use body::{build_chat_stream_body, build_complete_body, StructuredCall};
-
 pub struct OpenAiClient {
     id: ProviderId,
     base_url: String,
@@ -523,399 +75,6 @@ impl OpenAiClient {
                 .unwrap_or_else(|| DEFAULT_BASE.to_string()),
         }
     }
-
-    /// Build a URL for `path` (a `/`-separated relative endpoint, e.g.
-    /// `"models"` or `"chat/completions"`) on `self.base_url`, preserving any
-    /// existing query string / fragment the base carries untouched. Some
-    /// OpenAI-compatible gateways (Cloudflare AI Gateway, several self-hosted
-    /// proxies) authenticate via the base URL's own query string — e.g.
-    /// `https://gw.example.com/v1?api-key=SECRET`. Plain
-    /// `format!("{base}/{path}")` string concatenation sends THAT case to the
-    /// wrong path (the string reparses as path `/v1`, query
-    /// `api-key=SECRET/path`) and corrupts the key. `Url::join` is not a safe
-    /// drop-in either — verified empirically (see `openai_tests.rs`): a plain
-    /// relative reference like `"models"` carries no query of its own, and
-    /// WHATWG relative-URL resolution defines that as "clear the query" on
-    /// join, so it would silently DROP a working gateway's auth query string
-    /// rather than construct a malformed URL. `path_segments_mut` (with
-    /// `pop_if_empty` so a base with OR without a trailing slash both resolve
-    /// correctly, never a double slash) only appends path segments and
-    /// leaves scheme/host/query/fragment untouched — the correct primitive
-    /// for "hit a sibling endpoint on the same base".
-    fn endpoint_url(&self, path: &str) -> AppResult<reqwest::Url> {
-        let mut url = reqwest::Url::parse(&self.base_url).map_err(|e| {
-            AppError::Config(format!("{}: invalid base URL: {e}", self.id.as_str()))
-        })?;
-        url.path_segments_mut()
-            .map_err(|()| {
-                AppError::Config(format!(
-                    "{}: base URL has no host to build an endpoint on",
-                    self.id.as_str()
-                ))
-            })?
-            .pop_if_empty()
-            .extend(path.split('/'));
-        Ok(url)
-    }
-
-    /// Whether this client's provider id exposes OpenAI's native `web_search`
-    /// tool — only native OpenAI does; every OpenAI-compatible gateway can't be
-    /// assumed to support it, and Ollama Cloud overrides `research()`/
-    /// `research_salary()` on its own client. Factored to a pure, `AppHandle`-free
-    /// predicate purely so the gate stays unit-testable (this crate has no
-    /// `tauri::test` mock-app harness to drive `web_search_complete` itself end
-    /// to end — see the same note on `salary_research::SalaryResearch::enrich`).
-    fn supports_web_search(&self) -> bool {
-        self.id == ProviderId::OpenAi
-    }
-
-    /// Whether this client's provider id + model accepts the `reasoning_effort`
-    /// field on `/chat/completions` (verified against the provider's live
-    /// model/capability docs — a REQUEST SCHEMA like
-    /// `CreateChatCompletionRequest` never carries a model list, so a gate
-    /// like this one is checked against OpenAI's reasoning guide + model
-    /// pages, not the schema — and Ollama's OpenAI-compatibility reference,
-    /// fetched 2026-08-04). Native OpenAI: the legacy o-series
-    /// ([`is_reasoning_model`]) OR the current gpt-5.x line
-    /// ([`is_gpt5_or_later_reasoning_family`]) — two SEPARATE gates ORed
-    /// together, not one reused, because gpt-5.x accepts a normal
-    /// `temperature` unlike the o-series (see `is_reasoning_model`'s doc
-    /// comment). Ollama Cloud: a DIFFERENT gate —
-    /// [`ollama::ollama_family_supports_thinking`], the same
-    /// thinking-model-family classifier local Ollama's native `think` field
-    /// uses — its `/v1` endpoint is OpenAI-compatible but its model CATALOG is
-    /// Ollama's own (e.g. `gpt-oss:120b` doesn't match the `o`+digit or
-    /// `gpt-5`+ conventions). Every other OpenAI-compatible gateway (LM
-    /// Studio, OpenRouter, generic `openai-compatible`) is an unknown catalog
-    /// — never guessed, so a wrong value can't 400 a gateway this adapter
-    /// knows nothing about.
-    fn supports_reasoning_effort(&self, model: &str) -> bool {
-        match self.id {
-            ProviderId::OpenAi => {
-                is_reasoning_model(model) || is_gpt5_or_later_reasoning_family(model)
-            }
-            ProviderId::OllamaCloud => super::ollama::ollama_family_supports_thinking(model),
-            _ => false,
-        }
-    }
-
-    /// Whether this client's provider id accepts OpenAI's `response_format`
-    /// field on `/chat/completions` — native OpenAI (which defines it) and
-    /// Ollama Cloud (whose `/v1` endpoint documents structured outputs through
-    /// the same field). A generic `openai-compatible` gateway is an unknown
-    /// catalog behind an unknown server build, exactly like
-    /// [`Self::supports_reasoning_effort`]'s `_ => false` arm: guessing wrong
-    /// 400s a whole generation, while omitting the field only costs the
-    /// prompt-discipline fallback, so an unknown gateway is never guessed.
-    fn supports_response_format(&self) -> bool {
-        matches!(self.id, ProviderId::OpenAi | ProviderId::OllamaCloud)
-    }
-
-    /// Shared body of `complete`/`complete_with_usage`: one non-streaming
-    /// `/chat/completions` call, parsed once into `(text, usage)` so the two
-    /// trait methods never duplicate the HTTP round-trip. `structured` is
-    /// `Some` only on the structured path (see [`Self::complete_structured`])
-    /// — it is the only non-streaming entry point handed the whole
-    /// [`AiGenerateRequest`], so the other two have nothing to pass. Its
-    /// `effort` arrives RAW (the user's per-provider preference) and is gated
-    /// against this model's own capabilities inside [`build_complete_body`],
-    /// exactly as `chat_stream` gates it.
-    async fn complete_impl(
-        &self,
-        app: &AppHandle,
-        model: &str,
-        system: &str,
-        user: &str,
-        temperature: Option<f64>,
-        structured: Option<StructuredCall<'_>>,
-    ) -> AppResult<(String, Usage)> {
-        let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
-        let caps = self.capabilities(model);
-        let endpoint = self.endpoint_url("chat/completions")?;
-        let trace = RequestTrace::begin(self.id, model, "/chat/completions", &self.base_url, false);
-
-        let body = build_complete_body(model, system, user, temperature, caps, structured);
-
-        let resp = send_with_retry(
-            || {
-                crate::net::http::shared()
-                    .post(endpoint.clone())
-                    .bearer_auth(&api_key)
-                    .json(&body)
-            },
-            timeouts::COMPLETION,
-        )
-        .await;
-        let resp = match resp {
-            Ok(r) => r,
-            Err(e) => {
-                trace.end(None, false);
-                // Scrub BEFORE mapping: some OpenAI-compatible gateways put the
-                // API key in the base URL's own query string, and
-                // `reqwest::Error`'s `Display` embeds the request URL verbatim
-                // (see `scrub_url_secret`'s own doc) — the timeout branch never
-                // reads `e`'s `Display`, so scrubbing unconditionally is safe.
-                return Err(map_completion_transport_error(
-                    scrub_url_secret(e),
-                    self.id.as_str(),
-                    timeouts::COMPLETION,
-                ));
-            }
-        };
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text =
-                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
-                    .await
-                    .unwrap_or_default();
-            trace.end(Some(status.as_u16()), false);
-            return Err(friendly_api_error(self.id, status, &body_text));
-        }
-        let data: Value = match crate::net::http::read_json_capped(
-            resp,
-            crate::net::http::DEFAULT_MAX_BODY_BYTES,
-        )
-        .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                trace.end(Some(status.as_u16()), false);
-                return Err(AppError::Message(format!("parse: {e}")));
-            }
-        };
-        trace.end(Some(status.as_u16()), true);
-        let text = data
-            .get("choices")
-            .and_then(|c| c.get(0))
-            .and_then(|c| c.get("message"))
-            .and_then(|m| m.get("content"))
-            .and_then(|t| t.as_str())
-            .map(String::from)
-            .ok_or_else(|| {
-                AppError::Provider(format!("{}: unexpected response shape", self.id.as_str()))
-            })?;
-        let usage = parse_openai_usage(&data).unwrap_or_default();
-        Ok((text, usage))
-    }
-
-    /// Shared body of `embed`/`embed_with_usage`: one `/embeddings` call,
-    /// parsed once into `(vector, usage)` so the two trait methods never
-    /// duplicate the HTTP round-trip.
-    async fn embed_impl(
-        &self,
-        app: &AppHandle,
-        model: &str,
-        text: &str,
-    ) -> AppResult<(Vec<f64>, Usage)> {
-        let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
-        let endpoint = self.endpoint_url("embeddings")?;
-        let trace = RequestTrace::begin(self.id, model, "/embeddings", &self.base_url, false);
-        let body = json!({ "model": model, "input": text });
-        // The embed entry point (per-attempt bound ≠ sequence budget) so a
-        // timed-out first attempt is still retried — see `retry::
-        // send_embed_with_retry`.
-        let resp = super::retry::send_embed_with_retry(
-            || {
-                crate::net::http::shared()
-                    .post(endpoint.clone())
-                    .bearer_auth(&api_key)
-                    .json(&body)
-            },
-            timeouts::EMBED,
-        )
-        .await;
-        let resp = match resp {
-            Ok(r) => r,
-            Err(e) => {
-                trace.end(None, false);
-                return Err(AppError::Message(format!(
-                    "{} unreachable: {}",
-                    self.id.as_str(),
-                    scrub_url_secret(e)
-                )));
-            }
-        };
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text =
-                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
-                    .await
-                    .unwrap_or_default();
-            trace.end(Some(status.as_u16()), false);
-            return Err(friendly_api_error(self.id, status, &body_text));
-        }
-        let data: Value = match crate::net::http::read_json_capped(
-            resp,
-            crate::net::http::DEFAULT_MAX_BODY_BYTES,
-        )
-        .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                trace.end(Some(status.as_u16()), false);
-                return Err(AppError::Message(format!("parse: {e}")));
-            }
-        };
-        trace.end(Some(status.as_u16()), true);
-        let vector: Vec<f64> = data
-            .get("data")
-            .and_then(|d| d.get(0))
-            .and_then(|e| e.get("embedding"))
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_f64()).collect())
-            .ok_or_else(|| {
-                AppError::Provider(format!(
-                    "{}: missing embedding in response",
-                    self.id.as_str()
-                ))
-            })?;
-        Ok((vector, parse_openai_embed_usage(&data)))
-    }
-
-    /// Shared transport for every `research*` facet: the Responses API with the
-    /// native `web_search` tool, `system`/`user` supplied by the caller. Every
-    /// non-OpenAI id degrades to `""`, exactly like a missing key or a failed
-    /// call.
-    async fn web_search_complete(
-        &self,
-        app: &AppHandle,
-        model: &str,
-        system: &str,
-        user: &str,
-    ) -> AppResult<String> {
-        if !self.supports_web_search() {
-            return Ok(String::new());
-        }
-        let api_key = match get_provider_key(app, self.id.credential_key()) {
-            Some(k) if !k.trim().is_empty() => k,
-            _ => return Ok(String::new()),
-        };
-        self.web_search_transport(&api_key, model, system, user)
-            .await
-    }
-
-    /// The `/responses` HTTP transport itself — no `AppHandle`/keychain, so it's
-    /// directly testable against a `wiremock::MockServer` (see the tests below).
-    /// Behavior-preserving extraction from `web_search_complete`: a transport
-    /// failure, a non-2xx status, and a non-JSON body all degrade to `""` (never
-    /// an error) — the same gentle-degrade contract the caller already promises.
-    async fn web_search_transport(
-        &self,
-        api_key: &str,
-        model: &str,
-        system: &str,
-        user: &str,
-    ) -> AppResult<String> {
-        let endpoint = match self.endpoint_url("responses") {
-            Ok(u) => u,
-            Err(e) => {
-                tracing::warn!("openai research: {e}");
-                return Ok(String::new());
-            }
-        };
-        let trace = RequestTrace::begin(
-            self.id,
-            model,
-            "/responses web_search",
-            &self.base_url,
-            false,
-        );
-
-        let body = json!({
-            "model": model,
-            "instructions": system,
-            "input": user,
-            "tools": [{ "type": "web_search" }],
-        });
-        let resp = crate::net::http::shared()
-            .post(endpoint)
-            .timeout(timeouts::WEB_SEARCH)
-            .bearer_auth(api_key)
-            .json(&body)
-            .send()
-            .await;
-        let resp = match resp {
-            Ok(r) => r,
-            Err(e) => {
-                trace.end(None, false);
-                tracing::warn!("openai research unreachable: {}", scrub_url_secret(e));
-                return Ok(String::new());
-            }
-        };
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text =
-                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
-                    .await
-                    .unwrap_or_default();
-            trace.end(Some(status.as_u16()), false);
-            tracing::warn!("openai research {status}: {body_text}");
-            return Ok(String::new());
-        }
-        let data: Value = match crate::net::http::read_json_capped(
-            resp,
-            crate::net::http::DEFAULT_MAX_BODY_BYTES,
-        )
-        .await
-        {
-            Ok(v) => v,
-            Err(_) => {
-                trace.end(Some(status.as_u16()), false);
-                return Ok(String::new());
-            }
-        };
-        trace.end(Some(status.as_u16()), true);
-        Ok(join_responses_text(&data))
-    }
-
-    /// Build the `GET {base_url}/models` request, attaching the bearer header
-    /// only when a key is present — never an empty `Authorization: Bearer`
-    /// value for a keyless `OpenAiCompatible` deployment (some gateways
-    /// reject a malformed/empty header rather than ignoring it). Shared by
-    /// `list_models_transport` and `test_key`.
-    fn list_models_request(&self, api_key: Option<&str>) -> AppResult<reqwest::RequestBuilder> {
-        let url = self.endpoint_url("models")?;
-        let req = crate::net::http::shared()
-            .get(url)
-            .timeout(timeouts::LIST_MODELS);
-        Ok(match api_key {
-            Some(key) => req.bearer_auth(key),
-            None => req,
-        })
-    }
-
-    /// The `/models` HTTP transport itself — no `AppHandle`/keychain, so it's
-    /// directly testable against a `wiremock::MockServer` (see the tests below),
-    /// mirroring [`web_search_transport`](Self::web_search_transport).
-    async fn list_models_transport(&self, api_key: Option<&str>) -> AppResult<Vec<Value>> {
-        let resp = self
-            .list_models_request(api_key)?
-            .send()
-            .await
-            .map_err(|e| {
-                AppError::Network(format!(
-                    "{}: request failed: {}",
-                    self.id.as_str(),
-                    scrub_url_secret(e)
-                ))
-            })?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text =
-                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
-                    .await
-                    .unwrap_or_default();
-            return Err(friendly_api_error(self.id, status, &body_text));
-        }
-        let body: Value =
-            crate::net::http::read_json_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
-                .await
-                .map_err(|e| AppError::Provider(format!("{}: parse: {}", self.id.as_str(), e)))?;
-        // OpenAI proper: only chat-capable families. Every other OpenAI-compatible
-        // backend (incl. Ollama Cloud) lists its own curated catalog, so pass those
-        // through unfiltered — see `should_list_model`.
-        parse_model_list(self.id, &body)
-    }
 }
 
 #[async_trait]
@@ -925,78 +84,15 @@ impl AiProvider for OpenAiClient {
     }
 
     fn capabilities(&self, model: &str) -> ModelCapabilities {
-        // Rejecting `temperature` is an o-series-ONLY quirk — distinct from
-        // "accepts reasoning_effort" (Ollama Cloud's gpt-oss/deepseek/qwen3
-        // models accept both temperature AND reasoning_effort), so these are
-        // two separate gates, not one reused variable.
-        let rejects_temperature = is_reasoning_model(model);
-        ModelCapabilities {
-            supports_temperature: !rejects_temperature,
-            supports_system_role: true,
-            supports_streaming: true,
-            supports_reasoning: self.supports_reasoning_effort(model),
-            supports_tools: true,
-            // Corrected from a blanket `true`: a generic `openai-compatible`
-            // gateway is an unknown server build, and this adapter never
-            // sends it `response_format` for exactly that reason — the
-            // declared capability now matches what `complete_structured`
-            // actually does. Same gate, one source of truth.
-            supports_json_mode: self.supports_response_format(),
-            supports_embeddings: true,
-            // Only native OpenAI exposes the `web_search` tool; any
-            // OpenAI-compatible gateway (LM Studio, OpenRouter, …) can't be
-            // assumed to — see `supports_web_search()`.
-            supports_web_search: self.supports_web_search(),
-            token_param: if rejects_temperature {
-                TokenParam::MaxCompletionTokens
-            } else {
-                TokenParam::MaxTokens
-            },
-        }
+        self.capabilities_impl(model)
     }
 
     fn effort_levels(&self, model: &str) -> Vec<&'static str> {
-        if self.supports_reasoning_effort(model) {
-            OPENAI_EFFORT_LEVELS.to_vec()
-        } else {
-            Vec::new()
-        }
+        self.effort_levels_impl(model)
     }
 
     fn sampling_profile(&self, model: &str, intent: Intent) -> SamplingProfile {
-        // Ollama Cloud gets its own family table — never the generic
-        // native-OpenAI defaults below (see the doc comment on
-        // `ollama_cloud_sampling_profile`).
-        if self.id == ProviderId::OllamaCloud {
-            return ollama_cloud_sampling_profile(model, intent);
-        }
-        // o-series (`is_reasoning_model`) genuinely reject `temperature`
-        // (`capabilities().supports_temperature` already gates the send
-        // site). gpt-5.x TECHNICALLY accepts a normal `temperature`/`top_p`
-        // (see `is_gpt5_or_later_reasoning_family`'s doc comment) but a
-        // reasoning model doesn't need the old per-task tuning either — both
-        // families stay neutral here so this app never second-guesses their
-        // own adaptive defaults.
-        if is_reasoning_model(model) || is_gpt5_or_later_reasoning_family(model) {
-            return SamplingProfile::default();
-        }
-        // `openai_sampling_profile`'s numbers ARE applied to
-        // `OpenAiCompatible` gateways (LM Studio/vLLM/OpenRouter/custom
-        // endpoints) too, deliberately — this is NOT the unknown-model
-        // fail-safe the other adapters use for an unrecognized *model*.
-        // `Intent` (e.g. `Deterministic`, which the analyze prompt's
-        // strict-JSON contract relies on — `runAnalysis` hard-throws on a
-        // parse failure) is an APP requirement on the response shape, not a
-        // guess about a specific model's preferred creative sampling, so it
-        // belongs on every provider that speaks this wire protocol and
-        // accepts `temperature` — `caps.supports_temperature` (checked at
-        // the send site) is what actually gates whether a value is sent at
-        // all, same as native OpenAI. This also matches pre-fix behavior:
-        // the renderer used to send these exact numbers to every
-        // OpenAI-compatible gateway. Do not re-gate this on `self.id ==
-        // ProviderId::OpenAi` — that was tried and reverted (it silently
-        // neutralized the JSON-strict analysis surface for every gateway).
-        openai_sampling_profile(intent)
+        self.sampling_profile_impl(model, intent)
     }
 
     async fn chat_stream(
@@ -1005,74 +101,7 @@ impl AiProvider for OpenAiClient {
         job_id: &str,
         req: &AiGenerateRequest,
     ) -> AppResult<()> {
-        let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
-        let caps = self.capabilities(&req.model);
-        let sampling = self
-            .sampling_profile(&req.model, resolve_intent(req))
-            .resolve(req);
-        let endpoint = self.endpoint_url("chat/completions")?;
-        let trace = RequestTrace::begin(
-            self.id,
-            &req.model,
-            "/chat/completions",
-            &self.base_url,
-            true,
-        );
-
-        let body = build_chat_stream_body(req, caps, sampling);
-
-        // Retried on a transient 429/5xx: this is only the handshake, so a retry
-        // re-sends a request that emitted no deltas. Treating it as terminal is
-        // what turned a provider rate-limit into a lost multi-minute generation.
-        let response = super::retry::send_stream_with_retry(
-            || {
-                crate::net::http::shared()
-                    .post(endpoint.clone())
-                    .bearer_auth(&api_key)
-                    .json(&body)
-            },
-            timeouts::stream_deadline(req.effort.as_deref()),
-        )
-        .await;
-
-        let response = match response {
-            Ok(r) => r,
-            Err(e) => {
-                trace.end(None, false);
-                return Err(AppError::Network(format!(
-                    "{} unreachable: {}",
-                    self.id.as_str(),
-                    scrub_url_secret(e)
-                )));
-            }
-        };
-
-        let status = response.status();
-        if !status.is_success() {
-            let body_text = crate::net::http::read_text_capped(
-                response,
-                crate::net::http::DEFAULT_MAX_BODY_BYTES,
-            )
-            .await
-            .unwrap_or_default();
-            trace.end(Some(status.as_u16()), false);
-            return Err(friendly_api_error(self.id, status, &body_text));
-        }
-
-        // The shared loop owns cancel-check + chunk read + emit + complete; this
-        // closure is the only OpenAI-specific part (its `data:`-prefixed SSE framing).
-        stream_response(
-            app,
-            job_id,
-            &trace,
-            response,
-            status.as_u16(),
-            self.id,
-            &req.model,
-            &self.base_url,
-            parse_openai_frames,
-        )
-        .await
+        self.chat_stream_impl(app, job_id, req).await
     }
 
     async fn complete(
@@ -1105,9 +134,10 @@ impl AiProvider for OpenAiClient {
     /// (see [`structured::openai_response_format`]). The prompt still carries
     /// the directive + filled example on this path. A gateway whose id this
     /// adapter can't vouch for falls back to the trait default — see
-    /// [`Self::supports_response_format`].
+    /// [`capabilities::OPENAI_EFFORT_LEVELS`]'s doc and
+    /// `OpenAiClient::supports_response_format`.
     ///
-    /// `req.effort` rides along (gated by [`reasoning_effort`]) for the same
+    /// `req.effort` rides along (gated by `reasoning_effort`) for the same
     /// reason `chat_stream` sends it: this is a full [`AiGenerateRequest`], and
     /// a structured call on a reasoning model that silently ran at the vendor's
     /// default effort was the user's setting being dropped, not honored. Same
@@ -1217,7 +247,7 @@ impl AiProvider for OpenAiClient {
     ///
     /// `None` instead, so `embed_text`'s existing default-resolution error fires
     /// first and says what to actually do. Same `id == OpenAi` gate as
-    /// [`Self::supports_web_search`], and for the same reason.
+    /// `OpenAiClient::supports_web_search`, and for the same reason.
     ///
     /// Deliberately NOT paired with flipping `supports_embeddings` to `false`
     /// for those providers: the `/v1/embeddings` endpoint may well exist on a
@@ -1240,33 +270,15 @@ impl AiProvider for OpenAiClient {
     }
 
     async fn list_models(&self, app: &AppHandle) -> AppResult<Vec<Value>> {
-        let api_key = resolve_openai_key(self.id, get_provider_key(app, self.id.credential_key()))?;
+        let api_key = transport::resolve_openai_key(
+            self.id,
+            get_provider_key(app, self.id.credential_key()),
+        )?;
         self.list_models_transport(api_key.as_deref()).await
     }
 
     async fn test_key(&self, app: &AppHandle) -> AppResult<()> {
-        let api_key = resolve_openai_key(self.id, get_provider_key(app, self.id.credential_key()))?;
-        let resp = self
-            .list_models_request(api_key.as_deref())?
-            .send()
-            .await
-            .map_err(|e| {
-                AppError::Network(format!(
-                    "{}: request failed: {}",
-                    self.id.as_str(),
-                    scrub_url_secret(e)
-                ))
-            })?;
-        let status = resp.status();
-        if status.is_success() {
-            Ok(())
-        } else {
-            let body_text =
-                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
-                    .await
-                    .unwrap_or_default();
-            Err(friendly_api_error(self.id, status, &body_text))
-        }
+        self.test_key_impl(app).await
     }
 
     async fn chat_with_tools(
@@ -1277,98 +289,10 @@ impl AiProvider for OpenAiClient {
         tools: &[ToolSpec],
         temperature: Option<f64>,
     ) -> AppResult<AgentTurn> {
-        let caps = self.capabilities(model);
-        if !caps.supports_tools {
-            return single_shot_turn(self, app, model, messages, temperature).await;
-        }
-        let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
-        let endpoint = self.endpoint_url("chat/completions")?;
-        let trace = RequestTrace::begin(
-            self.id,
-            model,
-            "/chat/completions tools",
-            &self.base_url,
-            false,
-        );
-
-        let wire_messages: Vec<Value> = messages
-            .iter()
-            .map(|m| json!({ "role": m.role.wire(), "content": m.content }))
-            .collect();
-        // OpenAI function-tool shape. The schema is trusted, fixed input — never
-        // built from scraped/model text.
-        let tool_specs: Vec<Value> = tools
-            .iter()
-            .map(|t| {
-                json!({
-                    "type": "function",
-                    "function": {
-                        "name": t.name,
-                        "description": t.description,
-                        "parameters": t.schema,
-                    },
-                })
-            })
-            .collect();
-
-        let mut body = json!({
-            "model": model,
-            "messages": wire_messages,
-            "stream": false,
-            "tools": tool_specs,
-            "tool_choice": "auto",
-        });
-        if caps.supports_temperature {
-            body["temperature"] = json!(temperature.unwrap_or(0.7));
-        }
-
-        let resp = send_with_retry(
-            || {
-                crate::net::http::shared()
-                    .post(endpoint.clone())
-                    .bearer_auth(&api_key)
-                    .json(&body)
-            },
-            timeouts::COMPLETION,
-        )
-        .await;
-        let resp = match resp {
-            Ok(r) => r,
-            Err(e) => {
-                trace.end(None, false);
-                return Err(AppError::Network(format!(
-                    "{} unreachable: {}",
-                    self.id.as_str(),
-                    scrub_url_secret(e)
-                )));
-            }
-        };
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text =
-                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
-                    .await
-                    .unwrap_or_default();
-            trace.end(Some(status.as_u16()), false);
-            return Err(friendly_api_error(self.id, status, &body_text));
-        }
-        let data: Value = match crate::net::http::read_json_capped(
-            resp,
-            crate::net::http::DEFAULT_MAX_BODY_BYTES,
-        )
-        .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                trace.end(Some(status.as_u16()), false);
-                return Err(AppError::Message(format!("parse: {e}")));
-            }
-        };
-        trace.end(Some(status.as_u16()), true);
-        Ok(parse_openai_turn(&data))
+        self.chat_with_tools_impl(app, model, messages, tools, temperature)
+            .await
     }
 }
 
 #[cfg(test)]
-#[path = "openai_tests.rs"]
 mod tests;

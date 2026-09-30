@@ -350,7 +350,7 @@ fn rust_sources() -> Vec<RustSource> {
 /// Dozens of column-0 `#[cfg(test)]` attributes in this tree sit on something
 /// other than a `mod … {` block (e.g. `validate/content/mod.rs:66` on a
 /// `use`, `commands/ai_provider/stream.rs:528` on `enum StreamSink {`,
-/// `commands/ai_provider/anthropic.rs:1394` on a `#[path] mod tests;`
+/// `commands/ai_provider/embed.rs:426` on a `#[path] mod tests;`
 /// external-file reference) — `egress_cfg_test_stripper_never_swallows_a_non_mod_attribute_target`
 /// pins exactly those three as regression cases.
 ///
@@ -1007,8 +1007,8 @@ mod egress_4_detection_logic {
 /// survivors the extraction rule was measured against: an attribute on a
 /// `use` (`validate/content/mod.rs`), on an `enum`
 /// (`commands/ai_provider/stream.rs`), and on a `#[path] mod name;`
-/// external-file reference (`commands/ai_provider/anthropic.rs`). Each line
-/// must be found, byte-for-byte, in the stripped output. This is what
+/// external-file reference (`commands/ai_provider/embed.rs`).
+/// Each line must be found, byte-for-byte, in the stripped output. This is what
 /// mutation-tests the stripper: swap it for a naive "strip anything after
 /// `#[cfg(test)]` to the next standalone `}`" implementation and this test
 /// goes red, because a naive stripper does NOT distinguish these targets
@@ -1026,8 +1026,8 @@ fn egress_cfg_test_stripper_never_swallows_a_non_mod_attribute_target() {
         ),
         ("commands/ai_provider/stream.rs", "enum StreamSink {"),
         (
-            "commands/ai_provider/anthropic.rs",
-            "#[path = \"anthropic_tests.rs\"]",
+            "commands/ai_provider/embed.rs",
+            "#[path = \"embed_tests.rs\"]",
         ),
         ("commands/ai_provider/anthropic.rs", "mod tests;"),
     ];

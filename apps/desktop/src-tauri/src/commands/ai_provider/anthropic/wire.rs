@@ -2,10 +2,8 @@
 //! stream) into this crate's [`AgentTurn`]/[`StreamPiece`]/[`Usage`] shapes.
 //! Split out of `anthropic.rs` (R8 LOC cap — the file was already at the
 //! ceiling before the structured-output work in this module added anything).
-//! A CHILD module of `anthropic` (`#[path = "anthropic_wire.rs"] mod wire;`),
-//! exactly like `anthropic_tests.rs`'s own split, so `use super::*` reaches
-//! every private item `anthropic.rs` itself uses, and `anthropic.rs`'s own
-//! `use wire::*;` re-export means no caller — production or test — changed.
+//! A plain child module of `anthropic` (`mod wire;`), so `use super::*`
+//! reaches every private item `anthropic.rs` itself uses.
 
 use serde_json::{json, Value};
 

@@ -2,10 +2,8 @@
 //! — streaming and non-streaming — shared by native OpenAI, every
 //! OpenAI-compatible gateway, and Ollama Cloud.
 //!
-//! Wired via `#[path = "openai_body.rs"] mod body;` in `openai.rs` (the same
-//! sibling-file convention as `openai_tests.rs`), so these stay CHILD items of
-//! `openai` and keep reaching its private consts. Split out because `openai.rs`
-//! is at the R8 LOC cap; no call site or test import moves.
+//! A plain child module of `openai` (`mod body;`), so these stay CHILD items
+//! of `openai` and keep reaching its private consts.
 
 use serde_json::{json, Value};
 

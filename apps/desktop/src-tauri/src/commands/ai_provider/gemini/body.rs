@@ -1,11 +1,8 @@
 //! The pure Gemini request-body builders — `streamGenerateContent`,
 //! `generateContent`, and `embedContent`.
 //!
-//! Wired via `#[path = "gemini_body.rs"] mod body;` in `gemini.rs` (the same
-//! sibling-file convention as `gemini_tests.rs`, and the mirror of
-//! `openai_body.rs`), so these stay CHILD items of `gemini` and keep reaching
-//! its private model-classification gates. Split out because `gemini.rs` is at
-//! the R8 LOC cap; no call site or test import moves.
+//! A plain child module of `gemini` (`mod body;`), so these stay CHILD items
+//! of `gemini` and keep reaching its private model-classification gates.
 
 use serde_json::{json, Value};
 

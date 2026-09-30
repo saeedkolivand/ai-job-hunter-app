@@ -12,7 +12,16 @@
 //! Split out of `mod.rs` (which is at its R8 LOC cap) exactly like
 //! [`super::trace`] — every item is re-exported from `super`, so no call site
 //! moves.
+//!
+//! Also holds two smaller pieces of cross-adapter transport duplication that
+//! need the SAME "reachable by every adapter, but `mod.rs` has no LOC budget
+//! left to hold them directly" home: [`checked_response`] (the repeated
+//! check-status/map-error shape anthropic/openai/gemini's non-streaming and
+//! streaming HTTP paths all shared byte-for-byte) and
+//! [`incomplete_catalogue_error`] (the "ran out of page budget" message the
+//! two paginating adapters, anthropic and gemini, already worded identically).
 
+use super::{ProviderId, RequestTrace};
 use crate::error::{AppError, AppResult};
 
 /// Outcome of one paginated `list_models` iteration — see [`pagination_step`].
@@ -114,4 +123,46 @@ pub async fn bounded<F: std::future::Future>(
                 "{provider}: timed out listing models across multiple pages"
             ))
         })
+}
+
+/// Check `resp`'s status; on success, hand it back unconsumed so the caller
+/// can keep reading its body (a cheap, non-consuming second call to
+/// `.status()` gets the same value back for the caller's own success-path
+/// trace). On failure, drain the body (capped), end `trace` as a failure, and
+/// return the provider's friendly error.
+///
+/// This is the "check status → read the error body → end the trace → map via
+/// `friendly_api_error`" sequence anthropic/openai/gemini's non-streaming
+/// AND streaming HTTP paths all repeated byte-for-byte (3-4 call sites per
+/// adapter) before being collapsed to this one copy. Ollama's own status
+/// check is NOT a candidate — it maps failure to a raw
+/// `AppError::Provider(format!("Ollama {status}: {body_text}"))` instead of
+/// `friendly_api_error`, a genuine behavioral difference, not a formatting
+/// one, so it keeps its own inline check.
+pub async fn checked_response(
+    resp: reqwest::Response,
+    provider: ProviderId,
+    trace: &RequestTrace,
+) -> AppResult<reqwest::Response> {
+    let status = resp.status();
+    if status.is_success() {
+        return Ok(resp);
+    }
+    let body_text =
+        crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+            .await
+            .unwrap_or_default();
+    trace.end(Some(status.as_u16()), false);
+    Err(super::friendly_api_error(provider, status, &body_text))
+}
+
+/// The message every paginating adapter's `list_models` loop returns when it
+/// exhausts its own page budget while the cursor was STILL genuinely
+/// advancing (see [`PaginationStep::Incomplete`]) — worded byte-identically
+/// by anthropic and gemini (the two adapters that paginate) before being
+/// collapsed to this one copy.
+pub fn incomplete_catalogue_error(name: &str, max_pages: usize) -> AppError {
+    AppError::Provider(format!(
+        "{name}: model catalogue has more than {max_pages} pages — stopped early rather than return an incomplete list"
+    ))
 }
