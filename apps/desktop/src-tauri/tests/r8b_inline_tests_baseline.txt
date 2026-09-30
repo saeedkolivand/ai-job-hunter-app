@@ -5,13 +5,6 @@ applications/reminders.rs
 applications/status_events.rs
 autopilot_scheduler.rs
 commands/ai/spend.rs
-commands/ai_provider/cli_agent/antigravity.rs
-commands/ai_provider/cli_agent/claude_code.rs
-commands/ai_provider/cli_agent/codex.rs
-commands/ai_provider/cli_agent/cursor.rs
-commands/ai_provider/cli_agent/gemini_cli.rs
-commands/ai_provider/cli_agent/qwen_code.rs
-commands/ai_provider/cli_agent/workspace.rs
 commands/applications.rs
 commands/autopilot/best_matches.rs
 commands/cli_agents.rs

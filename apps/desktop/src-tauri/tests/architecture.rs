@@ -1144,7 +1144,7 @@ fn f() {
 const JOB_COMPLETE_PRODUCERS: &[(&str, &str)] = &[
     ("commands/ai/mod.rs", "ai_pull_model"),
     ("commands/ai/mod.rs", "run_embed_job"),
-    ("commands/ai_provider/cli_agent/mod.rs", "emit_done"),
+    ("commands/ai_provider/cli_agent/stream.rs", "emit_done"),
     ("commands/ai_provider/stream/finish.rs", "finish"),
     ("commands/autopilot.rs", "autopilot_run"),
     ("commands/resume_pipeline/mod.rs", "execute"),

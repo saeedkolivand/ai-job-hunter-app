@@ -15,10 +15,6 @@
 602	autopilot_scheduler.rs
 769	commands/ai/mod.rs
 379	commands/ai/spend.rs
-411	commands/ai_provider/cli_agent/claude_code.rs
-559	commands/ai_provider/cli_agent/codex.rs
-817	commands/ai_provider/cli_agent/mod.rs
-381	commands/ai_provider/cli_agent/qwen_code.rs
 777	commands/applications.rs
 679	commands/autopilot.rs
 1105	commands/autopilot/best_matches.rs
