@@ -403,4 +403,4 @@ impl Scraper for SmartRecruitersScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

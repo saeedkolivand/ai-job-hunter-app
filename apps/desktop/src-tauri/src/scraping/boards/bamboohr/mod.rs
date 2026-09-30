@@ -292,4 +292,4 @@ impl Scraper for BambooHrScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

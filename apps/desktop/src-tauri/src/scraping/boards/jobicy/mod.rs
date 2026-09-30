@@ -255,4 +255,4 @@ impl Scraper for JobicyScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

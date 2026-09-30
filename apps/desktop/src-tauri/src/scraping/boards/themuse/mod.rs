@@ -236,4 +236,4 @@ impl Scraper for TheMuseScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

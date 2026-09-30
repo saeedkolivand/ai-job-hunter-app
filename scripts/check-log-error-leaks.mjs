@@ -273,10 +273,10 @@ const ALLOWLIST = {
   'scraping/boards/ycombinator/mod.rs:109': httpChokepointSafe(
     '[ycombinator] item {id} failed: {e}; skipping'
   ),
-  'scraping/boards/aggregator/adzuna.rs:429': httpChokepointSafe(
+  'scraping/boards/aggregator/adzuna.rs:211': httpChokepointSafe(
     '[aggregator] adzuna broaden retry failed, keeping narrow result: {e}'
   ),
-  'scraping/boards/aggregator/adzuna.rs:562': httpChokepointSafe(
+  'scraping/boards/aggregator/adzuna_fetch.rs:355': httpChokepointSafe(
     '[aggregator] adzuna page {page} failed, keeping {} result(s) already collected: {e}'
   ),
   'scraping/boards/arbeitnow/mod.rs:96': httpChokepointSafe(
@@ -288,16 +288,16 @@ const ALLOWLIST = {
   'scraping/boards/arbeitsagentur/mod.rs:164': httpChokepointSafe(
     '[arbeitsagentur] page {page} failed: {e}; returning {} collected'
   ),
-  'scraping/boards/aggregator/mod.rs:318': httpChokepointSafe(
+  'scraping/boards/aggregator/fallback.rs:203': httpChokepointSafe(
     '[aggregator] adzuna error, attempting jsearch fallback: {e}'
   ),
-  'scraping/boards/aggregator/mod.rs:352': httpChokepointSafe(
+  'scraping/boards/aggregator/fallback.rs:237': httpChokepointSafe(
     '[aggregator] jsearch error, attempting jooble fallback: {e}'
   ),
-  'scraping/boards/aggregator/mod.rs:385': httpChokepointSafe(
+  'scraping/boards/aggregator/fallback.rs:270': httpChokepointSafe(
     '[aggregator] jooble fallback failed: {e}'
   ),
-  'scraping/boards/aggregator/mod.rs:623': httpChokepointSafe(
+  'scraping/boards/aggregator/merge.rs:142': httpChokepointSafe(
     '[aggregator] apify_linkedin error (additive, ignored): {e}'
   ),
   'scraping/boards/ashby/mod.rs:157': httpChokepointSafe("[ashby] fetch failed for '{}': {e}"),

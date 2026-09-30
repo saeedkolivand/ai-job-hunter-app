@@ -297,4 +297,4 @@ impl Scraper for RipplingScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

@@ -373,4 +373,4 @@ impl Scraper for BreezyScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

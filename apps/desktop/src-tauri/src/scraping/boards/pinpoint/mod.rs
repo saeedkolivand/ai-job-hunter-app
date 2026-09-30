@@ -240,4 +240,4 @@ impl Scraper for PinpointScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

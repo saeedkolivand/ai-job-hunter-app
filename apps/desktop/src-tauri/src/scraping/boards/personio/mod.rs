@@ -321,4 +321,4 @@ impl Scraper for PersonioScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

@@ -315,4 +315,4 @@ impl Scraper for GermanTechJobsScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

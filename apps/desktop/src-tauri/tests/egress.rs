@@ -103,9 +103,9 @@ const EGRESS: &[Egress] = &[
     // app's core function, covered by the generic "job boards you scrape"
     // disclosure rather than a per-board name.
     Egress { host: "api.adzuna.com", public_name: Some("Adzuna"), note: "Aggregator primary tier (ADR-026): search + redirect-URL resolution. scraping/boards/aggregator/adzuna.rs." },
-    Egress { host: "jsearch.p.rapidapi.com", public_name: Some("RapidAPI"), note: "JSearch, aggregator paid fallback tier, via RapidAPI. scraping/boards/aggregator/providers.rs." },
-    Egress { host: "jooble.org", public_name: Some("Jooble"), note: "Aggregator last-resort fallback tier. scraping/boards/aggregator/providers.rs." },
-    Egress { host: "api.apify.com", public_name: Some("Apify"), note: "Aggregator LinkedIn actor tier — additive, opt-in, paid. scraping/boards/aggregator/providers.rs." },
+    Egress { host: "jsearch.p.rapidapi.com", public_name: Some("RapidAPI"), note: "JSearch, aggregator paid fallback tier, via RapidAPI. scraping/boards/aggregator/jsearch.rs." },
+    Egress { host: "jooble.org", public_name: Some("Jooble"), note: "Aggregator last-resort fallback tier. scraping/boards/aggregator/jooble.rs." },
+    Egress { host: "api.apify.com", public_name: Some("Apify"), note: "Aggregator LinkedIn actor tier — additive, opt-in, paid. scraping/boards/aggregator/apify.rs." },
     Egress { host: "freehire.me", public_name: Some("freehire"), note: "Keyless job board — no API key, so it is the one broad board a fresh install can search with. Selected explicitly in the catalog. scraping/boards/freehire/mod.rs." },
     Egress { host: "api.ashbyhq.com", public_name: None, note: "Ashby ATS board fetch. scraping/boards/ashby/mod.rs." },
     Egress { host: "jobs.ashbyhq.com", public_name: None, note: "Ashby single-pasted-URL resolver. scraping/scrape_url/mod.rs." },

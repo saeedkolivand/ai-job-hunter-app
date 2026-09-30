@@ -526,4 +526,4 @@ impl Scraper for FreehireScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

@@ -381,4 +381,4 @@ impl Scraper for WorkableScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;
