@@ -1,5 +1,41 @@
 [
   {
+    "sha": "8958887834a975d12ec94f8df7459eac6cad57b4",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-30T06:28:31Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "3ddc41fb9190bbc47245fa30fafe1a78576d91ae",
+    "commit": {
+      "message": "refactor(scraping): split the job-board scrapers into modules under 300 code lines (#1296)",
+      "author": {
+        "date": "2026-09-30T06:06:52Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "2eaf5b156974fce78e34e8b24eb2bba8d2c3ecc9",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-29T09:47:25Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "4183aba29198312a83ccf486553a2fd22b845379",
     "commit": {
       "message": "chore: update export benchmark data [skip ci]",
@@ -1157,42 +1193,6 @@
       "message": "feat(extension): Prep tab and saving the answers you typed at submit (#1209)",
       "author": {
         "date": "2026-09-16T17:06:45Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "2c2c93ca9b4f0409306e87d4ff1eeed8d57985fd",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-16T08:33:30Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "cea0e56b3ab4df74a5a9e61c3af3a7a82b708b29",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-16T03:14:23Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "dbb36fe20af0d7fac23e4dd0725c6f5360a497d0",
-    "commit": {
-      "message": "feat(extension): Check-fit on the page — fit badge, results stamps, salary facts (#1205)",
-      "author": {
-        "date": "2026-09-16T02:50:27Z"
       }
     },
     "author": {
