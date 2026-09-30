@@ -78,8 +78,6 @@
 786	model/adapter/tests.rs
 573	model/rich.rs
 456	net/http.rs
-603	pipeline/json.rs
-598	pipeline/mod.rs
 305	pipeline/resume/mod.rs
 703	pipeline/resume/projects.rs
 403	pipeline/resume/prompts.rs
@@ -87,9 +85,6 @@
 406	pipeline/resume/stages/humanize.rs
 327	pipeline/resume/stages/repair.rs
 3285	pipeline/resume/test.rs
-563	pipeline/runs/mod.rs
-935	pipeline/runs/test.rs
-770	pipeline/test.rs
 336	platform/chrome/mod.rs
 318	platform/linux_appimage.rs
 410	platform/msix.rs

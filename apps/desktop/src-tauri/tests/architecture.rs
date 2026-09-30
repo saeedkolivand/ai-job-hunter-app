@@ -363,7 +363,13 @@ const R2_ALLOW: &[&str] = &[
     // Split out of documents/mod.rs (R8 LOC cap) — same AppHandle-for-the-
     // provider-layer shape as the parent store, not a new exception.
     "documents/embedding.rs",
-    "pipeline/mod.rs",
+    // Split out of pipeline/mod.rs (R8 LOC cap): `Completer`'s construction/
+    // accounting/research methods (completer.rs) and its actual provider-call
+    // methods (completion.rs) both need the `AppHandle` to reach managed state
+    // and stream through the centralized provider layer — same shape as the
+    // parent module, not a new exception.
+    "pipeline/completer.rs",
+    "pipeline/completion.rs",
     "platform/config.rs", // sole owner: resolves the data dir from the AppHandle at bootstrap
     "platform/accent_watcher.rs", // Windows live-accent watcher: holds the AppHandle + emits SYSTEM_ACCENT_CHANGED from the WinRT ColorValuesChanged callback (bootstrap shell-reach, like platform/config.rs). TODO(arch): inject an emitter port.
 ];
@@ -475,8 +481,13 @@ const R3_ALLOW: &[&str] = &[
     // wiped via `Resettable`, exactly like the per-domain stores above. It sits
     // under `pipeline/` rather than at the top level because `kind` — not a
     // separate module — is what separates a résumé run from an agent run, so a
-    // sibling store would have been a second copy of the same two tables.
-    "pipeline/runs/mod.rs",
+    // sibling store would have been a second copy of the same two tables. Split
+    // across three files only to stay under R8's LOC cap (store.rs: open/CRUD;
+    // maintenance.rs: retention/deletion; import_export.rs: the backup
+    // `DataStore` surface) — same connection, same store, not a new exception.
+    "pipeline/runs/store.rs",
+    "pipeline/runs/maintenance.rs",
+    "pipeline/runs/import_export.rs",
     // Per-board reliability history (Track B1): one row per board, folded from
     // every scrape run's `BoardScrapeSummary`. Same ADR-022 shape as the stores
     // above (`db::open` + position-indexed migrations, `Resettable`); it sits

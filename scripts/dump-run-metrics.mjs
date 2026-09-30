@@ -20,7 +20,7 @@
 // sidecars beside the file. See the open site below for why `immutable=1` is the
 // wrong trade here.
 //
-// Source of truth for the shape: apps/desktop/src-tauri/src/pipeline/runs/mod.rs
+// Source of truth for the shape: apps/desktop/src-tauri/src/pipeline/runs/store.rs
 // (the table) and apps/desktop/src-tauri/src/commands/resume_pipeline/mod.rs
 // (the `metrics_json` keys, written at the one terminal-update site).
 //

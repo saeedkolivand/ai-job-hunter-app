@@ -42,7 +42,7 @@ const describeSqlite = DatabaseSync ? describe : describe.skip;
 // file is a reader of it, the same spirit as
 // `phase_check_matches_the_generated_contract` on the Rust side.
 const REPO_ROOT = join(__dirname, '..');
-const RUNS_MOD = join(REPO_ROOT, 'apps/desktop/src-tauri/src/pipeline/runs/mod.rs');
+const RUNS_MOD = join(REPO_ROOT, 'apps/desktop/src-tauri/src/pipeline/runs/store.rs');
 const LEDGER_MOD = join(REPO_ROOT, 'apps/desktop/src-tauri/src/pipeline/resume/mod.rs');
 const PIPELINE_CMD = join(REPO_ROOT, 'apps/desktop/src-tauri/src/commands/resume_pipeline/mod.rs');
 

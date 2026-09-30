@@ -69,7 +69,6 @@ net/http.rs
 net/ssrf.rs
 observability.rs
 performance.rs
-pipeline/json.rs
 pipeline/resume/projects.rs
 pipeline/resume/stages/evidence.rs
 platform/config.rs
