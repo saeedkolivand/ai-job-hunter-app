@@ -1,5 +1,113 @@
 [
   {
+    "sha": "4183aba29198312a83ccf486553a2fd22b845379",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-28T23:57:57Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "555beb359433e6d323aae4c1d0eff18f9131802f",
+    "commit": {
+      "message": "refactor(scraping): split the scraping core into modules under 300 code lines (#1295)",
+      "author": {
+        "date": "2026-09-28T23:31:07Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "4aa192ff537d4a996f6d2a665c94eb68d06210b0",
+    "commit": {
+      "message": "fix(cli-agents): detect npm-installed CLIs and list opencode models on windows (#1294)",
+      "author": {
+        "date": "2026-09-28T23:30:51Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "44e60660e3e014f0703e13744ab1ec9dc380e527",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-28T16:04:11Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "b0b0c85c073e9db41a58f08dcfbf4e2bc627a92f",
+    "commit": {
+      "message": "chore(arch): count only code lines against the R8 file-size cap (#1291)",
+      "author": {
+        "date": "2026-09-28T15:39:46Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "9904b31ae280902961dd82041db38309b2aa5e0b",
+    "commit": {
+      "message": "ui(landing): show every store's count on its download button (#1290)",
+      "author": {
+        "date": "2026-09-28T15:38:31Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "e610fc79286a72499e912db1072dc7d23fa113f4",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-28T15:35:15Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "ad0edc4f55450e50b181124a89e332d9b5a87745",
+    "commit": {
+      "message": "refactor(extension-bridge): split the bridge core into modules under 300 lines (#1288)",
+      "author": {
+        "date": "2026-09-28T15:22:39Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "b06e386646ef9fc8d1c1b1205ed873ea60db7c0f",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-28T09:43:30Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "c03abaca6df48502528fe6dcba78941c2a426a4d",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1089,114 +1197,6 @@
     },
     "author": {
       "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "2a73650eb78abd34b06ce0561d5d9e494dae063b",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-15T16:42:30Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "c5940511bbdef8704b64c30739f53311cfdc09fe",
-    "commit": {
-      "message": "feat(extension): documents into ATS — résumé attach, cover-letter paste, deep links, copy fallback (#1204)",
-      "author": {
-        "date": "2026-09-15T16:18:14Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "b8ad6b23890b6e87f6728aeb7df11eb9a60704e0",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-15T08:39:05Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "0a002b77fd647263debdf55c799ab3212a4b6de5",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-14T22:09:46Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "dd5b0d9081c41905a70ab558d1668afc8f7219a5",
-    "commit": {
-      "message": "feat(extension): read-only agent tier + live settings switches (ADR-050) (#1203)",
-      "author": {
-        "date": "2026-09-14T21:45:38Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "3cb7ed99a3ce0019ad404e5e2836c29e24870a48",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-14T08:52:37Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "c110bb721b66ea23e80c82fd33222cf9059cb1ae",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-13T08:16:54Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "b2f496b325028cc9f4c135234ae15e10ce29febf",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-12T07:54:05Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "882700abf14d2d0ac5b47c52dd735b720bb93dd8",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-11T08:01:37Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
     }
   }
 ]

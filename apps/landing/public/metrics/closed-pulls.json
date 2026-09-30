@@ -1,5 +1,75 @@
 [
   {
+    "number": 1295,
+    "title": "refactor(scraping): split the scraping core into modules under 300 code lines",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1295",
+    "draft": false,
+    "created_at": "2026-09-28T23:23:38Z",
+    "updated_at": "2026-09-28T23:39:36Z",
+    "merged_at": "2026-09-28T23:31:07Z",
+    "closed_at": "2026-09-28T23:31:07Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1294,
+    "title": "fix(cli-agents): detect npm-installed CLIs and list opencode models on windows",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1294",
+    "draft": false,
+    "created_at": "2026-09-28T22:39:08Z",
+    "updated_at": "2026-09-28T23:39:35Z",
+    "merged_at": "2026-09-28T23:30:51Z",
+    "closed_at": "2026-09-28T23:30:51Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1290,
+    "title": "ui(landing): show every store's count on its download button",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1290",
+    "draft": false,
+    "created_at": "2026-09-28T15:37:03Z",
+    "updated_at": "2026-09-28T15:57:10Z",
+    "merged_at": "2026-09-28T15:38:32Z",
+    "closed_at": "2026-09-28T15:38:32Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1291,
+    "title": "chore(arch): count only code lines against the R8 file-size cap",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1291",
+    "draft": false,
+    "created_at": "2026-09-28T15:38:07Z",
+    "updated_at": "2026-09-28T15:58:07Z",
+    "merged_at": "2026-09-28T15:39:47Z",
+    "closed_at": "2026-09-28T15:39:47Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1288,
+    "title": "refactor(extension-bridge): split the bridge core into modules under 300 lines",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1288",
+    "draft": false,
+    "created_at": "2026-09-28T15:22:00Z",
+    "updated_at": "2026-09-28T15:39:54Z",
+    "merged_at": "2026-09-28T15:22:40Z",
+    "closed_at": "2026-09-28T15:22:40Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
     "number": 1287,
     "title": "refactor(extension-bridge): split and shrink the answer/assist family",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1287",
@@ -627,76 +697,6 @@
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1209,
-    "title": "feat(extension): Prep tab and saving the answers you typed at submit",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1209",
-    "draft": false,
-    "created_at": "2026-09-16T16:09:38Z",
-    "updated_at": "2026-09-16T17:59:27Z",
-    "merged_at": "2026-09-16T17:06:46Z",
-    "closed_at": "2026-09-16T17:06:46Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1206,
-    "title": "chore: bump the codeql-action group with 3 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1206",
-    "draft": false,
-    "created_at": "2026-09-16T16:07:13Z",
-    "updated_at": "2026-09-16T17:59:26Z",
-    "merged_at": "2026-09-16T17:23:24Z",
-    "closed_at": "2026-09-16T17:23:24Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1207,
-    "title": "chore: bump the desktop-rust group in /apps/desktop/src-tauri with 4 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1207",
-    "draft": false,
-    "created_at": "2026-09-16T16:09:18Z",
-    "updated_at": "2026-09-16T17:59:25Z",
-    "merged_at": "2026-09-16T17:25:14Z",
-    "closed_at": "2026-09-16T17:25:14Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1208,
-    "title": "chore: bump lopdf from 0.44.0 to 0.45.0 in /apps/desktop/src-tauri",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1208",
-    "draft": false,
-    "created_at": "2026-09-16T16:09:28Z",
-    "updated_at": "2026-09-16T17:59:24Z",
-    "merged_at": "2026-09-16T17:25:42Z",
-    "closed_at": "2026-09-16T17:25:42Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1210,
-    "title": "chore: bump the ci-actions group with 3 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1210",
-    "draft": false,
-    "created_at": "2026-09-16T16:11:27Z",
-    "updated_at": "2026-09-16T17:59:23Z",
-    "merged_at": "2026-09-16T17:26:43Z",
-    "closed_at": "2026-09-16T17:26:43Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
     }
   }
 ]
