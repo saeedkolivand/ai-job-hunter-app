@@ -63,10 +63,6 @@
 753	export/pdf/test.rs
 785	export/templates/mod.rs
 341	export/templates/test.rs
-994	export/typst_engine/letter.rs
-387	export/typst_engine/letterhead.rs
-318	export/typst_engine/render.rs
-5421	export/typst_engine/test.rs
 484	extraction/pdf.rs
 306	extraction/rtf.rs
 708	job_preferences/test.rs

@@ -29,7 +29,7 @@ mod render;
 mod world;
 
 #[cfg(test)]
-mod test;
+mod tests;
 
 pub use engine::{
     render_letter_pdf, render_letter_svg_pages, render_pdf, render_pdf_with_photo,

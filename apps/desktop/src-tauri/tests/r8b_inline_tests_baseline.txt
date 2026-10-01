@@ -44,10 +44,6 @@ email_watch_scheduler.rs
 export/docx_renderer.rs
 export/letter_shape.rs
 export/types.rs
-export/typst_engine/letter.rs
-export/typst_engine/letterhead.rs
-export/typst_engine/photo.rs
-export/typst_engine/render.rs
 extraction/clean.rs
 extraction/confidence.rs
 extraction/docx.rs

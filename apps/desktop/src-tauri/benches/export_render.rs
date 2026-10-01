@@ -21,7 +21,7 @@ use ajh_tauri::export::types::{
 /// Representative one-page résumé: header with contact links, summary, two
 /// experience entries with bullets, education, and skills — enough to exercise
 /// every block type the parser/renderer handles. Mirrors the in-crate test
-/// fixture (`typst_engine::test::FIXTURE_RESUME`).
+/// fixture (`typst_engine::tests::resume_fixtures::FIXTURE_RESUME`).
 const FIXTURE_RESUME: &str = "\
 Jane Doe
 jane@example.com | https://linkedin.com/in/janedoe | https://github.com/janedoe
