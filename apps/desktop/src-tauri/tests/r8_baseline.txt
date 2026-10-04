@@ -15,17 +15,11 @@
 363	commands/translation.rs
 343	crash_reporting/mod.rs
 448	email_watch_scheduler.rs
-322	locale/mod.rs
-786	model/adapter/tests.rs
-573	model/rich.rs
 456	net/http.rs
 336	platform/chrome/mod.rs
 318	platform/linux_appimage.rs
 410	platform/msix.rs
-415	prompt_fence/test.rs
 301	reminder_scheduler.rs
-425	retrieval/test.rs
-636	salary_research/mod.rs
 421	tray/mod.rs
 370	updater/mod.rs
 352	updater/test.rs

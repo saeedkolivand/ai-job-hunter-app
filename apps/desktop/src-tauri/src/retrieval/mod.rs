@@ -31,4 +31,4 @@ pub mod lexical;
 pub mod rerank;
 
 #[cfg(test)]
-mod test;
+mod tests;

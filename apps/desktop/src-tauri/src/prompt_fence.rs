@@ -520,4 +520,4 @@ pub(crate) fn known_fence_tags() -> impl Iterator<Item = &'static str> {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;
