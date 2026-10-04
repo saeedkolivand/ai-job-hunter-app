@@ -118,4 +118,4 @@ pub fn by_ats(board_id: &str) -> impl Iterator<Item = &'static AtsSeedEntry> + u
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

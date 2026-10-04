@@ -290,4 +290,4 @@ impl LinkedInJobsApiClient {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

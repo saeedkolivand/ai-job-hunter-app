@@ -454,4 +454,4 @@ fn utc_day() -> u64 {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

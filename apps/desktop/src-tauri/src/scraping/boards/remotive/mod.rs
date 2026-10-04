@@ -111,4 +111,4 @@ impl Scraper for RemotiveScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

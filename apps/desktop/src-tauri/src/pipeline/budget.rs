@@ -267,4 +267,4 @@ pub enum StoppedReason {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

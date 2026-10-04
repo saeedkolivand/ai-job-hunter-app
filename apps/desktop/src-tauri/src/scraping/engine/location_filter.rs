@@ -363,4 +363,4 @@ pub(crate) fn filter_postings(
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

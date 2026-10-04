@@ -182,4 +182,4 @@ fn normalize_id(id: Option<serde_json::Value>) -> String {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

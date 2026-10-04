@@ -120,4 +120,4 @@ impl Scraper for WeWorkRemotelyScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

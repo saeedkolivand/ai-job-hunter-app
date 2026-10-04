@@ -255,4 +255,4 @@ impl Scraper for RecruiteeScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

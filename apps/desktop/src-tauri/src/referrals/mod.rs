@@ -201,7 +201,7 @@ fn row_to_record(row: &rusqlite::Row) -> rusqlite::Result<ReferralContact> {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;
 
 pub(crate) fn make_referral_id() -> String {
     format!("ref-{}-{}", now_ms(), &Uuid::new_v4().to_string()[..8])

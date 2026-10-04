@@ -1,6 +1,6 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-09-07
+Last updated: 2026-10-04
 
 Describes the job-scraping subsystem: the board registry (`SCRAPERS` in `apps/desktop/src-tauri/src/scraping/boards/mod.rs`), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
@@ -75,7 +75,7 @@ Two more boards in the registry (Jobicy followed in #700). Neither is career-ops
 - **Ashby casing:** Slug casing is exact and preserved verbatim (e.g., `Linear`, `Perplexity`); must match the registered board.
 - **Lever and SmartRecruiters churn:** Slugs churn fastest (companies migrate off or go dormant); re-verify live before trusting future updates to this table.
 - **Accessor functions:** `all()` → every entry in source order; `by_ats(board_id)` → entries for one ATS board (e.g., `"greenhouse"`).
-- **Test coverage:** Compile-time truth table (`apps/desktop/src-tauri/src/scraping/boards/ats_seed/test.rs`) verifies table integrity: non-empty, every `ats` value matches a registered `Scraper::id()`, Personio entries have exactly one TLD, a floor on the DACH count, no duplicate ats-slug pairs, etc.
+- **Test coverage:** Compile-time truth table (`apps/desktop/src-tauri/src/scraping/boards/ats_seed/tests.rs`) verifies table integrity: non-empty, every `ats` value matches a registered `Scraper::id()`, Personio entries have exactly one TLD, a floor on the DACH count, no duplicate ats-slug pairs, etc.
 
 ## Retired boards (Glassdoor, Indeed, Xing, StepStone, Workday)
 

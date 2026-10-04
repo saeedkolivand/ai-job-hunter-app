@@ -198,4 +198,4 @@ pub(crate) fn sanitize_action_for_log(action: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

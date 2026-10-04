@@ -9,7 +9,7 @@ use crate::limits::Limiter;
 // (`commands::ai_provider::embed`, see its own tests in
 // `embed_tests.rs`), which fires once per ACTUAL provider round-trip
 // instead of once per admitted call (#1087). The rate/concurrency
-// primitives themselves are already covered generically by `limits::test`,
+// primitives themselves are already covered generically by `limits::tests`,
 // so only a normal-admission smoke test remains here.
 
 #[test]

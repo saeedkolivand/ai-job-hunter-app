@@ -317,4 +317,4 @@ pub(crate) fn canonical_job_key(url: &str, title: &str, company: &str) -> String
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

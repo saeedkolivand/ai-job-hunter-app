@@ -69,7 +69,7 @@ fn extract_scalar_returns_none_when_no_provider_is_active_yet() {
 
 /// T5 hardening (round-3 review): the policy test pins `updater_install`'s
 /// `ProofSource::Scalar { path: &["version"], .. }` as a LITERAL, and
-/// `updater::test` pins `status_reply`'s shape as a SEPARATE literal —
+/// `updater::replies::tests` pins `status_reply`'s shape as a SEPARATE literal —
 /// nothing ever fed a real `status_reply` output through `extract` using
 /// the ACTUAL `updater::updater_install` POLICY row, so renaming
 /// `status_reply`'s `version` key would leave both tests green while

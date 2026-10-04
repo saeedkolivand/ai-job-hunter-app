@@ -44,7 +44,7 @@ fn an_exhausted_daily_budget_is_reported_distinctly_from_a_transient_rate_limit(
 // are NOT covered here — they need a live `AppHandle`, which this crate
 // has no mock harness for (see `AnswerSearcher`'s doc comment); the
 // `Limiter`/`ProviderId` logic they delegate to is already covered by
-// `limits::test` and `ai_provider::mod`'s own unit tests.
+// `limits::tests` and `ai_provider::mod`'s own unit tests.
 
 struct FakeAnswerSearcher {
     supports_web_search: bool,

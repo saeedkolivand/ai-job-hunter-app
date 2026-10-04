@@ -1079,7 +1079,9 @@ fn egress_cfg_test_stripper_never_swallows_a_non_mod_attribute_target() {
 ///   - `crash_reporting/mod.rs` — `"{ not json"` (a deliberately-invalid JSON
 ///     fixture) has one embedded `{` and no matching `}`, offsetting the
 ///     trailing `mod tests { … }` block's count by +1 for the rest of the
-///     file, so it runs to EOF.
+///     file, so it ran to EOF. Its tests now live out of line
+///     (`crash_reporting/tests.rs`, skipped as a test file), so it has no inline
+///     region left and is no longer listed.
 ///   - `extraction/rtf.rs` — RTF's own `{`/`}` control-word syntax inside
 ///     string fixtures (e.g. `"{\\rtf1\\ansi …}"`) offset the count of its
 ///     inline `mod tests { … }`, which ran to EOF. Its tests now live out of line
@@ -1104,7 +1106,7 @@ fn egress_cfg_test_stripper_never_swallows_a_non_mod_attribute_target() {
 /// investigate before adding it to `KNOWN_EXCEPTIONS`.
 #[test]
 fn egress_stripped_regions_close_on_a_column_zero_brace_or_a_known_exception() {
-    const KNOWN_EXCEPTIONS: &[&str] = &["crash_reporting/mod.rs", "pipeline/json.rs"];
+    const KNOWN_EXCEPTIONS: &[&str] = &["pipeline/json.rs"];
     let mut bad = Vec::new();
     for f in rust_sources() {
         if !f.content.contains("#[cfg(test)]") {

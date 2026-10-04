@@ -338,4 +338,4 @@ pub fn build_authed_client(app_data_dir: &Path, board_id: &str) -> Result<reqwes
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

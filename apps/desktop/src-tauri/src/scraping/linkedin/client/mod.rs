@@ -204,4 +204,4 @@ fn decode_body(bytes: Vec<u8>, cap: usize) -> AppResult<String> {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

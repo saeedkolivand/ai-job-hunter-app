@@ -297,4 +297,4 @@ impl Scraper for ComeetScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

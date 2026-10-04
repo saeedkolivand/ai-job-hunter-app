@@ -172,4 +172,4 @@ impl Scraper for YCombinatorScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

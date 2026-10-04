@@ -13,4 +13,4 @@ pub fn linkedin_rate_limiter() -> &'static RateLimiter {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

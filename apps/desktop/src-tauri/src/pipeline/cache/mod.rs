@@ -111,4 +111,4 @@ fn now_secs() -> i64 {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

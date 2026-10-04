@@ -310,4 +310,4 @@ impl Scraper for ArbeitsagenturScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

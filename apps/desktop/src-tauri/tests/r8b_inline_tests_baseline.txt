@@ -1,21 +1,3 @@
 # R8b test-layout baseline — one `src/`-relative path per line, sorted, for files that still
 # carry an inline `#[cfg(test)] mod … { … }` body or `#[path]`-wired tests; a listed file must still have one.
 # Regenerate with: R8_BLESS=1 cargo test --test architecture
-crash_reporting/mod.rs
-crash_reporting/transport.rs
-db.rs
-email_watch_scheduler.rs
-net/http.rs
-net/ssrf.rs
-observability.rs
-performance.rs
-platform/config.rs
-platform/fs.rs
-platform/linux_appimage.rs
-platform/msix.rs
-platform/snap.rs
-reminder_scheduler.rs
-scraping/engine/work_type_filter.rs
-scraping/rate_limiter/mod.rs
-tray/mod.rs
-updater/pre_update_backup.rs

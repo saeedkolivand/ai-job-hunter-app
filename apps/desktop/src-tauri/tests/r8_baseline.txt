@@ -2,13 +2,3 @@
 # `<loc>` is CODE lines (blank and comment lines excluded).
 # A baselined file may shrink or be deleted, never grow; a new over-cap file is not baselined.
 # Regenerate after a split with: R8_BLESS=1 cargo test --test architecture
-343	crash_reporting/mod.rs
-448	email_watch_scheduler.rs
-456	net/http.rs
-336	platform/chrome/mod.rs
-318	platform/linux_appimage.rs
-410	platform/msix.rs
-301	reminder_scheduler.rs
-421	tray/mod.rs
-370	updater/mod.rs
-352	updater/test.rs

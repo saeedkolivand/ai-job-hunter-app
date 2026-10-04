@@ -287,4 +287,4 @@ impl LinkedInScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

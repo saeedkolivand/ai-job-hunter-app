@@ -169,4 +169,4 @@ impl Scraper for ArbeitnowScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

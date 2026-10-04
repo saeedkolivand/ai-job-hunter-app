@@ -418,4 +418,4 @@ pub trait Scraper: Send + Sync {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

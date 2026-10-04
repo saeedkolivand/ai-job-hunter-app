@@ -125,4 +125,4 @@ impl Scraper for BerlinStartupJobsScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

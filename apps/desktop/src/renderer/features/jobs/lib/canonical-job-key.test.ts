@@ -5,7 +5,7 @@
  * (`applications/mod.rs`).
  *
  * The first five cases copy the Rust truth-table inputs VERBATIM from
- * `scraping/boards/common/test.rs` (fixtures can't be literally shared across
+ * `scraping/boards/common/tests.rs` (fixtures can't be literally shared across
  * languages, so duplicating the inputs is the drift guard: if either side
  * changes the algorithm, one of these — or its Rust twin — fails). The rest
  * pin TS-side URL-normalization details (Indeed `jk`, www/fragment/query/

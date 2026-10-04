@@ -307,4 +307,4 @@ pub(crate) fn install_mock_keyring() {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

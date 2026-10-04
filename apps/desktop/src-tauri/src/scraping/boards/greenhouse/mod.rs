@@ -167,4 +167,4 @@ impl Scraper for GreenhouseScraper {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;
