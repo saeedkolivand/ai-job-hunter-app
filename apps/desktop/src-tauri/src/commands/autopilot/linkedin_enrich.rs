@@ -156,4 +156,4 @@ async fn enrich_one(app: &AppHandle, limiter: &'static RateLimiter, url: &str) -
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

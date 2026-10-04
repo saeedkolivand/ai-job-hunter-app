@@ -5,16 +5,9 @@
 433	ai_config/mod.rs
 518	ai_config/stage_overrides/tests.rs
 455	ai_config/tests.rs
-756	autopilot/mod.rs
-2675	autopilot/test.rs
-763	autopilot_helpers/tests.rs
-602	autopilot_scheduler.rs
 769	commands/ai/mod.rs
 379	commands/ai/spend.rs
 777	commands/applications.rs
-679	commands/autopilot.rs
-1105	commands/autopilot/best_matches.rs
-1555	commands/autopilot/tests.rs
 414	commands/data.rs
 986	commands/geocoding/test.rs
 322	commands/help.rs

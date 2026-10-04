@@ -1,31 +1,11 @@
 use super::*;
-use crate::autopilot::ScoreSource;
+use crate::autopilot::tests::support::found_job_full;
 
 fn job(board: Option<&str>, description: Option<&str>, url: &str) -> FoundJob {
     FoundJob {
-        title: "Engineer".to_string(),
-        company: "Acme".to_string(),
-        url: url.to_string(),
-        location: None,
         board: board.map(str::to_string),
-        board_remote: false,
         description: description.map(str::to_string),
-        salary_min: None,
-        salary_max: None,
-        salary_currency: None,
-        score: None,
-        score_provisional: false,
-        score_source: ScoreSource::Keyword,
-        found_at: 0,
-        posted_at: None,
-        is_new: false,
-        applied: false,
-        trust: None,
-        assistant_notes: None,
-        cluster_id: None,
-        cluster_canonical: true,
-        cluster_members: Vec::new(),
-        is_agency: false,
+        ..found_job_full(url, "Engineer", "Acme", 0)
     }
 }
 

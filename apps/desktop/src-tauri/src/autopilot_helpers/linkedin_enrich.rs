@@ -89,4 +89,4 @@ pub(crate) fn classify_resolution(result: anyhow::Result<Option<JobPosting>>) ->
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

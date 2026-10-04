@@ -1,10 +1,8 @@
 # R8b test-layout baseline — one `src/`-relative path per line, sorted, for files that still
 # carry an inline `#[cfg(test)] mod … { … }` body or `#[path]`-wired tests; a listed file must still have one.
 # Regenerate with: R8_BLESS=1 cargo test --test architecture
-autopilot_scheduler.rs
 commands/ai/spend.rs
 commands/applications.rs
-commands/autopilot/best_matches.rs
 commands/cli_agents.rs
 commands/contact_profile.rs
 commands/data.rs
