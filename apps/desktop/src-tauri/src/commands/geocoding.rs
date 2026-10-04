@@ -28,7 +28,7 @@ use serde_json::{json, Value};
 mod geonames;
 
 #[cfg(test)]
-mod test;
+mod tests;
 
 /// Build the offline index off the hot path. Called once from `lib.rs`'s setup
 /// on a blocking thread — see [`geonames::warm`] for why lazy-on-first-use is

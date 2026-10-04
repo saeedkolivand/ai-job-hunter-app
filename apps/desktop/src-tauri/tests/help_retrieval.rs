@@ -497,14 +497,14 @@ fn the_help_corpus_maps_to_one_entry_per_faq_leaf() {
 /// The corpus↔budget check nothing inside the crate can make. `help_search`
 /// embeds at most `HELP_EMBED_MISSES_MAX` cache MISSES per request and reports
 /// `dense: "unavailable"` for the whole arm once that budget runs out
-/// (all-or-nothing, `commands::help::run_dense_arm`) — so a shipped corpus
+/// (all-or-nothing, `commands::help::dense_arm::run_dense_arm`) — so a shipped corpus
 /// larger than the cap degrades every cold-cache question to keyword-only,
 /// permanently and silently. The constant's own unit tests are written against
 /// a synthetic corpus and cannot see that; this file already reads the REAL
 /// bundle, so the check belongs here.
 ///
 /// Deliberately `<=`, not `<`: the arm spends one miss per entry, so a corpus
-/// exactly at the cap still embeds every entry (`commands::help::test`'s
+/// exactly at the cap still embeds every entry (`commands::help::dense_arm::tests`'s
 /// `a_request_at_the_miss_budget_still_runs_the_arm` pins that boundary from
 /// the other side).
 #[test]

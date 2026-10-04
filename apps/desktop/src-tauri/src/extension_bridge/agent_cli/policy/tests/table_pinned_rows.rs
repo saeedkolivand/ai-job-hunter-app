@@ -144,8 +144,15 @@ fn help_module_doc_reachability_claims_stay_paired_with_its_not_exposed_status()
         "this doc-reachability guard only makes sense while the row is NotExposed — got {:?}",
         entry.effect
     );
-    const HELP_RS: &str =
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/commands/help.rs"));
+    // The module doc lives in `help.rs`; `help/dense_arm.rs` holds code split out of it, so
+    // both are scanned for reachability claims.
+    const HELP_RS: &str = concat!(
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/commands/help.rs")),
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/commands/help/dense_arm.rs"
+        )),
+    );
     let lines: Vec<&str> = HELP_RS.lines().collect();
     let mut checked = 0usize;
     for (n, line) in lines.iter().enumerate() {

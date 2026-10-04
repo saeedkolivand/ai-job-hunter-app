@@ -47,7 +47,7 @@ fn embedded_assets_match_their_recorded_digests() {
     use sha2::{Digest, Sha256};
 
     // `Sha256::digest` yields a byte array with no hex `Display`; fold it
-    // the same way `commands::geocoding::test`'s equivalent guard does.
+    // the same way `commands::geocoding::tests::index_build`'s equivalent guard does.
     let digest = |bytes: &[u8]| {
         Sha256::digest(bytes)
             .iter()

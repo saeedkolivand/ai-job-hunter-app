@@ -17,12 +17,12 @@
 //! **What moved out (PR #1091 review):** the companion measurement — that
 //! the dense candidate-pool policy does not bridge this gap once a
 //! distractor posting contains the canonical term — used to live here as a
-//! hand-mirrored copy of `commands::hybrid_search::dense_candidate_pool`'s
+//! hand-mirrored copy of `commands::hybrid_search::candidates::dense_candidate_pool`'s
 //! logic, because that function is private to its module and this file (an
 //! external integration test in a separate crate) could not call it
 //! directly. That mirror was flagged Major: it had no seam to check it
 //! against the real function, so it could drift silently. It now lives in
-//! `src/commands/hybrid_search/test.rs` — an in-crate test module that
+//! `src/commands/hybrid_search/candidates/tests.rs` — an in-crate test module that
 //! already has access to the real private `dense_candidate_pool`,
 //! `PostingRow`, and `to_lexical_doc` via `use super::*;` — and calls the
 //! REAL function instead of a copy. See
@@ -60,7 +60,7 @@ use ajh_tauri::retrieval::lexical::{LexicalDoc, LexicalIndex};
 /// table) — a failure there means resync this list by hand, deliberately.
 ///
 /// A second, independent copy (`POOL_SYNONYM_PAIRS`) lives in
-/// `src/commands/hybrid_search/test.rs` for the candidate-pool half of this
+/// `src/commands/hybrid_search/candidates/tests.rs` for the candidate-pool half of this
 /// measurement, for the same non-import reason — the two are kept in
 /// lockstep by hand, each guarded against the live table separately.
 const SYNONYM_PAIRS: &[(&str, &str)] = &[
@@ -116,7 +116,7 @@ fn frozen_synonym_pairs_match_the_live_table() {
     assert_eq!(
         SYNONYM_PAIRS, LIVE_SYNONYMS,
         "documents::keywords::SYNONYMS changed — resync SYNONYM_PAIRS above (and \
-         POOL_SYNONYM_PAIRS in src/commands/hybrid_search/test.rs) by hand"
+         POOL_SYNONYM_PAIRS in src/commands/hybrid_search/candidates/tests.rs) by hand"
     );
 }
 
