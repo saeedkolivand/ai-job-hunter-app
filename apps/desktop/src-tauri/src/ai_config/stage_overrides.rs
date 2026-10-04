@@ -99,11 +99,11 @@ pub struct StageOverride {
     ///
     /// Read leniently: an out-of-range or unrepresentable number costs this
     /// row its window, not its existence — see
-    /// [`lenient_context_window`](super::lenient_context_window).
+    /// [`lenient_context_window`](super::types::lenient_context_window).
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "super::lenient_context_window"
+        deserialize_with = "super::types::lenient_context_window"
     )]
     pub context_window: Option<u32>,
 }

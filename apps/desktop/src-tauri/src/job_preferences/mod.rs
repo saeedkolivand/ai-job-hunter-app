@@ -442,4 +442,4 @@ impl DataStore for JobPreferencesStore {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

@@ -504,7 +504,11 @@ const R3_ALLOW: &[&str] = &[
     // slice of that store's persistence, not a second store.
     "documents/help_vectors.rs",
     "job_preferences/mod.rs",
-    "contact_profile/mod.rs",
+    // Same store, split only to stay under R8's LOC cap: the persistence half of
+    // the old `contact_profile/mod.rs` (the single-row table, its migration and
+    // the `DataStore` surface) moved verbatim; the header/classify/conflict logic
+    // that stayed behind holds no SQL.
+    "contact_profile/store.rs",
     "ai_config/mod.rs",
     // Same store, split for COHESION rather than for the LOC cap (unlike the
     // `documents`/`applications` splits above — `ai_config/mod.rs` has ample
@@ -517,8 +521,17 @@ const R3_ALLOW: &[&str] = &[
     "dedup/mod.rs",
     "autopilot/found_jobs_db.rs",
     "discovered/mod.rs",
+    // Same store, split only to stay under R8's LOC cap: the read queries
+    // (`search`, the two watched-company reads, their row mapper) moved verbatim
+    // out of `discovered/mod.rs` and run on the SAME `DiscoveredCompanyStore`
+    // connection.
+    "discovered/queries.rs",
     "email_watch/mod.rs",
     "jobs/mod.rs",
+    // Same store, split only to stay under R8's LOC cap: the tracker's SQLite
+    // half (schema, boot-time load, per-transition upsert) moved verbatim out of
+    // `jobs/mod.rs` and runs on the SAME `JobTracker` connection.
+    "jobs/persist.rs",
     "pipeline/cache/mod.rs",
     // The pipeline/agent run store: its own `pipeline_runs.db` (ADR-022 shape —
     // `db::open` + position-indexed migrations), backed up via `DataStore` and

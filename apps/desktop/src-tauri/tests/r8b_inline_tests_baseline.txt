@@ -19,10 +19,6 @@ cover_letter/research/mod.rs
 crash_reporting/mod.rs
 crash_reporting/transport.rs
 db.rs
-dedup/mod.rs
-discovered/harvest.rs
-discovered/mod.rs
-discovered/vendored.rs
 email_watch_scheduler.rs
 locale/letter.rs
 locale/mod.rs
@@ -40,9 +36,6 @@ platform/fs.rs
 platform/linux_appimage.rs
 platform/msix.rs
 platform/snap.rs
-profile_import/github.rs
-profile_import/linkedin.rs
-profile_import/mod.rs
 reminder_scheduler.rs
 salary_research/mod.rs
 scraping/engine/work_type_filter.rs

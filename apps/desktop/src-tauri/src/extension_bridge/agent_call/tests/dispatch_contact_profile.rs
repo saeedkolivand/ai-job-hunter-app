@@ -101,7 +101,7 @@ fn stored_profile_value_is_none_when_the_store_is_unmanaged() {
 /// visible inside `contact_profile`'s own module tree, not here — so this
 /// source-guards the call, the same shape already used for `dispatch_direct`
 /// above for the identical "no mock, no reachable seam" gap.
-/// [`crate::contact_profile::test`] separately proves `try_get`'s error
+/// [`crate::contact_profile::store::tests`] separately proves `try_get`'s error
 /// behaviour for real, against a row it CAN reach and corrupt.
 #[test]
 fn stored_profile_value_reads_through_try_get_and_refuses_on_its_error() {

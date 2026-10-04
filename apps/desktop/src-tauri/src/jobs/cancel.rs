@@ -128,4 +128,4 @@ impl CancelRegistry {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;
