@@ -327,7 +327,7 @@ impl ApplicationStore {
     /// a confirmation email, then a later rejection email, both still
     /// unreviewed) meant a click on the OLDER row's Accept button silently
     /// confirmed the NEWER, unrelated one instead — see
-    /// `applications::test::accept_targets_the_specific_row_requested_never_whichever_landed_most_recently`.
+    /// `applications::tests::status_event_review::accept_targets_the_specific_row_requested_never_whichever_landed_most_recently`.
     /// A single `UPDATE ... WHERE` is now sufficient (no read-then-write): a
     /// wrong/foreign/already-reviewed `event_id` (a different application's
     /// row, a `user`-sourced row, an already-`confirmed` row) matches zero
@@ -360,7 +360,7 @@ impl ApplicationStore {
     /// resolve "the newest unconfirmed row for `id`" with no way to name
     /// which one, so two coexisting provisional rows meant a click on the
     /// OLDER row's Reject button silently dismissed-or-reverted the NEWER,
-    /// unrelated one instead — see `applications::test::
+    /// unrelated one instead — see `applications::tests::status_event_review::
     /// reject_targets_the_specific_row_requested_never_whichever_landed_most_recently`.
     /// A wrong/foreign/already-reviewed `event_id` matches zero rows in that
     /// initial `SELECT` and is a safe no-op.
@@ -459,35 +459,4 @@ impl ApplicationStore {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Pins these `pub(crate)` constants against hand-written literals — the TS
-    // mirror (`packages/shared/src/types/index.ts`, adjacent to `StatusEvent`)
-    // pins its own exported `EVENT_SOURCE_*` values against these SAME
-    // literals, since `pub(crate)` here means the renderer cannot import this
-    // constant directly and would otherwise silently re-declare its own copy
-    // (which is exactly what had happened before that TS-side fix). This value
-    // crosses that boundary with nothing else checking it: a rename on either
-    // side makes `isProvisionalEvent` (the renderer's `source`/`confirmed`
-    // check) stop matching, so a provisional email-derived row renders as
-    // settled history and the Accept/Reject affordance silently disappears —
-    // adjudication is the entire safety model that justifies auto-write
-    // defaulting ON, so losing it without a failing test is the worst
-    // available outcome. Compared against literals, not against each other or
-    // a derived value, so renaming both constants in lockstep still fails.
-    #[test]
-    fn event_source_user_is_user() {
-        assert_eq!(EVENT_SOURCE_USER, "user");
-    }
-
-    #[test]
-    fn event_source_email_is_email() {
-        assert_eq!(EVENT_SOURCE_EMAIL, "email");
-    }
-
-    #[test]
-    fn event_source_email_reject_is_email_reject() {
-        assert_eq!(EVENT_SOURCE_EMAIL_REJECT, "email_reject");
-    }
-}
+mod tests;

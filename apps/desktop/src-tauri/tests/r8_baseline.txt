@@ -5,10 +5,6 @@
 433	ai_config/mod.rs
 518	ai_config/stage_overrides/tests.rs
 455	ai_config/tests.rs
-737	ai_generations/mod.rs
-1387	ai_generations/test.rs
-794	applications/mod.rs
-4036	applications/test.rs
 756	autopilot/mod.rs
 2675	autopilot/test.rs
 763	autopilot_helpers/tests.rs

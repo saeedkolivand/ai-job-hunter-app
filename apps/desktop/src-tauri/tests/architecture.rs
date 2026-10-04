@@ -423,8 +423,33 @@ const R3_ALLOW: &[&str] = &[
     "db.rs",    // sole owner of the SQLite handle
     "error.rs", // From<rusqlite::Error> conversion
     "ai_generations/mod.rs",
+    // Same store, split only to stay under R8's LOC cap: `migrations.rs` (the
+    // `ai_generations.db` schema list, incl. the mojibake-repair body), `rows.rs`
+    // (the column projection, the row mapping and the one whole-record `INSERT`
+    // that `insert` and `import` both used to carry a copy of), `reads.rs` (the
+    // lookups) and `writes.rs` (the inserts, updates and deletes). Every statement
+    // moved from `ai_generations/mod.rs` and still runs on the SAME
+    // `AiGenerationStore` connection — persistence stays entirely inside the
+    // `ai_generations` domain store.
+    "ai_generations/migrations.rs",
+    "ai_generations/reads.rs",
+    "ai_generations/rows.rs",
+    "ai_generations/writes.rs",
     "spend/mod.rs",
     "applications/mod.rs",
+    // Same store, split only to stay under R8's LOC cap: the row mapping and
+    // connection-scoped row primitives (`rows.rs`), the upsert/status/patch/delete
+    // writes (`writes.rs`), the two answer-list merges (`answers.rs`) and the
+    // boot-time generation link (`orphan_link.rs` — like the backfill in
+    // `migrations.rs` it opens a SECOND connection onto the sibling
+    // `ai_generations.db`, the lookup-only twin of that backfill). Every statement
+    // moved verbatim from `applications/mod.rs` and runs on the SAME
+    // `ApplicationStore` connection — persistence stays entirely inside the
+    // `applications` domain store.
+    "applications/answers.rs",
+    "applications/orphan_link.rs",
+    "applications/rows.rs",
+    "applications/writes.rs",
     // Same store, split only to stay under R8's LOC cap: the follow-up reminder
     // read + its atomic claim. Persistence still lives entirely inside the
     // `applications` domain store — see applications::reminders.

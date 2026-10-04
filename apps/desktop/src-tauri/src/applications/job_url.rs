@@ -210,3 +210,6 @@ fn retain_identifying_params(host: &str, query: &str) -> String {
         .collect::<Vec<_>>()
         .join("&")
 }
+
+#[cfg(test)]
+mod tests;
