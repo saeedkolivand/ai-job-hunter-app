@@ -38,13 +38,6 @@
 1069	contact_profile/test.rs
 343	crash_reporting/mod.rs
 556	discovered/mod.rs
-310	documents/evidence/entry.rs
-668	documents/evidence/mod.rs
-1344	documents/evidence/test.rs
-860	documents/keywords.rs
-875	documents/keywords/test.rs
-835	documents/mod.rs
-2322	documents/test.rs
 448	email_watch_scheduler.rs
 708	job_preferences/test.rs
 358	jobs/mod.rs

@@ -115,7 +115,7 @@ pub(crate) fn is_synthetic_scoring_id(id: &str) -> bool {
 /// the exact text we're requesting (`requested_hash == cached.text_hash`). A
 /// `None` row (no cached vector) is always a miss. This is the single source of
 /// the resolver's cache-hit decision — [`posting_vector_or_embed`] calls it so a
-/// reverted/loosened check fails a unit test (see documents/test.rs).
+/// reverted/loosened check fails a unit test (see documents/tests/posting_vectors.rs).
 pub(crate) fn posting_vector_is_fresh(
     active: &EmbeddingConfig,
     requested_hash: &str,

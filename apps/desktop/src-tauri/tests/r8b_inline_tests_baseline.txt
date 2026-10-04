@@ -31,7 +31,6 @@ dedup/mod.rs
 discovered/harvest.rs
 discovered/mod.rs
 discovered/vendored.rs
-documents/evidence/mod.rs
 email_watch_scheduler.rs
 lib.rs
 locale/letter.rs

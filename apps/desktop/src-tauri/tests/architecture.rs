@@ -359,7 +359,9 @@ const R2_ALLOW: &[&str] = &[
     // pure and AppHandle-free.
     "reminder_scheduler.rs",
     "cover_letter/research/mod.rs",
-    "documents/mod.rs",
+    // The `tauri::async_runtime::spawn_blocking` async variants of the hot match
+    // path, split out of documents/mod.rs (R8 LOC cap) — the entry moved with them.
+    "documents/async_ops.rs",
     // Split out of documents/mod.rs (R8 LOC cap) — same AppHandle-for-the-
     // provider-layer shape as the parent store, not a new exception.
     "documents/embedding.rs",
@@ -446,6 +448,15 @@ const R3_ALLOW: &[&str] = &[
     // applications::status_events.
     "applications/status_events.rs",
     "documents/mod.rs",
+    // Same store, split only to stay under R8's LOC cap (the derived caches and
+    // the schema moved out of `documents/mod.rs`): `caches.rs` (posting_vectors +
+    // match_scores + their prune), `vectors.rs` (document vectors + the active
+    // embedding config) and `migrations.rs` (`DocumentStore::MIGRATIONS`). Every
+    // statement moved verbatim and still runs on the SAME `DocumentStore`
+    // connection — persistence stays entirely inside the `documents` domain store.
+    "documents/caches.rs",
+    "documents/migrations.rs",
+    "documents/vectors.rs",
     // Same store, split only to stay under R8's LOC cap: the
     // `repair_pre_pdf_text_string_mojibake` migration body. Persistence
     // still lives entirely inside the `documents` domain store.

@@ -21,6 +21,11 @@ fn job_analysis_never_reaches_match_scoring() {
     let scoring_sources = [
         include_str!("../../../commands/match_resume.rs"),
         include_str!("../../../documents/keywords.rs"),
+        include_str!("../../../documents/keywords/language.rs"),
+        include_str!("../../../documents/keywords/lexicon.rs"),
+        include_str!("../../../documents/keywords/posting.rs"),
+        include_str!("../../../documents/keywords/stopwords_germanic.rs"),
+        include_str!("../../../documents/keywords/stopwords_romance.rs"),
         include_str!("../../../commands/autopilot/rerank.rs"),
     ];
     for source in scoring_sources {

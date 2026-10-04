@@ -1,206 +1,61 @@
+//! Native document store (SQLite-backed). Holds metadata + embedding vectors.
+//!
+//! Metadata is persisted in SQLite (rusqlite, bundled). Embedding vectors are
+//! stored as JSON arrays in the same database — adequate for the small local
+//! datasets (≤ hundreds of documents) this app handles.
+//!
+//! Ollama is called for embeddings via reqwest; gracefully degrades when
+//! Ollama is not running.
+//!
+//! This file holds the store handle and the document CRUD; every other slice of
+//! the same store lives in a sibling module, split by responsibility (R8):
+//! `migrations` (schema), `vectors` (embedding vectors + active config),
+//! `caches` (posting-vector + match-score caches), `async_ops` (the
+//! `spawn_blocking` variants), `backup` (export / import), `sql` (shared
+//! connection-bound queries).
+
 use parking_lot::Mutex;
-/// Native document store (SQLite-backed). Holds metadata + embedding vectors.
-///
-/// Metadata is persisted in SQLite (rusqlite, bundled). Embedding vectors are
-/// stored as JSON arrays in the same database — adequate for the small local
-/// datasets (≤ hundreds of documents) this app handles.
-///
-/// Ollama is called for embeddings via reqwest; gracefully degrades when
-/// Ollama is not running.
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
-use crate::commands::ai_provider::{EmbeddingSpace, EmbeddingVector, EMBEDDING_VECTOR_VERSION};
-use crate::data_store::DataStore;
-use crate::db::{column_exists, now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
+use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db};
 use crate::error::AppResult;
-use crate::observability::sanitize_reason;
 
-use sql::{
-    get_match_score_with_conn, get_vector_with_conn, prune_due, prune_table_locked,
-    spawn_blocking_db, upsert_match_score_with_conn, upsert_vector_with_conn,
-};
-
+mod async_ops;
+mod backup;
+mod caches;
+mod embedding;
 pub mod evidence;
+// Inherent `impl DocumentStore` only (the `help_vectors` cache), so there is
+// nothing to re-export — see help_vectors.rs's own doc for why it is a
+// separate file rather than more of mod.rs.
+mod help_vectors;
 pub mod keywords;
+mod migrations;
 mod mojibake_repair;
 mod sql;
+mod vectors;
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-/// The active embedding configuration. Persisted next to the vectors it governs
-/// (in documents.db) because changing it changes the embedding *space* — every
-/// stored vector must be re-embedded. Defaults to local Ollama for offline use.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EmbeddingConfig {
-    pub provider: String,
-    pub model: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub base_url: Option<String>,
-}
-
-impl EmbeddingConfig {
-    /// True when a stored vector's space was produced by this exact config
-    /// AND the current [`EMBEDDING_VECTOR_VERSION`] — a version bump (e.g.
-    /// replacing naive truncation with chunk-and-mean-pool) makes an
-    /// old-format vector a miss even though its provider/model tag is
-    /// unchanged, so a re-embed picks up the new format instead of silently
-    /// comparing across formats.
-    pub fn matches(&self, space: &EmbeddingSpace) -> bool {
-        self.provider == space.provider
-            && self.model == space.model
-            && space.version == EMBEDDING_VECTOR_VERSION
-    }
-}
-
-/// Whether moving from `old` to `new` is a real embedding-space change — i.e.
-/// any field differs (provider, model, or base_url). The posting_vectors /
-/// match_scores caches key on provider+model, so their old-space rows become
-/// unreachable and must be evicted only when this returns true. Single source of
-/// `ai_set_embedding_config`'s eviction gate so a dropped check fails a test.
-pub(crate) fn embedding_space_changed(old: &EmbeddingConfig, new: &EmbeddingConfig) -> bool {
-    old != new
-}
-
-/// Fill the `dim` of legacy vectors (rows added before space metadata existed,
-/// stored with `dim = 0`) from their actual JSON length. A `Migration::up`, so it
-/// runs exactly once under the `user_version` gate (previously: on every `open()`).
-/// Idempotent — only `dim = 0` rows are touched — and runs inside the migration
-/// transaction (`conn` is the migration's transaction handle).
-fn backfill_vector_dims(conn: &Connection) -> rusqlite::Result<()> {
-    let rows: Vec<(String, String)> = {
-        let mut stmt = conn.prepare("SELECT doc_id, vector FROM vectors WHERE dim = 0")?;
-        let mapped = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })?;
-        mapped.filter_map(|r| r.ok()).collect()
-    };
-    for (doc_id, json) in rows {
-        if let Ok(v) = serde_json::from_str::<Vec<f64>>(&json) {
-            conn.execute(
-                "UPDATE vectors SET dim = ?1 WHERE doc_id = ?2",
-                params![v.len() as i64, doc_id],
-            )?;
-        }
-    }
-    Ok(())
-}
-
-/// One-time migration: `text-embedding-004` was retired by Google (shutdown
-/// Jan 14, 2026). Any install that had already persisted it as the active
-/// Gemini embedding model would keep 404-ing forever even after the code
-/// default changed to `gemini-embedding-2` — `embed_text` only falls back to
-/// `AiProvider::default_embedding_model()` when the STORED model is empty
-/// (`ai_provider/mod.rs`), so a non-empty retired id is never revisited on
-/// its own. Idempotent and self-healing: rewrites the persisted row
-/// directly, so the Settings UI (which mirrors `status.active.model`
-/// verbatim) shows the corrected model with no additional read-time
-/// special-casing anywhere.
-///
-/// The model column is free text (whatever the user typed/pasted into the
-/// Settings model field), so the `WHERE` matches on `trim(lower(model))`
-/// against BOTH the bare id and its `models/`-prefixed form — the Gemini
-/// adapter (`gemini.rs`) itself deliberately strips a leading `models/`, so
-/// that form is a real, deliberately-accepted variant, not a hypothetical
-/// one. An exact-only match would miss `models/text-embedding-004`,
-/// `TEXT-EMBEDDING-004`, and a trailing-space paste — leaving those installs
-/// 404-ing forever, the exact failure mode this migration exists to fix.
-///
-/// This IS a real embedding-space change (retired model → current model),
-/// exactly the case `ai_set_embedding_config` evicts `posting_vectors` /
-/// `match_scores` for at runtime (see `embedding_space_changed`) — so this
-/// migration performs the SAME eviction, only when the `UPDATE` actually
-/// touched a row (an install that never had the stale model is left alone,
-/// no needless cache wipe).
-fn alias_retired_gemini_text_embedding_004(conn: &Connection) -> rusqlite::Result<()> {
-    let rows_changed = conn.execute(
-        "UPDATE embedding_config SET model = 'gemini-embedding-2' \
-         WHERE provider = 'gemini' \
-           AND trim(lower(model)) IN ('text-embedding-004', 'models/text-embedding-004')",
-        [],
-    )?;
-    if rows_changed > 0 {
-        conn.execute_batch("DELETE FROM posting_vectors; DELETE FROM match_scores;")?;
-    }
-    Ok(())
-}
-
-/// Full cache key for the `match_scores` result cache (the table PK). Borrowed
-/// fields keep it allocation-free at the call site; passed by reference to the
-/// store methods. Grouped into a struct because 8 positional args read poorly.
-pub struct MatchScoreKey<'a> {
-    pub resume_id: &'a str,
-    pub job_id: &'a str,
-    pub provider: &'a str,
-    pub model: &'a str,
-    /// 1 when semantic scoring ran, 0 when it was skipped.
-    pub semantic_enabled: i64,
-    pub formula_version: i64,
-    /// [`EMBEDDING_VECTOR_VERSION`] at score-compute time. A semantic score is
-    /// derived from embedding vectors, so a vector-format bump changes what the
-    /// cached score MEANS even when neither `formula_version` nor the job text
-    /// changes — without this field a bump could only self-invalidate by
-    /// accident (a coincidental `formula_version` bump, or a maintainer
-    /// remembering to add a `DELETE FROM match_scores` to that release's
-    /// migration). Carrying it in the key makes invalidation structural: a new
-    /// `EMBEDDING_VECTOR_VERSION` is a new key, so it's a miss by construction.
-    pub vector_version: i64,
-    /// SHA-256 of the post-translation job text (see [`sha256_hex`]).
-    pub job_text_hash: &'a str,
-}
-
-impl MatchScoreKey<'_> {
-    /// Copy the borrowed key into an owned form that can cross into a
-    /// `spawn_blocking` (`'static`) closure for the async store methods.
-    pub fn to_owned_key(&self) -> OwnedMatchScoreKey {
-        OwnedMatchScoreKey {
-            resume_id: self.resume_id.to_string(),
-            job_id: self.job_id.to_string(),
-            provider: self.provider.to_string(),
-            model: self.model.to_string(),
-            semantic_enabled: self.semantic_enabled,
-            formula_version: self.formula_version,
-            vector_version: self.vector_version,
-            job_text_hash: self.job_text_hash.to_string(),
-        }
-    }
-}
-
-/// Owned twin of [`MatchScoreKey`]. The borrowed key keeps the hot call site
-/// allocation-free, but a `spawn_blocking` closure must be `Send + 'static`, so
-/// the async store methods take this owned form and borrow it back inside the
-/// closure via [`OwnedMatchScoreKey::as_ref`].
-pub struct OwnedMatchScoreKey {
-    pub resume_id: String,
-    pub job_id: String,
-    pub provider: String,
-    pub model: String,
-    pub semantic_enabled: i64,
-    pub formula_version: i64,
-    pub vector_version: i64,
-    pub job_text_hash: String,
-}
-
-impl OwnedMatchScoreKey {
-    /// Borrow back into a [`MatchScoreKey`] so the shared SQL helper takes one
-    /// key type for both the sync and async paths.
-    pub fn as_ref(&self) -> MatchScoreKey<'_> {
-        MatchScoreKey {
-            resume_id: &self.resume_id,
-            job_id: &self.job_id,
-            provider: &self.provider,
-            model: &self.model,
-            semantic_enabled: self.semantic_enabled,
-            formula_version: self.formula_version,
-            vector_version: self.vector_version,
-            job_text_hash: &self.job_text_hash,
-        }
-    }
-}
+pub use caches::{MatchScoreKey, OwnedMatchScoreKey};
+// Re-exported flat at `documents::` so this split is invisible to every
+// existing `crate::documents::X` call site (`embed` alone has ~5 external
+// callers, `sha256_hex`/`EmbedBudget` several more) — see embedding.rs's doc.
+pub use embedding::embed;
+pub(crate) use embedding::{
+    embed_charged, embed_with_config, is_synthetic_scoring_id, posting_vector_or_embed, sha256_hex,
+    AppEmbedder, EmbedBudget, Embedder,
+};
+// `posting_vector_is_fresh` has no caller outside `embedding.rs` itself in a
+// non-test build — only the `documents::tests` unit tests reach it through
+// this re-export, so it is unused (and clippy `-D warnings` fails on it)
+// outside `#[cfg(test)]`.
+#[cfg(test)]
+pub(crate) use embedding::posting_vector_is_fresh;
+pub(crate) use vectors::embedding_space_changed;
+pub use vectors::EmbeddingConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentRecord {
@@ -243,319 +98,30 @@ pub struct DocumentStore {
     match_score_writes: std::sync::atomic::AtomicU64,
 }
 
-impl DocumentStore {
-    const MIGRATIONS: &'static [Migration] = &[
-        Migration {
-            name: "create_documents_and_vectors",
-            up: |conn| {
-                conn.execute_batch(
-                    "CREATE TABLE IF NOT EXISTS documents (
-                        id          TEXT PRIMARY KEY,
-                        title       TEXT NOT NULL,
-                        name        TEXT NOT NULL,
-                        locale      TEXT,
-                        text        TEXT NOT NULL,
-                        pages       INTEGER,
-                        created_at  INTEGER NOT NULL,
-                        indexed     INTEGER NOT NULL DEFAULT 0
-                    );
-                    CREATE TABLE IF NOT EXISTS vectors (
-                        doc_id  TEXT PRIMARY KEY,
-                        vector  TEXT NOT NULL
-                    );",
-                )
-            },
-        },
-        Migration {
-            name: "add_is_default_column",
-            up: |conn| {
-                if !column_exists(conn, "documents", "is_default") {
-                    conn.execute(
-                        "ALTER TABLE documents ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0",
-                        [],
-                    )?;
-                }
-                Ok(())
-            },
-        },
-        Migration {
-            // Tag every vector with the embedding space that produced it so
-            // incompatible vectors can never be silently compared. Legacy rows
-            // were all Ollama/nomic-embed-text; their `dim` is backfilled in `open`.
-            name: "add_vector_space_metadata",
-            up: |conn| {
-                for (col, ddl) in [
-                    (
-                        "provider",
-                        "ALTER TABLE vectors ADD COLUMN provider TEXT NOT NULL DEFAULT 'ollama'",
-                    ),
-                    (
-                        "model",
-                        "ALTER TABLE vectors ADD COLUMN model TEXT NOT NULL DEFAULT 'nomic-embed-text'",
-                    ),
-                    ("dim", "ALTER TABLE vectors ADD COLUMN dim INTEGER NOT NULL DEFAULT 0"),
-                    ("version", "ALTER TABLE vectors ADD COLUMN version INTEGER NOT NULL DEFAULT 1"),
-                ] {
-                    if !column_exists(conn, "vectors", col) {
-                        conn.execute(ddl, [])?;
-                    }
-                }
-                Ok(())
-            },
-        },
-        Migration {
-            name: "create_embedding_config",
-            up: |conn| {
-                conn.execute_batch(
-                    "CREATE TABLE IF NOT EXISTS embedding_config (
-                        id          INTEGER PRIMARY KEY CHECK (id = 1),
-                        provider    TEXT NOT NULL,
-                        model       TEXT NOT NULL,
-                        base_url    TEXT,
-                        updated_at  INTEGER NOT NULL
-                    );
-                    INSERT OR IGNORE INTO embedding_config (id, provider, model, base_url, updated_at)
-                    VALUES (1, 'ollama', 'nomic-embed-text', NULL, 0);",
-                )
-            },
-        },
-        Migration {
-            // Cache normalized (un-stemmed) keywords per document so the match
-            // path skips re-tokenizing résumé text. Nullable: legacy rows fall
-            // back to live extraction in match_resume.
-            name: "cache_document_keywords",
-            up: |conn| {
-                if !column_exists(conn, "documents", "keywords_json") {
-                    conn.execute("ALTER TABLE documents ADD COLUMN keywords_json TEXT", [])?;
-                }
-                Ok(())
-            },
-        },
-        Migration {
-            // Persisted, translation-aware job-vector cache. Keyed by job_id
-            // (one row per posting); `text_hash` pins the row to the exact text
-            // that was embedded (post-translation) and the provider/model pin the
-            // embedding space, so a stale or wrong-language row is a natural miss.
-            name: "create_posting_vectors",
-            up: |conn| {
-                conn.execute_batch(
-                    "CREATE TABLE IF NOT EXISTS posting_vectors (
-                        job_id     TEXT PRIMARY KEY,
-                        text_hash  TEXT NOT NULL,
-                        vector     TEXT NOT NULL,
-                        provider   TEXT NOT NULL,
-                        model      TEXT NOT NULL,
-                        dim        INTEGER NOT NULL,
-                        created_at INTEGER NOT NULL
-                    );",
-                )
-            },
-        },
-        Migration {
-            // Persisted, self-invalidating match-result cache. The full PK is the
-            // cache key: resume/job ids, embedding space (provider/model), whether
-            // semantic scoring ran, the formula version, and a hash of the
-            // post-translation job text. Any change to those is a fresh key (miss).
-            name: "create_match_scores",
-            up: |conn| {
-                conn.execute_batch(
-                    "CREATE TABLE IF NOT EXISTS match_scores (
-                        resume_id        TEXT NOT NULL,
-                        job_id           TEXT NOT NULL,
-                        provider         TEXT NOT NULL,
-                        model            TEXT NOT NULL,
-                        semantic_enabled INTEGER NOT NULL,
-                        formula_version  INTEGER NOT NULL,
-                        job_text_hash    TEXT NOT NULL,
-                        score_json       TEXT NOT NULL,
-                        created_at       INTEGER NOT NULL,
-                        PRIMARY KEY (resume_id, job_id, provider, model, semantic_enabled, formula_version, job_text_hash)
-                    );",
-                )
-            },
-        },
-        Migration {
-            // Index `created_at` on both result caches so the per-write TTL prune
-            // and the row-cap eviction (an ORDER BY created_at threshold delete)
-            // run index-backed instead of full-table sorts. Hot path: batch
-            // match-scoring upserts once per row under the held connection lock.
-            name: "index_cache_created_at",
-            up: |conn| {
-                conn.execute_batch(
-                    "CREATE INDEX IF NOT EXISTS idx_match_scores_created_at ON match_scores(created_at);
-                     CREATE INDEX IF NOT EXISTS idx_posting_vectors_created_at ON posting_vectors(created_at);",
-                )
-            },
-        },
-        Migration {
-            // One-time `dim` backfill for legacy vectors (rows added before the
-            // space metadata existed, stored with `dim = 0`), filling each from its
-            // actual JSON length. Previously this scanned on EVERY `open()`; folding
-            // it into a `user_version`-gated migration makes it run exactly once.
-            // Idempotent (only touches `dim = 0` rows) and runs inside the migration
-            // transaction.
-            name: "backfill_vector_dims",
-            up: backfill_vector_dims,
-        },
-        Migration {
-            // text-embedding-004 was retired by Google (shutdown Jan 14, 2026 —
-            // the exact "model or endpoint not found" error this fixes). Any
-            // install that had already persisted it as the active embedding
-            // model would keep 404-ing FOREVER even after the code default
-            // changed to gemini-embedding-2: `embed_text` only falls back to
-            // `AiProvider::default_embedding_model()` when the STORED model
-            // string is empty, so a non-empty retired id is never revisited.
-            // One-time, idempotent (WHERE-scoped), self-healing alias — chosen
-            // over a read-time alias in `embedding_config()` so the fix is a
-            // single UPDATE rather than special-casing every reader forever,
-            // and so the Settings UI mirrors the corrected model immediately
-            // (it reads the persisted `model` verbatim).
-            name: "alias_retired_gemini_text_embedding_004",
-            up: alias_retired_gemini_text_embedding_004,
-        },
-        Migration {
-            // `EMBEDDING_VECTOR_VERSION` bumped 1 -> 2 when embeddings moved
-            // from a naive single truncation to chunk-and-mean-pool. The
-            // résumé/document `vectors` table carries its own `version`
-            // column, so a stale row there is already caught by
-            // `EmbeddingConfig::matches` on the next read. `posting_vectors`
-            // (job-posting embeddings) has NO version column — its only
-            // built-in staleness guard is the TTL/row-cap prune, and the TTL
-            // is NOT a guarantee: the top preference tier sets
-            // `cacheTtlSecs: null`, which `ttl_cutoff_ms()` reads as "never
-            // expires" (only the row cap still applies). Without this, a
-            // pre-upgrade (truncated-prefix) posting vector can be cosined
-            // against a post-upgrade (mean-pooled) résumé vector under the
-            // identical space tag for however long the row cap allows.
-            // Unconditional and applies to EVERY provider (unlike the
-            // Gemini-specific migration above) — the format change affects
-            // every provider's embeddings, not just Gemini's.
-            name: "evict_posting_vectors_for_embedding_format_v2",
-            up: |conn| conn.execute_batch("DELETE FROM posting_vectors;"),
-        },
-        Migration {
-            // `match_scores`' PK didn't carry the embedding vector version, only
-            // `formula_version` — so a semantic score computed from an old-format
-            // vector stayed a valid cache hit against new-format vectors unless a
-            // `MATCH_FORMULA_VERSION` bump happened to coincide with the
-            // `EMBEDDING_VECTOR_VERSION` bump (true of the v1->v2 migration above
-            // only by accident — CodeRabbit #933 follow-up). Adds `vector_version`
-            // to the PK so a future format bump invalidates by construction
-            // instead of relying on someone remembering to evict this table too.
-            // Recreated rather than `ALTER TABLE ADD COLUMN` because SQLite can't
-            // add a column to an existing PRIMARY KEY; `match_scores` is a pure
-            // result cache, so dropping its rows only forces a recompute, not a
-            // real data loss.
-            name: "add_vector_version_to_match_scores_key",
-            up: |conn| {
-                conn.execute_batch(
-                    "DROP TABLE IF EXISTS match_scores;
-                     CREATE TABLE match_scores (
-                        resume_id        TEXT NOT NULL,
-                        job_id           TEXT NOT NULL,
-                        provider         TEXT NOT NULL,
-                        model            TEXT NOT NULL,
-                        semantic_enabled INTEGER NOT NULL,
-                        formula_version  INTEGER NOT NULL,
-                        vector_version   INTEGER NOT NULL,
-                        job_text_hash    TEXT NOT NULL,
-                        score_json       TEXT NOT NULL,
-                        created_at       INTEGER NOT NULL,
-                        PRIMARY KEY (resume_id, job_id, provider, model, semantic_enabled,
-                                     formula_version, vector_version, job_text_hash)
-                     );
-                     CREATE INDEX IF NOT EXISTS idx_match_scores_created_at ON match_scores(created_at);",
-                )
-            },
-        },
-        Migration {
-            // `posting_vectors` had no persisted `version` column — every read
-            // synthesized the CURRENT `EMBEDDING_VECTOR_VERSION` on the fly
-            // (see `get_posting_vector`), so `EmbeddingConfig::matches` could
-            // structurally never reject a row here on format version. Appended
-            // at the END of the array (not inserted earlier) — migrations are
-            // position-indexed via `PRAGMA user_version`, so an insertion
-            // mid-array would make an already-migrated install skip it
-            // entirely.
-            //
-            // `DEFAULT 2`, not 0 and not a live `EMBEDDING_VECTOR_VERSION`
-            // reference: this migration runs strictly AFTER
-            // `evict_posting_vectors_for_embedding_format_v2` above
-            // (migrations are position-indexed, so the ordering is fixed),
-            // which unconditionally wipes the table. So by the time this ADD
-            // COLUMN runs, every surviving row was necessarily written
-            // afterward, under the format that was current at that point —
-            // `EMBEDDING_VECTOR_VERSION == 2` when this migration was
-            // authored. `DEFAULT 0` would mislabel every one of those
-            // provably-current rows as stale, forcing a real (billed)
-            // re-embed of the entire cache for zero correctness gain. The
-            // literal must stay `2` even after a future
-            // `EMBEDDING_VECTOR_VERSION` bump — it records a historical fact
-            // about rows as of migration time, not the live constant.
-            name: "add_version_to_posting_vectors",
-            up: |conn| {
-                if !column_exists(conn, "posting_vectors", "version") {
-                    conn.execute(
-                        "ALTER TABLE posting_vectors ADD COLUMN version INTEGER NOT NULL DEFAULT 2",
-                        [],
-                    )?;
-                }
-                Ok(())
-            },
-        },
-        Migration {
-            // See `mojibake_repair` module doc for the full corruption shape
-            // and the error-policy rationale (why a per-row failure
-            // propagates instead of being logged-and-skipped).
-            name: "repair_pre_pdf_text_string_mojibake",
-            up: mojibake_repair::up,
-        },
-        Migration {
-            // The help-corpus vector cache (`documents::help_vectors`). Keyed
-            // by `sha256_hex(entry body)` — NOT by entry id or locale — so an
-            // edited answer misses by itself and an unchanged one costs at
-            // most one embed per embedding space once the cache is warm (the
-            // concurrency caveat on that claim lives in `help_vectors`' own
-            // module doc).
-            //
-            // The `created_at` index ships in the SAME migration as the table,
-            // not a later one: `prune_caches` sweeps `help_vectors` on the
-            // same tier as its two siblings, and `sql::prune_table_locked`'s
-            // row-cap delete is WRITTEN for that index (`ORDER BY created_at
-            // DESC LIMIT 1 OFFSET ?`) — without it the cap degrades to a
-            // full-table sort on every pruning write. Same
-            // `idx_<table>_created_at` name shape as
-            // `index_cache_created_at`'s two.
-            //
-            // Forward-safe and safe to drop: `CREATE TABLE IF NOT EXISTS` on
-            // a table no earlier migration reads, holding nothing but derived
-            // data (losing it costs a re-embed, never user content). APPENDED
-            // at the END — `run_migrations` is position-indexed, so a new
-            // migration must never be inserted earlier in this list.
-            name: "create_help_vectors",
-            up: |conn| {
-                conn.execute_batch(
-                    "CREATE TABLE IF NOT EXISTS help_vectors (
-                        text_hash  TEXT PRIMARY KEY,
-                        provider   TEXT NOT NULL,
-                        model      TEXT NOT NULL,
-                        dim        INTEGER NOT NULL,
-                        version    INTEGER NOT NULL,
-                        vector     TEXT NOT NULL,
-                        created_at INTEGER NOT NULL
-                    );
-                     CREATE INDEX IF NOT EXISTS idx_help_vectors_created_at ON help_vectors(created_at);",
-                )
-            },
-        },
-    ];
+/// Map one `documents` row, in the column order of the `SELECT`s in
+/// [`DocumentStore::list`] and [`DocumentStore::get`].
+fn record_from_row(row: &rusqlite::Row) -> rusqlite::Result<DocumentRecord> {
+    Ok(DocumentRecord {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        name: row.get(2)?,
+        locale: row.get(3)?,
+        text: row.get(4)?,
+        pages: row.get(5)?,
+        created_at: ts_from_db(row.get::<_, i64>(6)?),
+        indexed: row.get::<_, i64>(7)? != 0,
+        is_default: row.get::<_, i64>(8).unwrap_or(0) != 0,
+        keywords_json: row.get::<_, Option<String>>(9).unwrap_or(None),
+    })
+}
 
+impl DocumentStore {
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
         std::fs::create_dir_all(data_dir)?;
         let path = data_dir.join("documents.db");
         let mut conn = crate::db::open(&path)?;
         // The legacy `dim` backfill now runs as a one-time, `user_version`-gated
-        // migration (see `backfill_vector_dims` migration above) instead of on
+        // migration (see `backfill_vector_dims` in `migrations.rs`) instead of on
         // every `open()`.
         run_migrations(&mut conn, Self::MIGRATIONS)?;
         Ok(Self {
@@ -592,22 +158,9 @@ impl DocumentStore {
         )
         .ok()
         .and_then(|mut stmt| {
-            stmt.query_map([], |row| {
-                Ok(DocumentRecord {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    name: row.get(2)?,
-                    locale: row.get(3)?,
-                    text: row.get(4)?,
-                    pages: row.get(5)?,
-                    created_at: ts_from_db(row.get::<_, i64>(6)?),
-                    indexed: row.get::<_, i64>(7)? != 0,
-                    is_default: row.get::<_, i64>(8).unwrap_or(0) != 0,
-                    keywords_json: row.get::<_, Option<String>>(9).unwrap_or(None),
-                })
-            })
-            .ok()
-            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            stmt.query_map([], record_from_row)
+                .ok()
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
         })
         .unwrap_or_default()
     }
@@ -619,20 +172,7 @@ impl DocumentStore {
             "SELECT id, title, name, locale, text, pages, created_at, indexed, is_default, keywords_json
              FROM documents WHERE id = ?1",
             params![id],
-            |row| {
-                Ok(DocumentRecord {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    name: row.get(2)?,
-                    locale: row.get(3)?,
-                    text: row.get(4)?,
-                    pages: row.get(5)?,
-                    created_at: ts_from_db(row.get::<_, i64>(6)?),
-                    indexed: row.get::<_, i64>(7)? != 0,
-                    is_default: row.get::<_, i64>(8).unwrap_or(0) != 0,
-                    keywords_json: row.get::<_, Option<String>>(9).unwrap_or(None),
-                })
-            },
+            record_from_row,
         )
         .ok()
     }
@@ -682,14 +222,22 @@ impl DocumentStore {
         Ok(())
     }
 
+    /// Run ONE statement under the connection lock, mapping the SQLite error to the
+    /// store's string error — the shape every single-statement write shares (also
+    /// used by the sibling modules' cache deletes).
+    fn exec(&self, sql: &str, params: impl rusqlite::Params) -> AppResult<()> {
+        self.conn
+            .lock()
+            .execute(sql, params)
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     pub fn set_indexed(&self, id: &str) -> AppResult<()> {
-        let conn = self.conn.lock();
-        conn.execute(
+        self.exec(
             "UPDATE documents SET indexed = 1 WHERE id = ?1",
             params![id],
         )
-        .map_err(|e| e.to_string())?;
-        Ok(())
     }
 
     pub fn remove(&self, id: &str) -> AppResult<()> {
@@ -713,398 +261,7 @@ impl DocumentStore {
         .map_err(|e| e.to_string())?;
         Ok(())
     }
-
-    /// Store a space-tagged vector. The space (`provider`/`model`/`dim`) travels
-    /// with the values so comparisons can reject incompatible vectors.
-    pub fn upsert_vector(&self, doc_id: &str, v: &EmbeddingVector) -> AppResult<()> {
-        let conn = self.conn.lock();
-        upsert_vector_with_conn(&conn, doc_id, v)
-    }
-
-    /// Async variant of [`upsert_vector`] that runs the blocking lock + write on
-    /// a `spawn_blocking` thread, keeping the Tokio worker free on the hot match
-    /// path (`score_one` may call this up to once per job in a 1000-job batch).
-    /// Same write, same return type — callers in async contexts use this.
-    pub async fn upsert_vector_async(&self, doc_id: &str, v: &EmbeddingVector) -> AppResult<()> {
-        let conn = Arc::clone(&self.conn);
-        let doc_id = doc_id.to_string();
-        let v = v.clone();
-        spawn_blocking_db(move || {
-            let conn = conn.lock();
-            upsert_vector_with_conn(&conn, &doc_id, &v)
-        })
-        .await
-    }
-
-    pub fn get_vector(&self, doc_id: &str) -> Option<EmbeddingVector> {
-        let conn = self.conn.lock();
-        get_vector_with_conn(&conn, doc_id)
-    }
-
-    /// Async variant of [`get_vector`] — runs the blocking lock + read off the
-    /// async worker via `spawn_blocking`. A `JoinError` (closure panicked)
-    /// degrades to `None`, matching the sync read's "row missing → None" shape.
-    pub async fn get_vector_async(&self, doc_id: &str) -> Option<EmbeddingVector> {
-        let conn = Arc::clone(&self.conn);
-        let doc_id = doc_id.to_string();
-        tauri::async_runtime::spawn_blocking(move || {
-            let conn = conn.lock();
-            get_vector_with_conn(&conn, &doc_id)
-        })
-        .await
-        .ok()
-        .flatten()
-    }
-
-    // ── Posting-vector cache (translation-aware job embeddings) ───────────────
-    //
-    // A persisted, single-row-per-job cache of the job-text embedding. Distinct
-    // from `vectors` (résumé/document embeddings) and from the in-memory
-    // `PostingsCache` (which holds RAW-text vectors for hybrid search): this
-    // table stores the vector for the EXACT text that was embedded, which may be
-    // a translation. Reads are guarded by both the embedding space and a
-    // `text_hash` of that exact text, so a stale or wrong-language row misses.
-
-    /// Fetch a cached posting vector plus the `text_hash` it was stored under.
-    /// The caller compares the space (`EmbeddingConfig::matches`) and the hash
-    /// before trusting it. Mirrors `get_vector`'s read+deserialize shape.
-    pub fn get_posting_vector(&self, job_id: &str) -> Option<(EmbeddingVector, String)> {
-        let conn = self.conn.lock();
-        // Read-side TTL: an expired-but-not-yet-evicted row is a miss. None ttl = no expiry.
-        let cutoff = ttl_cutoff_ms();
-        conn.query_row(
-            "SELECT vector, provider, model, dim, version, text_hash FROM posting_vectors WHERE job_id = ?1 AND created_at >= ?2",
-            params![job_id, cutoff],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, i64>(3)?,
-                    row.get::<_, i64>(4)?,
-                    row.get::<_, String>(5)?,
-                ))
-            },
-        )
-        .ok()
-        .and_then(|(json, provider, model, dim, version, text_hash)| {
-            let values: Vec<f64> = serde_json::from_str(&json).ok()?;
-            Some((
-                EmbeddingVector {
-                    values,
-                    space: EmbeddingSpace {
-                        provider,
-                        model,
-                        dim: dim as usize,
-                        // Persisted at write time (`upsert_posting_vector`), not
-                        // re-derived here — `EmbeddingConfig::matches` compares
-                        // it against `EMBEDDING_VECTOR_VERSION`, so a stale-format
-                        // row (including a pre-migration row, defaulted to 0) is
-                        // a real cache miss instead of a hand-maintained invariant.
-                        version,
-                    },
-                },
-                text_hash,
-            ))
-        })
-    }
-
-    /// Store (or replace) the cached vector for `job_id`, tagged with the
-    /// `text_hash` of the exact text embedded and its embedding space.
-    pub fn upsert_posting_vector(
-        &self,
-        job_id: &str,
-        text_hash: &str,
-        v: &EmbeddingVector,
-    ) -> AppResult<()> {
-        let json = serde_json::to_string(&v.values).map_err(|e| e.to_string())?;
-        let conn = self.conn.lock();
-        conn.execute(
-            "INSERT INTO posting_vectors (job_id, text_hash, vector, provider, model, dim, version, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-             ON CONFLICT(job_id) DO UPDATE SET
-                text_hash = excluded.text_hash, vector = excluded.vector,
-                provider = excluded.provider, model = excluded.model,
-                dim = excluded.dim, version = excluded.version, created_at = excluded.created_at",
-            params![
-                job_id,
-                text_hash,
-                json,
-                v.space.provider,
-                v.space.model,
-                v.space.dim as i64,
-                v.space.version,
-                ts_to_db(now_ms()),
-            ],
-        )
-        .map_err(|e| e.to_string())?;
-        // Amortized eviction on the shared cadence, reusing the held lock (must
-        // NOT re-lock) — see `sql::prune_due`.
-        if prune_due(&self.posting_writes) {
-            let cfg = crate::performance::current();
-            prune_table_locked(
-                &conn,
-                "posting_vectors",
-                cfg.cache_ttl_secs,
-                cfg.cache_max_rows,
-            );
-        }
-        Ok(())
-    }
-
-    /// Drop ONE cached posting vector.
-    ///
-    /// The cache is otherwise bounded only by its TTL and row cap, which is the
-    /// right discipline for a derived row whose producer still exists. It is
-    /// the wrong one for a row derived from user CONTENT that has just been
-    /// deleted (an Autopilot's résumé snapshot, `autopilot-resume:<sha>`): that
-    /// row must go with its producer, not linger for the TTL. Idempotent — a
-    /// missing row is not an error.
-    pub fn delete_posting_vector(&self, job_id: &str) -> AppResult<()> {
-        let conn = self.conn.lock();
-        conn.execute(
-            "DELETE FROM posting_vectors WHERE job_id = ?1",
-            params![job_id],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(())
-    }
-
-    /// Drop the entire posting-vector cache (e.g. on embedding-config change).
-    pub fn clear_posting_vectors(&self) -> AppResult<()> {
-        let conn = self.conn.lock();
-        conn.execute("DELETE FROM posting_vectors", [])
-            .map_err(|e| e.to_string())?;
-        Ok(())
-    }
-
-    /// Bound EVERY derived cache table: expire rows older than `ttl_secs` and
-    /// cap each to the newest `max_rows`. `None` for a knob disables that bound
-    /// (today's unbounded behavior). Best-effort — a failed prune never blocks
-    /// the caller. Pure of its inputs (does not read the live global), so the
-    /// command can pass the exact tier it just applied. Unlike the amortized
-    /// per-write prune, this one always runs: its caller is the settings change.
-    pub fn prune_caches(&self, ttl_secs: Option<i64>, max_rows: Option<i64>) {
-        let conn = self.conn.lock();
-        prune_table_locked(&conn, "posting_vectors", ttl_secs, max_rows);
-        prune_table_locked(&conn, "match_scores", ttl_secs, max_rows);
-        // `help_vectors` is swept on the same tier, for the same reason: its
-        // producer (`commands::help`) takes its entries from the REQUEST, so
-        // the shipped corpus does not bound the table — see its own module
-        // doc. Losing a row costs one re-embed, never user content.
-        prune_table_locked(&conn, "help_vectors", ttl_secs, max_rows);
-    }
-
-    // ── Match-result cache (self-invalidating) ────────────────────────────────
-    //
-    // Caches the full `match_resume` JSON result. The cache key (the table PK)
-    // captures every input that can change the score: the resume/job ids, the
-    // embedding space, whether semantic scoring ran, the formula version, the
-    // embedding vector version, and a hash of the post-translation job text. A
-    // change to any of those is a new key — so the cache self-invalidates
-    // without explicit eviction.
-
-    /// Fetch a cached match-score JSON result for the given key, if present.
-    pub fn get_match_score(&self, key: &MatchScoreKey) -> Option<serde_json::Value> {
-        let conn = self.conn.lock();
-        get_match_score_with_conn(&conn, key)
-    }
-
-    /// Async variant of [`get_match_score`] — runs the blocking lock + read off
-    /// the async worker. Takes an owned [`OwnedMatchScoreKey`] because the
-    /// borrowed [`MatchScoreKey`] can't cross into a `'static` closure. A
-    /// `JoinError` degrades to `None` (a cache miss), so a panicking blocking
-    /// task never poisons the result — `score_one` recomputes the score.
-    pub async fn get_match_score_async(
-        &self,
-        key: OwnedMatchScoreKey,
-    ) -> Option<serde_json::Value> {
-        let conn = Arc::clone(&self.conn);
-        tauri::async_runtime::spawn_blocking(move || {
-            let conn = conn.lock();
-            get_match_score_with_conn(&conn, &key.as_ref())
-        })
-        .await
-        .ok()
-        .flatten()
-    }
-
-    /// Store (or replace) the cached match-score JSON result for the given key.
-    ///
-    /// The amortized-prune decision is taken HERE, not in the SQL helper: the
-    /// counter belongs to the store and the helper only holds a `&Connection`.
-    pub fn upsert_match_score(&self, key: &MatchScoreKey, score_json: &str) -> AppResult<()> {
-        let prune = prune_due(&self.match_score_writes);
-        let conn = self.conn.lock();
-        upsert_match_score_with_conn(&conn, key, score_json, prune)
-    }
-
-    /// Async variant of [`upsert_match_score`] — runs the blocking write + lazy
-    /// eviction off the async worker. Takes owned key + json so the closure is
-    /// `'static`; the prune decision is likewise resolved before the move, since
-    /// the counter lives on `self`. The TTL/row-cap prune reads
-    /// `performance::current()` *inside* the closure, reusing the held lock
-    /// (never re-locks → no deadlock).
-    pub async fn upsert_match_score_async(
-        &self,
-        key: OwnedMatchScoreKey,
-        score_json: String,
-    ) -> AppResult<()> {
-        let conn = Arc::clone(&self.conn);
-        let prune = prune_due(&self.match_score_writes);
-        spawn_blocking_db(move || {
-            let conn = conn.lock();
-            upsert_match_score_with_conn(&conn, &key.as_ref(), &score_json, prune)
-        })
-        .await
-    }
-
-    /// Drop every cached match score computed FOR one résumé id.
-    ///
-    /// A `match_scores` row is résumé-derived content — its gaps,
-    /// recommendations and explanation all describe that résumé — so it must
-    /// die with the résumé, not at the TTL. Sibling of
-    /// [`Self::delete_posting_vector`] for the other half of an Autopilot
-    /// snapshot's cache footprint. Idempotent.
-    pub fn delete_match_scores_for_resume(&self, resume_id: &str) -> AppResult<()> {
-        let conn = self.conn.lock();
-        conn.execute(
-            "DELETE FROM match_scores WHERE resume_id = ?1",
-            params![resume_id],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(())
-    }
-
-    /// Drop the entire match-result cache (e.g. on embedding-config change).
-    pub fn clear_match_scores(&self) -> AppResult<()> {
-        let conn = self.conn.lock();
-        conn.execute("DELETE FROM match_scores", [])
-            .map_err(|e| e.to_string())?;
-        Ok(())
-    }
-
-    /// Count of stored vectors in one embedding space, by SQL `COUNT(*)` — never
-    /// deserializes the float-array blobs. Powers `ai_embedding_status`'s
-    /// indexed-in-active-space figure (the old path loaded every vector via a
-    /// full vector scan just to count the matching ones). Matches the SAME
-    /// identity [`EmbeddingConfig::matches`] uses — provider + model AND the
-    /// current [`EMBEDDING_VECTOR_VERSION`] — so a version bump (an old-format
-    /// row every real match-check now rejects) is also reflected here: without
-    /// the version filter, the status strip would report `stale: 0` and "N/N
-    /// indexed" over an index where every row is actually stale.
-    pub fn count_vectors_in_space(&self, provider: &str, model: &str) -> usize {
-        let conn = self.conn.lock();
-        conn.query_row(
-            "SELECT COUNT(*) FROM vectors WHERE provider = ?1 AND model = ?2 AND version = ?3",
-            params![provider, model, EMBEDDING_VECTOR_VERSION],
-            |row| row.get::<_, i64>(0),
-        )
-        .map(|n| n as usize)
-        .unwrap_or(0)
-    }
-
-    /// Count of stored vectors grouped by embedding space (for the status panel).
-    pub fn vector_space_counts(&self) -> Vec<(EmbeddingSpace, usize)> {
-        let conn = self.conn.lock();
-        conn.prepare(
-            "SELECT provider, model, dim, COUNT(*) FROM vectors GROUP BY provider, model, dim",
-        )
-        .ok()
-        .and_then(|mut stmt| {
-            stmt.query_map([], |row| {
-                Ok((
-                    EmbeddingSpace {
-                        provider: row.get::<_, String>(0)?,
-                        model: row.get::<_, String>(1)?,
-                        dim: row.get::<_, i64>(2)? as usize,
-                        // Display-only aggregate (grouped by provider/model/dim,
-                        // not version) — never fed into `.matches()`/`compare()`,
-                        // so a placeholder is fine here.
-                        version: EMBEDDING_VECTOR_VERSION,
-                    },
-                    row.get::<_, i64>(3)? as usize,
-                ))
-            })
-            .ok()
-            .map(|rows| rows.filter_map(|r| r.ok()).collect())
-        })
-        .unwrap_or_default()
-    }
-
-    pub fn embedding_config(&self) -> EmbeddingConfig {
-        let conn = self.conn.lock();
-        let result = conn.query_row(
-            "SELECT provider, model, base_url FROM embedding_config WHERE id = 1",
-            [],
-            |row| {
-                Ok(EmbeddingConfig {
-                    provider: row.get::<_, String>(0)?,
-                    model: row.get::<_, String>(1)?,
-                    base_url: row.get::<_, Option<String>>(2)?,
-                })
-            },
-        );
-        result.unwrap_or_else(|e| {
-            // A missing row is the ordinary unseeded default; anything else is
-            // a real fault silently substituting a different embedding model
-            // — this used to swallow both cases identically, with no log line.
-            if matches!(e, rusqlite::Error::QueryReturnedNoRows) {
-                tracing::debug!(
-                    "embedding_config: unseeded, defaulting to ollama/nomic-embed-text"
-                );
-            } else {
-                // `e` is `rusqlite::Error` — `InvalidPath` can carry the
-                // absolute DB path, so this must never interpolate it raw
-                // (the `check-log-error-leaks` guard only scans `log::`
-                // macros, not `tracing::`, so it can't catch this itself).
-                tracing::warn!(
-                    "embedding_config: read failed ({}), defaulting to ollama/nomic-embed-text",
-                    sanitize_reason(&e.to_string())
-                );
-            }
-            EmbeddingConfig {
-                provider: "ollama".to_string(),
-                model: "nomic-embed-text".to_string(),
-                base_url: None,
-            }
-        })
-    }
-
-    pub fn set_embedding_config(&self, cfg: &EmbeddingConfig) -> AppResult<()> {
-        let conn = self.conn.lock();
-        conn.execute(
-            "INSERT INTO embedding_config (id, provider, model, base_url, updated_at)
-             VALUES (1, ?1, ?2, ?3, ?4)
-             ON CONFLICT(id) DO UPDATE SET
-                provider = excluded.provider, model = excluded.model,
-                base_url = excluded.base_url, updated_at = excluded.updated_at",
-            params![cfg.provider, cfg.model, cfg.base_url, ts_to_db(now_ms())],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(())
-    }
 }
-
-mod embedding;
-// Inherent `impl DocumentStore` only (the `help_vectors` cache), so there is
-// nothing to re-export — see help_vectors.rs's own doc for why it is a
-// separate file rather than more of mod.rs.
-mod help_vectors;
-// Re-exported flat at `documents::` so this split is invisible to every
-// existing `crate::documents::X` call site (`embed` alone has ~5 external
-// callers, `sha256_hex`/`EmbedBudget` several more) — see embedding.rs's doc.
-pub use embedding::embed;
-pub(crate) use embedding::{
-    embed_charged, embed_with_config, is_synthetic_scoring_id, posting_vector_or_embed, sha256_hex,
-    AppEmbedder, EmbedBudget, Embedder,
-};
-// `posting_vector_is_fresh` has no caller outside `embedding.rs` itself in a
-// non-test build — only `documents/test.rs`'s unit tests reach it through
-// this re-export, so it is unused (and clippy `-D warnings` fails on it)
-// outside `#[cfg(test)]`.
-#[cfg(test)]
-pub(crate) use embedding::posting_vector_is_fresh;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1122,142 +279,5 @@ pub fn make_doc_id() -> String {
     format!("doc-{}-{}", now_ms(), &Uuid::new_v4().to_string()[..8])
 }
 
-/// Read an exported document's optional embedding vector out of its JSON row.
-///
-/// Legacy exports carry no `vectorSpace` — they predate cloud embeddings and were
-/// all Ollama/nomic-embed-text, which is what the fallback records. The export
-/// JSON never carries a `version` (see `export()` below), so every imported
-/// vector is tagged `version: 0` — never [`EMBEDDING_VECTOR_VERSION`] — so
-/// `EmbeddingConfig::matches` always treats a just-imported vector as stale
-/// and re-embeds it. Conservative on purpose: we genuinely don't know which
-/// format version produced a vector from another install/app version.
-fn parse_exported_vector(item: &serde_json::Value) -> Option<EmbeddingVector> {
-    let values: Vec<f64> = item
-        .get("vector")?
-        .as_array()?
-        .iter()
-        .filter_map(|v| v.as_f64())
-        .collect();
-    if values.is_empty() {
-        return None;
-    }
-    let dim = values.len();
-    let space = item
-        .get("vectorSpace")
-        .map(|s| EmbeddingSpace {
-            provider: s
-                .get("provider")
-                .and_then(|v| v.as_str())
-                .unwrap_or("ollama")
-                .to_string(),
-            model: s
-                .get("model")
-                .and_then(|v| v.as_str())
-                .unwrap_or("nomic-embed-text")
-                .to_string(),
-            dim: s
-                .get("dim")
-                .and_then(|v| v.as_u64())
-                .map(|d| d as usize)
-                .unwrap_or(dim),
-            version: 0,
-        })
-        .unwrap_or_else(|| EmbeddingSpace {
-            provider: "ollama".to_string(),
-            model: "nomic-embed-text".to_string(),
-            dim,
-            version: 0,
-        });
-    Some(EmbeddingVector { values, space })
-}
-
-impl DataStore for DocumentStore {
-    fn key(&self) -> &'static str {
-        "documents"
-    }
-
-    fn export(&self) -> serde_json::Value {
-        let docs: Vec<serde_json::Value> = self
-            .list()
-            .into_iter()
-            .map(|rec| {
-                let mut obj = serde_json::to_value(&rec).unwrap_or_else(|_| serde_json::json!({}));
-                if let Some(ev) = self.get_vector(&rec.id) {
-                    obj["vector"] = serde_json::json!(ev.values);
-                    obj["vectorSpace"] = serde_json::json!({
-                        "provider": ev.space.provider,
-                        "model": ev.space.model,
-                        "dim": ev.space.dim,
-                    });
-                }
-                obj
-            })
-            .collect();
-        serde_json::json!(docs)
-    }
-
-    fn import(&self, data: &serde_json::Value) -> AppResult<usize> {
-        let items = data.as_array().ok_or("documents: expected an array")?;
-        // Deserialize EVERY row before mutating the store. `clear_all` wipes
-        // documents, vectors, posting_vectors AND match_scores, so a malformed
-        // row (hand-edited bundle, newer schema, corruption) reached after that
-        // call used to destroy the user's whole document library + embeddings and
-        // still return Err — nothing left to restore from. The sibling stores
-        // (applications, ai_generations, dedup, discovered) all validate up-front
-        // for exactly this reason; documents was the lone outlier.
-        let parsed: Vec<(DocumentRecord, Option<EmbeddingVector>)> = items
-            .iter()
-            .map(|item| {
-                let record: DocumentRecord =
-                    serde_json::from_value(item.clone()).map_err(|e| e.to_string())?;
-                Ok((record, parse_exported_vector(item)))
-            })
-            .collect::<AppResult<_>>()?;
-
-        self.clear_all();
-        let mut count = 0;
-        let mut default_id: Option<String> = None;
-        for (record, vector) in &parsed {
-            if record.is_default {
-                default_id = Some(record.id.clone());
-            }
-            // A pre-#955 bundle carries BOTH the corrupt text and the vector
-            // derived from it. `insert()` repairs the text and, if it
-            // changed, deletes any latent vector for this id — but that
-            // happens BEFORE the `upsert_vector` below would restore the
-            // bundle's own (corrupt-derived) one, so it must be skipped
-            // here too or it would just get written right back.
-            let text_was_repaired = matches!(
-                crate::extraction::pdf::repair_utf16_mojibake(&record.text),
-                std::borrow::Cow::Owned(_)
-            );
-            self.insert(record)?;
-            if let Some(vector) = vector {
-                if !text_was_repaired {
-                    // A `<namespace>:` id is refused by the document-index write
-                    // guard (`is_synthetic_scoring_id`). Unreachable for a bundle
-                    // this app produced — `export()` only walks real `documents`
-                    // rows — but a hand-edited backup must not BRICK the restore:
-                    // `clear_all()` has already run, so propagating here would
-                    // leave the library half-restored with nothing to retry from.
-                    // Skip the one vector (it re-embeds on demand) and keep going.
-                    if let Err(e) = self.upsert_vector(&record.id, vector) {
-                        log::warn!(
-                            "[documents] import: skipping the embedding of one restored document ({})",
-                            sanitize_reason(&e.to_string())
-                        );
-                    }
-                }
-            }
-            count += 1;
-        }
-        // insert() auto-defaults the first row; restore the originally-default doc.
-        if let Some(id) = default_id {
-            self.set_default(&id)?;
-        }
-        Ok(count)
-    }
-}
-
 #[cfg(test)]
-mod test;
+mod tests;
