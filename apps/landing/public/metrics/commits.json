@@ -1,5 +1,185 @@
 [
   {
+    "sha": "eb066c0c540c7d3b5ebea3e83e89a43e4392faff",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-10-02T09:43:45Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "c8f7603e991daef81ac99158578221e5b7af8ebc",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-10-01T10:05:53Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "a43c59df1326279932095e133ebd966288df1883",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-10-01T04:05:26Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "4a5c0307a58eb29999dcfd0a49c2991623fa1e10",
+    "commit": {
+      "message": "refactor(export): split the typst engine into modules under 300 code lines (#1309)",
+      "author": {
+        "date": "2026-10-01T03:51:36Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "aca41a7212e42f6a44bae185a0cc2b439214caed",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-30T22:28:33Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "cf816f592825385569200bc6ff6b4dbbf2fc5467",
+    "commit": {
+      "message": "refactor(pipeline): split the resume pipeline into modules under 300 code lines (#1308)",
+      "author": {
+        "date": "2026-09-30T22:08:17Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "44f82b50b35cff72ef58102578804dfaf630f579",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-30T19:51:41Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "455ba14de0ff7b409adc333ee57c6d6c50ca89fe",
+    "commit": {
+      "message": "refactor(pipeline): split the pipeline core into modules under 300 code lines (#1307)",
+      "author": {
+        "date": "2026-09-30T19:37:35Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "570c5af427cb37b348d2d58b7bfe3f63dc2b24b1",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-30T18:30:35Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "a4463fbda07627b6188bd707ab50e85288e973e2",
+    "commit": {
+      "message": "refactor(ai-provider): split the cli agent layer into modules under 300 code lines (#1306)",
+      "author": {
+        "date": "2026-09-30T18:06:45Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "a23bfe0b96d254161c333be7af69cca67aa25836",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-30T17:16:04Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "cd7eb5d206cbd2669eec632d6f23aee5529ee83e",
+    "commit": {
+      "message": "refactor(ai-provider): split the shared provider layer into modules under 300 code lines (#1304)",
+      "author": {
+        "date": "2026-09-30T16:46:52Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "49c696c64da28256d2007f5aba891d3646db6cb3",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-09-30T15:30:14Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "42b1bb9013c0d284304e2bda4e6af2c54c58986f",
+    "commit": {
+      "message": "refactor(ai-provider): split the provider adapters into modules under 300 code lines (#1297)",
+      "author": {
+        "date": "2026-09-30T15:09:43Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "9442212b0dc50e59efd881b1201640ae480d626d",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-09-30T09:40:04Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "8958887834a975d12ec94f8df7459eac6cad57b4",
     "commit": {
       "message": "chore: update export benchmark data [skip ci]",
@@ -1013,186 +1193,6 @@
       "message": "docs(extension): record the prep tab and answer capture on submit",
       "author": {
         "date": "2026-09-21T18:49:55Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "531b9ca25663eee4dcbfc1811e11875e40fc0e69",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-21T08:54:09Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "377e6d21335798d3bd47e88510760951184ddf00",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-20T08:33:26Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "ca2ec856db8ce1132fd61091cf5c76c552f98248",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-19T08:01:21Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "6e9a27a6b08b2f80f08b9a157b02b708ca0bc5ac",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-18T08:13:28Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "97976f9a332130b5e8ede01017fa908606023c78",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-09-17T08:37:51Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "ba72ca298bfe99e05acbe3821b01c4ec0003b612",
-    "commit": {
-      "message": "chore: sync landing download version to v0.154.0",
-      "author": {
-        "date": "2026-09-16T18:43:46Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "35177b61bb967e90ff008ce4fe562fae40e6eb0f",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.154.0 [skip ci]",
-      "author": {
-        "date": "2026-09-16T18:43:24Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "dc0479486fe024f541aea6cd63eafe9bc373b416",
-    "commit": {
-      "message": "chore(release): 0.154.0 [skip ci]",
-      "author": {
-        "date": "2026-09-16T17:58:53Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "1f0ef98877555ebf0c20ebe90d8483df8b7a434a",
-    "commit": {
-      "message": "chore: bump the javascript group with 21 updates (#1212)",
-      "author": {
-        "date": "2026-09-16T17:28:30Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "472611a63245258acd2ea7231ca45aa395859389",
-    "commit": {
-      "message": "chore: bump actions/setup-dotnet from 4.3.1 to 6.0.0 (#1211)",
-      "author": {
-        "date": "2026-09-16T17:27:09Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "3b00733e48ad90a0d94a1cc679f1b93719ea0874",
-    "commit": {
-      "message": "chore: bump the ci-actions group with 3 updates (#1210)",
-      "author": {
-        "date": "2026-09-16T17:26:42Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "0f84c868757252d41de6db3f78b61365221d68da",
-    "commit": {
-      "message": "chore: bump lopdf from 0.44.0 to 0.45.0 in /apps/desktop/src-tauri (#1208)",
-      "author": {
-        "date": "2026-09-16T17:25:41Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "ddfb3d3d24dece98b05be9f92171d9e70d36cc08",
-    "commit": {
-      "message": "chore: bump the desktop-rust group (#1207)",
-      "author": {
-        "date": "2026-09-16T17:25:14Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "b18ca6c62261a2ffde24782030119aa134aab271",
-    "commit": {
-      "message": "chore: bump the codeql-action group with 3 updates (#1206)",
-      "author": {
-        "date": "2026-09-16T17:23:24Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "6d95b6bbcb1a5c66b10f6807b08113d19a5045c8",
-    "commit": {
-      "message": "feat(extension): Prep tab and saving the answers you typed at submit (#1209)",
-      "author": {
-        "date": "2026-09-16T17:06:45Z"
       }
     },
     "author": {

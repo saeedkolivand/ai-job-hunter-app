@@ -1,1 +1,100 @@
-[]
+[
+  {
+    "number": 1305,
+    "title": "chore: bump the javascript group with 31 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1305",
+    "draft": false,
+    "created_at": "2026-09-30T16:34:17Z",
+    "updated_at": "2026-09-30T17:16:52Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1303,
+    "title": "chore: bump the ci-actions group with 2 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1303",
+    "draft": false,
+    "created_at": "2026-09-30T16:13:03Z",
+    "updated_at": "2026-09-30T17:13:42Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1302,
+    "title": "chore: bump feed-rs from 2.4.0 to 3.0.0 in /apps/desktop/src-tauri",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1302",
+    "draft": false,
+    "created_at": "2026-09-30T16:12:22Z",
+    "updated_at": "2026-09-30T16:36:09Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1301,
+    "title": "chore: bump tauri-plugin-sentry from 0.6.0 to 0.7.0 in /apps/desktop/src-tauri",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1301",
+    "draft": false,
+    "created_at": "2026-09-30T16:12:14Z",
+    "updated_at": "2026-09-30T16:59:03Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1300,
+    "title": "chore: bump the desktop-rust group in /apps/desktop/src-tauri with 22 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1300",
+    "draft": false,
+    "created_at": "2026-09-30T16:12:07Z",
+    "updated_at": "2026-09-30T16:57:18Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1299,
+    "title": "chore: bump the codeql-action group with 3 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1299",
+    "draft": false,
+    "created_at": "2026-09-30T16:08:55Z",
+    "updated_at": "2026-09-30T17:03:31Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1298,
+    "title": "chore: bump the vitest group with 3 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1298",
+    "draft": false,
+    "created_at": "2026-09-30T16:08:13Z",
+    "updated_at": "2026-09-30T16:49:48Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  }
+]

@@ -1,5 +1,89 @@
 [
   {
+    "number": 1309,
+    "title": "refactor(export): split the typst engine into modules under 300 code lines",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1309",
+    "draft": false,
+    "created_at": "2026-10-01T03:50:40Z",
+    "updated_at": "2026-10-01T04:15:55Z",
+    "merged_at": "2026-10-01T03:51:37Z",
+    "closed_at": "2026-10-01T03:51:37Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1308,
+    "title": "refactor(pipeline): split the resume pipeline into modules under 300 code lines",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1308",
+    "draft": false,
+    "created_at": "2026-09-30T21:11:36Z",
+    "updated_at": "2026-09-30T22:08:20Z",
+    "merged_at": "2026-09-30T22:08:18Z",
+    "closed_at": "2026-09-30T22:08:18Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1307,
+    "title": "refactor(pipeline): split the pipeline core into modules under 300 code lines",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1307",
+    "draft": false,
+    "created_at": "2026-09-30T19:29:47Z",
+    "updated_at": "2026-09-30T19:46:29Z",
+    "merged_at": "2026-09-30T19:37:35Z",
+    "closed_at": "2026-09-30T19:37:35Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1306,
+    "title": "refactor(ai-provider): split the cli agent layer into modules under 300 code lines",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1306",
+    "draft": false,
+    "created_at": "2026-09-30T17:40:03Z",
+    "updated_at": "2026-09-30T18:06:49Z",
+    "merged_at": "2026-09-30T18:06:46Z",
+    "closed_at": "2026-09-30T18:06:46Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1304,
+    "title": "refactor(ai-provider): split the shared provider layer into modules under 300 code lines",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1304",
+    "draft": false,
+    "created_at": "2026-09-30T16:14:24Z",
+    "updated_at": "2026-09-30T17:06:00Z",
+    "merged_at": "2026-09-30T16:46:53Z",
+    "closed_at": "2026-09-30T16:46:53Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1297,
+    "title": "refactor(ai-provider): split the provider adapters into modules under 300 code lines",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1297",
+    "draft": false,
+    "created_at": "2026-09-30T14:26:24Z",
+    "updated_at": "2026-09-30T15:09:46Z",
+    "merged_at": "2026-09-30T15:09:44Z",
+    "closed_at": "2026-09-30T15:09:44Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
     "number": 1296,
     "title": "refactor(scraping): split the job-board scrapers into modules under 300 code lines",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1296",
@@ -613,90 +697,6 @@
     "requested_reviewers": [],
     "user": {
       "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1198,
-    "title": "fix(release): create the xdg data dir before msstore runs; surface the snap store listing",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1198",
-    "draft": false,
-    "created_at": "2026-09-10T13:09:15Z",
-    "updated_at": "2026-09-16T17:59:46Z",
-    "merged_at": "2026-09-10T13:15:27Z",
-    "closed_at": "2026-09-10T13:15:27Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1199,
-    "title": "ci(release): pin msstore-cli to v0.4.2 and verify against a committed sha256",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1199",
-    "draft": false,
-    "created_at": "2026-09-10T13:37:55Z",
-    "updated_at": "2026-09-16T17:59:43Z",
-    "merged_at": "2026-09-10T13:39:02Z",
-    "closed_at": "2026-09-10T13:39:02Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1200,
-    "title": "ci(charts): count store installs in the public installs badge",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1200",
-    "draft": false,
-    "created_at": "2026-09-10T13:41:21Z",
-    "updated_at": "2026-09-16T17:59:40Z",
-    "merged_at": "2026-09-10T13:42:54Z",
-    "closed_at": "2026-09-10T13:42:54Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1201,
-    "title": "ui(extension): notebook redesign shell — launcher popup, tabbed panel, settings page",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1201",
-    "draft": false,
-    "created_at": "2026-09-11T03:46:53Z",
-    "updated_at": "2026-09-16T17:59:37Z",
-    "merged_at": "2026-09-11T04:34:34Z",
-    "closed_at": "2026-09-11T04:34:34Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1203,
-    "title": "feat(extension): read-only agent tier + live settings switches (ADR-050)",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1203",
-    "draft": false,
-    "created_at": "2026-09-14T20:54:08Z",
-    "updated_at": "2026-09-16T17:59:34Z",
-    "merged_at": "2026-09-14T21:45:38Z",
-    "closed_at": "2026-09-14T21:45:38Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1204,
-    "title": "feat(extension): documents into ATS — résumé attach, cover-letter paste, deep links, copy fallback",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1204",
-    "draft": false,
-    "created_at": "2026-09-15T10:30:37Z",
-    "updated_at": "2026-09-16T17:59:31Z",
-    "merged_at": "2026-09-15T16:18:15Z",
-    "closed_at": "2026-09-15T16:18:15Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
     }
   }
 ]

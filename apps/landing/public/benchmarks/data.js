@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790807313295,
+  "lastUpdate": 1790827526517,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "49699333+dependabot[bot]@users.noreply.github.com",
-            "name": "dependabot[bot]",
-            "username": "dependabot[bot]"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "a928665eb280da6650ab27b316232bea38020c36",
-          "message": "chore: bump tauri-winrt-notification in /apps/desktop/src-tauri (#975)\n\nBumps [tauri-winrt-notification](https://github.com/tauri-apps/winrt-notification) from 0.7.2 to 0.8.1.\n- [Release notes](https://github.com/tauri-apps/winrt-notification/releases)\n- [Changelog](https://github.com/tauri-apps/winrt-notification/blob/dev/CHANGELOG.md)\n- [Commits](https://github.com/tauri-apps/winrt-notification/compare/tauri-winrt-notification-v0.7.2...tauri-winrt-notification-v0.8.1)\n\n---\nupdated-dependencies:\n- dependency-name: tauri-winrt-notification\n  dependency-version: 0.8.1\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-          "timestamp": "2026-08-12T18:56:33+02:00",
-          "tree_id": "d90f3a0a1abca830dbe5dddc25e2c15d377cc695",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/a928665eb280da6650ab27b316232bea38020c36"
-        },
-        "date": 1786555930066,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 1689754,
-            "range": "± 71317",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2044701,
-            "range": "± 22227",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 195875,
-            "range": "± 13466",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4195,6 +4153,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 213349,
             "range": "± 1680",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4a5c0307a58eb29999dcfd0a49c2991623fa1e10",
+          "message": "refactor(export): split the typst engine into modules under 300 code lines (#1309)\n\nThe 5.4k-line typst_engine test file becomes a tests.rs hub with shared\nfixtures (resume, letter, pdf introspection, svg geometry) and one topic\nfile per template or feature. letter.rs moves its data model into\nletter/model.rs; letter, letterhead, render and photo move their inline\ntests out.\n\nletter's style mapping now uses render's existing rgb_to_hex and\nfont_family_to_typst instead of its own identical copies. The ten\nper-template stray-Typst guards and the Swiss Minimal/Academic render\nchecks become table-driven tests that keep every case. Rendered output\nis unchanged.\n\nRefs #1280\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-01T05:51:36+02:00",
+          "tree_id": "ad9896c78199dcd885c439397e971851a23b8824",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/4a5c0307a58eb29999dcfd0a49c2991623fa1e10"
+        },
+        "date": 1790827526286,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2173716,
+            "range": "± 25486",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2581718,
+            "range": "± 36253",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 308930,
+            "range": "± 9206",
             "unit": "ns/iter"
           }
         ]
