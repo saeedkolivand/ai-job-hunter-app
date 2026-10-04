@@ -287,4 +287,4 @@ pub fn generate_preview_svg(request: &ExportRequest) -> AppResult<Vec<String>> {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;

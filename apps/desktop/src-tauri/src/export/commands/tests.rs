@@ -1,4 +1,6 @@
-use super::super::types::{DocumentType, ExportFormat, LetterLayout, TemplateId};
+use super::super::types::{
+    DocumentType, ExportFormat, GenerationMeta, LetterLayout, TemplateId,
+};
 use super::*;
 
 // ── Fixtures (mirrors typst_engine/test.rs — minimal but complete) ────────────
@@ -36,14 +38,12 @@ Sincerely,
 Jane Smith
 ";
 
-// ── documents_render_preview_images ──────────────────────────────────────────
-
-/// Résumé request → at least one page, every page is an SVG document,
-/// mime_type is "image/svg+xml".
-#[tokio::test]
-async fn preview_resume_returns_svg_pages() {
-    let request = ExportRequest {
-        text: FIXTURE_RESUME.to_string(),
+/// The common shape every test below starts from — a minimal résumé/PDF
+/// request. Each test spreads this and overrides only the fields its
+/// scenario cares about, so a reviewer can see exactly what varies.
+fn default_request() -> ExportRequest {
+    ExportRequest {
+        text: "Test".to_string(),
         format: ExportFormat::Pdf,
         document_type: DocumentType::Resume,
         template_id: TemplateId::Classic,
@@ -53,6 +53,18 @@ async fn preview_resume_returns_svg_pages() {
         contact: None,
         accent: None,
         letter_layout: LetterLayout::Classic,
+    }
+}
+
+// ── documents_render_preview_images ──────────────────────────────────────────
+
+/// Résumé request → at least one page, every page is an SVG document,
+/// mime_type is "image/svg+xml".
+#[tokio::test]
+async fn preview_resume_returns_svg_pages() {
+    let request = ExportRequest {
+        text: FIXTURE_RESUME.to_string(),
+        ..default_request()
     };
     let result = documents_render_preview_images(request)
         .await
@@ -80,15 +92,10 @@ async fn preview_resume_returns_svg_pages() {
 async fn preview_cover_letter_returns_svg_pages() {
     let request = ExportRequest {
         text: LETTER_FIXTURE_US.to_string(),
-        format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
         template_id: TemplateId::SwissMinimal,
-        meta: None,
-        ats_mode: false,
         locale: Some("us".to_string()),
-        contact: None,
-        accent: None,
-        letter_layout: LetterLayout::Classic,
+        ..default_request()
     };
     let result = documents_render_preview_images(request)
         .await
@@ -108,56 +115,23 @@ async fn preview_cover_letter_returns_svg_pages() {
     assert_eq!(result.mime_type, "image/svg+xml");
 }
 
-/// Empty text → same Validation error as `documents_export_document` (shared
-/// `validate_and_normalize`).
+/// Empty AND whitespace-only text are both rejected with the same Validation
+/// error (the trim check in `validate_and_normalize`).
 #[tokio::test]
-async fn preview_empty_text_is_rejected() {
-    let request = ExportRequest {
-        text: "".to_string(),
-        format: ExportFormat::Pdf,
-        document_type: DocumentType::Resume,
-        template_id: TemplateId::Classic,
-        meta: None,
-        ats_mode: false,
-        locale: None,
-        contact: None,
-        accent: None,
-        letter_layout: LetterLayout::Classic,
-    };
-    let err = documents_render_preview_images(request)
-        .await
-        .expect_err("empty text must be rejected");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("Cannot export empty document"),
-        "expected the shared empty-text error, got: {msg}"
-    );
-}
-
-/// Whitespace-only text → same Validation error (trim check in
-/// `validate_and_normalize`).
-#[tokio::test]
-async fn preview_whitespace_text_is_rejected() {
-    let request = ExportRequest {
-        text: "   \n\t  ".to_string(),
-        format: ExportFormat::Pdf,
-        document_type: DocumentType::Resume,
-        template_id: TemplateId::Classic,
-        meta: None,
-        ats_mode: false,
-        locale: None,
-        contact: None,
-        accent: None,
-        letter_layout: LetterLayout::Classic,
-    };
-    let err = documents_render_preview_images(request)
-        .await
-        .expect_err("whitespace-only text must be rejected");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("Cannot export empty document"),
-        "expected the shared empty-text error, got: {msg}"
-    );
+async fn preview_empty_or_whitespace_text_is_rejected() {
+    for text in ["", "   \n\t  "] {
+        let request = ExportRequest {
+            text: text.to_string(),
+            ..default_request()
+        };
+        let result = documents_render_preview_images(request).await;
+        assert!(result.is_err(), "{text:?} must be rejected");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("Cannot export empty document"),
+            "expected the shared empty-text error for {text:?}, got: {msg}"
+        );
+    }
 }
 
 /// Unknown templateId deserializes to Classic (serde fallback) — the preview
@@ -196,15 +170,7 @@ async fn preview_unknown_template_id_falls_back_to_classic() {
 async fn export_empty_text_error_matches_preview_error() {
     let mk_request = |text: &str| ExportRequest {
         text: text.to_string(),
-        format: ExportFormat::Pdf,
-        document_type: DocumentType::Resume,
-        template_id: TemplateId::Classic,
-        meta: None,
-        ats_mode: false,
-        locale: None,
-        contact: None,
-        accent: None,
-        letter_layout: LetterLayout::Classic,
+        ..default_request()
     };
 
     let export_err = documents_export_document(mk_request(""))
@@ -240,14 +206,8 @@ fn test_sanitize_filename() {
 
 #[test]
 fn test_generate_filename() {
-    use super::super::types::{
-        DocumentType, ExportFormat, GenerationMeta, LetterLayout, TemplateId,
-    };
-
     let request = ExportRequest {
-        text: "Test".to_string(),
         format: ExportFormat::Docx,
-        document_type: DocumentType::Resume,
         template_id: TemplateId::SwissMinimal,
         meta: Some(GenerationMeta {
             candidate_name: Some("John Doe".to_string()),
@@ -255,11 +215,7 @@ fn test_generate_filename() {
             company_name: Some("Tech Corp".to_string()),
             target_language: None,
         }),
-        ats_mode: false,
-        locale: None,
-        contact: None,
-        accent: None,
-        letter_layout: LetterLayout::Classic,
+        ..default_request()
     };
 
     let filename = generate_filename(&request, "docx");
@@ -281,12 +237,7 @@ fn test_generate_filename() {
 /// falling back to `"Company"`).
 #[test]
 fn generate_filename_falls_back_to_company_default_for_an_implausible_name() {
-    use super::super::types::{
-        DocumentType, ExportFormat, GenerationMeta, LetterLayout, TemplateId,
-    };
-
     let request = ExportRequest {
-        text: "Test".to_string(),
         format: ExportFormat::Docx,
         document_type: DocumentType::CoverLetter,
         template_id: TemplateId::SwissMinimal,
@@ -296,11 +247,7 @@ fn generate_filename_falls_back_to_company_default_for_an_implausible_name() {
             company_name: Some("Apply now | LinkedIn".to_string()),
             target_language: None,
         }),
-        ats_mode: false,
-        locale: None,
-        contact: None,
-        accent: None,
-        letter_layout: LetterLayout::Classic,
+        ..default_request()
     };
 
     let filename = generate_filename(&request, "pdf");
@@ -320,30 +267,21 @@ fn generate_filename_falls_back_to_company_default_for_an_implausible_name() {
 /// `Some` and never reached this fallback rung at all.
 #[test]
 fn generate_filename_falls_back_to_contact_profile_when_meta_name_is_blank() {
-    use super::super::types::{
-        DocumentType, ExportFormat, GenerationMeta, LetterLayout, TemplateId,
-    };
     use crate::contact_profile::ContactProfile;
 
     let request = ExportRequest {
-        text: "Test".to_string(),
-        format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
-        template_id: TemplateId::Classic,
         meta: Some(GenerationMeta {
             candidate_name: Some(String::new()),
             job_title: None,
             company_name: None,
             target_language: None,
         }),
-        ats_mode: false,
-        locale: None,
         contact: Some(ContactProfile {
             full_name: Some("Jane Smith".to_string()),
             ..Default::default()
         }),
-        accent: None,
-        letter_layout: LetterLayout::Classic,
+        ..default_request()
     };
 
     let filename = generate_filename(&request, "pdf");
@@ -357,19 +295,9 @@ fn generate_filename_falls_back_to_contact_profile_when_meta_name_is_blank() {
 /// to "Candidate" — the fallback rung is additive, not a replacement.
 #[test]
 fn generate_filename_falls_back_to_candidate_with_no_name_anywhere() {
-    use super::super::types::{DocumentType, ExportFormat, LetterLayout, TemplateId};
-
     let request = ExportRequest {
-        text: "Test".to_string(),
-        format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
-        template_id: TemplateId::Classic,
-        meta: None,
-        ats_mode: false,
-        locale: None,
-        contact: None,
-        accent: None,
-        letter_layout: LetterLayout::Classic,
+        ..default_request()
     };
 
     let filename = generate_filename(&request, "pdf");
@@ -384,24 +312,17 @@ fn generate_filename_falls_back_to_candidate_with_no_name_anywhere() {
 /// the fix from this one call site.
 #[test]
 fn validate_and_normalize_completes_a_body_only_cover_letter() {
-    use super::super::types::GenerationMeta;
-
     let mut request = ExportRequest {
         text: "I am writing to express my interest in this role.".to_string(),
-        format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
-        template_id: TemplateId::Classic,
         meta: Some(GenerationMeta {
             candidate_name: Some("Jane Smith".to_string()),
             job_title: None,
             company_name: None,
             target_language: None,
         }),
-        ats_mode: false,
         locale: Some("us".to_string()),
-        contact: None,
-        accent: None,
-        letter_layout: LetterLayout::Classic,
+        ..default_request()
     };
 
     validate_and_normalize(&mut request).expect("validate_and_normalize should succeed");
@@ -424,28 +345,23 @@ fn validate_and_normalize_completes_a_body_only_cover_letter() {
 /// helper, so this pins that they stay in lockstep.
 #[test]
 fn validate_and_normalize_signs_off_with_contact_profile_when_meta_name_is_blank() {
-    use super::super::types::GenerationMeta;
     use crate::contact_profile::ContactProfile;
 
     let mut request = ExportRequest {
         text: "I am writing to express my interest in this role.".to_string(),
-        format: ExportFormat::Pdf,
         document_type: DocumentType::CoverLetter,
-        template_id: TemplateId::Classic,
         meta: Some(GenerationMeta {
             candidate_name: Some(String::new()),
             job_title: None,
             company_name: None,
             target_language: None,
         }),
-        ats_mode: false,
         locale: Some("us".to_string()),
         contact: Some(ContactProfile {
             full_name: Some("Jane Smith".to_string()),
             ..Default::default()
         }),
-        accent: None,
-        letter_layout: LetterLayout::Classic,
+        ..default_request()
     };
 
     validate_and_normalize(&mut request).expect("validate_and_normalize should succeed");
@@ -463,15 +379,8 @@ fn validate_and_normalize_signs_off_with_contact_profile_when_meta_name_is_blank
 fn validate_and_normalize_leaves_a_resume_untouched_by_letter_completion() {
     let mut request = ExportRequest {
         text: "Some résumé body text with no salutation at all.".to_string(),
-        format: ExportFormat::Pdf,
-        document_type: DocumentType::Resume,
-        template_id: TemplateId::Classic,
-        meta: None,
-        ats_mode: false,
         locale: Some("us".to_string()),
-        contact: None,
-        accent: None,
-        letter_layout: LetterLayout::Classic,
+        ..default_request()
     };
     let original = request.text.clone();
 

@@ -368,4 +368,4 @@ fn sanitize_filename(s: &str) -> String {
 }
 
 #[cfg(test)]
-mod test;
+mod tests;
