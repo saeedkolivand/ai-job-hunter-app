@@ -45,16 +45,7 @@
 875	documents/keywords/test.rs
 835	documents/mod.rs
 2322	documents/test.rs
-619	email_watch/auth_results.rs
-440	email_watch/auto_write.rs
-348	email_watch/imap_client.rs
-623	email_watch/intent.rs
-497	email_watch/matcher.rs
-735	email_watch/parser.rs
-356	email_watch/tests.rs
 448	email_watch_scheduler.rs
-484	extraction/pdf.rs
-306	extraction/rtf.rs
 708	job_preferences/test.rs
 358	jobs/mod.rs
 744	lib.rs

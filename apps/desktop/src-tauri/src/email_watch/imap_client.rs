@@ -36,30 +36,19 @@
 //! **Blocking**: every call here is synchronous — callers MUST run it inside
 //! `tokio::task::spawn_blocking`, never directly on an async worker.
 
-use std::net::{TcpStream, ToSocketAddrs};
-use std::time::Duration;
-
-use native_tls::TlsConnector;
+use std::net::TcpStream;
 
 use crate::error::{AppError, AppResult};
-use crate::observability::sanitize_reason;
+
+mod connect;
+
+use connect::{connect_with_timeout, error_kind};
 
 /// Default IMAP host/port — v1's Settings UI is Gmail-branded, but the value
 /// is DATA (stored in `EmailWatchStore`'s `account` row), not hardcoded into
 /// this connector, so a future non-Gmail provider needs no code change here.
 pub const DEFAULT_IMAP_HOST: &str = "imap.gmail.com";
 pub const DEFAULT_IMAP_PORT: u16 = 993;
-
-/// Bounds the initial TCP connect (`TcpStream::connect_timeout`) — a
-/// black-holed/firewalled host must fail the Connect/Check-now button rather
-/// than pin a `spawn_blocking` worker forever.
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
-
-/// Read/write timeout applied to the socket AFTER it connects (covers TLS
-/// handshake, greeting, `LOGIN`, `EXAMINE`) — bounds a server that ACCEPTS the
-/// connection but then never answers (a slow-loris-style stall), which
-/// `CONNECT_TIMEOUT` alone does not cover.
-const IO_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// A logged-in, `INBOX`-opened session over the timeout-bounded TLS socket.
 type ImapSession = imap::Session<native_tls::TlsStream<TcpStream>>;
@@ -393,120 +382,6 @@ fn uid_sequence_set(sorted_uids: &[u32]) -> String {
         .join(",")
 }
 
-/// Manual TLS-connect with both a connect timeout and a read/write timeout on
-/// the socket, then read the server's IMAP greeting.
-///
-/// The crate's own `ClientBuilder::connect()` sets NEITHER: `TcpStream::
-/// connect()` has no timeout, and the builder's timeout-capable
-/// `connect_with` is private — so a black-holing host hangs forever. This
-/// mirrors the crate's own `examples/timeout.rs` (resolve → try each
-/// `SocketAddr` with `connect_timeout` → wrap in TLS → `Client::new` →
-/// `read_greeting`), plus the read/write timeouts that example doesn't set.
-///
-/// DNS can resolve to multiple addresses (IPv4 + IPv6); each is tried in
-/// order, returning the first that connects.
-fn connect_with_timeout(
-    host: &str,
-    port: u16,
-) -> AppResult<imap::Client<native_tls::TlsStream<TcpStream>>> {
-    let addrs = (host, port).to_socket_addrs().map_err(|e| {
-        log::warn!("[email_watch] resolving {host}:{port} failed: {}", e.kind());
-        AppError::Network("could not resolve the mail server".to_string())
-    })?;
-
-    let connector = TlsConnector::new()
-        .map_err(|_| AppError::Network("could not initialize TLS".to_string()))?;
-
-    let mut last_err = AppError::Network("could not resolve the mail server".to_string());
-    for addr in addrs {
-        let tcp = match TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT) {
-            Ok(tcp) => tcp,
-            Err(e) => {
-                log::warn!(
-                    "[email_watch] TCP connect to {addr} ({host}:{port}) failed: {}",
-                    e.kind()
-                );
-                last_err = AppError::Network("could not connect to the mail server".to_string());
-                continue;
-            }
-        };
-        // A failed `set_*_timeout` must drop this socket and move on to the
-        // next resolved address — NOT log-and-proceed — so no socket ever
-        // enters TLS/LOGIN without an I/O deadline (deferred LOW from the
-        // PR A review; the pre-fix behavior let a `set_read_timeout`/
-        // `set_write_timeout` failure fall through to `connector.connect`
-        // below with no read/write timeout applied at all).
-        if let Err(e) = tcp.set_read_timeout(Some(IO_TIMEOUT)) {
-            log::warn!(
-                "[email_watch] set_read_timeout for {host}:{port} failed: {}",
-                e.kind()
-            );
-            last_err = AppError::Network("could not connect to the mail server".to_string());
-            continue;
-        }
-        if let Err(e) = tcp.set_write_timeout(Some(IO_TIMEOUT)) {
-            log::warn!(
-                "[email_watch] set_write_timeout for {host}:{port} failed: {}",
-                e.kind()
-            );
-            last_err = AppError::Network("could not connect to the mail server".to_string());
-            continue;
-        }
-
-        let tls = match connector.connect(host, tcp) {
-            Ok(tls) => tls,
-            Err(e) => {
-                log::warn!(
-                    "[email_watch] TLS handshake with {host}:{port} failed: {}",
-                    sanitize_reason(&e.to_string())
-                );
-                last_err = AppError::Network("could not connect to the mail server".to_string());
-                continue;
-            }
-        };
-
-        let mut client = imap::Client::new(tls);
-        match client.read_greeting() {
-            Ok(_) => return Ok(client),
-            Err(e) => {
-                log::warn!(
-                    "[email_watch] IMAP greeting from {host}:{port} failed: {}",
-                    error_kind(&e)
-                );
-                last_err = AppError::Network("could not connect to the mail server".to_string());
-            }
-        }
-    }
-
-    Err(last_err)
-}
-
-/// A short, content-free classification of an `imap::Error` for logging.
-/// Deliberately NOT the error's `Display`/`Debug` — see [`validate_connection`]
-/// for why. `imap::Error` is `#[non_exhaustive]` (and some variants are
-/// feature-gated, e.g. `RustlsHandshake` doesn't exist under this crate's
-/// `native-tls`-only build), so this always ends in a wildcard arm.
-fn error_kind(e: &imap::Error) -> &'static str {
-    match e {
-        imap::Error::Io(_) => "io",
-        imap::Error::Tls(_) => "tls",
-        imap::Error::TlsHandshake(_) => "tls-handshake",
-        imap::Error::Bad(_) => "bad-response",
-        imap::Error::No(_) => "no-response",
-        imap::Error::Bye(_) => "bye-response",
-        imap::Error::ConnectionLost => "connection-lost",
-        imap::Error::Parse(_) => "parse",
-        imap::Error::Validate(_) => "validate",
-        imap::Error::Append => "append",
-        imap::Error::Unexpected(_) => "unexpected-response",
-        imap::Error::MissingStatusResponse => "missing-status-response",
-        imap::Error::TagMismatch(_) => "tag-mismatch",
-        imap::Error::StartTlsNotAvailable => "starttls-not-available",
-        imap::Error::TlsNotConfigured => "tls-not-configured",
-        _ => "other",
-    }
-}
-
 // No automated test for the network-round-trip functions above (connect,
 // login_and_select, fetch_headers_since, fetch_bodies): every branch is a
 // real TLS/LOGIN/EXAMINE/FETCH exchange against an IMAP server, and there is
@@ -514,80 +389,4 @@ fn error_kind(e: &imap::Error) -> &'static str {
 // own "IMAP integration is manual smoke" note. The pure, network-free helper
 // below (and EmailWatchStore's store-level logic in `tests.rs`) IS covered.
 #[cfg(test)]
-mod tests {
-    use super::{body_fetch_item_spec, build_search_query, uid_sequence_set, MAX_BODY_BYTES};
-    use chrono::NaiveDate;
-
-    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(y, m, d).unwrap()
-    }
-
-    // ── body_fetch_item_spec (/review MEDIUM: protocol-level body bound) ────
-
-    #[test]
-    fn body_fetch_item_spec_is_bounded_by_a_partial_octet_range() {
-        // Pins the EXACT wire spec — a bare `BODY.PEEK[]` regression (fetching
-        // an unbounded whole message again) would fail this, not just a
-        // "contains a number somewhere" check.
-        assert_eq!(
-            body_fetch_item_spec(),
-            format!("(UID BODY.PEEK[]<0.{MAX_BODY_BYTES}>)")
-        );
-        assert_eq!(body_fetch_item_spec(), "(UID BODY.PEEK[]<0.200000>)");
-    }
-
-    // ── build_search_query (/review MEDIUM: watermark-scoped SEARCH) ────────
-
-    #[test]
-    fn build_search_query_bounds_by_uid_when_uidvalidity_matches_and_a_watermark_exists() {
-        assert_eq!(
-            build_search_query(date(2026, 7, 16), true, Some(100)),
-            "UID 101:* SINCE 16-Jul-2026"
-        );
-    }
-
-    #[test]
-    fn build_search_query_is_unbounded_without_a_stored_watermark() {
-        // No watermark yet (first-ever connect) — nothing to bound by, even
-        // though uidvalidity trivially "matches" (both `None`/absent).
-        assert_eq!(
-            build_search_query(date(2026, 7, 16), true, None),
-            "SINCE 16-Jul-2026"
-        );
-    }
-
-    #[test]
-    fn build_search_query_is_unbounded_when_uidvalidity_does_not_match_stored() {
-        // A stale watermark from a DIFFERENT uidvalidity generation must
-        // never be used to bound the search, even if one is stored.
-        assert_eq!(
-            build_search_query(date(2026, 7, 16), false, Some(100)),
-            "SINCE 16-Jul-2026"
-        );
-    }
-
-    #[test]
-    fn build_search_query_never_overflows_at_the_uid_ceiling() {
-        assert_eq!(
-            build_search_query(date(2026, 7, 16), true, Some(u32::MAX)),
-            format!("UID {}:* SINCE 16-Jul-2026", u32::MAX)
-        );
-    }
-
-    #[test]
-    fn uid_sequence_set_joins_sorted_uids_with_commas() {
-        assert_eq!(uid_sequence_set(&[101, 102, 105]), "101,102,105");
-    }
-
-    #[test]
-    fn uid_sequence_set_of_a_single_uid_has_no_comma() {
-        assert_eq!(uid_sequence_set(&[42]), "42");
-    }
-
-    #[test]
-    fn uid_sequence_set_of_empty_is_empty_string() {
-        // Callers (`fetch_bodies`) short-circuit before this is ever built
-        // with an empty slice, but the pure fn itself stays total.
-        assert_eq!(uid_sequence_set(&[]), "");
-    }
-}
+mod tests;

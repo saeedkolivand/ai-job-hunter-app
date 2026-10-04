@@ -1081,8 +1081,10 @@ fn egress_cfg_test_stripper_never_swallows_a_non_mod_attribute_target() {
 ///     trailing `mod tests { … }` block's count by +1 for the rest of the
 ///     file, so it runs to EOF.
 ///   - `extraction/rtf.rs` — RTF's own `{`/`}` control-word syntax inside
-///     string fixtures (e.g. `"{\\rtf1\\ansi …}"`) offsets the count, so its
-///     `mod tests { … }` block also runs to EOF.
+///     string fixtures (e.g. `"{\\rtf1\\ansi …}"`) offset the count of its
+///     inline `mod tests { … }`, which ran to EOF. Its tests now live out of line
+///     (`extraction/rtf/tests.rs`, skipped as a test file), so it has no inline
+///     region left and is no longer listed.
 ///   - `pipeline/json.rs` — `r#"{"note":"a \" then }","a":1}"#` has a `}`
 ///     INSIDE the quoted string value, which the naive counter reads as a
 ///     real closing brace and stops on, two statements before the block's
@@ -1102,11 +1104,7 @@ fn egress_cfg_test_stripper_never_swallows_a_non_mod_attribute_target() {
 /// investigate before adding it to `KNOWN_EXCEPTIONS`.
 #[test]
 fn egress_stripped_regions_close_on_a_column_zero_brace_or_a_known_exception() {
-    const KNOWN_EXCEPTIONS: &[&str] = &[
-        "crash_reporting/mod.rs",
-        "extraction/rtf.rs",
-        "pipeline/json.rs",
-    ];
+    const KNOWN_EXCEPTIONS: &[&str] = &["crash_reporting/mod.rs", "pipeline/json.rs"];
     let mut bad = Vec::new();
     for f in rust_sources() {
         if !f.content.contains("#[cfg(test)]") {

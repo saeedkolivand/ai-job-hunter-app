@@ -1,4 +1,5 @@
-//! Shared post-extraction text cleanup.
+//! Shared post-extraction text cleanup (and the link reference list every
+//! format appends).
 //!
 //! Resumes built with icon fonts (Font Awesome and friends) embed glyphs in the
 //! Unicode Private Use Area; a text extractor recovers those code points as
@@ -7,6 +8,7 @@
 //! pre-pass, and the renderer.
 
 use crate::export::parser::is_private_use;
+use crate::extraction::types::Link;
 
 /// Remove Private Use Area glyphs, the replacement char, and control characters
 /// (keeping the `\n` / `\t` / `\r` whitespace that carries layout).
@@ -20,27 +22,19 @@ pub fn strip_icon_glyphs(text: &str) -> String {
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn removes_private_use_glyphs() {
-        let input = "Email \u{f0e0} jane@example.com \u{f08c} LinkedIn";
-        let out = strip_icon_glyphs(input);
-        assert!(!out.contains('\u{f0e0}'));
-        assert!(!out.contains('\u{f08c}'));
-        assert!(out.contains("jane@example.com"));
-        assert!(out.contains("LinkedIn"));
+/// Append `links` to `text` as a markdown reference list (`---` rule, then one
+/// `- [anchor](url)` line each); `text` unchanged when there are none.
+pub(super) fn append_link_reference(text: String, links: &[Link]) -> String {
+    if links.is_empty() {
+        return text;
     }
-
-    #[test]
-    fn keeps_newlines_and_tabs() {
-        assert_eq!(strip_icon_glyphs("a\nb\tc"), "a\nb\tc");
+    let mut out = text;
+    out.push_str("\n\n---\n");
+    for link in links {
+        out.push_str(&format!("- [{}]({})\n", link.anchor_text, link.url));
     }
-
-    #[test]
-    fn removes_replacement_char_and_controls() {
-        assert_eq!(strip_icon_glyphs("a\u{FFFD}b\u{0007}c"), "abc");
-    }
+    out
 }
+
+#[cfg(test)]
+mod tests;

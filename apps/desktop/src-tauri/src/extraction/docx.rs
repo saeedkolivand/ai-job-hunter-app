@@ -142,12 +142,8 @@ fn parse_paragraph(xml: &str, rels: &HashMap<String, String>, links: &mut Vec<Li
     let mut remaining = xml;
 
     while let Some(tag_start) = remaining.find('<') {
-        // Emit any raw text before this tag.
-        let before = &remaining[..tag_start];
-        if !before.is_empty() && !looks_like_xml_noise(before) {
-            // Skip — raw inter-tag content in document.xml is not human text.
-        }
-
+        // Raw inter-tag content in document.xml is not human text; only the
+        // `<w:t>` runs below are emitted.
         let rest = &remaining[tag_start..];
 
         if rest.starts_with("<w:hyperlink ") {
@@ -226,11 +222,6 @@ fn strip_single_tag(s: &str) -> &str {
     }
 }
 
-fn looks_like_xml_noise(s: &str) -> bool {
-    s.chars()
-        .all(|c| c.is_whitespace() || c == '\n' || c == '\r')
-}
-
 /// Extract an XML attribute value by name from a fragment like `Id="rId1" ...`.
 fn attr_value(fragment: &str, name: &str) -> Option<String> {
     let needle = format!("{name}=\"");
@@ -240,78 +231,4 @@ fn attr_value(fragment: &str, name: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn body(inner: &str) -> String {
-        format!("<w:document><w:body>{inner}</w:body></w:document>")
-    }
-
-    fn para(tag: &str, text: &str) -> String {
-        format!("{tag}<w:r><w:t>{text}</w:t></w:r></w:p>")
-    }
-
-    /// Google Docs / LibreOffice / python-docx write a bare `<w:p>`. Asserting
-    /// on the EXACT text (not `contains`) is the point: the old chained-split
-    /// emitted every paragraph twice — once mashed with no boundaries, once
-    /// per paragraph — and a `contains` assertion stayed green through it.
-    #[test]
-    fn bare_paragraph_tags_are_not_emitted_twice() {
-        let xml = body(&format!(
-            "{}{}",
-            para("<w:p>", "Jane Doe"),
-            para("<w:p>", "Engineer")
-        ));
-        let (text, _) = parse_document(&xml, &HashMap::new());
-        assert_eq!(text, "Jane Doe\nEngineer");
-    }
-
-    /// The MS-Word spelling (`<w:p w:rsidR="…">`) keeps working unchanged.
-    #[test]
-    fn attributed_paragraph_tags_still_split() {
-        let xml = body(&format!(
-            "{}{}",
-            para("<w:p w:rsidR=\"00A1\">", "Jane Doe"),
-            para("<w:p w:rsidR=\"00A2\">", "Engineer")
-        ));
-        let (text, _) = parse_document(&xml, &HashMap::new());
-        assert_eq!(text, "Jane Doe\nEngineer");
-    }
-
-    /// A document mixing both spellings — neither branch may drop or duplicate.
-    #[test]
-    fn mixed_paragraph_spellings_each_appear_once() {
-        let xml = body(&format!(
-            "{}{}{}",
-            para("<w:p w:rsidR=\"00A1\">", "Alpha"),
-            para("<w:p>", "Beta"),
-            para("<w:p w:rsidR=\"00A3\">", "Gamma")
-        ));
-        let (text, _) = parse_document(&xml, &HashMap::new());
-        assert_eq!(text, "Alpha\nBeta\nGamma");
-    }
-
-    /// A self-closing `<w:p/>` (an empty paragraph) is folded into the previous
-    /// slice rather than opening its own. It carries no runs, so it contributes
-    /// no text either way — pinning the boundary so the behaviour is on record.
-    #[test]
-    fn self_closing_empty_paragraph_neither_splits_nor_duplicates() {
-        let xml = body(&format!(
-            "{}<w:p/>{}",
-            para("<w:p>", "A"),
-            para("<w:p>", "B")
-        ));
-        let (text, _) = parse_document(&xml, &HashMap::new());
-        assert_eq!(text, "A\nB");
-    }
-
-    /// `<w:pPr>` (paragraph properties) starts with `<w:p` but is not a
-    /// paragraph — it must not open a new slice.
-    #[test]
-    fn paragraph_properties_tag_is_not_a_paragraph() {
-        let xml =
-            body("<w:p><w:pPr><w:jc w:val=\"center\"/></w:pPr><w:r><w:t>Solo</w:t></w:r></w:p>");
-        let (text, _) = parse_document(&xml, &HashMap::new());
-        assert_eq!(text, "Solo");
-    }
-}
+mod tests;
