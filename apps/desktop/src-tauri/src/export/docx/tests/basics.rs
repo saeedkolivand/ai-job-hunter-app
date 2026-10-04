@@ -3,7 +3,9 @@
 
 use super::support::document_xml;
 use crate::export::docx::{extract_section, generate_docx};
-use crate::export::types::{DocumentType, ExportFormat, ExportRequest, GenerationMeta, LetterLayout, TemplateId};
+use crate::export::types::{
+    DocumentType, ExportFormat, ExportRequest, GenerationMeta, LetterLayout, TemplateId,
+};
 
 /// Regression: a region-tagged locale (`de-DE`) reaching `ExportRequest` for
 /// a DOCX résumé export must still resolve to the German `Lebenslauf`

@@ -2,7 +2,9 @@
 
 use crate::export::types::{FontFamily, TemplateId};
 
-use super::{CoverLetterLayout, ParagraphIndent, SectionStyle, Template, TemplateFonts, TemplateTier};
+use super::{
+    CoverLetterLayout, ParagraphIndent, SectionStyle, Template, TemplateFonts, TemplateTier,
+};
 
 impl Template {
     /// Cadence — Claude-PDF-style ATS single-column.

@@ -1,6 +1,8 @@
 //! Font-size / page-size / fallback-font / header-spacing invariants.
 
-use super::support::{all_font_sizes, document_xml, letter_request, resume_request, REFINED_US_TEXT};
+use super::support::{
+    all_font_sizes, document_xml, letter_request, resume_request, REFINED_US_TEXT,
+};
 use crate::export::docx::generate_docx;
 use crate::export::types::{DocumentType, ExportFormat, ExportRequest, LetterLayout, TemplateId};
 

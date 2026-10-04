@@ -15,19 +15,34 @@ use super::letter_style::LetterDocxStyle;
 /// paragraph — the two paragraphs the caller appends together whenever the
 /// opening line is a real name (`renders_name` in
 /// [`super::letter_layout::generate_cover_letter_docx_layout`]).
+/// The per-letter look [`render_layout_header_name`] reads, derived once by
+/// the caller (so ATS mode drops every decoration in one place).
+pub(super) struct HeaderLook<'a> {
+    pub(super) colors: &'a DocxColors,
+    pub(super) name_family: FontFamily,
+    pub(super) body_family: FontFamily,
+    pub(super) accent_hex: &'a str,
+    pub(super) band_hex: &'a str,
+    pub(super) show_device: bool,
+    pub(super) show_band: bool,
+}
+
 pub(super) fn render_layout_header_name(
     name_text: &str,
     meta: Option<&GenerationMeta>,
     sty: &LetterDocxStyle,
     template: &Template,
-    colors: &DocxColors,
-    name_family: FontFamily,
-    body_family: FontFamily,
-    accent_hex: &str,
-    band_hex: &str,
-    show_device: bool,
-    show_band: bool,
+    look: &HeaderLook<'_>,
 ) -> Vec<Paragraph> {
+    let HeaderLook {
+        colors,
+        name_family,
+        body_family,
+        accent_hex,
+        band_hex,
+        show_device,
+        show_band,
+    } = *look;
     let mut out = Vec::new();
 
     // Banded: uppercase name — the same small-caps→uppercase precedent

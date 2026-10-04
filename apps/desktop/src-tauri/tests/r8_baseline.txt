@@ -53,16 +53,6 @@
 735	email_watch/parser.rs
 356	email_watch/tests.rs
 448	email_watch_scheduler.rs
-386	export/commands/test.rs
-736	export/docx/mod.rs
-1003	export/docx/test.rs
-440	export/model_docx.rs
-378	export/model_docx/test.rs
-679	export/parser/mod.rs
-858	export/parser/test.rs
-753	export/pdf/test.rs
-785	export/templates/mod.rs
-341	export/templates/test.rs
 484	extraction/pdf.rs
 306	extraction/rtf.rs
 708	job_preferences/test.rs

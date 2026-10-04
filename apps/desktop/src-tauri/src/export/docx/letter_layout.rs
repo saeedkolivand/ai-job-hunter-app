@@ -50,7 +50,9 @@ use super::super::{
     templates::Template,
     types::{GenerationMeta, LetterRender},
 };
-use super::letter_layout_blocks::{render_layout_header_name, render_layout_subject_lines};
+use super::letter_layout_blocks::{
+    render_layout_header_name, render_layout_subject_lines, HeaderLook,
+};
 use super::letter_style::{band_tint_hex, LetterDocxStyle};
 use super::page_size_dxa;
 
@@ -149,19 +151,16 @@ pub(super) fn generate_cover_letter_docx_layout(
                 is_header_name_line && crate::export::typst_engine::is_letterhead_name(name_text);
 
             if renders_name {
-                for p in render_layout_header_name(
-                    name_text,
-                    meta,
-                    &sty,
-                    template,
-                    &colors,
+                let look = HeaderLook {
+                    colors: &colors,
                     name_family,
                     body_family,
-                    &accent_hex,
-                    &band_hex,
+                    accent_hex: &accent_hex,
+                    band_hex: &band_hex,
                     show_device,
                     show_band,
-                ) {
+                };
+                for p in render_layout_header_name(name_text, meta, &sty, template, &look) {
                     docx = docx.add_paragraph(p);
                 }
             }

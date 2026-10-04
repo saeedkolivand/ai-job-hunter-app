@@ -2,9 +2,7 @@
 //! cross-cutting ATS-mode / DE-market behavior shared across all five
 //! non-Classic layouts.
 
-use super::support::{
-    all_font_sizes, document_xml, letter_request, REFINED_DE_TEXT, REFINED_US_TEXT,
-};
+use super::support::{document_xml, letter_request, REFINED_DE_TEXT, REFINED_US_TEXT};
 use crate::export::docx::generate_docx;
 use crate::export::types::{GenerationMeta, LetterLayout};
 

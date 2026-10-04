@@ -14,10 +14,10 @@ mod markdown;
 mod normalize;
 mod shapes;
 
-pub use markdown::{parse_inline_md, strip_md};
-pub use normalize::{is_private_use, normalize_unicode, sanitize_markdown, typography};
-pub(crate) use normalize::is_word_char;
 pub(crate) use headings::{is_all_caps_section_heading, is_known_section_name, strip_atx_heading};
+pub use markdown::{parse_inline_md, strip_md};
+pub(crate) use normalize::is_word_char;
+pub use normalize::{is_private_use, normalize_unicode, sanitize_markdown, typography};
 pub(crate) use shapes::{
     is_contact_shaped, is_first_line_contact_shaped, is_project_stack_shaped,
     is_project_title_shaped,

@@ -3,7 +3,9 @@
 
 use crate::export::types::{FontFamily, TemplateId};
 
-use super::{CoverLetterLayout, ParagraphIndent, SectionStyle, Template, TemplateFonts, TemplateTier};
+use super::{
+    CoverLetterLayout, ParagraphIndent, SectionStyle, Template, TemplateFonts, TemplateTier,
+};
 
 impl Template {
     /// Jake — after "Jake's Resume": ultra-minimal single column, centred name,

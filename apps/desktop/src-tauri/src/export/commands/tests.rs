@@ -1,6 +1,4 @@
-use super::super::types::{
-    DocumentType, ExportFormat, GenerationMeta, LetterLayout, TemplateId,
-};
+use super::super::types::{DocumentType, ExportFormat, GenerationMeta, LetterLayout, TemplateId};
 use super::*;
 
 // ── Fixtures (mirrors typst_engine/test.rs — minimal but complete) ────────────

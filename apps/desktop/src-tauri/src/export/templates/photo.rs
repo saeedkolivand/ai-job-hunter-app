@@ -3,7 +3,10 @@
 
 use crate::export::types::{FontFamily, TemplateId};
 
-use super::{CoverLetterLayout, ParagraphIndent, SectionStyle, Template, TemplateFonts, TemplateTier, TwoColumnConfig};
+use super::{
+    CoverLetterLayout, ParagraphIndent, SectionStyle, Template, TemplateFonts, TemplateTier,
+    TwoColumnConfig,
+};
 
 impl Template {
     /// Portrait — circular photo top-left, name/title stacked right, accent

@@ -71,8 +71,7 @@ fn letter_layout_round_trips() {
     for (layout, expected_json) in cases {
         let serialized = serde_json::to_string(&layout).expect("serialize");
         assert_eq!(serialized, expected_json, "{layout:?} serialized wrong");
-        let deserialized: LetterLayout =
-            serde_json::from_str(&serialized).expect("deserialize");
+        let deserialized: LetterLayout = serde_json::from_str(&serialized).expect("deserialize");
         assert_eq!(deserialized, layout, "{layout:?} did not round-trip");
     }
 }

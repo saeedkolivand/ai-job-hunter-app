@@ -1,5 +1,5 @@
 use super::support::{
-    docx_paragraphs, document_xml, letter_request, LETTER_FIXTURE_BODY_ONLY_DE,
+    document_xml, docx_paragraphs, letter_request, LETTER_FIXTURE_BODY_ONLY_DE,
     LETTER_FIXTURE_BODY_ONLY_US,
 };
 use crate::export::docx::generate_docx;

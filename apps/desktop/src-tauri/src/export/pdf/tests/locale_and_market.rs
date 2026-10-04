@@ -1,5 +1,7 @@
 use crate::export::pdf::generate_pdf;
-use crate::export::types::{DocumentType, ExportFormat, ExportRequest, GenerationMeta, LetterLayout, TemplateId};
+use crate::export::types::{
+    DocumentType, ExportFormat, ExportRequest, GenerationMeta, LetterLayout, TemplateId,
+};
 
 /// Regression: a region-tagged locale (`de-DE`) reaching `ExportRequest` must
 /// still resolve to the German `Lebenslauf` section order (Certifications

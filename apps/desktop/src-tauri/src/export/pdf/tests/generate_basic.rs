@@ -1,5 +1,7 @@
 use crate::export::pdf::generate_pdf;
-use crate::export::types::{DocumentType, ExportFormat, ExportRequest, GenerationMeta, LetterLayout, TemplateId};
+use crate::export::types::{
+    DocumentType, ExportFormat, ExportRequest, GenerationMeta, LetterLayout, TemplateId,
+};
 
 #[test]
 fn test_generate_pdf_resume_basic() {

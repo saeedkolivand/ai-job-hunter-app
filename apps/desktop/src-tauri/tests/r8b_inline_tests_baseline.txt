@@ -41,9 +41,6 @@ email_watch/parser.rs
 email_watch/poller.rs
 email_watch/status_ladder.rs
 email_watch_scheduler.rs
-export/docx_renderer.rs
-export/letter_shape.rs
-export/types.rs
 extraction/clean.rs
 extraction/confidence.rs
 extraction/docx.rs

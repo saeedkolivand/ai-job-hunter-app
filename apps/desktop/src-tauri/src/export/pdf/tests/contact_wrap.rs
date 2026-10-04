@@ -1,6 +1,8 @@
 use super::support::{collect_link_rects, long_contact_profile};
 use crate::export::pdf::generate_pdf;
-use crate::export::types::{DocumentType, ExportFormat, ExportRequest, GenerationMeta, LetterLayout, TemplateId};
+use crate::export::types::{
+    DocumentType, ExportFormat, ExportRequest, GenerationMeta, LetterLayout, TemplateId,
+};
 
 #[test]
 fn cover_letter_does_not_leak_generated_contact_line() {

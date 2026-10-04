@@ -2,7 +2,9 @@
 
 use crate::contact_profile::ContactProfile;
 use crate::export::pdf::prepare_resume_render;
-use crate::export::types::{DocumentType, ExportFormat, ExportRequest, GenerationMeta, LetterLayout, TemplateId};
+use crate::export::types::{
+    DocumentType, ExportFormat, ExportRequest, GenerationMeta, LetterLayout, TemplateId,
+};
 
 #[test]
 fn prepare_resume_render_keeps_text_derived_name_over_metadata() {
