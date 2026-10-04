@@ -72,7 +72,7 @@ fn apply_projects_normalization_is_a_no_op_when_every_entry_is_invented() {
     assert_eq!(artifact["projectsMatched"], 0);
 }
 
-// Real, already-calibrated fixtures (shared with `validate::content::test`,
+// Real, already-calibrated fixtures (shared with `validate::content::tests`,
 // which pins their detected language) rather than hand-written strings — a
 // language-detection guard tested against text no detector was ever shown to
 // confidently read would prove nothing.

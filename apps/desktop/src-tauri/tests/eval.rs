@@ -30,7 +30,7 @@
 //! 4. the number of Warning findings on truthful fixtures stays inside
 //!    [`WARNING_FP_BUDGET`].
 //!
-//! **(1) and (2) deliberately overlap `validate::content::test`** — the same
+//! **(1) and (2) deliberately overlap `validate::content::tests`** — the same
 //! codes on the same fixtures are asserted there (e.g.
 //! `fabricated_metric_is_critical_and_names_the_number`,
 //! `near_duplicate_bullets_warn_once_on_the_later_bullet`). The first cut of
@@ -228,7 +228,7 @@ macro_rules! case {
 /// Every labelled fixture, with the code its planted edit is expected to
 /// produce.
 ///
-/// The labels are the ones `validate::content::test` already asserts — this
+/// The labels are the ones `validate::content::tests` already asserts — this
 /// table is a second READER of those fixtures, never a second opinion about
 /// what is planted in them.
 const CASES: &[Case] = &[
@@ -363,7 +363,7 @@ const WARNING_FP_BUDGET: usize = 0;
 const EXPECTED_PINNED_EMPTY: usize = 2;
 
 /// The posting requirements each language's job ad is analysed into — the same
-/// lists `validate::content::test` passes, so alignment findings here mean what
+/// lists `validate::content::tests` passes, so alignment findings here mean what
 /// they mean there.
 ///
 /// KNOWN DUPLICATION: these strings are hand-copied from that file's

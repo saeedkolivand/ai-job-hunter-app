@@ -74,7 +74,7 @@ fn every_template_extracts_accented_latin_content() {
             "{id:?}: grave-accented-lowercase body word missing\n---\n{extracted:?}"
         );
 
-        // Same gate `validate::mod::evaluate` uses to raise the CRITICAL
+        // Same gate `validate::readback::evaluate` uses to raise the CRITICAL
         // `no_extractable_text` issue — a passing assertion here means the
         // real validator would NOT have blocked this export.
         let normalized_len = normalize_like_validator(&extracted).len();

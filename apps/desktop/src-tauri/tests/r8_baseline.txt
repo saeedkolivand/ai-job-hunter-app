@@ -77,9 +77,3 @@
 421	tray/mod.rs
 370	updater/mod.rs
 352	updater/test.rs
-434	validate/content/credentials/tenure.rs
-584	validate/content/factual.rs
-498	validate/content/mod.rs
-6360	validate/content/test.rs
-557	validate/mod.rs
-806	validate/tests.rs

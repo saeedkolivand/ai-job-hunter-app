@@ -131,13 +131,13 @@ pub(super) fn word_tokens(text: &str) -> Vec<String> {
 }
 
 // Re-exported flat, so the three families stay ONE vocabulary to their callers
-// and to `test.rs`: the split into `credentials/` is about the LOC cap in
+// and to `tests/`: the split into `credentials/` is about the LOC cap in
 // `docs/architecture-rules.md` R8, not about the API.
 pub(super) use self::certifications::{unsupported_certs, CertArm};
 pub(super) use self::education::unsupported_institutions;
 pub(super) use self::tenure::{inflated_years_claims, reference_year};
 
-// The rest of the surface is reached only by `test.rs`, where the extractors
+// The rest of the surface is reached only by `tests/`, where the extractors
 // are measured DIRECTLY (`credential_extractor_calibration`) rather than
 // through [`validate`] — a report cannot say whether a check went quiet or
 // never looked, and telling those two apart is the whole point of that harness.

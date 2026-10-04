@@ -173,7 +173,7 @@ const ALLOWLIST = {
     // Copied verbatim from the call site's own format-string literal.
     sig: '[embed] round-trip refused by the daily ceiling: {e}',
   },
-  'validate/mod.rs:401': {
+  'validate/header_links.rs:139': {
     status: 'safe',
     reason:
       'lopdf::Document::load_mem parses IN-MEMORY bytes, not a file path — its errors ' +

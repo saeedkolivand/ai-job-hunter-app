@@ -547,7 +547,7 @@ const MONTH_TOKENS: &[&str] = &[
 
 /// "Today"/"currently"-family present-tense markers recognised **only** by
 /// [`is_date_only`] — deliberately never added to [`PRESENT_MARKERS`], which
-/// [`is_open_ended`] and `validate::content::factual::unsupported_date_issues`
+/// [`is_open_ended`] and `validate::content::factual::employment::unsupported_date_issues`
 /// both also consult (the latter through [`trailing_date_column`]), and never
 /// merged with either by stem/prefix matching.
 ///

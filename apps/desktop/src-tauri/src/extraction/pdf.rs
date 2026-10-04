@@ -304,7 +304,7 @@ pub(crate) fn repair_utf16_mojibake(s: &str) -> Cow<'_, str> {
 /// (`saeedkolivand.github.io/ai-engineering-hub`) is unambiguous and kept.
 ///
 /// Deliberately local rather than a relaxation of
-/// `validate::content::factual::URL_RE`: that regex grades link Criticals, and
+/// `validate::content::factual::links::URL_RE`: that regex grades link Criticals, and
 /// widening it would change what counts as a claimed link everywhere.
 static TEXT_URL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(?:https?://[^\s\]<>]+|(?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:com|org|net|dev|app|de|co|ai|sh|me|io)(?:/[^\s\]<>]*)?)").unwrap()

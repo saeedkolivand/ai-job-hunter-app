@@ -170,7 +170,7 @@ pub fn institutions(sections: &[Section]) -> Vec<(String, Option<String>)> {
 /// the reasoning that institutions are proper nouns and proper nouns survive
 /// translation. They do; their CITIES do not.
 /// `institution_value_comparison_fires_on_a_correctly_translated_institution`
-/// in `test.rs` runs that version and pins its result: a correct German
+/// in `tests/institutions.rs` runs that version and pins its result: a correct German
 /// rendering of an English source's "Technical University of Munich" —
 /// "Technische Universität München" — shares no token with the source and reads
 /// as an invention. One false finding out of thirteen truthful documents, on

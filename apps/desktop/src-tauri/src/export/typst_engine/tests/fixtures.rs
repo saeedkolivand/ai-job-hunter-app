@@ -43,7 +43,7 @@ pub(super) fn assert_reading_order(label: &str, lower: &str, order: &[&str]) {
 /// template is covered automatically rather than needing a remembered edit.
 ///
 /// Now a thin alias over `templates::CANONICAL_TEMPLATE_IDS`: the validator
-/// matrices in `validate/tests.rs` iterate the same list, so a new template
+/// matrices in `validate/tests/roundtrip.rs` iterate the same list, so a new template
 /// cannot be covered here and silently skipped there.
 pub(super) fn canonical_template_ids() -> [TemplateId; 16] {
     crate::export::templates::CANONICAL_TEMPLATE_IDS
@@ -62,7 +62,7 @@ pub(super) fn signature_block(lowercased: &str) -> &str {
         .unwrap_or("")
 }
 
-/// Mirrors `validate::mod::normalize` (validate/mod.rs:874-882): lowercased,
+/// Mirrors `validate::readback::normalize`: lowercased,
 /// whitespace-collapsed, alphanumeric-only text used for tolerant `contains`
 /// checks. Duplicated here (rather than exposed as `pub(crate)`) because this
 /// test file owns no production code — see [`NO_EXTRACTABLE_TEXT_THRESHOLD`].
@@ -76,7 +76,7 @@ pub(super) fn normalize_like_validator(s: &str) -> String {
         .to_lowercase()
 }
 
-/// The exact threshold `validate::mod::evaluate` uses (validate/mod.rs:796) to
+/// The exact threshold `validate::readback::evaluate` uses to
 /// raise the CRITICAL `no_extractable_text` issue that blocks an export: fewer
 /// than this many [`normalize_like_validator`]-normalized characters means the
 /// document has (almost) no extractable text. Asserting against this constant

@@ -1217,7 +1217,7 @@ fn date_only_markers_open_every_added_spelling() {
 
 /// The safety argument for [`DATE_ONLY_MARKERS`] depends entirely on it never
 /// sharing a spelling with [`PRESENT_MARKERS`] — [`is_open_ended`] and
-/// `validate::content::factual::unsupported_date_issues` both match
+/// `validate::content::factual::employment::unsupported_date_issues` both match
 /// [`PRESENT_MARKERS`] against arbitrary free text, so a spelling living in
 /// both lists would turn ordinary prose carrying that word into a false date
 /// context. That invariant lived only in the const's doc comment; this makes
