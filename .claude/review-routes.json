@@ -36,6 +36,10 @@
       "owner": "job-match-expert"
     },
     {
+      "glob": "apps/desktop/src-tauri/src/commands/match_resume/**",
+      "owner": "job-match-expert"
+    },
+    {
       "glob": "apps/desktop/src-tauri/src/cover_letter/**",
       "owner": "job-match-expert"
     },
@@ -219,6 +223,7 @@
     ],
     "ats": [
       "apps/desktop/src-tauri/src/commands/match_resume.rs",
+      "apps/desktop/src-tauri/src/commands/match_resume/**",
       "apps/desktop/src-tauri/src/cover_letter/**",
       "apps/desktop/src-tauri/src/validate/**",
       "apps/desktop/src-tauri/src/recommend/**"

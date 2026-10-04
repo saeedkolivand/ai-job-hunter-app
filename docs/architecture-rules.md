@@ -1,6 +1,6 @@
 # Architecture Rules — Rust/Tauri Core
 
-Last updated: 2026-09-25
+Last updated: 2026-10-04
 
 > **Status:** enforceable rules (Phase 2), derived from the June 2026 architecture
 > discovery analysis (now in git history) — the **actual** structure of
@@ -17,7 +17,7 @@ lower layer; a lower layer may never use a higher one). Layer = the first path s
 a module under `src/`.
 
 ```
-L3  Shell / IPC        commands, ipc_contracts, lib, app_menu, main, updater, tray, deeplink, extension_bridge, notifications, events, crash_reporting
+L3  Shell / IPC        commands, ipc_contracts, lib, app_menu, shell, main, updater, tray, deeplink, extension_bridge, notifications, events, crash_reporting
 L2  Application        pipeline, cover_letter, autopilot, autopilot_scheduler,
                        autopilot_helpers, recommend, salary_research
 L1  Domain             scraping, extraction, export, documents, jobs, postings, dedup,
@@ -105,18 +105,19 @@ L0  Shared infra       error, observability, performance, db, data_store, net, p
   moved the pure prompt primitives to `prompt_fence` and `AUTOPILOT_NOTE_SYSTEM`
   into `autopilot_helpers` itself.)
 
-### L3 — Shell / IPC (`commands`, `ipc_contracts`, `lib`, `app_menu`, `main`, `updater`, `tray`, `deeplink`, `extension_bridge`, `notifications`, `events`, `crash_reporting`)
+### L3 — Shell / IPC (`commands`, `ipc_contracts`, `lib`, `app_menu`, `shell`, `main`, `updater`, `tray`, `deeplink`, `extension_bridge`, `notifications`, `events`, `crash_reporting`)
 
 - **Allowed deps:** anything below (L0/L1/L2).
 - **Forbidden deps:** none structurally — but L3 must stay **thin**: command handlers
   route to domain/application code and own no business logic.
-- **Public API:** `#[tauri::command]` functions registered in `lib.rs`'s
-  `invoke_handler!`. `ipc_contracts` holds the serde DTOs.
+- **Public API:** `#[tauri::command]` functions registered in `shell/handler.rs`'s
+  `generate_handler!` list. `ipc_contracts` holds the serde DTOs.
 - **Sole authority for Tauri:** **only L3 may define `#[tauri::command]`** and freely use
   `AppHandle`/`State`/`Manager`/`emit`. Command-defining locations are limited to
   `commands/**`, `export/commands/**`, and `updater/mod.rs` (cohesive command surfaces).
 - **Ownership:** `commands/data.rs` owns the backup/restore bundle; `lib.rs` owns the
-  builder, tray, and store registration and delegates the native app menu to `app_menu`
+  builder and plugin chain and delegates the `setup` hook (tray and store registration),
+  the deep-link plumbing and the command registry to `shell`, and the native app menu to `app_menu`
   (`main.rs` is a thin launcher that calls `ajh_tauri::run()`, kept separate so the app is
   reachable from benches/integration tests).
 

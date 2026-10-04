@@ -236,12 +236,12 @@ pub(crate) enum LookupInput {
 }
 
 /// One row of the policy table: the exact path `generate_handler!`
-/// registers (matched verbatim against `lib.rs` by `super`'s own
+/// registers (matched verbatim against `shell/handler.rs` by `super`'s own
 /// exactness test), plus its declared [`Effect`].
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PolicyEntry {
     /// The fully-qualified path exactly as it appears inside
-    /// `tauri::generate_handler![...]` in `lib.rs`, e.g.
+    /// `tauri::generate_handler![...]` in `shell/handler.rs`, e.g.
     /// `"commands::jobs::jobs_list"`.
     pub(crate) path: &'static str,
     pub(crate) effect: Effect,

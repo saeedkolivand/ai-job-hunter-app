@@ -2,7 +2,7 @@
 //! referrals, profile import and GitHub.
 //!
 //! One contiguous shard of `POLICY`, split out under R8's LOC cap and
-//! concatenated back in `lib.rs`'s `generate_handler!` order by the parent.
+//! concatenated back in `shell/handler.rs`'s `generate_handler!` order by the parent.
 
 use super::*;
 

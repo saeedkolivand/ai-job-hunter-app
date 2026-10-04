@@ -1,17 +1,17 @@
 //! Membership + shape of `POLICY` itself: the pinned row count, set-equality with
-//! `lib.rs`'s `generate_handler!`, no duplicate paths, a real reason on every
+//! `shell/handler.rs`'s `generate_handler!`, no duplicate paths, a real reason on every
 //! `NotExposed` row, and the hand-pinned `match_resume`/regenerate-token rows — plus
-//! the `lib.rs` extraction the two set-comparison tests share.
+//! the `shell/handler.rs` extraction the two set-comparison tests share.
 
 use super::super::*;
 use std::collections::HashSet;
 
-/// The `lib.rs` source, embedded at compile time — the SAME text
+/// The `shell/handler.rs` source, embedded at compile time — the SAME text
 /// `cargo build` feeds to `tauri::generate_handler!`, so extraction from
 /// it can never drift from what is actually wired up (mirrors
 /// `commands::cli_agents::tests`' `include_str!` of the capability
 /// allowlist for the identical reason).
-const LIB_RS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"));
+const HANDLER_RS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/shell/handler.rs"));
 
 /// Extract the fully-qualified command paths registered inside
 /// `tauri::generate_handler![...]`, in source order. Comment-only and
@@ -31,11 +31,11 @@ const LIB_RS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.
 /// slicing — every real command line up to the true terminator is kept.
 fn registered_command_paths() -> Vec<&'static str> {
     const START_MARKER: &str = "tauri::generate_handler![";
-    let start = LIB_RS
+    let start = HANDLER_RS
         .find(START_MARKER)
-        .expect("tauri::generate_handler![ marker present in lib.rs")
+        .expect("tauri::generate_handler![ marker present in shell/handler.rs")
         + START_MARKER.len();
-    let rest: &'static str = &LIB_RS[start..];
+    let rest: &'static str = &HANDLER_RS[start..];
 
     let mut end = None;
     let mut offset = 0usize;
@@ -51,7 +51,8 @@ fn registered_command_paths() -> Vec<&'static str> {
         // so `offset` stays a correct byte position into `rest`.
         offset += line.len() + 1;
     }
-    let end = end.expect("generate_handler! list has a closing ] on a non-comment line in lib.rs");
+    let end = end
+        .expect("generate_handler! list has a closing ] on a non-comment line in shell/handler.rs");
 
     rest[..end]
         .lines()
@@ -192,7 +193,7 @@ fn match_resume_and_match_resume_text_stay_not_exposed_until_a_real_charge_lands
     }
 }
 
-/// `registered_command_paths` itself must find every command `lib.rs`
+/// `registered_command_paths` itself must find every command `shell/handler.rs`
 /// actually registers — sanity-checks the extraction against a handful
 /// of paths spanning the start, middle and end of the list, so a
 /// regression in the marker/parsing logic (not just a POLICY drift)

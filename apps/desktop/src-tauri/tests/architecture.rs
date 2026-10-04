@@ -133,10 +133,18 @@ const L3: &[&str] = &[
     "events",
     "main", // thin binary launcher
     "lib",  // shell entry point: holds the Tauri builder (`run()`); `main` just calls it
+    // `src/tests.rs`: the unit tests of `lib.rs` itself (its argv predicates), which a plain
+    // `#[cfg(test)] mod tests;` in the crate root resolves to. Test-only, same layer as `lib`.
+    "tests",
     // The native app menu (build + click handler) — split out of `lib.rs` (R8 relief, PR4).
     // Shell-role for the same reason `lib`/`tray` are: it builds a `tauri::menu::Menu` and
     // dispatches through `tray::dispatch_menu`, never reached from a lower layer.
     "app_menu",
+    // The shell wiring split out of `lib.rs` (R8, issue #1280): the `setup` hook with its
+    // managed state, the deep-link plumbing, the panic hook and the IPC command registry.
+    // Same layer as `lib` for the same reason — it assembles the app (stores, schedulers,
+    // every `#[tauri::command]`) and is never reached from below.
+    "shell",
     "updater",
     "tray",
     "deeplink",
@@ -1189,15 +1197,15 @@ fn f() {
 //
 // `(file, enclosing fn)` — a fn appears twice when it completes on two branches. Sorted.
 const JOB_COMPLETE_PRODUCERS: &[(&str, &str)] = &[
-    ("commands/ai/mod.rs", "ai_pull_model"),
-    ("commands/ai/mod.rs", "run_embed_job"),
+    ("commands/ai/embeddings.rs", "run_embed_job"),
+    ("commands/ai/local_models.rs", "ai_pull_model"),
     ("commands/ai_provider/cli_agent/stream.rs", "emit_done"),
     ("commands/ai_provider/stream/finish.rs", "finish"),
     ("commands/autopilot/run.rs", "autopilot_run"),
     ("commands/resume_pipeline/run.rs", "execute"),
     ("commands/resume_pipeline/run.rs", "execute"),
-    ("commands/scrape.rs", "scrape_boards"),
-    ("commands/scrape.rs", "scrape_url"),
+    ("commands/scrape/run.rs", "scrape_boards"),
+    ("commands/scrape/run.rs", "scrape_url"),
 ];
 
 /// The name of the nearest `fn` declared at or above `hit` — the enclosing item for a call

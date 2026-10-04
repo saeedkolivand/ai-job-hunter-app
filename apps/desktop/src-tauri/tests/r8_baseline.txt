@@ -5,9 +5,6 @@
 433	ai_config/mod.rs
 518	ai_config/stage_overrides/tests.rs
 455	ai_config/tests.rs
-769	commands/ai/mod.rs
-379	commands/ai/spend.rs
-777	commands/applications.rs
 414	commands/data.rs
 986	commands/geocoding/test.rs
 322	commands/help.rs
@@ -15,11 +12,7 @@
 557	commands/hybrid_search.rs
 433	commands/hybrid_search/test.rs
 347	commands/job_preferences.rs
-498	commands/match_resume.rs
-601	commands/match_resume/constraints.rs
-1446	commands/match_resume/test.rs
 491	commands/privacy.rs
-740	commands/scrape.rs
 415	commands/support.rs
 429	commands/system/mod.rs
 363	commands/translation.rs
@@ -30,7 +23,6 @@
 448	email_watch_scheduler.rs
 708	job_preferences/test.rs
 358	jobs/mod.rs
-744	lib.rs
 322	locale/mod.rs
 786	model/adapter/tests.rs
 573	model/rich.rs

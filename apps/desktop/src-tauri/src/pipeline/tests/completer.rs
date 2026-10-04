@@ -330,7 +330,7 @@ fn the_pipeline_and_the_command_admit_against_the_same_named_bucket_constant() {
         "Completer::admit_research must acquire the SHARED bucket constant, not a literal"
     );
 
-    let command_source = include_str!("../../commands/ai/mod.rs");
+    let command_source = include_str!("../../commands/ai/research.rs");
     assert!(
         command_source.contains("crate::limits::AI_RESEARCH_BUCKET"),
         "commands::ai::admit_research must acquire the SAME shared bucket constant"

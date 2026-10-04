@@ -1,5 +1,5 @@
 //! ADR-038 §1 — the command policy table: every `#[tauri::command]` site
-//! registered in `tauri::generate_handler!` (`lib.rs`, row count pinned by
+//! registered in `tauri::generate_handler!` (`shell/handler.rs`, row count pinned by
 //! `tests::policy_table_row_count_is_pinned`, never restated here),
 //! classified by [`Effect`]. Phase 1 (this table) shipped with
 //! nothing dispatching through it; Phase 2 (`super::super::agent_call`) reads
@@ -43,7 +43,7 @@ mod types;
 pub(crate) use types::{Effect, LookupInput, PolicyEntry, ProofSource};
 
 // One shard per command domain, each holding a contiguous run of `POLICY`
-// rows in the same order `lib.rs`'s `generate_handler!` uses. The array is
+// rows in the same order `shell/handler.rs`'s `generate_handler!` uses. The array is
 // concatenated from them by the const fn below, because `include!` cannot splice
 // array ELEMENTS — the row order and every row's own bytes are unchanged.
 mod rows_ai_embeddings_and_config;
@@ -104,7 +104,7 @@ const fn join<const N: usize>(parts: [&[PolicyEntry]; N]) -> [PolicyEntry; TOTAL
 }
 
 /// Every registered command, grouped by source module in the same order
-/// `lib.rs`'s `generate_handler!` list uses (so the two are easy to diff by
+/// `shell/handler.rs`'s `generate_handler!` list uses (so the two are easy to diff by
 /// eye, not just by the test below).
 const TABLE: [PolicyEntry; TOTAL] = join(PARTS);
 pub(crate) const POLICY: &[PolicyEntry] = &TABLE;
