@@ -8,8 +8,9 @@
 //! to `Client::send_envelope` (`client/mod.rs:500`) goes straight to the
 //! transport with no callback in between.
 //!
-//! `tauri-plugin-sentry` 0.6 walks through exactly that door. When a renderer
-//! envelope fails to parse — routinely in apps that use `@sentry/vite-plugin`,
+//! `tauri-plugin-sentry` 0.7 (its envelope handling is unchanged since 0.6)
+//! walks through exactly that door. When a renderer envelope fails to parse —
+//! routinely in apps that use `@sentry/vite-plugin`,
 //! whose debug-ID injection writes a `debug_meta` sourcemap image sentry-rust
 //! cannot deserialize (getsentry/sentry-rust#1267); this app ships no
 //! `@sentry/*` package, so the drop path is expected to stay cold here — the
@@ -19,9 +20,9 @@
 //! (sentry-types `protocol/envelope.rs:590`), so nothing we can install on the
 //! event pipeline is able to reach inside it.
 //!
-//! Plugin 0.5 dropped those envelopes on the floor; 0.6 forwards them. That is
-//! new, unredactable egress, so the guarantee moves to the one place that sees
-//! every byte: the transport.
+//! Plugin 0.5 dropped those envelopes on the floor; 0.6 onward forwards them.
+//! That is new, unredactable egress, so the guarantee moves to the one place
+//! that sees every byte: the transport.
 //!
 //! ## What is enforced here
 //!

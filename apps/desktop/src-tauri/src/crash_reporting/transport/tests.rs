@@ -50,7 +50,7 @@ fn parsed_envelope() -> Envelope {
     envelope
 }
 
-/// A real raw envelope — the exact constructor `tauri-plugin-sentry` 0.6
+/// A real raw envelope — the exact constructor `tauri-plugin-sentry` (0.7)
 /// reaches for when `from_slice` fails.
 fn raw_envelope() -> Envelope {
     Envelope::from_bytes_raw(b"{\"event_id\":\"nope\"}\n{\"type\":\"event\"}\n{}".to_vec())

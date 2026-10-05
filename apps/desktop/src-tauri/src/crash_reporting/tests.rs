@@ -1,5 +1,7 @@
 use super::*;
 
+mod supervisor;
+
 /// Cargo features on `sentry` that would open a log or metric pipeline: the
 /// two telemetry features themselves, plus the two integrations whose whole
 /// job is capturing `log`/`tracing` records automatically.
@@ -175,7 +177,11 @@ fn every_accessor_shares_one_resolved_directory() {
 /// sentry 0.49.2 deprecated `enable_logs`/`enable_metrics`, and those
 /// switches were never the gate they read as (see the module doc). The
 /// integration assertion below is what remains of them here — the rest is
-/// `sentry_log_and_metric_pipelines_are_off_at_the_feature_gate`.
+/// `sentry_log_and_metric_pipelines_are_off_at_the_feature_gate`. It is "the
+/// only integration is the minidump supervisor" rather than "none": the
+/// supervisor is an `Integration` too, but it captures native crashes and no
+/// `log`/`tracing` record, so what must stay true is that nothing ELSE is
+/// registered.
 ///
 /// One exception, stated rather than glossed: `send_default_pii` is `false`
 /// in `ClientOptions::default()` too, so that assertion catches someone
@@ -198,10 +204,21 @@ fn client_options_pin_every_privacy_switch() {
         options.before_breadcrumb.is_some(),
         "breadcrumb messages must still be redacted"
     );
-    assert!(
-        options.integrations.is_empty(),
-        "we register no custom integration — the log- and tracing-capture ones are the only \
-             way an event source other than a panic gets attached, and they are never automatic"
+    let integrations: Vec<_> = options.integrations.iter().map(|i| i.name()).collect();
+    let expected: &[&str] = if cfg!(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows"
+    )) {
+        &["minidump"]
+    } else {
+        &[]
+    };
+    assert_eq!(
+        integrations, expected,
+        "the minidump supervisor is the ONLY integration we register — the log- and \
+             tracing-capture ones are the only way an event source other than a panic gets \
+             attached, and they are never automatic"
     );
     assert!(
         !options.send_default_pii,
@@ -228,8 +245,8 @@ fn client_options_pin_every_privacy_switch() {
 /// and leave this test green. That alone still sends nothing — a log needs
 /// a call site or an installed integration — which is why
 /// `egress_no_source_captures_a_sentry_log_or_metric` (`tests/egress.rs`)
-/// and the `integrations.is_empty()` assertion above are the other two
-/// legs, and none of the three is redundant.
+/// and the "only the minidump supervisor is registered" assertion above are
+/// the other two legs, and none of the three is redundant.
 #[test]
 fn sentry_log_and_metric_pipelines_are_off_at_the_feature_gate() {
     let (inherits_defaults, enabled) = sentry_declaration(include_str!("../../Cargo.toml"));

@@ -188,10 +188,13 @@ fn is_agent_cli_launch(args: &[String]) -> bool {
 pub fn run() {
     // Remote crash reporting is initialised before ANYTHING else, for two
     // reasons that both cut the same way:
-    //   1. `sentry-rust-minidump` FORKS a crash-reporter process at this line.
-    //      Everything above it therefore executes in *both* processes, so it
-    //      must stay cheap and side-effect-free — keyring init, the Tauri
-    //      builder, and the panic hook all deliberately live below.
+    //   1. `sentry`'s `MinidumpIntegration` FORKS a crash-reporter process inside
+    //      `crash_reporting::init()`'s `sentry::init`. Everything above that call
+    //      therefore executes in *both* processes, so it must stay cheap and
+    //      side-effect-free — keyring init, the Tauri builder, and the panic hook
+    //      all deliberately live below. (The integration keeps the reporter
+    //      handle for the client's lifetime, which `sentry_guard` holds for the
+    //      whole of `run()`.)
     //   2. `[profile.release] panic = "abort"` means nothing in-process can
     //      outlive a crash to flush it, and a native crash during startup is
     //      only captured if the supervisor is already watching by then.
@@ -200,10 +203,6 @@ pub fn run() {
     // user has not consented — no client is constructed at all, so there is
     // nothing that could transmit, rather than a client sampled to zero.
     let sentry_guard = crash_reporting::init();
-    #[cfg(not(target_os = "ios"))]
-    let _minidump_guard = sentry_guard
-        .as_ref()
-        .map(|client| tauri_plugin_sentry::minidump::init(client));
 
     // ── Below here runs in the app process only ──────────────────────────────
 

@@ -8,9 +8,10 @@
 //!
 //! Every other user preference lives in the renderer's `localStorage`
 //! (`PreferencesSchema`). This one cannot: `sentry::init` has to run before
-//! `tauri::Builder`, because `sentry-rust-minidump` forks the crash-reporter
-//! process at startup and nothing after that fork can retroactively capture an
-//! early native crash. There is no WebView at that point, so no `localStorage`.
+//! `tauri::Builder`, because `sentry`'s `MinidumpIntegration` (`sentry-minidump`)
+//! forks the crash-reporter process inside it, at startup, and nothing after
+//! that fork can retroactively capture an early native crash. There is no
+//! WebView at that point, so no `localStorage`.
 //! The flag is therefore Rust-owned in a small JSON file, and the renderer
 //! reads and writes it over IPC.
 //!
@@ -25,8 +26,8 @@
 //! `AppHandle`, which does not exist this early, and `setup` — which resolves it
 //! and exports `AJH_DATA_DIR` — runs strictly later. Moving `init` into `setup`
 //! to get the handle is not an option either: the minidump supervisor re-executes
-//! everything above its own call in the forked child, so a late fork would have
-//! the child build a second Tauri app.
+//! everything above `sentry::init` in the forked child, so a late fork would
+//! have the child build a second Tauri app.
 //!
 //! Consequence worth knowing: deleting the app-data directory by hand does not
 //! remove this file. It holds two booleans and no personal data, and the factory
@@ -56,7 +57,7 @@
 //! * [`transport`] is the **wire gate**, and it is what the privacy claim
 //!   actually rests on. `before_send` is not the last hop: an envelope handed
 //!   straight to `Client::send_envelope` never reaches it, and
-//!   `tauri-plugin-sentry` 0.6 does exactly that for renderer envelopes it
+//!   `tauri-plugin-sentry` (0.7) does exactly that for renderer envelopes it
 //!   cannot parse. The transport re-checks consent and drops anything opaque,
 //!   for every path, on every envelope. See that module for the full chain.
 //!
@@ -97,13 +98,14 @@
 //!   would not compile — and in fact never tries;
 //! * no log-capturing integration is registered. `sentry::apply_defaults` adds
 //!   only the backtrace, debug-images, contexts and panic integrations; the
-//!   `log`/`tracing` ones are never automatic, and [`client_options`] adds no
-//!   integration of its own.
+//!   `log`/`tracing` ones are never automatic, and the one integration
+//!   [`client_options`] adds itself is the `MinidumpIntegration` crash
+//!   supervisor, which captures native crashes and no `log`/`tracing` record.
 //!
 //! Three tests, one per leg, none of them redundant:
 //! `sentry_log_and_metric_pipelines_are_off_at_the_feature_gate` (the feature
-//! list), the `integrations.is_empty()` assertion in
-//! `client_options_pin_every_privacy_switch` (nothing registered), and
+//! list), the "only the minidump supervisor is registered" assertion in
+//! `client_options_pin_every_privacy_switch` (nothing else registered), and
 //! `egress_no_source_captures_a_sentry_log_or_metric` in `tests/egress.rs` (no
 //! call site anywhere in `src/`). The last is the one that still bites if a
 //! *third-party* crate ever unifies `sentry/logs` into the build: the feature
@@ -321,7 +323,7 @@ pub fn init() -> Option<sentry::ClientInitGuard> {
 /// privacy-relevant value should be readable here, not inferred from an
 /// upstream default that can change under us.
 fn client_options() -> sentry::ClientOptions {
-    sentry::ClientOptions::new()
+    let options = sentry::ClientOptions::new()
         .release(env!("CARGO_PKG_VERSION"))
         .environment(if cfg!(debug_assertions) {
             "development"
@@ -352,8 +354,9 @@ fn client_options() -> sentry::ClientOptions {
         // compile error rather than a silent send; and `sentry::apply_defaults`
         // registers only the backtrace/debug-images/contexts/panic
         // integrations, never a log-capturing one (those must be installed by
-        // hand, and nothing here does). See the module doc, and the two tests
-        // that pin it: `sentry_log_and_metric_pipelines_are_off_at_the_feature_gate`
+        // hand, and the only integration installed here is the minidump
+        // supervisor, via `with_crash_supervisor`). See the module doc, and the tests that pin
+        // it: `sentry_log_and_metric_pipelines_are_off_at_the_feature_gate`
         // below plus `egress_no_source_captures_a_sentry_log_or_metric` in
         // `tests/egress.rs`.
         .before_send(redact_event)
@@ -363,7 +366,33 @@ fn client_options() -> sentry::ClientOptions {
         })
         // The wire gate. Everything above shapes events; this decides what
         // is allowed to leave the process at all. See `transport`.
-        .transport(transport::GuardedTransportFactory)
+        .transport(transport::GuardedTransportFactory);
+    with_crash_supervisor(options)
+}
+
+/// Register the native-crash supervisor — the ONLY integration we add.
+///
+/// Inside `sentry::init` it re-executes this binary as the crash-reporter
+/// process, which rebuilds its client from these same options (minus this
+/// integration), so `before_send` and the wire gate apply to the minidump event
+/// (and `before_breadcrumb` to any breadcrumb synced over). `inherit_args(false)`
+/// is load-bearing: the reporter must start with NO argv, as it always has — the
+/// app's argv can carry an `ajh://` deep link, which has no business in a second
+/// process. Every other knob stays at the integration's default.
+///
+/// Split out and gated on the targets `sentry` compiles the module for, so the
+/// other targets get an identity function instead of a `let x = …; x` that
+/// clippy would reject.
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn with_crash_supervisor(options: sentry::ClientOptions) -> sentry::ClientOptions {
+    options.add_integration(
+        sentry::integrations::minidump::MinidumpIntegration::new().inherit_args(false),
+    )
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn with_crash_supervisor(options: sentry::ClientOptions) -> sentry::ClientOptions {
+    options
 }
 
 /// Stop transmitting in the current process, immediately.

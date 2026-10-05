@@ -209,6 +209,24 @@ pub fn redact_tokens(text: &str) -> String {
     out
 }
 
+/// The `…` of an `Ident("…` token — what a derived `Debug` prints for a newtype or
+/// enum variant holding a string or path (`Path("/var/folders/…")`, as in
+/// minidumper's "Failed to create server with socket name …"). The surrounding
+/// punctuation (the closing `")`) is already trimmed by the caller, and a Windows
+/// path's `\\`-escaped separators still start with `X:\`, so the inner path then
+/// matches the bare-path checks. Anything not shaped `Ident("` comes back unchanged.
+fn strip_debug_wrapper(token: &str) -> &str {
+    match token.split_once("(\"") {
+        Some((ident, inner))
+            if !ident.is_empty()
+                && ident.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') =>
+        {
+            inner
+        }
+        _ => token,
+    }
+}
+
 /// Classify a single whitespace-delimited token and replace it with a neutral
 /// placeholder when it looks like a path / URL / request internal; otherwise keep
 /// it verbatim. Whitespace-token granularity keeps the surrounding human message
@@ -238,15 +256,18 @@ pub fn redact_token(token: &str) -> String {
     });
 
     let is_url = trimmed.contains("://");
+    // The path checks (and the placeholder swap) look through a Rust `Debug`
+    // wrapper — `Path("/var/…")` — so the inner path is treated exactly as a bare one.
+    let path_part = strip_debug_wrapper(trimmed);
     // Windows absolute path: drive letter + `:\` or `:/` (e.g. `C:\Users\…`).
-    let mut chars = trimmed.chars();
+    let mut chars = path_part.chars();
     let is_windows_path = matches!(
         (chars.next(), chars.next(), chars.next()),
         (Some(c), Some(':'), Some('\\' | '/')) if c.is_ascii_alphabetic()
     );
     // Unix absolute path: starts with `/` and has a further separator (a lone `/`
     // or a fraction like `1/2` is not a path).
-    let is_unix_path = trimmed.starts_with('/') && trimmed[1..].contains('/');
+    let is_unix_path = path_part.starts_with('/') && path_part[1..].contains('/');
     // Drive-less home/user path: a fragment like `Users\alice\…` or `home/alice/…`
     // that lost its drive letter / leading `/` (common in unwound error chains).
     // Lowercased substring match catches both separators and any case.
@@ -323,7 +344,7 @@ pub fn redact_token(token: &str) -> String {
     } else if is_credential {
         token.replace(trimmed, "<credential-redacted>")
     } else if is_windows_path || is_unix_path || is_homeish_path {
-        token.replace(trimmed, "<path-redacted>")
+        token.replace(path_part, "<path-redacted>")
     } else if is_host_port {
         token.replace(trimmed, "<host-redacted>")
     } else if is_email {
