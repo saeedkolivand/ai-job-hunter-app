@@ -301,7 +301,7 @@ jobs:
       # at 2x) for no new signal on everything else already proven on Linux.
       - name: 🪟 Atomic file-replace test (Windows rename-over-existing)
         working-directory: apps/desktop/src-tauri
-        run: cargo test --lib postings::test::save_replaces_the_file_atomically_and_leaves_no_temp_file --locked
+        run: cargo test --lib postings::interactions::tests::persistence::save_replaces_the_file_atomically_and_leaves_no_temp_file --locked
 
   # ── MCP stdio smoke (PR + manual; never on push-to-main) ─────────────────────
   # ADR-040 named macOS/Linux smoke of `ajh-tauri agent mcp` as its open gap.
