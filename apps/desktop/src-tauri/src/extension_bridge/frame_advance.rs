@@ -3,7 +3,7 @@
 //! their reply builders. Split from `frame.rs` (R8 relief, PR4) so the DECISION TYPE and the
 //! STATE MACHINE that produces it stay under the LOC cap as two separate concerns; behaviourally
 //! identical to the pre-split module. `pub(super)` throughout — see `frame`'s own doc for how
-//! `mod.rs`/`test.rs`/`caller_gate.rs` keep resolving these names unqualified.
+//! `mod.rs`/the sibling test modules/`caller_gate.rs` keep resolving these names unqualified.
 
 use serde_json::{json, Value};
 

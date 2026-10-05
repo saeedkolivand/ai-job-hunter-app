@@ -178,7 +178,7 @@ pub struct ScraperEngine {
     /// Shared across concurrent `scrape_boards` calls so two jobs that each
     /// include a browser board cannot spin up two headless instances at once.
     browser_sem: Arc<Semaphore>,
-    /// Per-board reliability history (Track B1). `None` until `lib.rs::setup`
+    /// Per-board reliability history (Track B1). `None` until `shell/state.rs`
     /// hands the opened store in — the engine is constructed before the L1
     /// stores are, and tests construct it with no store at all, so every use is
     /// optional and a missing store simply means "no health on the summaries".
@@ -199,7 +199,7 @@ impl ScraperEngine {
 
     /// Attach the per-board reliability store, after which every multi-board
     /// scrape folds its summaries into it and attaches the resulting health to
-    /// each [`BoardScrapeSummary`]. Called once from `lib.rs::setup`; idempotent
+    /// each [`BoardScrapeSummary`]. Called once from `shell/state.rs`; idempotent
     /// (a second call replaces the handle).
     pub fn set_health_store(&self, store: Arc<super::board_health::BoardHealthStore>) {
         self.health.store(Some(store));
@@ -275,7 +275,7 @@ impl ScraperEngine {
     /// The shared cancel registry this engine dispatches through, so a caller
     /// with no scraping concern (agent runs; pipeline runs from Phase 3) can
     /// register against the SAME map `jobs_cancel` reaches without borrowing the
-    /// engine. `lib.rs::setup` manages this clone as app state.
+    /// engine. `shell/state.rs` manages this clone as app state.
     pub fn cancel_registry(&self) -> Arc<CancelRegistry> {
         self.jobs.clone()
     }

@@ -48,6 +48,6 @@ Replace plaintext-token-per-frame auth with a **mutual HMAC-SHA256 challenge-res
 ## References
 
 - Protocol: `packages/shared/src/ipc/extension-protocol-constants.ts` + `extension-protocol.ts` (`hello`/`challenge`/`auth`/`auth.ok`/`update.required`, `HANDSHAKE_TEST_VECTOR`, `EXTENSION_PROTOCOL_VERSION`).
-- Desktop: `apps/desktop/src-tauri/src/extension_bridge/handshake.rs` (HMAC core, constant-time verify, nonces, KAT), `mod.rs` (`ConnState` state machine).
+- Desktop: `apps/desktop/src-tauri/src/extension_bridge/handshake.rs` (HMAC core, constant-time verify, nonces, KAT), `frame_advance.rs` (`ConnState` state machine).
 - Extension: `apps/extension/src/lib/handshake.ts` (Web-Crypto proof, constant-time hex compare), `bridge.ts` (`performHandshake`, `connected`-gated send path, `outdated` phase).
 - Related: [ADR 0009](0009-assisted-autofill.md) (the autofill PII path this hardens); `Pairing token` / `Connection phase` in `docs/CONTEXT.md`; `apps/extension/README.md` threat model.

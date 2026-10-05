@@ -27,7 +27,7 @@ const SLIDER_CLASS =
 // renderer no longer ships per-step numbers at all (`generation.ts` now
 // sends a `deterministic`/`prose`/`prose_grounded` INTENT; each provider
 // adapter's own `sampling_profile` — `commands/ai_provider/mod.rs` — picks
-// the numbers). These seeds instead mirror that Rust module's
+// the numbers). These seeds instead mirror `commands/ai_provider/sampling.rs`'s
 // `DETERMINISTIC_TEMPERATURE` (0.3) / `PROSE_TEMPERATURE` (0.5) /
 // `PROSE_GROUNDED_TEMPERATURE` (0.6) constants. Each key maps to exactly ONE
 // intent/surface group (see `TemperatureStep`'s doc comment): analysis

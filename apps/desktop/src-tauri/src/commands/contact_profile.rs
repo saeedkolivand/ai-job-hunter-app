@@ -27,7 +27,7 @@ fn contact_profile_get_inner(store: Option<&ContactProfileStore>) -> Value {
 
 #[tauri::command]
 pub async fn contact_profile_get(app: AppHandle) -> Value {
-    // `try_state`, not `state` — `lib.rs` logs a failed `ContactProfileStore::open`
+    // `try_state`, not `state` — `shell/state.rs` logs a failed `ContactProfileStore::open`
     // as "non-fatal" and leaves the store unmanaged in that case; `Manager::state`
     // panics on an unmanaged type, and `panic = "abort"` (Cargo.toml) turns that
     // into a hard process exit on what should degrade to an empty profile.

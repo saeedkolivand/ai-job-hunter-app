@@ -53,7 +53,7 @@ impl ScraperEngine {
             Ok(Ok(health)) => health,
             Ok(Err(e)) => {
                 // Path-free category code, not the raw `AppError` — the same
-                // rule as the store's own `open()` failure in `lib.rs`'s setup
+                // rule as the store's own `open()` failure in `shell/state.rs`
                 // path: a storage error can embed the db path.
                 log::warn!(
                     "[scrape] board-health history unavailable this run ({}); chips lose \

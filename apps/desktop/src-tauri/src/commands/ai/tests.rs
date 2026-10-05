@@ -11,7 +11,7 @@ use crate::error::AppError;
 // `ai_provider::tests`'s `resolve_by_name_*` base_url tests, which cover
 // the same rule on the sibling probe path. "Persisted" is covered at the
 // store level (`DocumentStore::set_embedding_config`), same idiom as
-// `documents::test`'s command-layer notes.
+// `documents::tests`'s command-layer notes.
 
 #[test]
 fn rejects_the_cloud_metadata_ip_on_openai_compatible() {

@@ -13,7 +13,7 @@
 //
 // The file name + key strings are the cross-language contract in
 // `packages/shared/src/scraping-settings.ts`; the literals below are pinned to it
-// by `aggregator_settings_keys_match_shared_contract` in `test.rs`.
+// by `aggregator_settings_keys_match_shared_contract` in `tests/apify_provider_mapping.rs`.
 pub(super) const SCRAPING_SETTINGS_FILE: &str = "scraping-settings.json";
 pub(super) const SETTING_APIFY_ENABLED: &str = "apifyLinkedinEnabled";
 pub(super) const SETTING_APIFY_ACTOR_ID: &str = "apifyLinkedinActorId";

@@ -56,7 +56,7 @@ const ERR_EXPORT_FAILED: &str = "export_failed";
 
 /// [`super::agent_call::ERR_EXTENSION_READ_GATE`]'s detail, for THIS verb's own reply — same
 /// sentinel, same wording as `agent_read`/`agent_call`'s own copies (each file keeps its own
-/// literal; see `agent_call.rs`'s `EXTENSION_READ_GATE_MESSAGE` doc for why — the SENTINEL is
+/// literal; see `agent_call/refusal/detail.rs`'s `EXTENSION_READ_GATE_MESSAGE` doc for why — the SENTINEL is
 /// what all three actually reuse, never the prose).
 const EXTENSION_READ_GATE_DETAIL: &str =
     "Turn on Assisted autofill in AI Job Hunter → Settings → Browser extension to let \

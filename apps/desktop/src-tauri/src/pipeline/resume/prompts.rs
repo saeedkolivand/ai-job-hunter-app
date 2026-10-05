@@ -54,7 +54,7 @@ pub(in crate::pipeline::resume) use shared::SIBLING_CONTEXT_CAP;
 
 // Test-only surface: `language_name` and `section_order_prompt_list` are
 // called directly by other prompt functions in this module's submodules
-// (never through this re-export) — only `pipeline::resume::test` imports
+// (never through this re-export) — only `pipeline::resume::tests` imports
 // them by this path, so a non-test build has no user of the re-export.
 #[cfg(test)]
 pub(in crate::pipeline::resume) use draft::section_order_prompt_list;

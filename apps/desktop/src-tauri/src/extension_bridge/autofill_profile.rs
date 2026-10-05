@@ -72,7 +72,7 @@ pub(super) const MAX_EXTRA_LINKS: usize = 10;
 /// required) via `project_contact_profile_get`, and it stops
 /// `restore_local_only_contact_fields` from restoring it on a
 /// `contact_profile_set` write. `contact_profile_agent_fields_matches_a_fully_populated_autofill_profile_wire_shape`
-/// (`extension_bridge/test.rs`) forces every new `AutofillProfile` field to
+/// (`extension_bridge/autofill_profile/tests/resolve.rs`) forces every new `AutofillProfile` field to
 /// land here — that mechanical fix IS the widening decision, not a
 /// drive-by; a genuinely PII-bearing field (like `photo`) should stay OFF
 /// `AutofillProfile` entirely rather than being added and then excluded here.

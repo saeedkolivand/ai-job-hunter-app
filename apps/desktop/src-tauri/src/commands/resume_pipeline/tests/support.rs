@@ -73,7 +73,7 @@ pub(super) fn fabrication_keys(wrapper: &str) -> Vec<String> {
 /// through its own top-level closing brace (column 0, so no NESTED `}`
 /// inside the function body can end the scan early; same "opener at a
 /// strictly smaller indent" assumption
-/// `commands::autopilot::tests::every_record_mutation_goes_through_mutate_record`
+/// `commands::autopilot::tests::plumbing::every_record_mutation_goes_through_mutate_record`
 /// already documents for this exact idiom). Shared by the two regression
 /// tests below so the extraction logic is not duplicated, and `include_str!`
 /// makes rustc track the file, so this can never silently read a stale copy.

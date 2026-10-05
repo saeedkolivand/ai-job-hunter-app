@@ -3,7 +3,7 @@
 //! that PRODUCES a decision — `ConnState`, `advance_frame_from`, and its helpers — now lives in
 //! `frame_advance` (sibling), which imports this enum. `pub(super)` throughout so `mod.rs`
 //! (which owns every CALL site) keeps resolving every name unqualified via its own
-//! `use self::frame::{...}` re-export, and `test.rs`/`caller_gate.rs` (siblings, not
+//! `use self::frame::{...}` re-export, and the sibling test modules/`caller_gate.rs` (siblings, not
 //! descendants of this module) keep reaching them through THAT re-export exactly as before.
 
 use serde_json::Value;

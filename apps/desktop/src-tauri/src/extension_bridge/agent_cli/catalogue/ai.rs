@@ -57,7 +57,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "ai_generations_save",
-        description: "Per-job merge-upsert keyed on `jobUrl` (`merge_application` in `apps/desktop/src-tauri/src/ai_generations/mod.rs`): a résumé, a cover letter, application answers and a company brief produced by separate generation actions all land on ONE row when they share a `jobUrl`.",
+        description: "Per-job merge-upsert keyed on `jobUrl` (`merge_application` in `apps/desktop/src-tauri/src/ai_generations/record.rs`): a résumé, a cover letter, application answers and a company brief produced by separate generation actions all land on ONE row when they share a `jobUrl`.",
         args: &[
             CatalogueArg { name: "req", required: true, fields: Some(&["candidateName", "jobTitle", "companyName", "resumeLanguage", "jobAdLanguage", "targetLanguage", "mismatch", "topRequirements", "mode", "resumeText", "coverLetterText", "jobAd", "jobUrl", "board", "applicationAnswers", "companyBrief", "interviewQuestions", "emailSubject", "emailBody", "qualityReport"]) },
         ],

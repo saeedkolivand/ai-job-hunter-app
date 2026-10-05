@@ -52,9 +52,9 @@ No runtime behavior changes: every current call already complies. The fix is to 
 
 - Privacy claims: `README.md` ("What It Does"), `SECURITY.md` ("Security posture").
 - Egress sites by class:
-  - Class 2 (Job boards/aggregators): `apps/desktop/src-tauri/src/scraping/boards/aggregator/adzuna.rs` (Adzuna), `apps/desktop/src-tauri/src/scraping/boards/aggregator/providers.rs` (JSearch/RapidAPI, Jooble, Apify), `apps/desktop/src-tauri/src/scraping/boards/freehire/mod.rs` (freehire, keyless).
+  - Class 2 (Job boards/aggregators): `apps/desktop/src-tauri/src/scraping/boards/aggregator/adzuna.rs` (Adzuna), `apps/desktop/src-tauri/src/scraping/boards/aggregator/{jsearch,jooble,apify}.rs` (JSearch/RapidAPI, Jooble, Apify), `apps/desktop/src-tauri/src/scraping/boards/freehire/mod.rs` (freehire, keyless).
   - Class 3 (Web search): `apps/desktop/src-tauri/src/commands/ai_provider/search/mod.rs` (Exa).
-  - Class 4 (Updater): `apps/desktop/src-tauri/tauri.conf.json` (endpoint configuration), `apps/desktop/src-tauri/src/updater/mod.rs` (polling loop), `apps/desktop/src-tauri/src/lib.rs` (setup hook).
+  - Class 4 (Updater): `apps/desktop/src-tauri/tauri.conf.json` (endpoint configuration), `apps/desktop/src-tauri/src/updater/mod.rs` (polling loop), `apps/desktop/src-tauri/src/shell/setup.rs` (setup hook).
   - Class 5 (Location autocomplete): `apps/desktop/src-tauri/src/commands/geocoding.rs` (Photon fallback; bundled index in `apps/desktop/src-tauri/geodata/`, see `apps/desktop/src-tauri/geodata/README.md` for license).
   - Class 6 (Optional enrichment): `apps/desktop/src/renderer/services/use-company-logo/use-company-logo.ts` (Clearbit), `apps/desktop/src-tauri/tauri.conf.json` (CSP enforcement).
   - Class 7 (Email-confirmation watching): `apps/desktop/src-tauri/src/email_watch/` (IMAP).

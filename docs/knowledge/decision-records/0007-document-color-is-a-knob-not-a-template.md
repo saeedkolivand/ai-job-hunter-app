@@ -139,8 +139,8 @@ truthfully advertise that they collapse to a linear single column under ATS mode
 - Template registry + tier + accent override: `apps/desktop/src-tauri/src/export/templates/mod.rs` (`Template`, `TemplateTier`, `with_accent_override`, `parse_accent_rgb`).
 - Accent validator (single source): `apps/desktop/src-tauri/src/export/typst_engine/` (`normalise_accent`).
 - Section placement / two-column / tier gates: `apps/desktop/src-tauri/src/theme/mod.rs` (`placement_for`, `is_two_column`).
-- Letter layout dispatch + inherited style: `apps/desktop/src-tauri/src/export/typst_engine/engine.rs` (`letter_source`), `typst_engine/letter.rs` (`LetterStyle`, `style_from_template`), market conventions `apps/desktop/src-tauri/src/locale/letter.rs`.
-- DOCX letter approximation: `apps/desktop/src-tauri/src/export/docx/mod.rs` (`generate_cover_letter_docx`).
+- Letter layout dispatch + inherited style: `apps/desktop/src-tauri/src/export/typst_engine/engine.rs` (`letter_source`), `typst_engine/letter.rs` (`style_from_template`) / `typst_engine/letter/model.rs` (`LetterStyle`), market conventions `apps/desktop/src-tauri/src/locale/letter.rs`.
+- DOCX letter approximation: `apps/desktop/src-tauri/src/export/docx/letter_classic.rs` (`generate_cover_letter_docx`).
 - Frontend registry + tier gate: `apps/desktop/src/renderer/lib/generate/templates/templates.ts` (`TemplateId`, `tier`, `isDesignTier`).
 - Shared contract: `packages/shared/src/ipc/contracts/documents.ts` (`TemplateId`, `accent`, `letterLayoutId`).
 - App-UI accent (distinct concept): [ADR 0004](0004-single-source-user-customizable-accent-color.md).

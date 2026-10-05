@@ -50,7 +50,7 @@ static LOCAL_CHAT_QUIET: LazyLock<Notify> = LazyLock::new(Notify::new);
 
 /// RAII marker held for the duration of one local `/api/chat` call. `Drop`
 /// releases it on every exit path (success, an early `?`, or a panic unwind)
-/// — the same discipline `RunGuard` (`commands/autopilot.rs`) uses for a
+/// — the same discipline `RunGuard` (`commands/autopilot/run.rs`) uses for a
 /// whole autopilot run.
 pub(super) struct ChatInFlight;
 

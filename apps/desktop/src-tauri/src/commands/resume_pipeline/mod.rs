@@ -67,7 +67,7 @@ pub mod max;
 pub mod notify;
 mod persist;
 // `pub(crate)`, not `mod`: each command stays reachable at
-// `commands::resume_pipeline::<file>::<command>` for `lib.rs`'s
+// `commands::resume_pipeline::<file>::<command>` for `shell/handler.rs`'s
 // `generate_handler!` list, which needs the real path — `#[tauri::command]`
 // generates hidden sibling items the macro looks up alongside the function
 // itself, which a `pub use` re-export does not carry along.

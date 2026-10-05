@@ -13,7 +13,7 @@ use super::*;
 // of this helper (forced to always return Network) found NOTHING red
 // anywhere in the workspace, which is exactly the gap this test closes.
 //
-// `reqwest::Error` has no public constructor (see `anthropic_tests.rs`'s
+// `reqwest::Error` has no public constructor (see `anthropic/tests/list_models.rs`'s
 // `reqwest_is_timeout_fires_for_the_clients_own_deadline_and_never_for_a_connect_failure`,
 // which pins the underlying `is_timeout()` assumption this helper relies on
 // but never drives the classification itself), so both branches below are
@@ -24,7 +24,7 @@ use super::*;
 //
 // `refused_connection_error` (below) binds an ephemeral loopback port, drops
 // it to free it, then immediately connects to the same port and expects a
-// refusal — but this file and `anthropic_tests.rs` both run that exact
+// refusal — but this file and `anthropic/tests/list_models.rs` both run that exact
 // pattern in the SAME test binary, in parallel by default, so a sibling test
 // can reclaim the just-freed port before this one reconnects. A bounded
 // retry (fresh port each attempt) rather than a single `expect_err` keeps

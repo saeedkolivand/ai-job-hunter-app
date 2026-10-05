@@ -19,7 +19,7 @@
 //! and routes the renderer; none carries a command/action payload.
 //!
 //! The OS URI scheme is registered (`tauri-plugin-deep-link`: `init()` +
-//! `register_all()` in `lib.rs`); this guard validates every incoming URL/argv
+//! `register_all()` in `shell/deep_link.rs`); this guard validates every incoming URL/argv
 //! against the allowlist before any navigation, on every delivery path.
 
 /// A validated, allowlisted deep-link target.
@@ -47,7 +47,7 @@ pub enum FocusTarget {
     PrepForJob(String),
 }
 
-/// The deep-link URI scheme (`ajh://`) — shared with `lib.rs`' rejected-argv
+/// The deep-link URI scheme (`ajh://`) — shared with `shell/deep_link.rs`' rejected-argv
 /// diagnostics so the two can never drift.
 pub(crate) const SCHEME: &str = "ajh://";
 
@@ -165,7 +165,7 @@ const MAX_LOGGED_ACTION_LEN: usize = 32;
 /// ASCII alphanumeric / `-` / `_` to a single `?`, and return `None` (the caller
 /// skips the log line) when no allowlisted character remains at all. Kept OUT of
 /// [`parse_focus_target`] so the parse layer stays pure — only the diagnostics
-/// in `lib.rs` consume this.
+/// in `shell/deep_link.rs` consume this.
 pub(crate) fn sanitize_action_for_log(action: &str) -> Option<String> {
     let mut out = String::with_capacity(MAX_LOGGED_ACTION_LEN);
     let mut pending_question = false;

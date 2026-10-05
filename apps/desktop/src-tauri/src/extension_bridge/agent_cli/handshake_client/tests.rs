@@ -3,8 +3,8 @@ use crate::extension_bridge::{advance_frame, BridgeState, ConnState, FrameDecisi
 // `advance_frame`/`ConnState`/`FrameDecision` are private to the parent
 // `extension_bridge` module — visible here because privacy in Rust
 // extends to every DESCENDANT module, not just direct children, so this
-// test module (a grandchild) can reach them exactly as
-// `extension_bridge::test` does one level up.
+// test module (a grandchild) can reach them exactly as the bridge's
+// own child test modules (e.g. `extension_bridge::server::tests`) do.
 
 // ── pairing-failure classification (pure) ───────────────────────────────
 // Hand-written expected buckets, not derived from `classify_pairing_failure`

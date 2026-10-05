@@ -7,8 +7,8 @@
  * named by {@link SCRAPING_SETTINGS_FILE}, which plugin-store resolves relative to
  * the app data dir — the SAME directory the Rust worker resolves via
  * `platform::config::data_dir()`. The Rust side reads the exact key strings below
- * (mirrored as literals in `scraping/boards/aggregator/mod.rs`, pinned by a unit
- * test there). Keep these values byte-stable: changing one is a settings-file
+ * (mirrored as literals in `scraping/boards/aggregator/apify_settings.rs`, pinned by a
+ * unit test under `scraping/boards/aggregator/tests/`). Keep these values byte-stable: changing one is a settings-file
  * migration, not a rename.
  *
  * The renderer writes them like:

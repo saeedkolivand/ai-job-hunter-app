@@ -1,6 +1,6 @@
 # ADR-008: PDF glyph subsetting at export time via `parse_font`
 
-Last updated: 2026-07-16
+Last updated: 2026-10-05
 
 **Status:** Superseded by the Typst migration (`feat/typst-premium-resume-templates`).
 Typst handles font subsetting internally when producing PDF bytes; the explicit
@@ -26,5 +26,5 @@ limit) enforced the subsetting contract.
   Typst world via `include_bytes!` in `export/typst_engine/world.rs`.
 - Typst's PDF serialiser performs its own subsetting — no application-level
   `subset_font` call is required.
-- The size-budget guardrail test was re-added in `export/typst_engine/test.rs`
+- The size-budget guardrail test was re-added in `export/pdf/tests/size_and_accent.rs`
   for the new engine path.

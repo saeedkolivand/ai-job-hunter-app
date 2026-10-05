@@ -158,7 +158,7 @@ fn saffron_matches_spec() {
 /// evidence: this test passed for the whole life of the bug where Jake's name
 /// rendered flush left because `single_column.typ` centred inside an
 /// auto-width block. The rendered geometry is pinned by
-/// `typst_engine::test::name_centered_actually_centres_the_rendered_header` —
+/// `typst_engine::tests::every_template::name_centered_actually_centres_the_rendered_header` —
 /// don't read a green here as "the name is centred".
 #[test]
 fn jake_matches_spec() {

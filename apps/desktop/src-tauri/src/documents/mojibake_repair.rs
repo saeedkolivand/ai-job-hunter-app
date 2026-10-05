@@ -17,7 +17,7 @@
 //! remaining copy of a résumé.
 //!
 //! Also DELETEs the row's `vectors` entry (not just clearing `keywords_json`
-//! and `indexed`): `stale_documents` (`commands/ai.rs`) — the sole consumer
+//! and `indexed`): `stale_documents` (`commands/ai/embeddings.rs`) — the sole consumer
 //! that decides what the auto-indexer re-embeds — asks only whether
 //! `get_vector` returns a hit in the ACTIVE embedding space; it never reads
 //! `indexed`. A prior version of this migration only flipped `indexed = 0`,
@@ -39,7 +39,7 @@
 //! clamp low enough to fail the UPDATE still let a swallowed error advance
 //! `user_version`. Propagating returns `Err` before that line is ever
 //! reached, so the whole migration rolls back for a clean retry next launch
-//! — not fatal to startup either way, `lib.rs`'s setup hook treats a failed
+//! — not fatal to startup either way, `shell/state.rs` treats a failed
 //! `DocumentStore::open()` as non-fatal.
 
 use rusqlite::{params, Connection};

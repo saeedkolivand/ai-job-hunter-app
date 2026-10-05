@@ -298,7 +298,7 @@ fn repair_pre_pdf_text_string_mojibake_evicts_the_active_space_vector_so_the_doc
 ) {
     // Regression test for a real defect: the migration used to only flip
     // `indexed = 0`, which is a complete no-op for re-embedding —
-    // `stale_documents` (`commands/ai.rs`) decides what to re-embed purely
+    // `stale_documents` (`commands/ai/embeddings.rs`) decides what to re-embed purely
     // from whether `get_vector` hits in the ACTIVE embedding space, and
     // never reads `indexed`. A pre-repair vector that still matches the
     // active space means the document is never picked up, so the embedding

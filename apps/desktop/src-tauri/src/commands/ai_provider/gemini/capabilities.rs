@@ -146,7 +146,7 @@ pub(super) fn gemini_sampling_profile(model: &str, intent: Intent) -> SamplingPr
     match intent {
         // `Default` (no declared intent) resolves the same as
         // `Deterministic` — see `Intent`'s own doc comment
-        // (`commands/ai_provider/mod.rs`).
+        // (`commands/ai_provider/sampling.rs`).
         Intent::Deterministic | Intent::Default => SamplingProfile {
             temperature: Some(DETERMINISTIC_TEMPERATURE),
             ..SamplingProfile::default()

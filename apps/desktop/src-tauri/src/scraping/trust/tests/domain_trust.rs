@@ -137,7 +137,7 @@ fn adzuna_aggregator_host_suppresses_mismatch() {
 /// suppress `CompanyDomainMismatch`. Regression for issue #1107: the
 /// allowlist covered only `api.adzuna.com`, so every posting whose
 /// `redirect_url` came back in this shape (confirmed in this repo's own
-/// aggregator fixture, `scraping/boards/aggregator/test.rs`, `"redirect_url":
+/// aggregator fixture, `scraping/boards/aggregator/tests/response_mapping.rs`, `"redirect_url":
 /// "https://www.adzuna.de/details/…"`) was false-flagged regardless of
 /// employer legitimacy.
 ///

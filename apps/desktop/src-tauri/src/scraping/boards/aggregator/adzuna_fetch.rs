@@ -290,7 +290,7 @@ pub(super) struct AdzunaPageRequest<'a> {
 
 /// Collect up to [`adzuna_page_budget`] pages for `amount`, newest-first.
 ///
-/// Loop contract (each clause is separately covered in `test.rs`):
+/// Loop contract (each clause is separately covered in `tests/adzuna_page_loop.rs`):
 /// * **Amount-bounded** — `amount <= 50` (or `None`) issues exactly ONE request,
 ///   so a small search costs the same daily quota as it did before paging.
 /// * **Short page stops** — a page returning fewer than [`ADZUNA_PAGE_SIZE`]
@@ -368,7 +368,7 @@ pub(super) async fn fetch_adzuna_pages(
 /// `retries` is hardwired to [`ADZUNA_RETRIES`] (0). Mirrors
 /// [`super::apify_fetch_options`]: the single source of truth consumed by both
 /// the production call in [`fetch_adzuna_page`] and the invariant test in
-/// `test.rs`, so dropping the override here breaks that test.
+/// `tests/quota_neutral_runs.rs`, so dropping the override here breaks that test.
 pub(super) fn adzuna_fetch_options() -> FetchOptions {
     FetchOptions {
         retries: ADZUNA_RETRIES, // METERED: each send bills the daily quota

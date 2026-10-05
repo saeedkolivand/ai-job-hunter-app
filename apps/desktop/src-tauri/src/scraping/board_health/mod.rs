@@ -29,7 +29,7 @@
 //! this reason. Without that filter a looping or XSS'd renderer could create
 //! unbounded rows here, which is the threat `commands::scrape`'s limiter
 //! already exists to stop. Guarded by
-//! `engine::test::an_unresolvable_board_id_never_creates_a_health_row`.
+//! `engine::tests::board_health_history::an_unresolvable_board_id_never_creates_a_health_row`.
 //!
 //! ## `skipped` is not `error`
 //!

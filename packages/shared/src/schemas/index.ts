@@ -52,7 +52,7 @@ export const JobEventSchema = z.object({
  * inline array literal so the IPC codegen (`pnpm gen:ipc`, see
  * `packages/shared/scripts/gen-ipc-rust.ts`) can emit the SAME literal list
  * as a Rust `&[&str]` const for `resolve_intent`'s own tests
- * (`commands/ai_provider/mod.rs`) to iterate — one source of truth for the
+ * (`commands/ai_provider/tests/chat_and_intent.rs`) to iterate — one source of truth for the
  * wire vocabulary instead of a hand-typed copy on each side that could
  * silently drift (a renamed/typo'd literal here would otherwise degrade
  * every affected request to `Intent::Default` with no test catching it).
@@ -111,7 +111,7 @@ export const AiGenerateRequestSchema = z.object({
    * model toward new topics, i.e. invented candidate facts). Absent/
    * `'default'`: resolves to the SAME numbers as `'deterministic'` on an
    * accepting provider (see `Intent`'s own doc comment,
-   * `commands/ai_provider/mod.rs`) — never a genuinely separate "no opinion"
+   * `commands/ai_provider/sampling.rs`) — never a genuinely separate "no opinion"
    * state, since omitting on an accepting provider is not a safe default
    * either. Each provider adapter maps `(model, intent)` to its OWN sampling
    * numbers via `AiProvider::sampling_profile`
@@ -585,8 +585,8 @@ export const ResumePipelineRunSchema = z
      *  an existing caller that never sets this gets byte-identical behavior.
      *  `false` is the cover-letter-only run — `draft` no-ops at zero cost,
      *  nothing résumé-shaped is validated, repaired or persisted, and the
-     *  posting's saved résumé is left alone (`ai_generations::pick` keeps the
-     *  stored value for an empty incoming field). The grounding stages
+     *  posting's saved résumé is left alone (`ai_generations::merge_application`'s
+     *  pick-non-empty merge keeps the stored value for an empty incoming field). The grounding stages
      *  (`analyze_job`, `match_evidence`, `strategy`) still run: the letter
      *  prompt fences `<resume_strategy>` and is told to follow it. */
     includeResume: z.boolean().default(true),

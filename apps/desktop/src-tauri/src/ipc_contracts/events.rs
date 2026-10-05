@@ -27,7 +27,7 @@ pub const PIPELINE_STAGE_PHASES: &[&str] = &["start", "finish", "error"];
 
 /// Every stage name the staged résumé pipeline can run, in pipeline order —
 /// pinned against `QUALITY_STAGES` (`pipeline/resume/mod.rs`) by
-/// `pipeline::resume::test`. Source of truth: `PIPELINE_STAGES` in
+/// `pipeline::resume::tests::pipeline_stages`. Source of truth: `PIPELINE_STAGES` in
 /// packages/shared/src/events/pipeline.ts.
 ///
 /// NORMATIVE for `ai_stage_overrides`: a row whose `stage` is not in this
@@ -47,7 +47,7 @@ pub const PIPELINE_STAGES: &[&str] = &[
 ];
 
 /// The stages that make NO provider call — pinned against
-/// `Pipeline::free_stage_names()` by `pipeline::resume::test`. Source of
+/// `Pipeline::free_stage_names()` by `pipeline::resume::tests::pipeline_stages`. Source of
 /// truth: `PIPELINE_STAGES_FREE` in packages/shared/src/events/pipeline.ts.
 ///
 /// NORMATIVE for `ai_stage_overrides`: a row on one of these must be

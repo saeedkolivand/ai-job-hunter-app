@@ -55,7 +55,7 @@ use dispatch::{dispatch, invoke_command, InvokeOutcome};
 // The pure `gate`/`plan` ordering decision — same R8 LOC-cap reasoning again. `dispatch.rs` reads
 // both through its own direct sibling import, not this re-export; this one is solely for
 // `#[cfg(test)]` consumers outside `agent_call::dispatch`'s own subtree —
-// `extension_bridge::test`'s exhaustive `agent_call::gate`/`Dispatch` walk (a COUSIN module) and
+// `extension_bridge::tests`'s exhaustive `agent_call::gate`/`Dispatch` walk (a COUSIN module) and
 // `validate::tests::ordering`'s real-`plan`-driven ordering tests — so the whole re-export is
 // `#[cfg(test)]` too.
 #[cfg(test)]

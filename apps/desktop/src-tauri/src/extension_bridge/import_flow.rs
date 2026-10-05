@@ -37,7 +37,7 @@ pub(super) struct ImportOk {
 
 /// Build a canonical `import.result` envelope (success or error). The error's
 /// `to_string()` becomes the `error` field the extension surfaces. Also reused
-/// by `mod.rs`'s `advance_authenticated` fallback to shape the "unknown
+/// by `caller_gate.rs`'s `advance_authenticated` fallback to shape the "unknown
 /// message type" error reply (see that call site) — the envelope shape is the
 /// same either way.
 pub(super) fn result_reply(req_id: &str, outcome: AppResult<ImportOk>) -> String {

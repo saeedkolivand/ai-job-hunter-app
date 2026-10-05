@@ -22,7 +22,7 @@ Codes are matched exact-only. The small curated endonym table (`deutschland`,
 `schweiz`, …) deliberately lives in `src/commands/geocoding/geonames.rs`, not in
 the asset, so regenerating from upstream never wipes it.
 
-**Runtime cost:** the index is built once (warmed from `lib.rs`'s setup on a
+**Runtime cost:** the index is built once (warmed from `shell/setup.rs` on a
 blocking thread, so it never lands on a command worker) and then retains
 **~10–12 MB** for the life of the process (folded search keys + display names);
 ~60–78 ms to build and ~7–11 ms per query on a release build.

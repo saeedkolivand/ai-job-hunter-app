@@ -1,6 +1,6 @@
 # Security rules (the security authority's knowledge)
 
-Last updated: 2026-09-07
+Last updated: 2026-10-05
 
 For `tauri-security-reviewer` (cross-cutting authority). Security/data findings round **UP**. Anchors below are real repo locations.
 
@@ -20,7 +20,7 @@ For `tauri-security-reviewer` (cross-cutting authority). Security/data findings 
 
 ## Extension bridge
 
-- **Auth model** — mutual HMAC-SHA256 challenge-response handshake; session tokens never on wire; pairing token in first hello only. See `apps/desktop/src-tauri/src/extension_bridge/mod.rs` (advance_auth/advance_authenticated flow), [ADR-0010](decision-records/0010-bridge-hmac-handshake.md).
+- **Auth model** — mutual HMAC-SHA256 challenge-response handshake; session tokens never on wire; pairing token in first hello only. See `apps/desktop/src-tauri/src/extension_bridge/frame_advance.rs` / `caller_gate.rs` (advance_auth/advance_authenticated flow), [ADR-0010](decision-records/0010-bridge-hmac-handshake.md).
 - **Port range** — bounded WebSocket listen on loopback only; the range is `PORT_RANGE` in `apps/desktop/src-tauri/src/extension_bridge/mod.rs` (also enumerated in the CSP and in `tests/egress.rs`). Out-of-range connections rejected.
 - **Consent gates** — assisted autofill rides the user opt-in (two-gate confirmation); imports gated to desktop online state. See [ADR-0009](decision-records/0009-assisted-autofill.md).
 
@@ -30,7 +30,7 @@ For `tauri-security-reviewer` (cross-cutting authority). Security/data findings 
 
 ## AI provider base URL provenance
 
-- **Backend-owned config** — provider, model, and base URL resolved from backend `AiConfigStore` (not renderer-supplied). Renderer passes only provider _alias_ (e.g. "claude-code" for CLI agents). See `apps/desktop/src-tauri/src/ai_config/mod.rs`, [ADR-0012](decision-records/0012-ai-provider-base-url-provenance.md).
+- **Backend-owned config** — provider, model, and base URL resolved from backend `AiConfigStore` (not renderer-supplied). Renderer passes only provider _alias_ (e.g. "claude-code" for CLI agents). See `apps/desktop/src-tauri/src/ai_config/` (`mod.rs`: `AiConfigStore`; `validation.rs`: server-side checks), [ADR-0012](decision-records/0012-ai-provider-base-url-provenance.md).
 
 ## AI security
 
@@ -40,8 +40,8 @@ For `tauri-security-reviewer` (cross-cutting authority). Security/data findings 
 ## Data / privacy (GDPR)
 
 - `commands/privacy.rs` + `db.rs`/`data_store.rs`: retention + deletion honored; temp/export files cleaned up; resume/PII protected at rest and in caches. A retention/cleanup regression is HIGH.
-- **Additive IPC PII fields** — when an IPC response gains a field carrying PII (e.g. `contactConflicts`/`suggestedContact` on `documents.import`): never `tracing`/log the values; render via JSX text nodes, not HTML/auto-anchors; the save path must re-read a validated IPC round-trip (not raw scraped data); allowlist the key before any dynamic property write (prototype-pollution guard); never `let _ =` a profile write. See `contact_profile/mod.rs: detect_contact_conflicts` as the reference implementation.
-- **Diagnostics bundle** — Bundles attached to public issues ship only an allowlisted, redaction-safe set (never the data dir, keys, or documents). System info is generated and clean; crash log and app logs are redacted for path, URL, credential, host, and email. See `commands/support.rs: build_diagnostics_zip` and `autopilot_helpers/mod.rs: redact_token` for implementation; [ADR-027](decision-records/adr-027-diagnostics-bundle-privacy-boundary.md) for specifics.
+- **Additive IPC PII fields** — when an IPC response gains a field carrying PII (e.g. `contactConflicts`/`suggestedContact` on `documents.import`): never `tracing`/log the values; render via JSX text nodes, not HTML/auto-anchors; the save path must re-read a validated IPC round-trip (not raw scraped data); allowlist the key before any dynamic property write (prototype-pollution guard); never `let _ =` a profile write. See `contact_profile/conflicts.rs: detect_contact_conflicts` as the reference implementation.
+- **Diagnostics bundle** — Bundles attached to public issues ship only an allowlisted, redaction-safe set (never the data dir, keys, or documents). System info is generated and clean; crash log and app logs are redacted for path, URL, credential, host, and email. See `commands/support.rs: build_diagnostics_zip` and `observability.rs: redact_token` for implementation; [ADR-027](decision-records/adr-027-diagnostics-bundle-privacy-boundary.md) for specifics.
 - **Full reset** — `privacy_reset_app` wipes every persistent store via a `Resettable` registry: stores are wired with `manage_resettable` at their `.manage()` site (which registers their reset), and the command just iterates the registry — so a new store is covered automatically. Backups (`commands/data.rs::build_bundle`) remain a separate explicit list. See [ADR-009](decision-records/adr-009-resettable-reset-registry.md).
 
 ## Abuse / cost (DoS & spend)

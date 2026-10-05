@@ -1,6 +1,6 @@
 # ADR-020: Unified autopilot scoring — keyword-coverage kernel + metric relabel
 
-Last updated: 2026-08-11
+Last updated: 2026-10-05
 
 **Status:** Accepted
 
@@ -19,7 +19,7 @@ Autopilot's `simple_similarity` was crude (failed to weight keyword importance, 
 
 **Delete `simple_similarity`.** The keyword-coverage algorithm is the canonical **embedding-free keyword-based ranker** — see `apps/desktop/src-tauri/src/documents/keywords.rs` → `coverage_score()` for the implementation. It is embedding-free, deterministic, and zero API calls (safe for headless Autopilot).
 
-**Autopilot's displayed "% match" is now pure keyword-coverage (embedding-free), NOT the Jobs page combined metric.** The Jobs page combines semantic + keyword signals (see `apps/desktop/src-tauri/src/commands/match_resume.rs` → `score_one()` for the exact weights); Autopilot uses keyword coverage alone. Rename the Autopilot metric in UI/analytics as "Keyword Coverage %", clearly distinct from "Match %" (the combined Jobs metric). The two metrics are complementary: Autopilot ranks fast and deterministically on keywords alone; the Jobs page weighs semantic meaning more heavily.
+**Autopilot's displayed "% match" is now pure keyword-coverage (embedding-free), NOT the Jobs page combined metric.** The Jobs page combines semantic + keyword signals (see `apps/desktop/src-tauri/src/commands/match_resume/score.rs` → `score_one()` for the exact weights); Autopilot uses keyword coverage alone. Rename the Autopilot metric in UI/analytics as "Keyword Coverage %", clearly distinct from "Match %" (the combined Jobs metric). The two metrics are complementary: Autopilot ranks fast and deterministically on keywords alone; the Jobs page weighs semantic meaning more heavily.
 
 ## Consequences
 
@@ -39,10 +39,10 @@ The pre-processing pipeline (translation via `translate_if_needed`, locale resol
 
 A pass the wall clock cuts off still reports its PARTIAL counts plus a distinct `rerank_timeout` step: it has already spent embeds and promoted jobs, so reporting nothing would make the run's step log read as keyword-only.
 
-Implementation: `commands/autopilot/rerank.rs::semantic_rerank_phase` (phase 2 entry point — split out of `commands/autopilot.rs` for the LOC cap, no behaviour change), `commands/match_resume.rs::score_one` (shared kernel), `documents::embed_charged` (per-round-trip charge choke point), `RERANK_DEGRADE_BREAKER = 3` (consecutive degrade limit per run). See `commands/autopilot/tests.rs` and `commands/match_resume/test.rs` for mutation-verified guards on cache identity, budget enforcement, and the mixed-shape degrade boundary. Related: `docs/knowledge/matching-algorithm.md`, and the "Ranking via keyword-coverage" row in `docs/ARCHITECTURE_STATUS.md`.
+Implementation: `commands/autopilot/rerank.rs::semantic_rerank_phase` (phase 2 entry point — split out of `commands/autopilot/mod.rs` for the LOC cap, no behaviour change), `commands/match_resume/score.rs::score_one` (shared kernel), `documents::embed_charged` (per-round-trip charge choke point), `RERANK_DEGRADE_BREAKER = 3` (consecutive degrade limit per run). See `commands/autopilot/tests.rs` and `commands/match_resume/tests/` for mutation-verified guards on cache identity, budget enforcement, and the mixed-shape degrade boundary. Related: `docs/knowledge/matching-algorithm.md`, and the "Ranking via keyword-coverage" row in `docs/ARCHITECTURE_STATUS.md`.
 
 ## Related
 
 - `docs/ARCHITECTURE.md` — updated to document the two scoring branches (keyword-coverage for Autopilot, combined for Jobs analysis).
 - `docs/knowledge/matching-algorithm.md` — thin pointer to `documents::keywords::coverage_score`.
-- `recommend/mod.rs` — batched keyword matching; `commands/autopilot.rs::build_found_job` — sorting logic.
+- `recommend/mod.rs` — batched keyword matching; `commands/autopilot/keyword_rank.rs::build_found_job` — sorting logic.

@@ -28,7 +28,7 @@ use crate::error::{AppError, AppResult};
 mod matcher;
 mod salary_match;
 
-// Re-exports so `answer_assist` (salary-shaped question routing) and `import_tests.rs` keep
+// Re-exports so `answer_assist` (salary-shaped question routing) and `answers_suggest/tests.rs` keep
 // resolving `answers_suggest::X` unchanged now that these live one module deeper.
 pub(in crate::extension_bridge) use self::matcher::{match_questions, AnswerCandidate, Suggestion};
 pub(super) use self::salary_match::is_salary_question;

@@ -22,7 +22,7 @@ use super::super::*;
 ///   - leave a genuinely empty board as `count=0, error=None` (a real zero is
 ///     NOT a failure — that distinction is the whole point of the PR).
 ///
-/// It complements `scraping/http/test.rs`'s source-end coverage
+/// It complements `scraping/http/tests/fetch_basic.rs`'s source-end coverage
 /// (`test_fetch_json_non_2xx_carries_status` → `Err(Provider("HTTP 403"))`,
 /// `test_fetch_json_invalid` → `Err(Parse)`): those prove the fetch layer
 /// produces the `Err`; this proves the engine surfaces it honestly. Board

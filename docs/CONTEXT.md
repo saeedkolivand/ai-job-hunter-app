@@ -577,7 +577,7 @@ _Avoid_: "app map", "screen list", "screen" (the app's own copy says **page**)
 
 **Command**:
 A `#[tauri::command]` Rust function. The set is exactly 1:1 with the `generate_handler!`
-registration list in `lib.rs` — that list is the **authoritative registry** of what the app can
+registration list in `shell/handler.rs` — that list is the **authoritative registry** of what the app can
 do, and the only source a parity surface may derive from. Read the macro for current membership;
 the agent-CLI policy table and its test are what stop anything being added without a declared
 Effect class.

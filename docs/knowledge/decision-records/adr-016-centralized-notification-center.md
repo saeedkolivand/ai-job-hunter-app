@@ -1,6 +1,6 @@
 # ADR-016: Centralized Notification Center
 
-Last updated: 2026-07-16
+Last updated: 2026-10-05
 
 **Status:** Accepted
 
@@ -60,7 +60,7 @@ The route pattern **generalizes**: any new source (Slack notification listener, 
 
 ### 5. Layering and ownership
 
-`notifications` is an **L3 shell module** (like `extension_bridge`, `tray`, `updater`). Its `manage()` registration helper in `main.rs` is the single integration point:
+`notifications` is an **L3 shell module** (like `extension_bridge`, `tray`, `updater`). Its `manage()` registration helper in `shell/setup.rs` is the single integration point:
 
 ```rust
 let mut reset_reg = ResetRegistry::new();

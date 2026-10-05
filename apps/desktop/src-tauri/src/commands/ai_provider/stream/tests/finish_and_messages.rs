@@ -4,7 +4,7 @@
 //! `finish` and `cli_agent::emit_done` both route their empty-answer `Err`
 //! message through the pure `empty_answer_message` decision, so it is
 //! directly testable without the `AppHandle` this crate has no test harness
-//! for (see e.g. `openai_tests.rs`'s note on the same limitation).
+//! for (see e.g. `openai/tests/capabilities.rs`'s note on the same limitation).
 //!
 //! `finish` used to consult `stop_reason` only on the EMPTY path — a stream
 //! that emitted real text and then reported `finish_reason: "length"` took

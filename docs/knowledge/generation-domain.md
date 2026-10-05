@@ -65,7 +65,7 @@ The verdict is recorded separately (in the run's [`PipelineRunDetail.report.fabr
 **Locations:**
 
 - Limits: [`apps/desktop/src-tauri/src/limits/mod.rs`](../../apps/desktop/src-tauri/src/limits/mod.rs)
-- Spend ledger: [`apps/desktop/src-tauri/src/pipeline/resume/ledger.rs`](../../apps/desktop/src-tauri/src/pipeline/resume/ledger.rs)
+- Spend ledger: [`apps/desktop/src-tauri/src/spend/mod.rs`](../../apps/desktop/src-tauri/src/spend/mod.rs)
 
 The pipeline enforces per-provider daily ceilings and per-run budgets. See the module doc in [`apps/desktop/src-tauri/src/pipeline/resume/mod.rs`](../../apps/desktop/src-tauri/src/pipeline/resume/mod.rs) for the per-stage call table (indicating which are base costs, optional, or bounded). The shape: a **fixed base of grounding stages** every run pays for, **optional stages gated on flags** (including `draft` and `cover_letter`), a **bounded repair loop** (see [`Budget::max_repair_attempts`](../../apps/desktop/src-tauri/src/pipeline/budget.rs)), and humanize (bounded separately). Every provider is charged against the same per-vendor daily ceiling defined in [`limits/mod.rs`](../../apps/desktop/src-tauri/src/limits/mod.rs). Cost is tracked per-call in a ledger; the pipeline checks remaining budget before every call and returns an error if the budget is exhausted.
 
@@ -81,20 +81,20 @@ Every prompt template consuming company research **must** call [`buildCompanyRes
 
 ## Search and ranking
 
-**Location:** [`ADR-039`](decision-records/adr-039-hybrid-postings-search-lexical-dense-rerank.md) · Implementation: [`apps/desktop/src-tauri/src/commands/hybrid_search.rs`](../../apps/desktop/src-tauri/src/commands/hybrid_search.rs)
+**Location:** [`ADR-039`](decision-records/adr-039-hybrid-postings-search-lexical-dense-rerank.md) · Implementation: [`apps/desktop/src-tauri/src/commands/hybrid_search.rs`](../../apps/desktop/src-tauri/src/commands/hybrid_search.rs) (candidate pool in `commands/hybrid_search/candidates.rs`)
 
 The Jobs page search combines three ranking surfaces: lexical FTS5 (BM25), optional dense embeddings (cosine similarity), and optional LLM reranking. This is **separate** from Autopilot's job-matching score (which uses keyword-coverage matching against the résumé).
 
 **What hybrid search does:**
 
-- Retrieves: when keyword search returns hits, ranks them lexically and (optionally) semantically. When keyword search finds nothing, retrieves the first `DENSE_CANDIDATE_MAX` postings in cache order (the constant lives in `apps/desktop/src-tauri/src/commands/hybrid_search.rs`) and ranks them densely.
+- Retrieves: when keyword search returns hits, ranks them lexically and (optionally) semantically. When keyword search finds nothing, retrieves the first `DENSE_CANDIDATE_MAX` postings in cache order (the constant lives in `apps/desktop/src-tauri/src/commands/hybrid_search/candidates.rs`) and ranks them densely.
 - Fuses: RRF (Reciprocal Rank Fusion) combines lexical and dense rankings if both are available.
 - Reranks: optional LLM listwise reranking of the top-K fused results (off by default; gated on `job_preferences.semantic_scoring`; K is [`RERANK_TOP_K`](../../apps/desktop/src-tauri/src/retrieval/rerank.rs)).
 
 **What it does not do:**
 
 - Does not persist posting text across scrapes (postings live in the in-memory cache, cleared on the next scrape).
-- Does not retrieve postings outside the first candidate pool (bounded by `DENSE_CANDIDATE_MAX` in [`commands/hybrid_search.rs`](../../apps/desktop/src-tauri/src/commands/hybrid_search.rs)).
+- Does not retrieve postings outside the first candidate pool (bounded by `DENSE_CANDIDATE_MAX` in [`commands/hybrid_search/candidates.rs`](../../apps/desktop/src-tauri/src/commands/hybrid_search/candidates.rs)).
 - Does not measure retrieval quality (no labelled dataset exists).
 
 See ADR-039 for the full design, including the tradeoffs and measurement boundaries.

@@ -1,6 +1,6 @@
 # Performance rules (hot paths + discipline)
 
-Last updated: 2026-07-16
+Last updated: 2026-10-05
 
 For `performance-profiler` (Secondary). Bias findings toward MEDIUM unless there's a concrete on-a-hot-path regression. Use `graphify` to locate hot code; measure, don't guess.
 
@@ -12,7 +12,7 @@ For `performance-profiler` (Secondary). Bias findings toward MEDIUM unless there
 
 - **Scraping** (`scraping/`, `platform/chrome/`) — bounded concurrency, reuse [chromiumoxide][chromiumoxide] pages where possible, per-board rate limits, don't spawn unbounded tasks. Primary hot path is aggregator-first HTTP API (Adzuna/JSearch/Jooble), not browser pages.
 - **AI / embeddings** (`commands/ai_provider/`, `documents/`) — batch sizing, streaming back-pressure, minimal token/context, cheapest viable model; avoid re-embedding unchanged content.
-- **Export / layout** (`export/`, `export/typst_engine/`) — compile once per export, avoid redundant re-renders of previews. Typst subsets fonts internally when producing PDF bytes; size guardrail test in `export/typst_engine/test.rs` catches regressions. See [ADR-008](decision-records/adr-008-pdf-glyph-subsetting.md) (superseded — historical rationale).
+- **Export / layout** (`export/`, `export/typst_engine/`) — compile once per export, avoid redundant re-renders of previews. Typst subsets fonts internally when producing PDF bytes; size guardrail test in `export/pdf/tests/size_and_accent.rs` catches regressions. See [ADR-008](decision-records/adr-008-pdf-glyph-subsetting.md) (superseded — historical rationale).
 - **Pipeline** (`pipeline/`, `autopilot/`) — bounded queues; backpressure; cancellation honored.
 - **Data** — no N+1 queries, no full-table scans on warm paths.
 

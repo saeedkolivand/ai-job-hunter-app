@@ -28,7 +28,7 @@ use crate::observability::sanitize_reason;
 
 /// Resolve the managed `EmailWatchStore`, or a typed error when it isn't
 /// managed (the boot-time `EmailWatchStore::open` failed — a non-fatal,
-/// logged-and-continue startup path, see `lib.rs::setup`). Using `try_state`
+/// logged-and-continue startup path, see `shell/state.rs`). Using `try_state`
 /// (never the panicking `state()`) is load-bearing here: unlike
 /// `email_watch_status` (which degrades to a default status), the four
 /// mutating commands below must reject with an `AppError` instead of

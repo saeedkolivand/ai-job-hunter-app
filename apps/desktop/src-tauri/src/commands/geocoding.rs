@@ -30,7 +30,7 @@ mod geonames;
 #[cfg(test)]
 mod tests;
 
-/// Build the offline index off the hot path. Called once from `lib.rs`'s setup
+/// Build the offline index off the hot path. Called once from `shell/setup.rs`
 /// on a blocking thread — see [`geonames::warm`] for why lazy-on-first-use is
 /// the wrong place to pay 60–250 ms of CPU.
 pub(crate) fn warm_index() {

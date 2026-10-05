@@ -436,7 +436,7 @@ pub(super) fn search(query: &str, limit: usize) -> Hits {
 /// command worker touches it first — and on the backfill path that worker is
 /// inside `derive_country_code`'s `tokio::time::timeout`, which cannot
 /// interrupt synchronous work, so the 2 s cap would silently not apply. Warmed
-/// from `lib.rs`'s setup on a blocking thread, every later `search` is a pure
+/// from `shell/setup.rs` on a blocking thread, every later `search` is a pure
 /// read of an already-initialized [`LazyLock`].
 pub(super) fn warm() {
     LazyLock::force(&INDEX);

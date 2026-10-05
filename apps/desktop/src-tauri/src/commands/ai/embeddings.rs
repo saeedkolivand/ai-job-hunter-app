@@ -159,7 +159,7 @@ async fn run_embed_job(
 
         // Re-embed with bounded concurrency: each document is normally one HTTP
         // round-trip, though a document longer than the provider's per-chunk cap
-        // now costs several (see `ai_provider::embed_adaptive` — chunk-and-mean-
+        // now costs several (see `ai_provider::embed::embed_adaptive` — chunk-and-mean-
         // pool, bounded to at most `MAX_CHUNKS_PER_DOCUMENT` chunks). A small
         // fan-out here keeps the provider busy without overwhelming it (or
         // hammering a rate limit). Cancellation is honored between chunks; store

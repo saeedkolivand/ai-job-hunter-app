@@ -41,13 +41,13 @@ pub(in crate::extension_bridge) enum Dispatch<'a> {
 /// longer silently leave a stale, now-unsound `expect` behind it.
 ///
 /// [`plan`] below calls this as its own LAST decision (never a
-/// parallel/shadow copy of the same logic), so `extension_bridge::test`'s
+/// parallel/shadow copy of the same logic), so `agent_call::tests::policy_matrix`'s
 /// exhaustive walk over every real `POLICY` row
 /// (`agent_call_gate_matches_every_policy_rows_declared_effect`) proves
 /// something about THIS production routing, not a second implementation
 /// that could silently drift from it. `pub(in crate::extension_bridge)` (re-exported at
-/// `agent_call`'s own top level) — reachable from `extension_bridge::test`, a sibling of
-/// `agent_call`, for exactly that test; [`Dispatch`] shares that visibility for the same reason.
+/// `agent_call`'s own top level) — reachable from that walk in `agent_call::tests::policy_matrix`;
+/// [`Dispatch`] shares that visibility for the same reason.
 pub(in crate::extension_bridge) fn gate(
     effect: Effect,
     confirm: Option<&str>,

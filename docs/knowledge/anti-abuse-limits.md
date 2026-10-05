@@ -1,6 +1,6 @@
 # Anti-Abuse Rate & Concurrency Limits
 
-Last updated: 2026-09-07
+Last updated: 2026-10-05
 
 Canonical source: `apps/desktop/src-tauri/src/limits/mod.rs`
 
@@ -39,7 +39,7 @@ Three independent guards (all process-local, reset on restart):
 
 1. **Sliding-window request-rate cap** — at most `max_requests` accepted starts of a given command within the last [`RATE_WINDOW`]. Old timestamps age out, so it is a true rolling window.
 2. **Concurrency cap** — at most `max_concurrent` in-flight calls of a command, held as an RAII [`ConcurrencyGuard`] that OWNS a semaphore permit, so a panicking/early-returning handler can never leak a slot. Two admission styles share one budget: `acquire` **rejects** when full, `acquire_queued` **waits** (bounded by a queue-depth cap) — the tailoring pipeline uses the latter, since every call there is a deliberate click.
-3. **Per-vendor daily request ceiling** — a generous runaway-cost backstop: at most `PROVIDER_DAILY_MAX` accepted billable requests per vendor per UTC day (reset at midnight UTC). Keyed by vendor name, not by `ProviderId`, so a **search backend** that bills separately (`exa`) charges its own bucket rather than spending the AI provider's — see [ADR 0023](decision-records/0023-web-search-is-a-separate-axis-from-the-ai-provider.md). **Multi-provider runs** — when per-stage overrides route different stages to different providers (e.g., local Ollama + cloud provider), each provider's cap is charged independently. Which stages a run pays for, and which are free (assembly, deterministic validation, override hooks make no provider call), is owned by `pipeline/resume/mod.rs` (`MAX_STAGES` and the module doc's per-stage call table). At a single provider a run costs that stage count in calls; spreading stages across providers charges each provider's cap independently and linearly.
+3. **Per-vendor daily request ceiling** — a generous runaway-cost backstop: at most `PROVIDER_DAILY_MAX` accepted billable requests per vendor per UTC day (reset at midnight UTC). Keyed by vendor name, not by `ProviderId`, so a **search backend** that bills separately (`exa`) charges its own bucket rather than spending the AI provider's — see [ADR 0023](decision-records/0023-web-search-is-a-separate-axis-from-the-ai-provider.md). **Multi-provider runs** — when per-stage overrides route different stages to different providers (e.g., local Ollama + cloud provider), each provider's cap is charged independently. Which stages a run pays for, and which are free (assembly, deterministic validation, override hooks make no provider call), is owned by `pipeline/resume/mod.rs` (`QUALITY_STAGES` and the module doc's per-stage call table). At a single provider a run costs that stage count in calls; spreading stages across providers charges each provider's cap independently and linearly.
 
 Defaults are intentionally **generous** so normal interactive use never trips them; they exist to stop pathological loops, not to throttle a human.
 
@@ -61,7 +61,7 @@ The wire code the renderer matches on, and whether the variant counts as retriab
 
 ### AI Commands
 
-Applied to `ai_generate` (`commands/ai.rs`), the shared `ai_research` bucket (`admit_research`, same file), and — via `acquire_queued` — `generate_pipeline` (`commands/pipeline.rs`), which is the command the tailoring flow actually calls:
+Applied to `ai_generate` (`commands/ai/generate.rs`), the shared `ai_research` bucket (`Completer::admit_research`, `pipeline/completer.rs`), and — via `acquire_queued` — `generate_pipeline` (`commands/pipeline.rs`), which is the command the tailoring flow actually calls:
 
 ```rust
 #[tauri::command]
@@ -88,7 +88,7 @@ The `_guard` is an RAII [`ConcurrencyGuard`] — when it drops (at function end 
 
 ### Scraping Commands
 
-Applied to `scrape_board` and `scrape_url` in `commands/scrape.rs`:
+Applied to `scrape_boards` and `scrape_url` in `commands/scrape/run.rs`:
 
 ```rust
 #[tauri::command]

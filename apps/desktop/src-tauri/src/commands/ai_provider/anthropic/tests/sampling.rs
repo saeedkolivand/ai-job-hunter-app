@@ -35,7 +35,7 @@ fn sampling_profile_declares_real_values_for_a_legacy_model_per_intent() {
     // A model `anthropic_supports_temperature` accepts (legacy pre-thinking)
     // declares REAL values reproducing this app's pre-fix shipped numbers —
     // omitting is not a safe fallback on a provider that accepts the field
-    // (see `commands/ai_provider/mod.rs`'s module doc for why).
+    // (see `commands/ai_provider/sampling.rs`'s module doc for why).
     let model = "claude-3-5-sonnet-20241022";
     assert_eq!(
         AnthropicClient.sampling_profile(model, Intent::Deterministic),

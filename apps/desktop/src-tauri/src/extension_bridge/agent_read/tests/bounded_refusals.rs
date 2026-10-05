@@ -67,7 +67,7 @@ fn origin_refused_reply_built_from_a_cap_sized_resource_still_fits_the_frame_cap
 
 /// `handle_agent_query`'s OTHER call site of `bounded_result_reply` cannot be driven directly the
 /// same way — it is `async fn(app: &AppHandle, ..)` and this crate has no `tauri::test` mock-app
-/// harness (see `extension_bridge::test::spawn_detached_runs_without_an_ambient_tokio_runtime`'s
+/// harness (see `extension_bridge::server::tests::spawn_detached_runs_without_an_ambient_tokio_runtime`'s
 /// doc for why that's a deliberately deferred, separately-reviewed change, not an oversight here).
 /// A literal scan of this module's own source is the fallback this repo already uses for the
 /// identical problem (`tests/architecture.rs`'s `job_complete_sites_in`): assert

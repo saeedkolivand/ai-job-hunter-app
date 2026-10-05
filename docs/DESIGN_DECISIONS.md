@@ -1,6 +1,6 @@
 # AI Job Hunter — Design Decisions
 
-Last updated: 2026-08-22
+Last updated: 2026-10-05
 
 This document records the major architectural decisions in the project — the reasoning behind the technology choices, the patterns used, and the trade-offs considered. It is a reference for contributors and reviewers who want to understand the _why_ behind the codebase.
 
@@ -98,7 +98,7 @@ For flows like an onboarding wizard or document generation, that is sufficient. 
 
 ### Hybrid search
 
-Posting search combines two signals, computed in the Rust core (`commands/search.rs`, `search_hybrid`):
+Posting search combines two signals, computed in the Rust core (`commands/hybrid_search.rs`, `scrape_hybrid_search`):
 
 1. **Semantic similarity** — the query is embedded via the active provider (`documents::embed`), then **cosine similarity** is computed against stored posting embeddings. This surfaces relevant results even when exact keywords don't match ("senior engineer" matching "staff software engineer").
 2. **Keyword overlap** — term overlap between the query and the posting text.

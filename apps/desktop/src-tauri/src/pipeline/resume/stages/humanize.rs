@@ -81,7 +81,7 @@ pub(crate) use predicates::{
 
 // Test-only surface: `humanize_is_worse`/`is_usable_rewrite` are called
 // directly by `attempt::humanize_one` (never through this re-export) — only
-// `pipeline::resume::test` imports them by this path (via `stages::`).
+// `pipeline::resume::tests` imports them by this path (via `stages::`).
 #[cfg(test)]
 pub(crate) use predicates::{humanize_is_worse, is_usable_rewrite};
 

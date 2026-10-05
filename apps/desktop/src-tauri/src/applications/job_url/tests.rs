@@ -176,7 +176,7 @@ fn retains_per_host_identifying_query_params_for_dedup() {
 }
 
 /// Companion to the `canonical_xing_*`/`canonical_stepstone_*` tests in
-/// `scraping::scrape_url::test` (PR 7): both hosts put the job id in the PATH, so
+/// `scraping::scrape_url::tests` (PR 7): both hosts put the job id in the PATH, so
 /// neither has an entry in `identifying_query_params` — the whole query must be
 /// dropped, not just the tracking param, via `retain_identifying_params` seeing an
 /// empty allowlist for the host. Pinned against the real detail-URL shapes

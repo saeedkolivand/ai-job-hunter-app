@@ -566,8 +566,8 @@ Declared in `packages/shared/src/ipc/contracts/ai.ts`.
  * against it) and is always present — every other field is optional because
  * no single provider's models endpoint returns all of them: see
  * `AiProvider::list_models`/`model_entry` in the Rust backend
- * (`apps/desktop/src-tauri/src/commands/ai_provider/mod.rs`) for exactly
- * which fields each provider supplies. A provider that doesn't return a
+ * (`apps/desktop/src-tauri/src/commands/ai_provider/mod.rs` / `catalogue.rs`) for
+ * exactly which fields each provider supplies. A provider that doesn't return a
  * field omits it here entirely — never a fabricated zero/empty-string/
  * "unknown" sentinel; treat absent as absent.
  */
@@ -803,7 +803,7 @@ save(req: AiGenerationSaveRequest): Promise<AiGenerationSaveResult>;
 ```
 
 Per-job merge-upsert keyed on `jobUrl` (`merge_application` in
-`apps/desktop/src-tauri/src/ai_generations/mod.rs`): a résumé, a cover
+`apps/desktop/src-tauri/src/ai_generations/record.rs`): a résumé, a cover
 letter, application answers and a company brief produced by separate
 generation actions all land on ONE row when they share a `jobUrl`. A save
 with no `jobUrl` (a manual generation) inserts its own row instead.

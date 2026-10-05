@@ -264,7 +264,7 @@ fn is_no_info(brief: &str) -> bool {
 // mock-app harness (see `SalaryResearch::enrich`'s doc comment for the same
 // limitation), so that wiring — including the "route is resolved exactly
 // once and reused" invariant PR #989 fixed — is unverified END TO END at the
-// unit level here; `commands::ai_provider::search::test`'s
+// unit level here; `commands::ai_provider::search::tests`'s
 // `resolve_via_backend` tests cover the pure half of that fix (the
 // tag-to-searcher pairing) instead. An honest gap, not a fix skipped.
 #[cfg(test)]

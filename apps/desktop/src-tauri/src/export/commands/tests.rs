@@ -1,7 +1,7 @@
 use super::super::types::{DocumentType, ExportFormat, GenerationMeta, LetterLayout, TemplateId};
 use super::*;
 
-// ── Fixtures (mirrors typst_engine/test.rs — minimal but complete) ────────────
+// ── Fixtures (mirrors typst_engine/tests/letter_fixtures.rs — minimal but complete) ────────────
 
 /// Short résumé fixture — exercises header + experience + skills blocks.
 const FIXTURE_RESUME: &str = "\

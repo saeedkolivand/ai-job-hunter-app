@@ -218,7 +218,7 @@ fn contact_profile_store_reset_yields_default_empty_profile() {
 // C3 — Registry completeness: every label that `privacy_reset_app` must wipe
 // is registered. The expected set now comes from the shared
 // `MANAGE_RESETTABLE_LABELS` const (the single source of truth), and
-// `lib.rs::setup` debug-asserts the live registry equals it — so a new
+// `shell/setup.rs` debug-asserts the live registry equals it — so a new
 // persistent store added via `manage_resettable` can't silently escape the
 // factory-reset wipe without tripping both this test and the boot assertion.
 //
@@ -228,13 +228,13 @@ fn contact_profile_store_reset_yields_default_empty_profile() {
 // only compiles when `T` implements `Resettable`.
 #[test]
 fn reset_registry_expected_labels_match_lib_rs_setup() {
-    // Labels come from the shared const that `lib.rs::setup` debug-asserts
+    // Labels come from the shared const that `shell/setup.rs` debug-asserts
     // against. Bridge/notification labels register via their own `manage`
     // helpers and are intentionally excluded.
     let expected: &[&str] = MANAGE_RESETTABLE_LABELS;
 
     let mut reg = ResetRegistry::default();
-    // Replicate registrations (types must match the T used in lib.rs).
+    // Replicate registrations (types must match the T used in `shell/state.rs`).
     reg.register::<Arc<Mutex<AutopilotStore>>>("autopilots");
     reg.register::<Mutex<CredentialStore>>("credentials");
     reg.register::<DocumentStore>("documents");
@@ -262,7 +262,7 @@ fn reset_registry_expected_labels_match_lib_rs_setup() {
             "expected reset label '{label}' missing from registry; current labels: {labels:?}"
         );
     }
-    // Count must match so a removal in lib.rs also breaks this guard.
+    // Count must match so a removal in `shell/state.rs` also breaks this guard.
     assert_eq!(
         labels.len(),
         expected.len(),

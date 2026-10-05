@@ -10,7 +10,7 @@ use crate::export::types::{
 /// Regression: a region-tagged locale (`de-DE`) reaching `ExportRequest` for
 /// a DOCX résumé export must still resolve to the German `Lebenslauf`
 /// section order (Certifications before Skills) — see the matching PDF-path
-/// test in `export/pdf/test.rs` for the full rationale.
+/// test in `export/pdf/tests/locale_and_market.rs` for the full rationale.
 #[test]
 fn ats_mode_resolves_region_tagged_german_locale_to_the_de_order_in_docx() {
     let request = ExportRequest {

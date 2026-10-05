@@ -53,7 +53,7 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
     // guard below returns before any cache access; `score_one`'s job-not-found
     // early-return likewise precedes its first cache call. So an error path can
     // never read or pollute the result cache. See
-    // `errors_never_populate_match_scores_cache` in documents/test.rs, which
+    // `errors_never_populate_match_scores_cache` in documents/tests/match_scores.rs, which
     // pins the store-level non-pollution half.
     let Some(resume) = store.get(&req.resume_id) else {
         return json!({ "error": format!("resume not found: {}", req.resume_id) });

@@ -11,7 +11,7 @@ use crate::export::types::LetterLayout;
 /// does — so `letter_request` bypasses completion exactly like
 /// `typst_engine::render_letter_pdf` does on the PDF side. This test
 /// completes the fixture HERE first, the same seam the sibling PDF tests
-/// (`typst_engine::test::body_only_us_letter_gets_completed_furniture_in_the_pdf_text_layer`
+/// (`typst_engine::tests::letter_completion_guardrail::body_only_us_letter_gets_completed_furniture_in_the_pdf_text_layer`
 /// / `..._de_...`) use, before building the `ExportRequest` and rendering.
 #[test]
 fn body_only_letter_gets_completed_furniture_in_docx_document_xml() {

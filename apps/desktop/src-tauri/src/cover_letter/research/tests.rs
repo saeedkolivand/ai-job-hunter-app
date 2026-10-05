@@ -4,7 +4,7 @@ use super::{cache_key, is_no_info, SearchBackend, StageIdentity, CACHE_NS, TTL_S
 use crate::pipeline::cache::KvCache;
 
 /// A routing identity, for the key tests below — same helper shape as
-/// `pipeline::resume::test::id`.
+/// `pipeline::resume::tests::support::id`.
 fn identity<'a>(provider: &'a str, model: &'a str) -> StageIdentity<'a> {
     StageIdentity {
         provider,
@@ -124,7 +124,7 @@ fn is_no_info_accepts_a_real_brief() {
 
 /// The daily-budget-on-cache-hit fix: `enrich_with` must check its cache
 /// and return on a hit BEFORE it ever reaches `completer.charge_daily()`.
-/// Same source-position technique `pipeline::resume::test`'s sibling
+/// Same source-position technique `pipeline::resume::tests`'s sibling
 /// `research_company_brief_has_no_fallible_operator_...` test uses for
 /// this crate's other AppHandle-requiring, harness-less research code —
 /// an honest structural guard, not a substitute for an integration test

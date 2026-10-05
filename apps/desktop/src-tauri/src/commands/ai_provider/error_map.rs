@@ -114,7 +114,7 @@ pub fn map_completion_transport_error(
 /// Redact a generation-failure message before it reaches the renderer.
 ///
 /// This is the choke point every generation-failure path funnels through
-/// (`ai_generate` in `commands/ai.rs`, `generate_pipeline` in
+/// (`ai_generate` in `commands/ai/generate.rs`, `generate_pipeline` in
 /// `commands/pipeline.rs` — both call [`emit_stream_error`] on their `Err`
 /// branch with a raw `AppError`/`e.to_string()`). A provider or transport
 /// error can carry a `base_url` with query-string auth (the #935 shape), an

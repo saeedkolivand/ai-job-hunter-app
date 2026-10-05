@@ -226,7 +226,7 @@ export interface MatchScore {
    *  embed that failed, a provider offline, or the daily ceiling refusing the
    *  round-trip) — `combined` then equals `ats`, and `semantic` is a `0.0`
    *  placeholder, not a measurement. Purely additive on the wire (see
-   *  `match_resume.rs`'s `SCORE_SOURCE_COMBINED`/`SCORE_SOURCE_KEYWORD`), so
+   *  `commands/match_resume/score.rs`'s `SCORE_SOURCE_COMBINED`/`SCORE_SOURCE_KEYWORD`), so
    *  undefined on a result cached before this field existed — treat that the
    *  same as `'keyword'`, never as `'combined'`. */
   scoreSource?: 'keyword' | 'combined';

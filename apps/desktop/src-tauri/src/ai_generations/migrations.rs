@@ -169,8 +169,8 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         // and a swallowed error would let the unconditional `PRAGMA
         // user_version = N` bump that follows commit anyway — durably
         // marking this migration "done" with the row never repaired and
-        // no future retry. Not fatal to startup either way: `lib.rs`'s
-        // setup hook treats a failed `AiGenerationStore::open()` as
+        // no future retry. Not fatal to startup either way: `shell/state.rs`
+        // treats a failed `AiGenerationStore::open()` as
         // non-fatal.
         name: "repair_pre_pdf_text_string_mojibake",
         up: |conn| {

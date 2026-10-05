@@ -167,7 +167,7 @@ fn rate_for_gives_gemini_3_pro_preview_its_own_row_not_the_default_fallback() {
     // No longer curated-list selectable — the model is SHUT DOWN and
     // `provider-meta.ts` now ships `gemini-3.6-flash` instead — but the row
     // is kept for historical spend records (see the doc comment in
-    // `spend/mod.rs`), so it must still resolve to its own real rate rather
+    // `spend/rates.rs`), so it must still resolve to its own real rate rather
     // than falling through to DEFAULT_RATE (3.00/15.00).
     assert_row("gemini-3-pro-preview", "gemini-3-pro-preview");
     let cost = estimate_cost("gemini-3-pro-preview", 1_000_000, 1_000_000);

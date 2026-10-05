@@ -181,7 +181,7 @@ fn regime_4_an_uncurated_target_language_never_raises_a_false_critical() {
         crate::documents::keywords::detected_language(pl),
         None,
         "premise: Polish is confidently read but not a curated tag — see \
-         documents::keywords::test::detected_language_is_none_for_a_language_this_crate_does_not_curate"
+         documents::keywords::tests::language::detected_language_is_none_for_a_language_this_crate_does_not_curate"
     );
     let report = report_in("pl", pl, pl, pl);
     silent(&report, CONTENT_LANGUAGE_MISMATCH);
@@ -295,7 +295,7 @@ fn a_confidently_reliable_job_ad_corroborates_even_when_the_source_cannot() {
 
 /// The genuine "cannot decide" case R5-F2's fixtures no longer exercise: BOTH
 /// witnesses fail. The source is too short to detect, AND the ad is the
-/// documented keyword-soup shape (`documents::keywords::test::detected_language_goes_quiet_below_the_confidence_floor`
+/// documented keyword-soup shape (`documents::keywords::tests::language::detected_language_goes_quiet_below_the_confidence_floor`
 /// pins its confidence at ~0.08) — neither can vouch for `"en"`, so the
 /// accusation has no reliable premise on either side and must stay quiet, the
 /// same "goes quiet on a real disagreement" posture

@@ -215,7 +215,7 @@ fn split_urls_labels_arbitrary_website_with_bare_domain() {
 #[test]
 fn url_label_matches_ts_url_to_friendly_label_fixture() {
     // Cross-language parity guard: this exact fixture is also asserted by the TS
-    // urlToFriendlyLabel() test in packages/prompts/src/generate.test.ts. Both read
+    // urlToFriendlyLabel() test in packages/prompts/src/generate/generate.test.ts. Both read
     // the same file, so the two implementations can never silently drift.
     #[derive(serde::Deserialize)]
     struct Case {

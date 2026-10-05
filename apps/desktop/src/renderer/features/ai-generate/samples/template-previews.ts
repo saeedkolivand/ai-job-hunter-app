@@ -1,6 +1,6 @@
 // Per-template preview images (a generic sample résumé rendered in each
 // template). The SVGs are produced offline by the ignored Rust test
-// `generate_templates_showcase_banner` (export/typst_engine/test.rs) and
+// `generate_templates_showcase_banner` (export/typst_engine/tests/showcase_resume_banner.rs) and
 // committed under ./assets/template-previews/<template-id>.svg. SVG (vector,
 // glyphs as paths) replaced the old PNGs: crisp at any zoom and far smaller.
 //

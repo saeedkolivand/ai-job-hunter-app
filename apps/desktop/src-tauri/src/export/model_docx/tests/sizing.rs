@@ -111,7 +111,7 @@ fn declares_a4_page_size_and_fallback_fonts() {
 /// `w:spacing` tag immediately preceding the name's own `w:t` run — DOCX has
 /// no pixel geometry to measure (see this module's doc comment), so this
 /// is the OOXML-part equivalent of the render-based checks in
-/// `typst_engine::test`.
+/// `typst_engine::tests`.
 #[test]
 fn resume_docx_header_name_paragraph_has_explicit_spacing_before_contact() {
     let xml = part(&build(TemplateId::SwissMinimal, false), "word/document.xml");

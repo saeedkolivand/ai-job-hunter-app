@@ -305,7 +305,7 @@ impl Completer {
     /// built.
     ///
     /// Resolves the managed `Arc<Limiter>` the same way every other charge
-    /// site does; the limiter is managed unconditionally in `lib.rs::setup`,
+    /// site does; the limiter is managed unconditionally in `shell/state.rs`,
     /// before any command can run.
     ///
     /// `pub(crate)` for [`stream_captured`](super::completion)'s caller,

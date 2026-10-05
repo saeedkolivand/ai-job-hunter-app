@@ -1,6 +1,6 @@
 //! Wire `type` strings — the Rust mirror of the shared `EXTENSION_MESSAGE_TYPES`
 //! in `packages/shared/src/ipc/extension-protocol-constants.ts`. A parity test
-//! (`super::test`) pins every constant here to the TS literal, and a uniqueness
+//! (`msg::tests`) pins every constant here to the TS literal, and a uniqueness
 //! test pins them distinct, so the two sides can never drift.
 //!
 //! Constants only — no logic, no imports. Lifted verbatim out of `mod.rs` when
@@ -160,7 +160,7 @@ pub const ASSIST_CANCEL: &str = "assist.cancel";
 /// extension_gate_reply`/`extension_capped_reply`; any other caller is
 /// refused. Mirrored in the shared TS `EXTENSION_MESSAGE_TYPES`
 /// (`packages/shared/src/ipc/extension-protocol-constants.ts`) and pinned by
-/// the Rust↔TS parity test (`super::test::message_type_constants_match_ts`)
+/// the Rust↔TS parity test (`tests::message_type_constants_match_ts`)
 /// now that the extension itself sends it.
 pub const AGENT_QUERY: &str = "agent.query";
 /// Desktop → extension/CLI: the `agent.query` outcome — `{ ok: true,

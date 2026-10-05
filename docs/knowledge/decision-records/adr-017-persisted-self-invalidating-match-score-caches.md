@@ -1,6 +1,6 @@
 # ADR-017: Persisted, self-invalidating match-score & posting-vector caches
 
-Last updated: 2026-07-16
+Last updated: 2026-10-05
 
 **Status:** Accepted
 
@@ -48,9 +48,9 @@ Add two new, self-invalidating SQLite tables to `DocumentStore` (`apps/desktop/s
 
 ### Match result caching in `match_resume.rs`
 
-- **Path:** `commands/match_resume.rs` — wraps compute in cache check.
+- **Path:** `commands/match_resume/score.rs` — wraps compute in cache check.
 - **Formula version constant:** `const MATCH_FORMULA_VERSION: i64 = 1;` — bump when the `0.6 * semantic + 0.4 * ats` weighting, keyword stemmer logic, or any other scoring input changes.
-- **Invariant (errors-never-cached):** Error early-returns (missing resume, missing job, fetch failure) MUST precede the first `get_match_score()` call. The cache is read+written only after those guards. Unit test: `errors_never_populate_match_scores_cache` in `documents/test.rs`.
+- **Invariant (errors-never-cached):** Error early-returns (missing resume, missing job, fetch failure) MUST precede the first `get_match_score()` call. The cache is read+written only after those guards. Unit test: `errors_never_populate_match_scores_cache` in `documents/tests/match_scores.rs`.
 - **Upsert:** On compute success, call `store.upsert_match_score(&cache_key, &s)` to persist the JSON result.
 
 ### SHA-256 hash function
@@ -63,7 +63,7 @@ Add two new, self-invalidating SQLite tables to `DocumentStore` (`apps/desktop/s
 
 - **Trigger:** `ai_set_embedding_config` detects via `embedding_space_changed(old, new)` helper — true if any field (provider/model/base_url) differs.
 - **Action:** If true, call `store.clear_posting_vectors()` + `store.clear_match_scores()` to orphan all rows (old space entries are now unreachable; new embeds will miss and recompute).
-- **Single source:** `embedding_space_changed()` lives in `documents/mod.rs` so the helper and its test are co-located.
+- **Single source:** `embedding_space_changed()` lives in `documents/vectors.rs` so the helper and its test are co-located.
 
 ## Trade-offs Evaluated
 
@@ -117,7 +117,7 @@ The default scoring path is **keyword-only** (`semanticScoring` defaults false �
 
 ## Testing
 
-- Unit tests in `documents/test.rs`:
+- Unit tests in `documents/tests/`:
   - `posting_vector_cache_hit_on_space_and_text_match` — verify cache predicate.
   - `posting_vector_cache_miss_on_space_change` — confirm eviction.
   - `match_score_cache_hit_on_exact_key_match` — composite PK behavior.
@@ -125,12 +125,12 @@ The default scoring path is **keyword-only** (`semanticScoring` defaults false �
   - `errors_never_populate_match_scores_cache` — error-path invariant.
   - `semantic_enabled_bit_consistency` — bit encoding matches cache key and skip logic.
   - `clear_all_wipes_caches` — Resettable coverage.
-- Integration tests in `commands/test.rs`:
+- Integration tests in `commands/match_resume/tests/`:
   - `match_resume_uses_cache_on_repeated_call` — end-to-end cache hit.
   - `match_resume_re_embeds_on_space_change` — eviction + fresh embed.
 
 ## References
 
-- Implemented in: `apps/desktop/src-tauri/src/documents/mod.rs` (tables, helpers, store methods), `apps/desktop/src-tauri/src/commands/match_resume.rs` (MATCH_FORMULA_VERSION, cache wrap).
+- Implemented in: `apps/desktop/src-tauri/src/documents/` (`caches.rs`, `sql.rs`, `migrations.rs`: tables, helpers, store methods), `apps/desktop/src-tauri/src/commands/match_resume/score.rs` (MATCH_FORMULA_VERSION, cache wrap).
 - Precursor work: ADR-009 (Resettable registry); ADR-003 (centralized net error layers); embedding storage schema in `documents/mod.rs`.
 - Follow-up phases: ADR for Phase 3 (pre-embed-on-scrape) when it ships.

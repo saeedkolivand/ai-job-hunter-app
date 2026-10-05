@@ -33,7 +33,7 @@ export const applications = {
     invoke('applications_save_from_posting', { req }),
   // The bridge (and any out-of-band creator) emits `applications:changed` with
   // `{ applicationId, title?, company?, status? }` — see
-  // `extension_bridge::APPLICATIONS_CHANGED_EVENT`.
+  // `crate::events::APPLICATIONS_CHANGED`.
   onChanged: (handler: (event: ApplicationChangedEvent) => void) =>
     asyncUnsub(() =>
       listen<ApplicationChangedEvent>(EVENT_CHANNELS.applications.changed, (e) =>

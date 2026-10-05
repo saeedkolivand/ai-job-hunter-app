@@ -12,7 +12,7 @@ use super::*;
 ///
 /// The gap that made it invisible:
 /// `every_untrusted_block_is_fenced_and_forgery_resistant`
-/// (`pipeline::resume::test`) does assert `</job_analysis>` appears exactly
+/// (`pipeline::resume::tests`) does assert `</job_analysis>` appears exactly
 /// once, but its hostile payload only ever forges `</job_posting>` — so
 /// every entry that payload never mentions is inert to that assertion, no
 /// matter how many real tags surround it in the transcript. Verbatim-moving

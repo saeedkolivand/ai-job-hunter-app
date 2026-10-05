@@ -26,7 +26,7 @@ use super::save::{save_verdict, SaveVerdict};
 /// **An empty `draft` is not by itself "nothing to save".** A
 /// cover-letter-only run (`includeResume: false`) reaches here with one by
 /// design, and it saves: `resume_text` goes in empty, which
-/// `ai_generations::pick` reads as "keep the stored value", and the wrapper
+/// `ai_generations::merge_application`'s `pick` closure reads as "keep the stored value", and the wrapper
 /// omits the `resume` key entirely, which the merge reads the same way. The
 /// posting's previously tailored résumé — and every Keep/Remove verdict
 /// recorded against it — survives the save untouched.
@@ -171,7 +171,7 @@ pub(super) fn persist_document(
         resume_text: ctx.draft.clone(),
         // ONLY the stage-generated letter, never the fallback: `save_application`'s
         // merge-upsert treats an empty `cover_letter_text` as "keep the
-        // existing value" (`ai_generations::pick`), so writing the legacy
+        // existing value" (`ai_generations::merge_application`'s `pick`), so writing the legacy
         // validate-only request text here would overwrite whatever letter the
         // posting's aggregate already had with a document this run never
         // generated.

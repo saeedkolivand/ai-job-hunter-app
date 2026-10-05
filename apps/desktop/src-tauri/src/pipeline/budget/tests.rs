@@ -204,7 +204,7 @@ fn resume_quality_allows_no_tool_calls_and_covers_every_section() {
 // field on the request struct a compromised renderer could escalate through)
 // used to be pinned here against the now-deleted `AgentRunRequest`. The
 // equivalent guard for the one remaining paying flow lives at
-// `commands::resume_pipeline::test::run_request_carries_only_identity_no_budget_and_no_routing`.
+// `commands::resume_pipeline::tests::wire::run_request_carries_only_identity_no_budget_and_no_routing`.
 
 /// The budgets themselves are compile-time constants, so there is no setter to
 /// call from a command handler either. `Copy` (not `Clone`-into-a-cell) is the

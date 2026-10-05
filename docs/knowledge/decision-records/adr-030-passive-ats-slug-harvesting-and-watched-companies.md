@@ -20,7 +20,7 @@ Create a new SQLite database via `db::open` (per ADR-022) with table `discovered
 
 ### (c) Harvest sites — parse-only, zero new network
 
-Integrate two parse-only passes: (1) after the engine returns in `commands/scrape.rs` and after `scrape_url` single-adds, harvest every stored posting URL before `job_complete`; (2) extension single-job import after URL resolve (via `extension_bridge/import_flow.rs`). Batch all discoveries into single-transaction upserts. No new network calls; parse existing URLs only.
+Integrate two parse-only passes: (1) after the engine returns in `commands/scrape/run.rs` and after `scrape_url` single-adds, harvest every stored posting URL before `job_complete`; (2) extension single-job import after URL resolve (via `extension_bridge/import_flow.rs`). Batch all discoveries into single-transaction upserts. No new network calls; parse existing URLs only.
 
 ### (d) Surfacing: slug typeahead in ScrapeForm
 
@@ -46,4 +46,4 @@ Add discovery contract to `packages/shared/src/ipc/contracts/discovery.ts` with 
 
 Slugs populate the autocomplete after ordinary scraping with zero user effort. The curated seed list stops being the ceiling of ATS coverage as discoveries grow organically. Watched-company autopilot runs track the user's current stars live, with no stale frozen lists. New store joins backup and privacy reset via standard registries. Harvesting adds a bounded parse pass per ingest with no network overhead. The extractor becomes the single URL-shape authority, shared with the extension import path and future Feature C URL resolution. Users never need to hand-type a slug again once they've scraped any posting from that ATS company. Watched fan-out is routed per board through the engine's seeded-companies override (replacing the original flat union design), so a board with no matching stars gets a clean needs-company skip.
 
-Owning symbols: `scraping/ats_ref.rs::extract_ats_ref`, `discovered/mod.rs::DiscoveredCompanyStore`, `commands/discovery.rs::harvest_ats_refs`, `autopilot_helpers/mod.rs::resolve_watched_companies`, `scraping/engine::scrape_boards_with_overrides`, `extension_bridge/import_flow.rs`, `packages/shared/src/ipc/contracts/discovery.ts`, `packages/ui` CompanyTypeahead.
+Owning symbols: `scraping/ats_ref.rs::extract_ats_ref`, `discovered/mod.rs::DiscoveredCompanyStore`, `discovered/harvest.rs::harvest_ats_refs`, `autopilot_helpers/mod.rs::resolve_watched_companies`, `scraping/engine::scrape_boards_with_overrides`, `extension_bridge/import_flow.rs`, `packages/shared/src/ipc/contracts/discovery.ts`, `packages/ui` CompanyTypeahead.

@@ -3,7 +3,7 @@
 //! `mod.rs` to keep that module under the R8 hard LOC cap
 //! (`tests/architecture.rs`); mirrors `status_update`'s pure/impure split —
 //! `resolve_applied_check` takes no `AppHandle` so it stays directly
-//! unit-testable (see `import_tests.rs`), while `handle_applied_check` does
+//! unit-testable (see `applied_check/tests.rs`), while `handle_applied_check` does
 //! the app-stateful store lookup. No consent gate (unlike `profile.get`) —
 //! this is the user's own metadata, device-local, loopback only.
 

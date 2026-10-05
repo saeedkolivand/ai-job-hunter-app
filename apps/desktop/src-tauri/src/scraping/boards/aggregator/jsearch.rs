@@ -81,7 +81,7 @@ pub(super) fn jsearch_num_pages(amount: Option<u32>) -> u32 {
 /// The RapidAPI key goes in a header only — never the URL. `retries` is hardwired
 /// to [`JSEARCH_RETRIES`] (0). Mirrors [`apify_fetch_options`]: the single source
 /// of truth consumed by both the production call in `JSearchProvider::search` and
-/// the invariant test in `test.rs`, so dropping the override here breaks that test.
+/// the invariant test in `tests/quota_neutral_runs.rs`, so dropping the override here breaks that test.
 pub(super) fn jsearch_fetch_options(api_key: &str) -> FetchOptions {
     FetchOptions {
         headers: Some(vec![

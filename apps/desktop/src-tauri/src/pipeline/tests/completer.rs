@@ -257,7 +257,7 @@ fn a_good_native_provider_resolves_and_ignores_base_url() {
 /// that method's own doc for why it exists rather than the pipeline reaching
 /// the `pub(super)` command function directly). `Completer` needs a live
 /// `AppHandle` this crate has no harness for, so — same shape as
-/// `commands::resume_pipeline::test`'s
+/// `commands::resume_pipeline::tests`'s
 /// `the_regenerate_section_bucket_refuses_a_caller_past_its_concurrency_cap` —
 /// the assertion is on the exact bucket/constants the method's source uses,
 /// against a real bare `Limiter`.
@@ -312,7 +312,7 @@ fn the_ai_research_bucket_refuses_a_caller_past_its_concurrency_cap() {
 /// drift that would reopen the unbounded-spend hole the shared bucket exists
 /// to close. `Completer` needs a live `AppHandle` to actually run, so this is
 /// provable only by reading the source, the same reason
-/// `commands::resume_pipeline::test`'s
+/// `commands::resume_pipeline::tests`'s
 /// `every_provider_calling_command_admits_before_it_spends` is grep-shaped.
 ///
 /// Mutation check: replace either site's constant with a literal

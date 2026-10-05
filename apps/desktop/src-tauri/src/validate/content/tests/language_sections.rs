@@ -91,7 +91,7 @@ fn a_drifted_experience_section_in_a_caseless_script_is_still_caught() {
 ///    confidently but WRONGLY reads Title-Case comma/middot tool lists as
 ///    Catalan, a language `documents::keywords::locale_tag_of` does not
 ///    curate (see
-///    `documents::keywords::test::detect_locale_tag_and_detected_language_agree_whenever_both_answer`)
+///    `documents::keywords::tests::language::detect_locale_tag_and_detected_language_agree_whenever_both_answer`)
 ///    — so the confidence-and-coverage gate excludes it a third time.
 ///
 /// Each gate's OWN mutation-checked guard lives elsewhere, on a fixture that
@@ -211,7 +211,7 @@ fn a_lowercase_canonical_tool_list_in_skills_never_trips_the_per_section_languag
 /// Mutation check: delete the confidence gate in
 /// `documents::keywords::detected_language` (fall straight through to
 /// `locale_tag_of`) and this goes red — see
-/// `documents::keywords::test::detected_language_goes_quiet_below_the_confidence_floor`,
+/// `documents::keywords::tests::language::detected_language_goes_quiet_below_the_confidence_floor`,
 /// which pins the same fixture shape's confidence directly.
 #[test]
 fn a_correct_certifications_block_never_trips_the_per_section_language_check() {

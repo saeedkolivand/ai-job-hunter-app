@@ -127,10 +127,10 @@ fn the_real_extension_bridge_status_row_refuses_through_the_real_gate() {
 /// answers `Ok(Dispatch::Direct)` and `call-read` would ship a user path into
 /// an MCP client's persisted transcript. No other test catches that flip: it
 /// changes no row COUNT (`policy_table_has_exactly_167_rows`, the 34
-/// Irreversible tally, `extension_bridge::test`'s 168-row walk are all blind
+/// Irreversible tally, `policy_matrix`'s 168-row walk are all blind
 /// to an `Effect` swap), `not_exposed_rows_carry_a_real_reason` only inspects
 /// rows that ARE already `NotExposed`, and the per-row walk in
-/// `extension_bridge::test` keys its assertions off `entry.effect` itself, so
+/// `policy_matrix` keys its assertions off `entry.effect` itself, so
 /// a reverted row just moves to a different self-consistent branch.
 #[test]
 fn the_real_system_agent_cli_info_row_refuses_through_the_real_gate() {

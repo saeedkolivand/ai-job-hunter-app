@@ -113,7 +113,7 @@ generic Reversible/Irreversible tier.
 - Caller class + gate: `extension_bridge::caller_gate::CallerClass`,
   `extension_bridge::auth::is_extension_origin`.
 - Dispatch + sentinels + cap: `extension_bridge::mod::EXTENSION_RESULT_MAX_BYTES`,
-  the `agent.query`/`agent.call` dispatch arms in `extension_bridge/mod.rs`.
+  the `agent.query`/`agent.call` dispatch arms in `extension_bridge/caller_gate.rs`.
 - Settings verbs: `extension_bridge::settings` (`SettingsKey`, `handle_settings_get`,
   `handle_settings_set`).
 - Wire constants: `extension_bridge::msg::{SETTINGS_GET,SETTINGS_RESULT,SETTINGS_SET}`,

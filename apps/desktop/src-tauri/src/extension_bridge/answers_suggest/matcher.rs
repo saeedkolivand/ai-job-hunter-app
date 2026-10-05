@@ -13,7 +13,7 @@ use super::salary_match::is_salary_question;
 pub(super) const MAX_SUGGESTIONS: usize = 20;
 
 /// Minimum token-Jaccard similarity for a candidate to be suggested at all.
-/// Tuned empirically against the regression pairs in `import_tests.rs`: 0.4 is
+/// Tuned empirically against the regression pairs in `answers_suggest/matcher/tests.rs`: 0.4 is
 /// the highest threshold that still matches short-vs-verbose paraphrases like
 /// "Notice period" vs "What is your notice period?" (score 0.4) and "Why do
 /// you want to work here?" vs "Why do you want this role?" (score 0.44),

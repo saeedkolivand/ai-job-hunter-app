@@ -58,7 +58,7 @@ export type PipelineStage = (typeof PIPELINE_STAGES)[number];
  * evidence map in pure Rust (no model, no cache — see the stage's module doc).
  *
  * Derived from the Rust `Pipeline::free_stage_names()` and pinned against it
- * (`pipeline::resume::test`).
+ * (`pipeline::resume::tests::pipeline_stages`).
  *
  * NORMATIVE: a model override on one of these is refused at write AND at import.
  * There is no model to choose — the stage never asks one anything — so the

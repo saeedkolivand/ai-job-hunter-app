@@ -1,6 +1,6 @@
 # ADR-012: Live preview renders the real exported document via SVG; templates stay single-source
 
-Last updated: 2026-07-16
+Last updated: 2026-10-05
 
 **Status:** Accepted (revised during implementation)
 
@@ -71,4 +71,4 @@ validation — but stop at vector SVG instead of PDF bytes.
 - `useDebouncedCommit()` – `apps/desktop/src/renderer/hooks/use-debounced-commit/use-debounced-commit.ts` (debounced local-edit commit)
 - `OutputPanelDone` – `apps/desktop/src/renderer/features/ai-generate/components/OutputPanelDone/index.tsx` (integration point)
 - `documents_render_preview_images` – `apps/desktop/src-tauri/src/export/commands/mod.rs`
-- `render_resume_svg_pages` / `render_letter_svg_pages` – `apps/desktop/src-tauri/src/export/typst_engine/render.rs`
+- `render_resume_svg_pages` / `render_letter_svg_pages` – `apps/desktop/src-tauri/src/export/typst_engine/engine.rs`

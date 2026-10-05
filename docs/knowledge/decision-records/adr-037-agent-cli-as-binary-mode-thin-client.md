@@ -68,7 +68,7 @@ It is not read-only, on evidence rather than principle. `ApplicationStore::open`
 `link_orphaned_generations` + `backfill_from_generations`, which open `ai_generations.db` read-write,
 run `ALTER TABLE … ADD COLUMN`, and **create `Application` rows**. Worse, `run_migrations` reads
 `user_version` outside any transaction, so two processes at the same version both apply migration N+1;
-the loser gets "duplicate column name", and if the loser is the app, `lib.rs` swallows it as non-fatal
+the loser gets "duplicate column name", and if the loser is the app, `shell/state.rs` swallows it as non-fatal
 and boots with **no `ApplicationStore`** — the user's entire application tracker silently reads empty.
 
 The data directory also holds ~15 separate SQLite files plus JSON stores, so a second reader would

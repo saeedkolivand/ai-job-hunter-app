@@ -1,7 +1,7 @@
 //! Phase 2 of the Autopilot rank: the optional semantic re-rank (ADR-020
 //! addendum).
 //!
-//! Split out of `commands/autopilot.rs` (the `commands/geocoding.rs` +
+//! Split out of `commands/autopilot/mod.rs` (the `commands/geocoding.rs` +
 //! `commands/geocoding/` precedent) purely to keep the parent under R8's LOC
 //! cap — a pure move, nothing about the behaviour changed with it. The gate,
 //! the cost bounds (top-N, wall clock, daily ceiling, degrade breaker), the

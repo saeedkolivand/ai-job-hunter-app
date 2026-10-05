@@ -97,7 +97,7 @@ const RESUME_ID = 'resume-1';
 const JOB_ID = 'job-1';
 
 /** `combined === ats` whenever `scoreSource: 'keyword'` — the kernel's own
- *  invariant (`match_resume.rs`: `combined` only diverges from `ats` when a
+ *  invariant (`commands/match_resume/score.rs`: `combined` only diverges from `ats` when a
  *  semantic comparison actually ran, which sets `scoreSource: 'combined'`).
  *  A fixture that violates this (e.g. `ats: 60, combined: 55` under
  *  `'keyword'`) is one `match:text` can never actually produce. */
@@ -366,7 +366,7 @@ describe('JobAdView — Score tab: additional context lines', () => {
   });
 
   it('renders the kernel explanation with the echoed guidance sentence trimmed (never duplicated)', async () => {
-    // The real Rust GUIDANCE constant (match_resume.rs) — deliberately the
+    // The real Rust GUIDANCE constant (`match_resume/score.rs`) — deliberately the
     // exact string `jobs.scoreGuidance` already renders at the top of this
     // panel, so a failed trim would make it appear twice.
     const guidance =

@@ -25,7 +25,7 @@ pub async fn system_health(app: AppHandle) -> Value {
     // The app's actually-configured provider/model — the SAME lookup
     // `ai_active_config` uses, so the two commands can never disagree. Degrades
     // to nulls rather than panicking if the store failed to open at startup (it
-    // is managed non-fatally in lib.rs).
+    // is managed non-fatally in `shell/state.rs`).
     let active = app
         .try_state::<crate::ai_config::AiConfigStore>()
         .map(|store| store.active_config());
@@ -249,7 +249,7 @@ pub async fn system_set_performance_mode(
 
     // One-shot prune so tightening a tier reclaims immediately. DocumentStore
     // is managed only if its open() succeeded at boot (treated as non-fatal in
-    // lib.rs), so use the fallible accessor to avoid panicking on a degraded
+    // `shell/state.rs`), so use the fallible accessor to avoid panicking on a degraded
     // startup.
     if let Some(store) = app.try_state::<DocumentStore>() {
         store.prune_caches(cache_ttl_secs, cache_max_rows);
@@ -262,7 +262,7 @@ pub async fn system_set_performance_mode(
     // Same one-shot prune for the namespaced KvCache (company briefs / OCR
     // results), which previously grew unbounded — only the DocumentStore result
     // caches were pruned. Managed only if its open() succeeded at boot (non-fatal
-    // in lib.rs), so use the fallible accessor.
+    // in `shell/state.rs`), so use the fallible accessor.
     if let Some(cache) = app.try_state::<crate::pipeline::cache::KvCache>() {
         cache.prune(cache_ttl_secs, cache_max_rows);
     } else {

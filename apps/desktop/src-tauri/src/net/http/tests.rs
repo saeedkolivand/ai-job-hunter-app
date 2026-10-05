@@ -296,7 +296,7 @@ async fn accumulate_capped_rejects_when_running_total_exceeds_cap_across_multipl
     );
 }
 
-/// Mirrors `scraping::http::test::test_fetch_json_invalid` — a body that
+/// Mirrors `scraping::http::tests::fetch_basic::test_fetch_json_invalid` — a body that
 /// doesn't deserialize into the target type returns the static no-leak
 /// `AppError::Parse` message, never the serde detail or the body itself.
 #[tokio::test]

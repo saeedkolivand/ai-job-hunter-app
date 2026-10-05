@@ -13,7 +13,7 @@ mod detail;
 /// sentinel is exactly the defect this repo's own `agent_cli` module doc
 /// says has already been fixed twice on this surface. `pub(super)` — it is
 /// the `Err` side of [`gate`]'s return type, and `gate` is itself
-/// `pub(super)` for `extension_bridge::test`; Rust's private-interfaces lint
+/// `pub(super)` for `agent_call::tests::policy_matrix`; Rust's private-interfaces lint
 /// requires every type in a `pub(super)` fn's signature to be at least as
 /// visible, regardless of whether a caller actually names a variant.
 pub(in crate::extension_bridge) enum Refusal {

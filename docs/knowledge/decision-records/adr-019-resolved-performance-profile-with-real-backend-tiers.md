@@ -1,6 +1,6 @@
 # ADR-019: Resolved performance profile with real backend tiers
 
-Last updated: 2026-07-16
+Last updated: 2026-10-05
 
 **Status:** Accepted
 
@@ -30,7 +30,7 @@ Resolve all performance modes to a single unified `PerformanceProfile` (the trut
 
 - `performance.rs` (new L0 module) holds a process-global `OnceLock<ArcSwap<PerformanceConfig>>` initialized to balanced defaults.
 - Two functions: `current()` returns a lock-free snapshot of the live config; `set(cfg)` replaces it (called by the IPC handler).
-- `ollama_keep_alive()` public function returns the wire value ("0" or "{secs}s") for the live config, called by the Ollama adapter (`commands/ai_provider/ollama.rs`).
+- `ollama_keep_alive()` public function returns the wire value ("0" or "{secs}s") for the live config, called by the Ollama adapter (`commands/ai_provider/ollama/`).
 - Keep-alive and cache bounds are read-side opt-in: any subsystem needing them calls `performance::current()` directly (no AppHandle required).
 
 **Subsystems:**
@@ -121,7 +121,7 @@ To find the exact numbers and update them, see the tier-mapping tables in `apps/
 - **Resolver function:** `apps/desktop/src/renderer/store/preferences-schema/preferences-schema.ts` lines 274–285 (`resolveBackendConfig`).
 - **IPC command handler:** `apps/desktop/src-tauri/src/commands/system/mod.rs` (` system_set_performance_mode`, lines 177–199+).
 - **Scraper concurrency:** `apps/desktop/src-tauri/src/scraping/engine/mod.rs` (`set_concurrency`).
-- **Ollama keep-alive:** `apps/desktop/src-tauri/src/commands/ai_provider/ollama.rs` (embed builder calls `performance::ollama_keep_alive()`).
+- **Ollama keep-alive:** `apps/desktop/src-tauri/src/commands/ai_provider/ollama/embed.rs` (embed builder calls `performance::ollama_keep_alive()`).
 - **Cache eviction:** `apps/desktop/src-tauri/src/documents/mod.rs` (cache sites query `performance::current()`).
 - **UI provider:** `apps/desktop/src/renderer/providers/PerformanceModeProvider/PerformanceModeProvider.tsx`.
 - **Settings UI:** `apps/desktop/src/renderer/features/settings/components/preferences/PerformancePreferences/index.tsx`.

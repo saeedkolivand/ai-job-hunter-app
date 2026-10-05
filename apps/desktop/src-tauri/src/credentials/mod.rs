@@ -295,7 +295,7 @@ pub fn read_credential(slot: &str) -> AppResult<Option<String>> {
 /// `Cred`s), every test that needs the keyring goes through this single `Once`,
 /// installing keyring-core's in-memory `mock::Store` exactly once for the whole
 /// binary. Tests then isolate themselves by using unique slot names rather than
-/// by swapping stores. Lives here (not in `test.rs`) so sibling modules like the
+/// by swapping stores. Lives here (not in `tests.rs`) so sibling modules like the
 /// aggregator can share the same install path.
 #[cfg(test)]
 pub(crate) fn install_mock_keyring() {

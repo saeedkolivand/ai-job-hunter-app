@@ -11,7 +11,7 @@ Describes the "Import from GitHub" action in the resume builder's Projects step.
 - **SSRF guard:** Username validated against the pattern in `profile_import/github.rs` (GitHub's own handle grammar); if input is a URL, host must be github.com (case-insensitive). API URL constructed server-side (never forwarded from client). Status codes map onto distinct `AppError` variants (not-found vs rate-limited vs network); the mapping is in that module. All routes preserved (no URL/status leakage in errors).
 - **Contract:** `packages/shared/src/ipc/contracts/github.ts` (`GitHubContract.importRepos(input): Promise<GitHubRepo[]>`; `GitHubRepo` type with optional fields using `#[serde(skip_serializing_if = "Option::is_none")]`).
 - **Command:** `apps/desktop/src-tauri/src/commands/github.rs` — invokes `fetch_repos`, returns `{ repos }` or `{ error }`.
-- **Registration:** `commands/mod.rs` + `lib.rs` handler list.
+- **Registration:** `commands/mod.rs` + `shell/handler.rs` handler list.
 
 See `docs/API.md` → `github` namespace for the IPC contract and calling conventions.
 
@@ -36,7 +36,7 @@ See `apps/desktop/src/renderer/features/resume-builder/components/GitHubImportMo
 
 ## Test coverage
 
-- **Rust** — Tests in `apps/desktop/src-tauri/src/profile_import/github.rs` (SSRF validation, status-code mapping, serialization) and `apps/desktop/src-tauri/src/scraping/http/test.rs` (`FetchOptions.timeout` field). Run: `cargo test github` + `cargo test --lib scraping::http`.
+- **Rust** — Tests in `apps/desktop/src-tauri/src/profile_import/github/tests.rs` (SSRF validation, status-code mapping, serialization) and `apps/desktop/src-tauri/src/scraping/http/tests/` (`FetchOptions.timeout` field). Run: `cargo test github` + `cargo test --lib scraping::http`.
 - **Prompts** — Tests in `packages/prompts/src/generate/github-projects/`. Scenarios: fence, parser, link re-attachment, name-based matching, cap boundaries. Run: `pnpm -C packages/prompts test`.
 - **Renderer** — Tests in `apps/desktop/src/renderer/features/resume-builder/` (GitHub import modal). Scenarios: Enter key fetch, Escape during generation, Add-button disabled when none selected, select-all after deselect-all, generation error recovery, prefill seededRef regression path. Run: `pnpm -C apps/desktop test`.
 

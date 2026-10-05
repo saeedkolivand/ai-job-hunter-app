@@ -1,6 +1,6 @@
 # Email-watch domain (IMAP confirmation-email polling)
 
-Last updated: 2026-09-07 (task #23 PR B: email-watch poller, parser, matcher, and scheduler)
+Last updated: 2026-10-05 (task #23 PR B: email-watch poller, parser, matcher, and scheduler)
 
 Owned by `extension-author` (frontend settings UI) and `rust-backend-author` (IMAP polling loop); security co-reviewed by `tauri-security-reviewer`.
 
@@ -65,7 +65,7 @@ The `seen` table (`uid PK, matched_app_id, ts`) deduplicates per-mailbox:
 
 The boundary rules that stop a capture from swallowing the rest of a subject line are part of those patterns, per language, and live with them in `email_watch/parser.rs`; restating the mechanics here would fork the fingerprint exactly as copying the patterns would.
 
-**Domain hints** (Boost-only, never gate): a verified-sender list plus a folklore list of ATS domains, both in `email_watch/matcher.rs`. A hint nudges the match score by `DOMAIN_HINT_BOOST` but never gates a candidate; a mismatch cannot be rescued by a domain hint.
+**Domain hints** (Boost-only, never gate): a verified-sender list plus a folklore list of ATS domains, both in `email_watch/parser.rs`. A hint nudges the match score by `DOMAIN_HINT_BOOST` (`email_watch/matcher.rs`) but never gates a candidate; a mismatch cannot be rescued by a domain hint.
 
 **Metadata extraction** (candidate words):
 

@@ -196,7 +196,7 @@ pub const OLLAMA_EMBED: Duration = Duration::from_secs(30);
 /// here first (bounded, and OUTSIDE any single attempt's timeout) means the
 /// request that follows gets a genuinely full [`OLLAMA_EMBED`] window rather
 /// than whatever was left after an unbounded queue wait — see
-/// `commands::ai_provider::ollama::wait_for_quiet_chat`.
+/// `commands::ai_provider::ollama::local_chat::wait_for_quiet`.
 ///
 /// **Costed into the rerank compile-time budget**, same as [`OLLAMA_EMBED`]
 /// itself: `commands/autopilot/rerank.rs` asserts
@@ -374,7 +374,7 @@ pub const HYBRID_SEARCH_RERANK_CLOUD: Duration = Duration::from_secs(45);
 pub const HYBRID_SEARCH_RERANK_LOCAL: Duration = Duration::from_secs(180);
 
 /// Applied as an OUTER `tokio::time::timeout` wrapping the whole rerank call
-/// from `commands::hybrid_search::maybe_rerank` — independent of whatever
+/// from `commands::hybrid_search::rerank_arm::maybe_rerank` — independent of whatever
 /// internal per-attempt deadline the resolved provider adapter applies
 /// underneath it (same pattern as `commands::autopilot::rerank::
 /// RERANK_STEP_TIMEOUT` wrapping `semantic_rerank`), rather than a new

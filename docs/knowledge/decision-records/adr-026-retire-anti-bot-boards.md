@@ -1,6 +1,6 @@
 # ADR-026: Retire self-scraping anti-bot boards; cover via aggregator; keep single-job import
 
-Last updated: 2026-07-16
+Last updated: 2026-10-05
 
 **Status:** Accepted
 
@@ -26,14 +26,14 @@ Remove the five boards from the `SCRAPERS` registry and delete their Rust scrape
 
 These items were considered for removal but kept for good reasons:
 
-| Item                                                                                                    | Kept reason                                                                                                                                                                                                                                                   |
-| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scraping/scrape_url/mod.rs`: `resolve()`, `canonical_job_url()` (Indeed URL resolver), `try_workday()` | Used by the browser extension single-job import flow. These are pure URL transforms with no authenticated scrape loop — they resolve a board URL to a canonical job URL and hand off to the app. Removing them would break extension import for those boards. |
-| `scraping/board_login/` and `credentials/` machinery                                                    | Infrastructure, not board-specific. LinkedIn still uses `board_login`. Keeping the machinery avoids a larger surgery.                                                                                                                                         |
-| `commands/boards.rs` `boards_list()`                                                                    | Trimmed to `["linkedin"]` — indeed/xing/glassdoor login no longer feeds anything active. But the command and infrastructure remain.                                                                                                                           |
-| `CredentialSetSchema` / `CredentialBoardSchema` in shared schemas                                       | Dormant; keeping them avoids a schema migration that would serve no current purpose.                                                                                                                                                                          |
-| Privacy "clear all" (`privacy_reset_app`) disconnect list                                               | Still includes the retired board IDs to wipe any lingering session cookies from before the migration. Deliberate: a user who had sessions pre-migration should get a clean slate on reset.                                                                    |
-| Translation keys `jobs.boards.indeed`, `jobs.boards.xing`, `jobs.boards.glassdoor`                      | Kept because they are still referenced from test files that exercise credential/IPC machinery (not scrapeability). `jobs.faq.indeedWrongCountry` was removed (the FAQ key was Only used in the scraping UI).                                                  |
+| Item                                                                                                                                      | Kept reason                                                                                                                                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scraping/scrape_url/mod.rs`: `resolve()`, `canonical_job_url()` (Indeed URL resolver), `scraping/scrape_url/workday.rs`: `try_workday()` | Used by the browser extension single-job import flow. These are pure URL transforms with no authenticated scrape loop — they resolve a board URL to a canonical job URL and hand off to the app. Removing them would break extension import for those boards. |
+| `scraping/board_login/` and `credentials/` machinery                                                                                      | Infrastructure, not board-specific. LinkedIn still uses `board_login`. Keeping the machinery avoids a larger surgery.                                                                                                                                         |
+| `commands/boards.rs` `boards_list()`                                                                                                      | Trimmed to `["linkedin"]` — indeed/xing/glassdoor login no longer feeds anything active. But the command and infrastructure remain.                                                                                                                           |
+| `CredentialSetSchema` / `CredentialBoardSchema` in shared schemas                                                                         | Dormant; keeping them avoids a schema migration that would serve no current purpose.                                                                                                                                                                          |
+| Privacy "clear all" (`privacy_reset_app`) disconnect list                                                                                 | Still includes the retired board IDs to wipe any lingering session cookies from before the migration. Deliberate: a user who had sessions pre-migration should get a clean slate on reset.                                                                    |
+| Translation keys `jobs.boards.indeed`, `jobs.boards.xing`, `jobs.boards.glassdoor`                                                        | Kept because they are still referenced from test files that exercise credential/IPC machinery (not scrapeability). `jobs.faq.indeedWrongCountry` was removed (the FAQ key was Only used in the scraping UI).                                                  |
 
 ### What is removed
 
@@ -41,7 +41,7 @@ These items were considered for removal but kept for good reasons:
 - Registry entries: 5 `pub mod`, 5 `pub use`, 5 `SCRAPERS` entries in `scraping/boards/mod.rs`
 - Shared schema: `BOARD_IDS` entries for `indeed`, `stepstone`, `xing`, `workday` (glassdoor was never in `BOARD_IDS`)
 - `StepStone` per-host rate-limiter branch in `scraping/rate_limiter/mod.rs`
-- `locale` field: fully removed — `ScrapeBoardsRequestSchema` (shared), `BoardSearchInput` (Rust), the generated `ipc_contracts/scrape.rs`, `commands/scrape.rs` and `autopilot_helpers` passthroughs, and ~18 Rust test fixtures. Was an Indeed-region-only field; the aggregator localises via `country_code` (which is kept).
+- `locale` field: fully removed — `ScrapeBoardsRequestSchema` (shared), `BoardSearchInput` (Rust), the generated `ipc_contracts/scrape.rs`, `commands/scrape/` and `autopilot_helpers` passthroughs, and ~18 Rust test fixtures. Was an Indeed-region-only field; the aggregator localises via `country_code` (which is kept).
 - Renderer: Indeed region dropdown, `locale` form field, `AUTH_BENEFITS` entries for indeed/xing, `BOARD_STYLE` map entries for indeed/xing/glassdoor, `boards_list()` trimmed to linkedin-only
 - Translation keys: `jobs.boards.workday`, `jobs.boards.stepstone`, entire `jobs.regions` block, `jobs.region`, `jobs.selectRegion`, `jobs.faq.indeedWrongCountry`
 

@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 
-Last updated: 2026-08-16
+Last updated: 2026-10-05
 
 ## Context
 
@@ -32,7 +32,7 @@ The cover-letter export boundary (in `export/commands/mod.rs::validate_and_norma
 
 1. **All letter exports (PDF, DOCX, preview) inherit completion:** The completion is called in `validate_and_normalize`, which runs before every render. Live previews in the AI-Generate UI, PDF exports, and DOCX exports all see the same completed letter.
 
-2. **Prompt—export coupling is visible, but only partly enforced.** The prompt says "do NOT write X," and the export writes X. The guard that exists is `letter_system_prompt_still_promises_the_export_adds_the_salutation` (`export/typst_engine/test.rs`): it fires when that instruction is **removed or reworded**, and its failure message names `complete_letter_text` as the thing that must be retired with it. It does **not** fire when the model's output shape drifts while the sentence stays — the adversarial body-only fixtures exercise the completion path, but they never invoke `letter_system`, so they cannot detect that drift either. The coupling is intentional — the alternative (silent duplication) is worse.
+2. **Prompt—export coupling is visible, but only partly enforced.** The prompt says "do NOT write X," and the export writes X. The guard that exists is `letter_system_prompt_still_promises_the_export_adds_the_salutation` (`export/typst_engine/tests/letter_completion_guardrail.rs`): it fires when that instruction is **removed or reworded**, and its failure message names `complete_letter_text` as the thing that must be retired with it. It does **not** fire when the model's output shape drifts while the sentence stays — the adversarial body-only fixtures exercise the completion path, but they never invoke `letter_system`, so they cannot detect that drift either. The coupling is intentional — the alternative (silent duplication) is worse.
    - **Update 2026-08-16 — the placeholder half of this gap is now mechanically closed.** A live defect showed that a model could reproduce an unfilled template slot, bypassing `complete_letter_text`'s idempotency guard (which only checks that both salutation and sign-off are present, not that everything between them is real content). Two guards now close this shape of drift: (1) `locale::is_template_placeholder` — a shared predicate consulted by `parse_cover_letter` to filter out placeholders before promoting post-signoff lines to rendered content; (2) `validate::content::letter`'s `letter.template_placeholder` Critical — a generation-time content issue using the same predicate.
 
      **Critical contract:** `validate::content` is **not** called from `export/`. The export path calls `validate::validate_and_fix`, a structural PDF/DOCX round-trip checker. Content validators run at generation time and feed the quality-report panel, so `letter.template_placeholder` **does not block an export** — the parser filter (guard #1) is what stops bad bytes reaching rendered output. **What remains open:** this closes the _placeholder_ shape specifically; other unanticipated furniture shapes are still only caught by human review.
@@ -48,9 +48,9 @@ The cover-letter export boundary (in `export/commands/mod.rs::validate_and_norma
 ## Related
 
 - `apps/desktop/src-tauri/src/export/letter_shape.rs` — `complete_letter_text` function and tests.
-- `apps/desktop/src-tauri/src/pipeline/resume/prompts.rs::letter_system` — the prompt that delegates these parts to export.
+- `apps/desktop/src-tauri/src/pipeline/resume/prompts/cover_letter.rs::letter_system` — the prompt that delegates these parts to export.
 - `apps/desktop/src-tauri/src/export/typst_engine/letter.rs::parse_cover_letter` — the parser that splits the completed letter into fields.
 - `apps/desktop/src-tauri/src/locale/letter.rs::conventions` — market-specific salutations, sign-offs, and other conventions.
 - `apps/desktop/src-tauri/src/export/commands/mod.rs::validate_and_normalize` — where completion is called.
-- `apps/desktop/src-tauri/src/locale/mod.rs` — `is_template_placeholder` re-exported at the root level (Consequence #2 update).
+- `apps/desktop/src-tauri/src/locale/mod.rs` — `is_template_placeholder` (defined in `locale/letter.rs`) re-exported at the root level (Consequence #2 update).
 - `apps/desktop/src-tauri/src/validate/content/letter.rs` — `letter.template_placeholder`, the mechanical guard added for Consequence #2.

@@ -166,7 +166,7 @@ impl Resettable for EmailWatchStore {
 type ResetAction = Box<dyn Fn(&AppHandle) + Send + Sync>;
 
 /// The factory-reset labels every persistent user-data store is registered under
-/// via `manage_resettable` in `lib.rs::setup`. SINGLE source of truth: `setup`
+/// via `manage_resettable` in `shell/state.rs`. SINGLE source of truth: `shell/setup.rs`
 /// debug-asserts the live registry matches this (catching a forgotten
 /// `manage_resettable`) and the completeness test pins it. Bridge/notification
 /// stores register through their own `manage` helpers and are NOT in this list.
@@ -345,7 +345,7 @@ pub fn privacy_reset_app(app: AppHandle) -> Value {
     crate::crash_reporting::disable_current();
 
     // Wipe every persistent store registered via `manage_resettable` in
-    // `main.rs::setup` — résumé/doc/generation stores, secrets, caches, and the
+    // `shell/state.rs` — résumé/doc/generation stores, secrets, caches, and the
     // job log. Registry-driven, so adding a store needs registration only; this
     // command never changes. (Stores that failed to open are skipped.)
     let cleared = app.state::<ResetRegistry>().reset_all(&app);

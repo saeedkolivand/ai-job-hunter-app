@@ -36,7 +36,7 @@ pub(super) fn thinking_rec(
 
 /// Directly inserts a row `days_ago` days in the past — `record()` always
 /// stamps `now_ms()`, so a window test that needs a call OUTSIDE today has to
-/// write the row itself, same idiom as `documents::test`'s TTL-eviction tests.
+/// write the row itself, same idiom as `documents::tests`'s TTL-eviction tests.
 pub(super) fn insert_backdated(
     store: &SpendStore,
     days_ago: u64,

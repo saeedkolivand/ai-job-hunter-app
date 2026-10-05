@@ -71,7 +71,7 @@ need — not by resurrecting this speculative, backendless subtree.
 - Reachable page: `apps/desktop/src/renderer/features/support/components/SupportPage/index.tsx`
   (FAQ via `support-data.ts` `getSupportSections`).
 - Orphaned subtree: the other 22 components under `apps/desktop/src/renderer/features/support/components/`.
-- Backend: `export_diagnostics` + `get_system_info` registration in `apps/desktop/src-tauri/src/lib.rs`; `support` client namespace in `apps/desktop/src/tauri-client/namespaces/support/`.
+- Backend: `export_diagnostics` + `get_system_info` registration in `apps/desktop/src-tauri/src/shell/handler.rs`; `support` client namespace in `apps/desktop/src/tauri-client/namespaces/support/`.
 - Audit findings: `renderer-feat-3-001`, `p2-b1-ipc-chain-001`, `p2-b1-ipc-chain-002`,
   §4 of the 2026-08-16 full-history audit. That report was a 1.5 MB one-off snapshot scoped to
   `v0.123.0`. It is not in the tree and, since the 2026-08-21 history rewrite,

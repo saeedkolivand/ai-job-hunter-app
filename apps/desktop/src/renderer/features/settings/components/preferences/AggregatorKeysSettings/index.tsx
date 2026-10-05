@@ -302,7 +302,7 @@ export function AggregatorKeysSettings() {
         />
 
         {/* Jooble — last-resort fallback fired only once Adzuna + JSearch both
-            come up empty/erroring (see aggregator/mod.rs: primary_chain). */}
+            come up empty/erroring (see aggregator/fallback.rs: primary_chain). */}
         <div className="space-y-1.5">
           <AggregatorKeyField
             slot={PROVIDER_SLOTS.joobleKey}

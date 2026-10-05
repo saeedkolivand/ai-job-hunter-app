@@ -283,7 +283,7 @@ fn found_job_carries_trust_from_real_build_found_job() {
 /// Regression for issue #1105 (trust half): LinkedIn's free/guest board
 /// leaves every posting's `description` empty/`None` (a dead "will be filled
 /// in background" promise). `build_found_job` is the real call site
-/// (`commands/autopilot.rs`) threading the posting's description into
+/// (`commands/autopilot/keyword_rank.rs`) threading the posting's description into
 /// `assess_trust` — this proves that wiring, not a hand-retyped mirror.
 #[test]
 fn found_job_flags_description_unavailable_for_stubbed_posting() {

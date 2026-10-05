@@ -27,7 +27,7 @@ Loopback and LAN addresses are deliberately **not** rejected — `validate_provi
 
 **Where provenance is enforced:**
 
-- Write path: `ai_set_provider_settings`/`ai_set_active_provider` (`commands/ai.rs`) call the store's writers, which validate server-side (`ProviderId::parse` → cross-family model check → `validate_provider_base_url`) — a hard error surfaced to the user in Settings.
+- Write path: `ai_set_provider_settings`/`ai_set_active_provider` (`commands/ai/active_config.rs`) call the store's writers, which validate server-side (`ProviderId::parse` → cross-family model check → `validate_provider_base_url`) — a hard error surfaced to the user in Settings.
 - Seed path: the one-time renderer→backend migration (`ai_active_config`'s `seedActiveConfig`) runs the same check leniently (`scrub_settings` drops a bad value instead of failing first run — a malicious pre-migration value must never persist as a live egress endpoint).
 - Read/egress path: `Completer::from_active` **defensively re-validates** the stored base_url before use — this only ever fires on a tampered store (fail closed, never silently fall back to a default endpoint).
 - Inspection commands (`ai_test_provider_key`, `ai_list_provider_models`, `ai_model_capabilities`) keep an explicit `provider`/`baseUrl` **request** parameter — they are Settings "test before save" calls against an in-progress, not-yet-persisted endpoint, not the generation/SSRF surface this ADR closes.
@@ -57,11 +57,11 @@ Loopback and LAN addresses are deliberately **not** rejected — `validate_provi
 
 ## References
 
-- Store: `apps/desktop/src-tauri/src/ai_config/mod.rs` (`AiConfigStore`, `ActiveAiConfig`, `ProviderConfig`, `validate_settings`, `scrub_settings`, `seed_if_empty`).
+- Store: `apps/desktop/src-tauri/src/ai_config/mod.rs` (`AiConfigStore`, `seed_if_empty`), `ai_config/types.rs` (`ActiveAiConfig`, `ProviderConfig`), `ai_config/validation.rs` (`validate_settings`, `scrub_settings`).
 - Provenance guard: `apps/desktop/src-tauri/src/net/ssrf.rs` (`validate_provider_base_url`, `CLOUD_METADATA_IPV4`) — distinct from the stricter `is_safe_ip`/`is_safe_public_host` used for scrape/redirect egress.
 - Resolver: `apps/desktop/src-tauri/src/pipeline/mod.rs` (`Completer::from_active`, `Completer::resolve`).
-- Commands: `apps/desktop/src-tauri/src/commands/ai.rs` (`ai_active_config`, `ai_set_active_provider`, `ai_set_provider_settings`, `ai_research_company`), `apps/desktop/src-tauri/src/commands/autopilot.rs` (assistant-notes resolution).
-- Extension bridge: `apps/desktop/src-tauri/src/extension_bridge/answer_assist.rs` (`resolve_answer_assist`), `apps/desktop/src-tauri/src/extension_bridge/mod.rs` (`ai_assist_enabled: AtomicBool`).
+- Commands: `apps/desktop/src-tauri/src/commands/ai/active_config.rs` (`ai_active_config`, `ai_set_active_provider`, `ai_set_provider_settings`), `apps/desktop/src-tauri/src/commands/ai/research.rs` (`ai_research_company`), `apps/desktop/src-tauri/src/commands/autopilot/phases.rs` (assistant-notes resolution).
+- Extension bridge: `apps/desktop/src-tauri/src/extension_bridge/answer_assist/resolve.rs` (`resolve_answer_assist`), `apps/desktop/src-tauri/src/extension_bridge/state.rs` (`ai_assist_enabled: AtomicBool`).
 - Shared contracts: `packages/shared/src/schemas/index.ts` (`AiGenerateRequestSchema`, `AgentRunRequestSchema`), `packages/shared/src/ipc/contracts/ai.ts` (`ActiveAiConfig`, `AiConfigSnapshot`, `AiProviderRouting`).
 - Renderer: `apps/desktop/src/renderer/services/use-ai-provider/use-ai-provider.ts` (`useActiveConfig`, `useSetActiveProvider`, `useSetProviderSettings`), `apps/desktop/src/renderer/providers/AiConfigBoot` (boot prefetch + one-time seed).
 - CSP local-AI exception: `docs/knowledge/security-rules.md` ("local AI egress is limited to Ollama (`127.0.0.1:11434`)").

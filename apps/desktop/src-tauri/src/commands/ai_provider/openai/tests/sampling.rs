@@ -53,7 +53,7 @@ fn native_openai_wire_body_per_intent() {
     );
 
     // `Default` (no declared intent) resolves the same as `Deterministic` —
-    // see `Intent`'s own doc comment (`commands/ai_provider/mod.rs`).
+    // see `Intent`'s own doc comment (`commands/ai_provider/sampling.rs`).
     let default = body_for(ProviderId::OpenAi, "gpt-4o", None);
     assert_eq!(default["temperature"], json!(DETERMINISTIC_TEMPERATURE));
     assert!(default.get("top_p").is_none());

@@ -2,7 +2,7 @@ use super::{support::*, *};
 
 // ── `link_orphaned_generations` — the FK backfill for existing installs ──────
 //
-// The FK fix (`commands::resume_pipeline::mod::persist_document`) stops NEW
+// The FK fix (`commands::resume_pipeline::persist::persist_document`) stops NEW
 // rows being orphaned; it does nothing for rows the staged pipeline already
 // wrote before that fix shipped. Those rows are the user-visible defect:
 // `applications_delete(keepDocuments=false)` calls `remove_for_application`,

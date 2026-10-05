@@ -12,7 +12,7 @@ export const notifications = {
   remove: (id: string) => invoke('notifications_remove', { id }),
   clearAll: () => invoke('notifications_clear_all'),
   clicked: () => invoke('notifications_clicked'),
-  // Emitted by every mutator command — see `commands::notifications::CHANGED_EVENT`.
+  // Emitted by every mutator command — see `crate::events::NOTIFICATIONS_CHANGED`.
   onChanged: (handler: () => void) =>
     asyncUnsub(() => listen(EVENT_CHANNELS.notifications.changed, () => handler())),
   // OS-banner / tray click "open the inbox" signal — see `notifications_clicked`

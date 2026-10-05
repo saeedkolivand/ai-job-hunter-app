@@ -71,7 +71,7 @@ pub(super) fn is_valid_apify_actor_id(id: &str) -> bool {
 /// the `Authorization` header only, keeping it out of request-URL logging.
 ///
 /// This is the single source of truth consumed by both the production call in
-/// [`ApifyLinkedInProvider::search`] and the invariant test in `test.rs`. A future
+/// [`ApifyLinkedInProvider::search`] and the invariant test in `tests/apify_fixes.rs`. A future
 /// refactor that removes either cap would break the test that calls this function.
 pub(super) fn build_apify_endpoint(actor_id: &str, max_items: u32) -> String {
     format!(
@@ -175,7 +175,7 @@ fn is_valid_apify_linkedin_url(url: &str) -> bool {
 /// and billed per result; a retry would start another charged run.
 ///
 /// This is the single source of truth consumed by [`ApifyLinkedInProvider::search`]
-/// and by the invariant test in `test.rs`.  Removing the `retries` override here
+/// and by the invariant test in `tests/apify_fixes.rs`.  Removing the `retries` override here
 /// breaks the test.
 pub(super) fn apify_fetch_options(body: String, token: &str) -> FetchOptions {
     FetchOptions {

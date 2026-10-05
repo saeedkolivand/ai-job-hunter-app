@@ -60,7 +60,7 @@ pub(in crate::extension_bridge::agent_read) const AGENT_CHEAP_REFILL_SECS: f64 =
 /// its clustering, which leaves the compute itself UN-truncated per call; this bucket stops
 /// repeated invocation from stacking that cost, not a pre-clustering cap.
 const AGENT_BEST_MATCHES_BURST: f64 = 1.0;
-// `pub(super)` (issue #1155) — `extension_bridge::test`'s
+// `pub(super)` (issue #1155) — `extension_bridge::state::throttle::tests`'s
 // `bridge_state_agent_retry_after_ms_reads_the_same_bucket_try_acquire_agent_drew_from` anchors to
 // this value directly, so a `BridgeState`-level test can't be satisfied by any hardcoded constant.
 pub(in crate::extension_bridge) const AGENT_BEST_MATCHES_REFILL_SECS: f64 = 30.0;

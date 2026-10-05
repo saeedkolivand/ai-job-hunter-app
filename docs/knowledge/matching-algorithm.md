@@ -14,7 +14,7 @@ The AI Job Hunter uses **two complementary scoring strategies**:
 
 The `coverage_score()` function (in `documents::keywords`) is the **single source of truth** for keyword-only scoring (the default Autopilot path). It powers:
 
-- **Autopilot ranking** (`commands::autopilot::build_found_job` → `coverage_score()`): filters + sorts candidates by keyword match %.
+- **Autopilot ranking** (`commands::autopilot::keyword_rank::build_found_job` → `coverage_score()`): filters + sorts candidates by keyword match %.
 - **ATS component** of the Jobs page combined score.
 - **Gap analysis** in resume feedback (which skills are missing).
 
@@ -32,7 +32,7 @@ For the exact algorithm steps, parameters, and implementation, see `apps/desktop
 
 Two phases. **Phase 1 always runs and is embedding-free**; phase 2 runs only when the user has enabled semantic scoring app-wide (default OFF), in which case a scheduled run makes zero embed calls and does not even resolve the scoring state.
 
-**Phase 1 — keyword prefilter** (`commands/autopilot.rs` → `build_found_job()`):
+**Phase 1 — keyword prefilter** (`commands/autopilot/keyword_rank.rs` → `build_found_job()`):
 
 1. Fetch job postings.
 2. For each job, call `coverage_score()` — a pure, uncached in-memory call (no DB I/O).
@@ -45,11 +45,11 @@ Two phases. **Phase 1 always runs and is embedding-free**; phase 2 runs only whe
 6. Degrade per job, never per run: an embed/provider failure leaves THAT job on its keyword score and the loop continues. The daily ceiling, cancellation, a run of consecutive degrades, and a wall clock each stop the loop, leaving every unvisited job keyword-scored. A run never fails because of scoring.
 7. Sort as **two blocks** — re-ranked head by combined score, keyword tail by coverage — because one axis over two scales would let a never-re-ranked keyword score outrank a re-ranked one.
 
-**Autopilot's displayed score** is therefore per-job: a Low/Medium/High MatchBand whose variant (and tier cut points, and metric label) **flips with that job's `scoreSource`** — `coverage` for a keyword score, `combined` for a re-ranked one; '~'-prefixed and muted when provisional from an aggregator snippet **or from a board whose search results never include a description at all** (title-only scoring — see the boards named on `no_jd_text` in `commands/autopilot.rs::build_found_job`, not just LinkedIn's free tier). When one list holds both, each row also shows its metric so the two-block order does not read as a sorting bug.
+**Autopilot's displayed score** is therefore per-job: a Low/Medium/High MatchBand whose variant (and tier cut points, and metric label) **flips with that job's `scoreSource`** — `coverage` for a keyword score, `combined` for a re-ranked one; '~'-prefixed and muted when provisional from an aggregator snippet **or from a board whose search results never include a description at all** (title-only scoring — see the boards named on `no_jd_text` in `commands/autopilot/keyword_rank.rs::build_found_job`, not just LinkedIn's free tier). When one list holds both, each row also shows its metric so the two-block order does not read as a sorting bug.
 
 ## Jobs Page Combined Score
 
-The Jobs page shows a **combined score** when analyzing a resume against a job. This hybrid approach weights semantic embedding similarity and keyword-based ATS scoring. See `apps/desktop/src-tauri/src/commands/match_resume.rs` → `score_one()` for the exact formula and weights.
+The Jobs page shows a **combined score** when analyzing a resume against a job. This hybrid approach weights semantic embedding similarity and keyword-based ATS scoring. See `apps/desktop/src-tauri/src/commands/match_resume/score.rs` → `score_one()` for the exact formula and weights.
 
 This hybrid approach is slower (requires embedding lookup) but more semantically aware than keyword coverage alone.
 
@@ -65,7 +65,7 @@ Both scores are cached in SQLite:
 Before scoring, the pipeline detects the target language (the language the output résumé/letter must use). **Two independent detectors decide this question:**
 
 - The **renderer** uses **franc** (`packages/shared/src/language-detection.ts`) to pick the target language from the job ad.
-- The **Rust validation layer** uses **whatlang** (`apps/desktop/src-tauri/src/documents/keywords.rs::detected_language`) to verify the generated output matches the target.
+- The **Rust validation layer** uses **whatlang** (`apps/desktop/src-tauri/src/documents/keywords/language.rs::detected_language`) to verify the generated output matches the target.
 
 Fail-quiet is **not** uniform across the two reads, and the difference matters:
 
@@ -74,11 +74,11 @@ Fail-quiet is **not** uniform across the two reads, and the difference matters:
 
 Coverage score and keyword-only scoring use language detection via `coverage_score()`; the renderer's language choice and Rust's validation are not perfectly in sync.
 
-Language-specific stemming for keyword matching uses `languages_align` (`documents/keywords.rs`), a separate function from `detected_language`; the two ask different questions and must never drift. See `detected_language`'s doc comment and the language-validation module docs for details.
+Language-specific stemming for keyword matching uses `languages_align` (`documents/keywords/language.rs`), a separate function from `detected_language`; the two ask different questions and must never drift. See `detected_language`'s doc comment and the language-validation module docs for details.
 
 ## Testing
 
-Keyword-coverage tests live in `documents/keywords.rs::tests` (unit tests for stemming, matching, language detection), `commands/autopilot/tests.rs` (ranking uses the shared kernel; the phase-2 gate, cost bounds and degrade rules), and `commands/match_resume/test.rs` (the combined formula's weights, the degrade boundary, and the per-round-trip embed charge — all driven through the real `score_one` against a real `DocumentStore`). See ARCHITECTURE_STATUS.md for the full coverage.
+Keyword-coverage tests live in `documents/keywords/tests/` (unit tests for stemming, matching, language detection), `commands/autopilot/tests.rs` (ranking uses the shared kernel; the phase-2 gate, cost bounds and degrade rules), and `commands/match_resume/tests/` (the combined formula's weights, the degrade boundary, and the per-round-trip embed charge — all driven through the real `score_one` against a real `DocumentStore`). See ARCHITECTURE_STATUS.md for the full coverage.
 
 ## Intentional simplification: flat keyword coverage
 
@@ -86,7 +86,7 @@ Keyword-coverage tests live in `documents/keywords.rs::tests` (unit tests for st
 
 Rationale: the match score is a **guidance estimate** surfaced to the user, not a real ATS verdict. The UI frames it accordingly — the score helps the user decide whether to apply; it does not simulate the employer's ATS system. Implementing knockout gating would require reliable JD parsing for requirement tiers, which is outside the current scope.
 
-If knockout gating is added in future, the entry point is `documents/keywords.rs::keyword_coverage` and the hybrid formula in `commands/match_resume.rs::score_one`.
+If knockout gating is added in future, the entry point is `documents/keywords.rs::keyword_coverage` and the hybrid formula in `commands/match_resume/score.rs::score_one`.
 
 ## UI Rendering
 

@@ -141,7 +141,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     });
     // NOTE: the `PendingMenu` buffer (menu-intent deep links — see
     // `dispatch_menu`) and its sibling `PendingFocus` (autopilot-focus deep
-    // links) are BOTH managed earlier, in `lib.rs` setup — before the
+    // links) are BOTH managed earlier, in `shell/setup.rs` — before the
     // cold-start deep-link block, which runs well before this `tray::build`.
     // See the comment there.
     Ok(())
@@ -417,7 +417,7 @@ fn on_new_jobs_click(app: &AppHandle) {
 /// for `pause_all` (Active → Paused) and `resume_all` (Paused → Active),
 /// pulled out of the `AppHandle`-driven click handlers so it's testable
 /// against a real `AutopilotStore` directly — this crate has no `tauri::test`
-/// mock-app harness (see the note in `commands/autopilot/tests.rs`). A no-op
+/// mock-app harness (see the note in `commands/autopilot/tests/plumbing.rs`). A no-op
 /// when nothing is currently in `from` (including when the store is empty or
 /// every autopilot is `Archived`).
 fn set_all_status(store: &AutopilotStore, from: AutopilotStatus, to: AutopilotStatus) {

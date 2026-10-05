@@ -33,7 +33,7 @@ Missing or unreadable evidence counts as **not packaged**, because the dangerous
 
 Each behaviour that differs is owned by its own symbol rather than by this record. The set is closed:
 
-- **Updating.** Each packaged build never checks and never polls for updates — the container's store owns updating. The updater contract's marker, present on the wire to let older clients read "no update", and the refusals behind `download`/`install` live in `apps/desktop/src-tauri/src/updater/mod.rs` and `packages/shared/src/ipc/contracts/updater.ts`.
+- **Updating.** Each packaged build never checks and never polls for updates — the container's store owns updating. The updater contract's marker, present on the wire to let older clients read "no update", and the refusals behind `download`/`install` live in `apps/desktop/src-tauri/src/updater/replies.rs` and `packages/shared/src/ipc/contracts/updater.ts`.
 - **What it publishes about itself.** MSIX publishes the execution-alias shim (and nothing if the alias is disabled). Snap's path publishing is confined to the container's own mount, and is not published outside the sandbox. Details: `platform::msix::published_exe_path` (Windows), and the Snap case in `platform::config::agent_cli_exe_path`. When no usable path exists (MSIX with no alias), the native-messaging registration and the agent-CLI pointer are skipped rather than written with an unusable path — and not deleted, since they may belong to a non-packaged install on the same machine.
 - **Native-messaging host registration.** A packaged Snap build skips registration entirely because the sandbox has no usable solution for the browser to reach the host process — Snap has no escape hatch for this at all. MSIX, with write virtualization disabled, can register normally. The guard and its warning live in `apps/desktop/src-tauri/src/extension_bridge/register.rs`.
 - **Launch at login.** MSIX delegates to the manifest's `StartupTask` (awaited WinRT calls, can be refused by the user or policy). Snap delegates to the manifest's `autostart` interface (`autostart` scope).
@@ -81,7 +81,7 @@ Identity values for MSIX are assigned by Partner Center and supplied as GitHub r
 - `apps/desktop/src-tauri/src/platform/mod.rs` — `is_packaged_build()` aggregator and `PackageFlavour` enum
 - `apps/desktop/src-tauri/src/platform/msix.rs` — Windows MSIX detection, published path, startup task
 - `apps/desktop/src-tauri/src/platform/snap.rs` — Linux Snap detection
-- `apps/desktop/src-tauri/src/updater/mod.rs` · `packages/shared/src/ipc/contracts/updater.ts` — packaged-aware updater wire shape
+- `apps/desktop/src-tauri/src/updater/replies.rs` · `packages/shared/src/ipc/contracts/updater.ts` — packaged-aware updater wire shape
 - `apps/desktop/src-tauri/src/extension_bridge/register.rs` — native-messaging guard (skips on Snap)
 
 **Manifests and tooling:**

@@ -72,7 +72,7 @@ pub fn ai_spend_summary(app: AppHandle, days: Option<u32>) -> Value {
 }
 
 /// Scrub-then-validate `base_url` before it can reach persistence — the exact
-/// pair `AiConfigStore::validate_settings` (`ai_config/mod.rs`) applies for
+/// pair `AiConfigStore::validate_settings` (`ai_config/validation.rs`) applies for
 /// `ai_set_provider_settings`, extracted here as a pure, AppHandle-free
 /// function so `ai_set_embedding_config` below stops being the one setter
 /// that persists a renderer-supplied embedding endpoint (carrying the

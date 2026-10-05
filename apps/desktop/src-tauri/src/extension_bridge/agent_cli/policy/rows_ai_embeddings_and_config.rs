@@ -188,7 +188,7 @@ pub(super) const AI_EMBEDDINGS_AND_CONFIG: &[PolicyEntry] = &[
     // HIGH fix (security review round 4), reclassified from `Irreversible`
     // AGAIN: the round-3 revision above bound this row's proof to
     // `ai_active_config`'s `activeProvider`, but `ProviderSettingsPatch.
-    // provider` (`ai_config/mod.rs`) is its OWN caller-chosen field,
+    // provider` (`ai_config/types.rs`) is its OWN caller-chosen field,
     // independent of which provider is active — `set_provider_settings`
     // rewrites `base_url` on ANY named provider, while the confirmed
     // `activeProvider` field never changes. So: read `ai_active_config`,

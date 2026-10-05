@@ -313,7 +313,7 @@ function looksLikeHeaderBoundary(line: string): boolean {
  * otherwise split into a lone, invalid surrogate. Strips `\p{Cc}` (control
  * characters) AND `\p{Cf}` (Format characters, e.g. the bidi override
  * U+202E) — a bidi override can visually REVERSE the surrounding rendered
- * name, mirrors Rust's `is_format_char` in `contact_profile/mod.rs`.
+ * name, mirrors Rust's `is_format_char` in `contact_profile/header.rs`.
  */
 function sanitizeHeaderName(name: string): string {
   return [...name.replace(/[\p{Cc}\p{Cf}]/gu, '')].slice(0, 200).join('');

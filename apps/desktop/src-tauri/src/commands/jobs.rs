@@ -134,8 +134,8 @@ pub fn job_progress(app: &AppHandle, id: &str, p: f64) {
 ///   (`BoardSummaryChips`) displays the same strings and matches `skipped`
 ///   against a controlled vocabulary, so a fence baked into the stored
 ///   result would show up as markup on screen.
-/// - The two streaming completions (`ai_provider::stream::finish`,
-///   `ai_provider::cli_agent::emit_done`) carry EVERY AI generation this app
+/// - The two streaming completions (`ai_provider::stream::finish::finish`,
+///   `ai_provider::cli_agent::stream::emit_done`) carry EVERY AI generation this app
 ///   makes, research briefs included, which ADR-038 §5 already leaves
 ///   unfenced — ACCEPTED, not overlooked.
 ///

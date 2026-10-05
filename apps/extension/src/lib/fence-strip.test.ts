@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { stripFenceWrapper } from './fence-strip';
 
-// Mirrors the Rust `prompt_fence::test` suite for `strip_fence_wrapper`
+// Mirrors the Rust `prompt_fence::tests` suite for `strip_fence_wrapper`
 // (the extension strips exactly what the desktop's `fenced` wrote — the
 // two transliterations must match case-for-case).
 

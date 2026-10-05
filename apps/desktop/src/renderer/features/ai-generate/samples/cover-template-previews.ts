@@ -1,6 +1,6 @@
 // Per-template preview images (a sample cover letter rendered in each
 // template). The SVGs are produced offline by the ignored Rust test
-// `generate_cover_template_previews` (export/typst_engine/test.rs) and
+// `generate_cover_template_previews` (export/typst_engine/tests/showcase_letter_previews.rs) and
 // committed under ./assets/cover-template-previews/<template-id>.svg.
 //
 // Vite emits each SVG as a separate hashed URL so this static glob yields URLs

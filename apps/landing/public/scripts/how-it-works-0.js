@@ -91,8 +91,8 @@
         commands: {
           t: '#[tauri::command] handlers',
           layer: 'rust',
-          d: '~120 commands registered in <code>main.rs</code> via <code>generate_handler![]</code>. Each receives an <code>AppHandle</code> + a deserialized request struct, reads shared state via <code>app.state::&lt;T&gt;()</code>, does the work, and returns <code>serde_json::Value</code> (or an <code>AppError</code> that serializes to a string).',
-          f: ['apps/desktop/src-tauri/src/main.rs', 'apps/desktop/src-tauri/src/commands/'],
+          d: '~120 commands registered in <code>shell/handler.rs</code> via <code>generate_handler![]</code>. Each receives an <code>AppHandle</code> + a deserialized request struct, reads shared state via <code>app.state::&lt;T&gt;()</code>, does the work, and returns <code>serde_json::Value</code> (or an <code>AppError</code> that serializes to a string).',
+          f: ['apps/desktop/src-tauri/src/shell/handler.rs', 'apps/desktop/src-tauri/src/commands/'],
         },
         provider: {
           t: 'AI provider layer',
@@ -324,7 +324,10 @@
           layer: 'rust',
           title: 'OS launches the Tauri binary',
           body: 'The native Rust process starts first. It initializes the OS keyring, registers Tauri plugins (log, dialog, opener, updater, clipboard), and enters the <code>setup()</code> closure that runs once.',
-          files: ['apps/desktop/src-tauri/src/main.rs'],
+          files: [
+            'apps/desktop/src-tauri/src/lib.rs',
+            'apps/desktop/src-tauri/src/shell/setup.rs',
+          ],
         },
         {
           layer: 'rust',
@@ -336,7 +339,7 @@
           layer: 'rust',
           title: 'setup(): build & manage shared state',
           body: 'All stores and registries are constructed and handed to Tauri via <code>app.manage()</code> so every command can reach them: <code>DocumentStore</code>, <code>AiGenerationStore</code>, <code>JobPreferencesStore</code>, <code>CredentialStore</code>, <code>JobTracker</code>, <code>PostingsCache</code>, <code>InteractionStore</code>, and the <code>ScraperEngine</code>.',
-          files: ['apps/desktop/src-tauri/src/main.rs'],
+          files: ['apps/desktop/src-tauri/src/shell/state.rs'],
         },
         {
           layer: 'rust',
@@ -419,7 +422,7 @@
               body: "The Rust handler parses the provider (<code>ProviderId::parse</code> — a hard error if it's missing/unknown, <b>never</b> a fallback), validates the model, registers a job in the <code>JobTracker</code>, spawns an async task, and <b>returns <code>{ jobId }</code> immediately</b>.",
               code: '<span class="k">let</span> id = ProviderId::parse(req.provider)?;  <span class="c">// no silent fallback</span>\\nid.validate_model(&req.model)?;\\n<span class="k">let</span> provider = resolve(id, req.base_url);\\n<span class="c">// spawn → return { jobId } now</span>',
               files: [
-                'apps/desktop/src-tauri/src/commands/ai.rs',
+                'apps/desktop/src-tauri/src/commands/ai/mod.rs',
                 'apps/desktop/src-tauri/src/commands/ai_provider/mod.rs',
               ],
             },
@@ -478,7 +481,7 @@
               layer: 'rust',
               title: 'Command spawns a scrape job',
               body: 'The handler registers a <code>JobTracker</code> entry, builds a <code>BoardSearchInput</code>, grabs the shared <code>ScraperEngine</code>, spawns the work and returns <code>{ jobId }</code> right away.',
-              files: ['apps/desktop/src-tauri/src/commands/scrape.rs'],
+              files: ['apps/desktop/src-tauri/src/commands/scrape/run.rs'],
             },
             {
               layer: 'rust',
@@ -505,7 +508,7 @@
               body: 'The <code>on_item</code> callback pushes the posting into the <code>PostingsCache</code> and emits it on <span class="chan">jobs:event</span> with <code>type:\'job.stream\'</code>. On finish it emits <code>job.completed</code> or <code>job.failed</code>.',
               code: 'app.emit(<span class="s">"jobs:event"</span>, json!({\\n  <span class="s">"type"</span>:<span class="s">"job.stream"</span>, <span class="s">"jobId"</span>:id, <span class="s">"data"</span>: posting\\n}));',
               files: [
-                'apps/desktop/src-tauri/src/commands/scrape.rs',
+                'apps/desktop/src-tauri/src/commands/scrape/run.rs',
                 'apps/desktop/src-tauri/src/postings/mod.rs',
               ],
             },
@@ -549,7 +552,7 @@
               body: 'The handler scrapes the configured boards, embeds &amp; cosine‑ranks postings against the résumé, keeps the top matches, registers a <code>JobTracker</code> job and emits <span class="chan">autopilot.step</span> per stage (scrape → rank → notify).',
               code: 'app.emit(<span class="s">"autopilot.step"</span>, json!({\\n  <span class="s">"autopilotId"</span>:id, <span class="s">"step"</span>:step, <span class="s">"detail"</span>:detail\\n}));',
               files: [
-                'apps/desktop/src-tauri/src/commands/autopilot.rs',
+                'apps/desktop/src-tauri/src/commands/autopilot/run.rs',
                 'apps/desktop/src-tauri/src/autopilot/mod.rs',
               ],
             },

@@ -12,7 +12,7 @@ use crate::error::AppResult;
 /// an import can never enter the Jobs/discovery feed. Split out of
 /// [`handle_import`] (which needs an `AppHandle` for event/notification
 /// plumbing) so the import → Application contract is unit-testable without a
-/// Tauri app — see `import_tests.rs`.
+/// Tauri app — see `import_flow_resolve/tests/persist.rs`.
 pub(super) fn persist_import_application(
     store: &ApplicationStore,
     normalized_url: &str,

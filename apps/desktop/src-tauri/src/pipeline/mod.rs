@@ -31,7 +31,7 @@ pub use completer::Completer;
 pub use stage::{Pipeline, Stage, StageHooks, StageInfo, StageOutcome};
 
 // Reachable at `pipeline::X` only for OTHER modules' test code
-// (`pipeline::resume::test`, `commands::ai_provider::tests::effort_tiers`, and
+// (`pipeline::resume::tests`, `commands::ai_provider::tests::effort_tiers`, and
 // this module's own `tests`) — every non-test caller already sits inside
 // `completer`/`completion` and uses the local name directly, so a non-test
 // build has no reader of this path at all.

@@ -12,7 +12,7 @@ use super::support::assert_object_keys;
 /// module private to `commands::autopilot` (`mod best_matches;`, no
 /// `pub`), so it cannot be named from this file at all (verified: naming
 /// it here is `error[E0603]: module 'best_matches' is private`), and
-/// widening that declaration lives in `commands/autopilot.rs`, out of
+/// widening that declaration lives in `commands/autopilot/mod.rs`, out of
 /// scope for this change. The compile-time backstop for a `BestMatchRow`
 /// rename instead lives NEXT TO the struct itself:
 /// `commands::autopilot::best_matches::tests::best_match_row_wire_shape_is_pinned`

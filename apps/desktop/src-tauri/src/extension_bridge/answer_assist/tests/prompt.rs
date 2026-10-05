@@ -100,7 +100,7 @@ fn build_user_message_caps_an_oversized_draft_instruction() {
     )));
 }
 
-/// This is the integration proof `prompt_fence::test`'s own unit tests
+/// This is the integration proof `prompt_fence::tests`'s own unit tests
 /// cannot give: that THIS call site actually wires its untrusted page/user
 /// text through [`crate::prompt_fence::fenced`], not just that the primitive
 /// neutralizes correctly in isolation. Coverage gap found and closed during
@@ -126,7 +126,7 @@ fn build_user_message_caps_an_oversized_draft_instruction() {
 /// rest benign, and asserts neither forgery survives intact in the composed
 /// message. The `job_posting` case is the one self-tag exception: it forges
 /// its OWN wrapper (a same-tag escape attempt, same shape
-/// `prompt_fence::test` covers for the primitive directly), so exactly ONE
+/// `prompt_fence::tests` covers for the primitive directly), so exactly ONE
 /// real `<job_posting>`/`</job_posting>` pair — the fence `build_user_message`
 /// itself emits — may survive, not zero.
 ///

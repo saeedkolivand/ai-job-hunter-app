@@ -137,7 +137,7 @@ impl<'a> Stage<QualityCtx<'a>> for CoverLetter {
 /// SECOND billable, no-other-ceiling provider web search per run, and a run
 /// whose toggle is on must not open a path around that ceiling.
 ///
-/// `pub(crate)`, not private: `pipeline::resume::test` pins this exact
+/// `pub(crate)`, not private: `pipeline::resume::tests` pins this exact
 /// signature at compile time (`research_company_brief_returns_a_plain_string`)
 /// instead of scraping this file's source text for a `?` — see that test's
 /// doc for why the scrape it replaced was a weaker guarantee than the type

@@ -54,7 +54,7 @@ pub(super) const REFINED_DE_TEXT: &str = "Max Müller\nmax@example.de | https://
 
 /// Body-only fixture — regression guardrail for the shipped
 /// `complete_letter_text` fix. Mirrors `LETTER_FIXTURE_BODY_ONLY_US` in
-/// `typst_engine/test.rs` (this file's fixtures are one-line `\n`-escaped;
+/// `typst_engine/tests/letter_fixtures.rs` (this file's fixtures are one-line `\n`-escaped;
 /// duplicated rather than shared because the two test modules have no
 /// production-code seam to reach a common fixture without touching
 /// non-test code — this file's German fixture already drifts from the PDF
@@ -66,7 +66,7 @@ pub(super) const REFINED_DE_TEXT: &str = "Max Müller\nmax@example.de | https://
 pub(super) const LETTER_FIXTURE_BODY_ONLY_US: &str = "I am writing to express my strong interest in the Software Engineer position, where I would bring five years of experience building distributed systems in Rust and Go to a team solving problems at real scale.\n\nDuring my time at Beta Inc, I led the migration of our payments service to a **microservices** architecture, reducing end-to-end latency by 40 percent and cutting infrastructure costs by 30 percent.\n\nI would welcome the opportunity to discuss how my background aligns with your team's needs and how I could contribute from day one.";
 
 /// German body-only fixture — mirrors `LETTER_FIXTURE_BODY_ONLY_DE` in
-/// `typst_engine/test.rs`: a long opening paragraph, a paragraph with digits
+/// `typst_engine/tests/letter_fixtures.rs`: a long opening paragraph, a paragraph with digits
 /// and a mid-sentence period ("von 0 % auf 90 %."), and a `**bold**` keyword.
 pub(super) const LETTER_FIXTURE_BODY_ONLY_DE: &str = "Mit großem Interesse habe ich Ihre Stellenausschreibung für die Position als Software Engineer gelesen und bin überzeugt, dass meine mehrjährige Erfahrung in der Entwicklung verteilter Systeme genau zu den Anforderungen passt, die Sie beschrieben haben.\n\nIn meiner bisherigen Tätigkeit bei der Beta GmbH konnte ich die Testabdeckung von 0 % auf 90 % steigern. Durch die Einführung von **Jest** und einer durchgängigen CI-Pipeline wurde die Codequalität spürbar besser.\n\nÜber eine Einladung zum Vorstellungsgespräch würde ich mich sehr freuen und stehe für Rückfragen jederzeit zur Verfügung.";
 

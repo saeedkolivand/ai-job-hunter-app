@@ -165,7 +165,7 @@ export function GenerationScoreStrip({ resumeId, jobDesc, className }: Generatio
           </div>
         </div>
       )}
-      {/* Backend-authored English prose (`match_resume.rs`'s `recommendations`
+      {/* Backend-authored English prose (`match_resume/score.rs`'s `recommendations`
           fn) — deliberately not run through `t()`, same precedent as
           `JobAdView`'s `explanationText`: there is nothing to translate a
           runtime-generated English sentence INTO. Gated on `hasCoverage` —

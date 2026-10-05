@@ -76,10 +76,10 @@ Invert the ownership model at export time:
 ## References
 
 - `apps/desktop/src-tauri/src/commands/contact_profile.rs` — `contact_profile_header_line()` IPC command
-- `apps/desktop/src-tauri/src/contact_profile/mod.rs` — `header_markdown()` and `apply_to_header()` implementation
+- `apps/desktop/src-tauri/src/contact_profile/header.rs` — `header_markdown()` and `apply_to_header()` implementation
 - `apps/desktop/src/renderer/lib/generate/generation/generation.ts` — `seedHeaderFromContactProfile()` (the shared, IPC-guarded caller), invoked from both `generateResume()` and `synthesizeResume()`; `seedHeaderFromProfile()` and `pickReplacementIndex()` implement the seeding/selection logic itself
 - `apps/desktop/src-tauri/src/export/pdf/mod.rs` — `extract_section(text, start_marker, end_marker)` signature
-- `apps/desktop/src-tauri/src/validate/mod.rs` — `pdf_render_issues()`: the reconstructed-header self-consistency check (`header_url_mismatch`), the `header_url_missing` completeness warning (`profile_is_header_source`-gated), and the `header_url_job_board` warning on `is_job_board()`/`is_personal_xing()`
+- `apps/desktop/src-tauri/src/validate/header_links.rs` — `pdf_render_issues()`: the reconstructed-header self-consistency check (`header_url_mismatch`), the `header_url_missing` completeness warning (`profile_is_header_source`-gated), and the `header_url_job_board` warning on `is_job_board()`/`is_personal_xing()`
 - `packages/prompts/src/generate/text/header-contact-line.ts` — `isHeaderContactLine()` fixture-based parity with Rust
 - `packages/prompts/src/fixtures/header-contact-line.json` + `section-names.json` — shared fixtures asserted from both TS and Rust tests
 - `docs/knowledge/resume-domain.md` — updated with new header ownership model

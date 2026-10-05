@@ -7,7 +7,7 @@
 use super::*;
 
 pub(super) const AUTOPILOT_AND_NOTIFICATIONS: &[PolicyEntry] = &[
-    // commands/autopilot.rs
+    // commands/autopilot/mod.rs
     PolicyEntry {
         path: "commands::autopilot::autopilot_list",
         effect: Effect::Read,

@@ -796,7 +796,7 @@ describe('seedHeaderFromProfile — header-boundary edge cases (security review)
   // LOW (security re-review): sanitizeHeaderName strips `\p{Cf}` (Unicode
   // Format characters) too, not just `\p{Cc}` — a bidi override (U+202E)
   // left in place could visually REVERSE the surrounding rendered name.
-  // Mirrors Rust's `is_format_char` in `contact_profile/mod.rs`.
+  // Mirrors Rust's `is_format_char` in `contact_profile/header.rs`.
   it('strips a bidi override character from fullName', () => {
     // \u202E RIGHT-TO-LEFT OVERRIDE — a JS unicode escape, not a literal bidi
     // character in source (a literal one here would visually scramble this

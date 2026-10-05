@@ -41,7 +41,7 @@ fn notify_title_names_the_actual_intent_not_always_confirmation() {
 // a comment on each side — an `AppError` serializes as plain text over
 // IPC, so the renderer discriminates the friendly-copy case by an EXACT
 // string match. Editing either alone would pass every test while
-// silently breaking that match. Mirrors `extension_bridge::test::
+// silently breaking that match. Mirrors `extension_bridge::msg::tests::
 // message_type_constants_match_ts`'s TS-source-as-text parity approach.
 
 /// Path from this crate's manifest dir (`apps/desktop/src-tauri`) to the

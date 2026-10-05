@@ -16,7 +16,7 @@ can perform in the UI, **including** irreversible ones (`privacy:reset_app`, `si
 
 Three facts, each independently reproduced, shaped the design:
 
-- Every `#[tauri::command]` site is exactly 1:1 with `generate_handler!` (`lib.rs`), diffed both
+- Every `#[tauri::command]` site is exactly 1:1 with `generate_handler!` (`shell/handler.rs`), diffed both
   directions — the current count is pinned by `policy::tests::policy_table_row_count_is_pinned`, never
   restated here since it moves with every new command.
 - **`IPC_CHANNELS` is not that registry.** `NOTIFICATIONS_CHANNELS` is literally `{} as const` and
@@ -113,10 +113,10 @@ agent layer may reshape the envelope — for these two enumerated reasons and no
   times their own size in decimal digits and separators, enough for an ordinary export to overrun the
   MCP result cap with no argument available to narrow it. So the agent layer base64-encodes those
   bytes and marks the encoding explicitly on the reply, and a caller decodes on the marker instead of
-  inferring it from the bytes (`base64_byte_fields` in `agent_call/reshape.rs`; its audited `(command, field)`
+  inferring it from the bytes (`base64_byte_fields` in `agent_call/reshape/base64.rs`; its audited `(command, field)`
   pairs carry the measurement that sized the choice).
 
-The page size is an audited constant beside the generic tier's reshaping (`agent_call/reshape.rs`), carrying its derivation
+The page size is an audited constant beside the generic tier's reshaping (`agent_call/reshape/paging.rs`), carrying its derivation
 on the constant itself; the size ceiling is the bridge's own `MAX_FRAME_BYTES`, reused rather than
 copied. That placement is the control: each value is reviewable in one place, and a row that starts
 paging is a change to a line rather than to scattered call sites. The offset/limit/byte-budget

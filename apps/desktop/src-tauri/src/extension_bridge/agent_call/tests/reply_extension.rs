@@ -17,7 +17,7 @@ fn extension_may_dispatch_is_true_only_for_a_read_effect_row() {
 }
 
 /// Walks every real `POLICY` row (same exhaustive discipline as
-/// `extension_bridge::test::agent_call_gate_matches_every_policy_rows_declared_effect`): the
+/// `policy_matrix::agent_call_gate_matches_every_policy_rows_declared_effect`): the
 /// extension tier's own gate must agree with EVERY row's declared `Effect`, not just a
 /// hand-picked sample — `Read` dispatchable, everything else refused.
 #[test]

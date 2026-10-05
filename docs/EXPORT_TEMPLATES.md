@@ -1,6 +1,6 @@
 # Export Templates — the resume/cover-letter rendering contract
 
-Last updated: 2026-08-21
+Last updated: 2026-10-05
 
 The normative reference for the document export system: the sixteen templates, the
 single PDF engine, and the cross-cutting rules (page size, ATS mode, links, fonts,
@@ -11,7 +11,7 @@ Source of truth in code:
 
 | Concern                           | Where                                                             |
 | --------------------------------- | ----------------------------------------------------------------- |
-| Template registry (styling data)  | `apps/desktop/src-tauri/src/export/templates/mod.rs`              |
+| Template registry (styling data)  | `apps/desktop/src-tauri/src/export/templates/`                    |
 | Template IDs + serde fallback     | `apps/desktop/src-tauri/src/export/types.rs` (`TemplateId`)       |
 | Canonical document model          | `apps/desktop/src-tauri/src/model/`                               |
 | PDF engine (Typst adapter)        | `apps/desktop/src-tauri/src/export/typst_engine/`                 |
@@ -19,7 +19,7 @@ Source of truth in code:
 | Section placement / two-col rules | `apps/desktop/src-tauri/src/theme/mod.rs`                         |
 | Locale profiles (page size, …)    | `apps/desktop/src-tauri/src/locale/mod.rs`                        |
 | Cover-letter market conventions   | `apps/desktop/src-tauri/src/locale/letter.rs`                     |
-| Validation + ATS gate             | `apps/desktop/src-tauri/src/validate/mod.rs`                      |
+| Validation + ATS gate             | `apps/desktop/src-tauri/src/validate/`                            |
 | IPC contract                      | `packages/shared/src/ipc/contracts/documents.ts`                  |
 | Output languages (renderer SSOT)  | `apps/desktop/src/renderer/lib/generate/locales.ts`               |
 | CJK detection (UI notice gate)    | `packages/shared/src/language-detection.ts` (`isCjkLanguage`)     |
@@ -90,7 +90,7 @@ reachable via the Document accent — see [ADR 0007](knowledge/decision-records/
 
 The `Tier` column is `TemplateTier` (`ats` | `design`) — see [Template tier](#template-tier--ats-mode-toggle).
 Character one-liners are descriptive; the authoritative palette/font/size literals
-live in each `Template::*` constructor in `export/templates/mod.rs`.
+live in each `Template::*` constructor under `export/templates/` (one module per group).
 
 | Id              | Name          | Tier   | Layout         | Character                                                                                   | Best for                                     |
 | --------------- | ------------- | ------ | -------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------- |
@@ -125,7 +125,7 @@ The other ten each have their own `.typ` under `export/typst_engine/templates/`:
 `cologne-navy`, `awesome`, `deedy`.
 
 Adding a template is **localized and additive**: one `TemplateId` variant + one
-`Template::*` constructor (with its `tier`) in `export/templates/mod.rs` + a `.typ`
+`Template::*` constructor (with its `tier`) in a group module under `export/templates/` + a `.typ`
 source (or a parametric-`single_column.typ` route). The backends, validation, and
 locale logic consume it unchanged.
 
@@ -335,7 +335,7 @@ The AI-Generate template picker surfaces visual preview thumbnails for the
 cover-letter rendering, one per resume template. These previews are generated
 offline by the `generate_cover_template_previews` test (ignored, run via
 `cargo test --lib -- --ignored generate_cover_template_previews`) in
-`typst_engine/test.rs`.
+`export/typst_engine/tests/showcase_letter_previews.rs`.
 
 Each preview:
 
@@ -357,7 +357,7 @@ confined to the test function; no typst types appear in production code paths.
 
 **Dev note — preview-regen.** The two preview generators are `#[ignore]`
 libtest fns (`generate_templates_showcase_banner` and
-`generate_cover_template_previews` in `typst_engine/test.rs`). Local `cargo test` works
+`generate_cover_template_previews` in `export/typst_engine/tests/`). Local `cargo test` works
 unconditionally — the delay-load fix that used to be branch-dependent lives in
 `apps/desktop/src-tauri/build.rs` on main (grep `DELAYLOAD`). The sha that
 caveat named stopped resolving in an earlier history rewrite and went unnoticed,
@@ -486,7 +486,7 @@ in the Typst world (`typst_engine/world.rs`):
 | Manrope                             | `swiss-minimal`, and `throughline` / `aria` name + headings                | OFL     |
 
 The authoritative per-template mapping is each template's `fonts: TemplateFonts`
-(name / heading / body roles) in `export/templates/mod.rs` — the table above is
+(name / heading / body roles) in `export/templates/`'s constructor modules — the table above is
 representative, not exhaustive. Carlito provides Calibri-metric compatibility so
 exported PDFs measure identically to the DOCX Calibri fallback. Cyrillic coverage
 comes from **Inter** (no Noto face is bundled).

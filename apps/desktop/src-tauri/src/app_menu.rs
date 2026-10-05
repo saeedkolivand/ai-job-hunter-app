@@ -11,7 +11,7 @@ use tauri::menu::{
 use tauri::{AppHandle, Manager};
 
 // Custom (non-predefined) menu-item ids. Predefined roles still self-handle; only
-// these ids are dispatched in `on_app_menu_event` (registered in `lib.rs`'s `setup`). The
+// these ids are dispatched in `on_app_menu_event` (registered in `shell/setup.rs`). The
 // `menu_nav_*` ids each map to a renderer route via [`NAV_ITEMS`].
 const MENU_SETTINGS: &str = "menu_settings";
 const MENU_CHECK_UPDATES: &str = "menu_check_updates";

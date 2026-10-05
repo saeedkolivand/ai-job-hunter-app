@@ -11,7 +11,7 @@ use super::{support::*, *};
 /// verify is grammatical in all nineteen languages: repetition is redundant
 /// content, not wrong content, and `whatlang`'s n-gram model reads it the
 /// same way it would read a longer original. The SAME sentences
-/// `documents::keywords::test::detected_language_identifies_*` pins at the
+/// `documents::keywords::tests::language::detected_language_identifies_*` pins at the
 /// primitive level, so a regression in either place is visible in both.
 ///
 /// Six of the seven Latin-curated languages repeat 7×, not 3× — measured: at

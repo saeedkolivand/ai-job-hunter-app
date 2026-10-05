@@ -1,6 +1,6 @@
 # Persistence Layer — State Ownership, SQLite, Transactions, Atomicity
 
-Last updated: 2026-09-24
+Last updated: 2026-10-05
 
 Canonical sources:
 
@@ -8,7 +8,7 @@ Canonical sources:
 - `apps/desktop/src-tauri/src/data_store.rs` — trait definition
 - Individual stores: `ai_generations/mod.rs`, `applications/mod.rs`, `documents/mod.rs`, etc.
 - JSON-file stores: `autopilot/mod.rs`, `postings/mod.rs`, `notifications/mod.rs`
-- In-flight status + reconciliation: `jobs/mod.rs`, `pipeline/runs/mod.rs`
+- In-flight status + reconciliation: `jobs/persist.rs`, `pipeline/runs/store.rs`
 - Enforcement: `scripts/check-event-subscriptions.mjs`
 
 ## State ownership: the persisted record is authoritative, events are notifications
@@ -81,11 +81,11 @@ If the process dies mid-run, `status = running` outlives the run. Reading an
 unreconciled record is reading a lie, so any store that records in-flight status
 owes a sweep when it opens. Today they disagree, and the gaps are known:
 
-| Record             | Sweep at open                                                                                                                                                                                                                         |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `jobs.db`          | Yes — in-flight statuses → `failed` / "Interrupted by app restart". Bounded by a `created_at` cutoff (the window is in `jobs/mod.rs`), so an older row stays `running` forever, invisibly: the same cutoff excludes it from the load. |
-| `autopilots.json`  | Yes, unbounded — `mark_interrupted_runs` flips `InProgress` → `Interrupted` and returns the ids so the scheduler can retry.                                                                                                           |
-| `pipeline_runs.db` | **None.** `PipelineRunStore::open` runs migrations and a URL normalizer, nothing else.                                                                                                                                                |
+| Record             | Sweep at open                                                                                                                                                                                                                             |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `jobs.db`          | Yes — in-flight statuses → `failed` / "Interrupted by app restart". Bounded by a `created_at` cutoff (the window is in `jobs/persist.rs`), so an older row stays `running` forever, invisibly: the same cutoff excludes it from the load. |
+| `autopilots.json`  | Yes, unbounded — `mark_interrupted_runs` flips `InProgress` → `Interrupted` and returns the ids so the scheduler can retry.                                                                                                               |
+| `pipeline_runs.db` | **None.** `PipelineRunStore::open` runs migrations and a URL normalizer, nothing else.                                                                                                                                                    |
 
 The last one is user-visible, not cosmetic. `runs_for_job` orders by `started_at DESC`,
 so a killed run stays the newest run for that posting, and `ensure_latest_run` keys
@@ -94,7 +94,7 @@ that posting is then refused, telling the user to wait for a run that will never
 finish. Adding a status sweep alone does not close it, because `ensure_latest_run`
 never looks at status. Pinned by `tests/pipeline_kill_recovery.rs` (a real process
 kill, with the `jobs.db` sweep as the positive control) and by the lockout test in
-`commands/resume_pipeline/test.rs` — both written to go **red when the gap is
+`commands/resume_pipeline/tests/run_store_roundtrip.rs` — both written to go **red when the gap is
 fixed**, so read such a failure as "closed, update the test".
 
 ### Accepted inconsistencies
@@ -207,13 +207,13 @@ pub trait DataStore {
 | `ApplicationStore`       | `applications/mod.rs`                 | Applied jobs, status, activity                                                                                                     |
 | `AiGenerationStore`      | `ai_generations/mod.rs`               | Generated cover letters, summaries                                                                                                 |
 | `JobPreferencesStore`    | `job_preferences/mod.rs`              | Saved filters, board preferences                                                                                                   |
-| `ContactProfileStore`    | `contact_profile/mod.rs`              | Saved address, phone, contact info                                                                                                 |
+| `ContactProfileStore`    | `contact_profile/store.rs`            | Saved address, phone, contact info                                                                                                 |
 | `ReferralStore`          | `referrals/mod.rs`                    | Referral tracking                                                                                                                  |
 | `AiConfigStore`          | `ai_config/mod.rs`                    | AI provider config (base_url provenance, ADR-0012)                                                                                 |
 | `SpendStore`             | `spend/mod.rs`                        | AI spend records                                                                                                                   |
 | `DedupStore`             | `dedup/mod.rs`                        | Dedup tombstones                                                                                                                   |
 | `DiscoveredCompanyStore` | `discovered/mod.rs`                   | Discovered companies                                                                                                               |
-| `PipelineRunStore`       | `pipeline/runs/mod.rs`                | Résumé pipeline runs + their stage events                                                                                          |
+| `PipelineRunStore`       | `pipeline/runs/store.rs`              | Résumé pipeline runs + their stage events                                                                                          |
 | `AutopilotStore`         | `autopilot/mod.rs`                    | Autopilot records + run status (JSON file); found jobs in SQLite (`autopilot/found_jobs_db.rs`), still exported under `autopilots` |
 | `InteractionStore`       | Exported inline by `commands/data.rs` | Generated autopilot interactions (JSON file)                                                                                       |
 
@@ -256,7 +256,7 @@ pub trait Resettable {
 }
 ```
 
-Most `impl Resettable` blocks live in `commands/privacy.rs` (a few sit with their own module, e.g. the extension bridge); registration happens through `manage_resettable` (mostly from `lib.rs::setup`), and `privacy_reset_app` iterates the registry. It is deliberately wider than the `DataStore` list above — a store can be resettable without being backed up (notifications, email watch, the KV cache), and transient state (`PostingsCache`, `JobTracker`, `CredentialStore`) is registered too. Query `commands/privacy.rs` for the canonical membership rather than trusting a copy here; a completeness test pins it.
+Most `impl Resettable` blocks live in `commands/privacy.rs` (a few sit with their own module, e.g. the extension bridge); registration happens through `manage_resettable` (mostly from `shell/state.rs`), and `privacy_reset_app` iterates the registry. It is deliberately wider than the `DataStore` list above — a store can be resettable without being backed up (notifications, email watch, the KV cache), and transient state (`PostingsCache`, `JobTracker`, `CredentialStore`) is registered too. Query `commands/privacy.rs` for the canonical membership rather than trusting a copy here; a completeness test pins it.
 
 **When adding a new persisted table to an existing store:** extend that store's `reset()` method to `DELETE FROM` the new table. Add a unit test to verify the table is empty after `reset()`.
 

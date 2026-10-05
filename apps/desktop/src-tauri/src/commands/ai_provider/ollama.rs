@@ -29,8 +29,8 @@ mod search;
 mod tools;
 mod wire;
 
-// The parent's public surface stays identical for outside callers (`commands
-// /ai.rs`, `commands/system.rs`, `commands/translation.rs`,
+// The parent's public surface stays identical for outside callers (`commands/ai/`,
+// `commands/system/`, `commands/translation.rs`,
 // `ollama_cloud.rs`) — re-exported here rather than editing those call sites.
 pub use embed::embed_with;
 pub use inspect::{pull, show_model};
@@ -172,7 +172,7 @@ impl AiProvider for OllamaClient {
         match intent {
             // `Default` (no declared intent) resolves the same as
             // `Deterministic` — see `Intent`'s own doc comment
-            // (`commands/ai_provider/mod.rs`).
+            // (`commands/ai_provider/sampling.rs`).
             Intent::Deterministic | Intent::Default => SamplingProfile {
                 temperature: Some(DETERMINISTIC_TEMPERATURE),
                 ..SamplingProfile::default()

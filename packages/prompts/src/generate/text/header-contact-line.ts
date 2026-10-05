@@ -1,6 +1,6 @@
 /**
  * Résumé header line classification — mirrors several Rust parser predicates
- * (`apps/desktop/src-tauri/src/export/parser/mod.rs`) so both sides agree on
+ * (`apps/desktop/src-tauri/src/export/parser/`) so both sides agree on
  * (a) what counts as a document's header contact line, and (b) what counts as
  * a section-heading boundary that ends the header block. Kept in parity by
  * shared fixtures (`../../fixtures/header-contact-line.json`,

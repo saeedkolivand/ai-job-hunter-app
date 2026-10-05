@@ -9,11 +9,11 @@ use crate::scraping::types::JobPosting;
 use super::merge::dedupe;
 
 /// Below this many results from a supported market, a non-empty `where` retries
-/// once country-wide (see `AdzunaProvider::search` in `providers.rs`). A city
+/// once country-wide (see `AdzunaProvider::search` in `adzuna.rs`). A city
 /// geocode can be sparse even when the country has plenty; broadening recovers
 /// the full market page. Also gates `primary_chain`'s guessed-market fallback
 /// below — shared between both, hence it stays at this level rather than moving
-/// into `providers.rs` with the provider implementations.
+/// into the provider modules with the provider implementations.
 pub(super) const ADZUNA_BROADEN_FLOOR: usize = 3;
 
 // ── Provider trait ────────────────────────────────────────────────────────────

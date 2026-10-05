@@ -4,7 +4,7 @@
 //! module under the R8 hard LOC cap (`tests/architecture.rs`); mirrors
 //! `resolve_applied_check`/`handle_applied_check`'s pure/impure split in the
 //! parent module — `resolve_status_update` takes no `AppHandle` so it stays
-//! directly unit-testable (see `import_tests.rs`), while `handle_status_update`
+//! directly unit-testable (see `status_update/tests.rs`), while `handle_status_update`
 //! does the app-stateful notify/emit tail.
 
 use serde_json::{json, Value};

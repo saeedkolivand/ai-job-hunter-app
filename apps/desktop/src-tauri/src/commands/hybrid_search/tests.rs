@@ -16,7 +16,7 @@ pub(super) fn ids(strs: &[&str]) -> Vec<String> {
 // `semantic_rerank`/`semantic_rerank_phase`, which are AppHandle-free and take
 // a `RerankEnv` fake) — so driving their live orchestration end-to-end needs a
 // mock `AppHandle`, which this crate has no harness for by deliberate choice
-// (`extension_bridge::test::spawn_detached_runs_without_an_ambient_tokio_runtime`'s
+// (`extension_bridge::server::tests::spawn_detached_runs_without_an_ambient_tokio_runtime`'s
 // doc comment, and the `research_answer_tests`/`reembed_tests`/
 // `embedding_base_url_tests` notes in `commands::system::tests`, all defer the
 // same class of test for the same reason). What IS pure and callable here is

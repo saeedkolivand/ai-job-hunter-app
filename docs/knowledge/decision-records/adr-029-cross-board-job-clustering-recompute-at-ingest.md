@@ -13,7 +13,7 @@ redirect URLs and board direct URLs never collapse; fuzzy company/title matching
 two rows, two notifications.
 
 Storage reality: no SQL postings table exists. Manual-scrape postings live in-memory in `PostingsCache`
-(dropped after `commands/scrape.rs:199`); autopilot found-jobs are `Vec<FoundJob>` in `autopilots.json`;
+(dropped after `commands/scrape/run.rs`); autopilot found-jobs are `Vec<FoundJob>` in `autopilots.json`;
 `posting_vectors` is lazily populated on the match path and `FoundJob` has no posting id. A `cluster_id`
 column on postings is therefore impossible; cluster state must reside elsewhere or be recomputed.
 
@@ -33,7 +33,7 @@ canonical row.
 
 ### (b) One pure module `scraping/cluster/`, called from two L3 sites
 
-`recluster_postings_cache(app)` is called after the engine returns in `commands/scrape.rs` and after
+`recluster_postings_cache(app)` is called after the engine returns in `commands/scrape/run.rs` and after
 `scrape_url` single-adds, before `job_complete`. Also invoked on autopilot as a batch pass before
 `minMatchScore` retain and a full-list pass inside `record_run` after `merge_found_jobs`. The engine
 remains store-blind; tombstone queries require app state.
@@ -118,4 +118,4 @@ primary would require ingest-time `ai_provider` calls, explicitly out of scope. 
 (recorded in `docs/knowledge/scraping-domain.md` at feature close): split-undo, ingest-time embeddings,
 agency-list growth.
 
-Owning symbols: `scraping/cluster/{mod,normalize}.rs`, `dedup/mod.rs` (`DedupStore`), `commands/scrape.rs::recluster_postings_cache`, `autopilot/mod.rs::record_run`, `commands/dedup.rs::dedup_mark_not_duplicate`.
+Owning symbols: `scraping/cluster/{mod,normalize}.rs`, `dedup/mod.rs` (`DedupStore`), `commands/scrape/clusters.rs::recluster_postings_cache`, `autopilot/runs.rs::record_run`, `commands/dedup.rs::dedup_mark_not_duplicate`.

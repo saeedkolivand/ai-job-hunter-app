@@ -15,7 +15,7 @@
 //! in source points at, nothing more:
 //!
 //! - `src/net/http.rs`'s shared client follows up to 10 redirects
-//!   (`MAX_REDIRECTS`, `net/http.rs:44`) and its redirect guard blocks only
+//!   (`MAX_REDIRECTS` in `net/http.rs`) and its redirect guard blocks only
 //!   private/loopback/link-local **IP literals** on the `Location` header — a
 //!   302 to an undeclared public hostname is followed without ever being
 //!   checked against this inventory.
@@ -97,30 +97,30 @@ const EGRESS: &[Egress] = &[
     Egress { host: "qwenlm.github.io", public_name: None, note: "CLI install-help link (Qwen Code); rendered only, never fetched. commands/ai_provider/cli_agent/qwen_code.rs." },
 
     // ── Web search (ADR-0005 class 3, ADR-0023) — opt-in.
-    Egress { host: "api.exa.ai", public_name: Some("Exa"), note: "Opt-in web-search backend for AI company research (ADR-0023), off unless a provider needing it is configured. commands/ai_provider/search/mod.rs." },
+    Egress { host: "api.exa.ai", public_name: Some("Exa"), note: "Opt-in web-search backend for AI company research (ADR-0023), off unless a provider needing it is configured. commands/ai_provider/search/exa.rs." },
 
     // ── Job boards / aggregators / ATS platforms (ADR-0005 class 2) — the
     // app's core function, covered by the generic "job boards you scrape"
     // disclosure rather than a per-board name.
-    Egress { host: "api.adzuna.com", public_name: Some("Adzuna"), note: "Aggregator primary tier (ADR-026): search + redirect-URL resolution. scraping/boards/aggregator/adzuna.rs." },
+    Egress { host: "api.adzuna.com", public_name: Some("Adzuna"), note: "Aggregator primary tier (ADR-026): search + redirect-URL resolution. scraping/boards/aggregator/adzuna_fetch.rs." },
     Egress { host: "jsearch.p.rapidapi.com", public_name: Some("RapidAPI"), note: "JSearch, aggregator paid fallback tier, via RapidAPI. scraping/boards/aggregator/jsearch.rs." },
     Egress { host: "jooble.org", public_name: Some("Jooble"), note: "Aggregator last-resort fallback tier. scraping/boards/aggregator/jooble.rs." },
     Egress { host: "api.apify.com", public_name: Some("Apify"), note: "Aggregator LinkedIn actor tier — additive, opt-in, paid. scraping/boards/aggregator/apify.rs." },
     Egress { host: "freehire.me", public_name: Some("freehire"), note: "Keyless job board — no API key, so it is the one broad board a fresh install can search with. Selected explicitly in the catalog. scraping/boards/freehire/mod.rs." },
     Egress { host: "api.ashbyhq.com", public_name: None, note: "Ashby ATS board fetch. scraping/boards/ashby/mod.rs." },
-    Egress { host: "jobs.ashbyhq.com", public_name: None, note: "Ashby single-pasted-URL resolver. scraping/scrape_url/mod.rs." },
-    Egress { host: "api.lever.co", public_name: None, note: "Lever ATS board fetch + single-URL resolver. scraping/boards/lever/mod.rs, scraping/scrape_url/mod.rs." },
+    Egress { host: "jobs.ashbyhq.com", public_name: None, note: "Ashby single-pasted-URL resolver. scraping/scrape_url/ashby.rs." },
+    Egress { host: "api.lever.co", public_name: None, note: "Lever ATS board fetch + single-URL resolver. scraping/boards/lever/mod.rs, scraping/scrape_url/lever.rs." },
     Egress { host: "api.rippling.com", public_name: None, note: "Rippling ATS board listing API (posting URLs live on ats.rippling.com, see SCHEMELESS). scraping/boards/rippling/mod.rs." },
     Egress { host: "api.smartrecruiters.com", public_name: None, note: "SmartRecruiters ATS board fetch. scraping/boards/smartrecruiters/mod.rs." },
-    Egress { host: "jobs.smartrecruiters.com", public_name: None, note: "SmartRecruiters single-pasted-URL resolver. scraping/scrape_url/mod.rs." },
+    Egress { host: "jobs.smartrecruiters.com", public_name: None, note: "SmartRecruiters single-pasted-URL resolver. scraping/scrape_url/smartrecruiters.rs." },
     Egress { host: "apply.workable.com", public_name: None, note: "Workable ATS board fetch. scraping/boards/workable/mod.rs." },
     Egress { host: "bamboohr.com", public_name: None, note: "BambooHR ATS board fetch ({slug}.bamboohr.com). scraping/boards/bamboohr/mod.rs." },
     Egress { host: "breezy.hr", public_name: None, note: "Breezy HR ATS board fetch ({slug}.breezy.hr). scraping/boards/breezy/mod.rs." },
     Egress { host: "recruitee.com", public_name: None, note: "Recruitee ATS board fetch ({slug}.recruitee.com). scraping/boards/recruitee/mod.rs." },
     Egress { host: "pinpointhq.com", public_name: None, note: "Pinpoint ATS board fetch ({slug}.pinpointhq.com). scraping/boards/pinpoint/mod.rs." },
-    Egress { host: "boards-api.greenhouse.io", public_name: None, note: "Greenhouse ATS board API fetch + single-URL resolver. scraping/boards/greenhouse/mod.rs, scraping/scrape_url/mod.rs." },
+    Egress { host: "boards-api.greenhouse.io", public_name: None, note: "Greenhouse ATS board API fetch + single-URL resolver. scraping/boards/greenhouse/mod.rs, scraping/scrape_url/greenhouse.rs." },
     Egress { host: "www.comeet.co", public_name: None, note: "Comeet ATS board fetch. scraping/boards/comeet/mod.rs." },
-    Egress { host: "myworkdayjobs.com", public_name: None, note: "Workday single-pasted-URL resolver ({tenant}.{company}.myworkdayjobs.com). scraping/scrape_url/mod.rs." },
+    Egress { host: "myworkdayjobs.com", public_name: None, note: "Workday single-pasted-URL resolver ({tenant}.{company}.myworkdayjobs.com). scraping/scrape_url/workday.rs." },
     Egress { host: "berlinstartupjobs.com", public_name: None, note: "Berlin Startup Jobs board fetch (own WordPress RSS permalink). scraping/boards/berlinstartupjobs/mod.rs." },
     Egress { host: "germantechjobs.de", public_name: None, note: "German Tech Jobs board fetch. scraping/boards/germantechjobs/mod.rs." },
     Egress { host: "jobicy.com", public_name: None, note: "Jobicy board fetch; own posting-page URL required by Jobicy's ToS attribution. scraping/boards/jobicy/mod.rs." },
@@ -148,8 +148,9 @@ const EGRESS: &[Egress] = &[
     Egress { host: "imap.gmail.com", public_name: Some("IMAP"), note: "Default (v1 Gmail-branded) IMAP host for opt-in email-confirmation watching; DATA not a hardcoded destination — user-configurable, credential OS-keychain-backed. Scheme-less: email_watch/imap_client.rs::DEFAULT_IMAP_HOST (see SCHEMELESS)." },
 
     // ── Updater (ADR-0005 class 4) — first check 10s after launch, then every
-    // 4h for the rest of the session (updater/mod.rs:314,317), no user data.
-    Egress { host: "github.com", public_name: Some("GitHub"), note: "Updater version-check endpoint, configured in tauri.conf.json's plugins.updater.endpoints; also the Help-menu doc/issues/changelog links opened in the user's browser, never fetched by net::http. lib.rs, updater/mod.rs, commands/menu.rs." },
+    // 4h for the rest of the session (`STARTUP_STATUS_DELAY` and the interval in
+    // updater/mod.rs), no user data.
+    Egress { host: "github.com", public_name: Some("GitHub"), note: "Updater version-check endpoint, configured in tauri.conf.json's plugins.updater.endpoints; also the Help-menu doc/issues/changelog links opened in the user's browser, never fetched by net::http. app_menu.rs, updater/changelog.rs." },
 
     // ── Optional enrichment (ADR-0005 class 6) — opt-in, default OFF, from
     // the declaration files (tauri.conf.json's CSP), not Rust src.
@@ -202,7 +203,7 @@ const UNEXTRACTABLE: &[UnextractableEgress] = &[
         note: "Crash-report ingest host, carried inside the DSN. The DSN is a GitHub Actions \
                secret (AJH_SENTRY_DSN) injected ONLY by .github/workflows/release.yml's signed \
                release job, read at compile time via build.rs into \
-               option_env!(\"AJH_SENTRY_DSN\") (crash_reporting/mod.rs:108) — every local build, \
+               option_env!(\"AJH_SENTRY_DSN\") (`DSN` in crash_reporting/mod.rs) — every local build, \
                every contributor clone, and every non-release CI check compiles with DSN = None \
                and cannot transmit at all, so the host is not merely hard to extract, it does \
                not exist in any reproducible build of this repo. Further gated by opt-out \
@@ -348,8 +349,8 @@ fn rust_sources() -> Vec<RustSource> {
 /// reference) — those hold no inline test code to leak, and the naive "strip
 /// to the next standalone `}`" approach would delete real declarations.
 /// Dozens of column-0 `#[cfg(test)]` attributes in this tree sit on something
-/// other than a `mod … {` block (e.g. `validate/content/mod.rs:66` on a
-/// `use`, `commands/ai_provider/stream.rs:528` on `enum StreamSink {`) — plus
+/// other than a `mod … {` block (e.g. `validate/content/mod.rs` on a
+/// `use`, `commands/ai_provider/stream.rs` on `enum StreamSink {`) — plus
 /// a `#[path] mod name;` external-file reference, which no real file under
 /// `src/` carries anymore since the R8b split of
 /// `commands/ai_provider/embed.rs`, so that shape is pinned against a small
@@ -748,8 +749,8 @@ fn egress_2_every_declared_host_is_still_in_source() {
     // Comment-stripped, cfg(test)-mod-stripped Rust text for the SCHEMELESS
     // bare-literal search, keyed by file — NOT one blob joined across the
     // whole tree (vacuously satisfied by ANY bare occurrence anywhere, e.g.
-    // the 31-hostname `ATS_ALLOWLIST` policy list at
-    // scraping/trust/mod.rs:76-108, a suffix-match allowlist, not an egress
+    // the 31-hostname `ATS_ALLOWLIST` policy list in
+    // scraping/trust/mod.rs, a suffix-match allowlist, not an egress
     // declaration, that happens to contain 3 of the 7 SCHEMELESS literals as
     // ordinary data) and NOT a raw `contains` over unstripped file text
     // (vacuously satisfied by a stale doc-comment mention). Each

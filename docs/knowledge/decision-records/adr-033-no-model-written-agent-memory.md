@@ -1,6 +1,6 @@
 # ADR-033: No model-written agent memory — core-rule violation and injection carrier
 
-Last updated: 2026-08-12
+Last updated: 2026-10-05
 
 **Status:** Accepted
 
@@ -39,5 +39,5 @@ Agent memory written by an LLM is not implemented. The agent system persists onl
 - ADR-032 (generation-pipeline ownership) — core rule: LLM decides HOW, never WHAT.
 - `apps/desktop/src-tauri/src/agent/` — agent controller, tools, flows, gates.
 - `apps/desktop/src-tauri/src/validate/content/mod.rs` — deterministic quality validators.
-- `apps/desktop/src-tauri/src/pipeline/runs/mod.rs` — immutable run history and retention.
+- `apps/desktop/src-tauri/src/pipeline/runs/` — immutable run history (`store.rs`) and retention (`maintenance.rs`).
 - `packages/shared/src/ipc/contracts/resumePipeline.ts` — run history query contract (`listForJob`).

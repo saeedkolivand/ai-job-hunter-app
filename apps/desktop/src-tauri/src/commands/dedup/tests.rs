@@ -128,7 +128,7 @@ fn clamp_byte_cap_cuts_on_a_utf8_char_boundary() {
     // A multi-byte (UTF-8) key well over the cap must be truncated on a char
     // boundary — never mid-codepoint (`String::truncate` would PANIC if the
     // char-boundary walk-back in `clamp_bytes` regressed). Mirrors the
-    // salary-field clamp regression net (job_preferences/test.rs).
+    // salary-field clamp regression net (job_preferences/tests/clamped_columns.rs).
     let euros = "€".repeat(150); // 150 × 3 bytes = 450 bytes, over the 200 cap
                                  // member path
     let (member, _) = clamp_split_request(&euros, &["distinct".to_string()])

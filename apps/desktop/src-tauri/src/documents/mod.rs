@@ -214,7 +214,7 @@ impl DocumentStore {
             // The text just changed under this id — any `vectors` row for
             // it (a stale leftover, or one `import` below is about to
             // restore) is now derived from the WRONG text. `stale_documents`
-            // (`commands/ai.rs`) decides what to re-embed purely from
+            // (`commands/ai/embeddings.rs`) decides what to re-embed purely from
             // `get_vector` presence in the active space, never `indexed`.
             conn.execute("DELETE FROM vectors WHERE doc_id = ?1", params![rec.id])
                 .map_err(|e| e.to_string())?;

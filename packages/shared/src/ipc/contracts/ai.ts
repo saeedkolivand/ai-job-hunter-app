@@ -7,8 +7,8 @@ import type { AiStreamChunk } from '../../types/index.js';
  * against it) and is always present — every other field is optional because
  * no single provider's models endpoint returns all of them: see
  * `AiProvider::list_models`/`model_entry` in the Rust backend
- * (`apps/desktop/src-tauri/src/commands/ai_provider/mod.rs`) for exactly
- * which fields each provider supplies. A provider that doesn't return a
+ * (`apps/desktop/src-tauri/src/commands/ai_provider/mod.rs` / `catalogue.rs`) for
+ * exactly which fields each provider supplies. A provider that doesn't return a
  * field omits it here entirely — never a fabricated zero/empty-string/
  * "unknown" sentinel; treat absent as absent.
  */

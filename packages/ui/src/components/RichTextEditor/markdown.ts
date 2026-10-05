@@ -58,7 +58,7 @@ export function getEditorSchema(): Schema {
 /**
  * The Rust PDF/DOCX extractor appends a `\n---\n` block of `- [Label](url)`
  * lines that the backend link classifier reads
- * (`packages/prompts/src/generate/links.ts::parseLinkBlock`, which scans from the
+ * (`packages/prompts/src/generate/links/links.ts::parseLinkBlock`, which scans from the
  * LAST `\n---\n`). The editor must never reorder, escape, or drop it, so it is
  * held out of the editable body entirely and re-appended verbatim on serialize.
  */

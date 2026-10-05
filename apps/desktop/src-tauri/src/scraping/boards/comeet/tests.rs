@@ -269,7 +269,7 @@ fn parse_comeet_response_workplace_type_maps_to_extra_work_type() {
 
 // Process-wide mock keyring install + a local lock, same idiom as the
 // aggregator's `AGG_KEYRING_LOCK`/`install_mock_keyring` — see that module's
-// test.rs for the full rationale (keyring_core::set_default_store is
+// `tests/support.rs` for the full rationale (keyring_core::set_default_store is
 // process-global; tests serialize on this lock instead of swapping stores).
 static COMEET_KEYRING_LOCK: Mutex<()> = Mutex::new(());
 

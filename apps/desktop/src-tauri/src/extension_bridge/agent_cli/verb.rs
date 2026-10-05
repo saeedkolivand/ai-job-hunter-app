@@ -237,7 +237,7 @@ pub(super) const VERB_TABLE: &[VerbHelp] = &[
         // the only place the distinction is written (MEDIUM fix, review round 4 — the old comment
         // said "named HERE", which reads as "one surface"): `agent schema` serves
         // `agent_read::RESOURCES`' own copy. The two are pinned together by
-        // `tests::both_automations_descriptions_name_both_totals`, so neither can drop a field
+        // `entrypoint::tests::help::both_automations_descriptions_name_both_totals`, so neither can drop a field
         // the other still explains.
         returns: "every autopilot and its status (`totalFound` is the last run's kept count; \
                   `foundJobsTotal` is the whole stored list `found-jobs` pages through)",

@@ -80,7 +80,7 @@ fn chat_stream_body_sends_an_explicit_temperature_even_on_a_v3_model() {
 fn chat_stream_body_uses_the_deterministic_target_for_a_pre_v3_model_with_no_explicit_value() {
     // No `req.intent` set → `Intent::Default`, which resolves to the SAME
     // numbers as `Intent::Deterministic` on an accepting model (see
-    // `Intent`'s own doc comment, `commands/ai_provider/mod.rs`) — this
+    // `Intent`'s own doc comment, `commands/ai_provider/sampling.rs`) — this
     // reproduces the pre-fix renderer's own hardcoded default (`0.3` for the
     // majority of deterministic surfaces), NOT the adapter's old standalone
     // `0.7` fallback (that fallback's job is now done by this profile).

@@ -7,7 +7,7 @@ use super::*;
 // smartrecruiters, greenhouse, ashby, breezy, bamboohr, pinpoint, rippling,
 // workable) and `should_propagate_page_error` by 3 paginated boards (themuse,
 // arbeitnow, arbeitsagentur) — unlike `normalize_companies`/`is_https_url`
-// (2-3 users each, tested by per-board copy in each user's `test.rs`),
+// (2-3 users each, tested by per-board copy in each user's `tests.rs`),
 // duplicating one test suite across 10+ board files would be pure repetition
 // of the exact same assertions against the exact same pure fn.
 

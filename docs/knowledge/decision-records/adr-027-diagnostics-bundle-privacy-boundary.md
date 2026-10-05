@@ -1,6 +1,6 @@
 # ADR-027: Diagnostics-bundle privacy boundary
 
-Last updated: 2026-07-16
+Last updated: 2026-10-05
 
 **Status:** Accepted
 
@@ -34,7 +34,7 @@ No directory walk of the data dir occurs. Any future bundle entry requires an ex
 
 **2. Redaction pass on all text before zipping.**
 Every line of `crashes.log` and the `logs/` files is tokenised on whitespace and each token is
-passed through `redact_token` in `apps/desktop/src-tauri/src/autopilot_helpers/mod.rs`. That
+passed through `redact_token` in `apps/desktop/src-tauri/src/observability.rs`. That
 function replaces sensitive tokens with neutral placeholders across five shape classes:
 
 | Shape                                                        | Placeholder             |
@@ -75,7 +75,7 @@ the file manager at the saved location.
   or proven PII-free like `system-info.txt`).
 - `redact_token` is the last line of defense before a public artifact. Extending it with a new
   PII shape or credential marker is a **security change** and requires a corresponding test in
-  `autopilot_helpers/mod.rs` (cf. `json_embedded_email_is_redacted`,
+  `autopilot_helpers/` (cf. `json_embedded_email_is_redacted` in `autopilot_helpers/tests/redaction.rs`,
   `json_password_field_is_redacted`).
 - `system-info.txt` is generated (not read from disk) and contains only OS metadata; it is
   deliberately excluded from the redaction pass.

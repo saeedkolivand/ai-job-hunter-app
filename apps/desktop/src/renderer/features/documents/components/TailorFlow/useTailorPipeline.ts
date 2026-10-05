@@ -147,7 +147,7 @@ interface TargetLanguageResolution {
  * would let a FUTURE run's tier 1 prefer that guess forever — exactly the
  * bug this chain exists to close. See `start`'s own comment for how the
  * caller keeps a guess off the wire without a schema change (Rust's own
- * `ai_generations::pick` already treats an empty incoming field as "keep
+ * `ai_generations::merge_application`'s `pick` already treats an empty incoming field as "keep
  * whatever is stored").
  *
  * Known limit (not fixable here, not worth a test): the renderer detects
@@ -623,7 +623,7 @@ export function useTailorPipeline({
     // (`packages/shared/src/schemas/index.ts`) only `.default('en')`s an
     // ABSENT key, so an explicit '' passes through untouched;
     // `normalize_language('')` already treats it as 'en' for every
-    // prompt/validation use; and `ai_generations::pick` (`ai_generations/mod.rs:958`)
+    // prompt/validation use; and `ai_generations::merge_application`'s `pick` (`ai_generations/record.rs`)
     // already keeps whatever the record had for an empty INCOMING field — the
     // exact mechanism that already protects `resumeLanguage`/`jobAdLanguage`
     // from a stale overwrite. A guess therefore still runs THIS generation

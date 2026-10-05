@@ -817,7 +817,7 @@ export type ExtensionAnswerAssistTopic = 'company-brief' | 'salary-answer';
  * field's own length limit, read from the DOM by the extension's scan and
  * therefore UNTRUSTED like every other field on this frame — the desktop
  * re-validates it (`parse_max_chars` in
- * `apps/desktop/src-tauri/src/extension_bridge/answer_assist.rs`) rather
+ * `apps/desktop/src-tauri/src/extension_bridge/answer_assist_max_chars.rs`) rather
  * than believing it. Two DIFFERENT bounds meet on this field, and they are
  * not the same thing: the WIRE bound is shape only (a positive integer —
  * an over-large number is a perfectly legal frame, never a parse failure),
@@ -852,7 +852,7 @@ export interface ExtensionAnswerAssistRequest {
  * desktop-side; a number can never get a legitimate draft refused. Exported
  * so a client can state a limit it knows will be honoured. Pinned to the
  * Rust `DRAFT_CAP` by `answer_assist_max_chars_matches_ts` in
- * `apps/desktop/src-tauri/src/extension_bridge/test.rs`.
+ * `apps/desktop/src-tauri/src/extension_bridge/msg/tests.rs`.
  */
 export const EXTENSION_ANSWER_ASSIST_MAX_CHARS = 4000;
 
@@ -865,10 +865,10 @@ export const EXTENSION_ANSWER_ASSIST_MAX_CHARS = 4000;
  * the code — see `docs/knowledge/extension-domain.md`), so a surface that
  * wants to say WHERE to turn the feature on matches these shared constants
  * instead of copying the string. Declared beside the handler in
- * `apps/desktop/src-tauri/src/extension_bridge/answer_assist.rs`
+ * `apps/desktop/src-tauri/src/extension_bridge/answer_assist/errors.rs`
  * (`AI_ASSIST_OFF_MESSAGE` / `NO_PROVIDER_MESSAGE`) and pinned to these
  * values by the parity test in
- * `apps/desktop/src-tauri/src/extension_bridge/test.rs`. Every OTHER
+ * `apps/desktop/src-tauri/src/extension_bridge/msg/tests.rs`. Every OTHER
  * `ok:false` error stays opaque to the client and is rendered verbatim.
  */
 export const EXTENSION_AI_ASSIST_OFF_MESSAGE =

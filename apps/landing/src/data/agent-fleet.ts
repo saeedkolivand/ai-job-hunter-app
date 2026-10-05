@@ -43,7 +43,7 @@ export const AUTHORS: readonly AgentTuple[] = [
     'author',
     'Implements AI provider integrations, model routing, embeddings, prompts, and streaming.',
     '↔ critic ai-provider-expert',
-    'commands/ai_provider/** · commands/ai.rs · documents/** · packages/prompts/**',
+    'commands/ai_provider/** · commands/ai/** · documents/** · packages/prompts/**',
     'Use ai-provider-author to wire a new model into the provider registry.',
   ],
   [
@@ -134,7 +134,7 @@ export const CRITICS: readonly AgentTuple[] = [
     'critic',
     'Reviews provider integrations — enforces add-a-provider = config + adapter only, never business-logic coupling.',
     'audits ai-provider-author',
-    'ai_provider/** · commands/ai.rs · documents/embed · packages/prompts',
+    'ai_provider/** · commands/ai/** · documents/embed · packages/prompts',
     '/review-ai on the new model adapter.',
   ],
   [

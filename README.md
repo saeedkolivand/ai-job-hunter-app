@@ -490,7 +490,7 @@ IPC request shapes have a single source of truth: **[Zod][zod] schemas in `packa
 <summary><strong>Add a new IPC capability (5 hand-synced touchpoints)</strong></summary>
 
 1. `packages/shared/src/ipc/contracts/*.ts`: add the method signature.
-2. `apps/desktop/src-tauri/src/commands/*.rs`: implement the `#[tauri::command]` and register it in `main.rs`.
+2. `apps/desktop/src-tauri/src/commands/*.rs`: implement the `#[tauri::command]` and register it in `shell/handler.rs`.
 3. `apps/desktop/src/tauri-client/namespaces/*`: wire the `invoke(...)` call.
 4. `apps/desktop/src/renderer/services/*`: add the React Query service hook.
 5. If the request has a new shape: add a Zod schema and run `pnpm gen:ipc`.

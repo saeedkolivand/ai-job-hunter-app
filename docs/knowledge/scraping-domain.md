@@ -1,6 +1,6 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-10-04
+Last updated: 2026-10-05
 
 Describes the job-scraping subsystem: the board registry (`SCRAPERS` in `apps/desktop/src-tauri/src/scraping/boards/mod.rs`), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
@@ -94,7 +94,7 @@ These five boards were retired as direct scrapers (ADR-026, 2026-06-21). Their R
 - Keys are read on-demand via `credentials::read_credential` (module at `apps/desktop/src-tauri/src/credentials/mod.rs`) into their keyring slots; the slot-id roster is `PROVIDER_SLOTS` in `packages/shared/src/provider-slots.ts`, codegen'd into `ipc_contracts/provider_slots.rs`.
 - **Path-embedded-key redaction (PR #618):** Jooble embeds its API key in the URL path (`POST https://jooble.org/api/{key}`), unlike Adzuna/JSearch which use query params. New `FetchOptions.redact_path` boolean + `safe_log_url(url, redact_path)` in `apps/desktop/src-tauri/src/scraping/http/mod.rs` redact the entire path when `true`, keeping logs safe. Providers using path-embedded keys must pass `redact_path: true` in their `FetchOptions`.
 
-**Provider details, endpoints, and fallback logic:** see `apps/desktop/src-tauri/src/scraping/boards/aggregator/providers.rs` (AdzunaProvider, JSearchProvider, JoobleProvider, ApifyLinkedInProvider, and JobProvider trait) and `adzuna.rs` (primary tier).
+**Provider details, endpoints, and fallback logic:** see `apps/desktop/src-tauri/src/scraping/boards/aggregator/` (one module per provider: `adzuna.rs` (primary tier), `jsearch.rs`, `jooble.rs`, `apify.rs`; the `JobProvider` trait is in `fallback.rs`).
 
 **Adzuna country-code limitation (PR #483):**
 
@@ -112,14 +112,14 @@ Adzuna's API is country-scoped with a fixed market allowlist; see `ADZUNA_SUPPOR
 
 Location input policy is now visible via per-board summary notes. When a search input lacks explicit country but specifies a city/region, the aggregator may broaden to country-level results or guess a market (fallback when Adzuna is sparse).
 
-- **Floor guard:** `ADZUNA_BROADEN_FLOOR` in `aggregator/mod.rs`. Broaden is triggered only when Adzuna returns fewer results than that floor for a location query AND `!country_guessed` (i.e. the user didn't supply a country). Guessed-market fallback to JSearch happens only when the guessed-market Adzuna call is also below the floor.
+- **Floor guard:** `ADZUNA_BROADEN_FLOOR` in `aggregator/fallback.rs`. Broaden is triggered only when Adzuna returns fewer results than that floor for a location query AND `!country_guessed` (i.e. the user didn't supply a country). Guessed-market fallback to JSearch happens only when the guessed-market Adzuna call is also below the floor.
 - **Note tokens:** `BoardScrapeSummary.note: Option<String>` records the location policy decision as a machine token:
   - `broadened:<cc>` — Adzuna results exist but are below the floor; broadened from city to country-level (e.g., "few local results in Berlin — showing Germany-wide").
   - `guessed-market:<cc>` — No explicit country provided; market was guessed and Adzuna cleared the floor (authoritative guess). Never emitted for sub-floor guesses that fall through to JSearch global fallback.
   - Only one note per run; guessed and broadened are mutually exclusive (guessed when `country_guessed=true`, broadened when `country_guessed=false`).
 - **Frontend rendering:** Chips mapped via `BoardSummaryChips.tsx` `ChipTone 'note'` (informational blue); locale-keyed labels `jobs.boardSummary.note.{broadened, guessed}` with country name via `Intl.DisplayNames({type:'region'})` for user-friendly labels (en + de).
 - **Wizard visibility:** Autopilot wizard shows inline "Country: <Name>" when `countryCode` is set, cleared on manual location edit (user may re-pick via the location-input autocompleter).
-- **Source:** `scraping/types/mod.rs` (`on_note` side-channel + `report_note()`), `scraping/engine/mod.rs` (`BoardScrapeSummary.note` wiring), `boards/aggregator/mod.rs` (inject), `boards/aggregator/providers.rs` (Adzuna emit sites + `guessed_market_note` helper).
+- **Source:** `scraping/types/mod.rs` (`on_note` side-channel + `report_note()`), `scraping/engine/mod.rs` (`BoardScrapeSummary.note` wiring), `boards/aggregator/mod.rs` (inject), `boards/aggregator/adzuna.rs` (Adzuna emit sites) + `boards/aggregator/adzuna_fetch.rs` (`guessed_market_note` helper).
 
 ## freehire board (keyless)
 
@@ -135,7 +135,7 @@ Adzuna and JSearch used to issue exactly one request per search however many job
 for, so any amount above one page silently under-filled. Both now page — but the paging is
 driven by a **budget**, not by `BoardSearchInput::pages` (a sentinel on the manual path) and
 not by `amount` (a sentinel on the scheduled path). Owner: `SearchBudget` in
-`apps/desktop/src-tauri/src/scraping/boards/aggregator/mod.rs`.
+`apps/desktop/src-tauri/src/scraping/boards/aggregator/budget.rs`.
 
 - **Two independent fields, one struct.** `amount` is the OUTPUT cap (how many postings the
   caller keeps — it buys nothing upstream); `provider_amount: Option<u32>` is the UPSTREAM
@@ -149,7 +149,7 @@ not by `amount` (a sentinel on the scheduled path). Owner: `SearchBudget` in
 - **Fails closed.** `provider_amount` passes through unchanged — `None` stays `None`, and
   `None` means no provider spend: every metered provider degrades to its cheapest
   single-request form. It is `None` by default and on every scheduled/autopilot run
-  (`autopilot_helpers`); only the manual search path sets it (`commands/scrape.rs`, from the
+  (`autopilot_helpers`); only the manual search path sets it (`commands/scrape/run.rs`, from the
   user-typed count).
 - **Paid Apify tier gates AND sizes off `provider_amount`.** `apify_cap()` returns `0` for
   `None` — and `0` means the run is never requested at all. With `Some(spend)` it asks only
@@ -159,7 +159,7 @@ not by `amount` (a sentinel on the scheduled path). Owner: `SearchBudget` in
   request × pages) build their `FetchOptions` with retries disabled, following the
   `apify_fetch_options` precedent: `net::http` re-sends on 429/503, and a 429 from a metered
   API _is_ the over-quota signal, so retrying answers "you are out of quota" by spending more
-  of it. All three invariants are pinned by tests in `boards/aggregator/test.rs` that assert
+  of it. All three invariants are pinned by tests in `boards/aggregator/tests/` that assert
   through the same helper functions production calls.
 
 - **`pages` is inert for the aggregator**, so the autopilot wizard disables the "Pages to
@@ -288,7 +288,7 @@ computed.
     — it only ever writes an `ApplicationMeta`, not the postings/`JobPosting`
     contract).
   - `commands::autopilot::autopilot_run`'s `postings → FoundJob` `.map()`
-    (`apps/desktop/src-tauri/src/commands/autopilot.rs`) — the **persisted**
+    (`apps/desktop/src-tauri/src/commands/autopilot/keyword_rank.rs`) — the **persisted**
     `AutopilotFoundJob` record the badge UI actually reads is built from the
     board's separately-returned `Vec<JobPosting>`, not the streamed copy the
     engine wrapper attaches to, so it calls `assess_trust` directly (a pure,
@@ -320,7 +320,7 @@ Every job is keyed by its `canonical_job_key(url, title, company)` — defined i
 
 **Engine dedup pass:**
 
-`scraping/engine/mod.rs`: `dedup_cross_source()` runs once per manual scrape after all boards are concatenated, before results are returned to the UI. Duplicates sharing a canonical key are collapsed down to one survivor; the survivor is the incumbent (first-seen job for that key), but its fields are field-level-upgraded (not wholesale replaced):
+`scraping/engine/dedup.rs`: `dedup_cross_source()` runs once per manual scrape after all boards are concatenated, before results are returned to the UI. Duplicates sharing a canonical key are collapsed down to one survivor; the survivor is the incumbent (first-seen job for that key), but its fields are field-level-upgraded (not wholesale replaced):
 
 - `id`, `url`, `source`, `interactions` — never overwritten (incumbent identity kept; user-state is tied to `id`)
 - `description` — upgraded when the challenger's is strictly longer (measured in UTF-8 bytes)
@@ -330,7 +330,7 @@ This policy prevents silent data loss (e.g., Adzuna's salary fields wouldn't be 
 
 **Autopilot merge:**
 
-`autopilot/mod.rs`: `merge_found_jobs()` dedupes the incoming batch intra-batch using the same canonical key before merging against existing persisted rows. The engine's cross-source pass runs upstream (the Autopilot path consumes the already-deduped vec directly), so this is defensive; intra-batch dedup follows the same field-level-upgrade pattern. Notification count reflects post-dedup genuinely-new jobs only.
+`autopilot/merge.rs`: `merge_found_jobs()` dedupes the incoming batch intra-batch using the same canonical key before merging against existing persisted rows. The engine's cross-source pass runs upstream (the Autopilot path consumes the already-deduped vec directly), so this is defensive; intra-batch dedup follows the same field-level-upgrade pattern. Notification count reflects post-dedup genuinely-new jobs only.
 
 **Renderer dedup pass:**
 
@@ -345,8 +345,8 @@ The Rust truth-table test cases (same URL across boards, url-less title+company,
 **Source pointers:**
 
 - Canonical key (Rust): `apps/desktop/src-tauri/src/scraping/boards/common.rs:canonical_job_key`
-- Engine dedup: `apps/desktop/src-tauri/src/scraping/engine/mod.rs:dedup_cross_source`
-- Autopilot merge: `apps/desktop/src-tauri/src/autopilot/mod.rs:merge_found_jobs` (delegates `merge_key` to the shared canonical key)
+- Engine dedup: `apps/desktop/src-tauri/src/scraping/engine/dedup.rs:dedup_cross_source`
+- Autopilot merge: `apps/desktop/src-tauri/src/autopilot/merge.rs:merge_found_jobs` (delegates `merge_key` to the shared canonical key)
 - Canonical key (TS mirror): `apps/desktop/src/renderer/features/jobs/lib/canonical-job-key.ts`
 - Renderer dedup: `apps/desktop/src/renderer/features/jobs/lib/merge-postings.ts:mergePostings`
 
@@ -358,8 +358,8 @@ Beyond exact canonical_job_key matching, a fuzzy clustering layer recomputed at 
 
 - Normalization + clustering engine: `apps/desktop/src-tauri/src/scraping/cluster/{mod,normalize}.rs`
 - Pair-tombstone store: `apps/desktop/src-tauri/src/dedup/mod.rs` (`DedupStore`)
-- Engine wiring (manual-scrape + single-import): `apps/desktop/src-tauri/src/commands/scrape.rs:recluster_postings_cache`
-- Autopilot wiring (batch clustering, minMatchScore awareness): `apps/desktop/src-tauri/src/autopilot/mod.rs:record_run`
+- Engine wiring (manual-scrape + single-import): `apps/desktop/src-tauri/src/commands/scrape/clusters.rs:recluster_postings_cache`
+- Autopilot wiring (batch clustering, minMatchScore awareness): `apps/desktop/src-tauri/src/autopilot/runs.rs:record_run`
 - IPC split command: `apps/desktop/src-tauri/src/commands/dedup.rs:dedup_mark_not_duplicate`
 - UI cluster chips + filters: `apps/desktop/src/renderer/components/job/ClusterSourceChips`, `hideAgency` session filter
 
@@ -390,10 +390,10 @@ Per-board scrape outcomes are now visible via a shared `BoardSummaryChips` compo
 
 **Aggregator short snippets → full descriptions:** the Adzuna search API returns truncated snippets. The detail pane auto-fetches on open when the source is the aggregator and the description is under its snippet floor, following the redirect chain and re-dispatching named-board handlers on the final URL. If the resolved text is meaningfully longer, it replaces the snippet; otherwise the snippet floor is kept. Redirect following is IP-guarded per-hop (closes DNS-rebinding TOCTOU); 429/login-wall/error returns Ok(None) and the snippet is retained.
 
-- **Resolver:** `apps/desktop/src-tauri/src/commands/scrape.rs: scrape_resolve_url(app, url)` — public command invoked by detail pane
+- **Resolver:** `apps/desktop/src-tauri/src/commands/scrape/run.rs: scrape_resolve_url(app, url)` — public command invoked by detail pane
 - **Re-dispatch:** `apps/desktop/src-tauri/src/scraping/scrape_url/mod.rs: resolve()` — follows redirect and re-dispatches handlers per final URL
 - **Pane gate:** `apps/desktop/src/renderer/features/jobs/components/JobDetailPane/index.tsx` — on-open resolve when the source is the aggregator and the description is under that file's snippet floor; keep-longer merge logic
-- **Description mutation & re-score:** Backend command `scrape_update_description` (`ScrapeUpdateDescriptionRequest`, `commands/scrape.rs`) addresses the posting by `url` (not a board-synthetic id — see the request struct's own doc), and writes the resolved text to BOTH the live `PostingsCache` and every matching `FoundJob` row across every persisted autopilot (`AutopilotStore::update_found_job_descriptions`), so a correction reaches postings surfaced via the Agent/MCP read resources too, not only the session-lifetime cache. The frontend's `MatchScoresProvider` holds a reactive `requested` set; when the description is updated, the per-job match score is re-computed on-demand via `useJobMatchScore` (single-job scoring, not batch). Not a generated IPC contract — the request type is hand-declared on both sides (`commands/scrape.rs` / `tauri-client/namespaces/scrape/scrape.ts`).
+- **Description mutation & re-score:** Backend command `scrape_update_description` (`ScrapeUpdateDescriptionRequest`, `commands/scrape/postings.rs`) addresses the posting by `url` (not a board-synthetic id — see the request struct's own doc), and writes the resolved text to BOTH the live `PostingsCache` and every matching `FoundJob` row across every persisted autopilot (`AutopilotStore::update_found_job_descriptions`), so a correction reaches postings surfaced via the Agent/MCP read resources too, not only the session-lifetime cache. The frontend's `MatchScoresProvider` holds a reactive `requested` set; when the description is updated, the per-job match score is re-computed on-demand via `useJobMatchScore` (single-job scoring, not batch). Not a generated IPC contract — the request type is hand-declared on both sides (`commands/scrape/postings.rs` / `tauri-client/namespaces/scrape/scrape.ts`).
 
 ## Source pointers
 
@@ -420,7 +420,7 @@ Per-board scrape outcomes are now visible via a shared `BoardSummaryChips` compo
   - Jobicy: `apps/desktop/src-tauri/src/scraping/boards/jobicy/mod.rs` — HTTP GET request to Jobicy's free API with `count`/`tag` query params; returns full inline job descriptions (no truncation, no detail-fetch wall); free-text `tag` parameter for keyword search; part of the SCRAPERS registry.
 - **Aggregator:**
   - Registry: `apps/desktop/src-tauri/src/scraping/boards/aggregator/mod.rs`
-  - Providers (Adzuna, JSearch, Jooble, Apify LinkedIn): `apps/desktop/src-tauri/src/scraping/boards/aggregator/providers.rs` (JobProvider trait + implementations)
+  - Providers (Adzuna, JSearch, Jooble, Apify LinkedIn): `apps/desktop/src-tauri/src/scraping/boards/aggregator/` (`fallback.rs`: JobProvider trait; one module per provider)
 
 ## Error representability (PR A, 2026-07-10)
 
@@ -436,7 +436,7 @@ Board fetch errors are now representable end-to-end, distinguishing between "boa
   - Resolve + merge gate: `apps/desktop/src/renderer/features/jobs/components/JobDetailPane/index.tsx` (on-open resolve if short snippet; keep-longer merge logic; calls `scrape_resolve_url` + `scrape_update_description` IPC)
   - Description formatting: `html_to_markdown()` in `apps/desktop/src-tauri/src/scraping/http/mod.rs` — converts HTML job descriptions to Markdown
   - Rendering: `JobDescription` component (`packages/ui/src/components/JobDescription/index.tsx`) renders Markdown via react-markdown with design-token-only styling
-- **Rust commands:** `apps/desktop/src-tauri/src/commands/scrape.rs` (`scrape_resolve_url`, `scrape_update_description`)
+- **Rust commands:** `apps/desktop/src-tauri/src/commands/scrape/run.rs` (`scrape_resolve_url`), `apps/desktop/src-tauri/src/commands/scrape/postings.rs` (`scrape_update_description`)
 - **PostingsCache mutation:** `apps/desktop/src-tauri/src/postings/mod.rs: update_description(job_id, text)` — in-place cache mutation; text-hash-keyed result/embedding caches auto-invalidate on changed job text
 
 ## Board hygiene (PR G, 2026-07-11)
@@ -513,8 +513,8 @@ Browser extension single-job imports on SPA/list-view pages (`?currentJobId=…`
 **Seam points:**
 
 - **Content script:** `apps/extension/src/content.ts` `markLikelyJobNode()` tries detail-pane containers (`[class*="job-details"]`, `[class*="jobs-details"]`, `[class*="jobs-description"]`) before `main`, with visibility gates (no `display:none` or `visibility:hidden` decoys), to mark the correct pane.
-- **Bridge:** `apps/desktop/src-tauri/src/extension_bridge/import_flow.rs` `merge_resolve_with_hint()` — merge strategy: `resolve()`'s non-empty title/description fields win; empty fields are filled from the hint only (never clobbered).
-- **Hint extraction:** `apps/desktop/src-tauri/src/scraping/scrape_url/mod.rs` `job_root_generic_html()` (exposed `pub(crate)` for canonical branch) — reads ONLY the hinted subtree, never document-level JSON-LD/`__NEXT_DATA__`/structural heuristics.
+- **Bridge:** `apps/desktop/src-tauri/src/extension_bridge/import_flow_resolve.rs` `merge_resolve_with_hint()` — merge strategy: `resolve()`'s non-empty title/description fields win; empty fields are filled from the hint only (never clobbered).
+- **Hint extraction:** `apps/desktop/src-tauri/src/scraping/scrape_url/html_fallback.rs` `job_root_generic_html()` (exposed `pub(crate)` for canonical branch) — reads ONLY the hinted subtree, never document-level JSON-LD/`__NEXT_DATA__`/structural heuristics.
 
 **Canonical branch precedence:** SPA/list imports take three paths: (a) `resolve(canonical)` succeeds + usable → use it directly; (b) `resolve()` fails or description-less → try hint-scoped `job_root_generic_html()` to gap-fill title/description; (c) neither path yields a usable posting → fall through to stub/partial persist. Whole-document parse never runs for canonical URLs, only for direct page imports.
 
@@ -526,7 +526,7 @@ Company-scoped ATS boards require hand-typed slugs that users cannot know in adv
 
 - **Pure extractor:** `scraping/ats_ref.rs::extract_ats_ref(url) -> Option<AtsRef>` — reuses existing `scrape_url` URL parsers; matches posting-URL hosts for all company-scoped boards registered in `scraping/ats_ref.rs::PARSERS` (case-insensitive host matching; casing preserved on slugs).
 - **Store:** `discovered/mod.rs::DiscoveredCompanyStore` — persisted SQLite table (see the source file for schema and migrations). Registered in `Resettable` reset registry (ADR-009) + `DataStore` backup bundle.
-- **Harvest sites:** `commands/discovery.rs::harvest_ats_refs` wired into two parse-only passes: (1) after engine scrape in `commands/scrape.rs`, (2) extension import in `extension_bridge/import_flow.rs`. Batch upserts per transaction.
+- **Harvest sites:** `discovered/harvest.rs::harvest_ats_refs` wired into two parse-only passes: (1) after engine scrape in `commands/scrape/run.rs`, (2) extension import in `extension_bridge/import_flow.rs`. Batch upserts per transaction.
 
 **Surfacing + watching:**
 
@@ -537,7 +537,7 @@ Company-scoped ATS boards require hand-typed slugs that users cannot know in adv
 
 - Extractor: `scraping/ats_ref.rs::extract_ats_ref`
 - Store: `discovered/mod.rs::DiscoveredCompanyStore`
-- Harvest callers: `commands/discovery.rs::harvest_ats_refs`, `commands/scrape.rs::scrape_resolve_url`, `extension_bridge/import_flow.rs`
+- Harvest callers: `discovered/harvest.rs::harvest_ats_refs`, `commands/scrape/run.rs::scrape_resolve_url`, `extension_bridge/import_flow.rs`
 - Runtime watching: `autopilot_helpers/mod.rs::resolve_watched_companies`, `scraping/engine::scrape_boards_with_overrides`
 - IPC contract: `packages/shared/src/ipc/contracts/discovery.ts`
 - UI typeahead: `packages/ui` CompanyTypeahead
@@ -563,7 +563,7 @@ Company-scoped ATS boards require hand-typed slugs that users cannot know in adv
 
 **Classifier:** `scraping/engine/work_type_filter.rs` — pure functions `work_type_verdict(posting) -> WorkTypeVerdict` and `work_type_mismatch(posting, wanted) -> bool`. Reads ONLY `extra.workType` (declared by the board at parse time); no text inference. Tests: normalized spellings (`on-site`, `onsite`, `OnSite`, `ONSITE`, `on_site`), unknown-never-drops invariant.
 
-**Engine wiring:** `scraping/engine/mod.rs` — `keep_item` predicate applies `work_type_mismatch` alongside `location_mismatch` (two independent filters, one predicate). Emits `work-type-filtered:<n>` unconditionally when a work type is requested (n=0 preserves honesty: "not honored by non-supporting boards").
+**Engine wiring:** `scraping/engine/scrape_boards/requested_filters.rs` — `keep_item` predicate applies `work_type_mismatch` alongside `location_mismatch` (two independent filters, one predicate). Emits `work-type-filtered:<n>` unconditionally when a work type is requested (n=0 preserves honesty: "not honored by non-supporting boards").
 
 **Note precedence (updated):** see the "Partial-failure notes" section above.
 
@@ -588,7 +588,7 @@ under `apps/desktop/src-tauri/src/scraping/boards/`.
 **Source pointers:**
 
 - Classifier: `apps/desktop/src-tauri/src/scraping/engine/work_type_filter.rs`
-- Engine wiring: `apps/desktop/src-tauri/src/scraping/engine/mod.rs` (`keep_item` predicate, note emission)
+- Engine wiring: `apps/desktop/src-tauri/src/scraping/engine/scrape_boards.rs` + `scrape_boards/requested_filters.rs` (`keep_item` predicate, note emission)
 - Per-board mappings: each board module (`boards/{lever,ashby,smartrecruiters,...}/mod.rs`)
 - Capability flag: `Scraper::supports_work_type()` in `scraping/types/mod.rs`
 - Catalog: `BoardCatalogEntry.supportsWorkType?` in `packages/shared/src/ipc/contracts/boards.ts`

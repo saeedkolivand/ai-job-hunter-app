@@ -2,8 +2,8 @@
 //! server-side lookup and renderer-supplied text, for both the résumé and the
 //! job ad. Split out of `mod.rs` to stay under R8's per-module LOC cap
 //! (`docs/architecture-rules.md`) — every item here is `pub(crate)` because
-//! `execute`/`persist_document` (in `mod.rs`) and this module's own tests
-//! (`test.rs`, a sibling under `resume_pipeline`) all need them, not because
+//! `execute`/`persist_document` (in `run.rs`/`persist.rs`) and this module's own tests
+//! (`tests/`, a sibling under `resume_pipeline`) all need them, not because
 //! anything outside `commands::resume_pipeline` does.
 //!
 //! **The branch semantics live HERE, as pure functions over an already-decided

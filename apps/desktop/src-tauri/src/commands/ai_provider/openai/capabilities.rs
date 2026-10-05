@@ -60,7 +60,7 @@ pub(super) fn is_gpt5_or_later_reasoning_family(model: &str) -> bool {
 /// gateways (LM Studio/vLLM/OpenRouter/custom endpoints — same wire
 /// protocol): real values reproducing this app's pre-fix shipped numbers
 /// for every intent — see the shared constants' doc comments
-/// (`commands/ai_provider/mod.rs`) for the exact per-surface history each
+/// (`commands/ai_provider/sampling.rs`) for the exact per-surface history each
 /// one preserves. `frequency_penalty`/`presence_penalty` both sit inside
 /// OpenAI's own documented "reasonable" band
 /// (`platform.openai.com/docs/api-reference/chat/create`: "Number between
@@ -68,7 +68,7 @@ pub(super) fn is_gpt5_or_later_reasoning_family(model: &str) -> bool {
 fn openai_sampling_profile(intent: Intent) -> SamplingProfile {
     match intent {
         // `Default` (no declared intent) resolves the same as `Deterministic`
-        // — see `Intent`'s own doc comment (`commands/ai_provider/mod.rs`).
+        // — see `Intent`'s own doc comment (`commands/ai_provider/sampling.rs`).
         Intent::Deterministic | Intent::Default => SamplingProfile {
             temperature: Some(DETERMINISTIC_TEMPERATURE),
             ..SamplingProfile::default()

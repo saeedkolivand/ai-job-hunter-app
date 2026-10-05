@@ -132,7 +132,7 @@ export interface AiGenerationsContract {
   list(): Promise<AiGenerationRecord[]>;
   /**
    * Per-job merge-upsert keyed on `jobUrl` (`merge_application` in
-   * `apps/desktop/src-tauri/src/ai_generations/mod.rs`): a résumé, a cover
+   * `apps/desktop/src-tauri/src/ai_generations/record.rs`): a résumé, a cover
    * letter, application answers and a company brief produced by separate
    * generation actions all land on ONE row when they share a `jobUrl`. A save
    * with no `jobUrl` (a manual generation) inserts its own row instead.

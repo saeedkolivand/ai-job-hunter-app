@@ -206,7 +206,7 @@ async fn a_cached_job_is_re_ranked_without_charging_the_daily_budget() {
 ///
 /// There is no charge PREDICATE left to test: the charge is made by the call
 /// that reaches the provider, on the bytes it consumes (see
-/// `commands::match_resume::test`'s cache/charge pins, which drive the real
+/// `commands::match_resume::tests`'s cache/charge pins, which drive the real
 /// kernel against a real store).
 #[test]
 fn the_rerank_budget_charges_the_shared_ceiling_and_latches_its_refusal() {

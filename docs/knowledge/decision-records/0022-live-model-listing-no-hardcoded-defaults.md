@@ -149,7 +149,7 @@ PR #937 fixed it by requiring `openai-compatible` to be configured (either a sto
 ## References
 
 - `packages/shared/src/ipc/contracts/ai.ts` — `ProviderModelInfo` interface, `listProviderModels` contract
-- `apps/desktop/src-tauri/src/commands/ai.rs` — `ai_list_provider_models` command (now returns `AppResult<Value>`)
+- `apps/desktop/src-tauri/src/commands/ai/provider_keys.rs` — `ai_list_provider_models` command (now returns `AppResult<Value>`)
 - `apps/desktop/src-tauri/src/commands/ai_provider/mod.rs` — `AiProvider::list_models()` trait method (now returns `AppResult`)
 - `apps/desktop/src-tauri/src/commands/ai_provider/{anthropic,gemini,openai,ollama_cloud}.rs` — per-provider implementations with pagination + deadline bounding
 - `apps/desktop/src/renderer/services/use-ai-provider/use-ai-provider.ts` — `fetchProviderModelsWithCache()`, `useListProviderModels()`, purpose-split cache logic

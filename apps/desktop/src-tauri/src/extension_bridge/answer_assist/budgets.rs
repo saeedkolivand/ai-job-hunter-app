@@ -63,7 +63,7 @@ pub(in crate::extension_bridge) const DRAFT_CAP: usize = 4_000;
 /// stays under that threshold
 /// ([`crate::commands::ai_provider::anthropic::classic_thinking_engages`]),
 /// asserted (not just documented) by
-/// `tests::the_compose_budget_stays_under_anthropics_classic_thinking_gate`.
+/// `commands::ai_provider::anthropic::tests::thinking::the_extension_bridge_compose_budget_stays_under_the_classic_thinking_gate`.
 ///
 /// Reasoning-effort helps too — a cheap tier when the provider has one
 /// ([`crate::pipeline::Completer::low_effort`]) — and

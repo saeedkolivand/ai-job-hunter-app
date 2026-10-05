@@ -30,7 +30,7 @@ export function isMeasured(score: MatchScore | undefined): score is MatchScore {
 }
 
 /**
- * `keyword_coverage` (`match_resume.rs`) returns `ats: 0, gaps: []` for BOTH
+ * `keyword_coverage` (`documents/keywords.rs`) returns `ats: 0, gaps: []` for BOTH
  * "no extractable keywords" AND would for a genuine 0% match — except a
  * genuine 0% still lists every job keyword as a gap, so `gaps.length === 0`
  * only co-occurs with `ats === 0` in the former case. `combined` inherits the

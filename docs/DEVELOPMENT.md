@@ -1,6 +1,6 @@
 # Development Setup — AI Job Hunter
 
-Last updated: 2026-09-22
+Last updated: 2026-10-05
 
 This guide gets you from zero to a running dev environment.
 
@@ -272,7 +272,7 @@ Each store owns its own migration list and tracks progress with `PRAGMA user_ver
 `1..N` in list order, each applied inside one transaction together with its version bump,
 so a failure rolls back wholesale rather than leaving a half-applied schema. (One
 exception to "each store owns its list": `ApplicationStore::backfill_from_generations`
-in `apps/desktop/src-tauri/src/applications/mod.rs` opens `ai_generations.db` and writes
+in `apps/desktop/src-tauri/src/applications/migrations.rs` opens `ai_generations.db` and writes
 its schema — an unversioned second writer, guarded by its own idempotent
 `column_exists` checks rather than by `user_version`.)
 

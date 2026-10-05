@@ -1,5 +1,5 @@
 //! `CancelRegistry` behaviour pins. These are the invariants the scraper engine
-//! used to own inline (`scraping::engine::test`) — restated here against the
+//! used to own inline (`scraping::engine::tests`) — restated here against the
 //! extracted registry so a future refactor of either side has to keep them.
 
 use tokio_util::sync::CancellationToken;

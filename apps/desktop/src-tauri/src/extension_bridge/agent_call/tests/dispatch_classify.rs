@@ -61,7 +61,7 @@ fn invoke_error_detail_falls_back_to_json_form_for_a_non_string_value() {
 
 // ── gate (the gate `dispatch` actually calls) ───────────────────────────
 // The exhaustive walk over every real POLICY row lives in
-// `extension_bridge::test` (needs `POLICY`, not just a hand-picked sample);
+// `policy_matrix` (needs `POLICY`, not just a hand-picked sample);
 // this covers the 4 variants directly, once each, as the fast/local check.
 
 #[test]

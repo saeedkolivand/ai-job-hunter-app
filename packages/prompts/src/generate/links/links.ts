@@ -12,7 +12,7 @@ import { isAllCapsSectionHeading, isKnownSectionName } from '../text/header-cont
 
 // Known social/portfolio domains that belong in a resume contact line.
 // `about.me`/`carrd.co` added for parity with Rust WEBSITE_HOSTS (#L1,
-// contact_profile/mod.rs:558-565) — link-in-bio hosts alongside the other
+// contact_profile/classify.rs) — link-in-bio hosts alongside the other
 // four already here (solo.to, bio.link, linktr.ee, bento.me). `xing.com`
 // added deliberately (#LOW, xing.com is also in JOB_BOARD_HOSTS below — a
 // DACH candidate's personal Xing profile, gated to `/profile/` the same way
@@ -49,7 +49,7 @@ const PROFILE_DOMAINS = [
 /**
  * Hosts that are job boards / aggregators / employer ATS — never a personal
  * contact link and never a project either. Mirrors Rust `JOB_BOARD_HOSTS`
- * (`contact_profile/mod.rs`). Used both to keep one off the "Website"
+ * (`contact_profile/classify.rs`). Used both to keep one off the "Website"
  * apex/first-seen pre-pass (#L1) and to drop it entirely in `classifyLinks`'s
  * main loop rather than letting it fall through to `body` (#HIGH-3 — a
  * fabrication risk of the same shape #M6 closed for non-personal LinkedIn).
@@ -89,7 +89,7 @@ function isProfileUrl(url: string): boolean {
 }
 
 /**
- * Derive a friendly label from a URL — mirrors the Rust url_label() in links.rs.
+ * Derive a friendly label from a URL — mirrors the Rust url_label() in model/rich.rs.
  * Used when a PDF annotation stores the raw URL as its anchor text instead of a label.
  * Exported for the cross-language parity test against Rust url_label().
  */
@@ -202,7 +202,7 @@ function isLinkedinHost(url: string): boolean {
  * (`/school/…`) or job (`/jobs/…`) page is shape-indistinguishable but must
  * never seed the contact line — or a fabricated body item (#M6, see the
  * exclusion in `classifyLinks`). Mirrors Rust `is_personal_linkedin`
- * (`contact_profile/mod.rs`).
+ * (`contact_profile/classify.rs`).
  */
 function isPersonalLinkedin(url: string): boolean {
   return isLinkedinHost(url) && url.toLowerCase().includes('/in/');
@@ -260,7 +260,7 @@ function isProfileShaped(url: string): boolean {
  * Among bare-root, non-platform candidate URLs, decide which one is admitted
  * as the single "Website" contact link — order-independent (#A parity with
  * Rust `classify_contact_links`'s `apex_pick`/`first_pick`,
- * `contact_profile/mod.rs`): a host that is the apex of another candidate
+ * `contact_profile/classify.rs`): a host that is the apex of another candidate
  * host in this same document (e.g. `example.dev` beside `blog.example.dev`)
  * wins over every standalone candidate; among hosts tied on that signal,
  * first-seen decides. The subdomain check is dot-prefixed
@@ -679,7 +679,7 @@ function matchLineTitle(line: string, label: string): TitleSpan | null {
   end = extendPastDanglingCloser(line, start, end);
   end = backOffSurrogateSplit(line, end);
   // Never wrap a span containing `[`/`]` — MD_LINK_SPAN_RE (and the Rust
-  // renderer's MD_LINK_RE, model/rich.rs:33-34) can't parse nested brackets,
+  // renderer's MD_LINK_RE, model/rich.rs) can't parse nested brackets,
   // and the widened separator class (#M2) would otherwise let a match skip
   // straight across them: "CrossKit [beta] Toolkit" → the broken
   // `[CrossKit [beta] Toolkit](url)` (#MEDIUM).

@@ -180,7 +180,7 @@ pub fn assess_trust(url: &str, company: &str, description: &str) -> TrustAssessm
 }
 
 /// Compound ccTLD suffixes used by Adzuna's own per-market websites, for the
-/// `ADZUNA_SUPPORTED_COUNTRIES` markets (`scraping/boards/aggregator/adzuna.rs`)
+/// `ADZUNA_SUPPORTED_COUNTRIES` markets (`scraping/boards/aggregator/adzuna_fetch.rs`)
 /// whose real domain isn't a bare single-label TLD — verified live
 /// (issue #1107 follow-up): `gb`→`co.uk` (Adzuna's HOME market), `au`→`com.au`,
 /// `za`→`co.za`, `nz`→`co.nz`, `mx`→`com.mx`, `br`→`com.br`, `in`→`co.in`.

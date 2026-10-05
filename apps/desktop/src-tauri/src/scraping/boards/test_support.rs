@@ -3,7 +3,7 @@
 //! Every board's tests built the full 18-field `BoardSearchInput` and the
 //! 5-field `ScrapeContext` literal by hand — one to a handful of fields ever
 //! differ per test, the rest is the same boilerplate copied into every board's
-//! `test.rs`. `default_search_input()`/`default_ctx()` hold that boilerplate
+//! `tests.rs`. `default_search_input()`/`default_ctx()` hold that boilerplate
 //! once; a test overrides only what it varies via struct-update syntax
 //! (`BoardSearchInput { companies: vec![...], ..default_search_input() }`).
 
