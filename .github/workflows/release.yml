@@ -337,6 +337,19 @@ jobs:
           rustup target add ${{ matrix.target }}
           echo "::endgroup::"
 
+      # tauri-bundler (2.10.1 at time of writing) saves its downloaded AppRun helper
+      # as 0770 and copies it into the AppImage as AppRun.wrapped, so any other
+      # user (the AppImage catalog's firejail test) gets "Permission denied"
+      # (tauri-apps/tauri#16155). It reuses a cached helper, so seed a 0755 one.
+      - name: 🐧 Seed AppRun Helper (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          d="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
+          mkdir -p "$d"
+          curl -fsSL -o "$d/AppRun-x86_64" https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64
+          echo "f30140a43a0a59e46db21bdefdf749b9e9f2c6946e92afabbacf98b8ae73fb4f  $d/AppRun-x86_64" | sha256sum -c -
+          chmod 755 "$d/AppRun-x86_64"
+
       - name: 🏗️ Build Tauri Application
         id: tauri-build
         continue-on-error: true
@@ -373,6 +386,15 @@ jobs:
           # auto-updater for every user. See docs/DEPLOYMENT.md (Updater signing keys).
           node scripts/verify-updater-key.cjs
           echo "::endgroup::"
+
+      - name: 🐧 Verify AppImage Starts For Any User (Linux only)
+        if: runner.os == 'Linux' && steps.tauri-build.outcome == 'success'
+        working-directory: ${{ runner.temp }}
+        run: |
+          img=$(ls "$GITHUB_WORKSPACE"/apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage)
+          "$img" --appimage-extract AppRun.wrapped >/dev/null
+          stat -c '%A %n' squashfs-root/AppRun.wrapped
+          test -n "$(find squashfs-root/AppRun.wrapped -perm -o+rx)" || { echo "::error::AppRun.wrapped is not executable by other users (see the seed step above)"; exit 1; }
 
       # ── Microsoft Store (MSIX) ────────────────────────────────────────────
       # Wraps the SAME ajh-tauri.exe the NSIS installer ships (Tauri has no
