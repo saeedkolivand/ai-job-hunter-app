@@ -7279,7 +7279,6 @@ dependencies = [
  "sentry-contexts",
  "sentry-core",
  "sentry-debug-images",
- "sentry-minidump",
  "sentry-panic",
  "sentry-tracing",
  "ureq",
@@ -7347,18 +7346,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sentry-minidump"
-version = "0.49.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ffa59eab15910d1edf0705a172bd408ac7487d6e0ab622dd402a92b35b230dc"
-dependencies = [
- "minidumper-child",
- "sentry-core",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "sentry-panic"
 version = "0.49.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7366,6 +7353,17 @@ checksum = "b7153e68642b761ed3aa62c022795c11b2facc728b2db7484084492373c944f9"
 dependencies = [
  "sentry-backtrace",
  "sentry-core",
+]
+
+[[package]]
+name = "sentry-rust-minidump"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2133269d675e52cb96cdbec8fa1ccb8adc50e74899e53902860f7c3e74fb2550"
+dependencies = [
+ "minidumper-child",
+ "sentry",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -8563,13 +8561,14 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-sentry"
-version = "0.7.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24e8963d2a79b6e796599f14c7f2ec0db9b7bc58642ee7d1fa50e243b46547b4"
+checksum = "b5520fe8aa00d12fbdb0c290e15f9629f33aaaa1440b1703a01b1cfab44cdf1c"
 dependencies = [
  "base64 0.23.1",
  "schemars 0.8.22",
  "sentry",
+ "sentry-rust-minidump",
  "serde",
  "tauri",
  "tauri-plugin",
