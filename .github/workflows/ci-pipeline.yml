@@ -391,10 +391,21 @@ jobs:
           pnpm check:log-error-leaks
           echo "::endgroup::"
 
-      - name: ❌ Check for Failures
-        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure' || steps.gen_agent_catalogue.outcome == 'failure' || steps.gen_prompts.outcome == 'failure' || steps.gen_api.outcome == 'failure' || steps.landing_drift.outcome == 'failure' || steps.agent_system.outcome == 'failure' || steps.tech_radar.outcome == 'failure' || steps.toolchain_pin.outcome == 'failure' || steps.event_subscriptions.outcome == 'failure' || steps.adr_citations.outcome == 'failure' || steps.log_error_leaks.outcome == 'failure'
+      # Every tracked *.ts/*.tsx file stays under 300 code lines, ratcheted
+      # against scripts/data/ts-size-baseline.txt (the TypeScript twin of the
+      # Rust R8 size rule) — see scripts/check-ts-size.mjs.
+      - name: 📏 Check TS/TSX file size
+        id: ts_size
+        continue-on-error: true
         run: |
-          echo "::error file=package.json::Lint, format, IPC codegen, agent-catalogue codegen, prompts codegen, API-docs codegen, landing-diagram, agent-system, tech-radar, toolchain-pin, event-subscription, ADR-citation, or log-error-leak drift check failed. Run 'pnpm lint:fix', 'pnpm format', 'pnpm gen:ipc', 'pnpm gen:agent-catalogue', 'pnpm gen:prompts', 'pnpm gen:api', 'pnpm check:landing-drift', 'pnpm check:agent-system', 'pnpm check:tech-radar', 'pnpm check:toolchain-pin', 'pnpm check:event-subscriptions', 'pnpm check:adr-citations', and 'pnpm check:log-error-leaks' locally to fix."
+          echo "::group::Checking TS/TSX file size against the 300-line cap"
+          pnpm check:ts-size
+          echo "::endgroup::"
+
+      - name: ❌ Check for Failures
+        if: steps.eslint.outcome == 'failure' || steps.format.outcome == 'failure' || steps.gen_ipc.outcome == 'failure' || steps.gen_agent_catalogue.outcome == 'failure' || steps.gen_prompts.outcome == 'failure' || steps.gen_api.outcome == 'failure' || steps.landing_drift.outcome == 'failure' || steps.agent_system.outcome == 'failure' || steps.tech_radar.outcome == 'failure' || steps.toolchain_pin.outcome == 'failure' || steps.event_subscriptions.outcome == 'failure' || steps.adr_citations.outcome == 'failure' || steps.log_error_leaks.outcome == 'failure' || steps.ts_size.outcome == 'failure'
+        run: |
+          echo "::error file=package.json::Lint, format, IPC codegen, agent-catalogue codegen, prompts codegen, API-docs codegen, landing-diagram, agent-system, tech-radar, toolchain-pin, event-subscription, ADR-citation, log-error-leak, or TS-file-size drift check failed. Run 'pnpm lint:fix', 'pnpm format', 'pnpm gen:ipc', 'pnpm gen:agent-catalogue', 'pnpm gen:prompts', 'pnpm gen:api', 'pnpm check:landing-drift', 'pnpm check:agent-system', 'pnpm check:tech-radar', 'pnpm check:toolchain-pin', 'pnpm check:event-subscriptions', 'pnpm check:adr-citations', 'pnpm check:log-error-leaks', and 'pnpm check:ts-size' locally to fix."
           echo "::error::Please fix the issues above before merging."
           exit 1
 
