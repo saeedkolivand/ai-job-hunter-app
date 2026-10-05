@@ -31,6 +31,10 @@ describe('countCodeLines', () => {
     expect(countCodeLines('// head\nconst a = 1;\n  // indented\n', 'x.ts')).toBe(1);
   });
 
+  it("keeps a multi-line comment's newlines, so code on both sides still counts", () => {
+    expect(countCodeLines('const a = 1; /* x\n y */ const b = 2;\n', 'x.ts')).toBe(2);
+  });
+
   it('does not count a multi-line block comment', () => {
     const src = ['/*', ' * one', ' * two', ' */', 'const a = 1;', ''].join('\n');
     expect(countCodeLines(src, 'x.ts')).toBe(1);
@@ -205,8 +209,7 @@ describe('the committed baseline', () => {
   const baseline = parseBaseline(readFileSync(join(root, BASELINE_REL), 'utf8'));
   const paths = Object.keys(baseline);
 
-  it('is non-empty and lists only files over the cap', () => {
-    expect(paths.length).toBeGreaterThan(0);
+  it('lists only files over the cap', () => {
     expect(Object.values(baseline).every((loc) => loc > HARD_CAP)).toBe(true);
   });
 

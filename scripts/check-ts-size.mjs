@@ -129,8 +129,16 @@ function main() {
   const counts = {};
   const unparsable = [];
   for (const path of trackedSources()) {
+    let source;
     try {
-      counts[path] = countCodeLines(readFileSync(resolve(REPO_ROOT, path), 'utf8'), path);
+      source = readFileSync(resolve(REPO_ROOT, path), 'utf8');
+    } catch {
+      // Not `e.message`: Node's IO errors embed the absolute path (path privacy).
+      unparsable.push(`${path}: unreadable`);
+      continue;
+    }
+    try {
+      counts[path] = countCodeLines(source, path);
     } catch (e) {
       unparsable.push(`${path}: failed to parse — ${e.message}`);
     }

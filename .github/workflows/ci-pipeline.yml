@@ -391,14 +391,14 @@ jobs:
           pnpm check:log-error-leaks
           echo "::endgroup::"
 
-      # Every tracked *.ts/*.tsx file stays under 300 code lines, ratcheted
+      # Every tracked *.ts/*.tsx file stays under HARD_CAP code lines, ratcheted
       # against scripts/data/ts-size-baseline.txt (the TypeScript twin of the
       # Rust R8 size rule) — see scripts/check-ts-size.mjs.
       - name: 📏 Check TS/TSX file size
         id: ts_size
         continue-on-error: true
         run: |
-          echo "::group::Checking TS/TSX file size against the 300-line cap"
+          echo "::group::Checking TS/TSX file size against the cap"
           pnpm check:ts-size
           echo "::endgroup::"
 
