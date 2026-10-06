@@ -1,6 +1,8 @@
 import { useTranslation } from '@ajh/translations';
 import { Input } from '@ajh/ui';
 
+import { FieldError, FieldLabel } from '../DetailChrome';
+
 /**
  * Id of the single shared hint under the recipient pair. A literal (not `useId`)
  * because BOTH fields must point at the same node, and only one instance of this
@@ -17,22 +19,6 @@ interface Props {
   onEmailChange: (value: string) => void;
   onNameBlur: () => void;
   onEmailBlur: (value: string) => void;
-}
-
-function FieldLabel({ htmlFor, children }: { htmlFor: string; children: string }) {
-  return (
-    <label htmlFor={htmlFor} className="text-xs font-semibold text-foreground/70">
-      {children}
-    </label>
-  );
-}
-
-function FieldError({ children }: { children: string }) {
-  return (
-    <p className="text-fine-print text-red-400" role="alert">
-      {children}
-    </p>
-  );
 }
 
 /** The recipient name/email pair (the application's canonical contact) + its shared hint. */

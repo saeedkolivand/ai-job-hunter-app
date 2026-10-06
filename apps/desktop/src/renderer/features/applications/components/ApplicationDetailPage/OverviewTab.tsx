@@ -5,6 +5,7 @@ import { cn, IconBadge, Input, SectionLabel, TextArea } from '@ajh/ui';
 
 import type { nextActionLabel } from '@/features/applications/lib/stale';
 
+import { FieldError, FieldLabel } from './DetailChrome';
 import type { OverviewFields } from './useOverviewFields';
 
 /**
@@ -36,21 +37,18 @@ function OverviewSection({
 function Field({ id, label, children }: { id: string; label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-xs font-semibold text-foreground/70">
-        {label}
-      </label>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
       {children}
     </div>
   );
 }
 
-function FieldError({ children }: { children: string }) {
-  return (
-    <p className="text-fine-print text-red-400" role="alert">
-      {children}
-    </p>
-  );
-}
+/** The value / change / blur props every save-on-blur overview input shares. */
+const bind = (f: { value: string; onChange: (v: string) => void; onBlur: () => void }) => ({
+  value: f.value,
+  onChange: (e: { target: { value: string } }) => f.onChange(e.target.value),
+  onBlur: f.onBlur,
+});
 
 export function OverviewTab({
   fields,
@@ -73,9 +71,7 @@ export function OverviewTab({
               id="appdetail-next-action"
               variant="default"
               type="date"
-              value={nextAction.value}
-              onChange={(e) => nextAction.onChange(e.target.value)}
-              onBlur={nextAction.onBlur}
+              {...bind(nextAction)}
               className="w-full"
             />
             <p
@@ -104,9 +100,7 @@ export function OverviewTab({
           rows={4}
           className="!shadow-none"
           placeholder={t('applications.detail.notesPlaceholder')}
-          value={notes.value}
-          onChange={(e) => notes.onChange(e.target.value)}
-          onBlur={notes.onBlur}
+          {...bind(notes)}
         />
       </OverviewSection>
 
@@ -117,9 +111,7 @@ export function OverviewTab({
               id="appdetail-contact-name"
               variant="default"
               placeholder={t('applications.detail.contactNamePlaceholder')}
-              value={contactName.value}
-              onChange={(e) => contactName.onChange(e.target.value)}
-              onBlur={contactName.onBlur}
+              {...bind(contactName)}
             />
             {contactName.error && (
               <FieldError>{t('applications.detail.contactSaveError')}</FieldError>
@@ -132,9 +124,7 @@ export function OverviewTab({
               variant="default"
               type="email"
               placeholder={t('applications.detail.contactEmailPlaceholder')}
-              value={contactEmail.value}
-              onChange={(e) => contactEmail.onChange(e.target.value)}
-              onBlur={contactEmail.onBlur}
+              {...bind(contactEmail)}
             />
             {contactEmail.error && (
               <FieldError>{t('applications.detail.email.emailInvalid')}</FieldError>
@@ -150,9 +140,7 @@ export function OverviewTab({
               id="appdetail-comp"
               variant="default"
               placeholder={t('applications.detail.compPlaceholder')}
-              value={comp.value}
-              onChange={(e) => comp.onChange(e.target.value)}
-              onBlur={comp.onBlur}
+              {...bind(comp)}
             />
           </Field>
         </div>

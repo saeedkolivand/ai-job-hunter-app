@@ -52,3 +52,19 @@ export function PanelShell({ children }: { children: React.ReactNode }) {
 export function TabScroll({ children }: { children: React.ReactNode }) {
   return <div className="h-full space-y-4 overflow-y-auto px-6 py-5">{children}</div>;
 }
+
+export function FieldLabel({ htmlFor, children }: { htmlFor: string; children: string }) {
+  return (
+    <label htmlFor={htmlFor} className="text-xs font-semibold text-foreground/70">
+      {children}
+    </label>
+  );
+}
+
+export function FieldError({ children }: { children: string }) {
+  return (
+    <p className="text-fine-print text-red-400" role="alert">
+      {children}
+    </p>
+  );
+}

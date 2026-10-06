@@ -14,8 +14,8 @@
  *    heavy generation sub-tree never loads.
  *  - `@ajh/translations` returns keys as-is.
  *
- * `./test-mocks` registers the `vi.mock`s that read this state; a suite imports it
- * first. The mutable knobs live on `state` so a suite can flip them per test.
+ * `./test-render` registers the `vi.mock`s that read this state; a suite imports the
+ * page from there. The mutable knobs live on `state` so a suite can flip them per test.
  */
 
 import { type Mock, vi } from 'vitest';
