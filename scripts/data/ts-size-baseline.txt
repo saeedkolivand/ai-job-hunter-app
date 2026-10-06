@@ -14,13 +14,6 @@
 1343	packages/prompts/src/generate/natural-voice/natural-voice.test.ts
 319	packages/prompts/src/generate/referral/referral.test.ts
 933	packages/prompts/src/locale/index.ts
-776	packages/shared/scripts/gen-agent-catalogue.ts
-753	packages/shared/scripts/gen-ipc-rust.ts
-1465	packages/shared/src/ipc/extension-protocol.test.ts
-407	packages/shared/src/ipc/extension-protocol.ts
-483	packages/shared/src/schemas/index.ts
-453	packages/shared/src/schemas/schemas.extra.test.ts
-320	packages/shared/src/types/index.ts
 319	packages/ui/src/components/Drawer/Drawer.test.tsx
 589	packages/ui/src/components/Image/ImagePreview.test.tsx
 387	packages/ui/src/components/Notification/Notification.tsx
