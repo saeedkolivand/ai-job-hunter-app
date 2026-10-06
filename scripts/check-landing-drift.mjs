@@ -52,8 +52,22 @@ const ROOT = process.cwd();
 // that never resolve under the literal existsSync in checkPaths. It is secret-scanned
 // below instead (see SECRET_SCAN_FILES). check-agent-system.mjs owns its name/roster
 // invariants.
+// A data facade plus every .ts in its same-named sibling dir (the split sources),
+// enumerated at runtime so a file added later is covered with no list to update.
+// readdirSync throws if the dir is gone — loud, never a silent void.
+const withSplitDir = (facade) => {
+  const dir = facade.slice(0, -'.ts'.length);
+  return [
+    facade,
+    ...readdirSync(join(ROOT, dir))
+      .filter((n) => n.endsWith('.ts'))
+      .sort()
+      .map((n) => `${dir}/${n}`),
+  ];
+};
+
 const DIAGRAMS = [
-  'apps/landing/src/data/architecture-map.ts',
+  ...withSplitDir('apps/landing/src/data/architecture-map.ts'),
   'apps/landing/src/components/how-it-works/HowItWorksBody.tsx',
 ];
 
@@ -68,8 +82,8 @@ const DIAGRAMS = [
 // see the run loop below, which now hard-fails a missing entry instead of
 // skipping it.
 const SECRET_SCAN_FILES = [
-  'apps/landing/src/data/agent-fleet.ts',
-  'apps/landing/src/data/architecture-map.ts',
+  ...withSplitDir('apps/landing/src/data/agent-fleet.ts'),
+  ...withSplitDir('apps/landing/src/data/architecture-map.ts'),
   'apps/landing/public/benchmarks/index.html',
   'apps/landing/public/benchmarks/data.js',
   'apps/landing/public/benchmarks/chart.min.js',
@@ -253,7 +267,7 @@ function checkDeadTerms(file, text) {
 // NOT derived here — it comes from the ProviderId registry, a different source and
 // out of scope for this guard.
 const BOARD_COUNT_FILES = [
-  'apps/landing/src/data/architecture-map.ts',
+  ...withSplitDir('apps/landing/src/data/architecture-map.ts'),
   'apps/landing/src/components/architecture-map/ArchitectureMap.tsx',
 ];
 const BOARD_CLAIM_RES = [
@@ -325,7 +339,7 @@ const TELEMETRY_ALLOWED = new Set([
   // The tech-radar entry for Sentry, whose rationale reads "reversed a published
   // no-telemetry promise" — a description of ADR-0020, not a promise. Its own
   // accuracy is covered by the radar staleness check.
-  'apps/landing/src/data/tech-radar.ts',
+  'apps/landing/src/data/tech-radar/entries-build-ship-trust.ts',
 ]);
 
 /** Text files under `rel`, recursively; `rel` may itself be a file. */

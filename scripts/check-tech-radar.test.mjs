@@ -14,10 +14,11 @@ const scriptPath = join(__dirname, 'check-tech-radar.mjs');
 // against it via execFileSync (cwd: repoDir) — this is a black-box test of
 // the CLI, not of an internal export, mirroring
 // scripts/bump-last-updated.test.mjs.
+const RADAR_DIR = ['apps', 'landing', 'src', 'data', 'tech-radar'];
 const repoDir = join(tmpdir(), `check-tech-radar-test-${Date.now()}`);
 
 function writeBaseRepo() {
-  mkdirSync(join(repoDir, 'apps', 'landing', 'src', 'data'), { recursive: true });
+  mkdirSync(join(repoDir, ...RADAR_DIR), { recursive: true });
   mkdirSync(join(repoDir, 'apps', 'desktop', 'src-tauri'), { recursive: true });
   mkdirSync(join(repoDir, 'packages', 'shared'), { recursive: true });
   mkdirSync(join(repoDir, 'docs', 'knowledge', 'decision-records'), { recursive: true });
@@ -63,8 +64,17 @@ function writeBaseRepo() {
   );
 }
 
-/** Write tech-radar.ts with the given RADAR array body and run the checker. */
-function run(entriesSource) {
+/**
+ * Write the given per-quadrant entries files (name -> array body; a bare string is one
+ * `entries-fixture.ts`) and run the checker.
+ */
+function run(files) {
+  const byName = typeof files === 'string' ? { 'entries-fixture.ts': files } : files;
+  for (const [name, body] of Object.entries(byName)) writeEntries(name, body);
+  return runChecker();
+}
+
+function writeEntries(name, entriesSource) {
   const source = [
     "export type RadarRing = 'adopt' | 'trial' | 'assess' | 'hold';",
     "export type RadarQuadrant = 'renderer-ui' | 'backend-data' | 'documents-export' | 'build-ship-trust';",
@@ -85,7 +95,10 @@ function run(entriesSource) {
     entriesSource,
     '];',
   ].join('\n');
-  writeFileSync(join(repoDir, 'apps', 'landing', 'src', 'data', 'tech-radar.ts'), source);
+  writeFileSync(join(repoDir, ...RADAR_DIR, name), source);
+}
+
+function runChecker() {
   try {
     const stdout = execFileSync('node', [scriptPath], { cwd: repoDir, encoding: 'utf8' });
     return { exitCode: 0, output: stdout };
@@ -458,5 +471,35 @@ describe('check-tech-radar', () => {
       },
     `);
     expect(exitCode).toBe(0);
+  });
+
+  const entry = (id, dep) => `
+      {
+        id: '${id}',
+        name: '${dep}',
+        ring: 'adopt',
+        quadrant: 'renderer-ui',
+        subjectKind: 'dependency',
+        dependencyName: '${dep}',
+        lastReviewed: '2026-08-05',
+      },
+    `;
+
+  it('checks the entries of every entries-*.ts file, not just the first', () => {
+    const { exitCode, output } = run({
+      'entries-a.ts': entry('react', 'react'),
+      'entries-b.ts': entry('ghost', 'no-such-package'),
+    });
+    expect(exitCode).toBe(1);
+    expect(output).toContain('no-such-package');
+  });
+
+  it('fails when one entries file has no entries left', () => {
+    const { exitCode, output } = run({
+      'entries-a.ts': entry('react', 'react'),
+      'entries-b.ts': '',
+    });
+    expect(exitCode).toBe(1);
+    expect(output).toContain('entries-b.ts has no radar entries');
   });
 });

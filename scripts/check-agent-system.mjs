@@ -47,6 +47,10 @@ const ROUTES = '.claude/review-routes.json';
 // must still appear here (check 6), and its roster tuples feed the reverse-check
 // (check 9).
 const EXPLAINER = 'apps/landing/src/data/agent-fleet.ts';
+// The roster tuples live in the facade's sibling dir; both are read as one source.
+const ROSTER = 'apps/landing/src/data/agent-fleet/roster.ts';
+const readExplainer = () => `${read(EXPLAINER)}
+${read(ROSTER)}`;
 
 // Author → its independent critic (the writer never approves its own work).
 const PAIRS = [
@@ -252,7 +256,10 @@ function checkExplainer() {
   if (!exists(EXPLAINER)) {
     return fail('Explainer', EXPLAINER, `${EXPLAINER} does not exist yet`);
   }
-  const source = read(EXPLAINER);
+  if (!exists(ROSTER)) {
+    return fail('Explainer', ROSTER, `${ROSTER} does not exist — the roster tuples moved`);
+  }
+  const source = readExplainer();
   for (const name of agentNames()) {
     if (!source.includes(name)) {
       fail('Explainer card', EXPLAINER, `no card/mention for agent '${name}'`);
@@ -391,11 +398,11 @@ function checkReferencedAgents() {
       }
     }
   }
-  if (exists(EXPLAINER)) {
+  if (exists(EXPLAINER) && exists(ROSTER)) {
     // the AGENT roster tuples: ['name', 'author'|'critic'|'cross', …]. The source
     // is now a prettier-formatted TS module, so tolerate the whitespace prettier
     // inserts around the array separators (the old HTML was space-free).
-    for (const [, name] of read(EXPLAINER).matchAll(
+    for (const [, name] of readExplainer().matchAll(
       /\[\s*'([a-z][a-z0-9-]+)'\s*,\s*'(?:author|critic|cross)'/g
     )) {
       record(name, EXPLAINER);

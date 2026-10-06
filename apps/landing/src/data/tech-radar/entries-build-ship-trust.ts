@@ -1,0 +1,162 @@
+import type { TechRadarEntry } from './types';
+
+export const buildShipTrustEntries: readonly TechRadarEntry[] = [
+  // ── Build, Ship & Trust ─────────────────────────────────────────────────
+  {
+    id: 'typescript',
+    name: 'TypeScript',
+    ring: 'trial',
+    quadrant: 'build-ship-trust',
+    subjectKind: 'dependency',
+    dependencyName: 'typescript',
+    summary: '7.x (native compiler) everywhere except apps/landing, pinned to 6.x.',
+    rationale:
+      "apps/desktop and every packages/* workspace run TypeScript 7's native compiler; apps/landing stays pinned to 6.0.3 because Next 16's build-time verifyTypeScriptSetup doesn't recognise TS 7's native-compiler package layout and crashes the build worker. Trial, not Adopt, until Next supports it and the pin can drop repo-wide.",
+    lastReviewed: '2026-08-05',
+  },
+  {
+    id: 'vite',
+    name: 'Vite 8',
+    ring: 'adopt',
+    quadrant: 'build-ship-trust',
+    subjectKind: 'dependency',
+    dependencyName: 'vite',
+    summary: 'Dev server + build tool for the desktop renderer, landing, and the extension.',
+    rationale:
+      'Every buildable frontend workspace (apps/desktop, apps/landing, apps/extension, packages/ui) builds on Vite; Vitest is Vite-native, so the same config/plugin surface backs both dev and test.',
+    lastReviewed: '2026-08-05',
+  },
+  {
+    id: 'vitest',
+    name: 'Vitest 5',
+    ring: 'adopt',
+    quadrant: 'build-ship-trust',
+    subjectKind: 'dependency',
+    dependencyName: 'vitest',
+    summary: 'The one test runner, in every workspace.',
+    rationale:
+      'A root vitest workspace config aggregates every package + app project — plus a dedicated node-env project for build/release scripts — into one coverage report, so `pnpm test` is a single command regardless of which package changed.',
+    lastReviewed: '2026-09-07',
+  },
+  {
+    id: 'playwright',
+    name: 'Playwright',
+    ring: 'adopt',
+    quadrant: 'build-ship-trust',
+    subjectKind: 'dependency',
+    dependencyName: 'playwright',
+    summary: "Axe-driven accessibility checks, and the desktop app's E2E suite.",
+    rationale:
+      "Backs apps/landing's check:a11y (@axe-core/playwright) and apps/desktop's Playwright E2E suite (test:e2e) — the same tool covers both a static export and a live Tauri window.",
+    lastReviewed: '2026-08-05',
+  },
+  {
+    id: 'turborepo',
+    name: 'Turborepo',
+    ring: 'adopt',
+    quadrant: 'build-ship-trust',
+    subjectKind: 'dependency',
+    dependencyName: 'turbo',
+    summary: 'Incremental builds across an 8-workspace monorepo.',
+    rationale:
+      "Tracks file hashes per package, so an unchanged packages/shared build is skipped entirely when only apps/desktop changed — the dependency graph is why CI build time doesn't scale linearly with workspace count.",
+    lastReviewed: '2026-08-05',
+  },
+  {
+    id: 'semantic-release',
+    name: 'semantic-release',
+    ring: 'adopt',
+    quadrant: 'build-ship-trust',
+    subjectKind: 'dependency',
+    dependencyName: 'semantic-release',
+    summary: 'Commit-driven, manually-triggered versioning — never automatic.',
+    rationale:
+      'Driven by Conventional Commits (feat → minor, fix/perf → patch, BREAKING CHANGE → minor pre-1.0), but nothing runs on push/merge to main — a release is a deliberate Actions dispatch, never an automatic side effect of merging.',
+    lastReviewed: '2026-08-05',
+  },
+  {
+    id: 'husky-lint-staged',
+    name: 'Husky + lint-staged pre-commit gate',
+    ring: 'adopt',
+    quadrant: 'build-ship-trust',
+    subjectKind: 'dependency',
+    dependencyName: 'husky',
+    summary: 'Every commit is linted/formatted before it lands, not after.',
+    rationale:
+      'Pre-commit runs eslint --fix on staged TypeScript and Prettier on the rest; commitlint checks the message. Pre-push runs the full gate (typecheck, lint, cargo check/test/clippy, formatting) so main never carries a known lint or type error.',
+    lastReviewed: '2026-08-05',
+  },
+  {
+    id: 'eslint-astgrep',
+    name: 'ESLint + ast-grep architecture guardrails',
+    ring: 'adopt',
+    quadrant: 'build-ship-trust',
+    subjectKind: 'dependency',
+    dependencyName: 'eslint',
+    summary: 'The rules in AGENTS.md are enforced, not just written down.',
+    rationale:
+      'Package-boundary imports, the ports-and-adapters window.api ban, hardcoded hex colors, inline transition objects, raw <button>/<select>/<textarea> — every one of those rules is an ESLint error or an ast-grep scan rule, not a convention someone has to remember and a reviewer has to catch by eye.',
+    lastReviewed: '2026-08-05',
+  },
+  {
+    id: 'sentry',
+    name: 'Sentry crash reporting',
+    ring: 'adopt',
+    quadrant: 'build-ship-trust',
+    subjectKind: 'dependency',
+    dependencyName: 'sentry',
+    summary: 'Desktop-only, default ON, consent-gated, whole-event redacted.',
+    rationale:
+      'Adding remote crash reporting reversed a published no-telemetry promise, so the decision to do it is recorded explicitly: default on, but nothing transmits until the first-run wizard has actually shown the consent screen, every outgoing event is redacted, the DSN is baked only into signed release builds, and both the browser extension and the landing site are excluded.',
+    adrSlug: '0020-crash-reporting',
+    lastReviewed: '2026-08-05',
+  },
+  {
+    id: 'coderabbit',
+    name: 'CodeRabbit',
+    ring: 'adopt',
+    quadrant: 'build-ship-trust',
+    subjectKind: 'service',
+    summary: 'The always-on AI PR reviewer — advisory only, never blocking.',
+    rationale:
+      "Free and unlimited on public repos, and it overlapped three separate advisory lanes (a reviewdog ESLint/Clippy pass, a Dangerfile, an actionlint lane) closely enough that all three were retired in its favour. It's configured to never approve or block on its own — the required check stays CI, plus an on-demand deep-dive review for anything that needs one.",
+    adrSlug: '0002-coderabbit-ai-review',
+    lastReviewed: '2026-08-05',
+  },
+  {
+    id: 'nextjs-static-export',
+    name: 'Next.js (static export)',
+    ring: 'adopt',
+    quadrant: 'build-ship-trust',
+    subjectKind: 'dependency',
+    dependencyName: 'next',
+    summary: 'apps/landing is plain HTML/JS at runtime — no server, ever.',
+    rationale:
+      "output: 'export' — no middleware, no Server Actions, no ISR, no dynamic route handlers, no headers()/cookies(). A permanent check:parity gate diffs the built out/ against the legacy static site so a route can never silently change shape.",
+    adrSlug: '0018-landing-nextjs-static-export',
+    lastReviewed: '2026-08-05',
+  },
+  {
+    id: 'codecov-sonarcloud',
+    name: 'Codecov + SonarCloud',
+    ring: 'hold',
+    quadrant: 'build-ship-trust',
+    subjectKind: 'not-adopted',
+    summary: 'Dropped in favour of the zero-external-SaaS CI default.',
+    rationale:
+      "The CI program's stated default is Actions-native, zero external SaaS advisory tooling; both were dropped for exactly that reason before CodeRabbit was even evaluated. CodeRabbit's own free-tier scan (ESLint, Clippy, Semgrep, secret-scan) made a paid hosted coverage/quality dashboard even less necessary once it was adopted.",
+    adrSlug: '0002-coderabbit-ai-review',
+    lastReviewed: '2026-08-05',
+  },
+  {
+    id: 'react-compiler',
+    name: 'React Compiler',
+    ring: 'assess',
+    quadrant: 'build-ship-trust',
+    subjectKind: 'technique',
+    summary: 'GA since React 19, not yet wired into any build here.',
+    rationale:
+      "No babel-plugin-react-compiler or eslint-plugin-react-compiler dependency exists anywhere in the monorepo today — manual memoization discipline is still how the renderer avoids re-render cost. Worth a real trial once it's had more mileage against a render-heavy, streaming-text-updating UI like this one; not adopted yet because nobody has actually run it here.",
+    lastReviewed: '2026-08-05',
+  },
+];

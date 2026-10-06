@@ -2,10 +2,6 @@
 # `<loc>` is CODE lines (blank and comment lines excluded).
 # A baselined file may shrink or be deleted, never grow; a new over-cap file is not baselined.
 # Regenerate after a split with: TS_SIZE_BLESS=1 node scripts/check-ts-size.mjs
-404	apps/landing/src/app/world/scrub-engine.test.ts
-563	apps/landing/src/data/agent-fleet.ts
-3199	apps/landing/src/data/architecture-map.ts
-522	apps/landing/src/data/tech-radar.ts
 349	packages/prompts/scripts/gen-prompts-rust.ts
 589	packages/prompts/src/generate/application-email/application-email.test.ts
 1881	packages/prompts/src/generate/generate.test.ts

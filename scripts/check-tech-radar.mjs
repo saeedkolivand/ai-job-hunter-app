@@ -47,7 +47,10 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = process.cwd();
-const RADAR_FILE = 'apps/landing/src/data/tech-radar.ts';
+// The entries live in data/tech-radar/entries-*.ts (one file per quadrant),
+// enumerated at runtime so a new quadrant file is checked with no list to update.
+const RADAR_DIR = 'apps/landing/src/data/tech-radar';
+const RADAR_FILE = `${RADAR_DIR}/entries-*.ts`;
 const ADR_DIR = 'docs/knowledge/decision-records';
 const CARGO_FILE = 'apps/desktop/src-tauri/Cargo.toml';
 
@@ -139,8 +142,9 @@ function parseRadarEntries(source) {
 // (that one has no quote after the colon, so it wouldn't match anyway, but
 // scoping to the array is what makes this an honest apples-to-apples count).
 function countRawIdLines(source) {
-  const marker = source.indexOf('export const RADAR');
-  if (marker === -1) return null;
+  const found = /export const \w+\s*:\s*readonly TechRadarEntry\[\]\s*=/.exec(source);
+  if (!found) return null;
+  const marker = found.index;
   // NOT indexOf('[', marker) — the type annotation itself contains one
   // (`TechRadarEntry[]`), which closes immediately and would bound an
   // effectively empty "array" before the real literal is ever reached.
@@ -259,36 +263,51 @@ function claimedMajor(name) {
 }
 
 // ── Run ───────────────────────────────────────────────────────────────────
-if (!exists(RADAR_FILE)) {
-  console.error(`check:tech-radar FAILED — ${RADAR_FILE} not found.`);
+if (!exists(RADAR_DIR)) {
+  console.error(`check:tech-radar FAILED — ${RADAR_DIR} not found.`);
   process.exit(1);
 }
 
-const source = read(RADAR_FILE);
-const entries = parseRadarEntries(source);
-const rawIdCount = countRawIdLines(source);
+function checkParsed(file, fileEntries, rawIdCount) {
+  // Ordered so the MOST SPECIFIC diagnosis wins: a structurally-missing array
+  // is a different problem than a count mismatch (checked next, and catches
+  // "every single entry got skipped" — entries.length === 0 with rawIdCount >
+  // 0 — just as well as a partial one, so there's no separate "zero parsed"
+  // special case to accidentally shadow it), which is itself different from a
+  // RADAR array that's genuinely empty (both counts legitimately zero).
+  if (rawIdCount === null) {
+    console.error(
+      `check:tech-radar FAILED — couldn't locate an 'export const X: readonly TechRadarEntry[] = [...]' array in ${file} at all. The parser's array-bounding logic (countRawIdLines in this script) no longer matches the data file's formatting — fix whichever one drifted.`
+    );
+    process.exit(1);
+  }
 
-// Ordered so the MOST SPECIFIC diagnosis wins: a structurally-missing array
-// is a different problem than a count mismatch (checked next, and catches
-// "every single entry got skipped" — entries.length === 0 with rawIdCount >
-// 0 — just as well as a partial one, so there's no separate "zero parsed"
-// special case to accidentally shadow it), which is itself different from a
-// RADAR array that's genuinely empty (both counts legitimately zero).
-if (rawIdCount === null) {
-  console.error(
-    `check:tech-radar FAILED — couldn't locate 'export const RADAR = [...]' in ${RADAR_FILE} at all. The parser's array-bounding logic (countRawIdLines in this script) no longer matches the data file's formatting — fix whichever one drifted.`
-  );
-  process.exit(1);
+  if (rawIdCount !== fileEntries.length) {
+    console.error(
+      `check:tech-radar FAILED — the array in ${file} has ${rawIdCount} 'id:' line(s) but the parser only extracted ${fileEntries.length} entrie(s). ` +
+        `This means at least one entry was silently skipped — likely because its FIRST key isn't 'id', it's written on one line, or 'subjectKind' shares ` +
+        `a line with another field (extractObjectBlocks/field() in this script both assume Prettier's one-key-per-line formatting). ` +
+        `Run 'pnpm format' and re-run this check before assuming the entries themselves are wrong.`
+    );
+    process.exit(1);
+  }
+
+  if (fileEntries.length === 0) {
+    console.error(`check:tech-radar FAILED — ${file} has no radar entries (the array is empty).`);
+    process.exit(1);
+  }
 }
 
-if (rawIdCount !== entries.length) {
-  console.error(
-    `check:tech-radar FAILED — the RADAR array has ${rawIdCount} 'id:' line(s) but the parser only extracted ${entries.length} entrie(s). ` +
-      `This means at least one entry was silently skipped — likely because its FIRST key isn't 'id', it's written on one line, or 'subjectKind' shares ` +
-      `a line with another field (extractObjectBlocks/field() in this script both assume Prettier's one-key-per-line formatting). ` +
-      `Run 'pnpm format' and re-run this check before assuming the entries themselves are wrong.`
-  );
-  process.exit(1);
+const entries = [];
+for (const name of readdirSync(join(ROOT, RADAR_DIR))
+  .filter((n) => /^entries-.*\.ts$/.test(n))
+  .sort()) {
+  const file = `${RADAR_DIR}/${name}`;
+  const source = read(file);
+  const fileEntries = parseRadarEntries(source);
+  const rawIdCount = countRawIdLines(source);
+  checkParsed(file, fileEntries, rawIdCount);
+  entries.push(...fileEntries);
 }
 
 if (entries.length === 0) {
