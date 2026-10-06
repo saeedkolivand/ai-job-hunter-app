@@ -1,444 +1,30 @@
 /**
- * TailorFlow — extraction seams
- *
- * Tests the three public contracts introduced by the TailorFlow extraction:
- *   1. Stage derivation — generating > done > configuring priority.
- *   2. Persistence injection — TailorFlow READS from and WRITES to the injected
- *      persistence object; the component is host-agnostic.
- *   3. Controller seam — onController is called with the correct shape, the
- *      questionsCount reflects selected.size, and openQuestions/openReferral
- *      open the respective modals.
- *
- * Strategy:
- *  - `useTailorPipeline` and `useApplicationAnswers` are mocked so stage
- *    transitions are fully controlled without any IPC / React Query.
- *  - Service hooks (`useExtractText`, `useResolveJobUrl`, `useSelectedModel`,
- *    `useCanUseAI`) are mocked so no QueryClient / AppClient provider is needed.
- *  - Heavy child panels (TailorWizard, GeneratingPanel, ResultsPanel,
- *    ApplicationQuestionsModal, ReferralModal) are stubbed to stable markers so
- *    assertions are cheap and deterministic.
- *  - `motion/react` is collapsed to plain fragments (no animation overhead).
- *  - `@ajh/translations` returns keys as-is.
- *  - noUncheckedIndexedAccess: all array accesses are guarded.
+ * TailorFlow — extraction seams: stage derivation, persistence injection, capability-driven research default.
+ * Shared mocks, state and helpers live in `test-support.tsx` (see its header).
  */
-
-import React, { act } from 'react';
-import { beforeEach, describe, expect, it, type Mock, onTestFinished, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
 
-// ── i18n ──────────────────────────────────────────────────────────────────────
+import {
+  genMock,
+  makePersistence,
+  modelCapsState,
+  renderFlow,
+  rerenderFlow,
+  resetState,
+} from './TailorFlow.test-support';
 
-vi.mock('@ajh/translations', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}));
+beforeEach(resetState);
 
-// ── motion/react — collapse animations to plain wrappers ──────────────────────
-
-vi.mock('motion/react', () => ({
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  motion: {
-    div: React.forwardRef(
-      (
-        { children, ...rest }: React.HTMLAttributes<HTMLDivElement>,
-        ref: React.Ref<HTMLDivElement>
-      ) => (
-        <div ref={ref} {...rest}>
-          {children}
-        </div>
-      )
-    ),
-  },
-}));
-
-// ── ModelSelector hooks ───────────────────────────────────────────────────────
-
-vi.mock('@/components/ui/ModelSelector', () => ({
-  useSelectedModel: () => 'test-model',
-  useCanUseAI: () => ({ canUse: true, reason: undefined }),
-  useSelectedProvider: () => 'ollama',
-}));
-
-// ── Service hooks — no real IPC / QueryClient needed ─────────────────────────
-
-// Mutable container so individual tests can override the resolved description
-// and the second arg (shouldFetch) can be captured and asserted.
-const resolveJobUrlState = {
-  data: undefined as { description: string } | undefined,
-  isLoading: false,
+const { tailorWizard, generatingPanel, resultsPanel } = TEST_IDS.documents;
+const wizard = () => screen.getByTestId(tailorWizard);
+const expectPresent = (shown: string, ...hidden: string[]) => {
+  expect(screen.getByTestId(shown)).toBeInTheDocument();
+  for (const id of hidden) expect(screen.queryByTestId(id)).not.toBeInTheDocument();
 };
-// Tracks the last `shouldFetch` arg received by useResolveJobUrl.
-let lastResolveJobUrlShouldFetch: boolean | undefined = undefined;
-
-// Mutable container so tests can flip the active model's web-search capability,
-// which drives the capability-driven default of the "search company" toggle.
-const modelCapsState = {
-  data: { supportsWebSearch: false } as { supportsWebSearch: boolean } | undefined,
-  isSuccess: true,
-};
-
-/** Saved documents `useDefaultResumeId` resolves the Score-tab fallback from. */
-let savedDocsState: { _id: string; name?: string; isDefault?: boolean }[] = [];
-
-vi.mock('@/services', () => ({
-  // `TailorFlow` resolves the DEFAULT résumé for the Score tab's fallback id
-  // (`useDefaultResumeId` reads this). Defaults to an empty list — no default
-  // résumé — which keeps every other test on the pre-existing behaviour.
-  useDocuments: () => ({ data: savedDocsState, isLoading: false }),
-  useResolveJobUrl: (_url: string, shouldFetch: boolean) => {
-    lastResolveJobUrlShouldFetch = shouldFetch;
-    return { data: resolveJobUrlState.data, isLoading: resolveJobUrlState.isLoading };
-  },
-  useExtractText: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useActiveModelCapabilities: () => ({
-    data: modelCapsState.data,
-    isSuccess: modelCapsState.isSuccess,
-  }),
-}));
-
-// ── useTailorPipeline — controlled mock ───────────────────────────────────────
-
-const genMock = {
-  state: 'idle' as string,
-  busy: false,
-  starting: false,
-  currentStep: 0,
-  stageLabel: '',
-  thinking: '',
-  draft: '',
-  letterDraft: '',
-  resumeOut: '' as string,
-  coverOut: '' as string,
-  activeOut: 'resume' as const,
-  setActiveOut: vi.fn(),
-  output: '' as string,
-  hasOutput: false,
-  error: null as string | null,
-  stoppedReason: undefined as string | null | undefined,
-  copied: false,
-  exportOpen: false,
-  setExportOpen: vi.fn(),
-  start: vi.fn().mockResolvedValue(null),
-  cancel: vi.fn(),
-  copy: vi.fn(),
-  exportAs: vi.fn(),
-  editActiveOutput: vi.fn(),
-  meta: null,
-  market: undefined as string | undefined,
-  report: null,
-  pipelineReview: undefined,
-  recheck: undefined,
-  rechecking: false,
-  runs: [],
-};
-
-vi.mock('@/features/documents/components/TailorFlow/useTailorPipeline', () => ({
-  useTailorPipeline: () => genMock,
-}));
-
-// ── useApplicationAnswers — controlled mock ───────────────────────────────────
-
-const answersMock = {
-  selected: new Set<string>(),
-  toggle: vi.fn(),
-  answers: {} as Record<string, string>,
-  generating: false,
-  error: null,
-  generate: vi.fn(),
-  canGenerate: false,
-};
-
-vi.mock('@/features/documents/components/TailorFlow/useApplicationAnswers', () => ({
-  useApplicationAnswers: () => answersMock,
-}));
-
-// ── useInterviewQuestions — controlled mock ───────────────────────────────────
-
-const interviewMock = {
-  seedTopics: '',
-  setSeedTopics: vi.fn(),
-  audiences: ['recruiter', 'hiringManager'],
-  toggleAudience: vi.fn(),
-  questions: [],
-  generating: false,
-  error: null,
-  generate: vi.fn(),
-  canGenerate: false,
-  needsResearchKey: false,
-};
-
-vi.mock('@/hooks/use-interview-questions', () => ({
-  useInterviewQuestions: () => interviewMock,
-}));
-
-// ── useJobAdSummary — controlled mock ─────────────────────────────────────────
-
-// Hoisted so the spies are STABLE across hook calls/renders — recreating them
-// per call would make any assertion against them brittle (cleared in beforeEach).
-const jobAdSummaryMock = vi.hoisted(() => ({
-  generate: vi.fn(),
-  setLanguage: vi.fn(),
-}));
-
-vi.mock('./useJobAdSummary', () => ({
-  useJobAdSummary: () => ({
-    summary: '',
-    generating: false,
-    error: null,
-    generate: jobAdSummaryMock.generate,
-    language: 'en',
-    setLanguage: jobAdSummaryMock.setLanguage,
-  }),
-}));
-
-// ── Heavy child stubs ─────────────────────────────────────────────────────────
-
-// TailorWizard stub exposes:
-//   - a "next-step" button → calls setStep(step + 1), exercising handleStep →
-//     persistForm → persistence.setWizardForm + persistence.setWizardStep.
-//   - a "generate" button → calls onGenerate({ resume, outputType, researchCompany }),
-//     exercising startGeneration → persistForm → persistence.setWizardForm.
-// The stub is purposely @ajh/ui-free (uses div[role=button]) to stay inside
-// the no-raw-button ESLint rule for test files.
-vi.mock('./TailorWizard', () => ({
-  TailorWizard: ({
-    step,
-    setStep,
-    onGenerate,
-    jobDesc,
-    onJobDescChange,
-    methods,
-    resumeId,
-  }: {
-    step: number;
-    setStep: (n: number) => void;
-    onGenerate: (v: { resume: string; outputType: 'resume'; researchCompany: boolean }) => void;
-    jobDesc?: string;
-    onJobDescChange?: (v: string) => void;
-    // The RHF form — the stub reads the research toggle so the capability-driven
-    // default is observable via a data attribute.
-    methods: { watch: (name: 'researchCompany') => boolean };
-    /** What the Score tab will actually score — see TailorFlow's `resumeId`. */
-    resumeId?: string;
-  }) => (
-    <div
-      data-testid={TEST_IDS.documents.tailorWizard}
-      data-step={step}
-      data-jobdesc={jobDesc}
-      data-research={String(methods.watch('researchCompany'))}
-      data-resumeid={resumeId ?? ''}
-    >
-      <div
-        role="button"
-        tabIndex={0}
-        data-testid={TEST_IDS.documents.wizardNext}
-        onClick={() => setStep(step + 1)}
-      >
-        next-step
-      </div>
-      <div
-        role="button"
-        tabIndex={0}
-        data-testid={TEST_IDS.documents.wizardGenerate}
-        onClick={() =>
-          onGenerate({ resume: 'my-resume', outputType: 'resume', researchCompany: false })
-        }
-      >
-        generate
-      </div>
-      <div
-        role="button"
-        tabIndex={0}
-        data-testid="wizard-edit-jobdesc"
-        onClick={() => onJobDescChange?.('edited-job-ad')}
-      >
-        edit-jobdesc
-      </div>
-    </div>
-  ),
-}));
-
-vi.mock('./GeneratingPanel', () => ({
-  // `streamingTarget` is surfaced as a data attribute: the panel's own
-  // rendering of it is `GeneratingPanel.test.tsx`'s job — what belongs HERE is
-  // which value TailorFlow hands it, which is a decision this component makes.
-  GeneratingPanel: ({ streamingTarget }: { streamingTarget: 'resume' | 'cover' }) => (
-    <div data-testid={TEST_IDS.documents.generatingPanel} data-streaming={streamingTarget} />
-  ),
-}));
-
-vi.mock('./ResultsPanel', () => ({
-  // div[role=button] avoids the no-raw-button ESLint rule while remaining
-  // clickable via userEvent.click — stubs in test files only, no production code.
-  ResultsPanel: ({
-    onEditSettings,
-    onTemplateChange,
-    onAtsModeChange,
-    templateId,
-    atsMode,
-    market,
-  }: {
-    onEditSettings?: () => void;
-    onTemplateChange?: (v: string) => void;
-    onAtsModeChange?: (v: boolean) => void;
-    templateId?: string;
-    atsMode?: boolean;
-    market?: string;
-  }) => (
-    <div
-      data-testid={TEST_IDS.documents.resultsPanel}
-      data-templateid={templateId}
-      data-atsmode={String(atsMode)}
-      data-market={market ?? ''}
-    >
-      <div role="button" tabIndex={0} onClick={onEditSettings}>
-        edit-settings
-      </div>
-      <div role="button" tabIndex={0} onClick={() => onTemplateChange?.('classic')}>
-        change-template
-      </div>
-      <div role="button" tabIndex={0} onClick={() => onAtsModeChange?.(true)}>
-        toggle-ats
-      </div>
-    </div>
-  ),
-}));
-
-vi.mock('./ApplicationQuestionsModal', () => ({
-  ApplicationQuestionsModal: ({ onClose }: { onClose: () => void }) => (
-    <div data-testid={TEST_IDS.documents.questionsModal}>
-      <div role="button" tabIndex={0} onClick={onClose}>
-        close-questions
-      </div>
-    </div>
-  ),
-}));
-
-vi.mock('./InterviewQuestionsModal', () => ({
-  InterviewQuestionsModal: ({ onClose }: { onClose: () => void }) => (
-    <div data-testid={TEST_IDS.documents.interviewModal}>
-      <div role="button" tabIndex={0} onClick={onClose}>
-        close-interview
-      </div>
-    </div>
-  ),
-}));
-
-vi.mock('./ReferralModal', () => ({
-  ReferralModal: ({ onClose }: { onClose: () => void }) => (
-    <div data-testid={TEST_IDS.documents.referralModal}>
-      <div role="button" tabIndex={0} onClick={onClose}>
-        close-referral
-      </div>
-    </div>
-  ),
-}));
-
-// ── Import component after all mocks ─────────────────────────────────────────
-
-import type { AutopilotFoundJob } from '@ajh/shared';
-
-import { TailorFlow, type TailorFlowController, type TailorFlowPersistence } from './index';
-
-// ── Fixtures ──────────────────────────────────────────────────────────────────
-
-const JOB: AutopilotFoundJob = {
-  title: 'Senior Engineer',
-  company: 'Acme',
-  url: 'https://acme.com/jobs/1',
-  description: 'Build great things.',
-  location: undefined,
-  foundAt: Date.now(),
-};
-
-type MockedPersistence = Omit<
-  TailorFlowPersistence,
-  | 'setWizardStep'
-  | 'setWizardForm'
-  | 'setTemplateId'
-  | 'setAtsMode'
-  | 'setAccent'
-  | 'setLetterLayoutId'
-  | 'setRun'
-> & {
-  setWizardStep: Mock;
-  setWizardForm: Mock;
-  setTemplateId: Mock;
-  setAtsMode: Mock;
-  setAccent: Mock;
-  setLetterLayoutId: Mock;
-  setRun: Mock;
-};
-
-function makePersistence(overrides: Partial<MockedPersistence> = {}): MockedPersistence {
-  return {
-    wizardStep: 0,
-    wizardForm: null,
-    templateId: 'classic',
-    atsMode: false,
-    runId: null,
-    runJobId: null,
-    setWizardStep: vi.fn(),
-    setWizardForm: vi.fn(),
-    setTemplateId: vi.fn(),
-    setAtsMode: vi.fn(),
-    setAccent: vi.fn(),
-    setLetterLayoutId: vi.fn(),
-    setRun: vi.fn(),
-    ...overrides,
-  };
-}
-
-function renderFlow(opts: {
-  persistence?: TailorFlowPersistence;
-  onController?: (c: TailorFlowController) => void;
-  job?: AutopilotFoundJob;
-  onJobDescChange?: (text: string) => void;
-}) {
-  const persistence = opts.persistence ?? makePersistence();
-  const job = opts.job ?? JOB;
-  return render(
-    <TailorFlow
-      job={job}
-      resumeText="My resume"
-      board="linkedin"
-      contextId="autopilot:https://acme.com/jobs/1"
-      jobUrl="https://acme.com/jobs/1"
-      persistence={persistence}
-      onController={opts.onController}
-      onJobDescChange={opts.onJobDescChange}
-    />
-  );
-}
-
-// ── Reset between tests ───────────────────────────────────────────────────────
-
-beforeEach(() => {
-  savedDocsState = [];
-  genMock.state = 'idle';
-  genMock.busy = false;
-  genMock.hasOutput = false;
-  genMock.resumeOut = '';
-  genMock.coverOut = '';
-  genMock.output = '';
-  genMock.error = null;
-  genMock.market = undefined;
-  genMock.start.mockClear();
-  genMock.cancel.mockClear();
-  jobAdSummaryMock.generate.mockClear();
-  jobAdSummaryMock.setLanguage.mockClear();
-  answersMock.selected = new Set<string>();
-  answersMock.generate.mockClear();
-  // Reset useResolveJobUrl state.
-  resolveJobUrlState.data = undefined;
-  resolveJobUrlState.isLoading = false;
-  lastResolveJobUrlShouldFetch = undefined;
-  // Reset model-capability state (default: cannot web-search → toggle off).
-  modelCapsState.data = { supportsWebSearch: false };
-  modelCapsState.isSuccess = true;
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. Stage derivation
@@ -447,67 +33,49 @@ beforeEach(() => {
 describe('TailorFlow — stage derivation', () => {
   it('renders the wizard (configuring) when not busy and no output', () => {
     renderFlow({});
-    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toBeInTheDocument();
-    expect(screen.queryByTestId(TEST_IDS.documents.generatingPanel)).not.toBeInTheDocument();
-    expect(screen.queryByTestId(TEST_IDS.documents.resultsPanel)).not.toBeInTheDocument();
+    expectPresent(tailorWizard, generatingPanel, resultsPanel);
   });
 
   // A cover-only run skips the `draft` stage entirely, so there is no résumé
   // stream to precede the letter's first token — `letterDraft ? 'cover' :
   // 'resume'` alone labelled the pane "Resume" for the whole analyze → strategy
   // warm-up of a run that produces no résumé at all.
-  it('labels the streaming pane Cover letter for a cover-only run before the first token', () => {
+  it.each([
+    [
+      'labels the streaming pane Cover letter for a cover-only run before the first token',
+      'cover',
+      'cover',
+    ],
+    ['still labels it Resume for a run that produces one', 'both', 'resume'],
+  ] as const)('%s', (_name, outputType, label) => {
     genMock.busy = true;
     genMock.letterDraft = '';
     genMock.draft = '';
     renderFlow({
       persistence: makePersistence({
-        wizardForm: { resume: 'r', outputType: 'cover', researchCompany: false },
+        wizardForm: { resume: 'r', outputType, researchCompany: false },
       }),
     });
-    expect(screen.getByTestId(TEST_IDS.documents.generatingPanel)).toHaveAttribute(
-      'data-streaming',
-      'cover'
-    );
-  });
-
-  it('still labels it Resume for a run that produces one', () => {
-    genMock.busy = true;
-    genMock.letterDraft = '';
-    genMock.draft = '';
-    renderFlow({
-      persistence: makePersistence({
-        wizardForm: { resume: 'r', outputType: 'both', researchCompany: false },
-      }),
-    });
-    expect(screen.getByTestId(TEST_IDS.documents.generatingPanel)).toHaveAttribute(
-      'data-streaming',
-      'resume'
-    );
+    expect(screen.getByTestId(generatingPanel)).toHaveAttribute('data-streaming', label);
   });
 
   it('renders the generating panel when busy=true (no output)', () => {
     genMock.busy = true;
     renderFlow({});
-    expect(screen.getByTestId(TEST_IDS.documents.generatingPanel)).toBeInTheDocument();
-    expect(screen.queryByTestId(TEST_IDS.documents.tailorWizard)).not.toBeInTheDocument();
-    expect(screen.queryByTestId(TEST_IDS.documents.resultsPanel)).not.toBeInTheDocument();
+    expectPresent(generatingPanel, tailorWizard, resultsPanel);
   });
 
   it('renders the results panel when hasOutput is true and not busy', () => {
     genMock.hasOutput = true;
     renderFlow({});
-    expect(screen.getByTestId(TEST_IDS.documents.resultsPanel)).toBeInTheDocument();
-    expect(screen.queryByTestId(TEST_IDS.documents.tailorWizard)).not.toBeInTheDocument();
-    expect(screen.queryByTestId(TEST_IDS.documents.generatingPanel)).not.toBeInTheDocument();
+    expectPresent(resultsPanel, tailorWizard, generatingPanel);
   });
 
   it('busy=true WINS over existing output (generating stage takes priority)', () => {
     genMock.busy = true;
     genMock.hasOutput = true;
     renderFlow({});
-    expect(screen.getByTestId(TEST_IDS.documents.generatingPanel)).toBeInTheDocument();
-    expect(screen.queryByTestId(TEST_IDS.documents.resultsPanel)).not.toBeInTheDocument();
+    expectPresent(generatingPanel, resultsPanel);
   });
 
   it('clicking "edit-settings" from done stage reverts to the wizard (forceConfiguring)', async () => {
@@ -516,14 +84,13 @@ describe('TailorFlow — stage derivation', () => {
     renderFlow({});
 
     // We are in done stage — results panel visible.
-    expect(screen.getByTestId(TEST_IDS.documents.resultsPanel)).toBeInTheDocument();
+    expect(screen.getByTestId(resultsPanel)).toBeInTheDocument();
 
     // The stubbed ResultsPanel exposes an edit-settings button that calls onEditSettings.
     await user.click(screen.getByRole('button', { name: 'edit-settings' }));
 
     // After clicking, TailorFlow sets forceConfiguring → wizard shown.
-    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toBeInTheDocument();
-    expect(screen.queryByTestId(TEST_IDS.documents.resultsPanel)).not.toBeInTheDocument();
+    expectPresent(tailorWizard, resultsPanel);
 
     // Output is preserved under forceConfiguring — the mock's own hasOutput stays.
     expect(genMock.hasOutput).toBe(true);
@@ -537,9 +104,8 @@ describe('TailorFlow — stage derivation', () => {
 describe('TailorFlow — persistence injection', () => {
   it('reads wizardStep from the injected persistence and forwards it to TailorWizard', () => {
     // The stub renders `data-step={step}` so we can assert the value was forwarded.
-    const persistence = makePersistence({ wizardStep: 2 });
-    renderFlow({ persistence });
-    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute('data-step', '2');
+    renderFlow({ persistence: makePersistence({ wizardStep: 2 }) });
+    expect(wizard()).toHaveAttribute('data-step', '2');
   });
 
   it('reads wizardForm from persistence to seed the RHF defaultValues (non-null form)', () => {
@@ -550,7 +116,7 @@ describe('TailorFlow — persistence injection', () => {
       wizardForm: { resume: 'Seeded resume', outputType: 'resume', researchCompany: false },
     });
     renderFlow({ persistence });
-    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toBeInTheDocument();
+    expect(wizard()).toBeInTheDocument();
   });
 
   it('calls persistence.setWizardForm AND persistence.setWizardStep when advancing a step', async () => {
@@ -593,10 +159,9 @@ describe('TailorFlow — persistence injection', () => {
     // persistence values were forwarded as props (rendered as data-* attributes by
     // the stub). This proves TailorFlow reads them from persistence, not constants.
     genMock.hasOutput = true;
-    const persistence = makePersistence({ templateId: 'classic', atsMode: true });
-    renderFlow({ persistence });
+    renderFlow({ persistence: makePersistence({ templateId: 'classic', atsMode: true }) });
 
-    const panel = screen.getByTestId(TEST_IDS.documents.resultsPanel);
+    const panel = screen.getByTestId(resultsPanel);
     expect(panel).toHaveAttribute('data-templateid', 'classic');
     expect(panel).toHaveAttribute('data-atsmode', 'true');
   });
@@ -612,38 +177,36 @@ describe('TailorFlow — persistence injection', () => {
     genMock.market = 'de';
     renderFlow({});
 
-    expect(screen.getByTestId(TEST_IDS.documents.resultsPanel)).toHaveAttribute(
-      'data-market',
-      'de'
-    );
+    expect(screen.getByTestId(resultsPanel)).toHaveAttribute('data-market', 'de');
   });
 
-  it('calls persistence.setTemplateId when ResultsPanel fires onTemplateChange', async () => {
-    // GAP 2 FIX: ResultsPanel stub exposes a "change-template" button that calls
-    // onTemplateChange('classic'). Assert persistence.setTemplateId is called.
+  // GAP 2 FIX: the ResultsPanel stub exposes "change-template" / "toggle-ats"
+  // buttons that call onTemplateChange('classic') / onAtsModeChange(true).
+  it.each([
+    [
+      'calls persistence.setTemplateId when ResultsPanel fires onTemplateChange',
+      'change-template',
+      { templateId: 'swiss-minimal' },
+      'setTemplateId',
+      'classic',
+    ],
+    [
+      'calls persistence.setAtsMode when ResultsPanel fires onAtsModeChange',
+      'toggle-ats',
+      { atsMode: false },
+      'setAtsMode',
+      true,
+    ],
+  ] as const)('%s', async (_name, button, overrides, setter, value) => {
     const user = userEvent.setup();
     genMock.hasOutput = true;
-    const persistence = makePersistence({ templateId: 'swiss-minimal' });
+    const persistence = makePersistence(overrides);
     renderFlow({ persistence });
 
-    await user.click(screen.getByRole('button', { name: 'change-template' }));
+    await user.click(screen.getByRole('button', { name: button }));
 
-    expect(persistence.setTemplateId).toHaveBeenCalledTimes(1);
-    expect(persistence.setTemplateId).toHaveBeenCalledWith('classic');
-  });
-
-  it('calls persistence.setAtsMode when ResultsPanel fires onAtsModeChange', async () => {
-    // GAP 2 FIX: ResultsPanel stub exposes a "toggle-ats" button that calls
-    // onAtsModeChange(true). Assert persistence.setAtsMode is called.
-    const user = userEvent.setup();
-    genMock.hasOutput = true;
-    const persistence = makePersistence({ atsMode: false });
-    renderFlow({ persistence });
-
-    await user.click(screen.getByRole('button', { name: 'toggle-ats' }));
-
-    expect(persistence.setAtsMode).toHaveBeenCalledTimes(1);
-    expect(persistence.setAtsMode).toHaveBeenCalledWith(true);
+    expect(persistence[setter]).toHaveBeenCalledTimes(1);
+    expect(persistence[setter]).toHaveBeenCalledWith(value);
   });
 });
 
@@ -652,22 +215,20 @@ describe('TailorFlow — persistence injection', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('TailorFlow — capability-driven research default', () => {
-  it('defaults the research toggle ON for a web-search-capable model (fresh form)', () => {
-    modelCapsState.data = { supportsWebSearch: true };
-    renderFlow({ persistence: makePersistence({ wizardForm: null }) });
-    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
-      'data-research',
-      'true'
-    );
-  });
+  const expectResearch = (value: string) =>
+    expect(wizard()).toHaveAttribute('data-research', value);
 
-  it('defaults the research toggle OFF for a model without web search (fresh form)', () => {
-    modelCapsState.data = { supportsWebSearch: false };
+  it.each([
+    ['defaults the research toggle ON for a web-search-capable model (fresh form)', true, 'true'],
+    [
+      'defaults the research toggle OFF for a model without web search (fresh form)',
+      false,
+      'false',
+    ],
+  ])('%s', (_name, supportsWebSearch, expected) => {
+    modelCapsState.data = { supportsWebSearch };
     renderFlow({ persistence: makePersistence({ wizardForm: null }) });
-    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
-      'data-research',
-      'false'
-    );
+    expectResearch(expected);
   });
 
   it('does NOT override a restored form — the saved choice wins over the capability default', () => {
@@ -677,525 +238,19 @@ describe('TailorFlow — capability-driven research default', () => {
       wizardForm: { resume: 'Seeded', outputType: 'both', researchCompany: false },
     });
     renderFlow({ persistence });
-    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
-      'data-research',
-      'false'
-    );
+    expectResearch('false');
   });
 
   it('re-seeds the toggle when the model changes mid-session (fresh form, untouched)', () => {
     modelCapsState.data = { supportsWebSearch: false };
     const persistence = makePersistence({ wizardForm: null });
     // A fresh element per render so React reconciles (identical element refs bail).
-    const el = () => (
-      <TailorFlow
-        job={JOB}
-        resumeText="My resume"
-        board="linkedin"
-        contextId="autopilot:https://acme.com/jobs/1"
-        jobUrl="https://acme.com/jobs/1"
-        persistence={persistence}
-      />
-    );
-    const { rerender } = render(el());
-    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
-      'data-research',
-      'false'
-    );
+    const { rerender } = render(rerenderFlow(persistence));
+    expectResearch('false');
 
     // User switches to a web-search-capable model without touching the toggle.
     modelCapsState.data = { supportsWebSearch: true };
-    rerender(el());
-    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
-      'data-research',
-      'true'
-    );
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 3. Controller seam — onController shape + modal triggers
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('TailorFlow — controller seam', () => {
-  it('calls onController with stage=configuring when no output and not busy', () => {
-    const onController = vi.fn();
-    renderFlow({ onController });
-
-    expect(onController).toHaveBeenCalled();
-    const lastCall = onController.mock.calls[onController.mock.calls.length - 1];
-    const controller = lastCall?.[0] as TailorFlowController | undefined;
-    expect(controller).toBeDefined();
-    expect(controller?.stage).toBe('configuring');
-  });
-
-  it('calls onController with stage=generating when busy=true', () => {
-    genMock.busy = true;
-    const onController = vi.fn();
-    renderFlow({ onController });
-
-    const lastCall = onController.mock.calls[onController.mock.calls.length - 1];
-    const controller = lastCall?.[0] as TailorFlowController | undefined;
-    expect(controller?.stage).toBe('generating');
-  });
-
-  it('calls onController with stage=done when output exists and not busy', () => {
-    genMock.hasOutput = true;
-    const onController = vi.fn();
-    renderFlow({ onController });
-
-    const lastCall = onController.mock.calls[onController.mock.calls.length - 1];
-    const controller = lastCall?.[0] as TailorFlowController | undefined;
-    expect(controller?.stage).toBe('done');
-  });
-
-  it('reports questionsCount=0 when selected is empty', () => {
-    answersMock.selected = new Set<string>();
-    const onController = vi.fn();
-    renderFlow({ onController });
-
-    const lastCall = onController.mock.calls[onController.mock.calls.length - 1];
-    const controller = lastCall?.[0] as TailorFlowController | undefined;
-    expect(controller?.questionsCount).toBe(0);
-  });
-
-  it('reports questionsCount reflecting selected.size', () => {
-    answersMock.selected = new Set(['q1', 'q2', 'q3']);
-    const onController = vi.fn();
-    renderFlow({ onController });
-
-    const lastCall = onController.mock.calls[onController.mock.calls.length - 1];
-    const controller = lastCall?.[0] as TailorFlowController | undefined;
-    expect(controller?.questionsCount).toBe(3);
-  });
-
-  it('controller exposes openQuestions and openReferral as functions', () => {
-    const onController = vi.fn();
-    renderFlow({ onController });
-
-    const lastCall = onController.mock.calls[onController.mock.calls.length - 1];
-    const controller = lastCall?.[0] as TailorFlowController | undefined;
-    expect(typeof controller?.openQuestions).toBe('function');
-    expect(typeof controller?.openReferral).toBe('function');
-  });
-
-  it('calling openQuestions() opens the ApplicationQuestionsModal', async () => {
-    let capturedController: TailorFlowController | null = null;
-    renderFlow({
-      onController: (c) => {
-        capturedController = c;
-      },
-    });
-
-    expect(screen.queryByTestId(TEST_IDS.documents.questionsModal)).not.toBeInTheDocument();
-
-    // Wrap the imperative state-update in act() so React flushes synchronously.
-    act(() => {
-      capturedController?.openQuestions();
-    });
-
-    expect(await screen.findByTestId(TEST_IDS.documents.questionsModal)).toBeInTheDocument();
-  });
-
-  it('calling openReferral() opens the ReferralModal', async () => {
-    let capturedController: TailorFlowController | null = null;
-    renderFlow({
-      onController: (c) => {
-        capturedController = c;
-      },
-    });
-
-    expect(screen.queryByTestId(TEST_IDS.documents.referralModal)).not.toBeInTheDocument();
-
-    act(() => {
-      capturedController?.openReferral();
-    });
-
-    expect(await screen.findByTestId(TEST_IDS.documents.referralModal)).toBeInTheDocument();
-  });
-
-  it('closing the questions modal removes it from the DOM', async () => {
-    let capturedController: TailorFlowController | null = null;
-    const user = userEvent.setup();
-    renderFlow({
-      onController: (c) => {
-        capturedController = c;
-      },
-    });
-
-    act(() => {
-      capturedController?.openQuestions();
-    });
-    expect(await screen.findByTestId(TEST_IDS.documents.questionsModal)).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'close-questions' }));
-    expect(screen.queryByTestId(TEST_IDS.documents.questionsModal)).not.toBeInTheDocument();
-  });
-
-  it('closing the referral modal removes it from the DOM', async () => {
-    let capturedController: TailorFlowController | null = null;
-    const user = userEvent.setup();
-    renderFlow({
-      onController: (c) => {
-        capturedController = c;
-      },
-    });
-
-    act(() => {
-      capturedController?.openReferral();
-    });
-    expect(await screen.findByTestId(TEST_IDS.documents.referralModal)).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'close-referral' }));
-    expect(screen.queryByTestId(TEST_IDS.documents.referralModal)).not.toBeInTheDocument();
-  });
-
-  it('onController is not required — component renders without it', () => {
-    // Verify no crash when onController prop is omitted.
-    expect(() => renderFlow({})).not.toThrow();
-    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toBeInTheDocument();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 4. prefer-longer / skip-refetch branch (SHORT_DESC_FLOOR = 800)
-// ─────────────────────────────────────────────────────────────────────────────
-
-// A string of exactly `n` 'x' characters — avoids import of a pad utility.
-const repeat = (n: number) => 'x'.repeat(n);
-
-describe('TailorFlow — prefer-longer / useResolveJobUrl branch', () => {
-  it('(a) short initialDesc + longer fetchedDesc → fetchedDesc wins (forwarded to TailorWizard)', () => {
-    // initialDesc is 10 chars (< 800): re-resolve is triggered.
-    // fetchedDesc is 900 chars: longer than initialDesc → must win.
-    const shortDesc = repeat(10);
-    const longFetched = repeat(900);
-    resolveJobUrlState.data = { description: longFetched };
-
-    renderFlow({
-      job: { ...JOB, description: shortDesc },
-    });
-
-    // jobDesc flowed into TailorWizard as the jobDesc prop → exposed as data-jobdesc.
-    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
-      'data-jobdesc',
-      longFetched
-    );
-  });
-
-  it('(b) long initialDesc (≥800) → useResolveJobUrl called with shouldFetch=false', () => {
-    // initialDesc is 800 chars: at the floor, re-resolve is skipped.
-    const longDesc = repeat(800);
-
-    renderFlow({
-      job: { ...JOB, description: longDesc },
-    });
-
-    // The 2nd arg to useResolveJobUrl must be false when initialDesc.length >= SHORT_DESC_FLOOR.
-    expect(lastResolveJobUrlShouldFetch).toBe(false);
-  });
-
-  it('(c) equal-length fetchedDesc and initialDesc → initialDesc (carried) wins', () => {
-    // Both are 50 chars: fetchedDesc.length > initialDesc.length is false → initialDesc wins.
-    const carried = repeat(50);
-    const fetched = repeat(50);
-    resolveJobUrlState.data = { description: fetched };
-
-    renderFlow({
-      job: { ...JOB, description: carried },
-    });
-
-    // jobDesc must equal the carried initialDesc, not the fetched one.
-    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
-      'data-jobdesc',
-      carried
-    );
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 5. onJobDescChange prop — host persist callback
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('TailorFlow — onJobDescChange host callback', () => {
-  it('calls onJobDescChange when the user edits the job ad in the configuring stage', async () => {
-    // The TailorWizard stub exposes an "edit-jobdesc" button that calls
-    // onJobDescChange('edited-job-ad'). TailorFlow must forward this to the host
-    // via the new prop, in addition to updating its internal jobDescOverride.
-    const onJobDescChange = vi.fn();
-    const user = userEvent.setup();
-    renderFlow({ onJobDescChange });
-
-    await user.click(screen.getByTestId('wizard-edit-jobdesc'));
-
-    expect(onJobDescChange).toHaveBeenCalledTimes(1);
-    expect(onJobDescChange).toHaveBeenCalledWith('edited-job-ad');
-  });
-
-  it('does NOT throw when onJobDescChange is omitted (autopilot callers unaffected)', async () => {
-    // Omitting the prop must not throw — the optional-call guard `onJobDescChange?.()` covers it.
-    const user = userEvent.setup();
-    expect(() => renderFlow({})).not.toThrow();
-
-    await expect(user.click(screen.getByTestId('wizard-edit-jobdesc'))).resolves.not.toThrow();
-  });
-
-  it('still updates the internal jobDesc (forwarded to TailorWizard) even without the host prop', async () => {
-    // Editing with no onJobDescChange still updates jobDescOverride so the
-    // job ad textarea reflects the user's paste in the wizard.
-    const user = userEvent.setup();
-    renderFlow({});
-
-    await user.click(screen.getByTestId('wizard-edit-jobdesc'));
-
-    // After the edit, jobDesc is 'edited-job-ad' — forwarded to the wizard as data-jobdesc.
-    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
-      'data-jobdesc',
-      'edited-job-ad'
-    );
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 6. Height chain (load-bearing layout)
-// ─────────────────────────────────────────────────────────────────────────────
-// GenerationOutput pins its header by being height-bounded, which only works if
-// every ancestor passes a bounded height down. These two links are that chain's
-// top: drop either and the viewer grows past the window again, an ancestor
-// becomes the scroll owner and the header scrolls away with the document — while
-// every assertion inside GenerationOutput/ResultsPanel stays green (they only
-// walk up to their own render container).
-
-describe('TailorFlow — height chain', () => {
-  it('bounds the stage body and stretches the stage to it, on every stage', () => {
-    for (const stage of ['configuring', 'done'] as const) {
-      genMock.hasOutput = stage === 'done';
-
-      const { unmount } = renderFlow({});
-      const testId =
-        stage === 'done' ? TEST_IDS.documents.resultsPanel : TEST_IDS.documents.tailorWizard;
-
-      // Stage element (motion.div) must fill the stage body…
-      const stageEl = screen.getByTestId(testId).parentElement;
-      expect(stageEl, stage).not.toBeNull();
-      expect(stageEl?.className, stage).toContain('h-full');
-
-      // …and the stage body must be a bounded flex child, never content-sized.
-      const stageBody = stageEl?.parentElement;
-      expect(stageBody, stage).not.toBeNull();
-      expect(stageBody?.className, stage).toContain('min-h-0');
-      expect(stageBody?.className, stage).toContain('flex-1');
-
-      // The root the two hang off is itself height-bounded.
-      const root = stageBody?.parentElement;
-      expect(root?.className, stage).toContain('h-full');
-      expect(root?.className, stage).toContain('min-h-0');
-
-      unmount();
-    }
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 7. Cancelled-with-no-output acknowledgement (H9)
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('TailorFlow — cancelled-before-any-output hint (H9)', () => {
-  it('shows an acknowledgement on the configuring stage when cancelled with no output', () => {
-    genMock.state = 'cancelled';
-    genMock.busy = false;
-    genMock.hasOutput = false;
-    renderFlow({});
-    expect(screen.getByTestId(TEST_IDS.documents.generationCancelled)).toHaveTextContent(
-      'autopilot.apply.cancelledNoOutput'
-    );
-  });
-
-  it('does not show it while idle (nothing to acknowledge)', () => {
-    genMock.state = 'idle';
-    renderFlow({});
-    expect(screen.queryByTestId(TEST_IDS.documents.generationCancelled)).not.toBeInTheDocument();
-  });
-
-  it('a start failure (gen.error) takes priority over the cancelled hint', () => {
-    genMock.state = 'cancelled';
-    genMock.error = 'Model timed out';
-    renderFlow({});
-    expect(screen.getByTestId(TEST_IDS.documents.generationError)).toBeInTheDocument();
-    expect(screen.queryByTestId(TEST_IDS.documents.generationCancelled)).not.toBeInTheDocument();
-  });
-
-  it('does not show once output exists (done stage) even if state is still cancelled', () => {
-    genMock.state = 'cancelled';
-    genMock.hasOutput = true;
-    renderFlow({});
-    expect(screen.queryByTestId(TEST_IDS.documents.generationCancelled)).not.toBeInTheDocument();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 8. Focus follows the stage — but never STEALS it from mount or a modal (M6/N2)
-// ─────────────────────────────────────────────────────────────────────────────
-
-const rerenderFlow = () => (
-  <TailorFlow
-    job={JOB}
-    resumeText="My resume"
-    board="linkedin"
-    contextId="autopilot:https://acme.com/jobs/1"
-    jobUrl="https://acme.com/jobs/1"
-    persistence={makePersistence()}
-  />
-);
-
-describe('TailorFlow — focus follows the stage (M6/N2)', () => {
-  it('does NOT steal focus on mount (only on a subsequent stage CHANGE)', () => {
-    renderFlow({});
-    // Nothing focused this render — the effect's mount guard must no-op.
-    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard).parentElement).not.toHaveFocus();
-    expect(document.activeElement === document.body).toBe(true);
-  });
-
-  it('focuses the (inert) stage body element on a stage CHANGE after mount', () => {
-    const { rerender } = renderFlow({});
-    genMock.busy = true;
-    rerender(rerenderFlow());
-    expect(screen.getByTestId(TEST_IDS.documents.generatingPanel).parentElement).toHaveFocus();
-
-    genMock.busy = false;
-    genMock.hasOutput = true;
-    rerender(rerenderFlow());
-    expect(screen.getByTestId(TEST_IDS.documents.resultsPanel).parentElement).toHaveFocus();
-  });
-
-  // N2: Interview-questions/Referral stay open (and enabled) while a run is
-  // busy (ApplicationDetailPage's toolbar) — a stage flip mid-run must not
-  // pull focus out from under an open dialog. `useFocusTrap` only intercepts
-  // Tab, so a stray programmatic `.focus()` landing outside the trap is not
-  // caught by anything else.
-  it('does NOT steal focus from an element inside an open modal (aria-modal) on a stage change', () => {
-    const { rerender } = renderFlow({});
-
-    const dialog = document.createElement('div');
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-modal', 'true');
-    const dialogButton = document.createElement('button');
-    dialog.appendChild(dialogButton);
-    document.body.appendChild(dialog);
-    // CR-8: registered via `onTestFinished`, not a trailing statement — a
-    // failed assertion above would otherwise skip this cleanup and leave a
-    // `[aria-modal="true"]` node in `document.body` for every LATER test in
-    // this file, which could silently suppress the N2 focus guard in a way
-    // that only reproduces depending on run order.
-    onTestFinished(() => dialog.remove());
-    dialogButton.focus();
-    expect(dialogButton).toHaveFocus();
-
-    genMock.busy = true;
-    rerender(rerenderFlow());
-
-    expect(dialogButton).toHaveFocus();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 9. Persistent live-region announcer (CR-7)
-// ─────────────────────────────────────────────────────────────────────────────
-// Several screen readers do not announce content added to the a11y tree in
-// the SAME update that creates the region — a `role="status"` div that only
-// mounts once its condition is already true is unreliable. This region is
-// mounted for TailorFlow's entire lifetime; only its text changes.
-
-describe('TailorFlow — persistent live-region announcer (CR-7)', () => {
-  it('is present on mount, before there is anything to announce', () => {
-    renderFlow({});
-    expect(screen.getByTestId(TEST_IDS.documents.liveAnnouncer)).toBeInTheDocument();
-  });
-
-  it('announces the cancelled-no-output state', () => {
-    genMock.state = 'cancelled';
-    renderFlow({});
-    expect(screen.getByTestId(TEST_IDS.documents.liveAnnouncer)).toHaveTextContent(
-      'autopilot.apply.cancelledNoOutput'
-    );
-  });
-
-  it('announces needsReview once the done stage renders with that status', () => {
-    genMock.state = 'needsReview';
-    genMock.hasOutput = true;
-    renderFlow({});
-    expect(screen.getByTestId(TEST_IDS.documents.liveAnnouncer)).toHaveTextContent(
-      'pipeline.status.needsReview'
-    );
-  });
-
-  // CR-10: without clearing the region on the null transition, a run that
-  // finishes cleanly after an earlier cancel kept exposing the stale
-  // "cancelled" text forever (the region is mounted for the whole component
-  // lifetime, so nothing else ever overwrote it).
-  it('clears the live region once the cancelled state ends', () => {
-    genMock.state = 'cancelled';
-    const { rerender } = renderFlow({});
-    expect(screen.getByTestId(TEST_IDS.documents.liveAnnouncer)).toHaveTextContent(
-      'autopilot.apply.cancelledNoOutput'
-    );
-
-    genMock.state = 'idle';
-    genMock.busy = true;
-    rerender(rerenderFlow());
-
-    expect(screen.getByTestId(TEST_IDS.documents.liveAnnouncer)).toBeEmptyDOMElement();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Score-tab résumé id — the SAVED résumé, which is not always the form's field
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('TailorFlow — which résumé the Score tab scores', () => {
-  it('falls back to the default saved résumé when the form has no picked document', () => {
-    // The autopilot apply path seeds `ap.resumeText`, a snapshot that can differ
-    // from the document it came from, so `resumeDocId` stays deliberately unset —
-    // which used to leave the Score tab permanently on "Save a résumé to score".
-    savedDocsState = [{ _id: 'doc-default', name: 'Resume.pdf', isDefault: true }];
-
-    renderFlow({});
-
-    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
-      'data-resumeid',
-      'doc-default'
-    );
-  });
-
-  it('prefers an explicitly picked document over the default', () => {
-    savedDocsState = [
-      { _id: 'doc-default', name: 'Resume.pdf', isDefault: true },
-      { _id: 'doc-picked', name: 'Other.pdf' },
-    ];
-    const persistence = makePersistence();
-    persistence.wizardForm = {
-      resume: 'My resume',
-      outputType: 'both',
-      researchCompany: false,
-      resumeDocId: 'doc-picked',
-    };
-
-    renderFlow({ persistence });
-
-    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
-      'data-resumeid',
-      'doc-picked'
-    );
-  });
-
-  it('scores nothing when there is no saved résumé at all — never a fabricated id', () => {
-    savedDocsState = [];
-
-    renderFlow({});
-
-    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toHaveAttribute(
-      'data-resumeid',
-      ''
-    );
+    rerender(rerenderFlow(persistence));
+    expectResearch('true');
   });
 });

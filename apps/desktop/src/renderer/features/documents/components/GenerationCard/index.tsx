@@ -1,50 +1,31 @@
 import {
   Building2,
-  Calendar,
-  Check,
-  ChevronDown,
-  Copy,
   Download,
   ExternalLink as ExternalLinkIcon,
   FileText,
   HelpCircle,
   Search,
-  Send,
   Trash2,
-  UserPlus,
-  Wand2,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
-import type { AiGenerationRecord, ReferralChannel, ReferralContact } from '@ajh/shared/ipc';
+import type { AiGenerationRecord } from '@ajh/shared/ipc';
 import { useTranslation } from '@ajh/translations';
-import { ActionMenu, Button, cn, ConfirmModal, transition, useNotification } from '@ajh/ui';
+import { ActionMenu, Button, ConfirmModal, transition } from '@ajh/ui';
 
 import { EditableOutput } from '@/components/generation/EditableOutput';
-import {
-  ExportActionIcon,
-  type ExportFormat,
-  ExportPicker,
-} from '@/components/generation/ExportPicker';
-import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
-import { errorClass } from '@/lib/error-class';
-import {
-  buildFilename,
-  exportDOCX,
-  exportPDF,
-  exportTXT,
-  PERSIST_DEBOUNCE_MS,
-  resolveMarket,
-  type TemplateId,
-  TEMPLATES,
-} from '@/lib/generate';
-import { COPY_FEEDBACK_LONG_MS } from '@/lib/timings';
+import { ExportActionIcon, ExportPicker } from '@/components/generation/ExportPicker';
+import { type TemplateId, TEMPLATES } from '@/lib/generate';
 import { useOpenExternal } from '@/services';
-import { useRemoveAiGeneration, useUpdateAiGeneration } from '@/services/use-ai-generations';
-import { useReferrals, useUpsertReferral } from '@/services/use-referrals/use-referrals';
+import { useRemoveAiGeneration } from '@/services/use-ai-generations';
+import { useReferrals } from '@/services/use-referrals/use-referrals';
 
+import { GenerationCardTitle } from './GenerationCardTitle';
+import { ReferralSection, useReferralActions } from './ReferralSection';
 import { Section } from './Section';
+import { useGenerationDrafts } from './useGenerationDrafts';
+import { useGenerationExport } from './useGenerationExport';
 
 const TEMPLATE_OPTIONS: { id: TemplateId; label: string }[] = Object.values(TEMPLATES).map((t) => ({
   id: t.id,
@@ -52,13 +33,6 @@ const TEMPLATE_OPTIONS: { id: TemplateId; label: string }[] = Object.values(TEMP
 }));
 
 type SectionKey = 'resume' | 'cover' | 'jobAd' | 'brief' | 'answers' | 'referral';
-
-/** The persisted draft text for a contact depends on the chosen channel. */
-function referralDraft(contact: ReferralContact): string {
-  if (contact.channel === 'email') return contact.emailDraft ?? '';
-  if (contact.channel === 'linkedin_message') return contact.messageDraft ?? '';
-  return contact.inviteNoteDraft ?? '';
-}
 
 interface GenerationCardProps {
   gen: AiGenerationRecord;
@@ -68,104 +42,20 @@ interface GenerationCardProps {
 
 export function GenerationCard({ gen, selected = false, onToggleSelect }: GenerationCardProps) {
   const { t } = useTranslation();
-  const formatRelative = useFormatRelativeTime(t, 'resumes.relativeTime');
-  const notify = useNotification();
   const openExternal = useOpenExternal();
   const removeAiGeneration = useRemoveAiGeneration();
-  const updateAiGeneration = useUpdateAiGeneration();
   const referrals = useReferrals(gen.jobUrl);
-  const upsertReferral = useUpsertReferral();
+  const referralActions = useReferralActions();
   // Card collapses to its header row by default; click to reveal the body (#27).
   const [cardExpanded, setCardExpanded] = useState(false);
   const [expanded, setExpanded] = useState<SectionKey | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
-  const [copiedReferral, setCopiedReferral] = useState<string | null>(null);
-  const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
-  const [exportTemplate, setExportTemplate] = useState<TemplateId>('classic');
-  // Per-export document accent (6-hex) — undefined = the template's own palette.
-  const [exportAccent, setExportAccent] = useState<string | undefined>(undefined);
-  const [exporting, setExporting] = useState<'resume' | 'cover' | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-
-  // Local editing buffers keep typing smooth and own the edit truth for the card's
-  // lifetime. The card is keyed by `gen.id` at the list (it remounts per record),
-  // so drafts are seeded once from the record on mount; thereafter the optimistic
-  // update hook patches the list cache (with rollback on failure) and we do NOT
-  // re-sync the drafts from `gen`. A re-sync here would let the post-`onSettled`
-  // refetch overwrite the buffer with debounce-stale text, clobbering keystrokes
-  // typed during the 800ms debounce window.
-  const [resumeDraft, setResumeDraft] = useState(gen.resumeText);
-  const [coverDraft, setCoverDraft] = useState(gen.coverLetterText);
-
-  // Debounced persistence — one timer per field; flushed on unmount.
-  const persistTimers = useRef<{
-    resume?: ReturnType<typeof setTimeout>;
-    cover?: ReturnType<typeof setTimeout>;
-  }>({});
-  useEffect(() => {
-    const timers = persistTimers.current;
-    return () => {
-      if (timers.resume) clearTimeout(timers.resume);
-      if (timers.cover) clearTimeout(timers.cover);
-    };
-  }, []);
-
-  const persistEdit = (type: 'resume' | 'cover', text: string) => {
-    const existing = persistTimers.current[type];
-    if (existing) clearTimeout(existing);
-    persistTimers.current[type] = setTimeout(() => {
-      updateAiGeneration.mutate(
-        type === 'resume' ? { id: gen.id, resumeText: text } : { id: gen.id, coverLetterText: text }
-      );
-    }, PERSIST_DEBOUNCE_MS);
-  };
-
-  const onEdit = (type: 'resume' | 'cover', text: string) => {
-    if (type === 'resume') setResumeDraft(text);
-    else setCoverDraft(text);
-    persistEdit(type, text);
-  };
+  const { resumeDraft, coverDraft, onEdit } = useGenerationDrafts(gen);
 
   const handleDelete = () => {
     setConfirmDelete(false);
     removeAiGeneration.mutate(gen.id);
-  };
-
-  const copyReferralDraft = async (contact: ReferralContact) => {
-    const draft = referralDraft(contact);
-    if (!draft) return;
-    await navigator.clipboard.writeText(draft);
-    setCopiedReferral(contact.id);
-    notify.success({ message: t('resumes.generated.referralCopied') });
-    setTimeout(
-      () => setCopiedReferral((id) => (id === contact.id ? null : id)),
-      COPY_FEEDBACK_LONG_MS
-    );
-  };
-
-  // Mark a referral as sent. The backend upsert overwrites the whole row by id
-  // (only `created_at` is preserved), so we re-send every field with the status
-  // flipped — passing a partial payload would blank the other columns.
-  const markReferralSent = (contact: ReferralContact) => {
-    upsertReferral.mutate(
-      {
-        id: contact.id,
-        jobUrl: contact.jobUrl,
-        companyName: contact.companyName,
-        personName: contact.personName,
-        personRole: contact.personRole,
-        linkedinUrl: contact.linkedinUrl,
-        emailDraft: contact.emailDraft,
-        messageDraft: contact.messageDraft,
-        inviteNoteDraft: contact.inviteNoteDraft,
-        channel: contact.channel,
-        status: 'sent',
-        notes: contact.notes,
-      },
-      {
-        onSuccess: () => notify.success({ message: t('resumes.generated.referralMarkedSent') }),
-      }
-    );
   };
 
   const meta = {
@@ -179,75 +69,9 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
     mismatch: gen.mismatch,
   };
 
-  const doExport = async (type: 'resume' | 'cover') => {
-    const text = type === 'resume' ? resumeDraft : coverDraft;
-    if (!text) return;
-    const docType = type === 'resume' ? 'resume' : 'cover-letter';
-    const filename = buildFilename(meta, docType, exportFormat);
-    // Cover-letter market — the backend's `complete_letter_text` synthesizes a
-    // body-only letter's salutation/sign-off from this locale, defaulting to
-    // "intl" (English) when omitted, regardless of the letter's real language.
-    // Resolved the same way `AIGeneratePage`/`useTailorPipeline` do. This record
-    // carries no structured job location/country (unlike `GenerationMeta`'s
-    // optional `jobCountry`), so language is the whole signal here — the correct
-    // floor per `resolveMarket`'s own country → language → intl priority.
-    // Résumé export keeps `locale` unset, mirroring `AIGeneratePage.doExport`
-    // (there `locale` is the user's own template-locale picker, not the job
-    // market; this card has no such picker, so there's nothing to preserve).
-    const coverLetterLocale =
-      docType === 'cover-letter'
-        ? resolveMarket({ targetLanguage: meta.targetLanguage })
-        : undefined;
-    setExporting(type);
-    try {
-      if (exportFormat === 'pdf') {
-        await exportPDF(
-          text,
-          filename.replace('.pdf', ''),
-          docType,
-          meta,
-          exportTemplate,
-          false,
-          coverLetterLocale,
-          exportAccent
-        );
-      } else if (exportFormat === 'docx') {
-        await exportDOCX(
-          text,
-          filename.replace('.docx', ''),
-          docType,
-          meta,
-          exportTemplate,
-          false,
-          coverLetterLocale,
-          exportAccent
-        );
-      } else {
-        exportTXT(text, filename.replace('.txt', ''));
-      }
-    } catch (err) {
-      console.error('[export] failed', {
-        format: exportFormat,
-        docType,
-        // Never the raw message — it can embed a header URL. See `errorClass`.
-        error: errorClass(err),
-      });
-      notify.error({
-        message: err instanceof Error && err.message ? err.message : t('common.exportFailed'),
-      });
-    } finally {
-      setExporting(null);
-    }
-  };
+  const exportState = useGenerationExport({ meta, resumeDraft, coverDraft });
+  const { exporting, doExport } = exportState;
 
-  const generatedDate = new Date(gen.createdAt).toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-
-  const channelLabel = (channel: ReferralChannel) =>
-    t(`resumes.generated.referralChannel.${channel}`);
   const contacts = referrals.data ?? [];
   const hasOutput = Boolean(resumeDraft || coverDraft);
 
@@ -270,60 +94,11 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
             </div>
           )}
 
-          <Button
-            variant="unstyled"
-            onClick={() => setCardExpanded((v) => !v)}
-            aria-expanded={cardExpanded}
-            className="flex min-w-0 flex-1 items-start gap-4 text-left"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand/10">
-              <Wand2 size={16} className="text-brand-soft" />
-            </span>
-
-            <span className="min-w-0 flex-1 space-y-2">
-              <span className="block min-w-0">
-                <span className="block truncate text-[15px] font-semibold leading-tight text-foreground/90">
-                  {gen.jobTitle || t('resumes.unknownPosition')}
-                </span>
-                {gen.companyName && (
-                  <span className="mt-1 flex items-center gap-1.5 truncate text-xs text-foreground/55">
-                    <Building2 size={11} className="shrink-0 text-foreground/35" />
-                    {gen.companyName}
-                  </span>
-                )}
-              </span>
-
-              <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-foreground/50">
-                {gen.candidateName && <span>{gen.candidateName}</span>}
-                <span className="flex items-center gap-1 text-foreground/40">
-                  <Calendar size={11} />
-                  <span title={formatRelative(gen.createdAt)}>{generatedDate}</span>
-                </span>
-                <span className="rounded-full border border-brand/20 bg-brand/8 px-2 py-0.5 text-[9px] uppercase tracking-wider text-brand-soft">
-                  {gen.mode}
-                </span>
-                {gen.board && (
-                  <span className="rounded-full border border-[var(--border-clear)] bg-muted px-2 py-0.5 text-[9px] uppercase tracking-wider text-foreground/55">
-                    {t(`jobs.boards.${gen.board}`, { defaultValue: gen.board })}
-                  </span>
-                )}
-                {/* A linked job means this generation was an application. */}
-                {gen.jobUrl && (
-                  <span className="flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-0.5 text-[9px] uppercase tracking-wider text-emerald-300">
-                    <Check size={9} /> {t('resumes.generated.applied')}
-                  </span>
-                )}
-              </span>
-            </span>
-
-            <ChevronDown
-              size={16}
-              className={cn(
-                'mt-1 shrink-0 text-foreground/30 transition-transform',
-                cardExpanded && 'rotate-180'
-              )}
-            />
-          </Button>
+          <GenerationCardTitle
+            gen={gen}
+            expanded={cardExpanded}
+            onToggle={() => setCardExpanded((v) => !v)}
+          />
 
           <div className="flex shrink-0 items-center self-center">
             <ActionMenu
@@ -479,82 +254,12 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
                   we display-join them here by `gen.jobUrl`. Each contact exposes copy
                   and mark-as-sent quick actions. */}
               {contacts.length > 0 && (
-                <Section
-                  label={t('resumes.generated.referralTitle')}
-                  icon={UserPlus}
-                  badge={contacts.length}
+                <ReferralSection
+                  contacts={contacts}
                   open={expanded === 'referral'}
                   onToggle={() => setExpanded(expanded === 'referral' ? null : 'referral')}
-                >
-                  <div className="max-h-80 select-text space-y-2.5 overflow-y-auto px-5 pb-5">
-                    {contacts.map((contact) => {
-                      const draft = referralDraft(contact);
-                      return (
-                        <div
-                          key={contact.id}
-                          className="surface-card space-y-2.5 rounded-lg px-3.5 py-3"
-                        >
-                          <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="truncate text-[12px] font-medium text-foreground/85">
-                                {contact.personName}
-                                {contact.personRole ? (
-                                  <span className="font-normal text-foreground/45">
-                                    {' '}
-                                    · {contact.personRole}
-                                  </span>
-                                ) : null}
-                              </p>
-                              <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-foreground/45">
-                                <span>{channelLabel(contact.channel)}</span>
-                                <span className="text-foreground/25">·</span>
-                                <span>
-                                  {t(`resumes.generated.referralStatus.${contact.status}`)}
-                                </span>
-                              </p>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-1.5">
-                              <Button
-                                disabled={!draft}
-                                onClick={() => void copyReferralDraft(contact)}
-                                title={t('resumes.generated.referralCopyDraft')}
-                                className="flex h-auto items-center gap-1.5 rounded-lg border-transparent bg-white/5 px-2.5 py-1.5 text-[10px] text-foreground/60 transition-colors hover:text-foreground"
-                              >
-                                {copiedReferral === contact.id ? (
-                                  <Check size={11} />
-                                ) : (
-                                  <Copy size={11} />
-                                )}
-                                {t('resumes.generated.referralCopyDraft')}
-                              </Button>
-                              {contact.status !== 'sent' && (
-                                <Button
-                                  disabled={upsertReferral.isPending}
-                                  onClick={() => markReferralSent(contact)}
-                                  title={t('resumes.generated.referralMarkSent')}
-                                  className="flex h-auto items-center gap-1.5 rounded-lg border-brand/20 bg-brand/10 px-2.5 py-1.5 text-[10px] text-brand-soft transition-colors hover:bg-brand/20"
-                                >
-                                  <Send size={11} />
-                                  {t('resumes.generated.referralMarkSent')}
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-
-                          {draft ? (
-                            <pre className="max-h-40 select-text overflow-y-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-foreground/55">
-                              {draft}
-                            </pre>
-                          ) : (
-                            <p className="text-[10px] italic text-foreground/35">
-                              {t('resumes.generated.referralNoDraft')}
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </Section>
+                  actions={referralActions}
+                />
               )}
             </motion.div>
           )}
@@ -565,13 +270,13 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
       <ExportPicker
         open={showExportModal}
         onClose={() => setShowExportModal(false)}
-        format={exportFormat}
-        onFormatChange={setExportFormat}
-        templateId={exportTemplate}
-        onTemplateChange={setExportTemplate}
+        format={exportState.format}
+        onFormatChange={exportState.setFormat}
+        templateId={exportState.template}
+        onTemplateChange={exportState.setTemplate}
         templateOptions={TEMPLATE_OPTIONS}
-        accent={exportAccent}
-        onAccentChange={setExportAccent}
+        accent={exportState.accent}
+        onAccentChange={exportState.setAccent}
       >
         {resumeDraft && (
           <Button

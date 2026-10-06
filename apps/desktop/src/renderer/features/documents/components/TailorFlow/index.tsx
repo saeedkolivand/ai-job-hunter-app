@@ -1,67 +1,29 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
+import { type ReactNode, useEffect, useState } from 'react';
 
 import type { AiGenerationRecord, AutopilotFoundJob } from '@ajh/shared';
-import type { PipelineRunSummary } from '@ajh/shared/ipc';
 import { TEST_IDS } from '@ajh/test-ids';
-import { useTranslation } from '@ajh/translations';
-import { ErrorState, transition } from '@ajh/ui';
+import { transition } from '@ajh/ui';
 
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
-import { useInterviewQuestions } from '@/hooks/use-interview-questions';
-import { useDefaultResumeId } from '@/hooks/useDefaultResumeId';
 import type { LetterLayoutId, TemplateId } from '@/lib/generate';
-import { shouldSeedResearchDefault } from '@/lib/research-company-default';
-import { useActiveModelCapabilities, useResolveJobUrl } from '@/services';
 
 import { ApplicationQuestionsModal } from './ApplicationQuestionsModal';
+import { ConfiguringNotices } from './ConfiguringNotices';
 import { GeneratingPanel } from './GeneratingPanel';
 import { InterviewQuestionsModal } from './InterviewQuestionsModal';
-import { tailorWizardSchema } from './lib/tailor-schema';
-import { buildTailorDefaults, type TailorWizardState } from './lib/tailor-state';
+import { type TailorFlowStage, toRunState } from './lib/tailor-stage';
+import type { TailorWizardState } from './lib/tailor-state';
 import { ReferralModal } from './ReferralModal';
-import { ResultsPanel, type TailorRunState } from './ResultsPanel';
+import { ResultsPanel } from './ResultsPanel';
 import { TailorWizard } from './TailorWizard';
-import { useApplicationAnswers } from './useApplicationAnswers';
-import { useJobAdSummary } from './useJobAdSummary';
+import { useJobDescription } from './useJobDescription';
+import { useLiveAnnouncement, useStageFocus } from './useStageEffects';
+import { useTailorAssistants } from './useTailorAssistants';
+import { useTailorForm } from './useTailorForm';
 import { useTailorPipeline } from './useTailorPipeline';
 
 export type { TailorWizardState };
-
-// A short carried description (e.g. an Adzuna API snippet, ~200–400 chars) is
-// worth re-resolving: the URL fetch (which now follows the aggregator redirect)
-// may reach the fuller ad. Re-resolve when the carried text is short OR empty,
-// then prefer whichever description is longer.
-// ponytail: 800-char floor separates aggregator snippets from full ads; raise if
-// real full ads legitimately come in shorter.
-const SHORT_DESC_FLOOR = 800;
-
-type TailorFlowStage = 'configuring' | 'generating' | 'done';
-
-/**
- * A terminal `ResumePipelineState` → the results panel's status banner.
- *
- * A COLD entry (a past run redisplayed from `latestGeneration`, never
- * started/reconnected in THIS session) leaves the machine at `idle` — its
- * own state has no opinion, but this posting's run list (`runs`, already
- * fetched) does: `runs[0]` is that same latest run's real, persisted status.
- * Falling back to a blind `'done'` there rendered a needsReview or failed
- * run as a clean success. Any OTHER non-terminal state (queued/drafting/…)
- * still reads as `'done'` — those only happen with a live session, which
- * `GeneratingPanel` owns instead.
- */
-function toRunState(state: string, runs: PipelineRunSummary[]): TailorRunState {
-  if (state === 'needsReview' || state === 'cancelled' || state === 'error') return state;
-  if (state === 'idle') {
-    const coldStatus = runs[0]?.status;
-    if (coldStatus === 'needsReview') return 'needsReview';
-    if (coldStatus === 'cancelled') return 'cancelled';
-    if (coldStatus === 'failed') return 'error';
-  }
-  return 'done';
-}
 
 /**
  * Imperative surface a host can drive: it reads the derived `stage` + the
@@ -171,7 +133,6 @@ export function TailorFlow({
   initialSummary,
   onJobDescChange,
 }: TailorFlowProps) {
-  const { t } = useTranslation();
   const model = useSelectedModel();
   const { canUse, reason } = useCanUseAI();
 
@@ -184,76 +145,11 @@ export function TailorFlow({
   const setAccent = persistence.setAccent;
   const setLetterLayoutId = persistence.setLetterLayoutId;
 
-  // Capability-driven default for the "search company" toggle: default ON when
-  // the active model can web-search. Read from the Rust capability matrix (never
-  // a TS mirror), so a new provider needs no change here.
-  const caps = useActiveModelCapabilities();
-  const supportsWebSearch = caps.data?.supportsWebSearch ?? false;
-
-  // RHF owns the live editing layer; `persistence.wizardForm` is a one-shot seed.
-  // Seed `defaultValues` ONCE — written back on step-advance and on generate.
-  // Only a FRESH (unpersisted) form takes the capability-driven research default;
-  // a restored form keeps the user's saved choice. Lazy `useState` initializer so
-  // `buildTailorDefaults` runs once, not on every render.
-  const startedFresh = useRef(persistence.wizardForm == null);
-  const [initialForm] = useState<TailorWizardState>(
-    () => persistence.wizardForm ?? buildTailorDefaults(resumeText, supportsWebSearch, resumeDocId)
+  const { methods, researchCompany, resumeId } = useTailorForm(
+    persistence.wizardForm,
+    resumeText,
+    resumeDocId
   );
-  const methods = useForm<TailorWizardState>({
-    defaultValues: initialForm,
-    resolver: zodResolver(tailorWizardSchema),
-    mode: 'onChange',
-  });
-
-  // The research toggle is an RHF field; the questions/interview assistants
-  // below need its live value (the staged run itself takes no such field —
-  // see the shared schema's doc comment on `ResumePipelineRunRequest`).
-  const researchCompany = useWatch({ control: methods.control, name: 'researchCompany' });
-  // The form field: which saved document backs the text about to be GENERATED.
-  // It must keep matching the visible text, because `useTailorPipeline` sends
-  // `resumeText: ''` whenever it is set — a mismatched id would silently generate
-  // from a different résumé than the one on screen.
-  const pickedResumeDocId = useWatch({ control: methods.control, name: 'resumeDocId' });
-
-  // The Score tab asks a DIFFERENT question, and the two answers are not always
-  // the same document. Its own copy says "Scored against your saved résumé, not
-  // the tailored version shown here", so it wants the saved document even when
-  // the editor holds something else — and the autopilot apply path seeds
-  // `ap.resumeText` (see `AutopilotPage`), a snapshot that can differ from the
-  // document it was taken from, which is exactly when the strict field above must
-  // stay unset. Reading that field alone left this tab permanently on "Save a
-  // résumé to score" for every autopilot-originated application.
-  //
-  // Prefer an explicitly-picked document, fall back to the default — which is what
-  // the Jobs page has always scored (`useDefaultResumeId`), and what this line's
-  // previous comment already claimed to do.
-  const defaultResumeId = useDefaultResumeId();
-  const resumeId = pickedResumeDocId ?? defaultResumeId ?? undefined;
-
-  // Keep the "search company" default in sync with the active model's capability:
-  // seed it when the capability resolves after a cold-cache seed, and RE-seed it
-  // on a mid-session model switch that flips the capability — but only for a fresh
-  // form and only until the user touches the toggle (RHF's dirty flag guards the
-  // override, so an explicit choice is never clobbered). The DECISION is the shared
-  // `shouldSeedResearchDefault` helper; RHF owns the state. `lastSeededResearch`
-  // tracks the last-seeded capability (seeded from the fresh form's construction
-  // value) so a no-change resolve is a no-op.
-  const researchDirty = !!methods.formState.dirtyFields.researchCompany;
-  const lastSeededResearch = useRef<boolean | null>(
-    startedFresh.current ? (caps.isSuccess ? supportsWebSearch : null) : null
-  );
-  useEffect(() => {
-    if (!startedFresh.current) return;
-    const { seed, value } = shouldSeedResearchDefault({
-      capabilityResolved: caps.isSuccess,
-      supportsWebSearch,
-      userTouched: researchDirty,
-      lastSeededValue: lastSeededResearch.current,
-    });
-    if (!seed) return;
-    lastSeededResearch.current = value;
-    methods.setValue('researchCompany', value, { shouldDirty: false });
-  }, [caps.isSuccess, supportsWebSearch, researchDirty, methods]);
 
   const [referralOpen, setReferralOpen] = useState(false);
   const [questionsOpen, setQuestionsOpen] = useState(false);
@@ -262,23 +158,10 @@ export function TailorFlow({
   // when the next run starts (output is intentionally preserved underneath).
   const [forceConfiguring, setForceConfiguring] = useState(false);
 
-  const initialDesc = (job.description ?? '').trim();
-  const resolved = useResolveJobUrl(job.url, initialDesc.length < SHORT_DESC_FLOOR);
-  const fetchedDesc = (resolved.data?.description ?? '').trim();
-  const [jobDescOverride, setJobDescOverride] = useState<string | null>(null);
-  // Combine the local override with the optional host persist callback so the
-  // host can react to edits (e.g. debounce-persist to application.jobDescription)
-  // without TailorFlow caring about storage details.
-  const handleJobDescEdit = (v: string) => {
-    setJobDescOverride(v);
-    onJobDescChange?.(v);
-  };
-  const jobDesc =
-    jobDescOverride ?? (fetchedDesc.length > initialDesc.length ? fetchedDesc : initialDesc);
-  const hasDesc = jobDesc.length > 0;
-  // Show the loading state only when there's nothing to display yet (no snippet);
-  // with a snippet present it renders immediately and upgrades silently on fetch.
-  const fetchingDesc = !initialDesc && resolved.isLoading;
+  const { jobDesc, hasDesc, fetchingDesc, handleJobDescEdit } = useJobDescription(
+    job,
+    onJobDescChange
+  );
 
   // The target that produced (or is producing) the output. Persisted form value
   // is the source of truth once a run starts; falls back to the live form value.
@@ -311,49 +194,19 @@ export function TailorFlow({
     onRunStarted: persistence.setRun,
   });
 
-  // Lazy, résumé-independent AI summary of the job ad (shared by the wizard's
-  // job-ad step and the results job-ad tab). Reuses the flow's detected meta.
-  const jobAdSummary = useJobAdSummary({
-    jobDesc,
-    model,
-    canUse,
-    hasDesc,
-    meta: gen.meta,
-    applicationId,
-    initialSummary,
-  });
-
-  // Lifted out of ResultsPanel so the modal can fully unmount on close without
-  // losing the user's picks/answers (the hook holds non-rehydrated local state)
-  // and so an in-flight generation keeps running while the modal is closed.
-  const questions = useApplicationAnswers({
+  const { jobAdSummary, questions, interview } = useTailorAssistants({
+    job,
     resume: methods.getValues('resume'),
     jobDesc,
     model,
     researchCompany,
-    meta: gen.meta,
-    targetLanguageConfident: gen.targetLanguageConfident,
+    gen,
     canUse,
     hasDesc,
     jobUrl,
     board,
-    salaryMin: job.salaryMin,
-    salaryMax: job.salaryMax,
-    salaryCurrency: job.salaryCurrency,
-  });
-
-  // "Questions to ask the interviewer" — the second assistant. Same inputs; it
-  // always gathers its own company/role research (not gated on the toggle).
-  const interview = useInterviewQuestions({
-    resume: methods.getValues('resume'),
-    jobDesc,
-    model,
-    meta: gen.meta,
-    targetLanguageConfident: gen.targetLanguageConfident,
-    canUse,
-    hasDesc,
-    jobUrl,
-    board,
+    applicationId,
+    initialSummary,
   });
 
   // Persist the form snapshot to the host's store (mirrors CreationWizard).
@@ -382,73 +235,13 @@ export function TailorFlow({
 
   const runState = toRunState(gen.state, gen.runs);
 
-  // CR-7: a `role="status"` element that only enters the DOM once its
-  // condition is already true (the cancelled-no-output hint below,
-  // ResultsPanel's needsReview box) is unreliable — several screen readers
-  // only announce a TEXT CHANGE inside an ALREADY-mounted live region, not
-  // content that arrives in the same update as the region itself. This one
-  // region stays mounted for TailorFlow's whole lifetime (every stage
-  // transition); only its text changes. It's additive, not a replacement —
-  // the two visual banners keep their own `role="status"` too, for AT/browser
-  // combinations that DO handle a freshly-mounted status role; this is the
-  // reliable fallback for the ones that don't. Same "announce the
-  // TRANSITION, not the mount" posture as GeneratingPanel's per-step
-  // announcer (H8).
-  const [liveAnnouncement, setLiveAnnouncement] = useState('');
-  const announcedKeyRef = useRef<'cancelled' | 'needsReview' | null>(null);
-  useEffect(() => {
-    const key =
-      stage === 'configuring' && !gen.error && gen.state === 'cancelled'
-        ? 'cancelled'
-        : stage === 'done' && runState === 'needsReview'
-          ? 'needsReview'
-          : null;
-    if (announcedKeyRef.current === key) return;
-    announcedKeyRef.current = key;
-    // CR-10: clearing to '' on the null branch (not leaving the previous
-    // text in place) is the whole fix — for BOTH halves CodeRabbit raised.
-    // Stale text: without this, a run that finishes cleanly after an
-    // earlier cancel/needsReview kept exposing that old announcement in
-    // the (still-mounted) region forever. Re-announcing an IDENTICAL
-    // consecutive value: React bails out of a `setState` that's
-    // `Object.is`-equal to the current value, so calling
-    // `setLiveAnnouncement` with the SAME string twice in a row is not a
-    // real DOM text mutation and may not re-announce — but `key` cannot
-    // reach 'cancelled' (or 'needsReview') twice without passing through
-    // `null` in between (starting a new run always moves `stage` off
-    // 'configuring'/'done' first), so this clear always lands between two
-    // occurrences of the same text, making the SECOND one a genuine ''→text
-    // change again. No separate machinery needed for that half.
-    if (key === 'cancelled') setLiveAnnouncement(t('autopilot.apply.cancelledNoOutput'));
-    else if (key === 'needsReview') setLiveAnnouncement(t('pipeline.status.needsReview'));
-    else setLiveAnnouncement('');
-  }, [stage, gen.error, gen.state, runState, t]);
-
-  // `AnimatePresence mode="wait"` swaps the whole stage subtree on every stage
-  // change, which drops focus to `<body>` with nothing to restore it —
-  // keyboard/AT users lose their place after every wizard step, generate, or
-  // "Edit settings". Focus the (otherwise inert, tabIndex={-1}) stage body
-  // itself on each transition, matching a route/modal-swap pattern.
-  //
-  // Two guards, both load-bearing:
-  // - Skip the FIRST run (mount): the ref below only tracks CHANGES, so a
-  //   fresh page load never steals focus into an unlabeled offscreen div.
-  // - Bail when focus is already inside an open `ModalShell` dialog
-  //   (`[aria-modal="true"]`) — Questions/Interview/Referral stay open
-  //   across a `generating → done` transition (ApplicationDetailPage keeps
-  //   them enabled while busy), and `useFocusTrap` only intercepts Tab, not
-  //   a programmatic `.focus()` landing outside the trap. Pulling focus out
-  //   from under an open dialog would leave Tab walking the background page.
-  const stageBodyRef = useRef<HTMLDivElement>(null);
-  const mountedStageRef = useRef<TailorFlowStage | null>(null);
-  useEffect(() => {
-    const isFirstRun = mountedStageRef.current === null;
-    mountedStageRef.current = stage;
-    if (isFirstRun) return;
-    const activeEl = stageBodyRef.current?.ownerDocument.activeElement;
-    if (activeEl instanceof Element && activeEl.closest('[aria-modal="true"]')) return;
-    stageBodyRef.current?.focus();
-  }, [stage]);
+  const liveAnnouncement = useLiveAnnouncement({
+    stage,
+    error: gen.error,
+    state: gen.state,
+    runState,
+  });
+  const stageBodyRef = useStageFocus(stage);
 
   // Surface the imperative controller to the host (header triggers + derived stage).
   const questionsCount = questions.selected.size;
@@ -583,33 +376,8 @@ export function TailorFlow({
         </AnimatePresence>
       </div>
 
-      {/* A start failure falls back to the wizard above — surface WHY, not
-          silence. A terminal needsReview/cancelled/error is NOT shown here —
-          ResultsPanel's own status banner (`stage === 'done'`) owns that. */}
-      {stage === 'configuring' && gen.error && (
-        <div data-testid={TEST_IDS.documents.generationError} className="mx-8 mb-4 shrink-0">
-          <ErrorState
-            title={t('autopilot.apply.error')}
-            description={gen.error}
-            className="rounded-xl border border-red-400/20 bg-red-400/5 py-6"
-          />
-        </div>
-      )}
-
-      {/* Cancelling BEFORE any text streamed leaves no output, so the stage
-          derivation above falls back to the wizard with nothing else to say
-          it happened — `session.cancel()` sets no `error`, and the banner
-          above is gated on one. A one-line acknowledgement instead of dead
-          silence; stays until the next `start()` moves `gen.state` off
-          `cancelled`. */}
-      {stage === 'configuring' && !gen.error && gen.state === 'cancelled' && (
-        <div
-          data-testid={TEST_IDS.documents.generationCancelled}
-          role="status"
-          className="mx-8 mb-4 shrink-0 rounded-lg border border-[var(--border-clear)] bg-foreground/[0.02] px-4 py-3 text-[11px] text-foreground/60"
-        >
-          {t('autopilot.apply.cancelledNoOutput')}
-        </div>
+      {stage === 'configuring' && (
+        <ConfiguringNotices error={gen.error} cancelled={gen.state === 'cancelled'} />
       )}
 
       {questionsOpen && (

@@ -8,186 +8,105 @@
  *   4. Truncation hint visible iff description ends with ellipsis.
  *   5. ExternalLink "view job" rendered only when jobUrl is provided.
  *   6. TextArea a11y: short aria-label (tab key, NOT editHelper sentence) + aria-describedby wiring.
- *   7. Score tab query gating — opening it snapshots the posting text ONCE;
- *      editing it afterwards never re-enables the query (no per-keystroke
- *      scoring storm — this surface translates, so a live wire could route a
- *      slow local-model call onto every keystroke).
+ *   7. ModelSelector visibility on the summary tab.
+ *   8. Tab resync on posting change.
  *
- * Strategy:
- *  - `@ajh/translations` returns keys as-is (deterministic assertions).
- *  - `@ajh/ui` primitives that this component uses render their child content /
- *    pass through props we assert on; we do NOT stub them — real primitives
- *    catch future API changes early.
- *  - `@/components/ui/ExternalLink` and `@/lib/generate` are real imports
- *    (no network, pure).
- *  - noUncheckedIndexedAccess: all array index accesses are guarded.
+ * Score-tab wiring + query gating live in `JobAdView/scoreTab.test.tsx`; shared stubs in
+ * `JobAdView/test-support.tsx`. `@ajh/translations` returns keys as-is (deterministic assertions).
+ * noUncheckedIndexedAccess: all array index accesses are guarded.
  */
 
-import React from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
 
-// ── i18n ──────────────────────────────────────────────────────────────────────
+import { JobAdView } from './JobAdView';
+import { makeProps } from './JobAdView/test-support';
 
 vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+vi.mock('@/components/ui/ModelSelector', async () => {
+  return (await import('./JobAdView/test-support')).modelSelectorModule;
+});
+vi.mock('@/components/ui/ExternalLink', async () => {
+  return (await import('./JobAdView/test-support')).externalLinkModule;
+});
+vi.mock('@/lib/generate', async () => (await import('./JobAdView/test-support')).generateModule);
+vi.mock('@/services', async () => (await import('./JobAdView/test-support')).servicesModule);
 
-// ── ModelSelector — self-contained store-driven picker; stub for unit tests ────
-// The real component pulls React Query + AppClient; a stub that renders a
-// sentinel element is sufficient to assert it mounts on the summary tab.
-
-// className is forwarded so the containment test below can assert it — the
-// real component applies `className` to its own root div.
-vi.mock('@/components/ui/ModelSelector', () => ({
-  ModelSelector: ({ className }: { className?: string }) => (
-    <div data-testid="model-selector-stub" className={className} />
-  ),
-  // Score-tab CLI-agent egress disclosure reads this — 'ollama' (kind:
-  // local-server) keeps every existing test in this file's assertions
-  // unaffected; the real-copy assertion for the disclosure itself lives in
-  // JobAdView.i18n.test.tsx.
-  useSelectedProvider: () => 'ollama',
-}));
-
-// ── ExternalLink — thin anchor wrapper, no special provider needed ─────────────
-
-vi.mock('@/components/ui/ExternalLink', () => ({
-  ExternalLink: ({
-    href,
-    children,
-    ...rest
-  }: { href: string; children: React.ReactNode } & React.HTMLAttributes<HTMLAnchorElement>) => (
-    <a href={href} {...rest}>
-      {children}
-    </a>
-  ),
-}));
-
-// ── OUTPUT_LANGUAGES — only the shape matters; stub to a minimal list ──────────
-
-vi.mock('@/lib/generate', () => ({
-  OUTPUT_LANGUAGES: [{ code: 'en', endonym: 'English' }],
-}));
-
-// ── useJobAdTextMatchScore — the Score tab's only data source. Stubbed (as a
-// tracked vi.fn, not a plain arrow) so no QueryClient/AppClient/IPC is needed
-// here, while section 10 below can still assert on ITS call arguments — the
-// component-level guard that a keystroke never flips `enabled` to `true`.
-// The Score tab's real vs. "not scored" render logic is covered separately in
-// JobAdView.i18n.test.tsx against REAL translated copy. Most tests below
-// never open the Score tab, but the hook is still called unconditionally on
-// every render (Rules of Hooks), so SOME `@/services` binding must exist.
-// `mockUseJobAdTextMatchScore` (the `mock`-prefixed name) is Vitest's
-// documented exception to the "no out-of-scope refs in a hoisted factory"
-// rule — see MatchScoresProvider.test.tsx for the same pattern.
-
-const mockUseJobAdTextMatchScore = vi.fn(
-  (_resumeId: string | null, _jobText: string, _enabled?: boolean) => ({
-    data: undefined,
-    isLoading: false,
-    isError: false,
-    refetch: vi.fn(),
-  })
-);
-
-vi.mock('@/services', () => ({
-  useJobAdTextMatchScore: (...args: Parameters<typeof mockUseJobAdTextMatchScore>) =>
-    mockUseJobAdTextMatchScore(...args),
-}));
-
-// ── Import component AFTER all mocks ─────────────────────────────────────────
-
-import { JobAdView } from './JobAdView';
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function makeProps(overrides: Partial<Parameters<typeof JobAdView>[0]> = {}) {
-  return {
-    jobDesc: 'Full job description with enough text.',
-    onJobDescChange: vi.fn(),
-    summary: '',
-    generating: false,
-    error: null,
-    onGenerateSummary: vi.fn(),
-    language: 'en',
-    onLanguageChange: vi.fn(),
-    hasDesc: true,
-    fetchingDesc: false,
-    jobUrl: undefined,
-    ...overrides,
-  };
-}
+type Overrides = Parameters<typeof makeProps>[0];
+const renderView = (overrides: Overrides = {}) => render(<JobAdView {...makeProps(overrides)} />);
+const rerenderView = (r: ReturnType<typeof renderView>, overrides: Overrides) =>
+  r.rerender(<JobAdView {...makeProps(overrides)} />);
+const textarea = () => screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea);
+const queryTextarea = () => screen.queryByTestId(TEST_IDS.documents.jobAdViewTextarea);
+const clickTab = (label: string) => userEvent.click(screen.getByText(`autopilot.apply.${label}`));
+/** No description at all — the view starts on the source tab. */
+const EMPTY: Overrides = { hasDesc: false, jobDesc: '' };
+const FULL: Overrides = { jobDesc: 'Normal full description.', hasDesc: true };
 
 // ── 1. Default tab selection ──────────────────────────────────────────────────
 
 describe('JobAdView — default tab selection', () => {
   it('defaults to summary tab when description is present and not truncated', () => {
-    render(<JobAdView {...makeProps()} />);
+    renderView();
     // Summary content area is visible (no jobAdViewTextarea at initial render)
     // because we start on the summary tab. The textarea is behind the source tab.
-    expect(screen.queryByTestId(TEST_IDS.documents.jobAdViewTextarea)).not.toBeInTheDocument();
+    expect(queryTextarea()).not.toBeInTheDocument();
     // The "Generate summary" button is rendered (summary tab empty state).
     expect(screen.getByText('autopilot.apply.jobAdView.generateSummary')).toBeInTheDocument();
   });
 
-  it('defaults to source tab when hasDesc is false', () => {
-    render(<JobAdView {...makeProps({ hasDesc: false, jobDesc: '' })} />);
-    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea)).toBeInTheDocument();
-  });
-
-  it('defaults to source tab when jobDesc ends with "…" (unicode ellipsis)', () => {
-    render(<JobAdView {...makeProps({ jobDesc: 'Some partial description…', hasDesc: true })} />);
-    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea)).toBeInTheDocument();
-  });
-
-  it('defaults to source tab when jobDesc ends with "..." (three dots)', () => {
-    render(<JobAdView {...makeProps({ jobDesc: 'Partial...', hasDesc: true })} />);
-    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea)).toBeInTheDocument();
+  it.each([
+    ['defaults to source tab when hasDesc is false', EMPTY],
+    [
+      'defaults to source tab when jobDesc ends with "…" (unicode ellipsis)',
+      { jobDesc: 'Some partial description…', hasDesc: true },
+    ],
+    [
+      'defaults to source tab when jobDesc ends with "..." (three dots)',
+      { jobDesc: 'Partial...', hasDesc: true },
+    ],
+  ])('%s', (_name, overrides) => {
+    renderView(overrides);
+    expect(textarea()).toBeInTheDocument();
   });
 
   it('defaults to summary tab when jobDesc ends with a normal character (not truncated)', () => {
-    render(<JobAdView {...makeProps({ jobDesc: 'Normal full description.', hasDesc: true })} />);
-    expect(screen.queryByTestId(TEST_IDS.documents.jobAdViewTextarea)).not.toBeInTheDocument();
+    renderView(FULL);
+    expect(queryTextarea()).not.toBeInTheDocument();
   });
 });
 
 // ── 2. TextArea always present on source tab ──────────────────────────────────
 
 describe('JobAdView — TextArea always present on source tab', () => {
-  async function switchToSource() {
-    // Click the "Job ad" segmented control option (key passed through as-is by mock).
-    await userEvent.click(screen.getByText('autopilot.apply.tabs.jobAd'));
-  }
-
-  it('shows an editable TextArea even when jobDesc is empty and hasDesc is false', async () => {
-    render(<JobAdView {...makeProps({ hasDesc: false, jobDesc: '' })} />);
+  it('shows an editable TextArea even when jobDesc is empty and hasDesc is false', () => {
+    renderView(EMPTY);
     // Already on source tab (default for no-desc).
-    const textarea = screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea);
-    expect(textarea).toBeInTheDocument();
+    expect(textarea()).toBeInTheDocument();
   });
 
   it('shows the paste placeholder when jobDesc is empty', () => {
-    render(<JobAdView {...makeProps({ hasDesc: false, jobDesc: '' })} />);
-    const textarea = screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea);
+    renderView(EMPTY);
     // Placeholder is set via the `placeholder` prop on TextArea → rendered on the underlying element.
-    expect(textarea).toHaveAttribute('placeholder', 'autopilot.apply.jobAdView.pasteHint');
+    expect(textarea()).toHaveAttribute('placeholder', 'autopilot.apply.jobAdView.pasteHint');
   });
 
   it('shows an editable TextArea on source tab even when starting on summary (normal desc)', async () => {
-    render(<JobAdView {...makeProps({ jobDesc: 'Normal full description.', hasDesc: true })} />);
+    renderView(FULL);
     // Starts on summary — switch to source.
-    await switchToSource();
-    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea)).toBeInTheDocument();
+    await clickTab('tabs.jobAd');
+    expect(textarea()).toBeInTheDocument();
   });
 
-  it('does NOT show the TextArea while fetchingDesc is true (loading state takes precedence)', async () => {
-    render(<JobAdView {...makeProps({ hasDesc: false, jobDesc: '', fetchingDesc: true })} />);
+  it('does NOT show the TextArea while fetchingDesc is true (loading state takes precedence)', () => {
+    renderView({ ...EMPTY, fetchingDesc: true });
     // The spinner/loading state replaces the textarea while fetching.
-    expect(screen.queryByTestId(TEST_IDS.documents.jobAdViewTextarea)).not.toBeInTheDocument();
+    expect(queryTextarea()).not.toBeInTheDocument();
     expect(screen.getByText('autopilot.apply.fetchingDescription')).toBeInTheDocument();
   });
 });
@@ -197,9 +116,8 @@ describe('JobAdView — TextArea always present on source tab', () => {
 describe('JobAdView — onJobDescChange callback', () => {
   it('calls onJobDescChange once per keystroke when the user types in the textarea', async () => {
     const onJobDescChange = vi.fn();
-    render(<JobAdView {...makeProps({ hasDesc: false, jobDesc: '', onJobDescChange })} />);
-    const textarea = screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea);
-    await userEvent.type(textarea, 'hello');
+    renderView({ ...EMPTY, onJobDescChange });
+    await userEvent.type(textarea(), 'hello');
     // Controlled component fires one change event per character.
     expect(onJobDescChange).toHaveBeenCalledTimes(5);
     // Each call receives the current target value (a single char since the prop
@@ -209,11 +127,10 @@ describe('JobAdView — onJobDescChange callback', () => {
 
   it('calls onJobDescChange when the user clears and re-types in the textarea', async () => {
     const onJobDescChange = vi.fn();
-    render(<JobAdView {...makeProps({ hasDesc: true, jobDesc: 'Partial…', onJobDescChange })} />);
+    renderView({ hasDesc: true, jobDesc: 'Partial…', onJobDescChange });
     // Truncated desc — already on source tab.
-    const textarea = screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea);
-    await userEvent.clear(textarea);
-    await userEvent.type(textarea, 'New text');
+    await userEvent.clear(textarea());
+    await userEvent.type(textarea(), 'New text');
     expect(onJobDescChange).toHaveBeenCalled();
   });
 });
@@ -221,31 +138,24 @@ describe('JobAdView — onJobDescChange callback', () => {
 // ── 4. Truncation hint ────────────────────────────────────────────────────────
 
 describe('JobAdView — truncation hint', () => {
-  it('shows the truncation hint Alert when jobDesc ends with unicode ellipsis', () => {
-    render(<JobAdView {...makeProps({ jobDesc: 'Short snippet…', hasDesc: true })} />);
+  it.each([
+    ['unicode ellipsis', 'Short snippet…'],
+    ['three dots', 'Short snippet...'],
+  ])('shows the truncation hint Alert when jobDesc ends with %s', (_name, jobDesc) => {
+    renderView({ jobDesc, hasDesc: true });
     // The hint is now an Alert (role="alert") — auto-announced by screen readers.
     const alert = screen.getByRole('alert');
     expect(alert).toBeInTheDocument();
     expect(alert).toHaveTextContent('autopilot.apply.jobAdView.truncatedHint');
   });
 
-  it('shows the truncation hint Alert when jobDesc ends with three dots', () => {
-    render(<JobAdView {...makeProps({ jobDesc: 'Short snippet...', hasDesc: true })} />);
-    const alert = screen.getByRole('alert');
-    expect(alert).toBeInTheDocument();
-    expect(alert).toHaveTextContent('autopilot.apply.jobAdView.truncatedHint');
-  });
-
-  it('does NOT show the truncation hint for a normal (non-truncated) description', async () => {
-    render(<JobAdView {...makeProps({ jobDesc: 'Normal full description.', hasDesc: true })} />);
+  it.each([
+    ['for a normal (non-truncated) description', FULL, true],
+    ['when jobDesc is empty (no text to hint about)', EMPTY, false],
+  ])('does NOT show the truncation hint %s', async (_name, overrides, switchToSource) => {
+    renderView(overrides);
     // Switch to source tab to inspect.
-    await userEvent.click(screen.getByText('autopilot.apply.tabs.jobAd'));
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    expect(screen.queryByText('autopilot.apply.jobAdView.truncatedHint')).not.toBeInTheDocument();
-  });
-
-  it('does NOT show the truncation hint when jobDesc is empty (no text to hint about)', () => {
-    render(<JobAdView {...makeProps({ hasDesc: false, jobDesc: '' })} />);
+    if (switchToSource) await clickTab('tabs.jobAd');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText('autopilot.apply.jobAdView.truncatedHint')).not.toBeInTheDocument();
   });
@@ -254,36 +164,20 @@ describe('JobAdView — truncation hint', () => {
 // ── 5. ExternalLink / viewJob ─────────────────────────────────────────────────
 
 describe('JobAdView — view job link', () => {
-  it('renders the "view job" link on source tab when jobUrl is provided', async () => {
-    render(
-      <JobAdView
-        {...makeProps({ hasDesc: false, jobDesc: '', jobUrl: 'https://example.com/job' })}
-      />
-    );
-    // Already on source tab (no desc).
-    const link = screen.getByText('autopilot.viewJob').closest('a');
-    expect(link).toHaveAttribute('href', 'https://example.com/job');
+  const jobUrl = 'https://example.com/job';
+
+  it.each([
+    ['renders the "view job" link on source tab when jobUrl is provided', EMPTY, false],
+    ['renders the "view job" link even on the source tab when description is present', FULL, true],
+  ])('%s', async (_name, overrides, switchToSource) => {
+    renderView({ ...overrides, jobUrl });
+    if (switchToSource) await clickTab('tabs.jobAd');
+    expect(screen.getByText('autopilot.viewJob').closest('a')).toHaveAttribute('href', jobUrl);
   });
 
   it('does NOT render the "view job" link when jobUrl is undefined', () => {
-    render(<JobAdView {...makeProps({ hasDesc: false, jobDesc: '', jobUrl: undefined })} />);
+    renderView({ ...EMPTY, jobUrl: undefined });
     expect(screen.queryByText('autopilot.viewJob')).not.toBeInTheDocument();
-  });
-
-  it('renders the "view job" link even on the source tab when description is present', async () => {
-    render(
-      <JobAdView
-        {...makeProps({
-          jobDesc: 'Normal full description.',
-          hasDesc: true,
-          jobUrl: 'https://example.com/job',
-        })}
-      />
-    );
-    // Switch to source tab.
-    await userEvent.click(screen.getByText('autopilot.apply.tabs.jobAd'));
-    const link = screen.getByText('autopilot.viewJob').closest('a');
-    expect(link).toHaveAttribute('href', 'https://example.com/job');
   });
 });
 
@@ -291,83 +185,78 @@ describe('JobAdView — view job link', () => {
 
 describe('JobAdView — TextArea a11y wiring', () => {
   it('uses the short tab-label key as aria-label (NOT the full editHelper sentence)', () => {
-    render(<JobAdView {...makeProps({ hasDesc: false, jobDesc: '' })} />);
-    const textarea = screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea);
+    renderView(EMPTY);
     // aria-label must be the tab key (short name), not the full editHelper description
-    expect(textarea).toHaveAttribute('aria-label', 'autopilot.apply.tabs.jobAd');
-    expect(textarea).not.toHaveAttribute('aria-label', 'autopilot.apply.jobAdView.editHelper');
+    expect(textarea()).toHaveAttribute('aria-label', 'autopilot.apply.tabs.jobAd');
+    expect(textarea()).not.toHaveAttribute('aria-label', 'autopilot.apply.jobAdView.editHelper');
   });
 
   it('references the helper paragraph id via aria-describedby (non-truncated)', async () => {
-    render(<JobAdView {...makeProps({ jobDesc: 'Normal full description.', hasDesc: true })} />);
-    await userEvent.click(screen.getByText('autopilot.apply.tabs.jobAd'));
-    const textarea = screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea);
-    expect(textarea).toHaveAttribute('aria-describedby', 'job-ad-edit-helper');
+    renderView(FULL);
+    await clickTab('tabs.jobAd');
+    expect(textarea()).toHaveAttribute('aria-describedby', 'job-ad-edit-helper');
     // The helper paragraph itself must carry the stable id
     const helperPara = document.getElementById('job-ad-edit-helper');
     expect(helperPara).toBeInTheDocument();
     expect(helperPara).toHaveTextContent('autopilot.apply.jobAdView.editHelper');
   });
 
-  it('always uses only the helper id in aria-describedby (truncation hint is now an Alert, not an id-referenced element)', () => {
-    render(<JobAdView {...makeProps({ jobDesc: 'Short snippet…', hasDesc: true })} />);
-    // Truncated → starts on source tab automatically
-    const textarea = screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea);
-    // The Alert has role="alert" so screen readers auto-announce it;
-    // aria-describedby only references the persistent helper paragraph.
-    expect(textarea).toHaveAttribute('aria-describedby', 'job-ad-edit-helper');
-    expect(textarea).not.toHaveAttribute(
+  // Truncated → starts on source tab automatically. The Alert has role="alert" so
+  // screen readers auto-announce it; aria-describedby only references the
+  // persistent helper paragraph (the truncation hint is no longer id-referenced).
+  it.each([
+    [
+      'always uses only the helper id in aria-describedby (truncation hint is now an Alert, not an id-referenced element)',
+      { jobDesc: 'Short snippet…', hasDesc: true },
+      false,
+    ],
+    ['does NOT include truncation-hint id when description is not truncated', FULL, true],
+  ])('%s', async (_name, overrides, switchToSource) => {
+    renderView(overrides);
+    if (switchToSource) await clickTab('tabs.jobAd');
+    expect(textarea()).toHaveAttribute('aria-describedby', 'job-ad-edit-helper');
+    expect(textarea()).not.toHaveAttribute(
       'aria-describedby',
       expect.stringContaining('job-ad-truncated-hint')
     );
     // The helper paragraph must carry its stable id
-    expect(document.getElementById('job-ad-edit-helper')).toBeInTheDocument();
-  });
-
-  it('does NOT include truncation-hint id when description is not truncated', async () => {
-    render(<JobAdView {...makeProps({ jobDesc: 'Normal full description.', hasDesc: true })} />);
-    await userEvent.click(screen.getByText('autopilot.apply.tabs.jobAd'));
-    const textarea = screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea);
-    // Only helper id, no truncation-hint id
-    expect(textarea).toHaveAttribute('aria-describedby', 'job-ad-edit-helper');
-    expect(textarea).not.toHaveAttribute(
-      'aria-describedby',
-      expect.stringContaining('job-ad-truncated-hint')
-    );
+    if (!switchToSource) expect(document.getElementById('job-ad-edit-helper')).toBeInTheDocument();
   });
 });
 
 // ── 7. ModelSelector renders on the summary tab ──────────────────────────────
 
 describe('JobAdView — ModelSelector visibility', () => {
+  const selector = () => screen.queryByTestId('model-selector-stub');
+
   it('renders ModelSelector when on the summary tab (default for full description)', () => {
-    render(<JobAdView {...makeProps({ jobDesc: 'Normal full description.', hasDesc: true })} />);
+    renderView(FULL);
     // Default tab is summary for a non-truncated, present description.
-    expect(screen.getByTestId('model-selector-stub')).toBeInTheDocument();
+    expect(selector()).toBeInTheDocument();
   });
 
   it('does NOT render ModelSelector when on the source tab', () => {
     // No description → defaults to source tab.
-    render(<JobAdView {...makeProps({ hasDesc: false, jobDesc: '' })} />);
-    expect(screen.queryByTestId('model-selector-stub')).not.toBeInTheDocument();
+    renderView(EMPTY);
+    expect(selector()).not.toBeInTheDocument();
   });
 
   it('shows ModelSelector after switching to the summary tab', async () => {
-    render(<JobAdView {...makeProps({ hasDesc: false, jobDesc: '' })} />);
+    renderView(EMPTY);
     // Starts on source — ModelSelector not yet visible.
-    expect(screen.queryByTestId('model-selector-stub')).not.toBeInTheDocument();
+    expect(selector()).not.toBeInTheDocument();
     // Switch to summary tab.
-    await userEvent.click(screen.getByText('autopilot.apply.jobAdView.summaryTab'));
-    expect(screen.getByTestId('model-selector-stub')).toBeInTheDocument();
+    await clickTab('jobAdView.summaryTab');
+    expect(selector()).toBeInTheDocument();
   });
 
   it('hides ModelSelector after switching away from the summary tab', async () => {
-    render(<JobAdView {...makeProps({ jobDesc: 'Normal full description.', hasDesc: true })} />);
+    renderView(FULL);
     // Starts on summary — ModelSelector visible.
-    expect(screen.getByTestId('model-selector-stub')).toBeInTheDocument();
+    expect(selector()).toBeInTheDocument();
     // Switch to source tab.
-    await userEvent.click(screen.getByText('autopilot.apply.tabs.jobAd'));
-    expect(screen.queryByTestId('model-selector-stub')).not.toBeInTheDocument();
+    await clickTab('tabs.jobAd');
+    expect(selector()).not.toBeInTheDocument();
   });
 
   // Regression: the model dropdown + guidance line used to overflow the card's
@@ -376,7 +265,7 @@ describe('JobAdView — ModelSelector visibility', () => {
   // layout, so this asserts the structural fix (the classes that make it
   // shrink/truncate inside its row) rather than pixels.
   it('passes the containment class (min-w-0) to ModelSelector so it shrinks inside the toolbar row, without stretching it', () => {
-    render(<JobAdView {...makeProps({ jobDesc: 'Normal full description.', hasDesc: true })} />);
+    renderView(FULL);
     const stub = screen.getByTestId('model-selector-stub');
     expect(stub).toHaveClass('min-w-0');
     expect(stub).not.toHaveClass('shrink-0');
@@ -390,194 +279,54 @@ describe('JobAdView — ModelSelector visibility', () => {
 // ── 8. Tab resync on posting change ──────────────────────────────────────────
 
 describe('JobAdView — tab resync on posting change', () => {
+  const job = (n: number, overrides: Overrides) => ({
+    jobUrl: `https://example.com/job/${n}`,
+    ...overrides,
+  });
+
   it('does NOT switch tab when jobDesc changes but jobUrl stays the same (no-yank guard)', () => {
     // Start on source tab (truncated posting).
-    const { rerender } = render(
-      <JobAdView
-        {...makeProps({ jobUrl: 'https://example.com/job/1', jobDesc: 'Partial…', hasDesc: true })}
-      />
-    );
+    const view = renderView(job(1, { jobDesc: 'Partial…', hasDesc: true }));
     // Confirm we started on source.
-    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea)).toBeInTheDocument();
+    expect(textarea()).toBeInTheDocument();
 
     // Simulate the user pasting a full description — jobDesc changes, jobUrl stays the same.
-    rerender(
-      <JobAdView
-        {...makeProps({
-          jobUrl: 'https://example.com/job/1',
-          jobDesc: 'Full description that is no longer truncated.',
-          hasDesc: true,
-        })}
-      />
+    rerenderView(
+      view,
+      job(1, { jobDesc: 'Full description that is no longer truncated.', hasDesc: true })
     );
 
     // Tab must NOT flip to summary — the user is still editing in the textarea.
-    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea)).toBeInTheDocument();
+    expect(textarea()).toBeInTheDocument();
   });
 
   it('re-derives to summary when a new jobUrl arrives with a full description', () => {
     // Posting #1 — truncated, starts on source.
-    const { rerender } = render(
-      <JobAdView
-        {...makeProps({ jobUrl: 'https://example.com/job/1', jobDesc: 'Partial…', hasDesc: true })}
-      />
-    );
-    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea)).toBeInTheDocument();
+    const view = renderView(job(1, { jobDesc: 'Partial…', hasDesc: true }));
+    expect(textarea()).toBeInTheDocument();
 
     // Navigate to posting #2 — full description, different URL.
-    rerender(
-      <JobAdView
-        {...makeProps({
-          jobUrl: 'https://example.com/job/2',
-          jobDesc: 'Full description with plenty of content.',
-          hasDesc: true,
-        })}
-      />
+    rerenderView(
+      view,
+      job(2, { jobDesc: 'Full description with plenty of content.', hasDesc: true })
     );
 
     // Tab should re-derive to summary (full desc, not truncated).
-    expect(screen.queryByTestId(TEST_IDS.documents.jobAdViewTextarea)).not.toBeInTheDocument();
+    expect(queryTextarea()).not.toBeInTheDocument();
     expect(screen.getByText('autopilot.apply.jobAdView.generateSummary')).toBeInTheDocument();
   });
 
   it('re-derives to source when a new jobUrl arrives with no description (hasDesc false)', () => {
     // Posting #1 — full description, starts on summary.
-    const { rerender } = render(
-      <JobAdView
-        {...makeProps({
-          jobUrl: 'https://example.com/job/1',
-          jobDesc: 'Full description with plenty of content.',
-          hasDesc: true,
-        })}
-      />
+    const view = renderView(
+      job(1, { jobDesc: 'Full description with plenty of content.', hasDesc: true })
     );
-    expect(screen.queryByTestId(TEST_IDS.documents.jobAdViewTextarea)).not.toBeInTheDocument();
+    expect(queryTextarea()).not.toBeInTheDocument();
 
     // Navigate to posting #2 — no description.
-    rerender(
-      <JobAdView
-        {...makeProps({
-          jobUrl: 'https://example.com/job/2',
-          jobDesc: '',
-          hasDesc: false,
-        })}
-      />
-    );
+    rerenderView(view, job(2, EMPTY));
 
     // Tab should re-derive to source (no desc).
-    expect(screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea)).toBeInTheDocument();
-  });
-});
-
-// ── 9. Score tab — presence + empty-state wiring ─────────────────────────────
-// The "never a 0" / "never reads ATS score" guarantees are covered against REAL
-// translated copy in JobAdView.i18n.test.tsx (this file's `t` is a raw-key echo,
-// which can't catch either regression). This block only covers structural wiring.
-
-describe('JobAdView — Score tab presence and empty states', () => {
-  it('renders a third "score" tab option alongside summary/source', () => {
-    render(<JobAdView {...makeProps()} />);
-    expect(screen.getByText('autopilot.apply.jobAdView.scoreTab')).toBeInTheDocument();
-  });
-
-  it('shows the no-resume reason when resumeId is absent (never a score)', async () => {
-    render(<JobAdView {...makeProps({ resumeId: undefined })} />);
-    await userEvent.click(screen.getByText('autopilot.apply.jobAdView.scoreTab'));
-    expect(screen.getByText('jobs.scoreNoResume')).toBeInTheDocument();
-  });
-
-  it('shows the no-posting reason when resumeId is present but the snapshot is empty', async () => {
-    render(<JobAdView {...makeProps({ resumeId: 'resume-1', jobDesc: '' })} />);
-    await userEvent.click(screen.getByText('autopilot.apply.jobAdView.scoreTab'));
-    expect(screen.getByText('autopilot.apply.jobAdView.score.noPosting')).toBeInTheDocument();
-  });
-
-  it('treats a whitespace-only posting as empty (no-posting reason, not a score)', async () => {
-    render(<JobAdView {...makeProps({ resumeId: 'resume-1', jobDesc: '   ' })} />);
-    await userEvent.click(screen.getByText('autopilot.apply.jobAdView.scoreTab'));
-    expect(screen.getByText('autopilot.apply.jobAdView.score.noPosting')).toBeInTheDocument();
-  });
-});
-
-// ── 10. Score tab query gating — no per-keystroke storm ──────────────────────
-// The hazard: `useJobAdTextMatchScore`'s query key is content-addressed on the
-// job text, and the Job Ad sub-tab right next to Score is a live-editing
-// textarea. A naive wire-up (pass `jobDesc` straight through, gate `enabled`
-// only on `tab === 'score'`) still re-enables the query with a NEW key on
-// every keystroke typed while the tab happens to stay open. The fix
-// snapshots `jobDesc` once, at the moment the tab opens. Asserted against the
-// mocked hook's actual `enabled` argument (absolute counts), not a
-// before/after comparison — see JobAdView's `handleTabChange`.
-
-/** Controlled wrapper — `makeProps()`'s `onJobDescChange` is a no-op `vi.fn`,
- *  so typing in the real component needs a real state loop backing it. */
-function ControlledJobAdView(overrides: Partial<Parameters<typeof JobAdView>[0]> = {}) {
-  const [jobDesc, setJobDesc] = React.useState(overrides.jobDesc ?? '');
-  return <JobAdView {...makeProps({ ...overrides, jobDesc, onJobDescChange: setJobDesc })} />;
-}
-
-describe('JobAdView — Score tab query gating (no per-keystroke storm)', () => {
-  beforeEach(() => {
-    mockUseJobAdTextMatchScore.mockClear();
-  });
-
-  // The real property under test is DISTINCT query keys fired, not raw call
-  // count — the mock is invoked on every render (Rules of Hooks) regardless
-  // of `enabled`, so an incidental extra re-render with the SAME (already-
-  // enabled) key would fail a plain length check while behaviour never
-  // actually changed. Counting `enabled` calls by their distinct `jobText`
-  // argument survives that.
-  function distinctEnabledKeyCount() {
-    return new Set(
-      mockUseJobAdTextMatchScore.mock.calls
-        .filter((call) => call[2] === true)
-        .map((call) => call[1])
-    ).size;
-  }
-
-  it('typing on the source tab never enables the query; opening Score enables it exactly once', async () => {
-    render(
-      <ControlledJobAdView
-        resumeId="resume-1"
-        jobDesc="Full description that looks truncated..."
-        hasDesc
-      />
-    );
-    // Truncated ("...") → starts on the source tab, textarea already visible.
-    const textarea = screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea);
-
-    await userEvent.type(textarea, 'more');
-    expect(distinctEnabledKeyCount()).toBe(0);
-
-    await userEvent.click(screen.getByText('autopilot.apply.jobAdView.scoreTab'));
-    expect(distinctEnabledKeyCount()).toBe(1);
-  });
-
-  it('re-opening the Score tab re-scores, but editing while it stays open does not', async () => {
-    render(
-      <ControlledJobAdView
-        resumeId="resume-1"
-        jobDesc="Full description that looks truncated..."
-        hasDesc
-      />
-    );
-
-    await userEvent.click(screen.getByText('autopilot.apply.jobAdView.scoreTab'));
-    expect(distinctEnabledKeyCount()).toBe(1);
-
-    // Back to source, edit, and stay there — the (now closed) Score tab's
-    // query must not flip enabled again from a live jobDesc change. The
-    // textarea is RE-QUERIED here (not the reference from before the tab
-    // switch) — the source tab's whole subtree, textarea included, unmounts
-    // while the Score tab is showing, so a stale node would silently no-op.
-    await userEvent.click(screen.getByText('autopilot.apply.tabs.jobAd'));
-    const textarea = screen.getByTestId(TEST_IDS.documents.jobAdViewTextarea);
-    await userEvent.type(textarea, ' plus some edits');
-    expect(distinctEnabledKeyCount()).toBe(1);
-
-    // Re-opening IS the explicit action that re-scores the edited (DIFFERENT)
-    // text — a genuinely new key, not just another render.
-    await userEvent.click(screen.getByText('autopilot.apply.jobAdView.scoreTab'));
-    expect(distinctEnabledKeyCount()).toBe(2);
+    expect(textarea()).toBeInTheDocument();
   });
 });

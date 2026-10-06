@@ -1,36 +1,23 @@
-import { Check, Copy, Download, FileText, LayoutTemplate } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Check, Copy, Download } from 'lucide-react';
+import { useMemo, useState } from 'react';
 
 import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
-import { Button, Dropdown, type TabItem, Tabs } from '@ajh/ui';
+import { Button, type TabItem, Tabs } from '@ajh/ui';
 
-import { AccentPicker } from '@/components/generation/AccentPicker';
-import { AtsModeToggle } from '@/components/generation/AtsModeToggle';
 import { EditableOutput } from '@/components/generation/EditableOutput';
 import { type ExportFormat, ExportPicker } from '@/components/generation/ExportPicker';
 import { HandEditNudge } from '@/components/generation/HandEditNudge';
-import { LetterLayoutPicker } from '@/components/generation/LetterLayoutPicker';
 import { PdfPreview } from '@/components/generation/PdfPreview';
 import {
   QualityBadge,
   type QualityPipelineReview,
 } from '@/components/generation/QualityReportPanel';
-import { useDebouncedCommit } from '@/hooks/use-debounced-commit';
-import {
-  atsModeHintKey,
-  buildFilename,
-  type GenerationMeta,
-  isDecoratedLetterLayout,
-  isDesignTier,
-  type LetterLayoutId,
-  type QualityReport,
-  shouldClearAtsMode,
-  TEMPLATE_IDS,
-  type TemplateId,
-  TEMPLATES,
-} from '@/lib/generate';
+import type { GenerationMeta, LetterLayoutId, QualityReport, TemplateId } from '@/lib/generate';
 
+import { OutputOptionStrips } from './GenerationOutput/OutputOptionStrips';
+import { useCommittedPreview } from './GenerationOutput/useCommittedPreview';
+import { useScoreSnapshot } from './GenerationOutput/useScoreSnapshot';
 import { GenerationScoreStrip } from './GenerationScoreStrip';
 import { JobAdView } from './JobAdView';
 import type { TailorTarget } from './lib/tailor-target';
@@ -138,144 +125,25 @@ export function GenerationOutput({
   // downloads), so this only tracks the visual selection between opens.
   const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf');
 
-  // Score-strip snapshot — lives HERE, not inside `GenerationScoreStrip`,
-  // because that strip only renders while `view === 'doc' && activeOut ===
-  // 'resume'`: switching to the Job ad or Cover tab unmounts it. A `useState`
-  // owned by the strip itself would re-initialise from whatever `jobDesc` is
-  // live at remount — the Job ad sub-tab is an editable textarea one view
-  // over, so "résumé tab → Job ad tab → edit posting → back" would silently
-  // mint a fresh score for the edited text, including the translation-egress
-  // cost `JobAdView`'s own snapshot (`scoreSnapshot`) exists to avoid. This
-  // component stays mounted across every tab switch, so the snapshot survives
-  // here instead. Lazy-initializes from `jobDesc` to cover a cold-hydrated
-  // session (`output` restored from a saved record with no `report` yet, so
-  // the effect below never fires — the strip then scores against whatever
-  // `jobDesc` this component mounted with, same as before the lift);
-  // re-snapshots exactly once per NEW completed generation (`report`'s own
-  // `generatedAt` changing).
-  const [scoreSnapshot, setScoreSnapshot] = useState(jobDesc);
-  const lastScoreKeyRef = useRef(report?.generatedAt);
-  useEffect(() => {
-    const key = report?.generatedAt;
-    if (key !== undefined && key !== lastScoreKeyRef.current) {
-      lastScoreKeyRef.current = key;
-      setScoreSnapshot(jobDesc);
-    }
-  }, [report?.generatedAt, jobDesc]);
-
-  // Committed text per doc — what PdfPreview renders. Local edits auto-commit
-  // after ~700 ms via useDebouncedCommit; generation/regeneration commits immediately.
-  const [committed, setCommitted] = useState<Record<'resume' | 'cover', string>>({
-    resume: activeOut === 'resume' ? output : '',
-    cover: activeOut === 'cover' ? output : '',
-  });
-  const [pending, setPending] = useState(false);
-
-  const lastEditRef = useRef<Record<'resume' | 'cover', string | null>>({
-    resume: null,
-    cover: null,
-  });
-
-  const commitToDoc = useCallback((out: 'resume' | 'cover', text: string) => {
-    setCommitted((c) => ({ ...c, [out]: text }));
-    setPending(false);
-  }, []);
-
-  const { scheduleCommit, flush, cancel } = useDebouncedCommit<'resume' | 'cover'>(commitToDoc);
-
-  // Flush on doc/tab switch so a pending edit commits to ITS OWN doc before the
-  // view changes. flush() uses the (out, value) pair captured at scheduleCommit
-  // time — never the current activeOut — so the edit always lands in the right doc.
-  const prevActiveOutRef = useRef(activeOut);
-  useEffect(() => {
-    if (prevActiveOutRef.current !== activeOut) {
-      flush();
-      prevActiveOutRef.current = activeOut;
-    }
-  }, [activeOut, flush]);
-
-  // Cancel on unmount.
-  useEffect(() => cancel, [cancel]);
-
-  // Refresh committed when `output` changes for a reason OTHER than a local edit
-  // (generation, regenerate, or tab switch). A local edit sets lastEditRef so the
-  // debounce handles it instead.
-  useEffect(() => {
-    if (output !== lastEditRef.current[activeOut]) {
-      setCommitted((c) => ({ ...c, [activeOut]: output }));
-      setPending(false);
-      lastEditRef.current[activeOut] = null;
-    }
-  }, [output, activeOut]);
-
-  const handleEdit = useCallback(
-    (value: string) => {
-      lastEditRef.current[activeOut] = value;
-      setPending(true);
-      // Capture (activeOut, value) pair now — tab switches can't misroute the commit.
-      scheduleCommit(activeOut, value);
-      onEdit(value);
-    },
-    [activeOut, scheduleCommit, onEdit]
+  const scoreSnapshot = useScoreSnapshot(jobDesc, report?.generatedAt);
+  const { committed, pending, handleEdit, handleBlur } = useCommittedPreview(
+    activeOut,
+    output,
+    onEdit
   );
-
-  const handleBlur = useCallback(() => {
-    // flush() commits the (out, value) pair captured at scheduleCommit time —
-    // uses the typed value, never the prop, and always routes to the correct doc.
-    flush();
-  }, [flush]);
   const docType = activeOut === 'resume' ? 'resume' : 'cover-letter';
 
-  // Does the one ATS-safe flag still act on this export's cover letter? True
-  // only for a run that produces a letter whose layout carries a decoration
-  // (band / rail / monogram tile) the renderer drops under `data.opts.ats`.
-  const letterAtsApplies = target !== 'resume' && isDecoratedLetterLayout(letterLayoutId);
-
-  // …and does this panel show a résumé tab at all? ONE definition, read by both
-  // the tab list below and the ATS-flag release below it — a `resume`/`both`
-  // run always has one; a cover-only run does only when the posting already
-  // carries a saved tailored résumé from an earlier run.
+  // Does this panel show a résumé tab at all? ONE definition, read by both
+  // the tab list below and the ATS-flag release in `OutputOptionStrips` — a
+  // `resume`/`both` run always has one; a cover-only run does only when the
+  // posting already carries a saved tailored résumé from an earlier run. A
+  // cover-only run still has a templateId (it supplies the letter's palette),
+  // so a design-tier id must not keep the shared ATS flag alive on a résumé that
+  // is not there — deliberately the SAME predicate as the tab list rather than
+  // `target !== 'cover'`, since a saved résumé stays an exportable tab and
+  // releasing the flag out from under a document the user can still see and
+  // export is the failure this shares a definition to prevent.
   const hasResumeTab = target !== 'cover' || hasResume;
-
-  // …and is there a résumé in this export at all? A cover-only run still has a
-  // templateId (it supplies the letter's palette), so a design-tier id must not
-  // keep the shared ATS flag alive on a résumé that is not there. Deliberately
-  // the SAME predicate as the tab list rather than `target !== 'cover'`: a
-  // cover-only run on a posting that already has a saved tailored résumé keeps
-  // it as an exportable tab, and releasing the flag out from under a document
-  // the user can still see and export is the failure this shares a definition
-  // to prevent.
-  const resumeInRun = hasResumeTab;
-
-  // …and does it act on the document currently on screen? That is what decides
-  // whether the toolbar shows the switch: the résumé tab asks about the template,
-  // the cover tab about the letter layout (the tab itself proves a letter exists).
-  const showAtsToggle =
-    activeOut === 'cover' ? isDecoratedLetterLayout(letterLayoutId) : isDesignTier(templateId);
-
-  // Template picker (mirrors GenerateWizard.handleTemplateChange): selecting an
-  // ATS-tier template forces ATS off, since ATS-safe mode only applies to
-  // design-tier layouts (two-column OR photo, incl. Lebenslauf) — unless a
-  // decorated cover letter is still reading the flag, which is the one case
-  // where clearing it would strand the letter's decoration with no off switch.
-  // One template id drives BOTH docs' preview + export.
-  const templateOptions = TEMPLATE_IDS.map((id) => ({ value: id, label: TEMPLATES[id].name }));
-  const handleTemplateChange = (value: string) => {
-    const id = value as TemplateId;
-    onTemplateChange(id);
-    if (shouldClearAtsMode(id, letterAtsApplies, resumeInRun)) onAtsModeChange(false);
-  };
-
-  // Same guard, other input: switching AWAY from a decorated layout has to
-  // release the shared flag too, or the next decorated layout comes back
-  // silently pre-ATS'd (user picks Monogram, exports a letter with no monogram).
-  // Still keeps the flag when a design-tier résumé template is reading it — and
-  // only when that résumé is actually part of the run.
-  const handleLetterLayoutChange = (id: LetterLayoutId) => {
-    onLetterLayoutChange(id);
-    if (shouldClearAtsMode(templateId, isDecoratedLetterLayout(id), resumeInRun))
-      onAtsModeChange(false);
-  };
 
   // ARIA tabs contract: each tab owns a stable id and controls a panel id; the
   // single content region below is the active tab's panel (doc tabs share one
@@ -425,75 +293,22 @@ export function GenerationOutput({
         tabIndex={0}
         className="flex min-h-0 flex-1 flex-col overflow-y-auto"
       >
-        {/* Filename + LIVE template picker strip (parity with the AI Generate done step).
-            The single chosen template/ATS drive BOTH docs' preview + export, so the
-            picker is shown on BOTH doc tabs (résumé AND cover) — never on the job-ad
-            tab. The ATS-safe toggle sits beside it on whichever tab the flag can
-            still change: the résumé (linearize / drop the photo) or a cover letter
-            whose layout has a decoration to drop. */}
         {view === 'doc' && (
-          <div className="shrink-0 flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] px-3 py-1.5 text-[10px] text-foreground/30">
-            {meta && (
-              <>
-                <FileText size={10} />
-                <span className="font-mono">{buildFilename(meta, docType, 'pdf')}</span>
-              </>
-            )}
-            <div className="ml-auto flex items-center gap-2">
-              {/* Template dropdown — render-time switch (drives BOTH docs' preview +
-                  export), no regeneration. Its list is portalled to <body> (fixed),
-                  so the scrollport around it never clips the options. */}
-              <div className="w-40">
-                <Dropdown
-                  id="template-picker"
-                  options={templateOptions}
-                  value={templateId}
-                  onChange={handleTemplateChange}
-                  icon={<LayoutTemplate size={11} />}
-                  listClassName="max-h-48"
-                />
-              </div>
-              {/* ATS-safe toggle — one flag, shown on whichever tab it can still
-                  act on: the résumé tab for design-tier templates (two-column OR
-                  photo, incl. Lebenslauf), and the cover tab when the letter's
-                  layout carries a decoration ATS mode drops. The hint names the
-                  document, so the same switch reads honestly on both tabs. */}
-              {showAtsToggle && (
-                <AtsModeToggle
-                  checked={atsMode}
-                  onChange={onAtsModeChange}
-                  hintKey={
-                    activeOut === 'cover'
-                      ? 'aiGenerate.atsModeHintLetter'
-                      : atsModeHintKey(templateId)
-                  }
-                />
-              )}
-              {/* The toggle APPEARS when a decorated layout (or a design-tier
-                  template) is picked — a silent DOM insertion otherwise. This
-                  region is always mounted (a live region only announces content
-                  added AFTER it exists) and `sr-only` is out of flow, so the
-                  toolbar's gap is unchanged. */}
-              <span role="status" aria-live="polite" className="sr-only">
-                {showAtsToggle ? t('aiGenerate.atsToggleAvailable') : ''}
-              </span>
-            </div>
-          </div>
-        )}
-        {/* Document-accent strip — render-time colour override; drives BOTH docs'
-            preview + export, mirroring the template picker above. */}
-        {view === 'doc' && (
-          <div className="shrink-0 border-b border-foreground/[0.06] px-3 py-2">
-            <AccentPicker value={accent} onChange={onAccentChange} />
-          </div>
-        )}
-        {/* Letter-layout strip — cover-only (the layout only affects the letter; the
-            résumé is unaffected). Drives the cover preview + export; picking a
-            decorated layout here is what surfaces the ATS toggle above. */}
-        {view === 'doc' && activeOut === 'cover' && (
-          <div className="shrink-0 border-b border-foreground/[0.06] px-3 py-2">
-            <LetterLayoutPicker value={letterLayoutId} onChange={handleLetterLayoutChange} />
-          </div>
+          <OutputOptionStrips
+            target={target}
+            resumeInRun={hasResumeTab}
+            activeOut={activeOut}
+            docType={docType}
+            meta={meta}
+            templateId={templateId}
+            atsMode={atsMode}
+            accent={accent}
+            letterLayoutId={letterLayoutId}
+            onTemplateChange={onTemplateChange}
+            onAtsModeChange={onAtsModeChange}
+            onAccentChange={onAccentChange}
+            onLetterLayoutChange={onLetterLayoutChange}
+          />
         )}
         {/* Document region — grows to fill the scrollport, but never shrinks below
             the floor, so a short window scrolls instead of collapsing the document

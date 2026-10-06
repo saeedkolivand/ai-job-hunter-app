@@ -1,10 +1,10 @@
-import { Check, Copy, Save, ShieldCheck, Sparkles, UserPlus, Wand2, X } from 'lucide-react';
+import { Check, ShieldCheck, Sparkles, UserPlus, X } from 'lucide-react';
 import { useState } from 'react';
 
 import type { AutopilotFoundJob } from '@ajh/shared';
 import type { ReferralChannel } from '@ajh/shared/ipc';
 import { useTranslation } from '@ajh/translations';
-import { Button, Input, ModalShell, SegmentedControl, StreamingText, TextArea } from '@ajh/ui';
+import { Button, Input, ModalShell, SegmentedControl, TextArea } from '@ajh/ui';
 
 import { ModelSelector, useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { CONNECTION_NOTE_LIMIT } from '@/lib/generate';
@@ -12,6 +12,7 @@ import { COPY_FEEDBACK_MS, TOOLTIP_HIDE_MS } from '@/lib/timings';
 import { useReferrals, useUpsertReferral } from '@/services';
 
 import { WizardField } from '../WizardField';
+import { ReferralDraftOutput } from './ReferralDraftOutput';
 import { ReferralList } from './ReferralList';
 import { useReferralDraft } from './useReferralDraft';
 
@@ -23,10 +24,6 @@ interface Props {
 }
 
 const CHANNELS: ReferralChannel[] = ['email', 'linkedin_message', 'connection_note'];
-
-/** Preset improve instructions — key matches i18n `improvePresets.*`. */
-const IMPROVE_PRESETS = ['warmer', 'shorter', 'moreSpecific', 'fixGrammar'] as const;
-type ImprovePreset = (typeof IMPROVE_PRESETS)[number];
 
 /** Map the chosen channel to the matching persisted draft field. */
 function draftField(channel: ReferralChannel): 'emailDraft' | 'messageDraft' | 'inviteNoteDraft' {
@@ -291,99 +288,20 @@ export function ReferralModal({ job, resume, onClose }: Props) {
 
         {/* Draft output — generated message, Improve with AI affordance, and actions. */}
         {(gen.draft || gen.generating) && (
-          <div className="surface-card space-y-1.5 rounded-lg px-3 py-2.5">
-            <StreamingText text={gen.draft} isStreaming={gen.generating} />
-            <div className="flex items-center justify-between gap-2 pt-1">
-              {isNote ? (
-                <span
-                  className={
-                    overLimit
-                      ? 'text-[10px] font-medium text-red-300/90'
-                      : 'text-[10px] text-foreground/40'
-                  }
-                >
-                  {gen.draft.length}/{CONNECTION_NOTE_LIMIT}
-                  {overLimit ? ` · ${t('autopilot.referral.overLimit')}` : ''}
-                </span>
-              ) : (
-                <span />
-              )}
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="glass"
-                  disabled={!gen.draft || overLimit || gen.generating}
-                  onClick={() => void copy()}
-                >
-                  {copied ? <Check size={12} /> : <Copy size={12} />}
-                  {copied ? t('autopilot.referral.copied') : t('autopilot.referral.copy')}
-                </Button>
-                <Button
-                  variant="glass"
-                  loading={upsert.isPending}
-                  disabled={!canSave || upsert.isPending}
-                  onClick={save}
-                >
-                  {saved ? <Check size={12} /> : <Save size={12} />}
-                  {saved ? t('autopilot.referral.saved') : t('autopilot.referral.save')}
-                </Button>
-              </div>
-            </div>
-
-            {/* Improve with AI — only visible when a draft exists and not streaming. */}
-            {gen.draft && !gen.generating && (
-              <div className="space-y-2 border-t border-[var(--border-clear)] pt-2">
-                {/* Preset chips */}
-                <div
-                  className="flex flex-wrap gap-1.5"
-                  role="group"
-                  aria-label={t('autopilot.referral.improveLabel')}
-                >
-                  {IMPROVE_PRESETS.map((preset: ImprovePreset) => (
-                    <Button
-                      key={preset}
-                      variant="glass"
-                      disabled={!gen.canGenerate}
-                      onClick={() =>
-                        submitImprove(t(`autopilot.referral.improvePresets.${preset}`))
-                      }
-                      className="h-auto px-2 py-0.5 text-[10px]"
-                    >
-                      {t(`autopilot.referral.improvePresets.${preset}`)}
-                    </Button>
-                  ))}
-                </div>
-
-                {/* Free-text instruction */}
-                <div className="flex gap-1.5">
-                  <Input
-                    id="referral-improve-instruction"
-                    variant="default"
-                    className="min-w-0 flex-1 shadow-none"
-                    value={improveInstruction}
-                    onChange={(e) => setImproveInstruction(e.target.value)}
-                    placeholder={t('autopilot.referral.improveInstructionPlaceholder')}
-                    aria-label={t('autopilot.referral.improveInstruction')}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        submitImprove(improveInstruction);
-                      }
-                    }}
-                  />
-                  <Button
-                    variant="glass"
-                    disabled={!gen.canGenerate || !improveInstruction.trim()}
-                    onClick={() => submitImprove(improveInstruction)}
-                    aria-label={t('autopilot.referral.improveApply')}
-                    className="shrink-0"
-                  >
-                    <Wand2 size={12} />
-                    {t('autopilot.referral.improveApply')}
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
+          <ReferralDraftOutput
+            gen={gen}
+            isNote={isNote}
+            overLimit={overLimit}
+            copied={copied}
+            onCopy={() => void copy()}
+            saved={saved}
+            saving={upsert.isPending}
+            canSave={canSave}
+            onSave={save}
+            improveInstruction={improveInstruction}
+            onImproveInstructionChange={setImproveInstruction}
+            onImprove={submitImprove}
+          />
         )}
 
         {/* Existing contacts for this job */}

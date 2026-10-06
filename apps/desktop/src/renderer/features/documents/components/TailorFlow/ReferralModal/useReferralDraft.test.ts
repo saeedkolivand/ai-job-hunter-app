@@ -7,99 +7,36 @@
  *  - generate() calls generateReferral with the expected arguments.
  *  - Error handling: non-abort errors surface in `error` state.
  *  - Abort: does NOT set an error.
+ *
+ * `improve()` lives in `useReferralDraft.improve.test.ts`; shared mocks in
+ * `draft.test-support.ts`.
  */
-import { createElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 
 import type { ReferralChannel } from '@ajh/shared/ipc';
 
+import { render, settle, wrapper } from './draft.test-helpers';
+import { BASE, mockGenerateReferral, resetGenerateMocks } from './draft.test-support';
 import { useReferralDraft } from './useReferralDraft';
 
-// ── mock @/lib/generate ───────────────────────────────────────────────────────
-// generateReferral + generateReferralImprove are mocked as vi.fn that resolve with
-// a deterministic string. The mock is reset between tests so individual cases can
-// override the return value.
-
-const mockGenerateReferral =
-  vi.fn<
-    (params: {
-      personName: string;
-      personRole?: string;
-      companyName: string;
-      jobTitle: string;
-      resume: string;
-      format: ReferralChannel;
-      charLimit?: number;
-      model: string;
-      locale?: string;
-      onToken?: (tok: string) => void;
-      signal?: AbortSignal;
-    }) => Promise<string>
-  >();
-
-const mockGenerateReferralImprove =
-  vi.fn<
-    (params: {
-      personName: string;
-      personRole?: string;
-      companyName: string;
-      jobTitle: string;
-      resume: string;
-      draft: string;
-      instruction: string;
-      format: ReferralChannel;
-      charLimit?: number;
-      model: string;
-      locale?: string;
-      onToken?: (tok: string) => void;
-      signal?: AbortSignal;
-    }) => Promise<string>
-  >();
-
-vi.mock('@/lib/generate', () => ({
-  generateReferral: (...args: Parameters<typeof mockGenerateReferral>) =>
-    mockGenerateReferral(...args),
-  generateReferralImprove: (...args: Parameters<typeof mockGenerateReferralImprove>) =>
-    mockGenerateReferralImprove(...args),
-  // CONNECTION_NOTE_LIMIT is a re-export from @ajh/prompts — provide the real value.
-  CONNECTION_NOTE_LIMIT: 300,
-}));
-
-// ── mock @ajh/shared/language-detection ──────────────────────────────────────
-vi.mock('@ajh/shared/language-detection', () => ({
-  detectLanguages: vi.fn<(resume: string, jobAd: string) => { resumeName: string }>(() => ({
-    resumeName: 'en',
-  })),
-}));
-
-// ── base params ───────────────────────────────────────────────────────────────
-
-const BASE = {
-  personName: 'Bob Chen',
-  personRole: 'Director',
-  companyName: 'Acme',
-  jobTitle: 'Senior Engineer',
-  resume: 'Jane Doe\nSenior Engineer with 8 years experience.',
-  channel: 'linkedin_message' as ReferralChannel,
-  model: 'llama3',
-  canUse: true,
-};
-
-// No QueryClient needed — useReferralDraft holds no React Query state.
-const wrapper = ({ children }: { children: ReactNode }) => createElement('div', {}, children);
-const render = (p: typeof BASE = BASE) => renderHook(() => useReferralDraft(p), { wrapper });
-
-beforeEach(() => {
-  mockGenerateReferral.mockResolvedValue('Hi Bob, I wanted to reach out about the role at Acme.');
-  mockGenerateReferralImprove.mockResolvedValue(
-    'Hi Bob! I really wanted to reach out about the role at Acme.'
-  );
+vi.mock('@/lib/generate', async () => (await import('./draft.test-support')).generateModule);
+vi.mock('@ajh/shared/language-detection', async () => {
+  return (await import('./draft.test-support')).languageDetectionModule;
 });
+
+beforeEach(resetGenerateMocks);
 
 afterEach(() => {
   vi.clearAllMocks();
 });
+
+/** Renders with `overrides`, runs `generate()` to completion, returns the hook result. */
+async function generated(overrides: Partial<typeof BASE> = {}) {
+  const { result } = render({ ...BASE, ...overrides });
+  await settle(() => result.current.generate());
+  return result;
+}
 
 // ── initial state ─────────────────────────────────────────────────────────────
 
@@ -111,24 +48,14 @@ describe('useReferralDraft — initial state', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it('canGenerate is true when personName + resume are non-empty and canUse=true', () => {
-    const { result } = render();
-    expect(result.current.canGenerate).toBe(true);
-  });
-
-  it('canGenerate is false when personName is blank', () => {
-    const { result } = render({ ...BASE, personName: '   ' });
-    expect(result.current.canGenerate).toBe(false);
-  });
-
-  it('canGenerate is false when canUse=false', () => {
-    const { result } = render({ ...BASE, canUse: false });
-    expect(result.current.canGenerate).toBe(false);
-  });
-
-  it('canGenerate is false when resume is blank', () => {
-    const { result } = render({ ...BASE, resume: '' });
-    expect(result.current.canGenerate).toBe(false);
+  it.each([
+    ['canGenerate is true when personName + resume are non-empty and canUse=true', {}, true],
+    ['canGenerate is false when personName is blank', { personName: '   ' }, false],
+    ['canGenerate is false when canUse=false', { canUse: false }, false],
+    ['canGenerate is false when resume is blank', { resume: '' }, false],
+  ])('%s', (_name, overrides, expected) => {
+    const { result } = render({ ...BASE, ...overrides });
+    expect(result.current.canGenerate).toBe(expected);
   });
 });
 
@@ -136,11 +63,7 @@ describe('useReferralDraft — initial state', () => {
 
 describe('useReferralDraft — generate()', () => {
   it('calls generateReferral and sets draft to the returned text', async () => {
-    const { result } = render();
-
-    await act(async () => {
-      await result.current.generate();
-    });
+    const result = await generated();
 
     expect(mockGenerateReferral).toHaveBeenCalledTimes(1);
     expect(result.current.draft).toBe('Hi Bob, I wanted to reach out about the role at Acme.');
@@ -149,11 +72,7 @@ describe('useReferralDraft — generate()', () => {
   });
 
   it('calls generateReferral with the correct personName, companyName, format, and model', async () => {
-    const { result } = render();
-
-    await act(async () => {
-      await result.current.generate();
-    });
+    await generated();
 
     expect(mockGenerateReferral).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -166,11 +85,7 @@ describe('useReferralDraft — generate()', () => {
   });
 
   it('passes charLimit=300 for connection_note channel', async () => {
-    const { result } = render({ ...BASE, channel: 'connection_note' });
-
-    await act(async () => {
-      await result.current.generate();
-    });
+    await generated({ channel: 'connection_note' });
 
     expect(mockGenerateReferral).toHaveBeenCalledWith(
       expect.objectContaining({ charLimit: 300, format: 'connection_note' })
@@ -178,22 +93,14 @@ describe('useReferralDraft — generate()', () => {
   });
 
   it('does NOT pass charLimit for email channel', async () => {
-    const { result } = render({ ...BASE, channel: 'email' });
-
-    await act(async () => {
-      await result.current.generate();
-    });
+    await generated({ channel: 'email' });
 
     const call = mockGenerateReferral.mock.calls[0]?.[0];
     expect(call?.charLimit).toBeUndefined();
   });
 
   it('does nothing when canGenerate is false', async () => {
-    const { result } = render({ ...BASE, canUse: false });
-
-    await act(async () => {
-      await result.current.generate();
-    });
+    const result = await generated({ canUse: false });
 
     expect(mockGenerateReferral).not.toHaveBeenCalled();
     expect(result.current.draft).toBe('');
@@ -201,11 +108,7 @@ describe('useReferralDraft — generate()', () => {
 
   it('surfaces non-abort errors in the error state', async () => {
     mockGenerateReferral.mockRejectedValueOnce(new Error('network failure'));
-    const { result } = render();
-
-    await act(async () => {
-      await result.current.generate();
-    });
+    const result = await generated();
 
     expect(result.current.error).toBe('network failure');
     expect(result.current.generating).toBe(false);
@@ -215,34 +118,21 @@ describe('useReferralDraft — generate()', () => {
 // ── connection_note ≤300 enforcement ─────────────────────────────────────────
 
 describe('useReferralDraft — connection_note overLimit logic', () => {
-  it('draft >300 chars on connection_note channel: draft contains the full text', async () => {
-    // The hook accumulates tokens and sets draft; the UI layer derives overLimit
-    // from draft.length > CONNECTION_NOTE_LIMIT. We verify the raw draft value
-    // so callers can compute canSave = !overLimit themselves.
-    const longDraft = 'A'.repeat(301);
-    mockGenerateReferral.mockResolvedValueOnce(longDraft);
+  // The hook accumulates tokens and sets draft; the UI layer derives overLimit
+  // from draft.length > CONNECTION_NOTE_LIMIT. We verify the raw draft value
+  // so callers can compute canSave = !overLimit themselves.
+  it.each([
+    ['draft >300 chars on connection_note channel: draft contains the full text', 301],
+    ['draft ≤300 chars on connection_note: draft length is within limit', 300],
+  ])('%s', async (_name, length) => {
+    const draft = 'A'.repeat(length);
+    mockGenerateReferral.mockResolvedValueOnce(draft);
 
-    const { result } = render({ ...BASE, channel: 'connection_note' });
+    const result = await generated({ channel: 'connection_note' });
 
-    await act(async () => {
-      await result.current.generate();
-    });
-
-    expect(result.current.draft).toBe(longDraft);
-    expect(result.current.draft.length).toBeGreaterThan(300);
-  });
-
-  it('draft ≤300 chars on connection_note: draft length is within limit', async () => {
-    const shortDraft = 'A'.repeat(300);
-    mockGenerateReferral.mockResolvedValueOnce(shortDraft);
-
-    const { result } = render({ ...BASE, channel: 'connection_note' });
-
-    await act(async () => {
-      await result.current.generate();
-    });
-
-    expect(result.current.draft.length).toBeLessThanOrEqual(300);
+    expect(result.current.draft).toBe(draft);
+    if (length > 300) expect(result.current.draft.length).toBeGreaterThan(300);
+    else expect(result.current.draft.length).toBeLessThanOrEqual(300);
   });
 });
 
@@ -313,216 +203,24 @@ describe('useReferralDraft — aborted generation does not surface an error', ()
   });
 });
 
-// ── improve() ────────────────────────────────────────────────────────────────
-
-describe('useReferralDraft — improve()', () => {
-  it('calls generateReferralImprove with the current draft + instruction and sets the new draft', async () => {
-    const { result } = render();
-
-    // First generate a draft.
-    await act(async () => {
-      await result.current.generate();
-    });
-    expect(result.current.draft).toBe('Hi Bob, I wanted to reach out about the role at Acme.');
-
-    // Now improve it.
-    await act(async () => {
-      await result.current.improve('make it warmer');
-    });
-
-    expect(mockGenerateReferralImprove).toHaveBeenCalledTimes(1);
-    expect(mockGenerateReferralImprove).toHaveBeenCalledWith(
-      expect.objectContaining({
-        draft: 'Hi Bob, I wanted to reach out about the role at Acme.',
-        instruction: 'make it warmer',
-        personName: 'Bob Chen',
-        companyName: 'Acme',
-        format: 'linkedin_message',
-        model: 'llama3',
-      })
-    );
-    expect(result.current.draft).toBe(
-      'Hi Bob! I really wanted to reach out about the role at Acme.'
-    );
-    expect(result.current.generating).toBe(false);
-    expect(result.current.error).toBeNull();
-  });
-
-  it('does nothing when canGenerate is false (no draft + canUse=false)', async () => {
-    const { result } = render({ ...BASE, canUse: false });
-
-    await act(async () => {
-      await result.current.improve('make it warmer');
-    });
-
-    expect(mockGenerateReferralImprove).not.toHaveBeenCalled();
-    expect(result.current.draft).toBe('');
-  });
-
-  it('does nothing when draft is empty even if canGenerate is true', async () => {
-    const { result } = render();
-    // draft starts empty — improve should early-return.
-
-    await act(async () => {
-      await result.current.improve('make it warmer');
-    });
-
-    expect(mockGenerateReferralImprove).not.toHaveBeenCalled();
-  });
-
-  it('replaces the draft with the improved text (streams replacement)', async () => {
-    mockGenerateReferralImprove.mockImplementationOnce(
-      async ({ onToken }: { onToken?: (tok: string) => void }): Promise<string> => {
-        onToken?.('Improved ');
-        onToken?.('text.');
-        return 'Improved text.';
-      }
-    );
-
-    const { result } = render();
-
-    // Seed a draft so improve() can act.
-    await act(async () => {
-      await result.current.generate();
-    });
-
-    await act(async () => {
-      await result.current.improve('shorter');
-    });
-
-    expect(result.current.draft).toBe('Improved text.');
-  });
-
-  it('surfaces non-abort errors in error state', async () => {
-    mockGenerateReferralImprove.mockRejectedValueOnce(new Error('improve failure'));
-
-    const { result } = render();
-
-    // Seed a draft.
-    await act(async () => {
-      await result.current.generate();
-    });
-
-    await act(async () => {
-      await result.current.improve('fix grammar');
-    });
-
-    expect(result.current.error).toBe('improve failure');
-    expect(result.current.generating).toBe(false);
-  });
-
-  it('passes charLimit=300 for connection_note channel', async () => {
-    const { result } = render({ ...BASE, channel: 'connection_note' });
-
-    // Seed a draft first.
-    await act(async () => {
-      await result.current.generate();
-    });
-
-    await act(async () => {
-      await result.current.improve('shorter');
-    });
-
-    expect(mockGenerateReferralImprove).toHaveBeenCalledWith(
-      expect.objectContaining({ charLimit: 300, format: 'connection_note' })
-    );
-  });
-
-  it('abort during improve does NOT set an error', async () => {
-    mockGenerateReferralImprove.mockImplementationOnce(async (): Promise<string> => {
-      throw new DOMException('The operation was aborted.', 'AbortError');
-    });
-
-    const { result } = render();
-
-    // Seed a draft.
-    await act(async () => {
-      await result.current.generate();
-    });
-
-    act(() => {
-      void result.current.improve('make it warmer');
-    });
-
-    await act(async () => {
-      result.current.abort();
-    });
-
-    expect(result.current.error).toBeNull();
-    expect(result.current.generating).toBe(false);
-  });
-
-  // ── BUG 3 regression guard: draft must survive failed / aborted improve ────────
-
-  it('draft is preserved (not cleared) when improve() fails with a network error', async () => {
-    mockGenerateReferralImprove.mockRejectedValueOnce(new Error('network failure'));
-
-    const { result } = render();
-
-    // Seed a draft.
-    await act(async () => {
-      await result.current.generate();
-    });
-    const originalDraft = result.current.draft;
-    expect(originalDraft).not.toBe('');
-
-    // improve() fails — draft must be restored to the pre-improve value.
-    await act(async () => {
-      await result.current.improve('make it shorter');
-    });
-
-    expect(result.current.draft).toBe(originalDraft);
-    expect(result.current.error).toBe('network failure');
-    expect(result.current.generating).toBe(false);
-  });
-
-  it('draft is preserved (not cleared) when improve() is aborted mid-stream', async () => {
-    mockGenerateReferralImprove.mockImplementationOnce(async (): Promise<string> => {
-      throw new DOMException('The operation was aborted.', 'AbortError');
-    });
-
-    const { result } = render();
-
-    // Seed a draft.
-    await act(async () => {
-      await result.current.generate();
-    });
-    const originalDraft = result.current.draft;
-    expect(originalDraft).not.toBe('');
-
-    // Start improve then abort — draft must survive.
-    act(() => {
-      void result.current.improve('make it shorter');
-    });
-
-    await act(async () => {
-      result.current.abort();
-    });
-
-    expect(result.current.draft).toBe(originalDraft);
-    expect(result.current.error).toBeNull();
-    expect(result.current.generating).toBe(false);
-  });
-});
-
 // ── channel-switch clears draft ───────────────────────────────────────────────
 
 describe('useReferralDraft — channel switch clears draft', () => {
-  it('switches channel → draft is cleared', async () => {
-    const { result, rerender } = renderHook((props: typeof BASE) => useReferralDraft(props), {
+  const renderOn = (channel: ReferralChannel) =>
+    renderHook((props: typeof BASE) => useReferralDraft(props), {
       wrapper,
-      initialProps: { ...BASE, channel: 'linkedin_message' as ReferralChannel },
+      initialProps: { ...BASE, channel },
     });
 
+  it('switches channel → draft is cleared', async () => {
     // Generate on linkedin_message so we have a draft.
-    await act(async () => {
-      await result.current.generate();
-    });
+    const { result, rerender } = renderOn('linkedin_message');
+    await settle(() => result.current.generate());
     expect(result.current.draft).not.toBe('');
 
     // Switch to email.
     await act(async () => {
-      rerender({ ...BASE, channel: 'email' as ReferralChannel });
+      rerender({ ...BASE, channel: 'email' });
     });
 
     expect(result.current.draft).toBe('');
@@ -531,20 +229,14 @@ describe('useReferralDraft — channel switch clears draft', () => {
   });
 
   it('same channel on rerender does NOT clear draft', async () => {
-    const { result, rerender } = renderHook((props: typeof BASE) => useReferralDraft(props), {
-      wrapper,
-      initialProps: { ...BASE, channel: 'email' as ReferralChannel },
-    });
-
-    await act(async () => {
-      await result.current.generate();
-    });
+    const { result, rerender } = renderOn('email');
+    await settle(() => result.current.generate());
     const draftAfterGenerate = result.current.draft;
     expect(draftAfterGenerate).not.toBe('');
 
     // Re-render with identical channel — draft must be preserved.
     await act(async () => {
-      rerender({ ...BASE, channel: 'email' as ReferralChannel });
+      rerender({ ...BASE, channel: 'email' });
     });
 
     expect(result.current.draft).toBe(draftAfterGenerate);

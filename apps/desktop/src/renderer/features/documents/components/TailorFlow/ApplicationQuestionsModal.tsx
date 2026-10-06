@@ -1,34 +1,16 @@
 import { Check, Copy, HelpCircle, Plus, Sparkles, X } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 
 import { APPLICATION_QUESTIONS } from '@ajh/prompts/generate';
 import { useTranslation } from '@ajh/translations';
-import { Button, Input, ModalShell, Switch, useNotification } from '@ajh/ui';
+import { Button, Input, ModalShell, Switch } from '@ajh/ui';
 
-import {
-  RewritePopover,
-  type RewriteTarget,
-} from '@/components/generation/EditableOutput/RewritePopover';
-import { getSelectionOffsets } from '@/lib/selection-offsets';
+import { RewritePopover } from '@/components/generation/EditableOutput/RewritePopover';
 import { COPY_FEEDBACK_MS } from '@/lib/timings';
 
+import { useAnswerRewrite } from './ApplicationQuestionsModal/useAnswerRewrite';
 import { MAX_CUSTOM_QUESTION_LEN } from './useApplicationAnswers';
-
-/** A rewrite frozen at trigger time — the splice range + snapshot answer it
- *  should be spliced back into on Accept (mirrors EditableOutput's FrozenRange). */
-interface FrozenAnswer {
-  id: string;
-  start: number;
-  end: number;
-  /** The answer string at freeze time — accept splices against this, not the
-   *  live `answers[id]`, so a stray write in-between can't shift the offsets. */
-  snapshot: string;
-  target: RewriteTarget;
-  /** The Rewrite button that opened this popover — anchors the portaled popover
-   *  and reclaims focus when it closes. */
-  anchorEl: HTMLElement;
-}
 
 interface Props {
   selected: Set<string>;
@@ -82,17 +64,13 @@ export function ApplicationQuestionsModal({
   revertAnswer,
 }: Props) {
   const { t } = useTranslation();
-  const notify = useNotification();
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
-  // The frozen rewrite (one at a time) — null when no popover is open.
-  const [frozen, setFrozen] = useState<FrozenAnswer | null>(null);
-  // Answer <p> elements keyed by question id — read to compute selection offsets.
-  const answerRefs = useRef<Record<string, HTMLParagraphElement | null>>({});
-  // Tracks the latest optimistically-written value per answer id. Set
-  // SYNCHRONOUSLY in acceptRewrite (before the async save) so the .catch
-  // guard never races against a React render cycle.
-  const pendingRewriteRef = useRef<Record<string, string>>({});
+  const { frozen, answerRefs, openRewrite, closeRewrite, acceptRewrite } = useAnswerRewrite({
+    answers,
+    updateAnswer,
+    revertAnswer,
+  });
 
   const copy = async (id: string, text: string) => {
     await navigator.clipboard.writeText(text);
@@ -104,62 +82,6 @@ export function ApplicationQuestionsModal({
     if (!draft.trim()) return;
     addCustom(draft);
     setDraft('');
-  };
-
-  // Capture the live selection inside the answer's <p> (if any) and freeze it —
-  // splice range + surrounding context — so the rewrite targets just the
-  // selected span. Falls back to the whole answer when nothing is selected.
-  const openRewrite = (id: string, trigger: HTMLElement) => {
-    const answer = answers[id] ?? '';
-    const container = answerRefs.current[id];
-    const offsets = container ? getSelectionOffsets(container) : null;
-    const start = offsets?.start ?? 0;
-    const end = offsets?.end ?? answer.length;
-    setFrozen({
-      id,
-      start,
-      end,
-      snapshot: answer,
-      anchorEl: trigger,
-      target: {
-        selection: answer.slice(start, end),
-        before: answer.slice(0, start),
-        after: answer.slice(end),
-      },
-    });
-  };
-  const closeRewrite = () => {
-    const trigger = frozen?.anchorEl;
-    setFrozen(null);
-    trigger?.focus();
-  };
-  // Close the popover immediately (never leave the user stuck), then fire the
-  // persist. On failure: only revert if the answer hasn't been superseded by
-  // a second rewrite that was accepted while this save was in-flight.
-  // pendingRewriteRef is set SYNCHRONOUSLY here, so the guard is safe even if
-  // the rejection arrives before React flushes the optimistic re-render.
-  const acceptRewrite = (replacement: string) => {
-    if (!frozen) return;
-    const { id, start, end, snapshot } = frozen;
-    const prev = answers[id] ?? '';
-    const next = snapshot.slice(0, start) + replacement + snapshot.slice(end);
-    setFrozen(null);
-    pendingRewriteRef.current[id] = next; // synchronous — latest-wins sentinel
-    updateAnswer(id, next)
-      .then(() => {
-        // Still current — clear the sentinel so it doesn't linger forever.
-        if (pendingRewriteRef.current[id] === next) delete pendingRewriteRef.current[id];
-      })
-      .catch(() => {
-        // Only revert/toast if this save is still the current one — a
-        // superseded rewrite (a later accept already overwrote the sentinel)
-        // failing shouldn't surface a stale "save failed" toast or clobber
-        // the newer, already-displayed answer.
-        if (pendingRewriteRef.current[id] === next) {
-          revertAnswer(id, prev);
-          notify.error({ message: t('autopilot.apply.questions.rewriteSaveError') });
-        }
-      });
   };
 
   // Shared answer + Copy + Rewrite block — reused by predefined and custom rows.

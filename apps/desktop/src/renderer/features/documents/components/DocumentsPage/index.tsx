@@ -1,4 +1,4 @@
-import { Activity, ListChecks, Mail, RefreshCw, Search, Trash2, Wand2 } from 'lucide-react';
+import { Activity, ListChecks, Mail, RefreshCw, Search, Wand2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useMemo, useState } from 'react';
 
@@ -22,6 +22,8 @@ import { DOC_TABS, type DocTab, type Interaction } from '@/features/documents/co
 import { useAiGenerations, useRemoveAiGenerationsBulk } from '@/services/use-ai-generations';
 import { useInteractions } from '@/services/use-postings';
 import { useSessionStore } from '@/store/session-store';
+
+import { BulkActionBar } from './BulkActionBar';
 
 function DocumentsPage() {
   const { t } = useTranslation();
@@ -202,33 +204,12 @@ function DocumentsPage() {
           {/* Bulk-action bar — appears when ≥1 generation is selected on a doc tab */}
           <AnimatePresence initial={false}>
             {!isActivity && selection.size > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={transition.fast}
-                className="mb-4 flex items-center justify-between rounded-xl border border-red-400/20 bg-red-400/[0.06] px-4 py-2.5"
-              >
-                <span className="text-xs text-foreground/60">
-                  {t('resumes.select.count', { count: selection.size })}
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    onClick={() => setSelection(new Set())}
-                    className="h-auto rounded-lg border-transparent bg-transparent px-3 py-1.5 text-xs text-foreground/50 hover:text-foreground"
-                  >
-                    {t('resumes.select.clear')}
-                  </Button>
-                  <Button
-                    onClick={() => setConfirmBulkDelete(true)}
-                    disabled={removeBulk.isPending}
-                    className="flex h-auto items-center gap-1.5 rounded-lg border-red-400/20 bg-red-400/10 px-3 py-1.5 text-xs text-red-300 hover:bg-red-400/20"
-                  >
-                    <Trash2 size={11} />
-                    {t('resumes.select.deleteSelected')}
-                  </Button>
-                </div>
-              </motion.div>
+              <BulkActionBar
+                count={selection.size}
+                deleting={removeBulk.isPending}
+                onClear={() => setSelection(new Set())}
+                onDelete={() => setConfirmBulkDelete(true)}
+              />
             )}
           </AnimatePresence>
 

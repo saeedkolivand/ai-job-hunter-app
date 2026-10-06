@@ -2,23 +2,6 @@
 # `<loc>` is CODE lines (blank and comment lines excluded).
 # A baselined file may shrink or be deleted, never grow; a new over-cap file is not baselined.
 # Regenerate after a split with: TS_SIZE_BLESS=1 node scripts/check-ts-size.mjs
-305	apps/desktop/src/renderer/features/documents/components/DocumentsPage/index.tsx
-552	apps/desktop/src/renderer/features/documents/components/GenerationCard/index.tsx
-395	apps/desktop/src/renderer/features/documents/components/TailorFlow/ApplicationQuestionsModal.test.tsx
-308	apps/desktop/src/renderer/features/documents/components/TailorFlow/ApplicationQuestionsModal.tsx
-1235	apps/desktop/src/renderer/features/documents/components/TailorFlow/GenerationOutput.test.tsx
-396	apps/desktop/src/renderer/features/documents/components/TailorFlow/GenerationOutput.tsx
-452	apps/desktop/src/renderer/features/documents/components/TailorFlow/JobAdView.i18n.test.tsx
-373	apps/desktop/src/renderer/features/documents/components/TailorFlow/JobAdView.test.tsx
-342	apps/desktop/src/renderer/features/documents/components/TailorFlow/JobAdView.tsx
-331	apps/desktop/src/renderer/features/documents/components/TailorFlow/ReferralModal/ReferralModal.test.tsx
-346	apps/desktop/src/renderer/features/documents/components/TailorFlow/ReferralModal/index.tsx
-382	apps/desktop/src/renderer/features/documents/components/TailorFlow/ReferralModal/useReferralDraft.test.ts
-853	apps/desktop/src/renderer/features/documents/components/TailorFlow/TailorFlow.test.tsx
-402	apps/desktop/src/renderer/features/documents/components/TailorFlow/index.tsx
-499	apps/desktop/src/renderer/features/documents/components/TailorFlow/useApplicationAnswers.test.ts
-827	apps/desktop/src/renderer/features/documents/components/TailorFlow/useTailorPipeline.test.ts
-445	apps/desktop/src/renderer/features/documents/components/TailorFlow/useTailorPipeline.ts
 404	apps/landing/src/app/world/scrub-engine.test.ts
 563	apps/landing/src/data/agent-fleet.ts
 3199	apps/landing/src/data/architecture-map.ts

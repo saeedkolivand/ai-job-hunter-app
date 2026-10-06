@@ -1,48 +1,38 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { type AiGenerationRecord, detectLanguage, toLanguageCode } from '@ajh/shared';
+import type { AiGenerationRecord } from '@ajh/shared';
 import type { PipelineRunDetail } from '@ajh/shared/ipc';
 import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
-import type { QualityPipelineReview } from '@/components/generation/QualityReportPanel';
 import { useQualityRecheck } from '@/hooks/use-quality-recheck';
 import {
   type ResumePipelineSession,
   useResumePipelineSession,
 } from '@/hooks/use-resume-pipeline-session';
-import { errorClass, errorDetail } from '@/lib/error-class';
 import {
-  buildFilename,
-  buildSectionVerdicts,
   countryFromLocation,
-  exportDOCX,
-  exportPDF,
-  exportTXT,
   type GenerationMeta,
   type LetterLayoutId,
-  parseFabrications,
   parseQualityReport,
-  PERSIST_DEBOUNCE_MS,
   type QualityReport,
   resolveMarket,
   type TemplateId,
-  unresolvedCount,
 } from '@/lib/generate';
 import { RESUME_PIPELINE_BUSY_STATES } from '@/lib/machines/resume-pipeline.machine';
-import { COPY_FEEDBACK_MS } from '@/lib/timings';
 import { keys } from '@/services/query-client';
-import { useUpdateAiGeneration } from '@/services/use-ai-generations';
-import {
-  usePipelineRunsForJob,
-  useRegenerateSection,
-  useResolveFabrication,
-} from '@/services/use-resume-pipeline';
+import { usePipelineRunsForJob } from '@/services/use-resume-pipeline';
 
 import { pipelineStepForStage } from './lib/pipeline-steps';
 import type { TailorWizardState } from './lib/tailor-state';
 import type { TailorTarget } from './lib/tailor-target';
+import { resolveTargetLanguage } from './useTailorPipeline/resolveTargetLanguage';
+import { useEditPersistence } from './useTailorPipeline/useEditPersistence';
+import { usePipelineReview } from './useTailorPipeline/usePipelineReview';
+import { useTailorOutputActions } from './useTailorPipeline/useTailorOutputActions';
+
+export { resolveTargetLanguage };
 
 interface Params {
   jobDesc: string;
@@ -95,91 +85,6 @@ interface Params {
   onRunStarted?: (ids: { runId: string; jobId: string }) => void;
 }
 
-/** {@link resolveTargetLanguage}'s result: the language to actually use for
- *  THIS run, plus whether that answer is confident. `language` is always a
- *  real 2-letter code (every downstream consumer — the prompt, the date
- *  formatter, `resolveMarket` — needs one); `confident` is the separate axis
- *  that decides what may be REMEMBERED. See the function doc comment. */
-interface TargetLanguageResolution {
-  language: string;
-  confident: boolean;
-}
-
-/**
- * Resolve the tailor run's target language — an explicit, ordered precedence
- * chain (owner decision, see the plan's "What to build" §1/§3): a GUESS must
- * never be preferred over a confident answer, and must never be REMEMBERED
- * as one either.
- *
- * 1. The persisted `targetLanguage` — the field the STAGED PIPELINE actually
- *    writes (`target_language` → `AiGenerationRecord.targetLanguage`,
- *    `commands/resume_pipeline/mod.rs:712`). #1003's "keep the regenerate
- *    language" branch read `resumeLanguage`/`jobAdLanguage` instead, which
- *    the staged pipeline leaves EMPTY (`empty_record()`), so it was dead on
- *    this flow — this is the fix.
- * 2. The persisted `jobAdLanguage` — the fast (AIGeneratePage) path's own
- *    field, a legitimate target per `metadata.ts:211` (`targetLanguage:
- *    jobAdLanguage`, i.e. the SAME "target = the ad's language" answer as
- *    tier 1, just from the other write path).
- * 3. A fresh, confident detection of the CURRENT job ad (`detectLanguage`
- *    already returns `'unknown'` rather than a low-confidence guess — <20
- *    chars, franc `'und'`, or an unmapped code).
- * 4. `'en'` — the LAST resort. Not a confident fact: every downstream
- *    consumer needs a concrete 2-letter code to run generation with, so this
- *    function cannot return "unknown" here. This is the ONLY tier where
- *    `confident` is `false`.
- *
- * `resumeLanguage` — the SOURCE résumé's language — is deliberately never
- * read. It is the second door the English-lock bug (Defect B) walks through:
- * an English résumé applying to a German job is not, on its own, evidence
- * the candidate wants an English document; the job ad's language is the only
- * legitimate signal for a TARGET.
- *
- * Each candidate is normalized ({@link toLanguageCode}) and validated
- * INDEPENDENTLY before the next tier is tried — the SAME persisted field
- * carries two shapes across writers (`extractMetadata`'s heuristic fallback
- * writes a display NAME like "German"; every other writer stores an ISO
- * code), and a short-circuit on presence-without-validity would send a
- * perfectly good lower tier to detection unread.
- *
- * `confident` is what CALLERS use to decide what may reach the wire: sending
- * the tier-4 guess to `session.start` and having Rust persist it verbatim
- * would let a FUTURE run's tier 1 prefer that guess forever — exactly the
- * bug this chain exists to close. See `start`'s own comment for how the
- * caller keeps a guess off the wire without a schema change (Rust's own
- * `ai_generations::merge_application`'s `pick` already treats an empty incoming field as "keep
- * whatever is stored").
- *
- * Known limit (not fixable here, not worth a test): the renderer detects
- * with **franc**, Rust's `validate::content` checks with **whatlang** — two
- * different third-party models can legitimately disagree on the same text.
- */
-export function resolveTargetLanguage(
-  // Deliberately its own small shape, not `Pick<AiGenerationRecord, …>`: both
-  // fields are OPTIONAL here (a caller may not have a record at all yet),
-  // where `AiGenerationRecord`'s own fields are always-present strings. A
-  // real `AiGenerationRecord` (including one with `resumeLanguage` set) still
-  // satisfies this structurally — see the pure-function tests, which pass a
-  // full record to prove `resumeLanguage` is present on the input yet never
-  // read.
-  latestGeneration: { targetLanguage?: string; jobAdLanguage?: string } | undefined,
-  jobDesc: string
-): TargetLanguageResolution {
-  const persistedTarget = toLanguageCode(latestGeneration?.targetLanguage ?? '');
-  if (/^[a-z]{2}$/.test(persistedTarget)) {
-    return { language: persistedTarget, confident: true };
-  }
-  const persistedJobAd = toLanguageCode(latestGeneration?.jobAdLanguage ?? '');
-  if (/^[a-z]{2}$/.test(persistedJobAd)) {
-    return { language: persistedJobAd, confident: true };
-  }
-  const detected = detectLanguage(jobDesc);
-  if (detected !== 'unknown') {
-    return { language: detected, confident: true };
-  }
-  return { language: 'en', confident: false };
-}
-
 /**
  * Runs the staged quality pipeline for the tailor flow — the replacement for
  * `useTailorGeneration`'s one-shot path (PR-3 of the staged-cutover plan).
@@ -210,9 +115,6 @@ export function useTailorPipeline({
   const { t } = useTranslation();
   const notify = useNotification();
   const qc = useQueryClient();
-  const updateAiGeneration = useUpdateAiGeneration();
-  const regenerate = useRegenerateSection();
-  const resolveFabrication = useResolveFabrication();
   const runs = usePipelineRunsForJob(jobUrl).data ?? [];
 
   const session = useResumePipelineSession(initialRunId, initialJobId);
@@ -271,8 +173,6 @@ export function useTailorPipeline({
   const [activeOutOverride, setActiveOut] = useState<'resume' | 'cover' | null>(null);
   const activeOut: 'resume' | 'cover' =
     activeOutOverride ?? (target === 'cover' ? 'cover' : 'resume');
-  const [copied, setCopied] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
 
   // Local overrides for a hand-edit — the run record / aggregate are the
   // source of truth until the user types, exactly like the fast path's
@@ -280,52 +180,7 @@ export function useTailorPipeline({
   const [resumeOverride, setResumeOverride] = useState<string | null>(null);
   const [letterOverride, setLetterOverride] = useState<string | null>(null);
 
-  // CR-2: unmount previously CLEARED these timers without flushing — leaving
-  // a tab (or a host remount of `DocumentsTab`) inside the debounce window
-  // silently dropped the hand-edit; `resumeOverride`/`letterOverride` die
-  // with the unmount too, so nothing recovers it. Matches DocumentsTab's own
-  // `flushJd` posture (`ApplicationDetailPage/index.tsx`) exactly: the
-  // pending PAYLOAD lives in a ref (captured at schedule time, not re-read at
-  // flush time), one `flushPersist` function is the sole place a write is
-  // fired — the debounce timeout and the unmount cleanup both just call it —
-  // and a ref indirection keeps the unmount effect's empty deps honest
-  // without a stale closure over `flushPersist`/`mutate`.
-  const persistTimers = useRef<{
-    resume?: ReturnType<typeof setTimeout>;
-    cover?: ReturnType<typeof setTimeout>;
-  }>({});
-  const pendingEdits = useRef<{
-    resume?: { id: string; text: string };
-    cover?: { id: string; text: string };
-  }>({});
-  const mutateAiGenerationRef = useRef(updateAiGeneration.mutate);
-  mutateAiGenerationRef.current = updateAiGeneration.mutate;
-
-  const flushPersist = useCallback((field: 'resume' | 'cover') => {
-    const timer = persistTimers.current[field];
-    if (timer) {
-      clearTimeout(timer);
-      persistTimers.current[field] = undefined;
-    }
-    const pending = pendingEdits.current[field];
-    if (!pending) return;
-    pendingEdits.current[field] = undefined;
-    mutateAiGenerationRef.current(
-      field === 'resume'
-        ? { id: pending.id, resumeText: pending.text }
-        : { id: pending.id, coverLetterText: pending.text }
-    );
-  }, []);
-
-  const flushPersistRef = useRef(flushPersist);
-  flushPersistRef.current = flushPersist;
-  useEffect(
-    () => () => {
-      flushPersistRef.current('resume');
-      flushPersistRef.current('cover');
-    },
-    []
-  );
+  const persistEdit = useEditPersistence();
 
   // `session.detail` is the LIVE run's own document — present once this
   // session started or reconnected to a run. `latestGeneration` (the job's
@@ -502,85 +357,21 @@ export function useTailorPipeline({
     board,
   });
 
-  // Section-fix / fabrication-review extras for the ACTIVE document — this
-  // session's OWN run is always the posting's newest (nothing else can start
-  // one from here), so unlike `TailoredResumePanel` there is no older-run
-  // gate to apply.
-  // Read off the RAW `PipelineQualityReport` (not the renderer-shaped `report`
-  // above) — its slot type declares `fabrications`, where `QualityReportSlot`
-  // deliberately doesn't (it's opaque additional data there).
-  //
-  const rawSlot = !activeIsThisRunsOwn
-    ? undefined
-    : activeOut === 'resume'
-      ? session.detail?.report?.resume
-      : session.detail?.report?.coverLetter;
-  const sections = useMemo(() => buildSectionVerdicts(rawSlot?.report, output), [rawSlot, output]);
-  const fabrications = useMemo(() => parseFabrications(rawSlot?.fabrications), [rawSlot]);
-  const runId = session.detail?.runId;
-
-  // Unresolved fabrication count across BOTH documents — the Rust
-  // `needsReview` verdict (`still_needs_review`) scans resume AND coverLetter,
-  // but `fabrications` above (and the ACTIVE-tab-only `pipelineReview` it
-  // feeds) only ever reflects whichever document is on screen. A run flagged
-  // for review while the user is looking at the OTHER, clean document must
-  // not read as "0 claims" just because this session hasn't switched tabs.
-  const resumeReportSlot = session.detail?.report?.resume;
-  const coverReportSlot = session.detail?.report?.coverLetter;
-  const openClaimsTotal = useMemo(() => {
-    const resumeUnresolved = resumeReportSlot
-      ? unresolvedCount(parseFabrications(resumeReportSlot.fabrications), resumeOut)
-      : 0;
-    const coverUnresolved = coverReportSlot
-      ? unresolvedCount(parseFabrications(coverReportSlot.fabrications), coverOut)
-      : 0;
-    return resumeUnresolved + coverUnresolved;
-  }, [resumeReportSlot, coverReportSlot, resumeOut, coverOut]);
-  const pipelineReview: QualityPipelineReview | undefined =
-    runId && activeIsThisRunsOwn
-      ? {
-          documentText: output,
-          sections,
-          fabrications,
-          onFixSection: (sectionKey, note) =>
-            regenerate.mutate({ runId, sectionKey, ...(note ? { note } : {}) }),
-          fixingSection: regenerate.isPending ? (regenerate.variables?.sectionKey ?? null) : null,
-          fixError: regenerate.error
-            ? t('autopilot.apply.wizard.results.fixFailed', {
-                detail: errorDetail(regenerate.error),
-              })
-            : null,
-          onResolveFabrication: (issueKey, decision) =>
-            resolveFabrication.mutate({ runId, issueKey, decision }),
-          resolvingIssueKey: resolveFabrication.isPending
-            ? (resolveFabrication.variables?.issueKey ?? null)
-            : null,
-          resolveError: resolveFabrication.error
-            ? t('autopilot.apply.wizard.results.resolveFailed', {
-                detail: errorDetail(resolveFabrication.error),
-              })
-            : null,
-          ...(session.detail?.metrics.repairRounds != null
-            ? { repairRounds: session.detail.metrics.repairRounds }
-            : {}),
-          ...(session.detail?.metrics.reverted != null
-            ? { repairReverted: session.detail.metrics.reverted }
-            : {}),
-        }
-      : undefined;
+  const { openClaimsTotal, pipelineReview } = usePipelineReview({
+    session,
+    activeOut,
+    activeIsThisRunsOwn,
+    output,
+    resumeOut,
+    coverOut,
+  });
 
   const editActiveOutput = (text: string) => {
     if (activeOut === 'resume') setResumeOverride(text);
     else setLetterOverride(text);
     const id = latestGeneration?.id;
     if (!id) return;
-    const field = activeOut === 'resume' ? 'resume' : 'cover';
-    // Captured NOW, read at flush time (debounce fire OR unmount) instead of
-    // closing over `text`/`id` — mirrors DocumentsTab's `pendingJd` exactly.
-    pendingEdits.current[field] = { id, text };
-    const existing = persistTimers.current[field];
-    if (existing) clearTimeout(existing);
-    persistTimers.current[field] = setTimeout(() => flushPersist(field), PERSIST_DEBOUNCE_MS);
+    persistEdit(activeOut === 'resume' ? 'resume' : 'cover', id, text);
   };
 
   const start = async (values: TailorWizardState) => {
@@ -670,65 +461,16 @@ export function useTailorPipeline({
 
   const cancel = () => session.cancel();
 
-  const copy = async () => {
-    if (!output) return;
-    await navigator.clipboard.writeText(output);
-    setCopied(true);
-    setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
-  };
-
-  const exportAs = async (fmt: 'pdf' | 'docx' | 'txt') => {
-    setExportOpen(false);
-    if (!output) return;
-    const docType = activeOut === 'resume' ? 'resume' : 'cover-letter';
-    const fileMeta: GenerationMeta = meta ?? {
-      candidateName: '',
-      jobTitle: '',
-      companyName: '',
-      resumeLanguage: 'en',
-      jobAdLanguage: 'en',
-      mismatch: false,
-      targetLanguage: 'en',
-      topRequirements: [],
-    };
-    const name = buildFilename(fileMeta, docType, fmt);
-    try {
-      if (fmt === 'pdf')
-        await exportPDF(
-          output,
-          name,
-          docType,
-          meta ?? undefined,
-          templateId,
-          atsMode,
-          market,
-          accent,
-          letterLayoutId
-        );
-      else if (fmt === 'docx')
-        await exportDOCX(
-          output,
-          name,
-          docType,
-          meta ?? undefined,
-          templateId,
-          atsMode,
-          market,
-          accent,
-          letterLayoutId
-        );
-      else exportTXT(output, name);
-    } catch (err) {
-      console.error('[export] failed', {
-        format: fmt,
-        docType,
-        error: errorClass(err),
-      });
-      notify.error({
-        message: err instanceof Error && err.message ? err.message : t('common.exportFailed'),
-      });
-    }
-  };
+  const { copied, exportOpen, setExportOpen, copy, exportAs } = useTailorOutputActions({
+    output,
+    activeOut,
+    meta,
+    market,
+    templateId,
+    atsMode,
+    accent,
+    letterLayoutId,
+  });
 
   return {
     state: session.state,
