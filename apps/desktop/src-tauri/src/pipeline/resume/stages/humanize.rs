@@ -182,6 +182,8 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
 
         let input = ctx.input;
         let completer = ctx.completer_for(NAME);
+        // Mechanical stage: the user's effort, else the lowest tier.
+        let effort = ctx.stage_effort(NAME);
         // Computed once, exactly like `Draft::run`'s and `Repair::run`'s own
         // per-run seeding — every candidate reads the same seeds.
         let (seeds, _seed_skip_reason) = projects::seed_projects_for_normalize(input.source_resume);
@@ -244,10 +246,11 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
                                 findings,
                                 |text, findings| async move {
                                     completer
-                                        .complete(
+                                        .complete_with_effort(
                                             &humanize_system(tier, input.target_language),
                                             &humanize_user(&text, &findings),
                                             None,
+                                            effort,
                                         )
                                         .await
                                 },
@@ -315,10 +318,11 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
                                 findings,
                                 |text, findings| async move {
                                     completer
-                                        .complete(
+                                        .complete_with_effort(
                                             &humanize_system(tier, input.target_language),
                                             &humanize_user(&text, &findings),
                                             None,
+                                            effort,
                                         )
                                         .await
                                 },

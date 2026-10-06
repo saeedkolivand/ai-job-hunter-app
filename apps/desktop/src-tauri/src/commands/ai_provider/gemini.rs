@@ -93,6 +93,30 @@ impl AiProvider for GeminiClient {
             .await
     }
 
+    /// Plain text, but with the request's `thinkingLevel` (gated per model by
+    /// the same table `chat_stream` uses) and `maxOutputTokens` — no JSON mode.
+    async fn complete_with_effort(
+        &self,
+        app: &AppHandle,
+        req: &AiGenerateRequest,
+    ) -> AppResult<(String, Usage)> {
+        let (system, user) = structured::plain_prompt(req);
+        self.complete_impl(
+            app,
+            &req.model,
+            &system,
+            &user,
+            req.temperature,
+            Some(body::StructuredCall {
+                json: false,
+                schema: None,
+                effort: req.effort.as_deref(),
+                max_tokens: req.max_tokens,
+            }),
+        )
+        .await
+    }
+
     /// Native constrained decoding via `generationConfig.responseMimeType` +
     /// `responseSchema`. Gemini's schema is an OpenAPI-3.0 subset, not JSON
     /// Schema, so the caller's schema is translated first
@@ -123,6 +147,7 @@ impl AiProvider for GeminiClient {
             &user,
             structured::structured_temperature(self, req),
             Some(body::StructuredCall {
+                json: true,
                 schema: schema.and_then(structured::gemini_response_schema),
                 effort: req.effort.as_deref(),
                 max_tokens: req.max_tokens,

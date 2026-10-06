@@ -36,7 +36,7 @@ pub use stage::{Pipeline, Stage, StageHooks, StageInfo, StageOutcome};
 // `completer`/`completion` and uses the local name directly, so a non-test
 // build has no reader of this path at all.
 #[cfg(test)]
-pub(crate) use completer::low_effort_level;
+pub(crate) use completer::{effort_or_cheapest, low_effort_level};
 #[cfg(test)]
 pub(crate) use completion::{complete_json_with, text_request};
 

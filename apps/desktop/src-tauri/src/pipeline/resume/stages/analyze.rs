@@ -44,7 +44,8 @@ impl<'a> Stage<QualityCtx<'a>> for AnalyzeJob {
                         &analyze_job_user(ctx.input.job_ad),
                         JobAnalysis::EXAMPLE,
                         Some(&JobAnalysis::schema()),
-                        ctx.input.effort,
+                        // Mechanical stage: the user's effort, else the lowest tier.
+                        ctx.stage_effort(NAME),
                     )
                     .await?;
                 // `complete_json` guarantees the response PARSED; it cannot

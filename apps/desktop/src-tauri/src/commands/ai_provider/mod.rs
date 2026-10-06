@@ -192,6 +192,28 @@ pub trait AiProvider: Send + Sync {
         Ok((text, Usage::default()))
     }
 
+    /// Plain-text non-streaming completion that ALSO carries `req.effort`
+    /// (and `max_tokens`/`context_window`) — what
+    /// [`complete`](Self::complete)/[`complete_with_usage`](Self::complete_with_usage)
+    /// cannot, since they take no [`AiGenerateRequest`]. Text in, text out: no
+    /// JSON directive is added (contrast
+    /// [`complete_structured`](Self::complete_structured)).
+    ///
+    /// DEFAULT: [`complete_with_usage`](Self::complete_with_usage) over the
+    /// request's flattened slots, effort dropped — correct for a provider
+    /// with no effort lever, and the permanent fallback for a new provider
+    /// until it opts in. Providers with one override it and gate the effort
+    /// through the SAME per-model gate their `chat_stream` uses.
+    async fn complete_with_effort(
+        &self,
+        app: &AppHandle,
+        req: &AiGenerateRequest,
+    ) -> AppResult<(String, Usage)> {
+        let (system, user) = structured::plain_prompt(req);
+        self.complete_with_usage(app, &req.model, &system, &user, req.temperature)
+            .await
+    }
+
     /// Structured (JSON) completion: the same non-streaming call as
     /// [`complete_with_usage`](Self::complete_with_usage), but asking the model
     /// for ONE JSON value. `schema_hint` is a FILLED EXAMPLE object (not a JSON

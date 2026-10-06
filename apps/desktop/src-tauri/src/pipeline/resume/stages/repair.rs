@@ -112,6 +112,7 @@ pub async fn regenerate_one_section(
     key: SectionKey,
     issues: &[String],
     note: Option<&str>,
+    effort: Option<&str>,
 ) -> AppResult<SectionOutcome> {
     let split = sections::split(document);
     let Some(section) = sections::find(&split, key) else {
@@ -131,10 +132,11 @@ pub async fn regenerate_one_section(
 
     completer.charge_daily()?;
     let replacement = completer
-        .complete(
+        .complete_with_effort(
             &repair_system(target_language, !context.is_empty()),
             &repair_user(source_resume, &current, issues, note, context),
             None,
+            effort,
         )
         .await?;
     let replacement = replacement.trim();
@@ -324,6 +326,8 @@ impl<'a> Stage<QualityCtx<'a>> for Repair {
         // each other: `QualityInput` is `Copy` and `completer` is a shared ref.
         let input = ctx.input;
         let completer = ctx.completer_for(NAME);
+        // Mechanical stage: the user's effort, else the lowest tier.
+        let effort = ctx.stage_effort(NAME);
         // Computed ONCE per run — every round's normalize call reads the same
         // seeds, exactly like `Draft::run`'s. The skip reason is discarded
         // here: only the draft-stage ledger reports it (rule 5).
@@ -349,6 +353,7 @@ impl<'a> Stage<QualityCtx<'a>> for Repair {
                     key,
                     &issues,
                     None,
+                    effort,
                 )
                 .await
             },

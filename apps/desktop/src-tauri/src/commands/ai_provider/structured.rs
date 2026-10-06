@@ -80,6 +80,22 @@ fn role_of(wire: &str) -> Role {
     }
 }
 
+/// The request's `(system, user)` slots with no output contract appended — what
+/// a plain-text call that still carries the request's effort
+/// ([`AiProvider::complete_with_effort`]) sends. Roles go through [`role_of`]
+/// and [`flatten_messages`], exactly as [`structured_prompt`] does.
+pub(super) fn plain_prompt(req: &AiGenerateRequest) -> (String, String) {
+    let messages: Vec<ChatMsg> = req
+        .messages
+        .iter()
+        .map(|m| ChatMsg {
+            role: role_of(&m.role),
+            content: m.content.clone(),
+        })
+        .collect();
+    flatten_messages(&messages)
+}
+
 /// Build the `(system, user)` pair for a structured completion: the request's
 /// system messages, then [`JSON_ONLY_DIRECTIVE`], then the filled-example
 /// `schema_hint`; every non-system message flattened into the user slot.
@@ -101,15 +117,7 @@ fn role_of(wire: &str) -> Role {
 /// it keeps a schema-less caller (hint only) identical across providers. Pure
 /// + unit-tested.
 pub(super) fn structured_prompt(req: &AiGenerateRequest, schema_hint: &str) -> (String, String) {
-    let messages: Vec<ChatMsg> = req
-        .messages
-        .iter()
-        .map(|m| ChatMsg {
-            role: role_of(&m.role),
-            content: m.content.clone(),
-        })
-        .collect();
-    let (mut system, user) = flatten_messages(&messages);
+    let (mut system, user) = plain_prompt(req);
     if !system.is_empty() {
         system.push_str("\n\n");
     }

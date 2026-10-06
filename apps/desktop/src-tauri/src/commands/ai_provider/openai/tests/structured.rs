@@ -163,3 +163,23 @@ fn complete_body_omits_the_token_limit_the_request_left_unset() {
     assert!(body.get("max_tokens").is_none(), "{body}");
     assert!(body.get("max_completion_tokens").is_none(), "{body}");
 }
+
+/// The plain-text effort path (`complete_with_effort`): no `response_format`,
+/// yet the gated `reasoning_effort` still reaches the wire.
+#[test]
+fn a_plain_call_carries_reasoning_effort_but_no_response_format() {
+    let body = build_complete_body(
+        "gpt-oss:20b",
+        "sys",
+        "user",
+        None,
+        chat_caps(false),
+        Some(StructuredCall {
+            response_format: None,
+            effort: Some("low"),
+            max_tokens: None,
+        }),
+    );
+    assert!(body.get("response_format").is_none(), "{body}");
+    assert_eq!(body["reasoning_effort"], json!("low"), "{body}");
+}

@@ -73,6 +73,34 @@ impl Completer {
         Ok(text)
     }
 
+    /// [`complete`](Self::complete) that also carries a reasoning `effort` (and
+    /// the configured context window), through
+    /// [`AiProvider::complete_with_effort`](crate::commands::ai_provider::AiProvider::complete_with_effort).
+    /// Same spend contract as `complete`. `None` leaves the provider's own
+    /// default effort; the adapter gates a value it cannot honour, so a
+    /// provider with no lever behaves exactly like `complete`.
+    pub async fn complete_with_effort(
+        &self,
+        system: &str,
+        user: &str,
+        temperature: Option<f64>,
+        effort: Option<&str>,
+    ) -> AppResult<String> {
+        let req = text_request(
+            &self.model,
+            system,
+            user,
+            temperature,
+            None,
+            self.context_window,
+            effort,
+        );
+        let (text, usage) =
+            self.strip_secrets(self.provider.complete_with_effort(&self.app, &req).await)?;
+        self.record_spend(usage);
+        Ok(text)
+    }
+
     /// Stream a completion through the active provider — the streaming
     /// analogue of [`complete`](Self::complete). Emits incremental deltas
     /// via the SAME `ai:stream` event channel

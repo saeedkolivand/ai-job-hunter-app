@@ -90,8 +90,9 @@ pub(super) fn reasoning_effort(effort: Option<&str>, caps: ModelCapabilities) ->
 /// mirror of [`super::gemini::StructuredCall`].
 pub(super) struct StructuredCall<'a> {
     /// `json_schema` (strict) or `json_object` — see
-    /// `structured::openai_response_format`.
-    pub(super) response_format: Value,
+    /// `structured::openai_response_format`. `None` is the plain-text call that only carries an effort/limit
+    /// (`AiProvider::complete_with_effort`).
+    pub(super) response_format: Option<Value>,
     /// The request's RAW reasoning effort, gated here by [`reasoning_effort`].
     pub(super) effort: Option<&'a str>,
     /// `req.max_tokens` → `max_completion_tokens`/`max_tokens`, whichever
@@ -131,7 +132,9 @@ pub(super) fn build_complete_body(
         if let Some(mt) = structured.max_tokens {
             body[token_field(caps)] = json!(mt);
         }
-        body["response_format"] = structured.response_format;
+        if let Some(response_format) = structured.response_format {
+            body["response_format"] = response_format;
+        }
     }
     body
 }

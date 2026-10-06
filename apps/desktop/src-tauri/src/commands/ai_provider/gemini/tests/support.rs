@@ -43,6 +43,7 @@ pub(super) fn sampling_for(req: &AiGenerateRequest) -> SamplingProfile {
 /// per-test variations override the one field they are about.
 pub(super) fn structured_call() -> StructuredCall<'static> {
     StructuredCall {
+        json: true,
         schema: None,
         effort: None,
         max_tokens: None,

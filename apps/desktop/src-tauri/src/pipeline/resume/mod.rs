@@ -480,6 +480,12 @@ impl<'a> QualityCtx<'a> {
     /// disagree. A single run-wide key would let an overridden stage's artifact
     /// be served back to a run using the default model (and vice versa), which
     /// is the one failure a cache key exists to prevent.
+    ///
+    /// Binds the EFFECTIVE effort ([`Self::stage_effort`]'s rule applied to the
+    /// stage's own completer), not the raw user setting: this key is only used
+    /// by the two mechanical JSON stages, which send exactly that value, so an
+    /// answer cached at the default tier is never served to a run that chose a
+    /// different one.
     pub fn stage_cache_key(&self, stage: &str) -> StageCacheKey {
         let effort = self.input.effort;
         stage_cache_key_for(
@@ -487,8 +493,18 @@ impl<'a> QualityCtx<'a> {
             self.stage_completers,
             self.default_completer,
             stage,
-            move |completer| StageIdentity::of(completer, effort),
+            move |completer| StageIdentity::of(completer, completer.effort_or_low(effort)),
         )
+    }
+
+    /// The reasoning effort a MECHANICAL stage (analyze_job, strategy, repair,
+    /// humanize) sends: the user's own choice when they made one, otherwise the
+    /// lowest tier the stage's resolved model offers
+    /// ([`Completer::effort_or_low`]; `None` where it has no cheap tier or no
+    /// lever at all). Draft and cover letter do NOT use this — they keep the
+    /// user's setting verbatim, because reasoning is what they are for.
+    pub fn stage_effort(&self, stage: &str) -> Option<&'a str> {
+        self.completer_for(stage).effort_or_low(self.input.effort)
     }
 
     /// The run's deadline guard, ready to hand to

@@ -152,3 +152,27 @@ fn complete_body_omits_the_token_options_the_request_left_unset() {
     );
     assert_eq!(body["options"], json!({ "temperature": 0.3 }), "{body}");
 }
+
+/// The plain-text effort path (`complete_with_effort`, what repair/humanize
+/// use): `format: None` sends NO `format`, but the effort and limits still
+/// reach the wire. Mutation check: unconditionally insert `format` and the
+/// first assertion fails; drop the `think` gate for it and the last fails.
+#[test]
+fn a_plain_call_carries_think_and_limits_but_no_format() {
+    let body = build_complete_body(
+        "qwen3.8:latest",
+        "sys",
+        "user",
+        None,
+        Some(StructuredCall {
+            format: None,
+            effort: Some("off"),
+            max_tokens: Some(256),
+            context_window: Some(8_192),
+        }),
+    );
+    assert!(body.get("format").is_none(), "{body}");
+    assert_eq!(body["think"], json!(false), "{body}");
+    assert_eq!(body["options"]["num_predict"], json!(256));
+    assert_eq!(body["options"]["num_ctx"], json!(8_192));
+}

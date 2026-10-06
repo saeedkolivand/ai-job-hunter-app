@@ -110,6 +110,16 @@ impl AiProvider for OllamaCloudClient {
             .await
     }
 
+    /// Delegated: the inner OpenAI-compatible client carries the effort as
+    /// `reasoning_effort` (what Ollama Cloud's `/v1` endpoint reads).
+    async fn complete_with_effort(
+        &self,
+        app: &AppHandle,
+        req: &AiGenerateRequest,
+    ) -> AppResult<(String, Usage)> {
+        self.inner.complete_with_effort(app, req).await
+    }
+
     /// Delegated, NOT reimplemented with local Ollama's native `format` field:
     /// Ollama Cloud is reached over its **OpenAI-compatible** `/v1` endpoint
     /// (see this module's doc comment), which takes `response_format` — the

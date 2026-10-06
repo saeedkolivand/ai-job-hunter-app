@@ -15,7 +15,10 @@ use super::super::{
     Usage,
 };
 use super::wire::{parse_ollama_frames, parse_ollama_usage};
-use super::{host, ollama_family_supports_thinking, OLLAMA_EFFORT_LEVELS};
+use super::{
+    host, ollama_family_supports_thinking, ollama_think_is_level_only, OLLAMA_EFFORT_LEVELS,
+    OLLAMA_OFF,
+};
 
 /// Build the `/api/chat` streaming request body for a given
 /// [`AiGenerateRequest`] + resolved [`SamplingProfile`] (already merged with
@@ -39,8 +42,8 @@ pub(super) fn build_chat_stream_body(req: &AiGenerateRequest, sampling: Sampling
     .unwrap_or(json!([]));
 
     let mut body = json!({ "model": req.model, "messages": messages, "stream": true });
-    if let Some(effort) = think_level(&req.model, req.effort.as_deref()) {
-        body["think"] = json!(effort);
+    if let Some(think) = think_level(&req.model, req.effort.as_deref()) {
+        body["think"] = think;
     }
     let mut options = serde_json::Map::new();
     if let Some(t) = sampling.temperature {
@@ -137,6 +140,7 @@ pub(super) async fn stream_chat(
 /// The `think` value a request may send on this model — `None` when it must
 /// not be sent at all. `think` is a top-level request field (NOT nested under
 /// `options`), and only safe to send when it is one of [`OLLAMA_EFFORT_LEVELS`]
+/// or the `off` tier (which becomes `think: false`, or `"low"` on gpt-oss)
 /// (see its doc comment) AND the model is in the known thinking family: it 400s
 /// on a non-thinking model (see `ollama_family_supports_thinking`) or on an
 /// unrecognized value.
@@ -146,10 +150,23 @@ pub(super) async fn stream_chat(
 /// [`AiGenerateRequest`], and it silently dropped `effort` for its entire
 /// existence while `chat_stream` honored it — a second hand-written copy of
 /// this gate is precisely how that happens again.
-pub(super) fn think_level<'a>(model: &str, effort: Option<&'a str>) -> Option<&'a str> {
+pub(super) fn think_level(model: &str, effort: Option<&str>) -> Option<Value> {
     let effort = effort.map(str::trim)?;
-    (ollama_family_supports_thinking(model) && OLLAMA_EFFORT_LEVELS.contains(&effort))
-        .then_some(effort)
+    if !ollama_family_supports_thinking(model) {
+        return None;
+    }
+    if effort == OLLAMA_OFF {
+        // `false` switches thinking off on qwen3-style models; gpt-oss ignores
+        // it, so its cheapest tier is the level string.
+        return Some(if ollama_think_is_level_only(model) {
+            json!("low")
+        } else {
+            json!(false)
+        });
+    }
+    OLLAMA_EFFORT_LEVELS
+        .contains(&effort)
+        .then(|| json!(effort))
 }
 
 /// What `OllamaClient::complete_structured` adds to a non-streaming
@@ -161,7 +178,9 @@ pub(super) fn think_level<'a>(model: &str, effort: Option<&'a str>) -> Option<&'
 pub(super) struct StructuredCall<'a> {
     /// Ollama's own constrained-decoding field: the caller's JSON Schema
     /// verbatim, or the `"json"` string (see `structured::ollama_format`).
-    pub(super) format: Value,
+    /// `None` is the plain-text call that only carries an effort/limits
+    /// (`AiProvider::complete_with_effort`).
+    pub(super) format: Option<Value>,
     /// The request's RAW reasoning effort, gated here by [`think_level`].
     pub(super) effort: Option<&'a str>,
     /// `req.max_tokens` → `options.num_predict`.
@@ -210,9 +229,11 @@ pub(super) fn build_complete_body(
         if let Some(ctx) = structured.context_window {
             options.insert("num_ctx".to_string(), json!(ctx));
         }
-        body["format"] = structured.format;
-        if let Some(effort) = think_level(model, structured.effort) {
-            body["think"] = json!(effort);
+        if let Some(format) = structured.format {
+            body["format"] = format;
+        }
+        if let Some(think) = think_level(model, structured.effort) {
+            body["think"] = think;
         }
     }
     if !options.is_empty() {

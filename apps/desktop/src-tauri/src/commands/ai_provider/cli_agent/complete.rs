@@ -14,9 +14,23 @@ pub(super) async fn run_complete(
     system: &str,
     user: &str,
 ) -> AppResult<String> {
-    // The non-streaming path runs at the agent's default effort (the request
-    // carries no effort for `complete`).
-    let inv = backend.complete_invocation(model, system, None);
+    // Plain `complete` carries no effort: the agent's default effort.
+    run_complete_with_effort(app, backend, model, system, user, None).await
+}
+
+/// [`run_complete`] at an explicit effort — the one-shot half of
+/// `AiProvider::complete_with_effort`. Each backend's own
+/// `complete_invocation` decides whether it reads the value (only Codex and
+/// Claude Code do; the rest ignore it).
+pub(super) async fn run_complete_with_effort(
+    app: &AppHandle,
+    backend: &dyn CliAgentBackend,
+    model: &str,
+    system: &str,
+    user: &str,
+    effort: Option<&str>,
+) -> AppResult<String> {
+    let inv = backend.complete_invocation(model, system, effort);
     run_one_shot(app, backend, model, system, user, inv, |b, stdout| {
         b.parse_complete(stdout)
     })

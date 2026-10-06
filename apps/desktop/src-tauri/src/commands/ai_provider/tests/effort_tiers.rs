@@ -15,7 +15,7 @@ use super::super::*;
 /// < high < xhigh < max`; `max` is the TOP tier, not `xhigh`). Written out by
 /// hand here on purpose: a guard driven off the same list it guards would
 /// pass no matter how the adapters reorder theirs.
-const TIER_ORDER: [&str; 6] = ["minimal", "low", "medium", "high", "xhigh", "max"];
+const TIER_ORDER: [&str; 7] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 /// Every `(what it is, levels)` pair the shipped adapters can currently
 /// return, across each per-model branch of each provider's own table.
@@ -198,4 +198,72 @@ fn the_cheap_effort_tiers_keep_the_baseline_stream_deadline() {
         timeouts::stream_deadline(Some("high")) > timeouts::STREAM,
         "…while a higher tier still extends it"
     );
+}
+
+/// The default-effort policy the mechanical stages (analyze_job, strategy,
+/// repair, humanize) share, against the REAL adapters' level lists: the user's
+/// own pick always wins, a blank one counts as unset, and with none the
+/// model's cheapest tier applies — `None` where there is no cheap tier, so such
+/// a request is left exactly as it was. Draft and cover letter never call this.
+///
+/// Mutation check (executed): drop the `user.filter(..).or_else(..)` fallback
+/// (return `user` alone) and every `Some(cheapest)` case fails; ignore `user`
+/// (always take the cheapest) and the `Some("high")` case fails.
+#[test]
+fn mechanical_stages_default_to_the_cheapest_tier_and_defer_to_the_user() {
+    use crate::pipeline::effort_or_cheapest as effort;
+
+    let anthropic = AnthropicClient.effort_levels("claude-opus-5");
+    let claude_code = cli_agent::CliAgentClient::new(
+        cli_agent::backend_for(ProviderId::ClaudeCode)
+            .expect("claude-code is a registered backend"),
+    )
+    .effort_levels("");
+    for (what, levels, cheapest) in [
+        (
+            "ollama qwen3",
+            OllamaClient.effort_levels("qwen3.8:latest"),
+            Some("off"),
+        ),
+        (
+            "ollama gpt-oss",
+            OllamaClient.effort_levels("gpt-oss:20b"),
+            Some("low"),
+        ),
+        (
+            "ollama-cloud gpt-oss",
+            OllamaCloudClient::new().effort_levels("gpt-oss:20b"),
+            Some("low"),
+        ),
+        ("anthropic adaptive", anthropic, Some("low")),
+        ("claude-code", claude_code, Some("low")),
+        (
+            "gemini flash",
+            GeminiClient.effort_levels("gemini-3.6-flash"),
+            Some("minimal"),
+        ),
+        // Lowest tier is an expensive one / no lever at all: nothing invented.
+        (
+            "gemini flash-lite",
+            GeminiClient.effort_levels("gemini-3.1-flash-lite"),
+            None,
+        ),
+        (
+            "ollama llama",
+            OllamaClient.effort_levels("llama3.1:8b"),
+            None,
+        ),
+    ] {
+        assert_eq!(effort(None, &levels), cheapest, "{what}: no user effort");
+        assert_eq!(
+            effort(Some("  "), &levels),
+            cheapest,
+            "{what}: blank effort"
+        );
+        assert_eq!(
+            effort(Some("high"), &levels),
+            Some("high"),
+            "{what}: user effort"
+        );
+    }
 }

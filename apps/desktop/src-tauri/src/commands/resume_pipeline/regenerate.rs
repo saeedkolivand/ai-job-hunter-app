@@ -158,6 +158,8 @@ pub async fn resume_pipeline_regenerate_section(
         // asked for the change. The note carries the "why", fenced.
         &[],
         req.note.as_deref(),
+        // The button keeps the provider's own default effort.
+        None,
     )
     .await;
     // The provider's error text reaches the review panel verbatim: strip the

@@ -110,6 +110,19 @@ pub(super) fn ollama_family_supports_thinking(model: &str) -> bool {
 /// a future model needs a narrower one.
 const OLLAMA_EFFORT_LEVELS: [&str; 3] = ["low", "medium", "high"];
 
+/// The extra, LOWEST tier a thinking model that can switch thinking off
+/// offers: it sends `think: false`. Probed against a live daemon: qwen3-style
+/// models take a boolean (`false` => no reasoning at all) and ALSO accept the
+/// level strings; gpt-oss ignores `false` (it keeps reasoning) and only
+/// honours the level strings, so [`ollama_think_is_level_only`] models never
+/// list this tier and resolve a stale `off` to `low`, their cheapest tier.
+const OLLAMA_OFF: &str = "off";
+
+/// gpt-oss: reasoning cannot be disabled, only levelled.
+pub(super) fn ollama_think_is_level_only(model: &str) -> bool {
+    model.to_ascii_lowercase().contains("gpt-oss")
+}
+
 pub struct OllamaClient;
 
 #[async_trait]
@@ -137,11 +150,16 @@ impl AiProvider for OllamaClient {
     }
 
     fn effort_levels(&self, model: &str) -> Vec<&'static str> {
-        if ollama_family_supports_thinking(model) {
-            OLLAMA_EFFORT_LEVELS.to_vec()
-        } else {
-            Vec::new()
+        if !ollama_family_supports_thinking(model) {
+            return Vec::new();
         }
+        // Lowest tier FIRST: `Completer::low_effort` takes entry 0.
+        let mut levels = Vec::with_capacity(4);
+        if !ollama_think_is_level_only(model) {
+            levels.push(OLLAMA_OFF);
+        }
+        levels.extend(OLLAMA_EFFORT_LEVELS);
+        levels
     }
 
     /// Declares real values for every intent, on every model, no gating —
@@ -228,6 +246,29 @@ impl AiProvider for OllamaClient {
         chat::complete_impl(model, system, user, temperature, None).await
     }
 
+    /// Plain text, but with the request's effort (`think`), `num_predict` and
+    /// `num_ctx` — no `format`.
+    async fn complete_with_effort(
+        &self,
+        _app: &AppHandle,
+        req: &AiGenerateRequest,
+    ) -> AppResult<(String, Usage)> {
+        let (system, user) = structured::plain_prompt(req);
+        chat::complete_impl(
+            &req.model,
+            &system,
+            &user,
+            req.temperature,
+            Some(chat::StructuredCall {
+                format: None,
+                effort: req.effort.as_deref(),
+                max_tokens: req.max_tokens,
+                context_window: req.context_window,
+            }),
+        )
+        .await
+    }
+
     /// Native constrained decoding via Ollama's `format` field: the caller's
     /// JSON Schema verbatim when there is one, else `"json"` (valid-JSON only)
     /// — see [`structured::ollama_format`]. Applies to every local model:
@@ -256,7 +297,7 @@ impl AiProvider for OllamaClient {
             &user,
             structured::structured_temperature(self, req),
             Some(chat::StructuredCall {
-                format: structured::ollama_format(schema),
+                format: Some(structured::ollama_format(schema)),
                 effort: req.effort.as_deref(),
                 max_tokens: req.max_tokens,
                 context_window: req.context_window,

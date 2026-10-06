@@ -74,6 +74,7 @@ fn chat_stream_body_skips_top_p_when_extended_thinking_is_enabled() {
     let mut req = base_request("claude-opus-4-20250514");
     req.top_p = Some(0.95);
     req.max_tokens = Some(4096); // >= 2048 → thinking budget kicks in
+    req.effort = Some("high".to_string()); // classic thinking is opt-in
     let body = build_chat_stream_body(&req, sampling_for(&req));
     assert!(body.get("thinking").is_some(), "thinking should be enabled");
     assert!(
@@ -84,6 +85,37 @@ fn chat_stream_body_skips_top_p_when_extended_thinking_is_enabled() {
         body.get("top_p").is_none(),
         "top_p must be omitted when thinking is enabled"
     );
+}
+
+/// Classic extended thinking is opt-in (issue #1351): with no effort set, a
+/// big `max_tokens` (the draft's default 4096) no longer switches it on, so the
+/// user gets no hidden reasoning, no inflated cap and the plain sampling path.
+///
+/// Mutation check (executed): drop `effort_set &&` from the
+/// `classic_thinking_budget` condition and the first block fails; make the
+/// condition `false` and the second block fails.
+#[test]
+fn classic_extended_thinking_is_opt_in_on_the_effort() {
+    let mut req = base_request("claude-opus-4-20250514");
+    req.max_tokens = Some(4096);
+    req.top_p = Some(0.95);
+    let off = build_chat_stream_body(&req, sampling_for(&req));
+    assert!(off.get("thinking").is_none(), "{off}");
+    assert_eq!(off["max_tokens"], json!(4096), "no thinking headroom added");
+    assert_eq!(off["temperature"], json!(0.8), "plain sampling path kept");
+
+    // A blank effort is "not set" too.
+    req.effort = Some("  ".to_string());
+    let blank = build_chat_stream_body(&req, sampling_for(&req));
+    assert!(blank.get("thinking").is_none(), "{blank}");
+
+    req.effort = Some("low".to_string());
+    let on = build_chat_stream_body(&req, sampling_for(&req));
+    assert_eq!(
+        on["thinking"],
+        json!({ "type": "enabled", "budget_tokens": 2048 })
+    );
+    assert_eq!(on["max_tokens"], json!(4096 + 2048));
 }
 
 #[test]

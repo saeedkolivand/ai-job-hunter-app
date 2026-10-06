@@ -81,6 +81,30 @@ impl AiProvider for AnthropicClient {
             .await
     }
 
+    /// Plain text with `output_config.effort` only (no `format`), gated per
+    /// model by [`capabilities::anthropic_structured_effort`] — the same
+    /// level table `chat_stream` checks. No `thinking` block is sent on this
+    /// path, so on a classic model the effort is simply omitted.
+    async fn complete_with_effort(
+        &self,
+        app: &AppHandle,
+        req: &AiGenerateRequest,
+    ) -> AppResult<(String, Usage)> {
+        let (system, user) = structured::plain_prompt(req);
+        let output_config =
+            capabilities::anthropic_structured_effort(&req.model, req.effort.as_deref())
+                .map(|effort| serde_json::json!({ "effort": effort }));
+        self.complete_impl(
+            app,
+            &req.model,
+            &system,
+            &user,
+            req.temperature,
+            output_config,
+        )
+        .await
+    }
+
     /// Native structured output via `output_config.format` (GA — no beta
     /// header). `effort` is gated per-model ([`capabilities::anthropic_structured_effort`])
     /// before it ever reaches [`structured::anthropic_output_config`]. Off

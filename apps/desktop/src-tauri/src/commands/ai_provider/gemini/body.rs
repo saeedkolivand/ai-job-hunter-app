@@ -128,6 +128,9 @@ pub(super) fn thinking_level(model: &str, effort: Option<&str>) -> Option<String
 /// schema nor an effort to send. `Some(..)` IS the JSON-mode switch — the two
 /// can no longer disagree.
 pub(super) struct StructuredCall<'a> {
+    /// `false` is the plain-text call that only carries an effort/limit
+    /// (`AiProvider::complete_with_effort`): no JSON mode, no schema.
+    pub(super) json: bool,
     /// The translated `responseSchema`, or `None` when the caller's JSON Schema
     /// had no faithful Gemini equivalent (see
     /// `structured::gemini_response_schema`) — JSON mode still applies, just
@@ -169,9 +172,11 @@ pub(super) fn build_complete_body(
         generation_config["temperature"] = json!(t);
     }
     if let Some(structured) = structured {
-        generation_config["responseMimeType"] = json!("application/json");
-        if let Some(schema) = structured.schema {
-            generation_config["responseSchema"] = schema;
+        if structured.json {
+            generation_config["responseMimeType"] = json!("application/json");
+            if let Some(schema) = structured.schema {
+                generation_config["responseSchema"] = schema;
+            }
         }
         if let Some(mt) = structured.max_tokens {
             generation_config["maxOutputTokens"] = json!(mt);

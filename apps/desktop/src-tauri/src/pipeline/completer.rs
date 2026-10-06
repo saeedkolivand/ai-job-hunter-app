@@ -327,6 +327,13 @@ impl Completer {
         low_effort_level(&self.provider.effort_levels(&self.model))
     }
 
+    /// The effort a MECHANICAL stage sends: the user's own choice when they
+    /// made one, else [`low_effort`](Self::low_effort) — see
+    /// [`effort_or_cheapest`], the pure policy.
+    pub fn effort_or_low<'a>(&self, user: Option<&'a str>) -> Option<&'a str> {
+        effort_or_cheapest(user, &self.provider.effort_levels(&self.model))
+    }
+
     /// Charge ONE provider round-trip against the shared per-provider daily
     /// ceiling — the coarse runaway-cost backstop every other fan-out
     /// chokepoint charges (`commands::pipeline`; the now-deleted agentic
@@ -573,7 +580,7 @@ impl Completer {
 ///   that entry 0 is the MINIMUM of the list, which is pinned by
 ///   `crate::commands::ai_provider::tests::every_providers_effort_levels_list_its_lowest_tier_first`
 ///   against the live tables.
-/// * **Only `minimal`/`low` are cheap.** A model whose lowest — sometimes
+/// * **Only `off`/`minimal`/`low` are cheap.** A model whose lowest — sometimes
 ///   only — accepted tier is `"high"` resolves to `None`, leaving the request
 ///   byte-for-byte as it was before an effort was passed at all. Sending
 ///   `"high"` there would invert the one caller's intent twice: it asks for
@@ -582,6 +589,20 @@ impl Completer {
 ///   deadline past the baseline for it, holding an `ai_research` concurrency
 ///   slot longer for a request that wanted to be cheap and short.
 ///
+/// The default-effort policy for the mechanical stages (analyze_job, strategy,
+/// repair, humanize): the user's own effort wins, a blank one counts as unset,
+/// and with none the model's cheapest tier ([`low_effort_level`]) applies —
+/// `None` where it has no cheap tier or no lever at all, which leaves the
+/// request exactly as before. Pure, so the policy is testable against the real
+/// adapters' level lists without an `AppHandle`.
+pub(crate) fn effort_or_cheapest<'a>(
+    user: Option<&'a str>,
+    levels: &[&'static str],
+) -> Option<&'a str> {
+    user.filter(|e| !e.trim().is_empty())
+        .or_else(|| low_effort_level(levels))
+}
+
 /// Free function (not just [`Completer::low_effort`]) so the choice is
 /// unit-testable against the REAL provider adapters' level lists without a
 /// live `AppHandle` to build a `Completer` from.
@@ -589,5 +610,5 @@ pub(crate) fn low_effort_level(levels: &[&'static str]) -> Option<&'static str> 
     levels
         .first()
         .copied()
-        .filter(|level| matches!(*level, "minimal" | "low"))
+        .filter(|level| matches!(*level, "off" | "minimal" | "low"))
 }

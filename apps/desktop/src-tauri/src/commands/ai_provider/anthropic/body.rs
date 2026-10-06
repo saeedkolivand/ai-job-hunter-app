@@ -64,11 +64,18 @@ pub(super) fn build_chat_stream_body(req: &AiGenerateRequest, sampling: Sampling
     // gives the streaming and non-streaming builders one shared formula.
     let is_classic = anthropic_supports_thinking(&req.model);
     let is_adaptive = anthropic_uses_adaptive_thinking(&req.model);
-    let classic_thinking_budget = if is_classic && classic_thinking_engages(max_tokens) {
-        max_tokens / 2
-    } else {
-        0
-    };
+    // Classic extended thinking is OPT-IN: only a request that carries an
+    // effort turns it on. With none set the stream used to force it on for
+    // every `max_tokens >= 2048` (the draft's default 4096 always qualified),
+    // which is hidden reasoning the user never asked for. Adaptive models are
+    // untouched (they always get `thinking: adaptive`).
+    let effort_set = req.effort.as_deref().is_some_and(|e| !e.trim().is_empty());
+    let classic_thinking_budget =
+        if is_classic && effort_set && classic_thinking_engages(max_tokens) {
+            max_tokens / 2
+        } else {
+            0
+        };
     let actual_max_tokens = if is_adaptive {
         adaptive_max_tokens(&req.model, max_tokens)
     } else {

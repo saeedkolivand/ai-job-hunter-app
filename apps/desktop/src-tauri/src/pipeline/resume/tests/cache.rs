@@ -18,7 +18,7 @@ use tempfile::TempDir;
 #[test]
 fn prompt_version_is_pinned() {
     assert_eq!(
-        PIPELINE_PROMPT_VERSION, 1,
+        PIPELINE_PROMPT_VERSION, 2,
         "a stage prompt or artifact shape changed — bump PIPELINE_PROMPT_VERSION so every \
          cached stage artifact is invalidated, then update this pin"
     );
@@ -285,5 +285,39 @@ fn a_retry_after_a_mid_run_failure_does_not_re_spend_the_stages_that_already_suc
         analyze_calls.get(),
         2,
         "a different effort must miss the cache, never silently reuse the baseline answer"
+    );
+}
+
+/// A mechanical stage's cache key binds the EFFECTIVE effort (the user's, else
+/// the model's cheapest tier — `effort_or_cheapest`), so an answer produced at
+/// one tier is never served to a run that resolves to another. An unset effort
+/// and an explicit pick of the same cheapest tier are the SAME request, so they
+/// share an entry.
+///
+/// Mutation check (executed): key on the raw user effort (`user` instead of
+/// `effort_or_cheapest(user, ..)`) and the unset-vs-explicit-`off` assertion
+/// fails; drop effort from the key and the unset-vs-`high` one fails.
+#[test]
+fn a_mechanical_stage_key_binds_the_effective_effort() {
+    use crate::pipeline::effort_or_cheapest;
+
+    let qwen: [&'static str; 4] = ["off", "low", "medium", "high"];
+    let base = StageCacheKey::new(id_with_effort("ollama", "m", None), "seed");
+    let key = |user: Option<&str>, levels: &[&'static str]| {
+        base.rebound(id_with_effort(
+            "ollama",
+            "m",
+            effort_or_cheapest(user, levels),
+        ))
+        .key()
+    };
+
+    assert_ne!(key(None, &qwen), key(Some("high"), &qwen));
+    assert_ne!(key(Some("medium"), &qwen), key(Some("high"), &qwen));
+    assert_eq!(key(None, &qwen), key(Some("off"), &qwen));
+    // No lever at all: the default stays "nothing", so it equals an unset key.
+    assert_eq!(
+        key(None, &[]),
+        base.rebound(id_with_effort("ollama", "m", None)).key()
     );
 }

@@ -13,7 +13,7 @@ use crate::commands::ai_provider::{
 use crate::error::{AppError, AppResult};
 
 use super::claude_code;
-use super::complete::{run_complete, run_structured_complete};
+use super::complete::{run_complete, run_complete_with_effort, run_structured_complete};
 use super::detect::detect;
 use super::stream::run_stream;
 use super::CliAgentBackend;
@@ -100,6 +100,25 @@ impl AiProvider for CliAgentClient {
         _temperature: Option<f64>,
     ) -> AppResult<String> {
         run_complete(app, self.backend.as_ref(), model, system, user).await
+    }
+
+    async fn complete_with_effort(
+        &self,
+        app: &AppHandle,
+        req: &AiGenerateRequest,
+    ) -> AppResult<(String, Usage)> {
+        let (system, user) = structured::plain_prompt(req);
+        let text = run_complete_with_effort(
+            app,
+            self.backend.as_ref(),
+            &req.model,
+            &system,
+            &user,
+            req.effort.as_deref(),
+        )
+        .await?;
+        // A CLI agent reports no usage — same contract as `complete_structured`.
+        Ok((text, Usage::default()))
     }
 
     async fn complete_structured(

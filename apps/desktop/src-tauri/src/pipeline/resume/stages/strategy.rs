@@ -240,7 +240,8 @@ impl<'a> Stage<QualityCtx<'a>> for Strategy {
                         &user,
                         ResumeStrategy::EXAMPLE,
                         Some(&ResumeStrategy::schema()),
-                        ctx.input.effort,
+                        // Mechanical stage: the user's effort, else the lowest tier.
+                        ctx.stage_effort(NAME),
                     )
                     .await?
             }

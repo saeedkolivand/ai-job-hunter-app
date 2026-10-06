@@ -77,7 +77,7 @@ pub(super) fn body_for(id: ProviderId, model: &str, intent: Option<&str>) -> Val
 /// set — the per-test variations override the one field they are about.
 pub(super) fn structured_call(response_format: Value) -> StructuredCall<'static> {
     StructuredCall {
-        response_format,
+        response_format: Some(response_format),
         effort: None,
         max_tokens: None,
     }

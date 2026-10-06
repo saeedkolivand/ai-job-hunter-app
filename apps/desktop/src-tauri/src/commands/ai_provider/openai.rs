@@ -129,6 +129,30 @@ impl AiProvider for OpenAiClient {
             .await
     }
 
+    /// Plain text, but with the request's `reasoning_effort` and token limit
+    /// (gated per model exactly as `chat_stream` gates them) — no
+    /// `response_format`. Also what Ollama Cloud's gpt-oss reaches.
+    async fn complete_with_effort(
+        &self,
+        app: &AppHandle,
+        req: &AiGenerateRequest,
+    ) -> AppResult<(String, Usage)> {
+        let (system, user) = structured::plain_prompt(req);
+        self.complete_impl(
+            app,
+            &req.model,
+            &system,
+            &user,
+            req.temperature,
+            Some(StructuredCall {
+                response_format: None,
+                effort: req.effort.as_deref(),
+                max_tokens: req.max_tokens,
+            }),
+        )
+        .await
+    }
+
     /// Native constrained decoding via `response_format` — strict
     /// `json_schema` when the caller supplied a schema, else `json_object`
     /// (see [`structured::openai_response_format`]). The prompt still carries
@@ -161,7 +185,7 @@ impl AiProvider for OpenAiClient {
             &user,
             structured::structured_temperature(self, req),
             Some(StructuredCall {
-                response_format: structured::openai_response_format(schema),
+                response_format: Some(structured::openai_response_format(schema)),
                 effort: req.effort.as_deref(),
                 max_tokens: req.max_tokens,
             }),

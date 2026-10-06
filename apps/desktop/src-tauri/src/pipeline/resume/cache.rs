@@ -66,7 +66,7 @@ use crate::pipeline::Completer;
 /// Test-pinned (`prompt_version_is_pinned`): the pin exists so that editing a
 /// prompt makes the test fail and the author has to decide, rather than
 /// shipping a silent stale-cache bug.
-pub const PIPELINE_PROMPT_VERSION: u32 = 1;
+pub const PIPELINE_PROMPT_VERSION: u32 = 2;
 
 /// TTL for a cached stage artifact. Seven days, matching the `company_brief`
 /// namespace: the same reasoning applies (a posting's requirements do not

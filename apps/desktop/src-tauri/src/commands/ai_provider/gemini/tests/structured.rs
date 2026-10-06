@@ -169,3 +169,24 @@ fn complete_body_carries_the_thinking_level_only_where_the_streaming_body_would(
         );
     }
 }
+
+/// The plain-text effort path (`complete_with_effort`): `json: false` sends no
+/// JSON mode/schema, and the token cap still rides along.
+#[test]
+fn a_plain_call_sends_no_json_mode() {
+    let body = build_complete_body(
+        "gemini-2.5-flash",
+        "sys",
+        "user",
+        None,
+        Some(StructuredCall {
+            json: false,
+            max_tokens: Some(300),
+            ..structured_call()
+        }),
+    );
+    let config = &body["generationConfig"];
+    assert!(config.get("responseMimeType").is_none(), "{body}");
+    assert!(config.get("responseSchema").is_none(), "{body}");
+    assert_eq!(config["maxOutputTokens"], json!(300));
+}

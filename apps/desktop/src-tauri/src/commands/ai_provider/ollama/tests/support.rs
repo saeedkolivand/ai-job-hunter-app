@@ -39,7 +39,7 @@ pub(super) fn sampling_for(req: &AiGenerateRequest) -> SamplingProfile {
 /// per-test variations override the one field they are about.
 pub(super) fn structured_call(format: Value) -> super::super::chat::StructuredCall<'static> {
     super::super::chat::StructuredCall {
-        format,
+        format: Some(format),
         effort: None,
         max_tokens: None,
         context_window: None,
