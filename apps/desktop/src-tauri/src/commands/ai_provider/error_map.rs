@@ -4,7 +4,7 @@
 use serde_json::Value;
 use tauri::AppHandle;
 
-use crate::error::AppError;
+use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, AiStreamChunk, AiStreamChunkError, AI_STREAM};
 
 use super::ProviderId;
@@ -129,16 +129,57 @@ fn redact_stream_error_message(message: &str) -> String {
     crate::commands::support::redact_lines(message)
 }
 
+/// Shortest secret stripped verbatim: an empty/tiny needle would mangle the
+/// whole message (and a 1-3 char "key" is not a credential worth matching).
+const MIN_SECRET_LEN: usize = 8;
+
 /// Redact a model-list / key-probe failure before it crosses IPC into the
 /// settings UI (`ModelPicker` shows the string verbatim). Provider error text
-/// is upstream-controlled and can echo the request (an auth header, a
-/// base-url query key, a key fragment in the body); same redactor as
-/// [`redact_stream_error_message`], plus a length bound (200 chars) since the
-/// upstream body is arbitrary. Empty stays empty.
-pub fn redact_provider_error(e: AppError) -> AppError {
+/// is upstream-controlled and can echo the request. Two passes: (1) every
+/// known `secrets` value is replaced verbatim (shape-independent, so a bare
+/// `AIza…`/`gsk_…` key or an `x-api-key:` header echo cannot survive), skipping
+/// any shorter than [`MIN_SECRET_LEN`]; (2) the shape redactor
+/// ([`redact_stream_error_message`]) plus a 200-char bound, since the upstream
+/// body is arbitrary. Always `AppError::Provider` (the wire is a string).
+pub fn redact_provider_error(e: AppError, secrets: &[&str]) -> AppError {
+    let mut text = e.to_string();
+    let mut needles: Vec<&str> = secrets
+        .iter()
+        .copied()
+        .filter(|s| s.len() >= MIN_SECRET_LEN)
+        .collect();
+    needles.sort_by_key(|s| std::cmp::Reverse(s.len()));
+    for needle in needles {
+        text = text.replace(needle, "<credential-redacted>");
+    }
     AppError::Provider(crate::observability::sanitize_reason(
-        &redact_stream_error_message(&e.to_string()),
+        &redact_stream_error_message(&text),
     ))
+}
+
+/// The one error-shaping step both `ai_list_provider_models` and
+/// `ai_test_provider_key` run on their result. Derives the secrets from what
+/// the caller holds: the stored key (raw and trimmed), plus the base URL's
+/// userinfo password and query values. Secrets are only compared, never
+/// logged.
+pub fn finish_provider_result<T>(
+    res: AppResult<T>,
+    stored_key: Option<&str>,
+    base_url: Option<&str>,
+) -> AppResult<T> {
+    res.map_err(|e| {
+        let mut secrets: Vec<String> = Vec::new();
+        if let Some(k) = stored_key {
+            secrets.push(k.to_string());
+            secrets.push(k.trim().to_string());
+        }
+        if let Some(url) = base_url.and_then(|u| reqwest::Url::parse(u).ok()) {
+            secrets.extend(url.password().map(str::to_string));
+            secrets.extend(url.query_pairs().map(|(_, v)| v.into_owned()));
+        }
+        let refs: Vec<&str> = secrets.iter().map(String::as_str).collect();
+        redact_provider_error(e, &refs)
+    })
 }
 
 /// Emit the terminal `ai:stream` error event the renderer's stream reader expects.

@@ -63,8 +63,8 @@ pub use embeddings::{
     compare, embed_text, EmbeddingSpace, EmbeddingVector, EMBEDDING_VECTOR_VERSION,
 };
 pub use error_map::{
-    emit_stream_error, extract_error_message, friendly_api_error, map_completion_transport_error,
-    redact_provider_error,
+    emit_stream_error, extract_error_message, finish_provider_result, friendly_api_error,
+    map_completion_transport_error, redact_provider_error,
 };
 pub use sampling::{
     resolve_intent, Intent, ModelCapabilities, SamplingProfile, TokenParam,

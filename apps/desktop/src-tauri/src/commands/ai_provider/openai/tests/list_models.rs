@@ -214,17 +214,24 @@ async fn a_key_echoed_in_an_upstream_error_body_never_reaches_the_wire_error() {
     Mock::given(method("GET"))
         .and(path("/models"))
         .respond_with(ResponseTemplate::new(400).set_body_json(json!({
-            "error": { "message": "bad header Authorization: Bearer sk-TESTKEY123456 (?key=TESTKEY123456)" }
+            "error": { "message": "bad x-goog-api-key: AIzaSyTESTKEYabcdefghijklmnop" }
         })))
         .mount(&server)
         .await;
 
     let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
     let err = client
-        .list_models_transport(Some("sk-TESTKEY123456"))
+        .list_models_transport(Some("AIzaSyTESTKEYabcdefghijklmnop"))
         .await
         .expect_err("a 400 must reject");
-    let wire = crate::commands::ai_provider::redact_provider_error(err).to_string();
+    assert!(err.to_string().contains("AIzaSyTESTKEYabcdefghijklmnop"));
+    let wire = crate::commands::ai_provider::finish_provider_result::<()>(
+        Err(err),
+        Some("AIzaSyTESTKEYabcdefghijklmnop"),
+        None,
+    )
+    .unwrap_err()
+    .to_string();
     assert!(
         !wire.contains("TESTKEY"),
         "key reached the wire error: {wire}"

@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-use crate::commands::ai_provider::{redact_provider_error, resolve_by_name};
+use crate::commands::ai_provider::{finish_provider_result, resolve_by_name};
 use crate::credentials::CredentialStore;
 use crate::error::AppResult;
 
@@ -52,13 +52,18 @@ pub async fn ai_test_provider_key(
 ) -> Value {
     // The provider resolves its own credentials/transport (keychain key + client,
     // or a CLI binary check) — this command just dispatches.
-    let provider_client = match resolve_by_name(&provider, base_url) {
+    let provider_client = match resolve_by_name(&provider, base_url.clone()) {
         Ok(p) => p,
         Err(e) => return json!({ "success": false, "error": e }),
     };
-    match provider_client.test_key(&app).await {
+    let key = get_provider_key(&app, &provider);
+    match finish_provider_result(
+        provider_client.test_key(&app).await,
+        key.as_deref(),
+        base_url.as_deref(),
+    ) {
         Ok(()) => json!({ "success": true }),
-        Err(e) => json!({ "success": false, "error": redact_provider_error(e) }),
+        Err(e) => json!({ "success": false, "error": e }),
     }
 }
 
@@ -68,11 +73,14 @@ pub async fn ai_list_provider_models(
     provider: String,
     base_url: Option<String>,
 ) -> AppResult<Value> {
-    let provider_client = resolve_by_name(&provider, base_url)?;
-    Ok(json!(provider_client
-        .list_models(&app)
-        .await
-        .map_err(redact_provider_error)?))
+    let provider_client = resolve_by_name(&provider, base_url.clone())?;
+    let key = get_provider_key(&app, &provider);
+    let models = finish_provider_result(
+        provider_client.list_models(&app).await,
+        key.as_deref(),
+        base_url.as_deref(),
+    )?;
+    Ok(json!(models))
 }
 
 /// Capability probe for a provider/model. Network-free, but NOT side-effect

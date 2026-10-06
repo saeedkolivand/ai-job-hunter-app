@@ -177,18 +177,49 @@ fn redact_provider_error_strips_a_key_echoed_by_the_upstream_body() {
     let err = friendly_api_error(ProviderId::OpenAi, reqwest::StatusCode::BAD_REQUEST, body);
     // Precondition: the unredacted mapping really does carry the key.
     assert!(err.to_string().contains("sk-TESTKEY123456"));
-    let text = redact_provider_error(err).to_string();
+    let text = redact_provider_error(err, &[]).to_string();
     assert!(!text.contains("TESTKEY"), "key survived: {text}");
     assert!(!text.contains("gw.example.com"), "host survived: {text}");
 }
 
 #[test]
 fn redact_provider_error_bounds_length_and_keeps_an_ordinary_message() {
-    let long = redact_provider_error(AppError::Provider("x".repeat(5000))).to_string();
+    let long = redact_provider_error(AppError::Provider("x".repeat(5000)), &[]).to_string();
     assert!(long.chars().count() <= 201, "unbounded: {}", long.len());
     let msg = "openai: invalid or unauthorized API key.";
     assert_eq!(
-        redact_provider_error(AppError::Config(msg.into())).to_string(),
+        redact_provider_error(AppError::Config(msg.into()), &[]).to_string(),
         msg
     );
+}
+
+#[test]
+fn redact_provider_error_strips_known_secrets_verbatim_and_skips_short_ones() {
+    let key = "AIzaSyTESTKEYabcdefghijklmnop";
+    let e = AppError::Provider(format!("x-goog-api-key: {key} rejected; pw hunter22, id 7"));
+    let text = redact_provider_error(e, &[key, "", "7", "hunter22"]).to_string();
+    assert!(!text.contains("TESTKEY"), "bare key survived: {text}");
+    assert!(!text.contains("hunter22"), "secret survived: {text}");
+    assert!(
+        text.contains("id 7"),
+        "short needle must be skipped: {text}"
+    );
+}
+
+#[test]
+fn finish_provider_result_collects_key_and_base_url_secrets_and_passes_ok_through() {
+    let e =
+        AppError::Provider("bad AIzaSyTESTKEYabcdefghijklmnop and gwsecret99 and pass12345".into());
+    let res: AppResult<()> = Err(e);
+    let out = finish_provider_result(
+        res,
+        Some("  AIzaSyTESTKEYabcdefghijklmnop "),
+        Some("https://u:pass12345@gw.example.com/v1?token=gwsecret99"),
+    )
+    .unwrap_err()
+    .to_string();
+    for s in ["TESTKEY", "gwsecret99", "pass12345"] {
+        assert!(!out.contains(s), "{s} survived: {out}");
+    }
+    assert_eq!(finish_provider_result(Ok(3), Some("k"), None).unwrap(), 3);
 }
