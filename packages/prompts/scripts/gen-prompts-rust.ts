@@ -43,97 +43,21 @@ import {
   TEMPLATE_OPENERS_IT,
 } from '../src/generate/natural-voice/natural-voice.js';
 import { ATS_PRECEDENCE } from '../src/generate/resume/resume.js';
-import {
-  RESUME_CONVENTION_LOCALES,
-  type ResumeConventions,
-  resumeConventions,
-} from '../src/locale/index.js';
+import { rustResumeConventions } from './gen-prompts-rust/resume-conventions.js';
+import { rustArray, rustLookupFn, rustStrConst } from './gen-prompts-rust/rust-emit.js';
+
+export {
+  hasRustUnsafeChar,
+  rustArray,
+  rustLookupFn,
+  rustStrConst,
+  rustStringLiteral,
+} from './gen-prompts-rust/rust-emit.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '../../..');
 const OUT_FILE = 'apps/desktop/src-tauri/src/validate/content/lexicon.rs';
 const BLOCKS_OUT_FILE = 'apps/desktop/src-tauri/src/pipeline/resume/prompt_blocks.rs';
-
-/**
- * True when `entry` contains a character `JSON.stringify` would emit as a
- * `\uXXXX` escape: a C0 control character, DEL, or a LONE surrogate
- * (well-formed stringify, ES2019+, escapes unpaired surrogates the same way;
- * valid pairs come out as raw astral chars, which Rust accepts). `\uXXXX` is
- * valid JSON but NOT a valid Rust string escape (Rust needs the bracketed
- * `\u{XXXX}` form) — such a character surviving into an emitted array would
- * produce Rust source that fails to compile with a confusing "unknown
- * character escape" error far from its actual cause. Exported for its own
- * unit test.
- */
-export function hasRustUnsafeChar(entry: string): boolean {
-  for (let i = 0; i < entry.length; i += 1) {
-    const code = entry.charCodeAt(i);
-    if (code <= 0x1f || code === 0x7f) return true;
-    if (code >= 0xd800 && code <= 0xdfff) {
-      // NaN comparisons at end-of-string correctly read as "not a pair".
-      const next = entry.charCodeAt(i + 1);
-      if (code >= 0xdc00 || !(next >= 0xdc00 && next <= 0xdfff)) return true;
-      i += 1; // valid surrogate pair — emitted as a raw astral char
-    }
-  }
-  return false;
-}
-
-/**
- * One `&[&str]` const, formatted to match `cargo fmt`'s own choice: a single
- * line when the whole declaration fits within rustfmt's 100-col `max_width`,
- * else one entry per line (rustfmt's vertical list layout for the arrays this
- * module emits — words/short phrases, never short enough on average to
- * trigger rustfmt's separate horizontal-packing tactic). `cargo fmt --check`
- * (CI) is the backstop if a future word list ever lands outside that shape.
- *
- * Throws (rather than silently emitting invalid Rust) if any entry contains a
- * control character or lone surrogate — see {@link hasRustUnsafeChar}.
- */
-export function rustArray(name: string, entries: readonly string[]): string {
-  const offender = entries.find(hasRustUnsafeChar);
-  if (offender !== undefined) {
-    throw new Error(
-      `gen-prompts-rust: ${name} entry ${JSON.stringify(offender)} contains a control ` +
-        "character or lone surrogate — JSON.stringify's \\uXXXX escaping is not valid Rust " +
-        'string-literal syntax (Rust needs \\u{XXXX}). Fix the entry in natural-voice.ts and rerun.'
-    );
-  }
-  const items = entries.map((e) => JSON.stringify(e));
-  const singleLine = `const ${name}: &[&str] = &[${items.join(', ')}];`;
-  if (singleLine.length <= 100) return singleLine;
-  return `const ${name}: &[&str] = &[\n${items.map((e) => `    ${e},`).join('\n')}\n];`;
-}
-
-/**
- * `pub fn <name>(lang: &str) -> &'static [&'static str]` dispatching to the
- * curated `"en"`/`"de"`/`"it"` lists. Every OTHER language returns an EMPTY
- * slice, never the English list — `natural-voice.ts` sends an uncurated
- * language a generic, wordless directive (no word list at all; see its
- * `genericAntiAiTellLexical`/`genericAntiAiTellProse`), so falling back to
- * the English words here would flag a language the prompt never told to
- * avoid them (MEDIUM fix, PR #963 round 5).
- */
-export function rustLookupFn(
-  fnName: string,
-  doc: string,
-  enConst: string,
-  deConst: string,
-  itConst: string
-): string {
-  return `${doc}
-pub fn ${fnName}(lang: &str) -> &'static [&'static str] {
-    match lang {
-        "de" => ${deConst},
-        "en" => ${enConst},
-        "it" => ${itConst},
-        // Every other language gets the prompt's generic, wordless directive
-        // (see natural-voice.ts's genericAntiAiTellLexical/Prose) — there is
-        // no curated list to check it against.
-        _ => &[],
-    }
-}`;
-}
 
 function generate(): string {
   const body = [
@@ -203,159 +127,6 @@ function generate(): string {
     body,
     '',
   ].join('\n');
-}
-
-/**
- * A Rust `&'static str` literal for `value`.
- *
- * Unlike {@link hasRustUnsafeChar}, newline/CR/tab are ALLOWED — the prompt
- * blocks are multi-line templates and `JSON.stringify` emits those three as
- * `\n`/`\r`/`\t`, which Rust accepts verbatim. Strips them before delegating
- * to {@link hasRustUnsafeChar}'s control-char/lone-surrogate walk (rather than
- * re-implementing it), so the two functions can never drift on what counts as
- * unsafe. Every OTHER control character (and a lone surrogate) throws rather
- * than emitting source that fails to compile far from its cause.
- */
-export function rustStringLiteral(name: string, value: string): string {
-  if (hasRustUnsafeChar(value.replace(/[\n\r\t]/g, ''))) {
-    throw new Error(
-      `gen-prompts-rust: ${name} contains a control character or lone surrogate — ` +
-        "JSON.stringify's \\uXXXX escaping is not valid Rust string-literal syntax " +
-        '(Rust needs \\u{XXXX}).'
-    );
-  }
-  return JSON.stringify(value);
-}
-
-/**
- * One `pub const NAME: &str = "…";`, wrapped the way `cargo fmt` wraps it: a
- * single line while it fits rustfmt's 100-col `max_width`, otherwise the value
- * on its own 4-space-indented line (rustfmt cannot split a string literal, so
- * that is as far as it goes). Same tactic as `gen-ipc-rust.ts`'s
- * `genDateFilters`, and `cargo fmt --check` in CI is the backstop.
- */
-export function rustStrConst(doc: string, name: string, value: string): string {
-  const literal = rustStringLiteral(name, value);
-  const singleLine = `pub const ${name}: &str = ${literal};`;
-  const decl = singleLine.length <= 100 ? singleLine : `pub const ${name}: &str =\n    ${literal};`;
-  return `${doc}\n${decl}`;
-}
-
-/**
- * `headers: &[(id, name), …],` struct-literal field for one locale's
- * `headers` record, in the object's own key order (the canonical section
- * order each locale author used). The id side is one of the fixed
- * `ResumeSectionHeaderId` literals (ASCII, no escaping needed); only the
- * localized name can contain characters `rustStringLiteral` needs to guard.
- *
- * Wrapped one tuple per line, indented to `indent`, whenever the single-line
- * form would exceed rustfmt's 100-col `max_width` — same tactic as
- * {@link rustArray}, one level deeper because this is a struct field rather
- * than a top-level const (nine tuples never fits on one line for any
- * curated locale today, but the check stays honest rather than assuming
- * that never changes).
- */
-function rustHeadersField(c: ResumeConventions, indent: number): string {
-  const pad = ' '.repeat(indent);
-  const entries = Object.entries(c.headers).map(
-    ([id, name]) => `(${JSON.stringify(id)}, ${rustStringLiteral(id, name)})`
-  );
-  const singleLine = `${pad}headers: &[${entries.join(', ')}],`;
-  if (singleLine.length <= 100) return singleLine;
-  const inner = entries.map((e) => `${pad}    ${e},`).join('\n');
-  return `${pad}headers: &[\n${inner}\n${pad}],`;
-}
-
-/**
- * `pub fn resume_conventions(lang: &str) -> ResumeConventions` — the Rust
- * mirror of `locale/index.ts`'s `resumeConventions`, including its normalization
- * (first two chars, lowercased) and its English fallback for an uncurated
- * locale. Built by CALLING the real TS function once per curated locale, so the
- * two can never disagree about a header.
- *
- * `ResumeConventions.header(section_id)` looks up by the SAME canonical
- * `SectionId` Debug name (`format!("{id:?}")`, e.g. `"Summary"`) the TS
- * `ResumeSectionHeaderId` keys use — one key space on both sides, so this
- * codegen needs no separate id-name mapping table.
- */
-function rustResumeConventions(): string {
-  const arms = [...RESUME_CONVENTION_LOCALES]
-    .sort()
-    .filter((locale) => locale !== 'en')
-    .map((locale) => {
-      const c = resumeConventions(locale);
-      return `        ${rustStringLiteral(`resume_conventions(${locale})`, locale)} => ResumeConventions {
-${rustHeadersField(c, 12)}
-            date_example: ${rustStringLiteral('dateExample', c.dateExample)},
-        },`;
-    })
-    .join('\n');
-  const en = resumeConventions('en');
-  return `/// Localized standard résumé section headers + a market-conventional date
-/// range example.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ResumeConventions {
-    /// (canonical \`SectionId\` Debug name, localized header) pairs — every
-    /// ordered id \`locale::resume::section_order_for\` can emit has an entry,
-    /// generated from the TS \`Record<ResumeSectionHeaderId, string>\`, which
-    /// the compiler refuses to build unless every locale names every id.
-    headers: &'static [(&'static str, &'static str)],
-    pub date_example: &'static str,
-}
-
-impl ResumeConventions {
-    /// Localized header for \`section_id\`'s canonical \`SectionId\` Debug name
-    /// (e.g. \`"Summary"\`, \`"Certifications"\`). Falls back to \`section_id\`
-    /// itself — unreachable for any id \`locale::resume::section_order_for\`
-    /// emits, since \`headers\` is total over that set, but cheaper than a
-    /// panic for a caller that passes an id outside it. Takes \`section_id\`'s
-    /// own lifetime (rather than \`&'static str\`) so a caller can pass a
-    /// borrowed \`format!(...)\` temporary, like \`section_order_prompt_list\`
-    /// does.
-    pub fn header<'a>(&self, section_id: &'a str) -> &'a str {
-        for &(id, name) in self.headers {
-            if id == section_id {
-                return name;
-            }
-        }
-        section_id
-    }
-
-    /// Every canonical \`SectionId\` Debug name this locale names a header for,
-    /// in the curated order. Lets a guard enumerate the ID axis from the data
-    /// itself rather than restating it as a parallel literal list — which is
-    /// how \`header\`'s silent \`section_id\` fallback could otherwise become
-    /// reachable without any test noticing.
-    pub fn ids(&self) -> impl Iterator<Item = &'static str> {
-        self.headers.iter().map(|&(id, _)| id)
-    }
-}
-
-/// Every locale \`resume_conventions\` has a curated entry for, mirrored from
-/// the TS \`RESUME_CONVENTION_LOCALES\`. The companion to
-/// [\`ResumeConventions::ids\`] for the OTHER axis: a guard loops over this
-/// instead of hardcoding the locale list, so a locale added on the TS side
-/// cannot slip past a Rust-side check that never visits it.
-pub const RESUME_CONVENTION_LOCALES: &[&str] = &[${[...RESUME_CONVENTION_LOCALES]
-    .sort()
-    .map((l) => JSON.stringify(l))
-    .join(', ')}];
-
-/// Résumé conventions for \`lang\`, falling back to English for any locale the
-/// prompt side has no curated entry for — the same normalization
-/// (first two characters, lowercased) and the same fallback as the TS
-/// \`resumeConventions\`.
-pub fn resume_conventions(lang: &str) -> ResumeConventions {
-    let key: String = lang.chars().take(2).flat_map(char::to_lowercase).collect();
-    match key.as_str() {
-${arms}
-        // "en" and every uncurated locale.
-        _ => ResumeConventions {
-${rustHeadersField(en, 12)}
-            date_example: ${rustStringLiteral('dateExample', en.dateExample)},
-        },
-    }
-}`;
 }
 
 /**

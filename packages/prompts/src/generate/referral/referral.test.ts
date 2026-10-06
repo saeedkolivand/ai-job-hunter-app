@@ -39,6 +39,12 @@ const BASE: Parameters<typeof buildReferralPrompt>[0] = {
   format: 'email',
 };
 
+const extractResume = (u: string): string => {
+  const m = /<candidate_resume>([\s\S]*?)<\/candidate_resume>/.exec(u);
+  if (!m?.[1]) throw new Error('candidate_resume block not found in user prompt');
+  return m[1];
+};
+
 // ─── connection_note — hard cap constraint ────────────────────────────────────
 
 describe('buildReferralPrompt — connection_note cap', () => {
@@ -54,25 +60,13 @@ describe('buildReferralPrompt — connection_note cap', () => {
     expect(user).toMatch(/300/);
   });
 
-  it('the cap text is ABSENT from the system prompt for email', () => {
-    const { system } = buildReferralPrompt({ ...BASE, format: 'email' });
-    // The system prompt for email must not contain the character-limit rule.
-    expect(system).not.toMatch(/absolute hard limit of \d+ characters/i);
-  });
-
-  it('the cap text is ABSENT from the user prompt for email', () => {
-    const { user } = buildReferralPrompt({ ...BASE, format: 'email' });
-    expect(user).not.toMatch(/hard constraint/i);
-  });
-
-  it('the cap text is ABSENT from the system prompt for linkedin_message', () => {
-    const { system } = buildReferralPrompt({ ...BASE, format: 'linkedin_message' });
-    expect(system).not.toMatch(/absolute hard limit of \d+ characters/i);
-  });
-
-  it('the cap text is ABSENT from the user prompt for linkedin_message', () => {
-    const { user } = buildReferralPrompt({ ...BASE, format: 'linkedin_message' });
-    expect(user).not.toMatch(/hard constraint/i);
+  it.each([
+    ['system', 'email', /absolute hard limit of \d+ characters/i],
+    ['user', 'email', /hard constraint/i],
+    ['system', 'linkedin_message', /absolute hard limit of \d+ characters/i],
+    ['user', 'linkedin_message', /hard constraint/i],
+  ] as const)('the cap text is ABSENT from the %s prompt for %s', (which, format, pattern) => {
+    expect(buildReferralPrompt({ ...BASE, format })[which]).not.toMatch(pattern);
   });
 
   it('uses CONNECTION_NOTE_LIMIT (300) as the default cap for connection_note', () => {
@@ -152,12 +146,6 @@ describe('buildReferralPrompt — context budget vs provider tier', () => {
     const { user: userSmall } = buildReferralPrompt(params, 'small');
 
     // Count the résumé content that made it through truncation inside the fence.
-    const extractResume = (u: string): string => {
-      const m = /<candidate_resume>([\s\S]*?)<\/candidate_resume>/.exec(u);
-      if (!m?.[1]) throw new Error('candidate_resume block not found in user prompt');
-      return m[1];
-    };
-
     const largeResumeLen = extractResume(userLarge).length;
     const smallResumeLen = extractResume(userSmall).length;
 
@@ -167,12 +155,6 @@ describe('buildReferralPrompt — context budget vs provider tier', () => {
   it('small résumé passes through unchanged for both tiers (no truncation)', () => {
     // RESUME_SMALL is tiny — both tiers must carry it in full.
     const params = { ...BASE, resume: RESUME_SMALL, format: 'email' as ReferralFormat };
-
-    const extractResume = (u: string): string => {
-      const m = /<candidate_resume>([\s\S]*?)<\/candidate_resume>/.exec(u);
-      if (!m?.[1]) throw new Error('candidate_resume block not found in user prompt');
-      return m[1];
-    };
 
     const { user: userLarge } = buildReferralPrompt(params, 'large');
     const { user: userSmall } = buildReferralPrompt(params, 'small');
@@ -186,28 +168,19 @@ describe('buildReferralPrompt — context budget vs provider tier', () => {
 // ─── Whitespace trimming ──────────────────────────────────────────────────────
 
 describe('buildReferralPrompt — whitespace trimming', () => {
-  it('trims leading/trailing whitespace from companyName in user prompt', () => {
-    const { user } = buildReferralPrompt({ ...BASE, companyName: '  Globex  ', format: 'email' });
-    // Trimmed value present, padded form absent.
-    expect(user).toContain('Globex');
-    expect(user).not.toContain('  Globex  ');
-  });
-
-  it('trims leading/trailing whitespace from jobTitle in user prompt', () => {
-    const { user } = buildReferralPrompt({
-      ...BASE,
-      jobTitle: '\n  Staff Engineer\n',
-      format: 'email',
-    });
-    expect(user).toContain('Staff Engineer');
-    expect(user).not.toContain('\n  Staff Engineer\n');
-  });
-
-  it('trims leading/trailing whitespace from personName in user prompt', () => {
-    const { user } = buildReferralPrompt({ ...BASE, personName: '  Lena  ', format: 'email' });
-    expect(user).toContain('Lena');
-    expect(user).not.toContain('  Lena  ');
-  });
+  it.each([
+    ['companyName', '  Globex  ', 'Globex'],
+    ['jobTitle', '\n  Staff Engineer\n', 'Staff Engineer'],
+    ['personName', '  Lena  ', 'Lena'],
+  ] as const)(
+    'trims leading/trailing whitespace from %s in user prompt',
+    (field, padded, trimmed) => {
+      const { user } = buildReferralPrompt({ ...BASE, [field]: padded, format: 'email' });
+      // Trimmed value present, padded form absent.
+      expect(user).toContain(trimmed);
+      expect(user).not.toContain(padded);
+    }
+  );
 });
 
 // ─── personRole optional ──────────────────────────────────────────────────────
@@ -383,32 +356,29 @@ describe('buildReferralImprovePrompt — channel + length cap', () => {
   it('large tier renders MORE résumé context than small tier', () => {
     const longResume = 'Jane Doe\nSenior Engineer\n\nEXPERIENCE\n' + 'X'.repeat(20_000);
     const params = { ...IMPROVE_BASE, resume: longResume };
-    const extract = (u: string): string => {
-      const m = /<candidate_resume>([\s\S]*?)<\/candidate_resume>/.exec(u);
-      if (!m?.[1]) throw new Error('candidate_resume block not found');
-      return m[1];
-    };
     const { user: large } = buildReferralImprovePrompt(params, 'large');
     const { user: small } = buildReferralImprovePrompt(params, 'small');
-    expect(extract(large).length).toBeGreaterThan(extract(small).length);
+    expect(extractResume(large).length).toBeGreaterThan(extractResume(small).length);
   });
 });
 
 // ─── Humanization (positive HUMANIZE_PROSE block) ─────────────────────────────
 
 describe('buildReferralPrompt / buildReferralImprovePrompt — humanization', () => {
-  it('the generate builder carries the positive HUMANIZE_PROSE cadence anchor', () => {
-    const { system } = buildReferralPrompt(BASE);
-    expect(system).toContain('CADENCE');
-  });
-
-  it('the improve builder carries the positive HUMANIZE_PROSE cadence anchor too', () => {
-    const { system } = buildReferralImprovePrompt(IMPROVE_BASE);
-    expect(system).toContain('CADENCE');
-  });
-
-  it('humanization is present even for the char-capped connection_note format', () => {
-    const { system } = buildReferralPrompt({ ...BASE, format: 'connection_note' });
-    expect(system).toContain('CADENCE');
+  it.each([
+    [
+      'the generate builder carries the positive HUMANIZE_PROSE cadence anchor',
+      () => buildReferralPrompt(BASE),
+    ],
+    [
+      'the improve builder carries the positive HUMANIZE_PROSE cadence anchor too',
+      () => buildReferralImprovePrompt(IMPROVE_BASE),
+    ],
+    [
+      'humanization is present even for the char-capped connection_note format',
+      () => buildReferralPrompt({ ...BASE, format: 'connection_note' }),
+    ],
+  ])('%s', (_name, build) => {
+    expect(build().system).toContain('CADENCE');
   });
 });
