@@ -168,3 +168,27 @@ fn redact_stream_error_message_leaves_an_ordinary_provider_error_unchanged() {
         assert_eq!(redacted, msg, "an ordinary message must pass through as-is");
     }
 }
+
+// ── redact_provider_error (model-list / key-probe → settings UI) ───────────
+
+#[test]
+fn redact_provider_error_strips_a_key_echoed_by_the_upstream_body() {
+    let body = r#"{"error":{"message":"bad request for Authorization: Bearer sk-TESTKEY123456 at https://gw.example.com/v1/models?key=TESTKEY123456"}}"#;
+    let err = friendly_api_error(ProviderId::OpenAi, reqwest::StatusCode::BAD_REQUEST, body);
+    // Precondition: the unredacted mapping really does carry the key.
+    assert!(err.to_string().contains("sk-TESTKEY123456"));
+    let text = redact_provider_error(err).to_string();
+    assert!(!text.contains("TESTKEY"), "key survived: {text}");
+    assert!(!text.contains("gw.example.com"), "host survived: {text}");
+}
+
+#[test]
+fn redact_provider_error_bounds_length_and_keeps_an_ordinary_message() {
+    let long = redact_provider_error(AppError::Provider("x".repeat(5000))).to_string();
+    assert!(long.chars().count() <= 201, "unbounded: {}", long.len());
+    let msg = "openai: invalid or unauthorized API key.";
+    assert_eq!(
+        redact_provider_error(AppError::Config(msg.into())).to_string(),
+        msg
+    );
+}

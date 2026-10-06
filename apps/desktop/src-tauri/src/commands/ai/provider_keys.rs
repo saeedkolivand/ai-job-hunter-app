@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-use crate::commands::ai_provider::resolve_by_name;
+use crate::commands::ai_provider::{redact_provider_error, resolve_by_name};
 use crate::credentials::CredentialStore;
 use crate::error::AppResult;
 
@@ -58,7 +58,7 @@ pub async fn ai_test_provider_key(
     };
     match provider_client.test_key(&app).await {
         Ok(()) => json!({ "success": true }),
-        Err(e) => json!({ "success": false, "error": e }),
+        Err(e) => json!({ "success": false, "error": redact_provider_error(e) }),
     }
 }
 
@@ -69,7 +69,10 @@ pub async fn ai_list_provider_models(
     base_url: Option<String>,
 ) -> AppResult<Value> {
     let provider_client = resolve_by_name(&provider, base_url)?;
-    Ok(json!(provider_client.list_models(&app).await?))
+    Ok(json!(provider_client
+        .list_models(&app)
+        .await
+        .map_err(redact_provider_error)?))
 }
 
 /// Capability probe for a provider/model. Network-free, but NOT side-effect

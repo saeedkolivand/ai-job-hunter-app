@@ -207,3 +207,26 @@ async fn list_models_transport_sends_the_bearer_header_when_a_key_is_present() {
         .expect("a keyed request must send the bearer header the mock requires");
     assert_eq!(models, vec![json!({ "name": "gpt-4o" })]);
 }
+
+#[tokio::test]
+async fn a_key_echoed_in_an_upstream_error_body_never_reaches_the_wire_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "error": { "message": "bad header Authorization: Bearer sk-TESTKEY123456 (?key=TESTKEY123456)" }
+        })))
+        .mount(&server)
+        .await;
+
+    let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
+    let err = client
+        .list_models_transport(Some("sk-TESTKEY123456"))
+        .await
+        .expect_err("a 400 must reject");
+    let wire = crate::commands::ai_provider::redact_provider_error(err).to_string();
+    assert!(
+        !wire.contains("TESTKEY"),
+        "key reached the wire error: {wire}"
+    );
+}

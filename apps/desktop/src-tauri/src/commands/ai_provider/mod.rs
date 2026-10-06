@@ -64,6 +64,7 @@ pub use embeddings::{
 };
 pub use error_map::{
     emit_stream_error, extract_error_message, friendly_api_error, map_completion_transport_error,
+    redact_provider_error,
 };
 pub use sampling::{
     resolve_intent, Intent, ModelCapabilities, SamplingProfile, TokenParam,

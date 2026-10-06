@@ -129,6 +129,18 @@ fn redact_stream_error_message(message: &str) -> String {
     crate::commands::support::redact_lines(message)
 }
 
+/// Redact a model-list / key-probe failure before it crosses IPC into the
+/// settings UI (`ModelPicker` shows the string verbatim). Provider error text
+/// is upstream-controlled and can echo the request (an auth header, a
+/// base-url query key, a key fragment in the body); same redactor as
+/// [`redact_stream_error_message`], plus a length bound (200 chars) since the
+/// upstream body is arbitrary. Empty stays empty.
+pub fn redact_provider_error(e: AppError) -> AppError {
+    AppError::Provider(crate::observability::sanitize_reason(
+        &redact_stream_error_message(&e.to_string()),
+    ))
+}
+
 /// Emit the terminal `ai:stream` error event the renderer's stream reader expects.
 pub fn emit_stream_error(app: &AppHandle, job_id: &str, message: &str) {
     emit_event(
