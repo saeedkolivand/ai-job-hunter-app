@@ -143,9 +143,10 @@ pub fn sanitize_reason(reason: &str) -> String {
     out
 }
 
-/// Redact every whitespace-delimited token of `text` — including the two
+/// Redact every whitespace-delimited token of `text` — including the
 /// multi-token credential SHAPES a single token can't see on its own:
-/// `Authorization: Bearer <token>` / `Authorization: Basic <token>`, and a
+/// header/JSON echoes (`header_echo`: `Authorization: <scheme> <token>`,
+/// `x-api-key: <v>`, `*-key:`/`*-token:`, bare `Bearer <v>`), and a
 /// spaced `key = <value>` assignment (`redact_token` alone only catches the
 /// glued `key=value` form). No length cap — that is [`sanitize_reason`]'s
 /// concern, applied on top of this.
@@ -167,23 +168,11 @@ pub fn redact_tokens(text: &str) -> String {
             .trim_matches(|c: char| matches!(c, ':' | ',' | ';'))
             .to_ascii_lowercase();
 
-        // `Authorization: Bearer <token>` / `Authorization: Basic <token>` —
-        // gated on the `Authorization:` marker directly preceding the scheme
-        // word (never on `Bearer`/`Basic` alone), so an unrelated "Basic auth
-        // failed" survives untouched — see
-        // `authorization_scheme_word_alone_is_not_a_marker`.
-        if marker == "authorization" && i + 2 < tokens.len() {
-            let scheme = tokens[i + 1]
-                .trim_matches(|c: char| matches!(c, ':' | ',' | ';'))
-                .to_ascii_lowercase();
-            if matches!(scheme.as_str(), "bearer" | "basic") {
-                out.push_str(&redact_token(token));
-                out.push(' ');
-                out.push_str(&redact_token(tokens[i + 1]));
-                out.push_str(" <credential-redacted>");
-                i += 3;
-                continue;
-            }
+        // Header-style / pretty-JSON echoes (`x-goog-api-key: v`, `Authorization:
+        // Bearer v`, `{"x-api-key": "v"}`, bare `Bearer v`) — see `header_echo`.
+        if let Some(used) = header_echo::redact_header_echo(&tokens, i, &mut out) {
+            i += used;
+            continue;
         }
 
         // A SPACED assignment (`token = value`, `secret = value`) — the
@@ -353,6 +342,8 @@ pub fn redact_token(token: &str) -> String {
         token.to_string()
     }
 }
+
+mod header_echo;
 
 #[cfg(test)]
 mod tests;

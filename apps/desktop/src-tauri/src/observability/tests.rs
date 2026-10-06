@@ -1,5 +1,7 @@
 use super::this_module_path;
 
+mod header_echoes;
+
 /// Pins the module path every `Span::begin`/`end`/`end_with` call actually
 /// logs under. `log::info!` with no explicit `target:` resolves to the
 /// module the macro is *written* in — this file — regardless of which

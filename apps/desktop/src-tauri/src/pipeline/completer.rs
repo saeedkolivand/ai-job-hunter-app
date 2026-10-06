@@ -247,6 +247,31 @@ impl Completer {
         Ok((provider, model, base_url, context_window))
     }
 
+    /// The provider-call seam's error scrub: every `Err` a provider call returns
+    /// through a `Completer` method passes here, so the stored key and the base
+    /// URL's secrets are stripped verbatim wherever the text goes next
+    /// (`emit_stream_error`, `job_fail`, the pipeline's persisted run record,
+    /// logs). Variant-preserving and uncapped (see
+    /// [`strip_secrets_in_place`](crate::commands::ai_provider::strip_secrets_in_place)).
+    ///
+    /// The key is read only on the error path (one keychain read per FAILED
+    /// call): the adapters resolve their own key inside the request, so this
+    /// seam never holds it on the success path. It is only compared, never
+    /// logged, and not retained.
+    pub(super) fn strip_secrets<T>(&self, res: AppResult<T>) -> AppResult<T> {
+        res.map_err(|e| {
+            let key = crate::commands::ai::get_provider_key(
+                &self.app,
+                self.provider.id().credential_key(),
+            );
+            crate::commands::ai_provider::strip_provider_secrets(
+                e,
+                key.as_deref(),
+                self.base_url.as_deref(),
+            )
+        })
+    }
+
     /// The app handle, so stages can reach managed state (caches, credentials) and
     /// emit events without threading `AppHandle` through every signature.
     pub fn app(&self) -> &AppHandle {
@@ -382,15 +407,17 @@ impl Completer {
         company: &str,
         role: &str,
     ) -> AppResult<String> {
-        crate::commands::ai_provider::search::fetch_company_brief(
-            &self.app,
-            self.provider.as_ref(),
-            &self.model,
-            route,
-            company,
-            role,
+        self.strip_secrets(
+            crate::commands::ai_provider::search::fetch_company_brief(
+                &self.app,
+                self.provider.as_ref(),
+                &self.model,
+                route,
+                company,
+                role,
+            )
+            .await,
         )
-        .await
     }
 
     /// Web-grounded market salary-range lookup through the active provider's
@@ -409,30 +436,33 @@ impl Completer {
         currency: &str,
     ) -> AppResult<String> {
         if self.provider.has_native_search(&self.model) {
-            return self
-                .provider
-                .research_salary(
-                    &self.app,
-                    &self.model,
-                    role,
-                    company,
-                    location,
-                    country,
-                    currency,
-                )
-                .await;
+            return self.strip_secrets(
+                self.provider
+                    .research_salary(
+                        &self.app,
+                        &self.model,
+                        role,
+                        company,
+                        location,
+                        country,
+                        currency,
+                    )
+                    .await,
+            );
         }
-        crate::commands::ai_provider::search::searched_research_salary(
-            &self.app,
-            self.provider.as_ref(),
-            &self.model,
-            role,
-            company,
-            location,
-            country,
-            currency,
+        self.strip_secrets(
+            crate::commands::ai_provider::search::searched_research_salary(
+                &self.app,
+                self.provider.as_ref(),
+                &self.model,
+                role,
+                company,
+                location,
+                country,
+                currency,
+            )
+            .await,
         )
-        .await
     }
 
     /// Web-search reference notes for a single application-question answer
@@ -449,20 +479,23 @@ impl Completer {
         company: &str,
     ) -> AppResult<String> {
         if self.provider.has_native_search(&self.model) {
-            return self
-                .provider
-                .research_answer(&self.app, &self.model, question, role, company)
-                .await;
+            return self.strip_secrets(
+                self.provider
+                    .research_answer(&self.app, &self.model, question, role, company)
+                    .await,
+            );
         }
-        crate::commands::ai_provider::search::searched_research_answer(
-            &self.app,
-            self.provider.as_ref(),
-            &self.model,
-            question,
-            role,
-            company,
+        self.strip_secrets(
+            crate::commands::ai_provider::search::searched_research_answer(
+                &self.app,
+                self.provider.as_ref(),
+                &self.model,
+                question,
+                role,
+                company,
+            )
+            .await,
         )
-        .await
     }
 
     /// Whether company research can actually run right now — a configured search

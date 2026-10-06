@@ -214,7 +214,7 @@ async fn a_key_echoed_in_an_upstream_error_body_never_reaches_the_wire_error() {
     Mock::given(method("GET"))
         .and(path("/models"))
         .respond_with(ResponseTemplate::new(400).set_body_json(json!({
-            "error": { "message": "bad x-goog-api-key: AIzaSyTESTKEYabcdefghijklmnop" }
+            "error": { "message": "bad credential AIzaSyTESTKEYabcdefghijklmnop" }
         })))
         .mount(&server)
         .await;

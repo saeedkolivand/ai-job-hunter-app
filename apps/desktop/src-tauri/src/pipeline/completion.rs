@@ -42,7 +42,7 @@ impl Completer {
     pub async fn stream(&self, job_id: &str, mut req: AiGenerateRequest) -> AppResult<()> {
         req.model = self.model.clone();
         vet_wire_request(&mut req)?;
-        self.provider.chat_stream(&self.app, job_id, &req).await
+        self.strip_secrets(self.provider.chat_stream(&self.app, job_id, &req).await)
     }
 
     /// Non-streaming completion through the active provider — the single-shot text
@@ -64,10 +64,11 @@ impl Completer {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
-        let (text, usage) = self
-            .provider
-            .complete_with_usage(&self.app, &self.model, system, user, temperature)
-            .await?;
+        let (text, usage) = self.strip_secrets(
+            self.provider
+                .complete_with_usage(&self.app, &self.model, system, user, temperature)
+                .await,
+        )?;
         self.record_spend(usage);
         Ok(text)
     }
@@ -124,7 +125,7 @@ impl Completer {
             self.context_window,
             effort,
         );
-        self.provider.chat_stream(&self.app, job_id, &req).await
+        self.strip_secrets(self.provider.chat_stream(&self.app, job_id, &req).await)
     }
 
     /// [`stream`](Self::stream), plus the completed answer text.
@@ -192,10 +193,11 @@ impl Completer {
         tools: &[ToolSpec],
         temperature: Option<f64>,
     ) -> AppResult<AgentTurn> {
-        let turn = self
-            .provider
-            .chat_with_tools(&self.app, &self.model, messages, tools, temperature)
-            .await?;
+        let turn = self.strip_secrets(
+            self.provider
+                .chat_with_tools(&self.app, &self.model, messages, tools, temperature)
+                .await,
+        )?;
         self.record_spend(turn.usage);
         Ok(turn)
     }
@@ -319,9 +321,11 @@ impl Completer {
             self.context_window,
             effort,
         );
-        self.provider
-            .complete_structured(&self.app, &req, schema_hint, schema)
-            .await
+        self.strip_secrets(
+            self.provider
+                .complete_structured(&self.app, &req, schema_hint, schema)
+                .await,
+        )
     }
 }
 

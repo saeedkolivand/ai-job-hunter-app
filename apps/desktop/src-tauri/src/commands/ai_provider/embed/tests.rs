@@ -6,3 +6,4 @@ mod adaptive_retry;
 mod helpers;
 mod pooling_and_metering;
 mod redacted_errors;
+mod redactor_keywords;

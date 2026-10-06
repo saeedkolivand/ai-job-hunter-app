@@ -175,41 +175,85 @@ const MIN_SECRET_LEN: usize = 8;
 /// ([`redact_stream_error_message`]) plus a 200-char bound, since the upstream
 /// body is arbitrary. Always `AppError::Provider` (the wire is a string).
 pub fn redact_provider_error(e: AppError, secrets: &[&str]) -> AppError {
-    let mut text = e.to_string();
+    AppError::Provider(crate::observability::sanitize_reason(
+        &redact_stream_error_message(&strip_text(&e.to_string(), secrets)),
+    ))
+}
+
+/// Replace every `secrets` value (>= [`MIN_SECRET_LEN`], longest first so a
+/// secret that contains a shorter one is removed whole) in `text` verbatim.
+/// Cost: one `str::replace` pass per qualifying secret (a handful per call).
+fn strip_text(text: &str, secrets: &[&str]) -> String {
     let mut needles: Vec<&str> = secrets
         .iter()
         .copied()
         .filter(|s| s.len() >= MIN_SECRET_LEN)
         .collect();
     needles.sort_by_key(|s| std::cmp::Reverse(s.len()));
-    for needle in needles {
-        text = text.replace(needle, "<credential-redacted>");
+    needles.into_iter().fold(text.to_string(), |t, n| {
+        t.replace(n, "<credential-redacted>")
+    })
+}
+
+/// Verbatim strip that keeps the error's VARIANT and does not cap its length —
+/// the form the provider-call seams (`Completer`, `embed_text`) need:
+/// `pipeline/stage.rs` matches `Timeout`, `is_empty_answer_length_cut` compares
+/// the exact `Provider` text, and `retriable()` keys on `Network`/`RateLimited`.
+/// A message holding no secret comes back byte-identical.
+pub fn strip_secrets_in_place(e: AppError, secrets: &[&str]) -> AppError {
+    let s = |m: String| strip_text(&m, secrets);
+    match e {
+        AppError::Config(m) => AppError::Config(s(m)),
+        AppError::Network(m) => AppError::Network(s(m)),
+        AppError::Provider(m) => AppError::Provider(s(m)),
+        AppError::Storage(m) => AppError::Storage(s(m)),
+        AppError::Parse(m) => AppError::Parse(s(m)),
+        AppError::Validation(m) => AppError::Validation(s(m)),
+        AppError::RateLimited(m) => AppError::RateLimited(s(m)),
+        AppError::Timeout(m) => AppError::Timeout(s(m)),
+        AppError::Message(m) => AppError::Message(s(m)),
+        AppError::Cancelled => AppError::Cancelled,
     }
-    AppError::Provider(crate::observability::sanitize_reason(
-        &redact_stream_error_message(&text),
-    ))
+}
+
+/// The secrets a provider call holds: the stored key (raw and trimmed), plus
+/// the base URL's userinfo password and query values. Only compared, never
+/// logged.
+fn provider_secrets(stored_key: Option<&str>, base_url: Option<&str>) -> Vec<String> {
+    let mut secrets: Vec<String> = Vec::new();
+    if let Some(k) = stored_key {
+        secrets.push(k.to_string());
+        secrets.push(k.trim().to_string());
+    }
+    if let Some(url) = base_url.and_then(|u| reqwest::Url::parse(u).ok()) {
+        secrets.extend(url.password().map(str::to_string));
+        secrets.extend(url.query_pairs().map(|(_, v)| v.into_owned()));
+    }
+    secrets
+}
+
+/// [`strip_secrets_in_place`] with the secrets derived from what a provider
+/// call holds (see [`provider_secrets`]).
+pub fn strip_provider_secrets(
+    e: AppError,
+    stored_key: Option<&str>,
+    base_url: Option<&str>,
+) -> AppError {
+    let secrets = provider_secrets(stored_key, base_url);
+    let refs: Vec<&str> = secrets.iter().map(String::as_str).collect();
+    strip_secrets_in_place(e, &refs)
 }
 
 /// The one error-shaping step both `ai_list_provider_models` and
-/// `ai_test_provider_key` run on their result. Derives the secrets from what
-/// the caller holds: the stored key (raw and trimmed), plus the base URL's
-/// userinfo password and query values. Secrets are only compared, never
-/// logged.
+/// `ai_test_provider_key` run on their result: [`redact_provider_error`] with
+/// the secrets from [`provider_secrets`].
 pub fn finish_provider_result<T>(
     res: AppResult<T>,
     stored_key: Option<&str>,
     base_url: Option<&str>,
 ) -> AppResult<T> {
     res.map_err(|e| {
-        let mut secrets: Vec<String> = Vec::new();
-        if let Some(k) = stored_key {
-            secrets.push(k.to_string());
-            secrets.push(k.trim().to_string());
-        }
-        if let Some(url) = base_url.and_then(|u| reqwest::Url::parse(u).ok()) {
-            secrets.extend(url.password().map(str::to_string));
-            secrets.extend(url.query_pairs().map(|(_, v)| v.into_owned()));
-        }
+        let secrets = provider_secrets(stored_key, base_url);
         let refs: Vec<&str> = secrets.iter().map(String::as_str).collect();
         redact_provider_error(e, &refs)
     })

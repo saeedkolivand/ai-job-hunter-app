@@ -118,7 +118,13 @@ pub async fn embed_text(
     let mut usage = Usage::default();
     let result = embed_adaptive(&metered, text, initial_cap, &mut usage).await;
     record_usage(app, provider.as_str(), &model, usage, base_url.as_deref());
-    let values = result?;
+    // Strip the stored key / base-URL secrets AFTER `embed_adaptive`'s
+    // context-length retry, so that matcher still reads the raw (source-redacted)
+    // provider text. Variant-preserving, uncapped; key read on the error path only.
+    let values = result.map_err(|e| {
+        let key = crate::commands::ai::get_provider_key(app, provider.credential_key());
+        super::strip_provider_secrets(e, key.as_deref(), base_url.as_deref())
+    })?;
     if values.is_empty() {
         return Err(AppError::Provider(format!(
             "{} returned an empty embedding.",
