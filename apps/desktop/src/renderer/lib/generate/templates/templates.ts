@@ -34,8 +34,34 @@ export const LETTER_LAYOUT_IDS = [
   'monogram',
 ] as const satisfies readonly LetterLayoutId[];
 
-/** Every template, ATS tier first. The two halves are merged here so `tsc` still fails when a `TemplateId` has no entry. */
-export const TEMPLATES: Record<TemplateId, DocTemplate> = { ...ATS_TEMPLATES, ...DESIGN_TEMPLATES };
+/** Picker order (the two unfiltered dropdowns render it as-is). */
+const TEMPLATE_ORDER = [
+  'classic',
+  'swiss-minimal',
+  'academic',
+  'atelier',
+  'meridian',
+  'throughline',
+  'portrait',
+  'lebenslauf',
+  'cadence',
+  'cologne-navy',
+  'regent',
+  'aria',
+  'saffron',
+  'jake',
+  'awesome',
+  'deedy',
+] as const satisfies readonly TemplateId[];
+
+// Merging the tier halves keeps tsc failing when a TemplateId has no entry; the
+// ordered map below then restores picker order (spread order would put ATS first).
+const MERGED: Record<TemplateId, DocTemplate> = { ...ATS_TEMPLATES, ...DESIGN_TEMPLATES };
+
+export const TEMPLATES = Object.fromEntries(TEMPLATE_ORDER.map((id) => [id, MERGED[id]])) as Record<
+  TemplateId,
+  DocTemplate
+>;
 
 /** Stable list of all template ids (kebab-case on the wire). */
 export const TEMPLATE_IDS = Object.keys(TEMPLATES) as TemplateId[];

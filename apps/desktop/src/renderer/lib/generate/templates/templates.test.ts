@@ -10,8 +10,34 @@ import {
   isTwoColumnTemplate,
   LETTER_LAYOUT_IDS,
   shouldClearAtsMode,
+  TEMPLATE_IDS,
   TEMPLATES,
 } from './templates';
+
+describe('TEMPLATE_IDS order', () => {
+  // Two unfiltered dropdowns render this order as-is; hand-written on purpose.
+  it('pins the picker order', () => {
+    expect(TEMPLATE_IDS).toEqual([
+      'classic',
+      'swiss-minimal',
+      'academic',
+      'atelier',
+      'meridian',
+      'throughline',
+      'portrait',
+      'lebenslauf',
+      'cadence',
+      'cologne-navy',
+      'regent',
+      'aria',
+      'saffron',
+      'jake',
+      'awesome',
+      'deedy',
+    ]);
+    expect(Object.keys(TEMPLATES)).toEqual([...TEMPLATE_IDS]);
+  });
+});
 
 describe('TEMPLATES', () => {
   const ids = Object.keys(TEMPLATES);
