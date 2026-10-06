@@ -4,13 +4,12 @@
 //!
 //! The crate has no `tauri::test` mock app, so the `Completer`/`embed_text`
 //! methods themselves cannot be called; these drive the same shaping function
-//! they call (`strip_provider_secrets`) on errors built from a REAL wiremock
-//! upstream response, and `call_sites_are_wrapped` pins that the seams call it.
+//! they call (`strip_provider_secrets`) on errors built by `friendly_api_error`
+//! from an upstream-shaped body (no real socket: a round trip through the
+//! process-global pooled client left keep-alive connections that flaked later
+//! tests), and `wiring_guard` pins that the seams call it.
 
 use std::mem::discriminant;
-
-use wiremock::matchers::method;
-use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::commands::ai_provider::stream::{
     empty_answer_error_for_test, is_empty_answer_length_cut,
@@ -23,31 +22,22 @@ use crate::error::AppError;
 const GEMINI_KEY: &str = "AIzaSyTESTKEYabcdefghijklmnopqrstu";
 const GROQ_KEY: &str = "gsk_TESTKEYabcdefghijklmnopqrstuvwx";
 
-/// A real HTTP round trip to a mock upstream that answers `status` with a body
-/// echoing `key`, mapped the way every adapter maps it.
-async fn upstream_error(status: u16, key: &str) -> AppError {
-    let server = MockServer::start().await;
+/// The error every adapter builds for an upstream `status` whose body echoes `key`.
+fn upstream_error(status: u16, key: &str) -> AppError {
     let body = format!(r#"{{"error":{{"message":"bad request, credential {key} rejected"}}}}"#);
-    Mock::given(method("POST"))
-        .respond_with(ResponseTemplate::new(status).set_body_string(body))
-        .mount(&server)
-        .await;
-    let resp = crate::net::http::shared()
-        .post(server.uri())
-        .send()
-        .await
-        .expect("mock upstream reachable");
-    let code = resp.status();
-    let text = resp.text().await.expect("body");
-    friendly_api_error(ProviderId::Gemini, code, &text)
+    friendly_api_error(
+        ProviderId::Gemini,
+        reqwest::StatusCode::from_u16(status).unwrap(),
+        &body,
+    )
 }
 
-#[tokio::test]
-async fn a_bare_key_echoed_by_the_upstream_is_stripped_and_the_variant_kept() {
+#[test]
+fn a_bare_key_echoed_by_the_upstream_is_stripped_and_the_variant_kept() {
     for key in [GEMINI_KEY, GROQ_KEY] {
         // 400/404/418 echo the body; 500 maps to a fixed message (nothing to strip).
         for (status, echoed) in [(400, true), (404, true), (418, true), (500, false)] {
-            let err = upstream_error(status, key).await;
+            let err = upstream_error(status, key);
             assert_eq!(
                 err.to_string().contains(key),
                 echoed,
@@ -117,54 +107,4 @@ fn a_message_without_a_secret_is_byte_identical_and_short_secrets_are_ignored() 
         matches!(&out, AppError::Provider(m) if *m == long),
         "uncapped"
     );
-}
-
-/// Deleting the strip at a seam fails nothing else (no mock app), so pin the
-/// call sites textually: every provider-call in `Completer`'s methods and the
-/// `embed_text` result both pass through the strip.
-#[test]
-fn call_sites_are_wrapped() {
-    let completion = include_str!("../../../../pipeline/completion.rs");
-    let completer = include_str!("../../../../pipeline/completer.rs");
-    for (src, calls) in [
-        (
-            completion,
-            &[
-                "chat_stream(",
-                "complete_with_usage(",
-                "chat_with_tools(",
-                "complete_structured(",
-            ][..],
-        ),
-        (
-            completer,
-            &[
-                "fetch_company_brief(",
-                "research_salary(",
-                "research_answer(",
-                "searched_research_salary(",
-                "searched_research_answer(",
-            ][..],
-        ),
-    ] {
-        for call in calls {
-            let hits: Vec<_> = src
-                .match_indices(call)
-                .filter(|(i, _)| src[..*i].ends_with(".") || src[..*i].ends_with("::"))
-                .collect();
-            assert!(!hits.is_empty(), "no call site for {call}");
-            for (i, _) in hits {
-                let window = &src[i.saturating_sub(220)..i];
-                assert!(
-                    window.contains("strip_secrets("),
-                    "{call} not wrapped near byte {i}"
-                );
-            }
-        }
-    }
-    let embeddings = include_str!("../../embeddings.rs");
-    let adaptive = embeddings
-        .find("embed_adaptive(&metered")
-        .expect("embed_adaptive call");
-    assert!(embeddings[adaptive..].contains("strip_provider_secrets("));
 }

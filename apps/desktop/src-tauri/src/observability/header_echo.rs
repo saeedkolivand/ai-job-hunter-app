@@ -37,20 +37,88 @@ fn is_credential_name(token: &str) -> bool {
     if !token.ends_with(':') {
         return false;
     }
-    let name = strip_edge(token).to_ascii_lowercase();
+    let quoted = token
+        .trim_start_matches(['{', '[', '(', ','])
+        .starts_with(['"', '\'']);
+    is_key_name(&strip_edge(token).to_ascii_lowercase(), quoted)
+}
+
+/// `name` (lowercase) is a credential field name; `quoted` = it was JSON-quoted.
+fn is_key_name(name: &str, quoted: bool) -> bool {
     let suffixed = ["-key", "-token", "-secret", "_key", "_token", "_secret"]
         .iter()
         .any(|s| name.ends_with(s))
         || name == "apikey";
-    let quoted = token
-        .trim_start_matches(['{', '[', '(', ','])
-        .starts_with(['"', '\'']);
     suffixed
         || (quoted
             && matches!(
-                name.as_str(),
+                name,
                 "key" | "token" | "secret" | "password" | "passwd" | "auth"
             ))
+}
+
+/// Compact forms where the name and its value share one whitespace token:
+/// `{"Authorization":"Bearer`, `x-api-key:K`, `"api_key":"K"`, `Authorization=Bearer`.
+/// Scans each `:`/`=` once, reading the name run behind it; URLs are left to
+/// `redact_token`'s own `<url-redacted>`.
+fn redact_embedded(tokens: &[&str], i: usize, out: &mut String) -> Option<usize> {
+    let token = tokens[i];
+    if token.contains("://") {
+        return None;
+    }
+    let b = token.as_bytes();
+    for (p, &c) in b.iter().enumerate() {
+        if c != b':' && c != b'=' {
+            continue;
+        }
+        let mut e = p;
+        if e > 0 && matches!(b[e - 1], b'"' | b'\'') {
+            e -= 1;
+        }
+        let mut s = e;
+        while s > 0 && (b[s - 1].is_ascii_alphanumeric() || matches!(b[s - 1], b'_' | b'-')) {
+            s -= 1;
+        }
+        if s == e {
+            continue;
+        }
+        let name = token[s..e].to_ascii_lowercase();
+        let quoted = s > 0 && matches!(b[s - 1], b'"' | b'\'');
+        let auth = name.ends_with("authorization");
+        if !auth && !is_key_name(&name, quoted) {
+            continue;
+        }
+        let vstart = p
+            + 1
+            + b[p + 1..]
+                .iter()
+                .take_while(|c| matches!(c, b'"' | b'\'' | b'{' | b'['))
+                .count();
+        let vend = vstart
+            + b[vstart..]
+                .iter()
+                .rposition(|c| !matches!(c, b'"' | b'\'' | b'}' | b']' | b',' | b';'))
+                .map_or(0, |n| n + 1);
+        if vstart >= vend {
+            continue;
+        }
+        let value = &token[vstart..vend];
+        if is_scheme(value) {
+            tokens.get(i + 1)?;
+            out.push_str(token);
+            out.push(' ');
+            out.push_str(PLACEHOLDER);
+            return Some(2);
+        }
+        if auth && (e == p || value.len() < 8) {
+            continue;
+        }
+        out.push_str(&token[..vstart]);
+        out.push_str(PLACEHOLDER);
+        out.push_str(&token[vend..]);
+        return Some(1);
+    }
+    None
 }
 
 /// A bare credential-shaped word after `Bearer`: long, token charset, and not a
@@ -103,6 +171,10 @@ pub(super) fn redact_header_echo(tokens: &[&str], i: usize, out: &mut String) ->
         }
         out.push_str(PLACEHOLDER);
         return Some(2);
+    }
+
+    if let Some(used) = redact_embedded(tokens, i, out) {
+        return Some(used);
     }
 
     // Bare `Bearer <credential>` with no `Authorization:` before it.

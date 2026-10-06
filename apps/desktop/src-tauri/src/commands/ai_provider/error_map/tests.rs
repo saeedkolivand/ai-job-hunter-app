@@ -3,6 +3,7 @@
 use super::*;
 
 mod seam_strip;
+mod wiring_guard;
 
 // ── map_completion_transport_error (is_timeout() → Timeout/Network) ────────
 //

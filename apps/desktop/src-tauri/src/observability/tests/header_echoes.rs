@@ -57,6 +57,43 @@ fn each_header_and_json_echo_form_is_redacted() {
             GEMINI,
         ),
         ("json token", format!(r#"{{"token": "{GROQ}"}}"#), GROQ),
+        (
+            "compact json Authorization",
+            format!(r#"{{"Authorization":"Bearer {GROQ}"}}"#),
+            GROQ,
+        ),
+        (
+            "nested compact json",
+            format!(r#"{{"headers":{{"Authorization":"Bearer {GEMINI}"}}}}"#),
+            GEMINI,
+        ),
+        (
+            "compact json x-api-key",
+            format!(r#"{{"x-api-key":"{GROQ}"}}"#),
+            GROQ,
+        ),
+        (
+            "compact json api_key",
+            format!(r#"{{"api_key":"{GEMINI}","n":1}}"#),
+            GEMINI,
+        ),
+        (
+            "compact json bare authorization",
+            format!(r#"{{"authorization":"{GROQ}"}}"#),
+            GROQ,
+        ),
+        ("glued x-api-key", format!("sent x-api-key:{GROQ} ok"), GROQ),
+        ("glued api-key", format!("api-key:{GEMINI} bad"), GEMINI),
+        (
+            "glued authorization:Bearer",
+            format!("authorization:Bearer {GROQ} bad"),
+            GROQ,
+        ),
+        (
+            "authorization=Bearer",
+            format!("Authorization=Bearer {GROQ} bad"),
+            GROQ,
+        ),
     ] {
         let out = redact_tokens(&line);
         assert!(!out.contains(secret), "{label} survived: {out}");
@@ -74,6 +111,10 @@ fn ordinary_messages_pass_byte_identical() {
         "Basic auth failed",
         "Authorization failed for this request",
         "invalid token: expired",
+        "x-ratelimit-reset-tokens: 1s",
+        "x-ratelimit-reset-tokens:1s max_tokens:4096 retry-after:30",
+        "Authorization:failed",
+        "limit=100 offset=20 time 12:34",
         "no key: configured",
         "max-tokens exceeded, please retry",
         r#"{"max_tokens": 4096, "message": "too many tokens"}"#,
