@@ -99,6 +99,7 @@ vi.mock('@wxt-dev/browser', () => {
     browser: {
       runtime: {
         id: 'test-extension-id',
+        getURL: vi.fn((path: string) => `chrome-extension://test-extension-id/${path}`),
         onMessage: { addListener: vi.fn() },
         onStartup: { addListener: vi.fn() },
         onInstalled: { addListener: vi.fn() },
@@ -207,7 +208,11 @@ export function send(req: PopupRequest): Promise<PopupResponse> {
   return new Promise<PopupResponse>((resolve, reject) => {
     const kept = listener(
       req,
-      { id: EXTENSION_ID } as Browser.runtime.MessageSender,
+      // A popup-like sender: an extension page (`url` under the extension origin).
+      {
+        id: EXTENSION_ID,
+        url: `chrome-extension://${EXTENSION_ID}/popup.html`,
+      } as Browser.runtime.MessageSender,
       (response?: PopupResponse) => {
         if (response) resolve(response);
         else reject(new Error('listener called sendResponse with no response'));

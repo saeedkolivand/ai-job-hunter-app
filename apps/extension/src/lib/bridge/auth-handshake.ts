@@ -122,6 +122,11 @@ export class Handshake {
       computeProof(token, 'server', serverNonce, clientNonce),
     ]);
     const live = this.host.transport();
+    // Same stale-transport rule as the final authenticated-set below: the
+    // challenge was issued on `transport`, so the proof is only valid there. A
+    // newer attach may have replaced it during the await — never send this
+    // proof (or this token's handshake) onto a different socket.
+    if (live && live !== transport) return;
     if (!live) {
       // Socket closed while we were computing the proof. AMBIGUOUS: the Rust
       // `Unauthorized` path closes WITHOUT a reply BY DESIGN (see
@@ -130,7 +135,7 @@ export class Handshake {
       // alone — recoverable, consistent with the step-1 timeout above.
       return finish('app_not_running');
     }
-    live.send({
+    transport.send({
       type: EXTENSION_MESSAGE_TYPES.auth,
       reqId: crypto.randomUUID(),
       payload: { proof: clientProof },

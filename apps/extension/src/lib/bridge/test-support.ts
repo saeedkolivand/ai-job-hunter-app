@@ -123,8 +123,12 @@ export async function failAllPorts(fake: FakeWS): Promise<void> {
 
 // ── clients + frames ──────────────────────────────────────────────────────────
 
-/** A client with no stored token, connected over the first fake socket. */
-export async function connectedClient(
+/**
+ * A client with NO stored token: the socket is open and `phase` is `connected`
+ * but no handshake ran, so the session is NOT authenticated and every verb
+ * must refuse to send.
+ */
+export async function unauthenticatedClient(
   fake: FakeWS
 ): Promise<{ client: BridgeClient; socket: FakeWebSocket }> {
   const client = new BridgeClient(vi.fn());
@@ -132,6 +136,16 @@ export async function connectedClient(
   const socket = await fake.next();
   socket.simulateOpen();
   await connecting;
+  return { client, socket };
+}
+
+/** A client that completed the full v2 handshake over the first fake socket (verbs may send). */
+export async function connectedClient(
+  fake: FakeWS
+): Promise<{ client: BridgeClient; socket: FakeWebSocket }> {
+  const { client, socket, connectPromise } = await clientWithToken(fake, FAKE_TOKEN);
+  await runHandshake(socket);
+  await connectPromise;
   return { client, socket };
 }
 

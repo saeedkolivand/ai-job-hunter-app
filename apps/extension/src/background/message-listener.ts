@@ -8,6 +8,15 @@ import { openAnswerPanel } from './context-menu';
 import { handleRequest } from './dispatch';
 import { isOpenPanelFromBadge, isSubmitDetected } from './guards';
 
+/** True only for a sender that is one of THIS extension's own pages. */
+function isExtensionPage(sender: Browser.runtime.MessageSender): boolean {
+  return (
+    sender.id === browser.runtime.id &&
+    typeof sender.url === 'string' &&
+    sender.url.startsWith(browser.runtime.getURL(''))
+  );
+}
+
 export function onRuntimeMessage(
   message: unknown,
   sender: Browser.runtime.MessageSender,
@@ -31,6 +40,14 @@ export function onRuntimeMessage(
     }
     return undefined;
   }
+  // Every remaining message is a PopupRequest (token, import, settings, ...).
+  // Only extension PAGES (popup, side panel, options) may send one: a content
+  // script runs inside a hostile page's process and must never reach these. A
+  // content script's `sender.url` is the PAGE url, an extension page's starts
+  // with this extension's own origin (chrome-extension:// or moz-extension://).
+  // Deliberately NOT keyed on `sender.tab` — an options page opened in a tab has
+  // one. Ignored without a response (the sender sees "no response").
+  if (!isExtensionPage(sender)) return undefined;
   // Reply via `sendResponse` + a LITERAL `true`, never by returning a Promise.
   // `@wxt-dev/browser` is a thin `browser ?? chrome` pass-through (not
   // `webextension-polyfill`), and Chromium's `chrome.runtime.onMessage` has

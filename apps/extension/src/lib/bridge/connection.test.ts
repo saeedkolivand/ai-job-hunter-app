@@ -125,11 +125,12 @@ describe('BridgeClient – request/reply correlation', () => {
     const p1 = client.importJob(IMPORT);
     const p2 = client.importJob(IMPORT);
     await vi.waitFor(() => {
-      expect(socket.send.mock.calls.length).toBeGreaterThanOrEqual(2);
+      // hello + auth precede the two requests.
+      expect(socket.send.mock.calls.length).toBeGreaterThanOrEqual(4);
     });
 
-    const reqId1 = frameAt(socket, 0).reqId;
-    const reqId2 = frameAt(socket, 1).reqId;
+    const reqId1 = frameAt(socket, 2).reqId;
+    const reqId2 = frameAt(socket, 3).reqId;
     // Two distinct reqIds must have been generated.
     expect(reqId1).not.toBe(reqId2);
 

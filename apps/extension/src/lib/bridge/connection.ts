@@ -80,7 +80,7 @@ export class BridgeConnection {
    * Set only at the mutual-auth completion point; cleared on every fresh
    * `attach` and on close, so it can never outlive the transport that earned it.
    */
-  private authenticated = false;
+  protected authenticated = false;
   /**
    * Set between a `token.revoked` frame and the socket close that follows it.
    * The desktop rotated its pairing secret (Settings → "Regenerate", or a

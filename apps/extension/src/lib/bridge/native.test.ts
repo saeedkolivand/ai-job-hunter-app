@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { browser } from '@wxt-dev/browser';
 
 import { BridgeClient } from '../bridge';
-import { setupFakeWebSocket, T } from './test-support';
+import { computeProof } from '../handshake';
+import { FAKE_TOKEN, SERVER_NONCE, setupFakeWebSocket, T } from './test-support';
 
 vi.mock('@wxt-dev/browser', () => import('./browser-mock'));
 
@@ -29,10 +30,10 @@ describe('BridgeClient – native messaging transport', () => {
   const fake = setupFakeWebSocket();
 
   /** A native port wired in as the host, with `ensureConnected()` already in flight. */
-  function startNative() {
+  function startNative(token: string | null = null) {
     const port = buildFakePort();
     connectNativeMock.mockReturnValue(port as never);
-    const client = new BridgeClient(vi.fn());
+    const client = new BridgeClient(vi.fn(), () => Promise.resolve(token));
     return { port, client, connecting: client.ensureConnected() };
   }
 
@@ -57,18 +58,45 @@ describe('BridgeClient – native messaging transport', () => {
   }
 
   it('connects native-first on bridge.ready{ok:true} and round-trips an import via the port', async () => {
-    const { port, client, connecting } = startNative();
+    const { port, client, connecting } = startNative(FAKE_TOKEN);
     port.simulateMessage({ type: 'bridge.ready', ok: true });
+    // Verbs only send on an AUTHENTICATED session: run the v2 handshake over the port.
+    const sentFrame = async (i: number) => {
+      await vi.waitFor(() => {
+        expect(port.postMessage.mock.calls.length).toBeGreaterThan(i);
+      });
+      return port.postMessage.mock.calls[i]?.[0] as {
+        type: string;
+        reqId: string;
+        payload: { clientNonce: string };
+      };
+    };
+    const hello = await sentFrame(0);
+    port.simulateMessage({
+      type: T.challenge,
+      reqId: hello.reqId,
+      payload: { serverNonce: SERVER_NONCE },
+    });
+    const auth = await sentFrame(1);
+    port.simulateMessage({
+      type: T.authOk,
+      reqId: auth.reqId,
+      payload: {
+        serverProof: await computeProof(
+          FAKE_TOKEN,
+          'server',
+          SERVER_NONCE,
+          hello.payload.clientNonce
+        ),
+      },
+    });
     await connecting;
 
     expect(client.status().phase).toBe('connected');
     expect(fake.sockets).toHaveLength(0); // never touched ws
 
     const importPromise = client.importJob({ url: 'https://example.com/job/123', applied: false });
-    await vi.waitFor(() => {
-      expect(port.postMessage).toHaveBeenCalled();
-    });
-    const sent = port.postMessage.mock.calls[0]?.[0] as { type: string; reqId: string };
+    const sent = await sentFrame(2);
     expect(sent.type).toBe(T.importRequest);
 
     // Reply arrives as a PARSED OBJECT (native auto-parses JSON), not a string.

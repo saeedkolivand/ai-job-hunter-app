@@ -168,7 +168,7 @@ describe('BridgeClient – answerAssist', () => {
     expect(deltasA).toEqual([]);
 
     // The NEW request must still work completely normally.
-    await vi.waitFor(() => expect(socket.send).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalledTimes(5)); // hello + auth + A + cancel A + B
     const frameB = frameAt(socket);
     expect(frameB.type).toBe(T.answerAssist);
 

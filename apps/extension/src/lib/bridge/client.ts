@@ -1,7 +1,8 @@
 /**
  * The bridge verbs: one thin wrapper per request type over a single
  * request/reply path (`request`). Every verb is gated on the AUTHENTICATED
- * session (`phase === 'connected'`), never on transport liveness.
+ * session (the mutual handshake completed), never on transport liveness or on
+ * `phase === 'connected'` alone (reached with no handshake when no token is stored).
  */
 
 import {
@@ -41,15 +42,22 @@ export class BridgeClient extends BridgeConnection {
    * Connect, then hand back the transport — but ONLY for an authenticated
    * session. A non-null `this.transport` does NOT mean the peer is verified:
    * `attach()` sets it before the handshake checks the peer's `serverProof`.
-   * Only `'connected'` means the mutual handshake completed, so this is the seam
+   * Only `'connected'` AND `authenticated` mean the mutual handshake completed
+   * (`'connected'` alone is also reached with NO handshake when no token is
+   * stored), so this is the seam
    * that stops the active-tab DOM (or the Contact Profile, the highest
    * sensitivity payload this client sends) from ever reaching an
    * unverified/rogue peer.
    */
   private async session(): Promise<BridgeTransport> {
     await this.ensureConnected();
-    if (this.phase !== 'connected' || !this.transport) throw new Error(NOT_REACHABLE);
+    if (!this.hasAuthenticatedSession() || !this.transport) throw new Error(NOT_REACHABLE);
     return this.transport;
+  }
+
+  /** The mutual handshake completed on the live transport (never true for the no-token attach). */
+  private hasAuthenticatedSession(): boolean {
+    return this.phase === 'connected' && this.authenticated;
   }
 
   /**
@@ -296,7 +304,7 @@ export class BridgeClient extends BridgeConnection {
    */
   cancelAssist(reqId: string): void {
     this.requests.unlisten(reqId);
-    if (!this.transport || this.phase !== 'connected') return;
+    if (!this.transport || !this.hasAuthenticatedSession()) return;
     try {
       this.transport.send({ type: T.assistCancel, reqId, payload: null });
     } catch {
