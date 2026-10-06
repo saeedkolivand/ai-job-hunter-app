@@ -1,20 +1,12 @@
 import { Globe } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 
-import {
-  AGGREGATOR_BOARD_ID,
-  type BoardCatalogEntry,
-  PROVIDER_SLOTS,
-  WORK_TYPE_OPTIONS,
-} from '@ajh/shared';
+import { AGGREGATOR_BOARD_ID, type BoardCatalogEntry, PROVIDER_SLOTS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Alert, Button, cn, Dropdown, Input, LocationInput, NumberField } from '@ajh/ui';
+import { cn, Dropdown, Input, LocationInput, NumberField } from '@ajh/ui';
 
-import { LocationFilterNote, WorkTypeFilterNote } from '@/components/scrape/LocationFilterNote';
-import { SeededCompaniesNote } from '@/components/scrape/SeededCompaniesNote';
 import type { Prefilled, WizardState } from '@/features/autopilot/types';
-import { makeMultiSelectKeyHandler } from '@/hooks/use-roving-tabindex';
 import { regionName } from '@/lib/region-name';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { useHasProviderKey } from '@/services/use-ai-provider';
@@ -23,6 +15,8 @@ import { useBoardsCatalog } from '@/services/use-boards';
 import { PrefilledBadge } from '../PrefilledBadge';
 import { WatchedCompaniesField } from '../WatchedCompaniesField';
 import { WizardField } from '../WizardField';
+import { BoardPicker } from './BoardPicker';
+import { WorkTypePicker } from './WorkTypePicker';
 
 const fieldCls = 'h-9 w-full text-xs shadow-none';
 
@@ -51,9 +45,6 @@ export function StepTarget({ prefilled }: StepTargetProps) {
   const location = useWatch({ control, name: 'location' });
   // Work-type selection — drives the honest "work type filtered locally" board hint.
   const workTypes = useWatch({ control, name: 'workTypes' });
-
-  const boardRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const focusedBoardIdx = useRef<number>(0);
 
   const { data: catalogRaw, isLoading: catalogLoading } = useBoardsCatalog();
   const listedBoards: BoardCatalogEntry[] = (catalogRaw ?? []).filter((e) => e.listed);
@@ -147,145 +138,19 @@ export function StepTarget({ prefilled }: StepTargetProps) {
         )}
       />
 
-      <Controller
-        control={control}
-        name="boards"
-        render={({ field }) => {
-          const sel = new Set(field.value);
-          const toggle = (b: string) => {
-            const next = sel.has(b) ? field.value.filter((id) => id !== b) : [...field.value, b];
-            // Always keep at least one board selected.
-            if (next.length > 0) field.onChange(next);
-          };
-          return (
-            <WizardField label={t('autopilot.wizard.target.board')}>
-              <div
-                role="group"
-                aria-label={t('autopilot.wizard.target.board')}
-                className="grid grid-cols-2 gap-1.5 max-h-28 overflow-y-auto pr-1 @sm:grid-cols-4"
-                onKeyDown={makeMultiSelectKeyHandler(
-                  listedBoards.length,
-                  focusedBoardIdx,
-                  boardRefs,
-                  (idx) => {
-                    const b = listedBoards[idx]?.id;
-                    if (b !== undefined) toggle(b);
-                  }
-                )}
-              >
-                {listedBoards.map(({ id }, i) => {
-                  const active = sel.has(id);
-                  return (
-                    <Button
-                      key={id}
-                      ref={(el) => {
-                        boardRefs.current[i] = el;
-                      }}
-                      aria-pressed={active}
-                      tabIndex={i === focusedBoardIdx.current ? 0 : -1}
-                      onClick={() => {
-                        focusedBoardIdx.current = i;
-                        toggle(id);
-                      }}
-                      className={cn(
-                        'rounded-lg border px-2 py-1.5 text-[10px] font-medium capitalize transition-all h-auto',
-                        active
-                          ? 'border-brand/40 bg-brand/10 text-brand-soft'
-                          : 'border-[var(--border-clear)] text-foreground/40 hover:bg-muted hover:text-foreground/65'
-                      )}
-                    >
-                      {t(`jobs.boards.${id}`, { defaultValue: id })}
-                    </Button>
-                  );
-                })}
-              </div>
-
-              {/* Aggregator key hint — mirrors ScrapeForm */}
-              {showAggregatorKeyHint && (
-                <div className="mt-2">
-                  <Alert type="warning" showIcon message={t('jobs.aggregatorKeyHint')} />
-                </div>
-              )}
-
-              {/* Honest location hint — mirrors ScrapeForm */}
-              <div className="mt-2 empty:mt-0">
-                <LocationFilterNote boards={selectedListedBoards} hasLocation={hasLocation} />
-              </div>
-
-              {/* Same honesty disclosure for work type — mirrors ScrapeForm */}
-              <div className="mt-2 empty:mt-0">
-                <WorkTypeFilterNote boards={selectedListedBoards} active={workTypes.length > 0} />
-              </div>
-
-              {/* Seeded-companies disclosure — names the curated companies a
-                  company-scoped ATS board (Greenhouse/Lever/Ashby/…) will query (#621) */}
-              <SeededCompaniesNote boards={selectedListedBoards} />
-            </WizardField>
-          );
-        }}
+      <BoardPicker
+        listedBoards={listedBoards}
+        selectedListedBoards={selectedListedBoards}
+        hasLocation={hasLocation}
+        workTypeActive={workTypes.length > 0}
+        showAggregatorKeyHint={showAggregatorKeyHint}
       />
 
       {/* Watched-companies target (ADR-030 §e) — resolve the user's starred
           companies at run time instead of the curated seed. */}
       <WatchedCompaniesField />
 
-      <Controller
-        control={control}
-        name="workTypes"
-        render={({ field }) => {
-          const sel = new Set(field.value);
-          const toggle = (opt: (typeof WORK_TYPE_OPTIONS)[number]) => {
-            field.onChange(
-              sel.has(opt) ? field.value.filter((w) => w !== opt) : [...field.value, opt]
-            );
-          };
-          return (
-            <WizardField
-              label={t('autopilot.wizard.target.workType')}
-              // Empty set silently means "any" — three neutral, identically
-              // unselected buttons read as broken/unset otherwise. Same
-              // "Any time"-style visible microcopy idiom as the Posted
-              // Dropdown's own empty state.
-              hint={field.value.length === 0 ? t('jobs.workType.any') : undefined}
-            >
-              {/* Multi-select set, not a Dropdown — a Dropdown can't express a
-                  set. Empty = any, all three = all. Mirrors the board picker
-                  above and ScrapeForm's manual-search control — including its
-                  visual language (same selected/unselected classes) and its
-                  flex-wrap (not a fixed grid column, which can clip "Vor
-                  Ort"). Plain tab stops, not roving tabindex: that pattern
-                  earns its keep on the ~26-item board picker above, but a
-                  3-item set has no efficiency win from it and it breaks the
-                  standard "Tab moves to the next toggle" expectation. */}
-              <div
-                role="group"
-                aria-label={t('autopilot.wizard.target.workType')}
-                className="flex flex-wrap gap-1.5"
-              >
-                {WORK_TYPE_OPTIONS.map((opt) => {
-                  const active = sel.has(opt);
-                  return (
-                    <Button
-                      key={opt}
-                      aria-pressed={active}
-                      variant="ghost"
-                      onClick={() => toggle(opt)}
-                      className={cn(
-                        'rounded-lg px-2.5 py-1 text-[11px] transition-all',
-                        active
-                          ? 'bg-brand/20 text-brand-soft ring-1 ring-brand/40'
-                          : 'bg-card border border-[var(--border-clear)] text-foreground/50 hover:bg-muted hover:text-foreground/80'
-                      )}
-                    >
-                      {t(`jobs.workType.${opt}`)}
-                    </Button>
-                  );
-                })}
-              </div>
-            </WizardField>
-          );
-        }}
-      />
+      <WorkTypePicker />
 
       <div className="grid grid-cols-1 gap-3 @xs:grid-cols-2">
         <Controller

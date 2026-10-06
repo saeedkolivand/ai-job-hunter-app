@@ -1,21 +1,13 @@
-import { Briefcase, Check, ClipboardCopy, FileText, Mail, Sparkles } from 'lucide-react';
-import { AnimatePresence } from 'motion/react';
+import { Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
 
 import { type AiGenerationRecord, type Application, detectLanguage } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, CardSkeleton, EmptyState, Input, RowSkeleton, StreamingText } from '@ajh/ui';
+import { Button, CardSkeleton, RowSkeleton } from '@ajh/ui';
 
-import {
-  RewritePopover,
-  type RewriteTarget,
-} from '@/components/generation/EditableOutput/RewritePopover';
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
-import { ROUTES } from '@/constants/routes';
 import { useDefaultResumeId } from '@/hooks/useDefaultResumeId';
 import { generateApplicationEmail, type GenerationMeta } from '@/lib/generate';
-import { getSelectionOffsets } from '@/lib/selection-offsets';
 import { COPY_FEEDBACK_MS } from '@/lib/timings';
 import {
   useContactProfile,
@@ -28,42 +20,16 @@ import { useSaveAiGeneration } from '@/services/use-ai-generations';
 
 import { extractRecipient } from '../../lib/extract-recipient';
 import { useSyncedBuffer } from '../../lib/use-synced-buffer';
+import { splitEmail } from './ApplyByEmailTab/email-draft';
+import { EmailDraftView } from './ApplyByEmailTab/EmailDraftView';
+import { EmailRecipientFields } from './ApplyByEmailTab/EmailRecipientFields';
+import { EmailStatusMessages } from './ApplyByEmailTab/EmailStatusMessages';
+import { useCopyFlag } from './ApplyByEmailTab/useCopyFlag';
+import { useEmailRewrite } from './ApplyByEmailTab/useEmailRewrite';
 
 interface Props {
   application: Application;
   matchingGenerations: AiGenerationRecord[];
-}
-
-/** The two independently-rewritable fields of the draft. */
-type EmailField = 'subject' | 'body';
-
-/** A rewrite frozen at trigger time — which field, the splice range, the snapshot
- *  it splices back into on Accept, the rewrite target, and the anchor button. */
-interface FrozenRewrite {
-  field: EmailField;
-  start: number;
-  end: number;
-  snapshot: string;
-  target: RewriteTarget;
-  anchorEl: HTMLElement;
-}
-
-/**
- * Id of the single shared hint under the recipient pair. A literal (not `useId`)
- * because BOTH fields must point at the same node, and only one instance of this
- * tab is ever mounted.
- */
-const CONTACT_HINT_ID = 'applyemail-contact-hint';
-
-/** Split raw model output per the OUTPUT CONTRACT: line 1 is "Subject: …". */
-function splitEmail(raw: string): { subject: string; body: string } {
-  const firstLine = raw.split('\n')[0] ?? '';
-  const m = /^Subject:\s*(.*)$/i.exec(firstLine);
-  if (!m) return { subject: '', body: raw.trim() };
-  return {
-    subject: m[1]?.trim() ?? '',
-    body: raw.slice(firstLine.length).replace(/^\n/, '').trim(),
-  };
 }
 
 /**
@@ -80,7 +46,6 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
   const model = useSelectedModel();
   const { canUse } = useCanUseAI();
 
-  const navigate = useNavigate();
   const { isLoading: docsLoading } = useDocuments();
   const defaultResumeId = useDefaultResumeId();
   const resumeQuery = useDocumentText(defaultResumeId);
@@ -169,16 +134,8 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
   // (see the `draft` derivation below).
   const [email, setEmail] = useState<{ subject: string; body: string } | null>(null);
 
-  // Abort any in-flight stream on unmount to prevent quota burn on tab change,
-  // and clear the copy-feedback timers so they can't setState after unmount.
-  useEffect(
-    () => () => {
-      abortRef.current?.abort();
-      clearTimeout(copyTimerRef.current ?? undefined);
-      clearTimeout(subjectCopyTimerRef.current ?? undefined);
-    },
-    []
-  );
+  // Abort any in-flight stream on unmount to prevent quota burn on tab change.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   // Three sources, in precedence order:
   //  1. `email` — the editable draft, set once a generation settles (and after
@@ -306,87 +263,22 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
     }
   };
 
-  // Copy feedback: show "Copied!" for 2 s then reset.
-  const [copied, setCopied] = useState(false);
-  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Body-only copy — the subject has its own copy button, so re-prepending
+  // "Subject: …" would force the user to strip it back out before pasting into a
+  // mail client's body field. The subject copy writes JUST the subject (no
+  // "Subject:" prefix, no body) and has its own flag so the two never collide.
+  const [copied, copyBody] = useCopyFlag(2000);
+  const [subjectCopied, copySubject] = useCopyFlag(COPY_FEEDBACK_MS);
 
-  // Body-only copy — the subject has its own copy button (see handleCopySubject),
-  // so re-prepending "Subject: …" here would force the user to strip it back out
-  // before pasting into a mail client's body field.
-  const handleCopy = () => {
-    void navigator.clipboard
-      .writeText(body)
-      .then(() => {
-        setCopied(true);
-        if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-        copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
-      })
-      .catch(() => {});
-  };
-
-  // Subject-only copy — writes JUST the subject (no "Subject:" prefix, no body)
-  // so it drops straight into a mail client's Subject field. Its own flag so it
-  // never collides with the whole-email Copy button above.
-  const [subjectCopied, setSubjectCopied] = useState(false);
-  const subjectCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleCopySubject = () => {
-    void navigator.clipboard
-      .writeText(subject)
-      .then(() => {
-        setSubjectCopied(true);
-        if (subjectCopyTimerRef.current) clearTimeout(subjectCopyTimerRef.current);
-        subjectCopyTimerRef.current = setTimeout(() => setSubjectCopied(false), COPY_FEEDBACK_MS);
-      })
-      .catch(() => {});
-  };
-
-  // Select-to-rewrite (mirrors ApplicationQuestionsModal): one frozen rewrite at
-  // a time. The selected span inside the field's <p> — or the whole field when
-  // nothing is selected — is captured at trigger time and spliced back on Accept.
-  const subjectRef = useRef<HTMLParagraphElement | null>(null);
-  const bodyRef = useRef<HTMLParagraphElement | null>(null);
-  const [frozen, setFrozen] = useState<FrozenRewrite | null>(null);
-
-  const openRewrite = (field: EmailField, trigger: HTMLElement) => {
-    const text = field === 'subject' ? subject : body;
-    const container = field === 'subject' ? subjectRef.current : bodyRef.current;
-    const offsets = container ? getSelectionOffsets(container) : null;
-    const start = offsets?.start ?? 0;
-    const end = offsets?.end ?? text.length;
-    setFrozen({
-      field,
-      start,
-      end,
-      snapshot: text,
-      anchorEl: trigger,
-      target: {
-        selection: text.slice(start, end),
-        before: text.slice(0, start),
-        after: text.slice(end),
-      },
-    });
-  };
-
-  const closeRewrite = () => {
-    const trigger = frozen?.anchorEl;
-    setFrozen(null);
-    trigger?.focus();
-  };
-
-  // Splice the accepted replacement back into the frozen snapshot, commit it to
-  // the editable draft, and persist the result so the edit survives a tab switch.
-  // Splicing into `draft` (not `email`) also covers a rewrite of a draft that was
-  // hydrated from the store and never re-generated, where `email` is still null.
-  const acceptRewrite = (replacement: string) => {
-    if (!frozen) return;
-    const { field, start, end, snapshot } = frozen;
-    const spliced = snapshot.slice(0, start) + replacement + snapshot.slice(end);
+  // Select-to-rewrite: the accepted splice is committed to the editable draft and
+  // persisted so the edit survives a tab switch. Splicing into `draft` (not
+  // `email`) also covers a rewrite of a draft hydrated from the store and never
+  // re-generated, where `email` is still null.
+  const rewrite = useEmailRewrite(draft, (field, spliced) => {
     const next = { ...draft, [field]: spliced };
-    setFrozen(null);
     setEmail(next);
     persistDraft(next);
-  };
+  });
 
   const mailtoHref =
     recipientEmail.trim() && subject && body
@@ -438,66 +330,22 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
     <div className="@container flex h-full min-h-0 flex-col">
       {/* Toolbar: recipient inputs + generate button */}
       <div className="shrink-0 space-y-3 border-b border-[var(--border-soft)] px-6 py-4">
-        <div className="grid gap-3 @md:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="applyemail-recipient-name"
-              className="text-xs font-semibold text-foreground/70"
-            >
-              {t('applications.detail.email.recipientNameLabel')}
-            </label>
-            {/* ONE hint for the pair, rendered once below and referenced by BOTH
-                fields — a screen-reader user hears the consequence while focused
-                on either, and a sighted user reads it once, not twice. */}
-            <Input
-              id="applyemail-recipient-name"
-              variant="default"
-              placeholder={t('applications.detail.email.recipientNamePlaceholder')}
-              value={recipientName}
-              onChange={(e) => {
-                setRecipientName(e.target.value);
-                setNameError(false);
-              }}
-              onBlur={persistName}
-              aria-describedby={CONTACT_HINT_ID}
-            />
-            {nameError && (
-              <p className="text-fine-print text-red-400" role="alert">
-                {t('applications.detail.contactSaveError')}
-              </p>
-            )}
-          </div>
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="applyemail-recipient-email"
-              className="text-xs font-semibold text-foreground/70"
-            >
-              {t('applications.detail.email.recipientEmailLabel')}
-            </label>
-            <Input
-              id="applyemail-recipient-email"
-              type="email"
-              variant="default"
-              placeholder={t('applications.detail.email.recipientEmailPlaceholder')}
-              value={recipientEmail}
-              onChange={(e) => {
-                setRecipientEmail(e.target.value);
-                setEmailError(null);
-              }}
-              onBlur={(e) => persistEmail(e.target.value)}
-              aria-describedby={CONTACT_HINT_ID}
-            />
-            {emailError && (
-              <p className="text-fine-print text-red-400" role="alert">
-                {emailError}
-              </p>
-            )}
-          </div>
-        </div>
-
-        <p id={CONTACT_HINT_ID} className="text-fine-print text-foreground/70">
-          {t('applications.detail.email.recipientHint')}
-        </p>
+        <EmailRecipientFields
+          name={recipientName}
+          email={recipientEmail}
+          nameError={nameError}
+          emailError={emailError}
+          onNameChange={(v) => {
+            setRecipientName(v);
+            setNameError(false);
+          }}
+          onEmailChange={(v) => {
+            setRecipientEmail(v);
+            setEmailError(null);
+          }}
+          onNameBlur={persistName}
+          onEmailBlur={persistEmail}
+        />
 
         <Button
           variant="primary"
@@ -521,61 +369,15 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
         aria-live="polite"
         aria-atomic="false"
       >
-        {!canUse && (
-          <EmptyState
-            icon={Sparkles}
-            title={t('applications.detail.email.needsModel')}
-            className="py-12"
-          />
-        )}
-        {canUse && !resume && !hasDraft && !isGenerating && (
-          <EmptyState
-            icon={FileText}
-            title={t('applications.detail.email.needsResume')}
-            className="py-12"
-            action={
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => void navigate({ to: ROUTES.RESUMES })}
-                className="gap-1.5"
-              >
-                <FileText size={13} />
-                {t('applications.detail.email.addResume')}
-              </Button>
-            }
-          />
-        )}
-        {canUse && !!resume && !jobDesc && !hasDraft && (
-          <EmptyState
-            icon={Briefcase}
-            title={t('applications.detail.email.needsJob')}
-            className="py-12"
-          />
-        )}
-        {canUse && !!resume && !!jobDesc && !hasDraft && !isGenerating && !genError && (
-          <EmptyState
-            icon={Mail}
-            title={t('applications.detail.email.empty')}
-            description={t('applications.detail.email.emptyDesc')}
-            className="py-12"
-          />
-        )}
-
-        {genError && (
-          <p className="text-fine-print text-red-400" role="alert">
-            {genError}
-          </p>
-        )}
-
-        {/* role="alert" (not "status"): this is a data-loss warning, and it
-            matches the genError/emailError siblings. The weaker "status" also
-            conflicted with the ancestor aria-live region's aria-atomic. */}
-        {saveFailed && (
-          <p className="text-fine-print text-amber-400/80" role="alert">
-            {t('applications.detail.email.saveFailed')}
-          </p>
-        )}
+        <EmailStatusMessages
+          canUse={canUse}
+          hasResume={!!resume}
+          hasJobDesc={!!jobDesc}
+          hasDraft={hasDraft}
+          isGenerating={isGenerating}
+          genError={genError}
+          saveFailed={saveFailed}
+        />
 
         {/* Skeleton during the first tokens — avoids a bare-cursor flash */}
         {isGenerating && !streamText && (
@@ -586,133 +388,21 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
         )}
 
         {(hasDraft || (isGenerating && !!streamText)) && (
-          <div className="space-y-4">
-            {(subject || isGenerating) && (
-              <div className="rounded-md border border-[var(--border-soft)] bg-foreground/[0.02] px-4 py-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="block text-xs font-semibold uppercase tracking-[0.14em] text-foreground/70">
-                    {t('applications.detail.email.subjectLabel')}
-                  </span>
-                  {!isGenerating && subject && (
-                    <div className="flex items-center gap-0.5">
-                      {canRewrite && (
-                        <Button
-                          variant="ghost"
-                          type="button"
-                          // Keep the live selection alive through the click — a bare
-                          // click would collapse it before onClick reads it.
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={(e) => openRewrite('subject', e.currentTarget)}
-                          title={t('applications.detail.email.rewrite')}
-                          aria-label={t('applications.detail.email.rewriteSubjectAriaLabel')}
-                          className="h-auto gap-1 px-1.5 py-0.5 text-[11px] text-brand-soft"
-                        >
-                          <Sparkles size={11} />
-                          {t('applications.detail.email.rewrite')}
-                        </Button>
-                      )}
-                      <Button
-                        variant="unstyled"
-                        type="button"
-                        onClick={handleCopySubject}
-                        title={
-                          subjectCopied
-                            ? t('applications.detail.email.copied')
-                            : t('applications.detail.email.copySubject')
-                        }
-                        aria-label={t('applications.detail.email.copySubject')}
-                        className="rounded p-0.5 text-foreground/30 transition-colors hover:text-foreground/70"
-                      >
-                        {subjectCopied ? <Check size={13} /> : <ClipboardCopy size={13} />}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-                {isGenerating ? (
-                  <p className="mt-1 text-caption font-medium text-foreground/85">{subject}</p>
-                ) : (
-                  <p
-                    ref={subjectRef}
-                    className="mt-1 select-text whitespace-pre-wrap text-caption font-medium text-foreground/85"
-                  >
-                    {subject}
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="block text-xs font-semibold uppercase tracking-[0.14em] text-foreground/70">
-                  {t('applications.detail.email.bodyLabel')}
-                </span>
-                {canRewrite && !isGenerating && body && (
-                  <Button
-                    variant="ghost"
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={(e) => openRewrite('body', e.currentTarget)}
-                    title={t('applications.detail.email.rewrite')}
-                    aria-label={t('applications.detail.email.rewriteBodyAriaLabel')}
-                    className="h-auto gap-1 px-1.5 py-0.5 text-[11px] text-brand-soft"
-                  >
-                    <Sparkles size={11} />
-                    {t('applications.detail.email.rewrite')}
-                  </Button>
-                )}
-              </div>
-              {isGenerating ? (
-                <StreamingText text={body} isStreaming />
-              ) : (
-                <p
-                  ref={bodyRef}
-                  className="select-text whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground/85"
-                >
-                  {body}
-                </p>
-              )}
-            </div>
-
-            {/* One rewrite popover for whichever field is frozen — it portals to
-                document.body off `anchorEl`, so a single instance serves both. */}
-            <AnimatePresence>
-              {frozen && (
-                <RewritePopover
-                  target={frozen.target}
-                  docType="email"
-                  model={model}
-                  locale={meta.targetLanguage}
-                  anchorEl={frozen.anchorEl}
-                  onAccept={acceptRewrite}
-                  onClose={closeRewrite}
-                />
-              )}
-            </AnimatePresence>
-
-            {!isGenerating && hasDraft && (
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <Button variant="glass" size="sm" onClick={handleCopy} className="gap-1.5">
-                  <ClipboardCopy size={13} />
-                  {copied
-                    ? t('applications.detail.email.copied')
-                    : t('applications.detail.email.copy')}
-                </Button>
-                {mailtoHref && (
-                  <Button
-                    variant="glass"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => {
-                      window.open(mailtoHref, '_blank');
-                    }}
-                  >
-                    <Mail size={13} />
-                    {t('applications.detail.email.openMailto')}
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
+          <EmailDraftView
+            subject={subject}
+            body={body}
+            isGenerating={isGenerating}
+            hasDraft={hasDraft}
+            canRewrite={canRewrite}
+            model={model}
+            locale={meta.targetLanguage}
+            rewrite={rewrite}
+            copied={copied}
+            subjectCopied={subjectCopied}
+            onCopy={() => copyBody(body)}
+            onCopySubject={() => copySubject(subject)}
+            mailtoHref={mailtoHref}
+          />
         )}
       </div>
     </div>

@@ -24,6 +24,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { Application } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 
+import { makeApplication as makeApp } from '@/features/applications/lib/test-fixtures';
 import { useSessionStore } from '@/store/session-store';
 
 import { ApplicationsPage } from './index';
@@ -114,29 +115,6 @@ vi.mock('@/components/layout/PageShell', () => ({
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-function makeApp(overrides: Partial<Application>): Application {
-  return {
-    id: 'app-1',
-    status: 'applied',
-    createdAt: 1000,
-    updatedAt: 1000,
-    jobUrl: 'https://acme.com/job/1',
-    board: 'linkedin',
-    company: 'Acme',
-    title: 'Engineer',
-    candidate: 'Jane',
-    answers: [],
-    brief: '',
-    notes: '',
-    comp: '',
-    jobDescription: '',
-    jobSummary: '',
-    contactName: '',
-    contactEmail: '',
-    ...overrides,
-  };
-}
-
 const APPS_MULTI_STAGE: Application[] = [
   makeApp({ id: 'a1', status: 'applied', title: 'Applied Role', company: 'Alpha' }),
   makeApp({ id: 'a2', status: 'applied', title: 'Applied Role 2', company: 'AlphaB' }),
@@ -144,22 +122,24 @@ const APPS_MULTI_STAGE: Application[] = [
   makeApp({ id: 'a4', status: 'saved', title: 'Saved Role', company: 'Gamma' }),
 ];
 
+const mockApps = (data: Application[]) =>
+  mockUseApplications.mockReturnValue({ data, isLoading: false, isError: false });
+
+const renderApps = (data: Application[]) => {
+  mockApps(data);
+  return render(<ApplicationsPage />);
+};
+
+const setAppState = (patch: Partial<ReturnType<typeof useSessionStore.getState>['applications']>) =>
+  useSessionStore.setState((s) => ({ applications: { ...s.applications, ...patch } }));
+
 // ── Store reset ───────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  useSessionStore.setState((s) => ({
-    applications: {
-      ...s.applications,
-      collapsedSections: [],
-      filter: '',
-      stageGroup: null,
-      sort: 'updated',
-    },
-  }));
+  setAppState({ collapsedSections: [], filter: '', stageGroup: null, sort: 'updated' });
   mockUseApplications.mockReset();
 });
 
-/** Row ids in DOM order — the assertion surface for the sort tests. */
 /** Stage-section headers only — the strip cards now share their labels. */
 const sectionHeaders = (match: (name: string) => boolean) =>
   screen
@@ -181,13 +161,7 @@ const rowIds = () =>
 
 describe('ApplicationsPage — grouped rendering', () => {
   it('renders one section per non-empty stage in APPLICATION_STAGES order', () => {
-    mockUseApplications.mockReturnValue({
-      data: APPS_MULTI_STAGE,
-      isLoading: false,
-      isError: false,
-    });
-
-    render(<ApplicationsPage />);
+    renderApps(APPS_MULTI_STAGE);
 
     // Three stages present: saved, applied, interviewing.
     // The section header button's accessible name includes the count badge so
@@ -201,50 +175,26 @@ describe('ApplicationsPage — grouped rendering', () => {
     expect(headers).toHaveLength(3);
 
     // Verify APPLICATION_STAGES order: saved comes before applied comes before interviewing.
-    const headerTexts = headers.map((h) => h.textContent ?? '');
-    const savedIdx = headerTexts.findIndex((t) => t.includes('saved'));
-    const appliedIdx = headerTexts.findIndex((t) => t.includes('applied'));
-    const interviewingIdx = headerTexts.findIndex((t) => t.includes('interviewing'));
-    expect(savedIdx).toBeLessThan(appliedIdx);
-    expect(appliedIdx).toBeLessThan(interviewingIdx);
+    const order = headers.map((h) =>
+      ['saved', 'applied', 'interviewing'].findIndex((key) => h.textContent?.includes(key))
+    );
+    expect(order).toEqual([0, 1, 2]);
   });
 
   it('renders the correct count badge per section', () => {
-    mockUseApplications.mockReturnValue({
-      data: APPS_MULTI_STAGE,
-      isLoading: false,
-      isError: false,
-    });
+    renderApps(APPS_MULTI_STAGE);
 
-    render(<ApplicationsPage />);
-
-    // Two ApplicationRow stubs for 'applied'.
-    const appliedRows = screen
-      .getAllByTestId(TEST_IDS.applications.row)
-      .filter((el) => el.getAttribute('data-status') === 'applied');
-    expect(appliedRows).toHaveLength(2);
-
-    // One row for 'interviewing'.
-    const interviewingRows = screen
-      .getAllByTestId(TEST_IDS.applications.row)
-      .filter((el) => el.getAttribute('data-status') === 'interviewing');
-    expect(interviewingRows).toHaveLength(1);
-
-    // One row for 'saved'.
-    const savedRows = screen
-      .getAllByTestId(TEST_IDS.applications.row)
-      .filter((el) => el.getAttribute('data-status') === 'saved');
-    expect(savedRows).toHaveLength(1);
+    const rowsWithStatus = (status: string) =>
+      screen
+        .getAllByTestId(TEST_IDS.applications.row)
+        .filter((el) => el.getAttribute('data-status') === status);
+    expect(rowsWithStatus('applied')).toHaveLength(2);
+    expect(rowsWithStatus('interviewing')).toHaveLength(1);
+    expect(rowsWithStatus('saved')).toHaveLength(1);
   });
 
   it('renders EmptyState when the list is empty', () => {
-    mockUseApplications.mockReturnValue({
-      data: [],
-      isLoading: false,
-      isError: false,
-    });
-
-    render(<ApplicationsPage />);
+    renderApps([]);
 
     // The empty-list EmptyState uses the 'applications.empty' key as its title.
     expect(screen.getByText('applications.empty')).toBeInTheDocument();
@@ -253,13 +203,7 @@ describe('ApplicationsPage — grouped rendering', () => {
   });
 
   it('does not render empty-stage sections (stages with zero apps are hidden)', () => {
-    mockUseApplications.mockReturnValue({
-      data: [makeApp({ id: 'x1', status: 'offer', title: 'Offer Role' })],
-      isLoading: false,
-      isError: false,
-    });
-
-    render(<ApplicationsPage />);
+    renderApps([makeApp({ id: 'x1', status: 'offer', title: 'Offer Role' })]);
 
     // Only 'offer' section header should appear (name includes the count badge).
     expect(sectionHeaders((n) => n.includes('applications.stages.offer'))).toHaveLength(1);
@@ -302,42 +246,20 @@ describe('ApplicationsPage — grouped rendering', () => {
 
   // Gap 7 (MEDIUM): filter — only matching rows render when session-store filter is set.
   it('renders only rows matching the session-store filter substring (company match)', () => {
-    mockUseApplications.mockReturnValue({
-      data: APPS_MULTI_STAGE,
-      isLoading: false,
-      isError: false,
-    });
-
     // Set the filter to a company substring that matches only APPS_MULTI_STAGE[0] ('Alpha').
-    useSessionStore.setState((s) => ({
-      applications: { ...s.applications, collapsedSections: [], filter: 'alpha' },
-    }));
+    setAppState({ collapsedSections: [], filter: 'alpha' });
 
-    render(<ApplicationsPage />);
+    renderApps(APPS_MULTI_STAGE);
 
-    const rows = screen.getAllByTestId(TEST_IDS.applications.row);
     // APPS_MULTI_STAGE has company 'Alpha' (a1) and 'AlphaB' (a2) — both match 'alpha'.
     // 'Beta' (a3) and 'Gamma' (a4) must NOT appear.
-    expect(rows).toHaveLength(2);
-    const appIds = rows.map((r) => r.getAttribute('data-appid'));
-    expect(appIds).toContain('a1');
-    expect(appIds).toContain('a2');
-    expect(appIds).not.toContain('a3');
-    expect(appIds).not.toContain('a4');
+    expect(rowIds().sort()).toEqual(['a1', 'a2']);
   });
 
   it('renders the noResults empty state when filter matches nothing', () => {
-    mockUseApplications.mockReturnValue({
-      data: APPS_MULTI_STAGE,
-      isLoading: false,
-      isError: false,
-    });
+    setAppState({ collapsedSections: [], filter: 'zzz-no-match' });
 
-    useSessionStore.setState((s) => ({
-      applications: { ...s.applications, collapsedSections: [], filter: 'zzz-no-match' },
-    }));
-
-    render(<ApplicationsPage />);
+    renderApps(APPS_MULTI_STAGE);
 
     // noResults empty state is shown when allApps has rows but sections is empty.
     expect(screen.getByText('applications.noResults')).toBeInTheDocument();
@@ -346,16 +268,8 @@ describe('ApplicationsPage — grouped rendering', () => {
 
   // An unexplained empty list right after clicking a stage card reads as data loss.
   it('names the active filters in the empty state and offers a way out', () => {
-    mockUseApplications.mockReturnValue({
-      data: APPS_MULTI_STAGE,
-      isLoading: false,
-      isError: false,
-    });
-    useSessionStore.setState((s) => ({
-      applications: { ...s.applications, stageGroup: 'offer', filter: 'zzz' },
-    }));
-
-    render(<ApplicationsPage />);
+    setAppState({ stageGroup: 'offer', filter: 'zzz' });
+    renderApps(APPS_MULTI_STAGE);
 
     expect(screen.getByText('applications.noResultsBoth')).toBeInTheDocument();
 
@@ -367,22 +281,13 @@ describe('ApplicationsPage — grouped rendering', () => {
   });
 
   it('explains a stage-only and a query-only empty result differently', () => {
-    mockUseApplications.mockReturnValue({
-      data: APPS_MULTI_STAGE,
-      isLoading: false,
-      isError: false,
-    });
-    useSessionStore.setState((s) => ({
-      applications: { ...s.applications, stageGroup: 'offer', filter: '' },
-    }));
-    const { unmount } = render(<ApplicationsPage />);
+    setAppState({ stageGroup: 'offer', filter: '' });
+    const { unmount } = renderApps(APPS_MULTI_STAGE);
     expect(screen.getByText('applications.noResultsStage')).toBeInTheDocument();
     unmount();
 
-    useSessionStore.setState((s) => ({
-      applications: { ...s.applications, stageGroup: null, filter: 'zzz' },
-    }));
-    render(<ApplicationsPage />);
+    setAppState({ stageGroup: null, filter: 'zzz' });
+    renderApps(APPS_MULTI_STAGE);
     expect(screen.getByText('applications.noResultsQuery')).toBeInTheDocument();
   });
 
@@ -405,27 +310,16 @@ const APPS_CLOSED: Application[] = [
 
 describe('ApplicationsPage — pipeline strip filter', () => {
   it('renders the strip only once there is at least one application', () => {
-    mockUseApplications.mockReturnValue({ data: [], isLoading: false, isError: false });
-    const { unmount } = render(<ApplicationsPage />);
+    const { unmount } = renderApps([]);
     expect(screen.queryAllByTestId(TEST_IDS.applications.pipelineCard)).toHaveLength(0);
     unmount();
 
-    mockUseApplications.mockReturnValue({
-      data: APPS_MULTI_STAGE,
-      isLoading: false,
-      isError: false,
-    });
-    render(<ApplicationsPage />);
+    renderApps(APPS_MULTI_STAGE);
     expect(screen.getAllByTestId(TEST_IDS.applications.pipelineCard)).toHaveLength(6);
   });
 
   it('clicking a card narrows the list to that stage group and marks it pressed', () => {
-    mockUseApplications.mockReturnValue({
-      data: APPS_MULTI_STAGE,
-      isLoading: false,
-      isError: false,
-    });
-    render(<ApplicationsPage />);
+    renderApps(APPS_MULTI_STAGE);
 
     fireEvent.click(pipelineCard('applied'));
 
@@ -436,15 +330,8 @@ describe('ApplicationsPage — pipeline strip filter', () => {
   });
 
   it('clicking the active card again clears the filter', () => {
-    useSessionStore.setState((s) => ({
-      applications: { ...s.applications, stageGroup: 'applied' },
-    }));
-    mockUseApplications.mockReturnValue({
-      data: APPS_MULTI_STAGE,
-      isLoading: false,
-      isError: false,
-    });
-    render(<ApplicationsPage />);
+    setAppState({ stageGroup: 'applied' });
+    renderApps(APPS_MULTI_STAGE);
     expect(rowIds()).toHaveLength(2);
 
     fireEvent.click(pipelineCard('applied'));
@@ -454,11 +341,8 @@ describe('ApplicationsPage — pipeline strip filter', () => {
   });
 
   it('the Finished group renders ONE flat list, each row tagged with its own stage', () => {
-    useSessionStore.setState((s) => ({
-      applications: { ...s.applications, stageGroup: 'closed' },
-    }));
-    mockUseApplications.mockReturnValue({ data: APPS_CLOSED, isLoading: false, isError: false });
-    render(<ApplicationsPage />);
+    setAppState({ stageGroup: 'closed' });
+    renderApps(APPS_CLOSED);
 
     expect(rowIds().sort()).toEqual(['c1', 'c2']);
     // The multi-stage group turns on the per-row stage Tag…
@@ -474,33 +358,22 @@ describe('ApplicationsPage — pipeline strip filter', () => {
   // the selected strip card right above it (and its collapse toggle is
   // meaningless with one section) or a second printing of each row's stage.
   it('renders NO section headers while any stage filter is active', () => {
-    useSessionStore.setState((s) => ({
-      applications: { ...s.applications, stageGroup: 'interviewing' },
-    }));
-    mockUseApplications.mockReturnValue({ data: APPS_CLOSED, isLoading: false, isError: false });
-    render(<ApplicationsPage />);
+    setAppState({ stageGroup: 'interviewing' });
+    renderApps(APPS_CLOSED);
 
     expect(rowIds()).toEqual(['c3']);
     expect(sectionHeaders((n) => n.includes('applications.stages.'))).toHaveLength(0);
   });
 
   it('restores the section headers once the filter is cleared', () => {
-    mockUseApplications.mockReturnValue({
-      data: APPS_MULTI_STAGE,
-      isLoading: false,
-      isError: false,
-    });
-    render(<ApplicationsPage />);
+    renderApps(APPS_MULTI_STAGE);
 
     expect(sectionHeaders((n) => n.includes('applications.stages.')).length).toBeGreaterThan(0);
   });
 
   it('a single-stage group does NOT turn on the per-row stage Tag (one stage, nothing to disambiguate)', () => {
-    useSessionStore.setState((s) => ({
-      applications: { ...s.applications, stageGroup: 'interviewing' },
-    }));
-    mockUseApplications.mockReturnValue({ data: APPS_CLOSED, isLoading: false, isError: false });
-    render(<ApplicationsPage />);
+    setAppState({ stageGroup: 'interviewing' });
+    renderApps(APPS_CLOSED);
 
     expect(rowIds()).toEqual(['c3']);
     expect(screen.getByTestId(TEST_IDS.applications.row).getAttribute('data-stagetag')).toBe(
@@ -509,29 +382,15 @@ describe('ApplicationsPage — pipeline strip filter', () => {
   });
 
   it('an unknown persisted group degrades to the unfiltered list', () => {
-    useSessionStore.setState((s) => ({
-      applications: { ...s.applications, stageGroup: 'not-a-group' },
-    }));
-    mockUseApplications.mockReturnValue({
-      data: APPS_MULTI_STAGE,
-      isLoading: false,
-      isError: false,
-    });
-    render(<ApplicationsPage />);
+    setAppState({ stageGroup: 'not-a-group' });
+    renderApps(APPS_MULTI_STAGE);
 
     expect(rowIds()).toHaveLength(4);
   });
 
   it('the strip counts stay whole-list even while a filter narrows the rows', () => {
-    useSessionStore.setState((s) => ({
-      applications: { ...s.applications, stageGroup: 'saved' },
-    }));
-    mockUseApplications.mockReturnValue({
-      data: APPS_MULTI_STAGE,
-      isLoading: false,
-      isError: false,
-    });
-    render(<ApplicationsPage />);
+    setAppState({ stageGroup: 'saved' });
+    renderApps(APPS_MULTI_STAGE);
 
     expect(pipelineCard('applied')).toHaveTextContent('2');
     expect(rowIds()).toEqual(['a4']);
@@ -548,23 +407,13 @@ const APPS_SAME_STAGE: Application[] = [
 
 describe('ApplicationsPage — sort control', () => {
   it('defaults to `updated` (most recent first — the server order)', () => {
-    mockUseApplications.mockReturnValue({
-      data: APPS_SAME_STAGE,
-      isLoading: false,
-      isError: false,
-    });
-    render(<ApplicationsPage />);
+    renderApps(APPS_SAME_STAGE);
 
     expect(rowIds()).toEqual(['s1', 's3', 's2']);
   });
 
   it('selecting "Company" re-orders the rows A→Z and persists the choice', async () => {
-    mockUseApplications.mockReturnValue({
-      data: APPS_SAME_STAGE,
-      isLoading: false,
-      isError: false,
-    });
-    render(<ApplicationsPage />);
+    renderApps(APPS_SAME_STAGE);
 
     fireEvent.click(screen.getByRole('button', { name: /applications\.sort\.updated/i }));
     const listbox = await screen.findByRole('listbox');
@@ -575,15 +424,8 @@ describe('ApplicationsPage — sort control', () => {
   });
 
   it('`nextAction` puts the soonest reminder first and sinks reminder-less rows', () => {
-    useSessionStore.setState((s) => ({
-      applications: { ...s.applications, sort: 'nextAction' },
-    }));
-    mockUseApplications.mockReturnValue({
-      data: APPS_SAME_STAGE,
-      isLoading: false,
-      isError: false,
-    });
-    render(<ApplicationsPage />);
+    setAppState({ sort: 'nextAction' });
+    renderApps(APPS_SAME_STAGE);
 
     expect(rowIds()).toEqual(['s3', 's1', 's2']);
   });

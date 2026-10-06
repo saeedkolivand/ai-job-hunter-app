@@ -24,6 +24,8 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 
 import type { Application } from '@ajh/shared';
 
+import { makeApplication } from '@/features/applications/lib/test-fixtures';
+
 import { ApplicationRow } from './index';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
@@ -52,7 +54,6 @@ const mockSetStatusMutate = vi.fn((_vars: unknown, options?: MutateOptions) => {
   options?.onSuccess?.();
 });
 const mockRemoveMutateAsync = vi.fn().mockResolvedValue(undefined);
-const mockOpenExternalMutate = vi.fn();
 
 vi.mock('@/services', () => ({
   useSetApplicationStatus: () => ({
@@ -63,37 +64,15 @@ vi.mock('@/services', () => ({
     mutateAsync: mockRemoveMutateAsync,
     isPending: false,
   }),
-  useOpenExternal: () => ({
-    mutate: mockOpenExternalMutate,
-  }),
+  useOpenExternal: () => ({ mutate: vi.fn() }),
 }));
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
 const RECENT_UPDATED_AT = Date.now() - 1000; // 1 second ago — never stale
 
-function makeApp(overrides: Partial<Application>): Application {
-  return {
-    id: 'app-1',
-    status: 'applied',
-    createdAt: RECENT_UPDATED_AT,
-    updatedAt: RECENT_UPDATED_AT,
-    jobUrl: 'https://acme.com/job/1',
-    board: 'linkedin',
-    company: 'Acme',
-    title: 'Engineer',
-    candidate: 'Jane',
-    answers: [],
-    brief: '',
-    notes: '',
-    comp: '',
-    jobDescription: '',
-    jobSummary: '',
-    contactName: '',
-    contactEmail: '',
-    ...overrides,
-  };
-}
+const makeApp = (overrides: Partial<Application>) =>
+  makeApplication({ createdAt: RECENT_UPDATED_AT, updatedAt: RECENT_UPDATED_AT, ...overrides });
 
 // ── Reset mocks between tests ─────────────────────────────────────────────────
 
@@ -103,55 +82,48 @@ beforeEach(() => {
     options?.onSuccess?.();
   });
   mockRemoveMutateAsync.mockClear();
-  mockOpenExternalMutate.mockClear();
   mockNavigate.mockClear();
 });
 
+const renderRow = (
+  overrides: Partial<Application> = {},
+  props: Partial<React.ComponentProps<typeof ApplicationRow>> = {}
+) => render(<ApplicationRow application={makeApp(overrides)} {...props} />);
+
 /** Opens the stage Dropdown and picks `option` (the i18n key fragment). */
 async function changeStage(currentStatus: string, option: string) {
-  fireEvent.click(
-    screen.getByRole('button', {
-      name: new RegExp(`applications\\.status\\.${currentStatus}`, 'i'),
-    })
-  );
+  const stage = (status: string) => ({
+    name: new RegExp(`applications\\.status\\.${status}`, 'i'),
+  });
+  fireEvent.click(screen.getByRole('button', stage(currentStatus)));
   const listbox = await screen.findByRole('listbox');
-  fireEvent.click(
-    within(listbox).getByRole('option', {
-      name: new RegExp(`applications\\.status\\.${option}`, 'i'),
-    })
-  );
+  fireEvent.click(within(listbox).getByRole('option', stage(option)));
 }
 
 // ── Gap 5: status-change Dropdown calls setStatus mutation ──────────────
 
 describe('ApplicationRow — status change', () => {
-  it('changing the Dropdown calls setStatus.mutate with the correct id and status', async () => {
-    const app = makeApp({ id: 'app-42', status: 'applied' });
-    render(<ApplicationRow application={app} />);
-
-    // @ajh/ui Dropdown renders a <button aria-haspopup="listbox"> whose
-    // accessible name is the currently selected option's label. Since t() returns
-    // keys, the trigger is labelled "applications.status.applied".
-    await changeStage('applied', 'interviewing');
-
-    expect(mockSetStatusMutate).toHaveBeenCalledTimes(1);
-    expect(mockSetStatusMutate.mock.calls[0]?.[0]).toEqual({
+  // @ajh/ui Dropdown renders a <button aria-haspopup="listbox"> whose accessible
+  // name is the currently selected option's label. Since t() returns keys, the
+  // trigger is labelled "applications.status.applied".
+  it.each([
+    {
+      name: 'changing the Dropdown calls setStatus.mutate with the correct id and status',
       id: 'app-42',
-      status: 'interviewing',
-    });
-  });
+      to: 'interviewing',
+    },
+    {
+      name: 'calls setStatus.mutate with the correct status when selecting saved',
+      id: 'app-99',
+      to: 'saved',
+    },
+  ])('$name', async ({ id, to }) => {
+    renderRow({ id, status: 'applied' });
 
-  it('calls setStatus.mutate with the correct status when selecting saved', async () => {
-    const app = makeApp({ id: 'app-99', status: 'applied' });
-    render(<ApplicationRow application={app} />);
-
-    await changeStage('applied', 'saved');
+    await changeStage('applied', to);
 
     expect(mockSetStatusMutate).toHaveBeenCalledTimes(1);
-    expect(mockSetStatusMutate.mock.calls[0]?.[0]).toEqual({
-      id: 'app-99',
-      status: 'saved',
-    });
+    expect(mockSetStatusMutate.mock.calls[0]?.[0]).toEqual({ id, status: to });
   });
 
   it('surfaces a localized inline error (and NO note callback) when the mutation fails', async () => {
@@ -159,12 +131,7 @@ describe('ApplicationRow — status change', () => {
       options?.onError?.();
     });
     const onStatusChanged = vi.fn();
-    render(
-      <ApplicationRow
-        application={makeApp({ id: 'app-err', status: 'applied' })}
-        onStatusChanged={onStatusChanged}
-      />
-    );
+    renderRow({ id: 'app-err', status: 'applied' }, { onStatusChanged });
 
     await changeStage('applied', 'offer');
 
@@ -175,12 +142,7 @@ describe('ApplicationRow — status change', () => {
   // Dropdown.select fires onChange even when the CURRENT option is re-picked.
   it('re-picking the current stage writes nothing and raises no note prompt', async () => {
     const onStatusChanged = vi.fn();
-    render(
-      <ApplicationRow
-        application={makeApp({ id: 'app-noop', status: 'applied' })}
-        onStatusChanged={onStatusChanged}
-      />
-    );
+    renderRow({ id: 'app-noop', status: 'applied' }, { onStatusChanged });
 
     await changeStage('applied', 'applied');
 
@@ -199,12 +161,7 @@ describe('ApplicationRow — status change', () => {
 describe('ApplicationRow — status note handoff', () => {
   it('reports the new stage to the page after a successful change', async () => {
     const onStatusChanged = vi.fn();
-    render(
-      <ApplicationRow
-        application={makeApp({ id: 'app-note', status: 'applied' })}
-        onStatusChanged={onStatusChanged}
-      />
-    );
+    renderRow({ id: 'app-note', status: 'applied' }, { onStatusChanged });
 
     await changeStage('applied', 'interviewing');
 
@@ -213,7 +170,7 @@ describe('ApplicationRow — status note handoff', () => {
   });
 
   it('renders no dialog of its own (state here would not survive the refetch)', async () => {
-    render(<ApplicationRow application={makeApp({ id: 'app-note-2', status: 'applied' })} />);
+    renderRow({ id: 'app-note-2', status: 'applied' });
     await changeStage('applied', 'interviewing');
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -224,52 +181,44 @@ describe('ApplicationRow — status note handoff', () => {
 
 describe('ApplicationRow — row meta', () => {
   it('renders the localized board chip for a known board id', () => {
-    render(<ApplicationRow application={makeApp({ board: 'linkedin' })} />);
+    renderRow({ board: 'linkedin' });
     expect(screen.getByText('jobs.boards.linkedin')).toBeInTheDocument();
   });
 
   it('renders no board chip when the board is blank', () => {
-    const { container } = render(<ApplicationRow application={makeApp({ board: '   ' })} />);
+    const { container } = renderRow({ board: '   ' });
     expect(container.textContent).not.toContain('jobs.boards.');
   });
 
   it('renders a currency-formatted salary range when the posting carried one', () => {
-    render(
-      <ApplicationRow
-        application={makeApp({ salaryMin: 60000, salaryMax: 80000, salaryCurrency: 'EUR' })}
-      />
-    );
+    renderRow({ salaryMin: 60000, salaryMax: 80000, salaryCurrency: 'EUR' });
     // Locale-agnostic assertion: both bounds and the en-dash separator are present.
     const salary = screen.getByText(/60[,. ]?000.*–.*80[,. ]?000/);
     expect(salary).toBeInTheDocument();
   });
 
   it('renders no salary text when the posting carried none', () => {
-    const { container } = render(<ApplicationRow application={makeApp({})} />);
+    const { container } = renderRow({});
     expect(container.textContent).not.toMatch(/\d{2}[,. ]?\d{3}/);
   });
 
   it('labels the stamp "applied" when appliedAt is set and "updated" otherwise', () => {
-    const { unmount } = render(
-      <ApplicationRow application={makeApp({ appliedAt: RECENT_UPDATED_AT })} />
-    );
+    const { unmount } = renderRow({ appliedAt: RECENT_UPDATED_AT });
     expect(screen.getByText('applications.row.appliedAgo')).toBeInTheDocument();
     unmount();
 
-    render(<ApplicationRow application={makeApp({ appliedAt: undefined })} />);
+    renderRow({ appliedAt: undefined });
     expect(screen.getByText('applications.row.updatedAgo')).toBeInTheDocument();
   });
 
   it('shows the per-stage Tag only when showStageTag is set', () => {
     // The stage label always appears once as the Dropdown trigger's own label,
     // so the Tag is the SECOND occurrence — count rather than presence.
-    const { unmount } = render(
-      <ApplicationRow application={makeApp({ status: 'rejected' })} showStageTag />
-    );
+    const { unmount } = renderRow({ status: 'rejected' }, { showStageTag: true });
     expect(screen.getAllByText('applications.status.rejected')).toHaveLength(2);
     unmount();
 
-    render(<ApplicationRow application={makeApp({ status: 'rejected' })} />);
+    renderRow({ status: 'rejected' });
     expect(screen.getAllByText('applications.status.rejected')).toHaveLength(1);
   });
 });
@@ -277,76 +226,30 @@ describe('ApplicationRow — row meta', () => {
 // ── Gap 6: http(s) open-link gate (security regression — commit 38290332) ─────
 
 describe('ApplicationRow — open-link gate (security regression)', () => {
-  it('renders the open-job-link action menu item for an https jobUrl', () => {
-    const app = makeApp({ jobUrl: 'https://acme.com/job/1' });
-    render(<ApplicationRow application={app} />);
+  const openActions = (jobUrl: string) => {
+    renderRow({ jobUrl });
+    fireEvent.click(screen.getByRole('button', { name: 'applications.row.actions' }));
+  };
+  const openItem = { name: 'applications.row.openUrl' };
 
-    // Open the ActionMenu.
-    const actionsBtn = screen.getByRole('button', { name: 'applications.row.actions' });
-    fireEvent.click(actionsBtn);
-
-    // The open-link item must be present.
-    expect(screen.getByRole('menuitem', { name: 'applications.row.openUrl' })).toBeInTheDocument();
+  it.each([
+    ['an https jobUrl', 'https://acme.com/job/1'],
+    ['an http jobUrl', 'http://acme.com/job/1'],
+  ])('renders the open-job-link action menu item for %s', (_label, jobUrl) => {
+    openActions(jobUrl);
+    expect(screen.getByRole('menuitem', openItem)).toBeInTheDocument();
   });
 
-  it('renders the open-job-link action menu item for an http jobUrl', () => {
-    const app = makeApp({ jobUrl: 'http://acme.com/job/1' });
-    render(<ApplicationRow application={app} />);
-
-    const actionsBtn = screen.getByRole('button', { name: 'applications.row.actions' });
-    fireEvent.click(actionsBtn);
-
-    expect(screen.getByRole('menuitem', { name: 'applications.row.openUrl' })).toBeInTheDocument();
-  });
-
-  it('does NOT render the open-job-link action for an empty jobUrl', () => {
-    const app = makeApp({ jobUrl: '' });
-    render(<ApplicationRow application={app} />);
-
-    const actionsBtn = screen.getByRole('button', { name: 'applications.row.actions' });
-    fireEvent.click(actionsBtn);
-
-    expect(
-      screen.queryByRole('menuitem', { name: 'applications.row.openUrl' })
-    ).not.toBeInTheDocument();
-  });
-
-  it('does NOT render the open-job-link action for a javascript: jobUrl (dangerous scheme)', () => {
-    // This is the critical regression: a javascript: url must never produce a
-    // clickable "open" item — the guard is /^https?:\/\//i in ApplicationRow.
-    const app = makeApp({ jobUrl: 'javascript:alert(1)' });
-    render(<ApplicationRow application={app} />);
-
-    const actionsBtn = screen.getByRole('button', { name: 'applications.row.actions' });
-    fireEvent.click(actionsBtn);
-
-    expect(
-      screen.queryByRole('menuitem', { name: 'applications.row.openUrl' })
-    ).not.toBeInTheDocument();
-  });
-
-  it('does NOT render the open-job-link action for a data: jobUrl (dangerous scheme)', () => {
-    const app = makeApp({ jobUrl: 'data:text/html,<script>alert(1)</script>' });
-    render(<ApplicationRow application={app} />);
-
-    const actionsBtn = screen.getByRole('button', { name: 'applications.row.actions' });
-    fireEvent.click(actionsBtn);
-
-    expect(
-      screen.queryByRole('menuitem', { name: 'applications.row.openUrl' })
-    ).not.toBeInTheDocument();
-  });
-
-  it('does NOT render the open-job-link action for a file: jobUrl (dangerous scheme)', () => {
-    const app = makeApp({ jobUrl: 'file:///etc/passwd' });
-    render(<ApplicationRow application={app} />);
-
-    const actionsBtn = screen.getByRole('button', { name: 'applications.row.actions' });
-    fireEvent.click(actionsBtn);
-
-    expect(
-      screen.queryByRole('menuitem', { name: 'applications.row.openUrl' })
-    ).not.toBeInTheDocument();
+  // The critical regression: a javascript: url must never produce a clickable
+  // "open" item — the guard is /^https?:///i in ApplicationRow.
+  it.each([
+    ['an empty jobUrl', ''],
+    ['a javascript: jobUrl (dangerous scheme)', 'javascript:alert(1)'],
+    ['a data: jobUrl (dangerous scheme)', 'data:text/html,<script>alert(1)</script>'],
+    ['a file: jobUrl (dangerous scheme)', 'file:///etc/passwd'],
+  ])('does NOT render the open-job-link action for %s', (_label, jobUrl) => {
+    openActions(jobUrl);
+    expect(screen.queryByRole('menuitem', openItem)).not.toBeInTheDocument();
   });
 });
 
@@ -359,38 +262,30 @@ describe('ApplicationRow — open-link gate (security regression)', () => {
 // { id, keepDocuments: <bool> }.
 
 describe('ApplicationRow — delete flow', () => {
-  it('keepDocuments=true: clicking "deleteKeepDocs" then confirming calls remove with keepDocuments:true', async () => {
-    const app = makeApp({ id: 'app-del-1' });
-    render(<ApplicationRow application={app} />);
+  it.each([
+    {
+      name: 'keepDocuments=true: clicking "deleteKeepDocs" then confirming calls remove with keepDocuments:true',
+      id: 'app-del-1',
+      item: 'applications.row.deleteKeepDocs',
+      keepDocuments: true,
+    },
+    {
+      name: 'keepDocuments=false: clicking "deleteAll" then confirming calls remove with keepDocuments:false',
+      id: 'app-del-2',
+      item: 'applications.row.deleteAll',
+      keepDocuments: false,
+    },
+  ])('$name', async ({ id, item, keepDocuments }) => {
+    renderRow({ id });
 
-    // Open ActionMenu.
     fireEvent.click(screen.getByRole('button', { name: 'applications.row.actions' }));
-
-    // Click the "keep docs" delete item.
-    fireEvent.click(
-      await screen.findByRole('menuitem', { name: 'applications.row.deleteKeepDocs' })
-    );
+    fireEvent.click(await screen.findByRole('menuitem', { name: item }));
 
     // ConfirmModal should now be open — confirm it.
-    const confirmBtn = await screen.findByRole('button', { name: 'applications.delete.confirm' });
-    fireEvent.click(confirmBtn);
+    fireEvent.click(await screen.findByRole('button', { name: 'applications.delete.confirm' }));
 
     expect(mockRemoveMutateAsync).toHaveBeenCalledTimes(1);
-    expect(mockRemoveMutateAsync).toHaveBeenCalledWith({ id: 'app-del-1', keepDocuments: true });
-  });
-
-  it('keepDocuments=false: clicking "deleteAll" then confirming calls remove with keepDocuments:false', async () => {
-    const app = makeApp({ id: 'app-del-2' });
-    render(<ApplicationRow application={app} />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'applications.row.actions' }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: 'applications.row.deleteAll' }));
-
-    const confirmBtn = await screen.findByRole('button', { name: 'applications.delete.confirm' });
-    fireEvent.click(confirmBtn);
-
-    expect(mockRemoveMutateAsync).toHaveBeenCalledTimes(1);
-    expect(mockRemoveMutateAsync).toHaveBeenCalledWith({ id: 'app-del-2', keepDocuments: false });
+    expect(mockRemoveMutateAsync).toHaveBeenCalledWith({ id, keepDocuments });
   });
 });
 
@@ -398,8 +293,7 @@ describe('ApplicationRow — delete flow', () => {
 
 describe('ApplicationRow — row navigation', () => {
   it('clicking the row body navigates to the detail route', () => {
-    const app = makeApp({ id: 'app-nav-1' });
-    render(<ApplicationRow application={app} />);
+    renderRow({ id: 'app-nav-1' });
 
     // The row itself has role="button" and an aria-label set via t(), which
     // returns the key string (t returns (key) => key). The label is
@@ -416,8 +310,7 @@ describe('ApplicationRow — row navigation', () => {
   });
 
   it('clicking the actions (3-dots) menu does NOT navigate', () => {
-    const app = makeApp({ id: 'app-nav-2' });
-    render(<ApplicationRow application={app} />);
+    renderRow({ id: 'app-nav-2' });
 
     // The ActionMenu trigger is wrapped in a stopPropagation div — clicks on
     // it must not bubble to the row's openDetail handler.
@@ -428,8 +321,7 @@ describe('ApplicationRow — row navigation', () => {
   });
 
   it('clicking the status Dropdown does NOT navigate', () => {
-    const app = makeApp({ id: 'app-nav-5', status: 'applied' });
-    render(<ApplicationRow application={app} />);
+    renderRow({ id: 'app-nav-5', status: 'applied' });
 
     // The status Dropdown trigger is wrapped in a stopPropagation div — clicks
     // on it must not bubble to the row's openDetail handler.
@@ -441,32 +333,20 @@ describe('ApplicationRow — row navigation', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('pressing Enter on the row navigates to the detail route', () => {
-    const app = makeApp({ id: 'app-nav-3' });
-    render(<ApplicationRow application={app} />);
+  it.each([
+    ['Enter', 'Enter', 'app-nav-3'],
+    ['Space', ' ', 'app-nav-4'],
+  ])('pressing %s on the row navigates to the detail route', (_label, key, id) => {
+    renderRow({ id });
 
-    const rowButton = screen.getByRole('button', { name: 'applications.detail.openAria' });
-    fireEvent.keyDown(rowButton, { key: 'Enter' });
-
-    expect(mockNavigate).toHaveBeenCalledTimes(1);
-    expect(mockNavigate).toHaveBeenCalledWith({
-      to: '/applications/$id',
-      params: { id: 'app-nav-3' },
-      search: { from: 'applications' },
+    fireEvent.keyDown(screen.getByRole('button', { name: 'applications.detail.openAria' }), {
+      key,
     });
-  });
-
-  it('pressing Space on the row navigates to the detail route', () => {
-    const app = makeApp({ id: 'app-nav-4' });
-    render(<ApplicationRow application={app} />);
-
-    const rowButton = screen.getByRole('button', { name: 'applications.detail.openAria' });
-    fireEvent.keyDown(rowButton, { key: ' ' });
 
     expect(mockNavigate).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/applications/$id',
-      params: { id: 'app-nav-4' },
+      params: { id },
       search: { from: 'applications' },
     });
   });
@@ -490,22 +370,19 @@ describe('ApplicationRow — nextActionAt badge', () => {
   });
 
   it('renders the "overdue" badge when nextActionAt is in the past', () => {
-    const app = makeApp({ nextActionAt: FIXED_NOW - 86_400_000, updatedAt: FIXED_NOW });
-    render(<ApplicationRow application={app} />);
+    renderRow({ nextActionAt: FIXED_NOW - 86_400_000, updatedAt: FIXED_NOW });
     expect(screen.getByText('applications.row.overdue')).toBeInTheDocument();
     expect(screen.queryByText('applications.row.followUp')).not.toBeInTheDocument();
   });
 
   it('renders the "upcoming" (followUp) badge when nextActionAt is in the future', () => {
-    const app = makeApp({ nextActionAt: FIXED_NOW + 86_400_000, updatedAt: FIXED_NOW });
-    render(<ApplicationRow application={app} />);
+    renderRow({ nextActionAt: FIXED_NOW + 86_400_000, updatedAt: FIXED_NOW });
     expect(screen.getByText('applications.row.followUp')).toBeInTheDocument();
     expect(screen.queryByText('applications.row.overdue')).not.toBeInTheDocument();
   });
 
   it('renders no nextAction badge when nextActionAt is unset', () => {
-    const app = makeApp({ nextActionAt: undefined, updatedAt: FIXED_NOW });
-    render(<ApplicationRow application={app} />);
+    renderRow({ nextActionAt: undefined, updatedAt: FIXED_NOW });
     expect(screen.queryByText('applications.row.overdue')).not.toBeInTheDocument();
     expect(screen.queryByText('applications.row.followUp')).not.toBeInTheDocument();
   });
@@ -515,13 +392,13 @@ describe('ApplicationRow — nextActionAt badge', () => {
 
 describe('ApplicationRow — note chip', () => {
   it('renders the chip only when the page asks for it', () => {
-    const { unmount } = render(<ApplicationRow application={makeApp({})} />);
+    const { unmount } = renderRow({});
     expect(
       screen.queryByRole('button', { name: 'applications.row.addNoteHint' })
     ).not.toBeInTheDocument();
     unmount();
 
-    render(<ApplicationRow application={makeApp({})} showNoteHint />);
+    renderRow({}, { showNoteHint: true });
     expect(
       screen.getByRole('button', { name: 'applications.row.addNoteHint' })
     ).toBeInTheDocument();
@@ -530,21 +407,14 @@ describe('ApplicationRow — note chip', () => {
   // Enter/Space on a focused <button> fires a native click AND bubbles the
   // keydown — without stopPropagation the row's own handler opens the detail
   // page underneath the note dialog.
-  it('Enter on the chip does NOT navigate to the detail page', () => {
-    const onAddNote = vi.fn();
-    render(<ApplicationRow application={makeApp({})} showNoteHint onAddNote={onAddNote} />);
-
-    const chip = screen.getByRole('button', { name: 'applications.row.addNoteHint' });
-    fireEvent.keyDown(chip, { key: 'Enter' });
-
-    expect(mockNavigate).not.toHaveBeenCalled();
-  });
-
-  it('Space on the chip does NOT navigate to the detail page', () => {
-    render(<ApplicationRow application={makeApp({})} showNoteHint onAddNote={vi.fn()} />);
+  it.each([
+    ['Enter', 'Enter'],
+    ['Space', ' '],
+  ])('%s on the chip does NOT navigate to the detail page', (_label, key) => {
+    renderRow({}, { showNoteHint: true, onAddNote: vi.fn() });
 
     fireEvent.keyDown(screen.getByRole('button', { name: 'applications.row.addNoteHint' }), {
-      key: ' ',
+      key,
     });
 
     expect(mockNavigate).not.toHaveBeenCalled();
@@ -552,7 +422,7 @@ describe('ApplicationRow — note chip', () => {
 
   it('clicking the chip asks for the note dialog WITHOUT navigating to the detail page', () => {
     const onAddNote = vi.fn();
-    render(<ApplicationRow application={makeApp({})} showNoteHint onAddNote={onAddNote} />);
+    renderRow({}, { showNoteHint: true, onAddNote });
 
     fireEvent.click(screen.getByRole('button', { name: 'applications.row.addNoteHint' }));
 

@@ -17,17 +17,6 @@
 342	apps/desktop/src/renderer/features/ai-generate/components/OutputPanelDone/index.tsx
 640	apps/desktop/src/renderer/features/ai-generate/components/wizard-steps/StepTemplate/StepTemplate.test.tsx
 341	apps/desktop/src/renderer/features/ai-generate/hooks/useGeneration.test.ts
-1742	apps/desktop/src/renderer/features/applications/components/ApplicationDetailPage/ApplicationDetailPage.test.tsx
-752	apps/desktop/src/renderer/features/applications/components/ApplicationDetailPage/ApplyByEmailTab.test.tsx
-555	apps/desktop/src/renderer/features/applications/components/ApplicationDetailPage/ApplyByEmailTab.tsx
-1195	apps/desktop/src/renderer/features/applications/components/ApplicationDetailPage/index.tsx
-377	apps/desktop/src/renderer/features/applications/components/ApplicationRow/ApplicationRow.test.tsx
-425	apps/desktop/src/renderer/features/applications/components/ApplicationsPage/ApplicationsPage.test.tsx
-1101	apps/desktop/src/renderer/features/autopilot/components/AutopilotCard/AutopilotCard.test.tsx
-692	apps/desktop/src/renderer/features/autopilot/components/AutopilotCard/index.tsx
-442	apps/desktop/src/renderer/features/autopilot/components/wizard-steps/StepTarget/StepTarget.test.tsx
-346	apps/desktop/src/renderer/features/autopilot/components/wizard-steps/StepTarget/index.tsx
-393	apps/desktop/src/renderer/features/autopilot/lib/wizard-state.test.ts
 305	apps/desktop/src/renderer/features/documents/components/DocumentsPage/index.tsx
 552	apps/desktop/src/renderer/features/documents/components/GenerationCard/index.tsx
 395	apps/desktop/src/renderer/features/documents/components/TailorFlow/ApplicationQuestionsModal.test.tsx
