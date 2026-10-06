@@ -3,7 +3,7 @@
 // An **Application** is the status-bearing aggregate root for a job pursuit (the
 // single source of truth for "am I pursuing this, and how far along"). An
 // `AiGenerationRecord` is its child Document. NOTE: this is distinct from the
-// async-exec `JobStatus` above — do NOT conflate the two.
+// async-exec `JobStatus` in `./index.ts` — do NOT conflate the two.
 
 /**
  * The ordered stage registry — the SINGLE source of truth the Rust
