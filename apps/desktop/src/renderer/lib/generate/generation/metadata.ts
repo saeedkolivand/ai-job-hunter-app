@@ -7,6 +7,7 @@ import {
 } from '@ajh/prompts/generate';
 import { detectLanguages } from '@ajh/shared/language-detection';
 
+import { errorClass } from '../../error-class';
 import { buildProviderProfile } from '../provider-context';
 import { streamGenerate } from './stream';
 
@@ -49,7 +50,7 @@ export async function extractMetadata(
     // a job-ad heading. Which path ran has to be visible in the log.
     console.warn('[extractMetadata] extraction failed — using heuristics', {
       model,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorClass(err),
     });
   }
 

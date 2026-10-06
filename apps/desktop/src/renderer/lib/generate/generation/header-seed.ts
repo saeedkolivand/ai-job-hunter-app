@@ -24,6 +24,7 @@ import type { ContactProfile } from '@ajh/shared';
 import { toLanguageCode } from '@ajh/shared/language-detection';
 
 import { getClient } from '../../app-client';
+import { errorClass } from '../../error-class';
 
 /**
  * True once we're past the header block. Mirrors the Rust parser's
@@ -302,14 +303,14 @@ export async function seedHeaderFromContactProfile(
     api.contactProfile.get().catch((err: unknown) => {
       console.warn(
         'seedHeaderFromContactProfile: contactProfile.get failed, header not seeded',
-        err
+        errorClass(err)
       );
       return undefined;
     }),
     api.contactProfile.headerLine(headerLang).catch((err: unknown) => {
       console.warn(
         'seedHeaderFromContactProfile: contactProfile.headerLine failed, header not seeded',
-        err
+        errorClass(err)
       );
       return undefined;
     }),
