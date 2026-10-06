@@ -279,7 +279,12 @@ export class BridgeConnection {
     this.revoked = false;
     this.revokeCleared = null;
 
-    transport.onMessage((env) => this.onMessage(env));
+    transport.onMessage((env) => {
+      // Same stale-transport rule as `onClose` below: an orphaned socket (replaced
+      // by a later attach / reset) must not feed frames into the live session.
+      if (this.transport !== transport) return;
+      this.onMessage(env);
+    });
     transport.onClose(() => {
       // Stale transport: something (a later `attach()`, or `resetForNewToken()`
       // replacing an unauthenticated one — #1267) already moved `this.transport`

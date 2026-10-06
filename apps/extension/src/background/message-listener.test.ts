@@ -39,6 +39,7 @@ describe('PopupRequest sender gate', () => {
       'a content script (page url + tab)',
       { id: EXTENSION_ID, url: 'https://jobs.example.com/posting/9', tab: { id: 1 } },
     ],
+    ['our own url but a foreign sender id', { id: 'other-extension', url: `${ORIGIN}/popup.html` }],
     ['a sender with no url', { id: EXTENSION_ID }],
     [
       'a foreign extension page',

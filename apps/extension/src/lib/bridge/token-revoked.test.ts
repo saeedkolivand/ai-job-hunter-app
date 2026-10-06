@@ -99,6 +99,22 @@ describe('BridgeClient – token.revoked', () => {
     client.dispose();
   });
 
+  it('ignores `token.revoked` from a REPLACED transport while the live session stays authenticated', async () => {
+    const { client, socket, onTokenRevoked } = await authenticatedClient();
+    // A later attach replaced the transport; `socket` is now an orphan.
+    (client as unknown as { transport: unknown }).transport = {
+      send: vi.fn(),
+      close: vi.fn(),
+      onMessage: vi.fn(),
+      onClose: vi.fn(),
+    };
+
+    sendTokenRevoked(socket);
+
+    expect(onTokenRevoked).not.toHaveBeenCalled();
+    expect(client.status().authenticated).toBe(true);
+  });
+
   it('ignores a stale `token.revoked` delivered after the socket already closed', async () => {
     // The session dies with the socket, so a late/queued frame on the dead
     // transport's listener must not still count as authenticated.
