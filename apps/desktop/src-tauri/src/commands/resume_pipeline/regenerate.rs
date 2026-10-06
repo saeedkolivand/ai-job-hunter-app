@@ -9,7 +9,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
 use crate::ai_generations::{AiGenerationRecord, AiGenerationStore};
-use crate::commands::ai::redact_for_stage;
+use crate::commands::ai::redact_for_provider;
 use crate::documents::DocumentStore;
 use crate::error::{AppError, AppResult};
 use crate::ipc_contracts::resume_pipeline::{
@@ -145,8 +145,11 @@ pub async fn resume_pipeline_regenerate_section(
     // A whole-section REWRITE using `repair`'s prompt and grounding — the ONLY
     // path now that the max-depth per-entry artifact rebuild is gone. It
     // follows `repair`'s own override, the stage whose prompt this uses.
+    // Bound ONCE: the call and the secret strip below must see the same
+    // provider/base URL even if settings change mid-call.
+    let completer = Completer::from_active_for_stage(&app, stages::REPAIR_STAGE)?;
     let outcome = regenerate_one_section(
-        &Completer::from_active_for_stage(&app, stages::REPAIR_STAGE)?,
+        &completer,
         &source,
         &record.target_language,
         &record.resume_text,
@@ -159,7 +162,12 @@ pub async fn resume_pipeline_regenerate_section(
     .await;
     // The provider's error text reaches the review panel verbatim: strip the
     // stage provider's stored key / base-URL secrets and shape-redact (#1346).
-    let outcome = redact_for_stage(&app, stages::REPAIR_STAGE, outcome)?;
+    let outcome = redact_for_provider(
+        &app,
+        completer.provider_id().credential_key(),
+        completer.base_url(),
+        outcome,
+    )?;
     let spliced = match outcome {
         SectionOutcome::Replaced(spliced) => spliced,
         SectionOutcome::Unusable => {

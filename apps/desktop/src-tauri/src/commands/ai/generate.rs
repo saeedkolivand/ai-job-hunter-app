@@ -154,7 +154,7 @@ pub async fn ai_embed(app: AppHandle, req: AiEmbedRequest) -> Value {
     // Upstream-controlled error text crosses IPC here: strip the stored key /
     // base-URL secrets and shape-redact it (#1346).
     let res = crate::documents::embed_with_config(&app, &cfg, &text, Some(charge)).await;
-    match redact_for_provider(&app, &cfg.provider, res) {
+    match redact_for_provider(&app, &cfg.provider, cfg.base_url.as_deref(), res) {
         Ok(ev) => json!({
             "vector": ev.values,
             "dim": ev.space.dim,

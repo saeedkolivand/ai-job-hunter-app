@@ -101,7 +101,10 @@ pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> AppResult<()> {
             crate::net::http::read_text_capped(response, crate::net::http::DEFAULT_MAX_BODY_BYTES)
                 .await
                 .unwrap_or_default();
-        return Err(AppError::Provider(format!("Ollama {status}: {body}")));
+        return Err(AppError::Provider(format!(
+            "Ollama {status}: {}",
+            crate::commands::ai_provider::redact_upstream_text(&body)
+        )));
     }
 
     let mut line_buf = String::new();

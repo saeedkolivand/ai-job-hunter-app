@@ -268,6 +268,11 @@ impl Completer {
         &self.model
     }
 
+    /// The base URL this completer actually sends to (`openai-compatible` only).
+    pub fn base_url(&self) -> Option<&str> {
+        self.base_url.as_deref()
+    }
+
     /// The configured context window for the resolved model, for a caller that
     /// builds its own [`AiGenerateRequest`](crate::commands::ai_provider::AiGenerateRequest)
     /// rather than going through

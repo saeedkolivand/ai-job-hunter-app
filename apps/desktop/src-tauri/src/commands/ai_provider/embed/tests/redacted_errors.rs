@@ -67,3 +67,16 @@ async fn embed_adaptive_still_halves_on_a_redacted_context_length_error() {
     assert!(result.is_ok(), "retry did not fire: {result:?}");
     assert!(attempt.calls.load(std::sync::atomic::Ordering::SeqCst) > 2);
 }
+
+#[test]
+fn context_length_wording_past_200_chars_is_not_cut_off_at_the_source() {
+    // The source must NOT apply the 200-char `sanitize_reason` cap: a provider
+    // that leads with a long preamble would lose the keyword the retry reads.
+    let preamble = "request details ".repeat(20); // 320 chars
+    let body =
+        format!(r#"{{"error":{{"message":"{preamble}maximum context length is 8192 tokens"}}}}"#);
+    let msg =
+        friendly_api_error(ProviderId::OpenAi, reqwest::StatusCode::BAD_REQUEST, &body).to_string();
+    assert!(msg.chars().count() > 250, "precondition: {}", msg.len());
+    assert!(is_context_length_error(&msg), "wording was cut off: {msg}");
+}

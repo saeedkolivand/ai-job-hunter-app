@@ -38,7 +38,8 @@ pub async fn ollama_web_search(
                 .await
                 .unwrap_or_default();
         return Err(AppError::Network(format!(
-            "ollama web_search {status}: {body}"
+            "ollama web_search {status}: {}",
+            crate::commands::ai_provider::redact_upstream_text(&body)
         )));
     }
     let body: serde_json::Value =
