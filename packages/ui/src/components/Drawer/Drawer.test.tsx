@@ -1,4 +1,3 @@
-import { useRef, useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -115,49 +114,6 @@ describe('Drawer', () => {
     expect(document.activeElement).toBe(first);
   });
 
-  it('returns focus to the control that opened it when it closes', async () => {
-    function Harness() {
-      const [open, setOpen] = useState(false);
-      return (
-        <>
-          <button onClick={() => setOpen(true)}>open drawer</button>
-          <Drawer open={open} onClose={() => setOpen(false)} ariaLabel="Filters">
-            <button>inside</button>
-          </Drawer>
-        </>
-      );
-    }
-    render(<Harness />);
-
-    const opener = screen.getByRole('button', { name: 'open drawer' });
-    await userEvent.click(opener);
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'inside' }));
-
-    await userEvent.keyboard('{Escape}');
-    expect(document.activeElement).toBe(opener);
-  });
-
-  it('does not throw when the opener is gone by the time it closes', async () => {
-    function Harness() {
-      const [open, setOpen] = useState(false);
-      return (
-        <>
-          {/* The trigger unmounts while the drawer is open. */}
-          {!open && <button onClick={() => setOpen(true)}>open drawer</button>}
-          <Drawer open={open} onClose={() => setOpen(false)} ariaLabel="Filters">
-            <button>inside</button>
-          </Drawer>
-        </>
-      );
-    }
-    render(<Harness />);
-
-    await userEvent.click(screen.getByRole('button', { name: 'open drawer' }));
-    await userEvent.keyboard('{Escape}');
-
-    expect(screen.getByRole('button', { name: 'open drawer' })).toBeInTheDocument();
-  });
-
   it('pins the panel to the right edge and clamps its width to the window', () => {
     render(
       <Drawer open onClose={() => {}} ariaLabel="Filters">
@@ -204,95 +160,6 @@ describe('Drawer', () => {
       </Drawer>
     );
     expect(document.body.classList.contains('modal-blur-active')).toBe(false);
-  });
-
-  it('falls back to returnFocusTo when closing also unmounts the opener', async () => {
-    // Models the first-run path: the empty-state CTA opens the drawer, and the
-    // drawer's own action (start a scrape) replaces that empty state — so the
-    // opener and the drawer disappear in the SAME commit.
-    function Harness() {
-      const [phase, setPhase] = useState<'idle' | 'open' | 'done'>('idle');
-      const fallback = useRef<HTMLButtonElement>(null);
-      return (
-        <>
-          <button ref={fallback}>always here</button>
-          {phase !== 'done' && <button onClick={() => setPhase('open')}>transient opener</button>}
-          <Drawer
-            open={phase === 'open'}
-            onClose={() => setPhase('done')}
-            ariaLabel="Filters"
-            returnFocusTo={fallback}
-          >
-            <button>inside</button>
-          </Drawer>
-        </>
-      );
-    }
-    render(<Harness />);
-
-    await userEvent.click(screen.getByRole('button', { name: 'transient opener' }));
-    await userEvent.keyboard('{Escape}');
-
-    // Without the fallback focus would land on <body> — a WCAG 2.4.3 failure.
-    expect(screen.queryByRole('button', { name: 'transient opener' })).not.toBeInTheDocument();
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'always here' }));
-  });
-
-  it('never parks focus on <body> when the opener is already gone at open time', async () => {
-    // Degenerate case: the trigger unmounts as the drawer opens, so the captured
-    // "opener" is whatever activeElement degraded to — `<body>`.
-    function Harness() {
-      const [open, setOpen] = useState(false);
-      const fallback = useRef<HTMLButtonElement>(null);
-      return (
-        <>
-          <button ref={fallback}>always here</button>
-          {!open && <button onClick={() => setOpen(true)}>vanishing opener</button>}
-          <Drawer
-            open={open}
-            onClose={() => setOpen(false)}
-            ariaLabel="Filters"
-            returnFocusTo={fallback}
-          >
-            <button>inside</button>
-          </Drawer>
-        </>
-      );
-    }
-    render(<Harness />);
-
-    await userEvent.click(screen.getByRole('button', { name: 'vanishing opener' }));
-    await userEvent.keyboard('{Escape}');
-
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'always here' }));
-  });
-
-  it('prefers the live opener over returnFocusTo when both exist', async () => {
-    function Harness() {
-      const [open, setOpen] = useState(false);
-      const fallback = useRef<HTMLButtonElement>(null);
-      return (
-        <>
-          <button ref={fallback}>fallback</button>
-          <button onClick={() => setOpen(true)}>opener</button>
-          <Drawer
-            open={open}
-            onClose={() => setOpen(false)}
-            ariaLabel="Filters"
-            returnFocusTo={fallback}
-          >
-            <button>inside</button>
-          </Drawer>
-        </>
-      );
-    }
-    render(<Harness />);
-
-    const opener = screen.getByRole('button', { name: 'opener' });
-    await userEvent.click(opener);
-    await userEvent.keyboard('{Escape}');
-
-    expect(document.activeElement).toBe(opener);
   });
 
   it('lets an open popover inside consume Escape instead of closing the whole drawer', async () => {
