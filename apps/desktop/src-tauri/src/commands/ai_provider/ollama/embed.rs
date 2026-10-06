@@ -71,7 +71,8 @@ pub async fn embed_with(model: &str, text: &str) -> AppResult<Vec<f64>> {
                 .await
                 .unwrap_or_default();
         return Err(crate::error::AppError::Provider(format!(
-            "Ollama {status}: {body_text}"
+            "Ollama {status}: {}",
+            crate::commands::ai_provider::redact_upstream_text(&body_text)
         )));
     }
     let data: Value =

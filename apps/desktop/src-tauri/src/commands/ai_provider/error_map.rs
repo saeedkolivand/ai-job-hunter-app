@@ -30,6 +30,39 @@ pub fn extract_error_message(body: &str) -> String {
     body.trim().chars().take(200).collect()
 }
 
+/// ponytail: byte ceiling applied to upstream text BEFORE the shape redactor
+/// runs (which is a per-token scan, so its cost grows with input; the JSON
+/// branch of [`extract_error_message`] is otherwise uncapped). 8 KiB is ~40x
+/// the old 200-char cap and far past where any provider puts its
+/// context-length wording (the first sentence of the message), so
+/// `embed::is_context_length_error` keeps matching; it is NOT the 200-char
+/// `sanitize_reason` cap, which would cut that keyword off a long message.
+const MAX_UPSTREAM_TEXT_BYTES: usize = 8 * 1024;
+
+/// ponytail: log lines keep only `MAX_REASON_LEN` chars after redaction, so
+/// bounding the input to 1 KiB first loses nothing and caps the redactor's work.
+const MAX_LOG_BODY_BYTES: usize = 1024;
+
+/// Truncate `s` to at most `max` bytes on a char boundary (never panics on a
+/// multi-byte char straddling the ceiling).
+fn bound_bytes(s: &str, max: usize) -> &str {
+    &s[..s.floor_char_boundary(max)]
+}
+
+/// Untrusted upstream provider text -> bounded (byte ceiling, char-boundary
+/// safe) then shape-redacted. Ordinary text passes unchanged (modulo the
+/// redactor's whitespace normalisation). Deliberately not length-capped to
+/// 200 chars: see [`MAX_UPSTREAM_TEXT_BYTES`].
+pub fn redact_upstream_text(s: &str) -> String {
+    redact_stream_error_message(bound_bytes(s, MAX_UPSTREAM_TEXT_BYTES))
+}
+
+/// Upstream response body about to be written to a log: bounded, shape-redacted
+/// and capped to `MAX_REASON_LEN` chars (`sanitize_reason`).
+pub fn redact_body_for_log(s: &str) -> String {
+    crate::observability::sanitize_reason(bound_bytes(s, MAX_LOG_BODY_BYTES))
+}
+
 /// Map a provider HTTP error to a clear, actionable message.
 pub fn friendly_api_error(
     provider: ProviderId,
@@ -38,7 +71,7 @@ pub fn friendly_api_error(
 ) -> AppError {
     let name = provider.as_str();
     let code = status.as_u16();
-    let detail = extract_error_message(body);
+    let detail = redact_upstream_text(&extract_error_message(body));
     match code {
         401 | 403 => AppError::Config(format!("{name}: invalid or unauthorized API key.")),
         404 => AppError::Provider(format!("{name}: model or endpoint not found — {detail}")),

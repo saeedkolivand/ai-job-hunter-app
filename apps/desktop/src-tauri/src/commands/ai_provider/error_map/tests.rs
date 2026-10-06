@@ -174,8 +174,13 @@ fn redact_stream_error_message_leaves_an_ordinary_provider_error_unchanged() {
 #[test]
 fn redact_provider_error_strips_a_key_echoed_by_the_upstream_body() {
     let body = r#"{"error":{"message":"bad request for Authorization: Bearer sk-TESTKEY123456 at https://gw.example.com/v1/models?key=TESTKEY123456"}}"#;
-    let err = friendly_api_error(ProviderId::OpenAi, reqwest::StatusCode::BAD_REQUEST, body);
-    // Precondition: the unredacted mapping really does carry the key.
+    // `friendly_api_error` now redacts at the source (#1346), so build the raw
+    // upstream-shaped error by hand to keep this exercising the edge pass alone.
+    let err = AppError::Provider(format!(
+        "openai: request rejected — {}",
+        extract_error_message(body)
+    ));
+    // Precondition: the unredacted text really does carry the key.
     assert!(err.to_string().contains("sk-TESTKEY123456"));
     let text = redact_provider_error(err, &[]).to_string();
     assert!(!text.contains("TESTKEY"), "key survived: {text}");
@@ -222,4 +227,100 @@ fn finish_provider_result_collects_key_and_base_url_secrets_and_passes_ok_throug
         assert!(!out.contains(s), "{s} survived: {out}");
     }
     assert_eq!(finish_provider_result(Ok(3), Some("k"), None).unwrap(), 3);
+}
+
+// ── source-level redaction in friendly_api_error (#1346) ───────────────────
+
+fn detail_of(status: u16, body: &str) -> String {
+    friendly_api_error(
+        ProviderId::OpenAi,
+        reqwest::StatusCode::from_u16(status).unwrap(),
+        body,
+    )
+    .to_string()
+}
+
+#[test]
+fn friendly_api_error_redacts_the_upstream_detail_at_the_source() {
+    let body = r#"{"error":{"message":"bad Authorization: Bearer sk-TESTKEY123456 at https://gw.example.com/v1/models?key=AIzaSyTESTKEYabcdefghijklmnop"}}"#;
+    // Precondition: the raw extracted detail really carries both secrets.
+    let raw = extract_error_message(body);
+    assert!(raw.contains("sk-TESTKEY123456") && raw.contains("AIzaSyTESTKEY"));
+    for status in [400, 404, 422, 418] {
+        let text = detail_of(status, body);
+        assert!(!text.contains("TESTKEY"), "{status}: key survived: {text}");
+        assert!(
+            !text.contains("gw.example.com"),
+            "{status}: host survived: {text}"
+        );
+    }
+}
+
+#[test]
+fn friendly_api_error_leaves_ordinary_text_byte_identical() {
+    assert_eq!(
+        detail_of(400, r#"{"error":{"message":"model not found"}}"#),
+        "openai: request rejected — model not found"
+    );
+    assert_eq!(
+        detail_of(404, "plain body, no json"),
+        "openai: model or endpoint not found — plain body, no json"
+    );
+}
+
+#[test]
+fn upstream_text_is_bounded_without_panicking_on_a_multibyte_char_at_the_ceiling() {
+    // 3-byte char straddling the ceiling: every offset mod 3 is exercised.
+    for pad in 0..3 {
+        let body = format!(
+            "{}{}",
+            "a".repeat(MAX_UPSTREAM_TEXT_BYTES - 1 - pad),
+            "€".repeat(50)
+        );
+        let out = redact_upstream_text(&body);
+        assert!(
+            out.len() <= MAX_UPSTREAM_TEXT_BYTES,
+            "unbounded: {}",
+            out.len()
+        );
+    }
+    // Hostile JSON detail, far past the ceiling, through the real entry point.
+    let huge = format!(r#"{{"error":{{"message":"{}"}}}}"#, "x ".repeat(2_000_000));
+    let text = detail_of(400, &huge);
+    assert!(
+        text.len() < MAX_UPSTREAM_TEXT_BYTES + 100,
+        "unbounded: {}",
+        text.len()
+    );
+}
+
+#[test]
+fn redact_body_for_log_redacts_and_caps() {
+    let body = format!(
+        "denied Authorization: Bearer sk-TESTKEY123456 {}",
+        "word ".repeat(5000)
+    );
+    let out = redact_body_for_log(&body);
+    assert!(!out.contains("TESTKEY"), "key survived: {out}");
+    assert!(out.chars().count() <= crate::observability::MAX_REASON_LEN + 1);
+    assert_eq!(
+        redact_body_for_log("429 Too Many Requests"),
+        "429 Too Many Requests"
+    );
+}
+
+#[test]
+fn edge_helper_strips_a_bare_stored_key_the_shape_pass_cannot_see() {
+    // No marker, no known prefix: only the verbatim pass can catch it.
+    let key = "AIzaSyTESTKEYabcdefghijklmnop";
+    let body = format!(r#"{{"error":{{"message":"invalid credential {key} supplied"}}}}"#);
+    let err = friendly_api_error(ProviderId::Gemini, reqwest::StatusCode::BAD_REQUEST, &body);
+    assert!(
+        err.to_string().contains(key),
+        "precondition: shape pass keeps it"
+    );
+    let out = finish_provider_result::<()>(Err(err), Some(key), None)
+        .unwrap_err()
+        .to_string();
+    assert!(!out.contains("TESTKEY"), "bare key survived: {out}");
 }

@@ -133,7 +133,10 @@ impl AnthropicClient {
                     .await
                     .unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
-            tracing::warn!("anthropic research {status}: {body_text}");
+            tracing::warn!(
+                "anthropic research {status}: {}",
+                crate::commands::ai_provider::redact_body_for_log(&body_text)
+            );
             return Ok(String::new());
         }
         let data: Value = match crate::net::http::read_json_capped(

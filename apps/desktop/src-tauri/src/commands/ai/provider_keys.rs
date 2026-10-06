@@ -19,6 +19,43 @@ pub(crate) fn get_provider_key(app: &AppHandle, provider: &str) -> Option<String
         .map(|(_, password)| password)
 }
 
+/// Run a provider-call result through [`finish_provider_result`] with the
+/// secrets `provider` holds (its stored key + its stored base URL), for IPC
+/// edges that surface a provider failure to the renderer.
+pub(crate) fn redact_for_provider<T>(
+    app: &AppHandle,
+    provider: &str,
+    res: AppResult<T>,
+) -> AppResult<T> {
+    if res.is_ok() {
+        return res;
+    }
+    let base_url = app
+        .state::<crate::ai_config::AiConfigStore>()
+        .provider_base_url(provider);
+    finish_provider_result(
+        res,
+        get_provider_key(app, provider).as_deref(),
+        base_url.as_deref(),
+    )
+}
+
+/// [`redact_for_provider`] for the provider a pipeline `stage` runs on: its
+/// override if one is set, else the active provider (the same rule
+/// `Completer::from_active_for_stage` applies). No provider resolved -> shape
+/// pass only.
+pub(crate) fn redact_for_stage<T>(app: &AppHandle, stage: &str, res: AppResult<T>) -> AppResult<T> {
+    let cfg = app.state::<crate::ai_config::AiConfigStore>();
+    let provider = cfg
+        .stage_override(stage)
+        .map(|o| o.provider)
+        .or_else(|| cfg.active_config().active_provider);
+    match provider {
+        Some(p) => redact_for_provider(app, &p, res),
+        None => finish_provider_result(res, None, None),
+    }
+}
+
 #[tauri::command]
 pub fn ai_set_provider_key(app: AppHandle, provider: String, api_key: String) -> Value {
     let store = app.state::<Mutex<CredentialStore>>();

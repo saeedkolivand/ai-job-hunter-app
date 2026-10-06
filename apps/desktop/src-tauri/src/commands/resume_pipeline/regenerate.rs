@@ -9,6 +9,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
 use crate::ai_generations::{AiGenerationRecord, AiGenerationStore};
+use crate::commands::ai::redact_for_stage;
 use crate::documents::DocumentStore;
 use crate::error::{AppError, AppResult};
 use crate::ipc_contracts::resume_pipeline::{
@@ -155,7 +156,10 @@ pub async fn resume_pipeline_regenerate_section(
         &[],
         req.note.as_deref(),
     )
-    .await?;
+    .await;
+    // The provider's error text reaches the review panel verbatim: strip the
+    // stage provider's stored key / base-URL secrets and shape-redact (#1346).
+    let outcome = redact_for_stage(&app, stages::REPAIR_STAGE, outcome)?;
     let spliced = match outcome {
         SectionOutcome::Replaced(spliced) => spliced,
         SectionOutcome::Unusable => {

@@ -6,6 +6,7 @@
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+use super::redact_for_provider;
 use crate::commands::ai_provider::{emit_stream_error, AiGenerateRequest};
 use crate::db::new_job_id;
 use crate::documents::DocumentStore;
@@ -150,7 +151,10 @@ pub async fn ai_embed(app: AppHandle, req: AiEmbedRequest) -> Value {
         req.text,
         crate::applications::MAX_JOB_DESCRIPTION_BYTES,
     );
-    match crate::documents::embed_with_config(&app, &cfg, &text, Some(charge)).await {
+    // Upstream-controlled error text crosses IPC here: strip the stored key /
+    // base-URL secrets and shape-redact it (#1346).
+    let res = crate::documents::embed_with_config(&app, &cfg, &text, Some(charge)).await;
+    match redact_for_provider(&app, &cfg.provider, res) {
         Ok(ev) => json!({
             "vector": ev.values,
             "dim": ev.space.dim,

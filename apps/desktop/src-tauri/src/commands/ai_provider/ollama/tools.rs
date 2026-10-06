@@ -89,7 +89,8 @@ impl OllamaClient {
                     .unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
             return Err(crate::error::AppError::Provider(format!(
-                "Ollama {status}: {body_text}"
+                "Ollama {status}: {}",
+                crate::commands::ai_provider::redact_upstream_text(&body_text)
             )));
         }
         let data: Value =
