@@ -62,6 +62,31 @@ const scrapeForm = {
 // Module mocks — everything EXCEPT useScraping and the session store.
 // ---------------------------------------------------------------------------
 
+vi.mock('@/features/jobs/hooks/usePostingsSearch', () => ({
+  usePostingsSearch: () => ({
+    state: 'idle',
+    result: null,
+    committedQuery: '',
+    ...Object.fromEntries(
+      ['search', 'retry', 'clear', 'enableSemanticRanking'].map((k) => [k, vi.fn()])
+    ),
+  }),
+}));
+
+vi.mock('@/hooks/useDefaultResumeId', () => ({ useDefaultResumeId: () => null }));
+
+vi.mock('@/hooks/use-format-relative-time', () => ({
+  useFormatRelativeTime: () => (ts: number) => String(ts),
+}));
+
+vi.mock('@/components/layout/PageTransition', () => ({
+  PageTransition: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
+vi.mock('@/features/jobs/providers', () => ({
+  MatchScoresProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
 vi.mock('@/services', () => ({
   usePostings: () => postingsContainer,
   useClearPostings: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -148,9 +173,9 @@ vi.mock('@ajh/ui', () => ({
 // Import AFTER mocks.
 import { makeJobsDefaults, useSessionStore } from '@/store/session-store';
 
-import { fireJobEvent, jobEvents } from './common-mocks';
 import { makePosting as posting } from './fixtures';
 import { JobsPage } from './index';
+import { fireJobEvent, jobEvents } from './job-events';
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -19,8 +19,8 @@ import { TEST_IDS } from '@ajh/test-ids';
 import type { Posting } from '@/features/jobs/types';
 import { makeJobsDefaults, useSessionStore } from '@/store/session-store';
 
-import { jobEvents } from './common-mocks';
 import { JobsPage } from './index';
+import { jobEvents } from './job-events';
 
 /** useInvalidatePostings returns this spy; tests assert on call count. */
 export const invalidateSpy = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
@@ -38,6 +38,32 @@ export const scrapingState = {
 
 /** The merged+filtered `filtered` prop JobsResults last received. */
 export const lastFiltered: { value: Posting[] } = { value: [] };
+
+vi.mock('@/features/jobs/hooks/usePostingsSearch', () => ({
+  usePostingsSearch: () => ({
+    state: 'idle',
+    result: null,
+    committedQuery: '',
+    search: vi.fn(),
+    retry: vi.fn(),
+    clear: vi.fn(),
+    enableSemanticRanking: vi.fn(),
+  }),
+}));
+
+vi.mock('@/hooks/useDefaultResumeId', () => ({ useDefaultResumeId: () => null }));
+
+vi.mock('@/hooks/use-format-relative-time', () => ({
+  useFormatRelativeTime: () => (ts: number) => String(ts),
+}));
+
+vi.mock('@/components/layout/PageTransition', () => ({
+  PageTransition: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
+vi.mock('@/features/jobs/providers', () => ({
+  MatchScoresProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
 
 vi.mock('@/features/jobs/hooks/useScraping', () => ({
   useScraping: () => ({

@@ -177,13 +177,13 @@ describe('PostingListItem — click and keyboard selection', () => {
 
 // Active-descendant pattern — items never tab stops.
 describe('PostingListItem — aria-selected and tabIndex', () => {
-  it.each([true, false])('aria-selected is %s when selected=%s', (selected) => {
+  it.each([true, false])('aria-selected is %s when selected', (selected) => {
     renderItem(makePosting(), { selected });
     expect(screen.getByRole('option')).toHaveAttribute('aria-selected', String(selected));
   });
 
   it.each([true, false])(
-    'tabIndex is -1 when selected=%s (container is the tab stop)',
+    'tabIndex is -1 when selected is %s (container is the tab stop)',
     (selected) => {
       renderItem(makePosting(), { selected });
       expect(screen.getByRole('option')).toHaveAttribute('tabindex', '-1');

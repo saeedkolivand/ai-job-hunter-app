@@ -12,7 +12,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { waitFor } from '@testing-library/react';
 
-import { fireJobEvent, jobEvents } from './common-mocks';
+import { fireJobEvent, jobEvents } from './job-events';
 import { notifyMock, renderJobsPage, resetPage, scrapingMock } from './page-harness';
 
 beforeEach(resetPage);

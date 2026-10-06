@@ -12,13 +12,14 @@ import type { Posting } from '@/features/jobs/types';
 
 import {
   formatRelativeTime,
+  JobDetailPane,
   makePosting,
   mockNotify,
   mockSplitMutate,
   openPane,
+  rerenderPane,
   resetPaneMocks,
 } from './harness';
-import { JobDetailPane } from './index';
 
 beforeEach(resetPaneMocks);
 
@@ -36,15 +37,17 @@ describe('JobDetailPane — RowMatchScore renders in detail header', () => {
 });
 
 describe('JobDetailPane — cross-board cluster split', () => {
-  function clustered(): Posting {
+  const MEMBERS = [
+    { key: 'k1', board: 'linkedin', url: 'https://linkedin.com/job/1' },
+    { key: 'k2', board: 'indeed', url: 'https://indeed.com/job/2' },
+  ];
+
+  function clustered(members = MEMBERS): Posting {
     return makePosting('clustered', {
       description: 'Full description.',
       clusterId: 'k1',
       clusterCanonical: true,
-      clusterMembers: [
-        { key: 'k1', board: 'linkedin', url: 'https://linkedin.com/job/1' },
-        { key: 'k2', board: 'indeed', url: 'https://indeed.com/job/2' },
-      ],
+      clusterMembers: members,
     });
   }
 
@@ -83,6 +86,29 @@ describe('JobDetailPane — cross-board cluster split', () => {
 
     expect(mockNotify.error).toHaveBeenCalledWith({ message: 'jobs.cluster.splitFailed' });
     expect(mockNotify.success).not.toHaveBeenCalled();
+  });
+
+  it('the success toast still fires when the refetch collapses the cluster to one member mid-split', async () => {
+    // Splitting a 2-member cluster invalidates postings; the refetch drops it to
+    // 1 member while the mutation is still pending. The mutation observer (which
+    // owns the per-call toast) must stay mounted through that.
+    let pending: { onSuccess?: () => void } | undefined;
+    mockSplitMutate.mockImplementation((_req: unknown, opts?: { onSuccess?: () => void }) => {
+      pending = opts;
+    });
+    const view = await openPane(clustered());
+
+    await act(async () => {
+      screen.getByText('jobs.cluster.notDuplicate').click();
+    });
+    await rerenderPane(view, clustered(MEMBERS.slice(0, 1)));
+    expect(screen.queryByTestId(TEST_IDS.jobs.clusterMembers)).not.toBeInTheDocument();
+
+    act(() => {
+      pending?.onSuccess?.();
+    });
+
+    expect(mockNotify.success).toHaveBeenCalledWith({ message: 'jobs.cluster.splitDone' });
   });
 
   it('renders the host fallback label (not the raw url) for a member with no board', async () => {

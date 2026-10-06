@@ -10,6 +10,7 @@ import { act, render, screen } from '@testing-library/react';
 
 import {
   formatRelativeTime,
+  JobDetailPane,
   makePosting,
   mockRefetch,
   mockTrackInteraction,
@@ -20,7 +21,6 @@ import {
   resolveReturns,
   resolveSettled,
 } from './harness';
-import { JobDetailPane } from './index';
 
 beforeEach(resetPaneMocks);
 

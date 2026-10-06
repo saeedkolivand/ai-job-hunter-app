@@ -41,6 +41,11 @@ export function ClusterSources({ posting }: { posting: Posting }) {
     );
   };
 
+  // Hooks stay mounted for single-member rows: a split resolves AFTER the refetch
+  // drops the cluster to one member, and the mutation observer (which owns the
+  // per-call toasts) must outlive that.
+  if (clusterMembers.length <= 1) return null;
+
   return (
     <section
       data-testid={TEST_IDS.jobs.clusterMembers}

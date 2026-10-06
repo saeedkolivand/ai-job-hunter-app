@@ -1,20 +1,23 @@
 /**
- * Shared harness for the JobDetailPane suites. Named so the import-sort rule
- * loads it BEFORE `./index` (the mocks below must be registered first).
+ * Shared harness for the JobDetailPane suites.
  *
- *  - Heavy deps (router, services, store) are stubbed; `vi.mock` calls here
- *    apply because each suite imports this module BEFORE `./index`.
+ *  - Heavy deps (router, services, store) are stubbed by the `vi.mock` calls here,
+ *    which are hoisted above the `./index` import below. Suites import the subject
+ *    from this module (never `./index`), so the mocks always apply.
  *  - useMatchScores is stubbed so `mockScoreJob` is a spy.
  *  - `usePostingActions` is stubbed so `mockTrackInteraction` is a spy.
  */
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { type Mock, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 
 import type { Posting } from '@/features/jobs/types';
 
-import { JobDetailPane } from './index';
+import { JobDetailPane as Subject } from './index';
+
+/** The component under test, as loaded after this module's mocks registered. */
+export const JobDetailPane = Subject;
 
 vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
@@ -149,7 +152,24 @@ export const mockNotify: Record<'success' | 'error', Mock> = { success: vi.fn(),
 vi.mock('@/services', () => ({
   useResolveJobUrl: (...args: unknown[]) => mockUseResolveJobUrl(...args),
   useUpdatePostingDescription: () => ({ mutateAsync: mockUpdateDescMutateAsync }),
-  useMarkNotDuplicate: () => ({ mutate: mockSplitMutate, isPending: false }),
+  // Like React Query, per-call callbacks are dropped once the calling component unmounts.
+  useMarkNotDuplicate: () => {
+    const mounted = useRef(true);
+    useEffect(
+      () => () => {
+        mounted.current = false;
+      },
+      []
+    );
+    return {
+      mutate: (req: unknown, opts?: { onSuccess?: () => void; onError?: () => void }) =>
+        mockSplitMutate(req, {
+          onSuccess: () => mounted.current && opts?.onSuccess?.(),
+          onError: () => mounted.current && opts?.onError?.(),
+        }),
+      isPending: false,
+    };
+  },
   useOpenExternal: () => ({ mutate: mockOpenExternal }),
 }));
 
@@ -217,7 +237,7 @@ export function resetPaneMocks() {
 export async function openPane(posting: Posting | null) {
   let utils!: ReturnType<typeof render>;
   await act(async () => {
-    utils = render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    utils = render(<Subject posting={posting} formatRelativeTime={formatRelativeTime} />);
   });
   return utils;
 }
@@ -225,7 +245,7 @@ export async function openPane(posting: Posting | null) {
 /** Re-render the pane with another posting inside `act`. */
 export async function rerenderPane(utils: ReturnType<typeof render>, posting: Posting | null) {
   await act(async () => {
-    utils.rerender(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    utils.rerender(<Subject posting={posting} formatRelativeTime={formatRelativeTime} />);
   });
 }
 

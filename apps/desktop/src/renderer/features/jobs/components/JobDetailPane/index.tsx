@@ -40,9 +40,6 @@ function DetailContent({
   const { description, descLoading, showLoadButton, showError, refetch, announced } =
     useResolvedDescription(posting);
 
-  // Cross-board cluster (ADR-029) — shown when the row merged 2+ board listings.
-  const hasCluster = (posting.clusterMembers?.length ?? 0) > 1;
-
   // Mark 'viewed' after a 5s dwell (fire-once per job mount via key={posting.id}).
   // Depends ONLY on posting.id so a description-resolve re-render can't reset/refire it.
   // clearTimeout in cleanup cancels on job-switch or unmount.
@@ -83,7 +80,7 @@ function DetailContent({
           {announced ? t('jobs.fullDescriptionLoaded') : ''}
         </span>
 
-        {hasCluster && <ClusterSources posting={posting} />}
+        <ClusterSources posting={posting} />
 
         {/* "About the job" section label */}
         <h3 className="mb-3 text-fine-print uppercase tracking-wider text-muted-foreground">

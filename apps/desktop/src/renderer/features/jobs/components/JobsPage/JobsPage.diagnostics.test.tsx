@@ -7,7 +7,7 @@ import { screen, waitFor } from '@testing-library/react';
 
 import { TEST_IDS } from '@ajh/test-ids';
 
-import { fireJobEvent } from './common-mocks';
+import { fireJobEvent } from './job-events';
 import {
   boardChips,
   notifyMock,

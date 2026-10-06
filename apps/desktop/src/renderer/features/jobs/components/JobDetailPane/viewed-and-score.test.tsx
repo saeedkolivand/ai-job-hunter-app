@@ -13,6 +13,7 @@ import { act, render } from '@testing-library/react';
 import {
   flushMicrotasks,
   formatRelativeTime,
+  JobDetailPane,
   makePosting,
   mockScoreJob,
   mockTrackInteraction,
@@ -23,7 +24,6 @@ import {
   resolveInFlight,
   resolveSettled,
 } from './harness';
-import { JobDetailPane } from './index';
 
 beforeEach(resetPaneMocks);
 

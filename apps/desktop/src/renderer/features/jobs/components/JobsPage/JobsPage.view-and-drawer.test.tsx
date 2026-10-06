@@ -10,8 +10,8 @@ import { TEST_IDS } from '@ajh/test-ids';
 
 import { useSessionStore } from '@/store/session-store';
 
-import { fireJobEvent } from './common-mocks';
 import { makePosting } from './fixtures';
+import { fireJobEvent } from './job-events';
 import {
   drawerContainer,
   postingsContainer,
