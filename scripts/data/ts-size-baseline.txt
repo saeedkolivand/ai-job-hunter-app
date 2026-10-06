@@ -2,17 +2,6 @@
 # `<loc>` is CODE lines (blank and comment lines excluded).
 # A baselined file may shrink or be deleted, never grow; a new over-cap file is not baselined.
 # Regenerate after a split with: TS_SIZE_BLESS=1 node scripts/check-ts-size.mjs
-353	apps/desktop/src/renderer/__tests__/route-outlet-nesting.test.tsx
-420	apps/desktop/src/renderer/components/contact/ContactProfileForm/index.tsx
-397	apps/desktop/src/renderer/components/generation/EditableOutput/EditableOutput.test.tsx
-359	apps/desktop/src/renderer/components/generation/EditableOutput/RewritePopover.test.tsx
-364	apps/desktop/src/renderer/components/generation/EditableOutput/RewritePopover.tsx
-413	apps/desktop/src/renderer/components/generation/QualityReportPanel/QualityReportPanel.pipeline.test.tsx
-347	apps/desktop/src/renderer/components/generation/QualityReportPanel/QualityReportPanel.test.tsx
-324	apps/desktop/src/renderer/components/layout/Titlebar/NotificationBell/NotificationBell.test.tsx
-788	apps/desktop/src/renderer/components/scrape/BoardSummaryChips.test.tsx
-328	apps/desktop/src/renderer/components/scrape/BoardSummaryChips.tsx
-318	apps/desktop/src/renderer/components/ui/ModelSelector/ModelSelector.test.tsx
 373	apps/desktop/src/renderer/features/ai-generate/components/AIGeneratePage/index.tsx
 342	apps/desktop/src/renderer/features/ai-generate/components/OutputPanelDone/index.tsx
 640	apps/desktop/src/renderer/features/ai-generate/components/wizard-steps/StepTemplate/StepTemplate.test.tsx
@@ -45,10 +34,6 @@
 499	apps/desktop/src/renderer/features/documents/components/TailorFlow/useApplicationAnswers.test.ts
 827	apps/desktop/src/renderer/features/documents/components/TailorFlow/useTailorPipeline.test.ts
 445	apps/desktop/src/renderer/features/documents/components/TailorFlow/useTailorPipeline.ts
-521	apps/desktop/src/renderer/features/onboarding/OnboardingWizard/index.test.tsx
-356	apps/desktop/src/renderer/features/resume-builder/components/GitHubImportModal/GitHubImportModal.test.tsx
-302	apps/desktop/src/renderer/features/resume-builder/components/GitHubImportModal/index.tsx
-395	apps/desktop/src/renderer/features/resume-builder/components/wizard-steps/StepExtras/index.tsx
 445	apps/desktop/src/renderer/features/settings/components/SettingsSidebar/index.test.tsx
 309	apps/desktop/src/renderer/features/settings/components/ai-settings/CloudProviderConfig/index.tsx
 379	apps/desktop/src/renderer/features/settings/components/extension/ExtensionBridgeSection/ExtensionBridgeSection.test.tsx
@@ -56,18 +41,10 @@
 333	apps/desktop/src/renderer/features/settings/components/preferences/AggregatorKeysSettings/index.tsx
 405	apps/desktop/src/renderer/features/settings/lib/search-anchor.test.tsx
 433	apps/desktop/src/renderer/features/settings/lib/search-index.ts
-464	apps/desktop/src/renderer/features/support/support-data.ts
-717	apps/desktop/src/renderer/features/support/use-help-chat.test.ts
-301	apps/desktop/src/renderer/hooks/use-interview-questions.test.ts
-384	apps/desktop/src/renderer/hooks/use-menu-navigation.test.ts
-446	apps/desktop/src/renderer/hooks/use-resume-pipeline-session.test.ts
 2021	apps/desktop/src/renderer/lib/generate/generation/generation.test.ts
 1032	apps/desktop/src/renderer/lib/generate/generation/generation.ts
 469	apps/desktop/src/renderer/lib/generate/quality-report.test.ts
 409	apps/desktop/src/renderer/lib/generate/templates/templates.ts
-381	apps/desktop/src/renderer/lib/mock-client/mock-client.ts
-322	apps/desktop/src/renderer/services/use-notifications/use-notifications.test.ts
-309	apps/desktop/src/renderer/store/preferences-store/preferences-store.ts
 404	apps/landing/src/app/world/scrub-engine.test.ts
 563	apps/landing/src/data/agent-fleet.ts
 3199	apps/landing/src/data/architecture-map.ts

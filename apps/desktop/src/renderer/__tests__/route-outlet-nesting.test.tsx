@@ -42,6 +42,7 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  type AnyRoute,
   createMemoryHistory,
   createRootRoute,
   createRoute,
@@ -236,42 +237,99 @@ vi.mock('@/routes/autopilot.index', () => ({
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * Build a minimal real route tree that mirrors the production layout+child
- * structure for both /applications and /autopilot, then render it at the
- * given initial URL.
- *
- * The REAL Outlet from @tanstack/react-router is what proves child routes
- * mount through the layout — that is NOT mocked anywhere in this file.
- */
-function renderAt(initialPath: string) {
-  const rootRoute = createRootRoute({ component: () => <Outlet /> });
+type SearchValidator = (s: Record<string, unknown>) => Record<string, unknown>;
 
-  // /applications layout — renders only <Outlet />, mirrors applications.tsx
-  const applicationsLayout = createRoute({
+/** The tab named by the `?tab=` param, or undefined for an unknown value (the real validateSearch's coercion). */
+const tabOf = (s: Record<string, unknown>): (typeof DETAIL_TABS)[number] | undefined =>
+  (DETAIL_TABS as readonly string[]).includes(s.tab as string)
+    ? (s.tab as (typeof DETAIL_TABS)[number])
+    : undefined;
+
+const tabSearch: SearchValidator = (s) => ({ tab: tabOf(s) });
+
+const FROMS = ['jobs', 'autopilot', 'applications'] as const;
+const fromSearch: SearchValidator = (s) => ({
+  tab: tabOf(s),
+  from: FROMS.includes(s.from as (typeof FROMS)[number]) ? s.from : undefined,
+});
+
+/**
+ * The /applications layout (renders only <Outlet />, mirrors applications.tsx) with its
+ * index (ApplicationsPage) and `$id` (ApplicationDetailPage) children.
+ *
+ * NOTE: ApplicationDetailPage calls Route.useParams() from the REAL
+ * @/routes/applications.$id module. That module's Route is a TanStack Route
+ * object whose useParams() reads from the router context. By placing the REAL
+ * ApplicationDetailPage inside a real createRoute with path '$id', the router
+ * context is populated correctly — no need to mock useParams.
+ */
+function applicationsRoutes(rootRoute: AnyRoute, validateSearch?: SearchValidator) {
+  const layout = createRoute({
     getParentRoute: () => rootRoute,
     path: '/applications',
     component: () => <Outlet />,
   });
-
-  // /applications/ index — ApplicationsPage (mirrors applications.index.tsx)
-  const applicationsIndex = createRoute({
-    getParentRoute: () => applicationsLayout,
+  const index = createRoute({
+    getParentRoute: () => layout,
     path: '/',
     component: ApplicationsPage,
   });
-
-  // /applications/$id — ApplicationDetailPage (mirrors applications.$id.tsx)
-  // NOTE: ApplicationDetailPage calls Route.useParams() from the REAL
-  // @/routes/applications.$id module. That module's Route is a TanStack Route
-  // object whose useParams() reads from the router context. By placing the REAL
-  // ApplicationDetailPage inside a real createRoute with path '$id', the router
-  // context is populated correctly — no need to mock useParams.
-  const applicationsDetail = createRoute({
-    getParentRoute: () => applicationsLayout,
+  const detail = createRoute({
+    getParentRoute: () => layout,
     path: '$id',
+    ...(validateSearch ? { validateSearch } : {}),
     component: ApplicationDetailPage,
   });
+  return layout.addChildren([index, detail]);
+}
+
+/** A top-level route that renders a marker `div`. */
+const markerRoute = (rootRoute: AnyRoute, path: string, testId: string, label: string) =>
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path,
+    component: () => <div data-testid={testId}>{label}</div>,
+  });
+
+/**
+ * Render a REAL route tree (real RouterProvider + createRouter + createMemoryHistory
+ * + Outlet) at `initialPath`: the /applications layout plus whatever `extra` returns.
+ * The REAL Outlet is what proves child routes mount through the layout — it is NOT
+ * mocked anywhere in this file.
+ */
+function renderApplicationsAt(
+  initialPath: string,
+  {
+    validateSearch,
+    extra = () => [],
+    guard = false,
+  }: {
+    validateSearch?: SearchValidator;
+    extra?: (rootRoute: AnyRoute) => AnyRoute[];
+    guard?: boolean;
+  } = {}
+) {
+  const rootRoute = createRootRoute({ component: () => <Outlet /> });
+  const routeTree = rootRoute.addChildren([
+    ...extra(rootRoute),
+    applicationsRoutes(rootRoute, validateSearch),
+  ]);
+  const router = createRouter({
+    routeTree,
+    history: createMemoryHistory({ initialEntries: [initialPath] }),
+  });
+  if (guard) installUnknownPathRedirect(router);
+  render(<RouterProvider router={router} />);
+  return router;
+}
+
+/**
+ * Build a minimal real route tree that mirrors the production layout+child
+ * structure for both /applications and /autopilot, then render it at the
+ * given initial URL.
+ */
+function renderAt(initialPath: string) {
+  const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
   // /autopilot layout — renders only <Outlet />, mirrors autopilot.tsx
   const autopilotLayout = createRoute({
@@ -288,7 +346,7 @@ function renderAt(initialPath: string) {
   });
 
   const routeTree = rootRoute.addChildren([
-    applicationsLayout.addChildren([applicationsIndex, applicationsDetail]),
+    applicationsRoutes(rootRoute),
     autopilotLayout.addChildren([autopilotIndex]),
   ]);
 
@@ -357,44 +415,7 @@ describe('Route Outlet nesting — regression guard', () => {
    * unit tests mock the router and cannot reach it.
    */
   it('navigating to /applications/$id?tab=GARBAGE coerces to the default (first) tab via validateSearch', async () => {
-    // Build a route tree identical to renderAt but with the real validateSearch
-    // wired onto the $id route so the coercion path is live.
-    const validateSearch = (
-      s: Record<string, unknown>
-    ): { tab?: (typeof DETAIL_TABS)[number] } => ({
-      tab: (DETAIL_TABS as readonly string[]).includes(s.tab as string)
-        ? (s.tab as (typeof DETAIL_TABS)[number])
-        : undefined,
-    });
-
-    const rootRoute = createRootRoute({ component: () => <Outlet /> });
-    const applicationsLayout = createRoute({
-      getParentRoute: () => rootRoute,
-      path: '/applications',
-      component: () => <Outlet />,
-    });
-    const applicationsIndex = createRoute({
-      getParentRoute: () => applicationsLayout,
-      path: '/',
-      component: ApplicationsPage,
-    });
-    const applicationsDetail = createRoute({
-      getParentRoute: () => applicationsLayout,
-      path: '$id',
-      validateSearch,
-      component: ApplicationDetailPage,
-    });
-
-    const routeTree = rootRoute.addChildren([
-      applicationsLayout.addChildren([applicationsIndex, applicationsDetail]),
-    ]);
-
-    const router = createRouter({
-      routeTree,
-      history: createMemoryHistory({ initialEntries: ['/applications/abc?tab=GARBAGE'] }),
-    });
-
-    render(<RouterProvider router={router} />);
+    renderApplicationsAt('/applications/abc?tab=GARBAGE', { validateSearch: tabSearch });
 
     // ApplicationDetailPage should mount and default to the first tab (documents).
     await waitFor(() => {
@@ -422,59 +443,14 @@ describe('Route Outlet nesting — regression guard', () => {
    * identical regardless of the active tab.)
    */
   it('Tailor-flow Back button (from=jobs) returns to /jobs (not the dashboard) with the guard active', async () => {
-    const FROMS = ['jobs', 'autopilot', 'applications'] as const;
-    const fromSearch = (
-      s: Record<string, unknown>
-    ): { tab?: (typeof DETAIL_TABS)[number]; from?: (typeof FROMS)[number] } => ({
-      tab: (DETAIL_TABS as readonly string[]).includes(s.tab as string)
-        ? (s.tab as (typeof DETAIL_TABS)[number])
-        : undefined,
-      from: FROMS.includes(s.from as (typeof FROMS)[number])
-        ? (s.from as (typeof FROMS)[number])
-        : undefined,
-    });
-
-    const rootRoute = createRootRoute({ component: () => <Outlet /> });
-    const indexRoute = createRoute({
-      getParentRoute: () => rootRoute,
-      path: '/',
-      component: () => <div data-testid={TEST_IDS.layout.dashboard}>dashboard</div>,
-    });
-    const jobsRoute = createRoute({
-      getParentRoute: () => rootRoute,
-      path: '/jobs',
-      component: () => <div data-testid={TEST_IDS.jobs.jobsList}>jobs</div>,
-    });
-    const applicationsLayout = createRoute({
-      getParentRoute: () => rootRoute,
-      path: '/applications',
-      component: () => <Outlet />,
-    });
-    const applicationsIndex = createRoute({
-      getParentRoute: () => applicationsLayout,
-      path: '/',
-      component: ApplicationsPage,
-    });
-    const applicationsDetail = createRoute({
-      getParentRoute: () => applicationsLayout,
-      path: '$id',
+    const router = renderApplicationsAt('/applications/abc?from=jobs', {
       validateSearch: fromSearch,
-      component: ApplicationDetailPage,
+      guard: true,
+      extra: (root) => [
+        markerRoute(root, '/', TEST_IDS.layout.dashboard, 'dashboard'),
+        markerRoute(root, '/jobs', TEST_IDS.jobs.jobsList, 'jobs'),
+      ],
     });
-
-    const routeTree = rootRoute.addChildren([
-      indexRoute,
-      jobsRoute,
-      applicationsLayout.addChildren([applicationsIndex, applicationsDetail]),
-    ]);
-
-    const router = createRouter({
-      routeTree,
-      history: createMemoryHistory({ initialEntries: ['/applications/abc?from=jobs'] }),
-    });
-
-    installUnknownPathRedirect(router);
-    render(<RouterProvider router={router} />);
 
     // Detail view mounted (back label is the jobs-origin one — `from=jobs`).
     const backButton = await screen.findByRole('button', { name: 'applications.detail.backJobs' });
@@ -495,53 +471,11 @@ describe('Route Outlet nesting — regression guard', () => {
    * (`/applications`) — NOT the Dashboard (`/`) — with the real guard active.
    */
   it('deep-link (no `from`) Back button defaults to /applications (not the dashboard) with the guard active', async () => {
-    const FROMS = ['jobs', 'autopilot', 'applications'] as const;
-    const fromSearch = (
-      s: Record<string, unknown>
-    ): { tab?: (typeof DETAIL_TABS)[number]; from?: (typeof FROMS)[number] } => ({
-      tab: (DETAIL_TABS as readonly string[]).includes(s.tab as string)
-        ? (s.tab as (typeof DETAIL_TABS)[number])
-        : undefined,
-      from: FROMS.includes(s.from as (typeof FROMS)[number])
-        ? (s.from as (typeof FROMS)[number])
-        : undefined,
-    });
-
-    const rootRoute = createRootRoute({ component: () => <Outlet /> });
-    const indexRoute = createRoute({
-      getParentRoute: () => rootRoute,
-      path: '/',
-      component: () => <div data-testid={TEST_IDS.layout.dashboard}>dashboard</div>,
-    });
-    const applicationsLayout = createRoute({
-      getParentRoute: () => rootRoute,
-      path: '/applications',
-      component: () => <Outlet />,
-    });
-    const applicationsIndex = createRoute({
-      getParentRoute: () => applicationsLayout,
-      path: '/',
-      component: ApplicationsPage,
-    });
-    const applicationsDetail = createRoute({
-      getParentRoute: () => applicationsLayout,
-      path: '$id',
+    const router = renderApplicationsAt('/applications/abc', {
       validateSearch: fromSearch,
-      component: ApplicationDetailPage,
+      guard: true,
+      extra: (root) => [markerRoute(root, '/', TEST_IDS.layout.dashboard, 'dashboard')],
     });
-
-    const routeTree = rootRoute.addChildren([
-      indexRoute,
-      applicationsLayout.addChildren([applicationsIndex, applicationsDetail]),
-    ]);
-
-    const router = createRouter({
-      routeTree,
-      history: createMemoryHistory({ initialEntries: ['/applications/abc'] }),
-    });
-
-    installUnknownPathRedirect(router);
-    render(<RouterProvider router={router} />);
 
     // Detail view mounted (back label is the default one — `from` is absent).
     const backButton = await screen.findByRole('button', { name: 'applications.detail.back' });

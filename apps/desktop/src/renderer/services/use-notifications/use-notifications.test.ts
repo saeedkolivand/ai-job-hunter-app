@@ -77,159 +77,64 @@ describe('useNotifications', () => {
   });
 });
 
-// ── useMarkNotificationRead ───────────────────────────────────────────────────
+// ── Mutation hooks ────────────────────────────────────────────────────────────
 
-describe('useMarkNotificationRead', () => {
-  it('calls api.notifications.markRead with the given id', async () => {
-    const markRead = vi.fn().mockResolvedValue(undefined);
-    const client = createMockClient({ 'notifications.markRead': markRead });
-
-    const { result } = renderHookWithClient(() => useMarkNotificationRead(), { client });
+describe.each([
+  { name: 'useMarkNotificationRead', hook: useMarkNotificationRead, method: 'markRead', arg: 'n1' },
+  { name: 'useMarkAllNotificationsRead', hook: useMarkAllNotificationsRead, method: 'markAllRead' },
+  { name: 'useRemoveNotification', hook: useRemoveNotification, method: 'remove', arg: 'n2' },
+  { name: 'useClearAllNotifications', hook: useClearAllNotifications, method: 'clearAll' },
+] as Array<{
+  name: string;
+  hook: () => { mutate: (arg?: never) => void; isSuccess: boolean };
+  method: string;
+  arg?: string;
+}>)('$name', ({ hook, method, arg }) => {
+  /** Mount the hook over a client whose `notifications.<method>` is a resolved spy, then fire it. */
+  async function fire(queryClient?: ReturnType<typeof makeQueryClient>) {
+    const spy = vi.fn().mockResolvedValue(undefined);
+    const client = createMockClient({ [`notifications.${method}`]: spy });
+    const { result } = renderHookWithClient(() => hook(), { client, queryClient });
 
     await act(async () => {
-      result.current.mutate('n1');
+      (result.current.mutate as (a?: string) => void)(arg);
       await Promise.resolve();
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(markRead).toHaveBeenCalledWith('n1');
+    return spy;
+  }
+
+  it(`calls api.notifications.${method}${arg ? ' with the given id' : ''}`, async () => {
+    const spy = await fire();
+    if (arg) expect(spy).toHaveBeenCalledWith(arg);
+    else expect(spy).toHaveBeenCalledTimes(1);
   });
 
   it('invalidates keys.notifications.all on success', async () => {
-    const markRead = vi.fn().mockResolvedValue(undefined);
-    const client = createMockClient({ 'notifications.markRead': markRead });
     const queryClient = makeQueryClient();
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
-
-    const { result } = renderHookWithClient(() => useMarkNotificationRead(), {
-      client,
-      queryClient,
-    });
-
-    await act(async () => {
-      result.current.mutate('n1');
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await fire(queryClient);
     expect(invalidate).toHaveBeenCalledWith(
       expect.objectContaining({ queryKey: keys.notifications.all })
     );
   });
 });
 
-// ── useMarkAllNotificationsRead ───────────────────────────────────────────────
-
-describe('useMarkAllNotificationsRead', () => {
-  it('calls api.notifications.markAllRead', async () => {
-    const markAllRead = vi.fn().mockResolvedValue(undefined);
-    const client = createMockClient({ 'notifications.markAllRead': markAllRead });
-
-    const { result } = renderHookWithClient(() => useMarkAllNotificationsRead(), { client });
-
-    await act(async () => {
-      result.current.mutate();
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(markAllRead).toHaveBeenCalledTimes(1);
+/** Mount `useNotificationEvents` and capture the `onOpenInbox` handler it registers. */
+function mountWithOpenInbox() {
+  let handler: ((p: NotificationOpen) => void) | null = null;
+  const onOpenInbox = vi.fn((cb: (p: NotificationOpen) => void) => {
+    handler = cb;
+    return () => {};
   });
-
-  it('invalidates keys.notifications.all on success', async () => {
-    const markAllRead = vi.fn().mockResolvedValue(undefined);
-    const client = createMockClient({ 'notifications.markAllRead': markAllRead });
-    const queryClient = makeQueryClient();
-    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
-
-    const { result } = renderHookWithClient(() => useMarkAllNotificationsRead(), {
-      client,
-      queryClient,
-    });
-
-    await act(async () => {
-      result.current.mutate();
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidate).toHaveBeenCalledWith(
-      expect.objectContaining({ queryKey: keys.notifications.all })
-    );
-  });
-});
-
-// ── useRemoveNotification ─────────────────────────────────────────────────────
-
-describe('useRemoveNotification', () => {
-  it('calls api.notifications.remove with the given id', async () => {
-    const remove = vi.fn().mockResolvedValue(undefined);
-    const client = createMockClient({ 'notifications.remove': remove });
-
-    const { result } = renderHookWithClient(() => useRemoveNotification(), { client });
-
-    await act(async () => {
-      result.current.mutate('n2');
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(remove).toHaveBeenCalledWith('n2');
-  });
-
-  it('invalidates keys.notifications.all on success', async () => {
-    const remove = vi.fn().mockResolvedValue(undefined);
-    const client = createMockClient({ 'notifications.remove': remove });
-    const queryClient = makeQueryClient();
-    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
-
-    const { result } = renderHookWithClient(() => useRemoveNotification(), { client, queryClient });
-
-    await act(async () => {
-      result.current.mutate('n2');
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidate).toHaveBeenCalledWith(
-      expect.objectContaining({ queryKey: keys.notifications.all })
-    );
-  });
-});
-
-// ── useClearAllNotifications ──────────────────────────────────────────────────
-
-describe('useClearAllNotifications', () => {
-  it('calls api.notifications.clearAll', async () => {
-    const clearAll = vi.fn().mockResolvedValue(undefined);
-    const client = createMockClient({ 'notifications.clearAll': clearAll });
-
-    const { result } = renderHookWithClient(() => useClearAllNotifications(), { client });
-
-    await act(async () => {
-      result.current.mutate();
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(clearAll).toHaveBeenCalledTimes(1);
-  });
-
-  it('invalidates keys.notifications.all on success', async () => {
-    const clearAll = vi.fn().mockResolvedValue(undefined);
-    const client = createMockClient({ 'notifications.clearAll': clearAll });
-    const queryClient = makeQueryClient();
-    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
-
-    const { result } = renderHookWithClient(() => useClearAllNotifications(), {
-      client,
-      queryClient,
-    });
-
-    await act(async () => {
-      result.current.mutate();
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidate).toHaveBeenCalledWith(
-      expect.objectContaining({ queryKey: keys.notifications.all })
-    );
-  });
-});
+  const client = createMockClient({ 'notifications.onOpenInbox': onOpenInbox });
+  renderHookWithClient(() => useNotificationEvents(), { client });
+  return {
+    open: (...args: [NotificationOpen?]) =>
+      (handler as ((...a: unknown[]) => void) | null)?.(...args),
+  };
+}
 
 // ── useNotificationEvents ─────────────────────────────────────────────────────
 
@@ -285,19 +190,12 @@ describe('useNotificationEvents', () => {
 
   it('calling the onOpenInbox handler sets notificationsOpen to true', async () => {
     const { useUiStore } = await import('@/store/ui-store');
-    let openHandler: (() => void) | null = null;
-    const onOpenInbox = vi.fn((cb: () => void) => {
-      openHandler = cb;
-      return () => {};
-    });
-    const client = createMockClient({ 'notifications.onOpenInbox': onOpenInbox });
-
-    renderHookWithClient(() => useNotificationEvents(), { client });
+    const mounted = mountWithOpenInbox();
 
     expect(useUiStore.getState().notificationsOpen).toBe(false);
 
     await act(async () => {
-      openHandler?.();
+      mounted.open();
     });
 
     expect(useUiStore.getState().notificationsOpen).toBe(true);
@@ -309,17 +207,10 @@ describe('useNotificationEvents', () => {
     // payload; a routed open must NOT also pop the inbox drawer, which would be
     // a second, competing destination.
     const { useUiStore } = await import('@/store/ui-store');
-    let openHandler: ((p: NotificationOpen) => void) | null = null;
-    const onOpenInbox = vi.fn((cb: (p: NotificationOpen) => void) => {
-      openHandler = cb;
-      return () => {};
-    });
-    const client = createMockClient({ 'notifications.onOpenInbox': onOpenInbox });
-
-    renderHookWithClient(() => useNotificationEvents(), { client });
+    const mounted = mountWithOpenInbox();
 
     await act(async () => {
-      openHandler?.({ route: { to: '/autopilot', search: { focus: 'ap-42' } } });
+      mounted.open({ route: { to: '/autopilot', search: { focus: 'ap-42' } } });
       await Promise.resolve();
     });
 
@@ -336,17 +227,10 @@ describe('useNotificationEvents', () => {
   it('an unknown backend route is survived, not thrown on', async () => {
     // `resolveNotificationRoute` maps it to the '/' fallback rather than handing
     // TanStack Router a path it does not know.
-    let openHandler: ((p: NotificationOpen) => void) | null = null;
-    const onOpenInbox = vi.fn((cb: (p: NotificationOpen) => void) => {
-      openHandler = cb;
-      return () => {};
-    });
-    const client = createMockClient({ 'notifications.onOpenInbox': onOpenInbox });
-
-    renderHookWithClient(() => useNotificationEvents(), { client });
+    const mounted = mountWithOpenInbox();
 
     await act(async () => {
-      openHandler?.({ route: { to: '/does-not-exist' } });
+      mounted.open({ route: { to: '/does-not-exist' } });
       await Promise.resolve();
     });
 
@@ -357,17 +241,10 @@ describe('useNotificationEvents', () => {
 
   it('a payload with no route opens the inbox (the tray-click case)', async () => {
     const { useUiStore } = await import('@/store/ui-store');
-    let openHandler: ((p: NotificationOpen) => void) | null = null;
-    const onOpenInbox = vi.fn((cb: (p: NotificationOpen) => void) => {
-      openHandler = cb;
-      return () => {};
-    });
-    const client = createMockClient({ 'notifications.onOpenInbox': onOpenInbox });
-
-    renderHookWithClient(() => useNotificationEvents(), { client });
+    const mounted = mountWithOpenInbox();
 
     await act(async () => {
-      openHandler?.({});
+      mounted.open({});
       await Promise.resolve();
     });
 

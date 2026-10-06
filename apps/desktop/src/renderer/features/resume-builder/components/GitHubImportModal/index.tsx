@@ -1,4 +1,4 @@
-import { GitBranch, Star } from 'lucide-react';
+import { GitBranch } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 
 import type { GitHubRepo } from '@ajh/shared';
@@ -18,19 +18,8 @@ import { generateGitHubProjects } from '@/lib/generate';
 import { useContactProfile } from '@/services/use-contact-profile';
 import { useGitHubImport } from '@/services/use-github-import';
 
-/** Extract a bare GitHub username from a full profile URL or return the input as-is. */
-function extractGitHubUsername(value: string): string {
-  try {
-    const url = new URL(value);
-    if (url.hostname === 'github.com' || url.hostname === 'www.github.com') {
-      const seg = url.pathname.replace(/^\//, '').split('/')[0];
-      return seg ?? value;
-    }
-  } catch {
-    // not a URL — treat as bare username
-  }
-  return value;
-}
+import { extractGitHubUsername } from './extractGitHubUsername';
+import { RepoRow } from './RepoRow';
 
 interface GitHubImportModalProps {
   open: boolean;
@@ -310,48 +299,14 @@ export function GitHubImportModal({ open, onClose, onAppend }: GitHubImportModal
               role="list"
               aria-label={t('build.extras.projects.github.modalTitle')}
             >
-              {repos.map((repo) => {
-                const isChecked = selected.has(repo.name);
-                const checkId = `github-repo-${repo.name}`;
-                return (
-                  <li key={repo.name}>
-                    <label
-                      htmlFor={checkId}
-                      className="flex cursor-pointer items-start gap-3 rounded-xl border border-foreground/10 bg-foreground/[0.03] p-3 transition-colors hover:bg-foreground/[0.06] has-[:checked]:border-brand/40 has-[:checked]:bg-brand/5"
-                    >
-                      {/* Checkbox — allowed raw input per lint exception */}
-                      <input
-                        type="checkbox"
-                        id={checkId}
-                        checked={isChecked}
-                        onChange={() => toggleRepo(repo.name)}
-                        className="mt-0.5 h-4 w-4 shrink-0 accent-[color:var(--color-brand)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate text-sm font-semibold text-foreground/85">
-                            {repo.name}
-                          </span>
-                          {repo.language && (
-                            <span className="shrink-0 rounded-full bg-foreground/[0.08] px-1.5 py-0.5 text-fine-print text-foreground/60">
-                              {repo.language}
-                            </span>
-                          )}
-                          <span className="ml-auto flex shrink-0 items-center gap-0.5 text-fine-print text-foreground/60">
-                            <Star size={11} aria-hidden={true} />
-                            {t('build.extras.projects.github.stars', { count: repo.stars })}
-                          </span>
-                        </div>
-                        {repo.description && (
-                          <p className="mt-0.5 line-clamp-2 text-xs text-foreground/60">
-                            {repo.description}
-                          </p>
-                        )}
-                      </div>
-                    </label>
-                  </li>
-                );
-              })}
+              {repos.map((repo) => (
+                <RepoRow
+                  key={repo.name}
+                  repo={repo}
+                  checked={selected.has(repo.name)}
+                  onToggle={toggleRepo}
+                />
+              ))}
             </ul>
           </div>
         )}

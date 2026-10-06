@@ -1,6 +1,6 @@
 import { Check, Loader2, Sparkles, X } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { useTranslation } from '@ajh/translations';
@@ -20,6 +20,9 @@ import {
   type RewriteLimitUnit,
 } from '@/lib/generate/rewrite';
 
+import { RewriteResultPreview } from './RewritePopover/RewriteResultPreview';
+import { useAnchoredStyle } from './RewritePopover/useAnchoredStyle';
+
 /** The quick-action presets — id maps to an i18n label + a preset instruction. */
 const PRESETS = ['shorten', 'expand', 'rephrase', 'impact', 'grammar'] as const;
 
@@ -27,9 +30,6 @@ const PRESETS = ['shorten', 'expand', 'rephrase', 'impact', 'grammar'] as const;
  *  A default-effort rewrite of a long span measured 7-34 s typically, with
  *  individual streams of 91-152 s — long enough to look dead without a line. */
 const STILL_WORKING_MS = 20_000;
-/** Matches the panel's `w-[22rem]` — clamps left-edge overflow when the trigger
- *  sits near a viewport edge (anchored-portal mode only). */
-const POPOVER_WIDTH_PX = 352;
 type Preset = (typeof PRESETS)[number];
 
 export interface RewriteTarget {
@@ -113,38 +113,7 @@ export function RewritePopover({
   // `trapRef`) so measuring its height doesn't depend on `useFocusTrap`'s
   // returned ref identity — merged onto the same node via the callback ref below.
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
-  // The popover's own rendered height — it varies with content (streaming
-  // result, error text, …), so it can't be assumed static. Used to decide
-  // whether the panel fits below the trigger or must flip above it.
-  const [panelHeight, setPanelHeight] = useState<number | null>(null);
-
-  // Anchored-portal mode only: measure the trigger on open, and re-measure on
-  // scroll/resize — the caller's scrollable ancestor (e.g. a modal body) can move
-  // the trigger while this fixed-positioned popover stays put otherwise. Also
-  // track the panel's own height via ResizeObserver so a later content change
-  // (e.g. the streaming result appearing) can re-trigger the fit check below.
-  useLayoutEffect(() => {
-    if (!anchorEl) return;
-    const measureAnchor = () => setAnchorRect(anchorEl.getBoundingClientRect());
-    measureAnchor();
-    window.addEventListener('scroll', measureAnchor, true);
-    window.addEventListener('resize', measureAnchor);
-
-    const panel = panelRef.current;
-    let observer: ResizeObserver | undefined;
-    if (panel) {
-      setPanelHeight(panel.getBoundingClientRect().height);
-      observer = new ResizeObserver(() => setPanelHeight(panel.getBoundingClientRect().height));
-      observer.observe(panel);
-    }
-
-    return () => {
-      window.removeEventListener('scroll', measureAnchor, true);
-      window.removeEventListener('resize', measureAnchor);
-      observer?.disconnect();
-    };
-  }, [anchorEl]);
+  const anchoredStyle = useAnchoredStyle(anchorEl, panelRef);
 
   // The instruction that produced the current result — lets Regenerate re-run the
   // same instruction without the user retyping it.
@@ -303,30 +272,6 @@ export function RewritePopover({
   // count next to Accept is the honest part; the user decides).
   const canAccept = !streaming && !!result.trim() && !error && !unchanged;
 
-  // Anchored-portal mode: fixed-position below-right of the trigger, clamped so
-  // the (fixed-width) panel never runs off the left edge, and flipped ABOVE the
-  // trigger when it wouldn't fit below (e.g. Rewrite opened on a question near
-  // the bottom of a scrollable, height-capped modal) — clamped so it also never
-  // runs off the top edge. `visibility: hidden` (not `display: none`) until the
-  // first measurement lands keeps the panel laid out (so its real height can be
-  // read) without a visible flash — it's gone by paint since `useLayoutEffect`
-  // flushes `setAnchorRect`/`setPanelHeight` before the browser paints.
-  const anchoredStyle: React.CSSProperties | undefined = anchorEl
-    ? anchorRect
-      ? {
-          position: 'fixed',
-          top:
-            panelHeight !== null && anchorRect.bottom + panelHeight + 4 > window.innerHeight - 8
-              ? Math.max(8, anchorRect.top - panelHeight - 4)
-              : anchorRect.bottom + 4,
-          left: Math.min(
-            Math.max(8, anchorRect.right - POPOVER_WIDTH_PX),
-            window.innerWidth - POPOVER_WIDTH_PX - 8
-          ),
-        }
-      : { position: 'fixed', top: 0, left: 0, visibility: 'hidden' }
-    : undefined;
-
   const popover = (
     <motion.div
       ref={(node: HTMLDivElement | null) => {
@@ -415,44 +360,13 @@ export function RewritePopover({
           </Button>
         </div>
 
-        {/* Streaming preview / result */}
-        {(streaming || result || error) && (
-          <div>
-            <p className="mb-1 flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-foreground/35">
-              {streaming && <Loader2 size={9} className="animate-spin" />}
-              {streaming ? t('aiGenerate.rewrite.streaming') : t('aiGenerate.rewrite.resultLabel')}
-            </p>
-            {error ? (
-              <p className="rounded-md bg-red-400/10 px-2 py-1.5 text-[11px] text-red-300">
-                {error}
-              </p>
-            ) : (
-              <p className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md border border-brand/15 bg-brand/[0.04] px-2 py-1.5 text-[11px] leading-relaxed text-foreground/80">
-                {result || '…'}
-              </p>
-            )}
-            {/* A long reasoning pass looks dead without this line. */}
-            {streaming && stillWorking && (
-              <p
-                role="status"
-                aria-live="polite"
-                className="mt-1 text-[10px] italic text-foreground/45"
-              >
-                {t('aiGenerate.rewrite.stillWorking')}
-              </p>
-            )}
-            {/* Neutral, NOT an error: the model handed the selection back. */}
-            {unchanged && !streaming && (
-              <p
-                role="status"
-                aria-live="polite"
-                className="mt-1 rounded-md bg-muted px-2 py-1.5 text-[11px] text-foreground/60"
-              >
-                {t('aiGenerate.rewrite.unchanged')}
-              </p>
-            )}
-          </div>
-        )}
+        <RewriteResultPreview
+          streaming={streaming}
+          result={result}
+          error={error}
+          stillWorking={stillWorking}
+          unchanged={unchanged}
+        />
       </div>
 
       {/* Actions */}

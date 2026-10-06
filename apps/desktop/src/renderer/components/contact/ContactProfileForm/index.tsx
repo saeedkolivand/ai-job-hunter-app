@@ -1,7 +1,6 @@
 import { Camera, Plus, Trash2, UserRound } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Controller, useFieldArray, useForm } from 'react-hook-form';
-import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 
 import type { ContactProfile } from '@ajh/shared';
@@ -12,70 +11,8 @@ import { PhotoProcessingError, processPhotoFile } from '@/lib/photo';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { useContactProfile, useSaveContactProfile } from '@/services';
 
-const FIELD_CLASS = 'flex flex-col gap-1.5';
-const LABEL_CLASS = 'text-xs font-medium text-foreground/70';
-
-const isBlank = (v: string | undefined): boolean => !v || !v.trim();
-
-/** Accepts http(s) URLs only; non-pedantic. Blank passes. */
-function isValidUrl(value: string): boolean {
-  if (isBlank(value)) return true;
-  try {
-    const url = new URL(value.trim());
-    return url.protocol === 'http:' || url.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
-/** A blank string or a valid http(s) URL. Messages are i18n keys. */
-const urlField = z.string().refine(isValidUrl, { message: 'settings.contactProfile.urlInvalid' });
-
-/**
- * Light, NON-blocking schema for the contact form. The form auto-saves on blur
- * (no submit), so these refinements only surface inline hints — they never gate
- * persistence. Every field is a plain string; empty strings are the "unset"
- * value and are treated as blank.
- */
-const contactSchema = z.object({
-  fullName: z.string(),
-  email: z.string().refine((v) => isBlank(v) || z.string().email().safeParse(v.trim()).success, {
-    message: 'settings.contactProfile.emailInvalid',
-  }),
-  phone: z.string(),
-  location: z.string(),
-  linkedin: urlField,
-  github: urlField,
-  website: urlField,
-  extraLinks: z.array(z.object({ label: z.string(), url: urlField })),
-});
-
-type ContactFormValues = z.infer<typeof contactSchema>;
-
-const EMPTY_VALUES: ContactFormValues = {
-  fullName: '',
-  email: '',
-  phone: '',
-  location: '',
-  linkedin: '',
-  github: '',
-  website: '',
-  extraLinks: [],
-};
-
-/** Map a stored profile into the flat form value shape. */
-function toFormValues(profile: ContactProfile): ContactFormValues {
-  return {
-    fullName: profile.fullName ?? '',
-    email: profile.email ?? '',
-    phone: profile.phone ?? '',
-    location: profile.location?.default ?? '',
-    linkedin: profile.linkedin ?? '',
-    github: profile.github ?? '',
-    website: profile.website ?? '',
-    extraLinks: (profile.extraLinks ?? []).map((l) => ({ label: l.label, url: l.url })),
-  };
-}
+import { type ContactFormValues, contactSchema, EMPTY_VALUES, toFormValues } from './contactSchema';
+import { ContactTextField, FIELD_CLASS, LABEL_CLASS } from './ContactTextField';
 
 /**
  * The editable contact-profile form — the single source of truth for the document
@@ -280,74 +217,30 @@ export function ContactProfileForm() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 @md:grid-cols-2">
-        <div className={FIELD_CLASS}>
-          <label className={LABEL_CLASS} htmlFor="cp-name">
-            {t('settings.contactProfile.fullName')}
-          </label>
-          <Controller
-            control={control}
-            name="fullName"
-            render={({ field }) => (
-              <Input
-                id="cp-name"
-                value={field.value}
-                onChange={field.onChange}
-                onBlur={() => {
-                  field.onBlur();
-                  persist();
-                }}
-              />
-            )}
-          />
-        </div>
-
-        <div className={FIELD_CLASS}>
-          <label className={LABEL_CLASS} htmlFor="cp-email">
-            {t('settings.contactProfile.email')}
-          </label>
-          <Controller
-            control={control}
-            name="email"
-            render={({ field }) => (
-              <Input
-                id="cp-email"
-                type="email"
-                value={field.value}
-                onChange={field.onChange}
-                onBlur={() => {
-                  field.onBlur();
-                  persist();
-                }}
-                placeholder={t('settings.contactProfile.emailPlaceholder')}
-                aria-invalid={errors.email ? true : undefined}
-              />
-            )}
-          />
-          {errors.email && (
-            <p className="text-xs text-amber-400/80">{t(errors.email.message ?? '')}</p>
-          )}
-        </div>
-
-        <div className={FIELD_CLASS}>
-          <label className={LABEL_CLASS} htmlFor="cp-phone">
-            {t('settings.contactProfile.phone')}
-          </label>
-          <Controller
-            control={control}
-            name="phone"
-            render={({ field }) => (
-              <Input
-                id="cp-phone"
-                value={field.value}
-                onChange={field.onChange}
-                onBlur={() => {
-                  field.onBlur();
-                  persist();
-                }}
-              />
-            )}
-          />
-        </div>
+        <ContactTextField
+          control={control}
+          name="fullName"
+          id="cp-name"
+          label={t('settings.contactProfile.fullName')}
+          onCommit={persist}
+        />
+        <ContactTextField
+          control={control}
+          name="email"
+          id="cp-email"
+          label={t('settings.contactProfile.email')}
+          type="email"
+          placeholder={t('settings.contactProfile.emailPlaceholder')}
+          error={errors.email}
+          onCommit={persist}
+        />
+        <ContactTextField
+          control={control}
+          name="phone"
+          id="cp-phone"
+          label={t('settings.contactProfile.phone')}
+          onCommit={persist}
+        />
 
         <div className={FIELD_CLASS}>
           <span className={LABEL_CLASS}>{t('settings.contactProfile.location')}</span>
@@ -369,83 +262,33 @@ export function ContactProfileForm() {
           />
         </div>
 
-        <div className={FIELD_CLASS}>
-          <label className={LABEL_CLASS} htmlFor="cp-linkedin">
-            {t('settings.contactProfile.linkedin')}
-          </label>
-          <Controller
-            control={control}
-            name="linkedin"
-            render={({ field }) => (
-              <Input
-                id="cp-linkedin"
-                value={field.value}
-                onChange={field.onChange}
-                onBlur={() => {
-                  field.onBlur();
-                  persist();
-                }}
-                placeholder={t('settings.contactProfile.linkedinPlaceholder')}
-                aria-invalid={errors.linkedin ? true : undefined}
-              />
-            )}
-          />
-          {errors.linkedin && (
-            <p className="text-xs text-amber-400/80">{t(errors.linkedin.message ?? '')}</p>
-          )}
-        </div>
-
-        <div className={FIELD_CLASS}>
-          <label className={LABEL_CLASS} htmlFor="cp-github">
-            {t('settings.contactProfile.github')}
-          </label>
-          <Controller
-            control={control}
-            name="github"
-            render={({ field }) => (
-              <Input
-                id="cp-github"
-                value={field.value}
-                onChange={field.onChange}
-                onBlur={() => {
-                  field.onBlur();
-                  persist();
-                }}
-                placeholder={t('settings.contactProfile.githubPlaceholder')}
-                aria-invalid={errors.github ? true : undefined}
-              />
-            )}
-          />
-          {errors.github && (
-            <p className="text-xs text-amber-400/80">{t(errors.github.message ?? '')}</p>
-          )}
-        </div>
-
-        <div className={FIELD_CLASS}>
-          <label className={LABEL_CLASS} htmlFor="cp-website">
-            {t('settings.contactProfile.website')}
-          </label>
-          <Controller
-            control={control}
-            name="website"
-            render={({ field }) => (
-              <Input
-                id="cp-website"
-                value={field.value}
-                onChange={field.onChange}
-                onBlur={() => {
-                  field.onBlur();
-                  persist();
-                }}
-                placeholder={t('settings.contactProfile.websitePlaceholder')}
-                aria-invalid={errors.website ? true : undefined}
-              />
-            )}
-          />
-          {errors.website && (
-            <p className="text-xs text-amber-400/80">{t(errors.website.message ?? '')}</p>
-          )}
-        </div>
+        <ContactTextField
+          control={control}
+          name="linkedin"
+          id="cp-linkedin"
+          label={t('settings.contactProfile.linkedin')}
+          placeholder={t('settings.contactProfile.linkedinPlaceholder')}
+          error={errors.linkedin}
+          onCommit={persist}
+        />
+        <ContactTextField
+          control={control}
+          name="github"
+          id="cp-github"
+          label={t('settings.contactProfile.github')}
+          placeholder={t('settings.contactProfile.githubPlaceholder')}
+          error={errors.github}
+          onCommit={persist}
+        />
+        <ContactTextField
+          control={control}
+          name="website"
+          id="cp-website"
+          label={t('settings.contactProfile.website')}
+          placeholder={t('settings.contactProfile.websitePlaceholder')}
+          error={errors.website}
+          onCommit={persist}
+        />
       </div>
 
       <div className="mt-6 flex flex-col gap-2">

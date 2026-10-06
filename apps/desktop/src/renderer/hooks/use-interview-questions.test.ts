@@ -81,6 +81,12 @@ const renderProps = (initialProps: Parameters<typeof useInterviewQuestions>[0]) 
     initialProps,
   });
 
+/** Run `generate()` to completion inside `act`. */
+const runGenerate = (result: { current: { generate: () => Promise<void> } }) =>
+  act(async () => {
+    await result.current.generate();
+  });
+
 /** Long enough for the real `detectLanguage` heuristic to settle on German. */
 const GERMAN_JD =
   'Wir suchen einen erfahrenen Softwareentwickler für unser Team in München. ' +
@@ -147,9 +153,7 @@ describe('useInterviewQuestions', () => {
 
     act(() => result.current.toggleAudience('team')); // recruiter, hiringManager, team
 
-    await act(async () => {
-      await result.current.generate();
-    });
+    await runGenerate(result);
 
     expect(generateInterviewQuestions).toHaveBeenCalledTimes(1);
     expect(generateInterviewQuestions).toHaveBeenCalledWith(
@@ -209,9 +213,7 @@ describe('useInterviewQuestions', () => {
     act(() => result.current.setLanguage('es'));
     expect(result.current.language).toBe('es');
 
-    await act(async () => {
-      await result.current.generate();
-    });
+    await runGenerate(result);
 
     expect(generateInterviewQuestions).toHaveBeenCalledWith(
       expect.objectContaining({ language: 'es' })
@@ -227,9 +229,7 @@ describe('useInterviewQuestions', () => {
     // the save must still carry the EXTRACTED value while generation uses the ad's.
     const { result } = render({ ...params, jobDesc: GERMAN_JD });
 
-    await act(async () => {
-      await result.current.generate();
-    });
+    await runGenerate(result);
 
     expect(generateInterviewQuestions).toHaveBeenCalledWith(
       expect.objectContaining({ language: 'de' })
@@ -245,9 +245,7 @@ describe('useInterviewQuestions', () => {
         targetLanguageConfident: false,
       });
 
-      await act(async () => {
-        await result.current.generate();
-      });
+      await runGenerate(result);
 
       expect(save).toHaveBeenCalledWith(
         expect.objectContaining({ targetLanguage: '', resumeLanguage: '', jobAdLanguage: '' })
@@ -261,9 +259,7 @@ describe('useInterviewQuestions', () => {
         targetLanguageConfident: true,
       });
 
-      await act(async () => {
-        await result.current.generate();
-      });
+      await runGenerate(result);
 
       expect(save).toHaveBeenCalledWith(
         expect.objectContaining({ targetLanguage: 'en', resumeLanguage: 'en', jobAdLanguage: 'en' })
@@ -275,9 +271,7 @@ describe('useInterviewQuestions', () => {
       // flag from a caller that never passed `meta` must not blank the record.
       const { result } = render({ ...params, targetLanguageConfident: false });
 
-      await act(async () => {
-        await result.current.generate();
-      });
+      await runGenerate(result);
 
       expect(save).toHaveBeenCalledWith(expect.objectContaining({ targetLanguage: 'en' }));
     });
@@ -289,9 +283,7 @@ describe('useInterviewQuestions', () => {
     expect(result.current.language).toBe('nl');
     expect(result.current.detectedLanguage).toBe('nl');
 
-    await act(async () => {
-      await result.current.generate();
-    });
+    await runGenerate(result);
 
     expect(generateInterviewQuestions).toHaveBeenCalledWith(
       expect.objectContaining({ language: 'nl' })
@@ -304,9 +296,7 @@ describe('useInterviewQuestions', () => {
     const { result } = render();
     expect(result.current.language).toBe('');
 
-    await act(async () => {
-      await result.current.generate();
-    });
+    await runGenerate(result);
 
     expect(generateInterviewQuestions).toHaveBeenCalledWith(
       expect.objectContaining({ language: undefined })
@@ -340,9 +330,7 @@ describe('useInterviewQuestions', () => {
       vi.mocked(generateInterviewQuestions).mockRejectedValueOnce(new Error('model exploded'));
       const { result } = render();
 
-      await act(async () => {
-        await result.current.generate();
-      });
+      await runGenerate(result);
 
       expect(result.current.error).toBe('model exploded');
       expect(result.current.generating).toBe(false);
@@ -355,9 +343,7 @@ describe('useInterviewQuestions', () => {
       vi.mocked(generateInterviewQuestions).mockRejectedValueOnce('just a string');
       const { result } = render();
 
-      await act(async () => {
-        await result.current.generate();
-      });
+      await runGenerate(result);
 
       expect(result.current.error).toBe('Failed to generate interview questions');
       expect(result.current.generating).toBe(false);
@@ -367,14 +353,10 @@ describe('useInterviewQuestions', () => {
       vi.mocked(generateInterviewQuestions).mockRejectedValueOnce(new Error('transient'));
       const { result } = render();
 
-      await act(async () => {
-        await result.current.generate();
-      });
+      await runGenerate(result);
       expect(result.current.error).toBe('transient');
 
-      await act(async () => {
-        await result.current.generate();
-      });
+      await runGenerate(result);
 
       expect(result.current.error).toBeNull();
       expect(result.current.questions).toHaveLength(1);
@@ -384,9 +366,7 @@ describe('useInterviewQuestions', () => {
       save.mockRejectedValueOnce(new Error('disk full'));
       const { result } = render();
 
-      await act(async () => {
-        await result.current.generate();
-      });
+      await runGenerate(result);
 
       expect(result.current.error).toBe('disk full');
       expect(result.current.generating).toBe(false);
@@ -401,9 +381,7 @@ describe('useInterviewQuestions', () => {
     act(() => result.current.toggleAudience('recruiter'));
     act(() => result.current.toggleAudience('hiringManager'));
 
-    await act(async () => {
-      await result.current.generate();
-    });
+    await runGenerate(result);
 
     expect(generateInterviewQuestions).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();

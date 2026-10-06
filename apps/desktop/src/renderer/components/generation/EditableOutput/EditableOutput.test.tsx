@@ -1,78 +1,20 @@
-import { forwardRef, useImperativeHandle } from 'react';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { TEST_IDS } from '@ajh/test-ids';
-import type * as AjhUi from '@ajh/ui';
-import type { RichTextEditorHandle, RichTextEditorProps } from '@ajh/ui';
-
-import type * as Generate from '@/lib/generate';
 
 import { EditableOutput } from './index';
+import {
+  mockEditorFocus,
+  mockGetSelectionContext,
+  mockGetSelectionText,
+  mockReplaceSelection,
+  mockRewriteSelection,
+} from './test-mocks';
 
-// ── Shared spy functions for the RichTextEditor test-double ───────────────────
-//
-// Declared before vi.mock('@ajh/ui') so the factory closure can capture them.
-// Each describe's beforeEach resets them independently.
-
-const mockReplaceSelection = vi.fn<(text: string) => void>();
-const mockGetSelectionText = vi.fn<() => string>(() => '');
-const mockGetSelectionContext = vi.fn<() => { selection: string; before: string; after: string }>(
-  () => ({ selection: '', before: '', after: '' })
+vi.mock('@ajh/ui', async (importOriginal) =>
+  (await import('./test-mocks')).uiMock(await importOriginal())
 );
-const mockEditorFocus = vi.fn<() => void>();
-
-// ── Module mocks ──────────────────────────────────────────────────────────────
-//
-// The @ajh/ui mock:
-//   - replaces RichTextEditor with a test-double (see below)
-//   - stubs useFocusTrap (needed by every EditableOutput test)
-//   - forwards all other exports unchanged
-//
-// Test-double contract:
-//   (a) renders [data-testid="rich-text-editor"] so tests can assert tab wiring
-//   (b) exposes a [data-testid="rte-select-trigger"] button that fires
-//       onSelectionChange(true) — simulates the user highlighting text
-//   (c) wires the ref to the module-level spy functions above
-
-vi.mock('@ajh/ui', async (importOriginal) => {
-  const actual = await importOriginal<typeof AjhUi>();
-
-  const RichTextEditorDouble = forwardRef<RichTextEditorHandle, RichTextEditorProps>(
-    function RichTextEditorDouble({ onSelectionChange, value }, ref) {
-      useImperativeHandle(ref, (): RichTextEditorHandle => ({
-        getSelectionText: mockGetSelectionText,
-        getSelectionContext: mockGetSelectionContext,
-        replaceSelection: mockReplaceSelection,
-        focus: mockEditorFocus,
-      }));
-
-      return (
-        <div data-testid={TEST_IDS.generation.richTextEditor}>
-          <span data-testid={TEST_IDS.generation.rteValue}>{value}</span>
-          <actual.Button
-            data-testid={TEST_IDS.generation.rteSelectTrigger}
-            onClick={() => onSelectionChange?.(true)}
-          >
-            simulate selection
-          </actual.Button>
-          <actual.Button
-            data-testid={TEST_IDS.generation.rteDeselectTrigger}
-            onClick={() => onSelectionChange?.(false)}
-          >
-            deselect
-          </actual.Button>
-        </div>
-      );
-    }
-  );
-
-  return {
-    ...actual,
-    useFocusTrap: () => ({ current: null }),
-    RichTextEditor: RichTextEditorDouble,
-  };
-});
 
 // Stub the model selector — the component calls this on every render.
 vi.mock('@/components/ui/ModelSelector', () => ({
@@ -90,16 +32,9 @@ vi.mock('@/services/use-contact-profile', () => ({
   useContactProfile: () => ({ data: undefined }),
 }));
 
-// rewriteSelection is the only async side-effect we need to control.
-const mockRewriteSelection = vi.fn();
-vi.mock('@/lib/generate', async (importOriginal) => {
-  const actual = await importOriginal<typeof Generate>();
-  return {
-    ...actual,
-    rewriteSelection: (...args: Parameters<typeof mockRewriteSelection>) =>
-      mockRewriteSelection(...args),
-  };
-});
+vi.mock('@/lib/generate', async (importOriginal) =>
+  (await import('./test-mocks')).generateMock(await importOriginal())
+);
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -156,6 +91,61 @@ function getSourceTextarea(): HTMLTextAreaElement {
   return el;
 }
 
+/** Mock the rewrite stream: emits `text` as one token, then resolves with it. */
+function mockStream(text: string) {
+  mockRewriteSelection.mockImplementation(
+    async ({ onToken }: { onToken: (tok: string) => void }) => {
+      onToken(text);
+      return text;
+    }
+  );
+}
+
+/** Click the "shorten" preset chip (starts a rewrite) inside `act`. */
+async function runShortenPreset() {
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: /aiGenerate\.rewrite\.presets\.shorten/i }));
+  });
+}
+
+/** Wait for the streamed result to become acceptable, then click Accept. */
+async function acceptRewrite() {
+  const acceptBtn = screen.getByRole('button', { name: /aiGenerate\.rewrite\.accept/i });
+  await waitFor(() => expect(acceptBtn).not.toBeDisabled());
+  fireEvent.click(acceptBtn);
+}
+
+/** Cancel the open popover without starting a rewrite. */
+function cancelRewrite() {
+  const [firstCancel] = screen.getAllByRole('button', { name: /aiGenerate\.rewrite\.cancel/i });
+  if (!firstCancel) throw new Error('no cancel button rendered');
+  fireEvent.click(firstCancel);
+}
+
+/** The single onChange argument, failing loudly when onChange never fired. */
+function firstOnChangeArg(onChange: Mock<(value: string) => void>): string {
+  const [firstCall] = onChange.mock.calls;
+  if (!firstCall) throw new Error('onChange was not called');
+  return firstCall[0];
+}
+
+/** Source view with `start..end` selected and the rewrite popover open. */
+function openSourceRewrite(onChange: (v: string) => void, start: number, end: number) {
+  const view = render(<EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />);
+  switchToSource();
+  simulateSourceSelection(start, end);
+  openRewritePopover();
+  return view;
+}
+
+/** WYSIWYG view with a selection made inside the editor and the popover open. */
+function openEditorRewrite(onChange: (v: string) => void) {
+  render(<EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />);
+  switchToWysiwygEdit();
+  fireEvent.click(screen.getByTestId(TEST_IDS.generation.rteSelectTrigger));
+  openRewritePopover();
+}
+
 // ── Source-path rewrite tests ─────────────────────────────────────────────────
 
 describe('EditableOutput — F4 inline rewrite splice (Source path)', () => {
@@ -167,108 +157,44 @@ describe('EditableOutput — F4 inline rewrite splice (Source path)', () => {
   });
 
   it('selecting a range + accepting a rewrite splices exactly [start,end) with the replacement', async () => {
-    mockRewriteSelection.mockImplementation(
-      async ({ onToken }: { onToken: (tok: string) => void }) => {
-        onToken(REPLACEMENT);
-        return REPLACEMENT;
-      }
-    );
-
-    render(<EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />);
-
-    switchToSource();
-    simulateSourceSelection(SEL_START, SEL_END);
-    openRewritePopover();
-
-    await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: /aiGenerate\.rewrite\.presets\.shorten/i })
-      );
-    });
-
-    const acceptBtn = screen.getByRole('button', { name: /aiGenerate\.rewrite\.accept/i });
-    await waitFor(() => expect(acceptBtn).not.toBeDisabled());
-
-    fireEvent.click(acceptBtn);
+    mockStream(REPLACEMENT);
+    openSourceRewrite(onChange, SEL_START, SEL_END);
+    await runShortenPreset();
+    await acceptRewrite();
 
     const expected = FULL_TEXT.slice(0, SEL_START) + REPLACEMENT + FULL_TEXT.slice(SEL_END);
     expect(onChange).toHaveBeenCalledWith(expected);
 
-    const [firstCall] = onChange.mock.calls;
-    if (!firstCall) throw new Error('onChange was not called');
-    const result = firstCall[0];
+    const result = firstOnChangeArg(onChange);
     expect(result.startsWith('Hello world. ')).toBe(true);
     expect(result.endsWith(' Goodbye world.')).toBe(true);
   });
 
-  it('splice at offset 0 (selection starts at the very beginning of text)', async () => {
-    mockRewriteSelection.mockImplementation(
-      async ({ onToken }: { onToken: (tok: string) => void }) => {
-        onToken('PREFIX');
-        return 'PREFIX';
-      }
-    );
+  it.each([
+    {
+      name: 'splice at offset 0 (selection starts at the very beginning of text)',
+      token: 'PREFIX',
+      start: 0,
+      end: 5,
+      expected: 'PREFIX' + FULL_TEXT.slice(5),
+      edge: (r: string) => r.startsWith('PREFIX'),
+    },
+    {
+      name: 'splice ending at text.length (selection ends at the very end of text)',
+      token: 'SUFFIX',
+      start: FULL_TEXT.length - 14,
+      end: FULL_TEXT.length,
+      expected: FULL_TEXT.slice(0, FULL_TEXT.length - 14) + 'SUFFIX',
+      edge: (r: string) => r.endsWith('SUFFIX'),
+    },
+  ])('$name', async ({ token, start, end, expected, edge }) => {
+    mockStream(token);
+    openSourceRewrite(onChange, start, end);
+    await runShortenPreset();
+    await acceptRewrite();
 
-    const START_BOUNDARY = 0;
-    const END_BOUNDARY = 5;
-
-    render(<EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />);
-
-    switchToSource();
-    simulateSourceSelection(START_BOUNDARY, END_BOUNDARY);
-    openRewritePopover();
-
-    await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: /aiGenerate\.rewrite\.presets\.shorten/i })
-      );
-    });
-
-    const acceptBtn = screen.getByRole('button', { name: /aiGenerate\.rewrite\.accept/i });
-    await waitFor(() => expect(acceptBtn).not.toBeDisabled());
-
-    fireEvent.click(acceptBtn);
-
-    const expected = 'PREFIX' + FULL_TEXT.slice(END_BOUNDARY);
     expect(onChange).toHaveBeenCalledWith(expected);
-    const [firstCall] = onChange.mock.calls;
-    if (!firstCall) throw new Error('onChange was not called');
-    expect(firstCall[0].startsWith('PREFIX')).toBe(true);
-  });
-
-  it('splice ending at text.length (selection ends at the very end of text)', async () => {
-    mockRewriteSelection.mockImplementation(
-      async ({ onToken }: { onToken: (tok: string) => void }) => {
-        onToken('SUFFIX');
-        return 'SUFFIX';
-      }
-    );
-
-    const END_BOUNDARY = FULL_TEXT.length;
-    const START_BOUNDARY = END_BOUNDARY - 14;
-
-    render(<EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />);
-
-    switchToSource();
-    simulateSourceSelection(START_BOUNDARY, END_BOUNDARY);
-    openRewritePopover();
-
-    await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: /aiGenerate\.rewrite\.presets\.shorten/i })
-      );
-    });
-
-    const acceptBtn = screen.getByRole('button', { name: /aiGenerate\.rewrite\.accept/i });
-    await waitFor(() => expect(acceptBtn).not.toBeDisabled());
-
-    fireEvent.click(acceptBtn);
-
-    const expected = FULL_TEXT.slice(0, START_BOUNDARY) + 'SUFFIX';
-    expect(onChange).toHaveBeenCalledWith(expected);
-    const [firstCall] = onChange.mock.calls;
-    if (!firstCall) throw new Error('onChange was not called');
-    expect(firstCall[0].endsWith('SUFFIX')).toBe(true);
+    expect(edge(firstOnChangeArg(onChange))).toBe(true);
   });
 
   it('opens the popover in PORTAL mode, outside every overflow-hidden ancestor', () => {
@@ -280,13 +206,7 @@ describe('EditableOutput — F4 inline rewrite splice (Source path)', () => {
     // branch; drop that prop and the dialog lands back inside `container`.
     mockRewriteSelection.mockImplementation(async () => REPLACEMENT);
 
-    const { container } = render(
-      <EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />
-    );
-
-    switchToSource();
-    simulateSourceSelection(SEL_START, SEL_END);
-    openRewritePopover();
+    const { container } = openSourceRewrite(onChange, SEL_START, SEL_END);
 
     const dialog = screen.getByRole('dialog');
     expect(container.contains(dialog)).toBe(false);
@@ -295,35 +215,17 @@ describe('EditableOutput — F4 inline rewrite splice (Source path)', () => {
 
   it('Cancel leaves onChange uncalled and text unchanged', () => {
     mockRewriteSelection.mockImplementation(async () => REPLACEMENT);
+    openSourceRewrite(onChange, SEL_START, SEL_END);
 
-    render(<EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />);
-
-    switchToSource();
-    simulateSourceSelection(SEL_START, SEL_END);
-    openRewritePopover();
-
-    const cancelBtns = screen.getAllByRole('button', { name: /aiGenerate\.rewrite\.cancel/i });
-    const [firstCancel] = cancelBtns;
-    if (!firstCancel) throw new Error('no cancel button rendered');
-    fireEvent.click(firstCancel);
+    cancelRewrite();
 
     expect(onChange).not.toHaveBeenCalled();
   });
 
   it('stream rejection: onChange is NOT called, error is surfaced, Accept is disabled', async () => {
     mockRewriteSelection.mockImplementation(() => Promise.reject(new Error('provider error')));
-
-    render(<EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />);
-
-    switchToSource();
-    simulateSourceSelection(SEL_START, SEL_END);
-    openRewritePopover();
-
-    await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: /aiGenerate\.rewrite\.presets\.shorten/i })
-      );
-    });
+    openSourceRewrite(onChange, SEL_START, SEL_END);
+    await runShortenPreset();
 
     await waitFor(() => {
       expect(screen.getByText('aiGenerate.rewrite.failed')).toBeInTheDocument();
@@ -335,24 +237,9 @@ describe('EditableOutput — F4 inline rewrite splice (Source path)', () => {
   });
 
   it('empty/whitespace result: onChange is NOT called, error is surfaced, Accept is disabled', async () => {
-    mockRewriteSelection.mockImplementation(
-      async ({ onToken }: { onToken: (tok: string) => void }) => {
-        onToken('   ');
-        return '   ';
-      }
-    );
-
-    render(<EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />);
-
-    switchToSource();
-    simulateSourceSelection(SEL_START, SEL_END);
-    openRewritePopover();
-
-    await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: /aiGenerate\.rewrite\.presets\.shorten/i })
-      );
-    });
+    mockStream('   ');
+    openSourceRewrite(onChange, SEL_START, SEL_END);
+    await runShortenPreset();
 
     await waitFor(() => {
       expect(screen.getByText('aiGenerate.rewrite.empty')).toBeInTheDocument();
@@ -373,18 +260,8 @@ describe('EditableOutput — F4 inline rewrite splice (Source path)', () => {
         });
       }
     );
-
-    render(<EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />);
-
-    switchToSource();
-    simulateSourceSelection(SEL_START, SEL_END);
-    openRewritePopover();
-
-    await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: /aiGenerate\.rewrite\.presets\.shorten/i })
-      );
-    });
+    openSourceRewrite(onChange, SEL_START, SEL_END);
+    await runShortenPreset();
 
     const textarea = getSourceTextarea();
     expect(textarea).toHaveAttribute('readonly');
@@ -444,35 +321,10 @@ describe('EditableOutput — F4 inline rewrite splice (Editor/WYSIWYG path)', ()
 
   it('editor rewrite accept: replaceSelection called once with the AI result', async () => {
     const AI_RESULT = 'This is the REPLACED part.';
-
-    mockRewriteSelection.mockImplementation(
-      async ({ onToken }: { onToken: (tok: string) => void }) => {
-        onToken(AI_RESULT);
-        return AI_RESULT;
-      }
-    );
-
-    render(<EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />);
-
-    // Switch to WYSIWYG Edit view.
-    switchToWysiwygEdit();
-
-    // Simulate the user making a selection inside the editor.
-    fireEvent.click(screen.getByTestId(TEST_IDS.generation.rteSelectTrigger));
-
-    // Rewrite trigger should now be visible.
-    openRewritePopover();
-
-    await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: /aiGenerate\.rewrite\.presets\.shorten/i })
-      );
-    });
-
-    const acceptBtn = screen.getByRole('button', { name: /aiGenerate\.rewrite\.accept/i });
-    await waitFor(() => expect(acceptBtn).not.toBeDisabled());
-
-    fireEvent.click(acceptBtn);
+    mockStream(AI_RESULT);
+    openEditorRewrite(onChange);
+    await runShortenPreset();
+    await acceptRewrite();
 
     // The editor's replaceSelection must be called exactly once with the result.
     expect(mockReplaceSelection).toHaveBeenCalledTimes(1);
@@ -485,64 +337,31 @@ describe('EditableOutput — F4 inline rewrite splice (Editor/WYSIWYG path)', ()
   });
 
   it('editor rewrite cancel: replaceSelection is never called', () => {
-    render(<EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />);
-
-    switchToWysiwygEdit();
-    fireEvent.click(screen.getByTestId(TEST_IDS.generation.rteSelectTrigger));
-    openRewritePopover();
+    openEditorRewrite(onChange);
 
     // Cancel without starting a rewrite.
-    const cancelBtns = screen.getAllByRole('button', { name: /aiGenerate\.rewrite\.cancel/i });
-    const [firstCancel] = cancelBtns;
-    if (!firstCancel) throw new Error('no cancel button rendered');
-    fireEvent.click(firstCancel);
+    cancelRewrite();
 
     expect(mockReplaceSelection).not.toHaveBeenCalled();
     expect(onChange).not.toHaveBeenCalled();
   });
 
   it('editor rewrite: getSelectionContext called when trigger fires', async () => {
-    mockRewriteSelection.mockImplementation(
-      async ({ onToken }: { onToken: (tok: string) => void }) => {
-        onToken('result');
-        return 'result';
-      }
-    );
-
-    render(<EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />);
-
-    switchToWysiwygEdit();
-    fireEvent.click(screen.getByTestId(TEST_IDS.generation.rteSelectTrigger));
-    openRewritePopover();
+    mockStream('result');
+    openEditorRewrite(onChange);
 
     // getSelectionContext must have been invoked when the popover opened.
     expect(mockGetSelectionContext).toHaveBeenCalled();
 
     // Accept to clean up state.
-    await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: /aiGenerate\.rewrite\.presets\.shorten/i })
-      );
-    });
-    const acceptBtn = screen.getByRole('button', { name: /aiGenerate\.rewrite\.accept/i });
-    await waitFor(() => expect(acceptBtn).not.toBeDisabled());
-    fireEvent.click(acceptBtn);
+    await runShortenPreset();
+    await acceptRewrite();
   });
 
   it('editor rewrite stream rejection: replaceSelection and onChange uncalled', async () => {
     mockRewriteSelection.mockImplementation(() => Promise.reject(new Error('network error')));
-
-    render(<EditableOutput value={FULL_TEXT} onChange={onChange} docType="resume" />);
-
-    switchToWysiwygEdit();
-    fireEvent.click(screen.getByTestId(TEST_IDS.generation.rteSelectTrigger));
-    openRewritePopover();
-
-    await act(async () => {
-      fireEvent.click(
-        screen.getByRole('button', { name: /aiGenerate\.rewrite\.presets\.shorten/i })
-      );
-    });
+    openEditorRewrite(onChange);
+    await runShortenPreset();
 
     await waitFor(() => {
       expect(screen.getByText('aiGenerate.rewrite.failed')).toBeInTheDocument();

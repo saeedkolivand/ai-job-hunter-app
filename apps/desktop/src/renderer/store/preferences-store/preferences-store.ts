@@ -135,201 +135,119 @@ type PreferencesStore = Preferences & PreferencesActions;
 
 export const usePreferencesStore = create<PreferencesStore>()(
   persist(
-    (set) => ({
-      ...defaultPreferences,
-      setUserName: (userName: string) =>
-        set((state) => ({
-          ...state,
-          userName,
-          lastUpdated: new Date().toISOString(),
-        })),
+    (set) => {
+      // Every simple setter stamps `lastUpdated` the same way.
+      const patch = (change: Partial<Preferences>) =>
+        set((state) => ({ ...state, ...change, lastUpdated: new Date().toISOString() }));
+      return {
+        ...defaultPreferences,
+        setUserName: (userName: string) => patch({ userName }),
 
-      setLanguage: (language: string) =>
-        set((state) => ({
-          ...state,
-          language,
-          lastUpdated: new Date().toISOString(),
-        })),
+        setLanguage: (language: string) => patch({ language }),
 
-      setProviderSettings: (provider: AiProvider, settings: Partial<PerProviderSettings>) =>
-        set((state) => {
-          const existing = state.aiProviderConfig?.providers?.[provider] ?? { model: '' };
-          return {
-            ...state,
-            aiProviderConfig: {
-              activeProvider: state.aiProviderConfig?.activeProvider ?? 'ollama',
-              providers: {
-                ...state.aiProviderConfig?.providers,
-                [provider]: { ...existing, ...settings },
+        setProviderSettings: (provider: AiProvider, settings: Partial<PerProviderSettings>) =>
+          set((state) => {
+            const existing = state.aiProviderConfig?.providers?.[provider] ?? { model: '' };
+            return {
+              ...state,
+              aiProviderConfig: {
+                activeProvider: state.aiProviderConfig?.activeProvider ?? 'ollama',
+                providers: {
+                  ...state.aiProviderConfig?.providers,
+                  [provider]: { ...existing, ...settings },
+                },
               },
-            },
-            lastUpdated: new Date().toISOString(),
-          };
-        }),
+              lastUpdated: new Date().toISOString(),
+            };
+          }),
 
-      // Per-model limits live under the local (ollama) provider, keyed by model
-      // name, and are deep-merged so context-window and max-output update
-      // independently.
-      setLocalModelLimits: (model: string, limits: Partial<LocalModelLimits>) =>
-        set((state) => {
-          const ollama = state.aiProviderConfig?.providers?.ollama ?? { model: '' };
-          const existingLimits = ollama.modelLimits ?? {};
-          return {
-            ...state,
-            aiProviderConfig: {
-              activeProvider: state.aiProviderConfig?.activeProvider ?? 'ollama',
-              providers: {
-                ...state.aiProviderConfig?.providers,
-                ollama: {
-                  ...ollama,
-                  modelLimits: {
-                    ...existingLimits,
-                    [model]: { ...existingLimits[model], ...limits },
+        // Per-model limits live under the local (ollama) provider, keyed by model
+        // name, and are deep-merged so context-window and max-output update
+        // independently.
+        setLocalModelLimits: (model: string, limits: Partial<LocalModelLimits>) =>
+          set((state) => {
+            const ollama = state.aiProviderConfig?.providers?.ollama ?? { model: '' };
+            const existingLimits = ollama.modelLimits ?? {};
+            return {
+              ...state,
+              aiProviderConfig: {
+                activeProvider: state.aiProviderConfig?.activeProvider ?? 'ollama',
+                providers: {
+                  ...state.aiProviderConfig?.providers,
+                  ollama: {
+                    ...ollama,
+                    modelLimits: {
+                      ...existingLimits,
+                      [model]: { ...existingLimits[model], ...limits },
+                    },
                   },
                 },
               },
-            },
+              lastUpdated: new Date().toISOString(),
+            };
+          }),
+
+        setOutputTone: (outputTone: Preferences['outputTone']) => patch({ outputTone }),
+
+        setResume: (resume: Preferences['resume']) => patch({ resume }),
+
+        setApplicant: (applicant: Preferences['applicant']) => patch({ applicant }),
+
+        setPerformanceMode: (performanceMode: Preferences['performanceMode']) =>
+          patch({ performanceMode }),
+
+        setCustomPerformance: (customPerformance: PerformanceProfile) =>
+          patch({ customPerformance }),
+
+        setPromptQuality: (promptQuality: PromptQuality) => patch({ promptQuality }),
+
+        setDebugMode: (debugMode: boolean) => patch({ debugMode }),
+
+        setSemanticScoring: (semanticScoring: boolean) => patch({ semanticScoring }),
+
+        setAutoIndexOnUpload: (autoIndexOnUpload: boolean) => patch({ autoIndexOnUpload }),
+
+        setCloseToTray: (closeToTray: boolean) => patch({ closeToTray }),
+
+        addRecentLocation: (location: string) =>
+          set((state) => {
+            const trimmed = location.trim();
+            if (!trimmed) return state;
+            const existing = state.recentLocations ?? [];
+            // Most-recent first, de-duplicated, capped.
+            const next = [trimmed, ...existing.filter((l) => l !== trimmed)].slice(
+              0,
+              MAX_RECENT_LOCATIONS
+            );
+            return { ...state, recentLocations: next, lastUpdated: new Date().toISOString() };
+          }),
+
+        setOnboardingComplete: () => {
+          void markOnboardingComplete();
+          patch({ onboardingCompleted: true });
+        },
+
+        resetOnboarding: () => {
+          void clearOnboardingMirror();
+          patch({ onboardingCompleted: false });
+        },
+
+        setContactPromptSeen: () => patch({ contactPromptSeen: true }),
+
+        toggleSidebar: () =>
+          set((state) => ({
+            ...state,
+            sidebarCollapsed: !state.sidebarCollapsed,
             lastUpdated: new Date().toISOString(),
-          };
-        }),
+          })),
 
-      setOutputTone: (outputTone: Preferences['outputTone']) =>
-        set((state) => ({
-          ...state,
-          outputTone,
-          lastUpdated: new Date().toISOString(),
-        })),
+        setSidebarCollapsed: (sidebarCollapsed: boolean) => patch({ sidebarCollapsed }),
 
-      setResume: (resume: Preferences['resume']) =>
-        set((state) => ({
-          ...state,
-          resume,
-          lastUpdated: new Date().toISOString(),
-        })),
+        setFetchCompanyLogos: (fetchCompanyLogos: boolean) => patch({ fetchCompanyLogos }),
 
-      setApplicant: (applicant: Preferences['applicant']) =>
-        set((state) => ({
-          ...state,
-          applicant,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      setPerformanceMode: (performanceMode: Preferences['performanceMode']) =>
-        set((state) => ({
-          ...state,
-          performanceMode,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      setCustomPerformance: (customPerformance: PerformanceProfile) =>
-        set((state) => ({
-          ...state,
-          customPerformance,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      setPromptQuality: (promptQuality: PromptQuality) =>
-        set((state) => ({
-          ...state,
-          promptQuality,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      setDebugMode: (debugMode: boolean) =>
-        set((state) => ({
-          ...state,
-          debugMode,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      setSemanticScoring: (semanticScoring: boolean) =>
-        set((state) => ({
-          ...state,
-          semanticScoring,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      setAutoIndexOnUpload: (autoIndexOnUpload: boolean) =>
-        set((state) => ({
-          ...state,
-          autoIndexOnUpload,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      setCloseToTray: (closeToTray: boolean) =>
-        set((state) => ({
-          ...state,
-          closeToTray,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      addRecentLocation: (location: string) =>
-        set((state) => {
-          const trimmed = location.trim();
-          if (!trimmed) return state;
-          const existing = state.recentLocations ?? [];
-          // Most-recent first, de-duplicated, capped.
-          const next = [trimmed, ...existing.filter((l) => l !== trimmed)].slice(
-            0,
-            MAX_RECENT_LOCATIONS
-          );
-          return { ...state, recentLocations: next, lastUpdated: new Date().toISOString() };
-        }),
-
-      setOnboardingComplete: () => {
-        void markOnboardingComplete();
-        set((state) => ({
-          ...state,
-          onboardingCompleted: true,
-          lastUpdated: new Date().toISOString(),
-        }));
-      },
-
-      resetOnboarding: () => {
-        void clearOnboardingMirror();
-        set((state) => ({
-          ...state,
-          onboardingCompleted: false,
-          lastUpdated: new Date().toISOString(),
-        }));
-      },
-
-      setContactPromptSeen: () =>
-        set((state) => ({
-          ...state,
-          contactPromptSeen: true,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      toggleSidebar: () =>
-        set((state) => ({
-          ...state,
-          sidebarCollapsed: !state.sidebarCollapsed,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      setSidebarCollapsed: (sidebarCollapsed: boolean) =>
-        set((state) => ({
-          ...state,
-          sidebarCollapsed,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      setFetchCompanyLogos: (fetchCompanyLogos: boolean) =>
-        set((state) => ({
-          ...state,
-          fetchCompanyLogos,
-          lastUpdated: new Date().toISOString(),
-        })),
-
-      resetPreferences: () =>
-        set((state) => ({
-          ...state,
-          ...defaultPreferences,
-          customPerformance: undefined,
-          lastUpdated: new Date().toISOString(),
-        })),
-    }),
+        resetPreferences: () => patch({ ...defaultPreferences, customPerformance: undefined }),
+      };
+    },
     {
       name: 'ai-job-hunter-preferences',
       storage: createJSONStorage(() => localStorage),

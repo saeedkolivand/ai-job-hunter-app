@@ -112,6 +112,20 @@ function renderBell() {
   return render(<NotificationBell />);
 }
 
+/** Set the fixture, render the bell and open its dropdown. */
+function renderOpenBell(items: AppNotification[]) {
+  mockNotifications = items;
+  renderBell();
+  openDropdown();
+}
+
+/** Click the notification row whose title is `title`. */
+function clickRow(title: string) {
+  const row = screen.getByText(title).closest('[role="button"]');
+  expect(row).not.toBeNull();
+  if (row) fireEvent.click(row);
+}
+
 function openDropdown() {
   const bellBtn = screen.getByRole('button', { name: /notifications\.bell\.aria/i });
   fireEvent.click(bellBtn);
@@ -182,9 +196,7 @@ describe('NotificationBell — badge', () => {
 
 describe('NotificationBell — empty list', () => {
   it('shows EmptyState when the notification list is empty', () => {
-    mockNotifications = [];
-    renderBell();
-    openDropdown();
+    renderOpenBell([]);
     // EmptyState renders with the key used in NotificationBell: notifications.empty
     expect(screen.getByText('notifications.empty')).toBeInTheDocument();
   });
@@ -194,13 +206,11 @@ describe('NotificationBell — empty list', () => {
 
 describe('NotificationBell — rows', () => {
   it('renders rows newest-first by createdAt', () => {
-    mockNotifications = [
+    renderOpenBell([
       makeNotification({ id: 'n1', title: 'Older', createdAt: 1000 }),
       makeNotification({ id: 'n2', title: 'Newest', createdAt: 3000 }),
       makeNotification({ id: 'n3', title: 'Middle', createdAt: 2000 }),
-    ];
-    renderBell();
-    openDropdown();
+    ]);
 
     const titles = screen.getAllByText(/Older|Newest|Middle/);
     const textOrder = titles.map((el) => el.textContent);
@@ -210,25 +220,19 @@ describe('NotificationBell — rows', () => {
   });
 
   it('renders an unread dot for unread notifications', () => {
-    mockNotifications = [makeNotification({ id: 'n1', read: false })];
-    renderBell();
-    openDropdown();
+    renderOpenBell([makeNotification({ id: 'n1', read: false })]);
     expect(screen.getByLabelText('notifications.unread.dotAria')).toBeInTheDocument();
   });
 
   it('does NOT render an unread dot for read notifications', () => {
-    mockNotifications = [makeNotification({ id: 'n1', read: true })];
-    renderBell();
-    openDropdown();
+    renderOpenBell([makeNotification({ id: 'n1', read: true })]);
     expect(screen.queryByLabelText('notifications.unread.dotAria')).not.toBeInTheDocument();
   });
 
   it('renders notification title and body as text (XSS guard — no innerHTML injection)', () => {
     const htmlishTitle = '<b>Bold Title</b>';
     const htmlishBody = '<script>evil()</script>';
-    mockNotifications = [makeNotification({ id: 'n1', title: htmlishTitle, body: htmlishBody })];
-    renderBell();
-    openDropdown();
+    renderOpenBell([makeNotification({ id: 'n1', title: htmlishTitle, body: htmlishBody })]);
 
     // The literal string must appear as text, not rendered as HTML.
     expect(screen.getByText(htmlishTitle)).toBeInTheDocument();
@@ -243,42 +247,30 @@ describe('NotificationBell — rows', () => {
 
 describe('NotificationBell — row click', () => {
   it('clicking a row calls markRead with the notification id', () => {
-    mockNotifications = [makeNotification({ id: 'n1', title: 'Click Me' })];
-    renderBell();
-    openDropdown();
+    renderOpenBell([makeNotification({ id: 'n1', title: 'Click Me' })]);
 
-    const row = screen.getByText('Click Me').closest('[role="button"]');
-    expect(row).not.toBeNull();
-    if (row) fireEvent.click(row);
+    clickRow('Click Me');
     expect(mockMarkRead).toHaveBeenCalledWith('n1');
   });
 
   it('clicking a row with a route calls router.navigate', () => {
-    mockNotifications = [
+    renderOpenBell([
       makeNotification({
         id: 'n1',
         title: 'Navigable',
         route: { to: '/applications', search: { highlight: 'app-1' } },
       }),
-    ];
-    renderBell();
-    openDropdown();
+    ]);
 
-    const row = screen.getByText('Navigable').closest('[role="button"]');
-    expect(row).not.toBeNull();
-    if (row) fireEvent.click(row);
+    clickRow('Navigable');
     expect(mockNavigate).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith(expect.objectContaining({ to: '/applications' }));
   });
 
   it('clicking a row without a route does NOT call router.navigate', () => {
-    mockNotifications = [makeNotification({ id: 'n1', title: 'No Route', route: undefined })];
-    renderBell();
-    openDropdown();
+    renderOpenBell([makeNotification({ id: 'n1', title: 'No Route', route: undefined })]);
 
-    const row = screen.getByText('No Route').closest('[role="button"]');
-    expect(row).not.toBeNull();
-    if (row) fireEvent.click(row);
+    clickRow('No Route');
     expect(mockMarkRead).toHaveBeenCalledWith('n1');
     expect(mockNavigate).not.toHaveBeenCalled();
   });
@@ -312,9 +304,7 @@ describe('NotificationBell — remove button', () => {
     renderBell();
     openDropdown();
 
-    const row = screen.getByText('Paired Test Row').closest('[role="button"]');
-    expect(row).not.toBeNull();
-    if (row) fireEvent.click(row);
+    clickRow('Paired Test Row');
 
     expect(mockMarkRead).toHaveBeenCalledWith('n1');
     expect(mockNavigate).toHaveBeenCalledTimes(1);
@@ -343,9 +333,7 @@ describe('NotificationBell — remove button', () => {
 
 describe('NotificationBell — toolbar actions', () => {
   it('mark-all-read button calls markAllRead mutation', () => {
-    mockNotifications = [makeNotification({ id: 'n1', read: false })];
-    renderBell();
-    openDropdown();
+    renderOpenBell([makeNotification({ id: 'n1', read: false })]);
 
     const markAllBtn = screen.getByRole('button', { name: 'notifications.markAllRead' });
     fireEvent.click(markAllBtn);
@@ -353,18 +341,14 @@ describe('NotificationBell — toolbar actions', () => {
   });
 
   it('mark-all-read button is disabled when there are no unread notifications', () => {
-    mockNotifications = [makeNotification({ id: 'n1', read: true })];
-    renderBell();
-    openDropdown();
+    renderOpenBell([makeNotification({ id: 'n1', read: true })]);
 
     const markAllBtn = screen.getByRole('button', { name: 'notifications.markAllRead' });
     expect(markAllBtn).toBeDisabled();
   });
 
   it('clear-all button calls clearAll mutation', () => {
-    mockNotifications = [makeNotification({ id: 'n1', read: false })];
-    renderBell();
-    openDropdown();
+    renderOpenBell([makeNotification({ id: 'n1', read: false })]);
 
     const clearAllBtn = screen.getByRole('button', { name: 'notifications.clearAll' });
     fireEvent.click(clearAllBtn);
@@ -372,9 +356,7 @@ describe('NotificationBell — toolbar actions', () => {
   });
 
   it('clear-all button is disabled when there are no notifications', () => {
-    mockNotifications = [];
-    renderBell();
-    openDropdown();
+    renderOpenBell([]);
     // When list is empty the EmptyState shows; toolbar buttons are still rendered in the header.
     const clearAllBtn = screen.getByRole('button', { name: 'notifications.clearAll' });
     expect(clearAllBtn).toBeDisabled();
@@ -393,19 +375,15 @@ describe('NotificationBell — foreground before navigate', () => {
       foregroundOrder.push('navigate');
     });
 
-    mockNotifications = [
+    renderOpenBell([
       makeNotification({
         id: 'n1',
         title: 'Nav Row',
         route: { to: '/applications', search: { highlight: 'n1' } },
       }),
-    ];
-    renderBell();
-    openDropdown();
+    ]);
 
-    const row = screen.getByText('Nav Row').closest('[role="button"]');
-    expect(row).not.toBeNull();
-    if (row) fireEvent.click(row);
+    clickRow('Nav Row');
 
     // foreground() is void-called (fire-and-forget); it must have been invoked.
     expect(mockForeground).toHaveBeenCalledOnce();
@@ -416,13 +394,9 @@ describe('NotificationBell — foreground before navigate', () => {
   });
 
   it('clicking a row WITHOUT a route still calls foreground() but NOT navigate()', () => {
-    mockNotifications = [makeNotification({ id: 'n1', title: 'No Route Row', route: undefined })];
-    renderBell();
-    openDropdown();
+    renderOpenBell([makeNotification({ id: 'n1', title: 'No Route Row', route: undefined })]);
 
-    const row = screen.getByText('No Route Row').closest('[role="button"]');
-    expect(row).not.toBeNull();
-    if (row) fireEvent.click(row);
+    clickRow('No Route Row');
 
     expect(mockForeground).toHaveBeenCalledOnce();
     expect(mockNavigate).not.toHaveBeenCalled();
@@ -438,9 +412,7 @@ describe('NotificationBell — dropdown close behaviors', () => {
    * the dropdown is open to handle Escape and outside-click closes.
    */
   it('pressing Escape closes the open dropdown', () => {
-    mockNotifications = [makeNotification({ id: 'n1', title: 'Open Me' })];
-    renderBell();
-    openDropdown();
+    renderOpenBell([makeNotification({ id: 'n1', title: 'Open Me' })]);
 
     // Dropdown is open — its content is visible.
     expect(screen.getByText('Open Me')).toBeInTheDocument();
@@ -452,9 +424,7 @@ describe('NotificationBell — dropdown close behaviors', () => {
   });
 
   it('a mousedown outside the container closes the open dropdown', () => {
-    mockNotifications = [makeNotification({ id: 'n1', title: 'Outside Click Test' })];
-    renderBell();
-    openDropdown();
+    renderOpenBell([makeNotification({ id: 'n1', title: 'Outside Click Test' })]);
 
     expect(screen.getByText('Outside Click Test')).toBeInTheDocument();
 
@@ -465,9 +435,7 @@ describe('NotificationBell — dropdown close behaviors', () => {
   });
 
   it('a mousedown INSIDE the container does NOT close the dropdown', () => {
-    mockNotifications = [makeNotification({ id: 'n1', title: 'Inside Click Test' })];
-    renderBell();
-    openDropdown();
+    renderOpenBell([makeNotification({ id: 'n1', title: 'Inside Click Test' })]);
 
     expect(screen.getByText('Inside Click Test')).toBeInTheDocument();
 

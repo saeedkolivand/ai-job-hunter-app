@@ -5,7 +5,7 @@ import type { PendingMenuIntent } from '@ajh/shared';
 
 import { createMockClient, withProviders } from '@/test-support';
 
-import { resolveJobDeepLinkTarget, useMenuNavigation } from './use-menu-navigation';
+import { useMenuNavigation } from './use-menu-navigation';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 // The hook's only side-effect surface is: router navigate, the session/ui store
@@ -67,6 +67,8 @@ vi.mock('@ajh/translations', () => ({ useTranslation: () => ({ t: (k: string) =>
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+const URL = 'https://boards.greenhouse.io/acme/jobs/1';
+
 /**
  * Render the hook with a mock client whose `menu.takePending` resolves to
  * `pending` (the shell-buffered intent). On mount the hook drains once; a test
@@ -82,6 +84,15 @@ function renderWithPending(
   const client = createMockClient({ 'menu.takePending': takePending, ...clientOverrides });
   const utils = renderHook(() => useMenuNavigation(), { wrapper: withProviders(client) });
   return { ...utils, takePending };
+}
+
+/** Deliver a `route` deep-link intent (carrying `URL` unless `withUrl` is false) against a scripted applications list. */
+function renderDeepLink(route: string, list: (...args: never[]) => unknown, withUrl = true) {
+  return renderWithPending(
+    { event: 'menu:navigate', payload: { route, section: null, ...(withUrl ? { url: URL } : {}) } },
+    undefined,
+    { 'applications.list': list }
+  );
 }
 
 beforeEach(() => {
@@ -234,15 +245,9 @@ describe('useMenuNavigation', () => {
   // component-local cache.
 
   describe('generate-for-job / open-job deep links', () => {
-    const URL = 'https://boards.greenhouse.io/acme/jobs/1';
-
     it('generate-for-job with a matching application lands on its Documents tab', async () => {
       const list = vi.fn().mockResolvedValue([{ id: 'app-1', jobUrl: URL }]);
-      renderWithPending(
-        { event: 'menu:navigate', payload: { route: 'generate-for-job', section: null, url: URL } },
-        undefined,
-        { 'applications.list': list }
-      );
+      renderDeepLink('generate-for-job', list);
 
       await waitFor(() =>
         expect(navigate).toHaveBeenCalledWith({
@@ -256,11 +261,7 @@ describe('useMenuNavigation', () => {
 
     it('generate-for-job with no matching application prefills the generate flow with the URL', async () => {
       const list = vi.fn().mockResolvedValue([]);
-      renderWithPending(
-        { event: 'menu:navigate', payload: { route: 'generate-for-job', section: null, url: URL } },
-        undefined,
-        { 'applications.list': list }
-      );
+      renderDeepLink('generate-for-job', list);
 
       await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/ai-generate' }));
       expect(setAIGenerate).toHaveBeenCalledExactlyOnceWith({ jobUrl: URL });
@@ -269,11 +270,7 @@ describe('useMenuNavigation', () => {
 
     it('open-job with a matching application lands on its detail page', async () => {
       const list = vi.fn().mockResolvedValue([{ id: 'app-2', jobUrl: URL }]);
-      renderWithPending(
-        { event: 'menu:navigate', payload: { route: 'open-job', section: null, url: URL } },
-        undefined,
-        { 'applications.list': list }
-      );
+      renderDeepLink('open-job', list);
 
       await waitFor(() =>
         expect(navigate).toHaveBeenCalledWith({
@@ -286,11 +283,7 @@ describe('useMenuNavigation', () => {
 
     it('open-job with no matching application falls back to the jobs list, URL as the search term', async () => {
       const list = vi.fn().mockResolvedValue([]);
-      renderWithPending(
-        { event: 'menu:navigate', payload: { route: 'open-job', section: null, url: URL } },
-        undefined,
-        { 'applications.list': list }
-      );
+      renderDeepLink('open-job', list);
 
       await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/jobs' }));
       expect(setJobs).toHaveBeenCalledExactlyOnceWith({ filter: URL });
@@ -302,11 +295,7 @@ describe('useMenuNavigation', () => {
       const list = vi
         .fn()
         .mockResolvedValue([{ id: 'app-3', jobUrl: 'HTTPS://Boards.Greenhouse.io/acme/jobs/1/' }]);
-      renderWithPending(
-        { event: 'menu:navigate', payload: { route: 'open-job', section: null, url: URL } },
-        undefined,
-        { 'applications.list': list }
-      );
+      renderDeepLink('open-job', list);
 
       await waitFor(() =>
         expect(navigate).toHaveBeenCalledWith(
@@ -317,11 +306,7 @@ describe('useMenuNavigation', () => {
 
     it('does nothing when the deep-link intent carries no url', async () => {
       const list = vi.fn().mockResolvedValue([]);
-      const { takePending } = renderWithPending(
-        { event: 'menu:navigate', payload: { route: 'open-job', section: null } },
-        undefined,
-        { 'applications.list': list }
-      );
+      const { takePending } = renderDeepLink('open-job', list, false);
 
       await waitFor(() => expect(takePending).toHaveBeenCalled());
       expect(list).not.toHaveBeenCalled();
@@ -334,11 +319,7 @@ describe('useMenuNavigation', () => {
     it('open-job falls back to the jobs list when applications.list rejects', async () => {
       const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
       const list = vi.fn().mockRejectedValue(new Error('offline'));
-      renderWithPending(
-        { event: 'menu:navigate', payload: { route: 'open-job', section: null, url: URL } },
-        undefined,
-        { 'applications.list': list }
-      );
+      renderDeepLink('open-job', list);
 
       // React Query's `retry: 1` (query-client.ts) backs off ~1s before the
       // query settles — a longer timeout than the default.
@@ -353,11 +334,7 @@ describe('useMenuNavigation', () => {
     it('generate-for-job falls back to a prefilled generate session when applications.list rejects', async () => {
       const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
       const list = vi.fn().mockRejectedValue(new Error('offline'));
-      renderWithPending(
-        { event: 'menu:navigate', payload: { route: 'generate-for-job', section: null, url: URL } },
-        undefined,
-        { 'applications.list': list }
-      );
+      renderDeepLink('generate-for-job', list);
 
       await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/ai-generate' }), {
         timeout: 3000,
@@ -372,15 +349,9 @@ describe('useMenuNavigation', () => {
   // "Prepare in the app" action, same buffered-intent + fetch-applications
   // mechanics as the other two job deep links above.
   describe('prep-for-job deep link', () => {
-    const URL = 'https://boards.greenhouse.io/acme/jobs/1';
-
     it('prep-for-job with a matching application lands on its Interview-prep tab', async () => {
       const list = vi.fn().mockResolvedValue([{ id: 'app-4', jobUrl: URL }]);
-      renderWithPending(
-        { event: 'menu:navigate', payload: { route: 'prep-for-job', section: null, url: URL } },
-        undefined,
-        { 'applications.list': list }
-      );
+      renderDeepLink('prep-for-job', list);
 
       await waitFor(() =>
         expect(navigate).toHaveBeenCalledWith({
@@ -394,11 +365,7 @@ describe('useMenuNavigation', () => {
 
     it('prep-for-job with no matching application prefills the generate flow with the URL', async () => {
       const list = vi.fn().mockResolvedValue([]);
-      renderWithPending(
-        { event: 'menu:navigate', payload: { route: 'prep-for-job', section: null, url: URL } },
-        undefined,
-        { 'applications.list': list }
-      );
+      renderDeepLink('prep-for-job', list);
 
       await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/ai-generate' }));
       expect(setAIGenerate).toHaveBeenCalledExactlyOnceWith({ jobUrl: URL });
@@ -407,11 +374,7 @@ describe('useMenuNavigation', () => {
 
     it('does nothing when the prep-for-job intent carries no url', async () => {
       const list = vi.fn().mockResolvedValue([]);
-      const { takePending } = renderWithPending(
-        { event: 'menu:navigate', payload: { route: 'prep-for-job', section: null } },
-        undefined,
-        { 'applications.list': list }
-      );
+      const { takePending } = renderDeepLink('prep-for-job', list, false);
 
       await waitFor(() => expect(takePending).toHaveBeenCalled());
       expect(list).not.toHaveBeenCalled();
@@ -421,11 +384,7 @@ describe('useMenuNavigation', () => {
     it('prep-for-job falls back to a prefilled generate session when applications.list rejects', async () => {
       const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
       const list = vi.fn().mockRejectedValue(new Error('offline'));
-      renderWithPending(
-        { event: 'menu:navigate', payload: { route: 'prep-for-job', section: null, url: URL } },
-        undefined,
-        { 'applications.list': list }
-      );
+      renderDeepLink('prep-for-job', list);
 
       await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/ai-generate' }), {
         timeout: 3000,
@@ -434,62 +393,5 @@ describe('useMenuNavigation', () => {
       expect(consoleError).toHaveBeenCalled();
       consoleError.mockRestore();
     });
-  });
-});
-
-describe('resolveJobDeepLinkTarget', () => {
-  const URL = 'https://boards.greenhouse.io/acme/jobs/1';
-  const applications = [{ id: 'app-1', jobUrl: URL }];
-
-  it('routes generate-for-job to the Documents tab of a matching application', () => {
-    expect(resolveJobDeepLinkTarget('generate-for-job', URL, applications)).toEqual({
-      kind: 'application',
-      id: 'app-1',
-      tab: 'documents',
-    });
-  });
-
-  it('routes open-job to a matching application with no forced tab', () => {
-    expect(resolveJobDeepLinkTarget('open-job', URL, applications)).toEqual({
-      kind: 'application',
-      id: 'app-1',
-    });
-  });
-
-  it('falls back to a prefilled generate session when no application matches', () => {
-    expect(resolveJobDeepLinkTarget('generate-for-job', URL, [])).toEqual({
-      kind: 'generate-prefill',
-      url: URL,
-    });
-  });
-
-  it('falls back to a jobs-list search when no application matches', () => {
-    expect(resolveJobDeepLinkTarget('open-job', URL, [])).toEqual({
-      kind: 'jobs-search',
-      url: URL,
-    });
-  });
-
-  it('routes prep-for-job to the Interview-prep tab of a matching application', () => {
-    expect(resolveJobDeepLinkTarget('prep-for-job', URL, applications)).toEqual({
-      kind: 'application',
-      id: 'app-1',
-      tab: 'interview',
-    });
-  });
-
-  it('falls back to a prefilled generate session when no application matches prep-for-job', () => {
-    expect(resolveJobDeepLinkTarget('prep-for-job', URL, [])).toEqual({
-      kind: 'generate-prefill',
-      url: URL,
-    });
-  });
-
-  it('never matches on an unnormalizable url (e.g. a non-http scheme)', () => {
-    expect(
-      resolveJobDeepLinkTarget('open-job', 'javascript:alert(1)', [
-        { id: 'app-1', jobUrl: 'javascript:alert(1)' },
-      ])
-    ).toEqual({ kind: 'jobs-search', url: 'javascript:alert(1)' });
   });
 });

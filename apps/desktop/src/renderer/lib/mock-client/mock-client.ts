@@ -17,24 +17,20 @@
  * Every method is a jest/vitest spy-friendly async stub. Provide overrides as a
  * deep-partial — only the methods you care about need to be specified.
  */
-import type {
-  EmailWatchConnectRequest,
-  HelpSearchResult,
-  HybridSearchResult,
-  ReferralContact,
-  ReferralUpsertRequest,
-  ScrapeProgressEvent,
-} from '@ajh/shared';
+import type { HybridSearchResult, ScrapeProgressEvent } from '@ajh/shared';
 
 import type { AppClient } from '../app-client';
+import { appNamespaces } from './namespaces/app';
+import { bridgeNamespaces } from './namespaces/bridges';
+import { coreNamespaces } from './namespaces/core';
+import { emptyList, noop } from './namespaces/helpers';
+import { createMockReferrals } from './namespaces/referrals';
+import { serviceNamespaces } from './namespaces/services';
+import { workspaceNamespaces } from './namespaces/workspace';
 
 type DeepPartial<T> = {
   [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
 };
-
-const noop = () => Promise.resolve() as Promise<never>;
-const emptyList = () => Promise.resolve([]) as Promise<never>;
-const unsub = () => () => {};
 
 // Where the mock scrape namespace stashes its progress emitter. Off-contract
 // (ScrapeContract has no emit surface), so a symbol keeps it out of enumeration
@@ -46,206 +42,15 @@ type ScrapeProgressEmitting = {
 };
 
 export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppClient {
-  // In-memory referral store so the renderer/tests can exercise list/upsert/remove
-  // offline without a backend. Scoped per client so each mock starts empty.
-  const referralRows: ReferralContact[] = [];
-
   // In-memory scrape-progress fan-out so tests can drive the onProgress path
   // (register a handler, then push events via `emitScrapeProgress`). Scoped per
   // client so each mock starts with no subscribers.
   const scrapeProgressHandlers = new Set<(event: ScrapeProgressEvent) => void>();
 
   const base: AppClient = {
-    system: {
-      health: noop,
-      getVersion: noop,
-      getLocale: async () => 'en',
-      setLocale: noop,
-      getPlatform: noop,
-      accentColor: async () => ({ supported: false, color: null }),
-      openExternal: noop,
-      // Accepts the resolved PerformanceBackendConfig; no-op stub for tests.
-      setPerformanceMode: noop,
-      getLaunchAtLogin: async () => false,
-      setLaunchAtLogin: async (enabled: boolean) => enabled,
-      setCloseToTray: noop,
-      getMetrics: noop,
-      checkBrowser: async () => ({ detected: false }),
-      openDevtools: noop,
-      getProtocolVersion: async () => '1.1.0',
-      // A path with a SPACE in it, on purpose: every consumer of this value
-      // has to quote it (a shell command, a TOML value), and a space-free stub
-      // would let an unquoted snippet pass Storybook and e2e unnoticed.
-      agentCliInfo: async () => ({
-        exePath: 'C:\\Users\\demo\\AppData\\Local\\AI Job Hunter\\ajh-tauri.exe',
-      }),
-      onAccentChanged: unsub,
-    },
-
-    jobs: {
-      list: emptyList,
-      get: noop,
-      cancel: noop,
-      retry: noop,
-      onEvent: unsub,
-    },
-
-    ai: {
-      generate: noop,
-      generatePipeline: noop,
-      listModels: emptyList,
-      inspectModel: async () => null,
-      activeConfig: async () => ({ providers: {} }),
-      setActiveProvider: async () => ({ providers: {} }),
-      setProviderSettings: async () => ({ providers: {} }),
-      seedActiveConfig: async () => ({ seeded: false }),
-      researchCompany: async () => ({ company: '', brief: '' }),
-      lookupSalary: async () => null,
-      researchAnswer: async () => '',
-      pullModel: noop,
-      unloadModel: noop,
-      embed: noop,
-      onStream: unsub,
-      setProviderKey: noop,
-      removeProviderKey: noop,
-      hasProviderKey: async () => ({ has: false }),
-      testProviderKey: async () => ({ success: true }),
-      listProviderModels: emptyList,
-      modelCapabilities: async () => ({
-        supportsWebSearch: false,
-        supportsReasoning: false,
-        effortLevels: [],
-      }),
-      embeddingStatus: async () => ({
-        active: { provider: 'ollama', model: 'nomic-embed-text' },
-        spaces: [],
-        documents: { total: 0, indexedInActiveSpace: 0, stale: 0 },
-        indexing: false,
-      }),
-      setEmbeddingConfig: async () => ({ success: true }),
-      reembedAll: async () => ({ jobId: 'mock-reembed' }),
-      indexStaleDocuments: async () => ({ jobId: null }),
-      stageOverrides: async () => ({}),
-      setStageOverride: async () => ({}),
-      clearStageOverride: async () => ({}),
-      // Echo the requested window so a multi-day caller can be exercised against the mock.
-      spendSummary: async (days = 1) => ({
-        window: { days, from: 0, to: 0 },
-        today: { inputTokens: 0, outputTokens: 0, estCostUsd: 0 },
-        windowTotals: { inputTokens: 0, outputTokens: 0, estCostUsd: 0 },
-        perProvider: [],
-        thinkingByModel: [],
-        thinkingByModelWindow: 'allTime',
-      }),
-    },
-
-    aiGenerations: {
-      list: emptyList,
-      save: noop,
-      update: noop,
-      remove: noop,
-      removeBulk: noop,
-    },
-
-    applications: {
-      list: emptyList,
-      get: async () => ({ application: null, events: [] }),
-      setStatus: async () => ({ success: true }),
-      acceptStatusEvent: async () => ({ success: true }),
-      rejectStatusEvent: async () => ({ success: true }),
-      update: async () => ({ success: true }),
-      remove: async () => ({ success: true }),
-      track: async () => ({ success: true }),
-      saveFromPosting: async () => ({ success: true }),
-      onChanged: unsub,
-    },
-
-    documents: {
-      list: emptyList,
-      getText: async () => '',
-      import: noop,
-      recommendTemplate: async () => ({
-        templateId: 'classic',
-        locale: 'en',
-        atsSuggested: false,
-        rationale: 'Mock recommendation.',
-      }),
-      remove: noop,
-      setDefault: noop,
-      exportDocument: async () => ({ data: [], mimeType: 'text/plain', filename: 'mock.txt' }),
-      exportAndSave: noop,
-      renderPreviewImages: async () => ({ pages: [], mimeType: 'image/svg+xml' }),
-    },
-
-    jobPreferences: {
-      get: async () => ({}),
-      set: noop,
-      setSalaryExpectation: noop,
-      setExtraAgencyCompanies: noop,
-      setSemanticScoring: noop,
-    },
-
-    dedup: {
-      markNotDuplicate: async () => ({ success: true }),
-    },
-
-    discovery: {
-      searchCompanies: emptyList,
-      setStarred: async () => ({ success: true }),
-      watched: emptyList,
-    },
-
-    contactProfile: {
-      get: async () => ({}),
-      set: async () => ({ success: true }),
-      headerLine: async () => '',
-    },
-
-    github: {
-      importRepos: emptyList,
-    },
-
-    extensionBridge: {
-      status: async () => ({
-        port: 47615,
-        connected: false,
-        lastSeenMs: null,
-        token: 'mock-token',
-      }),
-      regenerateToken: async () => ({ token: 'mock-token' }),
-      autofillEnabled: async () => ({ enabled: false }),
-      setAutofillEnabled: async (enabled: boolean) => ({ enabled }),
-      aiAssistEnabled: async () => ({ enabled: false }),
-      setAiAssistEnabled: async (enabled: boolean) => ({ enabled }),
-      autoTrackEnabled: async () => ({ enabled: false }),
-      setAutoTrackEnabled: async (enabled: boolean) => ({ enabled }),
-      onChanged: unsub,
-    },
-
-    // autoWriteEnabled defaults to false — matches the real backend default
-    // (opt-in only, after five security rounds on the sender-authentication
-    // gate's known-imperfect check).
-    emailWatch: {
-      status: async () => ({ connected: false, enabled: false, autoWriteEnabled: false }),
-      connect: async ({ address }: EmailWatchConnectRequest) => ({
-        connected: true,
-        address,
-        enabled: false,
-        autoWriteEnabled: false,
-      }),
-      disconnect: async () => ({ connected: false, enabled: false, autoWriteEnabled: false }),
-      setEnabled: async (enabled: boolean) => ({
-        connected: false,
-        enabled,
-        autoWriteEnabled: false,
-      }),
-      setAutoWriteEnabled: async (autoWriteEnabled: boolean) => ({
-        connected: false,
-        enabled: false,
-        autoWriteEnabled,
-      }),
-      checkNow: async () => ({ connected: false, enabled: false, autoWriteEnabled: false }),
-    },
+    ...coreNamespaces(),
+    ...workspaceNamespaces(),
+    ...bridgeNamespaces(),
 
     scrape: {
       boards: noop,
@@ -280,179 +85,9 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       import: async () => ({ success: false }),
     },
 
-    match: {
-      resume: noop,
-      text: noop,
-      trimSuggestions: async () => ({ maxPages: 2, lines: [] }),
-    },
-
-    geocode: {
-      suggest: async () => [],
-    },
-
-    credentials: {
-      available: async () => false,
-    },
-
-    linkedin: {
-      connect: noop,
-      disconnect: noop,
-      getStatus: async () => ({ connected: false }),
-      importProfileFromUrl: async () => ({ error: 'not available in mock' }),
-      importCookies: async () => ({ outcome: 'NoSession', imported: 0 }),
-    },
-
-    boards: {
-      catalog: async () => [],
-      health: async () => [],
-      connect: async () => ({ connected: false }),
-      disconnect: noop,
-      getStatus: async () => ({ connected: false }),
-      importCookies: async () => ({ outcome: 'NoSession', imported: 0 }),
-    },
-
-    cliAgents: {
-      status: async () => ({ agents: [], npmAvailable: false }),
-      redetect: async () => ({ agents: [], npmAvailable: false }),
-      install: async () => ({ code: 0, success: true }),
-    },
-
-    privacy: {
-      signOutAll: noop,
-      clearInteractions: noop,
-      resetApp: async () => ({ success: true }),
-      // Mirrors the Rust default: on, but not yet consented — so a mock-driven
-      // test sees the same "does not transmit until asked" state as a fresh install.
-      getCrashReporting: async () => ({ enabled: true, consentShown: false }),
-      setCrashReporting: async (settings: { enabled: boolean; consentShown: boolean }) => settings,
-    },
-
-    referrals: {
-      list: async (jobUrl?: string) =>
-        jobUrl ? referralRows.filter((r) => r.jobUrl === jobUrl) : [...referralRows],
-      upsert: async (req: ReferralUpsertRequest) => {
-        const now = Date.now();
-        const existing = req.id ? referralRows.find((r) => r.id === req.id) : undefined;
-        const record: ReferralContact = {
-          id: existing?.id ?? req.id ?? `ref-${now}-${Math.random().toString(36).slice(2, 10)}`,
-          jobUrl: req.jobUrl ?? '',
-          companyName: req.companyName ?? '',
-          personName: req.personName ?? '',
-          personRole: req.personRole ?? '',
-          linkedinUrl: req.linkedinUrl ?? '',
-          emailDraft: req.emailDraft ?? '',
-          messageDraft: req.messageDraft ?? '',
-          inviteNoteDraft: req.inviteNoteDraft ?? '',
-          channel: req.channel ?? 'email',
-          status: req.status ?? 'draft',
-          notes: req.notes ?? '',
-          createdAt: existing?.createdAt ?? now,
-          updatedAt: now,
-        };
-        if (existing) {
-          referralRows.splice(referralRows.indexOf(existing), 1, record);
-        } else {
-          referralRows.push(record);
-        }
-        return record;
-      },
-      remove: async (id: string) => {
-        const i = referralRows.findIndex((r) => r.id === id);
-        if (i >= 0) referralRows.splice(i, 1);
-      },
-    },
-
-    updater: {
-      check: noop,
-      download: noop,
-      install: noop,
-      changelog: () => Promise.resolve({ releases: [] }),
-      onStatus: unsub,
-    },
-
-    resume: {
-      extractText: noop,
-      // Canned "clean" report by default — tests that care about issues/severity
-      // override `resume.validateContent` per-call via `overrides`.
-      validateContent: async () => ({
-        ok: true,
-        issues: [],
-        metrics: {
-          keywordCoverage: null,
-          topRequirementHits: 0,
-          duplicateRatio: 0,
-          rolesSource: 0,
-          rolesOutput: 0,
-        },
-      }),
-    },
-
-    // Staged résumé pipeline. `run` resolves with ids (a test that asserts on a
-    // run has to override it anyway), `get` with `null` = "no such run", and
-    // `listForJob` with an empty history — the shapes a panel renders before
-    // anything has been generated.
-    resumePipeline: {
-      run: () => Promise.resolve({ runId: 'run-mock', jobId: 'job-mock' }),
-      get: () => Promise.resolve(null),
-      listForJob: emptyList,
-      regenerateSection: noop,
-      resolveFabrication: noop,
-      onStage: unsub,
-    },
-
-    support: {
-      exportDiagnostics: noop,
-    },
-
-    help: {
-      // Same reason `scrape.hybridSearch` above resolves a real shape rather
-      // than `noop`: the help chat reads `results`/`mode` off the reply on
-      // every question, so an `undefined` would throw before the UI could
-      // degrade. Empty results with `keyword` mode is the honest "nothing
-      // ranked, and nothing semantic ran" answer.
-      search: async (): Promise<HelpSearchResult> => ({
-        results: [],
-        mode: 'keyword',
-        arms: { lexical: 'ran', dense: 'skipped' },
-      }),
-    },
-
-    autopilot: {
-      list: emptyList,
-      get: noop,
-      create: noop,
-      update: noop,
-      remove: noop,
-      run: noop,
-      pause: noop,
-      resume: noop,
-      onStep: () => () => {},
-      onFocus: () => () => {},
-      takePendingFocus: () => Promise.resolve(null),
-      bestMatches: async () => ({ matches: [], total: 0, autopilotCount: 0 }),
-    },
-
-    menu: {
-      onNavigate: unsub,
-      onAction: unsub,
-      takePending: () => Promise.resolve(null),
-    },
-
-    notifications: {
-      list: emptyList,
-      markRead: noop,
-      markAllRead: noop,
-      remove: noop,
-      clearAll: noop,
-      clicked: noop,
-      onChanged: unsub,
-      onOpenInbox: unsub,
-      onToast: unsub,
-    },
-
-    dialog: {
-      openFiles: async () => [] as string[],
-    },
+    ...serviceNamespaces(),
+    referrals: createMockReferrals(),
+    ...appNamespaces(),
   };
 
   // Shallow-merge overrides at the namespace level.

@@ -1,14 +1,14 @@
 import { Award, BookText, FolderGit2, GitBranch, HeartHandshake } from 'lucide-react';
 import { useState } from 'react';
-import { Controller, useFieldArray, useFormContext } from 'react-hook-form';
+import { useFieldArray, useFormContext } from 'react-hook-form';
 
 import { useTranslation } from '@ajh/translations';
-import { Accordion, Button, Input, TextArea } from '@ajh/ui';
+import { Accordion, Button } from '@ajh/ui';
 
 import type { BuilderFormValues } from '../../../types';
 import { FieldArrayList } from '../../FieldArrayList';
 import { GitHubImportModal } from '../../GitHubImportModal';
-import { WizardField } from '../../WizardField';
+import { ExtrasLinesField, ExtrasTextField } from './ExtrasFields';
 
 /** Optional extra sections (projects, publications, awards, volunteering, languages, certs). */
 export function StepExtras() {
@@ -58,74 +58,30 @@ export function StepExtras() {
               icon={FolderGit2}
               render={(index) => (
                 <div className="space-y-2.5">
-                  <WizardField label={t('build.extras.projects.name')}>
-                    <Controller
-                      control={control}
-                      name={`projects.${index}.name`}
-                      render={({ field }) => (
-                        <Input
-                          className="w-full"
-                          value={field.value ?? ''}
-                          onChange={field.onChange}
-                          onBlur={field.onBlur}
-                          placeholder={t('build.extras.projects.namePlaceholder')}
-                        />
-                      )}
-                    />
-                  </WizardField>
-                  <WizardField label={t('build.extras.projects.description')}>
-                    <Controller
-                      control={control}
-                      name={`projects.${index}.description`}
-                      render={({ field }) => (
-                        <TextArea
-                          variant="glass"
-                          value={field.value ?? ''}
-                          onChange={field.onChange}
-                          onBlur={field.onBlur}
-                          rows={2}
-                          placeholder={t('build.extras.projects.descriptionPlaceholder')}
-                        />
-                      )}
-                    />
-                  </WizardField>
-                  <WizardField
+                  <ExtrasTextField
+                    name={`projects.${index}.name`}
+                    label={t('build.extras.projects.name')}
+                    placeholder={t('build.extras.projects.namePlaceholder')}
+                  />
+                  <ExtrasTextField
+                    multiline
+                    name={`projects.${index}.description`}
+                    label={t('build.extras.projects.description')}
+                    placeholder={t('build.extras.projects.descriptionPlaceholder')}
+                  />
+                  <ExtrasTextField
+                    name={`projects.${index}.technologies`}
                     label={t('build.extras.projects.technologies')}
                     hint={t('build.extras.projects.technologiesHint')}
-                  >
-                    <Controller
-                      control={control}
-                      name={`projects.${index}.technologies`}
-                      render={({ field }) => (
-                        <Input
-                          className="w-full"
-                          value={field.value ?? ''}
-                          onChange={field.onChange}
-                          onBlur={field.onBlur}
-                          placeholder={t('build.extras.projects.technologiesPlaceholder')}
-                        />
-                      )}
-                    />
-                  </WizardField>
-                  <WizardField
+                    placeholder={t('build.extras.projects.technologiesPlaceholder')}
+                  />
+                  <ExtrasTextField
+                    name={`projects.${index}.link`}
                     label={t('build.extras.link')}
                     hint={t('build.extras.linkHint')}
+                    placeholder={t('build.extras.linkPlaceholder')}
                     error={msg(errors.projects?.[index]?.link?.message)}
-                  >
-                    <Controller
-                      control={control}
-                      name={`projects.${index}.link`}
-                      render={({ field }) => (
-                        <Input
-                          className="w-full"
-                          value={field.value ?? ''}
-                          onChange={field.onChange}
-                          onBlur={field.onBlur}
-                          placeholder={t('build.extras.linkPlaceholder')}
-                        />
-                      )}
-                    />
-                  </WizardField>
+                  />
                 </div>
               )}
             />
@@ -146,75 +102,31 @@ export function StepExtras() {
             icon={BookText}
             render={(index) => (
               <div className="space-y-2.5">
-                <WizardField label={t('build.extras.publications.titleField')}>
-                  <Controller
-                    control={control}
-                    name={`publications.${index}.title`}
-                    render={({ field }) => (
-                      <Input
-                        className="w-full"
-                        value={field.value ?? ''}
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        placeholder={t('build.extras.publications.titlePlaceholder')}
-                      />
-                    )}
-                  />
-                </WizardField>
+                <ExtrasTextField
+                  name={`publications.${index}.title`}
+                  label={t('build.extras.publications.titleField')}
+                  placeholder={t('build.extras.publications.titlePlaceholder')}
+                />
                 <div className="grid grid-cols-1 gap-2.5 @xs:grid-cols-2">
-                  <WizardField label={t('build.extras.publications.venue')}>
-                    <Controller
-                      control={control}
-                      name={`publications.${index}.venue`}
-                      render={({ field }) => (
-                        <Input
-                          className="w-full"
-                          value={field.value ?? ''}
-                          onChange={field.onChange}
-                          onBlur={field.onBlur}
-                          placeholder={t('build.extras.publications.venuePlaceholder')}
-                        />
-                      )}
-                    />
-                  </WizardField>
-                  <WizardField
+                  <ExtrasTextField
+                    name={`publications.${index}.venue`}
+                    label={t('build.extras.publications.venue')}
+                    placeholder={t('build.extras.publications.venuePlaceholder')}
+                  />
+                  <ExtrasTextField
+                    name={`publications.${index}.year`}
                     label={t('build.extras.publications.year')}
+                    placeholder={t('build.extras.yearPlaceholder')}
                     error={msg(errors.publications?.[index]?.year?.message)}
-                  >
-                    <Controller
-                      control={control}
-                      name={`publications.${index}.year`}
-                      render={({ field }) => (
-                        <Input
-                          className="w-full"
-                          value={field.value ?? ''}
-                          onChange={field.onChange}
-                          onBlur={field.onBlur}
-                          placeholder={t('build.extras.yearPlaceholder')}
-                        />
-                      )}
-                    />
-                  </WizardField>
+                  />
                 </div>
-                <WizardField
+                <ExtrasTextField
+                  name={`publications.${index}.link`}
                   label={t('build.extras.link')}
                   hint={t('build.extras.linkHint')}
+                  placeholder={t('build.extras.linkPlaceholder')}
                   error={msg(errors.publications?.[index]?.link?.message)}
-                >
-                  <Controller
-                    control={control}
-                    name={`publications.${index}.link`}
-                    render={({ field }) => (
-                      <Input
-                        className="w-full"
-                        value={field.value ?? ''}
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        placeholder={t('build.extras.linkPlaceholder')}
-                      />
-                    )}
-                  />
-                </WizardField>
+                />
               </div>
             )}
           />
@@ -234,54 +146,22 @@ export function StepExtras() {
             icon={Award}
             render={(index) => (
               <div className="grid grid-cols-[1fr_1fr_5rem] gap-2.5">
-                <WizardField label={t('build.extras.entryTitle')}>
-                  <Controller
-                    control={control}
-                    name={`awards.${index}.title`}
-                    render={({ field }) => (
-                      <Input
-                        className="w-full"
-                        value={field.value ?? ''}
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        placeholder={t('build.extras.awards.titlePlaceholder')}
-                      />
-                    )}
-                  />
-                </WizardField>
-                <WizardField label={t('build.extras.entryDetail')}>
-                  <Controller
-                    control={control}
-                    name={`awards.${index}.detail`}
-                    render={({ field }) => (
-                      <Input
-                        className="w-full"
-                        value={field.value ?? ''}
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        placeholder={t('build.extras.awards.detailPlaceholder')}
-                      />
-                    )}
-                  />
-                </WizardField>
-                <WizardField
+                <ExtrasTextField
+                  name={`awards.${index}.title`}
+                  label={t('build.extras.entryTitle')}
+                  placeholder={t('build.extras.awards.titlePlaceholder')}
+                />
+                <ExtrasTextField
+                  name={`awards.${index}.detail`}
+                  label={t('build.extras.entryDetail')}
+                  placeholder={t('build.extras.awards.detailPlaceholder')}
+                />
+                <ExtrasTextField
+                  name={`awards.${index}.year`}
                   label={t('build.extras.entryYear')}
+                  placeholder={t('build.extras.yearPlaceholder')}
                   error={msg(errors.awards?.[index]?.year?.message)}
-                >
-                  <Controller
-                    control={control}
-                    name={`awards.${index}.year`}
-                    render={({ field }) => (
-                      <Input
-                        className="w-full"
-                        value={field.value ?? ''}
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        placeholder={t('build.extras.yearPlaceholder')}
-                      />
-                    )}
-                  />
-                </WizardField>
+                />
               </div>
             )}
           />
@@ -301,54 +181,22 @@ export function StepExtras() {
             icon={HeartHandshake}
             render={(index) => (
               <div className="grid grid-cols-[1fr_1fr_5rem] gap-2.5">
-                <WizardField label={t('build.extras.entryTitle')}>
-                  <Controller
-                    control={control}
-                    name={`volunteer.${index}.title`}
-                    render={({ field }) => (
-                      <Input
-                        className="w-full"
-                        value={field.value ?? ''}
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        placeholder={t('build.extras.volunteer.titlePlaceholder')}
-                      />
-                    )}
-                  />
-                </WizardField>
-                <WizardField label={t('build.extras.entryDetail')}>
-                  <Controller
-                    control={control}
-                    name={`volunteer.${index}.detail`}
-                    render={({ field }) => (
-                      <Input
-                        className="w-full"
-                        value={field.value ?? ''}
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        placeholder={t('build.extras.volunteer.detailPlaceholder')}
-                      />
-                    )}
-                  />
-                </WizardField>
-                <WizardField
+                <ExtrasTextField
+                  name={`volunteer.${index}.title`}
+                  label={t('build.extras.entryTitle')}
+                  placeholder={t('build.extras.volunteer.titlePlaceholder')}
+                />
+                <ExtrasTextField
+                  name={`volunteer.${index}.detail`}
+                  label={t('build.extras.entryDetail')}
+                  placeholder={t('build.extras.volunteer.detailPlaceholder')}
+                />
+                <ExtrasTextField
+                  name={`volunteer.${index}.year`}
                   label={t('build.extras.entryYear')}
+                  placeholder={t('build.extras.yearPlaceholder')}
                   error={msg(errors.volunteer?.[index]?.year?.message)}
-                >
-                  <Controller
-                    control={control}
-                    name={`volunteer.${index}.year`}
-                    render={({ field }) => (
-                      <Input
-                        className="w-full"
-                        value={field.value ?? ''}
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        placeholder={t('build.extras.yearPlaceholder')}
-                      />
-                    )}
-                  />
-                </WizardField>
+                />
               </div>
             )}
           />
@@ -358,50 +206,24 @@ export function StepExtras() {
       <Accordion
         title={t('build.extras.languages.title')}
         content={
-          <WizardField
+          <ExtrasLinesField
+            name="languages"
             label={t('build.extras.languages.label')}
             hint={t('build.extras.languages.hint')}
-          >
-            <Controller
-              control={control}
-              name="languages"
-              render={({ field }) => (
-                <TextArea
-                  variant="glass"
-                  value={(field.value ?? []).join('\n')}
-                  onChange={(e) => field.onChange(e.target.value.split('\n'))}
-                  onBlur={field.onBlur}
-                  rows={3}
-                  placeholder={t('build.extras.languages.placeholder')}
-                />
-              )}
-            />
-          </WizardField>
+            placeholder={t('build.extras.languages.placeholder')}
+          />
         }
       />
 
       <Accordion
         title={t('build.extras.certifications.title')}
         content={
-          <WizardField
+          <ExtrasLinesField
+            name="certifications"
             label={t('build.extras.certifications.label')}
             hint={t('build.extras.certifications.hint')}
-          >
-            <Controller
-              control={control}
-              name="certifications"
-              render={({ field }) => (
-                <TextArea
-                  variant="glass"
-                  value={(field.value ?? []).join('\n')}
-                  onChange={(e) => field.onChange(e.target.value.split('\n'))}
-                  onBlur={field.onBlur}
-                  rows={3}
-                  placeholder={t('build.extras.certifications.placeholder')}
-                />
-              )}
-            />
-          </WizardField>
+            placeholder={t('build.extras.certifications.placeholder')}
+          />
         }
       />
     </div>
