@@ -35,7 +35,7 @@ describe('extractMetadata', () => {
   // candidate's existing résumé happens to be written in. An English résumé
   // applying to a German ad must not be pinned to English. Known-reliable
   // franc fixtures, lifted verbatim from `packages/shared/src/language-detection.test.ts`
-  // (also reused by `useTailorPipeline.test.ts`).
+  // (also reused by `useTailorPipeline/harness.ts`).
   describe('targetLanguage targets the job ad, not the source résumé (Defect B)', () => {
     const ENGLISH_RESUME =
       'Experienced software engineer with a strong background in building scalable web applications and distributed backend systems for large organisations.';

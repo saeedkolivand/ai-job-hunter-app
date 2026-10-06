@@ -14,7 +14,7 @@ import type { LinkSuggestion } from '@ajh/ui';
 
 /**
  * An inline markdown link span `[label](url)` in the live document. Mirrors the
- * `MD_LINK_SPAN_RE` shape in packages/prompts/src/generate/links/links.ts; the two
+ * `MD_LINK_SPAN_RE` shape in packages/prompts/src/generate/links/inject.ts; the two
  * capture groups are the label and the raw URL. The URL group allows one level
  * of balanced parens so Wikipedia-style URLs (e.g. `Python_(programming_language)`)
  * are captured whole instead of being truncated at the first `)`. Bounded

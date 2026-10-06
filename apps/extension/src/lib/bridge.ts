@@ -28,7 +28,7 @@
  * streaming `answer.assist` exchange, not just a quick import/profile
  * round-trip, so a multi-second draft has the same lifecycle guarantee an
  * import always had. If the worker IS evicted mid-stream anyway (a hard
- * kill, not just idle eviction), `background.ts`'s `assistBuffer` is lost
+ * kill, not just idle eviction), `background/answer-assist.ts`'s `assistBuffer` is lost
  * with it — the popup's reattach query then simply finds nothing, same as
  * a session that never streamed.
  */

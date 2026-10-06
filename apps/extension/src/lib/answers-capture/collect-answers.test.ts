@@ -3,7 +3,7 @@
  * (apps/extension/src/lib/answers-capture.ts) — the "save my answers" collector.
  *
  * jsdom is provided by the vitest environment declared in vitest.config.ts.
- * Mirrors autofill.test.ts's style: build a real form in `document`, run the
+ * Mirrors autofill/fills.test.ts's style: build a real form in `document`, run the
  * REAL implementation, and assert which fields were captured.
  */
 

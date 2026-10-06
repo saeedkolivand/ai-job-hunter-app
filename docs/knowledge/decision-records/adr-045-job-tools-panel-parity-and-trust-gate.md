@@ -45,11 +45,11 @@ The reason this cannot just be "mount the same buttons in both places" is Chrome
 
 - **A second gate on top of ADR-044's `pageChanged`, read more strictly.** Two callers now derive different UI decisions from the same one boolean (Answer-tools' own empty-vs-gated split, and this module's active-vs-gated split), which is a bit of interpretive weight on one field — accepted because a second field would need its own re-arm discipline for no behavioral gain over deriving it.
 - **The popup's Import button moved out of `popup.html`'s static markup** into DOM the shared module builds at runtime; anything that reached it directly (a focus call, a query) now goes through the module's host element instead. Verified against the existing popup test suite, which still passes.
-- **The gate's correctness depends on a caller-ordering contract, not purely on the module's own code.** `checkPage()` reads whatever `trusted` currently holds; it does not itself wait for a fresh `AnswerState`. A caller that (re)introduces a `checkPage()` call as a separate statement after `subscribeAnswerState` — instead of from inside that subscription's own delivery — reintroduces exactly the bug this record's Consequences section used to (wrongly) claim was structurally impossible. Mitigated by a doc comment on `JobToolsView.checkPage` and a regression test on the actual `follow()` call order (`sidepanel.test.ts`), not by anything job-tools.ts can enforce on its own.
+- **The gate's correctness depends on a caller-ordering contract, not purely on the module's own code.** `checkPage()` reads whatever `trusted` currently holds; it does not itself wait for a fresh `AnswerState`. A caller that (re)introduces a `checkPage()` call as a separate statement after `subscribeAnswerState` — instead of from inside that subscription's own delivery — reintroduces exactly the bug this record's Consequences section used to (wrongly) claim was structurally impossible. Mitigated by a doc comment on `JobToolsView.checkPage` and a regression test on the actual `follow()` call order (`sidepanel/sidepanel/follow.test.ts`), not by anything job-tools.ts can enforce on its own.
 
 ## References
 
-- The shared component: `apps/extension/src/job-tools/job-tools.ts` (+ co-located `job-tools.test.ts`)
+- The shared component: `apps/extension/src/job-tools/job-tools.ts` (+ co-located tests in `job-tools/job-tools/`)
 - Trust gate + re-arm: `isPageTrusted` (`job-tools.ts`), `rearmPageChangedForGesture` (`background.ts`)
 - Callers: `apps/extension/src/popup/popup.ts`, `apps/extension/src/sidepanel/sidepanel.ts`
 - Shared per-tab state this reuses: `apps/extension/src/lib/answer-state.ts` (`AnswerState.pageChanged`)

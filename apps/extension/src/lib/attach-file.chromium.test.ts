@@ -64,7 +64,7 @@ describe.skipIf(!playwrightResolvable())(
     }, 30_000);
 
     /**
-     * The other load-bearing claim jsdom/background.test.ts's mocked args
+     * The other load-bearing claim jsdom/background/*.test.ts's mocked args
      * capture can't prove: that a base64 STRING (not raw bytes) is what must
      * cross `chrome.scripting.executeScript({ func, args })`, because Chrome
      * JSON-serializes `args` on the way to the page (PR review round 2 — a

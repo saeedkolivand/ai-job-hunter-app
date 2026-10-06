@@ -95,7 +95,7 @@ describe('GenerationOutput', () => {
 
   // ── 11. Score strip — résumé result surfaces the job-match score ─────────────
   // Real render-logic guards (isMeasured/hasScoreCoverage/ScoreMetric) are
-  // covered once, at the source, by JobAdView.i18n.test.tsx against REAL
+  // covered once, at the source, by JobAdView/scoreEgress.i18n.test.tsx against REAL
   // translated copy — that module is now shared (MatchScoreMetric.tsx), not
   // forked. This block covers GenerationScoreStrip's OWN wiring: which tab it
   // renders on, and that it never fabricates a `0`.

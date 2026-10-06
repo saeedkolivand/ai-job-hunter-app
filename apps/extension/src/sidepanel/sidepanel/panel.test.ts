@@ -58,7 +58,7 @@ const fillConfirm = () => {
 // The panel's ONLY connection-status responsibility: show `#view-connected`
 // (the job/answer tools) only while `phase === 'connected'`. The pill/retry/
 // pairing/offline/outdated/searching behavior itself lives in
-// `connection-status.ts` — see `connection-status.test.ts` for that.
+// `connection-status.ts` — see `connection-status/connection-status/status.test.ts` for that.
 
 describe('connection-status composition', () => {
   it('mounts against the pill + views hosts and starts it', () => {

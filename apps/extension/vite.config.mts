@@ -87,7 +87,7 @@ function webExtensionAssets(): Plugin {
  * `capture.ts`, folding
  * `(() => ({ answers: a(document), filled: b(document) }))()` into
  * `a(document),b(document);`: the completion value became the last CALL's
- * array, `background.ts`'s `isCaptureResult` rejected it, and "Save my
+ * array, `background/guards.ts`'s `isCaptureResult` rejected it, and "Save my
  * answers from this page" failed with "Could not read the answers on this
  * page." on every page — in the store build, the release zip, and a fresh
  * local build. `content.js` and `capture-questions.js` survived only

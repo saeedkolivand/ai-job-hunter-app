@@ -274,7 +274,7 @@ describe('BridgeClient – v2 mutual handshake', () => {
   // path) must be replaced when a token is finally saved, so the next connect
   // actually runs the v2 handshake instead of sitting "connected" forever ────
 
-  /** Attach with NO token (reaches 'connected' with zero handshake), then save a token the way background.ts's `setToken` does. */
+  /** Attach with NO token (reaches 'connected' with zero handshake), then save a token the way background/dispatch.ts's `setToken` does. */
   async function pasteTokenOnUnpairedTransport() {
     let stored: string | null = null;
     const client = new BridgeClient(vi.fn(), () => Promise.resolve(stored));

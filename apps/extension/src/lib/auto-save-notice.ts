@@ -5,7 +5,7 @@
  * Lives in `storage.session` (survives the MV3 service-worker idling out,
  * dies with the browser session — same discipline as `lib/answer-state.ts`,
  * NOT `storage.local`: this is page-submit-derived text, not a UI
- * preference). Written once by `background.ts`'s auto-save flow right after
+ * preference). Written once by `background/auto-track.ts`'s auto-save flow right after
  * a successful `answers.save{auto:true}`; READ-ONCE by whichever surface
  * (popup or panel) asks first via `takeAutoSaveNotice` — the point of a
  * transparent notice is that the user sees it, not that every surface

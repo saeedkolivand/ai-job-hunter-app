@@ -86,7 +86,7 @@ The state machine matters here: streaming moves through explicit states (`idle â
 
 The flows in this app have at most a handful of states. XState is powerful but adds bundle weight, introduces its own config DSL, and is overkill for short linear flows.
 
-The project uses a micro state machine (~80 lines, `lib/machine.ts`) and a `useMachine(machine)` hook covering:
+The project uses a micro state machine (~80 lines, `lib/machine/machine.ts`) and a `useMachine(machine)` hook covering:
 
 - State transitions via `send(event)`
 - `busyStates` â€” when the machine is loading
@@ -258,7 +258,7 @@ import { useTranslation } from '@ajh/translations';
 import { useTranslation } from 'react-i18next';
 ```
 
-The wrapper in `lib/i18n.ts` provides a consistent namespace and isolates the underlying i18n library behind one module, so it can be swapped without touching component files.
+The wrapper in `@/i18n` (`apps/desktop/src/renderer/i18n/index.ts`) provides a consistent namespace and isolates the underlying i18n library behind one module, so it can be swapped without touching component files.
 
 ---
 

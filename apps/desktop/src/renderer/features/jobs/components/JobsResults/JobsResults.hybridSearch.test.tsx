@@ -4,7 +4,7 @@
  * every OTHER JobsResults test, get the `idle` default and are unaffected).
  *
  * Covers the task's three designed situations:
- *   1. idle — untouched, covered by JobsResults.test.tsx.
+ *   1. idle — untouched, covered by JobsResults.list-and-empty.test.tsx.
  *   2. a query with zero hits reads as "no match", never "you haven't scraped".
  *   3. degraded-but-useful: `arms.dense === 'skipped'` surfaces a one-click
  *      enable action; `arms.rerank === 'unavailable'` surfaces plainly.

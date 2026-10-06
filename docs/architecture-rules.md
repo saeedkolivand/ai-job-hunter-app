@@ -168,6 +168,8 @@ Extends `docs/PATTERNS.md` §13. No other module may reconstruct these:
 > that keeps the suite green **today** while making the rule block **new** violations.
 > The test fails if an allowlisted file no longer needs its exception (so they can't rot).
 
+> **TS/TSX counterpart of R8/R8b:** `AGENTS.md` rule 19, enforced by `scripts/check-ts-size.mjs` (ratchet baseline in `scripts/data/ts-size-baseline.txt`).
+
 ---
 
 ## How to extend the system (stays within the rules)

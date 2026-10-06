@@ -1,6 +1,6 @@
 /**
  * Resolution check for the page-budget field's copy. Uses the REAL
- * @ajh/translations instance — StepTarget.test.tsx mocks `useTranslation` to an
+ * @ajh/translations instance — StepTarget/test-support.tsx mocks `useTranslation` to an
  * identity function, so a typo'd key renders as the key there and every
  * assertion still passes. Locale gaps are owned by the global
  * `i18n/translations-parity.test.ts`. Mirrors AutopilotCard.i18n.test.ts.

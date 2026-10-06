@@ -147,7 +147,7 @@ describe('JobsPage — per-board chip strip retention (replaces the old skip-toa
 describe('JobsPage — outright failure note (no per-board summaries to chip)', () => {
   it('job.failed persists a SANITIZED failure note (not the raw error) for the empty state', async () => {
     // Zero results (default) — the note routes to JobsResults' empty state
-    // (verified end-to-end in JobsResults.test.tsx); this test proves the
+    // (verified end-to-end in JobsResults.list-and-empty.test.tsx); this test proves the
     // data-layer signal is sanitized before it ever leaves JobsPage. The
     // header's OWN rendering of this note (when results ARE present) is
     // covered by the mutual-exclusivity block below.

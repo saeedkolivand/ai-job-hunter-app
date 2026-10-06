@@ -14,7 +14,7 @@ import { activeTabId, activeTabOriginAtGesture, injectAndRun, tabStillConfirmed 
 const ATTACH_FILE_GLOBAL = '__ajhRunAttachFile';
 
 /** Decode a base64 `document.result` payload to raw bytes — the one place that
- *  turns the wire string into bytes (`bridge.ts` stays base64-agnostic). */
+ *  turns the wire string into bytes (`lib/bridge/` stays base64-agnostic). */
 function base64ToBytes(b64: string): Uint8Array {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);

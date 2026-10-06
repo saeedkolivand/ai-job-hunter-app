@@ -91,7 +91,7 @@ import type { PromptDepth } from '../../provider/index.js';
  * questions, STAR feedback, and the inline rewrite. The parameter still
  * defaults to `full`, but nothing in this package relies on that default —
  * a new surface that forgets to pass its depth is the one regression the
- * per-surface pins in `natural-voice.test.ts` section 18 exist to catch.
+ * per-surface pins in `natural-voice/depth-surfaces.test.ts` exist to catch.
  *
  * Self-consistency: these constants contain NO em or en dashes used as punctuation.
  * Normal hyphens appear only where a hyphen is genuinely part of a word.
@@ -104,7 +104,7 @@ import type { PromptDepth } from '../../provider/index.js';
  * and NOTHING here is a word the validator will never check (or the small
  * path would be paying for a judgement call it cannot act on, which is what
  * the `brief` tier exists to stop). Both directions are mechanically pinned in
- * `natural-voice.test.ts` section 16, by parsing this exact text.
+ * `natural-voice/depth-tier.test.ts`, by parsing this exact text.
  *
  * The prompt-only siblings that used to ride along in these lists — "beacon",
  * "transformative", "supercharge", "landscape (abstract)" and friends — live in

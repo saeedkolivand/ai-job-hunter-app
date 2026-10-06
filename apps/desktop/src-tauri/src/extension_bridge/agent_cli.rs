@@ -20,7 +20,7 @@
 //! only accepts the one whose **server** proof verifies (see
 //! [`super::handshake::verify_server_proof`], added for this client — there
 //! was previously no Rust-side implementation of this handshake; the browser
-//! extension's lives in TS, `apps/extension/src/lib/bridge.ts`).
+//! extension's lives in TS, `apps/extension/src/lib/bridge/auth-handshake.ts`).
 //!
 //! **This defeats a dumb port squatter (one with no way to answer the
 //! challenge), not a RELAYING one** — a local process that transparently

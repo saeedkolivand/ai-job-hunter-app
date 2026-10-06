@@ -6,7 +6,7 @@
  *
  * `chrome.scripting.executeScript({ files: ['capture.js'] })` returns whatever
  * the injected file's LAST STATEMENT evaluates to. That completion value is a
- * wire contract — `background.ts`'s `isCaptureResult` / `isScannedQuestions` /
+ * wire contract — `background/guards.ts`'s `isCaptureResult` / `isScannedQuestions` /
  * `isAnswerScan` / `isFieldsProbeResult` reject anything else — and it is a
  * contract expressed ONLY as "the value of a trailing expression", which is
  * exactly the thing a JS minifier is allowed to rewrite when it decides
@@ -134,7 +134,7 @@ afterAll(() => {
 });
 
 describe('built injected scripts — completion values', () => {
-  it('capture.js returns the {answers, filled} object background.ts requires', () => {
+  it('capture.js returns the {answers, filled} object background/guards.ts requires', () => {
     const result = runInPage(source('capture'));
 
     // The regression itself: the minifier left the two CALLS and dropped the
@@ -172,7 +172,7 @@ describe('built injected scripts — completion values', () => {
     expect(result).toEqual([{ question: 'Notice period?', index: 0 }]);
   });
 
-  it('capture-rows.js returns the {questions, filled} object background.ts requires', () => {
+  it('capture-rows.js returns the {questions, filled} object background/guards.ts requires', () => {
     const result = runInPage(source('capture-rows'));
 
     // Same regression shape as capture.js: folding the two collector calls

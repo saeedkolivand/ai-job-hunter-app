@@ -51,7 +51,7 @@ vi.mock('@/components/ui/ExternalLink', () => ({
 // result's score strip (GenerationScoreStrip), via useAppClient/QueryClient —
 // stubbed so tests that reach either don't need a provider tree. A mutable
 // `stubbedScore` (not a plain arrow) so the score-strip tests below can drive
-// it — same pattern as JobAdView.i18n.test.tsx. `mockUseJobAdTextMatchScore`
+// it — same pattern as JobAdView/test-support.tsx. `mockUseJobAdTextMatchScore`
 // (the `mock`-prefixed name) is Vitest's documented exception to the "no
 // out-of-scope refs in a hoisted factory" rule. Reset before EVERY test —
 // most never touch it and rely on this default (undefined data, not

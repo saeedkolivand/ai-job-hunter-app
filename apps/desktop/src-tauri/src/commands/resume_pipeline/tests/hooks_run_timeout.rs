@@ -10,7 +10,7 @@ use crate::pipeline::{Pipeline, Stage, StageHooks, StageInfo, StageOutcome};
 /// `persist_document_source` documents), so this is presence-only — the pure
 /// computation itself is pinned directly by the test above, and the
 /// renderer's consumption of the identical `{ kind, stage, seconds }` shape
-/// is pinned by `use-resume-pipeline-session.test.ts`'s "localizes a per-call
+/// is pinned by `use-resume-pipeline-session/failure.test.ts`'s "localizes a per-call
 /// timeout instead of splicing the raw stage key into prose". This is the one
 /// link connecting the two ends that only a source read can confirm without
 /// a live run.

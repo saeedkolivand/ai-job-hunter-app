@@ -32,7 +32,7 @@ interface DocumentsResourceData {
 
 /** Hand-written guard for the `documents` resource's `data` shape (PR2
  *  §A.2) — the extension stays zod-free everywhere, same discipline as
- *  `bridge.ts`. Ignores fields this picker doesn't render (`targetLanguage`,
+ *  `lib/bridge/`. Ignores fields this picker doesn't render (`targetLanguage`,
  *  `updatedAt`, `language`) rather than validating every one of them. */
 export function parseDocumentsResourceData(data: unknown): DocumentsResourceData {
   const EMPTY: DocumentsResourceData = { generation: null, documents: [] };

@@ -31,7 +31,7 @@ const FILL = { kind: 'fill' };
 
 /** The active-tab url the popup faces once the toolbar-click grant makes it
  *  readable — the shape `tabs.query` returns under a live `activeTab`
- *  grant (mirrors `background.ts`'s `activeTabOriginAtGesture` read). */
+ *  grant (mirrors `background/page.ts`'s `activeTabOriginAtGesture` read). */
 const GRANTED_URL = 'https://example.com/jobs/123';
 const grantActiveTab = (url: string = GRANTED_URL): void => {
   vi.mocked(browser.tabs.query).mockResolvedValue([{ id: 7, url }]);

@@ -140,9 +140,11 @@ const LANGUAGE_CODE_SHAPE = /^[a-z]{2}(-[a-z]{2})?$/i;
  * interpolating a language VALUE that reached here from an untrusted source
  * (a scraped job ad, via `metadata.ts`'s `toLanguage`) into a prompt.
  *
- * A `$`-anchored regex alone is not a safe gate: `/^[a-z]{2}$/.test('de\n')` is
- * `true` in JS because `$` matches immediately before a trailing newline even
- * without the `m` flag, so an embedded newline is rejected explicitly too.
+ * The shape regex is anchored with `$`, which in JS (unlike PCRE/Python) does
+ * not match before a trailing newline without the `m` flag, so
+ * `/^[a-z]{2}$/.test('de\n')` is already `false`. The newline is still rejected
+ * explicitly as defense in depth, so the gate stays safe if the pattern is
+ * ever ported to a regex flavour where `$` does match there.
  */
 export function isPlausibleLanguageCode(value: string): boolean {
   return (

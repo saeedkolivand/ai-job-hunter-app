@@ -68,7 +68,7 @@ export function useMyData(id: string) {
 }
 ```
 
-**5. Add query keys** (`services/query-client.ts`):
+**5. Add query keys** (`services/query-client/`):
 
 ```typescript
 myFeature: {
@@ -137,7 +137,7 @@ export function useAiStream(generationId: string | null) {
 
 ## 3. State Machine Pattern
 
-Flows with 3+ states use the minimal state machine from `lib/machine.ts`.
+Flows with 3+ states use the minimal state machine from `lib/machine/machine.ts`.
 
 ### Defining a Machine
 

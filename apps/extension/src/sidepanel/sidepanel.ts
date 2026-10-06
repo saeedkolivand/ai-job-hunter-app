@@ -266,7 +266,7 @@ const jobTools = mountJobTools(jobToolsHost, {
   // settling — re-validate both before treating the click as authorized for
   // THIS page.
   // TODO(follow-up, out of scope for this PR): thread the captured/validated
-  // tab id through the `fill` request itself (background.ts) rather than
+  // tab id through the `fill` request itself (background/dispatch.ts) rather than
   // relying solely on this caller-side re-check.
   confirmFill: async () => {
     const capturedGeneration = followGeneration;

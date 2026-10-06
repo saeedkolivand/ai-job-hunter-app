@@ -30,7 +30,7 @@ const submitDetected = (senderId: string) =>
   } as never);
 
 describe('SUBMIT_DETECTED_MSG parity (Task #22 review closure)', () => {
-  it('the background.ts re-exported literal matches the imported lib/submit-watch.ts const — a future edit to one side cannot silently break routing', () => {
+  it('the background/guards.ts literal matches the imported lib/submit-watch.ts const — a future edit to one side cannot silently break routing', () => {
     expect(backgroundModule.SUBMIT_DETECTED_MSG).toBe(SUBMIT_DETECTED_MSG);
   });
 });

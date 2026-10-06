@@ -40,7 +40,7 @@ universal fallback for every provider.
 
 ## Locale follows the job ad
 
-All market behaviour keys off the **job-ad's detected locale** (`locale.ts`):
+All market behaviour keys off the **job-ad's detected locale** (`locale/`):
 section-header lexicons (en, de, fr, es, it, nl, pt) for `detectSections`, resume
 conventions (localized headers + date format), and a per-locale `estimateTokens`
 factor. No default-to-German or default-to-English assumption.

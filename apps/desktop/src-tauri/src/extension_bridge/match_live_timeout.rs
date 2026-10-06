@@ -15,7 +15,7 @@ const SCORE_FAILED_MESSAGE: &str = "Could not score this posting. Please retry."
 
 /// Wall-clock cap on the keyword-only scorer — shared by
 /// [`score_import_posting`] (the import's own WS reply budget the extension
-/// enforces client-side is ~30s, `bridge.ts`'s import timeout; scoring must
+/// enforces client-side is ~30s, `lib/bridge/constants.ts`'s `REQUEST_TIMEOUT_MS`; scoring must
 /// never eat meaningfully into that) AND [`score_or_timeout`] (the
 /// interactive "Check fit" path — a hung/slow scorer must never block
 /// `handle_connection`'s single-socket serial frame loop, which awaits each

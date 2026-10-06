@@ -19,12 +19,12 @@
 import { currentNotebookPalette, type NotebookPalette } from './notebook-palette';
 
 /** Isolated-world global key `fit-badge.ts` exposes the renderer under. MUST
- *  match the literal duplicated in `background.ts` (same discipline as
+ *  match the literal duplicated in `background/match-live.ts` (same discipline as
  *  `AUTOFILL_GLOBAL`). */
 export const FIT_BADGE_GLOBAL = '__ajhRenderFitBadge';
 
 /** Internal message kind the badge's "Open the panel" button posts — MUST
- *  match the literal duplicated in `background.ts`. */
+ *  match the literal duplicated in `background/guards.ts`. */
 export const OPEN_PANEL_MSG = 'ajhOpenPanelFromBadge';
 
 /** DOM id of the injected badge (also used to clear a prior pass — a second

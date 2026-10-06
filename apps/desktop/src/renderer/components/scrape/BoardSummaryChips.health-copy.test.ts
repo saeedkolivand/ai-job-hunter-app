@@ -1,7 +1,7 @@
 /**
  * jobs.boardSummary.health.neverWorkedSince — grammar (MEDIUM 3).
  *
- * `BoardSummaryChips.test.tsx` mocks `@ajh/translations` down to a
+ * `BoardSummaryChips/test-mocks.tsx` mocks `@ajh/translations` down to a
  * `t(k, opts) => "${k}:${opts.since}"` identity stub (see the file header
  * there), so it can never see what the composed English SENTENCE reads like.
  * `timeAgo` returns a RELATIVE phrase ("2 days ago", "yesterday"), and the key

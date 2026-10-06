@@ -3,7 +3,7 @@
  * (apps/extension/src/lib/submit-watch.ts).
  *
  * jsdom is provided by the vitest environment (vitest.config.ts). Mirrors
- * answers-capture.test.ts's style: build a real form in the shared `document`,
+ * answers-capture/collect-answers.test.ts's style: build a real form in the shared `document`,
  * arm the REAL watcher, dispatch real DOM events, and assert what it posted.
  *
  * Visibility is asserted via computed style ONLY (jsdom always reports

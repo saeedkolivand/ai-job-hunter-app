@@ -52,7 +52,7 @@ fn is_personal_linkedin(url: &str) -> bool {
 /// entry (Xing hosts job listings too), so without this a legitimate DACH
 /// candidate's personal profile link reads as job-board-adjacent to
 /// `validate::pdf_render_issues`'s header-band warning. Mirrors
-/// `isPersonalXing` in `packages/prompts/src/generate/links/links.ts`.
+/// `isPersonalXing` in `packages/prompts/src/generate/links/classify.ts`.
 pub(crate) fn is_personal_xing(url: &str) -> bool {
     host_is(url, "xing.com") && url.to_lowercase().contains("/profile/")
 }
@@ -66,7 +66,7 @@ fn is_github(url: &str) -> bool {
 
 /// Known social/portfolio platform hosts whose profile page belongs on the
 /// contact line. Mirrors `PROFILE_DOMAINS` in
-/// `packages/prompts/src/generate/links/links.ts` — keep the two lists in
+/// `packages/prompts/src/generate/links/classify.ts` — keep the two lists in
 /// sync, WITH THREE DELIBERATE, NAMED EXCEPTIONS (a stale "keep in sync" claim
 /// with no named exceptions is what caused half this branch's parity
 /// findings — this list is not silently allowed to drift again):
@@ -149,7 +149,7 @@ fn is_profile_shaped(url: &str) -> bool {
 /// (see the fallback in [`classify_contact_links`]); every other one is a
 /// body/project link and must never re-enter the profile. Shared rule with
 /// `isProfileUrl`/`isProfileShaped`/`classifyLinks` in
-/// `packages/prompts/src/generate/links/links.ts`: a platform-profile URL
+/// `packages/prompts/src/generate/links/classify.ts`: a platform-profile URL
 /// stays on the contact side; a non-platform URL is admitted at most once
 /// (`Website`) — every other one is a body link.
 fn is_platform_profile_link(url: &str) -> bool {
@@ -188,7 +188,7 @@ pub(crate) fn is_job_board(url: &str) -> bool {
 /// promoted to `website`, and any deep-path project/demo/article/repo link,
 /// never enters the profile at all — it belongs in the résumé body, not the
 /// header. Shared rule with `classifyLinks` in
-/// `packages/prompts/src/generate/links/links.ts`: a platform-profile URL
+/// `packages/prompts/src/generate/links/classify.ts`: a platform-profile URL
 /// stays on the contact side (LinkedIn gated to `/in/`, same as
 /// `is_personal_linkedin` here); a non-platform URL is admitted at most once,
 /// as `Website`, via the same order-independent apex-over-subdomain

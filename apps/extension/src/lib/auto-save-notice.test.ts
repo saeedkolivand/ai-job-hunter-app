@@ -4,7 +4,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-// An in-memory `storage.session` area — mirrors answer-state.test.ts's own mock.
+// An in-memory `storage.session` area — mirrors answer-state/storage.test.ts's own mock.
 vi.mock('@wxt-dev/browser', () => {
   const store: Record<string, unknown> = {};
   return {

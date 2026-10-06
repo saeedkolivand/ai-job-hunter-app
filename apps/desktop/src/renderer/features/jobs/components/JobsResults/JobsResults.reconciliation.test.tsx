@@ -13,7 +13,7 @@
  *   • Empty display (topId === null): effect early-returns; EmptyState handles UI.
  *
  * Strategy:
- *  - Uses the same session-store mock shape as JobsResults.test.tsx.
+ *  - Uses the same session-store mock shape as results-harness.tsx.
  *  - JobsSplitView is stubbed (so split-mode renders cheaply).
  *  - PostingRow is stubbed (no router/provider deps needed).
  *  - Virtualizer is stubbed to render all items synchronously.

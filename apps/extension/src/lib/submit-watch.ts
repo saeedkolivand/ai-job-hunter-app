@@ -49,7 +49,7 @@ import { type CapturedAnswer, collectAnswers } from './answers-capture';
 import { isHidden, textSignal } from './field-signal';
 
 /** Internal background message kind the injected watcher posts on a detected
- *  submit. Duplicated as a plain literal in `background.ts` (kept out of that
+ *  submit. Duplicated as a plain literal in `background/guards.ts` (kept out of that
  *  bundle's import graph — same discipline as `AUTOFILL_GLOBAL`). */
 export const SUBMIT_DETECTED_MSG = 'submitDetected';
 
@@ -57,7 +57,7 @@ export const SUBMIT_DETECTED_MSG = 'submitDetected';
  *  runner (PR4 — same two-step files+func pattern as `fill.js`/
  *  `AUTOFILL_GLOBAL`, needed here to pass the `captureAnswers` boolean at
  *  injection time as a plain JSON-safe primitive arg). Duplicated as a local
- *  literal in `background.ts`, same discipline as `AUTOFILL_GLOBAL`. */
+ *  literal in `background/auto-track.ts`, same discipline as `AUTOFILL_GLOBAL`. */
 export const SUBMIT_WATCH_GLOBAL = '__ajhArmSubmitWatch';
 
 /** Visible text that marks a control as a real "send the application" action

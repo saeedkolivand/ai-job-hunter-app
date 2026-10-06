@@ -159,8 +159,8 @@ Pure-TypeScript AI prompt templates (zero dependencies). Builds prompt strings a
 
 It is **provider-aware** and **locale-driven**:
 
-- **`provider.ts`** — `ProviderProfile` (`{ kind: 'ollama' | 'cloud' | 'cli', model?, contextWindow?, sizeHint? }`) and `resolveProfile()`. Every builder accepts this **additively** (a legacy `'large' | 'medium' | 'small'` tier string still works). It picks prompt **depth** (`brief` / `full` / `task` brief), schema variant, and truncation budget per provider class: ollama → shortest imperative prompts + compact schema + aggressive truncation; cloud → full multi-perspective prompt + rich schema + minimal truncation; cli agents → a self-verifying **task brief** with explicit acceptance checks. Native structured output is decided per-request by the Rust provider layer (`complete_structured`), not modelled in `ProviderProfile`.
-- **`locale.ts`** — section-header lexicons, resume conventions (headers + date format), and per-locale token factors. All market behaviour follows the **job-ad's detected locale**, not a fixed US/German style.
+- **`provider/index.ts`** — `ProviderProfile` (`{ kind: 'ollama' | 'cloud' | 'cli', model?, contextWindow?, sizeHint? }`) and `resolveProfile()`. Every builder accepts this **additively** (a legacy `'large' | 'medium' | 'small'` tier string still works). It picks prompt **depth** (`brief` / `full` / `task` brief), schema variant, and truncation budget per provider class: ollama → shortest imperative prompts + compact schema + aggressive truncation; cloud → full multi-perspective prompt + rich schema + minimal truncation; cli agents → a self-verifying **task brief** with explicit acceptance checks. Native structured output is decided per-request by the Rust provider layer (`complete_structured`), not modelled in `ProviderProfile`.
+- **`locale/`** — section-header lexicons, resume conventions (headers + date format), and per-locale token factors. All market behaviour follows the **job-ad's detected locale**, not a fixed US/German style.
 - **Modular folders** — every concern (`analyze/`, `generate/`, `context-manager/`, `provider/`, `locale/`, `workspace/`) is a folder with an `index.ts` barrel (the `@ajh/prompts/<name>` subpath entry) plus focused submodules and a colocated test. `context-manager/model-size.ts` parses a model's parameter size generically from its tag and defaults unknown local models to the smaller/safer prompt; CLI-agent / hosted model names (sonnet/opus/haiku/codex/gpt/claude/gemini) are treated as capable.
 - **Validators** (`validateAndRepair`, `validateMetadata`) remain the universal fallback for every provider.
 
@@ -399,7 +399,7 @@ The renderer uses a `features/` directory where each feature owns its components
 
 ### 7. Minimal State Machine Library
 
-Rather than XState, the app uses a micro state machine implementation (`lib/machine.ts`, ~80 lines) with a `useMachine` hook. This keeps bundle size minimal and the mental model simple for flows with ≤ 10 states.
+Rather than XState, the app uses a micro state machine implementation (`lib/machine/machine.ts`, ~80 lines) with a `useMachine` hook. This keeps bundle size minimal and the mental model simple for flows with ≤ 10 states.
 
 ### 8. Uniform Data Layer + Backup/Restore
 

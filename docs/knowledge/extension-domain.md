@@ -6,14 +6,14 @@ Owned by `extension-author` / `extension-reviewer`; security co-reviewed by `tau
 
 ## Primary paths
 
-| Area                   | Path                                                                                                          |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Extension app (MV3)    | `apps/extension/src/` — background/service worker, popup, content scripts, `lib/bridge.ts`, `lib/messages.ts` |
-| Desktop bridge (Rust)  | `apps/desktop/src-tauri/src/extension_bridge/` — frame dispatch, token gate, import handler                   |
-| Wire `type` constants  | `apps/desktop/src-tauri/src/extension_bridge/msg.rs` — the Rust mirror of the TS table (constants only)       |
-| Revocation decision    | `apps/desktop/src-tauri/src/extension_bridge/revoke.rs` — `revoke_frames(authenticated)`, the no-oracle gate  |
-| Shared wire protocol   | `packages/shared/src/ipc/extension-protocol-constants.ts` + `extension-protocol.ts`                           |
-| Store policy checklist | `.claude/skills/extension-standards/SKILL.md`                                                                 |
+| Area                   | Path                                                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Extension app (MV3)    | `apps/extension/src/` — background/service worker, popup, content scripts, `lib/bridge/`, `lib/messages.ts`  |
+| Desktop bridge (Rust)  | `apps/desktop/src-tauri/src/extension_bridge/` — frame dispatch, token gate, import handler                  |
+| Wire `type` constants  | `apps/desktop/src-tauri/src/extension_bridge/msg.rs` — the Rust mirror of the TS table (constants only)      |
+| Revocation decision    | `apps/desktop/src-tauri/src/extension_bridge/revoke.rs` — `revoke_frames(authenticated)`, the no-oracle gate |
+| Shared wire protocol   | `packages/shared/src/ipc/extension-protocol-constants.ts` + `extension-protocol.ts`                          |
+| Store policy checklist | `.claude/skills/extension-standards/SKILL.md`                                                                |
 
 ## Auth model (HMAC v2 handshake)
 
@@ -29,7 +29,7 @@ The handshake itself enforces **mutual authentication**: the extension proves it
 
 ## Connection phases
 
-The connection surfaces render one link state at a time (roster: `BridgePhase` in `apps/extension/src/lib/bridge.ts`, plus `not_paired`, set in `background.ts`; labels in `apps/extension/src/connection-status/connection-status.ts`). Glossary: CONTEXT.md "Connection phase". What each one means:
+The connection surfaces render one link state at a time (roster: `BridgePhase` in `apps/extension/src/lib/bridge/connection.ts`, plus `not_paired`, set in `background/bridge-client.ts`; labels in `apps/extension/src/connection-status/connection-status.ts`). Glossary: CONTEXT.md "Connection phase". What each one means:
 
 - `app_not_running` — desktop app unreachable.
 - `searching` — probing / reconnecting; **also where a transient auth-handshake timeout folds in** (transient → retry).
@@ -58,7 +58,7 @@ The Rust constant table lives in its own `msg.rs` (lifted verbatim out of `mod.r
 
 ## Bridge verbs (reserved-verb pattern)
 
-The bridge uses a **reserved-verb pattern**: each verb is defined in shared constants (TS + Rust), has a Zod schema for wire shape, a Rust handler with parity tests, and an extension guard in `bridge.ts`. This keeps the protocol a single source of truth and makes adding new verbs (read: modify constant + handler + test + guard) predictable and auditable.
+The bridge uses a **reserved-verb pattern**: each verb is defined in shared constants (TS + Rust), has a Zod schema for wire shape, a Rust handler with parity tests, and an extension guard in `lib/bridge/guards.ts`. This keeps the protocol a single source of truth and makes adding new verbs (read: modify constant + handler + test + guard) predictable and auditable.
 
 | Verb                                                                                        | Direction                       | Consent gate                                                                                                                                                                  | Wire shape                                                                                                                                                                                                 | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ------------------------------------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -140,7 +140,7 @@ Closing it fully needs a client-side bounded-retry counter that degrades to a "r
 
 ### Store re-release pending
 
-Both halves of the extension changed in this batch — the wire protocol (`token.revoked` handling in `apps/extension/src/lib/bridge.ts`) and the autofill field matcher (`apps/extension/src/lib/field-signal.ts` / `autofill.ts`, attribute-only + hyphenated name fields). Neither reaches users until a **new Chrome Web Store + Firefox AMO release** ships; until then, an installed extension keeps the old matcher and ignores the revoke frame as an unknown wire `type`. Checklist: `.claude/skills/extension-standards/SKILL.md`.
+Both halves of the extension changed in this batch — the wire protocol (`token.revoked` handling in `apps/extension/src/lib/bridge/connection.ts`) and the autofill field matcher (`apps/extension/src/lib/field-signal.ts` / `autofill.ts`, attribute-only + hyphenated name fields). Neither reaches users until a **new Chrome Web Store + Firefox AMO release** ships; until then, an installed extension keeps the old matcher and ignores the revoke frame as an unknown wire `type`. Checklist: `.claude/skills/extension-standards/SKILL.md`.
 
 ## Status transition allowlist
 
@@ -156,11 +156,11 @@ This narrow gate keeps the bridge stateless (no complex transition rules) and ma
 
 ## Auto-track — gesture-armed submit detection (Task #22, Layer A)
 
-After the user has invoked the extension on an application page (any existing gesture: import, fill, answers save/suggest, answer fill/replace, match live — the `GESTURE_KINDS` set in `background.ts`), a SUCCESSFUL request arms a pure-DOM watcher for that page, gated end-to-end by a new **"auto-track sent applications" opt-in — default OFF, desktop-enforced**. No new manifest permissions; Firefox `data_collection_permissions` stays `['none']`.
+After the user has invoked the extension on an application page (any existing gesture: import, fill, answers save/suggest, answer fill/replace, match live — the `GESTURE_KINDS` set in `background/dispatch.ts`), a SUCCESSFUL request arms a pure-DOM watcher for that page, gated end-to-end by a new **"auto-track sent applications" opt-in — default OFF, desktop-enforced**. No new manifest permissions; Firefox `data_collection_permissions` stays `['none']`.
 
 - **Arming** (`maybeArmSubmitWatch`, `apps/extension/src/lib/auto-track.ts`): reads `autotrack.check` — only when `enabled` does it inject `submit-watch.js` (`apps/extension/src/submit-watch.ts` → `armSubmitWatch` in `apps/extension/src/lib/submit-watch.ts`) into the active tab. Best-effort (a restricted page / unreachable bridge / opt-in unknown just skips arming).
 - **Detection** (`armSubmitWatch`, pure DOM): a capture-phase `submit` listener PLUS a capture-phase click heuristic for apply-style controls (submit button/input, or `role="button"` whose visible text matches `/apply|submit application|send application|finish/i`, computed-style-only visibility via the shared `isHidden` helper — never `getBoundingClientRect`/`offsetWidth`, the jsdom gotcha). Fires **at most once** per arming, reads `location.href` synchronously in the handler (so a full-page-nav submit still delivers the URL before unload), and NEVER calls `preventDefault`/`stopPropagation` — observe only.
-- **Routing** (`background.ts`): the injected script posts a fire-and-forget `{ kind: 'submitDetected', url }` runtime message, handled out-of-band (not a `PopupRequest` — no response channel) by `isSubmitDetected` → `handleSubmitDetected` (`apps/extension/src/lib/auto-track.ts`), guarded by `sender.id === browser.runtime.id` (belt-and-braces MV3 hygiene since the extension declares no `externally_connectable`).
+- **Routing** (`background/message-listener.ts`): the injected script posts a fire-and-forget `{ kind: 'submitDetected', url }` runtime message, handled out-of-band (not a `PopupRequest` — no response channel) by `isSubmitDetected` → `handleSubmitDetected` (`apps/extension/src/lib/auto-track.ts`), guarded by `sender.id === browser.runtime.id` (belt-and-braces MV3 hygiene since the extension declares no `externally_connectable`).
 - **Decision** (`decideSubmitAction`, pure): re-checks `autotrackEnabled()` (may have flipped off since arming), then `applied.check {url}`:
   - **not tracked** (`found: false`) → `promptImport` — an extension action-badge nudge ("!" badge) toward the existing Import button; **never auto-creates**. The badge clears when the popup next opens (`clearImportPrompt`, called from `getStatus`).
   - **tracked & currently `saved`** → auto `status.update { url, to: 'applied', auto: true }` (silent — the confirmation the user sees is the DESKTOP's own `status.update` notify tail: Notification Center card + OS banner, not a popup message).
@@ -172,7 +172,7 @@ After the user has invoked the extension on an application page (any existing ge
 
 ## Import flow
 
-Single unified import: `background.ts::runImport` always tries DOM capture first (`scripting.executeScript` → `content.js`), falls back to URL-only if capture is blocked (restricted pages). No user-visible mode selection — one **Import this job** button. The bridge side (`extension_bridge/import_flow.rs::handle_import`) acquires the shared `"scrape_url"` rate-limiter slot, so it spends the same budget as the `scrape_url` IPC; the caps are `SCRAPE_RATE_MAX` / `SCRAPE_CONCURRENCY_MAX` / `RATE_WINDOW` in `apps/desktop/src-tauri/src/limits/mod.rs`.
+Single unified import: `background/autofill.ts::runImport` always tries DOM capture first (`scripting.executeScript` → `content.js`), falls back to URL-only if capture is blocked (restricted pages). No user-visible mode selection — one **Import this job** button. The bridge side (`extension_bridge/import_flow.rs::handle_import`) acquires the shared `"scrape_url"` rate-limiter slot, so it spends the same budget as the `scrape_url` IPC; the caps are `SCRAPE_RATE_MAX` / `SCRAPE_CONCURRENCY_MAX` / `RATE_WINDOW` in `apps/desktop/src-tauri/src/limits/mod.rs`.
 
 ## Streaming transport (answer.assist)
 
@@ -218,7 +218,7 @@ PII) to `browser.storage.local`, forgettable one at a time from Settings → Sit
 
 State keyed by **tab id alone** (`answerStateKey(tabId)`, origin captured into the record itself — see that function's doc for why) lives in `chrome.storage.session`: the side panel (`apps/extension/src/sidepanel/sidepanel.ts` — Chrome `chrome.sidePanel`, Firefox `sidebar_action`) follows the active tab and mounts `mountAnswerTools` (`apps/extension/src/answer-tools/answer-tools.ts`) in its Answers tab against that tab's record. **The popup no longer hosts this component** (ADR-044's 2026-09-11 amendment, decision 1 reversed) — see the redesign section above. The shared state (`AnswerState`, `subscribeAnswerState`, `apps/extension/src/lib/answer-state.ts`) is unaffected: it was always keyed by tab, never by which surface last rendered it. Full record: [ADR-044](decision-records/adr-044-extension-answer-tools-side-panel-and-popup.md).
 
-**Gesture model** (identical on both browsers — `background.ts::openAnswerPanel` / `popup.ts::openAnswerPanel`): the toolbar click grants `activeTab` and opens the popup (a declared `default_popup` takes priority over `openPanelOnActionClick`); the popup's own `#btn-open-panel` control (popup.html) opens the panel from that same click, synchronously; two context-menu entries (`contextMenus` permission, both on both targets) are the second gesture path, defined together in `background.ts`'s `installContextMenu` — one on selected text that adds the selection as a free-text row before opening the panel, one that opens the panel directly with nothing prefilled. The two are mutually exclusive in the common case, per how Chrome resolves its own context types, not stacked — see [ADR-044](decision-records/adr-044-extension-answer-tools-side-panel-and-popup.md)'s amendment for which case is the one exception and why. There is no open-on-action-click anywhere in this codebase — `manifest.test.ts` asserts its absence.
+**Gesture model** (identical on both browsers — `background/context-menu.ts::openAnswerPanel` / `popup.ts::openAnswerPanel`): the toolbar click grants `activeTab` and opens the popup (a declared `default_popup` takes priority over `openPanelOnActionClick`); the popup's own `#btn-open-panel` control (popup.html) opens the panel from that same click, synchronously; two context-menu entries (`contextMenus` permission, both on both targets) are the second gesture path, defined together in `background.ts`'s `installContextMenu` — one on selected text that adds the selection as a free-text row before opening the panel, one that opens the panel directly with nothing prefilled. The two are mutually exclusive in the common case, per how Chrome resolves its own context types, not stacked — see [ADR-044](decision-records/adr-044-extension-answer-tools-side-panel-and-popup.md)'s amendment for which case is the one exception and why. There is no open-on-action-click anywhere in this codebase — `manifest.test.ts` asserts its absence.
 
 **After ANY navigation** (same-origin included, not only cross-origin), the panel keeps its rows (state the extension holds itself) and replaces every write control with a line pointing back at the toolbar icon. The underlying `activeTab` grant itself only dies on a cross-origin navigation, but this extension has no way to tell same-origin from cross-origin apart without the `tabs` permission (denylisted), so `AnswerState.pageChanged` — see its own doc comment for the tradeoff — is set on every navigation regardless, and read by `background.ts`'s write handlers (`answerAccept` / `answerRestoreOriginal`) before either touches the tab.
 
@@ -232,7 +232,7 @@ State keyed by **tab id alone** (`answerStateKey(tabId)`, origin captured into t
 
 A separate shared component, `apps/extension/src/job-tools/job-tools.ts` (`mountJobTools`), mirrors `answer-tools.ts`'s "one component, both surfaces" shape for the popup's four page-scoped action buttons, moved out of `popup.ts` so the side panel gains them too. Full record: [ADR-045](decision-records/adr-045-job-tools-panel-parity-and-trust-gate.md).
 
-**Trust gate**: `isPageTrusted` (`job-tools.ts`), fed via `JobToolsView.render`/`checkPage`; re-armed by both context-menu entries through `rearmPageChangedForGesture` (`background.ts::installContextMenu`). See ADR-045 for the exact condition, the gated-state UI, and the caller-ordering contract `checkPage` depends on (`sidepanel.ts::follow`).
+**Trust gate**: `isPageTrusted` (`job-tools.ts`), fed via `JobToolsView.render`/`checkPage`; re-armed by both context-menu entries through `rearmPageChangedForGesture` (`background/context-menu.ts::installContextMenu`). See ADR-045 for the exact condition, the gated-state UI, and the caller-ordering contract `checkPage` depends on (`sidepanel.ts::follow`).
 
 **Scope boundary**: "Mark as applied" and the popup's adaptive Import re-label stay in `popup.ts`, unmoved — `JobToolsView.setImportLabel` is the one seam between them. See ADR-045 decision 5 for why.
 

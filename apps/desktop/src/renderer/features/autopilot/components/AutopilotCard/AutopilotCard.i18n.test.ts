@@ -1,6 +1,6 @@
 /**
  * Resolution check for the PR H provisional-score hint. Uses the REAL
- * @ajh/translations instance (not the identity mock AutopilotCard.test.tsx
+ * @ajh/translations instance (not the identity mock AutopilotCard/test-render.tsx
  * uses) so this verifies the key resolves to real, non-empty copy per locale.
  *
  * NOTE: because @ajh/translations initializes with `fallbackLng: 'en'`, a key

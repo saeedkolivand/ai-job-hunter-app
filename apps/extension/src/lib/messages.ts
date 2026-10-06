@@ -304,7 +304,7 @@ export type PopupRequest = SurfaceWindow &
     /**
      * Documents tab: export the picked source as DECODED text (cover-letter
      * TXT only — the picker's Copy/Paste actions both need plain text, never
-     * base64). The background is what decodes (`bridge.ts` stays base64-
+     * base64). The background is what decodes (`lib/bridge/` stays base64-
      * agnostic) — see `PopupResponse`'s `documentExportText` doc.
      */
     | {
@@ -320,7 +320,7 @@ export type PopupRequest = SurfaceWindow &
      * (`documents/documents.ts`) is responsible for the first-time-per-site
      * confirmation (reuses the panel's existing Fill confirmation) BEFORE
      * sending this — a deliberate page-touching gesture, so it joins
-     * `GESTURE_KINDS` in `background.ts`.
+     * `GESTURE_KINDS` in `background/dispatch.ts`.
      */
     | {
         kind: 'documentAttach';

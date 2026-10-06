@@ -98,10 +98,10 @@ describe('runAutofill', () => {
 });
 
 describe('AUTOFILL_GLOBAL', () => {
-  it('is pinned — background.ts hardcodes the same literal (kept in lockstep)', () => {
-    // background.ts intentionally duplicates this literal (it cannot runtime-import
-    // autofill.ts, or fill.js would gain an ES import and break classic injection).
-    // If this value changes, update the local const in background.ts too.
+  it('is pinned — background/autofill.ts hardcodes the same literal (kept in lockstep)', () => {
+    // background/autofill.ts intentionally duplicates this literal (it cannot runtime-import
+    // lib/autofill.ts, or fill.js would gain an ES import and break classic injection).
+    // If this value changes, update the local const in background/autofill.ts too.
     expect(AUTOFILL_GLOBAL).toBe('__ajhRunAutofill');
   });
 });

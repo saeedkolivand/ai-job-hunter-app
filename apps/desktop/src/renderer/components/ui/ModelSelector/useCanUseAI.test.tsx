@@ -2,7 +2,7 @@
  * Real (unmocked) coverage for `useCanUseAI` itself.
  *
  * Every existing CONSUMER test mocks this hook wholesale (see
- * `ApplyByEmailTab.test.tsx`: `vi.mock('@/components/ui/ModelSelector', ...)`),
+ * `ApplyByEmailTab/test-support.tsx`: `vi.mock('@/components/ui/ModelSelector', ...)`),
  * so its real branches — especially local-server, which never read health at
  * all before this fix — had zero coverage anywhere in the repo. This exercises
  * the real hook through a real (mock-backed) `AppClient` + `QueryClient`.

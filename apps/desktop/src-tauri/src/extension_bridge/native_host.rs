@@ -88,7 +88,7 @@ pub fn run() {
 /// forever) — giving any in-flight write a real chance to land before the
 /// process exits. This host still understands nothing about `reqId`
 /// correlation or multiple concurrent requests — that multiplexing lives in
-/// `bridge.ts` and the desktop's own connection loop; the host stays a dumb
+/// `lib/bridge/transport.ts` and the desktop's own connection loop; the host stays a dumb
 /// byte relay in both directions.
 async fn relay() {
     let ws = match connect_bridge().await {

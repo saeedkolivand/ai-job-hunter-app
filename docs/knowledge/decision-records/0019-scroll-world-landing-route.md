@@ -68,7 +68,7 @@ All media is same-origin (`apps/landing/public/world/`). The scrub-engine inject
 
 ## Addendum: engine deviation log
 
-`scrub-engine.js` is vendored third-party code. Every change from the upstream skill's original is recorded here and **must be re-applied on a re-vendor**. `apps/landing/src/app/world/scrub-engine.test.ts` is the mechanical guard: it mounts the engine in jsdom and asserts D2–D4 behaviourally, so a re-vendor that drops a deviation fails `pnpm -F @ajh/landing test` instead of silently regressing on hardware nobody has to hand.
+`scrub-engine.js` is vendored third-party code. Every change from the upstream skill's original is recorded here and **must be re-applied on a re-vendor**. The tests in `apps/landing/src/app/world/scrub-engine/` are the mechanical guard: they mount the engine in jsdom and assert D2–D4 behaviourally, so a re-vendor that drops a deviation fails `pnpm -F @ajh/landing test` instead of silently regressing on hardware nobody has to hand.
 
 ### D1 — ESM export (Turbopack)
 

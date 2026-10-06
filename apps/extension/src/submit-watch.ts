@@ -8,7 +8,7 @@
  * an arm-time argument to a classic-script injection, and load-bearing here:
  * the save-answers-on-submit consent flag must cross the injection boundary
  * as a plain JSON-safe primitive, never something the page itself decides.
- * `background.ts`'s `maybeArmSubmitWatch` call site does this right after any
+ * `background/auto-track.ts`'s `maybeArmSubmitWatch` call site does this right after any
  * existing page gesture (autofill / answer-fill / answers-capture / import
  * scan) WHEN the auto-track opt-in is on. Runs as a CLASSIC script (no ES
  * modules), so after the isolated Rollup pass (`vite.config.mts`'s
@@ -38,7 +38,7 @@ const ARMED_FLAG = '__ajhSubmitWatchArmed';
 
 /** Isolated-world MUTABLE consent value, updated on EVERY `runArmSubmitWatch`
  *  call (not gated by {@link ARMED_FLAG}) — the desktop-enforced
- *  `saveAnswersOnSubmit` opt-in can change mid-frame (background.ts's
+ *  `saveAnswersOnSubmit` opt-in can change mid-frame (background/auto-track.ts's
  *  `maybeArmSubmitWatch` re-reads it fresh on every subsequent gesture and
  *  re-injects), so freezing the FIRST value for the DOM-listener's whole life
  *  meant turning the switch off still captured on a later submit, and

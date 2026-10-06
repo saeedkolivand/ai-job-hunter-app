@@ -217,7 +217,7 @@ export class BridgeClient extends BridgeConnection {
    * The desktop STREAMS the answer: zero or more `assist.chunk { delta }` frames
    * arrive before the terminal `answer.assist.result` resolves this promise.
    * Each delta is forwarded to `onChunk` (best-effort live preview); the caller
-   * (background.ts) ACCUMULATES the running text — this client holds no
+   * (background/answer-assist.ts) ACCUMULATES the running text — this client holds no
    * cross-eviction buffer.
    *
    * Unlike every other verb's flat {@link REQUEST_TIMEOUT_MS}, this promise is

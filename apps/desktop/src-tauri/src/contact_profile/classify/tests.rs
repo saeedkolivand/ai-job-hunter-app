@@ -81,7 +81,7 @@ fn classify_keeps_other_personal_links_as_labelled_extras() {
 /// Project/repo/demo links must never leak into the contact profile, even
 /// though they share a host with a genuine platform profile — only the
 /// profile-shaped form (bare user page) qualifies. Mirrors `isProfileShaped`/
-/// `classifyLinks` in `packages/prompts/src/generate/links/links.ts`.
+/// `classifyLinks` in `packages/prompts/src/generate/links/classify.ts`.
 #[test]
 fn classify_excludes_deep_path_project_links_by_shape() {
     let links = vec![

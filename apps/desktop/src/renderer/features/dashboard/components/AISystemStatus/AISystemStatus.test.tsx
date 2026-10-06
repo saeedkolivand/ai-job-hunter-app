@@ -23,7 +23,7 @@ vi.mock('@/hooks/use-kind-label-map', () => ({
 }));
 
 // The seam under test — same shape/module `@/components/ui/ModelSelector`
-// mocks elsewhere in the suite (see ApplyByEmailTab.test.tsx).
+// mocks elsewhere in the suite (see ApplyByEmailTab/test-support.tsx).
 let mockCanUseAI: { canUse: boolean; reason?: string } = { canUse: true };
 let mockSelectedModel = '';
 vi.mock('@/components/ui/ModelSelector', () => ({

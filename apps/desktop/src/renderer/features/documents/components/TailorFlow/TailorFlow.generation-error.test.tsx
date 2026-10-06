@@ -288,8 +288,8 @@ describe('TailorFlow — a failed staged-run start surfaces its reason', () => {
 // buggy effect calls `setRun` repeatedly (4 times observed here — bounded
 // in THIS test only because a mock AppClient settles quickly; production's
 // unbounded churn is what the bug report's repro actually crashed on) for
-// the SAME run instead of once. The hook-level test in
-// `useTailorPipeline.test.ts` remains the primary, crash-shaped guard.
+// the SAME run instead of once. The hook-level tests in
+// `useTailorPipeline/` remain the primary, crash-shaped guard.
 
 function DocumentsTabShapedHost({ onSetRun }: { onSetRun: (ids: unknown) => void }) {
   const [applyRun, setApplyRun] = React.useState<{ runId: string; jobId: string } | null>(null);

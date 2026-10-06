@@ -115,7 +115,7 @@ The one non-obvious step is **dev pairing**: a locally-loaded (unpacked) extensi
 
 **Notes:** the app must be running first (the popup shows an "AI Job Hunter isn't running" state with a Retry button otherwise). **Firefox:** `about:debugging` → **Load Temporary Add-on** → `dist/firefox/manifest.json`; its origin is a per-profile `moz-extension://<uuid>` (find it in `about:debugging`), so set `AJH_EXTENSION_DEV_ORIGINS="moz-extension://<uuid>"`. **Multiple browsers at once:** comma-separate, e.g. `chrome-extension://<id>,moz-extension://<uuid>`.
 
-The loopback WebSocket (`ws://127.0.0.1:47615..47620`) discovers the desktop app — see `apps/desktop/src-tauri/src/extension_bridge/` for the bridge server and `src/lib/bridge.ts::probeRange` for how the extension finds the port.
+The loopback WebSocket (`ws://127.0.0.1:47615..47620`) discovers the desktop app — see `apps/desktop/src-tauri/src/extension_bridge/` for the bridge server and `src/lib/bridge/transport.ts::probePorts` for how the extension finds the port.
 
 ---
 
@@ -180,7 +180,7 @@ The extension finds the desktop bridge by probing `47615..47620` and connecting
 to the **first loopback port that answers**. Authentication is a **mutual HMAC
 challenge-response (protocol v2)** in which the pairing token is used only as an
 HMAC key and is **never transmitted** — see `src/lib/handshake.ts` +
-`src/lib/bridge.ts::performHandshake` (extension) and
+`src/lib/bridge/auth-handshake.ts` (`Handshake.run`) (extension) and
 `apps/desktop/src-tauri/src/extension_bridge/handshake.rs` (desktop).
 
 - **The token never goes on the wire.** The extension sends `hello{clientNonce}`,
@@ -329,7 +329,7 @@ The desktop bridge validates extension origins in the WS handshake (`apps/deskto
 The extension uses **native-messaging as the primary transport**, with **loopback WebSocket as a fallback**:
 
 1. **Native messaging (preferred):** The browser spawns the desktop app's own exe in `--native-host` mode, which runs a stdio ↔ `ws://127.0.0.1` relay (`apps/desktop/src-tauri/src/extension_bridge/native_host.rs`). This is the by-default fix for Firefox's HTTPS-Only Mode: Firefox silently upgrades the extension's `ws://127.0.0.1` to `wss://` in strict-mode profiles, breaking the plain loopback path. A native process spawned by the browser is immune to that upgrade.
-   - **Native host name:** `app.aijobhunter.bridge` (configured in `apps/extension/src/lib/bridge.ts` and registered on every app launch via `apps/desktop/src-tauri/src/extension_bridge/register.rs`).
+   - **Native host name:** `app.aijobhunter.bridge` (configured in `apps/extension/src/lib/bridge/constants.ts` and registered on every app launch via `apps/desktop/src-tauri/src/extension_bridge/register.rs`).
    - **Readiness frame:** the native host sends a transport-local `{"type":"bridge.ready","ok":true|false}` control frame (not part of the wire protocol) so the extension can distinguish "app reachable" from "app down".
    - **Same wire envelope:** the bridge protocol (`@ajh/shared` extension-protocol) is unchanged; only the transport swaps from `WebSocket` to `browser.runtime.connectNative` (`@wxt-dev/browser`).
 

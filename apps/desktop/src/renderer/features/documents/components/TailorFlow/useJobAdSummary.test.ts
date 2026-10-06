@@ -10,7 +10,7 @@
  * Strategy:
  *   - `generateJobAdSummary` is mocked: resolves immediately with a fixed string.
  *   - `useUpdateApplication` / `useSessionStore` / `AppClientProvider` are stubbed
- *     (same pattern as useApplicationAnswers.test.ts).
+ *     (same pattern as useApplicationAnswers/mocks.ts).
  *   - `useSessionStore` real Zustand store; reset between tests via setState.
  *   - No QueryClient needed (useUpdateApplication mock doesn't go through RQ).
  */

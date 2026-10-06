@@ -31,7 +31,7 @@ import { type AutofillSummary, renderSummaryOverlay } from './autofill';
 import { isNamedResumeFileInput, isResumeFileInput } from './submit-watch';
 
 /** Isolated-world global key `attach-file.ts` exposes the runner under. MUST
- *  match the literal duplicated in `background.ts` (kept a plain literal
+ *  match the literal duplicated in `background/documents.ts` (kept a plain literal
  *  there, not imported — same discipline as `AUTOFILL_GLOBAL`). */
 export const ATTACH_FILE_GLOBAL = '__ajhRunAttachFile';
 
@@ -148,10 +148,10 @@ export function attachResumeFile(
  * `executeScript({ func, args })` arguments, so a `Uint8Array` arg would
  * arrive here as a plain `{"0":…}` object rather than a real typed array; a
  * base64 STRING is JSON-safe and survives that boundary intact, so
- * `background.ts` passes the raw base64 and this decodes it back to bytes
+ * `background/documents.ts` passes the raw base64 and this decodes it back to bytes
  * once it's already running on the page (never crossing the boundary as
  * bytes at all). `atob` + a byte-copy loop — no dependency; a private
- * duplicate of `background.ts`'s own `base64ToBytes` since this file is a
+ * duplicate of `background/documents.ts`'s own `base64ToBytes` since this file is a
  * classic-script injection target and cannot import from it.
  */
 function base64ToBytes(b64: string): Uint8Array {

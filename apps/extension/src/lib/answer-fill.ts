@@ -23,14 +23,14 @@
 import { locateFilledField, locateQuestionField } from './answers-capture';
 
 /** Isolated-world global key `answer-fill.ts` exposes the filler under. MUST
- *  match the literal duplicated in `background.ts` (kept a plain literal
+ *  match the literal duplicated in `background/answer-fill.ts` (kept a plain literal
  *  there, not imported, so this module's runtime code never bundles into the
  *  background — same discipline as `autofill.ts`'s `AUTOFILL_GLOBAL`). */
 export const ANSWER_FILL_GLOBAL = '__ajhRunAnswerFill';
 
 /** Isolated-world global key `answer-replace.ts` exposes the replacer under
  *  — same discipline as {@link ANSWER_FILL_GLOBAL} (duplicated as a plain
- *  literal in `background.ts`, never imported there). */
+ *  literal in `background/answer-fill.ts`, never imported there). */
 export const ANSWER_REPLACE_GLOBAL = '__ajhRunAnswerReplace';
 
 /** The fill outcome — see `answers.suggest`'s per-row Fill contract. */
@@ -130,7 +130,7 @@ export function fillAnswerField(
  *
  * Backs BOTH extension PR 11 flows: Accept writes the rewritten draft,
  * Restore-original writes the SAME frozen text the field held at pick time —
- * the caller (background.ts) just passes a different `text`/`expectedValue`,
+ * the caller (background/answer-fill.ts) just passes a different `text`/`expectedValue`,
  * there is no separate "restore" code path. The caller (popup.ts) MUST
  * update its own tracked `expectedValue` to `text` after a successful call,
  * so the NEXT Accept/Restore compares against the right baseline (otherwise

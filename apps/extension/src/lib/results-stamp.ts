@@ -27,10 +27,10 @@ import { isHidden } from './field-signal';
 import { currentNotebookPalette, type NotebookPalette } from './notebook-palette';
 
 /** Isolated-world global key exposing {@link collectResultsCards}'s
- *  entry-point. MUST match the literal duplicated in `background.ts`. */
+ *  entry-point. MUST match the literal duplicated in `background/results-stamp.ts`. */
 export const RESULTS_COLLECT_GLOBAL = '__ajhCollectResultsCards';
 /** Isolated-world global key exposing {@link stampResultsCards}'s
- *  entry-point. MUST match the literal duplicated in `background.ts`. */
+ *  entry-point. MUST match the literal duplicated in `background/results-stamp.ts`. */
 export const RESULTS_STAMP_GLOBAL = '__ajhStampResultsCards';
 
 /** Mirrors the Rust `applied_check_batch::MAX_BATCH_URLS` / the shared

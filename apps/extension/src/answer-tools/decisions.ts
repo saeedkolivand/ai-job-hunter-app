@@ -7,7 +7,7 @@
 // The dedicated `extension-protocol` entrypoint, not the `@ajh/shared` barrel:
 // this is a RUNTIME import, and the barrel drags zod and the whole IPC surface
 // into an MV3 bundle that must stay reviewable and small (measured: 98.8 kB of
-// chunk vs 4.2 kB). Same reason `lib/bridge.ts` imports from there. TYPE-only
+// chunk vs 4.2 kB). Same reason `lib/bridge/` imports from there. TYPE-only
 // imports may keep using the barrel — they are erased at build.
 import {
   EXTENSION_AI_ASSIST_OFF_MESSAGE,

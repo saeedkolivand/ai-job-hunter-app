@@ -60,7 +60,7 @@ if (typeof globalThis.chrome === 'undefined') {
 // own fine-grained fake in beforeEach; this baseline prevents "WebSocket is
 // not defined" errors from leaking across test files.
 if (typeof globalThis.WebSocket === 'undefined') {
-  // Will be overridden per-test in bridge.test.ts.
+  // Will be overridden per-test in lib/bridge/*.test.ts.
   class StubWebSocket {
     static CONNECTING = 0;
     static OPEN = 1;

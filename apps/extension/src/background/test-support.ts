@@ -1,7 +1,7 @@
 /**
  * Shared harness for the background service worker's tests (`*.test.ts` here).
  *
- * The entry (`../background.ts`) has no usable exports — its popup-request
+ * The entry (`../background.ts`, a thin entry over the modules here) has no usable exports — its popup-request
  * dispatcher is only reachable through the `browser.runtime.onMessage` listener
  * it registers at module load. So this module mocks `@wxt-dev/browser` +
  * `../lib/storage` + `../lib/bridge` BEFORE the dynamic import (so module-load

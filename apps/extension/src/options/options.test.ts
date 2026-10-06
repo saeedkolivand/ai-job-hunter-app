@@ -67,7 +67,7 @@ document.body.innerHTML = `
 
 // Vitest 5 clears every mock before each test by default, which would wipe
 // the module-load-time `mountConnectionStatus(...)` call this file asserts
-// on — opt out, same rationale as sidepanel.test.ts's identical guard.
+// on — opt out, same rationale as sidepanel/sidepanel/panel.test.ts's identical guard.
 vi.setConfig({ clearMocks: false });
 
 const { renderSites } = await import('./options');

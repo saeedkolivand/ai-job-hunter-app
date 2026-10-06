@@ -28,7 +28,7 @@ export interface BridgeStatus {
    * Whether the v2 mutual handshake actually completed on the CURRENT
    * transport — distinct from `phase === 'connected'`, which is ALSO reached
    * with zero handshake when no token is stored (see `attach`'s no-token
-   * branch). `background.ts`'s `computeStatus()` gates the "Connected" popup
+   * branch). `background/bridge-client.ts`'s `computeStatus()` gates the "Connected" popup
    * state on this, not on `phase` alone (#1267).
    */
   authenticated: boolean;

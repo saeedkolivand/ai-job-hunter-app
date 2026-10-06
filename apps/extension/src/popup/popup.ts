@@ -225,7 +225,7 @@ const fillConfirm = mountFirstFillConfirm(fillConfirmHost, { getRememberedHosts,
 
 /**
  * The origin of the page this popup faces, resolved ON DEMAND at Fill-click
- * time via `tabs.query` — the SAME read `background.ts`'s
+ * time via `tabs.query` — the SAME read `background/page.ts`'s
  * `activeTabOriginAtGesture` performs: opening the popup IS the toolbar-click
  * gesture that grants `activeTab`, which is what makes the active tab's url
  * readable (it is NOT a `tabs`-permission lookup — `tabs` stays on the
@@ -402,7 +402,7 @@ let appliedCheckGeneration = 0;
  * `job-status.ts`'s already-tested `resolveJobStatusView`, shared with the
  * panel's Job tab — this file has no local copy of that decision), plus the
  * adaptive import-button label and the "Mark as applied" button.
- * `runAppliedCheck` in background.ts already folds every failure mode into
+ * `runAppliedCheck` in background/desktop-queries.ts already folds every failure mode into
  * `ok:true, result:{found:false}`, so the try/catch here only guards a
  * transport-level rejection (message-channel closed) — either way the card
  * just stays hidden.
@@ -559,7 +559,7 @@ export async function bootstrapNotice(): Promise<void> {
 }
 
 // `connectionStatus.start()` first: it registers the FIRST `onMessage`
-// listener (the live status push), which `popup.test.ts` relies on finding
+// listener (the live status push), which `popup/popup/test-support.ts` relies on finding
 // at `mock.calls[0]` — `wire()`'s own `answerAssistProgress` listener must
 // register second.
 connectionStatus.start();

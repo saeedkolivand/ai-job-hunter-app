@@ -91,7 +91,7 @@ pub fn verify_client_proof(
 /// Verify the server's step-4 `serverProof` (lowercase hex) **in constant
 /// time**, mirroring [`verify_client_proof`] with [`ROLE_SERVER`] — the
 /// counterpart the CLI-agent client (issue #1084 PR 1) needs and the browser
-/// extension never did (its handshake lives in TS, `bridge.ts`'s
+/// extension never did (its handshake lives in TS, `lib/handshake.ts`'s
 /// `constantTimeHexEqual`). A malformed-hex proof is rejected the same way.
 #[must_use]
 pub fn verify_server_proof(

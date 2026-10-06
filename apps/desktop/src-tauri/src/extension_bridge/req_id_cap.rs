@@ -11,8 +11,8 @@
 //! (`settings.get`, `profile.get`, …) enqueue multi-megabyte replies faster
 //! than the writer task can drain them, without ever tripping
 //! `MAX_FRAME_BYTES` on the (tiny) request. Real clients send short ids: the
-//! extension's own incrementing counter (`newReqId` in
-//! `apps/extension/src/lib/bridge.ts`) and the CLI's own request ids are both
+//! extension's own request ids (`crypto.randomUUID()` in
+//! `apps/extension/src/lib/bridge/client.ts`) and the CLI's own request ids are both
 //! a handful of bytes. Enforced once, in `advance_frame_from`, before any
 //! type dispatch (see that call site).
 

@@ -38,12 +38,12 @@ The popup has always shown a distinct view per connection phase — app not runn
 
 ### Tradeoffs
 
-- **The popup's static markup for the moved sections is gone**, replaced by empty host elements the module fills at runtime — anything that reached those elements directly (tests, a future hand-edit) now goes through the module's own build step instead. Verified against the existing popup test suite (moved, not deleted — see `connection-status.test.ts`), which still passes.
+- **The popup's static markup for the moved sections is gone**, replaced by empty host elements the module fills at runtime — anything that reached those elements directly (tests, a future hand-edit) now goes through the module's own build step instead. Verified against the existing popup test suite (moved, not deleted — see `connection-status/connection-status/*.test.ts`), which still passes.
 - **A caller-ordering dependency inside `popup.ts`** between the module's own listener registration and the popup's own remaining listener — documented at the call site, not enforceable by the module itself.
 
 ## References
 
-- The shared component: `apps/extension/src/connection-status/connection-status.ts` (+ co-located `connection-status.test.ts`)
+- The shared component: `apps/extension/src/connection-status/connection-status.ts` (+ co-located tests in `connection-status/connection-status/`)
 - Callers: `apps/extension/src/popup/popup.ts`, `apps/extension/src/sidepanel/sidepanel.ts`
 - The push this reuses: `broadcastStatus()`/`computeStatus()` (`apps/extension/src/background.ts`)
 - Prior decisions: [ADR-044](adr-044-extension-answer-tools-side-panel-and-popup.md) (the panel itself, the shared-stylesheet decision), [ADR-045](adr-045-job-tools-panel-parity-and-trust-gate.md) (the extraction pattern this record reuses)

@@ -3,7 +3,7 @@
  * (apps/extension/src/lib/answer-fill.ts).
  *
  * jsdom is provided by the vitest environment declared in vitest.config.ts.
- * Mirrors answers-capture.test.ts's style: build a real form in `document`,
+ * Mirrors answers-capture/collect-answers.test.ts's style: build a real form in `document`,
  * run the REAL implementation, and assert both the fill outcome and the
  * actual DOM value written.
  */
@@ -26,9 +26,9 @@ afterEach(() => {
 });
 
 describe('ANSWER_FILL_GLOBAL', () => {
-  it('is the fixed key background.ts duplicates as a local literal', () => {
-    // Pinned so a rename here can never silently desync from background.ts's
-    // duplicated literal (same discipline as autofill.test.ts's AUTOFILL_GLOBAL pin).
+  it('is the fixed key background/answer-fill.ts duplicates as a local literal', () => {
+    // Pinned so a rename here can never silently desync from background/answer-fill.ts's
+    // duplicated literal (same discipline as autofill/overlay.test.ts's AUTOFILL_GLOBAL pin).
     expect(ANSWER_FILL_GLOBAL).toBe('__ajhRunAnswerFill');
   });
 });
@@ -149,8 +149,8 @@ describe('fillAnswerField — fail-safe on any mutation since the scan', () => {
 });
 
 describe('ANSWER_REPLACE_GLOBAL', () => {
-  it('is the fixed key background.ts duplicates as a local literal', () => {
-    // Pinned so a rename here can never silently desync from background.ts's
+  it('is the fixed key background/answer-fill.ts duplicates as a local literal', () => {
+    // Pinned so a rename here can never silently desync from background/answer-fill.ts's
     // duplicated literal (same discipline as ANSWER_FILL_GLOBAL's own pin).
     expect(ANSWER_REPLACE_GLOBAL).toBe('__ajhRunAnswerReplace');
   });
