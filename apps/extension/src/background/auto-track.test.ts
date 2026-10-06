@@ -76,6 +76,50 @@ describe('submitDetected message — not a popup request (Task #22 review closur
   });
 });
 
+describe('submitDetected with a malformed answers payload is not routed to auto-track', () => {
+  it.each([
+    ['a string', 'x'],
+    ['entries missing the answer text', [{ question: 1 }]],
+  ])(
+    'answers as %s from our own sender never reaches handleSubmitDetected',
+    async (_label, answers) => {
+      mockClient.autotrackEnabled.mockResolvedValue(true);
+      mockClient.checkApplied.mockResolvedValue({ found: true, status: 'saved' });
+
+      listener?.(
+        { kind: SUBMIT_DETECTED_MSG, url: 'https://jobs.example.com/posting/9', answers },
+        { id: EXTENSION_ID } as never,
+        () => {}
+      );
+      await flush();
+
+      expect(mockClient.autotrackEnabled).not.toHaveBeenCalled();
+      expect(mockClient.checkApplied).not.toHaveBeenCalled();
+      expect(mockClient.saveAnswers).not.toHaveBeenCalled();
+    }
+  );
+});
+
+describe('the fit badge "Open the panel" message', () => {
+  const click = (sender: object) =>
+    listener?.({ kind: 'ajhOpenPanelFromBadge' }, sender as never, () => {});
+
+  it('opens the panel for our own sender with a tab', () => {
+    expect(click({ id: EXTENSION_ID, tab: { id: 5 } })).toBeUndefined();
+    expect(browser.sidePanel.open).toHaveBeenCalledWith({ tabId: 5 });
+  });
+
+  it.each([
+    ['a foreign sender', { id: 'some-other-extension-id', tab: { id: 5 } }],
+    ['our own sender without a tab', { id: EXTENSION_ID }],
+  ])('does not open the panel for %s', (_label, sender) => {
+    vi.mocked(browser.sidePanel.open).mockClear();
+
+    expect(click(sender)).toBeUndefined();
+    expect(browser.sidePanel.open).not.toHaveBeenCalled();
+  });
+});
+
 describe('arming the submit watcher after a gesture request (Task #22 review closure)', () => {
   beforeEach(() => {
     mockClient.autotrackEnabled.mockResolvedValue(true);
@@ -94,6 +138,11 @@ describe('arming the submit watcher after a gesture request (Task #22 review clo
       target: { tabId: 7 },
       files: ['submit-watch.js'],
     });
+    // Second step: the arm func gets captureAnswers first and the global key LAST.
+    const armCall = executeScriptMock.mock.calls.find(
+      (c) => (c[0] as { args?: unknown[] }).args?.[1] === '__ajhArmSubmitWatch'
+    );
+    expect((armCall?.[0] as { args: unknown[] }).args).toEqual([false, '__ajhArmSubmitWatch']);
   });
 
   it('a non-gesture request (getStatus) never arms the watcher', async () => {

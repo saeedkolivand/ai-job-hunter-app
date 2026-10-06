@@ -144,6 +144,11 @@ describe('documentAttach request', () => {
 
   it.each([
     ['the user switches tabs during the export wait', ['https://other.com/page', 9]],
+    // Same origin as the confirmed page, so ONLY the tab-id check can refuse.
+    [
+      'another tab on the same origin becomes active during the export wait',
+      ['https://example.com/other-tab', 9],
+    ],
     // Same tab id, but navigated to a different origin during the wait.
     [
       'a same-tab navigation to a different origin during the export wait',
