@@ -95,8 +95,6 @@
 439	apps/extension/src/lib/answer-state.test.ts
 516	apps/extension/src/lib/answers-capture.test.ts
 982	apps/extension/src/lib/autofill.test.ts
-2805	apps/extension/src/lib/bridge.test.ts
-1707	apps/extension/src/lib/bridge.ts
 426	apps/extension/src/lib/field-signal.test.ts
 356	apps/extension/src/lib/submit-watch.test.ts
 446	apps/extension/src/options/options.test.ts
