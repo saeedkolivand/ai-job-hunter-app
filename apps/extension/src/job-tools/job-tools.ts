@@ -45,392 +45,26 @@
  * the one caller this currently matters for.
  */
 
-import type { ExtensionProfileResult } from '@ajh/shared';
-
 import { copyText } from '../answer-tools/answer-tools';
 import type { AnswerState } from '../lib/answer-state';
 import { getStampResultsPages } from '../lib/appearance';
 import type { PopupRequest, PopupResponse } from '../lib/messages';
+import { buildJobToolsDom, buildMatchResultCard, renderProfileFallbackRows } from './dom';
+import {
+  buildProfileFallbackFields,
+  IMPORT_LABEL_DEFAULT,
+  isPageTrusted,
+  JOB_TOOLS_GATED_LINE,
+  type MatchLiveView,
+  resolveAnswersSaveResponse,
+  resolveFieldsProbeResponse,
+  resolveFillResponse,
+  resolveImportResponse,
+  resolveMatchLiveResponse,
+  resolveStampResultsResponse,
+} from './responses';
 
-// ── the trust gate ────────────────────────────────────────────────────────
-
-/**
- * Whether the panel's currently-followed tab has a record saying a
- * qualifying gesture landed since its last navigation. "No record" is
- * equivalent to `pageChanged: true` (untrusted) — under-claiming is the safe
- * direction, same rationale as `AnswerState.pageChanged`'s own doc.
- *
- * Pure — no DOM, no side effects.
- */
-export function isPageTrusted(state: AnswerState | null): boolean {
-  return state !== null && !state.pageChanged;
-}
-
-/** The line that replaces all four controls when {@link isPageTrusted} is
- *  false — same convention as `answer-tools.ts`'s `PAGE_CHANGED_LINE`. */
-export const JOB_TOOLS_GATED_LINE =
-  'Click the toolbar icon to grant access to this page, then use these tools.';
-
-// ── Import ────────────────────────────────────────────────────────────────
-
-/** Where an imported job lands in the desktop app — shown on success so the
- *  user knows where to look (the extension can't focus the native window). */
-const IMPORT_LANDING_HINT = 'Open AI Job Hunter → Applications to view it.';
-
-/** Shown when the job was saved but the description couldn't be read. */
-const IMPORT_PARTIAL_HINT = 'Open AI Job Hunter → Applications to paste it.';
-
-/** Percent-fit suffix appended to the import success/status-unchanged lines
- *  when the desktop populated `matchScore` (a best-effort keyword-only
- *  score, omitted on failure) — mirrors the "Check fit" card's percent
- *  treatment without the résumé name the import reply doesn't carry. */
-function matchScoreSuffix(matchScore: number | undefined): string {
-  return typeof matchScore === 'number' ? ` — ${Math.round(matchScore)}% fit.` : '';
-}
-
-/** Default label for the Import button. The adaptive "Re-import / update"
- *  relabel lives in popup.ts (its own, unmoved `appliedCheck` auto-check) —
- *  exported here purely so that logic can compare/apply it without a second
- *  copy of the literal. */
-export const IMPORT_LABEL_DEFAULT = 'Import this job';
-export const IMPORT_LABEL_FOUND = 'Re-import / update';
-
-/**
- * Given an `import` response, return the message text and tone to display. On
- * success it names the imported job (when the desktop parsed a title) and points
- * the user at where it landed, instead of a bare “Imported”.
- *
- * `requestedApplied` is the "I already applied" checkbox state sent with the
- * request. The desktop dedup-merges by URL and only ever advances a matched
- * Application's status OUT of `saved` — it never demotes an existing
- * applied-or-further row. So when the checkbox was NOT ticked and the matched
- * row's status is already past `saved`, a bare "Imported" success would read
- * like the status had changed when only the status was left untouched — surface
- * that explicitly instead.
- *
- * Pure: no DOM access, no side effects.
- */
-export function resolveImportResponse(
-  res: PopupResponse,
-  requestedApplied: boolean
-): { text: string; tone: 'ok' | 'err' } {
-  if (!res.ok) return { text: res.error, tone: 'err' };
-  if (res.kind !== 'import') return { text: 'Unexpected response — please retry.', tone: 'err' };
-  const { result } = res;
-  if (result.error) return { text: result.error, tone: 'err' };
-  const title = result.title?.trim();
-  if (result.partial) {
-    const lead = title ? `Imported “${title}”` : 'Imported';
-    return {
-      text: `${lead} — couldn't read the description. ${IMPORT_PARTIAL_HINT}`,
-      tone: 'ok',
-    };
-  }
-  const scoreSuffix = matchScoreSuffix(result.matchScore);
-  if (!requestedApplied && result.status && result.status !== 'saved') {
-    const label = result.status.charAt(0).toUpperCase() + result.status.slice(1);
-    const lead = title
-      ? `“${title}” is already tracked as ${label}`
-      : `This job is already tracked as ${label}`;
-    return {
-      text: `${lead} — status unchanged. ${IMPORT_LANDING_HINT}${scoreSuffix}`,
-      tone: 'ok',
-    };
-  }
-  const lead = title ? `Imported “${title}”.` : 'Imported.';
-  return { text: `${lead} ${IMPORT_LANDING_HINT}${scoreSuffix}`, tone: 'ok' };
-}
-
-// ── Fill ──────────────────────────────────────────────────────────────────
-
-/**
- * Given a `fill` response, return the popup message + tone. The detailed
- * summary lives in the in-page overlay; this shows a short confirmation (or
- * the desktop's refusal when autofill is opted out). Handles the "nothing
- * matched" case explicitly so a no-op never reads as a failure.
- *
- * Pure: no DOM access, no side effects.
- */
-export function resolveFillResponse(res: PopupResponse): { text: string; tone: 'ok' | 'err' } {
-  if (!res.ok) return { text: res.error, tone: 'err' };
-  if (res.kind !== 'fill') return { text: 'Unexpected response — please retry.', tone: 'err' };
-  const { summary } = res;
-  if (summary.filledNothing) {
-    return { text: 'No matchable fields found on this page.', tone: 'ok' };
-  }
-  const total = summary.filled.reduce((n, f) => n + f.count, 0);
-  const base = `Filled ${total} field${total === 1 ? '' : 's'} — review them on the page`;
-  return {
-    text: summary.nameSplit ? `${base} (name split is a guess — verify).` : `${base}.`,
-    tone: 'ok',
-  };
-}
-
-/** One profile field the copy-field fallback renders. */
-export interface ProfileFallbackField {
-  label: string;
-  value: string;
-}
-
-/**
- * Copy-field fallback (decision 8): when Fill finds nothing to match, project
- * a `profileGet` result into the field list the Job tab shows instead — each
- * with a Copy button, never stored. A refusal/failure (`result.error` set)
- * or an empty profile both project to `[]`, which the caller renders as
- * nothing (the fallback's own fail-closed discipline, same as `runFill`'s).
- *
- * Pure: no DOM access, no side effects.
- */
-export function buildProfileFallbackFields(result: ExtensionProfileResult): ProfileFallbackField[] {
-  if (result.error) return [];
-  const fields: ProfileFallbackField[] = [];
-  const push = (label: string, value: string | undefined): void => {
-    if (value?.trim()) fields.push({ label, value });
-  };
-  push('Name', result.fullName);
-  push('Email', result.email);
-  push('Phone', result.phone);
-  push('Location', result.location);
-  push('LinkedIn', result.linkedin);
-  push('GitHub', result.github);
-  push('Website', result.website);
-  for (const link of result.extraLinks ?? []) push(link.label, link.url);
-  return fields;
-}
-
-// ── Check fit ─────────────────────────────────────────────────────────────
-
-/** Human-readable label for `scoreSource` — `'combined'` is wire-reserved and
- *  never sent by the current desktop (keyword-only always), but the label
- *  exists so a future desktop's value renders sensibly without a change here. */
-const SCORE_SOURCE_LABEL: Record<'keyword' | 'combined', string> = {
-  keyword: 'keyword coverage',
-  combined: 'combined (keyword + semantic)',
-};
-
-/** The "Check fit" score to render, or `null` fields when there is nothing to show. */
-export interface MatchLiveView {
-  text: string;
-  tone: 'ok' | 'err';
-  score: number | null;
-  scoreLabel: string | null;
-  resumeName: string | null;
-  gaps: string[];
-  /** PR3 — two verbatim salary facts, never a verdict (design decision 5).
-   *  `undefined` when the desktop found no range and no stored expectation. */
-  salary?: { posting: string; expectation?: string };
-}
-
-const NO_MATCH_VIEW = (text: string, tone: 'ok' | 'err'): MatchLiveView => ({
-  text,
-  tone,
-  score: null,
-  scoreLabel: null,
-  resumeName: null,
-  gaps: [],
-});
-
-/**
- * Given a `matchLive` response, return the message text + tone plus the score
- * to render (percent, source label, résumé name, missing-keyword gaps).
- *
- * Pure: no DOM access, no side effects.
- */
-export function resolveMatchLiveResponse(res: PopupResponse): MatchLiveView {
-  if (!res.ok) return NO_MATCH_VIEW(res.error, 'err');
-  if (res.kind !== 'matchLive') {
-    return NO_MATCH_VIEW('Unexpected response — please retry.', 'err');
-  }
-  const { result } = res;
-  if (!result.ok) return NO_MATCH_VIEW(result.error, 'err');
-
-  const score = Math.round(result.combined);
-  return {
-    text: `${score}% fit against “${result.resumeName}”.`,
-    tone: 'ok',
-    score,
-    scoreLabel: SCORE_SOURCE_LABEL[result.scoreSource],
-    resumeName: result.resumeName,
-    gaps: result.gaps,
-    salary: result.salary,
-  };
-}
-
-/** Qualitative band next to the score (R6 of the redesign record) — same
- *  bands the popup/panel mockups use: strong ≥ 80, partial 50–79, low < 50. */
-export function scoreBand(score: number): 'strong match' | 'partial match' | 'low match' {
-  if (score >= 80) return 'strong match';
-  if (score >= 50) return 'partial match';
-  return 'low match';
-}
-
-/** Build the "Check fit" score card — red-pen score circle, band, an
- *  expandable "why?" (missing-keyword chips + which résumé was used).
- *  `textContent` only — no `innerHTML` with page/desktop-derived text. */
-function buildMatchResultCard(view: MatchLiveView): HTMLElement {
-  const card = document.createElement('div');
-  card.className = 'fit-card';
-
-  const head = document.createElement('div');
-  head.className = 'fit-head';
-  const circle = document.createElement('span');
-  circle.className = 'score-circle';
-  circle.textContent = `${view.score}%`;
-  head.append(circle);
-
-  const headCopy = document.createElement('div');
-  headCopy.className = 'fit-head-copy';
-  const band = view.score === null ? null : scoreBand(view.score);
-  const scoreLine = document.createElement('p');
-  scoreLine.className = 'match-result__score';
-  scoreLine.textContent = band ? `${view.score}% fit · ${band}` : `${view.score}% fit`;
-  headCopy.append(scoreLine);
-  head.append(headCopy);
-  card.append(head);
-
-  if (view.scoreLabel || view.resumeName) {
-    const meta = document.createElement('p');
-    meta.className = 'match-result__meta';
-    const bits: string[] = [];
-    if (view.scoreLabel) bits.push(view.scoreLabel);
-    if (view.resumeName) bits.push(`against “${view.resumeName}”`);
-    meta.textContent = bits.join(' — ');
-    card.append(meta);
-  }
-
-  if (view.gaps.length > 0 || view.salary) {
-    const why = document.createElement('details');
-    why.className = 'why-toggle';
-    // Collapsed by default — open, the popup's connected+Check-fit view
-    // overflows the 360×520 no-scroll budget (PR0 §2); the gap chips are one
-    // tap away behind "why?".
-    const summary = document.createElement('summary');
-    summary.className = 'link';
-    summary.textContent = 'why?';
-    why.append(summary);
-
-    if (view.gaps.length > 0) {
-      const gapsWrap = document.createElement('div');
-      gapsWrap.className = 'match-result__gaps';
-      for (const gap of view.gaps) {
-        const chip = document.createElement('span');
-        chip.className = 'match-result__gap';
-        chip.textContent = gap;
-        gapsWrap.append(chip);
-      }
-      why.append(gapsWrap);
-    }
-
-    if (view.salary) {
-      // Two verbatim facts side by side, never a verdict (design decision 5)
-      // — same wording the on-page fit badge uses (`lib/fit-badge.ts`).
-      const salaryLine = document.createElement('p');
-      salaryLine.className = 'match-result__meta';
-      const bits = [`Posting says ${view.salary.posting}`];
-      if (view.salary.expectation) bits.push(`You want ${view.salary.expectation}`);
-      salaryLine.textContent = bits.join(' · ');
-      why.append(salaryLine);
-    }
-
-    if (view.resumeName) {
-      const resumeLine = document.createElement('p');
-      resumeLine.className = 'match-result__meta';
-      resumeLine.textContent = `Résumé used: ${view.resumeName}`;
-      why.append(resumeLine);
-    }
-    card.append(why);
-  }
-
-  return card;
-}
-
-// ── Stamp this results page (PR3 §B.4) ──────────────────────────────────────
-
-/**
- * Given a `stampResults` response, return the message text + tone. UNLIKE
- * `resolveAnswersSaveResponse`, a desktop-side refusal is NOT surfaced as
- * `err` — `PopupResponse`'s `stampResults` doc: any refusal short of "not
- * paired"/"no active tab" degrades to `ok:true, stamped:0` with an
- * explanatory `status`, which reads as a neutral/ok status line here too.
- *
- * Pure: no DOM access, no side effects.
- */
-export function resolveStampResultsResponse(res: PopupResponse): {
-  text: string;
-  tone: 'ok' | 'err';
-} {
-  if (!res.ok) return { text: res.error, tone: 'err' };
-  if (res.kind !== 'stampResults') {
-    return { text: 'Unexpected response — please retry.', tone: 'err' };
-  }
-  return { text: res.status, tone: 'ok' };
-}
-
-// ── Save my answers ───────────────────────────────────────────────────────
-
-/**
- * Given an `answersSave` response, return the message text + tone. On
- * success names the job from the reply's `title`/`company` and reports the
- * saved count; a re-capture with nothing new to add reads as a benign "no
- * new answers", never an error. When the desktop dedupes/caps some answers,
- * `skipped` is folded into the copy too — `saved === 0` gets a distinct
- * "already recorded" message instead of the generic no-new-answers one.
- *
- * Pure: no DOM access, no side effects.
- */
-export function resolveAnswersSaveResponse(res: PopupResponse): {
-  text: string;
-  tone: 'ok' | 'err';
-} {
-  if (!res.ok) return { text: res.error, tone: 'err' };
-  if (res.kind !== 'answersSave') {
-    return { text: 'Unexpected response — please retry.', tone: 'err' };
-  }
-  const { result } = res;
-  if (!result.ok) return { text: result.error, tone: 'err' };
-
-  const title = result.title?.trim();
-  const company = result.company?.trim();
-  const name = title && company ? `${title} @ ${company}` : (title ?? company);
-
-  if (result.saved === 0) {
-    if (result.skipped > 0) {
-      const was = result.skipped === 1 ? 'was' : 'were';
-      const noun = `answer${result.skipped === 1 ? '' : 's'}`;
-      return { text: `All ${result.skipped} ${noun} ${was} already recorded.`, tone: 'ok' };
-    }
-    return { text: 'No new answers to save from this page.', tone: 'ok' };
-  }
-  const count = `${result.saved} answer${result.saved === 1 ? '' : 's'}`;
-  const base = name ? `Saved ${count} to ${name}` : `Saved ${count}`;
-  const suffix = result.skipped > 0 ? ` — ${result.skipped} already recorded.` : '.';
-  return { text: `${base}${suffix}`, tone: 'ok' };
-}
-
-// ── Form-group visibility (fields probe) ─────────────────────────────────
-
-/** Whether the Form group (Fill + Save answers) should show — see
- *  `resolveFieldsProbeResponse`'s doc for the split with `showAnswerTools`. */
-export interface FieldsProbeView {
-  showFormGroup: boolean;
-  showAnswerTools: boolean;
-}
-
-/**
- * Given a `fieldsProbe` response, whether the Form group and the caller's
- * Answer-tools disclosure should each be shown. Fails OPEN (`true` for both)
- * on a transport-level `ok:false` or an unexpected `kind` — mirrors the
- * background's own fail-open fold (`runFieldsProbe`) so a probe bug can never
- * hide either feature; only a CONFIRMED `false` signal hides one.
- *
- * Pure: no DOM access, no side effects.
- */
-export function resolveFieldsProbeResponse(res: PopupResponse): FieldsProbeView {
-  if (!res.ok || res.kind !== 'fieldsProbe') {
-    return { showFormGroup: true, showAnswerTools: true };
-  }
-  return { showFormGroup: res.hasFormFields, showAnswerTools: res.hasAnswerFields };
-}
+export * from './responses';
 
 // ── the view ──────────────────────────────────────────────────────────────
 
@@ -507,99 +141,20 @@ export interface JobToolsView {
  * views of one background, never two implementations.
  */
 export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsView {
-  // ── DOM ─────────────────────────────────────────────────────────────────
-  const gatedMsg = document.createElement('p');
-  gatedMsg.id = 'job-tools-gated';
-  gatedMsg.className = 'msg msg--muted';
-  gatedMsg.setAttribute('role', 'status');
-  gatedMsg.setAttribute('aria-live', 'polite');
-  gatedMsg.textContent = JOB_TOOLS_GATED_LINE;
-
-  const activeWrap = document.createElement('div');
-  activeWrap.id = 'job-tools-active';
-
-  const jobGroup = document.createElement('section');
-  jobGroup.className = 'group';
-  jobGroup.setAttribute('aria-label', 'Job');
-
-  const btnImport = document.createElement('button');
-  btnImport.id = 'btn-import';
-  btnImport.type = 'button';
-  btnImport.className = 'btn btn--primary';
-  btnImport.textContent = IMPORT_LABEL_DEFAULT;
-
-  const btnCheckFit = document.createElement('button');
-  btnCheckFit.id = 'btn-check-fit';
-  btnCheckFit.type = 'button';
-  btnCheckFit.className = 'btn btn--quiet';
-  btnCheckFit.title = "Score your resume against this page's job posting";
-  btnCheckFit.textContent = 'Check fit';
-
-  const matchResult = document.createElement('div');
-  matchResult.id = 'match-result';
-  matchResult.className = 'match-result';
-  matchResult.hidden = true;
-
-  // "Stamp this results page" (PR3 §B.4) — hidden until the preference read
-  // resolves it on (re-checked in `checkPage`, never cached at mount).
-  const btnStampResults = document.createElement('button');
-  btnStampResults.id = 'btn-stamp-results';
-  btnStampResults.type = 'button';
-  btnStampResults.className = 'btn btn--quiet';
-  btnStampResults.title = 'Mark each visible job card on this results page saved or applied';
-  btnStampResults.textContent = 'Stamp this results page';
-  btnStampResults.hidden = true;
-
-  const chkApplied = document.createElement('input');
-  chkApplied.id = 'chk-applied';
-  chkApplied.type = 'checkbox';
-  const chkLabel = document.createElement('label');
-  chkLabel.className = 'check';
-  const chkSpan = document.createElement('span');
-  chkSpan.textContent = 'I already applied to this job';
-  chkLabel.append(chkApplied, chkSpan);
-
-  jobGroup.append(btnImport, btnCheckFit, btnStampResults, matchResult, chkLabel);
-
-  const formGroup = document.createElement('section');
-  formGroup.id = 'group-form';
-  formGroup.className = 'group group--divided';
-  formGroup.setAttribute('aria-label', 'Form');
-
-  const btnFill = document.createElement('button');
-  btnFill.id = 'btn-fill';
-  btnFill.type = 'button';
-  btnFill.className = 'btn btn--primary';
-  btnFill.title =
-    "Fill this page's form with your saved contact details (opt-in, review before submitting)";
-  btnFill.textContent = 'Fill this form';
-
-  const btnSaveAnswers = document.createElement('button');
-  btnSaveAnswers.id = 'btn-save-answers';
-  btnSaveAnswers.type = 'button';
-  btnSaveAnswers.className = 'btn btn--quiet';
-  btnSaveAnswers.title = "Save the answers you typed on this page's application form";
-  btnSaveAnswers.textContent = 'Save my answers from this page';
-
-  if (deps.hideSaveAnswers) btnSaveAnswers.hidden = true;
-  formGroup.append(btnFill, btnSaveAnswers);
-
-  const msgEl = document.createElement('p');
-  msgEl.id = 'job-tools-msg';
-  msgEl.className = 'msg';
-  msgEl.setAttribute('role', 'status');
-  msgEl.setAttribute('aria-live', 'polite');
-
-  // Copy-field fallback (decision 8) — shown only after a `fill` comes back
-  // `filledNothing`; see `showProfileFallback` below. Never populated from
-  // storage — rebuilt fresh from a `profileGet` reply each time it opens.
-  const profileFallback = document.createElement('section');
-  profileFallback.id = 'job-tools-profile-fallback';
-  profileFallback.className = 'group group--divided';
-  profileFallback.setAttribute('aria-label', 'Your profile');
-  profileFallback.hidden = true;
-
-  activeWrap.append(jobGroup, formGroup, msgEl, profileFallback);
+  const {
+    gatedMsg,
+    activeWrap,
+    formGroup,
+    btnImport,
+    btnCheckFit,
+    btnStampResults,
+    btnFill,
+    btnSaveAnswers,
+    chkApplied,
+    matchResult,
+    msgEl,
+    profileFallback,
+  } = buildJobToolsDom(deps.hideSaveAnswers);
   host.append(gatedMsg, activeWrap);
 
   // ── state ───────────────────────────────────────────────────────────────
@@ -674,33 +229,6 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
     profileFallback.replaceChildren();
   }
 
-  function renderProfileFallback(fields: ProfileFallbackField[]): void {
-    profileFallback.replaceChildren();
-    if (fields.length === 0) {
-      profileFallback.hidden = true;
-      return;
-    }
-    const heading = document.createElement('p');
-    heading.className = 'field-label';
-    heading.textContent = "Nothing matched — here's your profile";
-    profileFallback.append(heading);
-    for (const field of fields) {
-      const row = document.createElement('div');
-      row.className = 'profile-fallback-row';
-      const text = document.createElement('span');
-      text.className = 'profile-fallback-row__value';
-      text.textContent = `${field.label}: ${field.value}`;
-      const copyBtn = document.createElement('button');
-      copyBtn.type = 'button';
-      copyBtn.className = 'btn btn--small btn--quiet';
-      copyBtn.textContent = 'Copy';
-      copyBtn.addEventListener('click', () => void copyField(field.value));
-      row.append(text, copyBtn);
-      profileFallback.append(row);
-    }
-    profileFallback.hidden = false;
-  }
-
   /**
    * Fetch the profile fresh (`profileGet` — the same source + Autofill
    * opt-in gate `fill` itself uses) and render it as Copy-able fields.
@@ -716,7 +244,11 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
       // is; a stale reply must never resurrect it (PR review round 2).
       if (myGeneration !== profileFallbackGeneration) return;
       if (res.ok && res.kind === 'profileGet') {
-        renderProfileFallback(buildProfileFallbackFields(res.result));
+        renderProfileFallbackRows(
+          profileFallback,
+          buildProfileFallbackFields(res.result),
+          copyField
+        );
       } else {
         hideProfileFallback();
       }

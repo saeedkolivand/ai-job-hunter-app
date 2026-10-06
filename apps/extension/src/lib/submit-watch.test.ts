@@ -14,10 +14,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { armSubmitWatch } from './submit-watch';
 
-function setBody(html: string): void {
-  document.body.innerHTML = html;
-}
-
 /** The fields that make a `<form>` read as a real application form rather than
  *  a search box / newsletter signup (see `looksLikeApplicationForm`). */
 const APPLICATION_FIELDS = `
@@ -26,20 +22,54 @@ const APPLICATION_FIELDS = `
   <input name="resume" type="file" />
 `;
 
+/** An application form with one answered free-text question. */
+const answerForm = (submitLabel = 'Submit application'): string => `
+  <form id="f">
+    ${APPLICATION_FIELDS}
+    <label for="q">Why this role?</label>
+    <textarea id="q">Because I love it.</textarea>
+    <button type="submit">${submitLabel}</button>
+  </form>
+`;
+const ANSWERS = [{ question: 'Why this role?', answer: 'Because I love it.' }];
+
+const NEWSLETTER = `
+  <form id="newsletter">
+    <label for="nlEmail">Newsletter email</label>
+    <input id="nlEmail" name="newsletter_email" value="me@example.com" />
+  </form>
+`;
+
+/** Put `html` in the body and arm the REAL watcher against a `post` spy. */
+function arm(html: string, options?: Parameters<typeof armSubmitWatch>[2]) {
+  document.body.innerHTML = html;
+  const post = vi.fn();
+  armSubmitWatch(document, post, options);
+  return post;
+}
+
+const submit = (id = 'f'): void => {
+  document
+    .getElementById(id)!
+    .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+};
+
+const click = (selector = 'button'): void => {
+  document
+    .querySelector(selector)!
+    .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+};
+
 afterEach(() => {
   document.body.innerHTML = '';
 });
 
 describe('armSubmitWatch — real form submit', () => {
   it('posts once on a real form submit', () => {
-    setBody(
+    const post = arm(
       `<form id="f">${APPLICATION_FIELDS}<button type="submit">Submit application</button></form>`
     );
-    const post = vi.fn();
-    armSubmitWatch(document, post);
-
-    const form = document.getElementById('f') as HTMLFormElement;
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    submit();
 
     expect(post).toHaveBeenCalledTimes(1);
     // The current page URL is posted (jsdom's default location).
@@ -50,29 +80,21 @@ describe('armSubmitWatch — real form submit', () => {
     // The listener sees EVERY form on the page and reports only location.href,
     // so an unscoped submit listener auto-marked the application "applied" when
     // the user pressed Enter in the site's search box.
-    setBody(`
+    const post = arm(`
       <form id="search"><input type="search" name="q" /><button type="submit">Search</button></form>
       <form id="news"><input type="email" name="email" /><button type="submit">Subscribe</button></form>
     `);
-    const post = vi.fn();
-    armSubmitWatch(document, post);
-
-    for (const id of ['search', 'news']) {
-      (document.getElementById(id) as HTMLFormElement).dispatchEvent(
-        new Event('submit', { bubbles: true, cancelable: true })
-      );
-    }
+    submit('search');
+    submit('news');
 
     expect(post).not.toHaveBeenCalled();
   });
 
   it('OBSERVES ONLY — never preventDefault on the submit', () => {
-    setBody(`<form id="f">${APPLICATION_FIELDS}<button type="submit">Apply</button></form>`);
-    armSubmitWatch(document, vi.fn());
+    arm(`<form id="f">${APPLICATION_FIELDS}<button type="submit">Apply</button></form>`);
 
-    const form = document.getElementById('f') as HTMLFormElement;
     const evt = new Event('submit', { bubbles: true, cancelable: true });
-    const notCancelled = form.dispatchEvent(evt);
+    const notCancelled = document.getElementById('f')!.dispatchEvent(evt);
 
     expect(evt.defaultPrevented).toBe(false);
     expect(notCancelled).toBe(true);
@@ -80,133 +102,86 @@ describe('armSubmitWatch — real form submit', () => {
 });
 
 describe('armSubmitWatch — apply-style click heuristic', () => {
-  it('posts on a click of an apply-style submit button inside the application form', () => {
-    setBody(`<form>${APPLICATION_FIELDS}<button type="submit">Apply now</button></form>`);
-    const post = vi.fn();
-    armSubmitWatch(document, post);
-
-    document
-      .querySelector('button')!
-      .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-
-    expect(post).toHaveBeenCalledTimes(1);
-  });
-
-  it('does NOT post on a bare "Apply now" that is not inside an application form', () => {
-    // On a job-listing page this control OPENS the application (often a modal);
-    // nothing has been submitted, so the app must not be marked applied.
-    setBody(`<button type="submit">Apply now</button><div role="button">Apply</div>`);
-    const post = vi.fn();
-    armSubmitWatch(document, post);
-
-    document.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    document
-      .querySelector('[role="button"]')!
-      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-    expect(post).not.toHaveBeenCalled();
-  });
-
-  it('posts on a role="button" apply control (Easy-Apply / SPA, no native submit)', () => {
-    setBody(`<div role="button">Submit application</div>`);
-    const post = vi.fn();
-    armSubmitWatch(document, post);
-
-    document
-      .querySelector('[role="button"]')!
-      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  it.each([
+    [
+      'an apply-style submit button inside the application form',
+      `<form>${APPLICATION_FIELDS}<button type="submit">Apply now</button></form>`,
+      'button',
+    ],
+    [
+      'a role="button" apply control (Easy-Apply / SPA, no native submit)',
+      `<div role="button">Submit application</div>`,
+      '[role="button"]',
+    ],
+    [
+      'an input[type=submit] whose value matches',
+      `<input type="submit" value="Finish" />`,
+      'input',
+    ],
+    [
+      'a click that lands on a child element of the control',
+      `<form>${APPLICATION_FIELDS}<button type="submit"><span>Apply</span> now</button></form>`,
+      'span',
+    ],
+  ])('posts on a click of %s', (_name, html, selector) => {
+    const post = arm(html);
+    click(selector);
 
     expect(post).toHaveBeenCalledTimes(1);
   });
 
-  it('posts on an input[type=submit] whose value matches', () => {
-    setBody(`<input type="submit" value="Finish" />`);
-    const post = vi.fn();
-    armSubmitWatch(document, post);
-
-    document.querySelector('input')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-    expect(post).toHaveBeenCalledTimes(1);
-  });
-
-  it('resolves the control when the click lands on a child element', () => {
-    setBody(
-      `<form>${APPLICATION_FIELDS}<button type="submit"><span>Apply</span> now</button></form>`
-    );
-    const post = vi.fn();
-    armSubmitWatch(document, post);
-
-    document.querySelector('span')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-    expect(post).toHaveBeenCalledTimes(1);
-  });
-
-  it('does NOT fire on a non-apply submit button (e.g. "Save draft")', () => {
-    // Formless, so only the click heuristic is in play — a submit button inside
-    // a form implicitly submits it, which is a separate (and legitimate) signal.
-    setBody(`<button type="submit">Save draft</button>`);
-    const post = vi.fn();
-    armSubmitWatch(document, post);
-
-    document.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-    expect(post).not.toHaveBeenCalled();
-  });
-
-  it('does NOT fire on a hidden (display:none) apply button — computed-style only', () => {
-    // The text matches, so `isHidden` is the only thing keeping this quiet.
-    setBody(`<button type="submit" style="display:none">Submit application</button>`);
-    const post = vi.fn();
-    armSubmitWatch(document, post);
-
-    document.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  it.each([
+    [
+      // On a job-listing page this control OPENS the application (often a modal);
+      // nothing has been submitted, so the app must not be marked applied.
+      'a bare "Apply now" that is not inside an application form',
+      `<button type="submit">Apply now</button><div role="button">Apply</div>`,
+    ],
+    [
+      // Formless, so only the click heuristic is in play — a submit button inside
+      // a form implicitly submits it, which is a separate (and legitimate) signal.
+      'a non-apply submit button (e.g. "Save draft")',
+      `<button type="submit">Save draft</button>`,
+    ],
+    [
+      // The text matches, so `isHidden` is the only thing keeping this quiet.
+      'a hidden (display:none) apply button — computed-style only',
+      `<button type="submit" style="display:none">Submit application</button>`,
+    ],
+  ])('does NOT fire on %s', (_name, html) => {
+    const post = arm(html);
+    for (const control of document.querySelectorAll('button, [role="button"]')) {
+      control.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    }
 
     expect(post).not.toHaveBeenCalled();
   });
 });
 
 describe('armSubmitWatch — hidden résumé file input (#786 follow-up)', () => {
-  it('recognizes a form whose résumé file input is hidden behind a custom upload button', () => {
-    // A styled upload widget hides the native <input type=file> (display:none).
-    // With only one OTHER visible field the form falls below the 3-field bar, so
-    // without treating the hidden résumé input as decisive the real application
-    // form would go unrecognized. Visibility is computed-style only (isHidden).
-    setBody(`
-      <form id="f">
-        <input name="first_name" />
-        <input type="file" name="resume" style="display:none" />
-        <button type="submit">Submit application</button>
-      </form>
-    `);
-    const post = vi.fn();
-    armSubmitWatch(document, post);
-
-    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
-      new Event('submit', { bubbles: true, cancelable: true })
+  // A styled upload widget hides the native <input type=file> (display:none).
+  // Only a résumé/CV-flavored hidden file input is decisive; a bare hidden
+  // upload on a non-application form stays below the 3-field bar, so the module
+  // keeps under-reporting rather than over-reporting. Visibility is
+  // computed-style only (isHidden).
+  it.each([
+    [
+      'recognizes a form whose résumé file input is hidden behind a custom upload button',
+      `<input name="first_name" /><input type="file" name="resume" style="display:none" />`,
+      1,
+    ],
+    [
+      'still ignores a hidden NON-résumé file input with too few visible fields',
+      `<input name="q" /><input type="file" style="display:none" />`,
+      0,
+    ],
+  ])('%s', (_name, fields, calls) => {
+    const post = arm(
+      `<form id="f">${fields}<button type="submit">Submit application</button></form>`
     );
+    submit();
 
-    expect(post).toHaveBeenCalledTimes(1);
-  });
-
-  it('still ignores a hidden NON-résumé file input with too few visible fields', () => {
-    // The narrowing: only a résumé/CV-flavored hidden file input is decisive, so
-    // a bare hidden upload on a non-application form stays below the bar and the
-    // module keeps under-reporting rather than over-reporting.
-    setBody(`
-      <form id="f">
-        <input name="q" />
-        <input type="file" style="display:none" />
-        <button type="submit">Submit application</button>
-      </form>
-    `);
-    const post = vi.fn();
-    armSubmitWatch(document, post);
-
-    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
-      new Event('submit', { bubbles: true, cancelable: true })
-    );
-
-    expect(post).not.toHaveBeenCalled();
+    expect(post).toHaveBeenCalledTimes(calls);
   });
 });
 
@@ -215,7 +190,7 @@ describe('armSubmitWatch — non-application forms (#786 lows)', () => {
     // A filter / cookie-consent / survey widget is built only from checkboxes or
     // radios; a real application form clears the bar on its text/email/résumé
     // fields, so these are excluded from the fillable-field count.
-    setBody(`
+    const post = arm(`
       <form id="f">
         <input type="checkbox" name="a" />
         <input type="checkbox" name="b" />
@@ -224,74 +199,44 @@ describe('armSubmitWatch — non-application forms (#786 lows)', () => {
         <button type="submit">Submit application</button>
       </form>
     `);
-    const post = vi.fn();
-    armSubmitWatch(document, post);
-
-    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
-      new Event('submit', { bubbles: true, cancelable: true })
-    );
+    submit();
 
     expect(post).not.toHaveBeenCalled();
   });
 
-  it('does NOT fire when a "Save draft" button submits the application form', () => {
-    // Real browsers carry the pressed button as the SubmitEvent's `submitter`;
-    // a draft-save submit must not auto-advance the application to `applied`.
-    setBody(`
+  // Real browsers carry the pressed button as the SubmitEvent's `submitter`;
+  // a draft-save submit must not auto-advance the application to `applied`.
+  it.each([
+    ['does NOT fire when a "Save draft" button submits the application form', 'draft', 0],
+    ['still fires when the real submit button sends the application form', 'send', 1],
+  ])('%s', (_name, submitterId, calls) => {
+    const post = arm(`
       <form id="f">
         ${APPLICATION_FIELDS}
         <button id="draft" type="submit">Save draft</button>
         <button id="send" type="submit">Submit application</button>
       </form>
     `);
-    const post = vi.fn();
-    armSubmitWatch(document, post);
-
-    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
+    document.getElementById('f')!.dispatchEvent(
       new SubmitEvent('submit', {
-        submitter: document.getElementById('draft'),
+        submitter: document.getElementById(submitterId),
         bubbles: true,
         cancelable: true,
       })
     );
 
-    expect(post).not.toHaveBeenCalled();
-  });
-
-  it('still fires when the real submit button sends the application form', () => {
-    setBody(`
-      <form id="f">
-        ${APPLICATION_FIELDS}
-        <button id="draft" type="submit">Save draft</button>
-        <button id="send" type="submit">Submit application</button>
-      </form>
-    `);
-    const post = vi.fn();
-    armSubmitWatch(document, post);
-
-    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
-      new SubmitEvent('submit', {
-        submitter: document.getElementById('send'),
-        bubbles: true,
-        cancelable: true,
-      })
-    );
-
-    expect(post).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledTimes(calls);
   });
 });
 
 describe('armSubmitWatch — fire-once guard', () => {
   it('posts AT MOST ONCE when the apply click AND its submit both fire', () => {
-    setBody(`<form id="f">${APPLICATION_FIELDS}<button type="submit">Apply</button></form>`);
-    const post = vi.fn();
-    armSubmitWatch(document, post);
-
-    const button = document.querySelector('button')!;
-    const form = document.getElementById('f') as HTMLFormElement;
+    const post = arm(
+      `<form id="f">${APPLICATION_FIELDS}<button type="submit">Apply</button></form>`
+    );
     // A real click on the apply button, then the submit it triggers.
-    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    click();
+    submit();
 
     expect(post).toHaveBeenCalledTimes(1);
   });
@@ -299,58 +244,28 @@ describe('armSubmitWatch — fire-once guard', () => {
 
 describe('armSubmitWatch — save-answers-on-submit capture (PR4)', () => {
   it('does NOT capture answers when captureAnswers is absent (default false)', () => {
-    setBody(`
-      <form id="f">
-        ${APPLICATION_FIELDS}
-        <label for="q">Why this role?</label>
-        <textarea id="q">Because I love it.</textarea>
-        <button type="submit">Submit application</button>
-      </form>
-    `);
-    const post = vi.fn();
-    armSubmitWatch(document, post);
-
-    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
-      new Event('submit', { bubbles: true, cancelable: true })
-    );
+    const post = arm(answerForm());
+    submit();
 
     expect(post).toHaveBeenCalledTimes(1);
     expect(post.mock.calls[0]?.[1]).toBeUndefined();
   });
 
   it('captures the currently-filled answers SYNCHRONOUSLY when armed with captureAnswers:true', () => {
-    setBody(`
-      <form id="f">
-        ${APPLICATION_FIELDS}
-        <label for="q">Why this role?</label>
-        <textarea id="q">Because I love it.</textarea>
-        <button type="submit">Submit application</button>
-      </form>
-    `);
-    const post = vi.fn();
-    armSubmitWatch(document, post, { captureAnswers: true });
-
-    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
-      new Event('submit', { bubbles: true, cancelable: true })
-    );
+    const post = arm(answerForm(), { captureAnswers: true });
+    submit();
 
     expect(post).toHaveBeenCalledTimes(1);
     expect(post.mock.calls[0]?.[0]).toEqual(expect.any(String));
-    expect(post.mock.calls[0]?.[1]).toEqual([
-      { question: 'Why this role?', answer: 'Because I love it.' },
-    ]);
+    expect(post.mock.calls[0]?.[1]).toEqual(ANSWERS);
   });
 
   it('omits answers (rather than an empty array) when armed but nothing is filled — present means "something to save"', () => {
-    setBody(
-      `<form id="f">${APPLICATION_FIELDS}<button type="submit">Submit application</button></form>`
+    const post = arm(
+      `<form id="f">${APPLICATION_FIELDS}<button type="submit">Submit application</button></form>`,
+      { captureAnswers: true }
     );
-    const post = vi.fn();
-    armSubmitWatch(document, post, { captureAnswers: true });
-
-    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
-      new Event('submit', { bubbles: true, cancelable: true })
-    );
+    submit();
 
     expect(post.mock.calls[0]?.[1]).toBeUndefined();
   });
@@ -358,63 +273,24 @@ describe('armSubmitWatch — save-answers-on-submit capture (PR4)', () => {
 
 describe('armSubmitWatch — capture is scoped to the submitted application form (PR-1209)', () => {
   it('does NOT include an unrelated filled form’s fields in the captured answers', () => {
-    setBody(`
-      <form id="app">
-        ${APPLICATION_FIELDS}
-        <label for="q">Why this role?</label>
-        <textarea id="q">Because I love it.</textarea>
-        <button type="submit">Submit application</button>
-      </form>
-      <form id="newsletter">
-        <label for="nlEmail">Newsletter email</label>
-        <input id="nlEmail" name="newsletter_email" value="me@example.com" />
-      </form>
-    `);
-    const post = vi.fn();
-    armSubmitWatch(document, post, { captureAnswers: true });
+    const post = arm(answerForm() + NEWSLETTER, { captureAnswers: true });
+    submit();
 
-    (document.getElementById('app') as HTMLFormElement).dispatchEvent(
-      new Event('submit', { bubbles: true, cancelable: true })
-    );
-
-    expect(post.mock.calls[0]?.[1]).toEqual([
-      { question: 'Why this role?', answer: 'Because I love it.' },
-    ]);
+    expect(post.mock.calls[0]?.[1]).toEqual(ANSWERS);
   });
 
   it('click-only detection resolves the associated form and scopes capture to it', () => {
-    setBody(`
-      <form id="app">
-        ${APPLICATION_FIELDS}
-        <label for="q">Why this role?</label>
-        <textarea id="q">Because I love it.</textarea>
-        <button type="submit">Apply now</button>
-      </form>
-    `);
-    const post = vi.fn();
-    armSubmitWatch(document, post, { captureAnswers: true });
+    const post = arm(answerForm('Apply now'), { captureAnswers: true });
+    click();
 
-    document.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-    expect(post.mock.calls[0]?.[1]).toEqual([
-      { question: 'Why this role?', answer: 'Because I love it.' },
-    ]);
+    expect(post.mock.calls[0]?.[1]).toEqual(ANSWERS);
   });
 
   it('click-only detection with no resolvable form captures NOTHING rather than the whole document', () => {
-    setBody(`
-      <div role="button">Submit application</div>
-      <form id="newsletter">
-        <label for="nlEmail">Newsletter email</label>
-        <input id="nlEmail" name="newsletter_email" value="me@example.com" />
-      </form>
-    `);
-    const post = vi.fn();
-    armSubmitWatch(document, post, { captureAnswers: true });
-
-    document
-      .querySelector('[role="button"]')!
-      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const post = arm(`<div role="button">Submit application</div>${NEWSLETTER}`, {
+      captureAnswers: true,
+    });
+    click('[role="button"]');
 
     expect(post).toHaveBeenCalledTimes(1);
     expect(post.mock.calls[0]?.[1]).toBeUndefined();
@@ -422,47 +298,24 @@ describe('armSubmitWatch — capture is scoped to the submitted application form
 });
 
 describe('armSubmitWatch — captureAnswers is read at FIRE TIME, not arm time (PR-1209)', () => {
-  it('captures when the getter flips ON between arming and firing (no re-arm needed)', () => {
-    setBody(`
-      <form id="f">
-        ${APPLICATION_FIELDS}
-        <label for="q">Why this role?</label>
-        <textarea id="q">Because I love it.</textarea>
-        <button type="submit">Submit application</button>
-      </form>
-    `);
-    const post = vi.fn();
-    let capture = false;
-    armSubmitWatch(document, post, { captureAnswers: () => capture });
+  it.each([
+    [
+      'captures when the getter flips ON between arming and firing (no re-arm needed)',
+      false,
+      ANSWERS,
+    ],
+    [
+      'does NOT capture when the getter flips OFF between arming and firing (no re-arm needed)',
+      true,
+      undefined,
+    ],
+  ])('%s', (_name, armedWith, expected) => {
+    let capture = armedWith;
+    const post = arm(answerForm(), { captureAnswers: () => capture });
 
-    capture = true; // e.g. the desktop-enforced opt-in was turned ON mid-frame
-    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
-      new Event('submit', { bubbles: true, cancelable: true })
-    );
+    capture = !armedWith; // e.g. the desktop-enforced opt-in flipped mid-frame
+    submit();
 
-    expect(post.mock.calls[0]?.[1]).toEqual([
-      { question: 'Why this role?', answer: 'Because I love it.' },
-    ]);
-  });
-
-  it('does NOT capture when the getter flips OFF between arming and firing (no re-arm needed)', () => {
-    setBody(`
-      <form id="f">
-        ${APPLICATION_FIELDS}
-        <label for="q">Why this role?</label>
-        <textarea id="q">Because I love it.</textarea>
-        <button type="submit">Submit application</button>
-      </form>
-    `);
-    const post = vi.fn();
-    let capture = true;
-    armSubmitWatch(document, post, { captureAnswers: () => capture });
-
-    capture = false; // e.g. the desktop-enforced opt-in was turned OFF mid-frame
-    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
-      new Event('submit', { bubbles: true, cancelable: true })
-    );
-
-    expect(post.mock.calls[0]?.[1]).toBeUndefined();
+    expect(post.mock.calls[0]?.[1]).toEqual(expected);
   });
 });

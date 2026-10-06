@@ -22,99 +22,15 @@
  * `mountX(host, deps)` — same pattern as `job-tools.ts`/`answer-tools.ts`.
  */
 
-import { browser } from '@wxt-dev/browser';
-
-import type { ExtensionDocumentSource } from '@ajh/shared/extension-protocol';
 import { LETTER_LAYOUT_LABELS, TEMPLATE_LABELS } from '@ajh/shared/ipc';
 
 import type { AnswerState } from '../lib/answer-state';
+import { appendEmptyState, button, el, openDeepLink, selectField } from '../lib/dom';
 import type { PopupRequest, PopupResponse } from '../lib/messages';
+import { buildKindRow, buildPastePicker, type DocumentKind } from './controls';
+import { buildCandidates, type DocumentCandidate, parseDocumentsResourceData } from './resource';
 
-// ── pure data shaping (exported for unit tests) ─────────────────────────────
-
-/** One candidate document the picker can export from. */
-export interface DocumentCandidate {
-  source: ExtensionDocumentSource;
-  label: string;
-  /** Only a `generation` source can ever have a cover letter. */
-  hasCoverLetter: boolean;
-}
-
-interface GenerationSummary {
-  hasResume: boolean;
-  hasCoverLetter: boolean;
-  jobTitle?: string;
-  company?: string;
-}
-
-interface DocumentSummary {
-  id: string;
-  name: string;
-}
-
-interface DocumentsResourceData {
-  generation: GenerationSummary | null;
-  documents: DocumentSummary[];
-}
-
-/** Hand-written guard for the `documents` resource's `data` shape (PR2
- *  §A.2) — the extension stays zod-free everywhere, same discipline as
- *  `bridge.ts`. Ignores fields this picker doesn't render (`targetLanguage`,
- *  `updatedAt`, `language`) rather than validating every one of them. */
-export function parseDocumentsResourceData(data: unknown): DocumentsResourceData {
-  const EMPTY: DocumentsResourceData = { generation: null, documents: [] };
-  if (typeof data !== 'object' || data === null) return EMPTY;
-  const o = data as Record<string, unknown>;
-
-  let generation: GenerationSummary | null = null;
-  if (typeof o.generation === 'object' && o.generation !== null) {
-    const g = o.generation as Record<string, unknown>;
-    if (typeof g.hasResume === 'boolean' && typeof g.hasCoverLetter === 'boolean') {
-      generation = {
-        hasResume: g.hasResume,
-        hasCoverLetter: g.hasCoverLetter,
-        jobTitle: typeof g.jobTitle === 'string' ? g.jobTitle : undefined,
-        company: typeof g.company === 'string' ? g.company : undefined,
-      };
-    }
-  }
-
-  const documents = (Array.isArray(o.documents) ? o.documents : [])
-    .filter((d): d is Record<string, unknown> => typeof d === 'object' && d !== null)
-    .filter((d) => typeof d.id === 'string' && typeof d.name === 'string')
-    .map((d) => ({ id: d.id as string, name: d.name as string }));
-
-  return { generation, documents };
-}
-
-/**
- * Build the picker's candidate list from the resource data — the job's own
- * generation first (when it has a résumé to export at all), then the saved
- * base résumés, newest first (the resource itself orders them that way — see
- * the Rust doc). `url` is the active tab's url (background-resolved, echoed
- * back — see `PopupResponse.documentsList`'s doc).
- */
-export function buildCandidates(data: DocumentsResourceData, url: string): DocumentCandidate[] {
-  const candidates: DocumentCandidate[] = [];
-  if (data.generation?.hasResume) {
-    const title = data.generation.jobTitle?.trim();
-    const company = data.generation.company?.trim();
-    const label = title && company ? `${title} · ${company}` : (title ?? company ?? 'This job');
-    candidates.push({
-      source: { kind: 'generation', url },
-      label,
-      hasCoverLetter: data.generation.hasCoverLetter,
-    });
-  }
-  for (const doc of data.documents) {
-    candidates.push({
-      source: { kind: 'document', id: doc.id },
-      label: doc.name,
-      hasCoverLetter: false,
-    });
-  }
-  return candidates;
-}
+export * from './resource';
 
 // ── the view ─────────────────────────────────────────────────────────────
 
@@ -160,27 +76,10 @@ export interface DocumentsView {
   reset: (reason?: string) => void;
 }
 
-const el = <K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className?: string,
-  text?: string
-): HTMLElementTagNameMap[K] => {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-};
-
-const button = (className: string, label: string): HTMLButtonElement => {
-  const b = el('button', className, label);
-  b.type = 'button';
-  return b;
-};
-
 export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): DocumentsView {
   let candidates: DocumentCandidate[] = [];
   let selectedIndex = 0;
-  let kind: 'resume' | 'cover-letter' = 'resume';
+  let kind: DocumentKind = 'resume';
   let templateId = 'classic';
   let letterLayoutId = 'classic';
   let format: 'pdf' | 'docx' = 'pdf';
@@ -208,43 +107,46 @@ export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): Document
     statusText = text;
     statusTone = tone;
   };
+  /** Terminal failure of a refresh: no candidates, the error on the status line. */
+  const fail = (message: string): void => {
+    candidates = [];
+    setStatus(message, 'err');
+    render();
+  };
+  /** Mark the tab busy around `task`; a throw lands on the status line. */
+  async function runBusy(pending: string, task: () => Promise<void>): Promise<void> {
+    busy = true;
+    setStatus(pending, 'muted');
+    render();
+    try {
+      await task();
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : String(err), 'err');
+    } finally {
+      busy = false;
+      render();
+    }
+  }
 
   function selected(): DocumentCandidate | null {
     return candidates[selectedIndex] ?? null;
-  }
-
-  async function openGenerateLink(): Promise<void> {
-    try {
-      await browser.tabs.create({ url: `ajh://generate?url=${encodeURIComponent(lastUrl)}` });
-    } catch {
-      // No-op: the deep link is best-effort — same discipline as
-      // connection-status.ts's own deep links.
-    }
   }
 
   function render(): void {
     host.replaceChildren();
 
     if (candidates.length === 0) {
-      if (loading) {
-        // "Loading…" ONLY while a refresh is genuinely in flight — never at
-        // mount, never after a settled refresh (its terminal branch clears
-        // `loading`), never after a reset (#1225).
-        host.append(el('p', 'msg msg--muted', 'Loading…'));
-      } else if (statusText) {
-        host.append(el('p', 'msg msg--muted', statusText));
-        if (statusTone === 'muted' && lastUrl) {
-          // A button, not an `<a href="ajh://…">` — mirrors the already-verified
-          // deep-link trigger the rest of the extension uses (connection-
-          // status.ts's PAIRING_DEEP_LINK/GET_APP_URL, options.ts's
-          // `openDeepLink`): `browser.tabs.create` in a click handler, wrapped
-          // in try/catch. A raw custom-scheme anchor is unverified cross-
-          // browser and can silently no-op.
-          const link = button('btn btn--quiet', 'Generate in the app');
-          link.addEventListener('click', () => void openGenerateLink());
-          host.append(link);
-        }
-      }
+      appendEmptyState(
+        host,
+        loading,
+        statusText,
+        statusTone === 'muted' && lastUrl
+          ? {
+              label: 'Generate in the app',
+              onClick: () => void openDeepLink(`ajh://generate?url=${encodeURIComponent(lastUrl)}`),
+            }
+          : null
+      );
       return;
     }
 
@@ -252,110 +154,72 @@ export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): Document
     if (!current) return;
 
     if (candidates.length > 1) {
-      const sourceLabel = el('label', 'field-label', 'Source');
-      const sourceSelect = document.createElement('select');
-      candidates.forEach((c, i) => {
-        const opt = document.createElement('option');
-        opt.value = String(i);
-        opt.textContent = c.label;
-        sourceSelect.append(opt);
-      });
-      sourceSelect.value = String(selectedIndex);
-      sourceSelect.addEventListener('change', () => {
-        selectedIndex = Number(sourceSelect.value) || 0;
-        if (kind === 'cover-letter' && !selected()?.hasCoverLetter) kind = 'resume';
+      const options = candidates.map((c, i) => [String(i), c.label] as const);
+      host.append(
+        selectField('Source', options, String(selectedIndex), (value) => {
+          selectedIndex = Number(value) || 0;
+          if (kind === 'cover-letter' && !selected()?.hasCoverLetter) kind = 'resume';
+          render();
+        })
+      );
+    }
+
+    host.append(
+      buildKindRow(kind, current.hasCoverLetter, (next) => {
+        kind = next;
         render();
-      });
-      sourceLabel.append(sourceSelect);
-      host.append(sourceLabel);
-    }
-
-    const kindRow = el('div', 'kind-row');
-    const resumeBtn = button('btn btn--small', 'Résumé');
-    resumeBtn.setAttribute('aria-pressed', String(kind === 'resume'));
-    if (kind === 'resume') resumeBtn.classList.add('btn--primary');
-    resumeBtn.addEventListener('click', () => {
-      kind = 'resume';
-      render();
-    });
-    kindRow.append(resumeBtn);
-
-    const letterBtn = button('btn btn--small', 'Cover letter');
-    letterBtn.disabled = !current.hasCoverLetter;
-    letterBtn.title = current.hasCoverLetter
-      ? ''
-      : 'This source has no cover letter — generate one in the app first.';
-    letterBtn.setAttribute('aria-pressed', String(kind === 'cover-letter'));
-    if (kind === 'cover-letter') letterBtn.classList.add('btn--primary');
-    letterBtn.addEventListener('click', () => {
-      kind = 'cover-letter';
-      render();
-    });
-    kindRow.append(letterBtn);
-    host.append(kindRow);
-
-    const templateLabel = el('label', 'field-label', 'Template');
-    const templateSelect = document.createElement('select');
-    for (const [id, label] of Object.entries(TEMPLATE_LABELS)) {
-      const opt = document.createElement('option');
-      opt.value = id;
-      opt.textContent = label;
-      templateSelect.append(opt);
-    }
-    templateSelect.value = templateId;
-    templateSelect.addEventListener('change', () => {
-      templateId = templateSelect.value;
-    });
-    templateLabel.append(templateSelect);
-    host.append(templateLabel);
+      })
+    );
+    host.append(
+      selectField('Template', Object.entries(TEMPLATE_LABELS), templateId, (value) => {
+        templateId = value;
+      })
+    );
 
     if (kind === 'cover-letter') {
-      const layoutLabel = el('label', 'field-label', 'Letter layout');
-      const layoutSelect = document.createElement('select');
-      for (const [id, label] of Object.entries(LETTER_LAYOUT_LABELS)) {
-        const opt = document.createElement('option');
-        opt.value = id;
-        opt.textContent = label;
-        layoutSelect.append(opt);
-      }
-      layoutSelect.value = letterLayoutId;
-      layoutSelect.addEventListener('change', () => {
-        letterLayoutId = layoutSelect.value;
-      });
-      layoutLabel.append(layoutSelect);
-      host.append(layoutLabel);
-
+      host.append(
+        selectField(
+          'Letter layout',
+          Object.entries(LETTER_LAYOUT_LABELS),
+          letterLayoutId,
+          (value) => {
+            letterLayoutId = value;
+          }
+        )
+      );
       const actions = el('div', 'action-row');
       const pasteBtn = button('btn btn--primary', 'Paste cover letter…');
       pasteBtn.disabled = busy;
-      pasteBtn.addEventListener('click', () => void doOpenPastePicker());
-      actions.append(pasteBtn);
+      pasteBtn.addEventListener('click', openPastePicker);
       const copyBtn = button('btn btn--quiet', 'Copy cover letter');
       copyBtn.disabled = busy;
       copyBtn.addEventListener('click', () => void doCopy());
-      actions.append(copyBtn);
+      actions.append(pasteBtn, copyBtn);
       host.append(actions);
 
-      if (pastePickerOpen) host.append(renderPastePicker());
+      if (pastePickerOpen) {
+        host.append(
+          buildPastePicker(
+            state,
+            busy,
+            (rowId) => void doPasteInto(rowId),
+            () => {
+              pastePickerOpen = false;
+              render();
+            }
+          )
+        );
+      }
     } else {
-      const formatLabel = el('label', 'field-label', 'Format');
-      const formatSelect = document.createElement('select');
-      for (const [value, label] of [
+      const formats = [
         ['pdf', 'PDF'],
         ['docx', 'DOCX'],
-      ] as const) {
-        const opt = document.createElement('option');
-        opt.value = value;
-        opt.textContent = label;
-        formatSelect.append(opt);
-      }
-      formatSelect.value = format;
-      formatSelect.addEventListener('change', () => {
-        format = formatSelect.value === 'docx' ? 'docx' : 'pdf';
-      });
-      formatLabel.append(formatSelect);
-      host.append(formatLabel);
-
+      ] as const;
+      host.append(
+        selectField('Format', formats, format, (value) => {
+          format = value === 'docx' ? 'docx' : 'pdf';
+        })
+      );
       const attachBtn = button('btn btn--primary', 'Attach résumé to this page');
       attachBtn.disabled = busy;
       attachBtn.addEventListener('click', () => void doAttach());
@@ -363,34 +227,11 @@ export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): Document
     }
 
     if (statusText) {
-      host.append(el('p', `msg msg--${statusTone === 'muted' ? 'muted' : statusTone}`, statusText));
+      host.append(el('p', `msg msg--${statusTone}`, statusText));
     }
   }
 
-  function renderPastePicker(): HTMLElement {
-    const wrap = el('div', 'picker');
-    wrap.append(el('p', 'field-label', 'Paste into…'));
-    const rows = (state?.rows ?? []).filter((r) => r.field !== null && !state?.pageChanged);
-    if (rows.length === 0) {
-      wrap.append(el('p', 'msg msg--muted', 'No form fields found on this page to paste into.'));
-      return wrap;
-    }
-    for (const row of rows) {
-      const rowBtn = button('btn btn--small btn--quiet picker__row', row.question);
-      rowBtn.disabled = busy;
-      rowBtn.addEventListener('click', () => void doPasteInto(row.id));
-      wrap.append(rowBtn);
-    }
-    const cancel = button('btn btn--small btn--quiet', 'Cancel');
-    cancel.addEventListener('click', () => {
-      pastePickerOpen = false;
-      render();
-    });
-    wrap.append(cancel);
-    return wrap;
-  }
-
-  async function doOpenPastePicker(): Promise<void> {
+  function openPastePicker(): void {
     pastePickerOpen = true;
     setStatus('', 'muted');
     render();
@@ -411,25 +252,13 @@ export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): Document
     return { text: res.text };
   }
 
-  async function doCopy(): Promise<void> {
-    busy = true;
-    setStatus('Fetching…', 'muted');
-    render();
-    try {
+  const doCopy = (): Promise<void> =>
+    runBusy('Fetching…', async () => {
       const out = await fetchCoverLetterText();
-      if ('error' in out) {
-        setStatus(out.error, 'err');
-        return;
-      }
+      if ('error' in out) return setStatus(out.error, 'err');
       const ok = await deps.copy(out.text);
       setStatus(ok ? 'Copied.' : 'Could not copy — try again.', ok ? 'ok' : 'err');
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : String(err), 'err');
-    } finally {
-      busy = false;
-      render();
-    }
-  }
+    });
 
   async function doPasteInto(rowId: string): Promise<void> {
     const row = state?.rows.find((r) => r.id === rowId);
@@ -441,22 +270,15 @@ export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): Document
     // its own to bind to (PR review round 2).
     const capturedGeneration = deps.getFollowGeneration();
     const capturedTabId = state?.tabId ?? null;
-    busy = true;
     pastePickerOpen = false;
-    setStatus('Fetching…', 'muted');
-    render();
-    try {
+    await runBusy('Fetching…', async () => {
       const out = await fetchCoverLetterText();
-      if ('error' in out) {
-        setStatus(out.error, 'err');
-        return;
-      }
+      if ('error' in out) return setStatus(out.error, 'err');
       if (
         deps.getFollowGeneration() !== capturedGeneration ||
         (state?.tabId ?? null) !== capturedTabId
       ) {
-        setStatus('The followed tab changed — please retry.', 'err');
-        return;
+        return setStatus('The followed tab changed — please retry.', 'err');
       }
       const res = await deps.send(
         field.kind === 'filled'
@@ -476,10 +298,7 @@ export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): Document
               answer: out.text,
             }
       );
-      if (!res.ok) {
-        setStatus(res.error, 'err');
-        return;
-      }
+      if (!res.ok) return setStatus(res.error, 'err');
       let result: { filled: boolean; error?: string } | null = null;
       if (res.kind === 'answerReplace' || res.kind === 'answerFill') result = res.result;
       setStatus(
@@ -488,12 +307,7 @@ export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): Document
           : (result?.error ?? 'Could not paste into that field.'),
         result?.filled ? 'ok' : 'err'
       );
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : String(err), 'err');
-    } finally {
-      busy = false;
-      render();
-    }
+    });
   }
 
   async function doAttach(): Promise<void> {
@@ -501,23 +315,16 @@ export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): Document
     if (!current) return;
     const proceed = await deps.confirmAttach(deps.currentHost());
     if (!proceed) return;
-    busy = true;
-    setStatus('Attaching…', 'muted');
-    render();
-    try {
+    await runBusy('Attaching…', async () => {
       const res = await deps.send({
         kind: 'documentAttach',
         source: current.source,
         templateId,
         format,
       });
-      if (!res.ok) {
-        setStatus(res.error, 'err');
-        return;
-      }
+      if (!res.ok) return setStatus(res.error, 'err');
       if (res.kind !== 'documentAttach') {
-        setStatus('Unexpected response — please retry.', 'err');
-        return;
+        return setStatus('Unexpected response — please retry.', 'err');
       }
       setStatus(
         res.result.attached
@@ -525,12 +332,7 @@ export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): Document
           : (res.result.reason ?? 'Could not attach the résumé.'),
         res.result.attached ? 'ok' : 'err'
       );
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : String(err), 'err');
-    } finally {
-      busy = false;
-      render();
-    }
+    });
   }
 
   async function refresh(): Promise<void> {
@@ -543,28 +345,15 @@ export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): Document
       const res = await deps.send({ kind: 'documentsList' });
       if (myGeneration !== generation) return;
       loading = false;
-      if (!res.ok) {
-        candidates = [];
-        setStatus(res.error, 'err');
-        render();
-        return;
-      }
+      if (!res.ok) return fail(res.error);
       if (res.kind !== 'documentsList') {
         // A kind mismatch is a terminal outcome too — clear `loading` so the
         // empty state can never sit on a phantom "Loading…" (#1225).
-        candidates = [];
-        setStatus('Unexpected response — please retry.', 'err');
-        render();
-        return;
+        return fail('Unexpected response — please retry.');
       }
       lastUrl = res.url;
       if (lastUrl) deps.onUrlResolved?.(lastUrl);
-      if (!res.result.ok) {
-        candidates = [];
-        setStatus(res.result.error, 'err');
-        render();
-        return;
-      }
+      if (!res.result.ok) return fail(res.result.error);
       const data = parseDocumentsResourceData(res.result.data);
       candidates = buildCandidates(data, res.url);
       selectedIndex = 0;
@@ -578,9 +367,7 @@ export function mountDocuments(host: HTMLElement, deps: DocumentsDeps): Document
     } catch (err) {
       if (myGeneration !== generation) return;
       loading = false;
-      candidates = [];
-      setStatus(err instanceof Error ? err.message : String(err), 'err');
-      render();
+      fail(err instanceof Error ? err.message : String(err));
     }
   }
 

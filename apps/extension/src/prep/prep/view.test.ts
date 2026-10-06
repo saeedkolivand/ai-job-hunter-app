@@ -1,121 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { browser } from '@wxt-dev/browser';
 
-import type { AnswerState } from '../lib/answer-state';
-import type { PopupRequest, PopupResponse } from '../lib/messages';
+import type { AnswerState } from '../../lib/answer-state';
+import type { PopupRequest, PopupResponse } from '../../lib/messages';
 
 vi.mock('@wxt-dev/browser', () => ({
   browser: { tabs: { create: vi.fn() }, runtime: { openOptionsPage: vi.fn() } },
 }));
 
-import { JOB_TOOLS_GATED_LINE } from '../job-tools/job-tools';
-import { mountPrep, parsePrepResourceData, prepHasContent } from './prep';
-
-// ---------------------------------------------------------------------------
-// parsePrepResourceData / prepHasContent (pure)
-// ---------------------------------------------------------------------------
-
-describe('parsePrepResourceData', () => {
-  it('parses a full payload', () => {
-    const data = parsePrepResourceData({
-      generation: {
-        hasCompanyBrief: true,
-        companyBrief: 'Acme makes widgets.',
-        interviewQuestions: [
-          { question: 'Tell me about yourself', why: 'Warm-up', audience: 'recruiter' },
-          { question: 'Why us?' },
-        ],
-        salaryAnswer: 'I am targeting $120k-$140k.',
-        updatedAt: 123,
-      },
-    });
-    expect(data).toEqual({
-      hasCompanyBrief: true,
-      companyBrief: 'Acme makes widgets.',
-      interviewQuestions: [
-        { question: 'Tell me about yourself', why: 'Warm-up', audience: 'recruiter' },
-        { question: 'Why us?', why: undefined, audience: undefined },
-      ],
-      salaryAnswer: 'I am targeting $120k-$140k.',
-    });
-  });
-
-  it('degrades to empty on malformed/missing data (never throws)', () => {
-    const EMPTY = {
-      hasCompanyBrief: false,
-      companyBrief: null,
-      interviewQuestions: [],
-      salaryAnswer: null,
-    };
-    expect(parsePrepResourceData(null)).toEqual(EMPTY);
-    expect(parsePrepResourceData(undefined)).toEqual(EMPTY);
-    expect(parsePrepResourceData('nope')).toEqual(EMPTY);
-    expect(parsePrepResourceData({})).toEqual(EMPTY);
-    expect(parsePrepResourceData({ generation: null })).toEqual(EMPTY);
-  });
-
-  it('drops a malformed interview-question entry (missing question) without failing the whole list', () => {
-    const data = parsePrepResourceData({
-      generation: {
-        hasCompanyBrief: false,
-        interviewQuestions: [{ why: 'no question text' }, { question: 'Good one?' }],
-      },
-    });
-    expect(data.interviewQuestions).toEqual([
-      { question: 'Good one?', why: undefined, audience: undefined },
-    ]);
-  });
-});
-
-describe('prepHasContent', () => {
-  it('false when the job has nothing yet', () => {
-    expect(
-      prepHasContent({
-        hasCompanyBrief: false,
-        companyBrief: null,
-        interviewQuestions: [],
-        salaryAnswer: null,
-      })
-    ).toBe(false);
-  });
-
-  it('true when only interview questions exist', () => {
-    expect(
-      prepHasContent({
-        hasCompanyBrief: false,
-        companyBrief: null,
-        interviewQuestions: [{ question: 'Why us?' }],
-        salaryAnswer: null,
-      })
-    ).toBe(true);
-  });
-});
+import { JOB_TOOLS_GATED_LINE } from '../../job-tools/job-tools';
+import { mountPrep } from '../prep';
 
 // ---------------------------------------------------------------------------
 // mountPrep (the view)
 // ---------------------------------------------------------------------------
 
-function makeDeps(send: (req: PopupRequest) => Promise<PopupResponse>) {
-  return { send, copy: vi.fn(async () => true) };
-}
-
-const AI_ASSIST_ON: PopupResponse = {
+const settings = (aiAssist: boolean): PopupResponse => ({
   ok: true,
   kind: 'settingsGet',
   result: {
     ok: true,
-    settings: { autofill: true, aiAssist: true, autotrack: false, saveAnswersOnSubmit: false },
+    settings: { autofill: true, aiAssist, autotrack: false, saveAnswersOnSubmit: false },
   },
-};
-
-const AI_ASSIST_OFF: PopupResponse = {
-  ok: true,
-  kind: 'settingsGet',
-  result: {
-    ok: true,
-    settings: { autofill: true, aiAssist: false, autotrack: false, saveAnswersOnSubmit: false },
-  },
-};
+});
+const AI_ASSIST_ON = settings(true);
+const AI_ASSIST_OFF = settings(false);
 
 /** `generation` (the wire's nesting, mirrors `documents`' own resource shape
  *  — see the Rust doc for `agent_read/prep.rs`) built from the flat fields
@@ -134,26 +43,48 @@ function prepRefusal(error: string, url = 'https://example.com/job/1'): PopupRes
   return { ok: true, kind: 'prepGet', result: { ok: false, resource: 'prep', error }, url };
 }
 
+/** A fresh job: nothing generated yet. */
+const NOTHING_YET = prepResult({ hasCompanyBrief: false, interviewQuestions: [] });
+
+const unhandled = (req: PopupRequest): PopupResponse => ({
+  ok: false,
+  error: `unhandled: ${req.kind}`,
+});
+
 /** Routes a send() call to the right canned response by request kind — the
  *  view fires `prepGet` and `settingsGet` concurrently via `Promise.all`. */
 function router(
   byKind: Partial<Record<PopupRequest['kind'], PopupResponse>>
 ): (req: PopupRequest) => Promise<PopupResponse> {
-  return async (req) => byKind[req.kind] ?? { ok: false, error: `unhandled: ${req.kind}` };
+  return async (req) => byKind[req.kind] ?? unhandled(req);
 }
+
+/** A fresh job with AI assist ON whose `answerAssist` never settles (a draft
+ *  stuck in flight) — `assistCancel` is acknowledged. */
+const draftInFlight = () =>
+  vi.fn(async (req: PopupRequest): Promise<PopupResponse> => {
+    if (req.kind === 'prepGet') return NOTHING_YET;
+    if (req.kind === 'settingsGet') return AI_ASSIST_ON;
+    if (req.kind === 'answerAssist') return new Promise<PopupResponse>(() => {});
+    if (req.kind === 'assistCancel') return { ok: true, kind: 'assistCancel' };
+    return unhandled(req);
+  });
 
 /** Wait until a NOT-disabled button with this exact text exists — the
  *  draft buttons render disabled until `settings.get` answers, and clicking
  *  a still-disabled button is a browser-spec no-op (jsdom included). */
 async function waitForEnabledButton(host: HTMLElement, label: string): Promise<HTMLButtonElement> {
   return vi.waitFor(() => {
-    const btn = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
-      (b) => b.textContent === label && !b.disabled
-    );
-    if (!btn) throw new Error(`no enabled button "${label}" yet`);
+    const btn = buttonByText(host, label);
+    if (!btn || btn.disabled) throw new Error(`no enabled button "${label}" yet`);
     return btn;
   });
 }
+
+const buttonByText = (host: HTMLElement, label: string): HTMLButtonElement | undefined =>
+  Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
+    (b) => b.textContent === label
+  );
 
 describe('mountPrep', () => {
   let host: HTMLElement;
@@ -165,9 +96,26 @@ describe('mountPrep', () => {
     vi.mocked(browser.runtime.openOptionsPage).mockClear();
   });
 
+  /** Mount against `send` and kick off the first refresh. */
+  function mountRefreshed(send: (req: PopupRequest) => Promise<PopupResponse>) {
+    const view = mountPrep(host, { send, copy: vi.fn(async () => true) });
+    view.refresh();
+    return view;
+  }
+
+  /** Mount a fresh job with AI assist ON whose draft is stuck, click "Draft company brief". */
+  async function startBriefDraft(send: ReturnType<typeof draftInFlight>) {
+    const view = mountRefreshed(send);
+    (await waitForEnabledButton(host, 'Draft company brief')).click();
+    await vi.waitFor(() => expect(host.textContent).toContain('Cancel'));
+    return view;
+  }
+
   it('mounts showing nothing, and shows "Loading…" only while refresh() is genuinely in flight (#1225)', () => {
-    const deps = makeDeps(() => new Promise<PopupResponse>(() => {}));
-    const view = mountPrep(host, deps);
+    const view = mountPrep(host, {
+      send: () => new Promise<PopupResponse>(() => {}),
+      copy: vi.fn(async () => true),
+    });
     // The mount alone is NOT a fetch — no phantom "Loading…" (#1225).
     expect(host.textContent).not.toContain('Loading…');
     expect(host.textContent).not.toContain('Prepare in the app');
@@ -185,18 +133,10 @@ describe('mountPrep', () => {
   });
 
   it('nothing yet: shows "Prepare in the app" once the url resolves, opening the deep link on click', async () => {
-    const send = vi.fn(
-      router({
-        prepGet: prepResult({ hasCompanyBrief: false, interviewQuestions: [] }),
-        settingsGet: AI_ASSIST_ON,
-      })
-    );
-    const view = mountPrep(host, makeDeps(send));
-    view.refresh();
+    mountRefreshed(vi.fn(router({ prepGet: NOTHING_YET, settingsGet: AI_ASSIST_ON })));
     await vi.waitFor(() => expect(host.textContent).toContain('Prepare in the app'));
 
-    const link = host.querySelector<HTMLButtonElement>('button.btn--quiet');
-    link?.click();
+    host.querySelector<HTMLButtonElement>('button.btn--quiet')?.click();
     await vi.waitFor(() =>
       expect(browser.tabs.create).toHaveBeenCalledWith({
         url: 'ajh://prep?url=https%3A%2F%2Fexample.com%2Fjob%2F1',
@@ -205,7 +145,7 @@ describe('mountPrep', () => {
   });
 
   it('everything: renders the company brief, interview questions and salary answer', async () => {
-    const send = vi.fn(
+    mountRefreshed(
       router({
         prepGet: prepResult({
           hasCompanyBrief: true,
@@ -216,8 +156,6 @@ describe('mountPrep', () => {
         settingsGet: AI_ASSIST_ON,
       })
     );
-    const view = mountPrep(host, makeDeps(send));
-    view.refresh();
     await vi.waitFor(() => expect(host.textContent).toContain('Acme makes widgets.'));
 
     expect(host.textContent).toContain('Interview questions (1)');
@@ -226,7 +164,7 @@ describe('mountPrep', () => {
   });
 
   it('brief only: interview questions and salary each fall back to their own draft button', async () => {
-    const send = vi.fn(
+    mountRefreshed(
       router({
         prepGet: prepResult({
           hasCompanyBrief: true,
@@ -236,8 +174,6 @@ describe('mountPrep', () => {
         settingsGet: AI_ASSIST_ON,
       })
     );
-    const view = mountPrep(host, makeDeps(send));
-    view.refresh();
     await vi.waitFor(() => expect(host.textContent).toContain('Acme makes widgets.'));
 
     expect(host.textContent).not.toContain('Interview questions');
@@ -246,30 +182,19 @@ describe('mountPrep', () => {
   });
 
   it('renders the desktop refusal verbatim', async () => {
-    const send = vi.fn(
+    mountRefreshed(
       router({ prepGet: prepRefusal('Assisted autofill is off.'), settingsGet: AI_ASSIST_ON })
     );
-    const view = mountPrep(host, makeDeps(send));
-    view.refresh();
     await vi.waitFor(() => expect(host.textContent).toContain('Assisted autofill is off.'));
   });
 
   it('AI-assist off: each draft button is replaced with an explanation + a link to Settings, never firing the request', async () => {
-    const send = vi.fn(
-      router({
-        prepGet: prepResult({ hasCompanyBrief: false, interviewQuestions: [] }),
-        settingsGet: AI_ASSIST_OFF,
-      })
-    );
-    const view = mountPrep(host, makeDeps(send));
-    view.refresh();
+    const send = vi.fn(router({ prepGet: NOTHING_YET, settingsGet: AI_ASSIST_OFF }));
+    mountRefreshed(send);
     await vi.waitFor(() => expect(host.textContent).toContain('AI-answer-assist is off.'));
 
     send.mockClear();
-    const settingsLink = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
-      (b) => b.textContent === 'Turn on in Settings'
-    );
-    settingsLink?.click();
+    buttonByText(host, 'Turn on in Settings')?.click();
     expect(browser.runtime.openOptionsPage).toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
   });
@@ -277,20 +202,15 @@ describe('mountPrep', () => {
   it('drafting: click fires answer.assist with the topic, and a completed draft renders copy-ready with no leftover button', async () => {
     let resolveAssist: ((res: PopupResponse) => void) | undefined;
     const send = vi.fn(async (req: PopupRequest) => {
-      if (req.kind === 'prepGet')
-        return prepResult({ hasCompanyBrief: false, interviewQuestions: [] });
-      if (req.kind === 'settingsGet') return AI_ASSIST_ON;
       if (req.kind === 'answerAssist') {
         return new Promise<PopupResponse>((resolve) => {
           resolveAssist = resolve;
         });
       }
-      return { ok: false, error: `unhandled: ${req.kind}` };
+      return router({ prepGet: NOTHING_YET, settingsGet: AI_ASSIST_ON })(req);
     });
-    const view = mountPrep(host, makeDeps(send));
-    view.refresh();
-    const draftBtn = await waitForEnabledButton(host, 'Draft company brief');
-    draftBtn.click();
+    const view = mountRefreshed(send);
+    (await waitForEnabledButton(host, 'Draft company brief')).click();
     await vi.waitFor(() =>
       expect(send).toHaveBeenCalledWith({
         kind: 'answerAssist',
@@ -332,28 +252,14 @@ describe('mountPrep', () => {
     await vi.waitFor(() => expect(host.textContent).toContain('Acme makes widgets.'));
     // Once finished the draft-button/streaming controls are replaced by the
     // copyable section — no dangling "Cancel"/"Draft…" control for this topic.
-    expect(
-      Array.from(host.querySelectorAll('button')).some((b) => b.textContent === 'Cancel')
-    ).toBe(false);
+    expect(buttonByText(host, 'Cancel')).toBeUndefined();
   });
 
   it('drafting one topic disables the OTHER draft button so a second click cannot silently supersede the first', async () => {
-    const send = vi.fn(async (req: PopupRequest) => {
-      if (req.kind === 'prepGet')
-        return prepResult({ hasCompanyBrief: false, interviewQuestions: [] });
-      if (req.kind === 'settingsGet') return AI_ASSIST_ON;
-      if (req.kind === 'answerAssist') return new Promise<PopupResponse>(() => {});
-      return { ok: false, error: `unhandled: ${req.kind}` };
-    });
-    const view = mountPrep(host, makeDeps(send));
-    view.refresh();
-    const briefBtn = await waitForEnabledButton(host, 'Draft company brief');
-    briefBtn.click();
-    await vi.waitFor(() => expect(host.textContent).toContain('Cancel'));
+    const send = draftInFlight();
+    await startBriefDraft(send);
 
-    const salaryBtn = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
-      (b) => b.textContent === 'Draft salary answer'
-    );
+    const salaryBtn = buttonByText(host, 'Draft salary answer');
     expect(salaryBtn?.disabled).toBe(true);
     salaryBtn?.click();
     // A disabled button never fires its click handler — no second request.
@@ -363,30 +269,16 @@ describe('mountPrep', () => {
   });
 
   it('cancel sends assistCancel and clears the pending state', async () => {
-    const send = vi.fn(async (req: PopupRequest) => {
-      if (req.kind === 'prepGet')
-        return prepResult({ hasCompanyBrief: false, interviewQuestions: [] });
-      if (req.kind === 'settingsGet') return AI_ASSIST_ON;
-      if (req.kind === 'answerAssist') return new Promise<PopupResponse>(() => {});
-      if (req.kind === 'assistCancel') return { ok: true, kind: 'assistCancel' };
-      return { ok: false, error: `unhandled: ${req.kind}` };
-    });
-    const view = mountPrep(host, makeDeps(send));
-    view.refresh();
-    const draftBtn = await waitForEnabledButton(host, 'Draft company brief');
-    draftBtn.click();
-    await vi.waitFor(() => expect(host.textContent).toContain('Cancel'));
+    const send = draftInFlight();
+    await startBriefDraft(send);
 
-    const cancelBtn = Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find(
-      (b) => b.textContent === 'Cancel'
-    );
-    cancelBtn?.click();
+    buttonByText(host, 'Cancel')?.click();
     await vi.waitFor(() => expect(send).toHaveBeenCalledWith({ kind: 'assistCancel' }));
     expect(host.textContent).toContain('Draft company brief');
   });
 
   it('reset() clears data and any pending draft', async () => {
-    const send = vi.fn(
+    const view = mountRefreshed(
       router({
         prepGet: prepResult({
           hasCompanyBrief: true,
@@ -396,8 +288,6 @@ describe('mountPrep', () => {
         settingsGet: AI_ASSIST_ON,
       })
     );
-    const view = mountPrep(host, makeDeps(send));
-    view.refresh();
     await vi.waitFor(() => expect(host.textContent).toContain('Acme.'));
 
     view.reset();
@@ -405,33 +295,16 @@ describe('mountPrep', () => {
   });
 
   it('reset() during a stream cancels the in-flight draft instead of leaving it billing (PR-1209)', async () => {
-    const send = vi.fn(async (req: PopupRequest) => {
-      if (req.kind === 'prepGet')
-        return prepResult({ hasCompanyBrief: false, interviewQuestions: [] });
-      if (req.kind === 'settingsGet') return AI_ASSIST_ON;
-      if (req.kind === 'answerAssist') return new Promise<PopupResponse>(() => {});
-      if (req.kind === 'assistCancel') return { ok: true, kind: 'assistCancel' };
-      return { ok: false, error: `unhandled: ${req.kind}` };
-    });
-    const view = mountPrep(host, makeDeps(send));
-    view.refresh();
-    const draftBtn = await waitForEnabledButton(host, 'Draft company brief');
-    draftBtn.click();
-    await vi.waitFor(() => expect(host.textContent).toContain('Cancel'));
+    const send = draftInFlight();
+    const view = await startBriefDraft(send);
 
     view.reset();
     await vi.waitFor(() => expect(send).toHaveBeenCalledWith({ kind: 'assistCancel' }));
   });
 
   it('reset() with no draft in flight never sends assistCancel', async () => {
-    const send = vi.fn(
-      router({
-        prepGet: prepResult({ hasCompanyBrief: false, interviewQuestions: [] }),
-        settingsGet: AI_ASSIST_ON,
-      })
-    );
-    const view = mountPrep(host, makeDeps(send));
-    view.refresh();
+    const send = vi.fn(router({ prepGet: NOTHING_YET, settingsGet: AI_ASSIST_ON }));
+    const view = mountRefreshed(send);
     await vi.waitFor(() => expect(host.textContent).toContain('Draft company brief'));
 
     send.mockClear();
@@ -440,14 +313,7 @@ describe('mountPrep', () => {
   });
 
   it('reset(reason) renders the shared gated line with BOTH draft buttons disabled (#1225, #1234)', async () => {
-    const send = vi.fn(
-      router({
-        prepGet: prepResult({ hasCompanyBrief: false, interviewQuestions: [] }),
-        settingsGet: AI_ASSIST_ON,
-      })
-    );
-    const view = mountPrep(host, makeDeps(send));
-    view.refresh();
+    const view = mountRefreshed(router({ prepGet: NOTHING_YET, settingsGet: AI_ASSIST_ON }));
     // AI assist is ON and the page is readable — both drafts are armed.
     const briefBtn = await waitForEnabledButton(host, 'Draft company brief');
     const salaryBtn = await waitForEnabledButton(host, 'Draft salary answer');
@@ -460,26 +326,20 @@ describe('mountPrep', () => {
     view.reset(JOB_TOOLS_GATED_LINE);
     expect(host.textContent).toContain(JOB_TOOLS_GATED_LINE);
     expect(host.textContent).not.toContain('Loading…');
-    const after = Array.from(host.querySelectorAll<HTMLButtonElement>('button'));
-    const briefAfter = after.find((b) => b.textContent === 'Draft company brief');
-    const salaryAfter = after.find((b) => b.textContent === 'Draft salary answer');
-    expect(briefAfter?.disabled).toBe(true);
-    expect(salaryAfter?.disabled).toBe(true);
+    expect(buttonByText(host, 'Draft company brief')?.disabled).toBe(true);
+    expect(buttonByText(host, 'Draft salary answer')?.disabled).toBe(true);
     // A gated reset is untrusted — `lastUrl` is cleared, so the "Prepare in
     // the app" deep link must never appear alongside the line.
     expect(host.querySelector('button.btn--quiet')).toBeNull();
   });
 
   it('kind-mismatch: surfaces an error instead of sitting on a phantom "Loading…" (#1225)', async () => {
-    const send = vi.fn(async (req: PopupRequest) => {
-      if (req.kind === 'prepGet') {
-        return { ok: true, kind: 'appliedCheck', result: { found: false } } satisfies PopupResponse;
-      }
-      if (req.kind === 'settingsGet') return AI_ASSIST_ON;
-      return { ok: false, error: `unhandled: ${req.kind}` };
-    });
-    const view = mountPrep(host, makeDeps(send));
-    view.refresh();
+    mountRefreshed(
+      router({
+        prepGet: { ok: true, kind: 'appliedCheck', result: { found: false } },
+        settingsGet: AI_ASSIST_ON,
+      })
+    );
     await vi.waitFor(() =>
       expect(host.textContent).toContain('Unexpected response — please retry.')
     );

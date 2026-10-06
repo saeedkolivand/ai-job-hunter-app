@@ -8,50 +8,47 @@
  * The focus is the module's stated contract: it must **under-fill rather than
  * mis-fill**. A field that resolves to the wrong key writes the user's PII into
  * a visibly wrong box, which they may not notice and cannot undo.
+ *
+ * Signal tables are written as one `|`-separated string per table (a signal never
+ * contains `|`), so each table is a line instead of one line per signal.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { isAmbiguousSignal, labelText, matchNamedKey } from './field-signal';
 
+/** Every signal in the `|`-separated `table` resolves to exactly `key`. */
+function expectKey(table: string, key: string | null): void {
+  for (const signal of table.split('|')) expect(matchNamedKey(signal), signal).toBe(key);
+}
+
+/** No signal in the table resolves to `key` (it may resolve to another key or none). */
+function expectNotKey(table: string, key: string): void {
+  for (const signal of table.split('|')) expect(matchNamedKey(signal), signal).not.toBe(key);
+}
+
+function expectAmbiguous(table: string, ambiguous: boolean): void {
+  for (const signal of table.split('|')) {
+    expect(isAmbiguousSignal(signal), signal).toBe(ambiguous);
+  }
+}
+
 describe('isAmbiguousSignal', () => {
   it('still skips the genuinely ambiguous / sensitive fields', () => {
-    for (const signal of [
-      'referral source',
-      'referrer',
-      'job_referral',
-      'professional references',
-      'reference_name',
-      'site search',
-      'job_search',
-      'emergency contact',
-      'confirm password',
-      'company name',
-      'recruiter',
-      'ssn',
-      'passport number',
-      // \b-anchored short terms, unchanged
-      'dni',
-      "contact d'urgence",
-    ]) {
-      expect(isAmbiguousSignal(signal), signal).toBe(true);
-    }
+    // The last two are \b-anchored short terms, unchanged.
+    expectAmbiguous(
+      "referral source|referrer|job_referral|professional references|reference_name|site search|job_search|emergency contact|confirm password|company name|recruiter|ssn|passport number|dni|contact d'urgence",
+      true
+    );
   });
 
   it('does not skip a field that merely CONTAINS a denylist term', () => {
     // `referr` ⊂ "preferred", `search` ⊂ "research", `reference` ⊂ "preferences".
     // These were skipped entirely — never filled AND never captured.
-    for (const signal of [
-      'preferred first name',
-      'preferred name',
-      'preferred pronouns',
-      'research experience',
-      'research interests',
-      'work preferences',
-      'notification preferences',
-    ]) {
-      expect(isAmbiguousSignal(signal), signal).toBe(false);
-    }
+    expectAmbiguous(
+      'preferred first name|preferred name|preferred pronouns|research experience|research interests|work preferences|notification preferences',
+      false
+    );
   });
 
   it('lets a freed-up field resolve to its real key', () => {
@@ -67,92 +64,45 @@ describe('isAmbiguousSignal — third-party / non-fillable name COMPOUNDS', () =
     // (`AMBIGUOUS_PREFIXED`), so once the name patterns learned the attribute
     // spellings, every camelCase third-party box below started receiving the
     // USER's name. Skipping is the only correct answer for all of them.
-    for (const signal of [
-      'professionalreferencefirstname',
-      'jobreferencefirstname',
-      'proreferencelastname',
-      'workreferencelastname',
-      'myreferrerfirstname',
-      'staffreferralfirstname',
-      'refereelastname',
-      'spousefirstname',
-      'childfirstname',
-      'dependentlastname',
-      'beneficiaryfirstname',
-      'previouslastname',
-      'formerfirstname',
-      'otherlastname',
-      'aka_first_name',
-      'alsoknownasfirstname',
-      'also_known_as_last_name',
-      // Taleo's `nm` abbreviation — the deny patterns end `n(?:ame|m)` for
-      // exactly these, and the name PATTERNS match them, so both halves must
-      // agree or a third party's `…Nm` box gets filled.
-      'spousefirstnm',
-      'referencelastnm',
-      'dependentlastnm',
-      'beneficiaryfirstnm',
-      // A leading `[^p]` character guard (the first attempt at exempting
-      // "preferred") silently exempted EVERY p-terminated prefix — these are
-      // ordinary HRIS spellings and each one was filled with the user's name.
-      'topreferencefirstname',
-      'groupreferencefirstname',
-      'helpreferencefirstname',
-      'backupreferencefirstname',
-      'signupreferencefirstname',
-      'stepreferencefirstname',
-      'shipreferencefirstname',
-      'campreferencefirstname',
-      'vipreferencefirstname',
-      'empreferencefirstname',
-      // Already denied before this rule (leading-anchored / prose) — pinned so
-      // the compound rule can never be "simplified" into losing them.
-      'reference_first_name',
-      'references[0][first_name]',
-      'referencefirstname',
-      'emergencycontactfirstname',
-      'mothers_maiden_name',
-    ]) {
-      expect(isAmbiguousSignal(signal), signal).toBe(true);
-    }
+    expectAmbiguous(
+      'professionalreferencefirstname|jobreferencefirstname|proreferencelastname|workreferencelastname|myreferrerfirstname|staffreferralfirstname|refereelastname|spousefirstname|childfirstname|dependentlastname|beneficiaryfirstname|previouslastname|formerfirstname|otherlastname|aka_first_name|alsoknownasfirstname|also_known_as_last_name',
+      true
+    );
+    // Taleo's `nm` abbreviation — the deny patterns end `n(?:ame|m)` for
+    // exactly these, and the name PATTERNS match them, so both halves must
+    // agree or a third party's `…Nm` box gets filled.
+    expectAmbiguous('spousefirstnm|referencelastnm|dependentlastnm|beneficiaryfirstnm', true);
+    // A leading `[^p]` character guard (the first attempt at exempting
+    // "preferred") silently exempted EVERY p-terminated prefix — these are
+    // ordinary HRIS spellings and each one was filled with the user's name.
+    expectAmbiguous(
+      'topreferencefirstname|groupreferencefirstname|helpreferencefirstname|backupreferencefirstname|signupreferencefirstname|stepreferencefirstname|shipreferencefirstname|campreferencefirstname|vipreferencefirstname|empreferencefirstname',
+      true
+    );
+    // Already denied before this rule (leading-anchored / prose) — pinned so
+    // the compound rule can never be "simplified" into losing them.
+    expectAmbiguous(
+      'reference_first_name|references[0][first_name]|referencefirstname|emergencycontactfirstname|mothers_maiden_name',
+      true
+    );
   });
 
   it('skips the name parts we hold no profile value for (middle / additional / kana)', () => {
     // There is no middleName key in the profile, so the ONLY safe outcome is a
     // skip — a hyphenated `middle-name` used to reach the bare-name catch-all
-    // and receive the full name.
-    for (const signal of [
-      'middle name',
-      'middlename',
-      'middle_name',
-      'middle-name',
-      'middleinitial name',
-      'additional name',
-      // The kana reading appears on BOTH sides of the name token.
-      'lastnamekana',
-      'name_kana',
-      'kana_last_name',
-      'kanalastname',
-      'furigana_first_name',
-      'furigana',
-    ]) {
-      expect(isAmbiguousSignal(signal), signal).toBe(true);
-    }
+    // and receive the full name. The kana reading appears on BOTH sides of the
+    // name token.
+    expectAmbiguous(
+      'middle name|middlename|middle_name|middle-name|middleinitial name|additional name|lastnamekana|name_kana|kana_last_name|kanalastname|furigana_first_name|furigana',
+      true
+    );
   });
 
   it('still lets the preferred/research/preferences family through (the `referr` ⊂ "preferred" trap)', () => {
-    for (const signal of [
-      'preferred first name',
-      'preferred_first_name',
-      'preferredfirstname',
-      'preferred name',
-      'preferred pronouns',
-      'work preferences',
-      'research experience',
-      'notification preferences',
-    ]) {
-      expect(isAmbiguousSignal(signal), signal).toBe(false);
-    }
+    expectAmbiguous(
+      'preferred first name|preferred_first_name|preferredfirstname|preferred name|preferred pronouns|work preferences|research experience|notification preferences',
+      false
+    );
     // …and the camelCase spelling resolves like the prose one.
     expect(matchNamedKey('preferredfirstname')).toBe('firstName');
     // The exemption covers ONLY the reference family, so a "preferred" that
@@ -168,194 +118,92 @@ describe('isAmbiguousSignal — third-party / non-fillable name COMPOUNDS', () =
 
 describe('matchNamedKey — phone', () => {
   it('matches real phone fields, including the separator-less compounds', () => {
-    for (const signal of [
-      'phone',
-      'phone number',
-      'phonenumber',
-      'phone_number',
-      'primary phone',
-      'candidate_phone',
-      'cell phone',
-      'cellphone',
-      'work phone',
-      // camelCase compound flattens to `workphone`; `work` is an enumerated
-      // prefix, so it still resolves to phone (see NAMED_KEY_PATTERNS note).
-      'workphone',
-      'home phone',
-      'mobile',
-      'mobile_number',
-      'mobilenumber',
-      'telephone',
-      'telefonnummer',
-      'telefoon',
-      'puhelin',
-    ]) {
-      expect(matchNamedKey(signal), signal).toBe('phone');
-    }
+    // `workphone`: camelCase compound flattens; `work` is an enumerated prefix,
+    // so it still resolves to phone (see NAMED_KEY_PATTERNS note).
+    expectKey(
+      'phone|phone number|phonenumber|phone_number|primary phone|candidate_phone|cell phone|cellphone|work phone|workphone|home phone|mobile|mobile_number|mobilenumber|telephone|telefonnummer|telefoon|puhelin',
+      'phone'
+    );
   });
 
   it('does not match a word that merely CONTAINS phone/mobile', () => {
     // Bare `phone`/`mobile` were unanchored substrings, so a "Smartphone model"
     // field resolved to `phone` and received the user's phone number. `headphone`
     // has a non-enumerated `head` prefix, so it stays a non-match too.
-    for (const signal of [
-      'smartphone',
-      'smartphone model',
-      'iphone',
-      'microphone',
-      'headphone',
-      'automobile',
-    ]) {
-      expect(matchNamedKey(signal), signal).not.toBe('phone');
-    }
+    expectNotKey('smartphone|smartphone model|iphone|microphone|headphone|automobile', 'phone');
   });
 });
 
 describe('matchNamedKey — location', () => {
   it('matches real city/town fields, including the separator-less compounds', () => {
-    for (const signal of [
-      'city',
-      'city name',
-      'cityname',
-      'candidate_city',
-      'city_1',
-      'current city',
-      // camelCase compounds flatten to `workcity` / `homecity`; `home`/`work` are
-      // enumerated prefixes, so they resolve to location (see NAMED_KEY_PATTERNS).
-      'workcity',
-      'homecity',
-      'town',
-      'hometown',
-      'location',
-      'wohnort',
-      'ciudad',
-      'plaats',
-      'miasto',
-      'cidade',
-      'localidad',
-    ]) {
-      expect(matchNamedKey(signal), signal).toBe('location');
-    }
+    // camelCase compounds flatten to `workcity` / `homecity`; `home`/`work` are
+    // enumerated prefixes, so they resolve to location (see NAMED_KEY_PATTERNS).
+    expectKey(
+      'city|city name|cityname|candidate_city|city_1|current city|workcity|homecity|town|hometown|location|wohnort|ciudad|plaats|miasto|cidade|localidad',
+      'location'
+    );
   });
 
   it('does not match a word that merely CONTAINS city', () => {
     // `city` ⊂ "ethnicity": an EEO ethnicity field used to resolve to `location`
     // and be filled with the user's city.
-    for (const signal of ['ethnicity', 'ethnicity / race', 'race and ethnicity']) {
-      expect(matchNamedKey(signal), signal).not.toBe('location');
-    }
+    expectNotKey('ethnicity|ethnicity / race|race and ethnicity', 'location');
   });
 });
 
 describe('matchNamedKey — first / last name', () => {
   it('matches the attribute spellings of a first-name field, not just the "first name" phrase', () => {
-    for (const signal of [
-      'first name',
-      // camelCase `firstName` flattens to `firstname` in the lowercased signal.
-      'firstname',
-      'first_name',
-      'first-name',
-      'job_application[first_name]', // Greenhouse
-      'fname',
-      'fname_1',
-      'first_nm', // Taleo
-      'firstnm',
-      'given name',
-      'given-name',
-      'givenname',
-      'forename',
-      'candidate_first_name',
-      // No separator at all before `first` (camelCase `applicantFirstName`) —
-      // these patterns are deliberately NOT leading-anchored (nothing collides).
-      'applicantfirstname',
-      'preferred first name',
-      'vorname',
-      'prenom',
-    ]) {
-      expect(matchNamedKey(signal), signal).toBe('firstName');
-    }
+    // camelCase `firstName` flattens to `firstname`; `job_application[first_name]`
+    // is Greenhouse, `first_nm` Taleo. `applicantfirstname` has no separator at
+    // all before `first` — these patterns are deliberately NOT leading-anchored
+    // (nothing collides).
+    expectKey(
+      'first name|firstname|first_name|first-name|job_application[first_name]|fname|fname_1|first_nm|firstnm|given name|given-name|givenname|forename|candidate_first_name|applicantfirstname|preferred first name|vorname|prenom',
+      'firstName'
+    );
   });
 
   it('matches the attribute spellings of a last-name field', () => {
-    for (const signal of [
-      'last name',
-      'lastname',
-      'last_name',
-      'last-name',
-      'job_application[last_name]', // Greenhouse
-      'lname',
-      'lnameinput',
-      'last_nm',
-      'lastnm',
-      'family name',
-      'family-name',
-      'familyname',
-      'surname',
-      'candidate_last_name',
-      'applicantlastname',
-      'nachname',
-      'nazwisko',
-    ]) {
-      expect(matchNamedKey(signal), signal).toBe('lastName');
-    }
+    // `job_application[last_name]` is Greenhouse.
+    expectKey(
+      'last name|lastname|last_name|last-name|job_application[last_name]|lname|lnameinput|last_nm|lastnm|family name|family-name|familyname|surname|candidate_last_name|applicantlastname|nachname|nazwisko',
+      'lastName'
+    );
   });
 
   it('regression: a HYPHENATED first/last field no longer falls through to the bare-name catch-all', () => {
     // `-` is not a word character, so `first-name` / `family-name` used to match
     // the generic `\bname\b` catch-all and receive the FULL name in BOTH boxes —
     // a silent mis-fill, the one failure mode this module exists to prevent.
-    expect(matchNamedKey('first-name')).toBe('firstName');
-    expect(matchNamedKey('given-name')).toBe('firstName');
-    expect(matchNamedKey('last-name')).toBe('lastName');
-    expect(matchNamedKey('family-name')).toBe('lastName');
+    expectKey('first-name|given-name', 'firstName');
+    expectKey('last-name|family-name', 'lastName');
   });
 
   it('keeps full-name fields on fullName — including the attribute spellings', () => {
-    for (const signal of [
-      'full name',
-      'fullname',
-      'full_name',
-      'full-name',
-      'candidatefullname',
-      // The bare-"name" catch-all is unchanged and still runs LAST.
-      'name',
-      'your name',
-      'vollstandiger name',
-      'nombre completo',
-      'imie i nazwisko',
-    ]) {
-      expect(matchNamedKey(signal), signal).toBe('fullName');
-    }
+    // The bare-"name" catch-all is unchanged and still runs LAST.
+    expectKey(
+      'full name|fullname|full_name|full-name|candidatefullname|name|your name|vollstandiger name|nombre completo|imie i nazwisko',
+      'fullName'
+    );
   });
 
   it('does not let `lname` claim `fullname` (ordering + leading anchor)', () => {
     // `lname` ⊂ "fu**llname**": unanchored it would turn every `fullName` field
     // into a lastName one.
-    expect(matchNamedKey('fullname')).toBe('fullName');
-    expect(matchNamedKey('candidate_fullname')).toBe('fullName');
+    expectKey('fullname|candidate_fullname', 'fullName');
   });
 
   it('never routes a username-family / non-person "name" field to a person key', () => {
     // `username`/`user name` are stopped by the denylist BEFORE matchNamedKey
     // runs (both autofill's `isCandidateField` and capture's `isCapturable`
     // check it first) …
-    expect(isAmbiguousSignal('username')).toBe(true);
-    expect(isAmbiguousSignal('user name')).toBe(true);
+    expectAmbiguous('username|user name', true);
     // … and matchNamedKey itself must refuse them too, so widening the name
     // patterns can never write the user's name into a login field.
-    for (const signal of [
-      'username',
-      'user name',
-      'user_name',
-      'nickname',
-      'display name',
-      'file name',
-      'screen name',
-      'school name',
-      'university name',
-    ]) {
-      expect(matchNamedKey(signal), signal).toBeNull();
-    }
+    expectKey(
+      'username|user name|user_name|nickname|display name|file name|screen name|school name|university name',
+      null
+    );
   });
 
   it('applies the school/company denylist to the fullName ATTRIBUTE spellings too', () => {
@@ -363,34 +211,23 @@ describe('matchNamedKey — first / last name', () => {
     // ("University Name") has always been refused by the catch-all's denylist,
     // but `university_full_name` matched the fullName row BEFORE the catch-all
     // ever ran, so it escaped — and received the applicant's name.
-    for (const signal of [
-      'school_full_name',
-      'university_full_name',
-      'college_full_name',
-      'institution_full_name',
-      'program_full_name',
-      'course_full_name',
-      'schoolfullname',
-      'universityfullname',
-      'degreefullname',
-      'certificationfullname',
-      'coursefullname',
-      'majorfullname',
-    ]) {
-      expect(matchNamedKey(signal), signal).toBeNull();
-    }
+    expectKey(
+      'school_full_name|university_full_name|college_full_name|institution_full_name|program_full_name|course_full_name|schoolfullname|universityfullname|degreefullname|certificationfullname|coursefullname|majorfullname',
+      null
+    );
   });
 
   it('keeps a single box that asks for BOTH halves on fullName', () => {
     // Prose freely names both halves of a name; the `lastName` row's `last name`
     // matches such a label, so without the conjunction forms (and with the
-    // first/last veto reading prose) the box received only the surname.
+    // first/last veto reading prose) the box received only the surname. The last
+    // is label + placeholder, as one signal.
     for (const signal of [
       'first and last name',
       'first & last name',
       'first/last name',
       'first name and last name',
-      'full name first and last name', // label + placeholder, as one signal
+      'full name first and last name',
     ]) {
       expect(matchNamedKey(signal, ''), signal).toBe('fullName');
     }
@@ -410,34 +247,23 @@ describe('matchNamedKey — first / last name', () => {
     expect(matchNamedKey('fullname full name')).toBe('fullName');
     // …and so are the localized COMBINED phrases (they carry no first/last
     // attribute token, only prose).
-    expect(matchNamedKey('vor- und nachname')).toBe('fullName');
-    expect(matchNamedKey('nombre y apellidos')).toBe('fullName');
-    expect(matchNamedKey('nome e cognome')).toBe('fullName');
-    expect(matchNamedKey('voor- en achternaam')).toBe('fullName');
+    expectKey(
+      'vor- und nachname|nombre y apellidos|nome e cognome|voor- en achternaam',
+      'fullName'
+    );
   });
 });
 
 describe('matchNamedKey — X / Twitter identity link (#1218)', () => {
   it('matches X / Twitter profile fields (`twitter` substring; the whole-signal `x`)', () => {
-    for (const signal of [
-      'twitter',
-      'twitter handle',
-      'twitter_url',
-      'twitter_handle',
-      'twitterhandle',
-      'twitter/x',
-      'x / twitter',
-      // The single letter matches only when the ENTIRE signal is x tokens —
-      // including the realistic bare-X shape, where the field echoes its own
-      // x in the id/name (`<label for="x">X</label><input id="x">` →
-      // `textSignal` = " x  x").
-      'x',
-      ' x ',
-      'x x',
-      ' x  x ',
-    ]) {
-      expect(matchNamedKey(signal), signal).toBe('twitter');
-    }
+    // The single letter matches only when the ENTIRE signal is x tokens —
+    // including the realistic bare-X shape, where the field echoes its own
+    // x in the id/name (`<label for="x">X</label><input id="x">` →
+    // `textSignal` = " x  x").
+    expectKey(
+      'twitter|twitter handle|twitter_url|twitter_handle|twitterhandle|twitter/x|x / twitter|x| x |x x| x  x ',
+      'twitter'
+    );
   });
 
   it('matches an `x` immediately paired with a handle-ish qualifier', () => {
@@ -445,20 +271,10 @@ describe('matchNamedKey — X / Twitter identity link (#1218)', () => {
     // "X handle" / "X username" / "X profile" — matched through x + the
     // qualifier rather than the whole-signal x above — plus the attribute
     // spellings `x_handle`/`x-handle` an id may use.
-    for (const signal of [
-      'x handle',
-      'x username',
-      'x profile',
-      'x url',
-      'x link',
-      'x id',
-      'x-handle',
-      'x_handle',
-      'x username field',
-      'what is your x handle',
-    ]) {
-      expect(matchNamedKey(signal), signal).toBe('twitter');
-    }
+    expectKey(
+      'x handle|x username|x profile|x url|x link|x id|x-handle|x_handle|x username field|what is your x handle',
+      'twitter'
+    );
   });
 
   it('never matches an `x` that has ANY company in the signal — prose, not a handle', () => {
@@ -470,30 +286,10 @@ describe('matchNamedKey — X / Twitter identity link (#1218)', () => {
     // "x experience" / "x ray" have the wrong next word, "do you use x" tails
     // the signal, and "tax id" hides its x inside "tax" where the word
     // boundary can never align.
-    for (const signal of [
-      'experience',
-      'years of experience',
-      'mac os x experience',
-      'x experience',
-      'x ray',
-      'xray',
-      'do you use x',
-      'list any x certifications',
-      'box',
-      'tax',
-      'tax id',
-      'next',
-      'text',
-      'xero',
-      'xavier',
-      'ex',
-      'expiration',
-      'external',
-      'axis',
-      'sexual orientation',
-    ]) {
-      expect(matchNamedKey(signal), signal).not.toBe('twitter');
-    }
+    expectNotKey(
+      'experience|years of experience|mac os x experience|x experience|x ray|xray|do you use x|list any x certifications|box|tax|tax id|next|text|xero|xavier|ex|expiration|external|axis|sexual orientation',
+      'twitter'
+    );
   });
 
   it('sits LAST: a signal naming a more specific key keeps that key', () => {
@@ -511,45 +307,46 @@ describe('labelText', () => {
     document.body.innerHTML = '';
   });
 
+  /** Render `html` and return `labelText` of the element with `id`. */
+  function labelOf(html: string, id: string): string {
+    document.body.innerHTML = html;
+    return labelText(document.getElementById(id) as HTMLInputElement);
+  }
+
   it('counts a label referenced BOTH by for= and aria-labelledby only once', () => {
     // The React-Aria / headless-UI shape. `answers-capture` persists this string
     // as the question key, so a duplicated label duplicates the stored question.
-    document.body.innerHTML = `
+    const html = `
       <label for="q" id="q-label">Why this role?</label>
       <input id="q" aria-labelledby="q-label" />`;
-    const el = document.getElementById('q') as HTMLInputElement;
-    expect(labelText(el).trim()).toBe('Why this role?');
+    expect(labelOf(html, 'q').trim()).toBe('Why this role?');
   });
 
   it('joins DISTINCT aria-labelledby references in order, after the <label>', () => {
-    document.body.innerHTML = `
+    const html = `
       <span id="g">Contact</span><span id="h">Email address</span>
       <input id="e" aria-labelledby="g h" />`;
-    const el = document.getElementById('e') as HTMLInputElement;
-    expect(labelText(el).trim()).toBe('Contact Email address');
+    expect(labelOf(html, 'e').trim()).toBe('Contact Email address');
   });
 
   it('counts a wrapping label that also carries for= only once', () => {
-    document.body.innerHTML = `<label for="w">Notice period<input id="w" /></label>`;
-    const el = document.getElementById('w') as HTMLInputElement;
-    expect(labelText(el).trim()).toBe('Notice period');
+    const html = `<label for="w">Notice period<input id="w" /></label>`;
+    expect(labelOf(html, 'w').trim()).toBe('Notice period');
   });
 
   it('collapses the markup whitespace inside a label', () => {
     // The question text is persisted + sent over the bridge, so the same
     // question must not key differently because of source indentation.
-    document.body.innerHTML = `
+    const html = `
       <label for="m">Why
           this     role?</label><input id="m" />`;
-    const el = document.getElementById('m') as HTMLInputElement;
-    expect(labelText(el).trim()).toBe('Why this role?');
+    expect(labelOf(html, 'm').trim()).toBe('Why this role?');
   });
 
   it('caps an aria-labelledby reference that points at a whole container', () => {
-    document.body.innerHTML = `
+    const html = `
       <div id="card">${'very long boilerplate '.repeat(60)}</div>
       <input id="c" aria-labelledby="card" />`;
-    const el = document.getElementById('c') as HTMLInputElement;
-    expect(labelText(el).length).toBeLessThanOrEqual(310);
+    expect(labelOf(html, 'c').length).toBeLessThanOrEqual(310);
   });
 });

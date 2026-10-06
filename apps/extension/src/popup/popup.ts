@@ -50,10 +50,9 @@ subscribeThemeChanges();
  * Pure: no DOM access, no side effects.
  */
 export function resolveImportButtonLabel(res: PopupResponse): string {
-  if (res.ok && res.kind === 'appliedCheck' && !res.result.error && res.result.found) {
-    return IMPORT_LABEL_FOUND;
-  }
-  return IMPORT_LABEL_DEFAULT;
+  return res.ok && res.kind === 'appliedCheck' && !res.result.error && res.result.found
+    ? IMPORT_LABEL_FOUND
+    : IMPORT_LABEL_DEFAULT;
 }
 
 /**
@@ -163,37 +162,29 @@ const els = {
 let activeTabId: number | null = null;
 
 /**
- * This popup's own window — resolved once on bootstrap. An action popup never
- * migrates windows, and the background cannot work this out for itself: a
- * `currentWindow: true` query in a service worker means "the last-focused
- * window", which is a DIFFERENT window whenever another one has focus. Sending
- * it with every request is what keeps a gesture acting on the tab the user is
- * looking at (#1215).
+ * This popup's own window id, resolved once, lazily, on the first send. An
+ * action popup never migrates windows, and the background cannot work this out
+ * for itself: a `currentWindow: true` query in a service worker means "the
+ * last-focused window", which is a DIFFERENT window whenever another one has
+ * focus. Sending it with every request is what keeps a gesture acting on the
+ * tab the user is looking at (#1215). Deliberately NOT tied to
+ * `bootstrapNotice`: `getStatus`/`appliedCheck` fire as soon as the popup
+ * opens and can race it.
+ *
+ * ONE shared promise, not a per-send lookup: every in-flight `send` awaits it,
+ * so concurrent requests resume in the order they were issued; the window is
+ * looked up once per popup and a failed lookup (`null`: the background keeps
+ * its previous behaviour) is not retried.
  */
-let popupWindowId: number | null = null;
+let popupWindowIdOnce: Promise<number | null> | null = null;
 
-/**
- * Resolve {@link popupWindowId} once, lazily, on the first send. Deliberately
- * NOT tied to `bootstrapNotice`: the popup issues `getStatus` (and the page
- * card's `appliedCheck`) as soon as it opens, which can race a bootstrap that
- * has not resolved yet, and a request without the id falls back to the
- * last-focused window — the very mistarget this fixes.
- */
-let popupWindowIdOnce: Promise<void> | null = null;
-
-function ensurePopupWindowId(): Promise<void> {
-  // ONE shared promise, not a per-send lookup: every in-flight `send` awaits
-  // this same promise, so concurrent requests resume in the order they were
-  // issued (a per-send lookup would let a later request overtake an earlier
-  // one — the popup's own stale-response guard is generation-based, but the
-  // background would still see the two requests reordered). It also means the
-  // window is looked up once per popup, and a failed lookup is not retried.
+function ensurePopupWindowId(): Promise<number | null> {
   popupWindowIdOnce ??= (async () => {
     try {
       const win = await browser.windows.getCurrent();
-      if (typeof win.id === 'number') popupWindowId = win.id;
+      return typeof win.id === 'number' ? win.id : null;
     } catch {
-      // Best-effort: without an id the background keeps its previous behaviour.
+      return null;
     }
   })();
   return popupWindowIdOnce;
@@ -201,8 +192,8 @@ function ensurePopupWindowId(): Promise<void> {
 
 /** Send a typed request to the background and return its typed response. */
 async function send(req: PopupRequest): Promise<PopupResponse> {
-  await ensurePopupWindowId();
-  if (popupWindowId !== null) req = { ...req, windowId: popupWindowId };
+  const windowId = await ensurePopupWindowId();
+  if (windowId !== null) req = { ...req, windowId };
   const res = (await browser.runtime.sendMessage(req)) as PopupResponse | undefined;
   if (!res) return { ok: false, error: 'No response from the extension background.' };
   return res;
@@ -320,16 +311,6 @@ function openAnswerPanel(): void {
 }
 
 /**
- * Rescan the page into the shared answer state. Fire-and-forget: it runs off
- * a gesture the user made for another reason (opening the popup), so a
- * failure must never talk over what they actually asked for. The scan feeds
- * the panel's Answers tab AND this popup's own notice line.
- */
-function runAnswerScan(): void {
-  void send({ kind: 'answerScan' }).catch(() => undefined);
-}
-
-/**
  * The one-shot save-answers-on-submit auto-save notice (PR4, decision 7 —
  * "the user must never discover this silently"). Read-once: whichever
  * surface (popup or panel) asks first via `autoSaveNotice` gets it; a
@@ -374,13 +355,7 @@ const connectionStatus = mountConnectionStatus(els.connectionPillHost, els.conne
     els.unpairGroup.hidden = !status.hasToken;
     els.views.import.hidden = status.phase !== 'connected';
     if (status.phase !== 'connected') {
-      els.jobCard.hidden = true;
-      els.jobCardTitle.hidden = true;
-      els.jobCardTitle.textContent = '';
-      els.appliedStatus.hidden = true;
-      els.appliedStatus.textContent = '';
-      els.btnMarkApplied.hidden = true;
-      els.btnMarkApplied.disabled = false;
+      clearJobCard();
       jobTools.reset();
       // The notice line is NOT cleared here: it reflects the shared per-tab
       // state, not a connection-scoped fetch — losing connection to the
@@ -391,13 +366,26 @@ const connectionStatus = mountConnectionStatus(els.connectionPillHost, els.conne
     void runAppliedAutoCheck();
     jobTools.checkPage();
     // Opening the popup IS the gesture that grants `activeTab`, so it is the
-    // right (and only free) moment to scan the page into the shared state.
-    void runAnswerScan();
+    // right (and only free) moment to scan the page into the shared state
+    // (feeds the panel's Answers tab AND this popup's notice line). Fire-and-
+    // forget: a failure must never talk over what the user actually asked for.
+    void send({ kind: 'answerScan' }).catch(() => undefined);
   },
   onPaired: () => {
     els.jobToolsHost.querySelector<HTMLButtonElement>('#btn-import')?.focus();
   },
 });
+
+/** Hide + empty the page-context card and its "Mark as applied" button. */
+function clearJobCard(): void {
+  els.jobCard.hidden = true;
+  els.jobCardTitle.hidden = true;
+  els.jobCardTitle.textContent = '';
+  els.appliedStatus.hidden = true;
+  els.appliedStatus.textContent = '';
+  els.btnMarkApplied.hidden = true;
+  els.btnMarkApplied.disabled = false;
+}
 
 /**
  * Generation counter guarding {@link runAppliedAutoCheck} against a stale
@@ -426,14 +414,8 @@ async function runAppliedAutoCheck(): Promise<void> {
   // render() re-enters `connected` for a new page while a previous check is
   // still in flight, the previous page's card must not linger while this
   // fresh one resolves.
-  els.jobCard.hidden = true;
-  els.jobCardTitle.hidden = true;
-  els.jobCardTitle.textContent = '';
-  els.appliedStatus.hidden = true;
-  els.appliedStatus.textContent = '';
+  clearJobCard();
   jobTools.setImportLabel(IMPORT_LABEL_DEFAULT);
-  els.btnMarkApplied.hidden = true;
-  els.btnMarkApplied.disabled = false;
   try {
     const res = await send({ kind: 'appliedCheck' });
     // A newer check started while this one was in flight — its result (or the
@@ -458,10 +440,8 @@ async function runAppliedAutoCheck(): Promise<void> {
     els.btnMarkApplied.disabled = false;
   } catch {
     if (myGeneration !== appliedCheckGeneration) return;
-    els.jobCard.hidden = true;
+    clearJobCard();
     jobTools.setImportLabel(IMPORT_LABEL_DEFAULT);
-    els.btnMarkApplied.hidden = true;
-    els.btnMarkApplied.disabled = false;
   }
 }
 
@@ -516,10 +496,6 @@ function setPopover(view: PopoverView): void {
   els.btnHelp.setAttribute('aria-expanded', String(view !== null));
 }
 
-function toggleMenu(): void {
-  setPopover(popoverView === null ? 'menu' : null);
-}
-
 function showAbout(): void {
   const version = browser.runtime.getManifest().version;
   els.aboutVersion.textContent = `AI Job Hunter — Job Importer v${version}`;
@@ -532,7 +508,7 @@ function wire(): void {
   // user gesture this click IS, and any await before the call spends it.
   els.btnOpenPanel.addEventListener('click', openAnswerPanel);
   els.btnUnpair.addEventListener('click', () => void unpair());
-  els.btnHelp.addEventListener('click', toggleMenu);
+  els.btnHelp.addEventListener('click', () => setPopover(popoverView === null ? 'menu' : null));
   els.menuHelp.addEventListener('click', () => setPopover('help'));
   els.menuSettings.addEventListener('click', () => {
     setPopover(null);

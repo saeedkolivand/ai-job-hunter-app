@@ -40,6 +40,7 @@ import { mountJobStatus } from '../job-status/job-status';
 import { isPageTrusted, JOB_TOOLS_GATED_LINE, mountJobTools } from '../job-tools/job-tools';
 import { type AnswerState, subscribeAnswerState } from '../lib/answer-state';
 import { getDefaultPanelTab } from '../lib/appearance';
+import { openDeepLink } from '../lib/dom';
 import type { PopupRequest, PopupResponse } from '../lib/messages';
 import {
   getRememberedHosts,
@@ -156,6 +157,15 @@ const tabs = mountTabs(
 // effort if `storage.session` is unavailable) can override it below.
 tabs.setActive('job');
 
+/** Append a `<div id>` mount point (optionally classed) to `panel`. */
+const addHost = (panel: HTMLElement, id: string, className?: string): HTMLDivElement => {
+  const host = document.createElement('div');
+  host.id = id;
+  if (className) host.className = className;
+  panel.append(host);
+  return host;
+};
+
 const jobPanel = tabs.panel('job');
 const jobHeader = document.createElement('div');
 jobHeader.className = 'job-header';
@@ -170,38 +180,15 @@ openInAppLink.className = 'btn btn--quiet';
 openInAppLink.textContent = 'Open in app';
 openInAppLink.hidden = true;
 let openInAppUrl = '';
-async function openInApp(): Promise<void> {
-  try {
-    await browser.tabs.create({ url: openInAppUrl });
-  } catch {
-    // No-op: the deep link is best-effort — same discipline as
-    // connection-status.ts's own deep links.
-  }
-}
-openInAppLink.addEventListener('click', () => void openInApp());
+openInAppLink.addEventListener('click', () => void openDeepLink(openInAppUrl));
 jobHeader.append(openInAppLink);
 jobPanel.append(jobHeader);
 const jobStatusHost = document.createElement('div');
 jobPanel.append(jobStatusHost);
-const jobToolsHost = document.createElement('div');
-jobToolsHost.id = 'job-tools-host';
-jobPanel.append(jobToolsHost);
-
-const documentsPanel = tabs.panel('documents');
-const documentsHost = document.createElement('div');
-documentsHost.id = 'documents-host';
-documentsPanel.append(documentsHost);
-
-const answersPanel = tabs.panel('answers');
-const answerToolsHost = document.createElement('div');
-answerToolsHost.id = 'answer-tools-host';
-answerToolsHost.className = 'atools';
-answersPanel.append(answerToolsHost);
-
-const prepPanel = tabs.panel('prep');
-const prepHost = document.createElement('div');
-prepHost.id = 'prep-host';
-prepPanel.append(prepHost);
+const jobToolsHost = addHost(jobPanel, 'job-tools-host');
+const documentsHost = addHost(tabs.panel('documents'), 'documents-host');
+const answerToolsHost = addHost(tabs.panel('answers'), 'answer-tools-host', 'atools');
+const prepHost = addHost(tabs.panel('prep'), 'prep-host');
 
 // First-time Fill confirmation (PR0 §4) — mounted ONCE into #view-connected
 // (a SIBLING of the tab bar, OUTSIDE every `[data-section]` panel — #1224:
@@ -501,8 +488,7 @@ function activeTabKey(windowId: number): string {
  *  which case the active tab just defaults to `job` every time (same
  *  best-effort discipline as `lib/answer-state.ts`'s `sessionArea`). */
 function sessionArea(): Browser.storage.StorageArea | null {
-  const area = (browser.storage as { session?: Browser.storage.StorageArea }).session;
-  return area ?? null;
+  return (browser.storage as { session?: Browser.storage.StorageArea }).session ?? null;
 }
 
 function selectTab(id: string): void {

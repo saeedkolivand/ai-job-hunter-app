@@ -20,6 +20,7 @@
 import { browser } from '@wxt-dev/browser';
 
 import type { AnswerState } from '../lib/answer-state';
+import { appendEmptyState, button, el, openDeepLink } from '../lib/dom';
 import type { PopupRequest, PopupResponse } from '../lib/messages';
 
 // ── pure data shaping (exported for unit tests) ─────────────────────────────
@@ -104,23 +105,6 @@ export interface PrepView {
   reset: (reason?: string) => void;
 }
 
-const el = <K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className?: string,
-  text?: string
-): HTMLElementTagNameMap[K] => {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-};
-
-const button = (className: string, label: string): HTMLButtonElement => {
-  const b = el('button', className, label);
-  b.type = 'button';
-  return b;
-};
-
 const TOPIC_LABEL: Record<PrepTopic, string> = {
   'company-brief': 'Company brief',
   'salary-answer': 'Salary answer',
@@ -162,25 +146,19 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
     statusTone = tone;
   };
 
-  async function openPrepLink(): Promise<void> {
-    try {
-      await browser.tabs.create({ url: `ajh://prep?url=${encodeURIComponent(lastUrl)}` });
-    } catch {
-      // No-op: the deep link is best-effort — same discipline as
-      // documents.ts's own "Generate in the app" link.
-    }
-  }
+  const fail = (message: string): void => {
+    setStatus(message, 'err');
+    render();
+  };
 
-  function openAiAssistSettings(): void {
-    void browser.runtime.openOptionsPage();
+  function renderSection(title: string): HTMLDetailsElement {
+    const details = el('details', 'prep-section');
+    details.append(el('summary', undefined, title));
+    return details;
   }
 
   function renderCopyableSection(title: string, text: string): HTMLElement {
-    const details = document.createElement('details');
-    details.className = 'prep-section';
-    const summary = document.createElement('summary');
-    summary.textContent = title;
-    details.append(summary);
+    const details = renderSection(title);
     const body = el('p', 'prep-section__text', text);
     details.append(body);
     const copyBtn = button('btn btn--small btn--quiet', 'Copy');
@@ -194,7 +172,7 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
     if (aiAssistEnabled === false) {
       wrap.append(el('p', 'msg msg--muted', 'AI-answer-assist is off.'));
       const link = button('btn btn--small btn--quiet', 'Turn on in Settings');
-      link.addEventListener('click', openAiAssistSettings);
+      link.addEventListener('click', () => void browser.runtime.openOptionsPage());
       wrap.append(link);
       return wrap;
     }
@@ -226,19 +204,17 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
 
     const hasContent = prepHasContent(data);
     if (!hasContent && !finishedDrafts['company-brief'] && !finishedDrafts['salary-answer']) {
-      if (loading) {
-        // "Loading…" ONLY while a refresh is genuinely in flight — never at
-        // mount, never after a settled refresh (its terminal branch clears
-        // `loading`), never after a reset (#1225).
-        host.append(el('p', 'msg msg--muted', 'Loading…'));
-      } else if (statusText) {
-        host.append(el('p', 'msg msg--muted', statusText));
-        if (statusTone === 'muted' && lastUrl) {
-          const link = button('btn btn--quiet', 'Prepare in the app');
-          link.addEventListener('click', () => void openPrepLink());
-          host.append(link);
-        }
-      }
+      appendEmptyState(
+        host,
+        loading,
+        statusText,
+        statusTone === 'muted' && lastUrl
+          ? {
+              label: 'Prepare in the app',
+              onClick: () => void openDeepLink(`ajh://prep?url=${encodeURIComponent(lastUrl)}`),
+            }
+          : null
+      );
       // The two on-demand buttons are still offered on an otherwise-empty job
       // — a fresh job has no generation yet, but the drafts don't need one.
       // They render DISABLED on an untrusted/no-page state (`pageReadable`)
@@ -257,11 +233,7 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
     }
 
     if (data.interviewQuestions.length > 0) {
-      const details = document.createElement('details');
-      details.className = 'prep-section';
-      const summary = document.createElement('summary');
-      summary.textContent = `Interview questions (${data.interviewQuestions.length})`;
-      details.append(summary);
+      const details = renderSection(`Interview questions (${data.interviewQuestions.length})`);
       for (const q of data.interviewQuestions) {
         const item = el('div', 'prep-question');
         item.append(el('p', 'prep-question__text', q.question));
@@ -283,7 +255,7 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
     }
 
     if (statusText) {
-      host.append(el('p', `msg msg--${statusTone === 'muted' ? 'muted' : statusTone}`, statusText));
+      host.append(el('p', `msg msg--${statusTone}`, statusText));
     }
   }
 
@@ -314,18 +286,15 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
       if (pendingTopic !== topic) return; // superseded by a cancel/newer draft
       pendingTopic = null;
       if (!res.ok) {
-        setStatus(res.error, 'err');
-        render();
+        fail(res.error);
         return;
       }
       if (res.kind !== 'answerAssist') {
-        setStatus('Unexpected response — please retry.', 'err');
-        render();
+        fail('Unexpected response — please retry.');
         return;
       }
       if (!res.result.ok) {
-        setStatus(res.result.error, 'err');
-        render();
+        fail(res.result.error);
         return;
       }
       finishedDrafts[topic] = res.result.draft;
@@ -334,8 +303,7 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
     } catch (err) {
       if (pendingTopic !== topic) return;
       pendingTopic = null;
-      setStatus(err instanceof Error ? err.message : String(err), 'err');
-      render();
+      fail(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -358,23 +326,20 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
       }
       if (!prepRes.ok) {
         data = EMPTY_PREP_DATA;
-        setStatus(prepRes.error, 'err');
-        render();
+        fail(prepRes.error);
         return;
       }
       if (prepRes.kind !== 'prepGet') {
         // A kind mismatch is a terminal outcome too — clear `loading` so the
         // empty state can never sit on a phantom "Loading…" (#1225).
         data = EMPTY_PREP_DATA;
-        setStatus('Unexpected response — please retry.', 'err');
-        render();
+        fail('Unexpected response — please retry.');
         return;
       }
       lastUrl = prepRes.url;
       if (!prepRes.result.ok) {
         data = EMPTY_PREP_DATA;
-        setStatus(prepRes.result.error, 'err');
-        render();
+        fail(prepRes.result.error);
         return;
       }
       data = parsePrepResourceData(prepRes.result.data);
@@ -384,8 +349,7 @@ export function mountPrep(host: HTMLElement, deps: PrepDeps): PrepView {
       if (myGeneration !== generation) return;
       loading = false;
       data = EMPTY_PREP_DATA;
-      setStatus(err instanceof Error ? err.message : String(err), 'err');
-      render();
+      fail(err instanceof Error ? err.message : String(err));
     }
   }
 
