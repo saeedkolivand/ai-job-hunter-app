@@ -1,0 +1,142 @@
+import type { TemplateId } from '@ajh/shared';
+
+import { type DocTemplate, docTemplate } from './doc-template';
+
+/** The design-tier half of the picker's table — see `TEMPLATES` in `./templates`. */
+export const DESIGN_TEMPLATES = {
+  /** Atelier — premium two-column, full-height sidebar rail, slate-indigo accent */
+  atelier: docTemplate({
+    id: 'atelier',
+    name: 'Atelier',
+    tier: 'design',
+    nameColor: '16143A',
+    sectionColor: '4A4580',
+    accentColor: '4A4580',
+    bodyColor: '1E1C32',
+    dateColor: '6E69AB',
+    emphasisColor: '4A4580',
+    ruleColor: '4A4580',
+    namePt: 22,
+    marginIn: 0.55,
+    lineSpacingDocx: 276,
+    sectionSpacingBefore: 260,
+    sectionAllCaps: true,
+  }),
+
+  /** Portrait — circular photo, name/title right, slate-teal accent (two-column) */
+  portrait: docTemplate({
+    id: 'portrait',
+    name: 'Portrait',
+    tier: 'design',
+    nameColor: '16303A',
+    sectionColor: '2A6478',
+    accentColor: '2A6478',
+    bodyColor: '1E1E28',
+    dateColor: '5A7A88',
+    emphasisColor: '2A6478',
+    ruleColor: '2A6478',
+    namePt: 24,
+    marginIn: 0.55,
+    lineSpacingDocx: 276,
+    sectionSpacingBefore: 260,
+    sectionAllCaps: true,
+  }),
+
+  /** Lebenslauf — DACH DIN-style tabular CV, photo top-right, formal slate accent */
+  lebenslauf: docTemplate({
+    id: 'lebenslauf',
+    name: 'Lebenslauf (DACH)',
+    tier: 'design',
+    nameColor: '1E1E28',
+    sectionColor: '3D4F6B',
+    accentColor: '3D4F6B',
+    bodyColor: '1E1E1E',
+    dateColor: '5A6478',
+    emphasisColor: '3D4F6B',
+    ruleColor: '3D4F6B',
+    namePt: 22,
+    marginIn: 0.9,
+    lineSpacingDocx: 264,
+    sectionSpacingBefore: 240,
+    sectionAllCaps: false,
+  }),
+
+  /** Aria — minimalist design two-column, untinted right sidebar, photo top-right, slate accent, 30pt Manrope name */
+  aria: docTemplate({
+    id: 'aria',
+    name: 'Aria',
+    tier: 'design',
+    nameColor: '111111',
+    sectionColor: '1A1A1A',
+    accentColor: '46505C',
+    bodyColor: '2A2A2A',
+    dateColor: '7A7A7A',
+    emphasisColor: '46505C',
+    ruleColor: 'D6D9DD',
+    namePt: 30,
+    sectionPt: 10.5,
+    bodyPt: 10,
+    marginIn: 0.6,
+    lineSpacingDocx: 288,
+    sectionSpacingBefore: 320,
+    sectionAllCaps: true,
+  }),
+
+  /** Saffron — warm design two-column, tinted left sidebar, ringed circular photo, terracotta accent, Source Serif 4 small-caps */
+  saffron: docTemplate({
+    id: 'saffron',
+    name: 'Saffron',
+    tier: 'design',
+    nameColor: '3A2E28',
+    sectionColor: 'A85A3E',
+    accentColor: 'A85A3E',
+    bodyColor: '302A26',
+    dateColor: '8A7A6E',
+    emphasisColor: 'A85A3E',
+    ruleColor: 'E2C9B4',
+    namePt: 24,
+    marginIn: 0.55,
+    lineSpacingDocx: 276,
+    sectionSpacingBefore: 240,
+    sectionAllCaps: false,
+  }),
+
+  /** Awesome — after Awesome-CV: thin accent-tinted header band, accent-bar section markers, crimson accent */
+  awesome: docTemplate({
+    id: 'awesome',
+    name: 'Awesome',
+    tier: 'design',
+    nameColor: '1A1A1A',
+    sectionColor: '1A1A1A',
+    accentColor: 'C41E3A',
+    bodyColor: '222222',
+    dateColor: '6E6E6E',
+    emphasisColor: 'C41E3A',
+    ruleColor: 'C41E3A',
+    namePt: 24,
+    marginIn: 0.7,
+    lineSpacingDocx: 264,
+    sectionSpacingBefore: 260,
+    sectionAllCaps: true,
+  }),
+
+  /** Deedy — modern single-column Deedy revision: bold name block with accent surname, cobalt accent */
+  deedy: docTemplate({
+    id: 'deedy',
+    name: 'Deedy',
+    tier: 'design',
+    nameColor: '1A1A1A',
+    sectionColor: '1A1A1A',
+    accentColor: '1E4FB3',
+    bodyColor: '222222',
+    dateColor: '787878',
+    emphasisColor: '1E4FB3',
+    ruleColor: 'C8C8C8',
+    namePt: 27,
+    sectionPt: 11.5,
+    marginIn: 0.75,
+    lineSpacingDocx: 276,
+    sectionSpacingBefore: 320,
+    sectionAllCaps: true,
+  }),
+} satisfies Partial<Record<TemplateId, DocTemplate>>;

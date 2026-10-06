@@ -1,0 +1,171 @@
+import type { SearchEntry } from './search-entry';
+
+/** Job search, résumé, accounts and privacy settings. */
+export const DATA_ENTRIES: SearchEntry[] = [
+  // ── job ──────────────────────────────────────────────────────────────────────
+  {
+    id: 'job-location',
+    section: 'job',
+    titleKey: 'settings.location.title',
+    keywords: ['location', 'city', 'country', 'remote', 'place', 'geo', 'where'],
+    anchor: 'job-location',
+  },
+  {
+    id: 'job-techstack',
+    section: 'job',
+    titleKey: 'settings.techStack.title',
+    keywords: [
+      'tech',
+      'stack',
+      'skills',
+      'programming',
+      'language',
+      'framework',
+      'javascript',
+      'typescript',
+      'react',
+      'python',
+      'rust',
+      'database',
+    ],
+    anchor: 'job-techstack',
+  },
+  {
+    id: 'job-aggregator',
+    section: 'job',
+    titleKey: 'settings.aggregatorKeys.title',
+    keywords: [
+      'adzuna',
+      'jsearch',
+      'rapidapi',
+      'aggregator',
+      'job search',
+      'api key',
+      'search provider',
+      'indeed',
+      'jobs',
+    ],
+    anchor: 'job-aggregator',
+  },
+
+  // ── resume ───────────────────────────────────────────────────────────────────
+  {
+    id: 'resume-manage',
+    section: 'resume',
+    titleKey: 'settings.resume.title',
+    keywords: [
+      'resume',
+      'cv',
+      'upload',
+      'pdf',
+      'docx',
+      'document',
+      'default',
+      'import',
+      'ocr',
+      'linkedin',
+    ],
+    anchor: 'resume-manage',
+  },
+
+  // ── accounts ─────────────────────────────────────────────────────────────────
+  {
+    id: 'accounts-boards',
+    section: 'accounts',
+    titleKey: 'settings.accounts.boardsTitle',
+    keywords: [
+      'accounts',
+      'boards',
+      'login',
+      'session',
+      'linkedin',
+      'indeed',
+      'glassdoor',
+      'xing',
+      'stepstone',
+      'connect',
+      'sign in',
+    ],
+    anchor: 'accounts-boards',
+  },
+  {
+    id: 'accounts-extension',
+    // Moved to its own nav section (#1213). The id/anchor deliberately keep
+    // their `accounts-` prefix: the tray deep link and any link already handed
+    // out address this panel by that anchor.
+    section: 'extension',
+    titleKey: 'settings.accounts.extension.title',
+    keywords: [
+      'extension',
+      'browser',
+      'chrome',
+      'firefox',
+      'pairing',
+      'token',
+      'bridge',
+      'websocket',
+      'plugin',
+    ],
+    anchor: 'accounts-extension',
+  },
+  {
+    id: 'accounts-email-watch',
+    section: 'accounts',
+    titleKey: 'settings.accounts.emailWatch.title',
+    keywords: [
+      'email',
+      'gmail',
+      'imap',
+      'app password',
+      'confirmation',
+      'auto-track',
+      'watch',
+      'inbox',
+    ],
+    anchor: 'accounts-email-watch',
+  },
+
+  // ── privacy ──────────────────────────────────────────────────────────────────
+  {
+    id: 'privacy-data',
+    section: 'privacy',
+    titleKey: 'settings.privacy.dataTitle',
+    keywords: [
+      'privacy',
+      'data',
+      'export',
+      'import',
+      'backup',
+      'sign out',
+      'clear',
+      'history',
+      'interactions',
+      'gdpr',
+    ],
+    anchor: 'privacy-data',
+  },
+  {
+    id: 'privacy-crash-reporting',
+    section: 'privacy',
+    titleKey: 'settings.privacy.crashReportingTitle',
+    keywords: [
+      'crash',
+      'crash reports',
+      'error reporting',
+      'telemetry',
+      'analytics',
+      'sentry',
+      'diagnostics',
+      'opt out',
+      'privacy',
+    ],
+    anchor: 'privacy-crash-reporting',
+  },
+  {
+    id: 'privacy-reset',
+    section: 'privacy',
+    titleKey: 'settings.privacy.resetApp',
+    keywords: ['reset', 'factory', 'wipe', 'delete', 'fresh start', 'danger'],
+    anchor: 'privacy-reset',
+  },
+];

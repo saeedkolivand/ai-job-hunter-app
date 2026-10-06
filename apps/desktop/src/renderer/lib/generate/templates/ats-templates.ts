@@ -1,0 +1,190 @@
+import type { TemplateId } from '@ajh/shared';
+
+import { type DocTemplate, docTemplate } from './doc-template';
+
+/** The ATS-tier half of the picker's table — see `TEMPLATES` in `./templates`. */
+export const ATS_TEMPLATES = {
+  /** ATS Classic — maximum compatibility, no color, safe for all ATS parsers */
+  classic: docTemplate({
+    id: 'classic',
+    name: 'ATS Classic',
+    tier: 'ats',
+    nameColor: '111111',
+    sectionColor: '111111',
+    accentColor: '222222',
+    bodyColor: '222222',
+    dateColor: '555555',
+    emphasisColor: '000000',
+    ruleColor: 'AAAAAA',
+    namePt: 20,
+    marginIn: 1.0,
+    lineSpacingDocx: 264,
+    sectionSpacingBefore: 240,
+    sectionAllCaps: true,
+  }),
+
+  /** Swiss Minimal — Manrope, red accent, clean whitespace */
+  'swiss-minimal': docTemplate({
+    id: 'swiss-minimal',
+    name: 'Swiss Minimal',
+    tier: 'ats',
+    nameColor: '141414',
+    sectionColor: '141414',
+    accentColor: 'E63946',
+    bodyColor: '282828',
+    dateColor: '787878',
+    emphasisColor: '141414',
+    ruleColor: 'E63946',
+    namePt: 22,
+    sectionPt: 10.5,
+    marginIn: 1.15,
+    lineSpacingDocx: 299,
+    sectionSpacingBefore: 320,
+    sectionAllCaps: false,
+    sectionStyle: 'bold-only',
+  }),
+
+  /** Academic — Source Serif 4 throughout, forest green accent, ruled headings */
+  academic: docTemplate({
+    id: 'academic',
+    name: 'Academic',
+    tier: 'ats',
+    nameColor: '141E1E',
+    sectionColor: '1B4332',
+    accentColor: '1B4332',
+    bodyColor: '1E1E1E',
+    dateColor: '5A6E64',
+    emphasisColor: '1B4332',
+    ruleColor: '649678',
+    namePt: 20,
+    marginIn: 0.85,
+    lineSpacingDocx: 252,
+    sectionSpacingBefore: 240,
+    sectionAllCaps: false,
+  }),
+
+  /** Meridian — header-forward tinted band, copper accent, airy single column */
+  meridian: docTemplate({
+    id: 'meridian',
+    name: 'Meridian',
+    tier: 'ats',
+    nameColor: '2A2A2A',
+    sectionColor: 'A0522D',
+    accentColor: 'A0522D',
+    bodyColor: '1E1E1E',
+    dateColor: '7A6A5A',
+    emphasisColor: 'A0522D',
+    ruleColor: 'A0522D',
+    namePt: 26,
+    marginIn: 0.9,
+    lineSpacingDocx: 276,
+    sectionSpacingBefore: 260,
+    sectionAllCaps: true,
+  }),
+
+  /** Throughline — vertical timeline spine, forest-teal accent */
+  throughline: docTemplate({
+    id: 'throughline',
+    name: 'Throughline',
+    tier: 'ats',
+    nameColor: '141E1E',
+    sectionColor: '1A5C52',
+    accentColor: '1A5C52',
+    bodyColor: '1E1E1E',
+    dateColor: '5A6E64',
+    emphasisColor: '1A5C52',
+    ruleColor: '1A5C52',
+    namePt: 22,
+    marginIn: 1.0,
+    lineSpacingDocx: 276,
+    sectionSpacingBefore: 260,
+    sectionAllCaps: true,
+  }),
+
+  /** Cadence — Inter, large 28pt name, blue-grey accent, letter-spaced all-caps ruled headings, underlined links */
+  cadence: docTemplate({
+    id: 'cadence',
+    name: 'Cadence',
+    tier: 'ats',
+    nameColor: '1A1A1A',
+    sectionColor: '1A1A1A',
+    accentColor: '4A6785',
+    bodyColor: '2B2B2B',
+    dateColor: '6B6B6B',
+    emphasisColor: '4A6785',
+    ruleColor: '4A6785',
+    namePt: 28,
+    sectionPt: 10.5,
+    bodyPt: 10,
+    marginIn: 0.8,
+    lineSpacingDocx: 264,
+    sectionSpacingBefore: 240,
+    sectionAllCaps: true,
+  }),
+
+  /**
+   * Cologne Navy — centred tracked-caps navy header, rule-underlined uppercase
+   * headings, blue company names, right-aligned italic dates. Carlito (via the
+   * Calibri family, which resolves to the bundled Carlito faces).
+   */
+  'cologne-navy': docTemplate({
+    id: 'cologne-navy',
+    name: 'Cologne Navy',
+    tier: 'ats',
+    nameColor: '1F3864',
+    sectionColor: '1F3864',
+    accentColor: '1F5C99',
+    bodyColor: '1A1A1A',
+    dateColor: '4A4A4A',
+    emphasisColor: '1F5C99',
+    ruleColor: '1F3864',
+    namePt: 20.8,
+    sectionPt: 9.5,
+    bodyPt: 10,
+    marginIn: 0.55,
+    lineSpacingDocx: 264,
+    sectionSpacingBefore: 240,
+    nameCentered: true,
+    sectionAllCaps: true,
+  }),
+
+  /** Regent — Source Serif 4, deep burgundy accent + rose rule, serif small-caps headings, executive */
+  regent: docTemplate({
+    id: 'regent',
+    name: 'Regent',
+    tier: 'ats',
+    nameColor: '2A2A2E',
+    sectionColor: '6E1E2B',
+    accentColor: '6E1E2B',
+    bodyColor: '26262A',
+    dateColor: '7A6A6E',
+    emphasisColor: '6E1E2B',
+    ruleColor: 'C9A9AE',
+    namePt: 26,
+    marginIn: 0.9,
+    lineSpacingDocx: 276,
+    sectionSpacingBefore: 280,
+    sectionAllCaps: false,
+  }),
+
+  /** Jake — after "Jake's Resume": ultra-minimal single column, centred name, thin ruled headings, compact entry lines */
+  jake: docTemplate({
+    id: 'jake',
+    name: 'Jake',
+    tier: 'ats',
+    nameColor: '111111',
+    sectionColor: '111111',
+    accentColor: '111111',
+    bodyColor: '222222',
+    dateColor: '555555',
+    emphasisColor: '111111',
+    ruleColor: 'AAAAAA',
+    namePt: 24,
+    bodyPt: 10,
+    marginIn: 0.6,
+    lineSpacingDocx: 240,
+    sectionSpacingBefore: 200,
+    nameCentered: true,
+    sectionAllCaps: true,
+  }),
+} satisfies Partial<Record<TemplateId, DocTemplate>>;

@@ -2,10 +2,6 @@
 # `<loc>` is CODE lines (blank and comment lines excluded).
 # A baselined file may shrink or be deleted, never grow; a new over-cap file is not baselined.
 # Regenerate after a split with: TS_SIZE_BLESS=1 node scripts/check-ts-size.mjs
-373	apps/desktop/src/renderer/features/ai-generate/components/AIGeneratePage/index.tsx
-342	apps/desktop/src/renderer/features/ai-generate/components/OutputPanelDone/index.tsx
-640	apps/desktop/src/renderer/features/ai-generate/components/wizard-steps/StepTemplate/StepTemplate.test.tsx
-341	apps/desktop/src/renderer/features/ai-generate/hooks/useGeneration.test.ts
 305	apps/desktop/src/renderer/features/documents/components/DocumentsPage/index.tsx
 552	apps/desktop/src/renderer/features/documents/components/GenerationCard/index.tsx
 395	apps/desktop/src/renderer/features/documents/components/TailorFlow/ApplicationQuestionsModal.test.tsx
@@ -23,17 +19,6 @@
 499	apps/desktop/src/renderer/features/documents/components/TailorFlow/useApplicationAnswers.test.ts
 827	apps/desktop/src/renderer/features/documents/components/TailorFlow/useTailorPipeline.test.ts
 445	apps/desktop/src/renderer/features/documents/components/TailorFlow/useTailorPipeline.ts
-445	apps/desktop/src/renderer/features/settings/components/SettingsSidebar/index.test.tsx
-309	apps/desktop/src/renderer/features/settings/components/ai-settings/CloudProviderConfig/index.tsx
-379	apps/desktop/src/renderer/features/settings/components/extension/ExtensionBridgeSection/ExtensionBridgeSection.test.tsx
-367	apps/desktop/src/renderer/features/settings/components/preferences/AggregatorKeysSettings/AggregatorKeysSettings.test.tsx
-333	apps/desktop/src/renderer/features/settings/components/preferences/AggregatorKeysSettings/index.tsx
-405	apps/desktop/src/renderer/features/settings/lib/search-anchor.test.tsx
-433	apps/desktop/src/renderer/features/settings/lib/search-index.ts
-2021	apps/desktop/src/renderer/lib/generate/generation/generation.test.ts
-1032	apps/desktop/src/renderer/lib/generate/generation/generation.ts
-469	apps/desktop/src/renderer/lib/generate/quality-report.test.ts
-409	apps/desktop/src/renderer/lib/generate/templates/templates.ts
 404	apps/landing/src/app/world/scrub-engine.test.ts
 563	apps/landing/src/data/agent-fleet.ts
 3199	apps/landing/src/data/architecture-map.ts

@@ -1,56 +1,24 @@
-import { useState } from 'react';
+// Gallery, selection, thumbnails, accent picker, tier badges, captions.
+// ATS toggle → `ats-toggle.test.tsx`; letter layout → `letter-layout.test.tsx`.
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
 
-import { type LetterLayoutId, TEMPLATES } from '@/lib/generate';
+import { TEMPLATES } from '@/lib/generate';
 
 import { StepTemplate } from './index';
+import { renderStepWith } from './test-support';
 
-// `t` is identity EXCEPT for the two caption keys the i18n-resolution test
-// below exercises — those map to distinguishable copy so that test can tell a
-// resolved translation apart from the raw key (see #965 R7).
-const CAPTION_TRANSLATIONS: Record<string, string> = {
-  'aiGenerate.templateCaption.classic': 'Best for maximum ATS safety.',
-  'aiGenerate.templateCaption.jake': 'Best for a dense, classic single column.',
-};
-vi.mock('@ajh/translations', () => ({
-  useTranslation: () => ({ t: (key: string) => CAPTION_TRANSLATIONS[key] ?? key }),
-}));
-
-// TEMPLATE_PREVIEWS, COVER_TEMPLATE_PREVIEWS, and TEMPLATE_CAPTIONS use
-// import.meta.glob — stub them all so no Vite transform is needed in jsdom.
-// Distinct non-empty URLs per template id so thumbnail-source tests can assert
-// which preview set is used. The factory must be self-contained (vi.mock is hoisted).
-vi.mock('../../../samples', () => {
-  const ids = [
-    'classic',
-    'swiss-minimal',
-    'academic',
-    'atelier',
-    'meridian',
-    'throughline',
-    'portrait',
-    'lebenslauf',
-  ] as const;
-  const resumePreviews = Object.fromEntries(ids.map((id) => [id, `resume-${id}.png`]));
-  const coverPreviews = Object.fromEntries(ids.map((id) => [id, `cover-${id}.svg`]));
-  return {
-    TEMPLATE_PREVIEWS: resumePreviews as Record<string, string>,
-    COVER_TEMPLATE_PREVIEWS: coverPreviews as Record<string, string>,
-    // Real captions are i18n keys, not display text — mirrors samples.ts.
-    TEMPLATE_CAPTIONS: {
-      classic: 'aiGenerate.templateCaption.classic',
-      jake: 'aiGenerate.templateCaption.jake',
-    } as Record<string, string>,
-  };
-});
+vi.mock('@ajh/translations', async () => (await import('./stubs')).translationsMock);
+vi.mock('../../../samples', async () => (await import('./stubs')).samplesMock());
 
 describe('StepTemplate', () => {
   let onTemplateChange: Mock;
   let onAtsModeChange: Mock;
+  const renderStep = (props: Parameters<typeof renderStepWith>[2] = {}) =>
+    renderStepWith(onTemplateChange, onAtsModeChange, props);
 
   beforeEach(() => {
     onTemplateChange = vi.fn();
@@ -58,14 +26,10 @@ describe('StepTemplate', () => {
   });
 
   it('renders a button for every template', () => {
-    render(
-      <StepTemplate
-        templateId="classic"
-        atsMode={false}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-      />
-    );
+    renderStep({
+      templateId: 'classic',
+      atsMode: false,
+    });
     for (const tpl of Object.values(TEMPLATES)) {
       expect(screen.getByText(tpl.name)).toBeInTheDocument();
     }
@@ -73,14 +37,10 @@ describe('StepTemplate', () => {
 
   it('calls onTemplateChange with the clicked template id', async () => {
     const user = userEvent.setup();
-    render(
-      <StepTemplate
-        templateId="classic"
-        atsMode={false}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-      />
-    );
+    renderStep({
+      templateId: 'classic',
+      atsMode: false,
+    });
     // Click the "ATS Classic" template button (id = "classic")
     const classicButton = screen.getByText('ATS Classic').closest('button');
     if (!classicButton) throw new Error('ATS Classic button not found');
@@ -90,14 +50,10 @@ describe('StepTemplate', () => {
 
   it('calls onAtsModeChange(false) when a single-column template is selected', async () => {
     const user = userEvent.setup();
-    render(
-      <StepTemplate
-        templateId="atelier" // two-column (atsMode currently true)
-        atsMode={true}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-      />
-    );
+    renderStep({
+      templateId: 'atelier', // two-column (atsMode currently true)
+      atsMode: true,
+    });
     // "ATS Classic" is single-column — selecting it must reset ATS mode
     const classicButton = screen.getByText('ATS Classic').closest('button');
     if (!classicButton) throw new Error('ATS Classic button not found');
@@ -108,14 +64,10 @@ describe('StepTemplate', () => {
 
   it('does NOT call onAtsModeChange when a two-column template is selected', async () => {
     const user = userEvent.setup();
-    render(
-      <StepTemplate
-        templateId="classic"
-        atsMode={false}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-      />
-    );
+    renderStep({
+      templateId: 'classic',
+      atsMode: false,
+    });
     // "Atelier" is two-column — no ATS reset
     const atelierButton = screen.getByText('Atelier').closest('button');
     if (!atelierButton) throw new Error('Atelier button not found');
@@ -125,39 +77,27 @@ describe('StepTemplate', () => {
   });
 
   it('shows the ATS toggle for two-column templates', () => {
-    render(
-      <StepTemplate
-        templateId="atelier"
-        atsMode={false}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-      />
-    );
+    renderStep({
+      templateId: 'atelier',
+      atsMode: false,
+    });
     expect(screen.getByRole('switch', { name: 'aiGenerate.atsMode' })).toBeInTheDocument();
   });
 
   it('does not show the ATS toggle for single-column templates', () => {
-    render(
-      <StepTemplate
-        templateId="classic"
-        atsMode={false}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-      />
-    );
+    renderStep({
+      templateId: 'classic',
+      atsMode: false,
+    });
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
   });
 
   it('toggles ATS mode when the switch is clicked', async () => {
     const user = userEvent.setup();
-    render(
-      <StepTemplate
-        templateId="atelier"
-        atsMode={false}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-      />
-    );
+    renderStep({
+      templateId: 'atelier',
+      atsMode: false,
+    });
     const atsSwitch = screen.getByRole('switch');
     await user.click(atsSwitch);
     expect(onAtsModeChange).toHaveBeenCalledWith(true);
@@ -167,42 +107,30 @@ describe('StepTemplate', () => {
 
   it('target=cover: hides the ATS toggle even for a two-column template', () => {
     // "atelier" is two-column — the toggle would normally appear for résumé.
-    render(
-      <StepTemplate
-        templateId="atelier"
-        atsMode={false}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-        target="cover"
-      />
-    );
+    renderStep({
+      templateId: 'atelier',
+      atsMode: false,
+      target: 'cover',
+    });
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
   });
 
   it('target=cover: hides the ATS toggle for portrait (two-column) as well', () => {
-    render(
-      <StepTemplate
-        templateId="portrait"
-        atsMode={true}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-        target="cover"
-      />
-    );
+    renderStep({
+      templateId: 'portrait',
+      atsMode: true,
+      target: 'cover',
+    });
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
   });
 
   it('target=cover: renders all template buttons and fires onTemplateChange on click', async () => {
     const user = userEvent.setup();
-    render(
-      <StepTemplate
-        templateId="classic"
-        atsMode={false}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-        target="cover"
-      />
-    );
+    renderStep({
+      templateId: 'classic',
+      atsMode: false,
+      target: 'cover',
+    });
 
     // Gallery is still present — all template names should be visible.
     for (const tpl of Object.values(TEMPLATES)) {
@@ -234,15 +162,11 @@ describe('StepTemplate', () => {
   // ── thumbnail source tests ──────────────────────────────────────────────────
 
   it("target='both' uses résumé thumbnails (not cover)", () => {
-    render(
-      <StepTemplate
-        templateId="classic"
-        atsMode={false}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-        target="both"
-      />
-    );
+    renderStep({
+      templateId: 'classic',
+      atsMode: false,
+      target: 'both',
+    });
     // "ATS Classic" image should be the résumé stub, not the cover stub.
     const classicImg = screen.getByAltText('ATS Classic');
     expect(classicImg.getAttribute('src')).toContain('resume-classic.png');
@@ -250,15 +174,11 @@ describe('StepTemplate', () => {
   });
 
   it("target='cover' uses cover thumbnails", () => {
-    render(
-      <StepTemplate
-        templateId="classic"
-        atsMode={false}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-        target="cover"
-      />
-    );
+    renderStep({
+      templateId: 'classic',
+      atsMode: false,
+      target: 'cover',
+    });
     const classicImg = screen.getByAltText('ATS Classic');
     expect(classicImg.getAttribute('src')).toContain('cover-classic.svg');
     expect(classicImg.getAttribute('src')).not.toContain('resume-classic.png');
@@ -266,15 +186,11 @@ describe('StepTemplate', () => {
 
   it("target='cover': selecting a single-column template does NOT call onAtsModeChange", async () => {
     const user = userEvent.setup();
-    render(
-      <StepTemplate
-        templateId="atelier"
-        atsMode={true}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-        target="cover"
-      />
-    );
+    renderStep({
+      templateId: 'atelier',
+      atsMode: true,
+      target: 'cover',
+    });
     const classicButton = screen.getByText('ATS Classic').closest('button');
     if (!classicButton) throw new Error('ATS Classic button not found');
     await user.click(classicButton);
@@ -284,15 +200,11 @@ describe('StepTemplate', () => {
 
   it("target='resume': selecting a single-column template DOES call onAtsModeChange(false)", async () => {
     const user = userEvent.setup();
-    render(
-      <StepTemplate
-        templateId="atelier"
-        atsMode={true}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-        target="resume"
-      />
-    );
+    renderStep({
+      templateId: 'atelier',
+      atsMode: true,
+      target: 'resume',
+    });
     const classicButton = screen.getByText('ATS Classic').closest('button');
     if (!classicButton) throw new Error('ATS Classic button not found');
     await user.click(classicButton);
@@ -303,106 +215,24 @@ describe('StepTemplate', () => {
   // ── document accent picker ──────────────────────────────────────────────────
 
   it('omits the accent picker when onAccentChange is not provided', () => {
-    render(
-      <StepTemplate
-        templateId="classic"
-        atsMode={false}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-      />
-    );
+    renderStep({
+      templateId: 'classic',
+      atsMode: false,
+    });
     expect(screen.queryByTestId(TEST_IDS.generation.accentDefault)).not.toBeInTheDocument();
   });
 
   it('renders the accent picker and forwards a swatch pick to onAccentChange', async () => {
     const user = userEvent.setup();
     const onAccentChange = vi.fn();
-    render(
-      <StepTemplate
-        templateId="classic"
-        atsMode={false}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-        onAccentChange={onAccentChange}
-      />
-    );
+    renderStep({
+      templateId: 'classic',
+      atsMode: false,
+      onAccentChange,
+    });
     await user.click(screen.getByTestId(`${TEST_IDS.generation.accentSwatch}-navy`));
     expect(onAccentChange).toHaveBeenCalledWith('#1B3A5C');
   });
-
-  // ── letter layout picker (cover-only) ───────────────────────────────────────
-
-  const letterOption = (id: string) => `${TEST_IDS.generation.letterLayoutOption}-${id}`;
-
-  it('shows the letter layout picker in cover mode but not in résumé mode', () => {
-    const { rerender } = render(
-      <StepTemplate
-        templateId="classic"
-        atsMode={false}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-        target="cover"
-        onLetterLayoutChange={vi.fn()}
-      />
-    );
-    expect(screen.getByTestId(letterOption('classic'))).toBeInTheDocument();
-
-    rerender(
-      <StepTemplate
-        templateId="classic"
-        atsMode={false}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-        target="resume"
-        onLetterLayoutChange={vi.fn()}
-      />
-    );
-    expect(screen.queryByTestId(letterOption('classic'))).not.toBeInTheDocument();
-  });
-
-  it("also shows the letter layout picker for target='both' — the primary flow produces a cover letter too", () => {
-    render(
-      <StepTemplate
-        templateId="classic"
-        atsMode={false}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-        target="both"
-        onLetterLayoutChange={vi.fn()}
-      />
-    );
-    expect(screen.getByTestId(letterOption('classic'))).toBeInTheDocument();
-  });
-
-  it('forwards a layout pick to onLetterLayoutChange in cover mode', async () => {
-    const user = userEvent.setup();
-    const onLetterLayoutChange = vi.fn();
-    render(
-      <StepTemplate
-        templateId="classic"
-        atsMode={false}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-        target="cover"
-        onLetterLayoutChange={onLetterLayoutChange}
-      />
-    );
-    await user.click(screen.getByTestId(letterOption('banded')));
-    expect(onLetterLayoutChange).toHaveBeenCalledWith('banded');
-  });
-
-  // ── tier grouping + badges ──────────────────────────────────────────────────
-
-  const renderStep = (props: Partial<Parameters<typeof StepTemplate>[0]> = {}) =>
-    render(
-      <StepTemplate
-        templateId="classic"
-        atsMode={false}
-        onTemplateChange={onTemplateChange}
-        onAtsModeChange={onAtsModeChange}
-        {...props}
-      />
-    );
 
   it('groups the gallery into labeled ATS-Safe and Design sections', () => {
     renderStep();
@@ -438,355 +268,5 @@ describe('StepTemplate', () => {
     expect(screen.getByText('Best for a dense, classic single column.')).toBeInTheDocument();
     expect(screen.queryByText('aiGenerate.templateCaption.classic')).not.toBeInTheDocument();
     expect(screen.queryByText('aiGenerate.templateCaption.jake')).not.toBeInTheDocument();
-  });
-
-  // ── ATS toggle gate is tier-aware (the Lebenslauf photo fix) ─────────────────
-
-  it.each(['atelier', 'portrait', 'lebenslauf', 'aria', 'saffron', 'awesome', 'deedy'] as const)(
-    'shows the ATS toggle for the design-tier template %s',
-    (id) => {
-      renderStep({ templateId: id });
-      expect(screen.getByRole('switch', { name: 'aiGenerate.atsMode' })).toBeInTheDocument();
-    }
-  );
-
-  it.each([
-    'classic',
-    'swiss-minimal',
-    'academic',
-    'meridian',
-    'throughline',
-    'cadence',
-    'regent',
-    'cologne-navy',
-    'jake',
-  ] as const)('hides the ATS toggle for the ATS-tier template %s', (id) => {
-    renderStep({ templateId: id });
-    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
-  });
-
-  it('uses the two-column hint for a two-column template but the photo hint for Lebenslauf', () => {
-    const { unmount } = renderStep({ templateId: 'atelier' });
-    expect(screen.getByText('aiGenerate.atsModeHintTwoColumn')).toBeInTheDocument();
-    expect(screen.queryByText('aiGenerate.atsModeHintPhoto')).not.toBeInTheDocument();
-    unmount();
-
-    renderStep({ templateId: 'lebenslauf' });
-    expect(screen.getByText('aiGenerate.atsModeHintPhoto')).toBeInTheDocument();
-    expect(screen.queryByText('aiGenerate.atsModeHintTwoColumn')).not.toBeInTheDocument();
-  });
-
-  // Awesome/Deedy are design-tier but neither two-column NOR photo-bearing —
-  // routing them to the photo hint is factually false (no photo to remove).
-  // They need the decorative-only hint instead (F1).
-  it.each(['awesome', 'deedy'] as const)(
-    'uses the decorative hint (not the false photo hint) for %s',
-    (id) => {
-      renderStep({ templateId: id });
-      expect(screen.getByText('aiGenerate.atsModeHintDecorative')).toBeInTheDocument();
-      expect(screen.queryByText('aiGenerate.atsModeHintPhoto')).not.toBeInTheDocument();
-      expect(screen.queryByText('aiGenerate.atsModeHintTwoColumn')).not.toBeInTheDocument();
-    }
-  );
-
-  // Portrait is two-column AND has a photo — it must get the (inclusive)
-  // two-column hint copy, which also covers photo removal, not the photo-only key.
-  it('uses the inclusive two-column hint for Portrait (two-column + photo)', () => {
-    renderStep({ templateId: 'portrait' });
-    expect(screen.getByText('aiGenerate.atsModeHintTwoColumn')).toBeInTheDocument();
-    expect(screen.queryByText('aiGenerate.atsModeHintPhoto')).not.toBeInTheDocument();
-  });
-
-  it('resets ATS mode when an ATS-tier template is selected from a design-tier one', async () => {
-    const user = userEvent.setup();
-    renderStep({ templateId: 'lebenslauf', atsMode: true });
-    const swissButton = screen.getByText('Swiss Minimal').closest('button');
-    if (!swissButton) throw new Error('Swiss Minimal button not found');
-    await user.click(swissButton);
-    expect(onTemplateChange).toHaveBeenCalledWith('swiss-minimal');
-    expect(onAtsModeChange).toHaveBeenCalledWith(false);
-  });
-
-  it('does NOT reset ATS mode when Lebenslauf (design tier) is selected', async () => {
-    const user = userEvent.setup();
-    renderStep({ templateId: 'atelier', atsMode: true });
-    const lebenslaufButton = screen.getByText('Lebenslauf (DACH)').closest('button');
-    if (!lebenslaufButton) throw new Error('Lebenslauf button not found');
-    await user.click(lebenslaufButton);
-    expect(onTemplateChange).toHaveBeenCalledWith('lebenslauf');
-    expect(onAtsModeChange).not.toHaveBeenCalled();
-  });
-
-  // ── ATS toggle for a DECORATED cover-letter layout ───────────────────────────
-  // The letter renderer reads the same atsMode flag (`data.opts.ats`), so a
-  // decorated layout (band / rail / monogram tile) needs the switch on a surface
-  // that produces a letter — even when the résumé template is ATS-tier and the
-  // résumé itself has nothing to linearize.
-
-  it.each(['banded', 'sidebar', 'monogram'] as const)(
-    'target=cover: shows the ATS toggle for the decorated layout %s under an ATS-tier template',
-    (letterLayoutId) => {
-      renderStep({ templateId: 'classic', target: 'cover', letterLayoutId });
-      expect(screen.getByRole('switch', { name: 'aiGenerate.atsMode' })).toBeInTheDocument();
-      expect(screen.getByText('aiGenerate.atsModeHintLetter')).toBeInTheDocument();
-    }
-  );
-
-  it.each(['classic', 'refined', 'navy'] as const)(
-    'target=cover: hides the ATS toggle for the undecorated layout %s',
-    (letterLayoutId) => {
-      renderStep({ templateId: 'classic', target: 'cover', letterLayoutId });
-      expect(screen.queryByRole('switch')).not.toBeInTheDocument();
-    }
-  );
-
-  it('target=cover: hides the ATS toggle when no layout has been picked yet (unset → classic)', () => {
-    renderStep({ templateId: 'classic', target: 'cover' });
-    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
-  });
-
-  it("target='both' with a decorated letter shows the toggle even for an ATS-tier template", () => {
-    renderStep({ templateId: 'classic', target: 'both', letterLayoutId: 'monogram' });
-    expect(screen.getByRole('switch', { name: 'aiGenerate.atsMode' })).toBeInTheDocument();
-    // Résumé is ATS-tier → only the letter hint, no résumé hint.
-    expect(screen.getByText('aiGenerate.atsModeHintLetter')).toBeInTheDocument();
-    expect(screen.queryByText('aiGenerate.atsModeHintTwoColumn')).not.toBeInTheDocument();
-  });
-
-  it("target='both' with a design-tier template AND a decorated letter states BOTH effects", () => {
-    renderStep({ templateId: 'atelier', target: 'both', letterLayoutId: 'sidebar' });
-    expect(screen.getByText('aiGenerate.atsModeHintTwoColumn')).toBeInTheDocument();
-    expect(screen.getByText('aiGenerate.atsModeHintLetter')).toBeInTheDocument();
-  });
-
-  it("target='resume' never shows the letter hint, whatever layout is threaded through", () => {
-    // A résumé-only run exports no letter — a letter hint there would be a lie.
-    renderStep({ templateId: 'classic', target: 'resume', letterLayoutId: 'monogram' });
-    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
-    expect(screen.queryByText('aiGenerate.atsModeHintLetter')).not.toBeInTheDocument();
-  });
-
-  it('the toggle actually flips atsMode on for a decorated letter (the reachable off switch)', async () => {
-    const user = userEvent.setup();
-    renderStep({
-      templateId: 'classic',
-      target: 'cover',
-      letterLayoutId: 'monogram',
-      atsMode: false,
-    });
-    await user.click(screen.getByRole('switch'));
-    expect(onAtsModeChange).toHaveBeenCalledWith(true);
-  });
-
-  it('reflects the current atsMode via aria-checked so the letter state is readable', () => {
-    const { unmount } = renderStep({
-      templateId: 'classic',
-      target: 'cover',
-      letterLayoutId: 'monogram',
-      atsMode: true,
-    });
-    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
-    unmount();
-
-    renderStep({
-      templateId: 'classic',
-      target: 'cover',
-      letterLayoutId: 'monogram',
-      atsMode: false,
-    });
-    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
-  });
-
-  // ── force-clear must not strand a decorated letter ───────────────────────────
-
-  it('does NOT clear atsMode when an ATS-tier template is picked while a decorated letter is in the run', async () => {
-    const user = userEvent.setup();
-    renderStep({
-      templateId: 'atelier',
-      target: 'both',
-      letterLayoutId: 'monogram',
-      atsMode: true,
-    });
-    const swissButton = screen.getByText('Swiss Minimal').closest('button');
-    if (!swissButton) throw new Error('Swiss Minimal button not found');
-    await user.click(swissButton);
-    expect(onTemplateChange).toHaveBeenCalledWith('swiss-minimal');
-    expect(onAtsModeChange).not.toHaveBeenCalled();
-    // …and the switch survives the template change, still on.
-    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
-  });
-
-  it('still clears atsMode for an ATS-tier template when the letter layout is undecorated', async () => {
-    const user = userEvent.setup();
-    renderStep({ templateId: 'atelier', target: 'both', letterLayoutId: 'navy', atsMode: true });
-    const swissButton = screen.getByText('Swiss Minimal').closest('button');
-    if (!swissButton) throw new Error('Swiss Minimal button not found');
-    await user.click(swissButton);
-    expect(onAtsModeChange).toHaveBeenCalledWith(false);
-  });
-
-  // ── the switch's a11y contract + layout anchoring ────────────────────────────
-
-  it('names the switch with the label ALONE — the hints are descriptions, not part of the name', () => {
-    // With both hint lines up, a name built from the button's text content would
-    // read "ATS-safe mode <résumé hint> <letter hint> <both-docs note>". Assert the
-    // EXACT name so that concatenation is a failure, not a passing substring.
-    renderStep({ templateId: 'atelier', target: 'both', letterLayoutId: 'monogram' });
-    const atsSwitch = screen.getByRole('switch');
-    expect(atsSwitch).toHaveAccessibleName('aiGenerate.atsMode');
-
-    // …and every hint line it points at is really in the document, under the
-    // same render guard (no dangling aria-describedby ids).
-    const described = atsSwitch.getAttribute('aria-describedby')?.split(' ') ?? [];
-    expect(described).toHaveLength(3);
-    for (const id of described) expect(document.getElementById(id)).not.toBeNull();
-    expect(atsSwitch).toHaveAccessibleDescription(
-      /aiGenerate\.atsModeHintTwoColumn.*aiGenerate\.atsModeHintLetter.*aiGenerate\.atsModeHintBothDocs/s
-    );
-  });
-
-  it('points aria-describedby at exactly the hint lines that render (résumé only)', () => {
-    renderStep({ templateId: 'atelier', target: 'resume' });
-    const described = screen.getByRole('switch').getAttribute('aria-describedby')?.split(' ') ?? [];
-    expect(described).toHaveLength(1);
-    expect(document.getElementById(described[0] as string)?.textContent).toBe(
-      'aiGenerate.atsModeHintTwoColumn'
-    );
-  });
-
-  it('says ONE switch drives both documents only when it actually drives both', () => {
-    const { unmount } = renderStep({
-      templateId: 'atelier',
-      target: 'both',
-      letterLayoutId: 'monogram',
-    });
-    expect(screen.getByText('aiGenerate.atsModeHintBothDocs')).toBeInTheDocument();
-    unmount();
-
-    // Résumé is ATS-tier → the switch drives the letter only; the note would lie.
-    renderStep({ templateId: 'classic', target: 'both', letterLayoutId: 'monogram' });
-    expect(screen.queryByText('aiGenerate.atsModeHintBothDocs')).not.toBeInTheDocument();
-  });
-
-  it('anchors the switch track to the label line (items-start, not items-center)', () => {
-    // jsdom zeroes rects, so the class IS the assertion: with two free-wrapping
-    // hint lines the row grows to ~80–90px and `items-center` drops the 16px
-    // track that far below the label it belongs to.
-    renderStep({ templateId: 'atelier', target: 'both', letterLayoutId: 'monogram' });
-    const atsSwitch = screen.getByRole('switch');
-    expect(atsSwitch.className).toContain('items-start');
-    expect(atsSwitch.className).not.toContain('items-center');
-  });
-
-  // ── layout change releases the shared flag (round-trip) ──────────────────────
-
-  it('clears atsMode when the letter drops to an undecorated layout and nothing else reads it', async () => {
-    const user = userEvent.setup();
-    renderStep({
-      templateId: 'classic', // ATS-tier → the flag is a no-op for the résumé
-      target: 'both',
-      letterLayoutId: 'monogram',
-      atsMode: true,
-      onLetterLayoutChange: vi.fn(),
-    });
-    await user.click(screen.getByTestId(letterOption('classic')));
-    expect(onAtsModeChange).toHaveBeenCalledWith(false);
-  });
-
-  it('KEEPS atsMode on the same change when a design-tier résumé template still reads it', async () => {
-    const user = userEvent.setup();
-    renderStep({
-      templateId: 'atelier', // design-tier → the résumé genuinely uses the flag
-      target: 'both',
-      letterLayoutId: 'monogram',
-      atsMode: true,
-      onLetterLayoutChange: vi.fn(),
-    });
-    await user.click(screen.getByTestId(letterOption('classic')));
-    expect(onAtsModeChange).not.toHaveBeenCalled();
-  });
-
-  // The full round-trip against real host state — the bug was that step 3 came
-  // back ON, so a freshly-picked Monogram exported with no monogram.
-  function StatefulStep({ templateId }: { templateId: 'classic' | 'atelier' }) {
-    const [atsMode, setAtsMode] = useState(false);
-    const [letterLayoutId, setLetterLayoutId] = useState<LetterLayoutId | undefined>(undefined);
-    return (
-      <StepTemplate
-        templateId={templateId}
-        atsMode={atsMode}
-        onTemplateChange={vi.fn()}
-        onAtsModeChange={setAtsMode}
-        target="both"
-        letterLayoutId={letterLayoutId}
-        onLetterLayoutChange={setLetterLayoutId}
-      />
-    );
-  }
-
-  it('monogram → ATS on → classic → monogram: the toggle comes back OFF', async () => {
-    const user = userEvent.setup();
-    render(<StatefulStep templateId="classic" />);
-
-    await user.click(screen.getByTestId(letterOption('monogram')));
-    await user.click(screen.getByRole('switch'));
-    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
-
-    await user.click(screen.getByTestId(letterOption('classic')));
-    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
-
-    await user.click(screen.getByTestId(letterOption('monogram')));
-    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
-  });
-
-  // target='cover': the picked template only supplies the letter's palette — no
-  // résumé is exported from it, so a design-tier id must NOT hold the flag open.
-  // This was the stranded case: Atelier + Monogram + ATS on → Classic → stuck.
-  function StatefulCoverStep() {
-    const [atsMode, setAtsMode] = useState(false);
-    const [letterLayoutId, setLetterLayoutId] = useState<LetterLayoutId | undefined>(undefined);
-    return (
-      <StepTemplate
-        templateId="atelier"
-        atsMode={atsMode}
-        onTemplateChange={vi.fn()}
-        onAtsModeChange={setAtsMode}
-        target="cover"
-        letterLayoutId={letterLayoutId}
-        onLetterLayoutChange={setLetterLayoutId}
-      />
-    );
-  }
-
-  it("target='cover': monogram → ATS on → classic → monogram comes back OFF, design-tier template notwithstanding", async () => {
-    const user = userEvent.setup();
-    render(<StatefulCoverStep />);
-
-    await user.click(screen.getByTestId(letterOption('monogram')));
-    await user.click(screen.getByRole('switch'));
-    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
-
-    await user.click(screen.getByTestId(letterOption('classic')));
-    // No résumé in this run, so nothing is left to read the flag: the switch is
-    // gone (Atelier is irrelevant here) and the flag went with it.
-    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
-
-    await user.click(screen.getByTestId(letterOption('monogram')));
-    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
-  });
-
-  it('same round-trip under a design-tier template KEEPS the flag on (the résumé owns it)', async () => {
-    const user = userEvent.setup();
-    render(<StatefulStep templateId="atelier" />);
-
-    await user.click(screen.getByTestId(letterOption('monogram')));
-    await user.click(screen.getByRole('switch'));
-
-    await user.click(screen.getByTestId(letterOption('classic')));
-    // The switch stays — the résumé still linearizes under it — and stays ON.
-    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
-
-    await user.click(screen.getByTestId(letterOption('monogram')));
-    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
   });
 });

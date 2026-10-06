@@ -37,14 +37,22 @@ import type { RefObject } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 
+import { AccountsSettingsTab } from '@/features/settings/components/accounts/AccountsSettingsTab';
+import { ContactProfileTab } from '@/features/settings/components/contact/ContactProfileTab';
+import { ExtensionSettingsTab } from '@/features/settings/components/extension/ExtensionSettingsTab';
+import { GeneralSection } from '@/features/settings/components/general-section';
+import { AppearanceCard } from '@/features/settings/components/general-section/AppearanceCard';
+import { PrivacySettingsTab } from '@/features/settings/components/privacy/PrivacySettingsTab';
+import { SettingsContent } from '@/features/settings/components/SettingsContent';
 import { NAV_GROUPS, type NavItem, type SectionId } from '@/features/settings/constants';
 import { SEARCH_INDEX } from '@/features/settings/lib/search-index';
 
-// ── global stubs ──────────────────────────────────────────────────────────────
+// ── global stubs (factory bodies live in ./search-anchor/service-mocks) ───────
 
-vi.mock('@ajh/translations', () => ({
-  useTranslation: () => ({ t: (k: string) => k }),
-}));
+vi.mock(
+  '@ajh/translations',
+  async () => (await import('./search-anchor/service-mocks')).translationsMock
+);
 
 // AgentCliSection links to Help & Support. `useRouter` throws outside a
 // RouterProvider, and this file renders sections without one.
@@ -53,134 +61,18 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   useRouter: () => ({ navigate: vi.fn() }),
 }));
 
-// Stub services consumed by the section components we render.
-vi.mock('@/services', () => ({
-  // GeneralSection / UpdateSection
-  useLaunchAtLogin: () => ({ data: false }),
-  useSetLaunchAtLogin: () => ({ mutate: vi.fn(), isPending: false }),
-  useSetCloseToTray: () => ({ mutate: vi.fn(), isPending: false }),
-  useAppVersion: () => ({ data: '1.0.0' }),
-  useOpenExternal: () => ({ mutate: vi.fn(), isPending: false }),
-  useUpdater: () => ({
-    status: { state: 'idle' },
-    check: vi.fn(),
-    download: vi.fn(),
-    install: vi.fn(),
-  }),
-  useChangelog: () => ({ data: undefined, isPending: false }),
-  // AppearanceCard
-  useSystemAccent: () => ({ data: { supported: false } }),
-  // ContactProfileTab / ApplicantDetailsSection
-  useContactProfile: () => ({ data: undefined }),
-  useSetContactProfile: () => ({ mutate: vi.fn(), isPending: false }),
-  useJobPreferences: () => ({ data: undefined }),
-  useSetJobPreferences: () => ({ mutate: vi.fn(), isPending: false }),
-  useSetExtraAgencyCompanies: () => ({ mutate: vi.fn(), isPending: false }),
-  // AccountsSettingsTab
-  useCredentialsAvailable: () => ({ data: true }),
-  useBoardSession: () => ({ data: undefined }),
-  useLoginBoard: () => ({ mutate: vi.fn(), isPending: false }),
-  useLogoutBoard: () => ({ mutate: vi.fn(), isPending: false }),
-  // ExtensionBridgeSection
-  useExtensionBridgeStatus: () => ({ data: undefined }),
-  useGeneratePairingToken: () => ({ mutate: vi.fn(), isPending: false }),
-  // PrivacySettingsTab
-  useCrashReporting: () => ({ data: { enabled: true, consentShown: true }, isLoading: false }),
-  useSetCrashReporting: () => ({ mutate: vi.fn(), isPending: false }),
-  useClearInteractions: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useExportData: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useImportData: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useResetApp: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useSignOutAll: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  // AISettingsTab via useProviderKeys
-  useActiveProvider: () => ({ data: undefined }),
-  useSetActiveProvider: () => ({ mutate: vi.fn(), isPending: false }),
-  useConnectedProviders: () => ({ data: [] }),
-  useProviderKeyStatus: () => ({ data: {} }),
-  useProviderConfig: () => ({ data: undefined }),
-  useOllamaModels: () => ({ data: undefined, isLoading: false }),
-  useSetProviderKey: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRemoveProviderKey: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useTestProviderKey: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  usePullOllamaModel: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  // EmbeddingsSettings
-  useEmbeddingStatus: () => ({ data: undefined, refetch: vi.fn() }),
-  useSetEmbeddingConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useReembedAll: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useJobEvents: (_handler: unknown) => undefined,
-  // CompanyResearchSettings
-  useCompanyResearchConfig: () => ({ data: undefined }),
-  useSetCompanyResearchConfig: () => ({ mutate: vi.fn(), isPending: false }),
-  // DeveloperPreferences
-  useOpenDevtools: () => ({ mutate: vi.fn(), isPending: false }),
-  useExportDiagnostics: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  // AgentCliSection
-  useAgentCliInfo: () => ({ data: { exePath: '/tmp/ajh-tauri' }, isPending: false }),
-  // ResumePreferences — covered via SettingsContent wrappers
-  useDocuments: () => ({ data: [], isLoading: false }),
-  useRemoveDocument: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useSetDefaultDocument: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  // AggregatorKeysSettings
-  useHasProviderKey: () => ({ data: { has: false } }),
-  useScrapingSettings: () => ({
-    data: { apifyLinkedinEnabled: false, apifyLinkedinActorId: undefined },
-  }),
-  useUpdateScrapingSettings: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  // Window controls (service hook)
-  useWindowControls: () => ({
-    resetPosition: vi.fn(),
-    hideApp: vi.fn(),
-    isMacos: false,
-  }),
-}));
-
-// Stub the Zustand stores that section components subscribe to.
-vi.mock('@/store/preferences-store', () => ({
-  useCloseToTray: () => false,
-  useOnboardingCompleted: () => true,
-  usePreferencesStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({
-      resetOnboarding: vi.fn(),
-      addRecentLocation: vi.fn(),
-      setDebugMode: vi.fn(),
-      setOutputTone: vi.fn(),
-      setPerformanceMode: vi.fn(),
-      setCustomPerformance: vi.fn(),
-      setFetchCompanyLogos: vi.fn(),
-    }),
-  useFetchCompanyLogos: () => false,
-  useDebugMode: () => false,
-  useOutputTone: () => 'professional',
-  usePerformanceMode: () => 'balanced',
-  useResolvedPerformanceProfile: () => ({
-    visual: { aurora: true, nebula: true, cursorGlow: true, animations: true, blur: 'full' },
-    backend: { concurrency: 'balanced', keepAlive: 'balanced', cache: 'balanced' },
-  }),
-  // JobLocationPreferences reads this from the store
-  useRecentLocations: () => [],
-}));
-
-// Stub applyThemeAnimated so AppearanceCard has no localStorage side-effect.
-vi.mock('@ajh/ui', async (importOriginal) => {
-  const actual = await importOriginal<Record<string, unknown>>();
-  return {
-    ...actual,
-    applyThemeAnimated: vi.fn(),
-    useNotification: () => ({
-      open: vi.fn(),
-      success: vi.fn(),
-      error: vi.fn(),
-      info: vi.fn(),
-      warning: vi.fn(),
-      destroy: vi.fn(),
-    }),
-  };
-});
+vi.mock('@/services', async () => (await import('./search-anchor/service-mocks')).servicesMock);
+vi.mock(
+  '@/store/preferences-store',
+  async () => (await import('./search-anchor/service-mocks')).preferencesStoreMock
+);
+vi.mock('@ajh/ui', async (importOriginal) =>
+  (await import('./search-anchor/service-mocks')).uiMock(importOriginal)
+);
 
 // ── Stub sub-components that need QueryClient or deep IPC trees ───────────────
 // The anchor drift guard only cares that data-settings-anchor attrs are present
-// in the rendered tree — it does not test sub-component behaviour. Stubbing the
-// heavy leaves keeps this file free of QueryClientProvider setup.
+// in the rendered tree — it does not test sub-component behaviour.
 
 // GeneralSection children
 vi.mock('@/features/settings/components/shared/LanguageSelector', () => ({
@@ -293,19 +185,6 @@ vi.mock('@/lib/doc-record', () => ({
   normalise: (d: unknown) => d,
 }));
 
-// ── lazy imports (AFTER all vi.mock calls) ────────────────────────────────────
-
-// Component imports intentionally deferred to after mock hoisting.
-// Sections rendered directly (not through SettingsContent):
-import { AccountsSettingsTab } from '@/features/settings/components/accounts/AccountsSettingsTab';
-import { ContactProfileTab } from '@/features/settings/components/contact/ContactProfileTab';
-import { ExtensionSettingsTab } from '@/features/settings/components/extension/ExtensionSettingsTab';
-import { GeneralSection } from '@/features/settings/components/general-section';
-import { AppearanceCard } from '@/features/settings/components/general-section/AppearanceCard';
-import { PrivacySettingsTab } from '@/features/settings/components/privacy/PrivacySettingsTab';
-// Sections rendered via SettingsContent (wrapper divs live in SettingsContent):
-import { SettingsContent } from '@/features/settings/components/SettingsContent';
-
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 /** Flatten NAV_GROUPS to a NavItem lookup by id. */
@@ -396,150 +275,62 @@ describe('SEARCH_INDEX — manifest integrity', () => {
 
 // ── render-based anchor drift guards ─────────────────────────────────────────
 //
-// Each describe block renders the component(s) responsible for that section and
-// asserts every anchor from SEARCH_INDEX for that section is present in the DOM.
+// Each row renders the component(s) responsible for that section and asserts every
+// anchor from SEARCH_INDEX for that section is present in the DOM. The ai, job,
+// resume, performance, developer and about rows go through SettingsContent, whose
+// wrapper divs carry those anchors (ai-embeddings / ai-company-research live inside
+// the real AISettingsTab it renders).
 
-describe('anchor drift guard — general (GeneralSection)', () => {
+const DRIFT_GUARDS: [
+  title: string,
+  section: SectionId,
+  renderSection: () => ReturnType<typeof render>,
+][] = [
+  [
+    'general (GeneralSection)',
+    'general',
+    () =>
+      render(
+        <GeneralSection
+          localName="Test User"
+          setLocalName={vi.fn()}
+          setUserName={vi.fn()}
+          userName="Test User"
+        />
+      ),
+  ],
+  ['appearance (AppearanceCard)', 'appearance', () => render(<AppearanceCard />)],
+  ['contact (ContactProfileTab)', 'contact', () => render(<ContactProfileTab />)],
+  [
+    'ai (AISettingsTab + OutputTonePreferences via SettingsContent)',
+    'ai',
+    () => renderSection('ai'),
+  ],
+  ['job (SettingsContent wrappers)', 'job', () => renderSection('job')],
+  ['resume (SettingsContent wrapper)', 'resume', () => renderSection('resume')],
+  ['accounts (AccountsSettingsTab)', 'accounts', () => render(<AccountsSettingsTab />)],
+  ['extension (ExtensionSettingsTab)', 'extension', () => render(<ExtensionSettingsTab />)],
+  ['privacy (PrivacySettingsTab)', 'privacy', () => render(<PrivacySettingsTab />)],
+  ['performance (SettingsContent wrapper)', 'performance', () => renderSection('performance')],
+  ['developer (SettingsContent wrapper)', 'developer', () => renderSection('developer')],
+  ['about (SettingsContent wrapper)', 'about', () => renderSection('about')],
+];
+
+describe.each(DRIFT_GUARDS)('anchor drift guard — %s', (_title, section, renderIt) => {
   it.each(
-    SEARCH_INDEX.filter((e) => e.section === 'general').map(
+    SEARCH_INDEX.filter((e) => e.section === section).map(
       (e) => [e.anchor, e.id] as [string, string]
     )
   )('anchor "%s" (entry "%s") is present in the rendered DOM', (anchor) => {
-    const { container } = render(
-      <GeneralSection
-        localName="Test User"
-        setLocalName={vi.fn()}
-        setUserName={vi.fn()}
-        userName="Test User"
-      />
-    );
-    assertAnchor(container, anchor);
-  });
-});
-
-describe('anchor drift guard — appearance (AppearanceCard)', () => {
-  it.each(
-    SEARCH_INDEX.filter((e) => e.section === 'appearance').map(
-      (e) => [e.anchor, e.id] as [string, string]
-    )
-  )('anchor "%s" (entry "%s") is present in the rendered DOM', (anchor) => {
-    const { container } = render(<AppearanceCard />);
-    assertAnchor(container, anchor);
-  });
-});
-
-describe('anchor drift guard — contact (ContactProfileTab)', () => {
-  it.each(
-    SEARCH_INDEX.filter((e) => e.section === 'contact').map(
-      (e) => [e.anchor, e.id] as [string, string]
-    )
-  )('anchor "%s" (entry "%s") is present in the rendered DOM', (anchor) => {
-    const { container } = render(<ContactProfileTab />);
-    assertAnchor(container, anchor);
-  });
-});
-
-describe('anchor drift guard — ai (AISettingsTab + OutputTonePreferences via SettingsContent)', () => {
-  it.each(
-    SEARCH_INDEX.filter((e) => e.section === 'ai').map((e) => [e.anchor, e.id] as [string, string])
-  )('anchor "%s" (entry "%s") is present in the rendered DOM', (anchor) => {
-    // ai-provider and ai-tone anchors are wrapper divs in SettingsContent.
-    // ai-embeddings and ai-company-research are inside AISettingsTab.
-    // Rendering SettingsContent covers all four.
-    const { container } = renderSection('ai');
-    assertAnchor(container, anchor);
-  });
-});
-
-describe('anchor drift guard — job (SettingsContent wrappers)', () => {
-  it.each(
-    SEARCH_INDEX.filter((e) => e.section === 'job').map((e) => [e.anchor, e.id] as [string, string])
-  )('anchor "%s" (entry "%s") is present in the rendered DOM', (anchor) => {
-    const { container } = renderSection('job');
-    assertAnchor(container, anchor);
-  });
-});
-
-describe('anchor drift guard — resume (SettingsContent wrapper)', () => {
-  it.each(
-    SEARCH_INDEX.filter((e) => e.section === 'resume').map(
-      (e) => [e.anchor, e.id] as [string, string]
-    )
-  )('anchor "%s" (entry "%s") is present in the rendered DOM', (anchor) => {
-    const { container } = renderSection('resume');
-    assertAnchor(container, anchor);
-  });
-});
-
-describe('anchor drift guard — accounts (AccountsSettingsTab)', () => {
-  it.each(
-    SEARCH_INDEX.filter((e) => e.section === 'accounts').map(
-      (e) => [e.anchor, e.id] as [string, string]
-    )
-  )('anchor "%s" (entry "%s") is present in the rendered DOM', (anchor) => {
-    const { container } = render(<AccountsSettingsTab />);
-    assertAnchor(container, anchor);
-  });
-});
-
-describe('anchor drift guard — extension (ExtensionSettingsTab)', () => {
-  it.each(
-    SEARCH_INDEX.filter((e) => e.section === 'extension').map(
-      (e) => [e.anchor, e.id] as [string, string]
-    )
-  )('anchor "%s" (entry "%s") is present in the rendered DOM', (anchor) => {
-    const { container } = render(<ExtensionSettingsTab />);
-    assertAnchor(container, anchor);
+    assertAnchor(renderIt().container, anchor);
   });
 
-  // `it.each` over an empty array silently registers NO tests, so the guard
-  // above would pass vacuously if the section lost its entries (#1213 moved
-  // them here from `accounts`). Pin the count so that cannot go unnoticed.
-  it('indexes at least one entry under the extension section', () => {
-    expect(SEARCH_INDEX.filter((e) => e.section === 'extension').length).toBeGreaterThan(0);
-  });
-});
-
-describe('anchor drift guard — privacy (PrivacySettingsTab)', () => {
-  it.each(
-    SEARCH_INDEX.filter((e) => e.section === 'privacy').map(
-      (e) => [e.anchor, e.id] as [string, string]
-    )
-  )('anchor "%s" (entry "%s") is present in the rendered DOM', (anchor) => {
-    const { container } = render(<PrivacySettingsTab />);
-    assertAnchor(container, anchor);
-  });
-});
-
-describe('anchor drift guard — performance (SettingsContent wrapper)', () => {
-  it.each(
-    SEARCH_INDEX.filter((e) => e.section === 'performance').map(
-      (e) => [e.anchor, e.id] as [string, string]
-    )
-  )('anchor "%s" (entry "%s") is present in the rendered DOM', (anchor) => {
-    const { container } = renderSection('performance');
-    assertAnchor(container, anchor);
-  });
-});
-
-describe('anchor drift guard — developer (SettingsContent wrapper)', () => {
-  it.each(
-    SEARCH_INDEX.filter((e) => e.section === 'developer').map(
-      (e) => [e.anchor, e.id] as [string, string]
-    )
-  )('anchor "%s" (entry "%s") is present in the rendered DOM', (anchor) => {
-    const { container } = renderSection('developer');
-    assertAnchor(container, anchor);
-  });
-});
-
-describe('anchor drift guard — about (SettingsContent wrapper)', () => {
-  it.each(
-    SEARCH_INDEX.filter((e) => e.section === 'about').map(
-      (e) => [e.anchor, e.id] as [string, string]
-    )
-  )('anchor "%s" (entry "%s") is present in the rendered DOM', (anchor) => {
-    const { container } = renderSection('about');
-    assertAnchor(container, anchor);
-  });
+  // `it.each` over an empty array silently registers NO tests, so the guard above would
+  // pass vacuously if the section lost its entries (#1213 moved them here from
+  // `accounts`). Pin the count so that cannot go unnoticed.
+  if (section === 'extension') {
+    it('indexes at least one entry under the extension section', () => {
+      expect(SEARCH_INDEX.filter((e) => e.section === 'extension').length).toBeGreaterThan(0);
+    });
+  }
 });

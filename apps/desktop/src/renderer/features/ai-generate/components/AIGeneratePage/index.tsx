@@ -19,22 +19,19 @@ import { useStageRotation } from '@/features/ai-generate/hooks/useStageRotation'
 import { useQualityRecheck } from '@/hooks/use-quality-recheck';
 import { useResearchCompanyDefault } from '@/hooks/use-research-company-default';
 import {
-  buildFilename,
   type EmphasisId,
-  exportDOCX,
-  exportPDF,
-  exportTXT,
   type GenerationMode,
   isDecoratedLetterLayout,
   type LetterLayoutId,
-  resolveMarket,
   type TemplateId,
 } from '@/lib/generate';
 import { COPY_FEEDBACK_LONG_MS } from '@/lib/timings';
 import { useExtractText } from '@/services';
 import { useSaveAiGeneration } from '@/services/use-ai-generations';
-import { useContactPromptSeen, usePreferencesStore } from '@/store/preferences-store';
 import { useSessionStore } from '@/store/session-store';
+
+import { exportActiveDocument } from './export-document';
+import { useContactPromptGate } from './useContactPromptGate';
 
 export function AIGeneratePage() {
   const { t } = useTranslation();
@@ -186,26 +183,8 @@ export function AIGeneratePage() {
   const canProceed = resume.trim().length > 50 && jobAd.trim().length > 50;
   const canGenerate = canProceed && canUseAI;
 
-  // First-run nudge: before the very first generation, surface the contact profile
-  // so the document header is complete. Shown once (persisted flag), then never
-  // again — afterwards Generate runs straight through.
-  const contactPromptSeen = useContactPromptSeen();
-  const setContactPromptSeen = usePreferencesStore((s) => s.setContactPromptSeen);
-  const [contactModalOpen, setContactModalOpen] = useState(false);
-
-  const requestGenerate = () => {
-    if (!contactPromptSeen) {
-      setContactPromptSeen();
-      setContactModalOpen(true);
-      return;
-    }
-    void handleGenerate();
-  };
-
-  const continueFromContactPrompt = () => {
-    setContactModalOpen(false);
-    void handleGenerate();
-  };
+  const { contactModalOpen, closeContactModal, requestGenerate, continueFromContactPrompt } =
+    useContactPromptGate(handleGenerate);
 
   const reset = () => {
     // Abort whenever a run is in flight — including the post-generation
@@ -227,68 +206,12 @@ export function AIGeneratePage() {
     setTimeout(() => setCopied(false), COPY_FEEDBACK_LONG_MS);
   };
 
-  const currentOutput = activeOut === 'resume' ? resumeOut : coverOut;
-
   const doExport = async (fmt: 'pdf' | 'docx' | 'txt') => {
     if (isGenerating) return;
-    const text = currentOutput;
-    if (!text) return;
-    const type = activeOut === 'resume' ? 'resume' : 'cover-letter';
-    // The cover letter's exported layout (subject line, date placement, page)
-    // must match the market its text was generated for, so resolve it the same
-    // way generation does (manual override → job country → language → intl).
-    // Résumé export keeps the user's chosen locale unchanged.
-    const exportLocale =
-      type === 'cover-letter'
-        ? resolveMarket({
-            jobCountry: meta?.jobCountry,
-            targetLanguage: meta?.targetLanguage,
-            override: locale,
-          })
-        : locale;
-    const name = buildFilename(
-      meta ?? {
-        candidateName: '',
-        jobTitle: '',
-        companyName: '',
-        resumeLanguage: 'en',
-        jobAdLanguage: 'en',
-        mismatch: false,
-        targetLanguage: 'en',
-        topRequirements: [],
-      },
-      type,
+    await exportActiveDocument(
+      { activeOut, resumeOut, coverOut, meta, locale, templateId, atsMode, accent, letterLayoutId },
       fmt
     );
-    if (fmt === 'pdf') {
-      await exportPDF(
-        text,
-        name,
-        type,
-        meta ?? undefined,
-        templateId,
-        atsMode,
-        exportLocale,
-        accent,
-        letterLayoutId
-      );
-    }
-    if (fmt === 'docx') {
-      await exportDOCX(
-        text,
-        name,
-        type,
-        meta ?? undefined,
-        templateId,
-        atsMode,
-        exportLocale,
-        accent,
-        letterLayoutId
-      );
-    }
-    if (fmt === 'txt') {
-      exportTXT(text, name);
-    }
   };
 
   // Which document is still streaming (only meaningful in the progressive-reveal
@@ -350,9 +273,7 @@ export function AIGeneratePage() {
                 onModeChange={setMode}
                 onEmphasisChange={setEmphasis}
                 onTargetChange={setTarget}
-                onTemplateChange={(id) => {
-                  setTemplateId(id);
-                }}
+                onTemplateChange={setTemplateId}
                 onAtsModeChange={setAtsMode}
                 onAccentChange={setAccent}
                 onLetterLayoutChange={setLetterLayoutId}
@@ -399,10 +320,7 @@ export function AIGeneratePage() {
                 onAtsModeChange={setAtsMode}
                 onCopy={() => void copyOutput()}
                 onExport={doExport}
-                onOutputChange={(value) => {
-                  if (activeOut === 'resume') setResumeOut(value);
-                  else setCoverOut(value);
-                }}
+                onOutputChange={activeOut === 'resume' ? setResumeOut : setCoverOut}
                 onRegenerate={() => void handleGenerate()}
                 copied={copied}
                 isGenerating={isGenerating}
@@ -426,7 +344,7 @@ export function AIGeneratePage() {
 
       <ContactPromptModal
         open={contactModalOpen}
-        onClose={() => setContactModalOpen(false)}
+        onClose={closeContactModal}
         onContinue={continueFromContactPrompt}
       />
     </PageTransition>
