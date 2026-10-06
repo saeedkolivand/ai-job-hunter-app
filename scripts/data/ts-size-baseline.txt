@@ -85,8 +85,6 @@
 309	apps/desktop/src/renderer/store/preferences-store/preferences-store.ts
 410	apps/extension/src/answer-tools/answer-tools.test.ts
 475	apps/extension/src/answer-tools/answer-tools.ts
-3077	apps/extension/src/background.test.ts
-1525	apps/extension/src/background.ts
 439	apps/extension/src/connection-status/connection-status.test.ts
 428	apps/extension/src/documents/documents.test.ts
 471	apps/extension/src/documents/documents.ts
