@@ -5,19 +5,20 @@ import { flushSync } from 'react-dom';
 import { AGGREGATOR_BOARD_ID, type BoardCatalogEntry, PROVIDER_SLOTS } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
-import { Button, CardSkeleton, cn, type CompanyTypeaheadHandle, Input } from '@ajh/ui';
+import { Button, type CompanyTypeaheadHandle, Input } from '@ajh/ui';
 
 import { LocationFilterNote, WorkTypeFilterNote } from '@/components/scrape/LocationFilterNote';
 import { SeededCompaniesNote } from '@/components/scrape/SeededCompaniesNote';
 import { AUTH_BENEFITS } from '@/features/jobs/constants';
-import { makeMultiSelectKeyHandler } from '@/hooks/use-roving-tabindex';
 import { useHasProviderKey } from '@/services/use-ai-provider';
 import { useBoardsCatalog, useBoardStatuses } from '@/services/use-boards';
 
 import { BoardConnectChip } from './BoardConnectChip';
+import { BoardPicker } from './BoardPicker';
 import { CompanySlugField } from './CompanySlugField';
 import type { ScrapeFormState } from './constants';
 import { ScrapeFilters } from './ScrapeFilters';
+import { ScrapeFooter } from './ScrapeFooter';
 
 interface ScrapeFormProps {
   /** Mount gate. The drawer that hosts the form already unmounts it on close;
@@ -33,11 +34,6 @@ interface ScrapeFormProps {
   onGeocode: (query: string) => Promise<{ display: string }[]>;
 }
 
-/** Toggle membership of `id` in the array without mutation. */
-function toggleBoard(boards: string[], id: string): string[] {
-  return boards.includes(id) ? boards.filter((b) => b !== id) : [...boards, id];
-}
-
 export function ScrapeForm({
   show,
   form,
@@ -50,9 +46,6 @@ export function ScrapeForm({
   onGeocode,
 }: ScrapeFormProps) {
   const { t } = useTranslation();
-  const boardRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  // Tracks keyboard-focus position independently of the selection set (multi-select pattern).
-  const focusedBoardIdx = useRef<number>(0);
   // Lets the submit path flush a typed-but-unentered company slug deterministically
   // (blur-independent — WebKit doesn't reliably blur on a sibling-button click).
   const companyFieldRef = useRef<CompanyTypeaheadHandle>(null);
@@ -75,7 +68,6 @@ export function ScrapeForm({
   }, [catalogLoading, listedBoards, form.boards, onFormChange]);
 
   const selectedSet = new Set(form.boards);
-  const allSelected = listedBoards.length > 0 && listedBoards.every((e) => selectedSet.has(e.id));
 
   // Boards that are selected and require login, filtered against catalog auth.
   const needsLoginBoards = listedBoards.filter(
@@ -137,15 +129,6 @@ export function ScrapeForm({
   const handleStart = () => {
     if (showCompanyInput) flushSync(() => companyFieldRef.current?.commitPending());
     onStart();
-  };
-
-  const handleSelectAll = () => {
-    onFormChange({ boards: listedBoards.map((e) => e.id) });
-  };
-  const handleClear = () => {
-    // Always keep at least one; clear to the first listed board.
-    const first = listedBoards[0]?.id;
-    if (first) onFormChange({ boards: [first] });
   };
 
   // Count label: "3 selected" — i18next picks the plural form automatically.
@@ -211,99 +194,14 @@ export function ScrapeForm({
           />
         </div>
 
-        {/* Board picker — multi-select toggle group */}
-        <div className="mb-4">
-          <div className="mb-2 flex items-center gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
-              {t('jobs.board')}
-            </span>
-            {!catalogLoading && listedBoards.length > 0 && (
-              <>
-                <span
-                  aria-live="polite"
-                  aria-atomic="true"
-                  className="rounded-full bg-brand/20 px-1.5 py-px text-[10px] font-medium text-brand-soft"
-                >
-                  {countLabel}
-                </span>
-                <div className="ml-auto flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    disabled={scraping || allSelected}
-                    onClick={handleSelectAll}
-                    className="h-auto rounded px-1.5 py-1 text-[10px] text-foreground/50 hover:text-foreground/80 disabled:opacity-40"
-                  >
-                    {t('jobs.selectAll')}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    disabled={scraping || form.boards.length <= 1}
-                    onClick={handleClear}
-                    className="h-auto rounded px-1.5 py-1 text-[10px] text-foreground/50 hover:text-foreground/80 disabled:opacity-40"
-                  >
-                    {t('jobs.clearBoards')}
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
-          {catalogLoading ? (
-            <CardSkeleton className="h-8 w-full" />
-          ) : (
-            <div
-              role="group"
-              aria-label={t('jobs.board')}
-              className="flex flex-wrap gap-1.5"
-              onKeyDown={
-                scraping
-                  ? undefined
-                  : makeMultiSelectKeyHandler(
-                      listedBoards.length,
-                      focusedBoardIdx,
-                      boardRefs,
-                      (idx) => {
-                        const id = listedBoards[idx]?.id;
-                        if (!id) return;
-                        // Prevent deselecting the last board.
-                        if (selectedSet.has(id) && form.boards.length === 1) return;
-                        onFormChange({ boards: toggleBoard(form.boards, id) });
-                      }
-                    )
-              }
-            >
-              {listedBoards.map(({ id }, i) => {
-                const active = selectedSet.has(id);
-                return (
-                  <Button
-                    key={id}
-                    ref={(el) => {
-                      boardRefs.current[i] = el;
-                    }}
-                    aria-pressed={active}
-                    tabIndex={i === focusedBoardIdx.current ? 0 : -1}
-                    variant="ghost"
-                    disabled={scraping}
-                    onClick={() => {
-                      // Prevent deselecting the last board.
-                      if (active && form.boards.length === 1) return;
-                      focusedBoardIdx.current = i;
-                      onFormChange({ boards: toggleBoard(form.boards, id) });
-                    }}
-                    className={cn(
-                      'rounded-lg px-2.5 py-1 text-[11px] transition-all',
-                      active
-                        ? 'bg-brand/20 text-brand-soft ring-1 ring-brand/40'
-                        : 'bg-card border border-[var(--border-clear)] text-foreground/50 hover:bg-muted hover:text-foreground/80',
-                      'disabled:cursor-not-allowed disabled:opacity-40'
-                    )}
-                  >
-                    {t(`jobs.boards.${id}`, { defaultValue: id })}
-                  </Button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        <BoardPicker
+          listedBoards={listedBoards}
+          catalogLoading={catalogLoading}
+          selected={form.boards}
+          scraping={scraping}
+          countLabel={countLabel}
+          onFormChange={onFormChange}
+        />
 
         {/* Auth affordance — compact "needs login" row per selected board */}
         {needsLoginBoards.length > 0 && (
@@ -381,58 +279,14 @@ export function ScrapeForm({
         )}
       </div>
 
-      {/* Footer — pinned; Start is always reachable without scrolling */}
-      <div className="shrink-0 border-t border-[var(--border-clear)] px-5 py-3">
-        {!scraping && blockedByRequiredLogin && (
-          <p
-            id="scrape-blocked-hint"
-            aria-live="polite"
-            className="mb-2 text-[11px] text-amber-400/70"
-          >
-            {t('jobs.needsLogin.blockedHint', {
-              boards: unconnectedRequired
-                .map((id) => t(`jobs.boards.${id}`, { defaultValue: id }))
-                .join(', '),
-            })}
-          </p>
-        )}
-        <div className="flex items-center justify-end gap-2">
-          {scraping ? (
-            <Button variant="ghost" onClick={onCancel}>
-              {t('jobs.cancel')}
-            </Button>
-          ) : (
-            scrapeOutcome && (
-              <span
-                className={cn(
-                  'min-w-0 flex-1 truncate text-[11px]',
-                  scrapeOutcome.ok && !scrapeOutcome.note
-                    ? 'text-emerald-400/70'
-                    : 'text-amber-400/70'
-                )}
-              >
-                {scrapeOutcome.ok
-                  ? (scrapeOutcome.note ?? t('jobs.done'))
-                  : (scrapeOutcome.note ?? t('jobs.failed'))}
-              </span>
-            )
-          )}
-          <Button
-            variant="primary"
-            onClick={handleStart}
-            disabled={scraping || !form.query.trim() || blockedByRequiredLogin}
-            loading={scraping}
-            aria-describedby={
-              !scraping && blockedByRequiredLogin ? 'scrape-blocked-hint' : undefined
-            }
-            data-testid={TEST_IDS.jobs.scrapeStartButton}
-            className="shrink-0 transition-all duration-150 ease-out"
-          >
-            {!scraping && <Search size={12} />}
-            {scraping ? t('jobs.scraping') : t('jobs.startScrape')}
-          </Button>
-        </div>
-      </div>
+      <ScrapeFooter
+        scraping={scraping}
+        scrapeOutcome={scrapeOutcome}
+        queryEmpty={!form.query.trim()}
+        unconnectedRequired={unconnectedRequired}
+        onStart={handleStart}
+        onCancel={onCancel}
+      />
     </div>
   );
 }

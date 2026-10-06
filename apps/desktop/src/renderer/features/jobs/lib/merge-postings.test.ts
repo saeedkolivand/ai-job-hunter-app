@@ -2,7 +2,7 @@
  * mergePostings — id-merge + cross-source canonical-key dedup (trust PR E, stage 3).
  *
  * Pass 1 (backend-wins-by-id) is also covered by the pure-function block in
- * JobsPage.dedup-throttle.test.tsx; this file focuses on pass 2 — collapsing the
+ * JobsPage.dedup.test.tsx; this file focuses on pass 2 — collapsing the
  * same job surfaced under DIFFERENT ids by two sources, and the survivor policy
  * (keep-incumbent identity, union interactions, byte-length description upgrade,
  * fill-only-missing enrichment).
@@ -27,6 +27,30 @@ function makePosting(overrides: Partial<Posting> & { id: string }): Posting {
   };
 }
 
+/** The one job most cases collapse onto. */
+const JOB_URL = 'https://acme.example/jobs/42';
+
+/** A posting of that job, surfaced under `id`. */
+const dup = (id: string, overrides: Partial<Posting> = {}) =>
+  makePosting({ id, url: JOB_URL, ...overrides });
+
+function interaction(jobId: string, overrides: Partial<JobInteraction> = {}): JobInteraction {
+  return {
+    jobId,
+    title: 'Engineer',
+    company: 'Acme',
+    url: JOB_URL,
+    source: 'linkedin',
+    interactionType: 'bookmarked',
+    timestamp: 1,
+    ...overrides,
+  };
+}
+
+/** Collapse two streamed rows (incumbent first). */
+const collapse = (incumbent: Posting, challenger: Posting) =>
+  mergePostings([], [incumbent, challenger]);
+
 describe('mergePostings — cross-source canonical-key dedup', () => {
   it('two streamed rows for the same job (different ids) collapse to one, first-seen kept', () => {
     // The live-stream window: the manual-scrape stream is NOT deduped by the
@@ -39,38 +63,19 @@ describe('mergePostings — cross-source canonical-key dedup', () => {
   });
 
   it('the richer (longest) description survives, incumbent id preserved', () => {
-    const incumbent = makePosting({
-      id: 'a',
-      url: 'https://acme.example/jobs/42',
-      description: 'short snippet',
-    });
-    const richer = makePosting({
-      id: 'b',
-      url: 'https://acme.example/jobs/42',
+    const incumbent = dup('a', { description: 'short snippet' });
+    const richer = dup('b', {
       description: 'a much longer, full job description with the entire body text',
     });
-    const result = mergePostings([], [incumbent, richer]);
+    const result = collapse(incumbent, richer);
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe('a');
     expect(result[0]?.description).toBe(richer.description);
   });
 
   it('a persisted row with user-state survives a streamed duplicate: id + interactions kept, description upgraded', () => {
-    const bookmark: JobInteraction = {
-      jobId: 'backend-1',
-      title: 'Engineer',
-      company: 'Acme',
-      url: 'https://acme.example/jobs/42',
-      source: 'linkedin',
-      interactionType: 'bookmarked',
-      timestamp: 1,
-    };
-    const backend = makePosting({
-      id: 'backend-1',
-      url: 'https://acme.example/jobs/42',
-      description: 'persisted text',
-      interactions: [bookmark],
-    });
+    const bookmark = interaction('backend-1');
+    const backend = dup('backend-1', { description: 'persisted text', interactions: [bookmark] });
     const live = makePosting({
       id: 'live-9',
       url: 'https://www.acme.example/jobs/42#apply',
@@ -90,61 +95,27 @@ describe('mergePostings — cross-source canonical-key dedup', () => {
     // Two already-persisted legacy duplicates (pre-dating the engine's dedup pass)
     // can each carry distinct saved/applied state — collapsing must not silently
     // drop the challenger's.
-    const saved: JobInteraction = {
-      jobId: 'a',
-      title: 'Engineer',
-      company: 'Acme',
-      url: 'https://acme.example/jobs/42',
-      source: 'linkedin',
-      interactionType: 'bookmarked',
-      timestamp: 1,
-    };
-    const applied: JobInteraction = {
-      jobId: 'b',
-      title: 'Engineer',
-      company: 'Acme',
-      url: 'https://acme.example/jobs/42',
+    const saved = interaction('a');
+    const applied = interaction('b', {
       source: 'indeed',
       interactionType: 'applied',
       timestamp: 2,
-    };
-    const incumbent = makePosting({
-      id: 'a',
-      url: 'https://acme.example/jobs/42',
-      interactions: [saved],
     });
-    const challenger = makePosting({
-      id: 'b',
-      url: 'https://acme.example/jobs/42',
-      interactions: [applied],
-    });
-    const result = mergePostings([], [incumbent, challenger]);
+    const result = collapse(
+      dup('a', { interactions: [saved] }),
+      dup('b', { interactions: [applied] })
+    );
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe('a');
     expect(result[0]?.interactions).toEqual([saved, applied]);
   });
 
   it('exact-duplicate interaction entries collapse to one on union', () => {
-    const dup: JobInteraction = {
-      jobId: 'a',
-      title: 'Engineer',
-      company: 'Acme',
-      url: 'https://acme.example/jobs/42',
-      source: 'linkedin',
-      interactionType: 'viewed',
-      timestamp: 5,
-    };
-    const incumbent = makePosting({
-      id: 'a',
-      url: 'https://acme.example/jobs/42',
-      interactions: [dup],
-    });
-    const challenger = makePosting({
-      id: 'b',
-      url: 'https://acme.example/jobs/42',
-      interactions: [{ ...dup }],
-    });
-    const result = mergePostings([], [incumbent, challenger]);
+    const viewed = interaction('a', { interactionType: 'viewed', timestamp: 5 });
+    const result = collapse(
+      dup('a', { interactions: [viewed] }),
+      dup('b', { interactions: [{ ...viewed }] })
+    );
     expect(result[0]?.interactions).toHaveLength(1);
   });
 
@@ -163,7 +134,7 @@ describe('mergePostings — cross-source canonical-key dedup', () => {
       company: '  ACME ',
       description: 'a longer description',
     });
-    const result = mergePostings([], [a, b]);
+    const result = collapse(a, b);
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe('a');
     expect(result[0]?.description).toBe('a longer description');
@@ -175,27 +146,17 @@ describe('mergePostings — cross-source canonical-key dedup', () => {
     // bytes (more than incumbent) — a code-unit compare would WRONGLY keep the
     // incumbent; the byte-length compare correctly upgrades to the challenger,
     // matching what Rust's byte-based `desc_len`/comparison would pick.
-    const incumbent = makePosting({
-      id: 'a',
-      url: 'https://acme.example/jobs/42',
-      description: '12345',
-    });
-    const challenger = makePosting({
-      id: 'b',
-      url: 'https://acme.example/jobs/42',
-      description: '€€€€',
-    });
+    const incumbent = dup('a', { description: '12345' });
+    const challenger = dup('b', { description: '€€€€' });
     expect(challenger.description.length).toBeLessThan(incumbent.description.length);
-    const result = mergePostings([], [incumbent, challenger]);
+    const result = collapse(incumbent, challenger);
     expect(result[0]?.id).toBe('a');
     expect(result[0]?.description).toBe('€€€€');
   });
 
   it('trust is filled from the challenger when the incumbent lacks it', () => {
     const trust: JobTrustAssessment = { score: 80, level: 'high', flags: [] };
-    const incumbent = makePosting({ id: 'a', url: 'https://acme.example/jobs/42' });
-    const challenger = makePosting({ id: 'b', url: 'https://acme.example/jobs/42', trust });
-    const result = mergePostings([], [incumbent, challenger]);
+    const result = collapse(dup('a'), dup('b', { trust }));
     expect(result[0]?.id).toBe('a');
     expect(result[0]?.trust).toEqual(trust);
   });
@@ -207,17 +168,10 @@ describe('mergePostings — cross-source canonical-key dedup', () => {
       level: 'low',
       flags: ['suspiciousDomain'],
     };
-    const incumbent = makePosting({
-      id: 'a',
-      url: 'https://acme.example/jobs/42',
-      trust: incumbentTrust,
-    });
-    const challenger = makePosting({
-      id: 'b',
-      url: 'https://acme.example/jobs/42',
-      trust: challengerTrust,
-    });
-    const result = mergePostings([], [incumbent, challenger]);
+    const result = collapse(
+      dup('a', { trust: incumbentTrust }),
+      dup('b', { trust: challengerTrust })
+    );
     expect(result[0]?.trust).toEqual(incumbentTrust);
   });
 
@@ -241,10 +195,7 @@ describe('mergePostings — cross-source canonical-key dedup', () => {
     // collapseDuplicate too — and vice versa, per the lockstep-pair doc comment
     // on both sides.
     const trust: JobTrustAssessment = { score: 55, level: 'medium', flags: [] };
-    const incumbent = makePosting({ id: 'a', url: 'https://acme.example/jobs/42' });
-    const challenger = makePosting({
-      id: 'b',
-      url: 'https://acme.example/jobs/42',
+    const challenger = dup('b', {
       remote: true,
       workType: 'hybrid',
       salaryMin: 80000,
@@ -252,7 +203,7 @@ describe('mergePostings — cross-source canonical-key dedup', () => {
       salaryCurrency: 'GBP',
       trust,
     });
-    const result = mergePostings([], [incumbent, challenger]);
+    const result = collapse(dup('a'), challenger);
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe('a'); // incumbent identity kept
     expect(result[0]?.remote).toBe(true);
@@ -264,9 +215,7 @@ describe('mergePostings — cross-source canonical-key dedup', () => {
   });
 
   it('equal-length descriptions tie to the incumbent (no upgrade)', () => {
-    const a = makePosting({ id: 'a', url: 'https://acme.example/jobs/42', description: 'abcd' });
-    const b = makePosting({ id: 'b', url: 'https://acme.example/jobs/42', description: 'wxyz' });
-    const result = mergePostings([], [a, b]);
+    const result = collapse(dup('a', { description: 'abcd' }), dup('b', { description: 'wxyz' }));
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe('a');
     expect(result[0]?.description).toBe('abcd');
@@ -288,7 +237,7 @@ describe('mergePostings — cross-source canonical-key dedup', () => {
       salaryMax: 120000,
       salaryCurrency: 'EUR',
     });
-    const result = mergePostings([], [directBoard, adzuna]);
+    const result = collapse(directBoard, adzuna);
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe('gh-1');
     expect(result[0]?.description).toBe('a full direct-board description');
@@ -298,20 +247,12 @@ describe('mergePostings — cross-source canonical-key dedup', () => {
   });
 
   it("the incumbent's own salary is never overwritten by the challenger", () => {
-    const incumbent = makePosting({
-      id: 'a',
-      url: 'https://acme.example/jobs/42',
-      salaryMin: 100000,
-      salaryCurrency: 'USD',
-    });
-    const challenger = makePosting({
-      id: 'b',
-      url: 'https://acme.example/jobs/42',
+    const challenger = dup('b', {
       description: 'a longer description that would win the description upgrade',
       salaryMin: 50000,
       salaryCurrency: 'EUR',
     });
-    const result = mergePostings([], [incumbent, challenger]);
+    const result = collapse(dup('a', { salaryMin: 100000, salaryCurrency: 'USD' }), challenger);
     expect(result).toHaveLength(1);
     expect(result[0]?.salaryMin).toBe(100000);
     expect(result[0]?.salaryCurrency).toBe('USD');
@@ -344,11 +285,7 @@ describe('mergePostings — absorbed out-param (selection traceability)', () => 
     // incumbent-selection order follows board input order, not display arrival
     // order — so `aggregator-1` is first-seen (incumbent) and `board-1` is the
     // absorbed challenger.
-    const aggregatorPersisted = makePosting({
-      id: 'aggregator-1',
-      source: 'aggregator',
-      url: 'https://acme.example/jobs/42',
-    });
+    const aggregatorPersisted = dup('aggregator-1', { source: 'aggregator' });
     const boardLive = makePosting({
       id: 'board-1',
       source: 'board',
@@ -374,16 +311,12 @@ describe('mergePostings — absorbed out-param (selection traceability)', () => 
   it('does not record an entry when the id-merge (pass 1) already unified the row (same id both sides)', () => {
     // Pass 1 drops the live copy before pass 2 ever runs — same id, not a
     // cross-source absorb, so nothing should be recorded as "absorbed".
-    const backend = makePosting({ id: 'shared', url: 'https://acme.example/jobs/42' });
-    const live = makePosting({ id: 'shared', url: 'https://acme.example/jobs/42' });
     const absorbed = new Map<string, string>();
-    mergePostings([backend], [live], absorbed);
+    mergePostings([dup('shared')], [dup('shared')], absorbed);
     expect(absorbed.size).toBe(0);
   });
 
   it('is a no-op (does not throw) when the caller omits the out-param', () => {
-    const a = makePosting({ id: 'a', url: 'https://acme.example/jobs/42' });
-    const b = makePosting({ id: 'b', url: 'https://acme.example/jobs/42' });
-    expect(() => mergePostings([], [a, b])).not.toThrow();
+    expect(() => collapse(dup('a'), dup('b'))).not.toThrow();
   });
 });

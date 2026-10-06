@@ -1,36 +1,21 @@
-import { Loader2, Plus, Search, Settings } from 'lucide-react';
+import { Loader2, Plus, Search } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useRouter } from '@tanstack/react-router';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
-import { type BoardScrapeSummary, type HybridSearchArms, PROVIDER_SLOTS } from '@ajh/shared';
-import { TEST_IDS } from '@ajh/test-ids';
+import { type BoardScrapeSummary, PROVIDER_SLOTS } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, EmptyState, ErrorState, GlassCard, ProgressBar, RowSkeleton } from '@ajh/ui';
 
-import { BoardSummaryChips } from '@/components/scrape/BoardSummaryChips';
 import { ROUTES } from '@/constants/routes/routes';
 import { JobsSplitView } from '@/features/jobs/components/JobsSplitView';
 import { PostingRow } from '@/features/jobs/components/PostingRow';
-import type { PostingsSearchState } from '@/features/jobs/hooks/usePostingsSearch';
 import type { Posting } from '@/features/jobs/types';
 import { useHasProviderKey } from '@/services/use-ai-provider';
 import { useSessionStore } from '@/store/session-store';
 
-/** Hybrid-search UI state `JobsPage` hands down — see `usePostingsSearch` for
- *  where each field comes from. Optional on {@link JobsResultsProps}: callers
- *  that never wire a search (and every EXISTING test) get the `idle` default
- *  below, so `filtered` is treated as the plain substring-filtered list. */
-interface HybridSearchUi {
-  /** Gated to the currently-typed filter text — see `JobsPage`. */
-  state: PostingsSearchState;
-  arms: HybridSearchArms | null;
-  /** How many postings the search actually ranked over (eligible subset). */
-  corpusSize: number;
-  onRetry: () => void;
-  onClear: () => void;
-  onEnableSemanticRanking: () => void;
-}
+import { EmptyResults } from './EmptyResults';
+import { HybridSearchBanner, type HybridSearchUi } from './HybridSearchBanner';
 
 const IDLE_HYBRID_SEARCH: HybridSearchUi = {
   state: 'idle',
@@ -277,115 +262,22 @@ export function JobsResults({
     );
   }
 
-  // "Ranked by …" banner above a search's own results — surfaces which arms
-  // actually ran (never lets a keyword-only list present as hybrid) and, when
-  // semantic ranking is off, a one-click enable action instead of just a note.
+  // Banner above a search's own results (see HybridSearchBanner).
   const searchBanner =
     hybridSearch.state === 'results' && filtered.length > 0 ? (
-      <div
-        data-testid={TEST_IDS.jobs.searchBanner}
-        role="status"
-        className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2 text-[11px] text-foreground/60"
-      >
-        <span>
-          {t('jobs.hybridSearch.rankedBy', {
-            count: hybridSearch.corpusSize,
-            arms: [
-              hybridSearch.arms?.lexical === 'ran' ? t('jobs.hybridSearch.armLexical') : null,
-              hybridSearch.arms?.dense === 'ran' ? t('jobs.hybridSearch.armDense') : null,
-              hybridSearch.arms?.rerank === 'ran' ? t('jobs.hybridSearch.armRerank') : null,
-            ]
-              .filter((label): label is string => label !== null)
-              .join(', '),
-          })}
-        </span>
-        {hybridSearch.arms?.dense === 'skipped' && (
-          <>
-            <span aria-hidden="true" className="text-foreground/30">
-              ·
-            </span>
-            <span>{t('jobs.hybridSearch.semanticOff')}</span>
-            <Button variant="ghost" onClick={hybridSearch.onEnableSemanticRanking}>
-              {t('jobs.hybridSearch.enableSemanticRanking')}
-            </Button>
-          </>
-        )}
-        {hybridSearch.arms?.dense === 'unavailable' && (
-          <>
-            <span aria-hidden="true" className="text-foreground/30">
-              ·
-            </span>
-            <span>{t('jobs.hybridSearch.semanticUnavailable')}</span>
-          </>
-        )}
-        {hybridSearch.arms?.rerank === 'unavailable' && (
-          <>
-            <span aria-hidden="true" className="text-foreground/30">
-              ·
-            </span>
-            <span>{t('jobs.hybridSearch.rerankUnavailable')}</span>
-          </>
-        )}
-        <Button variant="ghost" className="ml-auto" onClick={hybridSearch.onClear}>
-          {t('jobs.hybridSearch.clearSearch')}
-        </Button>
-      </div>
+      <HybridSearchBanner hybridSearch={hybridSearch} />
     ) : null;
 
   if (filtered.length === 0) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto px-10 pb-10">
-        <GlassCard>
-          <div role="status" aria-live="polite">
-            {missingAdzunaKeys ? (
-              <EmptyState
-                icon={Search}
-                title={t('jobs.empty')}
-                description={t('jobs.emptyNoAdzunaKeys')}
-                action={
-                  <Button variant="primary" onClick={openAggregatorSettings}>
-                    <Settings size={13} /> {t('jobs.emptyNoAdzunaKeysCta')}
-                  </Button>
-                }
-                className="py-10"
-              />
-            ) : (
-              <EmptyState
-                icon={Search}
-                title={t('jobs.empty')}
-                action={
-                  <Button variant="primary" onClick={onScrape}>
-                    <Search size={13} /> {t('jobs.emptyCta')}
-                  </Button>
-                }
-                className="py-10"
-              />
-            )}
-            {/* Per-board diagnostics so a zero result is never silent — the same
-                strip shown in the results header, wired here so the empty state
-                explains which boards were skipped / errored / returned partial.
-                Suppressed when `missingAdzunaKeys` already explains the zero
-                (that branch renders its own dedicated CTA) to avoid triple
-                -explaining the same root cause, AND when a text filter (not
-                the scrape) is what emptied the list — `genuinelyEmpty` keeps a
-                filter-hides-all view from re-showing a PRIOR scrape's outcome
-                as if this scrape found nothing. */}
-            {!missingAdzunaKeys &&
-              genuinelyEmpty &&
-              boardSummaries &&
-              boardSummaries.length > 0 && (
-                <div className="flex justify-center px-6 pb-8">
-                  <BoardSummaryChips summaries={boardSummaries} />
-                </div>
-              )}
-            {!missingAdzunaKeys && genuinelyEmpty && failureNote && (
-              <p className="px-6 pb-8 text-center text-[11px] text-red-400/80">
-                {t('jobs.lastScrapeFailed', { reason: failureNote })}
-              </p>
-            )}
-          </div>
-        </GlassCard>
-      </div>
+      <EmptyResults
+        missingAdzunaKeys={missingAdzunaKeys}
+        genuinelyEmpty={genuinelyEmpty}
+        boardSummaries={boardSummaries}
+        failureNote={failureNote}
+        onScrape={onScrape}
+        onOpenAggregatorSettings={openAggregatorSettings}
+      />
     );
   }
 

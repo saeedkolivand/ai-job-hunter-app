@@ -27,8 +27,6 @@ import { TEST_IDS } from '@ajh/test-ids';
 // Shared containers (objects, so hoisted vi.mock factories can reference them)
 // ---------------------------------------------------------------------------
 
-const jobEvents = { handler: null as ((event: unknown) => void) | null };
-
 /** scrapeBoards mutation — the seam the `replace` flag actually crosses. */
 const scrapeSpy = vi.fn<(payload: Record<string, unknown>) => Promise<unknown>>();
 const cancelSpy = vi.fn<(jobId: string) => Promise<unknown>>();
@@ -77,32 +75,6 @@ vi.mock('@/services', () => ({
   useCancelJob: () => ({ mutateAsync: cancelSpy }),
   useScrapeProgress: () => null,
   fetchJob: (jobId: string) => fetchJobSpy(jobId),
-}));
-
-vi.mock('@/features/jobs/hooks/usePostingsSearch', () => ({
-  usePostingsSearch: () => ({
-    state: 'idle',
-    result: null,
-    committedQuery: '',
-    search: vi.fn(),
-    retry: vi.fn(),
-    clear: vi.fn(),
-    enableSemanticRanking: vi.fn(),
-  }),
-}));
-
-vi.mock('@/hooks/useDefaultResumeId', () => ({ useDefaultResumeId: () => null }));
-
-vi.mock('@/hooks/use-format-relative-time', () => ({
-  useFormatRelativeTime: () => (ts: number) => String(ts),
-}));
-
-vi.mock('@/components/layout/PageTransition', () => ({
-  PageTransition: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
-
-vi.mock('@/features/jobs/providers', () => ({
-  MatchScoresProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
 vi.mock('@/components/scrape/BoardSummaryChips', () => ({
@@ -176,6 +148,8 @@ vi.mock('@ajh/ui', () => ({
 // Import AFTER mocks.
 import { makeJobsDefaults, useSessionStore } from '@/store/session-store';
 
+import { fireJobEvent, jobEvents } from './common-mocks';
+import { makePosting as posting } from './fixtures';
 import { JobsPage } from './index';
 
 // ---------------------------------------------------------------------------
@@ -201,26 +175,6 @@ async function search(query: string) {
   await act(async () => {
     scrapeForm.onStart?.();
     await Promise.resolve();
-  });
-}
-
-/** A minimal valid streamed Posting (the handler shape-checks these fields). */
-function posting(id: string) {
-  return {
-    id,
-    source: 'linkedin',
-    externalId: id,
-    url: `https://example.com/${id}`,
-    title: `Role ${id}`,
-    company: 'Acme',
-    description: '',
-    capturedAt: 0,
-  };
-}
-
-function fireJobEvent(event: unknown) {
-  act(() => {
-    jobEvents.handler?.(event);
   });
 }
 

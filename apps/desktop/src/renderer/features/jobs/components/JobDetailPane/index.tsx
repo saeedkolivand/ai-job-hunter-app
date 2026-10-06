@@ -1,54 +1,23 @@
-import {
-  Bookmark,
-  Briefcase,
-  CircleCheck,
-  Copy,
-  ExternalLink,
-  Eye,
-  Loader2,
-  MapPin,
-  RefreshCw,
-  Save,
-  Wand2,
-} from 'lucide-react';
+import { Briefcase, Loader2, RefreshCw } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
-import { AGGREGATOR_BOARD_ID } from '@ajh/shared';
-import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import {
-  ActionMenu,
   Button,
   EmptyState,
   JobDescription,
   resolveTransition,
-  SourceBadge,
-  Tag,
   transition,
-  useNotification,
   variants,
 } from '@ajh/ui';
 
-import { AgencyChip } from '@/components/job/AgencyChip';
-import { ClusterSourceChips } from '@/components/job/ClusterSourceChips';
-import { hostOf } from '@/components/job/host-of';
-import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
 import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
-import { getWorkTypeBadge } from '@/features/jobs/lib/work-type-badge';
-import { useMatchScores } from '@/features/jobs/providers';
 import type { Posting } from '@/features/jobs/types';
-import { TrustBadge } from '@/lib/trust-badge';
-import {
-  useMarkNotDuplicate,
-  useOpenExternal,
-  useResolveJobUrl,
-  useUpdatePostingDescription,
-} from '@/services';
 
-// ponytail: heuristic threshold — Adzuna search snippets are ~200–500 chars;
-// anything under 700 chars for aggregator postings gets an on-demand resolve.
-const SHORT_DESCRIPTION_CHARS = 700;
+import { ClusterSources } from './ClusterSources';
+import { DetailHeader } from './DetailHeader';
+import { useResolvedDescription } from './useResolvedDescription';
 
 // Dwell threshold before a job is marked as viewed (5s per spec).
 const VIEWED_DWELL_MS = 5000;
@@ -66,146 +35,13 @@ function DetailContent({
   formatRelativeTime: (timestamp?: number) => string;
 }) {
   const { t } = useTranslation();
-  const {
-    has,
-    trackInteraction,
-    handleOpen,
-    handleCopyLink,
-    handleTailor,
-    handleView,
-    handleSave,
-    saved,
-    pending,
-  } = usePostingActions(posting);
+  const actions = usePostingActions(posting);
+  const { trackInteraction } = actions;
+  const { description, descLoading, showLoadButton, showError, refetch, announced } =
+    useResolvedDescription(posting);
 
-  const notify = useNotification();
-  const openExternal = useOpenExternal();
-  const split = useMarkNotDuplicate();
-  const workTypeBadge = getWorkTypeBadge(posting);
-
-  // Cross-board cluster members (ADR-029) — canonical first for the "All
-  // sources" list; a member is self when it shares the row's key or url.
-  const clusterMembers = posting.clusterMembers ?? [];
-  const hasCluster = clusterMembers.length > 1;
-  const canonicalKey = posting.clusterId;
-  const orderedMembers = hasCluster
-    ? [...clusterMembers].sort((a, b) =>
-        a.key === canonicalKey ? -1 : b.key === canonicalKey ? 1 : 0
-      )
-    : [];
-
-  // Split a wrongly-merged member out of the cluster: tombstone it against every
-  // OTHER member so it survives re-scrapes (ADR-029 §h). Success is surfaced only
-  // after the mutation resolves.
-  const handleSplit = (member: { key: string }) => {
-    const otherKeys = clusterMembers.filter((m) => m.key !== member.key).map((m) => m.key);
-    if (otherKeys.length === 0) return;
-    split.mutate(
-      { memberKey: member.key, otherKeys },
-      {
-        onSuccess: () => notify.success({ message: t('jobs.cluster.splitDone') }),
-        onError: () => notify.error({ message: t('jobs.cluster.splitFailed') }),
-      }
-    );
-  };
-
-  // On-demand resolve gate:
-  //   1. Always resolve when description is empty (original behaviour).
-  //   2. Also resolve for aggregator (Adzuna) postings whose description is a
-  //      short snippet below the threshold — the full text lives on the redirect URL.
-  const descriptionEmpty = !posting.description?.trim();
-  const snippetLen = posting.description?.trim().length ?? 0;
-  const isAggregatorShort =
-    posting.source === AGGREGATOR_BOARD_ID && snippetLen < SHORT_DESCRIPTION_CHARS;
-  const shouldResolve = descriptionEmpty || isAggregatorShort;
-
-  const resolved = useResolveJobUrl(posting.url, shouldResolve);
-
-  // Keep-longer merge: never render text shorter than the original snippet.
-  // The resolved text wins only when it is meaningfully longer (guards against
-  // a 429 / generic-HTML result degrading the pane).
-  const resolvedText = resolved.data?.description ?? '';
-  const description: string = (() => {
-    if (descriptionEmpty) return resolvedText;
-    if (resolvedText.length > snippetLen) return resolvedText;
-    return posting.description ?? '';
-  })();
-
-  // Gate both the loading indicator and the retry button off isFetching so any
-  // refetch (including the manual retry click) consistently drives the UI.
-  const descLoading = shouldResolve && resolved.isFetching;
-
-  // Show the retry button when the description may still be incomplete:
-  //  - gate fired (aggregator-short or empty), AND
-  //  - not currently fetching, AND
-  //  - resolved text is not yet meaningfully longer than the snippet.
-  const resolvedLonger = resolvedText.length > snippetLen;
-  const showLoadButton =
-    (isAggregatorShort || descriptionEmpty) && !resolved.isFetching && !resolvedLonger;
-
-  // Persist-then-score: one ordered one-shot effect so the backend always reads
-  // the full markdown when computing the match score.
-  //
-  // Race that this fixes: on the render where resolve settles with longer text,
-  // two independent effects could fire in the same commit — scoreJob's match.resume
-  // might hit the backend BEFORE updateDescription persisted the full text, so the
-  // score would be computed on the stale snippet while the pane shows the full text.
-  //
-  // Fix: single effect, single `doneRef` guard. When the resolve produced longer
-  // text, persist FIRST then score inside `.finally()` (persist failure is non-fatal).
-  // When no persist is needed (already-full description or resolve didn't improve),
-  // score immediately. key={posting.id} on the parent resets the ref per job.
-  const { scoreJob } = useMatchScores();
-  const { mutateAsync: updateDescription } = useUpdatePostingDescription();
-  const doneRef = useRef(false);
-  useEffect(() => {
-    if (doneRef.current) return;
-    const descReady = description.trim().length > 0;
-    // isFetched guards against the window before the query has started fetching —
-    // without it resolveSettled could be true on the first render (isFetching=false,
-    // data=undefined) and we'd score the snippet before the resolve even begins.
-    const resolveSettled =
-      !shouldResolve || (resolved.isFetched && !resolved.isFetching && !descLoading);
-    if (!descReady || !resolveSettled) return;
-    if (resolvedLonger) {
-      // Persist the full text first, then score on it.
-      // Latch only AFTER persist resolves so a transient IPC failure doesn't
-      // permanently prevent a re-score with the full text.
-      doneRef.current = true;
-      void updateDescription({ url: posting.url, description })
-        .catch(() => {
-          // Persist failure is non-fatal — still score off the in-memory text,
-          // but clear the latch so the pane can retry on next open.
-          doneRef.current = false;
-        })
-        .then(() => scoreJob(posting.id));
-    } else {
-      // No persist needed — score immediately.
-      doneRef.current = true;
-      scoreJob(posting.id);
-    }
-  }, [
-    description,
-    descLoading,
-    posting.id,
-    posting.url,
-    resolved.isFetched,
-    resolved.isFetching,
-    resolvedLonger,
-    scoreJob,
-    shouldResolve,
-    updateDescription,
-  ]);
-
-  // Polite AT announcement when the description upgrades to the full text.
-  const [announced, setAnnounced] = useState(false);
-  const prevDescLen = useRef(description.length);
-  useEffect(() => {
-    if (!announced && description.length > prevDescLen.current && prevDescLen.current > 0) {
-      setAnnounced(true);
-    }
-    prevDescLen.current = description.length;
-  }, [announced, description.length]);
+  // Cross-board cluster (ADR-029) — shown when the row merged 2+ board listings.
+  const hasCluster = (posting.clusterMembers?.length ?? 0) > 1;
 
   // Mark 'viewed' after a 5s dwell (fire-once per job mount via key={posting.id}).
   // Depends ONLY on posting.id so a description-resolve re-render can't reset/refire it.
@@ -223,9 +59,6 @@ function DetailContent({
     return () => clearTimeout(id);
   }, [posting.id]);
 
-  // Shared className for status Tag pills — applied/saved in the header.
-  const statusTagCls = 'rounded-full px-1.5 py-0.5 text-fine-print uppercase tracking-wider';
-
   // Reduced-motion: keep opacity fade but drop the y-translate (no positional jump).
   const resolvedTransition = resolveTransition(transition.fast);
   const isInstant = resolvedTransition.duration === 0;
@@ -238,107 +71,7 @@ function DetailContent({
       transition={resolvedTransition}
       className="flex h-full flex-col overflow-hidden"
     >
-      {/* Header — flush with hairline bottom divider; no outer card margin.
-          `@container`: the header decides its own layout from the DETAIL PANE's
-          width, not the viewport (docs/PATTERNS.md §15) — the pane is a
-          width-varying panel, so a viewport breakpoint would be wrong here.
-          Note the container is THIS element, so `@2xl` (42rem) is measured
-          against its CONTENT box — the pane minus this `px-5`. Measured: the
-          content box reaches 714px (42rem at the app's 17px rem root) when the
-          pane is ~757px, and that is where the action cluster below goes
-          inline. */}
-      <div className="@container shrink-0 border-b border-[var(--border-clear)] px-5 pb-4 pt-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          {/* LEFT: title + meta + match score + status tags */}
-          <div className="min-w-0 flex-1">
-            <h2 className="text-body-strong text-foreground/95">{posting.title}</h2>
-            {/* fold 10: bump metadata row from /60 to /70 (contrast floor at <14px) */}
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-fine-print text-foreground/70">
-              <span className="font-semibold text-foreground/80">{posting.company}</span>
-              {posting.location && (
-                <span className="flex items-center gap-1">
-                  <MapPin size={9} /> {posting.location}
-                </span>
-              )}
-              {workTypeBadge && (
-                <Tag color={workTypeBadge.color} className={statusTagCls}>
-                  {t(workTypeBadge.key)}
-                </Tag>
-              )}
-              <span role="presentation">
-                <SourceBadge source={posting.source} url={posting.url} />
-              </span>
-              {posting.isAgency && <AgencyChip className={statusTagCls} />}
-              <ClusterSourceChips
-                members={posting.clusterMembers}
-                selfKey={posting.clusterId}
-                selfUrl={posting.url}
-              />
-              {posting.postedAt && <span>· {formatRelativeTime(posting.postedAt)}</span>}
-            </div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <RowMatchScore jobId={posting.id} />
-              {/* Status badges — viewed + applied + saved */}
-              {(has('opened') || has('viewed')) && (
-                <Tag color="blue" icon={<Eye size={8} />} className={statusTagCls}>
-                  {t('jobs.viewed')}
-                </Tag>
-              )}
-              {has('applied') && (
-                <Tag color="purple" icon={<CircleCheck size={8} />} className={statusTagCls}>
-                  {t('jobs.applied')}
-                </Tag>
-              )}
-              {has('bookmarked') && (
-                <Tag color="warning" icon={<Bookmark size={8} />} className={statusTagCls}>
-                  {t('jobs.saved')}
-                </Tag>
-              )}
-              <TrustBadge trust={posting.trust} className={statusTagCls} />
-            </div>
-          </div>
-
-          {/* RIGHT: action cluster — Save/View, Tailor, ActionMenu.
-              `shrink-0` used to pin this at max-content, so `flex-wrap` never
-              fired and the trailing actions were clipped by the pane's
-              overflow-hidden on a narrow window. `min-w-0` lets it shrink below
-              max-content so the wrap actually happens; under a ~757px pane (see
-              the header's container note) it takes its own full-width row
-              beneath the title instead of fighting it for a single line. */}
-          <div className="@2xl:w-auto @2xl:justify-end flex w-full min-w-0 flex-wrap items-center gap-2">
-            <motion.div layout transition={transition.fast} className="shrink-0">
-              <Button
-                variant="primary"
-                onClick={saved ? handleView : handleSave}
-                disabled={pending}
-                loading={pending}
-                title={saved ? t('jobs.view') : t('applications.saveToTracking')}
-              >
-                {saved ? <Eye size={11} /> : <Save size={11} />}{' '}
-                {saved ? t('jobs.view') : t('applications.save')}
-              </Button>
-            </motion.div>
-            <Button
-              variant="glass"
-              onClick={() => void handleTailor()}
-              title={t('jobs.tailorHint')}
-            >
-              <Wand2 size={11} /> {t('jobs.tailor')}
-            </Button>
-            <ActionMenu
-              label={t('jobs.actions')}
-              items={[
-                { label: t('jobs.open'), icon: <ExternalLink size={14} />, onSelect: handleOpen },
-                {
-                  label: t('jobs.copyLink'),
-                  icon: <Copy size={14} />,
-                  onSelect: () => void handleCopyLink(),
-                },
-              ]}
-            />
-          </div>
-        </div>
-      </div>
+      <DetailHeader posting={posting} formatRelativeTime={formatRelativeTime} actions={actions} />
 
       {/* Body — description.
           The live region is a small visually-hidden sentinel only (blocker 4):
@@ -350,52 +83,7 @@ function DetailContent({
           {announced ? t('jobs.fullDescriptionLoaded') : ''}
         </span>
 
-        {/* Cross-board cluster "All sources" (ADR-029): every member of this
-            cluster, canonical first. A non-canonical member can be split out via
-            "Not a duplicate" — the tombstone survives every re-scrape. */}
-        {hasCluster && (
-          <section
-            data-testid={TEST_IDS.jobs.clusterMembers}
-            className="mb-4 rounded-lg border border-[var(--border-clear)] p-3"
-          >
-            <h3 className="mb-2 text-fine-print uppercase tracking-wider text-muted-foreground">
-              {t('jobs.cluster.sources')}
-            </h3>
-            <ul className="space-y-1.5">
-              {orderedMembers.map((m) => {
-                const canonical = m.key === canonicalKey || m.url === posting.url;
-                const boardId = m.board?.trim();
-                const label = boardId
-                  ? t(`jobs.boards.${boardId}`, { defaultValue: boardId })
-                  : hostOf(m.url);
-                return (
-                  <li key={m.key} className="flex items-center justify-between gap-2">
-                    <Button
-                      variant="unstyled"
-                      onClick={() => openExternal.mutate(m.url)}
-                      title={t('jobs.cluster.openOn', { source: label })}
-                      className="flex min-w-0 items-center gap-1.5 text-left text-caption text-foreground/75 hover:text-foreground focus-visible:ring-offset-1"
-                    >
-                      <ExternalLink size={11} className="shrink-0 text-foreground/40" />
-                      <span className="truncate">{label}</span>
-                    </Button>
-                    {!canonical && (
-                      <Button
-                        variant="ghost"
-                        data-testid={TEST_IDS.jobs.clusterSplitButton}
-                        onClick={() => handleSplit(m)}
-                        disabled={split.isPending}
-                        className="shrink-0 text-[11px]"
-                      >
-                        {t('jobs.cluster.notDuplicate')}
-                      </Button>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        )}
+        {hasCluster && <ClusterSources posting={posting} />}
 
         {/* "About the job" section label */}
         <h3 className="mb-3 text-fine-print uppercase tracking-wider text-muted-foreground">
@@ -436,7 +124,7 @@ function DetailContent({
 
             {/* blocker 7: show error hint when resolve failed AND the gate fired;
                 gate on shouldResolve so non-aggregator postings are never affected */}
-            {shouldResolve && resolved.isError && !descLoading && (
+            {showError && (
               <p className="mt-2 text-[11px] text-foreground/50">
                 {t('jobs.descriptionLoadError')}
               </p>
@@ -446,7 +134,7 @@ function DetailContent({
             {showLoadButton && (
               <Button
                 variant="ghost"
-                onClick={() => void resolved.refetch()}
+                onClick={() => void refetch()}
                 className="mt-2 h-auto w-fit gap-1 px-2 py-1 text-[11px] text-foreground/50 hover:text-foreground/80"
               >
                 <RefreshCw size={11} aria-hidden="true" />
