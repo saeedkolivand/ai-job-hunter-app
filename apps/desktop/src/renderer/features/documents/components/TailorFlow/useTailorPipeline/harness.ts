@@ -100,6 +100,9 @@ vi.mock('@/services/use-resume-pipeline', () => ({
   }),
 }));
 
+export const activeConfig = { effort: undefined as string | undefined };
+vi.mock('@/services/use-ai-provider', () => ({ useGenerateConfig: () => activeConfig }));
+
 vi.mock('@/services/use-ai-generations', () => ({
   useUpdateAiGeneration: () => ({ mutate: updateAiGenerationMutate }),
 }));
@@ -229,6 +232,7 @@ export function resetHarness() {
   sessionBus.starting = false;
   sessionBus.start.mockReset().mockResolvedValue('run-1');
   sessionBus.cancel.mockReset();
+  activeConfig.effort = undefined;
   regenerateMutate.mockClear();
   resolveFabricationMutate.mockClear();
   updateAiGenerationMutate.mockClear();

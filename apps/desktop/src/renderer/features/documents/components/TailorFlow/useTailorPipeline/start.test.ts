@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  activeConfig,
   detail,
   ENGLISH_JOB_AD,
   expectStartRequest,
@@ -167,5 +168,10 @@ describe('useTailorPipeline — targetLanguage precedence is wired end to end', 
   it('exposes targetLanguageConfident: true when the language was actually detected', () => {
     const { result } = render({ jobDesc: GERMAN_JOB_AD, latestGeneration: undefined });
     expect(result.current.targetLanguageConfident).toBe(true);
+  });
+
+  it('sends the active provider effort on the run request', async () => {
+    activeConfig.effort = 'high';
+    await expectStartRequest({}, { effort: 'high' });
   });
 });

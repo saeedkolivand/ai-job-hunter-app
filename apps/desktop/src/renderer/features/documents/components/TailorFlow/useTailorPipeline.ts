@@ -22,6 +22,7 @@ import {
 } from '@/lib/generate';
 import { RESUME_PIPELINE_BUSY_STATES } from '@/lib/machines/resume-pipeline.machine';
 import { keys } from '@/services/query-client';
+import { useGenerateConfig } from '@/services/use-ai-provider';
 import { usePipelineRunsForJob } from '@/services/use-resume-pipeline';
 
 import { pipelineStepForStage } from './lib/pipeline-steps';
@@ -118,6 +119,8 @@ export function useTailorPipeline({
   const runs = usePipelineRunsForJob(jobUrl).data ?? [];
 
   const session = useResumePipelineSession(initialRunId, initialJobId);
+  // Same per-provider effort the other generation surfaces send (`stream.ts`).
+  const { effort } = useGenerateConfig();
 
   // `onRunStarted` is host-supplied and, on the real DocumentsTab/TailorFlow
   // wiring, a FRESH arrow every render (and calling it writes a Zustand
@@ -450,6 +453,7 @@ export function useTailorPipeline({
       includeResume: values.outputType !== 'cover',
       includeCoverLetter: values.outputType !== 'resume',
       researchCompany: values.researchCompany,
+      effort,
     });
     // `session.start` already logged the cause and set `error`/`state` — this
     // is the one thing it can't do itself: a transient, dismissable toast.
