@@ -82,6 +82,8 @@ impl<'a> Stage<QualityCtx<'a>> for AnalyzeJob {
             }),
         );
         ctx.analysis = analysis;
+        // Starts the cover-letter research lookup, if the run armed one.
+        ctx.publish_role();
         Ok(())
     }
 }

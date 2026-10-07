@@ -52,8 +52,8 @@ fn research_company_brief_returns_a_plain_string<'a>(
 fn research_company_brief_admits_before_it_researches() {
     let source = include_str!("../stages/cover_letter.rs");
     let start = source
-        .find("pub(crate) async fn research_company_brief")
-        .expect("research_company_brief must exist");
+        .find("pub(crate) async fn research_brief")
+        .expect("research_brief must exist");
     assert!(
         source[start..].contains(".admit_research("),
         "research_company_brief must admit against the shared bucket before researching"

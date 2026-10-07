@@ -13,6 +13,7 @@ use crate::error::AppError;
 use crate::ipc_contracts::resume_pipeline::ResumePipelineRunRequest;
 use crate::jobs::cancel::CancelRegistry;
 use crate::pipeline::cache::KvCache;
+use crate::pipeline::resume::early_research::race_background;
 use crate::pipeline::resume::{quality_pipeline, QualityCtx, QualityInput, RunDeadline, RunLedger};
 use crate::pipeline::runs::{PipelineRunStore, RunRow};
 use crate::pipeline::Completer;
@@ -278,7 +279,15 @@ async fn execute(
     )
     .with_stage_completers(&stage_completers);
 
-    let outcome = quality_pipeline().run_hooked(&mut ctx, &hooks).await;
+    // Company research for the letter runs beside the stages that precede it
+    // instead of inside the letter stage; dropped with the pipeline future,
+    // and on `cancel`. `None` unless the run writes a letter AND asked for it.
+    let early_research = ctx.start_early_research(cancel.clone());
+    let outcome = race_background(
+        quality_pipeline().run_hooked(&mut ctx, &hooks),
+        early_research,
+    )
+    .await;
 
     // ── THE DELETE WINS ──────────────────────────────────────────────────────
     //

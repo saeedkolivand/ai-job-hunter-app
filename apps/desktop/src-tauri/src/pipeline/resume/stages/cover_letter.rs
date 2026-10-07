@@ -45,7 +45,11 @@ use crate::pipeline::{Completer, Stage};
 
 pub struct CoverLetter;
 
-const NAME: &str = "cover_letter";
+const NAME: &str = LETTER_STAGE;
+
+/// The stage name, also the routing key the early research lookup resolves its
+/// completer under (so it runs on the model the letter would have used).
+pub(crate) const LETTER_STAGE: &str = "cover_letter";
 
 #[async_trait]
 impl<'a> Stage<QualityCtx<'a>> for CoverLetter {
@@ -62,7 +66,13 @@ impl<'a> Stage<QualityCtx<'a>> for CoverLetter {
         let completer = ctx.completer_for(NAME);
 
         let brief = if ctx.input.research_company {
-            research_company_brief(completer, ctx).await
+            // Started right after `analyze_job` when armed (see
+            // `early_research`); awaited only if it has not finished. A dropped
+            // lookup is "no brief". Unarmed callers research inline as before.
+            match ctx.early_research.as_mut().and_then(|e| e.take_brief()) {
+                Some(brief) => brief.await.unwrap_or_default(),
+                None => research_company_brief(completer, ctx).await,
+            }
         } else {
             String::new()
         };
@@ -143,16 +153,34 @@ impl<'a> Stage<QualityCtx<'a>> for CoverLetter {
 /// doc for why the scrape it replaced was a weaker guarantee than the type
 /// system already gives us for free.
 pub(crate) async fn research_company_brief(completer: &Completer, ctx: &QualityCtx<'_>) -> String {
+    research_brief(
+        completer,
+        ctx.input.job_ad,
+        ctx.input.company_name,
+        &ctx.analysis.role_title,
+        ctx.input.effort,
+    )
+    .await
+}
+
+/// The ctx-free body of [`research_company_brief`], shared with the early
+/// lookup. Same non-fatal `String` return, same admission before any spend.
+pub(crate) async fn research_brief(
+    completer: &Completer,
+    job_ad: &str,
+    company: &str,
+    role: &str,
+    effort: Option<&str>,
+) -> String {
     let Some(_guard) = completer.admit_research(NAME) else {
         return String::new();
     };
-    let deadline = research_deadline(ctx.input.effort);
-    let company = ctx.input.company_name.trim();
-    let role = ctx.analysis.role_title.trim();
+    let deadline = research_deadline(effort);
+    let (company, role) = (company.trim(), role.trim());
     CompanyResearch
         .enrich_with(
             completer,
-            ctx.input.job_ad,
+            job_ad,
             (!company.is_empty()).then_some(company),
             (!role.is_empty()).then_some(role),
             deadline,

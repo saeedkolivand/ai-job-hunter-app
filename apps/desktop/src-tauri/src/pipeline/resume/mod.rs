@@ -44,6 +44,7 @@
 
 pub mod cache;
 mod deadline;
+pub mod early_research;
 pub mod project_render;
 pub mod project_seed;
 pub mod projects;
@@ -413,6 +414,9 @@ pub struct QualityCtx<'a> {
     pub letter: String,
     /// The letter's own report — present only when a letter was in scope.
     pub letter_report: Option<ContentReport>,
+    /// Channels to the early company-research lookup — `Some` only when the
+    /// run driver armed one (see `early_research`).
+    pub(crate) early_research: Option<early_research::EarlyResearch>,
 }
 
 impl<'a> QualityCtx<'a> {
@@ -448,6 +452,7 @@ impl<'a> QualityCtx<'a> {
             report: None,
             letter: String::new(),
             letter_report: None,
+            early_research: None,
         }
     }
 

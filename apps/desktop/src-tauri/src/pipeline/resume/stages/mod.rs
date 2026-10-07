@@ -18,6 +18,7 @@ mod validate;
 
 pub use self::analyze::AnalyzeJob;
 pub use self::cover_letter::CoverLetter;
+pub(crate) use self::cover_letter::{research_brief, LETTER_STAGE};
 pub use self::draft::Draft;
 pub use self::evidence::MatchEvidence;
 pub use self::humanize::Humanize;
