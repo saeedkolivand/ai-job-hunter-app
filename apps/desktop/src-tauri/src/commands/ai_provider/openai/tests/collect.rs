@@ -112,3 +112,17 @@ async fn an_oversized_answer_is_capped() {
         "{err:?}"
     );
 }
+
+/// Refusal text accumulates outside the answer, so it must count toward the cap too.
+#[tokio::test]
+async fn an_oversized_refusal_is_capped() {
+    let big = "y".repeat(crate::net::http::DEFAULT_MAX_BODY_BYTES / 2 + 1);
+    let frame = format!("data: {{\"choices\":[{{\"delta\":{{\"refusal\":\"{big}\"}}}}]}}\n");
+    let err = collect_canned(&[&frame, &frame], parse_openai_frames, false)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&err, AppError::Provider(m) if m.contains("size limit")),
+        "{err:?}"
+    );
+}

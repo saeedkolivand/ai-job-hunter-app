@@ -239,7 +239,7 @@ where
             } else if !piece.thinking {
                 answer.push_str(&piece.delta);
             }
-            if answer.len() > DEFAULT_MAX_BODY_BYTES {
+            if answer.len() + refusal.len() > DEFAULT_MAX_BODY_BYTES {
                 return Err(too_big());
             }
             if piece.done {
