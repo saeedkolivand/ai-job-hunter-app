@@ -4,6 +4,10 @@
 
 pub const STREAM_BASELINE_SECS: u64 = 300;
 
+/// Absolute backstop on one provider call, as a multiple of its idle bound —
+/// see `timeouts::stream_ceiling`.
+pub const STREAM_CEILING_FACTOR: u32 = 4;
+
 /// Baseline NON-streaming completion deadline — the local-Ollama analogue
 /// of `STREAM_BASELINE_SECS`, scaled the same way by
 /// `timeouts::ollama_completion_deadline`. A separate constant from

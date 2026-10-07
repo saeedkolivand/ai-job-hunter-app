@@ -147,6 +147,8 @@ pub(super) fn build_complete_body(
         "model": model,
         "max_tokens": adaptive_max_tokens(model, 4096),
         "messages": [ { "role": "user", "content": user } ],
+        // Streamed and re-assembled by `complete_impl` (idle timeout, #1353).
+        "stream": true,
     });
     if anthropic_supports_temperature(model) {
         body["temperature"] = json!(temperature.unwrap_or(0.7));

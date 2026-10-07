@@ -22,7 +22,8 @@ fn complete_body_carries_the_schema_in_ollamas_own_format_field() {
         Some(structured_call(structured::ollama_format(Some(&schema)))),
     );
     assert_eq!(body["format"], schema);
-    assert_eq!(body["stream"], json!(false));
+    // Streamed + re-assembled (#1353): `format` rides the stream request.
+    assert_eq!(body["stream"], json!(true));
 }
 
 #[test]

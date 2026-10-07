@@ -10,7 +10,7 @@ use crate::commands::ai::get_provider_key;
 use crate::error::{AppError, AppResult};
 
 use super::super::pagination::checked_response;
-use super::super::stream::stream_response;
+use super::super::stream::{collect, open, stream_response, StreamLimits};
 use super::super::timeouts;
 use super::super::{
     map_completion_transport_error, resolve_intent, AiGenerateRequest, AiProvider, RequestTrace,
@@ -18,13 +18,15 @@ use super::super::{
 };
 use super::body::{build_chat_stream_body, build_complete_body, StructuredCall};
 use super::transport::scrub_url_secret;
-use super::wire::{parse_openai_embed_usage, parse_openai_frames, parse_openai_usage};
+use super::wire::{parse_openai_embed_usage, parse_openai_frames};
 use super::OpenAiClient;
 
 impl OpenAiClient {
-    /// Shared body of `complete`/`complete_with_usage`: one non-streaming
-    /// `/chat/completions` call, parsed once into `(text, usage)` so the two
-    /// trait methods never duplicate the HTTP round-trip. `structured` is
+    /// Shared body of `complete`/`complete_with_usage`: one `/chat/completions`
+    /// call, STREAMED and re-assembled into `(text, usage)` (idle timeout
+    /// instead of a whole-request wall, #1353) so the trait methods never
+    /// duplicate the HTTP round-trip. `response_format` is accepted on the
+    /// stream request exactly as on the one-shot one. `structured` is
     /// `Some` only on the structured path (see `AiProvider::complete_structured`)
     /// — it is the only non-streaming entry point handed the whole
     /// [`AiGenerateRequest`], so the other two have nothing to pass. Its
@@ -47,59 +49,36 @@ impl OpenAiClient {
 
         let body = build_complete_body(model, system, user, temperature, caps, structured);
 
-        let resp = super::super::retry::send_with_retry(
+        let limits = StreamLimits::new(timeouts::COMPLETION);
+        let resp = open(
             || {
                 crate::net::http::shared()
                     .post(endpoint.clone())
                     .bearer_auth(&api_key)
                     .json(&body)
             },
-            timeouts::COMPLETION,
+            limits,
+            self.id.as_str(),
+            // Scrub BEFORE mapping: some OpenAI-compatible gateways put the
+            // API key in the base URL's own query string, and
+            // `reqwest::Error`'s `Display` embeds the request URL verbatim
+            // (see `scrub_url_secret`'s own doc) — the timeout branch never
+            // reads `e`'s `Display`, so scrubbing unconditionally is safe.
+            |e| map_completion_transport_error(scrub_url_secret(e), self.id.as_str(), limits.idle),
         )
         .await;
-        let resp = match resp {
+        let mut resp = match resp {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                // Scrub BEFORE mapping: some OpenAI-compatible gateways put the
-                // API key in the base URL's own query string, and
-                // `reqwest::Error`'s `Display` embeds the request URL verbatim
-                // (see `scrub_url_secret`'s own doc) — the timeout branch never
-                // reads `e`'s `Display`, so scrubbing unconditionally is safe.
-                return Err(map_completion_transport_error(
-                    scrub_url_secret(e),
-                    self.id.as_str(),
-                    timeouts::COMPLETION,
-                ));
+                return Err(e);
             }
         };
-        let resp = checked_response(resp, self.id, &trace).await?;
+        resp = checked_response(resp, self.id, &trace).await?;
         let status = resp.status();
-        let data: Value = match crate::net::http::read_json_capped(
-            resp,
-            crate::net::http::DEFAULT_MAX_BODY_BYTES,
-        )
-        .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                trace.end(Some(status.as_u16()), false);
-                return Err(AppError::Message(format!("parse: {e}")));
-            }
-        };
-        trace.end(Some(status.as_u16()), true);
-        let text = data
-            .get("choices")
-            .and_then(|c| c.get(0))
-            .and_then(|c| c.get("message"))
-            .and_then(|m| m.get("content"))
-            .and_then(|t| t.as_str())
-            .map(String::from)
-            .ok_or_else(|| {
-                AppError::Provider(format!("{}: unexpected response shape", self.id.as_str()))
-            })?;
-        let usage = parse_openai_usage(&data).unwrap_or_default();
-        Ok((text, usage))
+        let collected = collect(&mut resp, parse_openai_frames, limits, self.id.as_str()).await;
+        trace.end(Some(status.as_u16()), collected.is_ok());
+        collected
     }
 
     /// Shared body of `embed`/`embed_with_usage`: one `/embeddings` call,
@@ -196,14 +175,23 @@ impl OpenAiClient {
         // Retried on a transient 429/5xx: this is only the handshake, so a retry
         // re-sends a request that emitted no deltas. Treating it as terminal is
         // what turned a provider rate-limit into a lost multi-minute generation.
-        let response = super::super::retry::send_stream_with_retry(
+        let limits = StreamLimits::new(timeouts::stream_deadline(req.effort.as_deref()));
+        let response = open(
             || {
                 crate::net::http::shared()
                     .post(endpoint.clone())
                     .bearer_auth(&api_key)
                     .json(&body)
             },
-            timeouts::stream_deadline(req.effort.as_deref()),
+            limits,
+            self.id.as_str(),
+            |e| {
+                AppError::Network(format!(
+                    "{} unreachable: {}",
+                    self.id.as_str(),
+                    scrub_url_secret(e)
+                ))
+            },
         )
         .await;
 
@@ -211,11 +199,7 @@ impl OpenAiClient {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                return Err(AppError::Network(format!(
-                    "{} unreachable: {}",
-                    self.id.as_str(),
-                    scrub_url_secret(e)
-                )));
+                return Err(e);
             }
         };
 
@@ -233,6 +217,7 @@ impl OpenAiClient {
             self.id,
             &req.model,
             &self.base_url,
+            limits,
             parse_openai_frames,
         )
         .await

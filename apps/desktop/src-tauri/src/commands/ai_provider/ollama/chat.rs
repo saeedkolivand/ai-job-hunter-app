@@ -8,13 +8,13 @@ use tauri::AppHandle;
 
 use crate::error::AppResult;
 
-use super::super::stream::stream_response;
+use super::super::stream::{collect, open, stream_response, StreamLimits};
 use super::super::timeouts;
 use super::super::{
     map_completion_transport_error, AiGenerateRequest, ProviderId, RequestTrace, SamplingProfile,
     Usage,
 };
-use super::wire::{parse_ollama_frames, parse_ollama_usage};
+use super::wire::parse_ollama_frames;
 use super::{
     host, ollama_family_supports_thinking, ollama_think_is_level_only, OLLAMA_EFFORT_LEVELS,
     OLLAMA_OFF,
@@ -89,10 +89,13 @@ pub(super) async fn stream_chat(
     // Retried on a transient 429/5xx: this is only the handshake, so a retry
     // re-sends a request that emitted no deltas. Treating it as terminal is what
     // turned a provider rate-limit into a lost multi-minute generation.
-    let deadline = timeouts::stream_deadline(req.effort.as_deref());
-    let response = super::super::retry::send_stream_with_retry(
+    // An IDLE bound (+ ceiling), not a whole-request wall — see `timeouts::stream_deadline`.
+    let limits = StreamLimits::new(timeouts::stream_deadline(req.effort.as_deref()));
+    let response = open(
         || crate::net::http::shared().post(&endpoint).json(&body),
-        deadline,
+        limits,
+        "Ollama",
+        |e| map_completion_transport_error(e, "Ollama", limits.idle),
     )
     .await;
 
@@ -100,7 +103,7 @@ pub(super) async fn stream_chat(
         Ok(r) => r,
         Err(e) => {
             trace.end(None, false);
-            return Err(map_completion_transport_error(e, "Ollama", deadline));
+            return Err(e);
         }
     };
 
@@ -132,6 +135,7 @@ pub(super) async fn stream_chat(
         ProviderId::Ollama,
         &req.model,
         &base,
+        limits,
         parse_ollama_frames,
     )
     .await
@@ -210,9 +214,12 @@ pub(super) fn build_complete_body(
     temperature: Option<f64>,
     structured: Option<StructuredCall<'_>>,
 ) -> Value {
+    // Streamed and re-assembled by `complete_impl` (idle timeout, #1353) — `format`
+    // (the JSON schema) is accepted on the stream endpoint exactly as on the
+    // one-shot one.
     let mut body = json!({
         "model": model,
-        "stream": false,
+        "stream": true,
         "messages": [
             { "role": "system", "content": system },
             { "role": "user", "content": user },
@@ -262,25 +269,27 @@ pub(super) async fn complete_impl(
     let endpoint = format!("{base}/api/chat");
     let trace = RequestTrace::begin(ProviderId::Ollama, model, "/api/chat", &base, false);
 
-    // Scaled by the SAME effort that governs `chat_stream`'s deadline — see
-    // `timeouts::ollama_completion_deadline`'s doc for why this is the only
-    // one of the three non-structured completion callers below (`complete`/
-    // `complete_with_usage`, which set `structured: None`) that can actually
-    // raise it above the baseline: those two have no `AiGenerateRequest` to
-    // read an effort off, so they fall back to the same flat bound as before.
-    let deadline = timeouts::ollama_completion_deadline(structured.as_ref().and_then(|s| s.effort));
+    // The IDLE bound, scaled by the SAME effort that governs `chat_stream`'s — see
+    // `timeouts::ollama_completion_deadline`'s doc for why only the callers that
+    // carry a `StructuredCall` can raise it above the baseline: `complete`/
+    // `complete_with_usage` have no `AiGenerateRequest` to read an effort off.
+    let limits = StreamLimits::new(timeouts::ollama_completion_deadline(
+        structured.as_ref().and_then(|s| s.effort),
+    ));
     let body = build_complete_body(model, system, user, temperature, structured);
 
-    let resp = match super::super::retry::send_with_retry(
+    let resp = match open(
         || crate::net::http::shared().post(&endpoint).json(&body),
-        deadline,
+        limits,
+        "Ollama",
+        |e| map_completion_transport_error(e, "Ollama", limits.idle),
     )
     .await
     {
         Ok(r) => r,
         Err(e) => {
             trace.end(None, false);
-            return Err(map_completion_transport_error(e, "Ollama", deadline));
+            return Err(e);
         }
     };
     let status = resp.status();
@@ -295,18 +304,10 @@ pub(super) async fn complete_impl(
             crate::commands::ai_provider::redact_upstream_text(&body_text)
         )));
     }
-    let data: Value =
-        crate::net::http::read_json_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
-            .await
-            .map_err(|e| format!("Ollama parse: {e}"))?;
-    trace.end(Some(status.as_u16()), true);
-    let text = data
-        .get("message")
-        .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_str())
-        .map(String::from)
-        .ok_or_else(|| {
-            crate::error::AppError::Provider("Ollama: unexpected response shape".to_string())
-        })?;
-    Ok((text, parse_ollama_usage(&data).unwrap_or_default()))
+    // Reasoning rides `message.thinking` and is dropped by `collect` (as the
+    // one-shot path never read it); the answer is `message.content` only.
+    let mut resp = resp;
+    let collected = collect(&mut resp, parse_ollama_frames, limits, "Ollama").await;
+    trace.end(Some(status.as_u16()), collected.is_ok());
+    collected
 }

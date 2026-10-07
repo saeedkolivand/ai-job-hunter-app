@@ -17,7 +17,11 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { EFFORT_TIMEOUT_MULTIPLIER, STREAM_BASELINE_SECS } from '@ajh/shared';
+import {
+  EFFORT_TIMEOUT_MULTIPLIER,
+  STREAM_BASELINE_SECS,
+  STREAM_CEILING_FACTOR,
+} from '@ajh/shared';
 
 import type { AppClient } from '../app-client';
 import { awaitAiStream, computeStreamTimeoutMs } from './stream-promise';
@@ -226,7 +230,9 @@ describe('awaitAiStream — empty completion rejects (both resolve paths)', () =
 });
 
 describe('computeStreamTimeoutMs — effort scaling', () => {
-  const BASELINE_MS = STREAM_BASELINE_SECS * 1000 + 30_000; // STREAM_TIMEOUT_MS + OUTER_BOUND_MARGIN_MS
+  // The backend's per-call bound is an idle timeout with a ceiling of idle ×
+  // STREAM_CEILING_FACTOR; the renderer outlasts the CEILING (+ OUTER_BOUND_MARGIN_MS).
+  const BASELINE_MS = STREAM_BASELINE_SECS * 1000 * STREAM_CEILING_FACTOR + 30_000;
 
   it('uses the flat baseline (+ margin) for no, low-tier, or unrecognized effort', () => {
     for (const effort of [undefined, 'minimal', 'low', 'bogus-provider-string']) {
@@ -261,11 +267,11 @@ describe('computeStreamTimeoutMs — effort scaling', () => {
   // the renderer's generic timeout. A change to `computeStreamTimeoutMs`'s own
   // margin/rounding that breaks this relationship must fail HERE, not surface
   // as a support report.
-  it('stays strictly above the backend deadline (derived from the same shared schedule) for every known effort level', () => {
+  it('stays strictly above the backend ceiling (derived from the same shared schedule) for every known effort level', () => {
     const backendBaselineMs = STREAM_BASELINE_SECS * 1000; // mirrors timeouts::STREAM's own derivation
     for (const effort of [undefined, 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']) {
       const multiplier = (effort ? EFFORT_TIMEOUT_MULTIPLIER[effort] : undefined) ?? 1;
-      const backendMs = backendBaselineMs * multiplier;
+      const backendMs = backendBaselineMs * multiplier * STREAM_CEILING_FACTOR; // the absolute ceiling
       const rendererMs = computeStreamTimeoutMs(effort);
       expect(rendererMs).toBeGreaterThan(backendMs);
     }

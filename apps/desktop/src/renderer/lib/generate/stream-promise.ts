@@ -17,7 +17,11 @@
  *     to `JOB_POLL_INTERVAL_MS = 3_000`.
  */
 
-import { EFFORT_TIMEOUT_MULTIPLIER, STREAM_BASELINE_SECS } from '@ajh/shared';
+import {
+  EFFORT_TIMEOUT_MULTIPLIER,
+  STREAM_BASELINE_SECS,
+  STREAM_CEILING_FACTOR,
+} from '@ajh/shared';
 
 import type { AppClient } from '../app-client';
 import { createThinkSplitter } from './think-split';
@@ -55,7 +59,11 @@ const OUTER_BOUND_MARGIN_MS = 30_000;
  */
 export function computeStreamTimeoutMs(effort?: string): number {
   const multiplier = (effort ? EFFORT_TIMEOUT_MULTIPLIER[effort] : undefined) ?? 1;
-  return Math.round(STREAM_TIMEOUT_MS * multiplier) + OUTER_BOUND_MARGIN_MS;
+  // The backend's per-call bound is an IDLE timeout, so the bound this must
+  // outlast is its absolute CEILING (idle × `STREAM_CEILING_FACTOR`), not the
+  // idle value: a stream that keeps producing tokens is legitimately alive
+  // until the ceiling, and the renderer must not give up on it first.
+  return Math.round(STREAM_TIMEOUT_MS * multiplier * STREAM_CEILING_FACTOR) + OUTER_BOUND_MARGIN_MS;
 }
 
 /**

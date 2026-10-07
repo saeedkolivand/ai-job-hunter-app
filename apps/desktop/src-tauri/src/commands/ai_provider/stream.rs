@@ -29,6 +29,7 @@ use crate::jobs::JobTracker;
 use super::{ProviderId, RequestTrace, StopReason, Usage};
 
 mod finish;
+mod idle;
 mod piece;
 mod text;
 
@@ -36,8 +37,11 @@ mod text;
 pub(crate) use finish::empty_answer_error_for_test;
 pub(crate) use finish::is_empty_answer_length_cut;
 pub(super) use finish::EMPTY_ANSWER_MESSAGE;
+pub(super) use idle::{collect, open, StreamLimits};
 pub(super) use piece::StreamPiece;
 pub(in crate::commands::ai_provider) use text::{push_utf8, strip_think_blocks};
+
+use idle::IdleGuard;
 
 /// Emit a single `ai:stream` delta for `job_id`.
 fn emit_delta(app: &AppHandle, job_id: &str, delta: &str, thinking: bool) {
@@ -192,6 +196,11 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
 /// direct loop here so the returned `Future` stays `Send` (an async-trait
 /// requirement — nothing non-`Send` is held across the `await`).
 ///
+/// A read that stays silent for `limits.idle` (or a stream still running at
+/// `limits.ceiling`) fails with `AppError::Timeout` — the same usage-recording
+/// error branch as a transport failure — instead of the whole request being
+/// bounded by one wall-clock deadline (#1353).
+///
 /// `provider`/`model`/`base_url` identify the call for spend recording only —
 /// every [`StreamPiece::usage`] seen is remembered (last write wins, since
 /// Anthropic reports usage incrementally and Gemini/Ollama repeat a running
@@ -210,6 +219,7 @@ pub(super) async fn stream_response<F>(
     provider: ProviderId,
     model: &str,
     base_url: &str,
+    limits: StreamLimits,
     mut parse: F,
 ) -> AppResult<()>
 where
@@ -240,6 +250,7 @@ where
     // reasoning model was actively thinking even when it never reached an
     // answer.
     let mut thinking_len: usize = 0;
+    let guard = IdleGuard::start(limits);
     loop {
         if is_cancelled(app, job_id) {
             drop(response);
@@ -267,7 +278,7 @@ where
             return Err(AppError::Message("Job cancelled".to_string()));
         }
 
-        match response.chunk().await {
+        match guard.read(response.chunk()).await {
             Ok(Some(bytes)) => {
                 push_utf8(&mut buf, &mut carry, &bytes);
                 for piece in parse(&mut buf) {
@@ -303,7 +314,7 @@ where
                 }
             }
             Ok(None) => break,
-            Err(e) => {
+            Err(stop) => {
                 trace.end(Some(status), false);
                 // Record whatever REAL usage the provider had already
                 // reported before the read failed — mirrors the
@@ -312,7 +323,15 @@ where
                 // one), so a single stream can never double-record. Never
                 // estimated, zero when none was ever seen.
                 super::record_usage(app, provider.as_str(), model, usage, Some(base_url));
-                return Err(AppError::Network(format!("Stream error: {e}")));
+                // Idle/ceiling are `Timeout`; a reqwest timer firing mid-body is
+                // the ceiling too (it is set to it — see `idle::open`).
+                return Err(stop.into_app(provider.as_str(), limits, |e| {
+                    if e.is_timeout() {
+                        idle::ceiling_error(provider.as_str(), limits.ceiling)
+                    } else {
+                        AppError::Network(format!("Stream error: {e}"))
+                    }
+                }));
             }
         }
     }

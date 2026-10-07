@@ -35,6 +35,21 @@
 export const STREAM_BASELINE_SECS = 300;
 
 /**
+ * Absolute backstop on ONE provider call, as a multiple of its idle bound.
+ *
+ * The per-call bound ({@link STREAM_BASELINE_SECS} × effort, or the cloud/Ollama
+ * completion baseline) is an IDLE timeout: it fires only when no bytes arrive for
+ * that long, so a model that keeps producing tokens (a thinking model at ~7 tok/s
+ * writing a long draft) is never killed for being slow. This factor caps how long
+ * a call that keeps trickling bytes may run in total — idle × 4 is 20 minutes at
+ * the baseline tier, far past any healthy draft, short of the run deadline
+ * ({@link qualityRunDeadlineSecs}). Rust twin: `timeouts::stream_ceiling`.
+ * The renderer's own stream timeout is sized from this ceiling, so the backend
+ * error still fires first.
+ */
+export const STREAM_CEILING_FACTOR = 4;
+
+/**
  * Baseline NON-streaming completion deadline, in seconds, for no/low/
  * unrecognized effort — the local-Ollama analogue of {@link STREAM_BASELINE_SECS}.
  * Mirrored in Rust as `timeouts::OLLAMA_COMPLETION_BASELINE`, scaled the exact

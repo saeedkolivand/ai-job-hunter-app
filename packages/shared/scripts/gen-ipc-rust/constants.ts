@@ -10,6 +10,7 @@ import {
   QUALITY_RUN_GENERATION_PASSES,
   QUALITY_RUN_JSON_STAGE_CALLS,
   STREAM_BASELINE_SECS,
+  STREAM_CEILING_FACTOR,
 } from '../../src/ai-timeouts.js';
 import { PROVIDER_SLOTS } from '../../src/provider-slots.js';
 import {
@@ -118,6 +119,10 @@ export function genStreamTimeouts(): string {
   return [
     ...generatedHeader('packages/shared/src/ai-timeouts.ts'),
     `pub const STREAM_BASELINE_SECS: u64 = ${STREAM_BASELINE_SECS};`,
+    '',
+    '/// Absolute backstop on one provider call, as a multiple of its idle bound —',
+    '/// see `timeouts::stream_ceiling`.',
+    `pub const STREAM_CEILING_FACTOR: u32 = ${STREAM_CEILING_FACTOR};`,
     '',
     '/// Baseline NON-streaming completion deadline — the local-Ollama analogue',
     '/// of `STREAM_BASELINE_SECS`, scaled the same way by',

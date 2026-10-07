@@ -57,6 +57,8 @@ fn build_structured_body_merges_output_config_and_still_omits_temperature_on_an_
         Some(output_config.clone()),
     );
     assert_eq!(body["output_config"], output_config);
+    // Streamed + re-assembled (#1353): the schema rides the stream request.
+    assert_eq!(body["stream"], json!(true));
     assert_eq!(
         body["output_config"]["format"]["type"],
         json!("json_schema")

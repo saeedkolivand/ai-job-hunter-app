@@ -19,6 +19,7 @@ use std::time::Duration;
 use crate::ipc_contracts::ai_timeouts::{
     EFFORT_TIMEOUT_MULTIPLIER, OLLAMA_COMPLETION_BASELINE_SECS, QUALITY_RUN_FIXED_SECS,
     QUALITY_RUN_GENERATION_PASSES, QUALITY_RUN_JSON_STAGE_CALLS, STREAM_BASELINE_SECS,
+    STREAM_CEILING_FACTOR,
 };
 
 // ── Chat generation ─────────────────────────────────────────────────────────────
@@ -92,27 +93,38 @@ pub fn effort_tier(effort: Option<&str>) -> &'static str {
     }
 }
 
-/// The actual per-request deadline for `chat_stream`: [`STREAM`] scaled by
-/// [`effort_multiplier`]. `reqwest::RequestBuilder::timeout` bounds the WHOLE
-/// request (connect through the last streamed byte — see reqwest's own docs),
-/// so this is a total deadline, not a per-chunk idle timeout; a per-chunk idle
-/// timeout would be architecturally nicer (it wouldn't need effort awareness
-/// at all — a stream that's still actively producing text would never be
-/// killed, regardless of how long it legitimately runs) but would mean
-/// loosening or removing this same total timeout at all 4 call sites AND
-/// adding a second timing mechanism inside the shared `stream_response` loop
-/// (`stream.rs`) — a materially bigger surface for the same bug. Scaling the
-/// existing total deadline is the smaller, fully-tested fix.
+/// The actual per-call IDLE bound for `chat_stream`: [`STREAM`] scaled by
+/// [`effort_multiplier`]. Since #1353 this is no longer a whole-request wall:
+/// the stream loop (`stream::StreamLimits`) fails a call only when NO bytes
+/// arrive for this long, so a stream that keeps producing text (a thinking
+/// model at ~7 tok/s writing a long draft) is never killed for being slow. The
+/// effort scaling stays because it is what lets a model that reasons SILENTLY
+/// (no streamed thinking deltas) get its longer first-byte window.
+/// [`stream_ceiling`] is the absolute backstop.
 pub fn stream_deadline(effort: Option<&str>) -> Duration {
     Duration::from_secs_f64(STREAM.as_secs_f64() * effort_multiplier(effort))
 }
 
-/// Non-streaming cloud completion (`complete`): a single full-response call to a
-/// cloud provider (OpenAI / Anthropic / Gemini).
+/// The absolute ceiling on one provider call whose idle bound is `idle`:
+/// `idle` × [`STREAM_CEILING_FACTOR`] (generated from
+/// `packages/shared/src/ai-timeouts.ts`, which the renderer's own stream
+/// timeout is also sized from, so the backend error always fires first).
+/// Derived from the idle bound rather than a flat number so it keeps the same
+/// effort scaling, and 4x is deliberately far above any healthy generation yet
+/// below `quality_run_deadline`, which stays the run-level backstop.
+pub fn stream_ceiling(idle: Duration) -> Duration {
+    idle.saturating_mul(STREAM_CEILING_FACTOR)
+}
+
+/// Cloud completion (`complete`): a call to a cloud provider (OpenAI /
+/// Anthropic / Gemini). Streamed and re-assembled since #1353, so this is the
+/// IDLE bound (no bytes for this long) with [`stream_ceiling`] as the absolute
+/// backstop — not a whole-request wall.
 pub const COMPLETION: Duration = Duration::from_secs(120);
 
-/// Non-streaming **local** Ollama completion (`complete`/`complete_structured`):
-/// the local daemon can be far slower than a cloud API on first token, so it
+/// **Local** Ollama completion (`complete`/`complete_structured`; streamed and
+/// re-assembled since #1353, so every bound derived from this is an IDLE bound
+/// with [`stream_ceiling`] as the backstop): the local daemon can be far slower than a cloud API on first token, so it
 /// gets the longer stream-class BASELINE rather than the cloud [`COMPLETION`]
 /// bound. This is the baseline only — every call site that HAS an effort to
 /// scale by uses [`ollama_completion_deadline`], never this constant directly;

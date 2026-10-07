@@ -11,7 +11,7 @@ use crate::error::{AppError, AppResult};
 
 use super::super::pagination::checked_response;
 use super::super::retry::send_with_retry;
-use super::super::stream::stream_response;
+use super::super::stream::{collect, open, stream_response, StreamLimits};
 use super::super::timeouts;
 use super::super::{
     map_completion_transport_error, resolve_intent, single_shot_turn, split_system, AgentTurn,
@@ -20,15 +20,15 @@ use super::super::{
 use super::body::{
     build_chat_stream_body, build_structured_body, build_tools_body, build_web_search_body,
 };
-use super::wire::{
-    join_text_blocks, parse_anthropic_frames, parse_anthropic_turn, parse_anthropic_usage,
-};
+use super::wire::{join_text_blocks, parse_anthropic_frames, parse_anthropic_turn};
 use super::{AnthropicClient, BASE, VERSION};
 
 impl AnthropicClient {
-    /// Shared body of `complete`/`complete_with_usage`: one non-streaming
-    /// `/messages` call, parsed once into `(text, usage)` so the two trait
-    /// methods never duplicate the HTTP round-trip.
+    /// Shared body of `complete`/`complete_with_usage`: one `/messages` call,
+    /// STREAMED and re-assembled into `(text, usage)` (idle timeout instead of
+    /// a whole-request wall, #1353) so the trait methods never duplicate the
+    /// HTTP round-trip. `output_config` (format + effort) is accepted on the
+    /// stream request exactly as on the one-shot one.
     pub(super) async fn complete_impl(
         &self,
         app: &AppHandle,
@@ -44,7 +44,8 @@ impl AnthropicClient {
 
         let body = build_structured_body(model, system, user, temperature, output_config);
 
-        let resp = send_with_retry(
+        let limits = StreamLimits::new(timeouts::COMPLETION);
+        let resp = open(
             || {
                 crate::net::http::shared()
                     .post(&endpoint)
@@ -52,34 +53,36 @@ impl AnthropicClient {
                     .header("anthropic-version", VERSION)
                     .json(&body)
             },
-            timeouts::COMPLETION,
+            limits,
+            "Anthropic",
+            |e| map_completion_transport_error(e, "Anthropic", limits.idle),
         )
         .await;
-        let resp = match resp {
+        let mut resp = match resp {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                return Err(map_completion_transport_error(
-                    e,
-                    "Anthropic",
-                    timeouts::COMPLETION,
-                ));
+                return Err(e);
             }
         };
-        let resp = checked_response(resp, ProviderId::Anthropic, &trace).await?;
+        resp = checked_response(resp, ProviderId::Anthropic, &trace).await?;
         let status = resp.status();
-        let data: Value =
-            crate::net::http::read_json_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
-                .await
-                .map_err(|e| format!("parse: {e}"))?;
-        trace.end(Some(status.as_u16()), true);
-        let text = join_text_blocks(&data);
-        if text.is_empty() {
-            return Err(AppError::Provider(
+        let mut last_event = String::new();
+        let mut usage = Usage::default();
+        let collected = collect(
+            &mut resp,
+            move |buf| parse_anthropic_frames(buf, &mut last_event, &mut usage),
+            limits,
+            "Anthropic",
+        )
+        .await;
+        trace.end(Some(status.as_u16()), collected.is_ok());
+        match collected? {
+            (text, _) if text.is_empty() => Err(AppError::Provider(
                 "Anthropic: unexpected response shape".to_string(),
-            ));
+            )),
+            ok => Ok(ok),
         }
-        Ok((text, parse_anthropic_usage(&data)))
     }
 
     /// Shared transport for every `research*` facet: a non-streaming Messages
@@ -175,7 +178,8 @@ impl AnthropicClient {
         // Retried on a transient 429/5xx: this is only the handshake, so a retry
         // re-sends a request that emitted no deltas. Treating it as terminal is
         // what turned a provider rate-limit into a lost multi-minute generation.
-        let response = super::super::retry::send_stream_with_retry(
+        let limits = StreamLimits::new(timeouts::stream_deadline(req.effort.as_deref()));
+        let response = open(
             || {
                 crate::net::http::shared()
                     .post(&endpoint)
@@ -183,7 +187,9 @@ impl AnthropicClient {
                     .header("anthropic-version", VERSION)
                     .json(&body)
             },
-            timeouts::stream_deadline(req.effort.as_deref()),
+            limits,
+            "Anthropic",
+            |e| AppError::Network(format!("Anthropic unreachable: {e}")),
         )
         .await;
 
@@ -191,7 +197,7 @@ impl AnthropicClient {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                return Err(AppError::Network(format!("Anthropic unreachable: {e}")));
+                return Err(e);
             }
         };
 
@@ -212,6 +218,7 @@ impl AnthropicClient {
             ProviderId::Anthropic,
             &req.model,
             BASE,
+            limits,
             move |buf| parse_anthropic_frames(buf, &mut last_event, &mut usage),
         )
         .await

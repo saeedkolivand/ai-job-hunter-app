@@ -120,7 +120,9 @@ pub(super) fn build_complete_body(
             { "role": "system", "content": system },
             { "role": "user", "content": user },
         ],
-        "stream": false,
+        // Streamed and re-assembled by `complete_impl` (idle timeout, #1353).
+        "stream": true,
+        "stream_options": { "include_usage": true },
     });
     if caps.supports_temperature {
         body["temperature"] = json!(temperature.unwrap_or(0.7));

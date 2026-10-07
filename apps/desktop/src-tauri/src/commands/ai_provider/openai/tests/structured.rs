@@ -36,7 +36,10 @@ fn complete_body_carries_a_strict_json_schema_response_format_when_a_schema_is_s
         body["response_format"]["json_schema"]["schema"]["properties"]["score"]["type"],
         json!("integer")
     );
-    assert_eq!(body["stream"], json!(false));
+    // Streamed + re-assembled (#1353): `response_format` rides the stream request,
+    // and usage is requested on the final chunk.
+    assert_eq!(body["stream"], json!(true));
+    assert_eq!(body["stream_options"]["include_usage"], json!(true));
 }
 
 #[test]
