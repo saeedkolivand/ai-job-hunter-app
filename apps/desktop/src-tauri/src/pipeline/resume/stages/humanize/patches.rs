@@ -13,6 +13,8 @@ use serde::Deserialize;
 
 use crate::validate::content::{line_carries_phrase, normalize_language, urls_in, ContentReport};
 
+use crate::pipeline::resume::prompts::HUMANIZE_DOCUMENT_CAP;
+
 use super::super::repair::issue_line;
 use super::predicates::eligible_voice_issues;
 
@@ -116,22 +118,19 @@ pub(crate) fn humanize_mode(flags: &Flags) -> Option<Mode> {
     }
 }
 
-/// The numbered excerpt the model sees: `{id}> line` for a flagged line,
+/// Chars of excerpt the model may be shown. Below the prompt fence's own cap
+/// (`HUMANIZE_DOCUMENT_CAP`) with headroom, because `fenced` truncates with NO
+/// marker: an over-long excerpt would cut a flagged line mid-sentence, and
+/// `apply_patches` would then replace the FULL line with the model's patch of
+/// the cut text.
+const EXCERPT_BUDGET: usize = HUMANIZE_DOCUMENT_CAP - 1_000;
+
+/// Render the lines `shown` (sorted ids): `{id}> line` for a flagged line,
 /// `{id}| line` for context, `...` where lines were left out.
-pub(crate) fn excerpt(document: &str, flagged: &[FlaggedLine]) -> String {
-    let doc: Vec<&str> = document.split('\n').collect();
-    let mut shown: Vec<usize> = flagged
-        .iter()
-        .flat_map(|l| {
-            let lo = l.id.saturating_sub(CONTEXT_LINES).max(1);
-            lo..=(l.id + CONTEXT_LINES).min(doc.len())
-        })
-        .collect();
-    shown.sort_unstable();
-    shown.dedup();
+fn render(doc: &[&str], flagged: &[&FlaggedLine], shown: &[usize]) -> String {
     let mut out = String::new();
     let mut prev = 0;
-    for id in shown {
+    for &id in shown {
         if prev != 0 && id != prev + 1 {
             out.push_str("...\n");
         }
@@ -147,6 +146,39 @@ pub(crate) fn excerpt(document: &str, flagged: &[FlaggedLine]) -> String {
         prev = id;
     }
     out
+}
+
+/// The numbered excerpt the model sees, built to [`EXCERPT_BUDGET`], plus the
+/// flagged lines actually IN it. A flagged line (with its neighbours) that
+/// would not fit whole is left out and never offered, so no line is shown
+/// truncated; the caller must patch only the returned lines.
+pub(crate) fn excerpt(document: &str, flagged: &[FlaggedLine]) -> (String, Vec<FlaggedLine>) {
+    excerpt_within(document, flagged, EXCERPT_BUDGET)
+}
+
+pub(crate) fn excerpt_within(
+    document: &str,
+    flagged: &[FlaggedLine],
+    budget: usize,
+) -> (String, Vec<FlaggedLine>) {
+    let doc: Vec<&str> = document.split('\n').collect();
+    let mut kept: Vec<&FlaggedLine> = Vec::new();
+    let mut shown: Vec<usize> = Vec::new();
+    let mut out = String::new();
+    for line in flagged {
+        let lo = line.id.saturating_sub(CONTEXT_LINES).max(1);
+        let mut trial = shown.clone();
+        trial.extend(lo..=(line.id + CONTEXT_LINES).min(doc.len()));
+        trial.sort_unstable();
+        trial.dedup();
+        let mut trial_kept = kept.clone();
+        trial_kept.push(line);
+        let rendered = render(&doc, &trial_kept, &trial);
+        if rendered.chars().count() <= budget {
+            (kept, shown, out) = (trial_kept, trial, rendered);
+        }
+    }
+    (out, kept.into_iter().cloned().collect())
 }
 
 /// The `<humanize_findings>` entries: per-line findings keyed by line id, then
@@ -221,7 +253,13 @@ fn accepted_body(original_prefix: &str, original_body: &str, replacement: &str) 
         .next()
         .filter(|c| body.starts_with(*c))
     {
-        body = body.trim_start_matches(marker).trim_start();
+        // Exactly ONE bullet (or one `#` run) followed by whitespace: a
+        // replacement starting `**Bold**` is not an echoed `*` bullet.
+        let run = body.len() - body.trim_start_matches(marker).len();
+        let after = &body[run..];
+        if (marker == '#' || run == marker.len_utf8()) && after.starts_with(char::is_whitespace) {
+            body = after.trim_start();
+        }
     }
     let usable = !body.is_empty()
         && !body.contains(['\n', '\r'])

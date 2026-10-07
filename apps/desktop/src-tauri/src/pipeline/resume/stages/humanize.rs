@@ -100,7 +100,7 @@ pub(crate) use predicates::{should_humanize_letter, voice_count};
 pub(crate) use attempt::humanize_one;
 #[cfg(test)]
 pub(crate) use patches::{
-    apply_patches, flagged_lines, humanize_mode, FlaggedLine, Patch, PatchList,
+    apply_patches, excerpt_within, flagged_lines, humanize_mode, FlaggedLine, Patch, PatchList,
 };
 #[cfg(test)]
 pub(crate) use predicates::{

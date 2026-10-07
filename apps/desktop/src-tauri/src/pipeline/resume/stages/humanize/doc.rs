@@ -45,7 +45,10 @@ where
     G: FnMut(String) -> GFut,
     GFut: std::future::Future<Output = AppResult<ContentReport>>,
 {
-    let flags = flagged_lines(&report, &text, env.lang);
+    let mut flags = flagged_lines(&report, &text, env.lang);
+    // Offer only the flagged lines that fit the excerpt whole (see `excerpt`).
+    let (excerpt_text, shown) = excerpt(&text, &flags.lines);
+    flags.lines = shown;
     let mode = humanize_mode(&flags);
     let document_wide = flags.document_wide;
     let attempt = if mode == Some(Mode::Rewrite) {
@@ -83,11 +86,10 @@ where
             flags.lines,
             |text, lines: Vec<FlaggedLine>| {
                 let document_wide = document_wide.clone();
+                let excerpt_text = excerpt_text.clone();
                 async move {
-                    let user = humanize_user(
-                        &excerpt(&text, &lines),
-                        &findings_for_prompt(&lines, &document_wide),
-                    );
+                    let user =
+                        humanize_user(&excerpt_text, &findings_for_prompt(&lines, &document_wide));
                     let list: PatchList = env
                         .completer
                         .complete_json(

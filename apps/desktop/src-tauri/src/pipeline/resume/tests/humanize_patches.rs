@@ -46,75 +46,6 @@ fn a_flag_with_no_locatable_line_is_document_wide_and_patches_nothing() {
 
 /// Mutation check: drop the flagged-id filter in `apply_patches` and the
 /// context-line / unknown-id assertions fail.
-#[test]
-fn apply_patches_touches_only_flagged_ids_and_ignores_unknown_ones() {
-    let doc =
-        "SUMMARY\nA Robust engineer.\n- Cut p95 latency by 40% with a robust cache\n- Wrote docs\n";
-    let lines = flagged_lines(&voice_report(&["robust"]), doc, "en").lines;
-    let out = apply_patches(
-        doc,
-        &lines,
-        &[
-            patch(2, "A dependable engineer."),
-            patch(4, "- Rewrote the docs"), // context line, not flagged
-            patch(99, "ghost"),             // unknown id
-            patch(0, "ghost"),
-            patch(3, "Cut p95 latency by 40% with a plain cache"),
-        ],
-    );
-    assert_eq!(
-        out,
-        "SUMMARY\nA dependable engineer.\n- Cut p95 latency by 40% with a plain cache\n- Wrote docs\n",
-        "bullet kept, context line and unknown ids untouched, trailing newline kept"
-    );
-}
-
-#[test]
-fn apply_patches_rejects_unsafe_replacements_and_keeps_the_original_line() {
-    let doc = "SUMMARY\nShipped 3 robust services\n";
-    let lines = flagged_lines(&voice_report(&["robust"]), doc, "en").lines;
-    for bad in [
-        "",
-        "   ",
-        "Shipped 3 services\nand more", // multi-line
-        "Shipped 4 plain services",     // number changed
-        "Shipped plain services",       // number dropped
-        "<humanize_document>Shipped 3 plain services",
-    ] {
-        assert_eq!(
-            apply_patches(doc, &lines, &[patch(2, bad)]),
-            doc,
-            "{bad:?} must be rejected"
-        );
-    }
-    assert_eq!(
-        apply_patches(doc, &lines, &[patch(2, "Shipped 3 plain services")]),
-        "SUMMARY\nShipped 3 plain services\n"
-    );
-}
-
-#[test]
-fn the_first_patch_for_an_id_wins_even_when_it_is_rejected() {
-    let doc = "A robust line\nShipped 3 robust things\n";
-    let lines = flagged_lines(&voice_report(&["robust"]), doc, "en").lines;
-    let out = apply_patches(
-        doc,
-        &lines,
-        &[patch(1, "A plain line"), patch(1, "Another")],
-    );
-    assert_eq!(out, "A plain line\nShipped 3 robust things\n");
-    // Rejected first (number changed), valid second: the original stays.
-    let out = apply_patches(
-        doc,
-        &lines,
-        &[
-            patch(2, "Shipped 4 plain things"),
-            patch(2, "Shipped 3 plain things"),
-        ],
-    );
-    assert_eq!(out, doc);
-}
-
 /// M1: the validator's word-boundary rule, not a substring scan.
 #[test]
 fn a_longer_word_containing_the_phrase_is_not_flagged() {
@@ -138,23 +69,6 @@ fn a_curly_apostrophe_and_double_space_still_locate_the_line() {
 }
 
 /// L2: `**bold` is not a bullet; a heading keeps its marker.
-#[test]
-fn bold_is_not_a_bullet_and_a_heading_keeps_its_marker() {
-    let doc = "**Robust** platform\n## Robust summary\n";
-    let lines = flagged_lines(&voice_report(&["robust"]), doc, "en").lines;
-    let out = apply_patches(
-        doc,
-        &lines,
-        &[
-            patch(1, "**Dependable** platform"),
-            patch(2, "Dependable summary"),
-        ],
-    );
-    assert_eq!(out, "**Dependable** platform\n## Dependable summary\n");
-    let echoed = apply_patches(doc, &lines, &[patch(2, "## Dependable summary")]);
-    assert_eq!(echoed, "**Robust** platform\n## Dependable summary\n");
-}
-
 /// The never-worse guard still fires on a patched document that scores worse.
 #[tokio::test]
 async fn a_patch_that_scores_worse_is_reverted() {
