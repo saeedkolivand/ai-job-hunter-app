@@ -38,6 +38,28 @@ pub struct Usage {
     /// Where reported, it is a SUBSET of `output_tokens`, not an addition to
     /// it, so cost estimation is unaffected.
     pub thinking_tokens: Option<u32>,
+    /// The provider's own per-call timing breakdown, where it reports one
+    /// (today only Ollama's final `done` object). `None` everywhere else —
+    /// never derived or estimated. Content-free; read only by `call_trace`.
+    pub timings: Option<ProviderTimings>,
+}
+
+/// Ollama's own timing fields from the final `/api/chat` object, converted from
+/// nanoseconds to whole milliseconds. Each is `None` when the provider omitted
+/// that field. `eval_count` is the decoded-token count (the same figure as
+/// `Usage::output_tokens`); it is kept next to `eval_ms` so tokens/s is one
+/// division in SQL.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderTimings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub load_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_eval_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eval_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eval_count: Option<u32>,
 }
 
 /// Record one AI call's REAL token usage against today's spend via the
@@ -72,6 +94,7 @@ pub(crate) fn record_usage(
     usage: Usage,
     base_url: Option<&str>,
 ) {
+    super::call_trace::observe_usage(usage);
     if let Some(store) = app.try_state::<crate::spend::SpendStore>() {
         store.record(crate::spend::SpendRecord {
             provider: provider.to_string(),

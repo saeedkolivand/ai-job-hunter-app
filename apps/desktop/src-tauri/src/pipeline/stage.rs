@@ -4,6 +4,7 @@
 
 use async_trait::async_trait;
 
+use crate::commands::ai_provider::call_trace::CallLog;
 use crate::error::{AppError, AppResult};
 
 /// One modular step of a workflow, operating on a shared mutable context `C`.
@@ -121,7 +122,10 @@ impl<C> Pipeline<C> {
             hooks.before(&info).await?;
             let started = std::time::Instant::now();
             let trace = StageTrace::begin(self.name, stage.name());
-            let result = stage.run(ctx).await;
+            let result = match hooks.call_log() {
+                Some(log) => log.scope(stage.run(ctx)).await,
+                None => stage.run(ctx).await,
+            };
             trace.end(result.is_ok());
             let outcome = StageOutcome {
                 ok: result.is_ok(),
@@ -192,6 +196,13 @@ pub trait StageHooks: Send + Sync {
     /// After the stage body, for success and failure alike. Returns nothing: an
     /// observer must not be able to turn a successful stage into a failed run.
     async fn after(&self, stage: &StageInfo, outcome: StageOutcome);
+
+    /// The collector for the provider calls each stage body makes, scoped around
+    /// the body by [`Pipeline::run_hooked`]. `None` (the default) collects
+    /// nothing; the implementor drains it in [`after`](Self::after).
+    fn call_log(&self) -> Option<CallLog> {
+        None
+    }
 }
 
 // ── Stage tracing ───────────────────────────────────────────────────────────────

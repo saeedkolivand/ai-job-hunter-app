@@ -112,6 +112,7 @@ pub(super) fn parse_gemini_usage(data: &Value) -> Option<Usage> {
             // `try_from`, not `as` — see the openai adapter: a wrapping cast
             // turns an absurd count into a plausible one.
             .and_then(|v| u32::try_from(v).ok()),
+        timings: None,
     })
 }
 
@@ -132,6 +133,7 @@ pub(super) fn parse_gemini_embed_usage(data: &Value) -> Usage {
         input_tokens,
         output_tokens: 0,
         thinking_tokens: None,
+        timings: None,
     }
 }
 

@@ -6,7 +6,7 @@
 
 use tauri::{AppHandle, Manager};
 
-use crate::commands::ai_provider::{record_usage, resolve, AiProvider, ProviderId, Usage};
+use crate::commands::ai_provider::{resolve, AiProvider, ProviderId};
 use crate::error::AppResult;
 
 /// Binds the active provider + model + app handle so any pipeline stage can run a
@@ -374,18 +374,6 @@ impl Completer {
                 self.provider.id().as_str(),
                 crate::limits::PROVIDER_DAILY_MAX,
             )
-    }
-
-    /// Record ONE completed round-trip's REAL reported usage against today's
-    /// spend. Post-call by necessity: the token counts come from the response.
-    pub(super) fn record_spend(&self, usage: Usage) {
-        record_usage(
-            &self.app,
-            self.provider.id().as_str(),
-            &self.model,
-            usage,
-            self.base_url.as_deref(),
-        );
     }
 
     /// Resolve the search ROUTE for a company-research pass exactly once —

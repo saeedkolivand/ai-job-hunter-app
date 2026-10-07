@@ -118,6 +118,7 @@ pub(super) fn parse_openai_usage(data: &Value) -> Option<Usage> {
             // would land as a small plausible number in the spend ledger. An
             // unrepresentable count is no measurement at all.
             .and_then(|v| u32::try_from(v).ok()),
+        timings: None,
     })
 }
 
@@ -137,6 +138,7 @@ pub(super) fn parse_openai_embed_usage(data: &Value) -> Usage {
         output_tokens: 0,
         // An embedding call does no reasoning; "not reported" is the truth.
         thinking_tokens: None,
+        timings: None,
     }
 }
 

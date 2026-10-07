@@ -40,6 +40,7 @@ fn usage(n: u32) -> Usage {
         input_tokens: n * 10,
         output_tokens: n,
         thinking_tokens: None,
+        timings: None,
     }
 }
 

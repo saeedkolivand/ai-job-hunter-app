@@ -2,12 +2,15 @@
 //! text, and structured JSON (with its one-retry parse/re-ask seam) — plus
 //! the wire-request builder and bound-check they share.
 
+use std::time::{Duration, Instant};
+
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tauri::Manager;
 
 use crate::commands::ai_provider::{
-    AgentTurn, AiGenerateRequest, AiGenerateRequestMessage, ChatMsg, ToolSpec, Usage,
+    call_trace, record_usage, AgentTurn, AiGenerateRequest, AiGenerateRequestMessage, ChatMsg,
+    ToolSpec, Usage,
 };
 use crate::error::{AppError, AppResult};
 
@@ -33,6 +36,33 @@ pub(super) fn vet_wire_request(req: &mut AiGenerateRequest) -> AppResult<()> {
 }
 
 impl Completer {
+    /// Record ONE completed round-trip's REAL reported usage against today's
+    /// spend. Post-call by necessity: the token counts come from the response.
+    ///
+    /// Also notes the call's routing + timing for the stage's persisted trail
+    /// (`effort` is what was actually sent; `started` is when the request left).
+    pub(super) fn record_spend(&self, usage: Usage, effort: Option<&str>, started: Instant) {
+        self.note_call(effort, started.elapsed(), usage);
+        record_usage(
+            &self.app,
+            self.provider.id().as_str(),
+            &self.model,
+            usage,
+            self.base_url.as_deref(),
+        );
+    }
+
+    /// Note one completed round-trip in the ambient per-stage call log.
+    pub(super) fn note_call(&self, effort: Option<&str>, elapsed: Duration, usage: Usage) {
+        call_trace::note(
+            self.provider.id().as_str(),
+            &self.model,
+            effort,
+            elapsed,
+            usage,
+        );
+    }
+
     /// Stream a full [`AiGenerateRequest`] through this resolved provider. Routing
     /// (provider + base_url) is fixed by how the `Completer` was resolved — the
     /// request no longer carries either. `model` is overwritten with the resolved
@@ -42,7 +72,14 @@ impl Completer {
     pub async fn stream(&self, job_id: &str, mut req: AiGenerateRequest) -> AppResult<()> {
         req.model = self.model.clone();
         vet_wire_request(&mut req)?;
-        self.strip_secrets(self.provider.chat_stream(&self.app, job_id, &req).await)
+        let started = Instant::now();
+        let out = self.strip_secrets(self.provider.chat_stream(&self.app, job_id, &req).await);
+        // The stream loop records its usage itself; read it back for the trail.
+        if out.is_ok() {
+            let usage = call_trace::take_observed_usage().unwrap_or_default();
+            self.note_call(req.effort.as_deref(), started.elapsed(), usage);
+        }
+        out
     }
 
     /// Non-streaming completion through the active provider — the single-shot text
@@ -64,12 +101,13 @@ impl Completer {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
+        let started = Instant::now();
         let (text, usage) = self.strip_secrets(
             self.provider
                 .complete_with_usage(&self.app, &self.model, system, user, temperature)
                 .await,
         )?;
-        self.record_spend(usage);
+        self.record_spend(usage, None, started);
         Ok(text)
     }
 
@@ -95,9 +133,10 @@ impl Completer {
             self.context_window,
             effort,
         );
+        let started = Instant::now();
         let (text, usage) =
             self.strip_secrets(self.provider.complete_with_effort(&self.app, &req).await)?;
-        self.record_spend(usage);
+        self.record_spend(usage, effort, started);
         Ok(text)
     }
 
@@ -221,12 +260,13 @@ impl Completer {
         tools: &[ToolSpec],
         temperature: Option<f64>,
     ) -> AppResult<AgentTurn> {
+        let started = Instant::now();
         let turn = self.strip_secrets(
             self.provider
                 .chat_with_tools(&self.app, &self.model, messages, tools, temperature)
                 .await,
         )?;
-        self.record_spend(turn.usage);
+        self.record_spend(turn.usage, None, started);
         Ok(turn)
     }
 
@@ -295,13 +335,17 @@ impl Completer {
         schema: Option<&Value>,
         effort: Option<&str>,
     ) -> AppResult<T> {
+        let started = parking_lot::Mutex::new(Instant::now());
         complete_json_with(
             || {
                 guard()?;
                 self.charge_daily()
             },
-            |reask| self.structured_call(system, user, schema_hint, schema, reask, effort),
-            |usage| self.record_spend(usage),
+            |reask| {
+                *started.lock() = Instant::now();
+                self.structured_call(system, user, schema_hint, schema, reask, effort)
+            },
+            |usage| self.record_spend(usage, effort, *started.lock()),
         )
         .await
     }

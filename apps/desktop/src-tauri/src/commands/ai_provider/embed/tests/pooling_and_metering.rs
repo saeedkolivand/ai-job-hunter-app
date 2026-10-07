@@ -29,6 +29,7 @@ impl EmbedAttempt for SequencedEmbedAttempt {
                 input_tokens: 10,
                 output_tokens: 0,
                 thinking_tokens: None,
+                timings: None,
             },
         ))
     }

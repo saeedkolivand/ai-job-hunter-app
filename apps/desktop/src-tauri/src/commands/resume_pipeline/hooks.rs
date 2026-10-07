@@ -16,6 +16,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 use tokio_util::sync::CancellationToken;
 
+use crate::commands::ai_provider::call_trace::{attach_routing, CallLog};
 use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, PIPELINE_STAGE};
 use crate::pipeline::budget::StoppedReason;
@@ -294,6 +295,9 @@ pub struct RunHooks {
     /// `&self` — the trait is deliberately shaped so an observer cannot mutate
     /// the run.
     seq: AtomicU32,
+    /// Collects each stage's provider calls (routing + timing, content-free);
+    /// drained into the stage's persisted artifact in `after`.
+    calls: CallLog,
 }
 
 impl RunHooks {
@@ -317,6 +321,7 @@ impl RunHooks {
             deadline,
             ledger,
             seq: AtomicU32::new(0),
+            calls: CallLog::default(),
         }
     }
 
@@ -433,7 +438,15 @@ impl StageHooks for RunHooks {
             stage,
             phase,
             Some(outcome.ms),
-            self.ledger.artifact(stage.stage),
+            attach_routing(
+                self.ledger.artifact(stage.stage),
+                &self.calls.take(),
+                outcome.ms,
+            ),
         );
+    }
+
+    fn call_log(&self) -> Option<CallLog> {
+        Some(self.calls.clone())
     }
 }

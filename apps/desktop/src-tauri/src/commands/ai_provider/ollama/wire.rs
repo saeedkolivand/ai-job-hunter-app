@@ -5,7 +5,7 @@
 use serde_json::{json, Value};
 
 use super::super::stream::StreamPiece;
-use super::super::{AgentTurn, StopReason, ToolCall, Usage};
+use super::super::{AgentTurn, ProviderTimings, StopReason, ToolCall, Usage};
 
 /// Ollama's own `done_reason`, from the final `/api/chat` object of EITHER the
 /// streaming or the non-streaming path, mapped to a [`StopReason`]. `None` when
@@ -98,7 +98,23 @@ pub(super) fn parse_ollama_usage(data: &Value) -> Option<Usage> {
         // thinking-vs-answer ratio is measured in CHARS off the stream, which
         // is not this unit and is deliberately not laundered into it.
         thinking_tokens: None,
+        timings: Some(ProviderTimings {
+            load_ms: duration_ms(data, "load_duration"),
+            prompt_eval_ms: duration_ms(data, "prompt_eval_duration"),
+            eval_ms: duration_ms(data, "eval_duration"),
+            eval_count: data
+                .get("eval_count")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as u32),
+        }),
     })
+}
+
+/// An Ollama duration field (nanoseconds) as whole milliseconds.
+fn duration_ms(data: &Value, key: &str) -> Option<u64> {
+    data.get(key)
+        .and_then(|v| v.as_u64())
+        .map(|ns| ns / 1_000_000)
 }
 
 /// Drain complete newline-delimited JSON objects from the accumulated stream

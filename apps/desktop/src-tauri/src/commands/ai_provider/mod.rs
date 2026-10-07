@@ -49,12 +49,13 @@ pub(crate) mod stream; // shared streaming loop (cancel-check + chunk read + emi
 mod structured; // `complete_structured`'s prompt-discipline default + the per-provider JSON wire shapes
 pub(crate) mod timeouts; // semantically-named per-request HTTP timeouts (pure extraction of the magic-number literals)
 
+pub(crate) mod call_trace;
 mod catalogue;
 mod chat;
 mod embeddings;
 mod error_map;
 mod sampling;
-mod usage;
+mod usage; // content-free per-call routing/timing, collected per pipeline stage
 
 pub use catalogue::{model_entry, parse_rfc3339_millis};
 pub(crate) use chat::{flatten_messages, single_shot_turn, split_system};
@@ -73,7 +74,7 @@ pub use sampling::{
     PROSE_PRESENCE_PENALTY, PROSE_REPEAT_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
 };
 pub(crate) use usage::record_usage;
-pub use usage::Usage;
+pub use usage::{ProviderTimings, Usage};
 
 use anthropic::AnthropicClient;
 use cli_agent::CliAgentClient;

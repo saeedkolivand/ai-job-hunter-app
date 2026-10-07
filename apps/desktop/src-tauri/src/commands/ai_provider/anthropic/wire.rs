@@ -210,5 +210,6 @@ pub(super) fn parse_anthropic_usage(data: &Value) -> Usage {
         // `output_tokens`. `None` says exactly that; a 0 would claim the model
         // did no reasoning.
         thinking_tokens: None,
+        timings: None,
     }
 }

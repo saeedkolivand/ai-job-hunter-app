@@ -263,6 +263,7 @@ async fn embed_adaptive_leaves_partial_usage_in_the_output_param_when_a_later_ch
                         input_tokens: 100,
                         output_tokens: 0,
                         thinking_tokens: None,
+                        timings: None,
                     },
                 ))
             } else {
