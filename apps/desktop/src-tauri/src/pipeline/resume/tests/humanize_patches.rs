@@ -1,6 +1,7 @@
 use super::super::prompts::HumanizeTier;
 use super::super::stages::{
-    apply_patches, flagged_lines, humanize_one, FlaggedLine, Patch, PatchList, HUMAN_VOICE_FLAGS,
+    apply_patches, flagged_lines, humanize_mode, humanize_one, FlaggedLine, Mode, Patch, PatchList,
+    HUMAN_VOICE_FLAGS,
 };
 use super::support::{live_deadline, ok_report, voice_report};
 use crate::error::AppError;
@@ -155,20 +156,41 @@ async fn a_patch_that_scores_better_is_kept() {
     assert_eq!(attempt.text, "SUMMARY\nA dependable engineer.\n");
 }
 
-/// Skip path: only document-wide flags means nothing to patch and ZERO calls.
+/// Routing: document-wide flags alone mean a whole-document rewrite, any
+/// line-locatable flag means patches, nothing eligible means no call.
 ///
-/// Mutation check: drop the empty-findings early return in `humanize_one` and
-/// `called` flips true.
+/// Mutation check: force `humanize_mode` to always return `Mode::Patch` and the
+/// document-wide-only and no-flag assertions fail.
+#[test]
+fn routing_picks_rewrite_for_document_wide_only_and_patch_when_any_line_is_flagged() {
+    let doc = "One robust line.
+Two lines.
+";
+    let wide_only = flagged_lines(&voice_report(&["stddev=1.2"]), doc);
+    assert!(wide_only.lines.is_empty());
+    assert_eq!(humanize_mode(&wide_only), Some(Mode::Rewrite));
+
+    let both = flagged_lines(&voice_report(&["stddev=1.2", "robust"]), doc);
+    assert_eq!(both.document_wide.len(), 1);
+    assert_eq!(humanize_mode(&both), Some(Mode::Patch));
+
+    let none = flagged_lines(&voice_report(&[]), doc);
+    assert_eq!(humanize_mode(&none), None);
+}
+
+/// With no eligible flag at all the attempt makes zero provider calls.
+///
+/// Mutation check: drop the empty-findings early return in `humanize_one`.
 #[tokio::test]
-async fn a_document_with_only_document_wide_flags_makes_no_provider_call() {
-    let doc = "One line.\nTwo lines.\n";
-    let report = voice_report(&["stddev=1.2"]);
+async fn a_document_with_no_eligible_flag_makes_no_provider_call() {
+    let doc = "One line.
+";
     let mut called = false;
     let attempt = humanize_one(
         live_deadline(),
         doc.to_string(),
-        report.clone(),
-        flagged_lines(&report, doc).lines,
+        ok_report(),
+        flagged_lines(&ok_report(), doc).lines,
         |_text, _lines: Vec<FlaggedLine>| {
             called = true;
             async move { Ok("never".to_string()) }

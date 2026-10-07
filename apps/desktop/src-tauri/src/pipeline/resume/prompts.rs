@@ -44,7 +44,8 @@ pub use analyze_job::{analyze_job_user, ANALYZE_JOB_SYSTEM};
 pub use cover_letter::{letter_system, letter_user};
 pub use draft::{draft_system, draft_user};
 pub use humanize::{
-    humanize_patch_schema, humanize_system, humanize_user, HumanizeTier, HUMANIZE_PATCH_EXAMPLE,
+    humanize_patch_schema, humanize_rewrite_system, humanize_system, humanize_user, HumanizeTier,
+    HUMANIZE_PATCH_EXAMPLE,
 };
 pub use repair::{repair_system, repair_user};
 pub use strategy::{company_roster_block, strategy_system, strategy_user};

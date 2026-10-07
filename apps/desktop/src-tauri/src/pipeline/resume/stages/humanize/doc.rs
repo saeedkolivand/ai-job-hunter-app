@@ -4,7 +4,8 @@
 
 use crate::error::AppResult;
 use crate::pipeline::resume::prompts::{
-    humanize_patch_schema, humanize_system, humanize_user, HumanizeTier, HUMANIZE_PATCH_EXAMPLE,
+    humanize_patch_schema, humanize_rewrite_system, humanize_system, humanize_user, HumanizeTier,
+    HUMANIZE_PATCH_EXAMPLE,
 };
 use crate::pipeline::resume::RunDeadline;
 use crate::pipeline::Completer;
@@ -12,7 +13,8 @@ use crate::validate::content::ContentReport;
 
 use super::attempt::{humanize_one, HumanizeAttempt};
 use super::patches::{
-    apply_patches, excerpt, findings_for_prompt, flagged_lines, FlaggedLine, PatchList,
+    apply_patches, excerpt, findings_for_prompt, flagged_lines, humanize_mode, FlaggedLine, Mode,
+    PatchList,
 };
 
 /// What every document's pass shares.
@@ -26,8 +28,10 @@ pub(super) struct DocEnv<'a> {
     pub effort: Option<&'a str>,
 }
 
-/// Humanize one document by line patches. `normalize`/`revalidate` are the
-/// same seams [`humanize_one`] takes. No flagged line means NO provider call.
+/// Humanize one document: by line patches when any flag is line-locatable,
+/// by whole-document rewrite when every flag is document-wide, with NO call
+/// when nothing eligible is flagged. `normalize`/`revalidate` are the same
+/// seams [`humanize_one`] takes. Returns the mode that ran.
 pub(super) async fn humanize_doc<N, G, GFut>(
     env: &DocEnv<'_>,
     tier: HumanizeTier,
@@ -35,43 +39,68 @@ pub(super) async fn humanize_doc<N, G, GFut>(
     report: ContentReport,
     normalize: N,
     revalidate: G,
-) -> AppResult<HumanizeAttempt>
+) -> AppResult<(HumanizeAttempt, Option<Mode>)>
 where
     N: Fn(&str) -> Option<String>,
     G: FnMut(String) -> GFut,
     GFut: std::future::Future<Output = AppResult<ContentReport>>,
 {
     let flags = flagged_lines(&report, &text);
+    let mode = humanize_mode(&flags);
     let document_wide = flags.document_wide;
-    humanize_one(
-        env.deadline,
-        text,
-        report,
-        flags.lines,
-        |text, lines: Vec<FlaggedLine>| {
-            let document_wide = document_wide.clone();
-            async move {
-                let user = humanize_user(
-                    &excerpt(&text, &lines),
-                    &findings_for_prompt(&lines, &document_wide),
-                );
-                let list: PatchList = env
-                    .completer
-                    .complete_json(
-                        || (env.guard)(),
-                        &humanize_system(tier, env.lang),
-                        &user,
-                        HUMANIZE_PATCH_EXAMPLE,
-                        Some(&humanize_patch_schema()),
+    let attempt = if mode == Some(Mode::Rewrite) {
+        humanize_one(
+            env.deadline,
+            text,
+            report,
+            document_wide,
+            |text, findings: Vec<String>| async move {
+                env.completer
+                    .complete_with_effort(
+                        &humanize_rewrite_system(tier, env.lang),
+                        &humanize_user(&text, &findings),
+                        None,
                         env.effort,
                     )
-                    .await?;
-                Ok(apply_patches(&text, &lines, &list.patches))
-            }
-        },
-        normalize,
-        revalidate,
-        tier,
-    )
-    .await
+                    .await
+            },
+            normalize,
+            revalidate,
+            tier,
+        )
+        .await?
+    } else {
+        humanize_one(
+            env.deadline,
+            text,
+            report,
+            flags.lines,
+            |text, lines: Vec<FlaggedLine>| {
+                let document_wide = document_wide.clone();
+                async move {
+                    let user = humanize_user(
+                        &excerpt(&text, &lines),
+                        &findings_for_prompt(&lines, &document_wide),
+                    );
+                    let list: PatchList = env
+                        .completer
+                        .complete_json(
+                            || (env.guard)(),
+                            &humanize_system(tier, env.lang),
+                            &user,
+                            HUMANIZE_PATCH_EXAMPLE,
+                            Some(&humanize_patch_schema()),
+                            env.effort,
+                        )
+                        .await?;
+                    Ok(apply_patches(&text, &lines, &list.patches))
+                }
+            },
+            normalize,
+            revalidate,
+            tier,
+        )
+        .await?
+    };
+    Ok((attempt, mode))
 }

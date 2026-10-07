@@ -86,6 +86,38 @@ pub(crate) fn flagged_lines(report: &ContentReport, document: &str) -> Flags {
     flags
 }
 
+/// How a document is humanized.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Mode {
+    /// Line-locatable flags: the model returns line patches.
+    Patch,
+    /// Only document-wide flags (no line to patch): the model re-emits the
+    /// whole document, as before line patches existed.
+    Rewrite,
+}
+
+impl Mode {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Mode::Patch => "patch",
+            Mode::Rewrite => "rewrite",
+        }
+    }
+}
+
+/// Route a document's flags: any line-locatable flag means patches
+/// (document-wide ones then stay context); document-wide flags alone mean a
+/// whole-document rewrite; nothing eligible means no call.
+pub(crate) fn humanize_mode(flags: &Flags) -> Option<Mode> {
+    if !flags.lines.is_empty() {
+        Some(Mode::Patch)
+    } else if !flags.document_wide.is_empty() {
+        Some(Mode::Rewrite)
+    } else {
+        None
+    }
+}
+
 /// The numbered excerpt the model sees: `{id}> line` for a flagged line,
 /// `{id}| line` for context, `...` where lines were left out.
 pub(crate) fn excerpt(document: &str, flagged: &[FlaggedLine]) -> String {

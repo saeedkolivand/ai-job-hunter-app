@@ -38,24 +38,33 @@ fn repair_and_humanize_send_the_stage_effort_and_never_a_plain_complete() {
     assert!(!repair.contains(".complete("));
     assert!(repair.contains("stage_effort("));
 
-    // `humanize` makes ONE provider call site, the structured line-patch call
-    // in `humanize/doc.rs` (shared by the résumé and the letter). It must pass
-    // the stage effort as `complete_json`'s last argument, and both documents
-    // must reach it through `humanize_doc` with an env built from
-    // `stage_effort`.
+    // `humanize` has TWO provider call sites in `humanize/doc.rs`, shared by
+    // the résumé and the letter: the structured line-patch call
+    // (`complete_json`) and the whole-document rewrite (`complete_with_effort`,
+    // for documents flagged only document-wide). Each must carry the stage
+    // effort as its last argument.
     let humanize = code_only(&["humanize.rs", "humanize/doc.rs"]);
     assert_eq!(
         humanize.matches(".complete_json(").count(),
         1,
-        "humanize: every provider call must go through the one complete_json site"
+        "humanize: exactly one patch call site"
+    );
+    assert_eq!(
+        humanize.matches(".complete_with_effort(").count(),
+        1,
+        "humanize: exactly one whole-document call site"
     );
     assert!(
         humanize.contains("Some(&humanize_patch_schema()),env.effort,)"),
-        "humanize: the structured call must carry the stage effort"
+        "humanize: the patch call must carry the stage effort"
     );
     assert!(
-        !humanize.contains(".complete(") && !humanize.contains(".complete_with_effort("),
-        "humanize: a plain completion drops the effort"
+        humanize.contains("None,env.effort,)"),
+        "humanize: the whole-document call must carry the stage effort"
+    );
+    assert!(
+        !humanize.contains(".complete("),
+        "humanize: a plain `.complete(` drops the effort"
     );
     assert!(humanize.contains("effort=ctx.stage_effort("));
     assert_eq!(humanize.matches("humanize_doc(&env,").count(), 2);

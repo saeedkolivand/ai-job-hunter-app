@@ -17,8 +17,9 @@
 //! fence-tagged or changes a number. The patched document then goes through
 //! the same accept/revert rule below. A flag with no locatable line
 //! (document-wide rhythm/dash density) cannot be patched: it rides along as
-//! context, and a document with ONLY such flags makes no call and records
-//! `skipped`.
+//! context. A document with ONLY such flags falls back to the old
+//! whole-document rewrite (`patches::humanize_mode`); the ledger records
+//! which `mode` ran.
 //!
 //! The résumé and the letter run CONCURRENTLY (`tokio::join!` in this task —
 //! `Completer` is not `'static`, so no `spawn`). Each is revalidated against
@@ -87,6 +88,7 @@ mod predicates;
 
 use attempt::HumanizeAttempt;
 use doc::{humanize_doc, DocEnv};
+pub(crate) use patches::Mode;
 pub(crate) use patches::HUMAN_VOICE_FLAGS;
 
 pub(crate) use predicates::{should_humanize_letter, voice_count};
@@ -97,7 +99,9 @@ pub(crate) use predicates::{should_humanize_letter, voice_count};
 #[cfg(test)]
 pub(crate) use attempt::humanize_one;
 #[cfg(test)]
-pub(crate) use patches::{apply_patches, flagged_lines, FlaggedLine, Patch, PatchList};
+pub(crate) use patches::{
+    apply_patches, flagged_lines, humanize_mode, FlaggedLine, Patch, PatchList,
+};
 #[cfg(test)]
 pub(crate) use predicates::{
     exceeds_humanize_cap, humanize_is_worse, is_usable_rewrite, voice_findings,
@@ -144,9 +148,11 @@ struct Artifact {
     timed_out: bool,
     capped: bool,
     too_large: bool,
-    /// No provider call was made and nothing stopped it: the draft already
-    /// reads human, or no flag points at a patchable line.
+    /// Nothing eligible was flagged: the draft already reads human (no call).
     skipped: bool,
+    /// Which path ran: "patch", "rewrite", "mixed" (the two documents
+    /// differ), or `None` when no call was routed.
+    mode: Option<&'static str>,
 }
 
 impl Artifact {
@@ -165,6 +171,7 @@ impl Artifact {
             "capped": self.capped,
             "tooLarge": self.too_large,
             "skipped": self.skipped,
+            "mode": self.mode,
         })
     }
 
@@ -316,15 +323,17 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
             .map(Some)
         };
         let (resume_result, letter_result): (
-            AppResult<Option<HumanizeAttempt>>,
-            AppResult<Option<HumanizeAttempt>>,
+            AppResult<Option<(HumanizeAttempt, Option<Mode>)>>,
+            AppResult<Option<(HumanizeAttempt, Option<Mode>)>>,
         ) = tokio::join!(resume_arm, letter_arm);
         let (resume_attempt, letter_attempt) = (resume_result?, letter_result?);
 
         let mut calls: u32 = 0;
         let (mut reverted, mut failed, mut timed_out) = (false, false, false);
         let (mut capped, mut too_large) = (false, false);
-        let mut tally = |attempt: &HumanizeAttempt| {
+        let mut modes: Vec<Mode> = Vec::new();
+        let mut tally = |(attempt, mode): &(HumanizeAttempt, Option<Mode>)| {
+            modes.extend(mode);
             calls += u32::from(attempt.called);
             failed |= attempt.failed;
             reverted |= attempt.reverted;
@@ -332,13 +341,15 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
             too_large |= attempt.too_large;
             capped |= attempt.capped;
         };
-        if let Some(attempt) = resume_attempt {
-            tally(&attempt);
+        if let Some(done) = resume_attempt {
+            tally(&done);
+            let attempt = done.0;
             ctx.draft = attempt.text;
             ctx.report = Some(attempt.report);
         }
-        if let Some(attempt) = letter_attempt {
-            tally(&attempt);
+        if let Some(done) = letter_attempt {
+            tally(&done);
+            let attempt = done.0;
             ctx.letter = attempt.text;
             ctx.letter_report = Some(attempt.report);
         }
@@ -367,7 +378,12 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
                 timed_out,
                 capped,
                 too_large,
-                skipped: calls == 0 && !timed_out && !too_large && !capped,
+                skipped: modes.is_empty() && !timed_out && !too_large,
+                mode: match modes.as_slice() {
+                    [] => None,
+                    [first, rest @ ..] if rest.iter().all(|m| m == first) => Some(first.as_str()),
+                    _ => Some("mixed"),
+                },
             }
             .into_json(),
         );
