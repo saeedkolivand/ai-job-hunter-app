@@ -23,6 +23,7 @@ async fn humanize_one_is_a_zero_cost_no_op_with_no_findings() {
         |_candidate: &str| None,
         |_candidate| async move { Ok(ok_report()) },
         HumanizeTier::Resume,
+        true,
     )
     .await
     .expect("no revalidate call means no error path either");
@@ -56,6 +57,7 @@ async fn humanize_one_refuses_a_document_over_the_cap_without_a_single_call() {
         |_candidate: &str| None,
         |_candidate| async move { panic!("revalidate must never run over the cap") },
         HumanizeTier::Resume,
+        true,
     )
     .await
     .expect("no revalidate call means no error path either");
@@ -96,6 +98,7 @@ async fn humanize_one_skips_gracefully_when_the_deadline_has_already_passed() {
         |_candidate: &str| None,
         |_candidate| async move { Ok(ok_report()) },
         HumanizeTier::Resume,
+        true,
     )
     .await
     .expect("no revalidate call means no error path either");
@@ -126,6 +129,7 @@ async fn humanize_one_keeps_the_original_and_marks_failed_on_a_provider_error() 
         |_candidate: &str| None,
         |_candidate| async move { panic!("revalidate must never run after a provider error") },
         HumanizeTier::Resume,
+        true,
     )
     .await
     .expect("a provider error is caught inside humanize_one, never propagated");
@@ -159,6 +163,7 @@ async fn humanize_one_keeps_the_original_and_marks_failed_when_revalidate_errors
             ))
         },
         HumanizeTier::Resume,
+        true,
     )
     .await
     .expect("a revalidate error is caught inside humanize_one, never propagated");
@@ -187,6 +192,7 @@ async fn humanize_one_keeps_the_original_when_the_answer_is_unusable() {
         |_candidate: &str| None,
         |_candidate| async move { panic!("revalidate must never run over an unusable answer") },
         HumanizeTier::Resume,
+        true,
     )
     .await
     .expect("no revalidate call means no error path either");
@@ -228,6 +234,7 @@ async fn humanize_one_keeps_the_original_when_the_answer_echoes_its_own_fence_ta
         |_candidate: &str| None,
         |_candidate| async move { panic!("revalidate must never run over a shape-broken answer") },
         HumanizeTier::Resume,
+        true,
     )
     .await
     .expect("no revalidate call means no error path either");

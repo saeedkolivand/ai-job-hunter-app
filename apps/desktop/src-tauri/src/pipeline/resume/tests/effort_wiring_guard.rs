@@ -62,6 +62,15 @@ fn repair_and_humanize_send_the_stage_effort_and_never_a_plain_complete() {
         humanize.contains("None,env.effort,)"),
         "humanize: the whole-document call must carry the stage effort"
     );
+    // `complete_with_effort` does not charge the per-provider daily ceiling
+    // (`complete_json` does), so every such call must be preceded by the charge.
+    assert_eq!(
+        humanize
+            .matches("charge_daily()?;env.completer.complete_with_effort(")
+            .count(),
+        humanize.matches(".complete_with_effort(").count(),
+        "humanize: every complete_with_effort must follow a charge_daily()"
+    );
     assert!(
         !humanize.contains(".complete("),
         "humanize: a plain `.complete(` drops the effort"

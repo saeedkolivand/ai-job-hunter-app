@@ -9,7 +9,7 @@ use crate::error::AppError;
 const DOC: &str = "SUMMARY\nA robust engineer.\n- Cut p95 latency by 40% with a robust cache\n- Wrote docs\nhttps://example.com/robust-demo\n";
 
 fn flagged() -> Vec<FlaggedLine> {
-    flagged_lines(&voice_report(&["robust"]), DOC).lines
+    flagged_lines(&voice_report(&["robust"]), DOC, "en").lines
 }
 
 fn patch(id: usize, replacement: &str) -> Patch {
@@ -27,7 +27,7 @@ fn flagged_lines_locates_every_line_but_never_a_link_line() {
 
     let doc =
         "SUMMARY\nA Robust engineer.\n- Cut p95 latency by 40% with a robust cache\n- Wrote docs\n";
-    let flags = flagged_lines(&voice_report(&["robust"]), doc);
+    let flags = flagged_lines(&voice_report(&["robust"]), doc, "en");
     let ids: Vec<usize> = flags.lines.iter().map(|l| l.id).collect();
     assert_eq!(ids, vec![2, 3], "case-insensitive, 1-based, every hit");
     assert!(flags.document_wide.is_empty());
@@ -35,7 +35,11 @@ fn flagged_lines_locates_every_line_but_never_a_link_line() {
 
 #[test]
 fn a_flag_with_no_locatable_line_is_document_wide_and_patches_nothing() {
-    let flags = flagged_lines(&voice_report(&["stddev=1.2"]), "One line.\nTwo lines.\n");
+    let flags = flagged_lines(
+        &voice_report(&["stddev=1.2"]),
+        "One line.\nTwo lines.\n",
+        "en",
+    );
     assert!(flags.lines.is_empty());
     assert_eq!(flags.document_wide.len(), 1);
 }
@@ -46,7 +50,7 @@ fn a_flag_with_no_locatable_line_is_document_wide_and_patches_nothing() {
 fn apply_patches_touches_only_flagged_ids_and_ignores_unknown_ones() {
     let doc =
         "SUMMARY\nA Robust engineer.\n- Cut p95 latency by 40% with a robust cache\n- Wrote docs\n";
-    let lines = flagged_lines(&voice_report(&["robust"]), doc).lines;
+    let lines = flagged_lines(&voice_report(&["robust"]), doc, "en").lines;
     let out = apply_patches(
         doc,
         &lines,
@@ -68,7 +72,7 @@ fn apply_patches_touches_only_flagged_ids_and_ignores_unknown_ones() {
 #[test]
 fn apply_patches_rejects_unsafe_replacements_and_keeps_the_original_line() {
     let doc = "SUMMARY\nShipped 3 robust services\n";
-    let lines = flagged_lines(&voice_report(&["robust"]), doc).lines;
+    let lines = flagged_lines(&voice_report(&["robust"]), doc, "en").lines;
     for bad in [
         "",
         "   ",
@@ -90,15 +94,65 @@ fn apply_patches_rejects_unsafe_replacements_and_keeps_the_original_line() {
 }
 
 #[test]
-fn the_first_patch_for_an_id_wins() {
-    let doc = "A robust line\n";
-    let lines = flagged_lines(&voice_report(&["robust"]), doc).lines;
+fn the_first_patch_for_an_id_wins_even_when_it_is_rejected() {
+    let doc = "A robust line\nShipped 3 robust things\n";
+    let lines = flagged_lines(&voice_report(&["robust"]), doc, "en").lines;
     let out = apply_patches(
         doc,
         &lines,
         &[patch(1, "A plain line"), patch(1, "Another")],
     );
-    assert_eq!(out, "A plain line\n");
+    assert_eq!(out, "A plain line\nShipped 3 robust things\n");
+    // Rejected first (number changed), valid second: the original stays.
+    let out = apply_patches(
+        doc,
+        &lines,
+        &[
+            patch(2, "Shipped 4 plain things"),
+            patch(2, "Shipped 3 plain things"),
+        ],
+    );
+    assert_eq!(out, doc);
+}
+
+/// M1: the validator's word-boundary rule, not a substring scan.
+#[test]
+fn a_longer_word_containing_the_phrase_is_not_flagged() {
+    let doc = "Revitalized the pipeline\nVitality Health, Backend Engineer\nA vital fix\n";
+    let ids: Vec<usize> = flagged_lines(&voice_report(&["vital"]), doc, "en")
+        .lines
+        .iter()
+        .map(|l| l.id)
+        .collect();
+    assert_eq!(ids, vec![3]);
+}
+
+/// M2: the validator's normalisation (case, whitespace, curly apostrophe).
+#[test]
+fn a_curly_apostrophe_and_double_space_still_locate_the_line() {
+    let doc = "Intro\nIt\u{2019}s  worth   noting that it works\n";
+    let flags = flagged_lines(&voice_report(&["it's worth noting"]), doc, "en");
+    let ids: Vec<usize> = flags.lines.iter().map(|l| l.id).collect();
+    assert_eq!(ids, vec![2]);
+    assert!(flags.document_wide.is_empty());
+}
+
+/// L2: `**bold` is not a bullet; a heading keeps its marker.
+#[test]
+fn bold_is_not_a_bullet_and_a_heading_keeps_its_marker() {
+    let doc = "**Robust** platform\n## Robust summary\n";
+    let lines = flagged_lines(&voice_report(&["robust"]), doc, "en").lines;
+    let out = apply_patches(
+        doc,
+        &lines,
+        &[
+            patch(1, "**Dependable** platform"),
+            patch(2, "Dependable summary"),
+        ],
+    );
+    assert_eq!(out, "**Dependable** platform\n## Dependable summary\n");
+    let echoed = apply_patches(doc, &lines, &[patch(2, "## Dependable summary")]);
+    assert_eq!(echoed, "**Robust** platform\n## Dependable summary\n");
 }
 
 /// The never-worse guard still fires on a patched document that scores worse.
@@ -106,7 +160,7 @@ fn the_first_patch_for_an_id_wins() {
 async fn a_patch_that_scores_worse_is_reverted() {
     let doc = "SUMMARY\nA robust engineer.\n";
     let report = voice_report(&["robust"]);
-    let lines = flagged_lines(&report, doc).lines;
+    let lines = flagged_lines(&report, doc, "en").lines;
     let attempt = humanize_one(
         live_deadline(),
         doc.to_string(),
@@ -122,6 +176,7 @@ async fn a_patch_that_scores_worse_is_reverted() {
         |_candidate: &str| None,
         |_candidate| async move { Ok(voice_report(&["seamless", "robust"])) },
         HumanizeTier::Resume,
+        false,
     )
     .await
     .expect("revalidate succeeds");
@@ -133,7 +188,7 @@ async fn a_patch_that_scores_worse_is_reverted() {
 async fn a_patch_that_scores_better_is_kept() {
     let doc = "SUMMARY\nA robust engineer.\n";
     let report = voice_report(&["robust"]);
-    let lines = flagged_lines(&report, doc).lines;
+    let lines = flagged_lines(&report, doc, "en").lines;
     let attempt = humanize_one(
         live_deadline(),
         doc.to_string(),
@@ -149,6 +204,7 @@ async fn a_patch_that_scores_better_is_kept() {
         |_candidate: &str| None,
         |_candidate| async move { Ok(ok_report()) },
         HumanizeTier::Resume,
+        false,
     )
     .await
     .expect("revalidate succeeds");
@@ -166,15 +222,15 @@ fn routing_picks_rewrite_for_document_wide_only_and_patch_when_any_line_is_flagg
     let doc = "One robust line.
 Two lines.
 ";
-    let wide_only = flagged_lines(&voice_report(&["stddev=1.2"]), doc);
+    let wide_only = flagged_lines(&voice_report(&["stddev=1.2"]), doc, "en");
     assert!(wide_only.lines.is_empty());
     assert_eq!(humanize_mode(&wide_only), Some(Mode::Rewrite));
 
-    let both = flagged_lines(&voice_report(&["stddev=1.2", "robust"]), doc);
+    let both = flagged_lines(&voice_report(&["stddev=1.2", "robust"]), doc, "en");
     assert_eq!(both.document_wide.len(), 1);
     assert_eq!(humanize_mode(&both), Some(Mode::Patch));
 
-    let none = flagged_lines(&voice_report(&[]), doc);
+    let none = flagged_lines(&voice_report(&[]), doc, "en");
     assert_eq!(humanize_mode(&none), None);
 }
 
@@ -190,7 +246,7 @@ async fn a_document_with_no_eligible_flag_makes_no_provider_call() {
         live_deadline(),
         doc.to_string(),
         ok_report(),
-        flagged_lines(&ok_report(), doc).lines,
+        flagged_lines(&ok_report(), doc, "en").lines,
         |_text, _lines: Vec<FlaggedLine>| {
             called = true;
             async move { Ok("never".to_string()) }
@@ -198,6 +254,7 @@ async fn a_document_with_no_eligible_flag_makes_no_provider_call() {
         |_candidate: &str| None,
         |_candidate| async move { Ok(ok_report()) },
         HumanizeTier::Resume,
+        false,
     )
     .await
     .expect("no call, no error path");
@@ -212,7 +269,7 @@ async fn unreadable_patch_json_fails_soft_to_the_original_document() {
     assert!(crate::pipeline::json::parse::<PatchList>("not json at all").is_err());
     let doc = "SUMMARY\nA robust engineer.\n";
     let report = voice_report(&["robust"]);
-    let lines = flagged_lines(&report, doc).lines;
+    let lines = flagged_lines(&report, doc, "en").lines;
     let attempt = humanize_one(
         live_deadline(),
         doc.to_string(),
@@ -226,6 +283,7 @@ async fn unreadable_patch_json_fails_soft_to_the_original_document() {
         |_candidate: &str| None,
         |_candidate| async move { Ok(ok_report()) },
         HumanizeTier::Resume,
+        false,
     )
     .await
     .expect("a patch-answer error is caught inside humanize_one");
@@ -239,7 +297,7 @@ async fn unreadable_patch_json_fails_soft_to_the_original_document() {
 async fn an_answer_with_no_surviving_patch_keeps_the_original_without_revalidating() {
     let doc = "SUMMARY\nA robust engineer.\n";
     let report = voice_report(&["robust"]);
-    let lines = flagged_lines(&report, doc).lines;
+    let lines = flagged_lines(&report, doc, "en").lines;
     let mut revalidated = false;
     let attempt = humanize_one(
         live_deadline(),
@@ -253,6 +311,7 @@ async fn an_answer_with_no_surviving_patch_keeps_the_original_without_revalidati
             async move { Ok(ok_report()) }
         },
         HumanizeTier::Resume,
+        false,
     )
     .await
     .expect("no error path");

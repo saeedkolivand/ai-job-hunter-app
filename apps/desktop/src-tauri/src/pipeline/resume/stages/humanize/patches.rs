@@ -11,7 +11,7 @@
 
 use serde::Deserialize;
 
-use crate::validate::content::{urls_in, ContentReport};
+use crate::validate::content::{line_carries_phrase, normalize_language, urls_in, ContentReport};
 
 use super::super::repair::issue_line;
 use super::predicates::eligible_voice_issues;
@@ -50,22 +50,20 @@ pub(crate) struct Flags {
 /// Locate each eligible `voice.*` issue on the document's lines. An issue
 /// whose evidence appears on no line is document-wide. A line carrying a URL
 /// is never flagged, whatever the case of the match.
-pub(crate) fn flagged_lines(report: &ContentReport, document: &str) -> Flags {
-    let lines: Vec<String> = document.split('\n').map(str::to_lowercase).collect();
-    let linked: Vec<bool> = document
-        .split('\n')
-        .map(|line| !urls_in(line).is_empty())
-        .collect();
+pub(crate) fn flagged_lines(report: &ContentReport, document: &str, lang: &str) -> Flags {
+    let lang = normalize_language(lang);
+    let lines: Vec<&str> = document.split('\n').collect();
+    let linked: Vec<bool> = lines.iter().map(|l| !urls_in(l).is_empty()).collect();
     let mut flags = Flags::default();
     for issue in eligible_voice_issues(report, document) {
         let needle = issue
             .evidence
             .as_deref()
-            .map(|e| e.trim().to_lowercase())
+            .map(str::trim)
             .filter(|e| !e.is_empty());
         let hits: Vec<usize> = needle.map_or_else(Vec::new, |needle| {
             (0..lines.len())
-                .filter(|&i| !linked[i] && lines[i].contains(&needle))
+                .filter(|&i| !linked[i] && line_carries_phrase(lines[i], needle, &lang))
                 .collect()
         });
         if hits.is_empty() {
@@ -180,13 +178,23 @@ pub(crate) struct PatchList {
     pub patches: Vec<Patch>,
 }
 
-/// Split a line into its indent + bullet marker and the text after it.
+/// Split a line into its indent + marker (a single bullet or a `#` heading
+/// run, followed by whitespace) and the text after it. A `**bold` opener is
+/// NOT a bullet.
 fn split_prefix(line: &str) -> (&str, &str) {
     let rest = line.trim_start();
     let mut len = line.len() - rest.len();
-    if let Some(bullet) = rest.chars().next().filter(|c| BULLETS.contains(*c)) {
-        let after = &rest[bullet.len_utf8()..];
-        len += bullet.len_utf8() + (after.len() - after.trim_start().len());
+    let marker = rest
+        .chars()
+        .next()
+        .filter(|c| BULLETS.contains(*c) || *c == '#');
+    if let Some(marker) = marker {
+        let run = rest.len() - rest.trim_start_matches(marker).len();
+        let after = &rest[run..];
+        let spaced = after.is_empty() || after.starts_with(char::is_whitespace);
+        if spaced && (marker == '#' || run == marker.len_utf8()) {
+            len += run + (after.len() - after.trim_start().len());
+        }
     }
     line.split_at(len)
 }
@@ -205,14 +213,15 @@ fn digit_runs(text: &str) -> Vec<&str> {
 /// The accepted replacement body for `original_body`, or `None` to keep it.
 fn accepted_body(original_prefix: &str, original_body: &str, replacement: &str) -> Option<String> {
     let mut body = replacement.trim();
-    // A model may echo the bullet it was shown; the line keeps its own.
-    if let Some(bullet) = original_prefix
+    // A model may echo the bullet/heading marker it was shown, or drop it; the
+    // line keeps its own marker either way.
+    if let Some(marker) = original_prefix
         .trim_start()
         .chars()
         .next()
         .filter(|c| body.starts_with(*c))
     {
-        body = body[bullet.len_utf8()..].trim_start();
+        body = body.trim_start_matches(marker).trim_start();
     }
     let usable = !body.is_empty()
         && !body.contains(['\n', '\r'])
@@ -238,10 +247,12 @@ pub(crate) fn apply_patches(document: &str, flagged: &[FlaggedLine], patches: &[
             Some(line) => (line, "\r"),
             None => (original.as_str(), ""),
         };
+        // Marked done BEFORE validation: a rejected first patch is not
+        // followed by a second one for the same id.
+        done.push(patch.id);
         let (prefix, body) = split_prefix(line);
         if let Some(new_body) = accepted_body(prefix, body, &patch.replacement) {
             lines[patch.id - 1] = format!("{prefix}{new_body}{cr}");
-            done.push(patch.id);
         }
     }
     lines.join("\n")

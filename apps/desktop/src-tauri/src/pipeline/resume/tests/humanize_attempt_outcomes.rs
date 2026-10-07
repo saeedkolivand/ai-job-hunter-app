@@ -26,6 +26,7 @@ async fn humanize_one_keeps_the_original_letter_when_the_candidate_is_truncated_
         |_candidate: &str| None,
         |_candidate| async move { panic!("revalidate must never run over an unusable letter") },
         HumanizeTier::Letter,
+        true,
     )
     .await
     .expect("no revalidate call means no error path either");
@@ -65,6 +66,7 @@ async fn humanize_one_accepts_a_resume_candidate_truncated_to_sixty_percent_when
         |_candidate: &str| None,
         |_candidate| async move { Ok(ok_report()) },
         HumanizeTier::Resume,
+        true,
     )
     .await
     .expect("revalidate succeeds");
@@ -93,6 +95,7 @@ async fn humanize_one_reverts_when_the_candidate_introduces_a_critical() {
                 Ok(after)
             },
             HumanizeTier::Resume,
+            true,
         )
         .await
         .expect("revalidate succeeds");
@@ -119,6 +122,7 @@ async fn humanize_one_reverts_when_the_candidate_has_more_voice_flags_than_befor
             |_candidate: &str| None,
             |_candidate| async move { Ok(voice_report(&["robust", "leverage"])) },
             HumanizeTier::Resume,
+            true,
         )
         .await
         .expect("revalidate succeeds");
@@ -146,6 +150,7 @@ async fn humanize_one_accepts_a_candidate_with_fewer_voice_flags() {
             |_candidate: &str| None,
             |_candidate| async move { Ok(voice_report(&["robust"])) },
             HumanizeTier::Resume,
+            true,
         )
         .await
         .expect("revalidate succeeds");
@@ -195,6 +200,7 @@ async fn humanize_one_runs_normalize_before_grading_so_an_accepted_candidate_is_
             }
         },
         HumanizeTier::Resume,
+        true,
     )
     .await
     .expect("revalidate succeeds");

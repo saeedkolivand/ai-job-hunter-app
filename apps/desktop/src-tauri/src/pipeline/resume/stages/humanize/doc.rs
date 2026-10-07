@@ -45,7 +45,7 @@ where
     G: FnMut(String) -> GFut,
     GFut: std::future::Future<Output = AppResult<ContentReport>>,
 {
-    let flags = flagged_lines(&report, &text);
+    let flags = flagged_lines(&report, &text, env.lang);
     let mode = humanize_mode(&flags);
     let document_wide = flags.document_wide;
     let attempt = if mode == Some(Mode::Rewrite) {
@@ -55,6 +55,10 @@ where
             report,
             document_wide,
             |text, findings: Vec<String>| async move {
+                // `complete_with_effort` does not charge the daily ceiling
+                // itself (`complete_json` does): charge here, so a refusal
+                // lands in `humanize_one`'s `capped` arm.
+                env.completer.charge_daily()?;
                 env.completer
                     .complete_with_effort(
                         &humanize_rewrite_system(tier, env.lang),
@@ -67,6 +71,8 @@ where
             normalize,
             revalidate,
             tier,
+            // The whole document goes out, so the size cap applies.
+            true,
         )
         .await?
     } else {
@@ -99,6 +105,8 @@ where
             normalize,
             revalidate,
             tier,
+            // Only a small excerpt goes out, so the document cap does not apply.
+            false,
         )
         .await?
     };

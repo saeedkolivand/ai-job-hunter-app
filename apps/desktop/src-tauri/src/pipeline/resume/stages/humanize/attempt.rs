@@ -69,10 +69,14 @@ impl HumanizeAttempt {
 /// read is an `Err` there and lands in the same fail-soft arm as a provider
 /// error: original kept, `failed`.
 ///
+/// `enforce_cap` applies the whole-document size cap: true when the whole
+/// document is sent (rewrite mode), false for line patches (a small excerpt).
+///
 /// `normalize` is `|candidate| Option<String>`, exactly like `repair_loop`'s
 /// own parameter: `Some` replaces the candidate with the re-rendered Projects
 /// section, `None` means no change. The letter tier passes a closure that
 /// always returns `None` — a letter has no Projects section to normalize.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn humanize_one<T, F, Fut, N, G, GFut>(
     deadline: RunDeadline,
     original_text: String,
@@ -82,6 +86,7 @@ pub(crate) async fn humanize_one<T, F, Fut, N, G, GFut>(
     normalize: N,
     mut revalidate: G,
     tier: HumanizeTier,
+    enforce_cap: bool,
 ) -> AppResult<HumanizeAttempt>
 where
     F: FnMut(String, Vec<T>) -> Fut,
@@ -90,7 +95,7 @@ where
     G: FnMut(String) -> GFut,
     GFut: std::future::Future<Output = AppResult<ContentReport>>,
 {
-    if exceeds_humanize_cap(&original_text) {
+    if enforce_cap && exceeds_humanize_cap(&original_text) {
         let mut attempt = HumanizeAttempt::kept(original_text, original_report);
         attempt.too_large = true;
         return Ok(attempt);

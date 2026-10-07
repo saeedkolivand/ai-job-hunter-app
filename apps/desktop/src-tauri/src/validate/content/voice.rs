@@ -75,6 +75,16 @@ fn fold_apostrophes(text: &str) -> String {
     text.replace('\u{2019}', "'")
 }
 
+/// Whether ONE document line carries `phrase` exactly as this module's own
+/// check sees it: whitespace-collapsed, lowercased, apostrophe-folded, with
+/// the word-boundary (and German inflection) rule of [`contains_lexicon_phrase`].
+/// Lets a caller that must LOCATE a finding on a line use the validator's own
+/// matcher instead of a re-implementation that drifts from it.
+pub(crate) fn line_carries_phrase(line: &str, phrase: &str, lang: &str) -> bool {
+    let fold = |text: &str| fold_apostrophes(&flattened_lower(text));
+    contains_lexicon_phrase(&fold(line), &fold(phrase), lang)
+}
+
 /// [`contains_phrase`], plus a bounded inflection suffix for German.
 ///
 /// DE-only by construction: for every other language this is exactly

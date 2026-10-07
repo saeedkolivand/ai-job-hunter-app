@@ -63,6 +63,7 @@ use self::text::{
     flattened_lower, has_real_contact_match, jaccard, looks_like_header_phone, sentences,
     word_count,
 };
+pub(crate) use self::voice::line_carries_phrase;
 // Only `tests` (a `super::*` glob import) reaches into these three directly.
 pub use self::issues::{
     ISSUE_EVIDENCE_MAX_BYTES, ISSUE_MESSAGE_MAX_BYTES, ISSUE_SECTION_MAX_BYTES, MAX_CONTENT_ISSUES,

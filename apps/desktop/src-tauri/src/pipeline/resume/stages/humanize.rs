@@ -140,6 +140,10 @@ fn empty_ok_report() -> ContentReport {
 struct Artifact {
     resume_flagged: usize,
     letter_flagged: usize,
+    /// Attempts that reached the provider, one per document. A structured
+    /// (patch) call's hidden parse re-ask is a second round-trip that
+    /// `Completer::complete_json` does not report, so it is NOT counted here
+    /// (it is still charged and recorded in spend).
     calls: u32,
     reverted: bool,
     voice_before: usize,
