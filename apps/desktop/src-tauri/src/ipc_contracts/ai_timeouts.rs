@@ -26,7 +26,9 @@ pub const EFFORT_TIMEOUT_MULTIPLIER: &[(&str, f64)] =
 /// WORST case: 2 stages × (1 call + 1 allowed re-ask), each through
 /// `Completer::complete_json`. `match_evidence` is deliberately absent: it
 /// selects evidence from the source résumé in pure Rust and makes no
-/// provider call.
+/// provider call. A quality-floor retry (up to 2 more calls) is deliberately
+/// not counted: the backstop's headroom covers it, and `guard_deadline`
+/// refuses any call that starts past the run deadline.
 pub const QUALITY_RUN_JSON_STAGE_CALLS: u64 = 4;
 
 /// The BASELINE-tier share of one quality-depth run's deadline: the repair

@@ -110,6 +110,11 @@ export function ollamaCompletionDeadlineSecs(effort?: string): number {
  * `Completer::complete_json`, which re-asks exactly once on a parse failure.
  * `match_evidence` is NOT counted: it makes no provider call at all.
  *
+ * A quality-floor retry (#1382: one more call at the provider default effort
+ * when a stage answers empty) can add up to 2 more round-trips. That is
+ * deliberately NOT counted: it is covered by this backstop's headroom, and
+ * `guard_deadline` refuses any call that starts past the run deadline.
+ *
  * Named so {@link qualityRunDeadlineSecs}'s formula reads as the derivation it
  * is rather than a bare `4`, and so the Rust-side lock test
  * (`quality_run_deadline_equals_the_inner_per_call_bounds`) has one shared

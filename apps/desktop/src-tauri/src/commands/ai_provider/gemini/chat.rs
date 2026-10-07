@@ -43,7 +43,7 @@ impl GeminiClient {
         let api_key = require_gemini_key(app)?;
         let m = model.strip_prefix("models/").unwrap_or(model);
         let endpoint_label = format!("/v1beta/models/{m}:streamGenerateContent");
-        let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
+        let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, true);
 
         // Truncated JSON must fail, not reach `repair_json`; plain text may be cut.
         let json = structured.as_ref().is_some_and(|s| s.json);

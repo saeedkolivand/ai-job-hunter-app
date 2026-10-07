@@ -278,7 +278,9 @@ pub fn research_deadline(effort: Option<&str>) -> Duration {
 ///   by [`ollama_completion_deadline`] — the fix this function exists to
 ///   carry: these two stages run FIRST, on the same model as everything
 ///   else, and used to be flat-bounded even though the STREAMED calls right
-///   after them already scaled.
+///   after them already scaled. A quality-floor retry (#1382) can add up to 2
+///   more calls; they are deliberately not counted — the backstop's headroom
+///   covers them and `guard_deadline` refuses any call past the deadline.
 /// * **the scaling term** — TWO streamed calls, the résumé draft and the
 ///   cover letter (`cover_letter` stage, PR-2).
 ///

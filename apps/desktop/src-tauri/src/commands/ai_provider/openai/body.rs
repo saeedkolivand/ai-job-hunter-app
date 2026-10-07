@@ -82,7 +82,7 @@ pub(super) fn reasoning_effort(effort: Option<&str>, caps: ModelCapabilities) ->
         .filter(|e| OPENAI_EFFORT_LEVELS.contains(e))
 }
 
-/// What [`super::OpenAiClient::complete_structured`] adds to a non-streaming
+/// What [`super::OpenAiClient::complete_structured`] adds to a streamed
 /// `/chat/completions` call and the plain `complete`/`complete_with_usage`
 /// path cannot: those two take no [`AiGenerateRequest`], so they have neither
 /// a `response_format` nor the request-level knobs below. `Some(..)` IS the
@@ -100,7 +100,7 @@ pub(super) struct StructuredCall<'a> {
     pub(super) max_tokens: Option<u32>,
 }
 
-/// Build the non-streaming `/chat/completions` body shared by `complete`/
+/// Build the streamed `/chat/completions` body shared by `complete`/
 /// `complete_with_usage`/`complete_structured`. Pure + unit-tested — `caps` is
 /// the caller's already-resolved `capabilities(model)` matrix (an o-series
 /// model rejects `temperature` outright and takes a differently-named token

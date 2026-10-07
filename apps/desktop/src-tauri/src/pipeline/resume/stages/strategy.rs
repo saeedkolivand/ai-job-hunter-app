@@ -15,6 +15,7 @@ use serde_json::json;
 
 use crate::documents::evidence::extract_evidence;
 use crate::error::AppResult;
+use crate::pipeline::resume::floor::{store_sound, with_floor};
 use crate::pipeline::resume::prompts::{company_roster_block, strategy_system, strategy_user};
 use crate::pipeline::resume::types::{CompanyPlan, EvidenceMap, EvidenceStatus, ResumeStrategy};
 use crate::pipeline::resume::{cache, QualityCtx};
@@ -221,8 +222,12 @@ impl<'a> Stage<QualityCtx<'a>> for Strategy {
         let roster = seed_company_roster(ctx.input.source_resume, ctx.input.job_ad);
 
         let key = ctx.stage_cache_key(NAME);
-        let cached: Option<ResumeStrategy> = cache::get(ctx.cache, NAME, &key);
+        // A below-floor row is a poisoned write from before the floor existed
+        // (#1382): treat it as a miss instead of serving it for a week.
+        let cached: Option<ResumeStrategy> =
+            cache::get::<ResumeStrategy>(ctx.cache, NAME, &key).filter(|s| !s.below_floor());
         let from_cache = cached.is_some();
+        let mut retried = false;
         let mut strategy = match cached {
             Some(strategy) => strategy,
             None => {
@@ -231,19 +236,33 @@ impl<'a> Stage<QualityCtx<'a>> for Strategy {
                     strategy_user(ctx.input.source_resume, &ctx.analysis, &ctx.evidence),
                     company_roster_block(&roster)
                 );
-                ctx.completer_for(NAME)
-                    .complete_json(
-                        // The re-ask is a second full provider call; a run
-                        // already out of time must not pay for it.
-                        ctx.deadline_guard(),
-                        &strategy_system(),
-                        &user,
-                        ResumeStrategy::EXAMPLE,
-                        Some(&ResumeStrategy::schema()),
-                        // Mechanical stage: the user's effort, else the lowest tier.
-                        ctx.stage_effort(NAME),
-                    )
-                    .await?
+                let system = strategy_system();
+                let floored = with_floor(
+                    // Mechanical stage: the user's effort, else the lowest tier.
+                    ctx.stage_effort(NAME),
+                    |effort| {
+                        let (ctx, system, user) = (&*ctx, &system, &user);
+                        async move {
+                            ctx.completer_for(NAME)
+                                .complete_json::<ResumeStrategy>(
+                                    // The re-ask is a second full provider call; a
+                                    // run already out of time must not pay for it.
+                                    ctx.deadline_guard(),
+                                    system,
+                                    user,
+                                    ResumeStrategy::EXAMPLE,
+                                    Some(&ResumeStrategy::schema()),
+                                    effort,
+                                )
+                                .await
+                        }
+                    },
+                    ResumeStrategy::below_floor,
+                    ResumeStrategy::richness,
+                )
+                .await?;
+                retried = floored.retried;
+                floored.value
             }
         };
         // Applied on the cache-hit path too: a cached artifact was grounded
@@ -252,13 +271,19 @@ impl<'a> Stage<QualityCtx<'a>> for Strategy {
         // rather than for one of them.
         let (per_company, emphasis_dropped) = reseed(&roster, &strategy, &ctx.evidence);
         strategy.per_company = per_company;
+        // Judged AFTER the rebuild, on the form that is stored and read back, so
+        // the write side and the cache-read filter agree (an angle under an
+        // employer the roster does not know is dropped by `reseed`).
+        let degraded = strategy.below_floor();
 
         let json = serde_json::to_string(&strategy).unwrap_or_default();
-        if !from_cache {
-            cache::put(ctx.cache, NAME, &key, &json);
-        }
+        // Never cache a floor miss: one bad call must not poison a week of runs.
+        store_sound(ctx.cache, NAME, &key, &json, from_cache || degraded);
         ctx.cache_key.extend(&json);
         ctx.ledger.count_call(from_cache);
+        if retried {
+            ctx.ledger.count_call(false);
+        }
         // Counts only — never a company name or an angle (ADR-027).
         // `emphasisDropped` is how many emphasis terms the grounding filter
         // removed: a silent drop otherwise looks exactly like a model that
@@ -272,6 +297,8 @@ impl<'a> Stage<QualityCtx<'a>> for Strategy {
                 "condensed": strategy.per_company.iter().filter(|p| p.condensed).count(),
                 "skillsGroups": strategy.skills_groups.len(),
                 "emphasisDropped": emphasis_dropped,
+                "retried": retried,
+                "belowFloor": degraded,
             }),
         );
         ctx.strategy = strategy;

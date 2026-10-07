@@ -132,7 +132,7 @@ pub(super) fn build_chat_stream_body(req: &AiGenerateRequest, sampling: Sampling
     body
 }
 
-/// Build the non-streaming `/messages` body shared by `complete`/
+/// Build the streamed `/messages` body shared by `complete`/
 /// `complete_with_usage`. Pure + unit-tested — mirrors
 /// [`build_chat_stream_body`]'s [`anthropic_supports_temperature`] gate but
 /// never sends a `thinking` key at all (no thinking-view display concern on

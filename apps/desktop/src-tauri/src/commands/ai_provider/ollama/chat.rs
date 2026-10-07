@@ -173,7 +173,7 @@ pub(super) fn think_level(model: &str, effort: Option<&str>) -> Option<Value> {
         .then(|| json!(effort))
 }
 
-/// What `OllamaClient::complete_structured` adds to a non-streaming
+/// What `OllamaClient::complete_structured` adds to a streamed
 /// `/api/chat` call and the plain `complete`/`complete_with_usage` path cannot:
 /// those two take no [`AiGenerateRequest`], so they have neither a `format` nor
 /// any of the request-level knobs below. `Some(..)` IS the JSON-mode switch, so
@@ -193,7 +193,7 @@ pub(super) struct StructuredCall<'a> {
     pub(super) context_window: Option<u32>,
 }
 
-/// Build the non-streaming `/api/chat` body shared by `complete`/
+/// Build the streamed `/api/chat` body shared by `complete`/
 /// `complete_with_usage`/`complete_structured`. Pure + unit-tested.
 ///
 /// Every `options.*` entry is added only when `Some` — an unset field lets
@@ -250,8 +250,31 @@ pub(super) fn build_complete_body(
     body
 }
 
+/// One content-free line per call naming what the body actually carries: the
+/// `think` value (or `absent`), the `format` kind and the option KEYS. Never the
+/// prompt, the schema or any value other than `think` (#1382: tells a "thinking
+/// ran although effort was off" report apart from a model that ignored `think`).
+fn log_request_shape(model: &str, body: &Value) {
+    let think = body
+        .get("think")
+        .map_or_else(|| "absent".to_string(), Value::to_string);
+    let format = match body.get("format") {
+        None => "none",
+        Some(Value::String(_)) => "json",
+        Some(_) => "schema",
+    };
+    let options: Vec<&str> = body
+        .get("options")
+        .and_then(Value::as_object)
+        .map(|o| o.keys().map(String::as_str).collect())
+        .unwrap_or_default();
+    log::info!(
+        "[ai] ollama request shape model={model} think={think} format={format} options={options:?}"
+    );
+}
+
 /// Shared body of `AiProvider::complete`/`AiProvider::complete_with_usage`
-/// for [`OllamaClient`](super::OllamaClient): one non-streaming `/api/chat`
+/// for [`OllamaClient`](super::OllamaClient): one streamed `/api/chat`
 /// call, parsed once into `(text, usage)` so the two trait methods never
 /// duplicate the HTTP round-trip. A free function (no `&self`) since
 /// `OllamaClient` is a unit struct with no other state.
@@ -267,7 +290,7 @@ pub(super) async fn complete_impl(
     let _chat_guard = super::local_chat::ChatInFlight::begin();
     let base = host();
     let endpoint = format!("{base}/api/chat");
-    let trace = RequestTrace::begin(ProviderId::Ollama, model, "/api/chat", &base, false);
+    let trace = RequestTrace::begin(ProviderId::Ollama, model, "/api/chat", &base, true);
 
     // The IDLE bound, scaled by the SAME effort that governs `chat_stream`'s — see
     // `timeouts::ollama_completion_deadline`'s doc for why only the callers that
@@ -279,6 +302,7 @@ pub(super) async fn complete_impl(
     // Truncated JSON must fail, not reach `repair_json`; plain text may be cut.
     let json = structured.as_ref().is_some_and(|s| s.format.is_some());
     let body = build_complete_body(model, system, user, temperature, structured);
+    log_request_shape(model, &body);
 
     let resp = match open(
         || crate::net::http::shared().post(&endpoint).json(&body),

@@ -143,7 +143,7 @@ pub(super) struct StructuredCall<'a> {
     pub(super) max_tokens: Option<u32>,
 }
 
-/// Build the non-streaming `generateContent` body shared by `complete`/
+/// Build the streamed `generateContent` body shared by `complete`/
 /// `complete_with_usage`/`complete_structured`. Pure + unit-tested.
 ///
 /// `structured` is `Some` only on the structured path and sets

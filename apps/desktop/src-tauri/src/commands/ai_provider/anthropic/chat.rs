@@ -40,7 +40,7 @@ impl AnthropicClient {
     ) -> AppResult<(String, Usage)> {
         let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
         let endpoint = format!("{BASE}/messages");
-        let trace = RequestTrace::begin(ProviderId::Anthropic, model, "/messages", BASE, false);
+        let trace = RequestTrace::begin(ProviderId::Anthropic, model, "/messages", BASE, true);
 
         // Truncated JSON must fail, not reach `repair_json`; plain text may be cut.
         let json = output_config

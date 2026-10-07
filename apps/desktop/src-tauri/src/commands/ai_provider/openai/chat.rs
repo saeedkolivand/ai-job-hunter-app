@@ -45,7 +45,7 @@ impl OpenAiClient {
         let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
         let caps = self.capabilities(model);
         let endpoint = self.endpoint_url("chat/completions")?;
-        let trace = RequestTrace::begin(self.id, model, "/chat/completions", &self.base_url, false);
+        let trace = RequestTrace::begin(self.id, model, "/chat/completions", &self.base_url, true);
 
         // Truncated JSON must fail, not reach `repair_json`; plain text may be cut.
         let json = structured

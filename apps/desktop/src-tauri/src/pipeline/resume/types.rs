@@ -84,7 +84,26 @@ impl JobAnalysis {
             && self.nice_to_have.is_empty()
             && self.responsibilities.is_empty()
     }
+
+    /// The quality floor (#1382): a non-trivial posting always states what it
+    /// asks for or what the job does, so an analysis with NEITHER `mustHave`
+    /// nor `responsibilities` is the low-effort degradation, not a real answer.
+    /// A near-empty ad is exempt: it can legitimately yield nothing.
+    pub fn below_floor(&self, job_ad: &str) -> bool {
+        job_ad.trim().chars().count() >= MIN_FLOOR_AD_CHARS
+            && self.must_have.is_empty()
+            && self.responsibilities.is_empty()
+    }
+
+    /// How much was extracted — only used to keep the better of two floor misses.
+    pub fn richness(&self) -> usize {
+        self.must_have.len() + self.nice_to_have.len() + self.responsibilities.len()
+    }
 }
+
+/// Shortest posting the analysis floor is enforced on. The probe's 230-char ad
+/// still produced requirements; 200 leaves headroom without exempting real ads.
+const MIN_FLOOR_AD_CHARS: usize = 200;
 
 /// Whether the source résumé evidences one requirement.
 ///
@@ -185,6 +204,30 @@ pub struct ResumeStrategy {
 }
 
 impl ResumeStrategy {
+    /// The quality floor (#1382): a strategy with no headline angle, no summary
+    /// focus and no per-company angle or emphasis said nothing at all. Used on
+    /// the model's raw answer (to decide the retry) and on the reseeded,
+    /// stored form (to decide caching and the cache-read filter).
+    pub fn below_floor(&self) -> bool {
+        self.headline_angle.trim().is_empty()
+            && self.summary_focus.is_empty()
+            && self
+                .per_company
+                .iter()
+                .all(|p| p.angle.trim().is_empty() && p.emphasis.is_empty())
+    }
+
+    /// How much was said — only used to keep the better of two floor misses.
+    pub fn richness(&self) -> usize {
+        usize::from(!self.headline_angle.trim().is_empty())
+            + self.summary_focus.len()
+            + self
+                .per_company
+                .iter()
+                .map(|p| usize::from(!p.angle.trim().is_empty()) + p.emphasis.len())
+                .sum::<usize>()
+    }
+
     pub const EXAMPLE: &'static str = r#"{
   "headlineAngle": "Payments-platform engineer who ships reliability work",
   "summaryFocus": ["distributed systems", "payments domain"],
