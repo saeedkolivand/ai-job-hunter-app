@@ -689,7 +689,7 @@ jobs:
       # nothing. Both must be installed before the test step below.
       - name: 🦀 Install cargo-llvm-cov + nextest
         if: always()
-        uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2
+        uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2
         with:
           tool: cargo-llvm-cov,nextest
 
@@ -786,7 +786,7 @@ jobs:
         # Advisory: a fork PR's read-only token 403s the check-run API itself —
         # that must not fail a green tests job (same guard as the coverage steps).
         continue-on-error: true
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
         with:
           name: Frontend tests (vitest)
           path: reports/vitest.junit.xml
@@ -800,7 +800,7 @@ jobs:
         if: always()
         # Advisory: same fork-PR 403 guard as the frontend report step above.
         continue-on-error: true
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
         with:
           name: Rust tests (nextest)
           # Glob: cargo-llvm-cov redirects the target dir (target/llvm-cov-target),
@@ -1063,7 +1063,7 @@ jobs:
           echo "::endgroup::"
 
       - name: 🧰 Install cargo-deny + cargo-machete
-        uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2
+        uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2
         with:
           tool: cargo-deny,cargo-machete
 
