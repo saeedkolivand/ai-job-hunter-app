@@ -47,6 +47,10 @@ impl OpenAiClient {
         let endpoint = self.endpoint_url("chat/completions")?;
         let trace = RequestTrace::begin(self.id, model, "/chat/completions", &self.base_url, false);
 
+        // Truncated JSON must fail, not reach `repair_json`; plain text may be cut.
+        let json = structured
+            .as_ref()
+            .is_some_and(|s| s.response_format.is_some());
         let body = build_complete_body(model, system, user, temperature, caps, structured);
 
         let limits = StreamLimits::new(timeouts::COMPLETION);
@@ -76,7 +80,14 @@ impl OpenAiClient {
         };
         resp = checked_response(resp, self.id, &trace).await?;
         let status = resp.status();
-        let collected = collect(&mut resp, parse_openai_frames, limits, self.id.as_str()).await;
+        let collected = collect(
+            &mut resp,
+            parse_openai_frames,
+            limits,
+            self.id.as_str(),
+            json,
+        )
+        .await;
         trace.end(Some(status.as_u16()), collected.is_ok());
         collected
     }

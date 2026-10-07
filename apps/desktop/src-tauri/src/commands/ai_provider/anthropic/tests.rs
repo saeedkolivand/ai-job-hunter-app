@@ -2,6 +2,7 @@
 //! test-mod body; R8 LOC cap per topic file). Shared fixtures live in
 //! [`support`].
 
+mod collect;
 mod support;
 
 mod body;

@@ -37,6 +37,8 @@ mod text;
 pub(crate) use finish::empty_answer_error_for_test;
 pub(crate) use finish::is_empty_answer_length_cut;
 pub(super) use finish::EMPTY_ANSWER_MESSAGE;
+#[cfg(test)]
+pub(super) use idle::collect_canned;
 pub(super) use idle::{collect, open, StreamLimits};
 pub(super) use piece::StreamPiece;
 pub(in crate::commands::ai_provider) use text::{push_utf8, strip_think_blocks};
@@ -282,13 +284,21 @@ where
             Ok(Some(bytes)) => {
                 push_utf8(&mut buf, &mut carry, &bytes);
                 for piece in parse(&mut buf) {
+                    if let Some(raw) = piece.error {
+                        // An in-band upstream error frame on a 200 stream: fail like
+                        // the transport-error branch below instead of finishing a
+                        // partial draft as a success.
+                        trace.end(Some(status), false);
+                        super::record_usage(app, provider.as_str(), model, usage, Some(base_url));
+                        return Err(idle::frame_error(provider.as_str(), &raw));
+                    }
                     if let Some(u) = piece.usage {
                         usage = u;
                     }
                     if let Some(r) = piece.stop_reason {
                         stop_reason = Some(r);
                     }
-                    if !piece.delta.is_empty() {
+                    if !piece.delta.is_empty() && !piece.refusal {
                         if piece.thinking {
                             thinking_len += piece.delta.chars().count();
                         } else {

@@ -276,6 +276,8 @@ pub(super) async fn complete_impl(
     let limits = StreamLimits::new(timeouts::ollama_completion_deadline(
         structured.as_ref().and_then(|s| s.effort),
     ));
+    // Truncated JSON must fail, not reach `repair_json`; plain text may be cut.
+    let json = structured.as_ref().is_some_and(|s| s.format.is_some());
     let body = build_complete_body(model, system, user, temperature, structured);
 
     let resp = match open(
@@ -307,7 +309,7 @@ pub(super) async fn complete_impl(
     // Reasoning rides `message.thinking` and is dropped by `collect` (as the
     // one-shot path never read it); the answer is `message.content` only.
     let mut resp = resp;
-    let collected = collect(&mut resp, parse_ollama_frames, limits, "Ollama").await;
+    let collected = collect(&mut resp, parse_ollama_frames, limits, "Ollama", json).await;
     trace.end(Some(status.as_u16()), collected.is_ok());
     collected
 }

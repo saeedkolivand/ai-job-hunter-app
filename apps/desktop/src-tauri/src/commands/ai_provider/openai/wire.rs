@@ -91,7 +91,9 @@ pub(super) fn parse_openai_turn(data: &Value) -> AgentTurn {
 /// emitted right before `[DONE]`. `None` on every other streamed chunk. Pure +
 /// unit-tested.
 pub(super) fn parse_openai_usage(data: &Value) -> Option<Usage> {
-    let usage = data.get("usage")?;
+    // `"usage": null` (sent on every non-final streamed chunk by some servers)
+    // is no measurement, not a measured zero.
+    let usage = data.get("usage").filter(|u| !u.is_null())?;
     Some(Usage {
         input_tokens: usage
             .get("prompt_tokens")
@@ -205,8 +207,23 @@ pub(super) fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
             Ok(v) => v,
             Err(_) => continue,
         };
+        if let Some(err) = event.get("error").filter(|e| !e.is_null()) {
+            buf.drain(..consumed);
+            out.push(StreamPiece::from_error_value(err));
+            return out;
+        }
         if let Some(usage) = parse_openai_usage(&event) {
             out.push(StreamPiece::usage(usage));
+        }
+        if let Some(refusal) = event
+            .get("choices")
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("delta"))
+            .and_then(|d| d.get("refusal"))
+            .and_then(|r| r.as_str())
+            .filter(|r| !r.is_empty())
+        {
+            out.push(StreamPiece::refusal(refusal));
         }
         if let Some(reason) = parse_openai_finish_reason(&event) {
             out.push(StreamPiece::stop_reason(reason));

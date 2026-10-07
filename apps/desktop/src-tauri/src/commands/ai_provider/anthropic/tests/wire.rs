@@ -103,13 +103,16 @@ fn parse_frames_combines_message_start_input_and_message_delta_output_tokens() {
     );
     let pieces = parse_anthropic_frames(&mut buf, &mut last, &mut usage);
     assert_eq!(
-        pieces,
+        pieces[..1],
         vec![StreamPiece::usage(Usage {
             input_tokens: 25,
             output_tokens: 91,
             thinking_tokens: None,
         })]
     );
+    // The same `message_delta` also reports why the turn ended (terminal proof).
+    assert_eq!(pieces.len(), 2);
+    assert_eq!(pieces[1], StreamPiece::stop_reason(StopReason::End));
 }
 
 #[test]

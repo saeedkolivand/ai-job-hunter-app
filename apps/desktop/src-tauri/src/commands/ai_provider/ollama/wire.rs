@@ -124,6 +124,11 @@ pub(super) fn parse_ollama_frames(buf: &mut String) -> Vec<StreamPiece> {
             Ok(v) => v,
             Err(_) => continue,
         };
+        if let Some(err) = event.get("error").filter(|e| !e.is_null()) {
+            buf.drain(..consumed);
+            out.push(StreamPiece::from_error_value(err));
+            return out;
+        }
         let message = event.get("message");
         let delta = message
             .and_then(|m| m.get("content"))

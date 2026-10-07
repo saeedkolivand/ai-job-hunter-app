@@ -225,12 +225,31 @@ pub(super) fn parse_gemini_frames(buf: &mut String, state: &mut GeminiScanner) -
             }
         }
         state.pending.push(ch);
+        if state.pending.len() > crate::net::http::DEFAULT_MAX_BODY_BYTES {
+            state.pending.clear();
+            out.push(StreamPiece::error("response frame exceeded the size limit"));
+            return out;
+        }
 
         if state.depth == 0
             && state.pending.trim_start().starts_with('{')
             && !state.pending.trim().is_empty()
         {
             if let Ok(event) = serde_json::from_str::<Value>(state.pending.trim()) {
+                if let Some(err) = event.get("error").filter(|e| !e.is_null()) {
+                    out.push(StreamPiece::from_error_value(err));
+                    state.pending.clear();
+                    return out;
+                }
+                if let Some(reason) = event
+                    .get("promptFeedback")
+                    .and_then(|f| f.get("blockReason"))
+                    .and_then(|r| r.as_str())
+                {
+                    out.push(StreamPiece::error(format!("prompt blocked: {reason}")));
+                    state.pending.clear();
+                    return out;
+                }
                 for (thought, text) in parse_gemini_parts(&event) {
                     if text.is_empty() {
                         continue;
@@ -243,6 +262,21 @@ pub(super) fn parse_gemini_frames(buf: &mut String, state: &mut GeminiScanner) -
                 }
                 if let Some(usage) = parse_gemini_usage(&event) {
                     out.push(StreamPiece::usage(usage));
+                }
+                // Gemini has no done sentinel; `finishReason` on the last
+                // candidate is the only proof the stream finished (`collect`
+                // fails an EOF without one).
+                if let Some(reason) = event
+                    .get("candidates")
+                    .and_then(|c| c.get(0))
+                    .and_then(|c| c.get("finishReason"))
+                    .and_then(|r| r.as_str())
+                {
+                    out.push(StreamPiece::stop_reason(match reason {
+                        "STOP" => StopReason::End,
+                        "MAX_TOKENS" => StopReason::Length,
+                        _ => StopReason::Other,
+                    }));
                 }
             }
             state.pending.clear();

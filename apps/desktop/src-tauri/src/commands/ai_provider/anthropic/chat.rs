@@ -42,6 +42,10 @@ impl AnthropicClient {
         let endpoint = format!("{BASE}/messages");
         let trace = RequestTrace::begin(ProviderId::Anthropic, model, "/messages", BASE, false);
 
+        // Truncated JSON must fail, not reach `repair_json`; plain text may be cut.
+        let json = output_config
+            .as_ref()
+            .is_some_and(|o| o.get("format").is_some());
         let body = build_structured_body(model, system, user, temperature, output_config);
 
         let limits = StreamLimits::new(timeouts::COMPLETION);
@@ -74,15 +78,11 @@ impl AnthropicClient {
             move |buf| parse_anthropic_frames(buf, &mut last_event, &mut usage),
             limits,
             "Anthropic",
+            json,
         )
         .await;
         trace.end(Some(status.as_u16()), collected.is_ok());
-        match collected? {
-            (text, _) if text.is_empty() => Err(AppError::Provider(
-                "Anthropic: unexpected response shape".to_string(),
-            )),
-            ok => Ok(ok),
-        }
+        collected
     }
 
     /// Shared transport for every `research*` facet: a non-streaming Messages

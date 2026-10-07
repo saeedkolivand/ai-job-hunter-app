@@ -116,6 +116,13 @@ pub(super) fn parse_anthropic_frames(
             Ok(v) => v,
             Err(_) => continue,
         };
+        if last_event == "error" || event.get("type").and_then(|t| t.as_str()) == Some("error") {
+            buf.drain(..consumed);
+            out.push(StreamPiece::from_error_value(
+                event.get("error").unwrap_or(&event),
+            ));
+            return out;
+        }
         match last_event.as_str() {
             "message_start" => {
                 if let Some(input) = event
@@ -136,6 +143,18 @@ pub(super) fn parse_anthropic_frames(
                 {
                     usage.output_tokens = output as u32;
                     out.push(StreamPiece::usage(*usage));
+                }
+                if let Some(reason) = event
+                    .get("delta")
+                    .and_then(|d| d.get("stop_reason"))
+                    .and_then(|r| r.as_str())
+                {
+                    out.push(StreamPiece::stop_reason(match reason {
+                        "end_turn" | "stop_sequence" => StopReason::End,
+                        "max_tokens" => StopReason::Length,
+                        "tool_use" => StopReason::ToolUse,
+                        _ => StopReason::Other,
+                    }));
                 }
             }
             _ => {}

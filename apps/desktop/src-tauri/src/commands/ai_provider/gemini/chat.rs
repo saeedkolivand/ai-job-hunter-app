@@ -45,6 +45,8 @@ impl GeminiClient {
         let endpoint_label = format!("/v1beta/models/{m}:streamGenerateContent");
         let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
 
+        // Truncated JSON must fail, not reach `repair_json`; plain text may be cut.
+        let json = structured.as_ref().is_some_and(|s| s.json);
         let body = build_complete_body(model, system, user, temperature, structured);
 
         let url = format!("{BASE}{endpoint_label}");
@@ -76,15 +78,11 @@ impl GeminiClient {
             move |buf| parse_gemini_frames(buf, &mut state),
             limits,
             "Gemini",
+            json,
         )
         .await;
         trace.end(Some(status.as_u16()), collected.is_ok());
-        match collected? {
-            (text, _) if text.is_empty() => Err(AppError::Provider(
-                "Gemini: unexpected response shape".to_string(),
-            )),
-            ok => Ok(ok),
-        }
+        collected
     }
 
     /// Shared body of `embed`/`embed_with_usage`: one `embedContent` call,

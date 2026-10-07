@@ -39,6 +39,16 @@ pub(in crate::commands::ai_provider) struct StreamPiece {
     /// channel) apart from a provider that just silently returned nothing —
     /// see `finish`'s empty-answer branch.
     pub stop_reason: Option<StopReason>,
+    /// An in-band upstream error frame (Anthropic `event: error`, OpenAI
+    /// `data: {"error":..}`, Gemini `{"error":..}`, Ollama `{"error":".."}`): the
+    /// RAW upstream message, unredacted. HTTP-200 streams carry these, so without
+    /// it an overloaded/failed call reads as an empty-but-successful one.
+    /// `stream::idle::frame_error` redacts and classifies it.
+    pub error: Option<String>,
+    /// `true` when `delta` is a model REFUSAL (OpenAI `delta.refusal`), not answer
+    /// text. Never emitted to the renderer or added to the answer; only quoted in
+    /// the empty-answer error.
+    pub refusal: bool,
 }
 
 impl StreamPiece {
@@ -50,6 +60,8 @@ impl StreamPiece {
             done: false,
             usage: None,
             stop_reason: None,
+            error: None,
+            refusal: false,
         }
     }
 
@@ -61,6 +73,8 @@ impl StreamPiece {
             done: false,
             usage: None,
             stop_reason: None,
+            error: None,
+            refusal: false,
         }
     }
 
@@ -72,6 +86,8 @@ impl StreamPiece {
             done: true,
             usage: None,
             stop_reason: None,
+            error: None,
+            refusal: false,
         }
     }
 
@@ -86,6 +102,8 @@ impl StreamPiece {
             done: false,
             usage: Some(usage),
             stop_reason: None,
+            error: None,
+            refusal: false,
         }
     }
 
@@ -100,6 +118,36 @@ impl StreamPiece {
             done: false,
             usage: None,
             stop_reason: Some(reason),
+            error: None,
+            refusal: false,
+        }
+    }
+
+    /// An in-band upstream error frame — see [`StreamPiece::error`].
+    pub fn error(message: impl Into<String>) -> Self {
+        Self {
+            error: Some(message.into()),
+            ..Self::text("")
+        }
+    }
+
+    /// An error frame from the provider's own `error` JSON value: a bare string
+    /// (Ollama), or an object with `message` (+ optional `type`/`status`).
+    pub fn from_error_value(err: &serde_json::Value) -> Self {
+        let text = |k: &str| err.get(k).and_then(|v| v.as_str());
+        Self::error(match (err.as_str(), text("type"), text("message")) {
+            (Some(s), _, _) => s.to_string(),
+            (_, Some(t), Some(m)) => format!("{t}: {m}"),
+            (_, _, Some(m)) => m.to_string(),
+            _ => err.to_string(),
+        })
+    }
+
+    /// A refusal delta — see [`StreamPiece::refusal`].
+    pub fn refusal(delta: impl Into<String>) -> Self {
+        Self {
+            refusal: true,
+            ..Self::text(delta)
         }
     }
 }
