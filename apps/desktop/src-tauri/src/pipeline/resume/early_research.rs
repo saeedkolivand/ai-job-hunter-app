@@ -56,7 +56,12 @@ impl EarlyResearch {
 
     /// The brief's receiver, once. `Err` on it means the lookup was dropped
     /// before answering, which the caller reads as "no brief".
+    ///
+    /// Also drops the role sender: the stage reading the brief is downstream
+    /// of `analyze_job`, so a role still unpublished here never will be, and
+    /// keeping the sender alive would hang both the lookup and the letter.
     pub(crate) fn take_brief(&mut self) -> Option<oneshot::Receiver<String>> {
+        self.role_tx.take();
         self.brief_rx.take()
     }
 }

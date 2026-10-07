@@ -28,6 +28,7 @@ mod cover_letter;
 mod ctx;
 mod deadline;
 mod draft;
+mod early_research_wiring_guard;
 mod effort_wiring_guard;
 mod humanize_attempt_gates;
 mod humanize_attempt_outcomes;

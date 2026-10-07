@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::time::{sleep, Instant};
-use tokio_util::sync::CancellationToken;
 
 use super::*;
 
@@ -157,4 +156,25 @@ fn only_a_letter_run_that_asked_for_research_arms_it() {
 async fn an_unarmed_run_is_just_the_pipeline() {
     let none: Option<std::future::Pending<()>> = None;
     assert_eq!(race_background(async { 7 }, none).await, 7);
+}
+
+/// A role that is never published (analyze skipped or reordered) must fail
+/// soft: taking the brief drops the role sender, so the lookup ends and the
+/// brief reads empty instead of hanging. The timeout turns a regression into a
+/// failure rather than a hang.
+///
+/// Mutation check: remove `self.role_tx.take();` from `take_brief`.
+#[tokio::test(start_paused = true)]
+async fn an_unpublished_role_fails_soft_instead_of_hanging() {
+    let (mut early, role_rx, brief_tx) = EarlyResearch::channel();
+    let bg = drive(role_rx, brief_tx, |_| async { "never".to_string() });
+    let rx = early.take_brief().expect("armed");
+
+    let brief = tokio::time::timeout(Duration::from_secs(5), async {
+        let (_, brief) = tokio::join!(bg, rx);
+        brief.unwrap_or_default()
+    })
+    .await
+    .expect("must not hang");
+    assert_eq!(brief, "");
 }

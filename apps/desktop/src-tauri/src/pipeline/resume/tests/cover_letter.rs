@@ -38,24 +38,24 @@ fn research_company_brief_returns_a_plain_string<'a>(
 }
 
 /// The one guarantee the type system above cannot give: that
-/// `research_company_brief` actually ADMITS against the shared rate/
+/// `research_brief` actually ADMITS against the shared rate/
 /// daily-budget bucket BEFORE it spends — the cost-control half of the same
 /// non-fatality contract. A narrow whole-file substring check, not a
-/// brace-bounded slice: `research_company_brief` is the last item in
+/// brace-bounded slice: `research_brief` is the last item in
 /// `cover_letter.rs`, so nothing after the match position could produce a
 /// false pass.
 ///
 /// Mutation check: delete the `let Some(_guard) = completer.admit_research(NAME)
-/// else { ... };` line from `research_company_brief` — this test fails
+/// else { ... };` line from `research_brief` — this test fails
 /// immediately.
 #[test]
-fn research_company_brief_admits_before_it_researches() {
+fn research_brief_admits_before_it_researches() {
     let source = include_str!("../stages/cover_letter.rs");
     let start = source
         .find("pub(crate) async fn research_brief")
         .expect("research_brief must exist");
     assert!(
         source[start..].contains(".admit_research("),
-        "research_company_brief must admit against the shared bucket before researching"
+        "research_brief must admit against the shared bucket before researching"
     );
 }
