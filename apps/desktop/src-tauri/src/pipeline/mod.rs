@@ -19,6 +19,7 @@
 
 pub mod budget;
 pub mod cache;
+mod call_notes;
 mod completer;
 mod completion;
 pub mod enrichment;

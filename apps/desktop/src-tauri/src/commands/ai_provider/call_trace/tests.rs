@@ -7,9 +7,12 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use super::{attach_routing, note, CallLog};
+use super::{
+    attach_routing, clear_observed_usage, error_class, note, observe_usage, take_observed_usage,
+    CallLog,
+};
 use crate::commands::ai_provider::{ProviderTimings, Usage};
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::pipeline::runs::{PipelineRunStore, RunEventRow};
 use crate::pipeline::{Pipeline, Stage, StageHooks, StageInfo, StageOutcome};
 
@@ -38,6 +41,17 @@ impl Stage<()> for CallingStage {
             Some("low"),
             Duration::from_millis(21_000),
             usage,
+            None,
+        );
+        // A call that timed out: class only, never the message text.
+        let err = AppError::Timeout("prompt text: my résumé at https://x.example".into());
+        note(
+            "ollama",
+            "llama3.2:1b",
+            Some("low"),
+            Duration::from_millis(300_000),
+            Usage::default(),
+            Some(error_class(&err)),
         );
         Ok(())
     }
@@ -136,6 +150,32 @@ async fn a_stage_calls_are_collected_persisted_and_content_free() {
         .map(String::as_str)
         .collect();
     assert_eq!(keys, allowed, "a call record may carry no content field");
+
+    // The failed call: base keys + `error`, the class only.
+    let failed = &stored["routing"]["calls"][1];
+    assert_eq!(failed["error"], "Timeout");
+    let failed_keys: BTreeSet<&str> = failed
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    let mut expected: BTreeSet<&str> = BTreeSet::from([
+        "provider",
+        "model",
+        "effort",
+        "ms",
+        "inputTokens",
+        "outputTokens",
+        "thinkingTokens",
+    ]);
+    expected.insert("error");
+    // `thinkingTokens: None` serializes as null, so it is present.
+    assert_eq!(failed_keys, expected);
+    assert!(
+        !stored.to_string().contains("résumé"),
+        "no message text persists"
+    );
     let routing_keys: BTreeSet<&str> = stored["routing"]
         .as_object()
         .unwrap()
@@ -149,7 +189,57 @@ async fn a_stage_calls_are_collected_persisted_and_content_free() {
 /// artifact byte-identical (cached / free stages are unchanged).
 #[test]
 fn no_scope_and_no_calls_change_nothing() {
-    note("openai", "m", None, Duration::ZERO, Usage::default());
+    note("openai", "m", None, Duration::ZERO, Usage::default(), None);
     let artifact = Some(json!({ "cached": true }));
     assert_eq!(attach_routing(artifact.clone(), &[], 5), artifact);
+}
+
+/// Observe-then-take consumes the slot, and a cleared slot is not inherited by
+/// the next call (a provider that returns Ok without `record_usage`).
+/// Mutation check: make `clear_observed_usage` a no-op and the last assert fails.
+#[tokio::test]
+async fn observed_usage_is_consumed_and_never_inherited() {
+    let log = CallLog::default();
+    log.scope(async {
+        observe_usage(Usage {
+            input_tokens: 9,
+            ..Usage::default()
+        });
+        assert_eq!(take_observed_usage().map(|u| u.input_tokens), Some(9));
+        assert!(take_observed_usage().is_none(), "second take is empty");
+        observe_usage(Usage {
+            input_tokens: 9,
+            ..Usage::default()
+        });
+        clear_observed_usage();
+        assert!(take_observed_usage().is_none(), "stale usage must not leak");
+    })
+    .await;
+}
+
+/// The error class is the variant name, with none of the message.
+#[test]
+fn error_class_is_the_variant_only() {
+    assert_eq!(error_class(&AppError::Timeout("secret".into())), "Timeout");
+    assert_eq!(error_class(&AppError::Network("secret".into())), "Network");
+}
+
+/// More calls than the cap keep the first N and count the rest.
+#[test]
+fn calls_past_the_cap_are_counted_not_stored() {
+    let call = |ms| super::CallRecord {
+        provider: "p".into(),
+        model: "m".into(),
+        effort: None,
+        ms,
+        input_tokens: 0,
+        output_tokens: 0,
+        thinking_tokens: None,
+        timings: None,
+        error: None,
+    };
+    let calls: Vec<_> = (0..15).map(call).collect();
+    let routing = attach_routing(None, &calls, 1).unwrap()["routing"].clone();
+    assert_eq!(routing["calls"].as_array().unwrap().len(), 12);
+    assert_eq!(routing["dropped"], 3);
 }
