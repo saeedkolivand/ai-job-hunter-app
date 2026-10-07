@@ -5,6 +5,7 @@
 use crate::pipeline::resume::prompts::{HumanizeTier, HUMANIZE_DOCUMENT_CAP};
 use crate::validate::content::{ContentIssue, ContentReport};
 
+#[cfg(test)]
 use super::super::repair::issue_line;
 
 /// A `voice.*` finding — the whole Warnings family the generation prompt's
@@ -43,20 +44,31 @@ fn on_link_line(document: &str, evidence: &str) -> bool {
         .any(|line| line.contains(evidence) && !crate::validate::content::urls_in(line).is_empty())
 }
 
-/// The `<humanize_findings>` list for one document: every `voice.*` finding,
-/// rendered with [`issue_line`] (the SAME format `repair` sends the model),
-/// minus any finding on a project-link line ([`on_link_line`]).
-pub(crate) fn voice_findings(report: &ContentReport, document: &str) -> Vec<String> {
+/// Every `voice.*` issue of one document that is allowed to reach the model:
+/// all of them, minus any finding on a project-link line ([`on_link_line`]).
+pub(super) fn eligible_voice_issues<'a>(
+    report: &'a ContentReport,
+    document: &'a str,
+) -> impl Iterator<Item = &'a ContentIssue> {
     report
         .issues
         .iter()
         .filter(|issue| is_voice_issue(issue))
-        .filter(|issue| {
+        .filter(move |issue| {
             !issue
                 .evidence
                 .as_deref()
                 .is_some_and(|evidence| on_link_line(document, evidence))
         })
+}
+
+/// The flat finding list for one document: [`eligible_voice_issues`] rendered
+/// with [`issue_line`] (the SAME format `repair` sends the model). The stage
+/// itself works from [`super::patches::flagged_lines`] (findings grouped by
+/// line); this flat view is the pinned contract of the link-line exclusion.
+#[cfg(test)]
+pub(crate) fn voice_findings(report: &ContentReport, document: &str) -> Vec<String> {
+    eligible_voice_issues(report, document)
         .map(issue_line)
         .collect()
 }

@@ -32,6 +32,7 @@ mod early_research_wiring_guard;
 mod effort_wiring_guard;
 mod humanize_attempt_gates;
 mod humanize_attempt_outcomes;
+mod humanize_patches;
 mod humanize_predicates;
 mod pipeline_integration;
 mod pipeline_stages;

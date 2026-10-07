@@ -42,8 +42,9 @@ pub(crate) use self::draft::{
 };
 #[cfg(test)]
 pub(crate) use self::humanize::{
-    exceeds_humanize_cap, humanize_is_worse, humanize_one, is_usable_rewrite,
-    should_humanize_letter, voice_count, voice_findings,
+    apply_patches, exceeds_humanize_cap, flagged_lines, humanize_is_worse, humanize_one,
+    is_usable_rewrite, should_humanize_letter, voice_count, voice_findings, FlaggedLine, Patch,
+    PatchList, HUMAN_VOICE_FLAGS,
 };
 #[cfg(test)]
 pub(crate) use self::repair::{criticals_by_section, repair_loop, round_is_worse};

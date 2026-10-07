@@ -6,10 +6,23 @@
 //! Every `voice.*` finding on both documents is counted BEFORE a single
 //! provider call is considered. Zero flags means the run is already clean by
 //! the prompt's own bans, and this stage costs nothing — no call, no cache
-//! lookup, nothing. A flagged document gets AT MOST ONE rewrite attempt
-//! ([`attempt::humanize_one`]), never a loop: the model is asked to fix ONLY
-//! the flagged lines, and the deterministic accept/revert rule below is what
-//! actually decides whether the answer ships.
+//! lookup, nothing. A flagged document gets AT MOST ONE attempt
+//! ([`attempt::humanize_one`]), never a loop.
+//!
+//! ## Line patches, not a re-emitted document
+//!
+//! The model is shown the flagged lines (numbered, with neighbours) and
+//! answers `{patches: [{id, replacement}]}` ([`patches`]); Rust applies them to
+//! flagged ids only and drops any replacement that is empty, multi-line,
+//! fence-tagged or changes a number. The patched document then goes through
+//! the same accept/revert rule below. A flag with no locatable line
+//! (document-wide rhythm/dash density) cannot be patched: it rides along as
+//! context, and a document with ONLY such flags makes no call and records
+//! `skipped`.
+//!
+//! The résumé and the letter run CONCURRENTLY (`tokio::join!` in this task —
+//! `Completer` is not `'static`, so no `spawn`). Each is revalidated against
+//! the OTHER document as it stood before humanize.
 //!
 //! ## The revert rule ([`predicates::humanize_is_worse`])
 //!
@@ -28,12 +41,13 @@
 //!
 //! ## Link lines are safe by construction, not by trust
 //!
-//! [`predicates::voice_findings`] drops any flagged line that also carries a
-//! URL BEFORE it ever reaches the model, and the system prompt repeats the
-//! ban as a hard contract. The résumé candidate additionally runs back
-//! through [`projects::normalize_projects`] before it is graded — the SAME
-//! deterministic, zero-cost pass `draft`/`repair` already run — so a rewrite
-//! cannot silently alter a project link even if it tried to.
+//! [`patches::flagged_lines`] never flags a line that also carries a URL, and
+//! only flagged ids can be patched, so a link line is unreachable even for a
+//! model that ignores the system prompt's ban. The résumé candidate
+//! additionally runs back through [`projects::normalize_projects`] before it
+//! is graded — the SAME deterministic, zero-cost pass `draft`/`repair` already
+//! run — so a rewrite cannot silently alter a project link even if it tried
+//! to.
 //!
 //! ## Language residual
 //!
@@ -47,24 +61,19 @@
 //! A real run shipped an exported résumé with `<humanize_document>` as the
 //! candidate's name and `</humanize_document>` as its last line: the model
 //! returned the document WRAPPED in the fence tag `humanize_user` wraps it in
-//! before sending it, and nothing checked for that. Every guard that already
-//! existed — [`predicates::is_usable_rewrite`]'s length floor,
-//! [`predicates::humanize_is_worse`]'s Critical/voice-flag comparison — grades
-//! CONTENT, and a wrapper only ADDS length and introduces no new finding, so
-//! the corrupt candidate sailed through both clean. `is_usable_rewrite` now
-//! also rejects any candidate containing a registered fence tag
-//! ([`crate::prompt_fence::contains_fence_tag`], checked against the whole
-//! [`crate::prompt_fence`] registry, not just this one tag) — a REVERT, not a
-//! strip-and-keep: a model that echoed the wrapper may have echoed other
-//! scaffolding too, and this stage's job is cosmetic polish, so its failure
-//! mode must be "no improvement", never "corrupted document".
+//! before sending it, and nothing checked for that. [`predicates::is_usable_rewrite`]
+//! rejects any candidate containing a registered fence tag
+//! ([`crate::prompt_fence::contains_fence_tag`]), and [`patches::apply_patches`]
+//! drops any single replacement that carries one — a REVERT/keep, not a
+//! strip-and-keep: this stage's job is cosmetic polish, so its failure mode
+//! must be "no improvement", never "corrupted document".
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
 use crate::error::{AppError, AppResult};
 use crate::pipeline::budget::StoppedReason;
-use crate::pipeline::resume::prompts::{humanize_system, humanize_user, HumanizeTier};
+use crate::pipeline::resume::prompts::HumanizeTier;
 use crate::pipeline::resume::{projects, QualityCtx};
 use crate::pipeline::Stage;
 use crate::validate::content::{ContentMetrics, ContentReport};
@@ -72,18 +81,27 @@ use crate::validate::content::{ContentMetrics, ContentReport};
 use super::validate::validate_documents;
 
 mod attempt;
+mod doc;
+mod patches;
 mod predicates;
 
-pub(crate) use attempt::humanize_one;
-pub(crate) use predicates::{
-    exceeds_humanize_cap, should_humanize_letter, voice_count, voice_findings,
-};
+use attempt::HumanizeAttempt;
+use doc::{humanize_doc, DocEnv};
+pub(crate) use patches::HUMAN_VOICE_FLAGS;
+
+pub(crate) use predicates::{should_humanize_letter, voice_count};
 
 // Test-only surface: `humanize_is_worse`/`is_usable_rewrite` are called
 // directly by `attempt::humanize_one` (never through this re-export) — only
 // `pipeline::resume::tests` imports them by this path (via `stages::`).
 #[cfg(test)]
-pub(crate) use predicates::{humanize_is_worse, is_usable_rewrite};
+pub(crate) use attempt::humanize_one;
+#[cfg(test)]
+pub(crate) use patches::{apply_patches, flagged_lines, FlaggedLine, Patch, PatchList};
+#[cfg(test)]
+pub(crate) use predicates::{
+    exceeds_humanize_cap, humanize_is_worse, is_usable_rewrite, voice_findings,
+};
 
 pub struct Humanize;
 
@@ -111,11 +129,9 @@ fn empty_ok_report() -> ContentReport {
     }
 }
 
-/// The stage's ledger artifact — one shape, shared by all three exits
-/// (`Stage::run`'s two early returns and its normal end), so a future new
-/// field lands in every exit at once instead of being added to the "real"
-/// one and forgotten on the early-return copies. `Default` gives the two
-/// early exits an all-zero/all-false artifact for free.
+/// The stage's ledger artifact — one shape, shared by all exits, so a future
+/// new field lands in every exit at once. `Default` gives an all-zero/all-false
+/// artifact for free.
 #[derive(Debug, Default)]
 struct Artifact {
     resume_flagged: usize,
@@ -128,6 +144,9 @@ struct Artifact {
     timed_out: bool,
     capped: bool,
     too_large: bool,
+    /// No provider call was made and nothing stopped it: the draft already
+    /// reads human, or no flag points at a patchable line.
+    skipped: bool,
 }
 
 impl Artifact {
@@ -145,7 +164,16 @@ impl Artifact {
             "timedOut": self.timed_out,
             "capped": self.capped,
             "tooLarge": self.too_large,
+            "skipped": self.skipped,
         })
+    }
+
+    /// The zero-call exit: nothing to humanize.
+    fn skip() -> Self {
+        Self {
+            skipped: true,
+            ..Self::default()
+        }
     }
 }
 
@@ -168,15 +196,16 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
         // validate did not run, so there is nothing to grade against.
         let resume_report = ctx.report.clone();
         if resume_report.is_none() && ctx.letter_report.is_none() {
-            ctx.ledger.record(NAME, Artifact::default().into_json());
+            ctx.ledger.record(NAME, Artifact::skip().into_json());
             return Ok(());
         }
         let resume_flagged = resume_report.as_ref().map_or(0, voice_count);
         let letter_flagged = ctx.letter_report.as_ref().map_or(0, voice_count);
         let voice_before = resume_flagged + letter_flagged;
 
-        if resume_flagged == 0 && letter_flagged == 0 {
-            ctx.ledger.record(NAME, Artifact::default().into_json());
+        // Already reads human: no flag, no call, no cache lookup.
+        if voice_before == HUMAN_VOICE_FLAGS {
+            ctx.ledger.record(NAME, Artifact::skip().into_json());
             return Ok(());
         }
 
@@ -184,199 +213,134 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
         let completer = ctx.completer_for(NAME);
         // Mechanical stage: the user's effort, else the lowest tier.
         let effort = ctx.stage_effort(NAME);
+        let guard = ctx.deadline_guard();
+        let env = DocEnv {
+            completer,
+            deadline: ctx.deadline,
+            guard: &guard,
+            lang: input.target_language,
+            effort,
+        };
         // Computed once, exactly like `Draft::run`'s and `Repair::run`'s own
         // per-run seeding — every candidate reads the same seeds.
         let (seeds, _seed_skip_reason) = projects::seed_projects_for_normalize(input.source_resume);
 
-        let mut calls: u32 = 0;
-        let mut reverted = false;
-        let mut failed = false;
-        let mut timed_out = false;
-        let mut capped = false;
-        let mut too_large = false;
-
-        // Read out of `ctx` BEFORE building any closure — `input` is `Copy`,
-        // `completer` is an owned `&'a Completer`, and this is the letter text
-        // the resume's revalidate pass must check alongside it. Mirrors
-        // `Repair::run`'s own reasoning: a closure that borrowed `ctx` itself
-        // would still be alive (via `humanize_one`'s `.await`) when `ctx.draft`
-        // is written below, which the borrow checker rightly refuses.
-        let letter_for_resume_revalidate = ctx.letter_text().to_string();
-        // Same reason, same timing: the RESOLVED list
-        // (`QualityCtx::top_requirements`'s doc), read once before `ctx.draft`
-        // starts getting rewritten below.
+        // Everything both arms read is cloned out of `ctx` BEFORE the join: the
+        // arms run concurrently, so each is revalidated against the OTHER
+        // document as it stood before humanize, and `ctx` is written only
+        // after both finish.
+        let draft = ctx.draft.clone();
+        let letter_before = ctx.letter_text().to_string();
         let top_requirements = ctx.top_requirements();
-
-        if resume_flagged > 0 {
-            // The SAME three gates `humanize_one` itself checks first, mirrored
-            // HERE so `charge_daily` — the call that actually spends the
-            // user's daily allowance — never fires on a path that was never
-            // going to send anything: a document over the cap (`fenced()`
-            // would silently truncate it — see `exceeds_humanize_cap`), an
-            // already-expired deadline, or every flagged line landing on a
-            // link line (`voice_findings` filters them all out).
-            if exceeds_humanize_cap(&ctx.draft) {
-                too_large = true;
-            } else if ctx.deadline.passed() {
-                timed_out = true;
-            } else {
-                // Safe: `resume_flagged > 0` only counts when `ctx.report` is
-                // `Some` (see its own `voice_count` above) — the exact idiom,
-                // and the exact justification, the letter arm below already
-                // uses for `ctx.letter_report`.
-                let resume_report = resume_report.clone().unwrap_or_else(empty_ok_report);
-                let findings = voice_findings(&resume_report, &ctx.draft);
-                if !findings.is_empty() {
-                    match completer.charge_daily() {
-                        // Limiter refused — don't attempt the rewrite. Neither
-                        // `called` nor `failed`: nothing was sent.
-                        Err(_) => capped = true,
-                        Ok(()) => {
-                            // ONE value, used for both the prompt tier AND the
-                            // usable-rewrite floor below — see
-                            // `is_usable_rewrite`'s own doc for why a single
-                            // `HumanizeTier` (not two independent literals) is
-                            // what makes "letter prompt, résumé floor" a type
-                            // a caller cannot construct.
-                            let tier = HumanizeTier::Resume;
-                            let attempt = humanize_one(
-                                ctx.deadline,
-                                ctx.draft.clone(),
-                                resume_report,
-                                findings,
-                                |text, findings| async move {
-                                    completer
-                                        .complete_with_effort(
-                                            &humanize_system(tier, input.target_language),
-                                            &humanize_user(&text, &findings),
-                                            None,
-                                            effort,
-                                        )
-                                        .await
-                                },
-                                |candidate: &str| projects::normalize_projects(candidate, &seeds),
-                                |candidate| {
-                                    let letter = letter_for_resume_revalidate.clone();
-                                    let top_requirements = top_requirements.clone();
-                                    async move {
-                                        let (report, _letter_report) = validate_documents(
-                                            candidate,
-                                            input.source_resume.to_string(),
-                                            input.job_ad.to_string(),
-                                            top_requirements,
-                                            input.target_language.to_string(),
-                                            letter,
-                                        )
-                                        .await?;
-                                        Ok(report)
-                                    }
-                                },
-                                tier,
-                            )
-                            .await?;
-                            calls += u32::from(attempt.called);
-                            failed |= attempt.failed;
-                            reverted |= attempt.reverted;
-                            timed_out |= attempt.timed_out;
-                            too_large |= attempt.too_large;
-                            ctx.draft = attempt.text;
-                            ctx.report = Some(attempt.report);
-                        }
-                    }
-                }
-                // else: every flag landed on a link line — nothing to ask
-                // about, `ctx.report` stays `resume_report`'s own content.
-            }
-        }
-
         // `ctx.letter` DIRECTLY — never `ctx.letter_text()`'s fallback. See
         // `should_humanize_letter`'s own doc for why the field-read has to be
         // this, not the "whichever letter is in scope" convenience accessor
         // every OTHER reader (validate, repair, persist) correctly uses.
         let letter_body = ctx.letter.clone();
-        if should_humanize_letter(letter_flagged, &letter_body, input.include_cover_letter) {
-            // Same three gates, same reason, as the résumé arm above.
-            if exceeds_humanize_cap(&letter_body) {
-                too_large = true;
-            } else if ctx.deadline.passed() {
-                timed_out = true;
-            } else {
-                // Safe: `letter_flagged > 0` only counts when `ctx.letter_report`
-                // is `Some` (see its own `voice_count` above).
-                let letter_report = ctx.letter_report.clone().unwrap_or_else(empty_ok_report);
-                let findings = voice_findings(&letter_report, &letter_body);
-                if !findings.is_empty() {
-                    match completer.charge_daily() {
-                        Err(_) => capped = true,
-                        Ok(()) => {
-                            let tier = HumanizeTier::Letter;
-                            let draft_for_revalidate = ctx.draft.clone();
-                            let attempt = humanize_one(
-                                ctx.deadline,
-                                letter_body,
-                                letter_report,
-                                findings,
-                                |text, findings| async move {
-                                    completer
-                                        .complete_with_effort(
-                                            &humanize_system(tier, input.target_language),
-                                            &humanize_user(&text, &findings),
-                                            None,
-                                            effort,
-                                        )
-                                        .await
-                                },
-                                // A letter has no Projects section to re-render.
-                                |_candidate: &str| None,
-                                |candidate| {
-                                    let draft = draft_for_revalidate.clone();
-                                    let top_requirements = top_requirements.clone();
-                                    async move {
-                                        let (_resume_report, letter_report) = validate_documents(
-                                            draft,
-                                            input.source_resume.to_string(),
-                                            input.job_ad.to_string(),
-                                            top_requirements,
-                                            input.target_language.to_string(),
-                                            candidate,
-                                        )
-                                        .await?;
-                                        // FAIL CLOSED: `None` here means a
-                                        // non-empty candidate produced no
-                                        // letter report at all (unreachable
-                                        // today — see `empty_ok_report`'s own
-                                        // doc). An `Err` is caught by
-                                        // `humanize_one`'s revalidate-error
-                                        // path (kept original, `failed`), so
-                                        // a future contract change on that
-                                        // `None` arm REVERTS instead of
-                                        // shipping an ungraded letter under a
-                                        // fabricated clean report.
-                                        letter_report.ok_or_else(|| {
-                                            AppError::Validation(
-                                                "the letter revalidate produced no report for a \
-                                                 non-empty candidate"
-                                                    .to_string(),
-                                            )
-                                        })
-                                    }
-                                },
-                                tier,
-                            )
-                            .await?;
-                            calls += u32::from(attempt.called);
-                            failed |= attempt.failed;
-                            reverted |= attempt.reverted;
-                            timed_out |= attempt.timed_out;
-                            too_large |= attempt.too_large;
-                            ctx.letter = attempt.text;
-                            ctx.letter_report = Some(attempt.report);
-                        }
-                    }
-                }
-                // else: every flag landed on a link line — nothing to ask
-                // about, `ctx.letter`/`ctx.letter_report` stay as they are.
+        let letter_report = ctx.letter_report.clone().unwrap_or_else(empty_ok_report);
+
+        let resume_arm = async {
+            if resume_flagged == 0 {
+                return Ok(None);
             }
+            // Safe: `resume_flagged > 0` only counts when `ctx.report` is `Some`.
+            let report = resume_report.clone().unwrap_or_else(empty_ok_report);
+            humanize_doc(
+                &env,
+                HumanizeTier::Resume,
+                draft.clone(),
+                report,
+                |candidate: &str| projects::normalize_projects(candidate, &seeds),
+                |candidate| {
+                    let letter = letter_before.clone();
+                    let top_requirements = top_requirements.clone();
+                    async move {
+                        let (report, _letter_report) = validate_documents(
+                            candidate,
+                            input.source_resume.to_string(),
+                            input.job_ad.to_string(),
+                            top_requirements,
+                            input.target_language.to_string(),
+                            letter,
+                        )
+                        .await?;
+                        Ok(report)
+                    }
+                },
+            )
+            .await
+            .map(Some)
+        };
+        let letter_arm = async {
+            if !should_humanize_letter(letter_flagged, &letter_body, input.include_cover_letter) {
+                return Ok(None);
+            }
+            humanize_doc(
+                &env,
+                HumanizeTier::Letter,
+                letter_body.clone(),
+                letter_report.clone(),
+                // A letter has no Projects section to re-render.
+                |_candidate: &str| None,
+                |candidate| {
+                    let draft = draft.clone();
+                    let top_requirements = top_requirements.clone();
+                    async move {
+                        let (_resume_report, letter_report) = validate_documents(
+                            draft,
+                            input.source_resume.to_string(),
+                            input.job_ad.to_string(),
+                            top_requirements,
+                            input.target_language.to_string(),
+                            candidate,
+                        )
+                        .await?;
+                        // FAIL CLOSED: `None` here means a non-empty candidate
+                        // produced no letter report at all (unreachable today —
+                        // see `empty_ok_report`). An `Err` is caught by
+                        // `humanize_one`'s revalidate-error path (kept
+                        // original, `failed`), so a future contract change
+                        // REVERTS instead of shipping an ungraded letter under
+                        // a fabricated clean report.
+                        letter_report.ok_or_else(|| {
+                            AppError::Validation(
+                                "the letter revalidate produced no report for a non-empty \
+                                 candidate"
+                                    .to_string(),
+                            )
+                        })
+                    }
+                },
+            )
+            .await
+            .map(Some)
+        };
+        let (resume_result, letter_result): (
+            AppResult<Option<HumanizeAttempt>>,
+            AppResult<Option<HumanizeAttempt>>,
+        ) = tokio::join!(resume_arm, letter_arm);
+        let (resume_attempt, letter_attempt) = (resume_result?, letter_result?);
+
+        let mut calls: u32 = 0;
+        let (mut reverted, mut failed, mut timed_out) = (false, false, false);
+        let (mut capped, mut too_large) = (false, false);
+        let mut tally = |attempt: &HumanizeAttempt| {
+            calls += u32::from(attempt.called);
+            failed |= attempt.failed;
+            reverted |= attempt.reverted;
+            timed_out |= attempt.timed_out;
+            too_large |= attempt.too_large;
+            capped |= attempt.capped;
+        };
+        if let Some(attempt) = resume_attempt {
+            tally(&attempt);
+            ctx.draft = attempt.text;
+            ctx.report = Some(attempt.report);
+        }
+        if let Some(attempt) = letter_attempt {
+            tally(&attempt);
+            ctx.letter = attempt.text;
+            ctx.letter_report = Some(attempt.report);
         }
 
         let voice_after = ctx.report.as_ref().map_or(0, voice_count)
@@ -403,6 +367,7 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
                 timed_out,
                 capped,
                 too_large,
+                skipped: calls == 0 && !timed_out && !too_large && !capped,
             }
             .into_json(),
         );

@@ -15,7 +15,7 @@ async fn humanize_one_is_a_zero_cost_no_op_with_no_findings() {
         live_deadline(),
         "ORIGINAL".to_string(),
         ok_report(),
-        Vec::new(),
+        Vec::<String>::new(),
         |_text, _findings| {
             called = true;
             async move { Ok("must never run".to_string()) }
