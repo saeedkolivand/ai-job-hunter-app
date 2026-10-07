@@ -143,12 +143,11 @@ pub const OLLAMA_COMPLETION_BASELINE: Duration =
 /// run's `AiGenerateRequest.effort` — those two now scale, closing the gap
 /// this function exists to fix (a per-call deadline that no effort setting
 /// could raise, even though the exact same run's STREAMED calls already
-/// scaled). The `repair`/`humanize` stages and `chat_with_tools` go through
-/// `Completer::complete`/`complete_with_usage`, which take no
+/// scaled), and so do `repair`/`humanize` through `Completer::complete_with_effort`. Plain
+/// `Completer::complete`/`complete_with_usage` (`chat_with_tools`, autopilot notes,
+/// interview questions, the cover-letter fast path, …) take no
 /// `AiGenerateRequest` and so have no effort to read — those call sites pass
-/// `None` here (unchanged baseline behavior) rather than gaining a new
-/// parameter that would ripple into every other caller of `Completer::complete`
-/// (autopilot notes, interview questions, the cover-letter fast path, …).
+/// `None` here (unchanged baseline behavior).
 pub fn ollama_completion_deadline(effort: Option<&str>) -> Duration {
     Duration::from_secs_f64(OLLAMA_COMPLETION_BASELINE.as_secs_f64() * effort_multiplier(effort))
 }
@@ -252,16 +251,16 @@ pub fn research_deadline(effort: Option<&str>) -> Duration {
 /// `StoppedReason::RunTimeout` reachable.
 ///
 /// **Not a single `baseline × multiplier`, unlike [`stream_deadline`] and
-/// [`research_deadline`].** Only the repair fan-out and `humanize`'s per-
-/// document rewrite stay FLAT — they go through `complete_with_usage`, which
-/// carries no `AiGenerateRequest` and so no `effort` to scale by (see
-/// [`ollama_completion_deadline`]'s doc). The formula is `flat + jsonStages ×
+/// [`research_deadline`]** — the three terms have different baselines. The
+/// repair fan-out and `humanize` send the run's effort
+/// (`Completer::complete_with_effort`), so [`ollama_completion_deadline`] scales
+/// their per-call bound too. The formula is `flat × multiplier + jsonStages ×
 /// ollama_completion_deadline(effort) + baseline × passes × multiplier`:
 ///
 /// * **flat** ([`QUALITY_RUN_FIXED_SECS`]) — `max_repair_attempts` (2) rounds
 ///   × `MAX_SECTIONS_PER_ROUND` (4) sections + `humanize`'s ≤2 flagged-document
-///   rewrites, i.e. 10 calls × [`OLLAMA_COMPLETION_BASELINE`] = 3000 s, always
-///   (no effort to raise it).
+///   rewrites, i.e. 10 calls × [`OLLAMA_COMPLETION_BASELINE`] = 3000 s at the
+///   baseline tier, scaled by [`effort_multiplier`] like every other term.
 /// * **jsonStages** ([`QUALITY_RUN_JSON_STAGE_CALLS`], 4) — 2 stages × 2
 ///   round-trips (`complete_json` allows exactly one re-ask), each now scaled
 ///   by [`ollama_completion_deadline`] — the fix this function exists to
@@ -297,9 +296,8 @@ pub fn quality_run_deadline(effort: Option<&str>) -> Duration {
         QUALITY_RUN_JSON_STAGE_CALLS as f64 * ollama_completion_deadline(effort).as_secs_f64();
     let generation =
         STREAM.as_secs_f64() * QUALITY_RUN_GENERATION_PASSES as f64 * effort_multiplier(effort);
-    Duration::from_secs_f64(
-        QUALITY_RUN_FIXED_SECS as f64 + json_stages.round() + generation.round(),
-    )
+    let flat = QUALITY_RUN_FIXED_SECS as f64 * effort_multiplier(effort);
+    Duration::from_secs_f64(flat.round() + json_stages.round() + generation.round())
 }
 
 // ── Model discovery & health ────────────────────────────────────────────────────

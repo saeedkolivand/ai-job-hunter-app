@@ -304,10 +304,10 @@ fn quality_run_deadline_pins_the_derived_table() {
         (None, 4_800),
         (Some("minimal"), 4_800),
         (Some("low"), 4_800),
-        (Some("medium"), 5_700),
-        (Some("high"), 6_600),
-        (Some("xhigh"), 7_500),
-        (Some("max"), 8_400),
+        (Some("medium"), 7_200),
+        (Some("high"), 9_600),
+        (Some("xhigh"), 12_000),
+        (Some("max"), 14_400),
     ] {
         assert_eq!(
             quality_run_deadline(effort),
@@ -381,7 +381,7 @@ fn quality_run_deadline_pins_the_derived_table() {
 /// kind this test was rebuilt to stop being.
 ///
 /// Mutation checks (applied and reverted): `QUALITY_RUN_FIXED_SECS` back to
-/// 1_800 ⇒ every tier fails; `MAX_SECTIONS_PER_ROUND` 4 → 6 ⇒ every tier
+/// 1_800 ⇒ every tier fails; dropping the flat term's multiplier ⇒ every tier above the bottom fails; `MAX_SECTIONS_PER_ROUND` 4 → 6 ⇒ every tier
 /// fails; `DEFAULT_MAX_REPAIR_ATTEMPTS` 2 → 3 ⇒ every tier fails;
 /// `QUALITY_RUN_GENERATION_PASSES` 2 → 1 ⇒ every tier fails (only the draft
 /// would be covered, not the letter); `quality_run_deadline`'s `json_stages`
@@ -395,14 +395,12 @@ fn quality_run_deadline_equals_the_inner_per_call_bounds() {
                                                // document (résumé, letter) — the worst case this deadline has to
                                                // cover, exactly like every other term here.
     const HUMANIZE_MAX_CALLS: u32 = 2;
-    // The repair fan-out and `humanize` are bounded by the SAME flat
-    // per-call constant — both go through `Completer::complete`, never a
-    // stream, and neither has an `effort` to scale by — so they stay
-    // effort-invariant.
-    let repair_half = OLLAMA_COMPLETION_BASELINE
-        * crate::pipeline::budget::Budget::RESUME_QUALITY.max_repair_attempts as u32
+    // The repair fan-out and `humanize` go through
+    // `Completer::complete_with_effort`, so local Ollama scales each call by
+    // the run's effort exactly like the JSON stages: bound them with the SAME
+    // per-call function the provider uses, not the baseline constant.
+    let repair_calls = crate::pipeline::budget::Budget::RESUME_QUALITY.max_repair_attempts as u32
         * crate::pipeline::resume::stages::MAX_SECTIONS_PER_ROUND as u32;
-    let humanize_half = OLLAMA_COMPLETION_BASELINE * HUMANIZE_MAX_CALLS;
     for effort in [
         None,
         Some("medium"),
@@ -413,6 +411,8 @@ fn quality_run_deadline_equals_the_inner_per_call_bounds() {
         // The JSON stages now scale exactly like the streamed calls do.
         let json_half =
             ollama_completion_deadline(effort) * JSON_STAGES * ROUND_TRIPS_PER_JSON_STAGE;
+        let repair_half = ollama_completion_deadline(effort) * repair_calls;
+        let humanize_half = ollama_completion_deadline(effort) * HUMANIZE_MAX_CALLS;
         // The draft and the cover letter are the only streamed calls the
         // run makes — see `QUALITY_RUN_GENERATION_PASSES`.
         let generation = stream_deadline(effort)

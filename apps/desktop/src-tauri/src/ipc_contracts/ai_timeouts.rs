@@ -25,18 +25,17 @@ pub const EFFORT_TIMEOUT_MULTIPLIER: &[(&str, f64)] =
 /// provider call.
 pub const QUALITY_RUN_JSON_STAGE_CALLS: u64 = 4;
 
-/// The part of one quality-depth run's deadline that does NOT scale with
-/// effort: the repair fan-out (`max_repair_attempts` rounds ×
-/// `MAX_SECTIONS_PER_ROUND` sections) and `humanize`'s up to 2
-/// flagged-document calls, both bounded by the FLAT
-/// `OLLAMA_COMPLETION_BASELINE_SECS` — `Completer::complete` carries no
-/// `effort` to scale by. See `qualityRunDeadlineSecs` in
-/// packages/shared/src/ai-timeouts.ts for the full derivation, including
-/// why the two JSON stages are NOT in this term any more.
+/// The BASELINE-tier share of one quality-depth run's deadline: the repair
+/// fan-out (`max_repair_attempts` rounds × `MAX_SECTIONS_PER_ROUND` sections)
+/// and `humanize`'s up to 2 flagged-document calls, each bounded by
+/// `OLLAMA_COMPLETION_BASELINE_SECS`. `quality_run_deadline` scales it by the
+/// effort multiplier — both stages send the run's effort. See
+/// `qualityRunDeadlineSecs` in packages/shared/src/ai-timeouts.ts for the full
+/// derivation, including why the two JSON stages are NOT in this term.
 pub const QUALITY_RUN_FIXED_SECS: u64 = 3000;
 
 /// Effort-SCALED whole-document passes one quality run may make: two — the
 /// draft, and the cover letter when `includeCoverLetter` is set. The repair
-/// rounds and `humanize` are flat-bounded and live in
+/// rounds and `humanize` are non-streaming and live in
 /// `QUALITY_RUN_FIXED_SECS` instead.
 pub const QUALITY_RUN_GENERATION_PASSES: u64 = 2;

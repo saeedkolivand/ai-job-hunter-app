@@ -209,3 +209,41 @@ fn chat_stream_body_sends_xhigh_only_on_a_model_that_supports_it() {
     let body = build_chat_stream_body(&req, sampling_for(&req));
     assert_eq!(body["output_config"], json!({ "effort": "xhigh" }));
 }
+
+/// `complete_with_effort`'s body (issue #1351): effort rides as
+/// `output_config.effort` only where the model's tier accepts it, and the plain
+/// path never carries a `thinking` block — with no effort the body is exactly
+/// the plain completion body.
+///
+/// Mutation check (executed): drop the `anthropic_structured_effort` filter in
+/// `anthropic_effort_output_config` and the stale-`xhigh` case fails; make it
+/// return `None` always and the `low` case fails.
+#[test]
+fn complete_with_effort_body_gates_the_effort_and_never_sends_thinking() {
+    use super::super::capabilities::anthropic_effort_output_config as oc;
+    let body = |model: &str, effort: Option<&str>| {
+        build_structured_body(model, "sys", "hi", Some(0.3), oc(model, effort))
+    };
+
+    let on = body("claude-opus-5", Some("low"));
+    assert_eq!(on["output_config"], json!({ "effort": "low" }), "{on}");
+    assert!(on.get("thinking").is_none(), "{on}");
+
+    // No effort (or blank): identical to the plain completion body.
+    for effort in [None, Some("  ")] {
+        let off = body("claude-opus-5", effort);
+        assert_eq!(
+            off,
+            build_complete_body("claude-opus-5", "sys", "hi", Some(0.3))
+        );
+    }
+
+    // A level this model's tier rejects, and a model with no effort lever, are
+    // omitted rather than sent and 400ed.
+    assert!(body("claude-opus-4-5", Some("xhigh"))
+        .get("output_config")
+        .is_none());
+    assert!(body("claude-opus-4-20250514", Some("low"))
+        .get("output_config")
+        .is_none());
+}

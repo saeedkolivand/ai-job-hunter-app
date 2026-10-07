@@ -92,8 +92,7 @@ impl AiProvider for AnthropicClient {
     ) -> AppResult<(String, Usage)> {
         let (system, user) = structured::plain_prompt(req);
         let output_config =
-            capabilities::anthropic_structured_effort(&req.model, req.effort.as_deref())
-                .map(|effort| serde_json::json!({ "effort": effort }));
+            capabilities::anthropic_effort_output_config(&req.model, req.effort.as_deref());
         self.complete_impl(
             app,
             &req.model,

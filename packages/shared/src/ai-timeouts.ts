@@ -103,16 +103,17 @@ export function ollamaCompletionDeadlineSecs(effort?: string): number {
 export const QUALITY_RUN_JSON_STAGE_CALLS = 4;
 
 /**
- * The part of one quality-depth pipeline run's deadline that does NOT scale
- * with effort, in seconds: the repair fan-out plus `humanize`'s allowance —
- * both bounded by the FLAT {@link OLLAMA_COMPLETION_BASELINE_SECS} regardless
- * of the run's effort, because neither call site currently has an effort to
- * scale by (`Completer::complete`, unlike `complete_json`, takes no
- * `AiGenerateRequest` and so carries no `effort` field to read).
+ * The BASELINE-tier share of one quality-depth pipeline run's deadline, in
+ * seconds: the repair fan-out plus `humanize`'s allowance, each call bounded
+ * by {@link OLLAMA_COMPLETION_BASELINE_SECS}. {@link qualityRunDeadlineSecs}
+ * multiplies this by the effort multiplier: both stages send the run's
+ * effective effort (`Completer::complete_with_effort`), so local Ollama scales
+ * their per-call bound exactly like the JSON stages' one
+ * (`ollama_completion_deadline`).
  *
  * Derived, not guessed, from the fan-out that actually runs:
  *
- * | term                       | calls     | per-call bound                     | total  |
+ * | term (baseline tier)       | calls     | per-call bound                     | total  |
  * | -------------------------- | --------- | ----------------------------------- | ------ |
  * | repair, ≤2 rounds × ≤4 sec | 2 × 4 = 8 | `OLLAMA_COMPLETION_BASELINE_SECS`  | 2400 s |
  * | humanize, ≤2 documents     | 2         | `OLLAMA_COMPLETION_BASELINE_SECS`  |  600 s |
@@ -120,8 +121,8 @@ export const QUALITY_RUN_JSON_STAGE_CALLS = 4;
  *
  * The repair stage regenerates up to `repair::MAX_SECTIONS_PER_ROUND` (4)
  * sections per round for up to `Budget::max_repair_attempts` (2) rounds, each
- * through `Completer::complete`. The `humanize` stage makes at most one
- * `complete` call PER FLAGGED DOCUMENT (résumé + letter), so at most 2.
+ * through `Completer::complete_with_effort`. The `humanize` stage makes at most
+ * one such call PER FLAGGED DOCUMENT (résumé + letter), so at most 2.
  *
  * **`analyze_job`/`match_evidence`/`strategy` used to live in this same flat
  * term too** (making it 4 800 s — 6 + 8 + 2 = 16 calls, all at a flat 300 s).
@@ -159,11 +160,10 @@ export const QUALITY_RUN_FIXED_SECS = 3_000;
  *
  * Both are the run's only `chat_stream` calls, and therefore the only calls
  * bounded by {@link STREAM_BASELINE_SECS} × the effort multiplier
- * (`stream_deadline`). The repair rounds and `humanize` are NOT here: they go
- * through `Completer::complete`, whose bound is flat, so they belong to
- * {@link QUALITY_RUN_FIXED_SECS} — counting them here would scale calls that do
- * not scale, wildly over-provisioning the top tier for the same reason
- * `baseline × multiplier` under-provisions the bottom one.
+ * (`stream_deadline`). The repair rounds and `humanize` are NOT here: they are
+ * non-streaming calls bounded by {@link OLLAMA_COMPLETION_BASELINE_SECS} × the
+ * multiplier, so they belong to {@link QUALITY_RUN_FIXED_SECS}'s scaled term —
+ * counting them here would charge them at the (different) streamed baseline.
  *
  * **Charged for every run, whether or not a letter is requested** — the SAME
  * choice {@link QUALITY_RUN_FIXED_SECS} already makes for `humanize`'s worst
@@ -176,19 +176,20 @@ export const QUALITY_RUN_GENERATION_PASSES = 2;
  * Deadline (seconds) for ONE WHOLE quality-depth résumé pipeline run — the
  * backend's `StoppedReason::RunTimeout` trigger.
  *
- * `flat + jsonStages × ollamaCompletionDeadline(effort) + baseline × passes ×
- * multiplier(effort)`, i.e. the sum of the inner per-call bounds the run can
- * legitimately consume at that effort — TWO of the three terms now scale,
- * since the non-streaming JSON-stage bound scales the same way the streamed
- * one does (see {@link ollamaCompletionDeadlineSecs}):
+ * `flat × multiplier(effort) + jsonStages × ollamaCompletionDeadline(effort) +
+ * baseline × passes × multiplier(effort)`, i.e. the sum of the inner per-call
+ * bounds the run can legitimately consume at that effort — EVERY term scales
+ * (repair and `humanize` send the run's effort too, so local Ollama scales
+ * their per-call bound like the JSON stages'; see
+ * {@link ollamaCompletionDeadlineSecs}):
  *
- * | effort            | m   | flat (repair+humanize) | 4 JSON-stage calls | 2 generation passes | deadline          |
+ * | effort            | m   | repair+humanize (scaled) | 4 JSON-stage calls | 2 generation passes | deadline          |
  * | ----------------- | --- | ------------------------ | -------------------- | -------------------- | ----------------- |
  * | none/minimal/low  | 1.0 | 3000 s                   | 1200 s                | 600 s                 | 4800 s (80 min)   |
- * | medium            | 1.5 | 3000 s                   | 1800 s                | 900 s                 | 5700 s (95 min)   |
- * | high              | 2.0 | 3000 s                   | 2400 s                | 1200 s                | 6600 s (110 min)  |
- * | xhigh             | 2.5 | 3000 s                   | 3000 s                | 1500 s                | 7500 s (125 min)  |
- * | max               | 3.0 | 3000 s                   | 3600 s                | 1800 s                | 8400 s (140 min)  |
+ * | medium            | 1.5 | 4500 s                   | 1800 s                | 900 s                 | 7200 s (120 min)  |
+ * | high              | 2.0 | 6000 s                   | 2400 s                | 1200 s                | 9600 s (160 min)  |
+ * | xhigh             | 2.5 | 7500 s                   | 3000 s                | 1500 s                | 12000 s (200 min) |
+ * | max               | 3.0 | 9000 s                   | 3600 s                | 1800 s                | 14400 s (240 min) |
  *
  * The floor moved DOWN with the stage change: `match_evidence` makes no
  * provider call anymore, so the worst case lost one per-call bound (300 s at
@@ -199,10 +200,8 @@ export const QUALITY_RUN_GENERATION_PASSES = 2;
  * deadline in place would have made IT the silent cap on the exact stages it
  * was just raised to unblock.
  *
- * Still deliberately not a single `baseline × multiplier`: the repair fan-out
- * and `humanize` (see {@link QUALITY_RUN_FIXED_SECS}) stay flat-bounded — a
- * single multiplicative constant across all three terms would either
- * under-provision the bottom tier or wildly over-provision the top one.
+ * Still deliberately not a single `baseline × multiplier`: the three terms have
+ * different baselines (repair+humanize, the JSON stages, the streamed passes).
  *
  * This is a BACKSTOP for a run that never trips a per-step timeout but crawls
  * forever, not a target: the realistic clean quality run is +30–90 s over the
@@ -213,7 +212,7 @@ export const QUALITY_RUN_GENERATION_PASSES = 2;
  */
 export function qualityRunDeadlineSecs(effort?: string): number {
   return (
-    QUALITY_RUN_FIXED_SECS +
+    Math.round(QUALITY_RUN_FIXED_SECS * effortMultiplier(effort)) +
     QUALITY_RUN_JSON_STAGE_CALLS * ollamaCompletionDeadlineSecs(effort) +
     Math.round(STREAM_BASELINE_SECS * QUALITY_RUN_GENERATION_PASSES * effortMultiplier(effort))
   );

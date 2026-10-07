@@ -175,6 +175,18 @@ pub(super) fn anthropic_structured_effort<'a>(
         .filter(|e| anthropic_effort_levels(model).contains(e))
 }
 
+/// The `output_config` the plain-text `complete_with_effort` path sends: just
+/// the gated effort (see [`anthropic_structured_effort`]), no `format`. `None`
+/// when no effort is set or this model's tier rejects it, leaving the body
+/// exactly as `build_complete_body` makes it (which never carries a
+/// `thinking` block). Pure + unit-tested.
+pub(super) fn anthropic_effort_output_config(
+    model: &str,
+    raw: Option<&str>,
+) -> Option<serde_json::Value> {
+    anthropic_structured_effort(model, raw).map(|effort| serde_json::json!({ "effort": effort }))
+}
+
 /// The [`ModelCapabilities`] Anthropic reports for `model` — moved out of the
 /// `AiProvider::capabilities` trait method body so that method stays a thin
 /// delegator (this file is the model-classification layer, per

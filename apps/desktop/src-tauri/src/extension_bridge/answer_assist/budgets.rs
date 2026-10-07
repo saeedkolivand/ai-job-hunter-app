@@ -58,9 +58,9 @@ pub(in crate::extension_bridge) const DRAFT_CAP: usize = 4_000;
 /// call measured on that replay spent 928 output tokens; this doubles the
 /// old budget). From above, `commands::ai_provider::anthropic::
 /// build_chat_stream_body` turns classic extended thinking ON for a classic
-/// Anthropic model once `max_tokens` crosses its own threshold (and forces
-/// `temperature` to 1.0) — the opposite of what this path wants. This value
-/// stays under that threshold
+/// Anthropic model only when the request carries an effort AND `max_tokens`
+/// crosses its own threshold (and then forces `temperature` to 1.0) — the
+/// opposite of what this path wants. This value stays under that threshold
 /// ([`crate::commands::ai_provider::anthropic::classic_thinking_engages`]),
 /// asserted (not just documented) by
 /// `commands::ai_provider::anthropic::tests::thinking::the_extension_bridge_compose_budget_stays_under_the_classic_thinking_gate`.

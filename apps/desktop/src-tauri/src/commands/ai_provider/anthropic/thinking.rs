@@ -43,8 +43,11 @@ pub(super) fn anthropic_supports_thinking(model: &str) -> bool {
         || contains_version_needle(&m, "claude-haiku-4")
 }
 
-/// Whether `max_tokens` reaches the gate at which the streaming body builder
-/// turns **classic** extended thinking on — see its call site.
+/// Whether `max_tokens` reaches the size gate for **classic** extended
+/// thinking. Necessary but not sufficient: the streaming body builder also
+/// requires the request to carry an effort (classic thinking is opt-in), so a
+/// request with no effort never engages it however large `max_tokens` is —
+/// see its call site.
 pub(crate) fn classic_thinking_engages(max_tokens: u32) -> bool {
     max_tokens >= 2048
 }

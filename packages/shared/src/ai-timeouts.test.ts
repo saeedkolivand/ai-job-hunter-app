@@ -78,10 +78,10 @@ describe('qualityRunDeadlineSecs', () => {
     expect(qualityRunDeadlineSecs(undefined)).toBe(4_800);
     expect(qualityRunDeadlineSecs('minimal')).toBe(4_800);
     expect(qualityRunDeadlineSecs('low')).toBe(4_800);
-    expect(qualityRunDeadlineSecs('medium')).toBe(5_700);
-    expect(qualityRunDeadlineSecs('high')).toBe(6_600);
-    expect(qualityRunDeadlineSecs('xhigh')).toBe(7_500);
-    expect(qualityRunDeadlineSecs('max')).toBe(8_400);
+    expect(qualityRunDeadlineSecs('medium')).toBe(7_200);
+    expect(qualityRunDeadlineSecs('high')).toBe(9_600);
+    expect(qualityRunDeadlineSecs('xhigh')).toBe(12_000);
+    expect(qualityRunDeadlineSecs('max')).toBe(14_400);
   });
 
   it('clears the inner per-call bounds it wraps at every tier', () => {
@@ -102,8 +102,9 @@ describe('qualityRunDeadlineSecs', () => {
         OLLAMA_COMPLETION_SECS * JSON_STAGES * ROUND_TRIPS_PER_JSON_STAGE * multiplier;
       // The draft and the letter are the run's only streamed (effort-scaled)
       // calls — see QUALITY_RUN_GENERATION_PASSES.
+      // Repair and humanize send the run's effort, so they scale too.
       const innerBounds =
-        flatCalls +
+        flatCalls * multiplier +
         jsonStageCalls +
         STREAM_BASELINE_SECS * QUALITY_RUN_GENERATION_PASSES * multiplier;
       expect(qualityRunDeadlineSecs(effort)).toBeGreaterThanOrEqual(innerBounds);
