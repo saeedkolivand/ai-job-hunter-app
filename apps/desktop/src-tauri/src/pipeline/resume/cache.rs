@@ -18,7 +18,9 @@
 //! ## The key
 //!
 //! `sha256(version ∥ provider ∥ model ∥ context_window ∥ effort ∥ chain)`, where
-//! `chain` is a rolling hash of every artifact upstream of this stage. Each
+//! `chain` is a rolling hash of the posting + language and every artifact
+//! upstream of this stage (the résumé joins at `match_evidence`, so the
+//! résumé-blind `analyze_job` key excludes it). Each
 //! term closes a way the same nominal input can mean something different:
 //!
 //! * [`PIPELINE_PROMPT_VERSION`] — the prompts themselves are an input. Editing
@@ -66,7 +68,7 @@ use crate::pipeline::Completer;
 /// Test-pinned (`prompt_version_is_pinned`): the pin exists so that editing a
 /// prompt makes the test fail and the author has to decide, rather than
 /// shipping a silent stale-cache bug.
-pub const PIPELINE_PROMPT_VERSION: u32 = 2;
+pub const PIPELINE_PROMPT_VERSION: u32 = 3;
 
 /// TTL for a cached stage artifact. Seven days, matching the `company_brief`
 /// namespace: the same reasoning applies (a posting's requirements do not
@@ -149,8 +151,8 @@ impl<'a> StageIdentity<'a> {
 const FIELD_SEPARATOR: char = '\u{1f}';
 
 impl StageCacheKey {
-    /// Seed the chain with the run's own inputs (source résumé + posting +
-    /// target language), under the run's DEFAULT routing identity.
+    /// Seed the chain with the run's own résumé-blind inputs (posting + target
+    /// language; see `super::chain_seed`), under the run's DEFAULT routing identity.
     pub fn new(identity: StageIdentity<'_>, seed: &str) -> Self {
         Self {
             provider: identity.provider.to_string(),
@@ -204,6 +206,16 @@ impl StageCacheKey {
             self.provider, self.model, self.effort, self.chain
         );
         sha256_hex(&pre_hash)
+    }
+
+    /// Fold the source résumé into the chain. Called once, by the first stage
+    /// that reads it (`MatchEvidence`): `analyze_job` is résumé-blind and is
+    /// keyed BEFORE this, so editing the résumé does not re-pay it, while every
+    /// later stage (`strategy` reads the raw résumé for its skills groups) still
+    /// misses on any résumé change — even one that leaves the evidence map
+    /// byte-identical.
+    pub fn extend_source(&mut self, source_resume: &str) {
+        self.extend(&format!("source_resume{FIELD_SEPARATOR}{source_resume}"));
     }
 
     /// Fold a completed stage's artifact into the chain, so every LATER stage's

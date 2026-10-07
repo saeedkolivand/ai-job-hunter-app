@@ -200,6 +200,12 @@ pub(crate) fn stage_cache_key_for<'m, T>(
     base.rebound(identity(pick(per_stage, default, stage)))
 }
 
+/// The seed of a run's cache chain: the inputs `analyze_job` actually reads.
+/// Deliberately excludes the résumé — see `StageCacheKey::extend_source`.
+pub(crate) fn chain_seed(job_ad: &str, target_language: &str) -> String {
+    format!("{job_ad}\u{1f}{target_language}")
+}
+
 /// Everything one run is run AGAINST — all of it resolved server-side before
 /// the pipeline starts. Borrowed: a run reads these repeatedly and copying a
 /// 200 KB résumé per stage would be silly.
@@ -427,14 +433,13 @@ impl<'a> QualityCtx<'a> {
         deadline: RunDeadline,
         ledger: Arc<RunLedger>,
     ) -> Self {
-        // The seed binds the cache chain to the run's own inputs. The résumé and
-        // the posting go in whole: they ARE the question, and a key built from
-        // an id instead would serve an analysis of a posting the user has since
-        // re-scraped.
-        let seed = format!(
-            "{}\u{1f}{}\u{1f}{}",
-            input.source_resume, input.job_ad, input.target_language
-        );
+        // The seed binds the cache chain to the posting + language ONLY: the
+        // first cached stage (`analyze_job`) is résumé-blind, so a résumé edit
+        // must not miss its cache. The résumé joins the chain in
+        // `MatchEvidence` (`extend_source`), before any résumé-reading stage
+        // is keyed. The posting goes in whole: a key built from an id instead
+        // would serve an analysis of a posting the user has since re-scraped.
+        let seed = chain_seed(input.job_ad, input.target_language);
         let cache_key = StageCacheKey::new(StageIdentity::of(completer, input.effort), &seed);
         Self {
             input,

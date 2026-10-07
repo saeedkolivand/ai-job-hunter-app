@@ -18,7 +18,7 @@ use tempfile::TempDir;
 #[test]
 fn prompt_version_is_pinned() {
     assert_eq!(
-        PIPELINE_PROMPT_VERSION, 2,
+        PIPELINE_PROMPT_VERSION, 3,
         "a stage prompt or artifact shape changed — bump PIPELINE_PROMPT_VERSION so every \
          cached stage artifact is invalidated, then update this pin"
     );
@@ -319,5 +319,48 @@ fn a_mechanical_stage_key_binds_the_effective_effort() {
     assert_eq!(
         key(None, &[]),
         base.rebound(id_with_effort("ollama", "m", None)).key()
+    );
+}
+
+/// The key chain as a run builds it: seed (posting + language), analyze, then
+/// `match_evidence` folds the résumé in. Returns `(analyze_key, strategy_key)`.
+fn run_keys(resume: &str, job: &str) -> (String, String) {
+    let mut key = StageCacheKey::new(
+        id("ollama", "m", None),
+        &super::super::chain_seed(job, "en"),
+    );
+    let analyze = key.key();
+    key.extend(r#"{"mustHave":["Rust"]}"#);
+    // Identical evidence map for every résumé: only the explicit résumé fold
+    // can tell the two strategy keys apart.
+    key.extend(r#"{"items":[]}"#);
+    key.extend_source(resume);
+    (analyze, key.key())
+}
+
+/// `analyze_job` is résumé-blind, so a résumé edit must still HIT its cache;
+/// `strategy` reads the raw résumé, so the same edit must MISS it.
+///
+/// Mutation check (executed): put the résumé back into `chain_seed` and the
+/// first assertion fails; drop the `extend_source` call and the second fails.
+#[test]
+fn analyze_key_ignores_the_resume_but_strategy_key_does_not() {
+    let (analyze_a, strategy_a) = run_keys("resume A", "the job ad");
+    let (analyze_b, strategy_b) = run_keys("resume B", "the job ad");
+    assert_eq!(analyze_a, analyze_b, "a résumé edit must not miss analyze");
+    assert_ne!(strategy_a, strategy_b, "a résumé edit must miss strategy");
+    let (analyze_other_job, _) = run_keys("resume A", "another job ad");
+    assert_ne!(
+        analyze_a, analyze_other_job,
+        "a different posting must miss"
+    );
+}
+
+/// Guard: `MatchEvidence` is where the résumé joins the chain. Without it the
+/// strategy key would be résumé-blind and serve a stale skills plan.
+#[test]
+fn match_evidence_folds_the_resume_into_the_chain() {
+    assert!(
+        include_str!("../stages/evidence.rs").contains("extend_source(ctx.input.source_resume)")
     );
 }

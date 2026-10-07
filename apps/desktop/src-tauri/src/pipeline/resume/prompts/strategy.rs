@@ -21,9 +21,9 @@ pub fn strategy_system() -> String {
 
 The employment history in <company_roster> is FIXED:
 - Every company in it must appear in `perCompany`, in the roster's order.
-- Never drop, rename, merge, re-date or invent an employer. The program re-seeds \
-`company`, `title` and `dates` from the source résumé after reading your answer, so \
-changing them accomplishes nothing except losing your `angle`.
+- Never drop, rename, merge or invent an employer. Answer per company with only \
+`company` (copied from the roster), `angle` and `emphasis`; the program fills in \
+`title`, `dates` and `condensed` from the source résumé.
 - A roster entry marked `condensed` is the single group holding the oldest roles. \
 Keep it last and keep it one entry.
 

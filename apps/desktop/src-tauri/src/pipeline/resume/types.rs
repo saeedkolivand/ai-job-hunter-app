@@ -10,7 +10,7 @@
 //!   decoder handles a flat schema; only some handle a referenced one, and the
 //!   ones that don't are exactly the ones this app runs offline.
 //! * *Defaulted* because a missing key must degrade to an empty value rather
-//!   than failing the whole parse — a model that omits `red_flags` has still
+//!   than failing the whole parse — a model that omits `must_have` has still
 //!   answered the question. The safety net for the OPPOSITE failure (a
 //!   truncated response deserializing cleanly into an all-empty struct) is not
 //!   here: it is [`Completer::complete_json`](crate::pipeline::Completer::complete_json),
@@ -48,7 +48,6 @@ pub struct JobAnalysis {
     pub nice_to_have: Vec<String>,
     pub responsibilities: Vec<String>,
     pub domain_keywords: Vec<String>,
-    pub red_flags: Vec<String>,
 }
 
 impl JobAnalysis {
@@ -59,8 +58,7 @@ impl JobAnalysis {
   "mustHave": ["Go", "Kubernetes", "distributed systems"],
   "niceToHave": ["Terraform", "gRPC"],
   "responsibilities": ["Own the payments service end to end"],
-  "domainKeywords": ["payments", "PCI"],
-  "redFlags": ["on-call rotation not described"]
+  "domainKeywords": ["payments", "PCI"]
 }"#;
 
     pub fn schema() -> Value {
@@ -74,7 +72,6 @@ impl JobAnalysis {
                 "niceToHave": { "type": "array", "items": { "type": "string" } },
                 "responsibilities": { "type": "array", "items": { "type": "string" } },
                 "domainKeywords": { "type": "array", "items": { "type": "string" } },
-                "redFlags": { "type": "array", "items": { "type": "string" } },
             },
         })
     }
@@ -148,7 +145,9 @@ pub struct EvidenceMap {
     pub items: Vec<EvidenceItem>,
 }
 
-/// How ONE employment entry should be presented. The identity fields
+/// How ONE employment entry should be presented. The model is asked for
+/// `company`/`angle`/`emphasis` only (the example and schema below); the other
+/// fields are program-owned and exist for the draft. The identity fields
 /// (`company`/`title`/`dates`) are SEEDED verbatim from the parsed source
 /// résumé before the model ever sees them, and re-seeded after parsing — the
 /// model may reorder and emphasize, never rename an employer or move a date.
@@ -192,11 +191,8 @@ impl ResumeStrategy {
   "perCompany": [
     {
       "company": "Acme Payments",
-      "title": "Senior Backend Engineer",
-      "dates": "2021 - Present",
       "angle": "Lead the reliability story with the migration numbers",
-      "emphasis": ["Kubernetes", "Go"],
-      "condensed": false
+      "emphasis": ["Kubernetes", "Go"]
     }
   ],
   "skillsGroups": [{ "label": "Languages", "skills": ["Go", "Rust"] }]
@@ -214,11 +210,8 @@ impl ResumeStrategy {
                         "type": "object",
                         "properties": {
                             "company": { "type": "string" },
-                            "title": { "type": "string" },
-                            "dates": { "type": "string" },
                             "angle": { "type": "string" },
                             "emphasis": { "type": "array", "items": { "type": "string" } },
-                            "condensed": { "type": "boolean" },
                         },
                     },
                 },

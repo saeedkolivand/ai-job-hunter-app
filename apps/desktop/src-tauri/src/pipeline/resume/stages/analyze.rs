@@ -78,7 +78,6 @@ impl<'a> Stage<QualityCtx<'a>> for AnalyzeJob {
                 "cached": from_cache,
                 "mustHave": analysis.must_have.len(),
                 "niceToHave": analysis.nice_to_have.len(),
-                "redFlags": analysis.red_flags.len(),
             }),
         );
         ctx.analysis = analysis;

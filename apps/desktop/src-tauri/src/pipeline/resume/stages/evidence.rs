@@ -300,6 +300,9 @@ impl<'a> Stage<QualityCtx<'a>> for MatchEvidence {
         // this stage keeps.
         let json = serde_json::to_string(&evidence).unwrap_or_default();
         ctx.cache_key.extend(&json);
+        // The résumé joins the chain HERE (see `StageCacheKey::extend_source`):
+        // the map alone can be identical for two different résumés.
+        ctx.cache_key.extend_source(ctx.input.source_resume);
 
         let covered = evidence
             .items
