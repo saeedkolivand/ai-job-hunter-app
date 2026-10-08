@@ -149,7 +149,7 @@ pub async fn translate_if_needed(
     // is not gated here — its own `.complete()` call fails fast when the
     // binary is missing or unauthenticated.
     if provider_id == ProviderId::Ollama
-        && !should_attempt_translation(provider_id, ollama::reachable_model().await.0)
+        && !should_attempt_translation(provider_id, ollama::reachable_model(None).await.0)
     {
         return text.to_string();
     }

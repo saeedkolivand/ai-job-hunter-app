@@ -103,14 +103,33 @@ pub(super) fn first_chat_model(body: &Value) -> Option<String> {
         .map(String::from)
 }
 
-/// `(reachable, first_CHAT_model_name)` — the local health probe behind
+/// The user's configured Ollama chat model when `/api/tags` lists it (and it can
+/// chat), else [`first_chat_model`]. Without this the health chip named whichever
+/// model Ollama happened to list first, not the one the user runs (#1365).
+pub(super) fn preferred_chat_model(body: &Value, preferred: Option<&str>) -> Option<String> {
+    // `qwen3` and `qwen3:latest` are the same model to Ollama; report the LISTED spelling.
+    let base = |n: &str| n.strip_suffix(":latest").unwrap_or(n).to_string();
+    let listed = preferred
+        .filter(|p| !is_embedding_only_model(p))
+        .and_then(|want| {
+            body.get("models")
+                .and_then(|m| m.as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|m| m.get("name").and_then(|n| n.as_str()))
+                .find(|name| base(name) == base(want))
+        });
+    listed.map(String::from).or_else(|| first_chat_model(body))
+}
+
+/// `(reachable, CHAT_model_name)` — the local health probe behind
 /// `system_health`'s "ai.ready"/"ai.model" fields.
 ///
 /// The chat filter is not cosmetic: this once returned `arr.first()`
 /// unconditionally, so a user whose first `/api/tags` entry was
 /// `qwen3-embedding:8b` saw that reported as the "detected" chat model. Job-ad
 /// translation no longer calls this at all — see `first_chat_model`'s doc.
-pub async fn reachable_model() -> (bool, Option<String>) {
+pub async fn reachable_model(preferred: Option<&str>) -> (bool, Option<String>) {
     match crate::net::http::shared()
         .get(format!("{}/api/tags", host()))
         .timeout(timeouts::HEALTH)
@@ -122,7 +141,7 @@ pub async fn reachable_model() -> (bool, Option<String>) {
                 crate::net::http::read_json_capped(r, crate::net::http::DEFAULT_MAX_BODY_BYTES)
                     .await
                     .unwrap_or_default();
-            (true, first_chat_model(&body))
+            (true, preferred_chat_model(&body, preferred))
         }
         _ => (false, None),
     }

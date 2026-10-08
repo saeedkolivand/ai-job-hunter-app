@@ -27,7 +27,7 @@ mod conflicts;
 mod header;
 mod store;
 
-pub use self::classify::classify_contact_links;
+pub use self::classify::{classify_contact_links, linkedin_from_text};
 pub(crate) use self::classify::{is_job_board, is_personal_xing};
 pub use self::conflicts::detect_contact_conflicts;
 pub use self::store::ContactProfileStore;
@@ -150,6 +150,7 @@ impl ContactProfile {
                 }
             }
         }
+        fill(&mut self.full_name, &other.full_name);
         fill(&mut self.email, &other.email);
         fill(&mut self.phone, &other.phone);
         fill(&mut self.linkedin, &other.linkedin);

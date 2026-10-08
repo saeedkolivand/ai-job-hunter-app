@@ -412,7 +412,7 @@
       "successRate": "Erfolgsrate"
     },
     "status": {
-      "ollama": "Ollama",
+      "ollama": "Lokales Ollama",
       "database": "Datenbank"
     },
     "sections": {

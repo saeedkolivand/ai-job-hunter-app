@@ -92,3 +92,26 @@ fn test_system_check_browser() {
     assert!(result.get("detected").is_some());
     assert!(result.get("path").is_some());
 }
+
+#[test]
+fn configured_ollama_model_reads_the_ollama_row_not_the_active_model() {
+    use crate::ai_config::{ActiveAiConfig, ProviderConfig};
+    let mut cfg = ActiveAiConfig {
+        active_provider: Some("openai".into()),
+        model: Some("gpt-x".into()),
+        ..Default::default()
+    };
+    assert_eq!(configured_ollama_model(Some(&cfg)), None);
+    cfg.providers.insert(
+        "ollama".into(),
+        ProviderConfig {
+            model: Some("qwen3.8:latest".into()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        configured_ollama_model(Some(&cfg)).as_deref(),
+        Some("qwen3.8:latest")
+    );
+    assert_eq!(configured_ollama_model(None), None);
+}

@@ -127,9 +127,22 @@ pub fn parse_from_html(url: &str, html: &str) -> Option<JobPosting> {
     title = strip_site_suffix(&title, site_name.as_deref(), &host);
     title = title.chars().take(GENERIC_FIELD_CAP).collect();
 
-    // Prefer a real employer name (JSON-LD / og:site_name / logo alt) over the
-    // bare host.
-    let company = parse_generic_company(html).unwrap_or(host);
+    // Prefer a real employer name (JSON-LD / og:site_name / logo alt), then the
+    // ATS board slug (a React-rendered `job-boards.greenhouse.io/<co>/…` page
+    // carries neither; #1359), over the bare host.
+    let company = parse_generic_company(html)
+        .or_else(|| {
+            let slug = crate::scraping::ats_ref::extract_ats_ref(url)?.slug;
+            let decoded = urlencoding::decode(&slug).map_or(slug.clone(), |d| d.into_owned());
+            Some(
+                decoded
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .take(GENERIC_FIELD_CAP)
+                    .collect(),
+            )
+        })
+        .unwrap_or(host);
 
     Some(JobPosting {
         id: format!("url:{}", url),
@@ -237,6 +250,22 @@ struct JsonLdJob {
     location: Option<String>,
 }
 
+/// A JSON-LD / `__NEXT_DATA__` description whose generator double-escaped its newlines
+/// decodes to a STANDALONE literal backslash-n between tags or whitespace (a real
+/// Lever/Spotify posting: backslash-n between `</p>` and `<p>`), which markdown conversion
+/// then shows verbatim. Restored to a newline here, where the artefact originates, rather
+/// than in the shared converter. Left alone: a token like `C:\new`, a doubled
+/// backslash-backslash-n, and any text that
+/// carries `<code>`/`<pre>` (there a backslash-n is the content).
+pub(super) fn unescape_literal_newlines(s: &str) -> std::borrow::Cow<'_, str> {
+    static RE: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"(^|[\s>])\\n($|[\s<])").unwrap());
+    if s.contains("<code") || s.contains("<pre") {
+        return s.into();
+    }
+    RE.replace_all(s, "$1\n$2")
+}
+
 /// Format one JSON-LD `PostalAddress`-shaped node to a display string.
 /// Locality-first (`"City, Region"` / `"City"` / `"Region"`); `addressCountry`
 /// is a fallback ONLY when both locality and region are absent.
@@ -306,7 +335,7 @@ fn job_from_node(node: &serde_json::Value) -> Option<JsonLdJob> {
     let description = node
         .get("description")
         .and_then(|s| s.as_str())
-        .map(crate::scraping::http::html_to_markdown)
+        .map(|d| crate::scraping::http::html_to_markdown(&unescape_literal_newlines(d)))
         .filter(|s| !s.trim().is_empty());
     Some(JsonLdJob {
         title,
@@ -353,6 +382,11 @@ fn json_ld_job_posting(html: &str) -> Option<JsonLdJob> {
     None
 }
 
+/// Whether the page ships a titled JSON-LD `JobPosting` of its own.
+pub(super) fn has_json_ld_job_posting(html: &str) -> bool {
+    json_ld_job_posting(html).is_some()
+}
+
 /// `__NEXT_DATA__` fallback: Next.js ships the page's props as JSON in a
 /// `script#__NEXT_DATA__` blob. Find a `JobPosting` node OR, failing that, a
 /// job-shaped node (a non-empty string `title` plus at least one of
@@ -372,7 +406,7 @@ fn next_data_job(html: &str) -> Option<JsonLdJob> {
         let description = node
             .get("description")
             .and_then(|s| s.as_str())
-            .map(crate::scraping::http::html_to_markdown)
+            .map(|d| crate::scraping::http::html_to_markdown(&unescape_literal_newlines(d)))
             .filter(|s| !s.trim().is_empty());
         JsonLdJob {
             title,

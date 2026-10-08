@@ -5,7 +5,9 @@
 
 use serde_json::{json, Value};
 
-use super::super::models::{first_chat_model, is_embedding_only_model, parse_model_list};
+use super::super::models::{
+    first_chat_model, is_embedding_only_model, parse_model_list, preferred_chat_model,
+};
 use crate::error::AppError;
 
 #[test]
@@ -116,4 +118,32 @@ fn first_chat_model_is_none_when_only_embedding_models_are_installed() {
     let body = json!({ "models": [{ "name": "qwen3-embedding:8b" }] });
     assert_eq!(first_chat_model(&body), None);
     assert_eq!(first_chat_model(&json!({})), None);
+}
+
+#[test]
+fn preferred_chat_model_wins_when_listed_else_falls_back_to_first_chat_model() {
+    // #1365: the chip named the first listed model, not the one the user runs.
+    let body = json!({ "models": [
+        { "name": "qwen3.8-4090:latest" }, { "name": "qwen3.8:latest" }, { "name": "nomic-embed-text" }
+    ]});
+    assert_eq!(
+        preferred_chat_model(&body, Some("qwen3.8:latest")).as_deref(),
+        Some("qwen3.8:latest")
+    );
+    // Not listed, an embedding model, or unset: the old first-chat-model pick.
+    for p in [Some("gone:1b"), Some("nomic-embed-text"), None] {
+        assert_eq!(
+            preferred_chat_model(&body, p).as_deref(),
+            Some("qwen3.8-4090:latest")
+        );
+    }
+}
+
+#[test]
+fn preferred_chat_model_treats_a_bare_name_and_its_latest_tag_as_one_model() {
+    let body = json!({ "models": [{ "name": "other:1b" }, { "name": "qwen3:latest" }] });
+    assert_eq!(
+        preferred_chat_model(&body, Some("qwen3")).as_deref(),
+        Some("qwen3:latest")
+    );
 }

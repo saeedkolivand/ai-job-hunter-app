@@ -1,6 +1,8 @@
 use super::super::types::{DocumentType, ExportFormat, GenerationMeta, LetterLayout, TemplateId};
 use super::*;
 
+mod filename;
+
 // ── Fixtures (mirrors typst_engine/tests/letter_fixtures.rs — minimal but complete) ────────────
 
 /// Short résumé fixture — exercises header + experience + skills blocks.
@@ -228,11 +230,6 @@ fn test_generate_filename() {
 /// scraper-supplied garbage company (the literal PR #960 report) must fall
 /// back to the same `"Company"` default an absent one already produces,
 /// never appear verbatim in the exported file's name.
-///
-/// Mutation check: remove the `.filter(|s| !crate::scraping::trust::
-/// is_implausible_company(s))` line from `generate_filename` — this test
-/// fails immediately (the filename contains the raw garbage instead of
-/// falling back to `"Company"`).
 #[test]
 fn generate_filename_falls_back_to_company_default_for_an_implausible_name() {
     let request = ExportRequest {

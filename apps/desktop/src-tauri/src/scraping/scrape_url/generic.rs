@@ -130,9 +130,15 @@ pub(super) const GENERIC_FIELD_CAP: usize = 200;
 /// description was non-empty, just not the job's. Recognising the BOARD is the
 /// signal that actually distinguishes the two.
 ///
-/// A frame pointing at the page's own host is ignored, so an ATS page that
-/// embeds itself is never flagged.
+/// A frame pointing at the page's own host is ignored, so an ATS page that embeds
+/// itself is never flagged. A page that ships its OWN JSON-LD `JobPosting` describes
+/// itself, not a wrapper, so it is never flagged either (#1360): a real Ashby posting
+/// carries that JSON-LD plus `embedded-media.ashbyhq.com/embed/…` frames, which
+/// `ats_ref` reads as another board (slug `embed`).
 pub(crate) fn embeds_ats_board(html: &str, page_url: &str) -> bool {
+    if super::html_fallback::has_json_ld_job_posting(html) {
+        return false;
+    }
     let page_host = reqwest::Url::parse(page_url)
         .ok()
         .and_then(|u| u.host_str().map(str::to_ascii_lowercase));

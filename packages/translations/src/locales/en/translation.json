@@ -412,7 +412,7 @@
       "successRate": "Success Rate"
     },
     "status": {
-      "ollama": "Ollama",
+      "ollama": "Local Ollama",
       "database": "Database"
     },
     "sections": {

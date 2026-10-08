@@ -24,11 +24,9 @@ describe('buildFilename', () => {
     );
   });
 
-  it('falls back to placeholders for empty fields', () => {
+  it('drops role and company when empty, keeps the Candidate fallback', () => {
     const blank = { ...meta, candidateName: '', jobTitle: '', companyName: '' };
-    expect(buildFilename(blank, 'cover-letter', 'docx')).toBe(
-      'Candidate-Role-Company-cover-letter.docx'
-    );
+    expect(buildFilename(blank, 'cover-letter', 'docx')).toBe('Candidate-cover-letter.docx');
   });
 
   it('preserves Cyrillic and CJK characters instead of collapsing to the placeholder', () => {

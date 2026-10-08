@@ -5,8 +5,10 @@
 
 mod canonical_url_and_redirect;
 mod dispatch_and_ssrf;
+mod html_fallback_ats;
 mod html_fallback_basic;
 mod html_fallback_job_root_hint;
+mod html_fallback_literal_newline;
 mod html_fallback_structured_data;
 mod personio_and_identity;
 mod url_parsing_and_generic_html;

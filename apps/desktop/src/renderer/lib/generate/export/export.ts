@@ -30,9 +30,11 @@ export function buildFilename(
   ext: 'pdf' | 'docx' | 'txt'
 ): string {
   const name = sanitize(meta.candidateName) || 'Candidate';
-  const role = sanitize(meta.jobTitle) || 'Role';
-  const company = sanitize(meta.companyName) || 'Company';
-  return `${name}-${role}-${company}-${type}.${ext}`;
+  // An absent title/company is dropped, never replaced by a placeholder (matches the Rust export).
+  return (
+    [name, sanitize(meta.jobTitle), sanitize(meta.companyName), type].filter(Boolean).join('-') +
+    `.${ext}`
+  );
 }
 
 // ─── Text helpers ─────────────────────────────────────────────────────────────

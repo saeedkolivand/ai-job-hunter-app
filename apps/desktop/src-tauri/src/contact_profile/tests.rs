@@ -97,3 +97,51 @@ fn localized_text_resolves_primary_subtag() {
     assert_eq!(loc.resolve("en"), "Netherlands");
     assert_eq!(loc.resolve("fr"), "Netherlands");
 }
+
+#[test]
+fn fill_empty_from_seeds_an_empty_full_name_but_never_overwrites_one() {
+    let suggested = ContactProfile {
+        full_name: Some("Jane Doe".into()),
+        ..Default::default()
+    };
+    let mut empty = ContactProfile::default();
+    empty.fill_empty_from(&suggested);
+    assert_eq!(empty.full_name.as_deref(), Some("Jane Doe"));
+
+    let mut set = ContactProfile {
+        full_name: Some("J. Doe".into()),
+        ..Default::default()
+    };
+    set.fill_empty_from(&suggested);
+    assert_eq!(set.full_name.as_deref(), Some("J. Doe"));
+}
+
+#[test]
+fn linkedin_from_text_linkifies_only_a_schemeless_linkedin_in_profile() {
+    assert_eq!(
+        linkedin_from_text("Jane Doe\njane@x.io | linkedin.com/in/jane-doe | Berlin").as_deref(),
+        Some("https://linkedin.com/in/jane-doe")
+    );
+    assert_eq!(
+        linkedin_from_text("www.linkedin.com/in/jane-doe").as_deref(),
+        Some("https://www.linkedin.com/in/jane-doe")
+    );
+    for no in [
+        "linkedin.com/company/acme",
+        "example.com/in/jane",
+        "notlinkedin.com/in/jane",
+        "https://www.linkedin.com/in/jane",
+    ] {
+        assert_eq!(linkedin_from_text(no), None, "{no}");
+    }
+}
+
+#[test]
+fn linkedin_from_text_keeps_unicode_slugs_and_skips_a_pdf_wrapped_url() {
+    assert_eq!(
+        linkedin_from_text("linkedin.com/in/jürgen-müller | Berlin").as_deref(),
+        Some("https://linkedin.com/in/jürgen-müller")
+    );
+    // Soft-wrapped mid-slug: the head alone would be a truncated URL.
+    assert_eq!(linkedin_from_text("linkedin.com/in/jane-\ndoe"), None);
+}

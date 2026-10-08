@@ -4,6 +4,8 @@ use tauri::{AppHandle, Manager};
 use crate::documents::keywords::keywords_normalized;
 use crate::error::AppResult;
 
+mod seed;
+
 // DocumentsImportRequest is generated from DocumentImportRequestSchema by `pnpm gen:ipc`.
 pub use crate::ipc_contracts::documents::DocumentsImportRequest;
 
@@ -51,31 +53,13 @@ pub async fn documents_import(app: AppHandle, req: DocumentsImportRequest) -> Va
     let mut contact_conflicts: Vec<crate::contact_profile::ContactFieldConflict> = Vec::new();
     let mut suggested_contact: Value = json!(null);
     if let Some(cp_store) = app.try_state::<crate::contact_profile::ContactProfileStore>() {
-        let mut suggested = crate::contact_profile::classify_contact_links(&extraction.links);
-        if let Some(email) = structured.email.as_ref().map(|f| f.value.clone()) {
-            suggested.email.get_or_insert(email);
-        }
-        if let Some(phone) = structured.phone.as_ref().map(|f| f.value.clone()) {
-            suggested.phone.get_or_insert(phone);
-        }
-        if let Some(loc) = structured.location.as_ref().map(|f| f.value.clone()) {
-            if !loc.trim().is_empty() {
-                suggested
-                    .location
-                    .get_or_insert_with(|| crate::contact_profile::LocalizedText {
-                        default: loc,
-                        ..Default::default()
-                    });
-            }
-        }
+        let suggested = seed::suggest_contact(&extraction, &structured);
         let current = cp_store.get();
         contact_conflicts = crate::contact_profile::detect_contact_conflicts(&current, &suggested);
         suggested_contact = serde_json::to_value(&suggested).unwrap_or(json!(null));
-        if !suggested.is_effectively_empty() {
-            // Empty fields still fill silently; conflicting (already-set) fields
-            // are preserved and reported above for the user to resolve.
-            let mut merged = current.clone();
-            merged.fill_empty_from(&suggested);
+        // Empty fields still fill silently; conflicting (already-set) fields
+        // are preserved and reported above for the user to resolve.
+        if let Some(merged) = seed::seeded_profile(&current, &suggested) {
             if let Err(e) = cp_store.set(&merged) {
                 // Import still succeeds; only the autofill persist failed. Log the
                 // error WITHOUT any contact values (no email/phone/name/url — PII).

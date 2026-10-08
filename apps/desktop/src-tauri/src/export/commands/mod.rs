@@ -327,32 +327,35 @@ fn generate_filename(request: &ExportRequest, extension: &str) -> String {
         .map(sanitize_filename)
         .unwrap_or_else(|| "Candidate".to_string());
 
-    let role = request
-        .meta
-        .as_ref()
-        .and_then(|m| m.job_title.as_ref())
-        .map(|s| sanitize_filename(s))
-        .unwrap_or_else(|| "Role".to_string());
-
-    let company = request
-        .meta
-        .as_ref()
-        .and_then(|m| m.company_name.as_ref())
-        // A1 (hardening plan): the renderer builds `GenerationMeta` from
-        // whatever a scraped posting's `company` field held, unsanitized —
-        // an implausible one (`"Apply now | LinkedIn"`) must fall to the same
-        // "Company" default an absent one already does, not land verbatim in
-        // the exported filename a user sees and shares.
-        .filter(|s| !crate::scraping::trust::is_implausible_company(s))
-        .map(|s| sanitize_filename(s))
-        .unwrap_or_else(|| "Company".to_string());
+    // An ABSENT title/company is dropped (`Jane-Doe-resume.pdf`), never replaced by
+    // a "Role"/"Company" placeholder the user would see and share. A PRESENT but
+    // implausible company still falls to "Company" (A1 hardening plan): a
+    // scraper-supplied `"Apply now | LinkedIn"` must not land in the filename.
+    fn present(v: Option<&String>) -> Option<&str> {
+        v.map(|s| s.trim()).filter(|s| !s.is_empty())
+    }
+    let meta = request.meta.as_ref();
+    let role = present(meta.and_then(|m| m.job_title.as_ref())).map(sanitize_filename);
+    let company = present(meta.and_then(|m| m.company_name.as_ref())).map(|s| {
+        if crate::scraping::trust::is_implausible_company(s) {
+            "Company".to_string()
+        } else {
+            sanitize_filename(s)
+        }
+    });
 
     let doc_type = match request.document_type {
         super::types::DocumentType::Resume => "resume",
         super::types::DocumentType::CoverLetter => "cover-letter",
     };
 
-    format!("{}-{}-{}-{}.{}", name, role, company, doc_type, extension)
+    let stem = [Some(name), role, company, Some(doc_type.to_string())]
+        .into_iter()
+        .flatten()
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    format!("{stem}.{extension}")
 }
 
 /// Sanitize filename (remove invalid characters)

@@ -47,6 +47,29 @@ fn is_personal_linkedin(url: &str) -> bool {
     host_is(url, "linkedin.com") && url.to_lowercase().contains("/in/")
 }
 
+/// A personal LinkedIn profile written as PLAIN TEXT without a scheme
+/// (`linkedin.com/in/jane`, `www.linkedin.com/in/jane`) — the shape a résumé
+/// header takes when the PDF/DOCX carries no hyperlink annotation, so
+/// [`classify_contact_links`] (which needs a real `http(s)` link) never sees it.
+/// Deliberately that one host family and the `/in/` path only: no other bare
+/// domain is promoted. Returns the `https://` form;
+/// the slug may carry unicode letters (`jürgen-müller`).
+pub fn linkedin_from_text(text: &str) -> Option<String> {
+    static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(
+            r"(?i)(?:^|[^A-Za-z0-9.@/-])((?:www\.)?linkedin\.com/in/[\p{L}\p{N}%_-]+)",
+        )
+        .unwrap()
+    });
+    let m = RE.captures(text)?.get(1)?;
+    // A slug ending in `-` right at a line break is a PDF soft-wrap: the rest of the
+    // URL is on the next line, so storing the head would persist a truncated URL.
+    if m.as_str().ends_with('-') && text[m.end()..].starts_with(['\n', '\r']) {
+        return None;
+    }
+    Some(format!("https://{}", m.as_str()))
+}
+
 /// A personal Xing profile is `/profile/…` — same gate shape as
 /// [`is_personal_linkedin`]'s `/in/`. `xing.com` is also a [`JOB_BOARD_HOSTS`]
 /// entry (Xing hosts job listings too), so without this a legitimate DACH

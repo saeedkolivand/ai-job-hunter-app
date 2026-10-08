@@ -72,8 +72,32 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
     // generation we upsert/advance the Application for this job_url (Generate
     // origin → `applied`), then store the generation (which still carries its
     // own job/company/board copy for backward compatibility + offline export).
-    let job_url = rec.job_url.clone();
-    let board = rec.board.clone();
+    link_application(
+        app.try_state::<crate::applications::ApplicationStore>()
+            .as_deref(),
+        &mut rec,
+    );
+
+    // Per-job aggregate (generation side): merge into that job's generation row so
+    // résumé/cover/answers/brief from separate actions land on one document record.
+    match store.save_application(rec) {
+        Ok(id) => json!({ "id": id, "success": true }),
+        Err(e) => json!({ "error": e }),
+    }
+}
+
+/// Upsert/advance the Application a generation belongs to and link `rec` to it by FK.
+/// A job-less generation (blank `job_url`, e.g. Résumé Builder / AI Generate with no
+/// posting) is a Documents entry only: an empty url never merges, so upserting would
+/// mint a fresh company-less "applied" row on every save (#1358). Pulled out of the
+/// command so the gate is unit-testable without an `AppHandle`.
+fn link_application(
+    apps: Option<&crate::applications::ApplicationStore>,
+    rec: &mut crate::ai_generations::AiGenerationRecord,
+) {
+    let Some(apps) = apps.filter(|_| !rec.job_url.trim().is_empty()) else {
+        return;
+    };
     let meta = crate::applications::ApplicationMeta {
         company: rec.company_name.clone(),
         title: rec.job_title.clone(),
@@ -86,34 +110,25 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
         salary_max: None,
         salary_currency: None,
     };
-    if let Some(apps) = app.try_state::<crate::applications::ApplicationStore>() {
-        match apps.upsert_for_origin(
-            &job_url,
-            &board,
-            &meta,
-            crate::applications::ApplicationOrigin::Generate,
-            None,
-        ) {
-            // Link the generation to its parent Application via the FK so the detail
-            // page can join docs by `application_id` instead of a raw-vs-normalized
-            // url string compare (which never matches for query-id boards like Indeed:
-            // the Application stores the normalized url, the generation the raw one).
-            Ok(app_id) => rec.application_id = Some(app_id),
-            // Non-fatal: a failed Application upsert must not lose the generation the
-            // user just produced. The generation save below is the user-visible action;
-            // the aggregate (and the FK, via boot-time backfill) can be re-derived.
-            Err(e) => log::warn!(
-                "[ai_generations] application upsert failed (non-fatal): {}",
-                sanitize_reason(&e.to_string())
-            ),
-        }
-    }
-
-    // Per-job aggregate (generation side): merge into that job's generation row so
-    // résumé/cover/answers/brief from separate actions land on one document record.
-    match store.save_application(rec) {
-        Ok(id) => json!({ "id": id, "success": true }),
-        Err(e) => json!({ "error": e }),
+    match apps.upsert_for_origin(
+        &rec.job_url,
+        &rec.board,
+        &meta,
+        crate::applications::ApplicationOrigin::Generate,
+        None,
+    ) {
+        // Link the generation to its parent Application via the FK so the detail
+        // page can join docs by `application_id` instead of a raw-vs-normalized
+        // url string compare (which never matches for query-id boards like Indeed:
+        // the Application stores the normalized url, the generation the raw one).
+        Ok(app_id) => rec.application_id = Some(app_id),
+        // Non-fatal: a failed Application upsert must not lose the generation the
+        // user just produced. The generation save is the user-visible action; the
+        // aggregate (and the FK, via boot-time backfill) can be re-derived.
+        Err(e) => log::warn!(
+            "[ai_generations] application upsert failed (non-fatal): {}",
+            sanitize_reason(&e.to_string())
+        ),
     }
 }
 
@@ -192,3 +207,6 @@ pub async fn ai_generations_remove_bulk(app: AppHandle, ids: Vec<String>) -> Val
         Err(e) => json!({ "error": e }),
     }
 }
+
+#[cfg(test)]
+mod tests;

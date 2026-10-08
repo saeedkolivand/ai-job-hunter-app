@@ -20,8 +20,6 @@ pub async fn system_health(app: AppHandle) -> Value {
     // `scope` labels this block for what it is: a probe of the local daemon, NOT
     // the app's configured generation provider (that's `activeProvider` below) —
     // the two can differ any time the user has switched to a cloud provider.
-    let (ai_ready, ai_model) = crate::commands::ai_provider::ollama::reachable_model().await;
-
     // The app's actually-configured provider/model — the SAME lookup
     // `ai_active_config` uses, so the two commands can never disagree. Degrades
     // to nulls rather than panicking if the store failed to open at startup (it
@@ -29,6 +27,10 @@ pub async fn system_health(app: AppHandle) -> Value {
     let active = app
         .try_state::<crate::ai_config::AiConfigStore>()
         .map(|store| store.active_config());
+    // The probe prefers the user's configured Ollama model over `/api/tags`' first entry.
+    let ollama_model = configured_ollama_model(active.as_ref());
+    let (ai_ready, ai_model) =
+        crate::commands::ai_provider::ollama::reachable_model(ollama_model.as_deref()).await;
     let active_provider_json = active_provider_summary(active);
 
     // CLI agents (Claude Code, …): "detected" = their binary is installed. Looped
@@ -49,6 +51,12 @@ pub async fn system_health(app: AppHandle) -> Value {
         cli_agents,
         active_provider_json,
     )
+}
+
+/// The Ollama row's configured chat model — what the health probe prefers over
+/// `/api/tags`' first entry (#1365). Pulled out for testing without an `AppHandle`.
+fn configured_ollama_model(active: Option<&crate::ai_config::ActiveAiConfig>) -> Option<String> {
+    active?.providers.get("ollama")?.model.clone()
 }
 
 /// The `activeProvider` block of `system_health` — pulled out so the
