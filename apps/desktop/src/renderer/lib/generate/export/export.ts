@@ -9,19 +9,22 @@ import { type LetterLayoutId, type TemplateId, TEMPLATES } from '../templates';
 
 // ─── Filename ─────────────────────────────────────────────────────────────────
 
+/**
+ * Mirrors the Rust `sanitize_filename` (export/commands/mod.rs) rule for rule, so the card
+ * chip and the save dialog agree; both are pinned by the same vector table in tests.
+ * Keeps Unicode letters/digits (any script) and `_`, turns any whitespace into `-`,
+ * collapses runs of `-` and trims them.
+ */
 function sanitize(str: string): string {
-  return (
+  return Array.from(
     str
-      .normalize('NFD')
-      .replace(/[̀-ͯ]/g, '')
-      // Keep any Unicode letter/number so non-Latin names (Cyrillic, CJK, Arabic,
-      // Greek, Hebrew, Thai, ...) survive instead of collapsing to the placeholder.
-      .replace(/[^\p{L}\p{N}\s-]/gu, '')
-      .trim()
-      .replace(/\s+/g, '-')
+      .replace(/[^\p{Alphabetic}\p{N}\p{White_Space}_-]/gu, '')
+      .replace(/\p{White_Space}/gu, '-')
       .replace(/-{2,}/g, '-')
-      .slice(0, 40)
-  );
+  )
+    .slice(0, 40)
+    .join('')
+    .replace(/^-+|-+$/g, '');
 }
 
 export function buildFilename(

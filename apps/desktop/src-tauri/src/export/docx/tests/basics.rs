@@ -176,3 +176,52 @@ fn test_generate_resume_with_meta() {
     let result = generate_docx(&request);
     assert!(result.is_ok());
 }
+
+fn core_xml(bytes: &[u8]) -> String {
+    use std::io::Read;
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+    let mut xml = String::new();
+    zip.by_name("docProps/core.xml")
+        .unwrap()
+        .read_to_string(&mut xml)
+        .unwrap();
+    xml
+}
+
+/// Regression #1398: docx-rs defaults (1970 / "unknown") must not reach the file.
+#[test]
+fn core_properties_carry_the_candidate_and_the_current_time() {
+    let mut request = super::support::resume_request(TemplateId::Classic);
+    request.meta = Some(GenerationMeta {
+        candidate_name: Some("Jane & Doe".into()),
+        job_title: None,
+        company_name: None,
+        target_language: None,
+    });
+    let xml = core_xml(&generate_docx(&request).unwrap());
+    assert!(
+        xml.contains("<dc:creator>Jane &amp; Doe</dc:creator>"),
+        "{xml}"
+    );
+    assert!(!xml.contains("1970") && !xml.contains("unknown"), "{xml}");
+    let w3cdtf = regex::Regex::new(r#"W3CDTF">\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z<"#).unwrap();
+    assert_eq!(w3cdtf.find_iter(&xml).count(), 2, "{xml}");
+
+    request.meta = None;
+    assert!(core_xml(&generate_docx(&request).unwrap()).contains("<dc:creator>AI Job Hunter<"));
+}
+
+#[test]
+fn core_properties_creator_drops_xml_illegal_control_chars() {
+    let xml = String::from_utf8(super::super::core_properties_xml("Jane\u{1}Doe", "t")).unwrap();
+    assert!(xml.contains("<dc:creator>JaneDoe</dc:creator>"), "{xml}");
+    // U+FFFE/U+FFFF are not XML Chars; an all-illegal name falls back to the default.
+    let xml =
+        String::from_utf8(super::super::core_properties_xml("A\u{FFFE}\u{FFFF}B", "t")).unwrap();
+    assert!(xml.contains("<dc:creator>AB</dc:creator>"), "{xml}");
+    let xml = String::from_utf8(super::super::core_properties_xml("\u{1}\u{FFFE}", "t")).unwrap();
+    assert!(
+        xml.contains("<dc:creator>AI Job Hunter</dc:creator>"),
+        "{xml}"
+    );
+}

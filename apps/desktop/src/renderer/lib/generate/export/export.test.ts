@@ -20,8 +20,27 @@ const meta: GenerationMeta = {
 describe('buildFilename', () => {
   it('sanitises name, role and company and appends the extension', () => {
     expect(buildFilename(meta, 'resume', 'pdf')).toBe(
-      'John-Doe-Senior-Engineer-Acme-Co-resume.pdf'
+      'Jöhn-Doe-Senior-Engineer-Acme-Co-resume.pdf'
     );
+  });
+
+  // Same table as FILENAME_VECTORS in the Rust test (export/commands/tests/filename.rs).
+  // An empty expectation means the "Candidate" fallback.
+  it.each([
+    ['Android Engineer — Experience', 'Android-Engineer-Experience'],
+    ['José Müller', 'José-Müller'],
+    ['snake_case name', 'snake_case-name'],
+    ['Jane\tDoe Smith', 'Jane-Doe-Smith'],
+    ['  ...Jane Doe!!  ', 'Jane-Doe'],
+    ['-a--b-', 'a-b'],
+    ['★★★', ''],
+    ['Cafe\u0301', 'Cafe'],
+    ['𝒜 𝔹', '𝒜-𝔹'],
+    ['x²½', 'x²½'],
+    ['x'.repeat(39) + ' y', 'x'.repeat(39)],
+  ])('matches the Rust sanitize_filename for %j', (input, stem) => {
+    const m = { ...meta, candidateName: input, jobTitle: '', companyName: '' };
+    expect(buildFilename(m, 'resume', 'pdf')).toBe(`${stem || 'Candidate'}-resume.pdf`);
   });
 
   it('drops role and company when empty, keeps the Candidate fallback', () => {

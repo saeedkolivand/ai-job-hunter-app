@@ -21,6 +21,7 @@ mod lever;
 mod linkedin;
 mod personio;
 mod smartrecruiters;
+mod thin_json_ld;
 mod workday;
 
 use ashby::try_ashby;

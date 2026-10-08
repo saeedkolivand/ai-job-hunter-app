@@ -31,11 +31,27 @@ pub(super) async fn try_greenhouse(url: &str) -> Result<Option<JobPosting>> {
     }
     let v: serde_json::Value =
         crate::net::http::read_json_capped(res, SCRAPE_URL_MAX_BYTES).await?;
+    Ok(Some(posting_from_api(url, company, job_id, &v)))
+}
+
+fn posting_from_api(
+    url: &str,
+    company: String,
+    job_id: String,
+    v: &serde_json::Value,
+) -> JobPosting {
     let title = v
         .get("title")
         .and_then(|s| s.as_str())
         .unwrap_or("")
         .to_string();
+    // The job response carries the display name ("GitLab"); fall back to a title-cased slug.
+    let company_name = v
+        .get("company_name")
+        .and_then(|s| s.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map_or_else(|| title_case_slug(&company), str::to_string);
     let location = v
         .get("location")
         .and_then(|l| l.get("name"))
@@ -56,11 +72,11 @@ pub(super) async fn try_greenhouse(url: &str) -> Result<Option<JobPosting>> {
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
         .map(|dt| dt.timestamp_millis());
 
-    Ok(Some(JobPosting {
+    JobPosting {
         id: format!("greenhouse:{}", job_id),
         external_id: Some(job_id),
         title,
-        company,
+        company: company_name,
         location,
         url: abs_url,
         source: "greenhouse".to_string(),
@@ -69,7 +85,7 @@ pub(super) async fn try_greenhouse(url: &str) -> Result<Option<JobPosting>> {
         posted_at: updated_at,
         captured_at: chrono::Utc::now().timestamp_millis(),
         extra: HashMap::new(),
-    }))
+    }
 }
 
 pub(super) fn parse_greenhouse_url(url: &str) -> Option<(String, String)> {
@@ -92,3 +108,20 @@ pub(super) fn parse_greenhouse_url(url: &str) -> Option<(String, String)> {
     }
     None
 }
+
+/// `"acme-corp"` -> `"Acme Corp"`.
+fn title_case_slug(slug: &str) -> String {
+    slug.split(['-', '_'])
+        .filter(|w| !w.is_empty())
+        .map(|w| {
+            let mut c = w.chars();
+            c.next()
+                .map(|f| f.to_uppercase().chain(c).collect::<String>())
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(test)]
+mod tests;

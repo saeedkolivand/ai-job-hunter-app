@@ -146,11 +146,42 @@ pub fn generate_docx(request: &ExportRequest) -> Result<Vec<u8>> {
         }
     };
 
+    // docx-rs exposes no creator setter and stamps 1970 / "unknown" (#1398), so
+    // replace the built core part with one carrying the candidate and the time.
+    let creator = request.candidate_name().unwrap_or("AI Job Hunter");
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let mut built = docx.build();
+    built.doc_props.core = core_properties_xml(creator, &now);
+
     let mut buffer = std::io::Cursor::new(Vec::new());
-    docx.build()
-        .pack(&mut buffer)
-        .context("Failed to pack DOCX")?;
+    built.pack(&mut buffer).context("Failed to pack DOCX")?;
     Ok(buffer.into_inner())
+}
+
+/// `docProps/core.xml` with a real creator and created/modified time (`now`, W3CDTF).
+///
+/// The XML mirrors docx-rs 0.4.22's `CoreProps` template (its `created_at` /
+/// `updated_at` can set the dates but nothing can set the creator): re-check it
+/// against `doc_props/core.rs` whenever docx-rs is bumped.
+fn core_properties_xml(creator: &str, now: &str) -> Vec<u8> {
+    // Keep only the XML 1.0 `Char` production; anything else corrupts the part.
+    let creator: String = creator
+        .chars()
+        .filter(|c| matches!(c, '\t' | '\n' | '\r' | ' '..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}'))
+        .collect();
+    let creator = if creator.trim().is_empty() {
+        "AI Job Hunter".to_string()
+    } else {
+        creator
+    };
+    let creator = creator
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dcterms:created xsi:type="dcterms:W3CDTF">{now}</dcterms:created><dc:creator>{creator}</dc:creator><cp:lastModifiedBy>{creator}</cp:lastModifiedBy><dcterms:modified xsi:type="dcterms:W3CDTF">{now}</dcterms:modified><cp:revision>1</cp:revision></cp:coreProperties>"#
+    )
+    .into_bytes()
 }
 
 #[cfg(test)]

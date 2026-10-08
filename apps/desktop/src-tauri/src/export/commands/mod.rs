@@ -14,33 +14,6 @@ use crate::validate::{validate_and_fix, ExportReport, Severity};
 /// MIME type for every page string returned by the SVG live-preview path.
 const SVG_MIME: &str = "image/svg+xml";
 
-/// Resolve the candidate's name from an [`ExportRequest`], one rung at a time:
-/// `meta.candidate_name` (trimmed, non-blank) first, then `contact.full_name`
-/// (trimmed, non-blank), else `None`. Both rungs are filtered non-blank because
-/// `meta.candidate_name: Some("")` is a shape callers actually send (TailorFlow),
-/// and without the filter it would win as an empty string — an `Option::Some("")`,
-/// not `None` — and never fall through to the profile rung below.
-///
-/// Shared by [`validate_and_normalize`] (which signs off the completed letter
-/// text) and [`generate_filename`] (which names the downloaded file) so the two
-/// never drift on which rung wins.
-fn resolve_candidate_name(request: &ExportRequest) -> Option<&str> {
-    request
-        .meta
-        .as_ref()
-        .and_then(|m| m.candidate_name.as_deref())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            request
-                .contact
-                .as_ref()
-                .and_then(|c| c.full_name.as_deref())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-        })
-}
-
 /// Reject empty input and run the same text-normalization passes every export
 /// path uses (Unicode normalize → strip stray Markdown → dash typography), so
 /// unsupported glyphs never appear as replacement boxes and no `*` / backtick or
@@ -85,7 +58,7 @@ fn validate_and_normalize(request: &mut ExportRequest) -> AppResult<()> {
     // marker line.
     if request.document_type == DocumentType::CoverLetter {
         let market = request.locale.as_deref().unwrap_or("intl");
-        let name = resolve_candidate_name(request).unwrap_or("");
+        let name = request.candidate_name().unwrap_or("");
         request.text = complete_letter_text(&request.text, market, name);
     }
 
@@ -322,9 +295,11 @@ fn generate_filename(request: &ExportRequest, extension: &str) -> String {
     // Meta name first (fallback only — never overrides text-derived content
     // elsewhere), then the contact profile's name, then "Candidate" — the same
     // chain `validate_and_normalize` uses to sign off the letter text, via
-    // `resolve_candidate_name` so the two never drift.
-    let name = resolve_candidate_name(request)
+    // `ExportRequest::candidate_name` so the two never drift.
+    let name = request
+        .candidate_name()
         .map(sanitize_filename)
+        .filter(|n| !n.is_empty())
         .unwrap_or_else(|| "Candidate".to_string());
 
     // An ABSENT title/company is dropped (`Jane-Doe-resume.pdf`), never replaced by
@@ -358,16 +333,21 @@ fn generate_filename(request: &ExportRequest, extension: &str) -> String {
     format!("{stem}.{extension}")
 }
 
-/// Sanitize filename (remove invalid characters)
+/// Sanitize a filename part. The renderer's `buildFilename` (`lib/generate/export`)
+/// mirrors these rules exactly; both are pinned by the same vector table in tests.
 fn sanitize_filename(s: &str) -> String {
-    s.chars()
-        .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_' || *c == ' ')
-        .collect::<String>()
-        .trim()
-        .replace(' ', "-")
-        .chars()
+    let mut out = String::new();
+    for c in s.chars() {
+        let c = if c.is_whitespace() { '-' } else { c };
+        if c.is_alphanumeric() || c == '_' || (c == '-' && !out.ends_with('-')) {
+            out.push(c);
+        }
+    }
+    out.chars()
         .take(40)
-        .collect()
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
 }
 
 #[cfg(test)]

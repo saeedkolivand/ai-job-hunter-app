@@ -195,110 +195,6 @@ async fn export_empty_text_error_matches_preview_error() {
     );
 }
 
-// ── Existing helpers ──────────────────────────────────────────────────────────
-
-#[test]
-fn test_sanitize_filename() {
-    assert_eq!(sanitize_filename("John Doe"), "John-Doe");
-    assert_eq!(sanitize_filename("John@Doe!"), "JohnDoe");
-    assert_eq!(sanitize_filename("  Spaces  "), "Spaces");
-}
-
-#[test]
-fn test_generate_filename() {
-    let request = ExportRequest {
-        format: ExportFormat::Docx,
-        template_id: TemplateId::SwissMinimal,
-        meta: Some(GenerationMeta {
-            candidate_name: Some("John Doe".to_string()),
-            job_title: Some("Software Engineer".to_string()),
-            company_name: Some("Tech Corp".to_string()),
-            target_language: None,
-        }),
-        ..default_request()
-    };
-
-    let filename = generate_filename(&request, "docx");
-    assert!(filename.contains("John-Doe"));
-    assert!(filename.contains("Software-Engineer"));
-    assert!(filename.contains("resume"));
-    assert!(filename.ends_with(".docx"));
-}
-
-/// A1 (hardening plan) — end-to-end, anchored to the RENDERED filename a user
-/// actually sees/saves/shares, not to `is_implausible_company`'s own bool: a
-/// scraper-supplied garbage company (the literal PR #960 report) must fall
-/// back to the same `"Company"` default an absent one already produces,
-/// never appear verbatim in the exported file's name.
-#[test]
-fn generate_filename_falls_back_to_company_default_for_an_implausible_name() {
-    let request = ExportRequest {
-        format: ExportFormat::Docx,
-        document_type: DocumentType::CoverLetter,
-        template_id: TemplateId::SwissMinimal,
-        meta: Some(GenerationMeta {
-            candidate_name: Some("John Doe".to_string()),
-            job_title: Some("Software Engineer".to_string()),
-            company_name: Some("Apply now | LinkedIn".to_string()),
-            target_language: None,
-        }),
-        ..default_request()
-    };
-
-    let filename = generate_filename(&request, "pdf");
-    assert!(
-        filename.contains("Company"),
-        "expected the absent-company fallback, got {filename:?}"
-    );
-    assert!(
-        !filename.contains("LinkedIn") && !filename.contains("Apply"),
-        "the garbage company must never reach the rendered filename, got {filename:?}"
-    );
-}
-
-/// `meta.candidate_name: Some("")` (the shape TailorFlow actually sends) must
-/// fall through to the attached `ContactProfile`'s name rather than winning
-/// as an empty string — before the non-blank filter, `Some("")` stayed
-/// `Some` and never reached this fallback rung at all.
-#[test]
-fn generate_filename_falls_back_to_contact_profile_when_meta_name_is_blank() {
-    use crate::contact_profile::ContactProfile;
-
-    let request = ExportRequest {
-        document_type: DocumentType::CoverLetter,
-        meta: Some(GenerationMeta {
-            candidate_name: Some(String::new()),
-            job_title: None,
-            company_name: None,
-            target_language: None,
-        }),
-        contact: Some(ContactProfile {
-            full_name: Some("Jane Smith".to_string()),
-            ..Default::default()
-        }),
-        ..default_request()
-    };
-
-    let filename = generate_filename(&request, "pdf");
-    assert!(
-        filename.starts_with("Jane-Smith-"),
-        "must fall back to the contact profile's name, not \"Candidate\": {filename}"
-    );
-}
-
-/// With no name anywhere (no meta, no contact), the filename still degrades
-/// to "Candidate" — the fallback rung is additive, not a replacement.
-#[test]
-fn generate_filename_falls_back_to_candidate_with_no_name_anywhere() {
-    let request = ExportRequest {
-        document_type: DocumentType::CoverLetter,
-        ..default_request()
-    };
-
-    let filename = generate_filename(&request, "pdf");
-    assert!(filename.starts_with("Candidate-"), "got: {filename}");
-}
-
 // ── validate_and_normalize completes a body-only cover letter (Stage 1) ───────
 
 /// The core fix: a body-only cover letter (no salutation, no sign-off — the
@@ -336,7 +232,7 @@ fn validate_and_normalize_completes_a_body_only_cover_letter() {
 
 /// `meta.candidate_name: Some("")` must fall through to the attached
 /// `ContactProfile`'s name for the LETTER sign-off too, not just the
-/// filename — both call sites route through the same `resolve_candidate_name`
+/// filename — both call sites route through the same `ExportRequest::candidate_name`
 /// helper, so this pins that they stay in lockstep.
 #[test]
 fn validate_and_normalize_signs_off_with_contact_profile_when_meta_name_is_blank() {

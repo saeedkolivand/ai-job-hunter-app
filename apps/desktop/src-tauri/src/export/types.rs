@@ -281,6 +281,31 @@ pub struct ExportRequest {
 }
 
 impl ExportRequest {
+    /// Resolve the candidate's name, one rung at a time:
+    /// `meta.candidate_name` (trimmed, non-blank) first, then `contact.full_name`
+    /// (trimmed, non-blank), else `None`. Both rungs are filtered non-blank because
+    /// `meta.candidate_name: Some("")` is a shape callers actually send (TailorFlow),
+    /// and without the filter it would win as an empty string — an `Option::Some("")`,
+    /// not `None` — and never fall through to the profile rung below.
+    ///
+    /// Shared by `validate_and_normalize` (which signs off the completed letter
+    /// text) and `generate_filename` (which names the downloaded file) so the two
+    /// never drift on which rung wins.
+    pub(crate) fn candidate_name(&self) -> Option<&str> {
+        self.meta
+            .as_ref()
+            .and_then(|m| m.candidate_name.as_deref())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                self.contact
+                    .as_ref()
+                    .and_then(|c| c.full_name.as_deref())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+            })
+    }
+
     /// Page geometry for this request's locale (international A4 by default).
     pub fn page_geometry(&self) -> crate::locale::PageGeometry {
         crate::locale::LocaleProfile::get(self.locale.as_deref().unwrap_or("en")).page_geometry()

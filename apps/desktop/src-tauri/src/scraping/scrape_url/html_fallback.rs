@@ -12,6 +12,7 @@ use super::generic::{
     main_content_text, og_site_name, parse_generic_company, parse_generic_html,
     readability_content_text, strip_site_suffix, GENERIC_FIELD_CAP,
 };
+use super::thin_json_ld::fuller_body;
 
 // ── Generic HTML fallback ───────────────────────────────────────────────────
 
@@ -68,10 +69,15 @@ pub fn parse_from_html(url: &str, html: &str) -> Option<JobPosting> {
     // the generic title/description and supply a location the meta tags lack.
     if let Some(jl) = json_ld_job_posting(html) {
         if !jl.title.is_empty() {
-            title = jl.title;
+            title = jl.title.clone();
         }
-        if jl.description.is_some() {
-            description = jl.description;
+        if let Some(desc) = jl.description {
+            // A thin JSON-LD summary loses to a much longer page body; a hinted page already
+            // scoped its own content, so it is left alone (#1400).
+            let body = (!hint_title_used)
+                .then(|| fuller_body(url, html, &jl.title, &desc))
+                .flatten();
+            description = Some(body.unwrap_or(desc));
         }
         if jl.location.is_some() {
             location = jl.location;

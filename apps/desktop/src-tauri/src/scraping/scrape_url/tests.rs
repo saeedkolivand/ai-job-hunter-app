@@ -10,5 +10,6 @@ mod html_fallback_basic;
 mod html_fallback_job_root_hint;
 mod html_fallback_literal_newline;
 mod html_fallback_structured_data;
+mod html_fallback_thin_json_ld;
 mod personio_and_identity;
 mod url_parsing_and_generic_html;
