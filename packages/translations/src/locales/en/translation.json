@@ -2344,6 +2344,7 @@
     "title": "Job board",
     "searchPlaceholder": "Filter by title, company, location…",
     "empty": "No postings yet. Start a scrape to populate this board.",
+    "emptyFiltered": "No postings match your filter. Clear or change the filter to see the postings on this board.",
     "emptyCta": "Search jobs",
     "emptyNoAdzunaKeys": "Add your free Adzuna API key in Settings to enable aggregated job search.",
     "emptyNoAdzunaKeysCta": "Add Adzuna keys",

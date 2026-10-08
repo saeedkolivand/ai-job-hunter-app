@@ -90,6 +90,23 @@ describe('ClusterSourceChips', () => {
     expect(mockOpen).toHaveBeenCalledWith('https://indeed.com/job/2');
   });
 
+  it('collapses members of one board into a single chip with a count', () => {
+    render(
+      <ClusterSourceChips
+        members={[
+          { key: 'self', board: 'linkedin', url: 'https://linkedin.com/job/1' },
+          { key: 'a1', board: 'aggregator', url: 'https://agg.example.com/1' },
+          { key: 'a2', board: 'aggregator', url: 'https://agg.example.com/2' },
+          { key: 'a3', board: 'aggregator', url: 'https://agg.example.com/3' },
+        ]}
+        selfKey="self"
+        selfUrl="https://linkedin.com/job/1"
+      />
+    );
+    expect(screen.getAllByTestId(TEST_IDS.jobs.clusterSourceChip)).toHaveLength(1);
+    expect(screen.getByText('×3')).toBeInTheDocument();
+  });
+
   it('renders nothing when the cluster has no other member', () => {
     const { container } = render(
       <ClusterSourceChips

@@ -3,6 +3,7 @@ import { Bot, CheckCircle2, Key, Loader2, RefreshCw, WifiOff } from 'lucide-reac
 import type { ProviderModelInfo } from '@ajh/shared';
 import { Button } from '@ajh/ui';
 
+import { chatModels } from '@/lib/ai-providers/embedding-model';
 import type { ProviderMeta } from '@/lib/ai-providers/provider-meta';
 import type { AiProvider } from '@/store/preferences-schema';
 import type { Model } from '@/types';
@@ -174,7 +175,7 @@ export function ProviderRow({
           {meta.kind === 'local-server' ? (
             <OllamaConfig
               connected={connected}
-              models={ollamaModels}
+              models={chatModels(ollamaModels, providerModel)}
               providerModel={providerModel}
               loading={loadingOllama}
               pulling={pulling}

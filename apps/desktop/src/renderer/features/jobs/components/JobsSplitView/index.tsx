@@ -96,16 +96,27 @@ export function JobsSplitView({
     };
   }, [setJobs]);
 
-  // Arrow key navigation on the listbox: moves selection + scrolls to keep it visible.
+  // Keyboard on the listbox (active-descendant pattern — focus stays on the
+  // container, even after a row was clicked): arrows/Home/End move the selection
+  // and keep it visible; Enter/Space act on the ACTIVE descendant, not whichever
+  // row last took DOM focus.
   const handleListKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-      e.preventDefault();
       const currentIndex = display.findIndex((p) => p.id === selectedId);
-      const nextIndex =
-        e.key === 'ArrowDown'
-          ? Math.min(currentIndex + 1, display.length - 1)
-          : Math.max(currentIndex - 1, 0);
+      if (e.key === 'Enter' || e.key === ' ') {
+        const active = display[currentIndex];
+        if (!active) return;
+        e.preventDefault();
+        setJobs({ selectedId: active.id });
+        return;
+      }
+      let nextIndex: number;
+      if (e.key === 'ArrowDown') nextIndex = Math.min(currentIndex + 1, display.length - 1);
+      else if (e.key === 'ArrowUp') nextIndex = Math.max(currentIndex - 1, 0);
+      else if (e.key === 'Home') nextIndex = 0;
+      else if (e.key === 'End') nextIndex = display.length - 1;
+      else return;
+      e.preventDefault();
       const next = display[nextIndex];
       if (!next) return;
       setJobs({ selectedId: next.id });

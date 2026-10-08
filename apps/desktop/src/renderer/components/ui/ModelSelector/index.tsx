@@ -5,6 +5,7 @@ import { useTranslation } from '@ajh/translations';
 import { Dropdown } from '@ajh/ui';
 
 import { EffortPicker } from '@/components/ui/EffortPicker';
+import { chatModels } from '@/lib/ai-providers/embedding-model';
 import { getModelGuidance } from '@/lib/ai-providers/model-guidance';
 import { isProviderConfigured, PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { useAppClient } from '@/providers/AppClientProvider';
@@ -99,7 +100,8 @@ export function ModelSelector({ className }: ModelSelectorProps) {
 
   // Grouped options, derived from the registry by provider kind (pure helper).
   const options = buildModelOptions(PROVIDER_ORDER, PROVIDERS, {
-    ollamaModels: ollamaModels.map((m) => m.name),
+    // Chat picker: an embedding-only model 400s on a chat turn.
+    ollamaModels: chatModels(ollamaModels, activeProviderModel).map((m) => m.name),
     cliDetected,
     cloudConnected: canFetchModels,
     cloudModels: (p) => cloudModelEntries.get(p) ?? [],

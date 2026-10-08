@@ -211,6 +211,12 @@ describe('ApplicationRow — row meta', () => {
     expect(screen.getByText('applications.row.updatedAgo')).toBeInTheDocument();
   });
 
+  it('does not keep the "applied" stamp after a demotion back to saved', () => {
+    renderRow({ status: 'saved', appliedAt: RECENT_UPDATED_AT });
+    expect(screen.queryByText('applications.row.appliedAgo')).not.toBeInTheDocument();
+    expect(screen.getByText('applications.row.updatedAgo')).toBeInTheDocument();
+  });
+
   it('shows the per-stage Tag only when showStageTag is set', () => {
     // The stage label always appears once as the Dropdown trigger's own label,
     // so the Tag is the SECOND occurrence — count rather than presence.

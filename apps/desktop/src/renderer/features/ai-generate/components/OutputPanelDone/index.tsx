@@ -164,7 +164,7 @@ export function OutputPanelDone({
       key="done"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="flex flex-1 flex-col overflow-hidden"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto"
     >
       {/* Output toolbar */}
       <div className="shrink-0 flex items-center justify-between border-b border-[var(--border-clear)] px-6 py-3">
@@ -295,7 +295,7 @@ export function OutputPanelDone({
 
       {/* Output — prettified Preview or raw Edit; the raw string stays canonical,
           so copy/export read exactly what's edited (incl. inline AI rewrites). */}
-      <div className="flex flex-1 flex-col overflow-hidden px-6 py-4">
+      <div className="flex min-h-64 flex-1 flex-col overflow-hidden px-6 py-4">
         <EditableOutput
           value={currentOutput}
           onChange={handleOutputChange}

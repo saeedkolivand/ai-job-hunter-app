@@ -127,6 +127,8 @@ export function useResumePipelineSession(
   const [letterDraft, setLetterDraft] = useState('');
   const [thinking, setThinking] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // The umbrella job's message, read after the record flips first (see its effect).
+  const [fetchedReason, setFetchedReason] = useState<string | null>(null);
   // Flips once, at the `cover_letter` stage's `start` event — see
   // `ResumePipelineSession.letterDraft`. A ref because it must be readable
   // from `appendDraft` without re-subscribing the stream on every stage event.
@@ -280,6 +282,25 @@ export function useResumePipelineSession(
     return suffix ? t(`pipeline.stopped.${suffix}`) : null;
   }, [status, detail?.stoppedReason, t]);
 
+  // The record flipping to `failed` before `job.failed` arrives drops the live
+  // message (`handleJobEvent` is gated on `busy`), and a failure with no
+  // recorded `stoppedReason` (a provider error) has nothing in the row either —
+  // `error` would stay null and the surface would show no reason. The umbrella
+  // job (in-memory tracker) still holds the message, so read it once.
+  useEffect(() => {
+    if (status !== 'failed' || !jobId || persistedFailureReason) return;
+    let cancelled = false;
+    void fetchJob(jobId)
+      .then((job) => {
+        const reason = (job as { error?: unknown } | null)?.error;
+        if (!cancelled && typeof reason === 'string' && reason) setFetchedReason(reason);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [status, jobId, persistedFailureReason]);
+
   // …and the same discovery is the only thing that can tell the posting's run
   // LIST its run just ended. Nothing was clicked, so none of the three
   // action-driven invalidators fires, and the list has no poll of its own: left
@@ -338,6 +359,7 @@ export function useResumePipelineSession(
   const start = useCallback(
     async (req: ResumePipelineRunRequest) => {
       setError(null);
+      setFetchedReason(null);
       setStage(null);
       setDraft('');
       setLetterDraft('');
@@ -420,6 +442,7 @@ export function useResumePipelineSession(
     setThinking('');
     writingLetterRef.current = false;
     setError(null);
+    setFetchedReason(null);
     replayed.current = null;
     // Same reasoning as `start` (see the `jobIdRef` doc comment above): these
     // three are written only in the render body, so a `pipeline:stage`/
@@ -445,7 +468,7 @@ export function useResumePipelineSession(
     detail,
     // The live message wins when one landed; otherwise fall back to what the
     // record itself says — see `persistedFailureReason`'s doc comment.
-    error: error ?? persistedFailureReason,
+    error: error ?? persistedFailureReason ?? fetchedReason,
     starting: startRun.isPending,
     start,
     cancel,

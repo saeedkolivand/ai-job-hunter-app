@@ -2,7 +2,7 @@ import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, SourceBadge } from '@ajh/ui';
 
-import { hostOf } from '@/components/job/host-of';
+import { groupByBoard, hostOf } from '@/components/job/host-of';
 import { useOpenExternal } from '@/services';
 
 /** A single cross-board cluster member (opaque key + its board + url). Mirrors
@@ -36,7 +36,7 @@ interface ClusterSourceChipsProps {
 /**
  * Cross-board cluster source chips (ADR-029): given a canonical posting/found-job
  * with `clusterMembers`, render an "Also on" label plus one chip per NON-SELF
- * member. A member is self when it shares the row's key or url. Each chip is a
+ * board (members of one board collapse into a single chip with a count). A member is self when it shares the row's key or url. Each chip is a
  * keyboard-reachable `@ajh/ui` `Button` (native focus ring) wrapping a
  * `SourceBadge` for per-platform colour/icon; clicking it opens that member's
  * url through the `useOpenExternal` service hook (never `window.open` directly).
@@ -52,24 +52,37 @@ export function ClusterSourceChips({
   const { t } = useTranslation();
   const openExternal = useOpenExternal();
 
-  const others = (members ?? []).filter((m) => m.key !== selfKey && m.url !== selfUrl);
+  const others = groupByBoard(
+    (members ?? []).filter((m) => m.key !== selfKey && m.url !== selfUrl)
+  );
   if (others.length === 0) return null;
 
   return (
     <span className={cn('inline-flex flex-wrap items-center gap-1.5', className)}>
       <span className="text-fine-print text-foreground/45">{t('jobs.cluster.alsoOn')}</span>
-      {others.map((m) => {
+      {others.map(({ members: grouped }) => {
+        const m = grouped[0] as ClusterMember;
+        const count = grouped.length;
         const boardId = m.board?.trim();
         const label = boardId
           ? t(`jobs.boards.${boardId}`, { defaultValue: boardId })
           : hostOf(m.url);
-        const badge = <SourceBadge source={boardId ?? label} />;
+        const badge = (
+          <>
+            <SourceBadge source={boardId ?? label} />
+            {count > 1 && <span className="ml-0.5 text-fine-print text-foreground/55">×{count}</span>}
+          </>
+        );
 
         // Presentational-only inside a listbox option: no Button, no click, so
         // the row stays a single tab stop (see the `interactive` doc above).
         if (!interactive) {
           return (
-            <span key={m.key} data-testid={TEST_IDS.jobs.clusterSourceChip} className="inline-flex">
+            <span
+              key={m.key}
+              data-testid={TEST_IDS.jobs.clusterSourceChip}
+              className="inline-flex items-center"
+            >
               {badge}
             </span>
           );
@@ -81,9 +94,9 @@ export function ClusterSourceChips({
             variant="unstyled"
             data-testid={TEST_IDS.jobs.clusterSourceChip}
             onClick={() => openExternal.mutate(m.url)}
-            aria-label={t('jobs.cluster.openOn', { source: label })}
+            aria-label={`${t('jobs.cluster.openOn', { source: label })}${count > 1 ? ` ×${count}` : ''}`}
             title={t('jobs.cluster.openOn', { source: label })}
-            className="rounded-full focus-visible:ring-offset-1"
+            className="inline-flex items-center rounded-full focus-visible:ring-offset-1"
           >
             {badge}
           </Button>

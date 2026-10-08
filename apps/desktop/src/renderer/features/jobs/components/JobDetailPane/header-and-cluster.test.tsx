@@ -72,6 +72,27 @@ describe('JobDetailPane — cross-board cluster split', () => {
     expect(arg?.otherKeys).toEqual(['k1']);
   });
 
+  it('a same-board sibling keeps its own working "Not a duplicate"', async () => {
+    await openPane(
+      clustered([
+        { key: 'k1', board: 'aggregator', url: 'https://agg.example.com/jobs/1' },
+        { key: 'k2', board: 'aggregator', url: 'https://agg.example.com/jobs/2' },
+      ])
+    );
+
+    // Two rows, told apart by their url path; only the sibling is splittable.
+    expect(screen.getByText('/jobs/1')).toBeInTheDocument();
+    expect(screen.getByText('/jobs/2')).toBeInTheDocument();
+    await act(async () => {
+      screen.getByText('jobs.cluster.notDuplicate').click();
+    });
+
+    const arg = mockSplitMutate.mock.calls[0]?.[0] as
+      { memberKey: string; otherKeys: string[] } | undefined;
+    expect(arg?.memberKey).toBe('k2');
+    expect(arg?.otherKeys).toEqual(['k1']);
+  });
+
   it('shows the error toast (not the success toast) when the split fails', async () => {
     // React Query calls the caller's onError when the mutation throws; the mock
     // stands in for that so the toast wiring is exercised.

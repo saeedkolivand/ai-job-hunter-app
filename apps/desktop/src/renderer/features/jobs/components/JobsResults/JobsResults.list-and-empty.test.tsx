@@ -223,7 +223,8 @@ describe('JobsResults — board diagnostics in the empty state', () => {
     expect(screen.queryByRole('group', boardGroup)).not.toBeInTheDocument();
     expect(screen.queryByText('jobs.lastScrapeFailed')).not.toBeInTheDocument();
     // The plain empty-state title still renders (filter just hid everything).
-    expect(screen.getByText('jobs.empty')).toBeInTheDocument();
+    expect(screen.getByText('jobs.emptyFiltered')).toBeInTheDocument();
+    expect(screen.queryByText('jobs.empty')).not.toBeInTheDocument();
   });
 
   it('genuinely zero postings (totalCount = 0) → chips/note DO render', () => {

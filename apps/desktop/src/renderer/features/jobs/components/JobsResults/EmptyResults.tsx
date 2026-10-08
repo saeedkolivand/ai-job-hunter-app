@@ -42,6 +42,8 @@ export function EmptyResults({
               }
               className="py-10"
             />
+          ) : !genuinelyEmpty ? (
+            <EmptyState icon={Search} title={t('jobs.emptyFiltered')} className="py-10" />
           ) : (
             <EmptyState
               icon={Search}

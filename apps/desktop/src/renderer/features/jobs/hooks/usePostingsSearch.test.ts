@@ -17,6 +17,7 @@ vi.mock('@ajh/ui', () => ({
 }));
 
 import { usePreferencesStore } from '@/store/preferences-store';
+import { makeJobsDefaults, useSessionStore } from '@/store/session-store';
 import { createMockClient, renderHookWithClient } from '@/test-support';
 
 import { usePostingsSearch } from './usePostingsSearch';
@@ -36,11 +37,25 @@ function setup(overrides: Record<string, (...args: never[]) => unknown> = {}) {
 }
 
 beforeEach(() => {
+  useSessionStore.setState({ jobs: makeJobsDefaults() });
   usePreferencesStore.setState({ semanticScoring: false });
   notifyMock.error.mockClear();
 });
 
 describe('usePostingsSearch', () => {
+  it('keeps the committed search across a remount (navigate away and back)', async () => {
+    const hybridSearch = vi.fn().mockResolvedValue(okResult(['a']));
+    const first = setup({ 'scrape.hybridSearch': hybridSearch });
+    act(() => first.result.current.search('backend payments', ['a']));
+    await waitFor(() => expect(first.result.current.state).toBe('results'));
+    first.unmount();
+
+    const second = setup({ 'scrape.hybridSearch': hybridSearch });
+    expect(second.result.current.state).toBe('results');
+    expect(second.result.current.committedQuery).toBe('backend payments');
+    expect(second.result.current.result?.hits).toEqual(['a']);
+  });
+
   it('starts idle and transitions to results on a hit', async () => {
     const hybridSearch = vi.fn().mockResolvedValue(okResult(['a', 'b']));
     const { result } = setup({ 'scrape.hybridSearch': hybridSearch });
@@ -115,7 +130,7 @@ describe('usePostingsSearch', () => {
     expect(result.current.result?.hits).toEqual(['second']);
   });
 
-  it('discards an outcome: cancelled response instead of surfacing it as an error', async () => {
+  it('settles a cancelled current search back to idle instead of surfacing an error', async () => {
     const hybridSearch = vi.fn().mockResolvedValue({
       outcome: 'cancelled',
       hits: [],
@@ -127,9 +142,10 @@ describe('usePostingsSearch', () => {
     act(() => result.current.search('x', []));
     await waitFor(() => expect(hybridSearch).toHaveBeenCalled());
     await new Promise((r) => setTimeout(r, 0));
-    // No SETTLED_* / FAILED event ever fires for 'cancelled' — the machine
-    // stays exactly where SUBMIT left it.
-    expect(result.current.state).toBe('searching');
+    // Never surfaced as a result or an error — and since the session store
+    // outlives the page, a cancel of the CURRENT search must not strand the
+    // state on 'searching'.
+    await waitFor(() => expect(result.current.state).toBe('idle'));
     expect(result.current.result).toBeNull();
   });
 

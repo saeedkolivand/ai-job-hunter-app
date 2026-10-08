@@ -100,11 +100,24 @@ describe('JobsSplitView — ArrowDown/ArrowUp navigation', () => {
     expect(mockScrollToIndex).toHaveBeenCalledWith(1, { align: 'auto' });
   });
 
-  it('other keys (e.g. Enter) do not move selection or scroll', async () => {
+  it.each([
+    ['Home selects the first posting', 'Home', 'c', 'a', 0],
+    ['End selects the last posting', 'End', 'a', 'c', 2],
+  ])('%s', async (_name, key, from, to, index) => {
+    await selectJob(from);
+    renderSplit();
+
+    await pressKey(key);
+
+    expect(selectedId()).toBe(to);
+    expect(mockScrollToIndex).toHaveBeenCalledWith(index, { align: 'auto' });
+  });
+
+  it('other keys (e.g. Tab) do not move selection or scroll', async () => {
     await selectJob('b');
     renderSplit();
 
-    await pressKey('Enter');
+    await pressKey('Tab');
 
     expect(selectedId()).toBe('b');
     expect(mockScrollToIndex).not.toHaveBeenCalled();

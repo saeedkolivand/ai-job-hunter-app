@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 import type { InterviewAnswers } from '@ajh/prompts/builder';
-import type { BoardScrapeSummary, WorkTypeOption } from '@ajh/shared';
+import type { BoardScrapeSummary, HybridSearchResult, WorkTypeOption } from '@ajh/shared';
 
 import type { WizardState } from '@/features/autopilot/types';
 import type { TailorWizardState } from '@/features/documents/components/TailorFlow/lib/tailor-state';
@@ -18,6 +18,7 @@ import type {
   QualityReport,
   TemplateId,
 } from '@/lib/generate';
+import type { PostingsSearchState } from '@/lib/machines/postings-search.machine';
 import type { AnalysisMode, AnalysisResult } from '@/lib/resume-ai';
 
 // Per-route state shapes
@@ -93,8 +94,23 @@ export interface ResumeBuilderSlice {
  * no "job id left over from a previous app run" case to defend against; the
  * only lifetime that matters is the current session.
  */
+export interface PostingsSearchSlice {
+  state: PostingsSearchState;
+  result: HybridSearchResult | null;
+  /** The query the committed search ran for; '' = none. */
+  committedQuery: string;
+  /** Id of the newest issued search — older responses are discarded. */
+  queryId: string | null;
+}
+
 interface JobsSlice {
   filter: string;
+  /**
+   * Committed hybrid-search state. Here (not in `usePostingsSearch`'s local
+   * state) because the filter text above survives navigation: a remounted page
+   * with a live filter chip but a reset search would filter on the raw query.
+   */
+  search: PostingsSearchSlice;
   sortBy: 'newest' | 'oldest' | 'company';
   viewMode: 'list' | 'split';
   selectedId: string | null;
@@ -338,6 +354,7 @@ const RESUME_BUILDER_DEFAULTS: ResumeBuilderSlice = {
 export function makeJobsDefaults(): JobsSlice {
   return {
     filter: '',
+    search: { state: 'idle', result: null, committedQuery: '', queryId: null },
     sortBy: 'newest',
     viewMode: 'split',
     selectedId: null,

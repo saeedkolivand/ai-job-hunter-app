@@ -52,6 +52,24 @@ describe('useResumePipelineSession — failures', () => {
       expect(result.current.error).toBe('the provider refused the request');
     });
 
+    it('reads the umbrella job message when the record flips first and recorded no reason', async () => {
+      fetchJobMock.mockResolvedValue({ status: 'failed', error: 'the provider refused the request' });
+      bus.detail = detail('failed', null);
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+
+      await waitFor(() => expect(result.current.error).toBe('the provider refused the request'));
+    });
+
+    it('keeps the localized persisted reason over the raw umbrella-job message', async () => {
+      fetchJobMock.mockResolvedValue({ status: 'failed', error: 'raw provider text' });
+      bus.detail = detail('failed', 'run_timeout');
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+
+      await waitFor(() => expect(result.current.state).toBe('error'));
+      expect(result.current.error).toContain('ran out of time');
+      expect(fetchJobMock).not.toHaveBeenCalled();
+    });
+
     it('says nothing for a failed run that recorded no reason at all', async () => {
       bus.detail = detail('failed', null);
       const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));

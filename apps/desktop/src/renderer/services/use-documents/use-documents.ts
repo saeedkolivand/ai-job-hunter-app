@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type {
   DocumentImportRequest,
@@ -25,12 +25,19 @@ export const useDocumentText = (id: string | null | undefined) => {
   });
 };
 
+/** Documents changed: the list AND the embedding status (the dashboard's "has a résumé" reads its `documents.total`). */
+const invalidateDocuments = (qc: QueryClient) =>
+  Promise.all([
+    qc.invalidateQueries({ queryKey: keys.documents.all }),
+    qc.invalidateQueries({ queryKey: keys.ai.embeddingStatus }),
+  ]);
+
 export const useImportDocument = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: DocumentImportRequest) => api.documents.import(req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.documents.all }),
+    onSuccess: () => invalidateDocuments(qc),
   });
 };
 
@@ -39,7 +46,7 @@ export const useRemoveDocument = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.documents.remove(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.documents.all }),
+    onSuccess: () => invalidateDocuments(qc),
   });
 };
 

@@ -73,9 +73,13 @@ export function ApplicationRow({
   // Applied date wins over updated: once a pursuit has left `saved`, "when did I
   // apply" is the question the row answers. Both carry the full local timestamp
   // in `title` so the relative label stays scannable without losing precision.
-  const stampAt = application.appliedAt ?? application.updatedAt;
-  const stampLabel = application.appliedAt
-    ? t('applications.row.appliedAgo', { when: formatRelative(application.appliedAt) })
+  // `appliedAt` is a one-way audit stamp (a demotion back to `saved` keeps it),
+  // so only a stage past apply may show it.
+  const preApply = APPLICATION_STAGES.find((s) => s.id === application.status)?.preApply ?? false;
+  const appliedAt = preApply ? null : application.appliedAt;
+  const stampAt = appliedAt ?? application.updatedAt;
+  const stampLabel = appliedAt
+    ? t('applications.row.appliedAgo', { when: formatRelative(appliedAt) })
     : t('applications.row.updatedAgo', { when: formatRelative(application.updatedAt) });
 
   const board = application.board.trim();

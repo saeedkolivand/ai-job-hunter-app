@@ -10,6 +10,7 @@ import {
 import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown, NumberField, Switch, useNotification } from '@ajh/ui';
 
+import { chatModels } from '@/lib/ai-providers/embedding-model';
 import { PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { useListProviderModels, useSetStageOverride } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
@@ -79,7 +80,7 @@ export function StageOverrideEditor({
   );
   const modelOptions =
     kind === 'local-server'
-      ? ollamaModels.map((m) => ({ value: m.name, label: m.name }))
+      ? chatModels(ollamaModels, model).map((m) => ({ value: m.name, label: m.name }))
       : (fetched?.models ?? []).map((m) => ({ value: m.name, label: m.displayName ?? m.name }));
   // Keep a stored selection that has fallen out of the live catalogue visible,
   // rather than showing the placeholder as if the choice had been lost.

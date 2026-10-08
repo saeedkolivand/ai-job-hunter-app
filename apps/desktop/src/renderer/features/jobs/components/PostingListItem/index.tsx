@@ -31,12 +31,6 @@ export function PostingListItem({
   const isViewed = has('opened') || has('viewed');
 
   const handleClick = () => onSelect(posting);
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      onSelect(posting);
-    }
-  };
 
   return (
     <div
@@ -44,10 +38,10 @@ export function PostingListItem({
       role="option"
       aria-selected={selected}
       // Active-descendant pattern: focus stays on the listbox container.
-      // Items are never tab stops; keyboard nav is handled by the container.
+      // Items are never tab stops; keyboard nav (incl. Enter on the active
+      // descendant) is handled by the container.
       tabIndex={-1}
       onClick={handleClick}
-      onKeyDown={handleKeyDown}
       className={cn(
         // Outer shell: fixed height for the virtualizer; relative for the abs-positioned
         // slide indicator. border-b separator on unselected rows only.
@@ -112,12 +106,12 @@ export function PostingListItem({
           {/* Line 2: company · location · time, then status markers */}
           <div
             className={cn(
-              'flex items-center gap-1.5 text-[11px]',
+              'flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px]',
               selected ? 'text-brand-soft/70' : 'text-foreground/50'
             )}
           >
-            <span className="truncate">{posting.company}</span>
-            {posting.location && <span className="shrink-0 truncate">· {posting.location}</span>}
+            <span className="min-w-0 truncate">{posting.company}</span>
+            {posting.location && <span className="min-w-0 truncate">· {posting.location}</span>}
             {posting.postedAt && (
               <span className="shrink-0">· {formatRelativeTime(posting.postedAt)}</span>
             )}
@@ -126,7 +120,7 @@ export function PostingListItem({
                 (active-descendant listbox) — chips must add no tab stops. The
                 "open other source" action lives in the detail pane instead. */}
             <ClusterSourceChips
-              className="shrink-0"
+              className="min-w-0 flex-nowrap overflow-hidden"
               members={posting.clusterMembers}
               selfKey={posting.clusterId}
               selfUrl={posting.url}

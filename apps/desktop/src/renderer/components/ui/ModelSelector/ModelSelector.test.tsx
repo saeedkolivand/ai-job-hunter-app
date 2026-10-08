@@ -71,6 +71,27 @@ describe('ModelSelector — no model selected (Ollama, model absent)', () => {
   });
 });
 
+describe('ModelSelector — embedding-only models', () => {
+  it('are not offered as chat models', () => {
+    stub.activeProviderModel = 'qwen3-embedding:4b';
+    stub.ollamaModels = [{ name: 'nomic-embed-text' }, { name: 'llama3.2' }];
+
+    renderSelector();
+
+    // The stored model is not in the list at all (and is not the filtered one).
+    expect(screen.getByText('models.modelUnavailable')).toBeInTheDocument();
+  });
+
+  it('keeps a SAVED embedding-only model visible as the current value', () => {
+    stub.activeProviderModel = 'nomic-embed-text';
+    stub.ollamaModels = [{ name: 'nomic-embed-text' }, { name: 'llama3.2' }];
+
+    renderSelector();
+
+    expect(screen.queryByText('models.modelUnavailable')).not.toBeInTheDocument();
+  });
+});
+
 describe('ModelSelector — model selected and visible (Ollama, model in available models)', () => {
   it('does NOT render the amber warning when the selected model is a visible option', () => {
     stub.activeProviderModel = 'llama3.2';

@@ -2348,6 +2348,7 @@
     "title": "Jobbörse",
     "searchPlaceholder": "Nach Titel, Unternehmen, Ort filtern…",
     "empty": "Noch keine Anzeigen. Starten Sie einen Scrape, um dieses Board zu füllen.",
+    "emptyFiltered": "Keine Anzeigen passen zu Ihrem Filter. Ändern oder löschen Sie den Filter, um die Anzeigen dieses Boards zu sehen.",
     "emptyCta": "Jobs suchen",
     "emptyNoAdzunaKeys": "Fügen Sie Ihren kostenlosen Adzuna-API-Schlüssel in den Einstellungen hinzu, um die aggregierte Jobsuche zu aktivieren.",
     "emptyNoAdzunaKeysCta": "Adzuna-Schlüssel hinzufügen",

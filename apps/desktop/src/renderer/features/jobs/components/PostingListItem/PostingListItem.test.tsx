@@ -145,27 +145,8 @@ describe('PostingListItem — click and keyboard selection', () => {
     expect(arg?.id).toBe('post-1');
   });
 
-  it('Enter key calls onSelect with the posting', () => {
-    const onSelect = vi.fn();
-    renderItem(makePosting(), { onSelect });
-
-    fireEvent.keyDown(screen.getByRole('option'), { key: 'Enter' });
-
-    expect(onSelect).toHaveBeenCalledTimes(1);
-    const arg = onSelect.mock.calls[0]?.[0] as Posting | undefined;
-    expect(arg?.id).toBe('post-1');
-  });
-
-  it('Space key calls onSelect with the posting', () => {
-    const onSelect = vi.fn();
-    renderItem(makePosting(), { onSelect });
-
-    fireEvent.keyDown(screen.getByRole('option'), { key: ' ' });
-
-    expect(onSelect).toHaveBeenCalledTimes(1);
-  });
-
-  it.each(['Tab', 'ArrowDown'])('%s key does NOT call onSelect', (key) => {
+  // Enter/Space belong to the listbox container (active descendant), not the row.
+  it.each(['Tab', 'ArrowDown', 'Enter', ' '])('%s key does NOT call onSelect', (key) => {
     const onSelect = vi.fn();
     renderItem(makePosting(), { onSelect });
 

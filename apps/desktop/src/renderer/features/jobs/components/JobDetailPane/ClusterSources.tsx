@@ -8,6 +8,16 @@ import { hostOf } from '@/components/job/host-of';
 import type { Posting } from '@/features/jobs/types';
 import { useMarkNotDuplicate, useOpenExternal } from '@/services';
 
+/** Short path hint for a member url, so two members of one board are distinguishable. */
+function pathOf(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.pathname}${u.search}`.replace(/\/$/, '');
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Cross-board cluster "All sources" (ADR-029): every member of this cluster,
  * canonical first. A non-canonical member can be split out via "Not a
@@ -71,6 +81,9 @@ export function ClusterSources({ posting }: { posting: Posting }) {
               >
                 <ExternalLink size={11} className="shrink-0 text-foreground/40" />
                 <span className="truncate">{label}</span>
+                {/* Same-board siblings read identically by label alone — the url
+                    path tells them apart (and each keeps its own split button). */}
+                <span className="truncate text-foreground/40">{pathOf(m.url)}</span>
               </Button>
               {!canonical && (
                 <Button

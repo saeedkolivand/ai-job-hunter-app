@@ -1,13 +1,16 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback } from 'react';
 
-import type { HybridSearchResult } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
-import { useMachine } from '@/hooks/use-machine';
-import { postingsSearchMachine } from '@/lib/machines/postings-search.machine';
+import { transition } from '@/lib/machine';
+import {
+  type PostingsSearchEvent,
+  postingsSearchMachine,
+} from '@/lib/machines/postings-search.machine';
 import { useCancelJob, useHybridSearch, useSetSemanticScoring } from '@/services';
 import { usePreferencesStore } from '@/store/preferences-store';
+import { type PostingsSearchSlice, useSessionStore } from '@/store/session-store';
 
 export type { PostingsSearchState } from '@/lib/machines/postings-search.machine';
 
@@ -20,6 +23,17 @@ export type { PostingsSearchState } from '@/lib/machines/postings-search.machine
  * chars, so the prefixed id stays well under the 64-char cap.
  */
 const QUERY_ID_PREFIX = 'search-';
+
+/** Applies a machine event to the session-held search slice. */
+function send(event: PostingsSearchEvent) {
+  const { jobs, setJobs } = useSessionStore.getState();
+  const state = transition(postingsSearchMachine, jobs.search.state, event);
+  setJobs({ search: { ...jobs.search, state } });
+}
+function patch(p: Partial<PostingsSearchSlice>) {
+  const { jobs, setJobs } = useSessionStore.getState();
+  setJobs({ search: { ...jobs.search, ...p } });
+}
 
 /**
  * Wires the real UX onto the minimal `useHybridSearch` mutation (see its
@@ -43,53 +57,53 @@ export function usePostingsSearch() {
   const hybridSearch = useHybridSearch();
   const cancelJob = useCancelJob();
   const syncSemanticScoring = useSetSemanticScoring();
-  const [state, send] = useMachine(postingsSearchMachine, 'idle');
-  const [result, setResult] = useState<HybridSearchResult | null>(null);
-  const [committedQuery, setCommittedQuery] = useState('');
-  const latestQueryIdRef = useRef<string | null>(null);
-  const lastQueryRef = useRef('');
+  const { state, result, committedQuery } = useSessionStore((s) => s.jobs.search);
 
   const search = useCallback(
     (query: string, eligibleIds: string[]) => {
       const trimmed = query.trim();
       if (!trimmed) return;
-      const previousQueryId = latestQueryIdRef.current;
+      const previousQueryId = useSessionStore.getState().jobs.search.queryId;
       const queryId = `${QUERY_ID_PREFIX}${crypto.randomUUID()}`;
-      latestQueryIdRef.current = queryId;
-      lastQueryRef.current = trimmed;
-      setCommittedQuery(trimmed);
+      patch({ queryId, committedQuery: trimmed });
       send('SUBMIT');
       // Best-effort, fire-and-forget: the superseded search keeps
       // embedding/reranking in Rust either way (the invoke promise isn't
       // abortable) — this only stops it sooner. Never blocks the new search.
       if (previousQueryId) void cancelJob.mutateAsync(previousQueryId).catch(() => {});
-      hybridSearch.mutate(
-        { queryId, query: trimmed, eligibleIds, limit: 20 },
-        {
-          onSuccess: (data, variables) => {
-            if (variables.queryId !== latestQueryIdRef.current) return; // superseded
-            if (data.outcome === 'cancelled') return; // superseded by design — never surfaced
-            setResult(data);
-            if (data.outcome === 'staleCorpus') send('SETTLED_STALE');
-            else if (data.hits.length === 0) send('SETTLED_EMPTY');
-            else send('SETTLED_RESULTS');
-          },
-          onError: (_err, variables) => {
-            if (variables.queryId !== latestQueryIdRef.current) return; // superseded
-            send('FAILED');
-          },
-        }
-      );
+      // `mutateAsync` (not `mutate` callbacks): those are dropped when the page
+      // unmounts, which would strand the stored state on 'searching'.
+      const superseded = () => useSessionStore.getState().jobs.search.queryId !== queryId;
+      hybridSearch
+        .mutateAsync({ queryId, query: trimmed, eligibleIds, limit: 20 })
+        .then((data) => {
+          if (superseded()) return;
+          if (data.outcome === 'cancelled') {
+            // Cancelled backend-side while still the CURRENT search: nothing will
+            // follow, so don't strand the state on 'searching'.
+            patch({ queryId: null, committedQuery: '' });
+            send('CLEAR');
+            return;
+          }
+          patch({ result: data });
+          if (data.outcome === 'staleCorpus') send('SETTLED_STALE');
+          else if (data.hits.length === 0) send('SETTLED_EMPTY');
+          else send('SETTLED_RESULTS');
+        })
+        .catch(() => {
+          if (!superseded()) send('FAILED');
+        });
     },
-    [hybridSearch, cancelJob, send]
+    [hybridSearch, cancelJob]
   );
 
   /** Re-issue the last committed query — used by the stale/error retry action
    *  and by {@link enableSemanticRanking} once the preference flips. */
   const retry = useCallback(
     (eligibleIds: string[]) => {
-      if (!lastQueryRef.current) return;
-      search(lastQueryRef.current, eligibleIds);
+      const last = useSessionStore.getState().jobs.search.committedQuery;
+      if (!last) return;
+      search(last, eligibleIds);
     },
     [search]
   );
@@ -97,14 +111,11 @@ export function usePostingsSearch() {
   /** Dismiss the active search (e.g. "Clear search") — reverts the caller to
    *  instant substring filtering without touching the typed text itself. */
   const clear = useCallback(() => {
-    const previousQueryId = latestQueryIdRef.current;
-    latestQueryIdRef.current = null;
-    lastQueryRef.current = '';
-    setCommittedQuery('');
-    setResult(null);
+    const previousQueryId = useSessionStore.getState().jobs.search.queryId;
+    patch({ queryId: null, committedQuery: '', result: null });
     send('CLEAR');
     if (previousQueryId) void cancelJob.mutateAsync(previousQueryId).catch(() => {});
-  }, [cancelJob, send]);
+  }, [cancelJob]);
 
   /**
    * One-click remediation for the most common degraded case

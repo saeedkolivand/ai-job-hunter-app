@@ -102,7 +102,7 @@ export function LetterLayoutPicker({ value, onChange, className }: LetterLayoutP
         // tabindex keeps the selected option as the sole tab stop.
         tabIndex={-1}
         aria-label={t('aiGenerate.letterLayout')}
-        className="flex flex-col gap-1.5"
+        className="grid grid-cols-2 gap-1.5 sm:grid-cols-3"
         onKeyDown={makeRovingTabindex(LETTER_LAYOUT_IDS, selected, onChange, optionRefs)}
       >
         {LAYOUTS.map((layout, i) => {
@@ -121,7 +121,7 @@ export function LetterLayoutPicker({ value, onChange, className }: LetterLayoutP
               onClick={() => onChange(layout.id)}
               data-testid={`${TEST_IDS.generation.letterLayoutOption}-${layout.id}`}
               className={cn(
-                'flex h-auto items-start gap-2.5 rounded-xl border px-3 py-2 text-left transition-all focus-visible:ring-2 focus-visible:ring-brand/50',
+                'flex h-auto min-w-0 items-start gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-all focus-visible:ring-2 focus-visible:ring-brand/50',
                 active
                   ? 'border-brand/50 bg-brand/10'
                   : 'border-[var(--border-clear)] bg-card hover:bg-muted'
@@ -141,7 +141,10 @@ export function LetterLayoutPicker({ value, onChange, className }: LetterLayoutP
                 >
                   {t(layout.labelKey)}
                 </span>
-                <span className="mt-0.5 text-[10px] leading-tight text-foreground/40">
+                <span
+                  title={t(layout.descKey)}
+                  className="mt-0.5 truncate text-[10px] leading-tight text-foreground/40"
+                >
                   {t(layout.descKey)}
                 </span>
               </span>
