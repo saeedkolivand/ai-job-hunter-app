@@ -113,6 +113,31 @@ describe('JobsSplitView — ArrowDown/ArrowUp navigation', () => {
     expect(mockScrollToIndex).toHaveBeenCalledWith(index, { align: 'auto' });
   });
 
+  it('keeps DOM focus on the listbox after a row click and each key (End, Home, Enter keep working)', async () => {
+    renderSplit();
+    const listbox = screen.getByRole('listbox');
+    const row = screen.getByTestId('list-item-b');
+
+    await act(async () => {
+      row.focus();
+      fireEvent.click(row);
+    });
+    expect(listbox).toHaveFocus();
+
+    // Simulate virtualisation dropping focus to the row, then End/Home.
+    await act(async () => {
+      row.focus();
+    });
+    await pressKey('End');
+    expect(selectedId()).toBe('c');
+    expect(listbox).toHaveFocus();
+    await pressKey('Home');
+    expect(selectedId()).toBe('a');
+    expect(listbox).toHaveFocus();
+    await pressKey('Enter');
+    expect(selectedId()).toBe('a');
+  });
+
   it('other keys (e.g. Tab) do not move selection or scroll', async () => {
     await selectJob('b');
     renderSplit();

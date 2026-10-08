@@ -1,8 +1,6 @@
 /**
- * JobPipelineOverview — "Total tracked" tile must not count `dismissed`
- * interactions (a dismissal is the user explicitly rejecting a job — the
- * opposite of tracking it), and the zero-state must still fire once every
- * remaining interaction is a dismissal.
+ * JobPipelineOverview — Saved / Applied / Total come from the `applications`
+ * table (same source as the Applications page); Viewed stays on interactions.
  */
 
 import type { ReactNode } from 'react';
@@ -30,55 +28,55 @@ vi.mock('lucide-react', async (importOriginal) => ({
   TrendingUp: () => null,
 }));
 
-type Row = { interactionType: string };
+type App = { status: string };
 
-let mockAll: Row[] = [];
+let mockApps: App[] = [];
+let mockViewed: unknown[] = [];
 
 vi.mock('@/services', () => ({
-  useInteractions: (type?: string) => {
-    if (!type) return { data: mockAll };
-    return { data: mockAll.filter((r) => r.interactionType === type) };
-  },
+  useApplications: () => ({ data: mockApps }),
+  useInteractions: () => ({ data: mockViewed }),
 }));
 
 import { JobPipelineOverview } from './index';
 
-describe('JobPipelineOverview — totalTracked excludes dismissed', () => {
-  it('does not count a dismissed record toward "Total tracked"', () => {
-    mockAll = [{ interactionType: 'viewed' }, { interactionType: 'dismissed' }];
+const tile = (label: string) => screen.getByText(label).previousElementSibling?.textContent;
+
+describe('JobPipelineOverview — counts come from applications', () => {
+  it('derives Saved / Applied / Total from the applications list, not interactions', () => {
+    mockApps = [
+      { status: 'saved' },
+      { status: 'saved' },
+      { status: 'applied' },
+      { status: 'rejected' },
+      { status: 'interviewing' },
+    ];
+    mockViewed = [{}, {}, {}];
     render(<JobPipelineOverview />);
 
-    // Both the "viewed" stat and "Total tracked" read 1 (the dismissed record
-    // excluded from the total) — if dismissed were still counted, the total
-    // would read 2 and no '2' would exist anywhere in the grid otherwise.
-    expect(screen.getAllByText('1')).toHaveLength(2);
-    expect(screen.queryByText('2')).not.toBeInTheDocument();
-  });
-
-  it('still shows the empty state when every interaction present is a dismissal', () => {
-    mockAll = [{ interactionType: 'dismissed' }, { interactionType: 'dismissed' }];
-    render(<JobPipelineOverview />);
-
-    expect(screen.getByText('dashboard.noJobsTracked')).toBeInTheDocument();
-  });
-
-  it('does NOT show the empty state when a non-dismissed interaction exists', () => {
-    mockAll = [{ interactionType: 'dismissed' }, { interactionType: 'bookmarked' }];
-    render(<JobPipelineOverview />);
-
+    expect(tile('dashboard.savedJobs')).toBe('2');
+    expect(tile('dashboard.applied')).toBe('1');
+    expect(tile('dashboard.viewed')).toBe('3');
+    expect(tile('dashboard.totalTracked')).toBe('5');
     expect(screen.queryByText('dashboard.noJobsTracked')).not.toBeInTheDocument();
   });
 
-  it('counts viewed, opened, applied AND bookmarked toward the total', () => {
-    mockAll = [
-      { interactionType: 'viewed' },
-      { interactionType: 'opened' },
-      { interactionType: 'applied' },
-      { interactionType: 'bookmarked' },
-      { interactionType: 'dismissed' },
-    ];
+  it('counts applications even when there are ZERO interactions', () => {
+    mockApps = [{ status: 'saved' }, { status: 'applied' }, { status: 'applied' }];
+    mockViewed = [];
     render(<JobPipelineOverview />);
 
-    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(tile('dashboard.savedJobs')).toBe('1');
+    expect(tile('dashboard.applied')).toBe('2');
+    expect(tile('dashboard.totalTracked')).toBe('3');
+  });
+
+  it('shows the empty state when there are no applications', () => {
+    mockApps = [];
+    mockViewed = [];
+    render(<JobPipelineOverview />);
+
+    expect(tile('dashboard.totalTracked')).toBe('0');
+    expect(screen.getByText('dashboard.noJobsTracked')).toBeInTheDocument();
   });
 });

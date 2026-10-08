@@ -16,6 +16,12 @@ const KIND_SHORT: Record<string, string> = {
   'autopilot.run': 'Autopilot',
 };
 
+const STATUS_KEY: Partial<Record<JobRecord['status'], string>> = {
+  queued: 'monitoring.activity.queued',
+  running: 'monitoring.metrics.running',
+  streaming: 'monitoring.timeLabels.streaming',
+};
+
 interface Props {
   job: JobRecord;
   kindLabel: Record<string, string>;
@@ -47,7 +53,7 @@ export function ActiveJobRow({ job, kindLabel, t }: Props) {
             isStreaming ? 'text-blue-400' : 'text-foreground/40'
           )}
         >
-          {isStreaming ? t('monitoring.timeLabels.streaming') : job.status}
+          {t(STATUS_KEY[job.status] ?? 'monitoring.metrics.running')}
         </span>
       </div>
       {job.progress > 0 && (

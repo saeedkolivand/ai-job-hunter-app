@@ -22,14 +22,14 @@
     },
     "dashboard": "Übersicht",
     "analyze": "Lebenslauf-Analyse",
-    "generate": "KI-Generator",
+    "generate": "KI-Generierung",
     "build": "Lebenslauf-Builder",
     "jobs": "Jobs",
     "autopilot": "Autopilot",
     "bestMatches": "Beste Treffer",
     "documents": "Dokumente",
     "resumes": "Lebensläufe",
-    "monitoring": "Monitoring",
+    "monitoring": "Überwachung",
     "support": "Hilfe & Support",
     "settings": "Einstellungen",
     "applications": "Bewerbungen",
@@ -1209,6 +1209,9 @@
       "uploadFailed": "Upload fehlgeschlagen",
       "removed": "Lebenslauf entfernt",
       "removeFailed": "Entfernen fehlgeschlagen",
+      "deleteTitle": "Lebenslauf löschen?",
+      "deleteDescription": "„{{title}}“ wird dauerhaft entfernt. Dies kann nicht rückgängig gemacht werden.",
+      "delete": "Löschen",
       "setDefault": "Als Standard setzen",
       "download": "Lebenslauf herunterladen",
       "downloaded": "Lebenslauf heruntergeladen",
@@ -2855,7 +2858,7 @@
       "gettingStartedQuestions": {
         "firstSteps": {
           "q": "Was sollte ich zuerst tun?",
-          "a": "Beginnen Sie mit einem Lebenslauf: Der Schritt \"Lebenslauf hochladen\" im Einrichtungsassistenten nimmt einen entgegen, oder Sie fügen ihn später unter Einstellungen → Lebenslauf → \"Lebenslaufverwaltung\" hinzu. Wählen Sie dann unter Einstellungen → KI → \"Aktiver Anbieter\" ein Modell — Generierung, Analyse und KI-Notizen bleiben blockiert, bis eines funktioniert. Öffnen Sie als Nächstes Jobs und klicken Sie auf \"Jobs scrapen\". Bei einer Stellenanzeige verfolgt \"Speichern\" diese als Bewerbung; \"Anpassen\" speichert sie ebenso und öffnet anschließend den Tab \"Dokumente\" dieser Bewerbung. Um einen angepassten Lebenslauf oder ein Anschreiben zu schreiben, öffnen Sie \"KI-Generator\" in der Seitenleiste; das Ergebnis verfolgen Sie auf der Seite Bewerbungen."
+          "a": "Beginnen Sie mit einem Lebenslauf: Der Schritt \"Lebenslauf hochladen\" im Einrichtungsassistenten nimmt einen entgegen, oder Sie fügen ihn später unter Einstellungen → Lebenslauf → \"Lebenslaufverwaltung\" hinzu. Wählen Sie dann unter Einstellungen → KI → \"Aktiver Anbieter\" ein Modell — Generierung, Analyse und KI-Notizen bleiben blockiert, bis eines funktioniert. Öffnen Sie als Nächstes Jobs und klicken Sie auf \"Jobs scrapen\". Bei einer Stellenanzeige verfolgt \"Speichern\" diese als Bewerbung; \"Anpassen\" speichert sie ebenso und öffnet anschließend den Tab \"Dokumente\" dieser Bewerbung. Um einen angepassten Lebenslauf oder ein Anschreiben zu schreiben, öffnen Sie \"KI-Generierung\" in der Seitenleiste; das Ergebnis verfolgen Sie auf der Seite Bewerbungen."
         },
         "noResumeYet": {
           "q": "Ich habe noch keinen Lebenslauf — was kann ich verwenden?",

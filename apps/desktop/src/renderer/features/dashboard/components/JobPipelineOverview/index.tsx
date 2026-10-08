@@ -3,34 +3,31 @@ import { Bookmark, Briefcase, CheckCircle, Eye, TrendingUp } from 'lucide-react'
 import { useTranslation } from '@ajh/translations';
 import { GlassCard } from '@ajh/ui';
 
-import { TRACKED_INTERACTION_TYPES } from '@/constants/interactions';
-import { useInteractions } from '@/services';
+import { pipelineCounts } from '@/lib/application-pipeline';
+import { useApplications, useInteractions } from '@/services';
 
 export function JobPipelineOverview() {
   const { t } = useTranslation();
 
-  const { data: bookmarked = [] } = useInteractions('bookmarked');
-  const { data: applied = [] } = useInteractions('applied');
+  // Saved / Applied / Total come from the `applications` table — the same
+  // source and `pipelineCounts` the Applications page uses — so the two never
+  // disagree (extension imports write applications only). "Viewed" has no
+  // application stage, so it stays on the interactions log.
+  const { data: applications = [] } = useApplications();
   const { data: viewed = [] } = useInteractions('viewed');
-  const { data: allInteractions = [] } = useInteractions();
-
-  // `useInteractions()` (no filter) returns every interaction regardless of
-  // type — including `dismissed`, which is not tracking, it's the opposite.
-  const trackedInteractions = (allInteractions as { interactionType?: string }[]).filter((i) =>
-    TRACKED_INTERACTION_TYPES.has(i.interactionType ?? '')
-  );
+  const counts = pipelineCounts(applications);
 
   const stats = [
     {
       label: t('dashboard.savedJobs'),
-      value: (bookmarked as unknown[]).length,
+      value: counts.saved,
       icon: Bookmark,
       color: 'text-blue-400',
       bg: 'bg-blue-400/10',
     },
     {
       label: t('dashboard.applied'),
-      value: (applied as unknown[]).length,
+      value: counts.applied,
       icon: CheckCircle,
       color: 'text-emerald-400',
       bg: 'bg-emerald-400/10',
@@ -44,7 +41,7 @@ export function JobPipelineOverview() {
     },
     {
       label: t('dashboard.totalTracked'),
-      value: trackedInteractions.length,
+      value: applications.length,
       icon: TrendingUp,
       color: 'text-purple-400',
       bg: 'bg-purple-400/10',
@@ -76,7 +73,7 @@ export function JobPipelineOverview() {
         })}
       </div>
 
-      {trackedInteractions.length === 0 && (
+      {applications.length === 0 && (
         <p className="mt-3 text-center text-xs text-muted-foreground">
           {t('dashboard.noJobsTracked')}
         </p>

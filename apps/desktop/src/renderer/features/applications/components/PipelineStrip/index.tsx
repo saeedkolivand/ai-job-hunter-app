@@ -6,12 +6,8 @@ import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn } from '@ajh/ui';
 
-import {
-  overdueCount,
-  PIPELINE_GROUPS,
-  pipelineCounts,
-  type PipelineGroupId,
-} from '@/features/applications/lib/pipeline';
+import { overdueCount } from '@/features/applications/lib/pipeline';
+import { PIPELINE_GROUPS, pipelineCounts, type PipelineGroupId } from '@/lib/application-pipeline';
 
 interface PipelineStripProps {
   /** The full (unfiltered) list — counts always describe every application. */

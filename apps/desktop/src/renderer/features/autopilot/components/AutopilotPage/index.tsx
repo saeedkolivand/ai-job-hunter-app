@@ -69,9 +69,10 @@ function AutopilotPage() {
     // #44 — kick off the first run immediately after *creating* a new autopilot
     // (not when editing an existing one). Read editingId before resetWizard
     // clears it. handleRun surfaces a friendly inline error if no browser.
+    // A 'manual' autopilot runs only when the user presses Run (#1397).
     const wasCreate = autopilot.editingId === null;
     resetWizard();
-    if (wasCreate) void handleRun(ap._id);
+    if (wasCreate && ap.schedule !== 'manual') void handleRun(ap._id);
   };
 
   const handleEdit = (ap: Autopilot) => {

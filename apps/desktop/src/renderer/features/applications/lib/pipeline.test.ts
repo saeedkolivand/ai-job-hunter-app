@@ -2,14 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type Application, APPLICATION_STAGES } from '@ajh/shared';
 
-import {
-  overdueCount,
-  PIPELINE_GROUPS,
-  pipelineCounts,
-  sortApplications,
-  stagesForGroup,
-  toApplicationSort,
-} from './pipeline';
+import { PIPELINE_GROUPS, pipelineCounts } from '@/lib/application-pipeline';
+
+import { overdueCount, sortApplications, stagesForGroup, toApplicationSort } from './pipeline';
 
 function makeApp(overrides: Partial<Application>): Application {
   return {

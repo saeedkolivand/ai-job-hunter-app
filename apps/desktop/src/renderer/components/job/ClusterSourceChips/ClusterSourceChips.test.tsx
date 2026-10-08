@@ -153,3 +153,16 @@ describe('ClusterSourceChips', () => {
     expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 });
+
+describe('ClusterSourceChips — layout never wraps/clips the label or chips', () => {
+  it('label is shrink-0 + nowrap, group is min-w-0, non-interactive chips are shrink-0', () => {
+    const { container } = render(
+      <ClusterSourceChips members={MEMBERS} selfKey="k1" interactive={false} />
+    );
+    expect(container.firstElementChild).toHaveClass('min-w-0');
+    expect(screen.getByText('jobs.cluster.alsoOn')).toHaveClass('shrink-0', 'whitespace-nowrap');
+    for (const chip of screen.getAllByTestId(TEST_IDS.jobs.clusterSourceChip)) {
+      expect(chip).toHaveClass('shrink-0');
+    }
+  });
+});

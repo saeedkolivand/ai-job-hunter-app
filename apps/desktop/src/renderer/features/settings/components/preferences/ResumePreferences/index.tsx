@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 
 import type { ContactFieldConflict, DocumentRecord } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, cn, GlassCard, transition, useNotification } from '@ajh/ui';
+import { Button, cn, ConfirmModal, GlassCard, transition, useNotification } from '@ajh/ui';
 
 import { ContactConflictModal } from '@/components/contact/ContactConflictModal';
 import { ProfileUrlImport } from '@/components/resume/ProfileUrlImport';
@@ -25,6 +25,10 @@ export function ResumePreferences() {
   const removeDocument = useRemoveDocument();
   const setDefaultDocument = useSetDefaultDocument();
 
+  // `deleteOpen` gates the modal; `pendingDelete` is kept after close so the
+  // description doesn't blank during the exit animation.
+  const [pendingDelete, setPendingDelete] = useState<DocumentRecord | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -80,6 +84,8 @@ export function ResumePreferences() {
       notify.success({ message: t('settings.resume.removed') });
     } catch {
       notify.error({ message: t('settings.resume.removeFailed') });
+    } finally {
+      setDeleteOpen(false);
     }
   };
 
@@ -256,8 +262,12 @@ export function ResumePreferences() {
                   </Button>
                   <Button
                     variant="ghost"
-                    onClick={() => void handleDelete(doc.id)}
+                    onClick={() => {
+                      setPendingDelete(doc);
+                      setDeleteOpen(true);
+                    }}
                     disabled={removeDocument.isPending}
+                    aria-label={t('settings.resume.delete')}
                     className="h-8 w-8 p-0 text-foreground/30 hover:text-red-400"
                   >
                     <Trash2 size={13} />
@@ -268,6 +278,17 @@ export function ResumePreferences() {
           })}
         </div>
       )}
+
+      <ConfirmModal
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={() => pendingDelete && void handleDelete(pendingDelete.id)}
+        title={t('settings.resume.deleteTitle')}
+        description={t('settings.resume.deleteDescription', { title: pendingDelete?.title ?? '' })}
+        confirmText={t('settings.resume.delete')}
+        variant="danger"
+        isConfirming={removeDocument.isPending}
+      />
 
       <ContactConflictModal
         key={importKey}

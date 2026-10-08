@@ -48,6 +48,9 @@ export function JobsSplitView({
 
   const handleSelect = (posting: Posting) => {
     setJobs({ selectedId: posting.id });
+    // A clicked row takes DOM focus; virtualisation may later unmount it and
+    // drop focus to <body>. Hand focus back to the listbox container.
+    listScrollRef.current?.focus();
   };
 
   // Deferred focus-restore for the Back button on narrow screens:
@@ -120,6 +123,7 @@ export function JobsSplitView({
       const next = display[nextIndex];
       if (!next) return;
       setJobs({ selectedId: next.id });
+      e.currentTarget.focus();
       virtualizer.scrollToIndex(nextIndex, { align: 'auto' });
     },
     [display, selectedId, setJobs, virtualizer]

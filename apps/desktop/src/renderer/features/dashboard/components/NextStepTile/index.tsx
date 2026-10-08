@@ -78,8 +78,8 @@ export function NextStepTile() {
 
   // Interactions ONLY, filtered by the same allowlist the pipeline card counts
   // with — a `dismissed` posting is the opposite of a tracked one, and the two
-  // surfaces sit inches apart. Applications are deliberately NOT consulted:
-  // `useApplications()` ships every application's full job description onto the
+  // surfaces sit inches apart. THIS tile deliberately does not consult
+  // applications (the pipeline card does, for its counts): `useApplications()` ships every application's full job description onto the
   // home route to answer one boolean, and the app-global `applications:changed`
   // listener would re-fetch all of it while the user just sits on the
   // Dashboard. The cost of leaving it out is that a job tracked by hand or by

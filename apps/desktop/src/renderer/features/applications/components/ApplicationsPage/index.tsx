@@ -24,11 +24,11 @@ import { StatusNoteModal } from '@/features/applications/components/StatusNoteMo
 import { TrackJobModal } from '@/features/applications/components/TrackJobModal';
 import {
   APPLICATION_SORTS,
-  PIPELINE_GROUPS,
   sortApplications,
   stagesForGroup,
   toApplicationSort,
 } from '@/features/applications/lib/pipeline';
+import { PIPELINE_GROUPS } from '@/lib/application-pipeline';
 import { Route } from '@/routes/applications.index';
 import { useApplications, useSetApplicationStatus } from '@/services/use-applications';
 import { useSessionStore } from '@/store/session-store';
@@ -188,7 +188,7 @@ export function ApplicationsPage() {
         : '';
 
   const actions = (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <Input
         prefix={<Search size={12} />}
         value={filter}

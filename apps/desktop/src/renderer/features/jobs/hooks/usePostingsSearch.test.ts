@@ -256,7 +256,7 @@ describe('usePostingsSearch', () => {
     expect(queryId.length).toBeLessThanOrEqual(64);
   });
 
-  it('clear() resets to idle and cancels any in-flight search without touching the last query text', async () => {
+  it('clear() resets to idle, cancels any in-flight search and clears the typed filter text', async () => {
     let resolveSearch: (v: unknown) => void = () => {};
     const hybridSearch = vi.fn().mockImplementation(
       () =>
@@ -267,10 +267,12 @@ describe('usePostingsSearch', () => {
     const cancel = vi.fn().mockResolvedValue({ success: true });
     const { result } = setup({ 'scrape.hybridSearch': hybridSearch, 'jobs.cancel': cancel });
 
+    useSessionStore.getState().setJobs({ filter: 'engineer' });
     act(() => result.current.search('engineer', []));
     expect(result.current.state).toBe('searching');
 
     act(() => result.current.clear());
+    expect(useSessionStore.getState().jobs.filter).toBe('');
     expect(result.current.state).toBe('idle');
     expect(result.current.committedQuery).toBe('');
     await waitFor(() => expect(cancel).toHaveBeenCalled());

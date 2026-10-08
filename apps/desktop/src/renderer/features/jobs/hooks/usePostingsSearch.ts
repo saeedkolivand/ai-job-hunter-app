@@ -108,12 +108,13 @@ export function usePostingsSearch() {
     [search]
   );
 
-  /** Dismiss the active search (e.g. "Clear search") — reverts the caller to
-   *  instant substring filtering without touching the typed text itself. */
+  /** Dismiss the active search (e.g. "Clear search") AND the typed filter text
+   *  (the "Search: …" chip), so the full list is restored. */
   const clear = useCallback(() => {
     const previousQueryId = useSessionStore.getState().jobs.search.queryId;
     patch({ queryId: null, committedQuery: '', result: null });
     send('CLEAR');
+    useSessionStore.getState().setJobs({ filter: '' });
     if (previousQueryId) void cancelJob.mutateAsync(previousQueryId).catch(() => {});
   }, [cancelJob]);
 

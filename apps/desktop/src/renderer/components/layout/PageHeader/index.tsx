@@ -13,8 +13,8 @@ interface PageHeaderProps {
 export function PageHeader({ title, subtitle, badge, actions, className }: PageHeaderProps) {
   return (
     <div className={cn('mb-8', className)}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-1 basis-64">
           {badge && (
             <div className="mb-2 inline-flex items-center rounded-full bg-brand-soft/10 px-3 py-1 text-xs font-medium text-brand-soft">
               {badge}
@@ -23,7 +23,7 @@ export function PageHeader({ title, subtitle, badge, actions, className }: PageH
           <h1 className="text-gradient text-3xl font-bold tracking-tight">{title}</h1>
           {subtitle && <p className="mt-2 max-w-2xl text-sm text-foreground/55">{subtitle}</p>}
         </div>
-        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
     </div>
   );

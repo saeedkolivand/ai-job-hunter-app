@@ -58,8 +58,10 @@ export function ClusterSourceChips({
   if (others.length === 0) return null;
 
   return (
-    <span className={cn('inline-flex flex-wrap items-center gap-1.5', className)}>
-      <span className="text-fine-print text-foreground/45">{t('jobs.cluster.alsoOn')}</span>
+    <span className={cn('inline-flex min-w-0 flex-wrap items-center gap-1.5', className)}>
+      <span className="shrink-0 whitespace-nowrap text-fine-print text-foreground/45">
+        {t('jobs.cluster.alsoOn')}
+      </span>
       {others.map(({ members: grouped }) => {
         const m = grouped[0] as ClusterMember;
         const count = grouped.length;
@@ -70,7 +72,9 @@ export function ClusterSourceChips({
         const badge = (
           <>
             <SourceBadge source={boardId ?? label} />
-            {count > 1 && <span className="ml-0.5 text-fine-print text-foreground/55">×{count}</span>}
+            {count > 1 && (
+              <span className="ml-0.5 text-fine-print text-foreground/55">×{count}</span>
+            )}
           </>
         );
 
@@ -81,7 +85,7 @@ export function ClusterSourceChips({
             <span
               key={m.key}
               data-testid={TEST_IDS.jobs.clusterSourceChip}
-              className="inline-flex items-center"
+              className="inline-flex shrink-0 items-center whitespace-nowrap"
             >
               {badge}
             </span>
