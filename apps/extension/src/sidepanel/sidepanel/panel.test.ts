@@ -402,3 +402,17 @@ describe('first-time confirmation with no origin yet (#1249)', () => {
     expect(docDeps.currentHost?.()).toBe('jobs.example.com');
   });
 });
+
+describe('applied-check parity with the popup', () => {
+  it('feeds every job-status outcome into the job tools (Import label + applied box)', () => {
+    const onResult = vi.mocked(mountJobStatus).mock.calls[0]?.[1].onResult;
+    const tools = vi.mocked(mountJobTools).mock.results[0]?.value;
+    const res = {
+      ok: true,
+      kind: 'appliedCheck',
+      result: { found: true, status: 'applied' },
+    } as never;
+    onResult?.(res);
+    expect(tools.applyAppliedCheck).toHaveBeenCalledWith(res);
+  });
+});

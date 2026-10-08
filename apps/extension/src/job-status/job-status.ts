@@ -88,6 +88,9 @@ export function resolveJobStatusView(res: PopupResponse): JobStatusView | null {
 
 export interface JobStatusDeps {
   send: (req: PopupRequest) => Promise<PopupResponse>;
+  /** Called with every `appliedCheck` outcome (`null` on reset/failure), so a
+   *  sibling view (the job tools' Import label) can follow the same check. */
+  onResult?: (res: PopupResponse | null) => void;
 }
 
 export interface JobStatusHandle {
@@ -150,6 +153,7 @@ export function mountJobStatus(host: HTMLElement, deps: JobStatusDeps): JobStatu
     generation += 1;
     card.hidden = true;
     card.replaceChildren();
+    deps.onResult?.(null);
   }
 
   async function refresh(): Promise<void> {
@@ -163,6 +167,7 @@ export function mountJobStatus(host: HTMLElement, deps: JobStatusDeps): JobStatu
       const view = resolveJobStatusView(res);
       if (view) render(view);
       else reset();
+      deps.onResult?.(res);
     } catch {
       if (myGeneration !== generation) return;
       reset();

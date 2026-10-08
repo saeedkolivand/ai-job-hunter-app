@@ -63,3 +63,23 @@ fn the_ats_slug_company_is_percent_decoded() {
     let p = parse_from_html("https://job-boards.greenhouse.io/acme%20labs/jobs/1", html).unwrap();
     assert_eq!(p.company, "acme labs");
 }
+
+#[test]
+fn parse_from_html_marks_a_page_with_its_own_job_posting_json_ld() {
+    let ld = r#"<script type="application/ld+json">{"@type":"JobPosting","title":"Dev","hiringOrganization":{"name":"Acme"}}</script>"#;
+    let with = parse_from_html(
+        "https://acme.example/x",
+        &format!("<html><head>{ld}</head></html>"),
+    )
+    .unwrap();
+    assert_eq!(
+        with.extra.get("company_src"),
+        Some(&serde_json::json!("jsonld"))
+    );
+    let without = parse_from_html(
+        "https://acme.example/x",
+        "<html><head><title>Dev</title></head></html>",
+    )
+    .unwrap();
+    assert!(!without.extra.contains_key("company_src"));
+}

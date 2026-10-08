@@ -224,3 +224,143 @@ fn canonical_branch_hint_scoped_fallback_ignores_unrelated_whole_document_json_l
         "the merged posting must never be the unrelated list-shell job"
     );
 }
+
+fn url_posting(url: &str, desc: Option<&str>) -> crate::scraping::types::JobPosting {
+    let mut p = sample_posting(url, "Co", "Title");
+    p.source = "url".into();
+    p.description = desc.map(str::to_string);
+    p
+}
+
+#[test]
+fn looks_like_job_refuses_a_generic_page_with_no_signal() {
+    let p = url_posting(
+        "https://example.com/",
+        Some("This domain is for use in examples."),
+    );
+    assert!(!looks_like_job(
+        &p,
+        Some("<html><title>Example Domain</title></html>"),
+        false
+    ));
+    // Wikipedia-article-shaped: og:site_name makes company differ from the host,
+    // long prose, no job words.
+    let mut wiki = url_posting(
+        "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+        Some(&"Rust is a general-purpose language emphasising performance. ".repeat(10)),
+    );
+    wiki.title = "Rust (programming language) - Wikipedia".into();
+    wiki.company = "Wikipedia".into();
+    assert!(!looks_like_job(&wiki, None, false));
+}
+
+#[test]
+fn looks_like_job_matches_whole_words_not_substrings() {
+    // "joint", "composition", "appliance", "poster" must not count as job words.
+    let mut p = url_posting(
+        "https://acme.example/joint-composition",
+        Some("A poster of an appliance."),
+    );
+    p.title = "Joint composition poster appliance".into();
+    assert!(!looks_like_job(&p, None, false));
+    // Description needs two DISTINCT stems; one repeated stem is not enough.
+    let one = format!("{} job job job", "lorem ipsum ".repeat(60));
+    assert!(!looks_like_job(
+        &url_posting("https://acme.example/x", Some(&one)),
+        None,
+        false
+    ));
+    let two = format!("{} job apply today", "lorem ipsum ".repeat(60));
+    assert!(looks_like_job(
+        &url_posting("https://acme.example/x", Some(&two)),
+        None,
+        false
+    ));
+    // Plural whole word in the path.
+    assert!(looks_like_job(
+        &url_posting("https://acme.example/jobs/9", None),
+        None,
+        false
+    ));
+}
+
+#[test]
+fn looks_like_job_accepts_schema_board_embedded_and_jsonld_marker() {
+    let p = url_posting("https://acme.example/x", None);
+    assert!(looks_like_job(
+        &p,
+        Some(r#"<script>{"@type":"JobPosting"}</script>"#),
+        false
+    ));
+    assert!(looks_like_job(
+        &sample_posting("https://acme.example/x", "Co", "T"),
+        None,
+        false
+    ));
+    // URL mode, no html: the generic parser's JSON-LD marker, short description.
+    let mut jl = url_posting("https://acme.example/x", Some("Short."));
+    jl.extra
+        .insert("company_src".into(), serde_json::json!("jsonld"));
+    assert!(looks_like_job(&jl, None, false));
+    // Embedded ATS board wrapper is never refused (mutation: drop `embedded ||`).
+    assert!(looks_like_job(
+        &url_posting("https://acme.example/", None),
+        None,
+        true
+    ));
+}
+
+#[test]
+fn looks_like_job_accepts_multilingual_careers_pages() {
+    let long = "lorem ipsum ".repeat(60);
+    assert!(looks_like_job(
+        &url_posting("https://acme.example/careers/42", Some(&long)),
+        None,
+        false
+    ));
+    assert!(looks_like_job(
+        &url_posting("https://acme.example/karriere/dev", Some("Kurz")),
+        None,
+        false
+    ));
+    assert!(looks_like_job(
+        &url_posting("https://acme.example/emploi/12", None),
+        None,
+        false
+    ));
+    let de = format!("{long} Ihre Aufgaben: Backend entwickeln. Bewerbung per Mail.");
+    assert!(looks_like_job(
+        &url_posting("https://acme.example/x", Some(&de)),
+        None,
+        false
+    ));
+    let mut t = url_posting("https://acme.example/x", None);
+    t.title = "Stellenangebot Entwickler".into();
+    assert!(looks_like_job(&t, None, false));
+    // Stem in a short description alone is not enough.
+    assert!(!looks_like_job(
+        &url_posting("https://acme.example/x", Some("Aufgaben")),
+        None,
+        false
+    ));
+}
+
+#[test]
+fn require_job_signal_returns_the_refusal_message() {
+    let p = url_posting("https://example.com/", None);
+    let err = require_job_signal(&p, None, false).unwrap_err();
+    assert_eq!(err.to_string(), NOT_A_JOB_MSG);
+    assert!(require_job_signal(&p, None, true).is_ok());
+}
+
+#[test]
+fn clean_title_collapses_embedded_whitespace() {
+    assert_eq!(
+        clean_title(
+            "  Wikipedia
+
+  the free	encyclopedia "
+        ),
+        "Wikipedia the free encyclopedia"
+    );
+}

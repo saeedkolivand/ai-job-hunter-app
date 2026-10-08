@@ -151,6 +151,9 @@ function clampMaxChars(value: number | undefined): number | undefined {
   return Math.min(floored, EXTENSION_ANSWER_ASSIST_MAX_CHARS);
 }
 
+/** The row error when the model never answered (stall, disconnect; zero chunks). */
+const ASSIST_NO_RESPONSE = 'No response — try again.';
+
 /** The neutral notice for a chip rewrite that came back unchanged (measured
  *  live, same defect class as the desktop's F3 — see `isUnchangedRewrite`). */
 const UNCHANGED_REWRITE_NOTICE =
@@ -317,6 +320,16 @@ export async function runAnswerAssist(req: AssistRun): Promise<PopupResponse> {
         interrupted: assistBuffer.text.length > 0,
       };
       broadcastAssistProgress();
+      // A stall with nothing streamed leaves the row empty and silent — give it a
+      // visible error (the extension is English-only; strings are inline).
+      if (rowId && !assistBuffer.text) {
+        await settleRowFromAssist(rowId, streamKind, {
+          ok: false,
+          error: ASSIST_NO_RESPONSE,
+        }).catch(
+          () => undefined // never mask the original error
+        );
+      }
     }
     throw err;
   }

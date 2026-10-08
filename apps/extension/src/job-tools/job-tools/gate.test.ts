@@ -1,7 +1,7 @@
 /**
  * The mounted job-tools component's page gating: the fields probe (Form group +
  * `onAnswerToolsVisibility`), the trust gate's effect on rendering, the popup's
- * `setImportLabel` / `reset` seam, and per-instance isolation.
+ * `applyAppliedCheck` / `reset` seam, and per-instance isolation.
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -163,18 +163,51 @@ describe('render — the trust gate', () => {
 // ── setImportLabel / reset (the popup's own appliedCheck seam) ───────────────
 
 describe('setImportLabel and reset', () => {
-  it('setImportLabel overrides the Import button text', () => {
+  const found = (status: string) =>
+    ({ ok: true, kind: 'appliedCheck', result: { found: true, status } }) as PopupResponse;
+  const chk = (host: HTMLElement) => el(host, '#chk-applied') as HTMLInputElement;
+
+  it('applyAppliedCheck relabels Import and ticks "already applied" for an Applied job', () => {
     const { host, view } = mount();
-    view.setImportLabel('Re-import / update');
+    view.applyAppliedCheck(found('applied'));
     expect(btn(host, '#btn-import').textContent).toBe('Re-import / update');
+    expect(chk(host).checked).toBe(true);
+  });
+
+  it('clearApplied (job change) unticks a hand-ticked box, then the new job applies', () => {
+    const { host, view } = mount();
+    chk(host).click();
+    view.clearApplied();
+    expect(chk(host).checked).toBe(false);
+    view.applyAppliedCheck(found('saved'));
+    expect(chk(host).checked).toBe(false);
+  });
+
+  it('a refresh never unticks a box the user ticked by hand', () => {
+    const { host, view } = mount();
+    chk(host).click();
+    view.applyAppliedCheck(found('saved'));
+    expect(chk(host).checked).toBe(true);
+  });
+
+  it('applyAppliedCheck relabels but leaves the box unticked for a Saved job, and clears on null', () => {
+    const { host, view } = mount();
+    view.applyAppliedCheck(found('saved'));
+    expect(btn(host, '#btn-import').textContent).toBe('Re-import / update');
+    expect(chk(host).checked).toBe(false);
+    view.applyAppliedCheck(found('applied'));
+    view.applyAppliedCheck(null);
+    expect(btn(host, '#btn-import').textContent).toBe(IMPORT_LABEL_DEFAULT);
+    expect(chk(host).checked).toBe(false);
   });
 
   it('reset restores the default Import label, hides the match card, and re-shows the Form group', () => {
     const { host, onAnswerToolsVisibility, view } = mount();
-    view.setImportLabel('Re-import / update');
+    view.applyAppliedCheck(found('applied'));
     view.reset();
 
     expect(btn(host, '#btn-import').textContent).toBe(IMPORT_LABEL_DEFAULT);
+    expect(chk(host).checked).toBe(false);
     expect(el(host, '#match-result').hidden).toBe(true);
     expect(formGroupHidden(host)).toBe(false);
     expect(onAnswerToolsVisibility).toHaveBeenCalledWith(true);

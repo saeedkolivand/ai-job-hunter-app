@@ -45,6 +45,117 @@ pub(super) fn usable(p: &crate::scraping::types::JobPosting) -> bool {
     !p.title.trim().is_empty()
 }
 
+/// Refusal shown by the extension when a generic-fallback page carries no job signal.
+pub(super) const NOT_A_JOB_MSG: &str = "This page doesn't look like a job posting";
+
+/// Minimum description length (chars) for a no-JSON-LD careers page to count as a job.
+const MIN_JOB_DESCRIPTION_CHARS: usize = 300;
+
+/// Job-ish words (en/de/fr/es/it/nl/pt/pl) that must match a WHOLE token (plus a
+/// plural `s`), because as raw substrings they hit "joint", "composition",
+/// "appliance", "poster".
+const JOB_WORDS: &[&str] = &[
+    "job", "join", "opening", "position", "apply", "hiring", "stelle", "stellen", "emploi",
+    "offre", "poste", "empleo", "trabajo", "oferta", "vacante", "lavoro", "vaga", "praca", "pracy",
+];
+
+/// Job-ish prefixes matched at the START of a token.
+const JOB_PREFIXES: &[&str] = &[
+    "career",
+    "vacanc",
+    "responsibilit",
+    "qualification",
+    "requirement",
+    "stellenangebot",
+    "karriere",
+    "bewerb",
+    "aufgaben",
+    "anforderungen",
+    "recrut",
+    "candidat",
+    "carri",
+    "requisitos",
+    "posizione",
+    "vacature",
+    "solliciteer",
+    "rekrut",
+    "kariera",
+];
+
+/// Distinct job stems found among the alphanumeric tokens of `text` (already lowercase).
+fn job_stems_in(text: &str) -> std::collections::HashSet<&'static str> {
+    let mut found = std::collections::HashSet::new();
+    for tok in text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+    {
+        let singular = tok.strip_suffix('s').unwrap_or(tok);
+        for w in JOB_WORDS {
+            if tok == *w || singular == *w {
+                found.insert(*w);
+            }
+        }
+        for pre in JOB_PREFIXES {
+            if tok.starts_with(pre) {
+                found.insert(*pre);
+            }
+        }
+    }
+    found
+}
+
+/// Whether a usable posting is plausibly a job. Biased toward accepting. Passes when:
+/// the posting came from a named board (`source != "url"`), a recognised ATS URL,
+/// the page embeds an ATS board (`embedded`, the #1238 wrapper), the HTML carries a
+/// `JobPosting` schema or the generic parser marked the posting `company_src: jsonld`
+/// (covers URL mode, where there is no captured HTML), a job stem is in the title or
+/// URL path, or the description is >= [`MIN_JOB_DESCRIPTION_CHARS`] and holds at
+/// least two distinct job stems. A company merely differing from the host is NOT a
+/// signal: og:site_name / logo alt make that true of nearly every site.
+pub(super) fn looks_like_job(
+    p: &crate::scraping::types::JobPosting,
+    html: Option<&str>,
+    embedded: bool,
+) -> bool {
+    if embedded
+        || p.source != "url"
+        || crate::scraping::ats_ref::extract_ats_ref(&p.url).is_some()
+        || html.is_some_and(|h| h.contains("JobPosting"))
+        || p.extra.get("company_src").and_then(|v| v.as_str()) == Some("jsonld")
+    {
+        return true;
+    }
+    let path = reqwest::Url::parse(&p.url)
+        .map(|u| u.path().to_lowercase())
+        .unwrap_or_default();
+    if !job_stems_in(&format!("{} {path}", p.title.to_lowercase())).is_empty() {
+        return true;
+    }
+    let desc = p.description.as_deref().unwrap_or("").to_lowercase();
+    desc.chars().count() >= MIN_JOB_DESCRIPTION_CHARS && job_stems_in(&desc).len() >= 2
+}
+
+/// The gate `handle_import` applies to a usable posting: `Err(Validation)` with
+/// [`NOT_A_JOB_MSG`] when [`looks_like_job`] is false.
+pub(super) fn require_job_signal(
+    p: &crate::scraping::types::JobPosting,
+    html: Option<&str>,
+    embedded: bool,
+) -> AppResult<()> {
+    if looks_like_job(p, html, embedded) {
+        Ok(())
+    } else {
+        Err(crate::error::AppError::Validation(
+            NOT_A_JOB_MSG.to_string(),
+        ))
+    }
+}
+
+/// Collapse every whitespace run (incl. embedded newlines) in a title to one space.
+pub(super) fn clean_title(title: &str) -> String {
+    title.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// Fill `resolve`'s title/description from the extension's `[data-ajh-job-root]`
 /// HINT ONLY — used by the SPA/list-view (canonical) import branch when the
 /// resolve came back unusable or description-less (LinkedIn's anonymous-fetch

@@ -7,15 +7,11 @@
  * handling, same button disable-during-request pattern — only the DOM target
  * changed (an injected `host`, not popup.html's specific element ids).
  *
- * "Mark as applied" and the adaptive Import re-label stay OUT of this module
- * and in popup.ts, unmoved: they were never part of the requested parity
- * (only the four verbs above), and showing them in the panel would be a
- * capability the panel never had. The one seam the popup's own (unmoved)
- * `appliedCheck` auto-check still needs into this module is
- * {@link JobToolsView.setImportLabel}, so the Import button this module now
- * owns can still carry the adaptive re-import wording; {@link
- * JobToolsView.reset} mirrors the rest of what that auto-check used to reset
- * directly on `els.*` (the match-fit card, the Form group's visibility).
+ * "Mark as applied" stays in popup.ts. The adaptive Import re-label and the "I
+ * already applied" box follow an `appliedCheck` through {@link
+ * JobToolsView.applyAppliedCheck}, which BOTH surfaces call; {@link
+ * JobToolsView.reset} mirrors the rest (the match-fit card, the Form group's
+ * visibility).
  *
  * ## The trust gate (new — side panel only in practice)
  *
@@ -57,8 +53,10 @@ import {
   JOB_TOOLS_GATED_LINE,
   type MatchLiveView,
   resolveAnswersSaveResponse,
+  resolveAppliedCheckbox,
   resolveFieldsProbeResponse,
   resolveFillResponse,
+  resolveImportButtonLabel,
   resolveImportResponse,
   resolveMatchLiveResponse,
   resolveStampResultsResponse,
@@ -123,10 +121,13 @@ export interface JobToolsView {
    *  separate statement racing an async read) or this will run — or skip —
    *  based on the PREVIOUS tab's trust instead. */
   checkPage: () => void;
-  /** Override the Import button's label — used ONLY by the popup's own
-   *  (unmoved) `appliedCheck` auto-check for the adaptive re-import wording;
-   *  this module has no opinion on it otherwise. */
-  setImportLabel: (label: string) => void;
+  /** Fold an `appliedCheck` outcome (`null` = nothing known / cleared) into the
+   *  Import button's adaptive label and the "I already applied" box. Shared by
+   *  the popup and the side panel. */
+  applyAppliedCheck: (res: PopupResponse | null) => void;
+  /** The followed job changed (tab switch / new URL): always untick "already
+   *  applied", hand-ticked or not, so a tick for job A can't mark job B. */
+  clearApplied: () => void;
   /** Reset to the disconnected/no-page defaults: the popup's own connection
    *  status render calls this on leaving `connected`, mirroring what its
    *  `appliedCheck` auto-check used to reset directly on `els.*` for the
@@ -443,8 +444,27 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
     redraw();
   }
 
-  function setImportLabel(label: string): void {
-    btnImport.textContent = label;
+  let autoTicked = false;
+  chkApplied.addEventListener('change', () => {
+    autoTicked = false;
+  });
+
+  function clearApplied(): void {
+    chkApplied.checked = false;
+    autoTicked = false;
+  }
+
+  function applyAppliedCheck(res: PopupResponse | null): void {
+    btnImport.textContent = resolveImportButtonLabel(res);
+    // Tick only from an Applied status, and untick only a tick WE made — a box
+    // the user ticked by hand survives a later refresh.
+    if (resolveAppliedCheckbox(res)) {
+      chkApplied.checked = true;
+      autoTicked = true;
+    } else if (autoTicked) {
+      chkApplied.checked = false;
+      autoTicked = false;
+    }
   }
 
   function reset(): void {
@@ -452,6 +472,8 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
     formGroupVisible = true;
     deps.onAnswerToolsVisibility?.(true);
     btnImport.textContent = IMPORT_LABEL_DEFAULT;
+    chkApplied.checked = false;
+    autoTicked = false;
     matchResult.hidden = true;
     matchResult.textContent = '';
     hideProfileFallback();
@@ -459,5 +481,5 @@ export function mountJobTools(host: HTMLElement, deps: JobToolsDeps): JobToolsVi
     redraw();
   }
 
-  return { render, checkPage, setImportLabel, reset };
+  return { render, checkPage, applyAppliedCheck, clearApplied, reset };
 }

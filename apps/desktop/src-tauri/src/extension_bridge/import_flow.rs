@@ -14,7 +14,9 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use super::import_flow_notify::notify_import_result;
-use super::import_flow_resolve::{merge_resolve_with_hint, persist_import_application, usable};
+use super::import_flow_resolve::{
+    clean_title, merge_resolve_with_hint, persist_import_application, require_job_signal, usable,
+};
 use super::{auth, match_live, msg};
 use crate::applications::{normalize_job_url, ApplicationStore};
 use crate::error::{AppError, AppResult};
@@ -195,16 +197,15 @@ pub(super) async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<
         // heading, at a single-digit fit. Keyed on RECOGNISING the board (see
         // `embeds_ats_board`), which is what keeps this off the analytics,
         // consent and video frames that are cross-origin on nearly every page.
-        let p = posting.unwrap();
-        // The captured document embeds a recognised ATS board in a cross-origin
-        // frame, so the posting itself was unreachable and whatever parsed came
-        // from the WRAPPER page. Deliberately NOT also requiring "we extracted
-        // no description": a careers page has plenty of prose, so that extra
-        // condition made this miss the reported case entirely — the description
-        // was non-empty, just not the job's.
+        let mut p = posting.unwrap();
         let embedded = html
             .as_deref()
             .is_some_and(|h| crate::scraping::scrape_url::embeds_ats_board(h, effective_url));
+        // A page the generic parser titled but that carries no job signal
+        // (example.com, a homepage) must not become an application. An embedded
+        // ATS board wrapper (#1238) is a positive signal: it imports as partial.
+        require_job_signal(&p, html.as_deref(), embedded)?;
+        p.title = clean_title(&p.title);
         (p, embedded)
     } else {
         let host = reqwest::Url::parse(effective_url)

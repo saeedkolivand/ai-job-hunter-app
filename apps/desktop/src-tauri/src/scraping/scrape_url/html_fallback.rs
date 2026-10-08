@@ -144,6 +144,12 @@ pub fn parse_from_html(url: &str, html: &str) -> Option<JobPosting> {
         })
         .unwrap_or(host);
 
+    // Marker for the extension import gate: the page ships its own JSON-LD JobPosting.
+    let mut extra = HashMap::new();
+    if has_json_ld_job_posting(html) {
+        extra.insert("company_src".to_string(), serde_json::json!("jsonld"));
+    }
+
     Some(JobPosting {
         id: format!("url:{}", url),
         external_id: None,
@@ -156,7 +162,7 @@ pub fn parse_from_html(url: &str, html: &str) -> Option<JobPosting> {
         requirements: None,
         posted_at: None,
         captured_at: chrono::Utc::now().timestamp_millis(),
-        extra: HashMap::new(),
+        extra,
     })
 }
 

@@ -63,6 +63,31 @@ export const IMPORT_LABEL_DEFAULT = 'Import this job';
 export const IMPORT_LABEL_FOUND = 'Re-import / update';
 
 /**
+ * The import button's label: {@link IMPORT_LABEL_FOUND} when an `appliedCheck`
+ * found an existing Application for the page, else the default (any error,
+ * not-found or non-`appliedCheck` reply, or `null` while nothing is known).
+ * Shared by the popup and the side panel. Pure.
+ */
+export function resolveImportButtonLabel(res: PopupResponse | null): string {
+  return res && res.ok && res.kind === 'appliedCheck' && !res.result.error && res.result.found
+    ? IMPORT_LABEL_FOUND
+    : IMPORT_LABEL_DEFAULT;
+}
+
+/** Whether the "I already applied" box should read checked: the found
+ *  Application is already `applied`. Pure. */
+export function resolveAppliedCheckbox(res: PopupResponse | null): boolean {
+  return (
+    !!res &&
+    res.ok &&
+    res.kind === 'appliedCheck' &&
+    !res.result.error &&
+    res.result.found &&
+    res.result.status === 'applied'
+  );
+}
+
+/**
  * Given an `import` response, return the message text and tone to display. On
  * success it names the imported job (when the desktop parsed a title) and points
  * the user at where it landed, instead of a bare “Imported”.

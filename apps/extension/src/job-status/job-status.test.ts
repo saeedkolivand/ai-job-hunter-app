@@ -121,6 +121,20 @@ describe('mountJobStatus', () => {
     expect(stages[0]?.classList.contains('current')).toBe(true);
   });
 
+  it('reports each outcome to onResult: the reply on success, null on failure', async () => {
+    const host = document.createElement('div');
+    const send = vi.fn();
+    const onResult = vi.fn();
+    const handle = mountJobStatus(host, { send, onResult });
+    const reply = { ok: true, kind: 'appliedCheck', result: { found: true, status: 'applied' } };
+    send.mockResolvedValueOnce(reply);
+    await handle.refresh();
+    expect(onResult).toHaveBeenLastCalledWith(reply);
+    send.mockRejectedValueOnce(new Error('closed'));
+    await handle.refresh();
+    expect(onResult).toHaveBeenLastCalledWith(null);
+  });
+
   it('hides the card when nothing is found', async () => {
     const { host, send, handle } = mount();
     send.mockResolvedValueOnce({ ok: true, kind: 'appliedCheck', result: { found: false } });

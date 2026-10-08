@@ -20,7 +20,7 @@ import { browser } from '@wxt-dev/browser';
 
 import { mountConnectionStatus } from '../connection-status/connection-status';
 import { resolveJobStatusView } from '../job-status/job-status';
-import { IMPORT_LABEL_DEFAULT, IMPORT_LABEL_FOUND, mountJobTools } from '../job-tools/job-tools';
+import { mountJobTools } from '../job-tools/job-tools';
 import { type AnswerState, subscribeAnswerState } from '../lib/answer-state';
 import type { PopupRequest, PopupResponse } from '../lib/messages';
 import {
@@ -41,19 +41,6 @@ void bootTheme();
 subscribeThemeChanges();
 
 // ── pure view-decision helpers (exported for unit tests) ─────────────────────
-
-/**
- * The import button's label: unchanged when no existing Application was found
- * for the active tab's url, {@link IMPORT_LABEL_FOUND} when one was. Any
- * non-found/error outcome (including one still in flight) keeps the default.
- *
- * Pure: no DOM access, no side effects.
- */
-export function resolveImportButtonLabel(res: PopupResponse): string {
-  return res.ok && res.kind === 'appliedCheck' && !res.result.error && res.result.found
-    ? IMPORT_LABEL_FOUND
-    : IMPORT_LABEL_DEFAULT;
-}
 
 /**
  * Whether the "Mark as applied" button should show: only for a found
@@ -415,7 +402,7 @@ async function runAppliedAutoCheck(): Promise<void> {
   // still in flight, the previous page's card must not linger while this
   // fresh one resolves.
   clearJobCard();
-  jobTools.setImportLabel(IMPORT_LABEL_DEFAULT);
+  jobTools.applyAppliedCheck(null);
   try {
     const res = await send({ kind: 'appliedCheck' });
     // A newer check started while this one was in flight — its result (or the
@@ -432,7 +419,7 @@ async function runAppliedAutoCheck(): Promise<void> {
       els.appliedStatus.textContent = view.chipText;
       els.appliedStatus.hidden = false;
     }
-    jobTools.setImportLabel(resolveImportButtonLabel(res));
+    jobTools.applyAppliedCheck(res);
     // Only a found+saved result shows the button — reset disabled here too,
     // so a re-fire after a successful "Mark as applied" click (which left the
     // button disabled) ends re-enabled for whatever this fresh check renders.
@@ -441,7 +428,7 @@ async function runAppliedAutoCheck(): Promise<void> {
   } catch {
     if (myGeneration !== appliedCheckGeneration) return;
     clearJobCard();
-    jobTools.setImportLabel(IMPORT_LABEL_DEFAULT);
+    jobTools.applyAppliedCheck(null);
   }
 }
 

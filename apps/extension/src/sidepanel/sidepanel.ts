@@ -221,7 +221,12 @@ let followGeneration = 0;
 
 const answerTools = mountAnswerTools(answerToolsHost, { send, copy: copyText });
 
-const jobStatus = mountJobStatus(jobStatusHost, { send });
+// `jobTools` is a `const` declared below: safe because `onResult` only fires from
+// `refresh()`/`reset()`, which run after module boot (pinned by panel.test.ts).
+const jobStatus = mountJobStatus(jobStatusHost, {
+  send,
+  onResult: (res) => jobTools.applyAppliedCheck(res),
+});
 
 /**
  * Auto-track's pushed "this tracked application just flipped to applied"
@@ -424,6 +429,7 @@ function follow(tabId: number | null): void {
   // than let it linger over whatever this call is about to show instead.
   fillConfirm.cancel();
   lastJobStatusKey = null;
+  jobTools.clearApplied(); // a new followed job: never carry the previous job's tick
   trustLineJobGeneration += 1; // invalidate any in-flight query for the tab being left
   if (tabId === null) {
     answerTools.render(null);
@@ -456,6 +462,7 @@ function follow(tabId: number | null): void {
     const key = jobStatusKeyOf(state);
     if (key !== lastJobStatusKey) {
       lastJobStatusKey = key;
+      jobTools.clearApplied(); // origin/page changed: a different job
       if (state && isPageTrusted(state)) {
         void jobStatus.refresh();
         void refreshTrustLineJob();

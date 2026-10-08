@@ -11,14 +11,11 @@ vi.mock('../../lib/storage', () => ({
   looksLikeToken: vi.fn(() => false),
 }));
 
+import { resolveImportButtonLabel } from '../../job-tools/responses';
 import { bootPopup } from './test-support';
 
-const {
-  resolveImportButtonLabel,
-  resolveShowMarkAppliedButton,
-  resolveMarkAppliedResponse,
-  resolveAnswersNoticeLine,
-} = await bootPopup();
+const { resolveShowMarkAppliedButton, resolveMarkAppliedResponse, resolveAnswersNoticeLine } =
+  await bootPopup();
 
 /** An `appliedCheck` reply carrying `result`. */
 const applied = (result: Record<string, unknown>) =>

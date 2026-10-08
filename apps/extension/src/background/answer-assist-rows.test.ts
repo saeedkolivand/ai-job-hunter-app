@@ -224,3 +224,31 @@ describe('a late activeTabId() must not re-arm a superseded run (regression)', (
     tabsQueryMock.mockResolvedValue(tabInfo);
   });
 });
+
+describe('a stalled assist with zero chunks', () => {
+  it('settles the row with a visible error instead of leaving it empty', async () => {
+    const [rowId] = (await scanRows(320, 'Why this role?')) as [string];
+    mockClient.answerAssist.mockRejectedValueOnce(new Error('request timed out'));
+
+    await draftRow(rowId);
+    await flush();
+
+    const rows = stateOf(await send({ kind: 'answerSelectVersion', rowId, version: 0 })).rows;
+    expect(rows[0]?.error).toMatch(/No response/);
+    expect(rows[0]?.versions ?? []).toHaveLength(0);
+  });
+
+  it('shows NO error when the user cancels the run', async () => {
+    const [rowId] = (await scanRows(321, 'Why this role?')) as [string];
+    mockClient.answerAssist.mockImplementationOnce(async () => {
+      await send({ kind: 'assistCancel' });
+      throw new Error('cancelled');
+    });
+
+    await draftRow(rowId);
+    await flush();
+
+    const rows = stateOf(await send({ kind: 'answerSelectVersion', rowId, version: 0 })).rows;
+    expect(rows[0]?.error).toBeUndefined();
+  });
+});

@@ -294,3 +294,23 @@ describe('documents/prep follow() trust gating (#1225, #1234)', () => {
     expect(prep.refresh).not.toHaveBeenCalled();
   });
 });
+
+describe('a followed-job change clears the "already applied" tick', () => {
+  const tools = firstResult<{ clearApplied: Spy }>(mountJobTools);
+
+  it('on every follow(), and on an origin change within the same tab, but not on a same-job push', () => {
+    const deliver = captureNextSubscription();
+    tools.clearApplied.mockClear();
+
+    activate(120);
+    expect(tools.clearApplied).toHaveBeenCalledTimes(1); // tab switch
+
+    const state = stateFor(120);
+    deliver(state); // first delivery: key changes from null
+    expect(tools.clearApplied).toHaveBeenCalledTimes(2);
+    deliver({ ...state, scannedAt: 2 }); // same job, later push
+    expect(tools.clearApplied).toHaveBeenCalledTimes(2);
+    deliver({ ...state, origin: 'https://other.example.com' }); // navigated elsewhere
+    expect(tools.clearApplied).toHaveBeenCalledTimes(3);
+  });
+});

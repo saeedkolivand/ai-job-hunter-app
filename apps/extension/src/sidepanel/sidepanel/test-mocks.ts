@@ -27,7 +27,15 @@ export const answerToolsMock = (): MockModule => ({
 
 export async function jobToolsMock(): Promise<MockModule> {
   const actual = await vi.importActual<typeof JobToolsModule>('../../job-tools/job-tools');
-  return { ...actual, mountJobTools: vi.fn(() => ({ render: vi.fn(), checkPage: vi.fn() })) };
+  return {
+    ...actual,
+    mountJobTools: vi.fn(() => ({
+      render: vi.fn(),
+      checkPage: vi.fn(),
+      applyAppliedCheck: vi.fn(),
+      clearApplied: vi.fn(),
+    })),
+  };
 }
 
 export const jobStatusMock = (): MockModule => ({
