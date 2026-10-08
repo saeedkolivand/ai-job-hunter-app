@@ -9,7 +9,7 @@ import { ROUTES } from '@/constants/routes';
 import { type GenerationMeta, synthesizeResume } from '@/lib/generate';
 import { useSaveAiGeneration } from '@/services/use-ai-generations';
 import { useContactProfile } from '@/services/use-contact-profile';
-import { useSessionStore } from '@/store/session-store';
+import { resetAIGenerateAll, useSessionStore } from '@/store/session-store';
 
 /**
  * Resume Builder orchestration (#1 / B9): builds the synthesis `GenerationMeta`
@@ -31,7 +31,6 @@ export function useResumeBuilder() {
   const setResumeBuilder = useSessionStore((s) => s.setResumeBuilder);
   const resetResumeBuilder = useSessionStore((s) => s.resetResumeBuilder);
   const setAIGenerate = useSessionStore((s) => s.setAIGenerate);
-  const resetAIGenerate = useSessionStore((s) => s.resetAIGenerate);
 
   const { answers, language, locale, templateId, atsMode, stage, output } = resumeBuilder;
 
@@ -144,7 +143,7 @@ export function useResumeBuilder() {
    */
   const tailorToJob = () => {
     if (!output.trim()) return;
-    resetAIGenerate();
+    resetAIGenerateAll();
     setAIGenerate({ resume: output });
     void navigate({ to: ROUTES.GENERATE });
   };

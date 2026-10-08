@@ -14,7 +14,7 @@ import { useReferrals, useUpsertReferral } from '@/services';
 import { WizardField } from '../WizardField';
 import { ReferralDraftOutput } from './ReferralDraftOutput';
 import { ReferralList } from './ReferralList';
-import { useReferralDraft } from './useReferralDraft';
+import { readReferralSeed, useReferralDraft } from './useReferralDraft';
 
 interface Props {
   job: AutopilotFoundJob;
@@ -44,11 +44,14 @@ export function ReferralModal({ job, resume, onClose }: Props) {
   const model = useSelectedModel();
   const { canUse, reason } = useCanUseAI();
 
-  const [personName, setPersonName] = useState('');
-  const [personRole, setPersonRole] = useState('');
+  // A draft still running (or finished) for this job survives closing the modal;
+  // restore its person/channel so the reopened modal shows it (rule 16).
+  const [seed] = useState(() => readReferralSeed(job.url));
+  const [personName, setPersonName] = useState(seed?.personName ?? '');
+  const [personRole, setPersonRole] = useState(seed?.personRole ?? '');
   const [linkedinUrl, setLinkedinUrl] = useState('');
   const [notes, setNotes] = useState('');
-  const [channel, setChannel] = useState<ReferralChannel>('linkedin_message');
+  const [channel, setChannel] = useState<ReferralChannel>(seed?.channel ?? 'linkedin_message');
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
   const [improveInstruction, setImproveInstruction] = useState('');
@@ -56,6 +59,7 @@ export function ReferralModal({ job, resume, onClose }: Props) {
   const contacts = useReferrals(job.url);
   const upsert = useUpsertReferral();
   const gen = useReferralDraft({
+    jobUrl: job.url,
     personName,
     personRole,
     companyName: job.company,

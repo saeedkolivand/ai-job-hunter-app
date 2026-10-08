@@ -52,6 +52,7 @@ export const modelSelectorModule = {
 
 // Stub useReferralDraft to control `draft` and `generate` deterministically.
 export const referralDraftModule: Record<string, unknown> = {
+  readReferralSeed: () => null,
   useReferralDraft: () => ({
     draft: stub.draft,
     generating: false,

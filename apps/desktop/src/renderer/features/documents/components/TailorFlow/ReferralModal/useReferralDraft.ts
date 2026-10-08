@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 import type { ReferralChannel } from '@ajh/shared/ipc';
 import { detectLanguages } from '@ajh/shared/language-detection';
 import { useTranslation } from '@ajh/translations';
 
 import { CONNECTION_NOTE_LIMIT, generateReferral, generateReferralImprove } from '@/lib/generate';
+import { useReferralDraftStore } from '@/store/session-store';
 
 interface Params {
+  /** The job the draft belongs to; keys the session-held run (see `ReferralDraftSlice`). */
+  jobUrl: string;
   personName: string;
   personRole: string;
   companyName: string;
@@ -20,6 +23,18 @@ interface Params {
 /** The backend's raw transport failure (`Stream error: …`) is not user-facing; localize it. */
 const STREAM_ERROR_PREFIX = 'Stream error';
 
+// The latest started run. Module-level (not a per-mount ref) so the stream outlives
+// the modal (AGENTS.md rule 16); late writes from a superseded/reset run are dropped.
+let current: AbortController | null = null;
+
+const store = () => useReferralDraftStore.getState();
+
+/** The saved form fields for `jobUrl`, so a reopened modal can restore them. */
+export function readReferralSeed(jobUrl: string) {
+  const s = store().referralDraft;
+  return s.jobUrl === jobUrl ? s : null;
+}
+
 /**
  * Drafts a single referral message for the SELECTED channel only (one LLM call
  * per channel, never all three). Streams tokens into `draft` so the UI can show
@@ -27,6 +42,7 @@ const STREAM_ERROR_PREFIX = 'Stream error';
  * call. The person's details are user-typed — there is NO LinkedIn fetch.
  */
 export function useReferralDraft({
+  jobUrl,
   personName,
   personRole,
   companyName,
@@ -37,38 +53,31 @@ export function useReferralDraft({
   canUse,
 }: Params) {
   const { t } = useTranslation();
-  const [draft, setDraft] = useState('');
-  const [generating, setGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const slice = useReferralDraftStore((s) => s.referralDraft);
+  const mine = slice.jobUrl === jobUrl && slice.channel === channel;
+  const draft = mine ? slice.draft : '';
+  const generating = mine && slice.generating;
+  const error = mine ? slice.error : null;
+  // Writes are dropped once this run was superseded or reset.
+  const write = (c: AbortController, patch: Partial<typeof slice>) => {
+    if (current === c) store().setReferralDraft(patch);
+  };
 
   const canGenerate =
     canUse && personName.trim().length > 0 && resume.trim().length > 0 && !generating;
 
   const abort = () => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setGenerating(false);
+    current?.abort();
+    if (mine) store().setReferralDraft({ generating: false });
   };
 
   // Clear the form's draft state after a save (the "add another" flow) — abort any
   // in-flight stream and wipe draft/error/generating back to the empty state.
   const reset = () => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setGenerating(false);
-    setDraft('');
-    setError(null);
+    current?.abort();
+    current = null;
+    store().resetReferralDraft();
   };
-
-  // Abort any in-flight generation on unmount so the stream is torn down and we
-  // never setState on a dead component.
-  useEffect(
-    () => () => {
-      abortRef.current?.abort();
-    },
-    []
-  );
 
   // When the channel changes, the previous channel's draft (and its ≤300
   // connection-note check) no longer applies, so abort any in-flight stream and
@@ -77,12 +86,11 @@ export function useReferralDraft({
   useEffect(() => {
     if (prevChannelRef.current === channel) return;
     prevChannelRef.current = channel;
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setGenerating(false);
-    setDraft('');
-    setError(null);
-  }, [channel]);
+    if (store().referralDraft.jobUrl !== jobUrl) return;
+    current?.abort();
+    current = null;
+    store().resetReferralDraft();
+  }, [channel, jobUrl]);
 
   const errorText = (err: unknown, fallback: string) => {
     if (!(err instanceof Error)) return fallback;
@@ -93,11 +101,18 @@ export function useReferralDraft({
 
   const generate = async () => {
     if (!canGenerate) return;
+    current?.abort();
     const controller = new AbortController();
-    abortRef.current = controller;
-    setGenerating(true);
-    setError(null);
-    setDraft('');
+    current = controller;
+    store().setReferralDraft({
+      jobUrl,
+      personName: personName.trim(),
+      personRole: personRole.trim(),
+      channel,
+      draft: '',
+      generating: true,
+      error: null,
+    });
     try {
       const text = await generateReferral({
         personName: personName.trim(),
@@ -111,18 +126,17 @@ export function useReferralDraft({
         // Write the message in the résumé's language — pass the ISO 639-1 code
         // (not the display name) so `safeLocale` downstream doesn't collapse it to 'en'.
         locale: detectLanguages(resume, '').resume,
-        onToken: (tok) => setDraft((prev) => prev + tok),
+        onToken: (tok) => write(controller, { draft: store().referralDraft.draft + tok }),
         signal: controller.signal,
       });
-      setDraft(text);
+      write(controller, { draft: text });
     } catch (err) {
       // An explicit abort is not an error to surface.
       if (!controller.signal.aborted) {
-        setError(errorText(err, 'Failed to draft the message'));
+        write(controller, { error: errorText(err, 'Failed to draft the message') });
       }
     } finally {
-      if (abortRef.current === controller) abortRef.current = null;
-      setGenerating(false);
+      write(controller, { generating: false });
     }
   };
 
@@ -141,10 +155,10 @@ export function useReferralDraft({
     if (!canGenerate || !draft) return;
     // Snapshot the current draft — if the request fails or is aborted, restore it.
     const snapshot = draft;
+    current?.abort();
     const controller = new AbortController();
-    abortRef.current = controller;
-    setGenerating(true);
-    setError(null);
+    current = controller;
+    store().setReferralDraft({ generating: true, error: null });
     // Do NOT clear the draft up front. The first streaming token replaces it.
     let firstToken = true;
     try {
@@ -164,23 +178,22 @@ export function useReferralDraft({
           if (firstToken) {
             // Replace the snapshot with the first streaming token.
             firstToken = false;
-            setDraft(tok);
+            write(controller, { draft: tok });
           } else {
-            setDraft((prev) => prev + tok);
+            write(controller, { draft: store().referralDraft.draft + tok });
           }
         },
         signal: controller.signal,
       });
-      setDraft(text);
+      write(controller, { draft: text });
     } catch (err) {
       if (!controller.signal.aborted) {
-        setError(errorText(err, 'Failed to improve the draft'));
+        write(controller, { error: errorText(err, 'Failed to improve the draft') });
       }
       // Restore the snapshot so the draft survives a failed or aborted improve.
-      setDraft(snapshot);
+      write(controller, { draft: snapshot });
     } finally {
-      if (abortRef.current === controller) abortRef.current = null;
-      setGenerating(false);
+      write(controller, { generating: false });
     }
   };
 

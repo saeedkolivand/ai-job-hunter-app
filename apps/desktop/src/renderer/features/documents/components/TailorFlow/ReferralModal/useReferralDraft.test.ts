@@ -147,10 +147,10 @@ describe('useReferralDraft — connection_note overLimit logic', () => {
   });
 });
 
-// ── unmount aborts in-flight generation ──────────────────────────────────────
+// ── unmount does NOT abort (rule 16; see .navigation.test) ──────────────────────────────────────
 
-describe('useReferralDraft — unmount aborts in-flight call', () => {
-  it('aborts the AbortController when the hook unmounts mid-generation', async () => {
+describe('useReferralDraft — unmount keeps the in-flight call', () => {
+  it('does not abort the AbortController when the hook unmounts mid-generation', async () => {
     // Capture the signal passed to generateReferral without resolving the promise,
     // so the hook stays in the "generating" state when we unmount.
     // Hold the signal in an object so TS keeps its declared type (a closure-
@@ -175,11 +175,9 @@ describe('useReferralDraft — unmount aborts in-flight call', () => {
     expect(captured.signal).toBeDefined();
     expect(captured.signal?.aborted).toBe(false);
 
-    // Unmount triggers the cleanup: `() => abortRef.current?.abort()`.
     unmount();
 
-    expect(captured.signal?.aborted).toBe(true);
-    // error stays null — no setState was called on the dead component.
+    expect(captured.signal?.aborted).toBe(false);
     expect(result.current.error).toBeNull();
   });
 });

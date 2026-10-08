@@ -47,6 +47,7 @@ export const languageDetectionModule = {
 };
 
 export const BASE = {
+  jobUrl: 'https://example.com/job/1',
   personName: 'Bob Chen',
   personRole: 'Director',
   companyName: 'Acme',
@@ -58,7 +59,9 @@ export const BASE = {
 };
 
 /** Call in `beforeEach`. */
-export function resetGenerateMocks() {
+export async function resetGenerateMocks() {
+  // Lazy: a static import would put the store inside the `@/lib/generate` mock factory's import cycle.
+  (await import('@/store/session-store')).useReferralDraftStore.getState().resetReferralDraft();
   mockGenerateReferral.mockResolvedValue('Hi Bob, I wanted to reach out about the role at Acme.');
   mockGenerateReferralImprove.mockResolvedValue(
     'Hi Bob! I really wanted to reach out about the role at Acme.'

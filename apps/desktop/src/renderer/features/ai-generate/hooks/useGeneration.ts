@@ -178,6 +178,8 @@ export function useGeneration(
     const onTok =
       (setter: (fn: (p: string) => string) => void, accumulate: (t: string) => void) =>
       (tok: string) => {
+        // A superseded/reset run must not keep writing into the live state.
+        if (abortControllerRef.current !== controller) return;
         if (!tokenStartRef.current) tokenStartRef.current = Date.now();
         setModelLoading(false);
         setTokenCount((c) => c + 1);
@@ -186,6 +188,7 @@ export function useGeneration(
       };
 
     const onThink = (tok: string) => {
+      if (abortControllerRef.current !== controller) return;
       setModelLoading(false);
       setThinkingBuffer((p) => p + tok);
     };

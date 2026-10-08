@@ -1,5 +1,5 @@
 import { AnimatePresence } from 'motion/react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 import { ErrorState, useNotification } from '@ajh/ui';
@@ -28,15 +28,23 @@ import {
 import { COPY_FEEDBACK_LONG_MS } from '@/lib/timings';
 import { useExtractText } from '@/services';
 import { useSaveAiGeneration } from '@/services/use-ai-generations';
-import { useSessionStore } from '@/store/session-store';
+import {
+  resetAIGenerateAll,
+  runAbortRef,
+  runTokenStartRef,
+  useAIGenerateRunStore,
+  useSessionStore,
+} from '@/store/session-store';
 
 import { exportActiveDocument } from './export-document';
+import { runSetters } from './run-setters';
 import { useContactPromptGate } from './useContactPromptGate';
 
 export function AIGeneratePage() {
   const { t } = useTranslation();
 
-  const { aiGenerate, setAIGenerate, resetAIGenerate } = useSessionStore();
+  const { aiGenerate, setAIGenerate } = useSessionStore();
+  const run = useAIGenerateRunStore();
   const {
     resume,
     jobAd,
@@ -52,11 +60,14 @@ export function AIGeneratePage() {
     accent,
     letterLayoutId,
     locale,
-    resumeOut,
-    coverOut,
     activeOut,
     report,
   } = aiGenerate;
+  const { isGenerating, stageLabel, streamBuffer, thinkingBuffer } = run;
+  const { modelLoading, tokenCount, genStep, error } = run;
+  // Per-token text streams in the run store; the committed text lives in the session slice.
+  const resumeOut = run.liveResume || aiGenerate.resumeOut;
+  const coverOut = run.liveCover || aiGenerate.coverOut;
 
   const setResume = (v: string) => setAIGenerate({ resume: v });
   // A manual edit / paste-over / upload replaces the ad, so any URL-import
@@ -78,39 +89,26 @@ export function AIGeneratePage() {
   const setAccent = (v: string | undefined) => setAIGenerate({ accent: v });
   const setLetterLayoutId = (v: LetterLayoutId) => setAIGenerate({ letterLayoutId: v });
   const setLocale = (v: string) => setAIGenerate({ locale: v });
-  const setResumeOut = (v: string | ((p: string) => string)) =>
-    setAIGenerate({ resumeOut: typeof v === 'function' ? v(resumeOut) : v });
-  const setCoverOut = (v: string | ((p: string) => string)) =>
-    setAIGenerate({ coverOut: typeof v === 'function' ? v(coverOut) : v });
+  const { setResumeOut, setCoverOut, setIsGenerating, setStageLabel, setError } = runSetters;
+  const { setStreamBuffer, setThinkingBuffer, setModelLoading } = runSetters;
+  const { setTokenCount, setGenStep } = runSetters;
   const setActiveOut = (v: 'resume' | 'cover') => setAIGenerate({ activeOut: v });
 
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState<'resume' | 'jobAd' | null>(null);
-  const [stageLabel, setStageLabel] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [streamBuffer, setStreamBuffer] = useState('');
-  const [thinkingBuffer, setThinkingBuffer] = useState('');
   const [copied, setCopied] = useState(false);
-  const [modelLoading, setModelLoading] = useState(false);
-  const [tokenCount, setTokenCount] = useState(0);
-  const tokenStartRef = useRef<number | null>(null);
-  const [genStep, setGenStep] = useState<{ current: number; total: number; label: string } | null>(
-    null
-  );
+  const tokenStartRef = runTokenStartRef;
   // Company research for the cover letter — the initial default is capability-
   // driven (ON when the active model can web-search, OFF otherwise); a user
   // toggle always wins from then on.
   const [researchCompany, setResearchCompany] = useResearchCompanyDefault();
-  // In-flight flag, decoupled from `stage`: with progressive reveal (#23) the
-  // stage is already `done` (résumé shown) while the cover letter still streams.
-  const [isGenerating, setIsGenerating] = useState(false);
 
   const notify = useNotification();
   const selectedModel = useSelectedModel();
   const { canUse: canUseAI, reason: aiReason } = useCanUseAI();
   const extractTextMutation = useExtractText();
 
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const abortControllerRef = runAbortRef;
 
   const { handleUpload } = useFileUpload(
     setUploadError,
@@ -190,12 +188,7 @@ export function AIGeneratePage() {
     // Abort whenever a run is in flight — including the post-generation
     // validation/save window (stage is already 'done' there, not 'generating'),
     // so Reset can't leave a stale save persisting after the user left.
-    abortControllerRef.current?.abort();
-    stopStageRotation();
-    setError(null);
-    setStreamBuffer('');
-    setThinkingBuffer('');
-    resetAIGenerate();
+    resetAIGenerateAll();
   };
 
   const copyOutput = async () => {
