@@ -85,14 +85,13 @@ impl JobAnalysis {
             && self.responsibilities.is_empty()
     }
 
-    /// The quality floor (#1382): a non-trivial posting always states what it
-    /// asks for or what the job does, so an analysis with NEITHER `mustHave`
-    /// nor `responsibilities` is the low-effort degradation, not a real answer.
-    /// A near-empty ad is exempt: it can legitimately yield nothing.
+    /// The quality floor (#1382, #1392): a non-trivial posting always states
+    /// what it asks for, so an analysis with no `mustHave` is the low-effort
+    /// degradation, even when `responsibilities` survived (downstream match and
+    /// strategy key off the must-haves). A near-empty ad is exempt: it can
+    /// legitimately yield nothing.
     pub fn below_floor(&self, job_ad: &str) -> bool {
-        job_ad.trim().chars().count() >= MIN_FLOOR_AD_CHARS
-            && self.must_have.is_empty()
-            && self.responsibilities.is_empty()
+        job_ad.trim().chars().count() >= MIN_FLOOR_AD_CHARS && self.must_have.is_empty()
     }
 
     /// How much was extracted — only used to keep the better of two floor misses.

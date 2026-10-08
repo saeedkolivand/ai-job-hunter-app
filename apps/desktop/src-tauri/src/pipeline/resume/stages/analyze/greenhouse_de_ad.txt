@@ -1,0 +1,25 @@
+Wir suchen Dich als Senior Technical Onboarding Specialist – Phone Assistant als Unterstützung für das Technical Onboarding Team in Berlin . 
+Du bringst Leidenschaft für Technik, Service und die Zufriedenheit unserer Kund:innen mit – und möchtest von Anfang an Teil der Customer Journey sein? Dann bist Du hier richtig. Im Technical Onboarding begleitest Du Praxen und Krankenhäuser bei der Einführung unserer Produkte und sorgst dafür, dass sie von Tag 1 an reibungslos mit Doctolib arbeiten können. Während des Onboardings unterstützt Du komplexe IT-Fälle und implementierst vorranging unseren KI-basierten Telefonassistenten. 
+Deine Aufgaben
+Du bringst unseren KI-basierten Telefonassistenten nicht nur in die Praxen, sondern gestaltest mit, wie das gesamte Team dabei erfolgreich skaliert. Eine Rolle, in der echte Innovation auf konkreten Praxisalltag trifft – und in der Du über den Einzelfall hinaus Wirkung entfaltest. 
+KI zum Leben erwecken, auch in den komplexesten Fällen: Du übernimmst die technisch anspruchsvollsten Installationen und Konfigurationen unseres KI-gestützten Telefonassistenten bei Groß- und Schlüsselkunden, inklusive komplexer Telefonanlagen und Sonderfälle, die andere an Dich eskalieren.
+Daten sicher überführen, im großen Maßstab: Du begleitest und verantwortest komplexe Datenmigrationen aus externen Praxissystemen und stellst sicher, dass wiederkehrende Muster in skalierbare Standardprozesse überführt werden.
+Direkter Draht zu den größten Kunden: Du bist zentrale Ansprechperson für Praxen und Kliniken im Großkundensegment und deren IT bei strategisch wichtigen oder technisch komplexen Onboardings, und schaffst Klarheit, wo Zuständigkeiten oder Lösungswege zunächst unklar sind.
+Wissen multiplizieren: Du coachst und mentorst Kolleg:innen im Team, teilst Dein Know-how zu Systemkonfigurationen und komplexen Onboarding-Fällen proaktiv und hebst so das technische Niveau des gesamten Teams.
+Inhouse-Expertise auf höherem Level: Sales und Deployment verlassen sich auf Dich als zentrale technische Ansprechperson bei strategischen und nicht nur operativen Fragen zum KI-Telefonassistenten.
+Standards setzen: Du definierst Best Practices, Playbooks und Trainingsmaterialien für die Einrichtung des Telefonassistenten, die Konsistenz und Qualität über das gesamte Team hinweg sicherstellen.
+Alles verbinden, auf Systemebene: Du gestaltest, wie unsere All-in-One-Praxissoftware und der KI-Telefonassistent skalierbar in bestehende Praxisverwaltungssysteme integriert werden, und richtest Schnittstellen so ein, dass sie auch für künftige Fälle tragfähig sind.
+Cross-funktionale Projekte leiten: Du leitest Initiativen im Innovation Lab oder zur Prozessautomatisierung, die mehrere Teams verbinden und über Deinen eigenen Case hinaus nachhaltig wirken.
+Datenbasiert entscheiden: Du nutzt operative Daten und Kundenfeedback aus dem Telefonassistenten-Rollout, um Prioritäten zu setzen und Verbesserungen zu validieren.
+Dein Profil
+Du bist der festen Überzeugung, dass Du genau das mitbringst, was es für die Position braucht? Dann ermutigen wir Dich, Dich zu bewerben. Selbst wenn Du nicht jede Anforderung erfüllst, bist Du vielleicht genau die oder der richtige zukünftige Doctoliber:in für diese oder andere Stellen! 
+Um Teil unseres Teams zu werden, bringst Du Folgendes mit:
+- Mehrjährige Erfahrung: Du hast bereits mehrere Jahre im technischen Onboarding, Customer Success oder Technical Support gearbeitet, idealerweise mit komplexen Systemen wie Telefonanlagen, APIs oder KI-gestützten Produkten, und dort eigenständig komplexe Fälle gelöst.
+Mentoring-Erfahrung: Du hast bereits Kolleg:innen angelernt, gecoacht oder Wissen strukturiert weitergegeben, sei es formell oder informell.
+Umgang mit Ambiguität: Du schaffst Klarheit und Struktur, auch wenn Zuständigkeiten oder Lösungswege zunächst nicht eindeutig sind, insbesondere bei Großkunden mit komplexen Anforderungen.
+Stakeholder-Management: Erfahrung in der Zusammenarbeit mit cross-funktionalen Teams (Sales, Deployment) und der Fähigkeit, unterschiedliche Prioritäten auszubalancieren.
+Kommunikationsstärke auf hohem Niveau: Du kommunizierst klar und verbindlich, auch mit technisch weniger versierten Gesprächspartner:innen im Groß- und Schlüsselkundensegment, am Telefon wie im Online-Meeting.
+Sprachen: Deutsch fließend und Englisch sicher (mind. C1), Du bewegst Dich souverän in beiden Sprachen, auch bei komplexen technischen und strategischen Themen.
+Verbesserungsdenken: Du hast bereits eigenständig Prozesse verbessert oder skaliert und kannst den Impact davon belegen.
+Das ist ein Plus – oder Du lernst es bei uns: 
+Programmiererfahrung in JavaScript und/oder Python sowie mit SQL-Datenbanken auf fortgeschrittenem Niveau.

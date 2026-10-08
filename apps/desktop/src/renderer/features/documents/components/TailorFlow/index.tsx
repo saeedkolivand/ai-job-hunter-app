@@ -22,6 +22,7 @@ import { useLiveAnnouncement, useStageFocus } from './useStageEffects';
 import { useTailorAssistants } from './useTailorAssistants';
 import { useTailorForm } from './useTailorForm';
 import { useTailorPipeline } from './useTailorPipeline';
+import { WeakAnalysisNotice } from './WeakAnalysisNotice';
 
 export type { TailorWizardState };
 
@@ -357,6 +358,8 @@ export function TailorFlow({
       >
         {liveAnnouncement}
       </span>
+
+      {gen.weakAnalysis && (stage === 'generating' || stage === 'done') && <WeakAnalysisNotice />}
 
       {/* Stage body */}
       <div className="min-h-0 flex-1">

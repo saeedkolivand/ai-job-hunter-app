@@ -2051,6 +2051,7 @@
       "hintNoResume": "Fügen Sie Ihren Lebenslauf hinzu, um zu generieren",
       "hintNoDescription": "Keine Stellenbeschreibung zum Anpassen vorhanden",
       "cancelledNoOutput": "Generierung abgebrochen — es wurde noch nichts geschrieben.",
+      "weakAnalysis": "Die Stellenanalyse war schwach, daher wurden die Anforderungen per Stichwortabgleich ermittelt. Prüfen Sie den Abgleich, bevor Sie sich darauf verlassen.",
       "wizard": {
         "steps": {
           "jobAd": "Stellenanzeige",

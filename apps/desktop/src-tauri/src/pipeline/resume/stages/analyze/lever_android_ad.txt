@@ -1,0 +1,84 @@
+We design Spotify’s consumer experience—end to end, moment to moment, across every screen, platform, and partner integration. Our mission is to make listening feel effortless, personal, and joyful for billions of users around the world. That means turning complexity into clarity across hundreds of touchpoints—from our mobile and desktop apps to the smart speakers, TVs, cars, and integrations where Spotify shows up every day. If it touches a consumer, we shape it. We bring deep insight into human behavior, design, and technology to craft experiences that feel intuitive, expressive, and unmistakably Spotify.
+The Stream Reporting team is responsible for capturing and processing the consumption signals that power some of Spotify’s most important experiences and business functions. Our systems help ensure accurate royalty reporting, support experimentation and analytics, and provide trusted data that informs recommendations and personalization across Spotify.
+We’re looking for an Android Engineer to join a highly collaborative team working at the intersection of mobile development, data, and platform systems. This is an opportunity to build software that operates at Spotify scale and helps power experiences used by millions of listeners every day. You’ll help shape how listening and engagement signals are captured across Spotify’s mobile experiences and transformed into trusted datasets used throughout the company.
+ 
+What You'll Do
+
+- 
+Develop and maintain mobile client components that capture and report listening and user behavior signals across Spotify. 
+
+- 
+Build high-quality, well-tested, and well-documented Kotlin code that contributes to business-critical datasets used for royalty reporting, analytics, experimentation, and personalization. 
+
+- 
+Collaborate with engineers across Android, iOS, backend, and data teams to deliver end-to-end solutions. 
+
+- 
+Help improve the architecture, reliability, and quality of the systems used to collect and process user behavior signals. 
+
+- 
+Contribute to new capabilities that enable Spotify to capture richer listening and engagement signals across evolving product experiences. 
+
+- 
+Drive technical improvements that make it easier for teams across Spotify to add, validate, and maintain event reporting integrations. 
+
+- 
+Use modern AI-assisted engineering tools and workflows to improve productivity and software quality. 
+
+- 
+Contribute to a culture of continuous learning, knowledge sharing, and technical excellence. 
+
+
+Who You Are
+
+- 
+You have experience developing Android and iOS applications using Kotlin using Swift or Objective-C 
+
+- You have solid experience as a Engingeer I 
+- 
+You know how to build maintainable, scalable, and well-tested software systems. 
+
+- 
+You are comfortable working within large codebases and can quickly learn unfamiliar domains and technologies. 
+
+- 
+You have experience collaborating with engineers and stakeholders across multiple teams. 
+
+- 
+You care about code quality, testing, documentation, and long-term maintainability. 
+
+- 
+You demonstrate curiosity, ownership, and a willingness to step outside your immediate area of expertise when needed. 
+
+- 
+You are comfortable using modern development tooling, including AI-assisted coding solutions. 
+
+- 
+You thrive in environments where learning and long-term growth are valued. 
+
+- 
+You might have experience with C++ and understand how native code integrates with Android and iOS applications. 
+
+- 
+You might have familiarity with SQL, analytics systems, or data engineering concepts. 
+
+- 
+You have experience with instrumentation, telemetry, event collection, or large-scale client-side data systems. 
+
+- 
+You have worked on mobile applications that operate at significant scale and reliability requirements. 
+
+
+Where You'll Be
+
+- 
+This role is based in London or Stockholm. 
+
+- 
+We offer you the flexibility to work where you work best! There will be some in person meetings, but still allows for flexibility to work from home. 
+
+
+Spotify is an equal opportunity employer. You are welcome at Spotify for who you are, no matter where you come from, what you look like, or what’s playing in your headphones. Our platform is for everyone, and so is our workplace. The more voices we have represented and amplified in our business, the more we will all thrive, contribute, and be forward-thinking! So bring us your personal experience, your perspectives, and your background. It’s in our differences that we will find the power to keep revolutionizing the way the world listens.
+ 
+At Spotify, we are passionate about inclusivity and making sure our entire recruitment process is accessible to everyone. We have ways to request reasonable accommodations during the interview process and help assist in what you need. If you need accommodations at any stage of the application or interview process, please let us know - we’re here to support you in any way we can.
+ 

@@ -9,6 +9,11 @@
 use async_trait::async_trait;
 use serde_json::json;
 
+use std::collections::HashSet;
+
+use crate::documents::keywords::{
+    detected_language, keywords_normalized_list, markdown_to_plain, SHORT_TECH_TERMS, SYNONYMS,
+};
 use crate::error::{AppError, AppResult};
 use crate::pipeline::resume::floor::{store_sound, with_floor};
 use crate::pipeline::resume::prompts::{analyze_job_user, ANALYZE_JOB_SYSTEM};
@@ -19,6 +24,83 @@ use crate::pipeline::Stage;
 pub struct AnalyzeJob;
 
 const NAME: &str = "analyze_job";
+
+/// Most keyword-kernel terms promoted to must-haves when both model attempts
+/// missed the floor.
+const FALLBACK_MUST_HAVES: usize = 8;
+
+/// Fill an analysis' empty must-haves from the keyword kernel; whether it did.
+fn apply_keyword_fallback(analysis: &mut JobAnalysis, job_ad: &str, company: &str) -> bool {
+    if !analysis.must_have.is_empty() {
+        return false;
+    }
+    analysis.must_have = keyword_must_haves(job_ad, &analysis.role_title, company);
+    !analysis.must_have.is_empty()
+}
+
+/// Skill-shaped term: a kernel-known tech term (short allowlist or a canonical
+/// synonym such as "python"), or one with `+ # .`.
+fn techy(token: &str) -> bool {
+    SHORT_TECH_TERMS.contains(&token)
+        || SYNONYMS.iter().any(|(_, canon)| *canon == token)
+        || token.contains(['+', '#', '.'])
+}
+
+/// Tokens written capitalised mid-sentence ("... using Kotlin code"): product
+/// and technology names, as opposed to sentence-initial words.
+fn proper_nouns(plain: &str) -> HashSet<String> {
+    let mut out = HashSet::new();
+    for line in plain.lines() {
+        let mut prev = "";
+        for word in line.split_whitespace() {
+            let sentence_start = prev.is_empty() || prev.ends_with(['.', '!', '?', ':', '-']);
+            if !sentence_start && word.starts_with(char::is_uppercase) {
+                out.extend(keywords_normalized_list(word));
+            }
+            prev = word;
+        }
+    }
+    out
+}
+
+/// Deterministic stand-in for the must-haves a degraded analysis failed to
+/// extract (#1392): `documents::keywords` terms of the plain-text posting minus
+/// the company and role-title words; skill-shaped terms first, then
+/// mid-sentence-capitalised names, then most repeated (ties keep document order).
+fn keyword_must_haves(job_ad: &str, role_title: &str, company: &str) -> Vec<String> {
+    let skip: HashSet<String> = keywords_normalized_list(&format!("{company} {role_title}"))
+        .into_iter()
+        .collect();
+    let plain = markdown_to_plain(job_ad);
+    // German capitalises every noun, so capitalisation says nothing there.
+    let german = detected_language(&plain) == Some("de");
+    let proper = if german {
+        HashSet::new()
+    } else {
+        proper_nouns(&plain)
+    };
+    let mut counts: Vec<(String, usize)> = Vec::new();
+    for token in keywords_normalized_list(&plain) {
+        if skip.contains(&token) {
+            continue;
+        }
+        match counts.iter_mut().find(|(t, _)| *t == token) {
+            Some((_, n)) => *n += 1,
+            None => counts.push((token, 1)),
+        }
+    }
+    // Nothing else tells a German skill from a German noun: keep only
+    // skill-shaped terms when the ad has any.
+    if german && counts.iter().any(|(t, _)| techy(t)) {
+        counts.retain(|(t, _)| techy(t));
+    }
+    counts.sort_by_key(|(t, n)| (!techy(t), !proper.contains(t), std::cmp::Reverse(*n)));
+    counts
+        .into_iter()
+        .take(FALLBACK_MUST_HAVES)
+        .map(|(t, _)| t)
+        .collect()
+}
 
 #[async_trait]
 impl<'a> Stage<QualityCtx<'a>> for AnalyzeJob {
@@ -37,6 +119,7 @@ impl<'a> Stage<QualityCtx<'a>> for AnalyzeJob {
         let from_cache = cached.is_some();
         let mut degraded = false;
         let mut retried = false;
+        let mut keyword_fallback = false;
         let analysis = match cached {
             Some(analysis) => analysis,
             None => {
@@ -65,13 +148,15 @@ impl<'a> Stage<QualityCtx<'a>> for AnalyzeJob {
                 )
                 .await?;
                 (degraded, retried) = (floored.degraded, floored.retried);
-                let analysis = floored.value;
+                let mut analysis = floored.value;
                 // `complete_json` guarantees the response PARSED; it cannot
                 // know whether the model answered. Every field is
                 // `#[serde(default)]`, so `{}` is a successful parse and an
                 // empty analysis — which would then silently produce an
                 // evidence map with no requirements and a strategy with no
                 // emphasis, all reported as a clean run.
+                // Intentionally BEFORE the keyword fallback: a model that returns
+                // nothing at all is broken, not weak.
                 if analysis.is_empty() {
                     return Err(AppError::Provider(
                         "The model returned no requirements for this posting. Try again, or \
@@ -79,6 +164,14 @@ impl<'a> Stage<QualityCtx<'a>> for AnalyzeJob {
                             .to_string(),
                     ));
                 }
+                // Both attempts missed the floor: real must-haves from the
+                // keyword kernel beat none (the artifact flags it).
+                keyword_fallback = degraded
+                    && apply_keyword_fallback(
+                        &mut analysis,
+                        ctx.input.job_ad,
+                        ctx.input.company_name,
+                    );
                 analysis
             }
         };
@@ -100,6 +193,7 @@ impl<'a> Stage<QualityCtx<'a>> for AnalyzeJob {
                 "niceToHave": analysis.nice_to_have.len(),
                 "retried": retried,
                 "belowFloor": degraded,
+                "keywordFallback": keyword_fallback,
             }),
         );
         ctx.analysis = analysis;
@@ -108,3 +202,6 @@ impl<'a> Stage<QualityCtx<'a>> for AnalyzeJob {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

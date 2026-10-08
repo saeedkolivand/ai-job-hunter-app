@@ -80,3 +80,26 @@ fn analyze_and_strategy_wire_the_quality_floor() {
         );
     }
 }
+
+/// #1392: `QualityCtx` cannot be built in a test, so the fallback wiring is
+/// pinned in source like the floor above. Mutation check (executed): delete the
+/// `keyword_fallback = degraded && apply_keyword_fallback(..)` statement, or the
+/// artifact key, and this fails.
+#[test]
+fn analyze_falls_back_to_the_keyword_kernel_only_when_degraded_and_flags_it() {
+    let code = code_only("analyze.rs");
+    assert!(
+        code.contains("keyword_fallback=degraded&&apply_keyword_fallback(&mutanalysis,"),
+        "analyze: a degraded analysis must be filled by apply_keyword_fallback"
+    );
+    assert!(
+        code.contains("\"keywordFallback\":keyword_fallback"),
+        "analyze: the artifact must flag the fallback"
+    );
+    // The fallback runs on the value that is hashed into the cache key and
+    // handed downstream, i.e. before the JSON is built.
+    assert!(
+        code.find("apply_keyword_fallback(&mutanalysis,") < code.find("letjson=serde_json"),
+        "analyze: the fallback must run before the analysis is serialised"
+    );
+}

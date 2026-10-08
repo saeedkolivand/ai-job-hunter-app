@@ -2047,6 +2047,7 @@
       "hintNoResume": "Add your resume to generate",
       "hintNoDescription": "No job description to tailor against",
       "cancelledNoOutput": "Generation was cancelled — nothing was written yet.",
+      "weakAnalysis": "The job analysis was weak, so the requirements were extracted by keyword matching. Review the match before relying on it.",
       "wizard": {
         "steps": {
           "jobAd": "Job ad",

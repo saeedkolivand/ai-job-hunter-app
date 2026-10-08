@@ -36,12 +36,17 @@ fn analysis_floor_separates_good_from_degraded_on_a_real_ad() {
     let ad = long_ad();
     assert!(!good_analysis().below_floor(&ad));
     assert!(degraded_analysis().below_floor(&ad));
-    // Responsibilities alone clear the floor; so do must-haves alone.
+    // #1392: responsibilities alone no longer clear the floor; must-haves alone do.
     let only_resp = JobAnalysis {
         responsibilities: vec!["Ship weekly".into()],
         ..JobAnalysis::default()
     };
-    assert!(!only_resp.below_floor(&ad));
+    assert!(only_resp.below_floor(&ad));
+    let only_must = JobAnalysis {
+        must_have: vec!["Kotlin".into()],
+        ..JobAnalysis::default()
+    };
+    assert!(!only_must.below_floor(&ad));
 }
 
 #[test]
