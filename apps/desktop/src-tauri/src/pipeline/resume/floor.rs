@@ -28,11 +28,10 @@ pub(crate) struct Floored<T> {
 /// first. A failing retry keeps the first answer, since the caller can still
 /// use it and the deadline state is checked at the next stage boundary.
 ///
-/// **Cancellation gap:** `QualityCtx` exposes no cancel token (the pipeline
-/// checks cancellation only at stage boundaries), so a cancel that lands during
-/// the first call does not stop the retry; it costs at most one more call, and
-/// the run stops at the next boundary. The deadline IS honoured: the retry goes
-/// through `complete_json`, whose guard refuses a call past the run deadline.
+/// **Cancellation:** both JSON stages opt into `Stage::abandon_on_cancel`, so a
+/// cancel drops this whole future, in-flight call and retry included. The
+/// deadline is honoured too: the retry goes through `complete_json`, whose guard
+/// refuses a call past the run deadline.
 pub(crate) async fn with_floor<'e, T, F, Fut>(
     effort: Option<&'e str>,
     mut ask: F,

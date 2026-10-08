@@ -178,7 +178,7 @@ fn apply_timeout_stops_the_run_only_when_the_outcome_says_so() {
 #[test]
 fn timeout_message_names_the_stage_and_rounds_the_duration_to_seconds() {
     assert_eq!(
-        timeout_message("strategy", 300_021),
+        timeout_message("strategy", 300_021, false),
         "The \"strategy\" step didn't get a response within 301s. Try a faster model or a \
          lower effort level."
     );
@@ -197,12 +197,12 @@ fn timeout_message_names_the_stage_and_rounds_the_duration_to_seconds() {
 #[test]
 fn a_sub_second_timeout_never_renders_as_0s() {
     assert!(
-        timeout_message("strategy", 250).contains("within 1s"),
+        timeout_message("strategy", 250, false).contains("within 1s"),
         "{}",
-        timeout_message("strategy", 250)
+        timeout_message("strategy", 250, false)
     );
     assert_eq!(
-        timeout_failure_data("strategy", 250),
+        timeout_failure_data("strategy", 250, false),
         serde_json::json!({ "kind": "timeout", "stage": "strategy", "seconds": 1 })
     );
 }
@@ -220,7 +220,22 @@ fn a_sub_second_timeout_never_renders_as_0s() {
 #[test]
 fn timeout_failure_data_carries_the_stage_and_the_rounded_duration() {
     assert_eq!(
-        timeout_failure_data("strategy", 300_021),
+        timeout_failure_data("strategy", 300_021, false),
         serde_json::json!({ "kind": "timeout", "stage": "strategy", "seconds": 301 })
+    );
+}
+
+/// #1393: a stage that already ran at the cheapest effort must not be told to
+/// lower it. Mutation check: ignore `lowest_effort` and the assertions fail.
+#[test]
+fn the_timeout_hint_drops_lower_effort_when_effort_is_already_lowest() {
+    let message = timeout_message("strategy", 300_000, true);
+    assert!(!message.contains("lower effort"), "{message}");
+    assert!(message.contains("smaller or faster model"), "{message}");
+    assert_eq!(
+        timeout_failure_data("strategy", 300_000, true),
+        serde_json::json!({
+            "kind": "timeout", "stage": "strategy", "seconds": 300, "lowestEffort": true
+        })
     );
 }

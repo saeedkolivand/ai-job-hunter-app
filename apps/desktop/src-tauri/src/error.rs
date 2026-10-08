@@ -20,6 +20,16 @@ pub enum AppError {
     /// An external API / AI provider rejected or failed the request.
     #[error("{0}")]
     Provider(String),
+    /// A JSON-mode call hit the provider's output limit and was cut off. Typed
+    /// (not a `Provider` message) because it is deterministic: retrying only
+    /// doubles a runaway, and the remedy is a smaller job or a model that stops,
+    /// not "check the provider is running".
+    #[error("{0}")]
+    OutputLimit(String),
+    /// The model answered with a refusal. Typed so a log line can name the class
+    /// without echoing the model's own text.
+    #[error("{0}")]
+    Refusal(String),
     /// Persistence: SQLite, filesystem, keychain.
     #[error("{0}")]
     Storage(String),
@@ -69,6 +79,8 @@ impl AppError {
             AppError::Config(_) => "CONFIG",
             AppError::Network(_) => "NETWORK",
             AppError::Provider(_) => "PROVIDER",
+            AppError::OutputLimit(_) => "OUTPUT_LIMIT",
+            AppError::Refusal(_) => "REFUSAL",
             AppError::Storage(_) => "STORAGE",
             AppError::Parse(_) => "PARSE",
             AppError::Validation(_) => "VALIDATION",

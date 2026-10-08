@@ -206,6 +206,8 @@ pub fn strip_secrets_in_place(e: AppError, secrets: &[&str]) -> AppError {
         AppError::Config(m) => AppError::Config(s(m)),
         AppError::Network(m) => AppError::Network(s(m)),
         AppError::Provider(m) => AppError::Provider(s(m)),
+        AppError::OutputLimit(m) => AppError::OutputLimit(s(m)),
+        AppError::Refusal(m) => AppError::Refusal(s(m)),
         AppError::Storage(m) => AppError::Storage(s(m)),
         AppError::Parse(m) => AppError::Parse(s(m)),
         AppError::Validation(m) => AppError::Validation(s(m)),

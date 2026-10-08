@@ -1781,9 +1781,12 @@
       "runTimeout": "Stopped — the run ran out of time",
       "maxToolCalls": "Stopped at its tool-call limit",
       "maxRepairs": "Stopped — the repair budget ran out",
+      "outputLimit": "Stopped — the model's answer was too long and was cut off. Lower the thinking effort or pick a non-thinking or faster model",
+      "providerError": "Stopped — the AI provider returned an error or was unreachable. Check it is running or try again shortly",
       "stopped": "Stopped"
     },
     "timeout": "The \"{{stage}}\" step didn't get a response within {{seconds}}s. Try a faster model or a lower effort level.",
+    "timeoutLowestEffort": "The \"{{stage}}\" step didn't get a response within {{seconds}}s. Try a smaller or faster model.",
     "runs": {
       "title": "Staged runs for this job",
       "empty": "No staged runs yet for this posting.",

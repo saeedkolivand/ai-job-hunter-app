@@ -142,6 +142,27 @@ pub(crate) fn apply_timeout(ledger: &RunLedger, stage: &StageInfo, outcome: Stag
     }
 }
 
+/// Record a provider failure as the run's stop reason, so the failed row keeps a
+/// reason once the umbrella job is gone. First-writer-wins (a timeout or budget
+/// stop already recorded stays), and a user cancel is never relabelled: a stream
+/// torn down by Cancel surfaces as an ordinary provider error.
+pub(crate) fn note_provider_failure(
+    ledger: &RunLedger,
+    outcome: &AppResult<()>,
+    token_cancelled: bool,
+) {
+    if token_cancelled {
+        return;
+    }
+    match outcome {
+        Err(AppError::Provider(_) | AppError::Network(_) | AppError::Refusal(_)) => {
+            ledger.stop(StoppedReason::ProviderError)
+        }
+        Err(AppError::OutputLimit(_)) => ledger.stop(StoppedReason::OutputLimit),
+        _ => {}
+    }
+}
+
 /// Round a millisecond duration UP to whole seconds, floored at 1 — shared by
 /// [`timeout_message`] and [`timeout_failure_data`] so the English sentence
 /// and the structured event payload always report the same number.
@@ -167,10 +188,14 @@ fn round_up_seconds(ms: u64) -> u64 {
 /// (`jobs_get`/`jobs_list`, a diagnostics surface with no i18n of its own) —
 /// a readable fallback for that surface, same as every other `job_fail`
 /// message this crate has always sent there.
-pub(crate) fn timeout_message(stage: &str, ms: u64) -> String {
+pub(crate) fn timeout_message(stage: &str, ms: u64, lowest_effort: bool) -> String {
+    let hint = if lowest_effort {
+        "Try a smaller or faster model."
+    } else {
+        "Try a faster model or a lower effort level."
+    };
     format!(
-        "The \"{stage}\" step didn't get a response within {}s. Try a faster model or a lower \
-         effort level.",
+        "The \"{stage}\" step didn't get a response within {}s. {hint}",
         round_up_seconds(ms)
     )
 }
@@ -183,8 +208,13 @@ pub(crate) fn timeout_message(stage: &str, ms: u64) -> String {
 /// echoing the raw internal stage key. `"kind": "timeout"` is a discriminator
 /// so a consumer never has to guess a bare `{ stage, seconds }` object apart
 /// from some other job's payload shape.
-pub(crate) fn timeout_failure_data(stage: &str, ms: u64) -> Value {
-    json!({ "kind": "timeout", "stage": stage, "seconds": round_up_seconds(ms) })
+pub(crate) fn timeout_failure_data(stage: &str, ms: u64, lowest_effort: bool) -> Value {
+    let mut data = json!({ "kind": "timeout", "stage": stage, "seconds": round_up_seconds(ms) });
+    // Present only when true: tells the renderer not to advise "lower effort".
+    if lowest_effort {
+        data["lowestEffort"] = json!(true);
+    }
+    data
 }
 
 /// The run's TERMINAL STATE — status and stopped reason, derived together.
@@ -425,6 +455,10 @@ impl StageHooks for RunHooks {
         )?;
         self.report(stage, PHASE_START, None, None);
         Ok(())
+    }
+
+    async fn cancelled(&self) {
+        self.cancel.cancelled().await;
     }
 
     async fn after(&self, stage: &StageInfo, outcome: StageOutcome) {

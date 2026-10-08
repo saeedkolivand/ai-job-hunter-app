@@ -218,6 +218,12 @@ impl<'a> Stage<QualityCtx<'a>> for Strategy {
         "strategy"
     }
 
+    /// Cancel drops the in-flight JSON call (closing the HTTP stream) instead of
+    /// waiting out the model, which has no cancel check of its own (#1391).
+    fn abandon_on_cancel(&self) -> bool {
+        true
+    }
+
     async fn run(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
         let roster = seed_company_roster(ctx.input.source_resume, ctx.input.job_ad);
 

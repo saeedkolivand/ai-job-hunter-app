@@ -89,11 +89,19 @@ export interface ResumePipelineSession {
  * autopilot, …) still sends a plain string, and `handleJobEvent` below must
  * keep treating those exactly as before.
  */
-function timeoutFailureDetail(data: unknown): { stage: string; seconds: number } | null {
+function timeoutFailureDetail(
+  data: unknown
+): { stage: string; seconds: number; lowestEffort: boolean } | null {
   if (typeof data !== 'object' || data === null || (data as { kind?: unknown }).kind !== 'timeout')
     return null;
-  const { stage, seconds } = data as { stage?: unknown; seconds?: unknown };
-  return typeof stage === 'string' && typeof seconds === 'number' ? { stage, seconds } : null;
+  const { stage, seconds, lowestEffort } = data as {
+    stage?: unknown;
+    seconds?: unknown;
+    lowestEffort?: unknown;
+  };
+  return typeof stage === 'string' && typeof seconds === 'number'
+    ? { stage, seconds, lowestEffort: lowestEffort === true }
+    : null;
 }
 
 /**
@@ -233,7 +241,7 @@ export function useResumePipelineSession(
       const timeout = timeoutFailureDetail(event.data);
       setError(
         timeout
-          ? t('pipeline.timeout', {
+          ? t(timeout.lowestEffort ? 'pipeline.timeoutLowestEffort' : 'pipeline.timeout', {
               stage: t(`pipeline.stage.${timeout.stage}`, { defaultValue: timeout.stage }),
               seconds: timeout.seconds,
             })

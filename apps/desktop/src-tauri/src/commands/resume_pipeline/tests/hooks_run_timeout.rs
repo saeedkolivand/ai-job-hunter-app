@@ -21,7 +21,7 @@ use crate::pipeline::{Pipeline, Stage, StageHooks, StageInfo, StageOutcome};
 fn executes_timeout_arm_attaches_the_structured_failure_data() {
     let source = include_str!("../run.rs");
     assert!(
-        source.contains("data: Some(hooks::timeout_failure_data(stage, ms))"),
+        source.contains("data: Some(hooks::timeout_failure_data(stage, ms, lowest))"),
         "execute's per-call-timeout arm must attach timeout_failure_data to the \
          ExecuteFailure it returns — otherwise job.failed's event carries no \
          structured payload and the renderer's timeout banner never renders"
@@ -106,8 +106,23 @@ fn a_per_call_deadline_failure_produces_a_run_row_with_the_timeout_reason() {
 
         // The RENDERED message: names the stage, gives a next step — never a
         // raw token or an empty string, which is the bug this fix closes.
-        let message = timeout_message(stage, ms);
+        let message = timeout_message(stage, ms, false);
         assert!(message.contains("strategy"), "{message}");
         assert!(message.contains("Try a faster model"), "{message}");
     });
+}
+
+/// Wiring pin (same `AppHandle` limitation as above): `execute` records a
+/// provider failure on the ledger before deriving the terminal state. Mutation
+/// check: delete that call in `run.rs` and this fails.
+#[test]
+fn execute_records_a_provider_failure_before_the_terminal_state() {
+    let source = include_str!("../run.rs");
+    let note =
+        source.find("hooks::note_provider_failure(&ledger, &outcome, cancel.is_cancelled())");
+    let terminal = source.find("hooks::terminal_state(");
+    assert!(
+        note.is_some() && note < terminal,
+        "execute must call note_provider_failure before terminal_state"
+    );
 }

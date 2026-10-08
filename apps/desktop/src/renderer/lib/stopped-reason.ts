@@ -27,7 +27,9 @@ export type StoppedSuffix =
   | 'timeout'
   | 'runTimeout'
   | 'maxToolCalls'
-  | 'maxRepairs';
+  | 'maxRepairs'
+  | 'providerError'
+  | 'outputLimit';
 
 export const STOPPED_SUFFIX: Record<string, StoppedSuffix> = {
   done: 'done',
@@ -40,6 +42,8 @@ export const STOPPED_SUFFIX: Record<string, StoppedSuffix> = {
   run_timeout: 'runTimeout',
   max_tool_calls: 'maxToolCalls',
   max_repairs: 'maxRepairs',
+  provider_error: 'providerError',
+  output_limit: 'outputLimit',
 };
 
 /**

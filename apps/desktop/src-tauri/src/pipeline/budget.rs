@@ -264,6 +264,14 @@ pub enum StoppedReason {
     /// re-asks. The run stops rather than shipping the last rejected draft:
     /// output that failed validation must never be persisted as a success.
     MaxRepairs,
+    /// A provider call failed (a mid-stream break, a refused request) and the run
+    /// could not continue. Persisted so a failed run keeps a reason the renderer
+    /// can show after the umbrella job is gone; the message text itself is never
+    /// stored (ADR-027).
+    ProviderError,
+    /// A JSON-mode call hit the output limit and was cut off (`AppError::OutputLimit`).
+    /// Its own reason: "check that the provider is running" is wrong for it.
+    OutputLimit,
 }
 
 #[cfg(test)]

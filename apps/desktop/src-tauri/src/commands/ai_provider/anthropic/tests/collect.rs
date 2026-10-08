@@ -59,7 +59,7 @@ async fn an_empty_answer_fails() {
 async fn max_tokens_fails_json_calls_only() {
     let err = run(&[START, TEXT, CUT], true).await.unwrap_err();
     assert!(
-        matches!(&err, AppError::Provider(m) if m.contains("cut off")),
+        matches!(&err, AppError::OutputLimit(m) if m.contains("cut off")),
         "{err:?}"
     );
     assert!(run(&[START, TEXT, CUT], false).await.is_ok());

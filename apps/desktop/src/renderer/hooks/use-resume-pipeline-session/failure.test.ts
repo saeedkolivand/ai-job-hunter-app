@@ -53,7 +53,10 @@ describe('useResumePipelineSession — failures', () => {
     });
 
     it('reads the umbrella job message when the record flips first and recorded no reason', async () => {
-      fetchJobMock.mockResolvedValue({ status: 'failed', error: 'the provider refused the request' });
+      fetchJobMock.mockResolvedValue({
+        status: 'failed',
+        error: 'the provider refused the request',
+      });
       bus.detail = detail('failed', null);
       const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
 
@@ -230,6 +233,30 @@ describe('useResumePipelineSession — failures', () => {
       expect(result.current.error).toContain('Matching your evidence');
       expect(result.current.error).toContain('302');
       expect(result.current.error).not.toContain('match_evidence');
+      consoleError.mockRestore();
+    });
+
+    // #1393: when the stage already ran at the cheapest effort, "lower effort"
+    // is advice it cannot take. Mutation check: always use `pipeline.timeout`
+    // and the `not.toContain` below fails.
+    it('does not advise a lower effort when the stage already ran at the lowest', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      act(() =>
+        bus.job?.(
+          jobFailed(JOB_ID, {
+            kind: 'timeout',
+            stage: 'strategy',
+            seconds: 300,
+            lowestEffort: true,
+          })
+        )
+      );
+
+      await waitFor(() => expect(result.current.state).toBe('error'));
+      expect(result.current.error).toContain('300');
+      expect(result.current.error).not.toContain('lower effort');
+      expect(result.current.error).toContain('smaller or faster model');
       consoleError.mockRestore();
     });
 

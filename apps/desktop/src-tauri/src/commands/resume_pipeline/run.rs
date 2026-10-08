@@ -378,6 +378,7 @@ async fn execute(
     // cancelled draft used to come out `failed` + `"done"`, and why a run whose
     // deadline expired at a stage boundary is not a failure once
     // `persist_document` has saved its document.
+    hooks::note_provider_failure(&ledger, &outcome, cancel.is_cancelled());
     let (status, stopped_reason) = hooks::terminal_state(
         &ledger,
         outcome.is_ok() && !refused,
@@ -504,10 +505,13 @@ async fn execute(
         // PLUS `timeout_failure_data` for the renderer to localize instead of
         // splicing the raw stage key into an un-translatable English sentence.
         Err(e) => Err(match ledger.timeout_detail() {
-            Some((stage, ms)) => ExecuteFailure {
-                error: AppError::Timeout(hooks::timeout_message(stage, ms)),
-                data: Some(hooks::timeout_failure_data(stage, ms)),
-            },
+            Some((stage, ms)) => {
+                let lowest = ctx.stage_at_lowest_effort(stage);
+                ExecuteFailure {
+                    error: AppError::Timeout(hooks::timeout_message(stage, ms, lowest)),
+                    data: Some(hooks::timeout_failure_data(stage, ms, lowest)),
+                }
+            }
             None => e.into(),
         }),
     }

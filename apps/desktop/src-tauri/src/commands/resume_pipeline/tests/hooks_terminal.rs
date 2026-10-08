@@ -183,3 +183,51 @@ fn a_timeout_stopped_run_is_always_a_failure_even_when_something_was_persisted()
         "persisted=true must not rescue a Timeout the way it rescues a RunTimeout"
     );
 }
+
+/// **A provider failure persists a reason** (#1393): without it the failed row
+/// had `stopped_reason = NULL` and the card could show nothing after a remount.
+/// A cancel the stream surfaced as a provider error is NOT relabelled, and an
+/// earlier recorded reason wins.
+///
+/// Mutation check: make `note_provider_failure` a no-op and the first assert fails.
+#[test]
+fn a_provider_failure_persists_a_terminal_reason() {
+    use super::super::hooks::note_provider_failure;
+    use crate::error::AppError;
+
+    let failed = RunLedger::new();
+    note_provider_failure(&failed, &Err(AppError::Provider("x".into())), false);
+    assert_eq!(
+        super::super::hooks::terminal_state(&failed, false, false, false, false),
+        ("failed", Some("provider_error".to_string()))
+    );
+
+    let cut_off = RunLedger::new();
+    note_provider_failure(&cut_off, &Err(AppError::OutputLimit("x".into())), false);
+    assert_eq!(
+        super::super::hooks::terminal_state(&cut_off, false, false, false, false),
+        ("failed", Some("output_limit".to_string())),
+        "the cutoff has its own reason, not provider_error"
+    );
+
+    let broke = RunLedger::new();
+    note_provider_failure(&broke, &Err(AppError::Network("x".into())), false);
+    assert_eq!(broke.stopped(), Some(StoppedReason::ProviderError));
+
+    let refused = RunLedger::new();
+    note_provider_failure(&refused, &Err(AppError::Refusal("x".into())), false);
+    assert_eq!(refused.stopped(), Some(StoppedReason::ProviderError));
+
+    let cancelled = RunLedger::new();
+    note_provider_failure(&cancelled, &Err(AppError::Provider("x".into())), true);
+    assert_eq!(cancelled.stopped(), None);
+
+    let timed_out = RunLedger::new();
+    timed_out.stop(StoppedReason::Timeout);
+    note_provider_failure(&timed_out, &Err(AppError::Provider("x".into())), false);
+    assert_eq!(timed_out.stopped(), Some(StoppedReason::Timeout));
+
+    let fine = RunLedger::new();
+    note_provider_failure(&fine, &Ok(()), false);
+    assert_eq!(fine.stopped(), None);
+}

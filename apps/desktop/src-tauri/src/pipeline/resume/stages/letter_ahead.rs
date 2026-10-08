@@ -49,7 +49,7 @@ pub(crate) fn can_overlap(a: Route<'_>, b: Route<'_>) -> bool {
 /// (`gpu-box`) or a LAN-style suffix (see [`is_lan_name`]). The caller has checked both routes share the provider, so two
 /// local servers on different ports are conservatively treated as one. CLI
 /// agents and cloud APIs run a request per call, so they overlap.
-fn one_request_at_a_time(route: Route<'_>) -> bool {
+pub(crate) fn one_request_at_a_time(route: Route<'_>) -> bool {
     match route.provider {
         ProviderId::Ollama => true,
         ProviderId::OpenAiCompatible => route

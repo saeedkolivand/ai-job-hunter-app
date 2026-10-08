@@ -522,6 +522,18 @@ impl<'a> QualityCtx<'a> {
         self.completer_for(stage).effort_or_low(self.input.effort)
     }
 
+    /// Whether `stage` ran at the cheapest effort its model offers, so "lower
+    /// effort" is not advice that stage can take. Draft and cover letter send the
+    /// user's effort verbatim; every other stage goes through [`Self::stage_effort`].
+    pub fn stage_at_lowest_effort(&self, stage: &str) -> bool {
+        let effort = if matches!(stage, "draft" | "cover_letter") {
+            self.input.effort
+        } else {
+            self.stage_effort(stage)
+        };
+        self.completer_for(stage).at_lowest_effort(effort)
+    }
+
     /// The run's deadline guard, ready to hand to
     /// [`Completer::complete_json`](crate::pipeline::Completer::complete_json) —
     /// see [`guard_deadline`]. Owned (an `Arc` clone plus a `Copy` clock), so it

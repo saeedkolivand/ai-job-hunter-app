@@ -60,7 +60,7 @@ async fn an_empty_answer_fails_and_a_refusal_is_quoted() {
         .await
         .unwrap_err();
     assert!(
-        matches!(&err, AppError::Provider(m) if m.contains("I cannot help with that")),
+        matches!(&err, AppError::Refusal(m) if m.contains("I cannot help with that")),
         "{err:?}"
     );
     let err = collect_canned(&[STOP, DONE], parse_openai_frames, false)
@@ -79,7 +79,7 @@ async fn a_length_stop_fails_json_calls_but_plain_text_keeps_the_partial() {
         .await
         .unwrap_err();
     assert!(
-        matches!(&err, AppError::Provider(m) if m.contains("cut off")),
+        matches!(&err, AppError::OutputLimit(m) if m.contains("cut off")),
         "{err:?}"
     );
     let (text, _) = collect_canned(&chunks, parse_openai_frames, false)

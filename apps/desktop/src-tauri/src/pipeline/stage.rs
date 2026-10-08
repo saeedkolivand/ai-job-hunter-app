@@ -33,6 +33,17 @@ pub trait Stage<C>: Send + Sync {
     fn costs_a_provider_call(&self) -> bool {
         true
     }
+
+    /// Whether a cancel should DROP this stage's future mid-flight
+    /// ([`StageHooks::cancelled`]), closing whatever HTTP stream it holds.
+    ///
+    /// **Default `false`:** a streaming stage (`draft`, `cover_letter`) observes
+    /// cancel itself through the job tracker and winds its stream down cleanly;
+    /// dropping it from outside would skip that. Opt in only for a stage whose
+    /// in-flight work has no cancel check of its own (the JSON stages).
+    fn abandon_on_cancel(&self) -> bool {
+        false
+    }
 }
 
 /// An ordered sequence of [`Stage`]s sharing a context. Runs each stage in order,
@@ -89,7 +100,7 @@ impl<C> Pipeline<C> {
             match stage.run(ctx).await {
                 Ok(()) => trace.end(true),
                 Err(e) => {
-                    trace.end(false);
+                    trace.end_err(&e);
                     return Err(e);
                 }
             }
@@ -122,11 +133,26 @@ impl<C> Pipeline<C> {
             hooks.before(&info).await?;
             let started = std::time::Instant::now();
             let trace = StageTrace::begin(self.name, stage.name());
-            let result = match hooks.call_log() {
-                Some(log) => log.scope(stage.run(ctx)).await,
-                None => stage.run(ctx).await,
+            let body = async {
+                match hooks.call_log() {
+                    Some(log) => log.scope(stage.run(ctx)).await,
+                    None => stage.run(ctx).await,
+                }
             };
-            trace.end(result.is_ok());
+            // A cancel drops the stage future, which closes its HTTP stream.
+            let result = if stage.abandon_on_cancel() {
+                tokio::select! {
+                    biased;
+                    r = body => r,
+                    () = hooks.cancelled() => Err(AppError::Cancelled),
+                }
+            } else {
+                body.await
+            };
+            match &result {
+                Ok(()) => trace.end(true),
+                Err(e) => trace.end_err(e),
+            }
             let outcome = StageOutcome {
                 ok: result.is_ok(),
                 ms: started.elapsed().as_millis() as u64,
@@ -197,6 +223,12 @@ pub trait StageHooks: Send + Sync {
     /// observer must not be able to turn a successful stage into a failed run.
     async fn after(&self, stage: &StageInfo, outcome: StageOutcome);
 
+    /// Resolves when the run is cancelled; never, by default. Raced against a
+    /// stage that opts in via [`Stage::abandon_on_cancel`].
+    async fn cancelled(&self) {
+        std::future::pending::<()>().await;
+    }
+
     /// The collector for the provider calls each stage body makes, scoped around
     /// the body by [`Pipeline::run_hooked`]. `None` (the default) collects
     /// nothing; the implementor drains it in [`after`](Self::after).
@@ -226,4 +258,25 @@ impl StageTrace {
     fn end(&self, ok: bool) {
         self.span.end(ok);
     }
+
+    /// A failed stage, with the (redacted, length-capped) error text: the bare
+    /// `ok=false` used to be all a support bundle had to go on.
+    fn end_err(&self, err: &AppError) {
+        self.span.end_with(&error_field(err), false);
+    }
+}
+
+/// The `error=` log field for a failed stage: the error text through
+/// [`crate::observability::sanitize_reason`] (paths, hosts, tokens redacted,
+/// length capped). Provider errors are already stripped of keys and base URLs
+/// by `Completer::strip_secrets` before they get here.
+pub(crate) fn error_field(err: &AppError) -> String {
+    // A refusal is the model's own words: class only, never its text.
+    if matches!(err, AppError::Refusal(_)) {
+        return "error=\"Refusal: the model declined to answer\"".to_string();
+    }
+    format!(
+        "error={:?}",
+        crate::observability::sanitize_reason(&err.to_string())
+    )
 }

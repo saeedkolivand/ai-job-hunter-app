@@ -11,7 +11,7 @@ mod cover_letter;
 mod draft;
 mod evidence;
 mod humanize;
-mod letter_ahead;
+pub(crate) mod letter_ahead;
 mod repair;
 pub mod sections;
 mod strategy;

@@ -6,6 +6,7 @@
 //! (`pipeline::cache::KvCache`).
 
 mod cache;
+mod cancel;
 mod completer;
 mod completion;
 mod stage;

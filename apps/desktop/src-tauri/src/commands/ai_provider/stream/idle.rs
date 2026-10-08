@@ -258,19 +258,19 @@ where
         )));
     }
     if reject_truncated && stop == Some(StopReason::Length) {
-        return Err(AppError::Provider(format!(
+        return Err(AppError::OutputLimit(format!(
             "{label}: the response hit the output limit and was cut off"
         )));
     }
     if answer.trim().is_empty() {
-        return Err(AppError::Provider(if refusal.trim().is_empty() {
-            format!("{label}: unexpected response shape")
+        return Err(if refusal.trim().is_empty() {
+            AppError::Provider(format!("{label}: unexpected response shape"))
         } else {
-            format!(
+            AppError::Refusal(format!(
                 "{label}: the model refused — {}",
                 redact_upstream_text(&refusal)
-            )
-        }));
+            ))
+        });
     }
     Ok((answer, usage))
 }

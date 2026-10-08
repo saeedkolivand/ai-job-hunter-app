@@ -29,6 +29,8 @@ const WIRE: &[(StoppedReason, &str)] = &[
     (StoppedReason::RunTimeout, "run_timeout"),
     (StoppedReason::MaxToolCalls, "max_tool_calls"),
     (StoppedReason::MaxRepairs, "max_repairs"),
+    (StoppedReason::ProviderError, "provider_error"),
+    (StoppedReason::OutputLimit, "output_limit"),
 ];
 
 #[test]
@@ -74,6 +76,8 @@ fn the_wire_table_pins_every_variant() {
             StoppedReason::RunTimeout => "run_timeout",
             StoppedReason::MaxToolCalls => "max_tool_calls",
             StoppedReason::MaxRepairs => "max_repairs",
+            StoppedReason::ProviderError => "provider_error",
+            StoppedReason::OutputLimit => "output_limit",
         };
         assert_eq!(
             *wire, expected,
@@ -82,7 +86,7 @@ fn the_wire_table_pins_every_variant() {
     }
     assert_eq!(
         WIRE.len(),
-        10,
+        12,
         "WIRE must carry exactly one row per StoppedReason variant — add the row \
          (and bump this count) alongside the match arm the compiler just demanded"
     );

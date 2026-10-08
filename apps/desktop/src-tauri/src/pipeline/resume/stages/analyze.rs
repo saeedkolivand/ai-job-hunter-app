@@ -108,6 +108,12 @@ impl<'a> Stage<QualityCtx<'a>> for AnalyzeJob {
         "analyze_job"
     }
 
+    /// Cancel drops the in-flight JSON call (closing the HTTP stream) instead of
+    /// waiting out the model, which has no cancel check of its own (#1391).
+    fn abandon_on_cancel(&self) -> bool {
+        true
+    }
+
     async fn run(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
         // Bound to the model THIS stage runs on, not to the run's default —
         // see `QualityCtx::stage_cache_key`.

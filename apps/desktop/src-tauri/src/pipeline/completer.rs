@@ -330,6 +330,12 @@ impl Completer {
     /// The effort a MECHANICAL stage sends: the user's own choice when they
     /// made one, else [`low_effort`](Self::low_effort) — see
     /// [`effort_or_cheapest`], the pure policy.
+    /// Whether `effort` is already as cheap as this model's levels go (or the
+    /// model has no effort lever at all) — see [`is_lowest_effort`].
+    pub fn at_lowest_effort(&self, effort: Option<&str>) -> bool {
+        is_lowest_effort(effort, &self.provider.effort_levels(&self.model))
+    }
+
     pub fn effort_or_low<'a>(&self, user: Option<&'a str>) -> Option<&'a str> {
         effort_or_cheapest(user, &self.provider.effort_levels(&self.model))
     }
@@ -589,6 +595,13 @@ pub(crate) fn effort_or_cheapest<'a>(
 ) -> Option<&'a str> {
     user.filter(|e| !e.trim().is_empty())
         .or_else(|| low_effort_level(levels))
+}
+
+/// Whether a call sent at `effort` could not get cheaper by lowering effort: the
+/// model has no effort levels, or `effort` is its first (lowest) one. `None`
+/// on a model with levels is the provider default, which is NOT the lowest.
+pub(crate) fn is_lowest_effort(effort: Option<&str>, levels: &[&'static str]) -> bool {
+    levels.is_empty() || (effort.is_some() && levels.first().copied() == effort)
 }
 
 /// Free function (not just [`Completer::low_effort`]) so the choice is

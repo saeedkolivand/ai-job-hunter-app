@@ -336,3 +336,13 @@ fn the_pipeline_and_the_command_admit_against_the_same_named_bucket_constant() {
         "commands::ai::admit_research must acquire the SAME shared bucket constant"
     );
 }
+
+/// #1393: "lower effort" is advice only a stage above the cheapest level can take.
+#[test]
+fn lowest_effort_means_the_first_level_or_no_lever() {
+    use crate::pipeline::is_lowest_effort;
+    assert!(is_lowest_effort(Some("low"), &["low", "medium", "high"]));
+    assert!(!is_lowest_effort(Some("high"), &["low", "medium", "high"]));
+    assert!(!is_lowest_effort(None, &["low", "medium", "high"]));
+    assert!(is_lowest_effort(None, &[]));
+}

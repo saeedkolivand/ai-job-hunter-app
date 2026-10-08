@@ -194,6 +194,12 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
         NAME
     }
 
+    /// Safe to drop mid-call: `ctx` is written only after both arms finish, so a
+    /// cancelled humanize leaves the pre-humanize documents untouched.
+    fn abandon_on_cancel(&self) -> bool {
+        true
+    }
+
     async fn run(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
         // The guard asks about BOTH documents, not just the résumé. It used to
         // bind `ctx.report` with a `let … else`, which made a résumé report the

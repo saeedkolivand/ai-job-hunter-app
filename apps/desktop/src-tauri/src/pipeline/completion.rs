@@ -14,6 +14,7 @@ use crate::commands::ai_provider::{
 use crate::error::{AppError, AppResult};
 use crate::jobs::{child_stream_id, JobTracker};
 
+use super::call_notes::begin_call;
 use super::completer::Completer;
 use super::json;
 
@@ -45,10 +46,8 @@ impl Completer {
     pub async fn stream(&self, job_id: &str, mut req: AiGenerateRequest) -> AppResult<()> {
         req.model = self.model.clone();
         vet_wire_request(&mut req)?;
-        // The stream loop records its usage itself; read it back for the trail,
-        // after clearing so a stale value from an earlier call is never read.
-        call_trace::clear_observed_usage();
-        let started = Instant::now();
+        // The stream loop records its usage itself; read it back for the trail.
+        let started = begin_call();
         let out = self.strip_secrets(self.provider.chat_stream(&self.app, job_id, &req).await);
         if out.is_ok() {
             let usage = call_trace::take_observed_usage().unwrap_or_default();
@@ -76,7 +75,7 @@ impl Completer {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
-        let started = Instant::now();
+        let started = begin_call();
         let (text, usage) = self.or_note(
             None,
             started,
@@ -112,7 +111,7 @@ impl Completer {
             self.context_window,
             effort,
         );
-        let started = Instant::now();
+        let started = begin_call();
         let (text, usage) = self.or_note(
             effort,
             started,
@@ -258,7 +257,7 @@ impl Completer {
         tools: &[ToolSpec],
         temperature: Option<f64>,
     ) -> AppResult<AgentTurn> {
-        let started = Instant::now();
+        let started = begin_call();
         let turn = self.or_note(
             None,
             started,
@@ -344,7 +343,7 @@ impl Completer {
                 self.charge_daily()
             },
             |reask| async {
-                let t = Instant::now();
+                let t = begin_call();
                 *started.lock() = t;
                 let out = self
                     .structured_call(system, user, schema_hint, schema, reask, effort)
@@ -383,22 +382,7 @@ impl Completer {
             Some(reask) => format!("{user}\n\n{reask}"),
             None => user.to_string(),
         };
-        // Temperature/max_tokens are deliberately absent (see above); the
-        // configured context window is not — a structured call reads the same
-        // oversized artifacts every other stage does. `effort` rides along so
-        // the provider's own per-call deadline (Ollama's
-        // `ollama_completion_deadline`) can scale by it, same as a streamed
-        // stage's — see `complete_json`'s own doc for why this parameter
-        // exists.
-        let req = text_request(
-            &self.model,
-            system,
-            &user,
-            None,
-            None,
-            self.context_window,
-            effort,
-        );
+        let req = self.structured_req(system, &user, effort);
         self.strip_secrets(
             self.provider
                 .complete_structured(&self.app, &req, schema_hint, schema)
@@ -453,6 +437,15 @@ pub(crate) fn text_request(
     }
 }
 
+/// A 429 / 5xx / in-band "busy" `Network` message (see `error_map` and
+/// `stream::idle::frame_error`): the transport layer already retried these.
+fn is_busy_message(m: &str) -> bool {
+    let m = m.to_ascii_lowercase();
+    ["rate limit", "service busy", "service error"]
+        .iter()
+        .any(|k| m.contains(k))
+}
+
 /// The `AppHandle`-free core of [`Completer::complete_json`]: parse, one re-ask,
 /// hard error — with the SPEND SEAM injected rather than hidden inside `ask`.
 ///
@@ -483,7 +476,19 @@ where
     R: FnMut(Usage),
 {
     charge()?;
-    let (raw, usage) = ask(None).await?;
+    let (raw, usage) = match ask(None).await {
+        // One retry for a transient mid-stream break (#1391: `Network`, e.g. "the
+        // stream ended before the model finished"). Re-charged, so the run-deadline
+        // guard and the daily ceiling gate it like the re-ask. Never retried: a
+        // busy/rate-limited error (the transport layer already retried it), a
+        // timeout, a cancel, and the deterministic output-limit cutoff
+        // (`OutputLimit`), which would only double a runaway.
+        Err(AppError::Network(m)) if !is_busy_message(&m) => {
+            charge()?;
+            ask(None).await?
+        }
+        other => other?,
+    };
     record(usage);
     let first_error = match json::parse::<T>(&raw) {
         Ok(value) => return Ok(value),

@@ -58,7 +58,7 @@ async fn a_length_stop_fails_json_calls() {
         .await
         .unwrap_err();
     assert!(
-        matches!(&err, AppError::Provider(m) if m.contains("cut off")),
+        matches!(&err, AppError::OutputLimit(m) if m.contains("cut off")),
         "{err:?}"
     );
     assert!(collect_canned(&[PART, CUT], parse_ollama_frames, false)

@@ -1785,9 +1785,12 @@
       "runTimeout": "Gestoppt — die Zeit für den Lauf war um",
       "maxToolCalls": "Beim Limit für Werkzeugaufrufe gestoppt",
       "maxRepairs": "Gestoppt — das Budget für Nachbesserungen war aufgebraucht",
+      "outputLimit": "Gestoppt — die Antwort des Modells war zu lang und wurde abgeschnitten. Senken Sie den Denkaufwand oder wählen Sie ein Modell ohne Denkmodus oder ein schnelleres Modell",
+      "providerError": "Gestoppt — der KI-Anbieter hat einen Fehler gemeldet oder war nicht erreichbar. Prüfen Sie, ob er läuft, oder versuchen Sie es in Kürze erneut",
       "stopped": "Gestoppt"
     },
     "timeout": "Der Schritt „{{stage}}“ hat innerhalb von {{seconds}} s keine Antwort erhalten. Versuchen Sie ein schnelleres Modell oder eine niedrigere Aufwandsstufe.",
+    "timeoutLowestEffort": "Der Schritt „{{stage}}“ hat innerhalb von {{seconds}} s keine Antwort erhalten. Versuchen Sie ein kleineres oder schnelleres Modell.",
     "runs": {
       "title": "Gestufte Läufe für diese Stelle",
       "empty": "Für diese Anzeige gibt es noch keine gestuften Läufe.",

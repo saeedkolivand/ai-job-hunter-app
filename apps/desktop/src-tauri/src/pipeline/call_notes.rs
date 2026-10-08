@@ -9,6 +9,35 @@ use crate::error::AppResult;
 
 use super::completer::Completer;
 
+/// Start of one provider call: forget any usage a PREVIOUS call left in the
+/// ambient slot, so a call that fails before reporting its own never records
+/// the last call's numbers (#1393). Every `Completer` entry point that ends in
+/// [`Completer::or_note`] starts with this.
+pub(super) fn begin_call() -> Instant {
+    call_trace::clear_observed_usage();
+    Instant::now()
+}
+
+/// Note a FAILED call: error class only, and only the usage THIS call observed.
+pub(super) fn note_failure(
+    provider: &str,
+    model: &str,
+    effort: Option<&str>,
+    started: Instant,
+    err: &crate::error::AppError,
+) {
+    let usage = call_trace::take_observed_usage().unwrap_or_default();
+    let class = call_trace::error_class(err);
+    call_trace::note(
+        provider,
+        model,
+        effort,
+        started.elapsed(),
+        usage,
+        Some(class),
+    );
+}
+
 impl Completer {
     /// Record ONE completed round-trip's REAL reported usage against today's
     /// spend. Post-call by necessity: the token counts come from the response.
@@ -57,9 +86,7 @@ impl Completer {
         result: AppResult<T>,
     ) -> AppResult<T> {
         if let Err(e) = &result {
-            let usage = call_trace::take_observed_usage().unwrap_or_default();
-            let class = call_trace::error_class(e);
-            self.note_with(effort, started.elapsed(), usage, Some(class));
+            note_failure(self.provider.id().as_str(), &self.model, effort, started, e);
         }
         result
     }
