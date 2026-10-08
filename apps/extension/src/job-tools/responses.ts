@@ -124,8 +124,12 @@ export function resolveFillResponse(res: PopupResponse): StatusLine {
   }
   const total = summary.filled.reduce((n, f) => n + f.count, 0);
   const base = `Filled ${total} field${total === 1 ? '' : 's'} — review them on the page`;
+  const skipped = summary.skippedAmbiguous ?? 0;
+  const skippedNote =
+    skipped > 0 ? ` ${skipped} field${skipped === 1 ? '' : 's'} skipped (ambiguous match).` : '';
   return {
-    text: summary.nameSplit ? `${base} (name split is a guess — verify).` : `${base}.`,
+    text:
+      (summary.nameSplit ? `${base} (name split is a guess — verify).` : `${base}.`) + skippedNote,
     tone: 'ok',
   };
 }

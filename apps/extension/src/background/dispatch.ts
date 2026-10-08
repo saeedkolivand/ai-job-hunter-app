@@ -165,7 +165,7 @@ async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
       case 'assistCancel':
         return runAssistCancel();
       case 'autoSaveNotice':
-        return await runAutoSaveNotice();
+        return await runAutoSaveNotice(req.windowId);
       default: {
         // Exhaustiveness guard — a new PopupRequest variant must be handled.
         const _never: never = req;

@@ -141,6 +141,18 @@ describe('resolveFillResponse', () => {
       'Filled 1 field — review them on the page (name split is a guess — verify).',
       'ok',
     ],
+    [
+      'adds the skipped-ambiguous count (singular)',
+      summary({ filled: [{ key: 'email', label: 'Email', count: 1 }], skippedAmbiguous: 1 }),
+      'Filled 1 field — review them on the page. 1 field skipped (ambiguous match).',
+      'ok',
+    ],
+    [
+      'adds the skipped-ambiguous count (plural)',
+      summary({ filled: [{ key: 'email', label: 'Email', count: 1 }], skippedAmbiguous: 3 }),
+      'Filled 1 field — review them on the page. 3 fields skipped (ambiguous match).',
+      'ok',
+    ],
   ])('%s', (_name, res, expectedText, expectedTone) => {
     const { text, tone } = resolveFillResponse(res);
     expect(tone).toBe(expectedTone);

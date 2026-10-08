@@ -23,27 +23,30 @@ function sessionArea(): Browser.storage.StorageArea | null {
   return area ?? null;
 }
 
-/** Record the notice text — called once, right after a successful auto-save. */
-export async function setAutoSaveNotice(text: string): Promise<void> {
+/** Record the notice text for the tab whose submit produced it (`tabId`
+ *  omitted = show on whichever tab asks first). */
+export async function setAutoSaveNotice(text: string, tabId?: number): Promise<void> {
   const area = sessionArea();
   if (!area) return;
   try {
-    await area.set({ [NOTICE_KEY]: text });
+    await area.set({ [NOTICE_KEY]: { text, tabId } });
   } catch {
     // Best-effort — same discipline as answer-state.ts's writeAnswerState.
   }
 }
 
-/** Read (and clear) the pending notice, or `null` when there is none. */
-export async function takeAutoSaveNotice(): Promise<string | null> {
+/** Read (and clear) the pending notice for `tabId`, or `null` when there is
+ *  none. A notice recorded for a DIFFERENT tab stays pending for its own tab. */
+export async function takeAutoSaveNotice(tabId?: number): Promise<string | null> {
   const area = sessionArea();
   if (!area) return null;
   try {
     const stored = await area.get(NOTICE_KEY);
-    const value = stored[NOTICE_KEY];
-    if (typeof value !== 'string' || value.length === 0) return null;
+    const value = stored[NOTICE_KEY] as { text?: unknown; tabId?: unknown } | undefined;
+    if (typeof value?.text !== 'string' || value.text.length === 0) return null;
+    if (typeof value.tabId === 'number' && value.tabId !== tabId) return null;
     await area.remove(NOTICE_KEY).catch(() => undefined);
-    return value;
+    return value.text;
   } catch {
     return null;
   }

@@ -138,7 +138,6 @@ async function checkAutoSaveNotice(): Promise<void> {
     // Best-effort — a missed notice this once is better than a broken panel.
   }
 }
-void checkAutoSaveNotice();
 
 // ── the tab bar (PR0 §3, PR4 adds Prep) ─────────────────────────────────────
 
@@ -569,6 +568,8 @@ browser.windows?.onRemoved.addListener((windowId) => {
 
 void resolvePanelWindowId().then((id) => {
   panelWindowId = id;
+  // After the window id is known so the notice matches THIS window's tab.
+  void checkAutoSaveNotice();
   if (id !== null) void loadActiveTab(id).then((tabId) => tabs.setActive(tabId));
   void activeTabId().then(follow);
 });

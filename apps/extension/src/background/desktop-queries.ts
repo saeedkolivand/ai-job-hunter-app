@@ -12,7 +12,7 @@ import { stripFenceWrapper } from '../lib/fence-strip';
 import type { PopupResponse } from '../lib/messages';
 import { getToken } from '../lib/storage';
 import { getClient } from './bridge-client';
-import { activeTabUrl } from './page';
+import { activeTabIn, activeTabUrl } from './page';
 
 /**
  * Fire-and-forget "have I already applied?" check — a read-only, best-effort
@@ -143,7 +143,8 @@ export async function runPrepGet(windowId?: number): Promise<PopupResponse> {
 
 /** Read-once "was there a transparent save-answers-on-submit notice waiting?"
  *  (see `lib/auto-save-notice.ts`). */
-export async function runAutoSaveNotice(): Promise<PopupResponse> {
-  const text = await takeAutoSaveNotice();
+export async function runAutoSaveNotice(windowId?: number): Promise<PopupResponse> {
+  const tab = await activeTabIn(windowId).catch(() => undefined);
+  const text = await takeAutoSaveNotice(tab?.id);
   return { ok: true, kind: 'autoSaveNotice', text };
 }

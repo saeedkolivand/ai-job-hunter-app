@@ -43,4 +43,10 @@ describe('setAutoSaveNotice / takeAutoSaveNotice', () => {
     await takeAutoSaveNotice();
     expect(await takeAutoSaveNotice()).toBeNull();
   });
+
+  it('keeps a notice for another tab pending until that tab asks', async () => {
+    await setAutoSaveNotice('Saved 1 answer.', 5);
+    expect(await takeAutoSaveNotice(6)).toBeNull();
+    expect(await takeAutoSaveNotice(5)).toBe('Saved 1 answer.');
+  });
 });

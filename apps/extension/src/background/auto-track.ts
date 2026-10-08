@@ -73,7 +73,7 @@ async function saveAnswersOnSubmitEnabled(): Promise<boolean> {
 }
 
 /** Auto-track dependencies wired to the live bridge client. */
-function submitFlowDeps() {
+function submitFlowDeps(tabId?: number) {
   return {
     autotrackEnabled: () => getClient().autotrackEnabled(),
     checkApplied: (url: string) => getClient().checkApplied(url),
@@ -84,7 +84,8 @@ function submitFlowDeps() {
     notifyAutoSave: (result: Extract<ExtensionAnswersSaveResult, { ok: true }>) => {
       const count = result.saved;
       void setAutoSaveNotice(
-        `Saved ${count} answer${count === 1 ? '' : 's'} from this submit${result.title ? ` (${result.title})` : ''} — change this in Settings → What the extension may do.`
+        `Saved ${count} answer${count === 1 ? '' : 's'} from this submit${result.title ? ` (${result.title})` : ''} — change this in Settings → What the extension may do.`,
+        tabId
       );
     },
     // The side panel's ONLY event-driven refresh: push the flipped application's
@@ -97,8 +98,8 @@ function submitFlowDeps() {
 }
 
 /** The injected watcher reported a form submit (fire-and-forget, no response). */
-export function onSubmitDetected(url: string, answers?: CapturedAnswer[]): void {
-  void handleSubmitDetected(url, submitFlowDeps(), answers);
+export function onSubmitDetected(url: string, answers?: CapturedAnswer[], tabId?: number): void {
+  void handleSubmitDetected(url, submitFlowDeps(tabId), answers);
 }
 
 /**

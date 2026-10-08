@@ -100,6 +100,28 @@ describe('submitDetected with a malformed answers payload is not routed to auto-
   );
 });
 
+describe('auto-save notice is recorded for the submitting tab (#1369)', () => {
+  it("stores the sender tab's id with the notice", async () => {
+    mockClient.autotrackEnabled.mockResolvedValue(true);
+    mockClient.checkApplied.mockResolvedValue({ found: false });
+    mockClient.saveAnswers.mockResolvedValue({ ok: true, saved: 1 });
+
+    listener?.(
+      {
+        kind: SUBMIT_DETECTED_MSG,
+        url: 'https://jobs.example.com/posting/9',
+        answers: [{ question: 'Why us?', answer: 'Because.' }],
+      },
+      { id: EXTENSION_ID, tab: { id: 42 } } as never,
+      () => {}
+    );
+    await flush();
+
+    const stored = await browser.storage.session.get('autoSaveNotice');
+    expect(stored.autoSaveNotice).toMatchObject({ tabId: 42 });
+  });
+});
+
 describe('the fit badge "Open the panel" message', () => {
   const click = (sender: object) =>
     listener?.({ kind: 'ajhOpenPanelFromBadge' }, sender as never, () => {});

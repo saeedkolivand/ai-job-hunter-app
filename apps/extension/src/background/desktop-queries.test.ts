@@ -245,7 +245,8 @@ describe('autoSaveNotice request (PR4)', () => {
 
   it('returns and clears a pending notice — read-once', async () => {
     const text = 'Saved 1 answer from this submit.';
-    await browser.storage.session.set({ autoSaveNotice: text });
+    activeTab(undefined, 7);
+    await browser.storage.session.set({ autoSaveNotice: { text, tabId: 7 } });
 
     expect(await send({ kind: 'autoSaveNotice' })).toEqual({
       ok: true,
@@ -257,6 +258,25 @@ describe('autoSaveNotice request (PR4)', () => {
       kind: 'autoSaveNotice',
       text: null,
     });
+  });
+});
+
+describe('autoSaveNotice request — per-tab (#1369)', () => {
+  it('resolves the tab in the requesting window (windowId pass-through)', async () => {
+    activeTab(undefined, 7);
+    await send({ kind: 'autoSaveNotice', windowId: 55 });
+    expect(tabsQueryMock).toHaveBeenCalledWith({ active: true, windowId: 55 });
+  });
+  it("leaves another tab's notice pending for its own tab", async () => {
+    await browser.storage.session.set({ autoSaveNotice: { text: 'Saved 1 answer.', tabId: 7 } });
+    activeTab(undefined, 9);
+    expect(await send({ kind: 'autoSaveNotice' })).toEqual({
+      ok: true,
+      kind: 'autoSaveNotice',
+      text: null,
+    });
+    activeTab(undefined, 7);
+    expect(await send({ kind: 'autoSaveNotice' })).toMatchObject({ text: 'Saved 1 answer.' });
   });
 });
 

@@ -29,7 +29,8 @@ export function onRuntimeMessage(
     // `externally_connectable`, so no other extension/page can ever reach this
     // listener — but require the sender to be THIS extension anyway before
     // acting on it (defense-in-depth, costs nothing).
-    if (sender.id === browser.runtime.id) onSubmitDetected(message.url, message.answers);
+    if (sender.id === browser.runtime.id)
+      onSubmitDetected(message.url, message.answers, sender.tab?.id);
     return undefined;
   }
   // The injected fit badge's "Open the panel" button — also fire-and-forget,
