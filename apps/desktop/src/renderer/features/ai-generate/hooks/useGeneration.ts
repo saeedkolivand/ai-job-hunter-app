@@ -140,7 +140,8 @@ export function useGeneration(
     const persist = async (
       resumeText: string,
       coverLetterText: string,
-      companyBrief: string
+      companyBrief: string,
+      afterCancel = false
     ): Promise<boolean> => {
       const report = await computeQualityReport({
         sourceResume: resume,
@@ -150,7 +151,11 @@ export function useGeneration(
         resumeText,
         coverLetterText,
       });
-      if (controller.signal.aborted) return false;
+      // `afterCancel`: the user's Cancel aborts too, but its finished document must
+      // still persist — only a superseded run (ref replaced/nulled) is stale then.
+      if (afterCancel ? abortControllerRef.current !== controller : controller.signal.aborted) {
+        return false;
+      }
       setReport(report);
       saveAiGeneration.mutate({
         candidateName: meta.candidateName,
@@ -292,6 +297,11 @@ export function useGeneration(
         console.warn('[handleGenerate] cancelled', { target });
         // User cancelled — keep any finished document on screen, no error toast.
         setStage(finalResume || finalCover ? 'done' : 'configuring');
+        // Same salvage as the cover-failed branch: a résumé that finished before the
+        // cancel still gets its history row + quality report.
+        if (finalResume || finalCover) {
+          await persist(finalResume, finalCover, finalCompanyBrief, true);
+        }
       } else if (target === 'both' && finalResume && !finalCover) {
         console.warn('[handleGenerate] cover failed, resume kept', {
           error: err instanceof Error ? err.message : String(err),

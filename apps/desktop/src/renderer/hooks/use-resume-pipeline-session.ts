@@ -26,6 +26,9 @@ import {
 
 export type { PipelineStageProgress };
 
+/** How long to keep reading the record after a stage `error` (see `usePipelineRun` call). */
+const ERROR_POLL_WINDOW_MS = 30_000;
+
 /** The letter has been reached once any of these stages has started. */
 const LETTER_STAGES = new Set(['cover_letter', 'validate', 'repair', 'humanize']);
 
@@ -150,11 +153,32 @@ export function useResumePipelineSession(
   const cancelJob = useCancelJob();
 
   const busy = resumePipelineMachine.busyStates?.includes(state) ?? false;
+  const [errorPollOpen, setErrorPollOpen] = useState(true);
+  const recordFailedRef = useRef(false);
   const {
     data: detail = null,
     isError: recordFailed,
     error: recordError,
-  } = usePipelineRun(runId, busy);
+  } = usePipelineRun(
+    runId,
+    // A stage `error` event ends the machine while the row still says `running`
+    // (the backend writes `failed` + `stoppedReason` just after). Keep reading the
+    // record for a short window — the query stops itself once it leaves `running` —
+    // or the persisted reason never arrives and the failure is silent (#1411).
+    // Bounded, and off when the read itself failed, so a crashed backend (row stuck
+    // `running`) or a throwing read cannot poll forever.
+    busy || (state === 'error' && errorPollOpen && !recordFailedRef.current)
+  );
+  recordFailedRef.current = recordFailed;
+
+  useEffect(() => {
+    if (state !== 'error') {
+      setErrorPollOpen(true);
+      return;
+    }
+    const id = setTimeout(() => setErrorPollOpen(false), ERROR_POLL_WINDOW_MS);
+    return () => clearTimeout(id);
+  }, [state]);
 
   // `runId` is state, so the subscription handlers below need the CURRENT one
   // without re-subscribing on every change (a re-subscribe drops events in the

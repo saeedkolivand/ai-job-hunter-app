@@ -30,7 +30,11 @@ export function EmptyResults({
     <div className="min-h-0 flex-1 overflow-y-auto px-10 pb-10">
       <GlassCard>
         <div role="status" aria-live="polite">
-          {missingAdzunaKeys ? (
+          {/* A filter that hid existing postings is never "no postings yet" or a
+              keys problem — the no-match state wins over the Adzuna CTA. */}
+          {!genuinelyEmpty ? (
+            <EmptyState icon={Search} title={t('jobs.emptyFiltered')} className="py-10" />
+          ) : missingAdzunaKeys ? (
             <EmptyState
               icon={Search}
               title={t('jobs.empty')}
@@ -42,8 +46,6 @@ export function EmptyResults({
               }
               className="py-10"
             />
-          ) : !genuinelyEmpty ? (
-            <EmptyState icon={Search} title={t('jobs.emptyFiltered')} className="py-10" />
           ) : (
             <EmptyState
               icon={Search}

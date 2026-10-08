@@ -113,6 +113,15 @@ describe('JobsResults — empty state', () => {
     expect(screen.queryByText('jobs.emptyCta')).not.toBeInTheDocument();
   });
 
+  it('a filter hiding existing postings shows the no-match state, not the Adzuna-keys CTA (#1412)', () => {
+    withoutAdzunaKeys();
+    renderResults({ filtered: [], resumeId: null, totalCount: 132 });
+
+    expect(screen.getByText('jobs.emptyFiltered')).toBeInTheDocument();
+    expect(screen.queryByText('jobs.empty')).not.toBeInTheDocument();
+    expect(screen.queryByText('jobs.emptyNoAdzunaKeys')).not.toBeInTheDocument();
+  });
+
   it('shows the generic CTA when the list is empty and keys are present', () => {
     renderResults({ filtered: [], resumeId: null });
 

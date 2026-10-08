@@ -22,6 +22,51 @@ import {
 } from './test-support';
 
 describe('useResumePipelineSession — failures', () => {
+  // ── #1411: a stage `error` event ends the machine BEFORE the record flips ──
+  //
+  // The real `output_limit` shape: `strategy` emits phase `error` (→ machine
+  // `error`, not busy) while the record is still `running`; the row only turns
+  // `failed` + `stoppedReason` afterwards. `job.failed` is dropped (busy gate),
+  // so the record is the only source of the reason and polling must continue.
+  it('keeps reading the record after a stage error so the persisted reason lands', async () => {
+    bus.detail = detail('running');
+    const { result, rerender } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+    await startRun(result);
+    act(() => bus.stage?.(stage('strategy', 'start', 2)));
+    act(() => bus.stage?.(stage('strategy', 'error', 2)));
+    expect(result.current.state).toBe('error');
+    expect(result.current.error).toBeNull();
+    expect(bus.live).toBe(true);
+
+    bus.detail = detail('failed', 'output_limit');
+    rerender();
+    expect(result.current.error).toContain('too long');
+  });
+
+  it('stops polling a stuck `running` record after the error window, and never polls a failed read', async () => {
+    vi.useFakeTimers();
+    try {
+      bus.detail = detail('running');
+      const { result, rerender } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      await startRun(result);
+      act(() => bus.stage?.(stage('strategy', 'error', 2)));
+      expect(bus.live).toBe(true);
+
+      act(() => {
+        vi.advanceTimersByTime(30_001);
+      });
+      expect(bus.live).toBe(false);
+
+      // A throwing read in `error` must not open the window at all.
+      act(() => result.current.reset?.());
+      bus.recordError = new Error('read failed');
+      rerender();
+      expect(bus.live).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // ── The failure reason survives a remount the live listener missed ────────
   //
   // `job.failed` only ever reaches `setError` while a listener is mounted at

@@ -380,7 +380,12 @@ export function TailorFlow({
       </div>
 
       {stage === 'configuring' && (
-        <ConfiguringNotices error={gen.error} cancelled={gen.state === 'cancelled'} />
+        <ConfiguringNotices
+          error={gen.error}
+          cancelled={gen.state === 'cancelled'}
+          failed={gen.state === 'error'}
+          stoppedReason={gen.stoppedReason}
+        />
       )}
 
       {questionsOpen && (

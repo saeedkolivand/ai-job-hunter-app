@@ -123,7 +123,7 @@ const SUBSCRIBERS = {
 
   'hooks/use-resume-pipeline-session.ts': {
     mount: 'route-scoped',
-    hash: 'a8c8f56bcc37',
+    hash: 'cbca895e9c36',
     note:
       'Mounted in TailorFlow/index.tsx (not GeneratingPanel, which takes only props) via ' +
       "useTailorPipeline → useResumePipelineSession. Reconnect (the session store's " +
@@ -131,7 +131,7 @@ const SUBSCRIBERS = {
       'checklist, and Cancel, so a remounted panel is not blank. A run that FAILS while the ' +
       "user is elsewhere now shows why: `error` falls back to the run record's " +
       '`stoppedReason`, so returning no longer lands on a bare "configuring" wizard as if ' +
-      'Generate had never been pressed. NOT recovered: the streamed draft/letter/thinking ' +
+      'Generate had never been pressed; a live stage `error` event ends the machine before the row flips, so the record keeps being polled in `error` for a bounded window (not when the read itself failed). NOT recovered: the streamed draft/letter/thinking ' +
       'text (useState, no transcript — a reconnected run jumps straight to the finished ' +
       "document), and the live message's exact stage/seconds detail, since the record " +
       'persists only the wire token.',

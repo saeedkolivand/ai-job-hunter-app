@@ -106,7 +106,7 @@ export function PostingListItem({
           {/* Line 2: company · location · time, then status markers */}
           <div
             className={cn(
-              'flex min-w-0 items-center gap-1.5 overflow-hidden text-[11px]',
+              'flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 overflow-hidden text-[11px]',
               selected ? 'text-brand-soft/70' : 'text-foreground/50'
             )}
           >
@@ -120,7 +120,7 @@ export function PostingListItem({
                 (active-descendant listbox) — chips must add no tab stops. The
                 "open other source" action lives in the detail pane instead. */}
             <ClusterSourceChips
-              className="min-w-0 flex-nowrap overflow-hidden"
+              className="min-w-0"
               members={posting.clusterMembers}
               selfKey={posting.clusterId}
               selfUrl={posting.url}

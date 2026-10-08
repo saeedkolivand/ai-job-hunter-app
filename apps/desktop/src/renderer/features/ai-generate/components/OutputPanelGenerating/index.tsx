@@ -2,7 +2,7 @@ import { Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
 import { useTranslation } from '@ajh/translations';
-import { transition } from '@ajh/ui';
+import { Button, transition } from '@ajh/ui';
 
 import { ThinkingBubble } from '@/components/generation/ThinkingBubble';
 
@@ -15,6 +15,8 @@ interface OutputPanelGeneratingProps {
   genStep?: { current: number; total: number; label: string } | null;
   tokenCount?: number;
   tokenStartMs?: number | null;
+  /** Aborts the live run; any finished document is kept. */
+  onCancel?: () => void;
 }
 
 export function OutputPanelGenerating({
@@ -26,6 +28,7 @@ export function OutputPanelGenerating({
   genStep,
   tokenCount,
   tokenStartMs,
+  onCancel,
 }: OutputPanelGeneratingProps) {
   const { t } = useTranslation();
 
@@ -45,8 +48,8 @@ export function OutputPanelGenerating({
     >
       {/* Stage label */}
       <div className="shrink-0 border-b border-[var(--border-clear)] px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <Loader2
               size={14}
               className="animate-spin motion-reduce:animate-none text-brand-soft"
@@ -72,6 +75,11 @@ export function OutputPanelGenerating({
                 label: genStep.label,
               })}
             </span>
+          )}
+          {onCancel && (
+            <Button variant="ghost" size="sm" onClick={onCancel} className="shrink-0">
+              {t('aiGenerate.cancelGeneration')}
+            </Button>
           )}
         </div>
         <div className="mt-2 h-0.5 overflow-hidden rounded-full bg-muted">

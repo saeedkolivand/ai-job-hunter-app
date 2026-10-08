@@ -4,7 +4,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { generateCoverLetter, generateResume } from '@/lib/generate';
 
-import { installGenerationMocks, runGeneration, stageCalls } from './useGeneration.test-support';
+import {
+  installGenerationMocks,
+  runGeneration,
+  setup,
+  stageCalls,
+} from './useGeneration.test-support';
 
 vi.mock('@/lib/generate', async () => (await import('./useGeneration.stubs')).generateMock());
 
@@ -49,6 +54,23 @@ describe('useGeneration — progressive reveal (#23)', () => {
     );
     expect(m.setError).not.toHaveBeenCalledWith(expect.any(String));
     expect(m.setIsGenerating).toHaveBeenLastCalledWith(false);
+  });
+
+  it('cancelling during the cover keeps AND persists the finished résumé, with no error (#1412)', async () => {
+    const h = setup('both');
+    vi.mocked(generateCoverLetter).mockImplementationOnce(async () => {
+      h.abortControllerRef.current?.abort();
+      throw new Error('aborted');
+    });
+    await h.handleGenerate();
+
+    expect(stageCalls(h.m).at(-1)).toBe('done');
+    expect(h.m.saveAiGeneration.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ resumeText: 'RESUME', coverLetterText: '' })
+    );
+    expect(h.m.notify.error).not.toHaveBeenCalled();
+    expect(h.m.setError).not.toHaveBeenCalledWith(expect.any(String));
+    expect(h.m.setIsGenerating).toHaveBeenLastCalledWith(false);
   });
 
   it('surfaces a hard error and returns to configuring when the résumé fails', async () => {

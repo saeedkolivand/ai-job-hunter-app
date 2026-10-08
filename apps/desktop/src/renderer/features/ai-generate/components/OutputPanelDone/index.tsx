@@ -72,6 +72,8 @@ interface OutputPanelDoneProps {
   onRegenerate: () => void;
   copied: boolean;
   isGenerating?: boolean;
+  /** Aborts the still-streaming cover letter (progressive reveal); the résumé is kept. */
+  onCancel?: () => void;
   /** Source résumé text — forwarded to the editor's link-suggestion pick-list. */
   sourceResume?: string;
   /** Raw job ad — ranks the trim panel's suggestions. Omitted disables the panel. */
@@ -103,6 +105,7 @@ export function OutputPanelDone({
   onRegenerate,
   copied,
   isGenerating = false,
+  onCancel,
   generatingDoc = null,
   sourceResume,
   jobAd,
@@ -167,8 +170,8 @@ export function OutputPanelDone({
       className="flex min-h-0 flex-1 flex-col overflow-y-auto"
     >
       {/* Output toolbar */}
-      <div className="shrink-0 flex items-center justify-between border-b border-[var(--border-clear)] px-6 py-3">
-        <div className="flex items-center gap-1">
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-[var(--border-clear)] px-6 py-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
           {(
             [
               ...(resumeOut || generatingDoc === 'resume'
@@ -197,7 +200,12 @@ export function OutputPanelDone({
             </Button>
           ))}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+          {isGenerating && onCancel && (
+            <Button variant="ghost" size="sm" onClick={onCancel}>
+              {t('aiGenerate.cancelGeneration')}
+            </Button>
+          )}
           <QualityBadge
             report={report}
             docKind={activeOut === 'resume' ? 'resume' : 'coverLetter'}

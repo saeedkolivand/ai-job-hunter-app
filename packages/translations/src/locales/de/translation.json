@@ -1467,6 +1467,7 @@
     },
     "analyzingDocuments": "Dokumente werden mit KI analysiert…",
     "generatingResume": "Lebenslauf wird generiert…",
+    "cancelGeneration": "Generierung abbrechen",
     "generatingCoverLetter": "Anschreiben wird generiert…",
     "copied": "Kopiert",
     "copy": "Kopieren",

@@ -207,6 +207,10 @@ export function AIGeneratePage() {
     );
   };
 
+  // Abort only — `useGeneration`'s catch owns the aborted outcome (keeps any finished
+  // document, no error toast).
+  const cancelGeneration = () => runAbortRef.current?.abort();
+
   // Which document is still streaming (only meaningful in the progressive-reveal
   // window: stage `done`, résumé shown, cover still generating). Drives the cover
   // tab's "generating…" indicator in OutputPanelDone (#23).
@@ -288,6 +292,7 @@ export function AIGeneratePage() {
                 genStep={genStep}
                 tokenCount={tokenCount}
                 tokenStartMs={tokenStartRef.current}
+                onCancel={cancelGeneration}
               />
             )}
 
@@ -317,6 +322,7 @@ export function AIGeneratePage() {
                 onRegenerate={() => void handleGenerate()}
                 copied={copied}
                 isGenerating={isGenerating}
+                onCancel={cancelGeneration}
                 generatingDoc={generatingDoc}
               />
             )}

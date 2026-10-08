@@ -2,9 +2,15 @@ import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { ErrorState } from '@ajh/ui';
 
+import { stoppedSuffix } from '@/lib/stopped-reason';
+
 interface ConfiguringNoticesProps {
   error: string | null | undefined;
   cancelled: boolean;
+  /** The live session ended in `error` with no output to show a results panel for. */
+  failed?: boolean;
+  /** Backend `stoppedReason` code of that run (`lib/stopped-reason.ts`). */
+  stoppedReason?: string | null;
 }
 
 /**
@@ -20,8 +26,14 @@ interface ConfiguringNoticesProps {
  * one-line acknowledgement instead of dead silence; stays until the next
  * `start()` moves the session state off `cancelled`.
  */
-export function ConfiguringNotices({ error, cancelled }: ConfiguringNoticesProps) {
+export function ConfiguringNotices({
+  error,
+  cancelled,
+  failed = false,
+  stoppedReason,
+}: ConfiguringNoticesProps) {
   const { t } = useTranslation();
+  const suffix = stoppedSuffix(stoppedReason);
   if (error) {
     return (
       <div data-testid={TEST_IDS.documents.generationError} className="mx-8 mb-4 shrink-0">
@@ -30,6 +42,27 @@ export function ConfiguringNotices({ error, cancelled }: ConfiguringNoticesProps
           description={error}
           className="rounded-xl border border-red-400/20 bg-red-400/5 py-6"
         />
+      </div>
+    );
+  }
+  if (failed) {
+    return (
+      <div
+        data-testid={TEST_IDS.documents.generationError}
+        role="alert"
+        className="mx-8 mb-4 shrink-0 rounded-lg border border-red-400/20 bg-red-400/5 px-4 py-3"
+      >
+        <p className="text-[11px] font-medium text-red-400">
+          {t('autopilot.apply.wizard.results.failedTitle')}
+        </p>
+        {suffix && (
+          <p className="mt-1 text-[10px] leading-relaxed text-foreground/60">
+            {t(`pipeline.stopped.${suffix}`)}
+          </p>
+        )}
+        <p className="mt-1 text-[10px] leading-relaxed text-foreground/60">
+          {t('autopilot.apply.wizard.results.failedHint')}
+        </p>
       </div>
     );
   }

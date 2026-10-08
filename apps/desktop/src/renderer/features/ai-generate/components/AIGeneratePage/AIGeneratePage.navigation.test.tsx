@@ -59,8 +59,9 @@ vi.mock('@/lib/generate', async (orig) => ({
   generateResume: (...a: unknown[]) => {
     gen.onToken = a[5] as (t: string) => void;
     gen.signal = a[7] as AbortSignal;
-    return new Promise<string>((res) => {
+    return new Promise<string>((res, rej) => {
       gen.finish = res;
+      gen.signal?.addEventListener('abort', () => rej(new Error('aborted')));
     });
   },
 }));
@@ -74,8 +75,17 @@ vi.mock('@/features/ai-generate/components/GenerateWizard', () => ({
   ),
 }));
 vi.mock('@/features/ai-generate/components/OutputPanelGenerating', () => ({
-  OutputPanelGenerating: ({ streamBuffer }: { streamBuffer: string }) => (
-    <div>generating:{streamBuffer}</div>
+  OutputPanelGenerating: ({
+    streamBuffer,
+    onCancel,
+  }: {
+    streamBuffer: string;
+    onCancel?: () => void;
+  }) => (
+    <div>
+      generating:{streamBuffer}
+      <button onClick={onCancel}>stop</button>
+    </div>
   ),
 }));
 vi.mock('@/features/ai-generate/components/OutputPanelDone', () => ({
@@ -129,6 +139,18 @@ describe('AIGeneratePage — survives navigation', () => {
     await userEvent.click(screen.getByText('cancel'));
     expect(gen.signal?.aborted).toBe(true);
     expect(useAIGenerateRunStore.getState().isGenerating).toBe(false);
+  });
+
+  it('the Cancel control aborts the live run without an error and returns to configuring (#1412)', async () => {
+    await startAndLeave();
+    render(<AIGeneratePage />);
+
+    await userEvent.click(screen.getByText('stop'));
+
+    expect(gen.signal?.aborted).toBe(true);
+    await vi.waitFor(() => expect(useAIGenerateRunStore.getState().isGenerating).toBe(false));
+    expect(useAIGenerateRunStore.getState().error).toBeNull();
+    expect(useSessionStore.getState().aiGenerate.stage).toBe('configuring');
   });
 
   it('shows the result on remount when the run finished while away', async () => {

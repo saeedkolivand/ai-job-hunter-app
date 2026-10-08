@@ -265,6 +265,38 @@ describe('TailorFlow — a failed staged-run start surfaces its reason', () => {
   });
 });
 
+describe('TailorFlow — a run that fails without output shows why (#1411)', () => {
+  const failedFlow = (stoppedReason?: string) =>
+    renderFlow({
+      'resumePipeline.run': vi.fn().mockResolvedValue({ runId: 'run-1', jobId: 'job-1' }),
+      'jobs.get': vi.fn().mockResolvedValue({ status: 'failed' }),
+      'resumePipeline.get': vi
+        .fn()
+        .mockResolvedValue(
+          completedDetail({ status: 'failed', stoppedReason, resumeText: undefined })
+        ),
+    });
+
+  it('shows the localized stopped reason on the wizard', async () => {
+    const user = userEvent.setup();
+    failedFlow('output_limit');
+    await user.click(screen.getByTestId(TEST_IDS.documents.wizardGenerate));
+
+    const notice = await screen.findByTestId(TEST_IDS.documents.generationError);
+    expect(notice).toHaveTextContent('pipeline.stopped.outputLimit');
+    expect(screen.getByTestId(TEST_IDS.documents.tailorWizard)).toBeInTheDocument();
+  });
+
+  it('still shows a failed notice when the run recorded no reason', async () => {
+    const user = userEvent.setup();
+    failedFlow();
+    await user.click(screen.getByTestId(TEST_IDS.documents.wizardGenerate));
+
+    const notice = await screen.findByTestId(TEST_IDS.documents.generationError);
+    expect(notice).toHaveTextContent('autopilot.apply.wizard.results.failedTitle');
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // F1 — mount-level regression through a DocumentsTab-shaped host
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1463,6 +1463,7 @@
     },
     "analyzingDocuments": "Analyzing documents with AI…",
     "generatingResume": "Generating Resume…",
+    "cancelGeneration": "Cancel generation",
     "generatingCoverLetter": "Generating Cover Letter…",
     "copied": "Copied",
     "copy": "Copy",
