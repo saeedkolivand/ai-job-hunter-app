@@ -21,6 +21,8 @@ export const fetchJobMock: Mock = vi.fn();
 export const bus = {
   stage: null as ((e: PipelineStageEvent) => void) | null,
   delta: null as ((d: string) => void) | null,
+  /** The letter's own stream (`<jobId>#letter`). */
+  letterDelta: null as ((d: string) => void) | null,
   thinking: null as ((d: string) => void) | null,
   job: null as ((e: JobEvent) => void) | null,
   detail: null as PipelineRunDetail | null,
@@ -38,10 +40,14 @@ export const pipelineMock = (): Record<string, unknown> => ({
     bus.stage = handler ?? null;
   },
   usePipelineDraftStream: (
-    _jobId: string | null,
+    jobId: string | null,
     onDelta?: (d: string) => void,
     onThinking?: (d: string) => void
   ) => {
+    if (jobId?.endsWith('#letter')) {
+      bus.letterDelta = onDelta ?? null;
+      return;
+    }
     bus.delta = onDelta ?? null;
     bus.thinking = onThinking ?? null;
   },

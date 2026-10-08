@@ -258,11 +258,7 @@ pub(super) async fn run_stream(
 }
 
 fn is_cancelled(app: &AppHandle, job_id: &str) -> bool {
-    app.state::<Mutex<JobTracker>>()
-        .lock()
-        .get(job_id)
-        .map(|j| j.status == crate::jobs::JobStatus::Cancelled)
-        .unwrap_or(false)
+    app.state::<Mutex<JobTracker>>().lock().is_cancelled(job_id)
 }
 
 /// On a normal (non-empty) completion: emit the terminal `ai:stream` event and

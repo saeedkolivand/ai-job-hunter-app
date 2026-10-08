@@ -11,13 +11,15 @@
 //! addition a ZERO-behavior-change diff for those callers, rather than a second
 //! stage list to keep in step with the first.
 //!
-//! ## Streams under the SAME job id `draft` used
+//! ## Streams under its OWN id
 //!
-//! Exactly like [`super::draft::Draft`]: a second `chat_stream` under the run's
-//! umbrella `jobId` re-marks the job's tracker record complete when the
-//! letter's own last delta lands — display-only, same as the draft's own
-//! stream. The run's completion signal stays its terminal `pipeline:stage`
-//! event, never a stream resolving; see that stage's module doc.
+//! The letter streams under a child id of the run's `jobId` (see
+//! [`Completer::stream_captured_child`]), never the
+//! run's umbrella `jobId` the draft uses: with the draft streaming beside it
+//! (see [`super::letter_ahead`]) one shared id would interleave the two
+//! documents' tokens. Cancelling the umbrella job cancels it too
+//! (`JobTracker::is_cancelled`). Display-only, like the draft's stream: the
+//! run's completion signal stays its terminal `pipeline:stage` event.
 //!
 //! ## Opt-in company research, gated the SAME way, non-fatal by construction
 //!
@@ -34,7 +36,9 @@
 
 use async_trait::async_trait;
 use serde_json::json;
+use tokio::sync::oneshot;
 
+use crate::commands::ai_provider::call_trace;
 use crate::commands::ai_provider::timeouts::research_deadline;
 use crate::commands::ai_provider::{AiGenerateRequest, AiGenerateRequestMessage};
 use crate::cover_letter::research::CompanyResearch;
@@ -63,60 +67,18 @@ impl<'a> Stage<QualityCtx<'a>> for CoverLetter {
             return Ok(());
         }
 
-        let completer = ctx.completer_for(NAME);
-
-        let brief = if ctx.input.research_company {
-            // Started right after `analyze_job` when armed (see
-            // `early_research`); awaited only if it has not finished. A dropped
-            // lookup is "no brief". Unarmed callers research inline as before.
-            match ctx.early_research.as_mut().and_then(|e| e.take_brief()) {
-                Some(brief) => brief.await.unwrap_or_default(),
-                None => research_company_brief(completer, ctx).await,
+        let LetterOut { text, brief_chars } = match ctx.letter_ahead.take() {
+            // `draft` wrote it beside itself: its calls were traced under their
+            // own log, so they are reported here, with this stage.
+            Some(ahead) => {
+                call_trace::merge(ahead.calls);
+                ahead.result?
             }
-        } else {
-            String::new()
+            None => {
+                let brief = take_brief(ctx);
+                write_letter(LetterJob::new(ctx, brief)).await?
+            }
         };
-
-        // Deliberately NOT cached — same reasoning as `Draft::run`: a cache hit
-        // emits no `ai:stream` deltas, so the user would watch an empty pane
-        // while an already-known letter was "generated".
-        let req = AiGenerateRequest {
-            model: String::new(), // overwritten by `Completer::stream` with the resolved model
-            messages: vec![
-                AiGenerateRequestMessage {
-                    role: "system".to_string(),
-                    content: letter_system(
-                        ctx.input.target_language,
-                        ctx.input.market,
-                        !ctx.input.today.trim().is_empty(),
-                        !brief.trim().is_empty(),
-                    ),
-                },
-                AiGenerateRequestMessage {
-                    role: "user".to_string(),
-                    content: letter_user(
-                        ctx.input.source_resume,
-                        ctx.input.job_ad,
-                        &ctx.strategy,
-                        ctx.input.market,
-                        ctx.input.today,
-                        &brief,
-                    ),
-                },
-            ],
-            locale: ctx.input.target_language.to_string(),
-            temperature: None,
-            top_p: None,
-            frequency_penalty: None,
-            presence_penalty: None,
-            repeat_penalty: None,
-            max_tokens: None,
-            context_window: completer.context_window(),
-            effort: ctx.input.effort.map(str::to_string),
-            intent: Some(LETTER_INTENT.to_string()),
-        };
-
-        let text = completer.stream_captured(ctx.input.job_id, req).await?;
         ctx.ledger.count_call(false);
         // Length only — never the letter or the brief itself (ADR-027).
         ctx.ledger.record(
@@ -125,12 +87,106 @@ impl<'a> Stage<QualityCtx<'a>> for CoverLetter {
                 "chars": text.chars().count(),
                 "lines": text.lines().count(),
                 "researchAttempted": ctx.input.research_company,
-                "researchBriefChars": brief.chars().count(),
+                "researchBriefChars": brief_chars,
             }),
         );
         ctx.letter = text;
         Ok(())
     }
+}
+
+/// What a finished letter hands to the ledger.
+pub(crate) struct LetterOut {
+    text: String,
+    brief_chars: usize,
+}
+
+/// Everything [`write_letter`] reads, borrowed from the context so the call can
+/// run beside `draft` (which reads the same fields, immutably).
+pub(crate) struct LetterJob<'c, 'a> {
+    ctx: &'c QualityCtx<'a>,
+    /// The early company-research lookup's brief, when one was armed.
+    brief: Option<oneshot::Receiver<String>>,
+}
+
+impl<'c, 'a> LetterJob<'c, 'a> {
+    pub(crate) fn new(ctx: &'c QualityCtx<'a>, brief: Option<oneshot::Receiver<String>>) -> Self {
+        Self { ctx, brief }
+    }
+}
+
+/// The armed early research's brief, taken out of the context (`None` when the
+/// run did not ask for research, or never armed a lookup).
+pub(crate) fn take_brief(ctx: &mut QualityCtx<'_>) -> Option<oneshot::Receiver<String>> {
+    if !ctx.input.research_company {
+        return None;
+    }
+    ctx.early_research.as_mut().and_then(|e| e.take_brief())
+}
+
+/// Write the letter: the (opt-in) company brief, then one streamed call.
+pub(crate) async fn write_letter(job: LetterJob<'_, '_>) -> AppResult<LetterOut> {
+    let LetterJob { ctx, brief } = job;
+    let completer = ctx.completer_for(NAME);
+
+    let brief = if ctx.input.research_company {
+        // Started right after `analyze_job` when armed (see `early_research`);
+        // awaited only if it has not finished. A dropped lookup is "no brief".
+        // Unarmed callers research inline as before.
+        match brief {
+            Some(brief) => brief.await.unwrap_or_default(),
+            None => research_company_brief(completer, ctx).await,
+        }
+    } else {
+        String::new()
+    };
+
+    // Deliberately NOT cached — same reasoning as `Draft::run`: a cache hit
+    // emits no `ai:stream` deltas, so the user would watch an empty pane
+    // while an already-known letter was "generated".
+    let req = AiGenerateRequest {
+        model: String::new(), // overwritten by `Completer::stream` with the resolved model
+        messages: vec![
+            AiGenerateRequestMessage {
+                role: "system".to_string(),
+                content: letter_system(
+                    ctx.input.target_language,
+                    ctx.input.market,
+                    !ctx.input.today.trim().is_empty(),
+                    !brief.trim().is_empty(),
+                ),
+            },
+            AiGenerateRequestMessage {
+                role: "user".to_string(),
+                content: letter_user(
+                    ctx.input.source_resume,
+                    ctx.input.job_ad,
+                    &ctx.strategy,
+                    ctx.input.market,
+                    ctx.input.today,
+                    &brief,
+                ),
+            },
+        ],
+        locale: ctx.input.target_language.to_string(),
+        temperature: None,
+        top_p: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        repeat_penalty: None,
+        max_tokens: None,
+        context_window: completer.context_window(),
+        effort: ctx.input.effort.map(str::to_string),
+        intent: Some(LETTER_INTENT.to_string()),
+    };
+
+    let text = completer
+        .stream_captured_child(ctx.input.job_id, "letter", req)
+        .await?;
+    Ok(LetterOut {
+        text,
+        brief_chars: brief.chars().count(),
+    })
 }
 
 /// Research the run's company for the letter's "why this company" paragraph —

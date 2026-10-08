@@ -131,6 +131,9 @@ impl JobTracker {
     }
 
     pub(super) fn persist_upsert(&self, record: &JobRecord) {
+        if super::is_child_id(&record.id) {
+            return;
+        }
         if let Some(db) = &self.db {
             let payload_str = serde_json::to_string(&record.payload).ok();
             let result_str = record
@@ -158,6 +161,12 @@ impl JobTracker {
                     record.finished_at.map(ts_to_db),
                 ],
             );
+        }
+    }
+
+    pub(super) fn persist_delete(&self, id: &str) {
+        if let Some(db) = &self.db {
+            let _ = db.execute("DELETE FROM jobs WHERE id = ?1", params![id]);
         }
     }
 }

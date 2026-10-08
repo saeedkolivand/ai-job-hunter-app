@@ -103,6 +103,27 @@ pub enum KeyedExclusiveStart {
     Busy(String),
 }
 
+/// Separates a parent job id from a part's name in a [child stream
+/// id](child_stream_id).
+const CHILD_SEP: char = '#';
+
+/// The id a part of job `parent` streams under (`<parent>#<part>`), so two
+/// concurrent streams of one run do not interleave on one `ai:stream` jobId.
+/// Cancelling `parent` cancels it ([`JobTracker::is_cancelled`]). Mirrored by
+/// the renderer's `use-resume-pipeline-session`.
+pub fn child_stream_id(parent: &str, part: &str) -> String {
+    // `is_child_id` is a bare `#` test, so a parent id must never contain one.
+    debug_assert!(!parent.contains(CHILD_SEP), "nested child id: {parent}");
+    format!("{parent}{CHILD_SEP}{part}")
+}
+
+/// Whether `id` is a [child stream id](child_stream_id). Such a record exists
+/// only to capture one stream's text and cancel state: it is never persisted,
+/// listed, read over IPC, or announced by a `job.*` event.
+pub fn is_child_id(id: &str) -> bool {
+    id.contains(CHILD_SEP)
+}
+
 #[derive(Default)]
 pub struct JobTracker {
     jobs: HashMap<String, JobRecord>,
@@ -303,13 +324,35 @@ impl JobTracker {
     }
 
     pub fn list(&self) -> Vec<&JobRecord> {
-        let mut jobs: Vec<&JobRecord> = self.jobs.values().collect();
+        let mut jobs: Vec<&JobRecord> =
+            self.jobs.values().filter(|j| !is_child_id(&j.id)).collect();
         jobs.sort_by_key(|j| std::cmp::Reverse(j.created_at));
         jobs
     }
 
     pub fn get(&self, id: &str) -> Option<&JobRecord> {
         self.jobs.get(id)
+    }
+
+    /// Whether `id` — or the job it is a [child stream](child_stream_id) of —
+    /// has been cancelled. What the stream loops poll, so cancelling a run's
+    /// umbrella job also stops a part streaming under its own id.
+    pub fn is_cancelled(&self, id: &str) -> bool {
+        std::iter::once(id)
+            .chain(id.split_once(CHILD_SEP).map(|(parent, _)| parent))
+            .any(|id| {
+                self.get(id)
+                    .is_some_and(|j| j.status == JobStatus::Cancelled)
+            })
+    }
+
+    /// Drop a record from memory and from disk. For short-lived records that
+    /// exist only to capture one stream's text ([`child_stream_id`]); a normal
+    /// job is history and is never removed.
+    pub fn forget(&mut self, id: &str) {
+        if self.jobs.remove(id).is_some() {
+            self.persist_delete(id);
+        }
     }
 }
 

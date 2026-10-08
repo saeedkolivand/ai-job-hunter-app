@@ -209,6 +209,9 @@ export const usePipelineStageEvents = (onStage?: (event: PipelineStageEvent) => 
  * `jobId`, same display-only status, so the pane builds up section by section
  * with no second channel and no branch here.
  *
+ * The cover letter streams under its own id (`<jobId>#letter`), so a caller that
+ * wants it passes that id.
+ *
  * Deliberately not `awaitAiStream`: that helper resolves on the stream's `done`
  * frame, which for a staged run lands while `validate` and up to two repair
  * rounds are still ahead. Here there is no promise to resolve, so there is

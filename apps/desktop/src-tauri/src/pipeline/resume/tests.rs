@@ -36,6 +36,7 @@ mod humanize_attempt_outcomes;
 mod humanize_patch_apply;
 mod humanize_patches;
 mod humanize_predicates;
+mod letter_ahead;
 mod pipeline_integration;
 mod pipeline_stages;
 mod prompts_draft_language;

@@ -77,6 +77,7 @@ export function resetPipelineMocks() {
   vi.clearAllMocks();
   bus.stage = null;
   bus.delta = null;
+  bus.letterDelta = null;
   bus.thinking = null;
   bus.job = null;
   bus.detail = null;

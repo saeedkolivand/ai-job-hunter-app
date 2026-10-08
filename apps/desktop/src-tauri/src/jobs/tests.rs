@@ -259,3 +259,84 @@ fn test_interrupted_running_job_marked_failed_on_reload() {
     assert_eq!(j.status, JobStatus::Failed);
     assert!(j.finished_at.is_some());
 }
+
+/// A part streaming under `<run>#<part>` must stop when the RUN is cancelled —
+/// the user's cancel only ever names the umbrella id. Mutation check: make
+/// `is_cancelled` read only `id` and the child assertion fails.
+#[test]
+fn cancelling_a_job_cancels_its_child_streams() {
+    let mut tracker = JobTracker::default();
+    tracker.start("job-1", "resumePipeline.run");
+    let child = child_stream_id("job-1", "letter");
+    tracker.start(&child, "resumePipeline.letter");
+    assert!(!tracker.is_cancelled(&child));
+    tracker.cancel("job-1");
+    assert!(tracker.is_cancelled("job-1"));
+    assert!(tracker.is_cancelled(&child));
+    assert!(!tracker.is_cancelled("job-2#letter"));
+}
+
+#[test]
+fn forget_removes_only_the_named_record() {
+    let mut tracker = JobTracker::default();
+    tracker.start("job-1", "a");
+    tracker.start("job-1#letter", "b");
+    tracker.forget("job-1#letter");
+    assert!(tracker.get("job-1#letter").is_none());
+    assert!(tracker.get("job-1").is_some());
+}
+
+/// The child record is plumbing: not persisted (no orphan row after a kill),
+/// not listed. Mutation check: drop the `is_child_id` guard in `persist_upsert`
+/// (or in `list`) and the matching assertion fails.
+#[test]
+fn a_child_record_is_neither_persisted_nor_listed() {
+    use tempfile::TempDir;
+    let dir = TempDir::new().unwrap();
+    let child = child_stream_id("job-1", "letter");
+    {
+        let mut tracker = JobTracker::open(dir.path());
+        tracker.start("job-1", "resumePipeline.run");
+        tracker.start(&child, "resumePipeline.part");
+        assert!(tracker.get(&child).is_some(), "text capture still reads it");
+        assert_eq!(tracker.list().len(), 1);
+        tracker.complete(&child, json!({ "text": "x" }));
+    }
+    let reopened = JobTracker::open(dir.path());
+    assert!(reopened.get("job-1").is_some());
+    assert!(reopened.get(&child).is_none());
+}
+
+/// No `job.*` event and no IPC read for a child id. A source guard: `emit_job_event`
+/// needs an `AppHandle`. Mutation check: delete either guard and this fails.
+#[test]
+fn child_ids_are_not_announced_or_served() {
+    assert!(is_child_id(&child_stream_id("job-1", "letter")));
+    assert!(!is_child_id("job-1"));
+    let src: String = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/commands/jobs.rs"),
+    )
+    .unwrap()
+    .split_whitespace()
+    .collect();
+    assert!(src.contains("ifcrate::jobs::is_child_id(job_id){return;}"));
+    assert!(src.contains(".filter(|_|!crate::jobs::is_child_id(&job_id))"));
+}
+
+/// The renderer builds the letter's stream id by hand; it must stay the id
+/// `child_stream_id(jobId, "letter")` makes. Mutation check: change `CHILD_SEP`
+/// or the TS suffix and this fails.
+#[test]
+fn the_renderers_letter_stream_id_matches_the_backend_s() {
+    let ts = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../src/renderer/hooks/use-resume-pipeline-session.ts"),
+    )
+    .unwrap();
+    let id = child_stream_id("JOB", "letter");
+    assert_eq!(id, "JOB#letter");
+    assert!(
+        ts.contains(&format!("`${{jobId}}{}`", &id[3..])),
+        "use-resume-pipeline-session.ts must build `${{jobId}}#letter`"
+    );
+}

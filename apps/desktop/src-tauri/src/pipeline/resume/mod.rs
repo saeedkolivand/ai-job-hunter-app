@@ -421,6 +421,9 @@ pub struct QualityCtx<'a> {
     pub letter: String,
     /// The letter's own report — present only when a letter was in scope.
     pub letter_report: Option<ContentReport>,
+    /// The letter, when `draft` wrote it beside itself (see
+    /// `stages::letter_ahead`); `cover_letter` then only reports it.
+    pub(crate) letter_ahead: Option<stages::LetterAhead>,
     /// Channels to the early company-research lookup — `Some` only when the
     /// run driver armed one (see `early_research`).
     pub(crate) early_research: Option<early_research::EarlyResearch>,
@@ -458,6 +461,7 @@ impl<'a> QualityCtx<'a> {
             report: None,
             letter: String::new(),
             letter_report: None,
+            letter_ahead: None,
             early_research: None,
         }
     }

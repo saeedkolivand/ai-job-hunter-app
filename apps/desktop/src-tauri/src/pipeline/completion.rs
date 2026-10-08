@@ -12,6 +12,7 @@ use crate::commands::ai_provider::{
     call_trace, AgentTurn, AiGenerateRequest, AiGenerateRequestMessage, ChatMsg, ToolSpec, Usage,
 };
 use crate::error::{AppError, AppResult};
+use crate::jobs::{child_stream_id, JobTracker};
 
 use super::completer::Completer;
 use super::json;
@@ -221,6 +222,22 @@ impl Completer {
             ));
         }
         Ok(text)
+    }
+
+    /// [`stream_captured`](Self::stream_captured) under `<parent>#<part>` — see
+    /// [`child_stream_id`] — so a part of a run can stream beside another
+    /// without interleaving on one `ai:stream` jobId. Cancelling `parent`
+    /// cancels it. The tracker record the text is read back from exists only
+    /// for the call, and is removed even if the caller drops this future.
+    pub async fn stream_captured_child(
+        &self,
+        parent: &str,
+        part: &str,
+        req: AiGenerateRequest,
+    ) -> AppResult<String> {
+        let id = child_stream_id(parent, part);
+        let _record = ChildRecord::open(&self.app, id.clone());
+        self.stream_captured(&id, req).await
     }
 
     /// One agentic tool-calling turn through the active provider — the multi-turn
@@ -507,4 +524,28 @@ pub(super) fn reask_prompt(error: &json::JsonParseError) -> String {
         out.push_str(&detail);
     }
     out
+}
+
+/// A short-lived tracker record, removed on drop.
+struct ChildRecord<'a> {
+    app: &'a tauri::AppHandle,
+    id: String,
+}
+
+impl<'a> ChildRecord<'a> {
+    fn open(app: &'a tauri::AppHandle, id: String) -> Self {
+        app.state::<parking_lot::Mutex<JobTracker>>()
+            .lock()
+            .start(&id, "resumePipeline.part");
+        Self { app, id }
+    }
+}
+
+impl Drop for ChildRecord<'_> {
+    fn drop(&mut self) {
+        self.app
+            .state::<parking_lot::Mutex<JobTracker>>()
+            .lock()
+            .forget(&self.id);
+    }
 }

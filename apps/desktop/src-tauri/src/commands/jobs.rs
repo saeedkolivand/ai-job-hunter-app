@@ -15,6 +15,10 @@ use tauri::{AppHandle, Manager};
 // few that used to emit ad-hoc. Call these instead of `tracker.lock().<mutator>()`.
 
 fn emit_job_event(app: &AppHandle, kind: &str, job_id: &str, data: Option<Value>) {
+    // A child stream's record is plumbing, not a job anyone watches.
+    if crate::jobs::is_child_id(job_id) {
+        return;
+    }
     emit_event(
         app,
         JOBS_EVENT,
@@ -236,7 +240,9 @@ pub fn jobs_list(app: AppHandle) -> Value {
 pub fn jobs_get(app: AppHandle, job_id: String) -> Value {
     let tracker = app.state::<Mutex<JobTracker>>();
     let guard = tracker.lock();
-    json!(guard.get(&job_id))
+    json!(guard
+        .get(&job_id)
+        .filter(|_| !crate::jobs::is_child_id(&job_id)))
 }
 
 #[tauri::command]
@@ -252,7 +258,10 @@ pub async fn jobs_cancel(app: AppHandle, job_id: String) -> Value {
 pub fn jobs_retry(app: AppHandle, job_id: String) -> Value {
     let tracker = app.state::<Mutex<JobTracker>>();
     let guard = tracker.lock();
-    match guard.get(&job_id) {
+    match guard
+        .get(&job_id)
+        .filter(|_| !crate::jobs::is_child_id(&job_id))
+    {
         Some(rec) => json!({
             "success": true,
             "kind": rec.kind,

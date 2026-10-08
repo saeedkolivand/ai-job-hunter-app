@@ -67,12 +67,11 @@ describe('useResumePipelineSession', () => {
     expect(result.current.draft).toBe('Ada');
   });
 
-  // The trap `usePipelineDraftStream`'s doc comment calls out: both the draft
-  // AND the cover_letter stage stream through the SAME `ai:stream` jobId, so
-  // without a split every letter token would land on the end of the résumé
-  // buffer.
+  // The backend may write the letter BESIDE the draft, so the two stream under
+  // separate ids: the draft's tokens must never land in the letter's buffer or
+  // the reverse, and the letter stays hidden until its own stage starts.
   describe('the letter stream split', () => {
-    it('routes deltas before cover_letter starts to `draft`', () => {
+    it('routes the draft stream to `draft` only', () => {
       const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
       act(() => {
         bus.stage?.(stage('draft', 'start', 3));
@@ -82,24 +81,42 @@ describe('useResumePipelineSession', () => {
       expect(result.current.letterDraft).toBe('');
     });
 
-    it('routes deltas from the cover_letter stage start onward to `letterDraft`, leaving `draft` frozen', () => {
+    it('keeps a letter that streams beside the draft out of both buffers until cover_letter starts', () => {
       const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
       act(() => {
         bus.stage?.(stage('draft', 'start', 3));
         bus.delta?.('resume text');
-        bus.stage?.(stage('draft', 'finish', 3));
-        bus.stage?.(stage('cover_letter', 'start', 4));
-        bus.delta?.('Dear hiring team,');
+        bus.letterDelta?.('Dear hiring team,');
       });
       expect(result.current.draft).toBe('resume text');
-      expect(result.current.letterDraft).toBe('Dear hiring team,');
+      // Held back: a panel showing `letterDraft || draft` still shows the résumé.
+      expect(result.current.letterDraft).toBe('');
+
+      act(() => {
+        bus.stage?.(stage('draft', 'finish', 3));
+        bus.stage?.(stage('cover_letter', 'start', 4));
+        bus.letterDelta?.(' Ada');
+      });
+      expect(result.current.draft).toBe('resume text');
+      expect(result.current.letterDraft).toBe('Dear hiring team, Ada');
     });
 
-    it('resets both buffers and the split flag on a new run', async () => {
+    it('reveals the letter on a remount that replays a trail already past cover_letter', async () => {
+      bus.detail = {
+        ...detail('running'),
+        events: [{ stage: 'cover_letter', phase: 'start', ts: 1, artifact: {} }],
+      } as never;
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      await waitFor(() => expect(result.current.stage?.stage).toBe('cover_letter'));
+      act(() => bus.letterDelta?.('still streaming'));
+      expect(result.current.letterDraft).toBe('still streaming');
+    });
+
+    it('resets both buffers and the reveal on a new run', async () => {
       const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
       act(() => {
         bus.stage?.(stage('cover_letter', 'start', 4));
-        bus.delta?.('old letter');
+        bus.letterDelta?.('old letter');
       });
       expect(result.current.letterDraft).toBe('old letter');
 
@@ -107,10 +124,9 @@ describe('useResumePipelineSession', () => {
       expect(result.current.letterDraft).toBe('');
       expect(result.current.draft).toBe('');
 
-      // The split flag reset too — a fresh delta with no stage event yet
-      // goes back to the résumé buffer, not the previous run's letter one.
-      act(() => bus.delta?.('new resume text'));
-      expect(result.current.draft).toBe('new resume text');
+      // The reveal reset too — a fresh letter delta stays hidden until the
+      // new run's own cover_letter stage starts.
+      act(() => bus.letterDelta?.('new letter'));
       expect(result.current.letterDraft).toBe('');
     });
   });

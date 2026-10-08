@@ -126,6 +126,13 @@ pub(crate) fn note(
     });
 }
 
+/// Move `calls` — drained from another log — into the ambient one. For work
+/// that ran under its own [`CallLog`] beside its stage and is reported by a
+/// later one.
+pub(crate) fn merge(calls: Vec<CallRecord>) {
+    let _ = LOG.try_with(|log| log.0.lock().calls.extend(calls));
+}
+
 /// Merge `calls` into a stage artifact as `routing`; `None` calls leaves the
 /// artifact untouched (cached and free stages stay exactly as they were).
 pub fn attach_routing(

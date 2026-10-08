@@ -26,6 +26,15 @@ import {
 
 export type { PipelineStageProgress };
 
+/** The letter has been reached once any of these stages has started. */
+const LETTER_STAGES = new Set(['cover_letter', 'validate', 'repair', 'humanize']);
+
+/**
+ * The `ai:stream` id the backend writes the cover letter under — the Rust
+ * `jobs::child_stream_id(jobId, "letter")`, kept in step by hand.
+ */
+export const letterStreamId = (jobId: string) => `${jobId}#letter`;
+
 export interface ResumePipelineSession {
   state: ResumePipelineState;
   /** The run is still doing work — nothing final to show yet. */
@@ -42,24 +51,20 @@ export interface ResumePipelineSession {
    * finished section's text is appended as its stage produces it, so this builds
    * up section by section instead of token by token. Display-only either way.
    *
-   * **Stops growing once the `cover_letter` stage starts** — see
-   * {@link ResumePipelineSession.letterDraft}.
    */
   draft: string;
   /**
-   * The `cover_letter` stage's streamed text, for DISPLAY ONLY — the same
-   * `ai:stream` channel as {@link ResumePipelineSession.draft} carries BOTH
-   * documents in sequence (draft, then the letter), so this hook splits the
-   * one stream at the `cover_letter` stage's `start` event rather than mashing
-   * the letter's tokens onto the end of the résumé buffer. Empty for a run
-   * that never includes a letter (`cover_letter` still runs but writes
-   * nothing) and for a reconnected run (the stream is not replayed).
+   * The `cover_letter` stage's streamed text, for DISPLAY ONLY. The letter
+   * streams under its own id ({@link letterStreamId}), because the backend may
+   * write it BESIDE the draft. It is held back until the `cover_letter` stage
+   * starts, so a panel that shows `letterDraft || draft` keeps showing the
+   * résumé while that one is being written. Empty for a run that never includes
+   * a letter and for a reconnected run (the stream is not replayed).
    */
   letterDraft: string;
   /**
-   * Reasoning/thinking tokens from EITHER streamed stage, for DISPLAY ONLY —
-   * not split by document (a reasoning bubble reads fine as one continuous
-   * transcript; only the finished text needs to land in the right pane).
+   * Reasoning/thinking tokens from the draft stream, for DISPLAY ONLY. The
+   * letter stream's own reasoning is not shown.
    */
   thinking: string;
   /** The run record: the authority on status, report, metrics and document. */
@@ -129,10 +134,9 @@ export function useResumePipelineSession(
   const [error, setError] = useState<string | null>(null);
   // The umbrella job's message, read after the record flips first (see its effect).
   const [fetchedReason, setFetchedReason] = useState<string | null>(null);
-  // Flips once, at the `cover_letter` stage's `start` event — see
-  // `ResumePipelineSession.letterDraft`. A ref because it must be readable
-  // from `appendDraft` without re-subscribing the stream on every stage event.
-  const writingLetterRef = useRef(false);
+  // Flips once, at the `cover_letter` stage's `start` event: the letter's
+  // buffer is only exposed from then on — see `ResumePipelineSession.letterDraft`.
+  const [letterShown, setLetterShown] = useState(false);
 
   const startRun = useStartResumePipelineRun();
   const cancelJob = useCancelJob();
@@ -163,13 +167,7 @@ export function useResumePipelineSession(
         ...(event.issueCount != null ? { issueCount: event.issueCount } : {}),
         ...(event.criticalCount != null ? { criticalCount: event.criticalCount } : {}),
       });
-      // The one thing that decides which buffer new deltas land in — flips
-      // ONCE, at the letter stage's start, and never back: nothing after it
-      // (validate/repair/humanize) streams visibly, so there is nothing left
-      // to misroute once it is set.
-      if (event.stage === 'cover_letter' && event.phase === 'start') {
-        writingLetterRef.current = true;
-      }
+      if (LETTER_STAGES.has(event.stage)) setLetterShown(true);
       const next = stageToEvent(event.stage, event.phase);
       if (next) send(next);
     },
@@ -177,12 +175,12 @@ export function useResumePipelineSession(
   );
   usePipelineStageEvents(handleStage);
 
-  const appendDraft = useCallback((delta: string) => {
-    if (writingLetterRef.current) setLetterDraft((prev) => prev + delta);
-    else setDraft((prev) => prev + delta);
-  }, []);
+  const appendDraft = useCallback((delta: string) => setDraft((prev) => prev + delta), []);
+  const appendLetter = useCallback((delta: string) => setLetterDraft((prev) => prev + delta), []);
   const appendThinking = useCallback((delta: string) => setThinking((prev) => prev + delta), []);
   usePipelineDraftStream(jobId, appendDraft, appendThinking);
+  // No thinking handler: the shared reasoning transcript is the draft's.
+  usePipelineDraftStream(jobId ? letterStreamId(jobId) : null, appendLetter);
 
   /**
    * The failures the run RECORD can never report, and the one job event that can.
@@ -352,6 +350,8 @@ export function useResumePipelineSession(
           attempt: 1,
         }
     );
+    // A remount mid-letter must still reveal the letter that keeps streaming.
+    if (LETTER_STAGES.has(last.stage)) setLetterShown(true);
     const next = stageToEvent(last.stage, last.phase);
     if (next) send(next);
   }, [runId, events, send]);
@@ -364,7 +364,7 @@ export function useResumePipelineSession(
       setDraft('');
       setLetterDraft('');
       setThinking('');
-      writingLetterRef.current = false;
+      setLetterShown(false);
       replayed.current = null;
       send('START');
       // `jobIdRef`/`runIdRef`/`busyRef` are all written in the render body
@@ -440,7 +440,7 @@ export function useResumePipelineSession(
     setDraft('');
     setLetterDraft('');
     setThinking('');
-    writingLetterRef.current = false;
+    setLetterShown(false);
     setError(null);
     setFetchedReason(null);
     replayed.current = null;
@@ -463,7 +463,7 @@ export function useResumePipelineSession(
     jobId,
     stage,
     draft,
-    letterDraft,
+    letterDraft: letterShown ? letterDraft : '',
     thinking,
     detail,
     // The live message wins when one landed; otherwise fall back to what the

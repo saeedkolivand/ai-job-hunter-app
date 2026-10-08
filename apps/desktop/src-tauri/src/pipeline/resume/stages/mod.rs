@@ -11,6 +11,7 @@ mod cover_letter;
 mod draft;
 mod evidence;
 mod humanize;
+mod letter_ahead;
 mod repair;
 pub mod sections;
 mod strategy;
@@ -22,6 +23,9 @@ pub(crate) use self::cover_letter::{research_brief, LETTER_STAGE};
 pub use self::draft::Draft;
 pub use self::evidence::MatchEvidence;
 pub use self::humanize::Humanize;
+pub(crate) use self::letter_ahead::LetterAhead;
+#[cfg(test)]
+pub(crate) use self::letter_ahead::{beside, can_overlap, Route};
 pub use self::repair::NAME as REPAIR_STAGE;
 pub use self::repair::{regenerate_one_section, Repair, SectionOutcome, MAX_SECTIONS_PER_ROUND};
 pub use self::strategy::{seed_company_roster, Strategy, MAX_COMPANY_PLANS};

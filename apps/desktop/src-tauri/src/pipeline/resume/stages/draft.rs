@@ -1,6 +1,11 @@
 //! `draft` — the whole résumé body, in one streamed call, with an at-most-once
 //! corrective retry when the streamed draft comes back in the wrong language.
 //!
+//! ## Writes the cover letter beside itself when that can help
+//!
+//! See [`super::letter_ahead`]. The letter streams under its own id, so the two
+//! documents never share an `ai:stream` jobId.
+//!
 //! ## Why this one streams and the others do not
 //!
 //! A JSON stage produces an artifact nobody reads; streaming it would show the
@@ -9,8 +14,8 @@
 //! already reaches and the id the renderer already filters `ai:stream` on.
 //!
 //! **The retry never streams.** The renderer clears its buffer only at
-//! `start()`/`reset()` and at the `cover_letter` stage-start event — all
-//! outside this stage — so a SECOND stream over the SAME `job_id` would land
+//! `start()`/`reset()` — both outside this stage — so a SECOND stream over
+//! the SAME `job_id` would land
 //! on top of the first with nothing telling the pane the model restarted:
 //! two contact headers, two of every section, for the whole retry. So
 //! [`run_draft_attempt`] routes the retry through [`DraftEnv::complete`], a
@@ -59,6 +64,9 @@ use crate::pipeline::resume::projects::{self, ProjectsNormalizeOutcome};
 use crate::pipeline::resume::prompts::{draft_language_retry_note, draft_system, draft_user};
 use crate::pipeline::resume::{QualityCtx, RunDeadline};
 use crate::pipeline::{Completer, Stage};
+
+use super::cover_letter::{take_brief, LetterJob, LETTER_STAGE};
+use super::letter_ahead::{beside, can_overlap, write_traced, Route};
 use crate::validate::content::document_language_mismatch;
 
 pub struct Draft;
@@ -145,7 +153,16 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
         // above) instead of borrowing the closure's OWN captured state —
         // the latter cannot outlive an `FnMut` call and is a compile error.
         let env: &dyn DraftEnv = &env;
-        let (draft, mut artifact, retry) = draft_with_language_retry(
+        // The letter is written beside the draft when it can help — see
+        // `letter_ahead`. Decided on the routing each stage resolves.
+        let letter_completer = ctx.completer_for(LETTER_STAGE);
+        // An expired deadline would refuse the `cover_letter` stage at its
+        // boundary, so it must not pay for a letter now either.
+        let letter_brief = (ctx.input.include_cover_letter
+            && !ctx.deadline.passed()
+            && can_overlap(route(completer), route(letter_completer)))
+        .then(|| take_brief(ctx));
+        let drafting = draft_with_language_retry(
             input.source_resume,
             input.job_ad,
             input.target_language,
@@ -161,8 +178,16 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
                 }
                 run_draft_attempt(env, input.job_id, is_retry, attempt)
             },
-        )
-        .await?;
+        );
+        let (draft, mut artifact, retry) = match letter_brief {
+            None => drafting.await?,
+            Some(brief) => {
+                let (drafted, letter) =
+                    beside(drafting, write_traced(LetterJob::new(ctx, brief))).await?;
+                ctx.letter_ahead = Some(letter);
+                drafted
+            }
+        };
 
         // The first call always happened (its own error already propagated
         // above); the retry counts only when it actually made a round trip —
@@ -180,6 +205,13 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
         ctx.ledger.record("draft", artifact);
         ctx.draft = draft;
         Ok(())
+    }
+}
+
+fn route(completer: &Completer) -> Route<'_> {
+    Route {
+        provider: completer.provider_id(),
+        base_url: completer.base_url(),
     }
 }
 
