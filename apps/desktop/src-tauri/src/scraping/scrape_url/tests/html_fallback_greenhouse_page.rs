@@ -33,6 +33,35 @@ fn anthropic_page_resolves_the_display_name_and_drops_the_header_block() {
     assert!(d.starts_with("## **About Anthropic**"), "{d}");
 }
 
+/// What the extension really sends: `markLikelyJobNode` (run against these fixtures in jsdom)
+/// marks the page's `<main>` — logo, location and Apply included — as the job root (#1409).
+fn extension_capture(html: &str) -> String {
+    let marked = html.replacen("<main ", r#"<main data-ajh-job-root="true" "#, 1);
+    assert_ne!(marked, html);
+    marked
+}
+
+#[test]
+fn extension_captures_drop_the_header_block_too() {
+    let g = extension_capture(GITLAB);
+    let p = parse_from_html(
+        "https://job-boards.greenhouse.io/gitlab/jobs/8860302002",
+        &g,
+    );
+    let d = p.unwrap().description.unwrap();
+    assert!(
+        d.starts_with("GitLab is the intelligent orchestration platform"),
+        "{d}"
+    );
+    let a = extension_capture(ANTHROPIC);
+    let p = parse_from_html(
+        "https://job-boards.greenhouse.io/anthropic/jobs/4461450008",
+        &a,
+    );
+    let d = p.unwrap().description.unwrap();
+    assert!(d.starts_with("## **About Anthropic**"), "{d}");
+}
+
 #[test]
 fn a_capitalised_logo_alt_is_not_a_company_off_greenhouse() {
     let html =

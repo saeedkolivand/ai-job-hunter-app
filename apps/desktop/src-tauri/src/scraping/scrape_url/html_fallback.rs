@@ -63,8 +63,9 @@ pub fn parse_from_html(url: &str, html: &str) -> Option<JobPosting> {
             description = hint_description;
         }
     }
-    // A rendered Greenhouse page: the ad body alone beats the meta stub and the header block.
-    if !hint_title_used && crate::scraping::ats_ref::greenhouse_slug(url).is_some() {
+    // A rendered Greenhouse page: the ad body alone beats the meta stub and the header block,
+    // and the extension's job-root hint (the whole `<main>`, logo and Apply included; #1409).
+    if crate::scraping::ats_ref::greenhouse_slug(url).is_some() {
         description = super::greenhouse::page_description(html).or(description);
     }
     let mut location = None;
@@ -288,6 +289,19 @@ pub(super) fn unescape_literal_newlines(s: &str) -> std::borrow::Cow<'_, str> {
     RE.replace_all(s, "$1\n$2")
 }
 
+/// Lever (and similar generators) HTML-escape plain-text JSON-LD strings (`Artist &amp; Label`);
+/// decoded once here, where the artefact originates (#1416). `<` is escaped first so tag-shaped
+/// text (`<Senior>`) is kept rather than parsed away.
+pub(super) fn decode_entities(s: &str) -> String {
+    if !s.contains('&') {
+        return s.to_string();
+    }
+    Html::parse_fragment(&s.replace('<', "&lt;"))
+        .root_element()
+        .text()
+        .collect()
+}
+
 /// Format one JSON-LD `PostalAddress`-shaped node to a display string.
 /// Locality-first (`"City, Region"` / `"City"` / `"Region"`); `addressCountry`
 /// is a fallback ONLY when both locality and region are absent.
@@ -326,7 +340,7 @@ fn job_location(node: &serde_json::Value) -> Option<String> {
     if parts.is_empty() {
         None
     } else {
-        Some(parts.join("; "))
+        Some(decode_entities(&parts.join("; ")))
     }
 }
 
@@ -345,12 +359,12 @@ fn job_from_node(node: &serde_json::Value) -> Option<JsonLdJob> {
     if !is_job_posting(node) {
         return None;
     }
-    let title = node
-        .get("title")
-        .and_then(|s| s.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
+    let title = decode_entities(
+        node.get("title")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .trim(),
+    );
     if title.is_empty() {
         return None;
     }
@@ -419,12 +433,12 @@ pub(super) fn has_json_ld_job_posting(html: &str) -> bool {
 fn next_data_job(html: &str) -> Option<JsonLdJob> {
     /// Pull a `JsonLdJob` out of a job-shaped node (already known to have a title).
     fn from_jobish(node: &serde_json::Value) -> JsonLdJob {
-        let title = node
-            .get("title")
-            .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .trim()
-            .to_string();
+        let title = decode_entities(
+            node.get("title")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .trim(),
+        );
         let description = node
             .get("description")
             .and_then(|s| s.as_str())

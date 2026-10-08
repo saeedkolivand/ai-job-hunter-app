@@ -287,10 +287,12 @@ pub(super) fn parse_generic_company(html: &str) -> Option<String> {
 pub(super) fn json_ld_company(json: &serde_json::Value) -> Option<String> {
     fn org_name(node: &serde_json::Value, depth: u8) -> Option<String> {
         match node.get("hiringOrganization") {
-            Some(serde_json::Value::String(s)) => return Some(s.clone()),
+            Some(serde_json::Value::String(s)) => {
+                return Some(super::html_fallback::decode_entities(s))
+            }
             Some(org @ serde_json::Value::Object(_)) => {
                 if let Some(name) = org.get("name").and_then(|n| n.as_str()) {
-                    return Some(name.to_string());
+                    return Some(super::html_fallback::decode_entities(name));
                 }
             }
             _ => {}
