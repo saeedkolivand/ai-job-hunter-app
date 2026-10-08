@@ -3,9 +3,10 @@
  * last-focused window's (a service worker has no window of its own).
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  browser,
   EMAIL_SUMMARY,
   executeScriptMock,
   FAKE_TOKEN,
@@ -80,6 +81,22 @@ describe('#1215 — a request carrying windowId acts on the requesting window ta
       url: POSTING_URL,
       applied: false,
       html: '<html>job</html>',
+    });
+  });
+
+  it('import pushes jobStatusChanged for the imported url only when it succeeded (#1410)', async () => {
+    scriptResults('<html>job</html>');
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+    mockClient.importJob.mockResolvedValueOnce({ error: 'not a job' });
+    await send({ kind: 'import', applied: false, windowId: REQUESTING_WINDOW_ID });
+    expect(browser.runtime.sendMessage).not.toHaveBeenCalled();
+
+    mockClient.importJob.mockResolvedValueOnce({ applicationId: 'app-1' });
+    await send({ kind: 'import', applied: true, windowId: REQUESTING_WINDOW_ID });
+    expect(browser.runtime.sendMessage).toHaveBeenCalledWith({
+      ok: true,
+      kind: 'jobStatusChanged',
+      url: POSTING_URL,
     });
   });
 

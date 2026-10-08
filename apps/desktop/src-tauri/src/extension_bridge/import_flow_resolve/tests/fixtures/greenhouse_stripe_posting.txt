@@ -1,0 +1,37 @@
+Abuse Research Engineer
+
+ Who we are 
+ About Stripe 
+ Stripe is a financial infrastructure platform for businesses. Millions of companies—from the world’s largest enterprises to the most ambitious startups—use Stripe to accept payments, grow their revenue, and accelerate new business opportunities. Our mission is to increase the GDP of the internet, and we have a staggering amount of work ahead. That means you have an unprecedented opportunity to put the global economy within everyone’s reach while doing the most important work of your career. 
+ About the team 
+ Abuse Research Group (ARG) handles proactive threat hunting and adversary behavior analysis across Stripe products. Rather than reacting to alerts, the team maps end-to-end fraud and abuse paths, validates novel attack vectors, and identifies product conditions that enable fraud. Using agentic automated testing and simulation tools, ARG translates research into actionable threat advisories, strategic control recommendations, and regression scenarios to systematically eliminate vulnerabilities. 
+ What you’ll do 
+ As an Abuse Research Engineer in the Abuse Research Group, you will play a critical role in safeguarding Stripe’s financial ecosystem by proactively hunting for advanced threats, dissecting complex fraud vectors, and extracting actionable adversary intelligence. Rather than relying solely on reactive alerts, you will develop and execute hypothesis-driven threat hunting operations across internal telemetry and external sources to uncover fraudulent tools, tactics, and techniques (TTPs) before they impact Stripe’s platform. Central to this work is FT3 (Fraud Taxonomy 3.0), Stripe’s multi-layered taxonomy that decomposes monolithic fraud into structured kill chains. Collaborating cross-functionally with Fraud Ops, Strategy, Risk, Onboarding, and Security, you will integrate threat intelligence, build agentic simulation workflows, and systematically eliminate product vulnerabilities. 
+ Responsibilities 
+ 
+ Proactive Threat Hunting &amp; Kill Chain Analysis: Formulate hypotheses and conduct iterative threat hunting operations across Stripe systems and external data. 
+ FT3 Taxonomy: Apply and enrich the FT3 framework across empirical datasets and incidents, standardizing threat intelligence across kill chain phases and targeted API endpoints. 
+ Threat Intelligence &amp; Signal Expansion: Partner with teams like Fraud Intelligence to integrate, curate, and automate threat feeds into engineering workflows. 
+ Cross-Functional Advisories &amp; Strategic Controls: Translate raw research and retrospective findings into actionable threat advisories and control recommendations (policy, technical systems, support workflows, and detection mechanisms) for stakeholders across Fraud, Risk, Onboarding, and Security. 
+ Agentic Testing &amp; Adversary Simulation: Utilize agentic automated testing frameworks to simulate adversary TTPs, validate whether deployed controls interrupt empirical kill chains, and generate regression scenarios to exercise controls. 
+ 
+ Who you are 
+ We’re looking for someone who meets the minimum requirements to be considered for the role. If you meet these requirements, you are encouraged to apply. The preferred qualifications are a bonus, not a requirement. 
+ Minimum requirements 
+ 
+ 5+ years of experience conducting threat intelligence, threat hunting, or technical incident response within cyber security, product abuse, or trust domains. 
+ 5+ years of experience analyzing large, complex datasets using data analytics tools to identify anomalies, map behavioral trends, and solve complex fraud problems. 
+ B.S. or M.S. in Computer Science, Cybersecurity, or a related technical field, or equivalent practical experience. 
+ Expert proficiency in Python and SQL, with demonstrated experience using code and scripting to automate workflows, build investigative tools, or query big data pipelines. 
+ Hands-on experience in log analysis (e.g., application logs, API route telemetry, network security events), digital forensics, and cyber investigation methodologies. 
+ Strong communication skills with a proven ability to translate complex technical research into clear, actionable recommendations and advisories for cross-functional partners. 
+ 
+ Preferred qualifications 
+ 
+ Deep technical understanding of threat actor motivations, infrastructure, and TTPs specific to financial fraud (e.g., ATO, Card Testing, Credential Stuffing). 
+ Familiarity with standardized taxonomies such as FT3 or MITRE ATT&amp;CK. 
+ Proficiency with engineering, data processing, and analysis platforms such as Databricks, Trino, PySpark, Pandas, or Scikit-Learn. 
+ Proven background utilizing Threat Intelligence Platforms (TIPs), tactical threat feeds, OSINT, and breach intelligence. 
+ Demonstrated capability building or leveraging agentic LLM tools, automated testing systems, or control validation frameworks to model adversary behavior at scale. 
+ Participation in industry conferences, webinars, or threat-sharing groups, alongside relevant professional certifications (e.g., GCTI, GCFA, OSCP). 
+ 

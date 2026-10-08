@@ -1,0 +1,112 @@
+Anthropic is an AI safety and research company. We build reliable, interpretable, and steerable AI systems.
+
+[Join us](/jobs)
+
+## Our Purpose
+
+## We believe AI will have a vast impact on the world. Anthropic is dedicated to building systems that people can rely on and generating research about the opportunities and risks of AI.
+
+### We Build Safer Systems
+
+We aim to build frontier AI systems that are reliable, interpretable, and steerable. We conduct frontier research, develop and apply a variety of safety techniques, and deploy the resulting systems via a set of partnerships and products.
+
+### Safety Is a Science
+
+We treat AI safety as a systematic science, conducting research, applying it to our products, feeding those insights back into our research, and regularly sharing what we learn with the world along the way.
+
+### Interdisciplinary
+
+Anthropic is a collaborative team of researchers, engineers, policy experts, business leaders and operators, who bring our experience from many different domains to our work.
+
+### AI Companies are One Piece of a Big Puzzle
+
+AI has the potential to fundamentally change how the world works. We view ourselves as just one piece of this evolving puzzle. We collaborate with civil society, government, academia, nonprofits and industry to promote safety industry-wide.
+
+## The Team
+
+We’re a team of researchers, engineers, policy experts and operational leaders, with experience spanning a variety of disciplines, all working together to build reliable and understandable AI systems.
+
+![Team members at whiteboard](/_next/image?url=https%3A%2F%2Fwww-cdn.anthropic.com%2Fimages%2F4zrzovbb%2Fwebsite%2F1536d2a2d317fb4714ab907cb5b103379ebb0be0-1152x864.jpg&w=3840&q=75)
+
+### Research
+
+We conduct frontier AI research across a variety of modalities, and explore novel and emerging safety research areas from interpretability to RL from human feedback to policy and societal impacts analysis.
+
+![Team members collaborating in meeting room](/_next/image?url=https%3A%2F%2Fwww-cdn.anthropic.com%2Fimages%2F4zrzovbb%2Fwebsite%2F49810dc8aa0de730866f49a164df84646226e880-1152x864.jpg&w=3840&q=75)
+
+### Policy
+
+We think about the impacts of our work and strive to communicate what we’re seeing at the frontier to policymakers and civil society in the US and abroad to help promote safe and reliable AI.
+
+![Team member working on laptop with headphones beside](/_next/image?url=https%3A%2F%2Fwww-cdn.anthropic.com%2Fimages%2F4zrzovbb%2Fwebsite%2F3e08b5548ea51c9d5928d31739aca51344ecb400-1152x864.jpg&w=3840&q=75)
+
+### Product
+
+We translate our research into tangible, practical tools like Claude that benefit businesses, nonprofits and civil society groups and their clients and people around the globe.
+
+![Team members in open, sunlit office](/_next/image?url=https%3A%2F%2Fwww-cdn.anthropic.com%2Fimages%2F4zrzovbb%2Fwebsite%2F62eedd3c49a10081ea84946f3e02b5840ffcb61c-1152x864.jpg&w=3840&q=75)
+
+### Operations
+
+Our people, finance, legal, and recruiting teams are the human engines that make Anthropic go. We’ve had previous careers at NASA, startups, and the armed forces and our diverse experiences help make Anthropic a great place to work (and we love plants!).
+
+## What we value and how we act
+
+Every day, we make critical decisions that inform our ability to achieve our mission. Shaping the future of AI and, in turn, the future of our world is a responsibility and a privilege. Our values guide how we work together, the decisions we make, and ultimately how we show up for each other and work toward our mission.
+
+01
+
+### Act for the global good.
+
+We strive to make decisions that maximize positive outcomes for humanity in the long run. This means we’re willing to be very bold in the actions we take to ensure our technology is a robustly positive force for good. We take seriously the task of safely guiding the world through a technological revolution that has the potential to change the course of human history, and are committed to helping make this transition go well.
+
+02
+
+### Hold light and shade.
+
+AI has the potential to pose unprecedented risks to humanity if things go badly. It also has the potential to create unprecedented benefits for humanity if things go well. We need shade to understand and protect against the potential for bad outcomes. We need light to realize the good outcomes.
+
+03
+
+### Be good to our users.
+
+At Anthropic, we define “users” broadly. Users are our customers, policy-makers, Ants, and anyone impacted by the technology we build or the actions we take. We cultivate generosity and kindness in all our interactions — with each other, with our users, and with the world at large. Going above and beyond for each other, our customers, and all of the people affected by our technology is meeting expectations.
+
+04
+
+### Ignite a race to the top on safety.
+
+As a safety-first company, we believe that building reliable, trustworthy, and secure systems is our collective responsibility - and the market agrees. We work to inspire a ‘race to the top’ dynamic where AI developers must compete to develop the most safe and secure AI systems. We want to constantly set the industry bar for AI safety and security and drive others to do the same.
+
+05
+
+### Do the simple thing that works.
+
+We take an empirical approach to problems and care about the size of our impact and not the sophistication of our methods. This doesn’t mean we throw together haphazard solutions. It means we try to identify the simplest solution and iterate from there. We don’t invent a spaceship if all we need is a bicycle.
+
+06
+
+### Be helpful, honest, and harmless.
+
+Anthropic is a high-trust, low-ego organization. We communicate kindly and directly, assuming good intentions even in disagreement. We are thoughtful about our actions, avoiding harm and repairing relationships when needed. Everyone contributes, regardless of role. If something urgently needs to be done, the right person to do it is probably you!
+
+07
+
+### Put the mission first.
+
+At the end of the day, the mission is what we’re all here for. It gives us a shared purpose and allows us to act swiftly together, rather than being pulled in multiple directions by competing goals. It engenders trust and collaboration and is the final arbiter in our decisions. When it comes to our mission, none of us are bystanders. We each take personal ownership over making our mission successful.
+
+## Governance
+
+  
+Anthropic is a Public Benefit Corporation, whose purpose is the responsible development and maintenance of advanced AI for the long-term benefit of humanity. Our Board of Directors is elected by stockholders and our Long-Term Benefit Trust, as explained [here](https://www.anthropic.com/news/the-long-term-benefit-trust). Current members of the Board and the Long-Term Benefit Trust (LTBT) are listed below.
+
+**Anthropic Board of Directors**  
+Dario Amodei, Daniela Amodei, Yasmin Razavi, Reed Hastings, Chris Liddell, and Vas Narasimhan.
+
+**LTBT Trustees**  
+Neil Buddy Shah, Richard Fontaine, and Dr. Ben Bernanke.
+
+Want to help us build the future of safe AI?
+
+[Join us](/jobs)

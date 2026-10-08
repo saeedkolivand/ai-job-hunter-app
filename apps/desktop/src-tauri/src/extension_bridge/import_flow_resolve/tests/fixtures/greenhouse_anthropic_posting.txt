@@ -1,0 +1,46 @@
+Account Executive - DNB
+
+ About Anthropic 
+ Anthropic’s mission is to create reliable, interpretable, and steerable AI systems. We want AI to be safe and beneficial for our users and for society as a whole. Our team is a quickly growing group of committed researchers, engineers, policy experts, and business leaders working together to build beneficial AI systems. About the role 
+ We are seeking an Enterprise Account Executive to serve as a founding member of our go-to-market expansion into Southeast Asia, based in Singapore. You will drive adoption of safe, frontier AI by securing strategic deals with the region&#39;s leading digital-native companies—from high-growth startups to established unicorns and super-apps—across Singapore, Indonesia, Vietnam, Thailand, Malaysia, and the Philippines. Owning the full sales cycle from first outbound to launch, you&#39;ll act as a trusted partner to customers as they embed Claude into their products and operations. As a first mover in ASEAN, you&#39;ll shape our regional strategy from the ground up, building the playbooks and market insight that will scale as our team grows. 
+ Key responsibilities 
+ 
+ Win new business and drive revenue for Anthropic across ASEAN, owning the full sales cycle from prospecting through deployment with digital-native customers 
+ Design and execute sales strategies tailored to the region&#39;s distinct markets, accounting for differences in market maturity, regulatory environment, language, and buying behaviour across Southeast Asian countries 
+ Spearhead market expansion by identifying high-potential customer segments and use cases within the region&#39;s startup and scale-up ecosystem, including fintech, e-commerce, super-apps, gaming, SaaS, and logistics 
+ Establish foundational go-to-market practices as a first mover in ASEAN, creating playbooks, templates, and frameworks that scale with the team 
+ Inform product roadmaps by gathering customer feedback and conveying market needs specific to Southeast Asian enterprises, including multilingual and localisation requirements 
+ Collaborate with cross-functional partners in product, marketing, solutions, and partnerships—including regional cloud and channel partners—to differentiate our offerings and sustain a competitive edge 
+ Serve as a market expert on ASEAN&#39;s digital-native landscape, providing strategic insight to global leadership on regional trends, competitive dynamics, and growth opportunities 
+ 
+ Minimum qualifications 
+ 
+ 12+ years of enterprise sales experience driving adoption of emerging technologies with digital-native businesses in Southeast Asia, with a consultative, solutions-oriented approach 
+ Deep understanding of the ASEAN startup and scale-up ecosystem, including familiarity with leading digital-native companies across multiple markets in the region 
+ Track record of managing complex, multi-stakeholder sales cycles and closing strategic deals by translating multifaceted technical requirements into tailored solutions 
+ Proven experience exceeding revenue targets in fast-paced organisations while managing an evolving pipeline and sales process 
+ Extensive experience negotiating complex, customised commercial agreements in Southeast Asian market contexts 
+ Excellent communication and presentation skills, with the ability to build relationships from ICs to C-level executives and cultural fluency across ASEAN business environments 
+ Entrepreneurial mindset and comfort with ambiguity as a founding team member building processes and strategy from scratch 
+ Bachelor&#39;s degree in a related field or equivalent experience 
+ 
+ Preferred qualifications 
+ 
+ Experience selling AI/ML, developer platforms, cloud, or API-based products to technical buyers 
+ Existing relationships with founders, CTOs, and product leaders at prominent Southeast Asian technology companies 
+ Experience working with hyperscaler or channel partners to co-sell into regional accounts 
+ Working proficiency in a Southeast Asian language in addition to English (e.g. Bahasa Indonesia, Vietnamese, Thai) 
+ Experience establishing a new market or region for a high-growth technology company 
+ A passion for and/or experience with advanced AI systems, and a strong interest in ensuring frontier AI is developed safely 
+ Logistics 
+ Minimum education: Bachelor’s degree or an equivalent combination of education, training, and/or experience 
+ Required field of study: A field relevant to the role as demonstrated through coursework, training, or professional experience 
+ Minimum years of experience: Years of experience required will correlate with the internal job level requirements for the position 
+ Location-based hybrid policy: Currently, we expect all staff to be in one of our offices at least 25% of the time. However, some roles may require more time in our offices. 
+ Visa sponsorship: We do sponsor visas! However, we aren&#39;t able to successfully sponsor visas for every role and every candidate. But if we make you an offer, we will make every reasonable effort to get you a visa, and we retain an immigration lawyer to help with this. 
+ We encourage you to apply even if you do not believe you meet every single qualification. Not all strong candidates will meet every single qualification as listed. Research shows that people who identify as being from underrepresented groups are more prone to experiencing imposter syndrome and doubting the strength of their candidacy, so we urge you not to exclude yourself prematurely and to submit an application if you&#39;re interested in this work. We think AI systems like the ones we&#39;re building have enormous social and ethical implications. We think this makes representation even more important, and we strive to include a range of diverse perspectives on our team. Your safety matters to us. To protect yourself from potential scams, remember that Anthropic recruiters only contact you from @anthropic.com email addresses. In some cases, we may partner with vetted recruiting agencies who will identify themselves as working on behalf of Anthropic. Be cautious of emails from other domains. Legitimate Anthropic recruiters will never ask for money, fees, or banking information before your first day. If you&#39;re ever unsure about a communication, don&#39;t click any links—visit anthropic.com/careers directly for confirmed position openings. 
+ How we&#39;re different 
+ We believe that the highest-impact AI research will be big science. At Anthropic we work as a single cohesive team on just a few large-scale research efforts. And we value impact — advancing our long-term goals of steerable, trustworthy AI — rather than work on smaller and more specific puzzles. We view AI research as an empirical science, which has as much in common with physics and biology as with traditional efforts in computer science. We&#39;re an extremely collaborative group, and we host frequent research discussions to ensure that we are pursuing the highest-impact work at any given time. As such, we greatly value communication skills. 
+ The easiest way to understand our research directions is to read our recent research. This research continues many of the directions our team worked on prior to Anthropic, including: GPT-3, Circuit-Based Interpretability, Multimodal Neurons, Scaling Laws, AI &amp; Compute, Concrete Problems in AI Safety, and Learning from Human Preferences. 
+ Come work with us! 
+ Anthropic is a public benefit corporation headquartered in San Francisco. We offer competitive compensation and benefits, optional equity donation matching, generous vacation and parental leave, flexible working hours, and a lovely office space in which to collaborate with colleagues. Guidance on Candidates&#39; AI Usage: Learn about our policy for using AI in our application process. 

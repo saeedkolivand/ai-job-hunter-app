@@ -1,6 +1,6 @@
 /** Thin handlers that ask the desktop about the active job / the extension's settings. */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PopupRequest } from '../lib/messages';
 import {
@@ -290,6 +290,34 @@ describe('statusUpdate request — errors are NOT folded (unlike appliedCheck)',
 
     expect(res).toEqual({ ok: true, kind: 'statusUpdate', result });
     expect(mockClient.updateStatus).toHaveBeenCalledWith(POSTING_URL);
+  });
+
+  it('pushes jobStatusChanged for the active url on success so an open side panel refreshes (#1410)', async () => {
+    activeTab();
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+    mockClient.updateStatus.mockResolvedValue({
+      ok: true,
+      applicationId: 'app-1',
+      status: 'applied',
+    });
+
+    await send({ kind: 'statusUpdate' });
+
+    expect(browser.runtime.sendMessage).toHaveBeenCalledWith({
+      ok: true,
+      kind: 'jobStatusChanged',
+      url: POSTING_URL,
+    });
+  });
+
+  it('does NOT push jobStatusChanged when the desktop refused the flip (#1410)', async () => {
+    activeTab();
+    vi.mocked(browser.runtime.sendMessage).mockClear();
+    mockClient.updateStatus.mockResolvedValue({ ok: false, error: 'nope' });
+
+    await send({ kind: 'statusUpdate' });
+
+    expect(browser.runtime.sendMessage).not.toHaveBeenCalled();
   });
 
   it('passes a desktop-side refusal straight through as result (never folds it, unlike appliedCheck)', async () => {

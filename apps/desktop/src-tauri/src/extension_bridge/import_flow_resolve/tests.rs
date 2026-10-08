@@ -4,3 +4,4 @@
 mod goldens;
 mod merge;
 mod persist;
+mod prose_fallback;

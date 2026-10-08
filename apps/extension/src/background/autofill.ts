@@ -5,7 +5,7 @@ import type { ExtensionImportRequest } from '@ajh/shared';
 import type { AutofillProfile, AutofillSummary } from '../lib/autofill';
 import type { PopupResponse } from '../lib/messages';
 import { getToken } from '../lib/storage';
-import { getClient, notPaired } from './bridge-client';
+import { broadcastJobStatusChanged, getClient, notPaired } from './bridge-client';
 import { isFieldsProbeResult, isFillSummary } from './guards';
 import { activeTabUrl, captureTabHtml, injectAndRun, readPage, requireTabId } from './page';
 
@@ -29,6 +29,8 @@ export async function runImport(applied: boolean, windowId?: number): Promise<Po
   }
 
   const result = await getClient().importJob(payload);
+  // #1410: an open side panel must follow a popup-initiated save/applied.
+  if (!result.error) void broadcastJobStatusChanged(url);
   return { ok: true, kind: 'import', result };
 }
 

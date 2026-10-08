@@ -46,10 +46,67 @@ pub(super) fn usable(p: &crate::scraping::types::JobPosting) -> bool {
 }
 
 /// Refusal shown by the extension when a generic-fallback page carries no job signal.
-pub(super) const NOT_A_JOB_MSG: &str = "This page doesn't look like a job posting";
+pub(super) const NOT_A_JOB_MSG: &str =
+    "This page doesn't look like a job posting. Open the job's own page and try again.";
 
 /// Minimum description length (chars) for a no-JSON-LD careers page to count as a job.
 const MIN_JOB_DESCRIPTION_CHARS: usize = 300;
+
+/// Longest description (chars) the prose-only fallback accepts: a posting is a few thousand
+/// chars, an encyclopedia article or company page is far longer (#1408).
+const MAX_JOB_DESCRIPTION_CHARS: usize = 50_000;
+
+/// The prose-only fallback also needs a stem density of at least one hit per this many tokens
+/// (4 per 1000): real postings measure 7-15 per 1000, long articles 1-3 (#1408).
+const MIN_STEM_TOKENS_PER_HIT: usize = 250;
+
+/// The prose-only fallback also needs a requirements-section signal: a company/about page says
+/// "join"/"careers"/"responsibility" in its values copy, but only a posting lists what it asks of
+/// the candidate (#1408). Token prefixes (en/de/fr/es/it/nl/pl) ...
+const REQUIREMENT_PREFIXES: &[&str] = &[
+    "requirement",
+    "qualification",
+    "qualifica",
+    "kwalificatie",
+    "kwalifikac",
+    "anforderung",
+    "requisit",
+    "exigence",
+    "competence",
+    "compétence",
+    "competenz",
+    "kompetenz",
+    "vereist",
+    "wymagan",
+    "oczekiwan",
+    "aufgaben",
+];
+
+/// ... exact tokens and whole-token phrases (the text is joined with single spaces).
+const REQUIREMENT_TOKENS: &[&str] = &["skills", "eisen", "profiel", "profil"];
+const REQUIREMENT_PHRASES: &[&str] = &[
+    "must have",
+    "nice to have",
+    "you have",
+    "you ll bring",
+    "you will bring",
+    "you bring",
+    "experience with",
+];
+
+/// Whether `text` (already lowercase) contains a requirements-section signal.
+fn has_requirement(text: &str) -> bool {
+    let toks: Vec<&str> = text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .collect();
+    let joined = format!(" {} ", toks.join(" "));
+    toks.iter().any(|t| {
+        REQUIREMENT_TOKENS.contains(t) || REQUIREMENT_PREFIXES.iter().any(|p| t.starts_with(p))
+    }) || REQUIREMENT_PHRASES
+        .iter()
+        .any(|ph| joined.contains(&format!(" {ph} ")))
+}
 
 /// Job-ish words (en/de/fr/es/it/nl/pt/pl) that must match a WHOLE token (plus a
 /// plural `s`), because as raw substrings they hit "joint", "composition",
@@ -82,26 +139,27 @@ const JOB_PREFIXES: &[&str] = &[
     "kariera",
 ];
 
-/// Distinct job stems found among the alphanumeric tokens of `text` (already lowercase).
-fn job_stems_in(text: &str) -> std::collections::HashSet<&'static str> {
+/// Job-stem hits among the alphanumeric tokens of `text` (already lowercase):
+/// `(distinct stems, total hits, total tokens)`.
+fn job_stem_stats(text: &str) -> (std::collections::HashSet<&'static str>, usize, usize) {
     let mut found = std::collections::HashSet::new();
+    let (mut hits, mut tokens) = (0, 0);
     for tok in text
         .split(|c: char| !c.is_alphanumeric())
         .filter(|t| !t.is_empty())
     {
+        tokens += 1;
         let singular = tok.strip_suffix('s').unwrap_or(tok);
-        for w in JOB_WORDS {
-            if tok == *w || singular == *w {
-                found.insert(*w);
-            }
-        }
-        for pre in JOB_PREFIXES {
-            if tok.starts_with(pre) {
-                found.insert(*pre);
-            }
+        let stem = JOB_WORDS
+            .iter()
+            .find(|w| tok == **w || singular == **w)
+            .or_else(|| JOB_PREFIXES.iter().find(|pre| tok.starts_with(**pre)));
+        if let Some(s) = stem {
+            found.insert(*s);
+            hits += 1;
         }
     }
-    found
+    (found, hits, tokens)
 }
 
 /// Whether a usable posting is plausibly a job. Biased toward accepting. Passes when:
@@ -109,8 +167,8 @@ fn job_stems_in(text: &str) -> std::collections::HashSet<&'static str> {
 /// the page embeds an ATS board (`embedded`, the #1238 wrapper), the HTML carries a
 /// `JobPosting` schema or the generic parser marked the posting `company_src: jsonld`
 /// (covers URL mode, where there is no captured HTML), a job stem is in the title or
-/// URL path, or the description is >= [`MIN_JOB_DESCRIPTION_CHARS`] and holds at
-/// least two distinct job stems. A company merely differing from the host is NOT a
+/// URL path, or the description is within [`MIN_JOB_DESCRIPTION_CHARS`]..=[`MAX_JOB_DESCRIPTION_CHARS`],
+/// holds at least two distinct job stems plus a requirements signal ([`has_requirement`]), and is dense in them ([`MIN_STEM_TOKENS_PER_HIT`]). A company merely differing from the host is NOT a
 /// signal: og:site_name / logo alt make that true of nearly every site.
 pub(super) fn looks_like_job(
     p: &crate::scraping::types::JobPosting,
@@ -128,11 +186,19 @@ pub(super) fn looks_like_job(
     let path = reqwest::Url::parse(&p.url)
         .map(|u| u.path().to_lowercase())
         .unwrap_or_default();
-    if !job_stems_in(&format!("{} {path}", p.title.to_lowercase())).is_empty() {
+    if !job_stem_stats(&format!("{} {path}", p.title.to_lowercase()))
+        .0
+        .is_empty()
+    {
         return true;
     }
     let desc = p.description.as_deref().unwrap_or("").to_lowercase();
-    desc.chars().count() >= MIN_JOB_DESCRIPTION_CHARS && job_stems_in(&desc).len() >= 2
+    let chars = desc.chars().count();
+    let (stems, hits, tokens) = job_stem_stats(&desc);
+    (MIN_JOB_DESCRIPTION_CHARS..=MAX_JOB_DESCRIPTION_CHARS).contains(&chars)
+        && stems.len() >= 2
+        && has_requirement(&desc)
+        && hits * MIN_STEM_TOKENS_PER_HIT >= tokens
 }
 
 /// The gate `handle_import` applies to a usable posting: `Err(Validation)` with

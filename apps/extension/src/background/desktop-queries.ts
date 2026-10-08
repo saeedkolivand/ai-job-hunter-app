@@ -11,7 +11,7 @@ import { takeAutoSaveNotice } from '../lib/auto-save-notice';
 import { stripFenceWrapper } from '../lib/fence-strip';
 import type { PopupResponse } from '../lib/messages';
 import { getToken } from '../lib/storage';
-import { getClient } from './bridge-client';
+import { broadcastJobStatusChanged, getClient } from './bridge-client';
 import { activeTabIn, activeTabUrl } from './page';
 
 /**
@@ -116,6 +116,8 @@ export async function runSettingsSet(
 export async function runStatusUpdate(windowId?: number): Promise<PopupResponse> {
   const url = await activeTabUrl(windowId);
   const result = await getClient().updateStatus(url);
+  // #1410: an open side panel must follow a popup-initiated flip.
+  if (result.ok) void broadcastJobStatusChanged(url);
   return { ok: true, kind: 'statusUpdate', result };
 }
 

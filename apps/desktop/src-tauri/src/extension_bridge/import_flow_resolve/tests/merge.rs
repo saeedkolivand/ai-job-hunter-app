@@ -270,7 +270,7 @@ fn looks_like_job_matches_whole_words_not_substrings() {
         None,
         false
     ));
-    let two = format!("{} job apply today", "lorem ipsum ".repeat(60));
+    let two = format!("{} job apply today requirements", "lorem ipsum ".repeat(60));
     assert!(looks_like_job(
         &url_posting("https://acme.example/x", Some(&two)),
         None,
