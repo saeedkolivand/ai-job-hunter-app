@@ -63,6 +63,10 @@ pub fn parse_from_html(url: &str, html: &str) -> Option<JobPosting> {
             description = hint_description;
         }
     }
+    // A rendered Greenhouse page: the ad body alone beats the meta stub and the header block.
+    if !hint_title_used && crate::scraping::ats_ref::greenhouse_slug(url).is_some() {
+        description = super::greenhouse::page_description(html).or(description);
+    }
     let mut location = None;
 
     // JSON-LD `JobPosting` is the richest source when present — let it override
@@ -140,6 +144,12 @@ pub fn parse_from_html(url: &str, html: &str) -> Option<JobPosting> {
         .or_else(|| {
             let slug = crate::scraping::ats_ref::extract_ats_ref(url)?.slug;
             let decoded = urlencoding::decode(&slug).map_or(slug.clone(), |d| d.into_owned());
+            let decoded = if crate::scraping::ats_ref::greenhouse_slug(url).is_some() {
+                super::greenhouse::page_company(html)
+                    .unwrap_or_else(|| super::greenhouse::title_case_slug(&decoded))
+            } else {
+                decoded
+            };
             Some(
                 decoded
                     .chars()

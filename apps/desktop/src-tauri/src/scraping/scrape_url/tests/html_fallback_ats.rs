@@ -11,7 +11,7 @@ fn parse_from_html_uses_the_ats_board_slug_not_the_host_as_company() {
         html,
     )
     .expect("a title is present");
-    assert_eq!(posting.company, "anthropic");
+    assert_eq!(posting.company, "Anthropic");
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn json_ld_and_og_site_name_beat_the_ats_slug_for_company() {
 fn the_ats_slug_company_is_percent_decoded() {
     let html = "<html><head><title>Eng</title></head></html>";
     let p = parse_from_html("https://job-boards.greenhouse.io/acme%20labs/jobs/1", html).unwrap();
-    assert_eq!(p.company, "acme labs");
+    assert_eq!(p.company, "Acme Labs");
 }
 
 #[test]

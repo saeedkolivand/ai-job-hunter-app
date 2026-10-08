@@ -109,9 +109,33 @@ pub(super) fn parse_greenhouse_url(url: &str) -> Option<(String, String)> {
     None
 }
 
+/// Description of a rendered `job-boards.greenhouse.io` page: only the ad body, so the
+/// header (logo link, location, Apply) the whole-page readability pass keeps is dropped.
+pub(super) fn page_description(html: &str) -> Option<String> {
+    let doc = scraper::Html::parse_document(html);
+    let sel = scraper::Selector::parse("div.job__description").ok()?;
+    let md = crate::scraping::http::html_to_markdown(&doc.select(&sel).next()?.inner_html());
+    (!md.trim().is_empty()).then_some(md)
+}
+
+/// Display name from the board's own header logo alt ("GitLab Logo"); `None` for a
+/// missing, empty or Greenhouse-branded alt.
+pub(super) fn page_company(html: &str) -> Option<String> {
+    let doc = scraper::Html::parse_document(html);
+    let sel = scraper::Selector::parse("div.image-container img[alt]").ok()?;
+    let alt = doc.select(&sel).next()?.value().attr("alt")?.trim();
+    let cut = alt.len().checked_sub(" logo".len())?;
+    let name = alt
+        .get(cut..)
+        .filter(|t| t.eq_ignore_ascii_case(" logo"))
+        .map_or(alt, |_| alt[..cut].trim());
+    (!name.is_empty() && !name.to_ascii_lowercase().contains("greenhouse"))
+        .then(|| name.to_string())
+}
+
 /// `"acme-corp"` -> `"Acme Corp"`.
-fn title_case_slug(slug: &str) -> String {
-    slug.split(['-', '_'])
+pub(super) fn title_case_slug(slug: &str) -> String {
+    slug.split(['-', '_', ' '])
         .filter(|w| !w.is_empty())
         .map(|w| {
             let mut c = w.chars();
