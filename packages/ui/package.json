@@ -28,7 +28,7 @@
     "@tiptap/starter-kit": "^3.31.4",
     "clsx": "^2.1.1",
     "lucide-react": "^1.50.0",
-    "motion": "^13.4.0",
+    "motion": "^14.0.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.7.0"
