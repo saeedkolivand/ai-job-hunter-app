@@ -28,6 +28,11 @@ export function useKindLabelMap(): Record<string, string> {
       // longest-lived job the app starts, so an unmapped kind renders as the
       // raw `resumePipeline.run` token in the status bar for up to 75 minutes.
       'resumePipeline.run': t('monitoring.jobKinds.resumePipelineRun'),
+      'pipeline.generate': t('monitoring.jobKinds.pipelineGenerate'),
+      'ai.reembed': t('monitoring.jobKinds.aiReembed'),
+      'ai.indexStale': t('monitoring.jobKinds.aiIndexStale'),
+      'ai.pull_model': t('monitoring.jobKinds.aiPullModel'),
+      'extension.answer_assist': t('monitoring.jobKinds.extensionAnswerAssist'),
     }),
     [t]
   );

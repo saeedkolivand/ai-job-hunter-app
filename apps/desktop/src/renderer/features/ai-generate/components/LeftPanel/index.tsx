@@ -125,7 +125,7 @@ export function LeftPanel({
           onImport={onJobAdImport}
           uploading={uploading === 'jobAd'}
           onUpload={(f: File) => onUpload('jobAd', f)}
-          placeholder={t('aiGenerate.placeholder').replace('…', '')}
+          placeholder={t('aiGenerate.jobAdPlaceholder')}
           uploadText={t('aiGenerate.upload')}
           disabled={stage !== 'idle'}
         />

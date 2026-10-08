@@ -137,7 +137,7 @@ Your résumés, generations, applications, and tracked job data live in a local 
 - **Now on the Chrome Web Store and Firefox Add-ons**: <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll" target="_blank" rel="noopener noreferrer">Install for Chrome</a> · <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter/" target="_blank" rel="noopener noreferrer">Install for Firefox</a>.
 - MV3 extension for **Chrome & Firefox**: while browsing any job board, click the extension button to import the job into your saved applications.
 - **One-click import**: click **"Import this job"** on any board page; the extension automatically captures the rendered DOM when possible (bypassing bot-walls on logged-in boards like LinkedIn/Indeed) and falls back to URL-only on restricted pages.
-- **Assisted autofill** (opt-in, default off): fill empty contact fields on any application with your saved profile; enabled only in Settings → Accounts → Browser extension.
+- **Assisted autofill** (opt-in, default off): fill empty contact fields on any application with your saved profile; enabled only in Settings → Browser extension.
 - **Transport**: native messaging (primary) with loopback WebSocket fallback. Paired with mutual HMAC-SHA256 authentication (token used only as an HMAC key, never transmitted). Zero remote backend, zero analytics.
 - See <a href="apps/extension/README.md" target="_blank" rel="noopener noreferrer">apps/extension/README.md</a> for setup, dev pairing, and architecture. Try it locally: see the extension's <a href="apps/extension/README.md#local-development--testing" target="_blank" rel="noopener noreferrer">Local development & testing</a> guide.
 

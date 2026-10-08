@@ -178,7 +178,10 @@ export function StepSchedule() {
         </div>
         {[
           [t('autopilot.wizard.schedule.summaryName'), name || '—'],
-          [t('autopilot.wizard.schedule.summaryBoard'), boards?.join(', ') ?? '—'],
+          [
+            t('autopilot.wizard.schedule.summaryBoard'),
+            boards?.map((id) => t(`jobs.boards.${id}`, { defaultValue: id })).join(', ') || '—',
+          ],
           [t('autopilot.wizard.schedule.summaryQuery'), query || '—'],
           [t('autopilot.wizard.schedule.summarySchedule'), scheduleSummary],
           [
@@ -190,7 +193,7 @@ export function StepSchedule() {
         ].map(([k, v]) => (
           <div key={k} className="flex items-center justify-between">
             <span className="text-[10px] text-foreground/35">{k}</span>
-            <span className="text-[10px] font-medium text-foreground/65 capitalize">{v}</span>
+            <span className="text-[10px] font-medium text-foreground/65">{v}</span>
           </div>
         ))}
       </div>

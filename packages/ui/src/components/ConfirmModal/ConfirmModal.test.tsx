@@ -21,6 +21,14 @@ describe('ConfirmModal', () => {
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
   });
 
+  it('defaults to layer 600 and honors a zIndex override', () => {
+    const layer = () => screen.getByRole('dialog').parentElement?.style.zIndex;
+    const { rerender } = render(<ConfirmModal {...base} />);
+    expect(layer()).toBe('600');
+    rerender(<ConfirmModal {...base} zIndex={700} />);
+    expect(layer()).toBe('700');
+  });
+
   it('fires onConfirm and onClose', async () => {
     const onConfirm = vi.fn();
     const onClose = vi.fn();

@@ -64,6 +64,23 @@ describe('ReferralList — contact display', () => {
   });
 });
 
+describe('ReferralList — saved drafts', () => {
+  it('shows each non-empty saved draft on the card', () => {
+    render(
+      <ReferralList
+        contacts={[makeContact({ messageDraft: 'Hi Jane, quick ask', emailDraft: 'Dear Jane' })]}
+      />
+    );
+    expect(screen.getByText('Hi Jane, quick ask')).toBeInTheDocument();
+    expect(screen.getByText('Dear Jane')).toBeInTheDocument();
+  });
+
+  it('renders no drafts toggle when the contact has none', () => {
+    render(<ReferralList contacts={[makeContact()]} />);
+    expect(screen.queryByText('autopilot.referral.drafts.toggle')).toBeNull();
+  });
+});
+
 describe('ReferralList — status change', () => {
   it('clicking "sent" upserts the full contact with status sent', () => {
     render(<ReferralList contacts={[makeContact({ id: 'ref-42', status: 'draft' })]} />);
@@ -108,6 +125,10 @@ describe('ReferralList — delete', () => {
     // The row trash button only opens the confirm dialog — no mutation yet.
     fireEvent.click(screen.getByRole('button', { name: 'autopilot.referral.delete' }));
     expect(mockRemoveMutate).not.toHaveBeenCalled();
+
+    // The confirm must stack above the referral modal (650) or it renders hidden behind it.
+    const layer = screen.getByRole('dialog').parentElement;
+    expect(Number(layer?.style.zIndex)).toBeGreaterThan(650);
 
     // The dialog's confirm button shares the `delete` label; it's the last one
     // in the document once the modal is mounted.

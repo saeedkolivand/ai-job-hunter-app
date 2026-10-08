@@ -17,6 +17,8 @@ interface ConfirmModalProps {
   isConfirming?: boolean;
   /** Accessible label for the close button. Pass a localized value from renderer callers. */
   closeAriaLabel?: string;
+  /** Stacking layer; raise above the parent when opened from inside another modal. */
+  zIndex?: number;
 }
 
 const variantConfig: Record<
@@ -75,6 +77,7 @@ export function ConfirmModal({
   variant = 'info',
   isConfirming = false,
   closeAriaLabel = 'Close dialog',
+  zIndex = 600,
 }: ConfirmModalProps) {
   const config = variantConfig[variant];
   const Icon = config.icon;
@@ -85,7 +88,7 @@ export function ConfirmModal({
       open={open}
       onClose={onClose}
       borderClass={config.border}
-      zIndex={600}
+      zIndex={zIndex}
       ariaLabelledby={titleId}
       header={
         <div className="flex items-start justify-between border-b border-white/5 px-6 py-5">

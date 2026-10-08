@@ -4,11 +4,11 @@
     "collapse": "Einklappen",
     "expand": "Ausklappen",
     "close": "Schließen",
-    "exportFailed": "Export fehlgeschlagen. Bitte versuche es erneut."
+    "exportFailed": "Export fehlgeschlagen. Bitte versuchen Sie es erneut."
   },
   "errorBoundary": {
     "title": "Etwas ist schiefgelaufen",
-    "description": "Auf dieser Seite ist ein unerwarteter Fehler aufgetreten. Versuche es erneut oder kehre zum Dashboard zurück.",
+    "description": "Auf dieser Seite ist ein unerwarteter Fehler aufgetreten. Versuchen Sie es erneut oder kehren Sie zum Dashboard zurück.",
     "goHome": "Zum Dashboard"
   },
   "app": {
@@ -34,22 +34,27 @@
     "settings": "Einstellungen",
     "applications": "Bewerbungen",
     "collapseSidebar": "Seitenleiste einklappen",
+    "greeting": {
+      "morning": "Guten Morgen",
+      "afternoon": "Guten Tag",
+      "evening": "Guten Abend"
+    },
     "expandSidebar": "Seitenleiste ausklappen",
     "back": "Zurück"
   },
   "build": {
     "title": "Lebenslauf-Builder",
-    "subtitle": "Beantworte ein paar Fragen und wir erstellen daraus einen Lebenslauf.",
+    "subtitle": "Beantworten Sie ein paar Fragen und wir erstellen daraus einen Lebenslauf.",
     "remove": "Entfernen",
     "wizard": {
       "back": "Zurück",
       "next": "Weiter",
       "generate": "Lebenslauf erstellen",
-      "generating": "Dein Lebenslauf wird erstellt…",
+      "generating": "Ihr Lebenslauf wird erstellt…",
       "stepCounter": "Schritt {{current}} von {{total}}"
     },
     "steps": {
-      "0": "Deine Angaben",
+      "0": "Ihre Angaben",
       "1": "Profil-Zusammenfassung",
       "2": "Berufserfahrung",
       "3": "Ausbildung",
@@ -58,11 +63,11 @@
       "6": "Prüfen & erstellen"
     },
     "descriptions": {
-      "0": "Deine Kontaktdaten werden zum Lebenslauf-Kopf. Optional eine Zielrolle ergänzen.",
-      "1": "Optional — leer lassen, dann schreiben wir sie aus deinen Angaben.",
+      "0": "Ihre Kontaktdaten werden zum Lebenslauf-Kopf. Optional eine Zielrolle ergänzen.",
+      "1": "Optional — leer lassen, dann schreiben wir sie aus Ihren Angaben.",
       "2": "Jede Position hinzufügen, neueste zuerst. Echte Erfolge als Stichpunkte.",
-      "3": "Füge deine Abschlüsse und Qualifikationen hinzu.",
-      "4": "Liste deine Kenntnisse auf — eine pro Zeile. Wir gruppieren sie.",
+      "3": "Fügen Sie Ihre Abschlüsse und Qualifikationen hinzu.",
+      "4": "Listen Sie Ihre Kenntnisse auf — eine pro Zeile. Wir gruppieren sie.",
       "5": "Optionale Extras: Projekte, Publikationen, Auszeichnungen, Ehrenamt, Sprachen, Zertifikate.",
       "6": "Ausgabesprache und Vorlage wählen, dann erstellen."
     },
@@ -73,13 +78,13 @@
     },
     "summary": {
       "label": "Profil-Zusammenfassung",
-      "placeholder": "Ein kurzer Absatz darüber, wer du bist und was du machst. Leer lassen zum automatischen Erstellen.",
+      "placeholder": "Ein kurzer Absatz darüber, wer Sie sind und was Sie machen. Leer lassen zum automatischen Erstellen.",
       "hint": "optional"
     },
     "experience": {
       "add": "Position hinzufügen",
       "empty": "Noch keine Positionen",
-      "emptyDescription": "Füge deinen Werdegang hinzu — neueste zuerst.",
+      "emptyDescription": "Fügen Sie Ihren Werdegang hinzu — neueste zuerst.",
       "title": "Position",
       "titlePlaceholder": "z. B. Senior Backend Engineer",
       "company": "Unternehmen",
@@ -97,7 +102,7 @@
     "education": {
       "add": "Ausbildung hinzufügen",
       "empty": "Noch keine Ausbildung",
-      "emptyDescription": "Füge Abschlüsse, Zertifikate oder relevante Kurse hinzu.",
+      "emptyDescription": "Fügen Sie Abschlüsse, Zertifikate oder relevante Kurse hinzu.",
       "degree": "Abschluss / Qualifikation",
       "degreePlaceholder": "z. B. M.Sc. Informatik",
       "institution": "Einrichtung",
@@ -129,14 +134,14 @@
         "name": "Name",
         "namePlaceholder": "z. B. Payment-Service",
         "description": "Beschreibung",
-        "descriptionPlaceholder": "Was es leistet und deine Rolle.",
+        "descriptionPlaceholder": "Was es leistet und Ihre Rolle.",
         "technologies": "Technologien",
         "technologiesHint": "Wird als eigene Zeile unter dem Projektnamen dargestellt.",
         "technologiesPlaceholder": "z. B. React, TypeScript, Node",
         "github": {
           "trigger": "Von GitHub importieren",
           "modalTitle": "GitHub-Projekte importieren",
-          "modalDescription": "Zeigt deine öffentlichen Repos an (bis zu ~30 nach Sternen, ohne Forks). Wähle beliebige aus – die KI schreibt passende Lebenslauf-Bullets.",
+          "modalDescription": "Zeigt Ihre öffentlichen Repos an (bis zu ~30 nach Sternen, ohne Forks). Wählen Sie beliebige aus – die KI schreibt passende Lebenslauf-Bullets.",
           "usernamePlaceholder": "GitHub-Benutzername oder Profil-URL",
           "fetchButton": "Repos abrufen",
           "loading": "Repositories werden geladen…",
@@ -193,20 +198,20 @@
     },
     "review": {
       "language": "Ausgabesprache",
-      "incomplete": "Füge deinen Namen, mindestens eine Position oder Ausbildung und einige Kenntnisse hinzu.",
+      "incomplete": "Fügen Sie Ihren Namen, mindestens eine Position oder Ausbildung und einige Kenntnisse hinzu.",
       "fixIssues": "Behebe {{count}} Problem, um zu erstellen.",
       "fixIssues_other": "Behebe {{count}} Probleme, um zu erstellen.",
-      "cjkHint": "PDF und Live-Vorschau können Chinesisch, Japanisch und Koreanisch noch nicht darstellen — dein Lebenslauf wird trotzdem erstellt und als DOCX exportiert. CJK-PDF-Unterstützung folgt."
+      "cjkHint": "PDF und Live-Vorschau können Chinesisch, Japanisch und Koreanisch noch nicht darstellen — Ihr Lebenslauf wird trotzdem erstellt und als DOCX exportiert. CJK-PDF-Unterstützung folgt."
     },
     "monthYear": {
       "month": "Monat",
       "year": "Jahr"
     },
     "validation": {
-      "url": "Gib eine gültige URL ein (https://…).",
-      "year": "Gib ein 4-stelliges Jahr ein.",
-      "experienceIdentity": "Gib eine Position oder ein Unternehmen an.",
-      "educationIdentity": "Gib einen Abschluss oder eine Einrichtung an."
+      "url": "Geben Sie eine gültige URL ein (https://…).",
+      "year": "Geben Sie ein 4-stelliges Jahr ein.",
+      "experienceIdentity": "Geben Sie eine Position oder ein Unternehmen an.",
+      "educationIdentity": "Geben Sie einen Abschluss oder eine Einrichtung an."
     },
     "output": {
       "tailor": "An Stelle anpassen",
@@ -236,8 +241,8 @@
         "cli": "CLI · nutzt Ihren bestehenden Login, kein API-Schlüssel."
       }
     },
-    "noModelSelected": "Kein KI-Modell ausgewählt – wähle eines, um KI-Funktionen zu nutzen.",
-    "modelUnavailable": "Dein ausgewähltes Modell ist nicht verfügbar – wähle eines aus der Liste unten.",
+    "noModelSelected": "Kein KI-Modell ausgewählt – wählen Sie eines, um KI-Funktionen zu nutzen.",
+    "modelUnavailable": "Ihr ausgewähltes Modell ist nicht verfügbar – wählen Sie eines aus der Liste unten.",
     "cloud": {
       "addKeyToLoad": "Fügen Sie einen API-Schlüssel hinzu, um die Modelle dieses Anbieters zu laden.",
       "addUrlToLoad": "Fügen Sie eine Basis-URL hinzu, um die Modelle dieses Anbieters zu laden.",
@@ -253,25 +258,25 @@
     "navigate": "Navigieren",
     "actions": "Aktionen",
     "help": "Kürzel anzeigen",
-    "hint": "Drücke jederzeit ?, um diese Liste zu öffnen"
+    "hint": "Drücken Sie jederzeit ?, um diese Liste zu öffnen"
   },
   "aiSetup": {
-    "addApiKey": "Füge einen KI-Anbieter-Schlüssel hinzu, um zu generieren.",
-    "selectModel": "Wähle ein KI-Modell, um zu generieren.",
-    "installCli": "Installiere deinen KI-CLI-Agenten, um fortzufahren.",
-    "startOllama": "Starte Ollama, um fortzufahren.",
-    "healthUnavailable": "KI-Status konnte nicht geprüft werden. Versuche es in Kürze erneut.",
+    "addApiKey": "Fügen Sie einen KI-Anbieter-Schlüssel hinzu, um zu generieren.",
+    "selectModel": "Wählen Sie ein KI-Modell, um zu generieren.",
+    "installCli": "Installieren Sie Ihren KI-CLI-Agenten, um fortzufahren.",
+    "startOllama": "Starten Sie Ollama, um fortzufahren.",
+    "healthUnavailable": "KI-Status konnte nicht geprüft werden. Versuchen Sie es in Kürze erneut.",
     "action": "KI-Einstellungen öffnen"
   },
   "analyze": {
     "title": "Lebenslauf-Analyse",
-    "subtitle": "Füge deinen Lebenslauf und eine Stellenanzeige ein. Erhalte sofort einen lokalen ATS-Score, semantischen Abgleich, Lückenanalyse und maßgeschneiderte Empfehlungen.",
-    "resume": "Dein Lebenslauf",
+    "subtitle": "Fügen Sie Ihren Lebenslauf und eine Stellenanzeige ein. Erhalten Sie sofort einen lokalen ATS-Score, semantischen Abgleich, Lückenanalyse und maßgeschneiderte Empfehlungen.",
+    "resume": "Ihr Lebenslauf",
     "resumeHint": "Klartext einfügen",
-    "resumePlaceholder": "Füge hier deinen Lebenslauf ein…\n\nIncludiere Fähigkeiten, Erfahrung, Ausbildung und Schlüsselwörter, die bewertet werden sollen.",
+    "resumePlaceholder": "Fügen Sie hier Ihren Lebenslauf ein…\n\nBeziehen Sie Fähigkeiten, Erfahrung, Ausbildung und Schlüsselwörter ein, die bewertet werden sollen.",
     "jobAd": "Stellenanzeige",
     "jobAdHint": "Komplette Anzeige einfügen",
-    "jobAdPlaceholder": "Füge hier die Stellenbeschreibung ein…\n\nIncludiere Anforderungen, Aufgaben und genannte Tools oder Qualifikationen.",
+    "jobAdPlaceholder": "Fügen Sie hier die Stellenbeschreibung ein…\n\nBeziehen Sie Anforderungen, Aufgaben und genannte Tools oder Qualifikationen ein.",
     "run": "Analysieren",
     "running": "Analysiere…",
     "reset": "Zurücksetzen",
@@ -375,17 +380,17 @@
   "generate": {
     "eyebrow": "KI-Generierung",
     "title": "Maßgeschneidert. Jedes Wort.",
-    "subtitle": "Generiere einen maßgeschneiderten Lebenslauf oder ein Anschreiben aus jeder Stellenanzeige. Streamt lokal von Ollama in deiner Sprache.",
+    "subtitle": "Generieren Sie einen maßgeschneiderten Lebenslauf oder ein Anschreiben aus jeder Stellenanzeige. Streamt lokal von Ollama in Ihrer Sprache.",
     "modes": {
       "resume": "Lebenslauf",
       "cover": "Anschreiben"
     },
-    "resume": "Dein Lebenslauf",
-    "resumePlaceholder": "Füge hier deinen Master-Lebenslauf ein…",
+    "resume": "Ihr Lebenslauf",
+    "resumePlaceholder": "Fügen Sie hier Ihren Master-Lebenslauf ein…",
     "jobAd": "Ziel-Stellenanzeige",
-    "jobAdPlaceholder": "Füge hier die Stellenbeschreibung ein…",
+    "jobAdPlaceholder": "Fügen Sie hier die Stellenbeschreibung ein…",
     "run": "Generieren",
-    "running": "Generiere…",
+    "running": "Wird generiert…",
     "reset": "Zurücksetzen",
     "copy": "Kopieren",
     "copied": "Kopiert",
@@ -393,7 +398,7 @@
       "resume": "Maßgeschneiderter Lebenslauf",
       "cover": "Anschreiben"
     },
-    "error": "Lokale KI nicht erreichbar. Stelle sicher, dass Ollama läuft."
+    "error": "Lokale KI nicht erreichbar. Stellen Sie sicher, dass Ollama läuft."
   },
   "monitoring": {
     "title": "Überwachung",
@@ -403,6 +408,7 @@
       "completed": "Abgeschlossen",
       "running": "Läuft",
       "failed": "Fehlgeschlagen",
+      "cancelled": "Abgebrochen",
       "successRate": "Erfolgsrate"
     },
     "status": {
@@ -416,7 +422,7 @@
     },
     "emptyStates": {
       "noActiveJobs": "Keine aktiven Jobs",
-      "waitingForActivity": "Warte auf Aktivität…"
+      "waitingForActivity": "Warten auf Aktivität…"
     },
     "actions": {
       "clear": "Löschen",
@@ -442,7 +448,12 @@
       "persistJob": "Interaktion gespeichert",
       "matchResume": "Lebenslauf-Match",
       "autopilotRun": "Autopilot-Lauf",
-      "resumePipelineRun": "Qualitätslauf Lebenslauf"
+      "resumePipelineRun": "Qualitätslauf Lebenslauf",
+      "pipelineGenerate": "Dokumenterstellung",
+      "aiReembed": "Embeddings werden neu erstellt",
+      "aiIndexStale": "Neue Dokumente werden indexiert",
+      "aiPullModel": "Modell-Download",
+      "extensionAnswerAssist": "Antwort der Erweiterung"
     },
     "activity": {
       "queued": "in Warteschlange",
@@ -638,7 +649,7 @@
     },
     "about": {
       "title": "Die Suche unterstützen",
-      "pitch": "Wenn diese App dir einige Nächte erspart hat, kannst du etwas zurückgeben — jeder Beitrag hilft.",
+      "pitch": "Wenn diese App Ihnen einige Nächte erspart hat, können Sie etwas zurückgeben — jeder Beitrag hilft.",
       "githubSponsors": "Auf GitHub sponsern",
       "kofi": "Einen Kaffee auf Ko-fi spendieren",
       "paypal": "Trinkgeld via PayPal senden",
@@ -748,7 +759,7 @@
     },
     "companyResearch": {
       "title": "Unternehmensrecherche",
-      "description": "Fügt Anschreiben und Bewerbungsantworten ein kurzes, faktisches Unternehmensprofil hinzu – über die Websuche deines aktiven KI-Anbieters. Cloud- und CLI-Anbieter suchen mit ihrem eigenen Schlüssel; Ollama benötigt den kostenlosen Ollama-Kontoschlüssel unten.",
+      "description": "Fügt Anschreiben und Bewerbungsantworten ein kurzes, faktisches Unternehmensprofil hinzu – über die Websuche Ihres aktiven KI-Anbieters. Cloud- und CLI-Anbieter suchen mit ihrem eigenen Schlüssel; Ollama benötigt den kostenlosen Ollama-Kontoschlüssel unten.",
       "connected": "Verbunden — Ollama-Schlüssel gespeichert",
       "remove": "Entfernen",
       "getKeyAt": "Kostenlosen Ollama-Schlüssel erhalten unter",
@@ -760,15 +771,15 @@
       "removeConfirmTitle": "Ollama-Schlüssel entfernen?",
       "removeConfirmDesc": "Dadurch wird Ihr gespeicherter Ollama-Schlüssel gelöscht. Die Unternehmensrecherche pausiert, bis Sie wieder einen Schlüssel hinzufügen.",
       "saveError": "Schlüssel konnte nicht gespeichert werden.",
-      "fallbackDescription": "Ersatzsuche – wird nur verwendet, wenn dein Anbieter keine eigene Websuche hat (jeder OpenAI-kompatible Server oder Ollama ohne den Schlüssel oben). Ein Anbieter, der bereits suchen kann, wird nie auf Exa umgestellt.",
+      "fallbackDescription": "Ersatzsuche – wird nur verwendet, wenn Ihr Anbieter keine eigene Websuche hat (jeder OpenAI-kompatible Server oder Ollama ohne den Schlüssel oben). Ein Anbieter, der bereits suchen kann, wird nie auf Exa umgestellt.",
       "exaConnected": "Verbunden – Exa-Schlüssel gespeichert",
-      "exaGetKeyAt": "Exa-Schlüssel erhältst du unter",
+      "exaGetKeyAt": "Exa-Schlüssel erhalten Sie unter",
       "exaKeyPlaceholder": "Exa-API-Schlüssel einfügen…",
       "exaNote": "Nutzungsbasiert, mit monatlichem Gratis-Guthaben.",
       "exaSaved": "Exa-Schlüssel gespeichert.",
       "exaRemoved": "Exa-Schlüssel entfernt.",
       "exaRemoveConfirmTitle": "Exa-Schlüssel entfernen?",
-      "exaRemoveConfirmDesc": "Dies löscht deinen gespeicherten Exa-Schlüssel. Anbieter ohne eigene Websuche erstellen dann kein Unternehmensprofil mehr.",
+      "exaRemoveConfirmDesc": "Dies löscht Ihren gespeicherten Exa-Schlüssel. Anbieter ohne eigene Websuche erstellen dann kein Unternehmensprofil mehr.",
       "showKey": "Schlüssel anzeigen",
       "hideKey": "Schlüssel verbergen",
       "ollamaFieldLabel": "Ollama-API-Schlüssel",
@@ -1209,7 +1220,7 @@
       "title": "Updates",
       "currentVersion": "Aktuelle Version",
       "checkNow": "Nach Updates suchen",
-      "checking": "Prüfe…",
+      "checking": "Wird geprüft…",
       "upToDate": "Sie sind auf dem neuesten Stand",
       "managedByStore": "Updates werden über den Microsoft Store bereitgestellt.",
       "managedBySnap": "Updates werden über den Snap Store bereitgestellt.",
@@ -1417,6 +1428,7 @@
     "resumeLabel": "Lebenslauf",
     "templateLabel": "Vorlage",
     "jobAdLabel": "Stellenanzeige",
+    "jobAdPlaceholder": "Fügen Sie hier die Stellenanzeige ein…",
     "detectedContext": "Erkannter Kontext",
     "candidate": "Kandidat",
     "role": "Rolle",
@@ -1490,7 +1502,7 @@
       "linkSave": "Speichern",
       "linkRemove": "Entfernen",
       "linkCancel": "Abbrechen",
-      "linkSuggestions": "Deine Links"
+      "linkSuggestions": "Ihre Links"
     },
     "placeholder": "Generierte Ausgabe erscheint hier…",
     "pdfPreview": {
@@ -1517,9 +1529,9 @@
       "selectionLabel": "Ausgewählter Text",
       "resultLabel": "Umschreibung",
       "streaming": "Wird umgeschrieben…",
-      "empty": "Die Umschreibung war leer. Versuche eine andere Anweisung.",
+      "empty": "Die Umschreibung war leer. Versuchen Sie eine andere Anweisung.",
       "failed": "Umschreiben fehlgeschlagen. Bitte erneut versuchen.",
-      "unchanged": "Das Ergebnis ist identisch mit deiner Auswahl. Versuche eine andere Anweisung oder generiere neu.",
+      "unchanged": "Das Ergebnis ist identisch mit Ihrer Auswahl. Versuchen Sie eine andere Anweisung oder generieren Sie neu.",
       "stillWorking": "Läuft noch — bei einer langen Auswahl kann das eine Minute dauern.",
       "overLimit": {
         "chars": "{{n}} Zeichen, Limit {{limit}}",
@@ -1727,15 +1739,15 @@
       },
       "analyze": {
         "label": "Analysieren",
-        "description": "Liest die Stellenanzeige und gleicht sie mit deinen Belegen ab."
+        "description": "Liest die Stellenanzeige und gleicht sie mit Ihren Belegen ab."
       },
       "generate": {
         "label": "Erstellen",
-        "description": "Entwirft deinen Lebenslauf – und das Anschreiben, falls gewünscht."
+        "description": "Entwirft Ihren Lebenslauf – und das Anschreiben, falls gewünscht."
       },
       "validate": {
         "label": "Prüfen",
-        "description": "Prüft jede Aussage gegen deinen Lebenslauf und behebt, was möglich ist."
+        "description": "Prüft jede Aussage gegen Ihren Lebenslauf und behebt, was möglich ist."
       },
       "humanize": {
         "label": "KI-Spuren entfernen",
@@ -1789,7 +1801,7 @@
       "liveOnly": "Nur der laufende Fortschritt — der Ablauf dieses Laufs wird noch nicht gespeichert."
     },
     "error": {
-      "notLatestRun": "Nur der neueste Lauf zu dieser Stelle lässt sich ändern. Erzeuge neu, um am aktuellen Dokument zu arbeiten."
+      "notLatestRun": "Nur der neueste Lauf zu dieser Stelle lässt sich ändern. Erzeugen Sie neu, um am aktuellen Dokument zu arbeiten."
     }
   },
   "quality": {
@@ -1798,7 +1810,7 @@
       "issues_one": "{{count}} Problem ({{critical}} kritisch)",
       "issues_other": "{{count}} Probleme ({{critical}} kritisch)",
       "open": "Qualitätsbericht öffnen",
-      "stale": "Vor deiner Bearbeitung geprüft",
+      "stale": "Vor Ihrer Bearbeitung geprüft",
       "staleTooltip": "Dieses Dokument wurde nach der Prüfung geändert — die Ergebnisse könnten veraltet sein."
     },
     "panel": {
@@ -1826,14 +1838,14 @@
         "noteLabel": "Was soll sich ändern? (optional)",
         "notePlaceholder": "z. B. mit der Plattform-Migration beginnen",
         "notAddressable": "Diesen Abschnitt kann diese Version nicht einzeln neu schreiben.",
-        "repaired_one": "{{count}} Nachbesserungsrunde lief automatisch, bevor du das hier gesehen hast.",
-        "repaired_other": "{{count}} Nachbesserungsrunden liefen automatisch, bevor du das hier gesehen hast.",
+        "repaired_one": "{{count}} Nachbesserungsrunde lief automatisch, bevor Sie das hier gesehen haben.",
+        "repaired_other": "{{count}} Nachbesserungsrunden liefen automatisch, bevor Sie das hier gesehen haben.",
         "reverted": "Die letzte Nachbesserung hat es verschlechtert und wurde zurückgenommen.",
         "perSectionNote": "Nachbesserungen werden für den gesamten Lauf gezählt — welcher Abschnitt betroffen war, hält die Prüfung nicht fest."
       },
       "judge": {
         "provenance": "KI-Review",
-        "hint": "Vom Modell geschrieben, nachdem es deinen fertigen Lebenslauf gelesen hat — ein Vorschlag, keine Regel der Prüfungen. Nichts davon blockiert oder ändert das Dokument.",
+        "hint": "Vom Modell geschrieben, nachdem es Ihren fertigen Lebenslauf gelesen hat — ein Vorschlag, keine Regel der Prüfungen. Nichts davon blockiert oder ändert das Dokument.",
         "kind": {
           "clarity": "Klarheit",
           "evidence": "Belege",
@@ -1843,7 +1855,7 @@
       },
       "review": {
         "title": "Aussagen zum Prüfen",
-        "description": "Diese Zeilen ließen sich nicht auf deinen Lebenslauf zurückführen. Nichts wird automatisch entfernt — entscheide jede einzeln, deine Wahl wird im Bericht festgehalten.",
+        "description": "Diese Zeilen ließen sich nicht auf Ihren Lebenslauf zurückführen. Nichts wird automatisch entfernt — entscheiden Sie jede einzeln, Ihre Wahl wird im Bericht festgehalten.",
         "pending_one": "{{count}} Aussage braucht noch eine Entscheidung",
         "pending_other": "{{count}} Aussagen brauchen noch eine Entscheidung",
         "allResolved": "Für jede markierte Aussage liegt eine Entscheidung vor.",
@@ -1852,9 +1864,9 @@
         "removed": "Zum Entfernen markiert",
         "kept": "Als zutreffend behalten",
         "orphaned": "Steht nicht mehr im Dokument",
-        "orphanedHint": "Du hast diese Zeile entfernt, oder sie hat sich seit der Prüfung geändert. Entscheide sie trotzdem, um die Prüfung abzuschließen.",
+        "orphanedHint": "Sie haben diese Zeile entfernt, oder sie hat sich seit der Prüfung geändert. Entscheiden Sie sie trotzdem, um die Prüfung abzuschließen.",
         "removalPending": "Zum Entfernen markiert — steht noch im Dokument",
-        "removalPendingHint": "Deine Entscheidung ist festgehalten, die Zeile ließ sich von hier aus aber nicht löschen. Öffne den bei der Bewerbung zu dieser Stelle gespeicherten Lebenslauf und entferne die Zeile dort, um es abzuschließen.",
+        "removalPendingHint": "Ihre Entscheidung ist festgehalten, die Zeile ließ sich von hier aus aber nicht löschen. Öffnen Sie den bei der Bewerbung zu dieser Stelle gespeicherten Lebenslauf und entfernen Sie die Zeile dort, um es abzuschließen.",
         "failed": "Die Entscheidung konnte nicht gespeichert werden. Bitte erneut versuchen."
       },
       "metrics": {
@@ -1866,21 +1878,21 @@
       }
     },
     "nudge": {
-      "message": "Überarbeite vor dem Versenden ein bis zwei Zeilen von Hand in deiner eigenen Stimme.",
+      "message": "Überarbeiten Sie vor dem Versenden ein bis zwei Zeilen von Hand in Ihrer eigenen Stimme.",
       "dismiss": "Verwerfen"
     },
-    "fallback": "Eine deterministische Prüfung hat dies markiert — sieh dir den Beleg unten an.",
+    "fallback": "Eine deterministische Prüfung hat dies markiert — sehen Sie sich den Beleg unten an.",
     "issue": {
       "factual": {
-        "unsourced_metric": "Diese Zahl taucht in deinem Lebenslauf nicht auf — bestätige, dass sie korrekt ist, bevor du das Dokument versendest.",
-        "dropped_role": "Eine Position aus deinem Lebenslauf fehlt scheinbar in diesem Dokument.",
-        "unsupported_date": "Dieses Datum stimmt nicht mit deinem Lebenslauf überein — bitte prüfen.",
-        "altered_project_link": "Ein Projektlink hier unterscheidet sich von deinem Lebenslauf — bitte prüfen, ob er korrekt ist.",
-        "unsourced_term": "Dieser Begriff taucht in deinem Lebenslauf nicht auf — bitte auf Richtigkeit prüfen.",
-        "inflated_experience": "Hier werden mehr Jahre Erfahrung angegeben, als dein Lebenslauf hergibt — bitte vor dem Versenden korrigieren.",
-        "unsourced_certification": "Diese Zertifizierung steht nicht in deinem Lebenslauf — sie ist überprüfbar, also entferne sie, falls sie nicht echt ist.",
-        "unsourced_credential": "Das klingt nach einer Zertifizierung, die dein Lebenslauf nicht nennt — bitte vor dem Versenden prüfen.",
-        "unsourced_institution": "Dein Lebenslauf nennt keine Ausbildungsstätte — bitte diesen Bildungseintrag prüfen."
+        "unsourced_metric": "Diese Zahl taucht in Ihrem Lebenslauf nicht auf — bestätigen Sie, dass sie korrekt ist, bevor Sie das Dokument versenden.",
+        "dropped_role": "Eine Position aus Ihrem Lebenslauf fehlt scheinbar in diesem Dokument.",
+        "unsupported_date": "Dieses Datum stimmt nicht mit Ihrem Lebenslauf überein — bitte prüfen.",
+        "altered_project_link": "Ein Projektlink hier unterscheidet sich von Ihrem Lebenslauf — bitte prüfen, ob er korrekt ist.",
+        "unsourced_term": "Dieser Begriff taucht in Ihrem Lebenslauf nicht auf — bitte auf Richtigkeit prüfen.",
+        "inflated_experience": "Hier werden mehr Jahre Erfahrung angegeben, als Ihr Lebenslauf hergibt — bitte vor dem Versenden korrigieren.",
+        "unsourced_certification": "Diese Zertifizierung steht nicht in Ihrem Lebenslauf — sie ist überprüfbar, also entfernen Sie sie, falls sie nicht echt ist.",
+        "unsourced_credential": "Das klingt nach einer Zertifizierung, die Ihr Lebenslauf nicht nennt — bitte vor dem Versenden prüfen.",
+        "unsourced_institution": "Ihr Lebenslauf nennt keine Ausbildungsstätte — bitte diesen Bildungseintrag prüfen."
       },
       "content": {
         "language_mismatch": "Dieser Text entspricht nicht der Zielsprache."
@@ -1889,12 +1901,12 @@
         "template_placeholder": "Das sieht nach einem nicht ausgefüllten Vorlagen-Platzhalter aus, nicht nach echtem Inhalt — bitte vor dem Versenden ersetzen."
       },
       "alignment": {
-        "low_coverage": "Dieses Dokument deckt wenig vom Vokabular der Stellenanzeige ab — erwäge, mehr davon einzubauen.",
+        "low_coverage": "Dieses Dokument deckt wenig vom Vokabular der Stellenanzeige ab — erwägen Sie, mehr davon einzubauen.",
         "missing_top_requirement": "Eine Top-Anforderung aus der Stellenanzeige wird hier nicht belegt."
       },
       "consistency": {
         "date_order": "Die Daten in diesem Abschnitt sind nicht in der erwarteten Reihenfolge.",
-        "title_drift": "Eine Berufsbezeichnung hier stimmt nicht mit deinem Lebenslauf überein.",
+        "title_drift": "Eine Berufsbezeichnung hier stimmt nicht mit Ihrem Lebenslauf überein.",
         "skill_not_demonstrated": "Eine behauptete Fähigkeit wird nicht durch ein Beispiel belegt — erwäge, eines hinzuzufügen.",
         "project_structure": "Ein Projekteintrag folgt nicht dem üblichen Format."
       },
@@ -1910,9 +1922,9 @@
         "bullet_count": "Dieser Abschnitt hat eine ungewöhnliche Anzahl an Aufzählungspunkten."
       },
       "voice": {
-        "ai_tell_lexical": "Ein Wort oder eine Formulierung hier wirkt häufig KI-generiert — erwäge eine Umformulierung.",
+        "ai_tell_lexical": "Ein Wort oder eine Formulierung hier wirkt häufig KI-generiert — erwägen Sie eine Umformulierung.",
         "template_opener": "Diese Eröffnungszeile klingt wie eine generische Vorlage.",
-        "low_burstiness": "Der Satzrhythmus hier ist sehr gleichförmig — variiere die Satzlänge.",
+        "low_burstiness": "Der Satzrhythmus hier ist sehr gleichförmig — variieren Sie die Satzlänge.",
         "rule_of_three_density": "Mehrere Dreier-Listen hintereinander können formelhaft wirken.",
         "em_dash_overuse": "Häufige Gedankenstriche hier können KI-generiert wirken.",
         "generic_letter": "Dieses Anschreiben wirkt generisch — erwäge, ein konkretes Detail zur Rolle oder Firma hinzuzufügen."
@@ -1936,7 +1948,7 @@
     "viewJob": "Anzeige öffnen",
     "applyJob": "Bewerben",
     "aiNote": "KI-Notiz",
-    "provisionalScoreHint": "Aus begrenztem Text geschätzt — öffne den Job für den genauen Match-Score.",
+    "provisionalScoreHint": "Aus begrenztem Text geschätzt — öffnen Sie den Job für den genauen Match-Score.",
     "scoreLabel": {
       "coverage": "Stichwortabdeckung %",
       "combined": "Match %"
@@ -1953,9 +1965,9 @@
       "applied": "Beworben",
       "failed": "Fehlgeschlagen",
       "completedWithErrors": "Teilweise Ergebnisse",
-      "completedWithErrorsHint": "Einige Boards schlugen fehl oder lieferten nur einen Teil ihrer Ergebnisse. Fahre mit der Maus über das Info-Symbol neben der Trefferzahl für die Board-Übersicht.",
+      "completedWithErrorsHint": "Einige Boards schlugen fehl oder lieferten nur einen Teil ihrer Ergebnisse. Fahren Sie mit der Maus über das Info-Symbol neben der Trefferzahl für die Board-Übersicht.",
       "needsConfig": "Konfiguration nötig",
-      "needsConfigHint": "Kein Board konnte laufen — melde dich bei den Boards unter Einstellungen → Konten an, oder hinterlege die API-Schlüssel in den Einstellungen → Jobs, und starte erneut.",
+      "needsConfigHint": "Kein Board konnte laufen — melden Sie sich bei den Boards unter Einstellungen → Konten an, oder hinterlegen Sie die API-Schlüssel in den Einstellungen → Jobs, und starten Sie erneut.",
       "interrupted": "Unterbrochen"
     },
     "card": {
@@ -2014,22 +2026,22 @@
         "label": "Stellenanzeige-Ansicht",
         "summaryTab": "Zusammenfassung",
         "generateSummary": "Zusammenfassung generieren",
-        "summaryHint": "Erhalte eine KI-Zusammenfassung dieser Anzeige — wichtigste Aufgaben, Anforderungen und Signale.",
+        "summaryHint": "Erhalten Sie eine KI-Zusammenfassung dieser Anzeige — wichtigste Aufgaben, Anforderungen und Signale.",
         "generating": "Stellenanzeige wird zusammengefasst…",
-        "editHelper": "Änderungen hier werden für die Generierung verwendet — korrigiere einen fehlerhaften Scrape vor dem Anpassen.",
+        "editHelper": "Änderungen hier werden für die Generierung verwendet — korrigieren Sie einen fehlerhaften Scrape vor dem Anpassen.",
         "summaryLanguage": "Zusammenfassungssprache",
         "pasteHint": "Vollständige Stellenanzeige hier einfügen…",
-        "truncatedHint": "Dies sieht wie ein unvollständiges Inserat aus — füge die vollständige Anzeige ein, um das beste Ergebnis zu erzielen.",
+        "truncatedHint": "Dies sieht wie ein unvollständiges Inserat aus — fügen Sie die vollständige Anzeige ein, um das beste Ergebnis zu erzielen.",
         "scoreTab": "Bewertung",
         "score": {
-          "noPosting": "Füge den Text der Stellenanzeige hinzu, um sie zu bewerten.",
+          "noPosting": "Fügen Sie den Text der Stellenanzeige hinzu, um sie zu bewerten.",
           "noKeywords": "Diese Anzeige enthält keine extrahierbaren Schlüsselwörter — die Abdeckung ist nicht verfügbar.",
           "semanticLabel": "Semantische Ähnlichkeit",
           "loading": "Bewertung der Anzeige läuft…",
-          "resumeNote": "Bewertet anhand deines gespeicherten Lebenslaufs, nicht der hier gezeigten angepassten Version.",
+          "resumeNote": "Bewertet anhand Ihres gespeicherten Lebenslaufs, nicht der hier gezeigten angepassten Version.",
           "cliAgentEgress": "Falls diese Anzeige übersetzt werden muss, wird ihr Text an {{provider}} gesendet — nicht lokal verarbeitet.",
           "errorTitle": "Bewertung dieser Anzeige nicht möglich",
-          "errorDescription": "Bei der Bewertung gegen deinen Lebenslauf ist etwas schiefgelaufen. Versuche es erneut."
+          "errorDescription": "Bei der Bewertung gegen Ihren Lebenslauf ist etwas schiefgelaufen. Versuchen Sie es erneut."
         }
       },
       "tryAgain": "Erneut versuchen",
@@ -2044,41 +2056,41 @@
           "model": "Modell"
         },
         "jobAd": {
-          "title": "Prüfe die Stelle",
-          "subtitle": "Lies die Anzeige, auf die du zuschneidest"
+          "title": "Prüfen Sie die Stelle",
+          "subtitle": "Lesen Sie die Anzeige, auf die Sie zuschneiden"
         },
         "resume": {
-          "title": "Dein Lebenslauf",
-          "subtitle": "Lade den Lebenslauf hoch oder füge ihn ein"
+          "title": "Ihr Lebenslauf",
+          "subtitle": "Laden Sie den Lebenslauf hoch oder fügen Sie ihn ein"
         },
         "output": {
           "title": "Was generieren",
-          "subtitle": "Wähle Lebenslauf, Anschreiben oder beides"
+          "subtitle": "Wählen Sie Lebenslauf, Anschreiben oder beides"
         },
         "model": {
           "title": "KI-Modell",
-          "subtitle": "Wähle das Modell und optionale Unternehmensrecherche",
-          "stagedCost": "Jede Anpassung läuft in mehreren Modellaufrufen ab – analysieren, erstellen, prüfen, dann KI-Spuren entfernen – das dauert meist Minuten statt Sekunden. Dafür wird der Lebenslauf geprüft, bevor du ihn siehst."
+          "subtitle": "Wählen Sie das Modell und optionale Unternehmensrecherche",
+          "stagedCost": "Jede Anpassung läuft in mehreren Modellaufrufen ab – analysieren, erstellen, prüfen, dann KI-Spuren entfernen – das dauert meist Minuten statt Sekunden. Dafür wird der Lebenslauf geprüft, bevor Sie ihn sehen."
         },
         "next": "Weiter",
         "back": "Zurück",
         "generate": "Generieren",
         "validation": {
-          "resumeRequired": "Füge deinen Lebenslauf hinzu, um fortzufahren",
-          "selectModel": "Wähle zuerst ein KI-Modell"
+          "resumeRequired": "Fügen Sie Ihren Lebenslauf hinzu, um fortzufahren",
+          "selectModel": "Wählen Sie zuerst ein KI-Modell"
         },
         "results": {
           "regenerate": "Neu generieren",
           "edit": "Einstellungen bearbeiten",
-          "needsReviewTitle_one": "Nicht fertig — {{count}} Aussage braucht dein Urteil",
-          "needsReviewTitle_other": "Nicht fertig — {{count}} Aussagen brauchen dein Urteil",
-          "needsReviewHint": "Das Dokument existiert, aber die Prüfung konnte diese Zeilen nicht auf deinen Lebenslauf zurückführen. Öffne den Bericht und behalte oder entferne jeden Eintrag.",
+          "needsReviewTitle_one": "Nicht fertig — {{count}} Aussage braucht Ihr Urteil",
+          "needsReviewTitle_other": "Nicht fertig — {{count}} Aussagen brauchen Ihr Urteil",
+          "needsReviewHint": "Das Dokument existiert, aber die Prüfung konnte diese Zeilen nicht auf Ihren Lebenslauf zurückführen. Öffnen Sie den Bericht und behalten oder entfernen Sie jeden Eintrag.",
           "needsReviewHintCold": "Dieser Lauf muss erneut geöffnet werden, bevor diese Aussagen geprüft und entschieden werden können.",
-          "needsReviewTitleEmpty": "Nicht fertig — eine der Prüfungen hat etwas markiert, das du dir ansehen solltest",
+          "needsReviewTitleEmpty": "Nicht fertig — eine der Prüfungen hat etwas markiert, das Sie sich ansehen sollten",
           "needsReviewHintEmpty": "Details siehe Qualitäts-Badge über dem Dokument.",
           "cancelledHint": "Was der Lauf bereits geschrieben hatte, wurde gespeichert.",
           "failedTitle": "Der Lauf ist fehlgeschlagen",
-          "failedHint": "Nichts wird automatisch wiederholt — versuche es gleich noch einmal.",
+          "failedHint": "Nichts wird automatisch wiederholt — versuchen Sie es gleich noch einmal.",
           "fixFailed": "Der Abschnitt konnte nicht neu erstellt werden. {{detail}}",
           "resolveFailed": "Die Entscheidung konnte nicht gespeichert werden. {{detail}}"
         }
@@ -2130,9 +2142,16 @@
         "replied": "Beantwortet"
       },
       "savedTitle": "Gespeicherte Kontakte",
-      "savedAddAnother": "Unten in deiner Liste gespeichert — das Formular ist bereit für die nächste Person.",
+      "savedAddAnother": "Unten in Ihrer Liste gespeichert — das Formular ist bereit für die nächste Person.",
       "deleteConfirmTitle": "Diesen Kontakt löschen?",
-      "deleteConfirmDesc": "Dadurch wird der gespeicherte Empfehlungskontakt für diesen Job entfernt. Diese Aktion kann nicht rückgängig gemacht werden."
+      "deleteConfirmDesc": "Dadurch wird der gespeicherte Empfehlungskontakt für diesen Job entfernt. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "streamError": "Die Verbindung zum KI-Anbieter wurde unterbrochen. Bitte versuchen Sie es erneut.",
+      "drafts": {
+        "toggle": "Gespeicherte Entwürfe anzeigen",
+        "message": "Nachricht",
+        "email": "E-Mail",
+        "invite": "Kontaktnotiz"
+      }
     },
     "loading": "Laden…",
     "empty": {
@@ -2154,7 +2173,7 @@
       "create": "Autopilot erstellen",
       "save": "Änderungen speichern",
       "validation": {
-        "missingFields": "Bitte fülle alle erforderlichen Felder aus (Name, Board und Suchanfrage).",
+        "missingFields": "Bitte füllen Sie alle erforderlichen Felder aus (Name, Board und Suchanfrage).",
         "nameRequired": "Geben Sie dieser Suche einen Namen.",
         "pagesRange": "Geben Sie eine ganze Seitenzahl zwischen 1 und 10 ein.",
         "queryRequired": "Geben Sie eine Suchanfrage ein."
@@ -2171,6 +2190,7 @@
         "locationOptional": "(optional)",
         "locationPlaceholder": "z.B. Berlin, remote",
         "fromLocationSettings": "aus Standortseinstellungen",
+        "fromLocationSettingsTitle": "In den Einstellungen → Jobs bearbeiten",
         "countryResolved": "Land: {{country}}",
         "workType": "Arbeitsform",
         "pages": "Zu scrapende Seiten",
@@ -2269,7 +2289,7 @@
     "subtitle": "Die bestbewerteten Jobs über alle Autopiloten hinweg, an einem Ort.",
     "viewAll": "Alle {{count}} anzeigen →",
     "errorTitle": "Beste Treffer konnten nicht geladen werden",
-    "errorDescription": "Beim Laden dieser Liste ist etwas schiefgelaufen. Versuche es erneut.",
+    "errorDescription": "Beim Laden dieser Liste ist etwas schiefgelaufen. Versuchen Sie es erneut.",
     "sort": {
       "label": "Sortieren",
       "score": "Score",
@@ -2285,8 +2305,8 @@
       "dismiss": "Verwerfen",
       "dismissed": "Verworfen",
       "undo": "Rückgängig",
-      "dismissFailed": "Dieser Job konnte nicht verworfen werden. Bitte versuche es erneut.",
-      "undoFailed": "Das Rückgängigmachen ist fehlgeschlagen. Bitte versuche es erneut.",
+      "dismissFailed": "Dieser Job konnte nicht verworfen werden. Bitte versuchen Sie es erneut.",
+      "undoFailed": "Das Rückgängigmachen ist fehlgeschlagen. Bitte versuchen Sie es erneut.",
       "discovered": "Entdeckt {{time}}",
       "foundBy": "Gefunden von: „{{name}}“",
       "pausedSuffix": " (pausiert)"
@@ -2294,11 +2314,11 @@
     "empty": {
       "noRuns": {
         "title": "Noch keine besten Treffer",
-        "description": "Keiner deiner Autopiloten ist bisher gelaufen — starte einen, um Jobs zu finden und zu bewerten. Die stärksten Treffer über alle Autopiloten hinweg erscheinen dann hier."
+        "description": "Keiner Ihrer Autopiloten ist bisher gelaufen — starten Sie einen, um Jobs zu finden und zu bewerten. Die stärksten Treffer über alle Autopiloten hinweg erscheinen dann hier."
       },
       "noneQualified": {
         "title": "Noch nichts hat die Schwelle überschritten",
-        "description": "Deine Autopiloten laufen bereits, aber noch kein Job hat einen ausreichend hohen Score erreicht. Schau nach dem nächsten Durchlauf noch einmal vorbei, oder lockere den Mindest-Score-Filter eines Autopiloten."
+        "description": "Ihre Autopiloten laufen bereits, aber noch kein Job hat einen ausreichend hohen Score erreicht. Schauen Sie nach dem nächsten Durchlauf noch einmal vorbei, oder lockern Sie den Mindest-Score-Filter eines Autopiloten."
       }
     }
   },
@@ -2311,14 +2331,14 @@
     "aiSystemStatus": "KI / Systemstatus",
     "viewed": "Angesehen",
     "totalTracked": "Gesamt verfolgt",
-    "noJobsTracked": "Öffne einen Job um deine Pipeline zu verfolgen.",
+    "noJobsTracked": "Öffnen Sie einen Job, um Ihre Pipeline zu verfolgen.",
     "status": {
       "aiModel": "KI-Modell",
       "database": "Datenbank",
       "vectorDb": "Vektor-DB",
       "activity": "Aktivität",
       "ready": "Bereit",
-      "checking": "Prüfe…",
+      "checking": "Wird geprüft…",
       "notAvailable": "Nicht verfügbar",
       "connected": "Verbunden",
       "indexed": "Indiziert",
@@ -2357,8 +2377,8 @@
     "copyLink": "Link kopieren",
     "actions": "Aktionen",
     "score": "Bewerten",
-    "scoreHint": "Diesen Job mit deinem Standard-Lebenslauf bewerten",
-    "scoreNoResume": "Speichere einen Lebenslauf zum Bewerten",
+    "scoreHint": "Diesen Job mit Ihrem Standard-Lebenslauf bewerten",
+    "scoreNoResume": "Speichern Sie einen Lebenslauf zum Bewerten",
     "scoreGuidance": "Dieser Score ist eine Schätzung — keine Entscheidung des Arbeitgebers oder eines ATS-Systems.",
     "scoreGuidanceLabel": "Über diese Bewertung",
     "scoreEst": "ca.",
@@ -2468,7 +2488,7 @@
       "connectBoard": "Verbinden",
       "blockedHint": "Bei {{boards}} anmelden, um die Suche zu starten.",
       "loginToEnable": "Anmelden zum Aktivieren",
-      "loginToEnableHint": "{{board}} erfordert eine Anmeldung — verbinde dein Konto, damit die Suche Ergebnisse liefert."
+      "loginToEnableHint": "{{board}} erfordert eine Anmeldung — verbinden Sie Ihr Konto, damit die Suche Ergebnisse liefert."
     },
     "locationFilterHint": "Ort lokal gefiltert:",
     "companies": {
@@ -2622,7 +2642,7 @@
   },
   "resumes": {
     "title": "Dokumente",
-    "subtitle": "Deine maßgeschneiderten Lebensläufe und Anschreiben sowie deine Job-Aktivität über alle Boards hinweg.",
+    "subtitle": "Ihre maßgeschneiderten Lebensläufe und Anschreiben sowie Ihre Job-Aktivität über alle Boards hinweg.",
     "badge": "Dokumente",
     "tabs": {
       "resumes": "Lebensläufe",
@@ -2635,13 +2655,13 @@
       "bookmarked": "Gespeichert",
       "dismissed": "Verworfen",
       "empty": "Noch keine Aktivität",
-      "emptyDesc": "Jobs, die du ansiehst, speicherst oder auf die du dich bewirbst, erscheinen hier."
+      "emptyDesc": "Jobs, die Sie ansehen, speichern oder auf die Sie sich bewerben, erscheinen hier."
     },
     "coverLettersEmpty": "Noch keine Anschreiben",
-    "coverLettersEmptyDesc": "Generiere ein maßgeschneidertes Anschreiben, um es hier zu sehen.",
+    "coverLettersEmptyDesc": "Generieren Sie ein maßgeschneidertes Anschreiben, um es hier zu sehen.",
     "generated": {
       "noGenerationsYet": "Noch keine KI-generierten Dokumente",
-      "noGenerationsDesc": "Generiere einen angepassten Lebenslauf oder ein Anschreiben, um es hier zu sehen.",
+      "noGenerationsDesc": "Generieren Sie einen angepassten Lebenslauf oder ein Anschreiben, um es hier zu sehen.",
       "resume": "Lebenslauf",
       "coverLetter": "Anschreiben",
       "mode": "Modus",
@@ -2712,7 +2732,7 @@
     "title": "KI-Arbeitsbereich",
     "model": "Modell",
     "promptQuality": "Prompt-Qualität",
-    "placeholder": "Frag alles. Die KI antwortet in deiner Sprache.",
+    "placeholder": "Fragen Sie alles. Die KI antwortet in Ihrer Sprache.",
     "send": "Senden",
     "processing": "Verarbeitung...",
     "copy": "Kopieren",
@@ -2740,7 +2760,7 @@
   },
   "command": {
     "placeholder": "Suchen, KI fragen, Befehl ausführen…",
-    "empty": "Keine Ergebnisse. Tippe, um die KI zu fragen.",
+    "empty": "Keine Ergebnisse. Tippen Sie, um die KI zu fragen.",
     "groups": {
       "actions": "Aktionen",
       "ai": "KI",
@@ -2786,7 +2806,7 @@
         },
         "noRecommendations": {
           "q": "Lebenslaufanalyse gibt keine Empfehlungen",
-          "a": "Die Schaltfläche \"Analysieren\" bleibt deaktiviert, bis beide Felder mehr als einen kurzen Textausschnitt enthalten und ein KI-Anbieter nutzbar ist — ein paar Wörter je Feld reichen nicht. Die Schaltfläche benennt selbst, was fehlt. \"Lebenslauf & Stellenanzeige einfügen\", \"Lebenslauf hinzufügen\" und \"Stellenanzeige hinzufügen\" beheben Sie auf der Seite: Fügen Sie Text in \"Dein Lebenslauf\" und \"Stellenanzeige\" ein oder klicken Sie auf \"Datei hochladen\". \"API-Schlüssel in Einstellungen hinzufügen\", \"Bitte zuerst ein Modell auswählen\" und \"CLI-Agent installieren\" beheben Sie unter Einstellungen → KI. Nach einem Durchlauf werden \"Empfehlungen\" und \"Fehlende Begriffe\" nur angezeigt, wenn die Analyse welche gefunden hat — ein sauberer Lebenslauf zeigt daher keinen der beiden Abschnitte."
+          "a": "Die Schaltfläche \"Analysieren\" bleibt deaktiviert, bis beide Felder mehr als einen kurzen Textausschnitt enthalten und ein KI-Anbieter nutzbar ist — ein paar Wörter je Feld reichen nicht. Die Schaltfläche benennt selbst, was fehlt. \"Lebenslauf & Stellenanzeige einfügen\", \"Lebenslauf hinzufügen\" und \"Stellenanzeige hinzufügen\" beheben Sie auf der Seite: Fügen Sie Text in \"Ihr Lebenslauf\" und \"Stellenanzeige\" ein oder klicken Sie auf \"Datei hochladen\". \"API-Schlüssel in Einstellungen hinzufügen\", \"Bitte zuerst ein Modell auswählen\" und \"CLI-Agent installieren\" beheben Sie unter Einstellungen → KI. Nach einem Durchlauf werden \"Empfehlungen\" und \"Fehlende Begriffe\" nur angezeigt, wenn die Analyse welche gefunden hat — ein sauberer Lebenslauf zeigt daher keinen der beiden Abschnitte."
         }
       },
       "accountsSessionsQuestions": {
@@ -2839,7 +2859,7 @@
         },
         "noResumeYet": {
           "q": "Ich habe noch keinen Lebenslauf — was kann ich verwenden?",
-          "a": "Öffnen Sie \"Lebenslauf-Builder\" in der Seitenleiste. Es ist ein siebenstufiger Fragebogen — \"Deine Angaben\", \"Profil-Zusammenfassung\", \"Berufserfahrung\", \"Ausbildung\", \"Kenntnisse\", \"Weitere Abschnitte\", \"Prüfen & erstellen\" — und im letzten Schritt wählen Sie eine Ausgabesprache und eine Vorlage und klicken dann auf \"Lebenslauf erstellen\". Der fertige Lebenslauf wird unter Dokumente gespeichert. \"An Stelle anpassen\" überträgt ihn danach als Ausgangslebenslauf auf die Seite \"KI-Generierung\"; es läuft noch nichts — Sie fügen weiterhin die Stellenanzeige hinzu und klicken auf \"Generieren\". Wenn Sie bereits eine Datei haben, laden Sie sie unter Einstellungen → Lebenslauf → \"Lebenslaufverwaltung\" hoch, wo PDF, DOC, DOCX und TXT akzeptiert werden, und klicken Sie dann auf \"Als Standard setzen\"."
+          "a": "Öffnen Sie \"Lebenslauf-Builder\" in der Seitenleiste. Es ist ein siebenstufiger Fragebogen — \"Ihre Angaben\", \"Profil-Zusammenfassung\", \"Berufserfahrung\", \"Ausbildung\", \"Kenntnisse\", \"Weitere Abschnitte\", \"Prüfen & erstellen\" — und im letzten Schritt wählen Sie eine Ausgabesprache und eine Vorlage und klicken dann auf \"Lebenslauf erstellen\". Der fertige Lebenslauf wird unter Dokumente gespeichert. \"An Stelle anpassen\" überträgt ihn danach als Ausgangslebenslauf auf die Seite \"KI-Generierung\"; es läuft noch nichts — Sie fügen weiterhin die Stellenanzeige hinzu und klicken auf \"Generieren\". Wenn Sie bereits eine Datei haben, laden Sie sie unter Einstellungen → Lebenslauf → \"Lebenslaufverwaltung\" hoch, wo PDF, DOC, DOCX und TXT akzeptiert werden, und klicken Sie dann auf \"Als Standard setzen\"."
         },
         "replayWizard": {
           "q": "Wie sehe ich den Einführungsassistenten und die Tour erneut?",
@@ -2884,8 +2904,8 @@
           "a": "\"Stichwortabdeckung %\" bedeutet, dass der Wert allein aus Stichwörtern stammt. \"Match %\" bedeutet, dass zusätzlich Embeddings eingeflossen sind, sodass die Bedeutung Ihres Lebenslaufs zählt und nicht nur die Wörter. Die semantische Bewertung ist bei einer frischen Installation ausgeschaltet, deshalb sehen Sie \"Stichwortabdeckung %\", bis Sie \"Semantische Bewertung\" unter Einstellungen → KI → \"Embeddings\" aktivieren. Sie arbeitet mit einem indizierten Lebenslauf; dasselbe Panel zeigt, wie viele Dokumente indiziert sind, und das Matching indiziert einen Lebenslauf beim ersten Bedarf automatisch."
         },
         "saveResumeToScore": {
-          "q": "Warum steht auf der Bewerten-Schaltfläche \"Speichere einen Lebenslauf zum Bewerten\"?",
-          "a": "Die Bewertung läuft immer gegen Ihren Standard-Lebenslauf. Ist keiner hinterlegt, gibt es nichts, womit sich eine Stellenanzeige vergleichen ließe, und die Schaltfläche zeigt stattdessen \"Speichere einen Lebenslauf zum Bewerten\". Öffnen Sie Einstellungen → Lebenslauf → \"Lebenslaufverwaltung\" und ziehen Sie eine Datei auf den Upload-Bereich, der \"PDF, DOC, DOCX\" annimmt. Der erste Lebenslauf, den Sie speichern, wird von selbst zum Standard, seine Karte erhält daher das Abzeichen \"Standard\" und die Schaltfläche auf der Jobs-Seite zeigt wieder \"Bewerten\". Wenn Sie bereits mehrere hinterlegt haben, wird der mit diesem Abzeichen bewertet."
+          "q": "Warum steht auf der Bewerten-Schaltfläche \"Speichern Sie einen Lebenslauf zum Bewerten\"?",
+          "a": "Die Bewertung läuft immer gegen Ihren Standard-Lebenslauf. Ist keiner hinterlegt, gibt es nichts, womit sich eine Stellenanzeige vergleichen ließe, und die Schaltfläche zeigt stattdessen \"Speichern Sie einen Lebenslauf zum Bewerten\". Öffnen Sie Einstellungen → Lebenslauf → \"Lebenslaufverwaltung\" und ziehen Sie eine Datei auf den Upload-Bereich, der \"PDF, DOC, DOCX\" annimmt. Der erste Lebenslauf, den Sie speichern, wird von selbst zum Standard, seine Karte erhält daher das Abzeichen \"Standard\" und die Schaltfläche auf der Jobs-Seite zeigt wieder \"Bewerten\". Wenn Sie bereits mehrere hinterlegt haben, wird der mit diesem Abzeichen bewertet."
         },
         "bestMatches": {
           "q": "Was ist die Seite \"Beste Treffer\"?",
@@ -2958,7 +2978,7 @@
         },
         "interviewPrep": {
           "q": "Wie übe ich für ein Vorstellungsgespräch?",
-          "a": "Öffnen Sie die Bewerbung, wählen Sie den Tab \"Interview-Vorbereitung\" und nutzen Sie dann den Modus-Umschalter. \"Fragen, die du stellst\" entwirft Fragen für Ihr Gegenüber: Wählen Sie unter \"Fragen generieren für\", wen Sie treffen werden, listen Sie optional \"Themen zum Fokussieren (optional)\" auf und klicken Sie auf \"Fragen vorschlagen\". \"Antworten üben\" geht den umgekehrten Weg — klicken Sie auf \"Übungsfragen generieren\", tippen Sie Ihre Antwort in das Feld und klicken Sie auf \"Feedback erhalten\", um \"Stärken\", \"Lücken zur Stellenanzeige\", \"STAR-Vollständigkeit\" und eine \"Verdichtete Überarbeitung\" zu erhalten."
+          "a": "Öffnen Sie die Bewerbung, wählen Sie den Tab \"Interview-Vorbereitung\" und nutzen Sie dann den Modus-Umschalter. \"Fragen, die Sie stellen\" entwirft Fragen für Ihr Gegenüber: Wählen Sie unter \"Fragen generieren für\", wen Sie treffen werden, listen Sie optional \"Themen zum Fokussieren (optional)\" auf und klicken Sie auf \"Fragen vorschlagen\". \"Antworten üben\" geht den umgekehrten Weg — klicken Sie auf \"Übungsfragen generieren\", tippen Sie Ihre Antwort in das Feld und klicken Sie auf \"Feedback erhalten\", um \"Stärken\", \"Lücken zur Stellenanzeige\", \"STAR-Vollständigkeit\" und eine \"Verdichtete Überarbeitung\" zu erhalten."
         },
         "emailTracking": {
           "q": "Kann die App mein Postfach auf Antworten überwachen?",
@@ -2988,11 +3008,11 @@
       "extensionQuestions": {
         "pairExtension": {
           "q": "Wie installiere und koppele ich die Browser-Erweiterung?",
-          "a": "Installieren Sie sie im Einrichtungsassistenten im Schritt \"Browser-Erweiterung installieren\" über \"Zu Chrome hinzufügen\" oder \"Zu Firefox hinzufügen\", oder aus dem Chrome- bzw. Firefox-Store. Öffnen Sie dann Einstellungen → Konten → \"Browser-Erweiterung\" und klicken Sie neben \"Kopplungs-Token\" auf \"Kopieren\". Öffnen Sie das Popup der Erweiterung, fügen Sie das Token in dessen Kopplungsbildschirm ein und speichern Sie es. Zurück unter Einstellungen → Konten → \"Browser-Erweiterung\" zeigt die Zeile \"Verbindung\" dann \"Verbunden\". Sie können mehr als einen Browser mit demselben Token koppeln; \"Token neu generieren\" trennt alle davon, sodass Sie anschließend jeden Browser erneut koppeln müssen."
+          "a": "Installieren Sie sie im Einrichtungsassistenten im Schritt \"Browser-Erweiterung installieren\" über \"Zu Chrome hinzufügen\" oder \"Zu Firefox hinzufügen\", oder aus dem Chrome- bzw. Firefox-Store. Öffnen Sie dann Einstellungen → \"Browser-Erweiterung\" und klicken Sie neben \"Kopplungs-Token\" auf \"Kopieren\". Öffnen Sie das Popup der Erweiterung, fügen Sie das Token in dessen Kopplungsbildschirm ein und speichern Sie es. Zurück unter Einstellungen → \"Browser-Erweiterung\" zeigt die Zeile \"Verbindung\" dann \"Verbunden\". Sie können mehr als einen Browser mit demselben Token koppeln; \"Token neu generieren\" trennt alle davon, sodass Sie anschließend jeden Browser erneut koppeln müssen."
         },
         "extensionActions": {
           "q": "Was kann die Browser-Erweiterung auf einer Stellenseite tun?",
-          "a": "Öffnen Sie die Erweiterung auf einer Stellenanzeige und klicken Sie auf \"Import this job\", um sie in die App zu senden, auf \"Check fit\", um sie mit Ihrem Standard-Lebenslauf zu bewerten, oder auf \"Mark as applied\". In einem Bewerbungsformular füllt \"Fill this form\" Ihre gespeicherten Angaben ein, und \"Save my answers from this page\" speichert Antworten zur Wiederverwendung; \"Answer tools\" ergänzt \"Suggest answers for this form\" und \"Help me answer…\". \"Assistiertes Formular-Ausfüllen\", \"KI-Antwortentwurf\" und \"Gesendete Bewerbungen automatisch nachverfolgen\" sind separate Schalter unter Einstellungen → Konten → \"Browser-Erweiterung\". Wenn die Desktop-App nicht läuft, zeigt das Popup \"App not running\"; wenn dieser Browser nicht gekoppelt ist, zeigt es den Kopplungsbildschirm."
+          "a": "Öffnen Sie die Erweiterung auf einer Stellenanzeige und klicken Sie auf \"Import this job\", um sie in die App zu senden, auf \"Check fit\", um sie mit Ihrem Standard-Lebenslauf zu bewerten, oder auf \"Mark as applied\". In einem Bewerbungsformular füllt \"Fill this form\" Ihre gespeicherten Angaben ein, und \"Save my answers from this page\" speichert Antworten zur Wiederverwendung; \"Answer tools\" ergänzt \"Suggest answers for this form\" und \"Help me answer…\". \"Assistiertes Formular-Ausfüllen\", \"KI-Antwortentwurf\" und \"Gesendete Bewerbungen automatisch nachverfolgen\" sind separate Schalter unter Einstellungen → \"Browser-Erweiterung\". Wenn die Desktop-App nicht läuft, zeigt das Popup \"App not running\"; wenn dieser Browser nicht gekoppelt ist, zeigt es den Kopplungsbildschirm."
         }
       },
       "aiSetup": "KI-Einrichtung & Ausgaben",
@@ -3064,7 +3084,7 @@
     "continue": "Weiter",
     "skip": "Überspringen",
     "crashReporting": {
-      "title": "Hilf mit, Abstürze zu beheben",
+      "title": "Helfen Sie mit, Abstürze zu beheben",
       "subtitle": "Wenn die App abstürzt, zeigt ein Bericht, was schiefgelaufen ist, damit es behoben werden kann.",
       "toggleLabel": "Absturzberichte senden",
       "sends": "Sendet den Fehler samt Stacktrace, Ihr Betriebssystem und die App-Version. Pfade, Links und Zugangsdaten werden entfernt, bevor etwas Ihr Gerät verlässt.",
@@ -3174,11 +3194,11 @@
     "browser": {
       "title": "Browser erforderlich",
       "subtitle": "Chrome oder Edge wird für die Anmeldung bei Jobbörsen und automatisierte Jobbewerbungen benötigt.",
-      "checking": "Prüfe Browser-Verfügbarkeit…",
+      "checking": "Browser-Verfügbarkeit wird geprüft…",
       "detected": "Browser erkannt",
       "foundAt": "Gefunden unter: {{path}}",
       "available": "Chrome oder Edge ist verfügbar",
-      "proceeding": "Gehe zum nächsten Schritt…",
+      "proceeding": "Weiter zum nächsten Schritt…",
       "notDetected": "Kein Browser erkannt",
       "notDetectedDesc": "Ohne Chrome oder Edge lädt die App beim ersten Verbindungsversuch mit einer Jobbörse eine ~120 MB Chromium-Binärdatei herunter. Die Installation von Chrome wird für bessere Leistung empfohlen.",
       "downloadChrome": "Chrome herunterladen",
@@ -3198,7 +3218,7 @@
       "subtitle": "Importieren Sie Jobs mit einem Klick direkt von jeder Jobbörse. Installieren Sie die Erweiterung und koppeln Sie sie anschließend in den Einstellungen.",
       "addToChrome": "Zu Chrome hinzufügen",
       "addToFirefox": "Zu Firefox hinzufügen",
-      "pairHint": "Koppeln Sie die Erweiterung nach der Installation unter Einstellungen → Konten.",
+      "pairHint": "Koppeln Sie die Erweiterung nach der Installation unter Einstellungen → Browser-Erweiterung.",
       "back": "Zurück",
       "next": "Weiter"
     },
@@ -3250,7 +3270,7 @@
     },
     "resume": {
       "title": "Lebenslauf hochladen",
-      "description": "Füge deinen Lebenslauf hinzu, damit die KI Anschreiben anpassen und dich genau mit Jobs abgleichen kann.",
+      "description": "Fügen Sie Ihren Lebenslauf hinzu, damit die KI Anschreiben anpassen und Sie genau mit Jobs abgleichen kann.",
       "dragDrop": "Lebenslauf hierher ziehen",
       "uploading": "Lebenslauf wird verarbeitet…",
       "uploaded": "Lebenslauf hochgeladen",
@@ -3283,12 +3303,12 @@
     "downloadButton": "Herunterladen",
     "installButton": "Neu starten & installieren",
     "checking": "Suche nach Updates…",
-    "upToDate": "Du verwendest die neueste Version.",
+    "upToDate": "Sie verwenden die neueste Version.",
     "checkFailed": "Update-Prüfung fehlgeschlagen."
   },
   "resumeReview": {
     "title": "Extrahierten Lebenslauf prüfen",
-    "subtitle": "Prüfe die erkannten Angaben vor der Generierung. Es wird nichts blockiert — nur ein Hinweis.",
+    "subtitle": "Prüfen Sie die erkannten Angaben vor der Generierung. Es wird nichts blockiert — nur ein Hinweis.",
     "notDetected": "Nicht erkannt",
     "name": "Name",
     "email": "E-Mail",
@@ -3311,7 +3331,7 @@
     "collapse": "Zuklappen",
     "activeResume": "Aktiver Lebenslauf",
     "pasteSection": "Oder Text einfügen / bearbeiten",
-    "scanning": "Scanne…",
+    "scanning": "Wird gescannt…",
     "remove": "Entfernen",
     "confirmRemove": "Entfernen?",
     "saved": "Gespeichert",
@@ -3322,7 +3342,7 @@
     "savedAsDefault": "Gespeichert & als Standard gesetzt",
     "savedToLibrary": "In Bibliothek gespeichert",
     "saveFailed": "Speichern fehlgeschlagen",
-    "saving": "Speichere…",
+    "saving": "Wird gespeichert…",
     "tooLarge": "Datei überschreitet 25 MB",
     "selectedSaved": "{{name}} geladen",
     "pasteProfileUrl": "Aus Profil-URL importieren",
@@ -3352,14 +3372,14 @@
   },
   "applications": {
     "title": "Bewerbungen",
-    "subtitle": "Verfolge jede Bewerbung — von gespeichert bis angenommen.",
+    "subtitle": "Verfolgen Sie jede Bewerbung — von gespeichert bis angenommen.",
     "trackButton": "Job tracken",
     "filterPlaceholder": "Nach Unternehmen oder Stelle filtern…",
     "empty": "Noch keine Bewerbungen",
-    "emptyDesc": "Tracke ein Stellenangebot oder speichere eines aus der Jobs-Seite.",
+    "emptyDesc": "Tracken Sie ein Stellenangebot oder speichern Sie eines aus der Jobs-Seite.",
     "noResults": "Keine passenden Bewerbungen",
     "errorTitle": "Bewerbungen konnten nicht geladen werden",
-    "errorDesc": "Versuche die Seite neu zu laden.",
+    "errorDesc": "Versuchen Sie, die Seite neu zu laden.",
     "save": "Speichern",
     "saveToTracking": "In Bewerbungs-Tracking speichern",
     "savedToTracking": "Im Bewerbungs-Tracking gespeichert",
@@ -3401,14 +3421,14 @@
     },
     "delete": {
       "keepTitle": "Bewerbungs-Tracking entfernen",
-      "keepDesc": "Dies entfernt nur den Tracking-Eintrag. Deine generierten Dokumente bleiben in der Dokumentenbibliothek.",
+      "keepDesc": "Dies entfernt nur den Tracking-Eintrag. Ihre generierten Dokumente bleiben in der Dokumentenbibliothek.",
       "allTitle": "Bewerbung und Dokumente löschen",
       "allDesc": "Dies löscht dauerhaft den Tracking-Eintrag und alle generierten Dokumente dieser Bewerbung.",
       "confirm": "Löschen"
     },
     "trackModal": {
       "title": "Job tracken",
-      "subtitle": "Füge einen Job hinzu, auf den du dich beworben hast oder tracken möchtest.",
+      "subtitle": "Fügen Sie einen Job hinzu, auf den Sie sich beworben haben oder den Sie tracken möchten.",
       "urlLabel": "Job-URL (optional)",
       "urlPlaceholder": "https://…",
       "companyLabel": "Unternehmen",
@@ -3416,7 +3436,7 @@
       "titleLabel": "Stellenbezeichnung",
       "titlePlaceholder": "z. B. Senior Engineer",
       "candidateLabel": "Kandidatenname",
-      "candidatePlaceholder": "Dein Name",
+      "candidatePlaceholder": "Ihr Name",
       "cancel": "Abbrechen",
       "submit": "Tracken"
     },
@@ -3442,12 +3462,12 @@
         "emailInvalid": "Diese E-Mail-Adresse ist ungültig.",
         "generate": "E-Mail generieren",
         "regenerate": "Neu generieren",
-        "generating": "Generiere…",
+        "generating": "Wird generiert…",
         "genError": "Generierung fehlgeschlagen – bitte erneut versuchen.",
-        "saveFailed": "Dieser Entwurf konnte nicht gespeichert werden und geht beim Verlassen des Tabs verloren. Kopiere ihn oder generiere ihn erneut.",
+        "saveFailed": "Dieser Entwurf konnte nicht gespeichert werden und geht beim Verlassen des Tabs verloren. Kopieren Sie ihn oder generieren Sie ihn erneut.",
         "empty": "Noch keine Bewerbungs-E-Mail",
-        "emptyDesc": "Generiere eine kurze, professionelle E-Mail, die du direkt an den Ansprechpartner senden kannst.",
-        "needsModel": "Wähle in den Einstellungen ein KI-Modell, um eine E-Mail zu generieren.",
+        "emptyDesc": "Generieren Sie eine kurze, professionelle E-Mail, die Sie direkt an den Ansprechpartner senden können.",
+        "needsModel": "Wählen Sie in den Einstellungen ein KI-Modell, um eine E-Mail zu generieren.",
         "needsJob": "Für die E-Mail-Generierung wird eine Stellenbeschreibung benötigt.",
         "subjectLabel": "Betreff",
         "bodyLabel": "Inhalt",
@@ -3458,7 +3478,7 @@
         "rewriteSubjectAriaLabel": "Betreff mit KI umschreiben",
         "rewriteBodyAriaLabel": "E-Mail-Inhalt mit KI umschreiben",
         "openMailto": "Per E-Mail-Client senden",
-        "needsResume": "Füge deinen Lebenslauf hinzu, um eine Bewerbungs-E-Mail zu generieren.",
+        "needsResume": "Fügen Sie Ihren Lebenslauf hinzu, um eine Bewerbungs-E-Mail zu generieren.",
         "addResume": "Lebenslauf hinzufügen",
         "recipientHint": "Wird als Hauptkontakt dieser Bewerbung gespeichert — Änderungen hier wirken auch im Tab Übersicht."
       },
@@ -3497,16 +3517,16 @@
       "answersTitle": "Bewerbungsantworten",
       "jobLink": "Job-Link",
       "interview": {
-        "title": "Fragen, die du stellst",
-        "hint": "Clevere Fragen für dein Interview, aus Stelle + Unternehmensrecherche.",
+        "title": "Fragen, die Sie stellen",
+        "hint": "Clevere Fragen für Ihr Interview, aus Stelle + Unternehmensrecherche.",
         "seedLabel": "Themen zum Fokussieren (optional)",
         "seedPlaceholder": "z. B. Teamstruktur, Roadmap, Bereitschaftsdienst — durch Komma oder Zeile getrennt",
         "generate": "Fragen vorschlagen",
         "regenerate": "Neu generieren",
         "generating": "Recherchiere…",
         "empty": "Noch keine Interviewfragen",
-        "emptyDesc": "Generiere präzise, gut recherchierte Fragen für dein Interview.",
-        "needsModel": "Wähle in den Einstellungen ein KI-Modell, um Fragen zu generieren.",
+        "emptyDesc": "Generieren Sie präzise, gut recherchierte Fragen für Ihr Interview.",
+        "needsModel": "Wählen Sie in den Einstellungen ein KI-Modell, um Fragen zu generieren.",
         "needsJob": "Für passende Fragen wird eine Stellenbeschreibung benötigt.",
         "audienceLabel": "Fragen generieren für",
         "languageLabel": "Sprache der Fragen",
@@ -3520,16 +3540,16 @@
         },
         "toggle": {
           "label": "Interviewvorbereitungs-Modus",
-          "ask": "Fragen, die du stellst",
+          "ask": "Fragen, die Sie stellen",
           "practice": "Antworten üben"
         },
         "practice": {
-          "hint": "Wahrscheinliche Fragen für diese Stelle — übe deine Antwort und erhalte STAR-basiertes Feedback.",
+          "hint": "Wahrscheinliche Fragen für diese Stelle — üben Sie Ihre Antwort und erhalten Sie STAR-basiertes Feedback.",
           "generate": "Übungsfragen generieren",
           "regenerate": "Neu generieren",
           "generating": "Wird generiert…",
           "empty": "Noch keine Übungsfragen",
-          "emptyDesc": "Generiere wahrscheinliche Interviewfragen und übe deine Antworten.",
+          "emptyDesc": "Generieren Sie wahrscheinliche Interviewfragen und üben Sie Ihre Antworten.",
           "answerPlaceholder": "Antwort eingeben… (Situation, Task, Action, Result)",
           "getFeedback": "Feedback erhalten",
           "gettingFeedback": "Wird analysiert…",
@@ -3564,8 +3584,8 @@
       "followUpOverdue": "Überfällig {{date}}",
       "followUpDue": "Nachfassen {{date}}",
       "followUpOverdueHint": "Dieses Nachfassen ist überfällig.",
-      "followUpUpcomingHint": "Du wirst erinnert, sobald dieses Datum erreicht ist.",
-      "followUpNoneHint": "Lege ein Datum fest, um an den nächsten Schritt erinnert zu werden.",
+      "followUpUpcomingHint": "Sie werden erinnert, sobald dieses Datum erreicht ist.",
+      "followUpNoneHint": "Legen Sie ein Datum fest, um an den nächsten Schritt erinnert zu werden.",
       "contactSaveError": "Dieser Kontakt konnte nicht gespeichert werden.",
       "compensationSection": "Vergütung"
     },

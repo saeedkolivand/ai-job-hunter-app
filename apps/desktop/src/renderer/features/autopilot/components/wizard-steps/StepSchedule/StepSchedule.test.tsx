@@ -252,6 +252,15 @@ describe('StepSchedule', () => {
       expect(screen.getByText(/:00/)).toBeInTheDocument();
     });
 
+    it('shows boards by display name and never title-cases user text or ids', () => {
+      renderStep({ name: 'e2e a3 remote android', boards: ['remoteok'] });
+
+      const board = screen.getByText('jobs.boards.remoteok');
+      expect(board).toBeInTheDocument();
+      expect(board.className).not.toContain('capitalize');
+      expect(screen.getByText('e2e a3 remote android').className).not.toContain('capitalize');
+    });
+
     it('manual: shows the manual i18n key (no time component)', () => {
       renderStep({ schedule: 'manual' });
       const matches = screen.getAllByText('autopilot.wizard.schedule.manual');

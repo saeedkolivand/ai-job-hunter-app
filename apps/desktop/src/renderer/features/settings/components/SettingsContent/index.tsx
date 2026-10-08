@@ -39,6 +39,15 @@ interface Props {
 /** Duration (ms) the ring-pulse stays visible. */
 const PULSE_DURATION = 1500;
 
+/** Delay (ms) before the single post-layout re-check of the scroll position. */
+const SETTLE_DELAY = 350;
+
+/** Max delayed anchor lookups when the section mounts after the first frame. */
+const MAX_LOOKUPS = 3;
+
+/** Misalignment (px) below which the settled position is considered correct. */
+const SETTLE_TOLERANCE_PX = 8;
+
 /** Classes added during the pulse — must all be removed in cleanup. */
 const PULSE_CLASSES = ['ring-2', 'ring-brand', 'rounded-xl', 'transition-[box-shadow]'] as const;
 
@@ -129,28 +138,41 @@ export function SettingsContent({
     if (!pendingAnchor) return;
 
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let settleTimer: ReturnType<typeof setTimeout> | undefined;
+    let lookupTimer: ReturnType<typeof setTimeout> | undefined;
     let anchoredEl: HTMLElement | null = null;
 
     const removePulseClasses = () => {
       anchoredEl?.classList.remove(...PULSE_CLASSES);
     };
 
-    // Use rAF so the section's DOM has finished painting.
-    const rafId = requestAnimationFrame(() => {
-      const el = scrollRef.current?.querySelector<HTMLElement>(
-        `[data-settings-anchor="${pendingAnchor}"]`
-      );
-      if (!el) return;
+    const locate = (attempt: number) => {
+      const container = scrollRef.current;
+      const el = container?.querySelector<HTMLElement>(`[data-settings-anchor="${pendingAnchor}"]`);
+      if (!container || !el) {
+        // A section switch under AnimatePresence mode="wait" mounts the new section late.
+        if (attempt < MAX_LOOKUPS)
+          lookupTimer = setTimeout(() => locate(attempt + 1), SETTLE_DELAY);
+        return;
+      }
       anchoredEl = el;
 
       const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const behavior = reducedMotion ? 'instant' : 'smooth';
+      // `start`, not `nearest`: a card already partly in view (e.g. right under a tall
+      // card) would otherwise scroll ~0 and never reach the top.
+      const align = () => el.scrollIntoView({ behavior, block: 'start' });
+      align();
 
-      if (reducedMotion) {
-        // Skip animation; just scroll instantly and consume the anchor.
-        el.scrollIntoView({ behavior: 'instant', block: 'nearest' });
-        onAnchorConsumed();
-      } else {
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      // One bounded re-check once layout has settled (the section's enter animation
+      // and async content above the card shift it after the first scroll).
+      settleTimer = setTimeout(() => {
+        const offset = el.getBoundingClientRect().top - container.getBoundingClientRect().top;
+        if (Math.abs(offset) > SETTLE_TOLERANCE_PX) align();
+        if (reducedMotion) onAnchorConsumed();
+      }, SETTLE_DELAY);
+
+      if (!reducedMotion) {
         el.classList.add(...PULSE_CLASSES);
 
         timer = setTimeout(() => {
@@ -158,11 +180,16 @@ export function SettingsContent({
           onAnchorConsumed();
         }, PULSE_DURATION);
       }
-    });
+    };
+
+    // Use rAF so the section's DOM has finished painting.
+    const rafId = requestAnimationFrame(() => locate(0));
 
     return () => {
       cancelAnimationFrame(rafId);
       clearTimeout(timer);
+      clearTimeout(settleTimer);
+      clearTimeout(lookupTimer);
       removePulseClasses();
     };
     // activeSection is intentionally included: the anchor DOM only exists after

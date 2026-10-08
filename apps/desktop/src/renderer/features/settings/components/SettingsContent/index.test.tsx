@@ -143,6 +143,17 @@ function renderWithAnchor(anchor: string | null, onConsumed = vi.fn()) {
   return { container, unmount, onConsumed };
 }
 
+/** Override window.matchMedia so `matches(query)` decides every media query. */
+function stubMatchMedia(matches: (query: string) => boolean) {
+  window.matchMedia = (query: string): MediaQueryList =>
+    ({
+      matches: matches(query),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }) as unknown as MediaQueryList;
+}
+
 // ── cleanup ───────────────────────────────────────────────────────────────────
 
 afterEach(() => {
@@ -180,10 +191,19 @@ describe('SettingsContent — pendingAnchor, normal motion', () => {
     installSyncRaf();
   });
 
-  it('scrollIntoView is called on the anchored element after rAF', () => {
+  it('scrolls with block: start and re-aligns once when the layout shifted it', () => {
+    const rectSpy = vi
+      .spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: Element) {
+        return { top: this.hasAttribute('data-settings-anchor') ? 300 : 0 } as DOMRect;
+      });
     renderWithAnchor('performance-mode');
-    // rAF fires synchronously in the effect — scrollIntoView must be called exactly once.
+    // rAF fires synchronously in the effect — exactly one scroll before the settle re-check.
     expect(scrollSpy).toHaveBeenCalledOnce();
+    expect(scrollSpy).toHaveBeenLastCalledWith(expect.objectContaining({ block: 'start' }));
+    vi.advanceTimersByTime(500);
+    expect(scrollSpy).toHaveBeenCalledTimes(2);
+    rectSpy.mockRestore();
   });
 
   it('pulse classes are added to the anchored element after rAF (before PULSE_DURATION)', () => {
@@ -259,34 +279,17 @@ describe('SettingsContent — pendingAnchor, reduced motion', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     installSyncRaf();
     // Override matchMedia to return matches=true for the reduced-motion query only.
-    window.matchMedia = (query: string): MediaQueryList => ({
-      matches: query === '(prefers-reduced-motion: reduce)',
-      media: query,
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    });
+    stubMatchMedia((query) => query === '(prefers-reduced-motion: reduce)');
   });
 
-  it('scrollIntoView is called with behavior: instant (not smooth)', () => {
+  it('scrolls instantly, then consumes the anchor after the settle re-check (no pulse wait)', () => {
     const onConsumed = vi.fn();
 
     renderWithAnchor('performance-mode', onConsumed);
 
     expect(scrollSpy).toHaveBeenCalledOnce();
-    const callArg = scrollSpy.mock.calls[0]?.[0] as ScrollIntoViewOptions | undefined;
-    expect(callArg?.behavior).toBe('instant');
-  });
-
-  it('onAnchorConsumed called immediately (inside rAF), no PULSE_DURATION wait', () => {
-    const onConsumed = vi.fn();
-
-    renderWithAnchor('performance-mode', onConsumed);
-
-    // rAF is sync — consumed without advancing timers.
+    expect(scrollSpy).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'instant' }));
+    vi.advanceTimersByTime(500);
     expect(onConsumed).toHaveBeenCalledOnce();
   });
 
@@ -326,16 +329,7 @@ describe('SettingsContent — querySelector-null defensive path', () => {
     installSyncRaf();
     // Ensure normal-motion context (reduced-motion describe block's beforeEach may
     // have left matchMedia returning matches=true for the reduced-motion query).
-    window.matchMedia = (query: string): MediaQueryList => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    });
+    stubMatchMedia(() => false);
   });
 
   it('does not throw, does not call onAnchorConsumed, and applies no pulse classes when the anchor element is absent', () => {
@@ -371,6 +365,18 @@ describe('SettingsContent — querySelector-null defensive path', () => {
       expect(el.classList.contains('ring-brand')).toBe(false);
     });
   });
+
+  it('still scrolls when the anchor mounts after the first frame', () => {
+    const { container } = renderWithAnchor('late-anchor');
+    expect(scrollSpy).not.toHaveBeenCalled();
+
+    const late = document.createElement('div');
+    late.setAttribute('data-settings-anchor', 'late-anchor');
+    container.querySelector('.overflow-y-auto')?.appendChild(late);
+    vi.advanceTimersByTime(400);
+
+    expect(scrollSpy).toHaveBeenCalledOnce();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -398,16 +404,7 @@ describe('SettingsContent — activeSection change re-fires pulse effect', () =>
     installSyncRaf();
     // Ensure normal-motion context (matchMedia may have been left in reduced-motion
     // state by a sibling describe block's beforeEach that runs before ours).
-    window.matchMedia = (query: string): MediaQueryList => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    });
+    stubMatchMedia(() => false);
   });
 
   it('fires scroll+pulse on the anchor element after activeSection changes to the section that owns it', () => {

@@ -75,7 +75,7 @@ export function BoardPicker({
                       toggle(id);
                     }}
                     className={cn(
-                      'rounded-lg border px-2 py-1.5 text-[10px] font-medium capitalize transition-all h-auto',
+                      'rounded-lg border px-2 py-1.5 text-[10px] font-medium transition-all h-auto',
                       active
                         ? 'border-brand/40 bg-brand/10 text-brand-soft'
                         : 'border-[var(--border-clear)] text-foreground/40 hover:bg-muted hover:text-foreground/65'

@@ -13,6 +13,37 @@ interface Props {
 
 const STATUSES: ReferralStatus[] = ['draft', 'sent', 'replied'];
 
+/** Above the referral modal (650) so the delete confirm is not rendered behind it. */
+const CONFIRM_Z_INDEX = 700;
+
+/** The contact's saved drafts, collapsed by default so a saved message can be reviewed. */
+function SavedDrafts({ contact }: { contact: ReferralContact }) {
+  const { t } = useTranslation();
+  const drafts = [
+    { key: 'message', text: contact.messageDraft },
+    { key: 'email', text: contact.emailDraft },
+    { key: 'invite', text: contact.inviteNoteDraft },
+  ].filter((d) => d.text?.trim());
+  if (drafts.length === 0) return null;
+  return (
+    <details className="text-[10px] text-foreground/60">
+      <summary className="cursor-pointer select-none text-foreground/50 hover:text-foreground/80">
+        {t('autopilot.referral.drafts.toggle')}
+      </summary>
+      <div className="mt-1.5 space-y-1.5">
+        {drafts.map((d) => (
+          <div key={d.key}>
+            <p className="font-medium text-foreground/60">
+              {t(`autopilot.referral.drafts.${d.key}`)}
+            </p>
+            <p className="whitespace-pre-wrap break-words">{d.text}</p>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 /**
  * The existing referral contacts saved for this job: person/role/company, the
  * channel, an inline status control (draft → sent → replied), notes, and delete.
@@ -92,6 +123,8 @@ export function ReferralList({ contacts }: Props) {
           />
 
           {c.notes ? <p className="text-[10px] text-foreground/50">{c.notes}</p> : null}
+
+          <SavedDrafts contact={c} />
         </div>
       ))}
 
@@ -106,6 +139,7 @@ export function ReferralList({ contacts }: Props) {
         description={t('autopilot.referral.deleteConfirmDesc')}
         confirmText={t('autopilot.referral.delete')}
         variant="danger"
+        zIndex={CONFIRM_Z_INDEX}
       />
     </div>
   );

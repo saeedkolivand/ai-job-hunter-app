@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { ReferralChannel } from '@ajh/shared/ipc';
 import { detectLanguages } from '@ajh/shared/language-detection';
+import { useTranslation } from '@ajh/translations';
 
 import { CONNECTION_NOTE_LIMIT, generateReferral, generateReferralImprove } from '@/lib/generate';
 
@@ -15,6 +16,9 @@ interface Params {
   model: string;
   canUse: boolean;
 }
+
+/** The backend's raw transport failure (`Stream error: …`) is not user-facing; localize it. */
+const STREAM_ERROR_PREFIX = 'Stream error';
 
 /**
  * Drafts a single referral message for the SELECTED channel only (one LLM call
@@ -32,6 +36,7 @@ export function useReferralDraft({
   model,
   canUse,
 }: Params) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState('');
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +84,13 @@ export function useReferralDraft({
     setError(null);
   }, [channel]);
 
+  const errorText = (err: unknown, fallback: string) => {
+    if (!(err instanceof Error)) return fallback;
+    return err.message.startsWith(STREAM_ERROR_PREFIX)
+      ? t('autopilot.referral.streamError')
+      : err.message;
+  };
+
   const generate = async () => {
     if (!canGenerate) return;
     const controller = new AbortController();
@@ -106,7 +118,7 @@ export function useReferralDraft({
     } catch (err) {
       // An explicit abort is not an error to surface.
       if (!controller.signal.aborted) {
-        setError(err instanceof Error ? err.message : 'Failed to draft the message');
+        setError(errorText(err, 'Failed to draft the message'));
       }
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
@@ -162,7 +174,7 @@ export function useReferralDraft({
       setDraft(text);
     } catch (err) {
       if (!controller.signal.aborted) {
-        setError(err instanceof Error ? err.message : 'Failed to improve the draft');
+        setError(errorText(err, 'Failed to improve the draft'));
       }
       // Restore the snapshot so the draft survives a failed or aborted improve.
       setDraft(snapshot);

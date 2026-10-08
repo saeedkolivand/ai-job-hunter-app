@@ -113,6 +113,17 @@ describe('useReferralDraft — generate()', () => {
     expect(result.current.error).toBe('network failure');
     expect(result.current.generating).toBe(false);
   });
+
+  it('maps the backend "Stream error: …" to a localized message', async () => {
+    mockGenerateReferral.mockRejectedValueOnce(
+      new Error('Stream error: error decoding response body')
+    );
+    const result = await generated();
+
+    expect(result.current.error).toBe(
+      'The connection to the AI provider was interrupted. Please try again.'
+    );
+  });
 });
 
 // ── connection_note ≤300 enforcement ─────────────────────────────────────────

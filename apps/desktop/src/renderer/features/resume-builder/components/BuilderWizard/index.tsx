@@ -222,8 +222,6 @@ export function BuilderWizard({
               className="min-h-full"
             >
               <WizardStep
-                stepIndex={step}
-                totalSteps={TOTAL_STEPS}
                 title={t(`build.steps.${step}`)}
                 description={t(`build.descriptions.${step}`)}
                 align={STEP_ALIGN[step] ?? 'top'}

@@ -206,9 +206,7 @@ export function StepTarget({ prefilled }: StepTargetProps) {
                     })}
                   </p>
                 )}
-                {prefilled.location && (
-                  <PrefilledBadge field={t('autopilot.wizard.target.fromLocationSettings')} />
-                )}
+                {prefilled.location && <PrefilledBadge />}
               </div>
             </WizardField>
           )}

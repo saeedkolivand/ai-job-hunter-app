@@ -24,6 +24,14 @@ interface Props {
   onToggleFound: () => void;
 }
 
+/** Schedule id → its `autopilot.wizard.schedule.*` label key (never print the raw id). */
+const SCHEDULE_LABEL_KEY: Record<Autopilot['schedule'], string> = {
+  manual: 'autopilot.wizard.schedule.manual',
+  hourly: 'autopilot.wizard.schedule.hourly',
+  daily: 'autopilot.wizard.schedule.daily',
+  twice_daily: 'autopilot.wizard.schedule.twiceDaily',
+};
+
 const stopProp = (e: React.MouseEvent | React.KeyboardEvent) => e.stopPropagation();
 
 /** The card's header row — click-to-expand when found jobs exist. */
@@ -135,8 +143,8 @@ export function AutopilotCardHeader({
                 : t('autopilot.card.boardsCount', { count: ap.target.boards.length });
             })()}
           </span>
-          <span className="text-[10px] text-foreground/30 bg-muted px-1.5 py-0.5 rounded capitalize">
-            {ap.schedule.replace('_', ' ')}
+          <span className="text-[10px] text-foreground/30 bg-muted px-1.5 py-0.5 rounded">
+            {t(SCHEDULE_LABEL_KEY[ap.schedule])}
           </span>
           {!running &&
             runBadge &&

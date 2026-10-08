@@ -34,6 +34,11 @@
     "settings": "Settings",
     "applications": "Applications",
     "collapseSidebar": "Collapse sidebar",
+    "greeting": {
+      "morning": "Good morning",
+      "afternoon": "Good afternoon",
+      "evening": "Good evening"
+    },
     "expandSidebar": "Expand sidebar",
     "back": "Back"
   },
@@ -403,6 +408,7 @@
       "completed": "Completed",
       "running": "Running",
       "failed": "Failed",
+      "cancelled": "Cancelled",
       "successRate": "Success Rate"
     },
     "status": {
@@ -442,7 +448,12 @@
       "persistJob": "Interaction saved",
       "matchResume": "Resume match",
       "autopilotRun": "Autopilot run",
-      "resumePipelineRun": "Quality résumé run"
+      "resumePipelineRun": "Quality résumé run",
+      "pipelineGenerate": "Document generation",
+      "aiReembed": "Rebuilding embeddings",
+      "aiIndexStale": "Indexing new documents",
+      "aiPullModel": "Model download",
+      "extensionAnswerAssist": "Extension answer"
     },
     "activity": {
       "queued": "queued",
@@ -1413,6 +1424,7 @@
     "resumeLabel": "Resume",
     "templateLabel": "Template",
     "jobAdLabel": "Job Advertisement",
+    "jobAdPlaceholder": "Paste the job ad here…",
     "detectedContext": "Detected Context",
     "candidate": "Candidate",
     "role": "Role",
@@ -2128,7 +2140,14 @@
       "savedTitle": "Saved contacts",
       "savedAddAnother": "Saved to your list below — the form is ready for the next person.",
       "deleteConfirmTitle": "Delete this referral?",
-      "deleteConfirmDesc": "This removes the saved referral contact from this job. This action cannot be undone."
+      "deleteConfirmDesc": "This removes the saved referral contact from this job. This action cannot be undone.",
+      "streamError": "The connection to the AI provider was interrupted. Please try again.",
+      "drafts": {
+        "toggle": "Show saved drafts",
+        "message": "Message",
+        "email": "Email",
+        "invite": "Connection note"
+      }
     },
     "loading": "Loading…",
     "empty": {
@@ -2167,6 +2186,7 @@
         "locationOptional": "(optional)",
         "locationPlaceholder": "e.g. Berlin, remote",
         "fromLocationSettings": "from location settings",
+        "fromLocationSettingsTitle": "Edit in Settings → Jobs",
         "countryResolved": "Country: {{country}}",
         "workType": "Work type",
         "pages": "Pages to scrape",
@@ -2984,11 +3004,11 @@
       "extensionQuestions": {
         "pairExtension": {
           "q": "How do I install and pair the browser extension?",
-          "a": "Install it from the setup wizard's \"Install the browser extension\" step with \"Add to Chrome\" or \"Add to Firefox\", or from the Chrome or Firefox store. Then open Settings → Accounts → \"Browser extension\" and click \"Copy\" beside \"Pairing token\". Open the extension popup, paste the token into its pairing screen and save it. Back in Settings → Accounts → \"Browser extension\", the \"Connection\" row then reads \"Connected\". You can pair more than one browser with the same token; \"Regenerate token\" disconnects all of them, so you then have to pair each browser again."
+          "a": "Install it from the setup wizard's \"Install the browser extension\" step with \"Add to Chrome\" or \"Add to Firefox\", or from the Chrome or Firefox store. Then open Settings → \"Browser extension\" and click \"Copy\" beside \"Pairing token\". Open the extension popup, paste the token into its pairing screen and save it. Back in Settings → \"Browser extension\", the \"Connection\" row then reads \"Connected\". You can pair more than one browser with the same token; \"Regenerate token\" disconnects all of them, so you then have to pair each browser again."
         },
         "extensionActions": {
           "q": "What can the browser extension do on a job page?",
-          "a": "Open the extension on a posting and click \"Import this job\" to send it into the app, \"Check fit\" to score it against your default résumé, or \"Mark as applied\". On an application form, \"Fill this form\" fills your saved details and \"Save my answers from this page\" stores answers for reuse; \"Answer tools\" adds \"Suggest answers for this form\" and \"Help me answer…\". \"Assisted form autofill\", \"AI answer drafting\" and \"Auto-track sent applications\" are separate toggles in Settings → Accounts → \"Browser extension\". If the desktop app is not running the popup shows \"App not running\"; if this browser is not paired it shows the pairing screen."
+          "a": "Open the extension on a posting and click \"Import this job\" to send it into the app, \"Check fit\" to score it against your default résumé, or \"Mark as applied\". On an application form, \"Fill this form\" fills your saved details and \"Save my answers from this page\" stores answers for reuse; \"Answer tools\" adds \"Suggest answers for this form\" and \"Help me answer…\". \"Assisted form autofill\", \"AI answer drafting\" and \"Auto-track sent applications\" are separate toggles in Settings → \"Browser extension\". If the desktop app is not running the popup shows \"App not running\"; if this browser is not paired it shows the pairing screen."
         }
       },
       "aiSetup": "AI Setup & Spend",
@@ -3194,7 +3214,7 @@
       "subtitle": "Import jobs straight from any board with one click. Install the extension, then pair it in Settings.",
       "addToChrome": "Add to Chrome",
       "addToFirefox": "Add to Firefox",
-      "pairHint": "After installing, pair it in Settings → Accounts.",
+      "pairHint": "After installing, pair it in Settings → Browser extension.",
       "back": "Back",
       "next": "Continue"
     },

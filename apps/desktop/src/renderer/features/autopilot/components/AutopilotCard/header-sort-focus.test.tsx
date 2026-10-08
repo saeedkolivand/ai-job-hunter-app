@@ -395,3 +395,11 @@ describe('AutopilotCard — focusedJobUrl scroll + highlight', () => {
     rafSpy.mockRestore();
   });
 });
+
+describe('AutopilotCard — header schedule label', () => {
+  it('shows the localized schedule label, not the raw id', () => {
+    renderCard({ ...makeAutopilot(), schedule: 'twice_daily' });
+    expect(screen.getByText('autopilot.wizard.schedule.twiceDaily')).toBeInTheDocument();
+    expect(screen.queryByText('twice daily')).not.toBeInTheDocument();
+  });
+});

@@ -1,4 +1,4 @@
-import { BarChart3, CheckCircle2, Cpu, Loader2, XCircle, Zap } from 'lucide-react';
+import { Ban, BarChart3, CheckCircle2, Cpu, Loader2, XCircle, Zap } from 'lucide-react';
 import { useMemo } from 'react';
 
 import { useTranslation } from '@ajh/translations';
@@ -67,6 +67,14 @@ export function MonitoringPage() {
       bg: 'bg-amber-500/10',
     },
     {
+      id: 'cancelled',
+      label: t('monitoring.metrics.cancelled'),
+      value: counters.cancelled,
+      icon: Ban,
+      color: 'text-slate-400',
+      bg: 'bg-slate-500/10',
+    },
+    {
       id: 'successRate',
       label: t('monitoring.metrics.successRate'),
       value: `${successRate}%`,
@@ -99,7 +107,7 @@ export function MonitoringPage() {
           }
         />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {metrics.map(({ id, label, value, icon: Icon, color, bg }) => (
             <MetricCard
               key={id}

@@ -165,7 +165,7 @@ export function Sidebar() {
               <div className="truncate text-sm font-medium leading-tight text-foreground/85">
                 {userName}
               </div>
-              <div className="text-xs leading-tight text-foreground/40">{getTimeGreeting()}</div>
+              <div className="text-xs leading-tight text-foreground/40">{getTimeGreeting(t)}</div>
             </div>
             <Link
               to={ROUTES.SETTINGS}
