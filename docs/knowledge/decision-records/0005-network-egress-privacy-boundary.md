@@ -28,7 +28,9 @@ Network egress is **permitted** and enumerated by class, each with a gating rule
 
 8. **Crash reporting** (Sentry) — the one class that is **default ON** rather than default OFF, and the only first-party-initiated egress. Amended in by [ADR 0020](0020-crash-reporting.md); see it for why the default departs from rule 6, and for the redaction and consent-gating that make the departure survivable. Sends the error, stack trace, OS/architecture and app version only; never document, job, prompt or credential content. Desktop app only — the browser extension is excluded so its AMO `data_collection_permissions: ['none']` declaration stays true.
 
-**Rule for new egress:** any new outbound call that would send data derived from the user's documents, credentials, or tracked applications is prohibited by default; anything sending a public identifier or user-typed query for **enrichment** must follow rule 6 (opt-in, default OFF, CSP-scoped).
+9. **Self-hosted sync** (user-run server) — amended in by [ADR-051](adr-051-optional-self-hosted-multi-device-sync.md). The one class that sends tracked-application data (the export bundle's records) off the device, and only to an endpoint the user explicitly configures. Opt-in and **default OFF**; with sync disabled nothing is sent. The project operates no server. TLS is the expected transport; a `http://` URL is allowed only with an explicit warning that traffic is unencrypted unless the link is already protected (for example Tailscale or a trusted LAN). There is no end-to-end encryption in v1, so the server operator can read synced data. The sync token is a device-local credential in the OS keychain: never logged, never sent to crash reporting (class 8), never written to the export bundle. Keychain contents and every store the bundle excludes never enter sync. Wire contract: [sync-protocol.md](../sync-protocol.md).
+
+**Rule for new egress:** any new outbound call that would send data derived from the user's documents, credentials, or tracked applications is prohibited by default — class 9 is the single explicit exception, and only under its own conditions; anything sending a public identifier or user-typed query for **enrichment** must follow rule 6 (opt-in, default OFF, CSP-scoped).
 
 **Exemption (classes 2 and 5 — user-initiated lookups):** rule 6 governs _enrichment_ — a call the app makes on its own initiative to decorate data the user did not ask about (a logo for a company they merely viewed). It does **not** govern a lookup the user directly invoked by typing into a field and waiting for its result: location autocomplete (class 5) and job search (class 2). Those are the feature, not a garnish, so an opt-in default-OFF toggle would just break them. They qualify only while all three hold: (a) **user-initiated** — no call without a deliberate action; (b) **no personal data** — only the literal text typed into that field; (c) **Rust-side** — issued from the backend through `net::http`, so no renderer CSP entry is needed and the request is auditable in one place. Location autocomplete additionally answers offline from a bundled index, so the common case makes no call at all. The README/SECURITY wording must keep the personal-data guarantee and accurately enumerate the endpoint classes rather than claim a call count.
 
@@ -47,6 +49,7 @@ No runtime behavior changes: every current call already complies. The fix is to 
 - **A new egress endpoint now has a written test to pass:** does it send personal data (prohibited) or a public identifier/typed query (opt-in, default OFF, CSP-scoped)? This is the reference for future review. The machine-readable inventory lives in `apps/desktop/src-tauri/tests/egress.rs`.
 - **The opt-in enrichment pattern (Clearbit) is now the sanctioned template** for feature-driven egress: default OFF, minimal CSP, public identifier only.
 - **No behavior changes ship from this ADR.** If a future decision adds a hard offline mode, it supersedes option 2 here.
+- **Amendment (ADR-051): class 9, self-hosted sync.** Recorded as a specification only; the runtime client, its entry in `apps/desktop/src-tauri/tests/egress.rs` and the README/SECURITY wording land with the PR that ships the egress.
 
 ## References
 
@@ -59,6 +62,7 @@ No runtime behavior changes: every current call already complies. The fix is to 
   - Class 6 (Optional enrichment): `apps/desktop/src/renderer/services/use-company-logo/use-company-logo.ts` (Clearbit), `apps/desktop/src-tauri/tauri.conf.json` (CSP enforcement).
   - Class 7 (Email-confirmation watching): `apps/desktop/src-tauri/src/email_watch/` (IMAP).
   - Class 8 (Crash reporting): Sentry integration in `apps/desktop/src-tauri/src/crash_reporting/mod.rs` (the `DSN` const and the event filter) and `crash_reporting/transport.rs`, wired from `lib.rs` via `crash_reporting::init` and `tauri_plugin_sentry::init`.
+  - Class 9 (Self-hosted sync): specified in `docs/knowledge/sync-protocol.md`; no egress site exists yet (see ADR-051 for the delivery plan).
   - Profile import: `apps/desktop/src-tauri/src/profile_import/github.rs` (GitHub).
 - Opt-in setting: `apps/desktop/src/renderer/store/preferences-schema/preferences-schema.ts` (company-logo preference, default OFF).
 - Machine-readable inventory: `apps/desktop/src-tauri/tests/egress.rs` (EGRESS const).

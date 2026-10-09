@@ -33,6 +33,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [document-record-wire-format.md](document-record-wire-format.md) | DocumentRecord serde renames = backup-bundle on-disk format; intentional divergence from TS app model                                       |
 | [matching-algorithm.md](matching-algorithm.md)                   | Keyword-coverage scoring kernel (Autopilot + ATS), caching, gap analysis, intentional flat-coverage simplification                          |
 | [persistence.md](persistence.md)                                 | State ownership + transient boundary, SQLite/`db::open`, DataStore, backup/restore, Resettable, JSON exceptions                             |
+| [sync-protocol.md](sync-protocol.md)                             | Self-hosted sync wire contract (v1): endpoints, envelope, cursor, conflict/tombstone and schema-version rules, run-your-own-server guide    |
 | [anti-abuse-limits.md](anti-abuse-limits.md)                     | Rate + concurrency limits, per-provider daily ceilings, runtime configuration                                                               |
 | [performance-rules.md](performance-rules.md)                     | Hot paths, async-runtime discipline, query-client tuning, token/cost                                                                        |
 | [security-rules.md](security-rules.md)                           | Capabilities, CSP, deps, secrets, privacy/GDPR, updater                                                                                     |
@@ -96,6 +97,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-048](decision-records/adr-048-automated-extension-store-submission.md)                  | Extension store submission is automated and terminal at "submitted", gated on a source archive that provably rebuilds the shipped package; the AMO tool is pinned outside the pnpm workspace                                                                                  |
 | [ADR-049](decision-records/adr-049-microsoft-store-msix-flavour.md)                          | Microsoft Store MSIX as a runtime-detected flavour of the same binary (no build variant), updates handed to the Store, write virtualization disabled on purpose                                                                                                               |
 | [ADR-050](decision-records/adr-050-extension-read-tier-and-settings-verbs.md)                | Extension read tier (a narrower caller class on the ADR-038 policy table) and dedicated settings verbs so the extension can toggle its own opt-ins                                                                                                                            |
+| [ADR-051](decision-records/adr-051-optional-self-hosted-multi-device-sync.md)                | Optional self-hosted multi-device sync: client-only HTTP protocol, diff of the export bundle at sync time, whole-record last-sync-wins, TLS expected (warned `http://`), no E2EE in v1                                                                                        |
 
 ### The `NNNN-` series (closed)
 
