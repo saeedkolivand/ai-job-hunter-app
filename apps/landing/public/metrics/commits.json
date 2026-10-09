@@ -1,5 +1,221 @@
 [
   {
+    "sha": "d4747798a8a49dabba5b11e7c73398f7d460cd03",
+    "commit": {
+      "message": "chore(release): 0.157.1 [skip ci]",
+      "author": {
+        "date": "2026-10-09T03:45:17Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "cd227a4f8a56b5d0b93ba7b2a5970c5099b148e2",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-10-08T20:18:06Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "8891631274c5f8ac712e4740aaa845f2c1498be2",
+    "commit": {
+      "message": "fix(scraping): drop the greenhouse header on extension imports and decode escaped json-ld text (#1417)",
+      "author": {
+        "date": "2026-10-08T19:52:32Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "f474444a9a043c2d578c91daf8f5dd62248e910b",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-10-08T19:34:53Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "9d66ed8ba3a582d53ba8bfb804f33eaadfcc60f3",
+    "commit": {
+      "message": "fix(extension): refuse article and company pages on import and refresh the panel on status changes (#1415)",
+      "author": {
+        "date": "2026-10-08T19:21:22Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "d8f2c1c8ee8cd2d1540fc636badddc71dd38ba0f",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-10-08T19:16:18Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "7a73d053807a9c64482c6878a7a3a4718be8b33c",
+    "commit": {
+      "message": "fix: name the company and keep only the ad body on greenhouse page imports (#1414)",
+      "author": {
+        "date": "2026-10-08T19:02:29Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "79b69d38714dcad0e081aa53b0559a022c9c7626",
+    "commit": {
+      "message": "fix: show why a tailor run failed, add ai generate cancel, and fix narrow layouts (#1413)",
+      "author": {
+        "date": "2026-10-08T19:01:40Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "35232a7289371ca029b675dc131c33803440007b",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-10-08T18:13:41Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "dcb931effca447ed33b06dc99f3f1097be3aa069",
+    "commit": {
+      "message": "fix: prefer the full posting body over thin json-ld and tidy export names (#1407)",
+      "author": {
+        "date": "2026-10-08T17:51:11Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "e494e2b66aae317c87958c9a0fb55d185a097706",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-10-08T17:40:54Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "683d92020dc9c500de0ae97ec89d122c7f8ecbc8",
+    "commit": {
+      "message": "fix: cap local structured calls, abandon stages on cancel, name provider errors (#1406)",
+      "author": {
+        "date": "2026-10-08T17:28:13Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "ad863b17141e3b62ca33e90322b8145922e67e90",
+    "commit": {
+      "message": "fix: keep ai generate run state alive across navigation (#1405)",
+      "author": {
+        "date": "2026-10-08T17:11:40Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "add3d36c106635ca8756958e9bda57b1268ec643",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-10-08T13:16:15Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "563d44611212ad2e38e2d52746bfe865ef575241",
+    "commit": {
+      "message": "fix(extension): refuse non-job pages on import, surface stalled answer drafts, and sync the side panel with saved status (#1404)",
+      "author": {
+        "date": "2026-10-08T12:51:04Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "22d7e241b2ecf03de16439a94e815a1978e64b7d",
+    "commit": {
+      "message": "fix(pipeline): fall back to keyword must-haves and warn when the job analysis stays empty (#1403)",
+      "author": {
+        "date": "2026-10-08T12:45:49Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "590013a6fc234739c8f5418b41c3b0c40c0b4f68",
+    "commit": {
+      "message": "fix(desktop): jobs search clear, split-view focus, narrow headers, dashboard counts and small ux gaps (#1401)",
+      "author": {
+        "date": "2026-10-08T11:12:32Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "1c6aae825fab519b7c40fd1549b5b6966bbb6273",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-10-08T10:32:25Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "a9fd611d17415710a9cca41e99f55e420628cb1f",
     "commit": {
       "message": "chore: bump the javascript group across 1 directory with 8 updates (#1390)",
@@ -977,222 +1193,6 @@
       "message": "chore: update export benchmark data [skip ci]",
       "author": {
         "date": "2026-10-04T11:12:20Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "54dee32722b5d93968d590040ae5d83afe4621c0",
-    "commit": {
-      "message": "refactor(validate): split validate/ into modules under 300 code lines (#1311)",
-      "author": {
-        "date": "2026-10-04T11:02:30Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "977f94201f063e6091cfad9bb787b1a1e77ab551",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-04T09:51:35Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "7e142207857ee1f5b8677f0fdaebc827b111f701",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-04T09:45:17Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "ccfc91f423e3495e899c17315fa72544ae40932f",
-    "commit": {
-      "message": "refactor(export): split docx, parser, templates, pdf and model_docx under 300 code lines (#1310)",
-      "author": {
-        "date": "2026-10-04T09:30:45Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "57822f7867e2bce5b7b6ff1acbac2fea233c3685",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-03T09:07:04Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "eb066c0c540c7d3b5ebea3e83e89a43e4392faff",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-02T09:43:45Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "c8f7603e991daef81ac99158578221e5b7af8ebc",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-01T10:05:53Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "a43c59df1326279932095e133ebd966288df1883",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-01T04:05:26Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "4a5c0307a58eb29999dcfd0a49c2991623fa1e10",
-    "commit": {
-      "message": "refactor(export): split the typst engine into modules under 300 code lines (#1309)",
-      "author": {
-        "date": "2026-10-01T03:51:36Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "aca41a7212e42f6a44bae185a0cc2b439214caed",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-30T22:28:33Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "cf816f592825385569200bc6ff6b4dbbf2fc5467",
-    "commit": {
-      "message": "refactor(pipeline): split the resume pipeline into modules under 300 code lines (#1308)",
-      "author": {
-        "date": "2026-09-30T22:08:17Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "44f82b50b35cff72ef58102578804dfaf630f579",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-30T19:51:41Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "455ba14de0ff7b409adc333ee57c6d6c50ca89fe",
-    "commit": {
-      "message": "refactor(pipeline): split the pipeline core into modules under 300 code lines (#1307)",
-      "author": {
-        "date": "2026-09-30T19:37:35Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "570c5af427cb37b348d2d58b7bfe3f63dc2b24b1",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-30T18:30:35Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "a4463fbda07627b6188bd707ab50e85288e973e2",
-    "commit": {
-      "message": "refactor(ai-provider): split the cli agent layer into modules under 300 code lines (#1306)",
-      "author": {
-        "date": "2026-09-30T18:06:45Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "a23bfe0b96d254161c333be7af69cca67aa25836",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-30T17:16:04Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "cd7eb5d206cbd2669eec632d6f23aee5529ee83e",
-    "commit": {
-      "message": "refactor(ai-provider): split the shared provider layer into modules under 300 code lines (#1304)",
-      "author": {
-        "date": "2026-09-30T16:46:52Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "49c696c64da28256d2007f5aba891d3646db6cb3",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-09-30T15:30:14Z"
       }
     },
     "author": {

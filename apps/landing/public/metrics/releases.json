@@ -1,5 +1,12 @@
 [
   {
+    "tag_name": "v0.157.1",
+    "name": "v0.157.1",
+    "published_at": "2026-10-09T03:45:22Z",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/releases/tag/v0.157.1",
+    "assets": []
+  },
+  {
     "tag_name": "v0.157.0",
     "name": "v0.157.0",
     "published_at": "2026-10-06T20:40:16Z",
@@ -14,11 +21,11 @@
     "assets": [
       {
         "name": "ai-job-hunter-extension-chrome-0.156.0.zip",
-        "download_count": 5
+        "download_count": 6
       },
       {
         "name": "ai-job-hunter-extension-firefox-0.156.0.zip",
-        "download_count": 5
+        "download_count": 7
       },
       {
         "name": "latest.json",
@@ -30,7 +37,7 @@
       },
       {
         "name": "linux-AI-Job-Hunter_0.156.0_amd64.AppImage",
-        "download_count": 10
+        "download_count": 12
       },
       {
         "name": "linux-AI-Job-Hunter_0.156.0_amd64.AppImage.sig",
@@ -42,7 +49,7 @@
       },
       {
         "name": "macos-AI-Job-Hunter-apple-silicon.app.tar.gz",
-        "download_count": 7
+        "download_count": 8
       },
       {
         "name": "macos-AI-Job-Hunter-apple-silicon.app.tar.gz.sig",
@@ -50,7 +57,7 @@
       },
       {
         "name": "macos-AI-Job-Hunter-intel.app.tar.gz",
-        "download_count": 4
+        "download_count": 5
       },
       {
         "name": "macos-AI-Job-Hunter-intel.app.tar.gz.sig",
@@ -58,7 +65,7 @@
       },
       {
         "name": "macos-AI-Job-Hunter_0.156.0_aarch64-apple-silicon.dmg",
-        "download_count": 9
+        "download_count": 10
       },
       {
         "name": "macos-AI-Job-Hunter_0.156.0_x64-intel.dmg",
@@ -1872,22 +1879,6 @@
       },
       {
         "name": "windows-AI-Job-Hunter_0.140.0_x64_en-US.msi",
-        "download_count": 1
-      }
-    ]
-  },
-  {
-    "tag_name": "assets-v1",
-    "name": "Store & press assets",
-    "published_at": "2026-08-21T15:45:23Z",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/releases/tag/assets-v1",
-    "assets": [
-      {
-        "name": "extension-store-assets.zip",
-        "download_count": 1
-      },
-      {
-        "name": "marketing-gallery.zip",
         "download_count": 1
       }
     ]

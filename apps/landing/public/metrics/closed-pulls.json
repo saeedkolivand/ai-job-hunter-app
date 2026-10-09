@@ -1,13 +1,223 @@
 [
   {
-    "number": 1390,
-    "title": "chore: bump the javascript group across 1 directory with 8 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1390",
+    "number": 1370,
+    "title": "perf(ai): run the mechanical pipeline stages at the lowest reasoning tier",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1370",
     "draft": false,
-    "created_at": "2026-10-08T08:38:42Z",
-    "updated_at": "2026-10-08T09:16:05Z",
-    "merged_at": "2026-10-08T08:48:35Z",
-    "closed_at": "2026-10-08T08:48:35Z",
+    "created_at": "2026-10-07T00:21:16Z",
+    "updated_at": "2026-10-09T03:47:01Z",
+    "merged_at": "2026-10-07T00:21:19Z",
+    "closed_at": "2026-10-07T00:21:19Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1371,
+    "title": "perf(ai): run cover-letter company research alongside strategy and draft",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1371",
+    "draft": false,
+    "created_at": "2026-10-07T00:29:46Z",
+    "updated_at": "2026-10-09T03:47:00Z",
+    "merged_at": "2026-10-07T00:29:49Z",
+    "closed_at": "2026-10-07T00:29:49Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1372,
+    "title": "perf(ai): stream every completion and time out on silence, not wall clock",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1372",
+    "draft": false,
+    "created_at": "2026-10-07T01:44:46Z",
+    "updated_at": "2026-10-09T03:46:59Z",
+    "merged_at": "2026-10-07T01:44:49Z",
+    "closed_at": "2026-10-07T01:44:49Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1373,
+    "title": "perf(ai): key the analyze cache on the job alone and trim unused stage output",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1373",
+    "draft": false,
+    "created_at": "2026-10-07T04:43:15Z",
+    "updated_at": "2026-10-09T03:46:58Z",
+    "merged_at": "2026-10-07T04:43:18Z",
+    "closed_at": "2026-10-07T04:43:18Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1374,
+    "title": "chore(ai): persist content-free provider routing and timing per pipeline stage",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1374",
+    "draft": false,
+    "created_at": "2026-10-07T05:14:53Z",
+    "updated_at": "2026-10-09T03:46:57Z",
+    "merged_at": "2026-10-07T05:14:56Z",
+    "closed_at": "2026-10-07T05:14:56Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1375,
+    "title": "perf(ai): humanize with line patches and run the résumé and letter arms together",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1375",
+    "draft": false,
+    "created_at": "2026-10-07T06:04:56Z",
+    "updated_at": "2026-10-09T03:46:56Z",
+    "merged_at": "2026-10-07T06:05:00Z",
+    "closed_at": "2026-10-07T06:05:00Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1383,
+    "title": "fix(pipeline): send the user's reasoning effort on the staged résumé run",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1383",
+    "draft": false,
+    "created_at": "2026-10-07T20:04:21Z",
+    "updated_at": "2026-10-09T03:46:55Z",
+    "merged_at": "2026-10-07T20:04:24Z",
+    "closed_at": "2026-10-07T20:04:24Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1384,
+    "title": "fix(pipeline): retry and never cache a job analysis or strategy below the quality floor",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1384",
+    "draft": false,
+    "created_at": "2026-10-08T04:04:58Z",
+    "updated_at": "2026-10-09T03:46:54Z",
+    "merged_at": "2026-10-08T04:05:01Z",
+    "closed_at": "2026-10-08T04:05:01Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1385,
+    "title": "fix(extension): show the auto-save notice only on its own tab and count skipped autofill fields",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1385",
+    "draft": false,
+    "created_at": "2026-10-08T04:28:52Z",
+    "updated_at": "2026-10-09T03:46:53Z",
+    "merged_at": "2026-10-08T04:28:55Z",
+    "closed_at": "2026-10-08T04:28:55Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1386,
+    "title": "fix(desktop): jobs list, letter preview, résumé checklist and model picker fixes from the e2e round",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1386",
+    "draft": false,
+    "created_at": "2026-10-08T04:48:08Z",
+    "updated_at": "2026-10-09T03:46:52Z",
+    "merged_at": "2026-10-08T04:48:11Z",
+    "closed_at": "2026-10-08T04:48:11Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1387,
+    "title": "fix(desktop): referral, monitoring, settings search and copy polish from the e2e round",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1387",
+    "draft": false,
+    "created_at": "2026-10-08T04:51:55Z",
+    "updated_at": "2026-10-09T03:46:51Z",
+    "merged_at": "2026-10-08T04:51:58Z",
+    "closed_at": "2026-10-08T04:51:58Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1388,
+    "title": "fix(desktop): import, contact seeding, export filename and monitoring fixes from the e2e round",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1388",
+    "draft": false,
+    "created_at": "2026-10-08T06:17:07Z",
+    "updated_at": "2026-10-09T03:46:50Z",
+    "merged_at": "2026-10-08T06:17:12Z",
+    "closed_at": "2026-10-08T06:17:12Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1389,
+    "title": "perf(ai): write the cover letter beside the résumé draft when the provider can serve both",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1389",
+    "draft": false,
+    "created_at": "2026-10-08T06:31:48Z",
+    "updated_at": "2026-10-09T03:46:49Z",
+    "merged_at": "2026-10-08T06:31:51Z",
+    "closed_at": "2026-10-08T06:31:51Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1377,
+    "title": "chore: bump the desktop-rust group in /apps/desktop/src-tauri with 2 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1377",
+    "draft": false,
+    "created_at": "2026-10-07T16:08:27Z",
+    "updated_at": "2026-10-09T03:46:48Z",
+    "merged_at": "2026-10-08T08:30:58Z",
+    "closed_at": "2026-10-08T08:30:58Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1378,
+    "title": "chore: bump the ci-actions group with 2 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1378",
+    "draft": false,
+    "created_at": "2026-10-07T16:10:38Z",
+    "updated_at": "2026-10-09T03:46:47Z",
+    "merged_at": "2026-10-08T08:31:04Z",
+    "closed_at": "2026-10-08T08:31:04Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1376,
+    "title": "chore: bump the vitest group with 3 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1376",
+    "draft": false,
+    "created_at": "2026-10-07T16:07:31Z",
+    "updated_at": "2026-10-09T03:46:46Z",
+    "merged_at": "2026-10-08T08:31:10Z",
+    "closed_at": "2026-10-08T08:31:10Z",
     "requested_reviewers": [],
     "user": {
       "login": "dependabot[bot]"
@@ -19,12 +229,166 @@
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1380",
     "draft": false,
     "created_at": "2026-10-07T16:12:59Z",
-    "updated_at": "2026-10-08T08:56:01Z",
+    "updated_at": "2026-10-09T03:46:45Z",
     "merged_at": "2026-10-08T08:39:58Z",
     "closed_at": "2026-10-08T08:39:58Z",
     "requested_reviewers": [],
     "user": {
       "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1390,
+    "title": "chore: bump the javascript group across 1 directory with 8 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1390",
+    "draft": false,
+    "created_at": "2026-10-08T08:38:42Z",
+    "updated_at": "2026-10-09T03:46:44Z",
+    "merged_at": "2026-10-08T08:48:35Z",
+    "closed_at": "2026-10-08T08:48:35Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1401,
+    "title": "fix(desktop): jobs search clear, split-view focus, narrow headers, dashboard counts and small ux gaps",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1401",
+    "draft": false,
+    "created_at": "2026-10-08T11:12:29Z",
+    "updated_at": "2026-10-09T03:46:43Z",
+    "merged_at": "2026-10-08T11:12:33Z",
+    "closed_at": "2026-10-08T11:12:33Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1403,
+    "title": "fix(pipeline): fall back to keyword must-haves and warn when the job analysis stays empty",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1403",
+    "draft": false,
+    "created_at": "2026-10-08T12:45:46Z",
+    "updated_at": "2026-10-09T03:46:42Z",
+    "merged_at": "2026-10-08T12:45:49Z",
+    "closed_at": "2026-10-08T12:45:50Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1404,
+    "title": "fix(extension): refuse non-job pages on import, surface stalled answer drafts, and sync the side panel with saved status",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1404",
+    "draft": false,
+    "created_at": "2026-10-08T12:51:01Z",
+    "updated_at": "2026-10-09T03:46:41Z",
+    "merged_at": "2026-10-08T12:51:04Z",
+    "closed_at": "2026-10-08T12:51:04Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1405,
+    "title": "fix: keep ai generate run state alive across navigation",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1405",
+    "draft": false,
+    "created_at": "2026-10-08T17:11:37Z",
+    "updated_at": "2026-10-09T03:46:40Z",
+    "merged_at": "2026-10-08T17:11:41Z",
+    "closed_at": "2026-10-08T17:11:41Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1406,
+    "title": "fix: cap local structured calls, abandon stages on cancel, name provider errors",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1406",
+    "draft": false,
+    "created_at": "2026-10-08T17:28:11Z",
+    "updated_at": "2026-10-09T03:46:39Z",
+    "merged_at": "2026-10-08T17:28:14Z",
+    "closed_at": "2026-10-08T17:28:14Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1407,
+    "title": "fix: prefer the full posting body over thin json-ld and tidy export names",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1407",
+    "draft": false,
+    "created_at": "2026-10-08T17:51:09Z",
+    "updated_at": "2026-10-09T03:46:38Z",
+    "merged_at": "2026-10-08T17:51:12Z",
+    "closed_at": "2026-10-08T17:51:12Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1413,
+    "title": "fix: show why a tailor run failed, add ai generate cancel, and fix narrow layouts",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1413",
+    "draft": false,
+    "created_at": "2026-10-08T19:01:37Z",
+    "updated_at": "2026-10-09T03:46:37Z",
+    "merged_at": "2026-10-08T19:01:40Z",
+    "closed_at": "2026-10-08T19:01:40Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1414,
+    "title": "fix: name the company and keep only the ad body on greenhouse page imports",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1414",
+    "draft": false,
+    "created_at": "2026-10-08T19:02:24Z",
+    "updated_at": "2026-10-09T03:46:36Z",
+    "merged_at": "2026-10-08T19:02:30Z",
+    "closed_at": "2026-10-08T19:02:30Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1415,
+    "title": "fix(extension): refuse article and company pages on import and refresh the panel on status changes",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1415",
+    "draft": false,
+    "created_at": "2026-10-08T19:21:19Z",
+    "updated_at": "2026-10-09T03:46:35Z",
+    "merged_at": "2026-10-08T19:21:23Z",
+    "closed_at": "2026-10-08T19:21:23Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1417,
+    "title": "fix(scraping): drop the greenhouse header on extension imports and decode escaped json-ld text",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1417",
+    "draft": false,
+    "created_at": "2026-10-08T19:52:30Z",
+    "updated_at": "2026-10-09T03:46:34Z",
+    "merged_at": "2026-10-08T19:52:33Z",
+    "closed_at": "2026-10-08T19:52:33Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
     }
   },
   {
@@ -39,230 +403,6 @@
     "requested_reviewers": [],
     "user": {
       "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1376,
-    "title": "chore: bump the vitest group with 3 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1376",
-    "draft": false,
-    "created_at": "2026-10-07T16:07:31Z",
-    "updated_at": "2026-10-08T08:31:12Z",
-    "merged_at": "2026-10-08T08:31:10Z",
-    "closed_at": "2026-10-08T08:31:10Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1378,
-    "title": "chore: bump the ci-actions group with 2 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1378",
-    "draft": false,
-    "created_at": "2026-10-07T16:10:38Z",
-    "updated_at": "2026-10-08T08:31:06Z",
-    "merged_at": "2026-10-08T08:31:04Z",
-    "closed_at": "2026-10-08T08:31:04Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1377,
-    "title": "chore: bump the desktop-rust group in /apps/desktop/src-tauri with 2 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1377",
-    "draft": false,
-    "created_at": "2026-10-07T16:08:27Z",
-    "updated_at": "2026-10-08T08:31:00Z",
-    "merged_at": "2026-10-08T08:30:58Z",
-    "closed_at": "2026-10-08T08:30:58Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1389,
-    "title": "perf(ai): write the cover letter beside the résumé draft when the provider can serve both",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1389",
-    "draft": false,
-    "created_at": "2026-10-08T06:31:48Z",
-    "updated_at": "2026-10-08T06:55:18Z",
-    "merged_at": "2026-10-08T06:31:51Z",
-    "closed_at": "2026-10-08T06:31:51Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1388,
-    "title": "fix(desktop): import, contact seeding, export filename and monitoring fixes from the e2e round",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1388",
-    "draft": false,
-    "created_at": "2026-10-08T06:17:07Z",
-    "updated_at": "2026-10-08T06:17:23Z",
-    "merged_at": "2026-10-08T06:17:12Z",
-    "closed_at": "2026-10-08T06:17:12Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1386,
-    "title": "fix(desktop): jobs list, letter preview, résumé checklist and model picker fixes from the e2e round",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1386",
-    "draft": false,
-    "created_at": "2026-10-08T04:48:08Z",
-    "updated_at": "2026-10-08T05:14:18Z",
-    "merged_at": "2026-10-08T04:48:11Z",
-    "closed_at": "2026-10-08T04:48:11Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1387,
-    "title": "fix(desktop): referral, monitoring, settings search and copy polish from the e2e round",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1387",
-    "draft": false,
-    "created_at": "2026-10-08T04:51:55Z",
-    "updated_at": "2026-10-08T05:13:54Z",
-    "merged_at": "2026-10-08T04:51:58Z",
-    "closed_at": "2026-10-08T04:51:58Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1384,
-    "title": "fix(pipeline): retry and never cache a job analysis or strategy below the quality floor",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1384",
-    "draft": false,
-    "created_at": "2026-10-08T04:04:58Z",
-    "updated_at": "2026-10-08T04:31:15Z",
-    "merged_at": "2026-10-08T04:05:01Z",
-    "closed_at": "2026-10-08T04:05:01Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1385,
-    "title": "fix(extension): show the auto-save notice only on its own tab and count skipped autofill fields",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1385",
-    "draft": false,
-    "created_at": "2026-10-08T04:28:52Z",
-    "updated_at": "2026-10-08T04:29:30Z",
-    "merged_at": "2026-10-08T04:28:55Z",
-    "closed_at": "2026-10-08T04:28:55Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1383,
-    "title": "fix(pipeline): send the user's reasoning effort on the staged résumé run",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1383",
-    "draft": false,
-    "created_at": "2026-10-07T20:04:21Z",
-    "updated_at": "2026-10-07T20:29:44Z",
-    "merged_at": "2026-10-07T20:04:24Z",
-    "closed_at": "2026-10-07T20:04:24Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1375,
-    "title": "perf(ai): humanize with line patches and run the résumé and letter arms together",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1375",
-    "draft": false,
-    "created_at": "2026-10-07T06:04:56Z",
-    "updated_at": "2026-10-07T06:30:12Z",
-    "merged_at": "2026-10-07T06:05:00Z",
-    "closed_at": "2026-10-07T06:05:00Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1374,
-    "title": "chore(ai): persist content-free provider routing and timing per pipeline stage",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1374",
-    "draft": false,
-    "created_at": "2026-10-07T05:14:53Z",
-    "updated_at": "2026-10-07T05:33:46Z",
-    "merged_at": "2026-10-07T05:14:56Z",
-    "closed_at": "2026-10-07T05:14:56Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1373,
-    "title": "perf(ai): key the analyze cache on the job alone and trim unused stage output",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1373",
-    "draft": false,
-    "created_at": "2026-10-07T04:43:15Z",
-    "updated_at": "2026-10-07T05:07:49Z",
-    "merged_at": "2026-10-07T04:43:18Z",
-    "closed_at": "2026-10-07T04:43:18Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1372,
-    "title": "perf(ai): stream every completion and time out on silence, not wall clock",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1372",
-    "draft": false,
-    "created_at": "2026-10-07T01:44:46Z",
-    "updated_at": "2026-10-07T02:07:42Z",
-    "merged_at": "2026-10-07T01:44:49Z",
-    "closed_at": "2026-10-07T01:44:49Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1371,
-    "title": "perf(ai): run cover-letter company research alongside strategy and draft",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1371",
-    "draft": false,
-    "created_at": "2026-10-07T00:29:46Z",
-    "updated_at": "2026-10-07T00:54:55Z",
-    "merged_at": "2026-10-07T00:29:49Z",
-    "closed_at": "2026-10-07T00:29:49Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1370,
-    "title": "perf(ai): run the mechanical pipeline stages at the lowest reasoning tier",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1370",
-    "draft": false,
-    "created_at": "2026-10-07T00:21:16Z",
-    "updated_at": "2026-10-07T00:45:51Z",
-    "merged_at": "2026-10-07T00:21:19Z",
-    "closed_at": "2026-10-07T00:21:19Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
     }
   },
   {
@@ -557,146 +697,6 @@
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1314,
-    "title": "refactor(applications): split applications/ and ai_generations/ under 300 code lines",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1314",
-    "draft": false,
-    "created_at": "2026-10-04T14:56:54Z",
-    "updated_at": "2026-10-06T20:42:18Z",
-    "merged_at": "2026-10-04T15:21:41Z",
-    "closed_at": "2026-10-04T15:21:41Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1315,
-    "title": "refactor(autopilot): split the autopilot family under 300 code lines",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1315",
-    "draft": false,
-    "created_at": "2026-10-04T16:11:24Z",
-    "updated_at": "2026-10-06T20:42:15Z",
-    "merged_at": "2026-10-04T16:37:08Z",
-    "closed_at": "2026-10-04T16:37:08Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1316,
-    "title": "refactor(commands): split match_resume, ai, applications, scrape and lib.rs under 300 code lines",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1316",
-    "draft": false,
-    "created_at": "2026-10-04T17:21:53Z",
-    "updated_at": "2026-10-06T20:42:12Z",
-    "merged_at": "2026-10-04T17:23:07Z",
-    "closed_at": "2026-10-04T17:23:07Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1317,
-    "title": "refactor(stores): split the user data stores under 300 code lines",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1317",
-    "draft": false,
-    "created_at": "2026-10-04T18:09:34Z",
-    "updated_at": "2026-10-06T20:42:09Z",
-    "merged_at": "2026-10-04T18:37:11Z",
-    "closed_at": "2026-10-04T18:37:11Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1319,
-    "title": "refactor(commands): split the remaining command modules under 300 code lines",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1319",
-    "draft": false,
-    "created_at": "2026-10-04T19:58:14Z",
-    "updated_at": "2026-10-06T20:42:08Z",
-    "merged_at": "2026-10-04T19:59:55Z",
-    "closed_at": "2026-10-04T19:59:55Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1318,
-    "title": "refactor(model): split the document model, locale and text modules under 300 code lines",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1318",
-    "draft": false,
-    "created_at": "2026-10-04T19:20:20Z",
-    "updated_at": "2026-10-06T20:42:08Z",
-    "merged_at": "2026-10-04T19:43:37Z",
-    "closed_at": "2026-10-04T19:43:37Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1320,
-    "title": "refactor(platform): split platform and shell infra, emptying the r8 baselines",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1320",
-    "draft": false,
-    "created_at": "2026-10-04T20:09:21Z",
-    "updated_at": "2026-10-06T20:42:06Z",
-    "merged_at": "2026-10-04T20:24:00Z",
-    "closed_at": "2026-10-04T20:24:00Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1298,
-    "title": "chore: bump the vitest group with 3 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1298",
-    "draft": false,
-    "created_at": "2026-09-30T16:08:13Z",
-    "updated_at": "2026-10-06T20:42:05Z",
-    "merged_at": "2026-10-04T20:27:53Z",
-    "closed_at": "2026-10-04T20:27:53Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1303,
-    "title": "chore: bump the ci-actions group with 2 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1303",
-    "draft": false,
-    "created_at": "2026-09-30T16:13:03Z",
-    "updated_at": "2026-10-06T20:42:04Z",
-    "merged_at": "2026-10-04T20:29:04Z",
-    "closed_at": "2026-10-04T20:29:04Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1302,
-    "title": "chore: bump feed-rs from 2.4.0 to 3.0.0 in /apps/desktop/src-tauri",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1302",
-    "draft": false,
-    "created_at": "2026-09-30T16:12:22Z",
-    "updated_at": "2026-10-06T20:42:03Z",
-    "merged_at": "2026-10-04T21:01:27Z",
-    "closed_at": "2026-10-04T21:01:27Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
     }
   }
 ]

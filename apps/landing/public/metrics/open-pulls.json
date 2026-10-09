@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "number": 1418,
+    "title": "docs(sync): add the self-hosted sync adr and v1 protocol, amend the egress boundary adr",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1418",
+    "draft": false,
+    "created_at": "2026-10-08T21:18:32Z",
+    "updated_at": "2026-10-08T21:33:30Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "NimaNabi"
+    }
+  }
+]
