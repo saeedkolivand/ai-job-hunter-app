@@ -4,7 +4,72 @@
     "name": "v0.157.1",
     "published_at": "2026-10-09T03:45:22Z",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/releases/tag/v0.157.1",
-    "assets": []
+    "assets": [
+      {
+        "name": "ai-job-hunter-extension-chrome-0.157.1.zip",
+        "download_count": 1
+      },
+      {
+        "name": "ai-job-hunter-extension-firefox-0.157.1.zip",
+        "download_count": 1
+      },
+      {
+        "name": "latest.json",
+        "download_count": 9
+      },
+      {
+        "name": "linux-AI-Job-Hunter-0.157.1-1.x86_64.rpm",
+        "download_count": 1
+      },
+      {
+        "name": "linux-AI-Job-Hunter_0.157.1_amd64.AppImage",
+        "download_count": 1
+      },
+      {
+        "name": "linux-AI-Job-Hunter_0.157.1_amd64.AppImage.sig",
+        "download_count": 1
+      },
+      {
+        "name": "linux-AI-Job-Hunter_0.157.1_amd64.deb",
+        "download_count": 2
+      },
+      {
+        "name": "macos-AI-Job-Hunter-apple-silicon.app.tar.gz",
+        "download_count": 1
+      },
+      {
+        "name": "macos-AI-Job-Hunter-apple-silicon.app.tar.gz.sig",
+        "download_count": 1
+      },
+      {
+        "name": "macos-AI-Job-Hunter-intel.app.tar.gz",
+        "download_count": 2
+      },
+      {
+        "name": "macos-AI-Job-Hunter-intel.app.tar.gz.sig",
+        "download_count": 1
+      },
+      {
+        "name": "macos-AI-Job-Hunter_0.157.1_aarch64-apple-silicon.dmg",
+        "download_count": 1
+      },
+      {
+        "name": "macos-AI-Job-Hunter_0.157.1_x64-intel.dmg",
+        "download_count": 1
+      },
+      {
+        "name": "windows-AI-Job-Hunter_0.157.1_x64-setup.exe",
+        "download_count": 2
+      },
+      {
+        "name": "windows-AI-Job-Hunter_0.157.1_x64-setup.exe.sig",
+        "download_count": 1
+      },
+      {
+        "name": "windows-AI-Job-Hunter_0.157.1_x64_en-US.msi",
+        "download_count": 1
+      }
+    ]
   },
   {
     "tag_name": "v0.157.0",
@@ -21,7 +86,7 @@
     "assets": [
       {
         "name": "ai-job-hunter-extension-chrome-0.156.0.zip",
-        "download_count": 6
+        "download_count": 7
       },
       {
         "name": "ai-job-hunter-extension-firefox-0.156.0.zip",

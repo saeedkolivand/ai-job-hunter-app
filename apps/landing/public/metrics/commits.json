@@ -1,5 +1,41 @@
 [
   {
+    "sha": "3b14ce79583bcc3756a2a535599ceffac6a5b388",
+    "commit": {
+      "message": "chore: sync landing download version to v0.157.1",
+      "author": {
+        "date": "2026-10-09T18:47:55Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "9f337a15a58fe6c9bb2f7d2009706613a38ac982",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.157.1 [skip ci]",
+      "author": {
+        "date": "2026-10-09T18:47:28Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "804853915e139c4f1e844cb91c3d21e7bdaa4ddc",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-10-09T10:30:39Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "d4747798a8a49dabba5b11e7c73398f7d460cd03",
     "commit": {
       "message": "chore(release): 0.157.1 [skip ci]",
@@ -1161,42 +1197,6 @@
     },
     "author": {
       "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "c71de7b11240509cffd6e3a102a9bff7207bc6d9",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-04T12:57:19Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "7da82191fbbe21ba7785b143784fd27e2dcb939c",
-    "commit": {
-      "message": "refactor(email-watch): split email_watch/ and extraction/ under 300 code lines (#1312)",
-      "author": {
-        "date": "2026-10-04T12:33:02Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "317011360d850ee8cd22da04591b2084be8470ab",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-04T11:12:20Z"
-      }
-    },
-    "author": {
-      "login": "github"
     }
   }
 ]
