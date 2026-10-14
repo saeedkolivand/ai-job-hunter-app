@@ -251,7 +251,7 @@ sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 # Cross-platform dependencies
 rusqlite = { version = "0.40", features = ["bundled"] }
 pdf-extract = "0.12"
-zip = "8"
+zip = "9"
 docx-rs = "0.4.20"
 lopdf = "0.45"
 typst = "=0.15.1"
