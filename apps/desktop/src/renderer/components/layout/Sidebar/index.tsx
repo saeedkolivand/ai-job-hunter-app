@@ -25,9 +25,9 @@ import { Button, cn, Image, NavPill, transition, variants } from '@ajh/ui';
 import { ROUTES } from '@/constants/routes';
 import { getTimeGreeting } from '@/lib/greeting';
 import { TOOLTIP_HIDE_MS } from '@/lib/timings';
-import { useContactProfile } from '@/services';
+import { useContactProfile, useDisplayName } from '@/services';
 import { useAppVersion } from '@/services/use-system';
-import { useToggleSidebar, useUserName } from '@/store/preferences-store';
+import { useToggleSidebar } from '@/store/preferences-store';
 
 import { HEADED_SECTIONS, type NavTourId, PINNED_SECTION, type SidebarPage } from './nav';
 
@@ -64,7 +64,7 @@ function scrollPageToTop() {
 export function Sidebar() {
   const { t } = useTranslation();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const userName = useUserName();
+  const userName = useDisplayName();
   // Use the contact-profile photo (a local data: URL) as the footer avatar when set.
   const { data: contactProfile } = useContactProfile();
   const avatar = contactProfile?.photo;

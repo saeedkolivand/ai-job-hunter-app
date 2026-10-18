@@ -245,6 +245,9 @@ export function SyncSection() {
         <p className="border-t border-foreground/10 pt-3 text-[11px] leading-snug text-foreground/40">
           {t('settings.privacy.sync.disclosure')}
         </p>
+        <p className="text-[11px] leading-snug text-foreground/40">
+          {t('settings.privacy.sync.scopeNote')}
+        </p>
       </div>
     </SettingsSection>
   );
