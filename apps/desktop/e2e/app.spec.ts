@@ -40,6 +40,25 @@ test.describe('AI Job Hunter shell (mock client)', () => {
     await expect.poll(async () => links.count()).toBeGreaterThan(3);
   });
 
+  test('keeps the profile and settings visible in a short window', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 640 });
+    await page.addInitScript(() => {
+      const key = 'ai-job-hunter-preferences';
+      const prefs = JSON.parse(localStorage.getItem(key) ?? '{}');
+      prefs.state.userName = 'Test User';
+      localStorage.setItem(key, JSON.stringify(prefs));
+    });
+    await page.goto('/e2e.html');
+    const sidebar = page.locator('aside.app-sidebar');
+    const identity = sidebar.getByText('Test User', { exact: true });
+    const settings = sidebar.getByRole('link', { name: 'Settings', exact: true });
+    await expect(identity).toBeInViewport();
+    await expect(settings).toBeInViewport();
+    await settings.click();
+    await expect(page).toHaveURL(/settings/);
+    await expect(identity).toBeInViewport();
+  });
+
   test('navigates to the Jobs route via the sidebar', async ({ page }) => {
     await page.goto('/e2e.html');
     await page.getByRole('link', { name: /jobs/i }).first().click();
