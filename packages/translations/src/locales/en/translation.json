@@ -570,7 +570,7 @@
       "linkUrlPlaceholder": "https://…",
       "removeLink": "Remove link",
       "photo": "Photo",
-      "photoHint": "Optional. Used by the photo templates (Portrait, Lebenslauf). Stored on this device; only leaves it if you turn on self-hosted sync, which sends it to your own sync server.",
+      "photoHint": "Optional. Used by the photo templates (Portrait, Lebenslauf). Stored locally and included in app backups and, when enabled, self-hosted sync.",
       "photoAlt": "Profile photo",
       "photoUpload": "Upload photo",
       "photoRemove": "Remove photo",
