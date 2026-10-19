@@ -8,12 +8,12 @@ import { AISystemStatus } from '@/features/dashboard/components/AISystemStatus';
 import { JobPipelineOverview } from '@/features/dashboard/components/JobPipelineOverview';
 import { NextStepTile } from '@/features/dashboard/components/NextStepTile';
 import { QUICK_ACTIONS } from '@/features/dashboard/constants';
-import { useUserName } from '@/store/preferences-store';
+import { useDisplayName } from '@/services';
 
 function Dashboard() {
   const { t } = useTranslation();
   const router = useRouter();
-  const userName = useUserName();
+  const userName = useDisplayName();
 
   return (
     <div

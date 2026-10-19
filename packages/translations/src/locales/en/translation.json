@@ -570,7 +570,7 @@
       "linkUrlPlaceholder": "https://…",
       "removeLink": "Remove link",
       "photo": "Photo",
-      "photoHint": "Optional. Used by the photo templates (Portrait, Lebenslauf). Kept on your device only — never uploaded.",
+      "photoHint": "Optional. Used by the photo templates (Portrait, Lebenslauf). Stored locally and included in app backups and, when enabled, self-hosted sync.",
       "photoAlt": "Profile photo",
       "photoUpload": "Upload photo",
       "photoRemove": "Remove photo",
@@ -1020,6 +1020,7 @@
         "disabling": "Turning off…",
         "disableFailed": "Couldn't turn off sync.",
         "disclosure": "Sync sends everything in an app backup — applications and their history, résumés and other documents, AI generations, your contact profile, job preferences, AI provider settings, referrals, autopilots and usage records — to the server you enter here, and to no one else. Passwords, API keys and the sync token never sync; the token stays in your OS keychain. Whoever runs that server can read what it stores, so use your own server or one you trust.",
+        "scopeNote": "Display nicknames, appearance, language, output tone, reasoning effort, applicant availability and notice periods are not included. Sync runs while the app is open: after startup, every 15 minutes, or when you choose Sync now.",
         "loading": "Checking sync status…",
         "loadFailed": "Couldn't read the sync status.",
         "retry": "Retry"
