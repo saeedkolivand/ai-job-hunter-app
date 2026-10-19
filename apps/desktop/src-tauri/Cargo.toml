@@ -188,7 +188,8 @@ tauri-plugin-store = "2"
 tauri-plugin-websocket = "2"
 
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# Sync hashes numeric payloads before and after their JSON/SQLite round trip.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 
 # HTTP client used by all in-process scrapers and the AI/cover-letter pipeline.
 # rustls-tls is added for the cover_letter pipeline (API calls use rustls client).

@@ -4,6 +4,24 @@ use super::*;
 use crate::sync::rules::{decide, Decision, Local};
 use crate::sync::state::BaselineEntry;
 
+#[test]
+fn numeric_payload_hash_survives_the_wire_round_trip() {
+    for cost in [
+        9.500900000000001e-05_f64,
+        9.969900000000001e-05,
+        9.010100000000001e-05,
+    ] {
+        let payload = json!({"estCostUsd": cost});
+        let received: Value =
+            serde_json::from_str(&serde_json::to_string(&payload).unwrap()).unwrap();
+        assert_eq!(received, payload);
+        assert_eq!(
+            crate::sync::envelope::record_hash(&received),
+            crate::sync::envelope::record_hash(&payload)
+        );
+    }
+}
+
 fn env(rev: u64, device: &str, schema: u32, payload: Value) -> Envelope {
     Envelope {
         store: "items".into(),

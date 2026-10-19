@@ -162,7 +162,7 @@ impl RealDevice {
             &self.spend,
             json!([{"id": "sp-1", "createdAt": 1, "provider": "ollama",
             "model": "m", "inputTokens": 1, "outputTokens": 2, "thinkingTokens": 0,
-            "estCostUsd": 0.0}]),
+            "estCostUsd": 0.00009500900000000001}]),
         );
         import(
             &self.dedup,
