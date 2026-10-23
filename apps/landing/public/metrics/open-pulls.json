@@ -1,5 +1,19 @@
 [
   {
+    "number": 1462,
+    "title": "feat(aggregator): send a keyword body for an optional LinkedIn jobs actor",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1462",
+    "draft": false,
+    "created_at": "2026-10-22T18:40:23Z",
+    "updated_at": "2026-10-22T18:40:41Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "johnisanerd"
+    }
+  },
+  {
     "number": 1461,
     "title": "chore: bump @hookform/resolvers from 5.9.1 to 6.0.0",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1461",

@@ -1,5 +1,17 @@
 [
   {
+    "sha": "8849a5a8cebf8179f3b973a4fc022167ecaced13",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-10-22T08:34:26Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "d75787c1b991999c8a7c7f036a3a200fc8e46a0f",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1181,18 +1193,6 @@
       "message": "refactor(desktop): bring generation, settings and ai-generate under 300 code lines (#1335)",
       "author": {
         "date": "2026-10-06T13:31:53Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "83aeeded4c7fb1b4e9e54ebde32f8a27a6ecb3ed",
-    "commit": {
-      "message": "refactor(desktop): bring the applications and autopilot features under 300 code lines (#1334)",
-      "author": {
-        "date": "2026-10-06T13:07:56Z"
       }
     },
     "author": {
