@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.159.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.158.0...v0.159.0) (2026-10-24)
+
+### ✨ Features
+
+* **aggregator:** send a keyword body for an optional LinkedIn jobs actor ([#1462](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1462)) (@johnisanerd) ([d03407f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/d03407ffe4fea90137d56b5a08ec96aacb77486d))
+
+### 🐛 Bug Fixes
+
+* **tracking:** avoid misleading application status badges ([#1441](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1441)) (@NimaNabi) ([d38c31d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/d38c31d25f309558f7a635eac482f23730340426))
+
 ## [0.158.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.157.1...v0.158.0) (2026-10-17)
 
 ### ✨ Features
