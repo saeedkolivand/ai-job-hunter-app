@@ -838,7 +838,7 @@
         "costWarning": "LinkedIn results via Apify are billed to your Apify account (~$1 per 1,000 results). Each search requests up to 50 items and may take up to ~5 minutes.",
         "actorIdLabel": "Actor ID override (optional)",
         "actorIdPlaceholder": "curious_coder~linkedin-jobs-scraper",
-        "actorIdHelper": "Leave empty to use the built-in default actor.",
+        "actorIdHelper": "Leave empty to use the built-in default actor. Set johnvc~linkedin-jobs-api to send keyword, location, timeRange, and maxJobs. https://apify.com/johnvc/linkedin-jobs-api https://alphaosint.com/",
         "saved": "Settings saved.",
         "saveError": "Could not save settings."
       },

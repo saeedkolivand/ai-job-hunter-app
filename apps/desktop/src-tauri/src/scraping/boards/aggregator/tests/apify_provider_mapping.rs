@@ -145,6 +145,74 @@ fn apify_maps_alternate_field_names_and_constructs_url_from_id() {
         .contains("Write Rust"));
 }
 
+/// The optional actor sends keyword, location, and a time window. Its job rows
+/// use jobId, postedDate, and description, and error rows are dropped.
+#[test]
+fn optional_linkedin_jobs_actor_uses_keyword_input_and_job_fields() {
+    let body = apify_run_body(
+        OPTIONAL_LINKEDIN_JOBS_ACTOR,
+        "rust",
+        "Berlin",
+        Some("week"),
+        50,
+    );
+    let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(value["keyword"], "rust");
+    assert_eq!(value["location"], "Berlin");
+    assert_eq!(value["timeRange"], "past-week");
+    assert_eq!(value["maxJobs"], 50);
+    assert!(value.get("urls").is_none());
+
+    let default_body = apify_run_body(APIFY_DEFAULT_ACTOR, "rust", "Berlin", Some("week"), 50);
+    let default_value: serde_json::Value = serde_json::from_str(&default_body).unwrap();
+    assert!(default_value["urls"][0]
+        .as_str()
+        .unwrap()
+        .contains("f_TPR=r604800"));
+    assert_eq!(default_value["count"], 50);
+
+    let item: ApifyItem = serde_json::from_value(serde_json::json!({
+        "result_type": "job",
+        "title": "Example role",
+        "companyName": "",
+        "jobUrl": "https://www.linkedin.com/jobs/view/1",
+        "jobId": "1",
+        "postedDate": "2026-01-02T03:04:05Z",
+        "description": ""
+    }))
+    .unwrap();
+    let posting = map_apify_item(item, 0).expect("optional job row maps");
+    assert_eq!(posting.title, "Example role");
+    assert_eq!(posting.company, "");
+    assert_eq!(posting.url, "https://www.linkedin.com/jobs/view/1");
+    assert_eq!(posting.external_id.as_deref(), Some("linkedin-1"));
+
+    let error: ApifyItem = serde_json::from_value(serde_json::json!({
+        "result_type": "error",
+        "title": "Example role",
+        "jobUrl": "https://www.linkedin.com/jobs/view/1",
+        "error_type": "CollectionError"
+    }))
+    .unwrap();
+    assert!(map_apify_item(error, 0).is_none());
+}
+
+/// `postedDate` may be a date-only `YYYY-MM-DD`; it maps to midnight UTC.
+#[test]
+fn apify_parses_date_only_posted_date() {
+    let item: ApifyItem = serde_json::from_value(serde_json::json!({
+        "title": "Example role",
+        "jobUrl": "https://www.linkedin.com/jobs/view/2",
+        "postedDate": "2026-06-20"
+    }))
+    .unwrap();
+    let p = map_apify_item(item, 0).expect("date-only row maps");
+    let expected_ts = chrono::DateTime::parse_from_rfc3339("2026-06-20T00:00:00Z")
+        .unwrap()
+        .timestamp_millis();
+    assert_eq!(p.posted_at, Some(expected_ts));
+}
+
 /// An item with no title — or a title but no URL and no id — is skipped (None).
 #[test]
 fn apify_skips_item_without_title_or_url() {

@@ -838,7 +838,7 @@
         "costWarning": "LinkedIn-Ergebnisse über Apify werden Ihrem Apify-Konto in Rechnung gestellt (~1 $ pro 1.000 Ergebnisse). Jede Suche fordert bis zu 50 Einträge an und kann bis zu ~5 Minuten dauern.",
         "actorIdLabel": "Actor-ID-Überschreibung (optional)",
         "actorIdPlaceholder": "curious_coder~linkedin-jobs-scraper",
-        "actorIdHelper": "Leer lassen, um den integrierten Standard-Actor zu verwenden.",
+        "actorIdHelper": "Leer lassen, um den integrierten Standard-Actor zu verwenden. johnvc~linkedin-jobs-api sendet keyword, location, timeRange und maxJobs. https://apify.com/johnvc/linkedin-jobs-api https://alphaosint.com/",
         "saved": "Einstellungen gespeichert.",
         "saveError": "Einstellungen konnten nicht gespeichert werden."
       },

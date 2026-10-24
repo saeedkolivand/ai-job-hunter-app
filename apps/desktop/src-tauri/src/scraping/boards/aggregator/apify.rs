@@ -22,6 +22,10 @@ use super::JobProvider;
 /// `apifyLinkedinActorId` setting.
 pub(super) const APIFY_DEFAULT_ACTOR: &str = "curious_coder~linkedin-jobs-scraper";
 
+/// Optional actor. Selected only when `apifyLinkedinActorId` is exactly this id.
+/// It takes `keyword`, `location`, `timeRange`, and `maxJobs` instead of search URLs.
+pub(super) const OPTIONAL_LINKEDIN_JOBS_ACTOR: &str = "johnvc~linkedin-jobs-api";
+
 // ponytail: HARD cost ceiling. Apify bills per dataset result, so every run is
 // bounded by `count = APIFY_MAX_ITEMS`; we NEVER issue an unbounded fetch. The
 // opt-in toggle (gated in `is_configured`) is the second, mandatory cost gate —
@@ -107,13 +111,48 @@ pub(super) fn build_linkedin_search_url(
     format!("https://www.linkedin.com/jobs/search/?keywords={q}&location={loc}&f_TPR={f_tpr}")
 }
 
+/// Actor input. The default actor still receives search URLs and `count`.
+/// The optional actor receives the keyword and location the search already has.
+pub(super) fn apify_run_body(
+    actor_id: &str,
+    query: &str,
+    location: &str,
+    date_filter: Option<&str>,
+    max_items: u32,
+) -> String {
+    if actor_id == OPTIONAL_LINKEDIN_JOBS_ACTOR {
+        let time_range = match apify_f_tpr(date_filter) {
+            "r86400" => "past-day",
+            "r604800" => "past-week",
+            _ => "past-month",
+        };
+        return serde_json::json!({
+            "keyword": query,
+            "location": location,
+            "timeRange": time_range,
+            "maxJobs": max_items,
+        })
+        .to_string();
+    }
+    serde_json::json!({
+        "urls": [build_linkedin_search_url(query, location, date_filter)],
+        "count": max_items,
+    })
+    .to_string()
+}
+
 /// Try to parse the actor's `postedAt` into epoch millis: RFC-3339 first, then a
-/// bare epoch (seconds scaled to millis, or millis as-is). A relative string
-/// ("2 weeks ago") yields `None` — an absent posted date is acceptable.
+/// date-only `YYYY-MM-DD` (midnight UTC), then a bare epoch (seconds scaled to
+/// millis, or millis as-is). A relative string ("2 weeks ago") yields `None` —
+/// an absent posted date is acceptable.
 fn parse_apify_posted_at(s: &str) -> Option<i64> {
     let s = s.trim();
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
         return Some(dt.timestamp_millis());
+    }
+    if let Ok(d) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        let midnight = d.and_hms_opt(0, 0, 0)?;
+        return Some(midnight.and_utc().timestamp_millis());
     }
     if let Ok(n) = s.parse::<i64>() {
         // < 10^12 ≈ seconds (any plausible ms epoch is far larger).
@@ -135,15 +174,18 @@ pub(super) struct ApifyItem {
     pub(super) location: Option<String>,
     #[serde(default, rename = "jobUrl")]
     pub(super) job_url: Option<String>,
-    #[serde(default, deserialize_with = "de_opt_string_or_number")]
+    #[serde(default, alias = "jobId", deserialize_with = "de_opt_string_or_number")]
     pub(super) id: Option<String>,
+    #[serde(default, rename = "result_type")]
+    pub(super) result_type: Option<String>,
     #[serde(
         default,
         rename = "postedAt",
+        alias = "postedDate",
         deserialize_with = "de_opt_string_or_number"
     )]
     pub(super) posted_at: Option<String>,
-    #[serde(default, rename = "descriptionText")]
+    #[serde(default, rename = "descriptionText", alias = "description")]
     pub(super) description_text: Option<String>,
     #[serde(default, rename = "jobDescription")]
     pub(super) job_description: Option<String>,
@@ -195,6 +237,9 @@ pub(super) fn apify_fetch_options(body: String, token: &str) -> FetchOptions {
 /// item lacks BOTH a usable title and a usable URL (no `jobUrl` and no `id` to
 /// construct one) — such an item can't be opened, so it's dropped.
 pub(super) fn map_apify_item(item: ApifyItem, now: i64) -> Option<JobPosting> {
+    if item.result_type.as_deref() == Some("error") {
+        return None;
+    }
     let title = item
         .title
         .map(|s| s.trim().to_string())
@@ -330,7 +375,6 @@ impl JobProvider for ApifyLinkedInProvider {
         }
 
         let token = self.token.as_deref().unwrap_or("");
-        let search_url = build_linkedin_search_url(query, location, date_filter);
 
         // Dynamic cost cap: honour the caller's remaining budget (amount - primary.len())
         // passed in by `search_with_providers`, capped at the absolute maximum.
@@ -341,11 +385,7 @@ impl JobProvider for ApifyLinkedInProvider {
         let max_items = amount.unwrap_or(APIFY_MAX_ITEMS).min(APIFY_MAX_ITEMS);
         let endpoint = build_apify_endpoint(&self.actor_id, max_items);
 
-        let body = serde_json::json!({
-            "urls": [search_url],
-            "count": max_items,
-        })
-        .to_string();
+        let body = apify_run_body(&self.actor_id, query, location, date_filter, max_items);
 
         // POST via the shared scraping client.
         //
