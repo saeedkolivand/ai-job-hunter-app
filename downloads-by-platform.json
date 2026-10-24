@@ -1,0 +1,9 @@
+{
+  "macArm": 72,
+  "macIntel": 26,
+  "winExe": 213,
+  "winMsi": 29,
+  "linuxAppImage": 62,
+  "linuxDeb": 49,
+  "linuxRpm": 23
+}
