@@ -15,7 +15,7 @@
       },
       {
         "name": "latest.json",
-        "download_count": 151
+        "download_count": 177
       },
       {
         "name": "linux-AI-Job-Hunter-0.158.0-1.x86_64.rpm",
@@ -23,7 +23,7 @@
       },
       {
         "name": "linux-AI-Job-Hunter_0.158.0_amd64.AppImage",
-        "download_count": 7
+        "download_count": 8
       },
       {
         "name": "linux-AI-Job-Hunter_0.158.0_amd64.AppImage.sig",
@@ -51,7 +51,7 @@
       },
       {
         "name": "macos-AI-Job-Hunter_0.158.0_aarch64-apple-silicon.dmg",
-        "download_count": 6
+        "download_count": 9
       },
       {
         "name": "macos-AI-Job-Hunter_0.158.0_x64-intel.dmg",

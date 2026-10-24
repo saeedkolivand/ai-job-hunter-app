@@ -1,5 +1,17 @@
 [
   {
+    "sha": "a4a1e0d5cf845bb932c55cbd3ec55ff42011e061",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-10-23T08:30:32Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "8849a5a8cebf8179f3b973a4fc022167ecaced13",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1181,18 +1193,6 @@
       "message": "refactor(desktop): bring the documents feature under 300 code lines per file (#1336)",
       "author": {
         "date": "2026-10-06T13:51:35Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "09c3eae4da0a17b1b78f1af399596ff8453b9c64",
-    "commit": {
-      "message": "refactor(desktop): bring generation, settings and ai-generate under 300 code lines (#1335)",
-      "author": {
-        "date": "2026-10-06T13:31:53Z"
       }
     },
     "author": {
