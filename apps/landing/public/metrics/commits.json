@@ -1,5 +1,77 @@
 [
   {
+    "sha": "4ae3f6ec14063b6cd50f7dcbb2f76062e18cfd8f",
+    "commit": {
+      "message": "chore: sync landing download version to v0.159.0",
+      "author": {
+        "date": "2026-10-24T21:34:35Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "4517de5db8fcaf52c1b256dbda1448df1746305b",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.159.0 [skip ci]",
+      "author": {
+        "date": "2026-10-24T21:34:09Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "5e72a5e8dc4253ad7d6f61ab436ed61d4d6cfa6c",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-10-24T21:07:23Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "6a4e27e3bfccb4c8692d63e7861ae19eec760423",
+    "commit": {
+      "message": "chore(release): 0.159.0 [skip ci]",
+      "author": {
+        "date": "2026-10-24T20:48:33Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "d03407ffe4fea90137d56b5a08ec96aacb77486d",
+    "commit": {
+      "message": "feat(aggregator): send a keyword body for an optional LinkedIn jobs actor (#1462)",
+      "author": {
+        "date": "2026-10-24T20:46:36Z"
+      }
+    },
+    "author": {
+      "login": "johnisanerd"
+    }
+  },
+  {
+    "sha": "d848c1053c1b4aeb9c42fde30f82de7965d24efa",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-10-24T08:05:33Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "a4a1e0d5cf845bb932c55cbd3ec55ff42011e061",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1121,78 +1193,6 @@
       "message": "fix(desktop): log the error class, not the raw error, when header seeding or metadata extraction fails (#1344)",
       "author": {
         "date": "2026-10-06T14:45:38Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "2a57841e7ae2cc4186eb09c7b98188e8cd327c99",
-    "commit": {
-      "message": "docs: repoint docs and code comments at the files the ts split moved (#1343)",
-      "author": {
-        "date": "2026-10-06T14:45:30Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "058745e8aabccb3306f0ed6ef7e639844f6b18c9",
-    "commit": {
-      "message": "refactor(ui): bring the design system's over-cap files under 300 code lines (#1338)",
-      "author": {
-        "date": "2026-10-06T14:28:35Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "2ff86def6ba062923330309cbdb73564db187b7b",
-    "commit": {
-      "message": "refactor(prompts): bring locale tables, links and the over-cap prompt suites under 300 code lines (#1340)",
-      "author": {
-        "date": "2026-10-06T14:28:05Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "4c4279deab11ef2c363dd0036f9dfe6b10d7761d",
-    "commit": {
-      "message": "refactor(landing): split the architecture map, agent fleet and tech radar tables under 300 code lines (#1337)",
-      "author": {
-        "date": "2026-10-06T14:27:24Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "15ad9dd0cc20231401419c39d647e0001f9bd97b",
-    "commit": {
-      "message": "refactor(shared): bring the shared contracts and codegen scripts under 300 code lines (#1339)",
-      "author": {
-        "date": "2026-10-06T14:20:53Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "23f8367d799ca2ddac3c54de36f3f0dcd0816d15",
-    "commit": {
-      "message": "refactor(desktop): bring the documents feature under 300 code lines per file (#1336)",
-      "author": {
-        "date": "2026-10-06T13:51:35Z"
       }
     },
     "author": {
