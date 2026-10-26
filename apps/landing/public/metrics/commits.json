@@ -1,5 +1,125 @@
 [
   {
+    "sha": "e60ca21ee11509ac2c34c0620523f22c24a85abe",
+    "commit": {
+      "message": "chore: bump the vitest group across 1 directory with 3 updates (#1455)",
+      "author": {
+        "date": "2026-10-25T16:33:53Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "8f9c99bc25157768000e9a5388c0b1587e30be73",
+    "commit": {
+      "message": "chore: bump cycjimmy/semantic-release-action from 7.1.2 to 8.1.3 (#1459)",
+      "author": {
+        "date": "2026-10-25T13:53:24Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "4366c741d8f0598b2c0e9dca208d00d99fd14c92",
+    "commit": {
+      "message": "chore: bump the codeql-action group across 1 directory with 3 updates (#1454)",
+      "author": {
+        "date": "2026-10-25T13:52:55Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "0f6113443d3d54d0e594d9ec625290ef6ab041b4",
+    "commit": {
+      "message": "chore: bump the desktop-rust group across 1 directory with 13 updates (#1465)",
+      "author": {
+        "date": "2026-10-25T13:51:05Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "443c91341ea4cd8f59c580e3861141521d655e1d",
+    "commit": {
+      "message": "chore: bump tauri-plugin-sentry in /apps/desktop/src-tauri (#1457)",
+      "author": {
+        "date": "2026-10-25T13:49:54Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "7d2dfa16fa673351ce05580723728936d4fb4144",
+    "commit": {
+      "message": "chore: bump the ci-actions group across 1 directory with 5 updates (#1464)",
+      "author": {
+        "date": "2026-10-25T13:49:06Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "6f1e3d5e0dbebc0e76c5d4f5f44b34895260c2a1",
+    "commit": {
+      "message": "chore: bump the javascript group across 1 directory with 38 updates (#1463)",
+      "author": {
+        "date": "2026-10-25T13:43:57Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "19a6f3d5ff6d758f2f51a51700d1c0114cdf0141",
+    "commit": {
+      "message": "chore: bump @hookform/resolvers from 5.9.1 to 6.0.0 (#1461)",
+      "author": {
+        "date": "2026-10-25T09:47:57Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "e8fa2d4adad92870c35cae1a54c9ce3f4de9a58a",
+    "commit": {
+      "message": "chore: bump web-ext from 10.7.0 to 10.8.0 in /apps/extension/tools/amo (#1453)",
+      "author": {
+        "date": "2026-10-25T09:42:50Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "b6ef6c9e41de2fb6c2e2ac71ca493381b4fbe1d9",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-10-25T08:22:55Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "4ae3f6ec14063b6cd50f7dcbb2f76062e18cfd8f",
     "commit": {
       "message": "chore: sync landing download version to v0.159.0",
@@ -1073,126 +1193,6 @@
       "message": "perf(ai): run cover-letter company research alongside strategy and draft (#1371)",
       "author": {
         "date": "2026-10-07T00:29:48Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "12af5fc2b75cef6d875f9e9ab308f345c4028034",
-    "commit": {
-      "message": "perf(ai): run the mechanical pipeline stages at the lowest reasoning tier (#1370)",
-      "author": {
-        "date": "2026-10-07T00:21:19Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "93cb4945d1de6e0aa8f1cabc16b2ba2b9c282cd7",
-    "commit": {
-      "message": "chore(release): 0.157.0 [skip ci]",
-      "author": {
-        "date": "2026-10-06T20:40:09Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "f5fbede9eb93ff2297257b3e1edb432137744583",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-06T19:55:17Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "0139d5c7461622cc3a2dece66bec4a443fc6047d",
-    "commit": {
-      "message": "fix(ai): strip provider keys verbatim at the completer and embed seams, and redact header-style key echoes (#1350)",
-      "author": {
-        "date": "2026-10-06T19:30:35Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "651e7368735c5e2b7f8ee7e95ab59730bbb4996a",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-06T17:54:35Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "2bd3c21182a96712d673beb5d74600a595eab7ea",
-    "commit": {
-      "message": "fix(ai): redact upstream provider error text where it is built, and on the regenerate and embed edges (#1349)",
-      "author": {
-        "date": "2026-10-06T17:42:08Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "a68a904851837e1d46f8dbe8cfc77d18da6f102f",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-06T15:43:44Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "062c6c19ce63724d32b3510feec7a4f0827b9096",
-    "commit": {
-      "message": "fix(ai): redact provider errors before they reach the model list and key test in settings (#1347)",
-      "author": {
-        "date": "2026-10-06T15:20:47Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "9cd2fb5bc304ed258498033e61b78517a95b26a5",
-    "commit": {
-      "message": "fix(extension): gate bridge verbs on authentication, pin the handshake transport, accept popup requests only from extension pages (#1345)",
-      "author": {
-        "date": "2026-10-06T15:05:55Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "333c2ad02b0ff65506ef38b4bff6b2e83839ff1d",
-    "commit": {
-      "message": "fix(desktop): log the error class, not the raw error, when header seeding or metadata extraction fails (#1344)",
-      "author": {
-        "date": "2026-10-06T14:45:38Z"
       }
     },
     "author": {
