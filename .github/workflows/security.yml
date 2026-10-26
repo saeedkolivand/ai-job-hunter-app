@@ -202,19 +202,22 @@ jobs:
       - name: 🦀 Setup Rust (Tauri)
         uses: ./.github/actions/setup-rust
 
-      - name: 📥 Install cargo-audit
+      # cargo-deny, not bare `cargo audit`: it reads the triaged `[advisories] ignore`
+      # list in deny.toml, so this sweep and the PR gate share one source of truth
+      # (bare cargo-audit re-failed on advisories already triaged there).
+      - name: 📥 Install cargo-deny
         uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
         with:
-          tool: cargo-audit
+          tool: cargo-deny
 
-      - name: 🔍 Run Cargo Audit
+      - name: 🔍 Run Cargo Deny (advisories)
         id: cargo-audit
         continue-on-error: true
         working-directory: apps/desktop/src-tauri
-        run: cargo audit
+        run: cargo deny check advisories
 
       - name: ❌ Check for Audit Failures
         if: steps.cargo-audit.outcome == 'failure'
         run: |
-          echo "::error::cargo audit found vulnerabilities. Review the audit output above."
+          echo "::error::cargo deny found vulnerabilities. Review the audit output above."
           exit 1

@@ -1,6 +1,6 @@
 # Dependency map (pointer)
 
-Last updated: 2026-07-16
+Last updated: 2026-10-27
 
 For the live graph use **graphify** — MCP `query_graph "what depends on <X>"` / `shortest_path "<A>" "<B>"` when connected, else the `graphify query` / `graphify path` CLI, or `graphify-out/GRAPH_REPORT.md` for hubs/communities. This file only fixes the **boundary rules** and where manifests live.
 
@@ -18,7 +18,7 @@ For the live graph use **graphify** — MCP `query_graph "what depends on <X>"` 
 
 ## Manifests (where to look)
 
-- Rust: `apps/desktop/src-tauri/Cargo.toml` / `Cargo.lock`. Supply-chain policy: `apps/desktop/src-tauri/deny.toml` (`cargo deny check`, `cargo audit`).
+- Rust: `apps/desktop/src-tauri/Cargo.toml` / `Cargo.lock`. Supply-chain policy: `apps/desktop/src-tauri/deny.toml` (`cargo deny check`).
 - JS: root `package.json` + `pnpm-lock.yaml`; per-package `package.json` (`packages/*`, `apps/desktop`). Audit: `pnpm audit` + dependency-review (CI).
 - Tauri: `apps/desktop/src-tauri/tauri.conf.json`, `apps/desktop/src-tauri/capabilities/default.json`.
 

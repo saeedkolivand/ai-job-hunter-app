@@ -1,6 +1,6 @@
 # Security rules (the security authority's knowledge)
 
-Last updated: 2026-10-05
+Last updated: 2026-10-27
 
 For `tauri-security-reviewer` (cross-cutting authority). Security/data findings round **UP**. Anchors below are real repo locations.
 
@@ -50,7 +50,7 @@ For `tauri-security-reviewer` (cross-cutting authority). Security/data findings 
 
 ## Supply chain
 
-- `apps/desktop/src-tauri/deny.toml` (`cargo deny check`, `cargo audit`), `pnpm audit`, dependency-review. New deps must be license-checked and vuln-clean; a known-vulnerable dep is HIGH/CRITICAL.
+- `apps/desktop/src-tauri/deny.toml` (`cargo deny check`), `pnpm audit`, dependency-review. New deps must be license-checked and vuln-clean; a known-vulnerable dep is HIGH/CRITICAL.
 
 [tauri]: https://tauri.app
 [ollama]: https://ollama.com

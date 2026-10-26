@@ -1069,7 +1069,7 @@ jobs:
 
       # Supply-chain policy (advisories, licenses, bans, sources). cargo-deny's
       # advisory check covers RUSTSEC, gating vulnerabilities on every PR (the
-      # weekly standalone cargo-audit in security.yml stays as a scheduled sweep).
+      # weekly sweep in security.yml re-runs the same advisory check on a schedule).
       - name: 🛡️ Cargo Deny
         working-directory: apps/desktop/src-tauri
         run: |

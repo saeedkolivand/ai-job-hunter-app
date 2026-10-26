@@ -13,8 +13,22 @@ packages:
 
 # Security overrides — pin transitive deps to patched ranges.
 # esbuild <0.28.1: GHSA-gv7w-rqvm-qjhr (RCE via NPM_CONFIG_REGISTRY); transitive dev-only (vitest/vite/storybook chains).
+# The rest: 2026-10 high/critical advisories, all transitive and within each
+# parent's own semver range (handlebars via semantic-release, fast-uri via ajv,
+# brace-expansion via eslint plugins' minimatch, undici via semantic-release,
+# browserslist/source-map-js via babel/tailwind, js-yaml via cosmiconfig, zod via
+# eslint-plugin-react-hooks). Drop each once the lockfile resolves past it unaided.
 overrides:
   esbuild: '>=0.28.1 <0.29'
+  handlebars@4: ^4.7.10
+  fast-uri@3: ^3.1.7
+  brace-expansion@1: ^1.1.20
+  undici@6: ^6.29.1
+  undici@7: ^7.30.1
+  browserslist@4: ^4.28.7
+  source-map-js@1: ^1.2.2
+  js-yaml@4: ^4.3.2
+  eslint-plugin-react-hooks>zod: ^4.6.6
 allowBuilds:
   '@ast-grep/cli': true
   '@swc/core': true
