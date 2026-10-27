@@ -85,9 +85,9 @@ export function Hero() {
           id="hero-dood"
           role="button"
           tabIndex={0}
-          aria-label="poke the guy"
+          aria-label="don't click me, poke the guy"
         >
-          <div className="bubble" />
+          <div className="bubble" aria-hidden="true" />
           <div className="dontclick" aria-hidden="true">
             <div className="dc-inner">
               <svg className="dc-arrow" viewBox="0 0 50 44">

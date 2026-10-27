@@ -13,7 +13,7 @@ export function CookieGag() {
       <div>
         <button
           onClick={() => document.getElementById('cookie')?.remove()}
-          aria-label="dismiss cookie notice"
+          aria-label="ok, dismiss cookie notice"
         >
           ok
         </button>
