@@ -1,5 +1,101 @@
 [
   {
+    "sha": "77c991a226e372e9c35e585905caa158589b7d1c",
+    "commit": {
+      "message": "chore: sync landing download version to v0.159.1",
+      "author": {
+        "date": "2026-10-27T02:01:02Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "b27c1dcf3f761caddf86409b9ef2689901bf2eea",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.159.1 [skip ci]",
+      "author": {
+        "date": "2026-10-27T02:00:34Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "fbef767f778ddedce23680fb61bc7a82ce9392c7",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-10-27T01:35:58Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "ab51e6ffaff6bb228a5f41afb1e6cdbb88365a0d",
+    "commit": {
+      "message": "chore(release): 0.159.1 [skip ci]",
+      "author": {
+        "date": "2026-10-27T01:20:53Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "32b066b807bd72affc73516f5ac3eb7819e62992",
+    "commit": {
+      "message": "fix: skip the crash supervisor inside the snap, and tidy github actions (#1469)",
+      "author": {
+        "date": "2026-10-27T01:18:26Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "55f34ed30ad6ae1e0a0eaebd45aa6062344cf513",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-10-27T01:07:33Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "4c686f8e65448b50e4bac68c3e5a6a1b7ef71bb9",
+    "commit": {
+      "message": "fix(deps): unbreak the linux build and clear the october security advisories (#1466)",
+      "author": {
+        "date": "2026-10-27T00:42:53Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "dbc5715fbf6972f5d8ffd82e68d1cca643e751f9",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-10-26T08:51:45Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "e60ca21ee11509ac2c34c0620523f22c24a85abe",
     "commit": {
       "message": "chore: bump the vitest group across 1 directory with 3 updates (#1455)",
@@ -1097,102 +1193,6 @@
       "message": "perf(ai): humanize with line patches and run the résumé and letter arms together (#1375)",
       "author": {
         "date": "2026-10-07T06:04:59Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "2d3c3bf2aa503a5189f4ae60badf7475da55176e",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-07T05:39:23Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "d9c422c4174a95bbb44e023a0acea972f52bfa40",
-    "commit": {
-      "message": "chore(ai): persist content-free provider routing and timing per pipeline stage (#1374)",
-      "author": {
-        "date": "2026-10-07T05:14:55Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "386cb1f1e0acb180a3f1e7e78ec3b4ce65bcebe9",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-07T04:55:19Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "0f54d0145277eecf00a971641f4af04afab10132",
-    "commit": {
-      "message": "perf(ai): key the analyze cache on the job alone and trim unused stage output fields (#1373)",
-      "author": {
-        "date": "2026-10-07T04:43:18Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "ec1867b56834d5ac9a064faf5aa2eef803e54f52",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-07T02:08:47Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "99e825b92ee627b3afbda181e2ef79e7fc3176fc",
-    "commit": {
-      "message": "perf(ai): stream every completion and time out on silence, not wall clock (#1372)",
-      "author": {
-        "date": "2026-10-07T01:44:48Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "dc240e94fbc9aaeb9d2473fc24d6bfc5e2e7119f",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-07T00:42:16Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "387a75ca5bcfd522771bfcd1f3bfbbd4e2fff119",
-    "commit": {
-      "message": "perf(ai): run cover-letter company research alongside strategy and draft (#1371)",
-      "author": {
-        "date": "2026-10-07T00:29:48Z"
       }
     },
     "author": {
