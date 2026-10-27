@@ -101,20 +101,8 @@ jobs:
           # files) to protected main over the deploy key the other jobs already use.
           ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
-      - name: 📦 Setup pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-
-      - name: 🟢 Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: 📥 Install Dependencies
-        run: |
-          echo "::group::Installing dependencies"
-          pnpm install --frozen-lockfile
-          echo "::endgroup::"
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: ⚙️ Configure Git
         run: |
@@ -204,6 +192,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          persist-credentials: false
 
       - name: 🏷️ Resolve Version
         id: resolve
@@ -239,77 +228,27 @@ jobs:
         with:
           ref: ${{ steps.resolve.outputs.version }}
           fetch-depth: 1
+          persist-credentials: false
 
-      - name: 📦 Setup pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-
-      - name: 🟢 Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
         with:
-          node-version: 22
-          cache: pnpm
+          install: 'false'
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo
           key: ${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}
           restore-keys: |
             ${{ runner.os }}-turbo-
 
-      - name: 🦀 Setup Rust
-        # Pinned to the version in apps/desktop/src-tauri/rust-toolchain.toml
-        # (enforced by `pnpm check:toolchain-pin`, which reads the trailing
-        # "# <version>" comment below — keep it accurate)
-        # (same SHA as .github/actions/setup-rust — bump both together).
-        uses: dtolnay/rust-toolchain@032958afbdc797a9164d3bc0b56325c1308924a5 # 1.97.1
-
-      # Three independent ways this step can block forever on a hosted runner,
-      # each closed below. Without them it hung once for the full 60-minute job
-      # timeout and took the whole release with it (every downstream job -
-      # Create Release, update manifest, Homebrew cask, landing page - skipped).
-      #
-      # 1. needrestart is apt-hooked on ubuntu-22.04 and prompts "Which services
-      #    should be restarted?", which nothing answers in CI. DEBIAN_FRONTEND
-      #    alone does NOT suppress it - needrestart reads its own env var.
-      # 2. unattended-upgrades holds the dpkg lock, and apt waits for it with no
-      #    timeout by default. It is supposed to be disabled on hosted images and
-      #    currently is not: actions/runner-images#13271 (open, regressed in the
-      #    2025-10-23 images, affects 22.04 and 24.04). DPkg::Lock::Timeout makes
-      #    the wait bounded instead of infinite.
-      # 3. debconf can prompt on its own; DEBIAN_FRONTEND covers that one.
-      #
-      # timeout-minutes is the backstop that matters most: it turns "silently
-      # burn the hour and lose the release" into "fail in 15, re-run".
-      - name: 🐧 Install Linux Dependencies
-        if: runner.os == 'Linux'
-        timeout-minutes: 15
-        env:
-          DEBIAN_FRONTEND: noninteractive
-          NEEDRESTART_MODE: a
-        run: |
-          sudo apt-get update -o DPkg::Lock::Timeout=300
-          sudo apt-get install -y -o DPkg::Lock::Timeout=300 \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev \
-            libxdo-dev \
-            libssl-dev \
-            patchelf \
-            build-essential \
-            curl wget file
-
-      - name: 💾 Restore Rust Cache
-        uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: 🦀 Setup Rust (Tauri)
+        uses: ./.github/actions/setup-rust
         with:
-          workspaces: apps/desktop/src-tauri
-          cache-on-failure: true
           # Separate cache per macOS arch so the two legs don't clobber each
           # other (empty on Windows/Linux — single cache as before).
-          key: ${{ matrix.target }}
+          cache-key: ${{ matrix.target }}
 
       - name: 📥 Install Dependencies
         run: |
@@ -435,7 +374,7 @@ jobs:
           success() && matrix.platform == 'windows-latest' &&
           vars.MSIX_IDENTITY_NAME != '' && vars.MSIX_PUBLISHER != '' &&
           vars.MSIX_PUBLISHER_DISPLAY_NAME != ''
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: msix-store-package
           path: apps/desktop/src-tauri/target/msix/*.msix
@@ -687,7 +626,7 @@ jobs:
 
       - name: 📊 Upload Build Logs on Failure
         if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build-logs-${{ matrix.platform }}-${{ github.run_id }}
           # Restrict to logs and bundler output to avoid uploading multi-GB
@@ -796,20 +735,8 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: 📦 Setup pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-
-      - name: 🟢 Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: 📥 Install Dependencies
-        run: |
-          echo "::group::Installing dependencies"
-          pnpm install --frozen-lockfile
-          echo "::endgroup::"
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: 🔨 Build + Package Extension
         run: |
@@ -836,7 +763,7 @@ jobs:
       # verified, so what reaches the two stores cannot diverge from what is
       # attached to the GitHub Release.
       - name: 📦 Hand the zips to the store-publish jobs
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: extension-store-zips
           path: |
@@ -958,23 +885,11 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: 📦 Setup pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-
-      - name: 🟢 Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
-        with:
-          node-version: 22
-          cache: pnpm
-
       # NO `env:` here, and it must stay that way: this step runs the lifecycle
       # scripts of the whole dependency tree. The store credentials belong only
       # to the step that actually talks to the store, below.
-      - name: 📥 Install Dependencies
-        run: |
-          echo "::group::Installing dependencies"
-          pnpm install --frozen-lockfile
-          echo "::endgroup::"
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
 
       # Both zips come from one directory in package-extension, so they land at
       # the artifact root; the explicit path check below turns any surprise there
@@ -1120,25 +1035,13 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: 📦 Setup pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-
-      - name: 🟢 Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
-        with:
-          node-version: 22
-          cache: pnpm
-
       # NO `env:` on this step or the AMO tool install below, and it must stay
       # that way: between them they run the lifecycle scripts of the whole
       # workspace. WEB_EXT_API_KEY/SECRET can publish a Mozilla-signed version of
       # every add-on on the account, so they belong only to the single step that
       # talks to AMO.
-      - name: 📥 Install Dependencies
-        run: |
-          echo "::group::Installing dependencies"
-          pnpm install --frozen-lockfile
-          echo "::endgroup::"
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
 
       # web-ext is pinned by its OWN committed package-lock.json in an isolated
       # npm project outside the pnpm workspace — `npx web-ext@<version>` would
@@ -1285,7 +1188,7 @@ jobs:
       # is reproduced by unpacking THIS archive, not by rebuilding from the tag.
       - name: 📤 Upload the AMO source archive
         if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: amo-source-archive
           path: apps/extension/dist/ai-job-hunter-extension-source-*.zip
@@ -1466,7 +1369,7 @@ jobs:
       # below was verified end-to-end (a real store + lookup through
       # libsecret) in a headless WSL session before writing this.
       - name: 💾 Cache apt packages
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /var/cache/apt/archives/*.deb
           key: ${{ runner.os }}-apt-gnome-keyring-v1
@@ -1762,6 +1665,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          persist-credentials: false
 
       - name: 🏷️ Resolve Release Version
         id: version
@@ -1774,14 +1678,10 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: 📦 Setup pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-
-      - name: 🟢 Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+      - name: 📦 Setup Node + pnpm
+        uses: ./.github/actions/setup-node-pnpm
         with:
-          node-version: 22
-          cache: pnpm
+          install: 'false'
 
       - name: 🏷️ Generate latest.json
         run: |
@@ -1943,7 +1843,7 @@ jobs:
           ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
       - name: 🟢 Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           package-manager-cache: false
@@ -2024,7 +1924,7 @@ jobs:
           ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
       - name: 🟢 Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           package-manager-cache: false

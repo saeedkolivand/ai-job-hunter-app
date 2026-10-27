@@ -56,7 +56,7 @@ jobs:
       # key busts on dep or landing-source changes; restore-keys falls back to the
       # newest lockfile-scoped cache so an incremental rebuild still starts warm.
       - name: ♻️ Cache Next.js build
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: apps/landing/.next/cache
           key: ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('apps/landing/src/**', 'apps/landing/public/**') }}
@@ -136,10 +136,10 @@ jobs:
           cp -r packages/ui/storybook-static apps/landing/out/storybook
 
       - name: 📤 Upload artifact
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: apps/landing/out
 
       - name: 🚀 Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

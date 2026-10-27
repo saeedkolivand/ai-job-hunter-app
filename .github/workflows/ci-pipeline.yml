@@ -49,15 +49,11 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: 🔍 Dependency Review
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
@@ -89,15 +85,11 @@ jobs:
       extension: ${{ steps.filter.outputs.extension }}
 
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: 🧭 Path filter
         id: filter
@@ -157,15 +149,11 @@ jobs:
       cache-key: ${{ steps.cache-key.outputs.value }}
 
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
@@ -177,7 +165,7 @@ jobs:
         run: echo "value=${{ runner.os }}-turbo-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/turbo.json') }}" >> $GITHUB_OUTPUT
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo
           key: ${{ steps.cache-key.outputs.value }}
@@ -197,7 +185,7 @@ jobs:
           echo "::endgroup::"
 
       - name: 📦 Cache node_modules
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules
@@ -212,15 +200,11 @@ jobs:
     needs: dependencies
 
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
@@ -229,7 +213,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules
@@ -244,7 +228,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -449,15 +433,11 @@ jobs:
     if: needs.changes.outputs.frontend == 'true'
 
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
@@ -466,7 +446,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules
@@ -481,7 +461,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -545,15 +525,11 @@ jobs:
       checks: write # dorny/test-reporter creates a test-results check run
 
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
@@ -562,7 +538,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules
@@ -577,7 +553,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -594,7 +570,7 @@ jobs:
       # when the playwright version bumps) to skip the ~120 MB download.
       - name: 💾 Restore Playwright Browser Cache
         id: playwright-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/pnpm-lock.yaml') }}
@@ -689,7 +665,7 @@ jobs:
       # nothing. Both must be installed before the test step below.
       - name: 🦀 Install cargo-llvm-cov + nextest
         if: always()
-        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
+        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: cargo-llvm-cov,nextest
 
@@ -822,7 +798,7 @@ jobs:
 
       - name: 📊 Upload Test Results on Failure
         if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-results-${{ github.run_id }}
           # Restricted to coverage and Cargo test logs. Uploading the full
@@ -887,15 +863,11 @@ jobs:
     if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.rust == 'true'
 
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
@@ -904,7 +876,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules
@@ -919,7 +891,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -953,7 +925,7 @@ jobs:
 
       - name: 📊 Upload Build Artifacts on Failure
         if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build-artifacts-${{ github.run_id }}
           # Restricted to logs/output to avoid uploading the multi-GB
@@ -1010,15 +982,11 @@ jobs:
     if: needs.changes.outputs.rust == 'true'
 
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: 🦀 Setup Rust (Tauri)
         uses: ./.github/actions/setup-rust
@@ -1063,7 +1031,7 @@ jobs:
           echo "::endgroup::"
 
       - name: 🧰 Install cargo-deny + cargo-machete
-        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
+        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: cargo-deny,cargo-machete
 
@@ -1128,15 +1096,11 @@ jobs:
     if: needs.changes.outputs.extension == 'true'
 
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
@@ -1145,7 +1109,7 @@ jobs:
 
       - name: 💾 Restore node_modules Cache
         id: restore-node-modules
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules
@@ -1160,7 +1124,7 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: 💾 Restore Turbo Cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo
           key: ${{ needs.dependencies.outputs.cache-key }}
@@ -1208,15 +1172,11 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: 🔐 Gitleaks Scan
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0

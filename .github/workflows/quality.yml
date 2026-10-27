@@ -44,15 +44,11 @@ jobs:
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: 🧭 Path filter
         id: filter
@@ -70,18 +66,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
       - name: 🧰 Install typos
         id: install-typos
         continue-on-error: true
-        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
+        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: typos
       # Advisory: run typos ourselves so the findings land in the job Summary
@@ -119,14 +112,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
       - name: 🔗 Lychee link check (advisory)
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
@@ -139,14 +129,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
       # Advisory: knip's markdown reporter writes a readable table to the job
@@ -175,14 +162,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
       # i18next-cli rewrites the locale files from t() usage; a non-empty diff
@@ -205,14 +189,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
       # jsx-a11y via a SEPARATE config so the strict main lint is unaffected.
@@ -256,14 +237,11 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
       - name: 🦀 Setup Rust (Tauri)
         uses: ./.github/actions/setup-rust
       - name: 🦀 cargo check (all targets)
@@ -276,14 +254,11 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
       - name: 🦀 Setup Rust (Tauri)
         uses: ./.github/actions/setup-rust
       - name: 🦀 cargo check (all targets)
@@ -333,14 +308,11 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest]
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
       - name: 🦀 Setup Rust (Tauri)
         uses: ./.github/actions/setup-rust
       - name: 🔌 Scripted MCP stdio sessions (advisory)
@@ -355,18 +327,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          persist-credentials: false
       - name: 🦀 Setup Rust (Tauri)
         uses: ./.github/actions/setup-rust
       - name: 🧰 Install cargo-hack
-        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
+        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: cargo-hack
       - name: 🦀 Check each feature (advisory)
@@ -380,18 +349,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
       - name: 📥 Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # full history so the merge-base diff for --in-diff resolves
+          persist-credentials: false
       - name: 🦀 Setup Rust (Tauri)
         uses: ./.github/actions/setup-rust
       - name: 🧰 Install cargo-mutants
-        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
+        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: cargo-mutants
       - name: 🦀 Mutation testing on the diff (advisory)
@@ -412,7 +378,7 @@ jobs:
           cargo mutants --in-diff "$RUNNER_TEMP/mutants.diff" --timeout 180 || true
       - name: 📊 Upload mutants report
         if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mutants-${{ github.run_id }}
           path: apps/desktop/src-tauri/mutants.out/
@@ -435,11 +401,6 @@ jobs:
       contents: write # commit benchmark history to apps/landing/public/benchmarks on main (push runs)
       pull-requests: write # comment on a PR when a result regresses
     steps:
-      - name: 🛡️ Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
-        with:
-          egress-policy: audit
-
       # Full history + the release deploy key so the push-to-main run can
       # commit the refreshed dashboard back to main. PR runs check out WITHOUT
       # the key (and without persisted credentials): `cargo bench` executes PR
