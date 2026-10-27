@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793063253674,
+  "lastUpdate": 1793064958768,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "e0a9066bacecc55260891ed0ced7550f350e1cdb",
-          "message": "chore: stop committing generated images, and fix the note that said otherwise (#1066)\n\nTwenty files, 6.38 MB, none of them source. Each is rendered output of a\ngenerator that is itself committed, so every regeneration wrote another few MB\ninto history that no clone needs but every clone pays for.\n\nWhere each set went, and why they could not all go to the same place:\n\n- branding/marketing/0{1..4}.png and the extension's screenshots + promo tiles\n  are attached to the assets-v1 release as two zips. They are downloaded once\n  and re-uploaded by hand to Product Hunt and the Chrome Web Store, so GitHub\n  serving release assets as application/octet-stream with\n  Content-Disposition: attachment is the shape their use already wants.\n- docs/assets/templates-showcase.png could NOT go there. The README embeds it,\n  and an attachment-disposition octet-stream does not render in an img tag. It\n  now lives on a parentless `assets` branch and is served from\n  raw.githubusercontent.com, which answers image/png — the same transport the\n  README's badges and growth charts already use.\n\nicon-512.png stays tracked: build.mjs reads it as base64, so it is an input,\nnot output. The gitignore negates it explicitly.\n\nThree places would have quietly undone this:\n\n- docs/EXPORT_TEMPLATES.md instructed the reader to regenerate the showcase\n  banner \"and commit\" it. It now says where to publish it instead, and carries\n  the plumbing to do so. That snippet is tested, not assumed: run verbatim it\n  reproduces the exact tree hash this branch published, and its first draft\n  did not — `mktemp` creates an empty file and git rejects an empty index, so\n  it needs -u to hand back a path.\n- typst_engine/test.rs still writes the banner to the now-ignored path, which\n  is correct, but nothing there said not to force-add the result. It does now.\n- The extension's store-assets README described files that are no longer in a\n  clone. It points at the release zip.\n\nAlso corrected while adjacent: the gitignore claimed the /world clips \"ship as\nGitHub release assets (world-assets-vN)\". No such tag was ever cut and\nworld-config.ts says Cloudflare R2 — because scrub-engine.js loads clips with\nfetch().blob() and release downloads carry no Access-Control-Allow-Origin. The\nabandoned plan is now recorded as abandoned, with the reason.\n\nThis stops the growth; it does not undo it. The blobs stay in history until a\nrewrite, and the gitignore says so where someone would otherwise assume the\nrepo just got 6 MB smaller.\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
-          "timestamp": "2026-08-21T18:17:14+02:00",
-          "tree_id": "ba2522bdf16a4dc8d5f3c953adb633aa2ff1a310",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/e0a9066bacecc55260891ed0ced7550f350e1cdb"
-        },
-        "date": 1787329754811,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2264226,
-            "range": "± 50218",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2678144,
-            "range": "± 27954",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 322108,
-            "range": "± 5548",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4193,6 +4151,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 323749,
             "range": "± 14583",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "32b066b807bd72affc73516f5ac3eb7819e62992",
+          "message": "fix: skip the crash supervisor inside the snap, and tidy github actions (#1469)\n\n* fix(crash-reporting): skip the minidump supervisor inside the snap\n\nThe snap's strict confinement only allows abstract Unix sockets under the\nsnap's own name, and minidumper-child always binds `temp-socket-<uuid>`, so the\nsupervisor failed with EACCES and reported that on every launch (Sentry\nDESKTOP-2) while capturing nothing. Gate on platform::snap::is_packaged(),\nwhich also requires the running exe to live under $SNAP, so a .deb or dev build\nrun from a snapped terminal keeps its crash capture.\n\nCloses #1467\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* ci: drop harden-runner, share setup composites, cache apt downloads\n\n- remove step-security/harden-runner from every workflow\n- release.yml uses the setup-node-pnpm and setup-rust composites like every\n  other workflow, so setup renders as nested groups; setup-rust gains an\n  optional cache-key input\n- setup-rust caches the downloaded .debs (keyed on runner image and package\n  list) and bounds apt with timeouts: two Build Verification runs were\n  cancelled after the Azure mirror served 65 MB at ~48 kB/s\n- pin the composite's setup-node (was an unpinned @v6), align pnpm/action-setup\n  and rust-cache, and make every pin comment the exact tag its SHA resolves to\n- persist-credentials: false on checkouts whose jobs never use git credentials;\n  repo-charts gets a top-level permissions: {}\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* docs: mark the harden-runner parts of adr-0002 and adr-0003 superseded\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T02:18:26+01:00",
+          "tree_id": "61f88b5adb6dfb05dbae2a0f10b554d9aafb9767",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/32b066b807bd72affc73516f5ac3eb7819e62992"
+        },
+        "date": 1793064958195,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1439874,
+            "range": "± 50168",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 1634621,
+            "range": "± 49368",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 166622,
+            "range": "± 4091",
             "unit": "ns/iter"
           }
         ]
