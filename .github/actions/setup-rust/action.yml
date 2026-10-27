@@ -6,6 +6,10 @@ inputs:
     description: Comma-separated rustup components (e.g. "clippy, rustfmt").
     required: false
     default: ''
+  cache-key:
+    description: Extra swatinem/rust-cache key, to keep matrix legs (e.g. macOS arches) from clobbering each other's cache.
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -24,12 +28,41 @@ runs:
     # NOTE: cache-apt-pkgs-action does not actually install dev packages to the
     # system location pkg-config searches (reports "Clean installing" but
     # gdk-3.0.pc etc. are missing afterward) — use apt-get directly instead.
+    #
+    # Two ways apt can block forever on a hosted runner (it hung a release job
+    # for the full 60-minute timeout once), both closed below:
+    #  1. needrestart is apt-hooked on ubuntu-22.04 and prompts "Which services
+    #     should be restarted?"; DEBIAN_FRONTEND alone does not suppress it —
+    #     needrestart reads its own NEEDRESTART_MODE.
+    #  2. unattended-upgrades can hold the dpkg lock (actions/runner-images#13271)
+    #     and apt waits with no timeout by default; DPkg::Lock::Timeout bounds it.
+    # `timeout` stands in for a step timeout-minutes, which composite steps lack.
+    #
+    # The .deb archives are cached (a mirror once crawled at ~48 kB/s: 22 min for
+    # 65 MB). apt-get install still runs for real — only the download is skipped.
+    - name: 💾 Restore apt Archives
+      if: runner.os == 'Linux'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/apt-archives
+        # The package list lives in this file, so editing it busts the key.
+        key: apt-${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}-${{ env.ImageVersion }}-${{ hashFiles('.github/actions/setup-rust/action.yml') }}
+
     - name: 🐧 Install Linux Dependencies
       if: runner.os == 'Linux'
       shell: bash
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
+        APT_CACHE="$HOME/.cache/apt-archives"
+        mkdir -p "$APT_CACHE/partial"
+        # apt downloads as the _apt user, which needs to write partial/.
+        chmod 777 "$APT_CACHE/partial"
+        # Env set on the sudo line itself: sudo's env_reset would drop a step-level `env:`.
+        APT="sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a timeout 15m apt-get -o DPkg::Lock::Timeout=300"
+        $APT update
+        # Keep-Downloaded-Packages: the runner image may default it off, which would empty the cache.
+        $APT install -y \
+          -o Dir::Cache::Archives="$APT_CACHE" \
+          -o APT::Keep-Downloaded-Packages=true \
           libwebkit2gtk-4.1-dev \
           libgtk-3-dev \
           libayatana-appindicator3-dev \
@@ -41,9 +74,12 @@ runs:
           patchelf \
           build-essential \
           curl wget file
+        # apt ran as root: hand the dir back so the post-step cache save can read it.
+        sudo chown -R "$(id -u):$(id -g)" "$APT_CACHE"
 
     - name: 💾 Restore Rust Cache
-      uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         workspaces: apps/desktop/src-tauri
         cache-on-failure: true
+        key: ${{ inputs.cache-key }}

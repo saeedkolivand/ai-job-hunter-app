@@ -100,7 +100,8 @@
 //!   only the backtrace, debug-images, contexts and panic integrations; the
 //!   `log`/`tracing` ones are never automatic, and the one integration
 //!   [`client_options`] adds itself is the `MinidumpIntegration` crash
-//!   supervisor, which captures native crashes and no `log`/`tracing` record.
+//!   supervisor (skipped inside the snap, see `with_crash_supervisor`), which
+//!   captures native crashes and no `log`/`tracing` record.
 //!
 //! Three tests, one per leg, none of them redundant:
 //! `sentry_log_and_metric_pipelines_are_off_at_the_feature_gate` (the feature
@@ -370,7 +371,8 @@ fn client_options() -> sentry::ClientOptions {
     with_crash_supervisor(options)
 }
 
-/// Register the native-crash supervisor — the ONLY integration we add.
+/// Register the native-crash supervisor — the ONLY integration we add (except
+/// inside the snap, see below).
 ///
 /// Inside `sentry::init` it re-executes this binary as the crash-reporter
 /// process, which rebuilds its client from these same options (minus this
@@ -380,11 +382,30 @@ fn client_options() -> sentry::ClientOptions {
 /// app's argv can carry an `ajh://` deep link, which has no business in a second
 /// process. Every other knob stays at the integration's default.
 ///
+/// Skipped inside a snap: its strict confinement only allows abstract Unix
+/// sockets under the snap's own name, while the supervisor's socket name is not
+/// configurable, so it would fail to start and report that failure on every launch.
+///
 /// Split out and gated on the targets `sentry` compiles the module for, so the
 /// other targets get an identity function instead of a `let x = …; x` that
 /// clippy would reject.
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn with_crash_supervisor(options: sentry::ClientOptions) -> sentry::ClientOptions {
+    with_crash_supervisor_unless(
+        options,
+        cfg!(target_os = "linux") && crate::platform::snap::is_packaged(),
+    )
+}
+
+/// Pure inner half of [`with_crash_supervisor`], testable without a snap.
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn with_crash_supervisor_unless(
+    options: sentry::ClientOptions,
+    in_snap: bool,
+) -> sentry::ClientOptions {
+    if in_snap {
+        return options;
+    }
     options.add_integration(
         sentry::integrations::minidump::MinidumpIntegration::new().inherit_args(false),
     )

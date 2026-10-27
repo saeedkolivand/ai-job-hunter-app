@@ -44,6 +44,25 @@ fn minidump_supervisor_does_not_inherit_argv_and_keeps_every_other_default() {
     );
 }
 
+/// Inside the snap the supervisor is skipped; outside, it registers.
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[test]
+fn supervisor_is_skipped_only_inside_the_snap() {
+    let has_minidump = |in_snap| {
+        with_crash_supervisor_unless(sentry::ClientOptions::new(), in_snap)
+            .integrations
+            .iter()
+            .any(|i| {
+                i.as_ref()
+                    .as_any()
+                    .downcast_ref::<sentry::integrations::minidump::MinidumpIntegration>()
+                    .is_some()
+            })
+    };
+    assert!(!has_minidump(true), "snap must not register the supervisor");
+    assert!(has_minidump(false), "outside the snap it must register");
+}
+
 /// `argv` can carry an `ajh://` deep link, so it must never reach the reporter.
 ///
 /// The `Debug` pin above cannot see an `on_process` closure (the one hook that
