@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.159.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.159.0...v0.159.1) (2026-10-27)
+
+### 🐛 Bug Fixes
+
+* **deps:** unbreak the linux build and clear the october security advisories ([#1466](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1466)) ([4c686f8](https://github.com/saeedkolivand/ai-job-hunter-app/commit/4c686f8e65448b50e4bac68c3e5a6a1b7ef71bb9)), closes [#1465](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1465) [#1463](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1463)
+* skip the crash supervisor inside the snap, and tidy github actions ([#1469](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1469)) ([32b066b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/32b066b807bd72affc73516f5ac3eb7819e62992)), closes [#1467](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1467)
+
 ## [0.159.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.158.0...v0.159.0) (2026-10-24)
 
 ### ✨ Features
