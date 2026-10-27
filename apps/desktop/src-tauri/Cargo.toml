@@ -166,6 +166,10 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-notification = "2"
 # `ajh://` deep links → focus a specific autopilot. Every incoming URL/argv is
 # validated against a strict route allowlist before navigation (see `deeplink`).
+# rust-ini is held at 0.21.1 in Cargo.lock: deep-link 2.6.2 builds `ini::ParseOption`
+# with only the two fields 0.21.1 has, so 0.21.3 breaks the Linux build (E0063).
+# Don't `cargo update -p rust-ini` until a deep-link release ships
+# tauri-apps/plugins-workspace#3711; then drop this note and the pin.
 tauri-plugin-deep-link = "2"
 # Opt-in launch-at-login (default OFF) so autopilot can run as a background
 # discovery agent. Toggled only via our own `system_*` commands (Rust API), so

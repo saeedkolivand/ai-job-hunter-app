@@ -16,7 +16,18 @@ const byId = new Map(nodes.map((n) => [n.id, n]));
 export type Panel = { kind: 'default' } | { kind: 'node'; id: string };
 
 export function nodeAria(n: MapNode): string {
-  return `${n.label}${n.sub ? ' — ' + n.sub : ''}${n.role ? '. ' + n.role : ''}`;
+  // Starts with the node's visible text (label + sub) — WCAG 2.5.3 Label in Name.
+  // Badge counts follow in words.
+  const f = FIXES[n.id]?.length ?? 0;
+  const b = KNOWN_BUGS[n.id]?.length ?? 0;
+  const parts = [
+    f ? `${f} fix${f > 1 ? 'es' : ''}` : '',
+    b ? `${b} known bug${b > 1 ? 's' : ''}` : '',
+  ].filter(Boolean);
+  // axe counts the (aria-hidden) badge digits as visible text, so they must sit
+  // right after label+sub in the name; the words that explain them follow the role.
+  const visible = [n.label, n.sub, f || '', b || ''].filter(Boolean).join(' ');
+  return [`${visible}${n.role ? '. ' + n.role : ''}`, ...parts].join(', ');
 }
 
 // Render verbatim findings prose, turning its <b>…</b> emphasis into real React

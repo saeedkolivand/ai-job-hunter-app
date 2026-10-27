@@ -94,13 +94,17 @@ export const Nodes = memo(function Nodes() {
             <text className="lbl" x={n.x + 12} y={n.y + (n.sub ? n.h / 2 - 1 : n.h / 2 + 4)}>
               {n.label}
             </text>
+            {/* Whitespace between label and sub so the visible text reads "label sub" —
+                matches nodeAria (WCAG 2.5.3); SVG ignores it for layout. */}
+            {n.sub ? ' ' : null}
             {n.sub ? (
               <text className="sub" x={n.x + 12} y={n.y + n.h / 2 + 13}>
                 {n.sub}
               </text>
             ) : null}
+            {fixes || bugs ? ' ' : null}
             {fixes ? (
-              <g className="badge">
+              <g className="badge" aria-hidden="true">
                 <circle
                   cx={n.x + n.w - 10}
                   cy={n.y + 10}
@@ -114,8 +118,9 @@ export const Nodes = memo(function Nodes() {
                 </text>
               </g>
             ) : null}
+            {fixes && bugs ? ' ' : null}
             {bugs ? (
-              <g className="badge">
+              <g className="badge" aria-hidden="true">
                 <circle
                   cx={n.x + n.w - (fixes ? 28 : 10)}
                   cy={n.y + 10}

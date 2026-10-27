@@ -88,7 +88,7 @@ export function RadarSvg() {
             key={item.id}
             className={`tr-blip tr-blip--${item.ring}`}
             href={`#tr-entry-${item.id}`}
-            aria-label={`${label}. Jump to full entry below.`}
+            aria-label={`${i + 1} ${label}. Jump to full entry below.`}
           >
             <title>{label}</title>
             <g transform={`translate(${pos.x} ${pos.y})`}>

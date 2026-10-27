@@ -21,17 +21,13 @@ ignore = [
     # Add `"RUSTSEC-YYYY-NNNN", # reason + tracking link` here only for advisories
     # with no available fix, so the gate stays meaningful.
     # quick-xml <0.41 DoS-class advisories (quadratic attribute-duplicate
-    # check; unbounded NsReader namespace allocation) — actually patched in
-    # 0.39.4 per the GHSA data (cargo-deny's own "fixed in" field reports
-    # >=0.41.0, which is misleading here). All three locked versions
-    # (0.36.2/0.37.5/0.38.4, via docx-rs, feed-rs + tauri-winrt-notification,
-    # and citationberg/typst respectively) are transitive pins whose
-    # dependents accept no semver-compatible upgrade path — a 0.x minor bump
-    # is a breaking change under cargo's semver rules, so there is no
-    # cargo-update path even to 0.39.4, let alone 0.41. Exposure is bounded:
-    # docx/typst/notifications parse our own generated content; feed-rs
-    # parses board RSS already capped at 8 MB by the shared fetch layer.
-    # Remove when the upstream dependents bump their quick-xml requirement.
+    # check; unbounded NsReader namespace allocation), fixed in >=0.41.0
+    # per RustSec. The one copy left below 0.41 is
+    # 0.38.4 via citationberg 0.7.0 (typst -> hayagriva), its latest release;
+    # a 0.x minor bump is breaking under cargo's semver rules, so there is no
+    # cargo-update path. Exposure is bounded: typst parses our own generated
+    # content. Upstream already moved to 0.41 (typst/citationberg#44, not yet
+    # released). Remove when a citationberg release ships it.
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
     # zip <9 extraction advisories (SUID/SGID bits kept, symlink targets and
@@ -44,8 +40,9 @@ ignore = [
     # checked the download against this project's own updater key; docx-rs is
     # used to WRITE documents only, and its zip reader is never called. The
     # third path (chromiumoxide's browser fetcher) was removed by dropping the
-    # unused `fetcher`/`zip8` features. Remove when those dependents move to
-    # zip 9.
+    # unused `fetcher`/`zip8` features. docx-rs has merged zip 9
+    # (bokuweb/docx-rs#944, not yet released). Remove when those dependents
+    # ship a zip 9 release.
     "RUSTSEC-2026-0367",
     "RUSTSEC-2026-0368",
     "RUSTSEC-2026-0369",
