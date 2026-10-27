@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792876043714,
+  "lastUpdate": 1793063253674,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "ef07f430f049cf1b300a9b449534d0987730bba5",
-          "message": "feat: put the growth charts on the home page, and stop the repo doubling yearly (#1065)\n\n* feat: put the growth charts on the home page, and stop the repo doubling yearly\n\nThree things, one PR, because they touch the same workflows.\n\n## The charts were only ever in the README\n\nstars.svg and downloads.svg have regenerated daily since #1063 and were embedded\nnowhere but README.md. They now sit in a dark band between the testimonials and\nthe finale — the one place on the page whose background is the body's own\n#0a0c11, because gold measures 10.55:1 there and 1.44:1 on the finale's cream,\nwhich fails even the 3:1 floor for graphics.\n\npages.yml fetches them off the `badges` branch at build time rather than anyone\ncommitting them: 77 KB that changes every day is ~28 MB of history a year, the\nexact cost the parentless badges branch exists to avoid. They land in public/ so\nthey are served SAME-ORIGIN — pointing at raw.githubusercontent.com would have\nbeen the first third-party request this site has ever made, and is blocked\noutright on /mission-control by `img-src 'self' data:`. The fetch runs after the\nNext cache step, whose key hashes public/**, so a daily-changing file cannot bust\nthe build cache. A missing or empty file fails the build: the last good site\nstays up, rather than shipping a broken img onto the home page.\n\nrepo-charts.yml now dispatches pages.yml after publishing. Without it the site\ntrailed the README by a day — the nightly deploy fires at 03:17 and the charts\nregenerate at 04:17.\n\n## The animation was hiding the data, including in the README\n\nRemoved from the renderer entirely. Measured side by side on one page: embedded\nvia an img tag, the animated SVG drew its card, title, gridlines and axis labels\nbut NEVER the line, fill or annotation, while the identical file with the\nanimation stripped rendered perfectly. Chrome applies the animation there but\ndoes not advance its timeline, so animation-fill-mode:backwards pins the\nfrom-state forever.\n\nGitHub serves README images through camo the same way, so the charts merged this\nmorning have been rendering as empty cards on GitHub since. The next scheduled\nrun republishes them fixed. A chart whose data is visible only if a stylesheet\nanimates is not a chart.\n\n## The metrics snapshot was adding ~70 MB of history a year\n\nmetrics-snapshot.yml committed 3.4 MB of raw REST bodies to main nightly, on a\n54 MB repo — undoing the 147 MB -> 54 MB rewrite within a year. Every payload is\nnow field-allowlisted against the interfaces in types.ts, whose header already\nsays only the used fields are typed. 3.4 MB -> 155 KB:\n\n  closed-pulls  1210 KB ->  23 KB   (1.2 MB nightly for one median and one ratio)\n  releases       988 KB ->  58 KB\n  runs           805 KB ->  24 KB\n  commits        361 KB ->  30 KB\n\ncommits.json keeps only the subject line: its sole consumer is\n`.split('\\n', 1)[0]`, and the bodies in this repo run to forty lines. Verified\nequivalent on a single API response — same typed/fixish counts, same per-day\nsparkline buckets, same sha order.\n\nissues.json is deliberately left raw. realIssues() discriminates a PR with\n`i.pull_request === undefined`, a STRICT undefined check, and jq writes an absent\nkey as null. `null === undefined` is false, so the obvious filter reclassifies\nevery issue as a PR and silently zeroes the critical count, the needs-attention\nlist and time-to-first-response. Six kilobytes is not worth that.\n\nVerified by loading /mission-control against the slimmed files: all fifteen cards\npopulate. The one dash — CI gating pass rate — is pre-existing, not a regression:\nthe original committed runs.json has the same zero matches, because\nci-pipeline.yml triggers on pull_request so its runs never carry head_branch=main,\nwhich the snapshot query and gatingRuns() both require.\n\n## Also\n\nbenchmarks/data.js had 199 entries over 76 days and no cap — ~20 KB/day, forever.\nmax-items-in-chart: 100 bounds it; the alert compares against the previous entry\nso trimming old points cannot weaken it. docs/assets/banner.png (645 KB) is\ndeleted: README links banner.svg, and banner.png has zero references anywhere.\n\n* fix(landing): drop the dark band, keep the dark charts\n\nThe growth section was a full-bleed #0a0c11 band sitting between two cream\nsections, which meant it needed a cross-fade at BOTH edges. A\ncream-to-transparent gradient painted over near-black does not blend — it\nrenders as a white-to-black smear, twice, and that was the actual complaint. The\ncharts were never the problem.\n\nThe seam system works for the page's dark beats because those neighbour each\nother. It cannot rescue a single dark slab dropped into the cream run at the end\nof the page. So the section is now `--paper`, matching .testi directly above it,\nand there is no luminance jump left to fade: .testi's bottom fade becomes a\nno-op against its own colour, .finale's ::before goes away again, and only the\nbottom edge keeps a seam into .finale's slightly deeper cream — exactly the\nboundary .testi owned before this section existed.\n\nThe charts stay dark and sit on the cream as inset cards. The page already does\nthis with .screencap: a bounded dark card reads as an embedded screen, where a\nfull-bleed dark band read as a foreign slab.\n\nAlso fixes the caption, which was #b9c4d4 — a token for the dark beats, and\n1.50:1 on --paper, a clear fail for 15px body text. It now uses creature.css's\nown --muted #6b6459, chosen as the warm grey that clears AA on this surface at\n4.98:1.\n\nDetour worth recording: I first read this as a chart-colour problem and built a\nwhole second cream palette for them, since gold is 1.58:1 on paper. That was\nsolving the wrong thing — reverted. Fixing the section removed the need for it.\n\n* fix: name what the growth charts plot, not which way the line goes\n\nReview pass on the Growth section. Four real problems, all of them the same\nshape: a claim in the source that nothing would falsify once it went stale.\n\n- The alt text said the star count was \"climbing over time\". The SVGs are\n  rebuilt nightly from data this component never sees, so that is an assertion\n  about a number it cannot check — a lie the first flat or falling week. Both\n  alts now name the metric and stop there.\n- Three comments still described .growth as a dark #0a0c11 band, which it was\n  for exactly one draft before it became cream. One of them sat directly above\n  a second comment that contradicted it.\n- .finale > * was dead on arrival: it lifts content above a .finale::before\n  seam that this branch removed before merging. Added and orphaned in the same\n  PR.\n- .growth's seam gradient ended on a hand-copied #ece2cf whose entire job was\n  to equal .finale's background, kept in agreement by nothing. Both now read\n  --paper-deep, so the seam cannot silently drift off the section it fades into.\n\nGuards, each mutation-tested rather than assumed:\n\n- scripts/lib/line-chart-svg.test.mjs asserts the area fill, both pencil\n  passes, the endpoint and the peak annotation are present, and that nothing\n  in the output animates. That set is not arbitrary — it is exactly what the\n  animated build failed to paint, since Chrome applies a draw-on animation\n  inside an img but never advances its timeline, so the card and gridlines\n  rendered while the data did not. Five mutations (drop the fill, drop a pass,\n  drop the annotation, re-add an animation, strip the aria-label value) each\n  fail the suite.\n- The alt assertion was alt.length > 0, which alt=\" \" satisfies. It now\n  requires the metric noun and rejects directional words; restoring\n  \"climbing\", blanking an alt, or dropping the noun each fail.\n\nThe i18n and stylelint findings were checked and do not apply: apps/landing\ndepends on next, react and react-dom only, has zero @ajh/translations imports\nand is not localized, and this repo has no stylelint config at all — the rule\ncited fires on .testi's identical, untouched shape. var(--muted) was also\nrejected for .growth-note: the home route loads home.css alone, so it resolves\nto nothing there and the colour would fall back to full --ink. The comment now\nsays so, since that is the edit the next reader will reach for.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
-          "timestamp": "2026-08-21T17:21:34+02:00",
-          "tree_id": "6599270bfd8aa812d455ea100ced70c528f9ae09",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/ef07f430f049cf1b300a9b449534d0987730bba5"
-        },
-        "date": 1787327083739,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2288619,
-            "range": "± 36011",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2693275,
-            "range": "± 15456",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 300644,
-            "range": "± 8010",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4193,6 +4151,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 245873,
             "range": "± 6149",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4c686f8e65448b50e4bac68c3e5a6a1b7ef71bb9",
+          "message": "fix(deps): unbreak the linux build and clear the october security advisories (#1466)\n\n* fix(deps): unbreak the linux build and clear the october security advisories\n\ntauri-plugin-deep-link 2.6.2 (via #1465) builds ini::ParseOption with the two\nfields rust-ini 0.21.1 has; the locked 0.21.3 added two more, so every Linux CI\njob failed with E0063. Hold rust-ini at 0.21.1 until a deep-link release ships\ntauri-apps/plugins-workspace#3711.\n\nRust advisories: semver-compatible updates of quinn-proto, rustls-webpki,\nwebpki-roots, webpki-root-certs, ctutils and the zstd family; plist 1.10 and\nwayland-scanner 0.31.11 drop quick-xml 0.39. The weekly sweep now runs\ncargo deny check advisories, so it reads the same triaged ignore list as the PR\ngate instead of re-failing on it.\n\nnpm advisories: major-scoped pnpm overrides for handlebars, fast-uri,\nbrace-expansion, undici, browserslist, source-map-js, js-yaml and zod.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(landing): put visible text in accessible names for axe-core 4.14\n\naxe-core 4.14 (via #1463) enforces label-content-name-mismatch (WCAG 2.5.3)\nunder the a11y gate's tags, failing 177 nodes on /, /architecture-map and\n/tech-radar. Each accessible name now contains the element's visible text,\nfixed at the component that emits it; architecture-map nodes also spell their\nbadge counts out in words. Also corrects the deny.toml quick-xml note: RustSec\nlists the fix as >=0.41.0, so 0.39.4 was never patched.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T01:42:53+01:00",
+          "tree_id": "61bf1413d138b67eb2e1bea5941479ec02fb2adc",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/4c686f8e65448b50e4bac68c3e5a6a1b7ef71bb9"
+        },
+        "date": 1793063253513,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2233095,
+            "range": "± 63087",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2706665,
+            "range": "± 68843",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 323749,
+            "range": "± 14583",
             "unit": "ns/iter"
           }
         ]
