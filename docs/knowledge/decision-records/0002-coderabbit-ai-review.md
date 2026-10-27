@@ -6,6 +6,8 @@ amendments:
 
 # CodeRabbit is the always-on AI PR reviewer; the duplicated reviewdog/Danger/labeler lanes are retired
 
+> **Superseded in part (2026-10):** `step-security/harden-runner` was later removed from every workflow (commit `254f583e`, "ci: drop harden-runner, share setup composites, cache apt downloads"). Its mentions below are historical.
+
 ## Context
 
 The repo runs an 18-workflow CI program whose stated default is "Actions-native, zero

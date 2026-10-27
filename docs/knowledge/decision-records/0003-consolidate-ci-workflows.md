@@ -4,6 +4,8 @@ status: accepted
 
 # Consolidate the CI workflows (16 → 9) and DRY the job bootstrap
 
+> **Superseded in part (2026-10):** `step-security/harden-runner` was later removed from every workflow (commit `254f583e`, "ci: drop harden-runner, share setup composites, cache apt downloads"). Its mentions below are historical.
+
 ## Context
 
 The CI-tooling program deliberately landed one tool per workflow file (advisory-first,
