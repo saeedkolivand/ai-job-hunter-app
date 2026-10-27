@@ -181,7 +181,8 @@ fn every_accessor_shares_one_resolved_directory() {
 /// only integration is the minidump supervisor" rather than "none": the
 /// supervisor is an `Integration` too, but it captures native crashes and no
 /// `log`/`tracing` record, so what must stay true is that nothing ELSE is
-/// registered.
+/// registered (and the supervisor itself is skipped inside the snap, see
+/// `with_crash_supervisor`).
 ///
 /// One exception, stated rather than glossed: `send_default_pii` is `false`
 /// in `ClientOptions::default()` too, so that assertion catches someone
