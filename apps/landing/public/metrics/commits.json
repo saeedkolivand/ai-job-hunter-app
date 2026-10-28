@@ -1,5 +1,17 @@
 [
   {
+    "sha": "dbb80f0fdceb7d9856406250854641c1ad371c15",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-10-27T08:57:02Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "77c991a226e372e9c35e585905caa158589b7d1c",
     "commit": {
       "message": "chore: sync landing download version to v0.159.1",
@@ -1185,18 +1197,6 @@
     },
     "author": {
       "login": "github"
-    }
-  },
-  {
-    "sha": "819fa1efd3dc04ff4190a38cf9e48b3df00130e0",
-    "commit": {
-      "message": "perf(ai): humanize with line patches and run the résumé and letter arms together (#1375)",
-      "author": {
-        "date": "2026-10-07T06:04:59Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
     }
   }
 ]
