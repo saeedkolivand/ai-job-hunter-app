@@ -1,5 +1,103 @@
 [
   {
+    "number": 1476,
+    "title": "chore: bump the javascript group with 14 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1476",
+    "draft": false,
+    "created_at": "2026-10-28T16:19:10Z",
+    "updated_at": "2026-10-28T16:57:21Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1475,
+    "title": "chore: bump taiki-e/install-action from 2.87.30 to 2.87.31 in the ci-actions group",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1475",
+    "draft": false,
+    "created_at": "2026-10-28T16:10:01Z",
+    "updated_at": "2026-10-28T16:53:42Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1474,
+    "title": "chore: bump scraper from 0.27.0 to 0.29.0 in /apps/desktop/src-tauri",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1474",
+    "draft": false,
+    "created_at": "2026-10-28T16:08:45Z",
+    "updated_at": "2026-10-28T17:01:05Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1473,
+    "title": "chore: bump rusqlite from 0.40.2 to 0.41.0 in /apps/desktop/src-tauri",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1473",
+    "draft": false,
+    "created_at": "2026-10-28T16:08:36Z",
+    "updated_at": "2026-10-28T16:55:57Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1472,
+    "title": "chore: bump lopdf from 0.45.0 to 0.46.0 in /apps/desktop/src-tauri",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1472",
+    "draft": false,
+    "created_at": "2026-10-28T16:08:27Z",
+    "updated_at": "2026-10-28T16:54:19Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1471,
+    "title": "chore: bump parking_lot from 0.12.5 to 0.13.0 in /apps/desktop/src-tauri",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1471",
+    "draft": false,
+    "created_at": "2026-10-28T16:08:19Z",
+    "updated_at": "2026-10-28T17:02:07Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1470,
+    "title": "chore: bump zip from 9.0.5 to 9.1.2 in /apps/desktop/src-tauri in the desktop-rust group",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1470",
+    "draft": false,
+    "created_at": "2026-10-28T16:08:08Z",
+    "updated_at": "2026-10-28T16:40:38Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
     "number": 1436,
     "title": "fix(sync): preserve numeric payloads across json round trips",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1436",
