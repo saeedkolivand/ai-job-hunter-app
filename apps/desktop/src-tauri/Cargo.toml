@@ -245,7 +245,7 @@ uuid = { version = "1", features = ["v4"] }
 unicode-normalization = "0.1"
 
 base64 = "0.23"
-scraper = "0.27"
+scraper = "0.29"
 flate2 = "1.0"
 
 # OS-native secret storage: DPAPI (Windows), Keychain (macOS), libsecret (Linux).
