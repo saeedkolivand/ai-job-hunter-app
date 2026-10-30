@@ -40,6 +40,43 @@ test.describe('AI Job Hunter shell (mock client)', () => {
     await expect.poll(async () => links.count()).toBeGreaterThan(3);
   });
 
+  for (const height of [540, 640, 720, 900]) {
+    test(`keeps the sidebar footer accessible at ${height}px height`, async ({ page }) => {
+      await page.setViewportSize({ width: 1280, height });
+      await page.addInitScript(() => {
+        const key = 'ai-job-hunter-preferences';
+        const prefs = JSON.parse(localStorage.getItem(key) ?? '{}');
+        prefs.state.userName = 'Test User';
+        localStorage.setItem(key, JSON.stringify(prefs));
+      });
+      await page.goto('/e2e.html');
+      const sidebar = page.locator('aside.app-sidebar');
+      const identity = sidebar.getByText('Test User', { exact: true });
+      const settings = sidebar.getByRole('link', { name: 'Settings', exact: true });
+      const help = sidebar.getByRole('link', { name: /Help.*Support/ });
+      const version = sidebar.getByRole('button', { name: /^v\d+\./ });
+      await expect(identity).toBeInViewport();
+      await expect(settings).toBeInViewport();
+      await expect(help).toBeInViewport();
+      await expect(version).toBeInViewport();
+      const navigation = sidebar.locator('nav').first();
+      if (height <= 640) {
+        expect(await navigation.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+      }
+      const monitoring = navigation.getByRole('link', { name: 'Monitoring', exact: true });
+      await monitoring.scrollIntoViewIfNeeded();
+      await expect(monitoring).toBeInViewport();
+      if (height <= 640) {
+        expect(await navigation.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+      }
+      await expect(help).toBeInViewport();
+      await expect(version).toBeInViewport();
+      await settings.click();
+      await expect(page).toHaveURL(/settings/);
+      await expect(identity).toBeInViewport();
+    });
+  }
+
   test('navigates to the Jobs route via the sidebar', async ({ page }) => {
     await page.goto('/e2e.html');
     await page.getByRole('link', { name: /jobs/i }).first().click();
