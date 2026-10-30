@@ -1,5 +1,125 @@
 [
   {
+    "sha": "1b79bf6bc9bb3f98bc719cda8841cd1e9b942632",
+    "commit": {
+      "message": "chore: bump the javascript group across 1 directory with 6 updates (#1478)",
+      "author": {
+        "date": "2026-10-29T15:14:33Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "69f90c58f5477ff211bafa02c2b85227042732c3",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-10-29T12:53:18Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "e23820e1772ffcfa51ec902615eee9f108abe8f3",
+    "commit": {
+      "message": "chore: bump scraper from 0.27.0 to 0.29.0 in /apps/desktop/src-tauri (#1474)",
+      "author": {
+        "date": "2026-10-29T12:21:34Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "78f25873fb85afd1c27d439a7275c6e6acb6f4df",
+    "commit": {
+      "message": "chore: bump taiki-e/install-action (#1475)",
+      "author": {
+        "date": "2026-10-29T12:18:55Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "04275d9053ab34befb2bb70036755d42f551f4a4",
+    "commit": {
+      "message": "chore: bump parking_lot from 0.12.5 to 0.13.0 in /apps/desktop/src-tauri (#1471)",
+      "author": {
+        "date": "2026-10-29T12:18:36Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "2f38c426a543e50c88d6f888ac4879f5faba3d81",
+    "commit": {
+      "message": "chore: bump lopdf from 0.45.0 to 0.46.0 in /apps/desktop/src-tauri (#1472)",
+      "author": {
+        "date": "2026-10-29T12:18:22Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "f21d5edf04ed020b5ca9d3b99498d5d888b2a669",
+    "commit": {
+      "message": "chore: bump rusqlite from 0.40.2 to 0.41.0 in /apps/desktop/src-tauri (#1473)",
+      "author": {
+        "date": "2026-10-29T12:18:09Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "57627a1ee5e0e6250d7a927a152e018a64178dd8",
+    "commit": {
+      "message": "chore: bump the javascript group with 14 updates (#1476)",
+      "author": {
+        "date": "2026-10-29T12:17:46Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "cc0e0b394416f7876393207c1b4df6885b2fb9c5",
+    "commit": {
+      "message": "chore: bump zip in /apps/desktop/src-tauri in the desktop-rust group (#1470)",
+      "author": {
+        "date": "2026-10-29T12:13:49Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "8bcac9d1c9a4029ea7ebb1211d4bfc09af21b260",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-10-29T09:55:34Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "7c311f3e881b46b83db5f08fbf946c1c1ab4faa9",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1077,126 +1197,6 @@
     },
     "author": {
       "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "979cd5c7958310e3b8396b14739a77fd6e3e49a0",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-08T06:52:15Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "5f241803726e64880d30da8ae93df083b797e0aa",
-    "commit": {
-      "message": "perf(ai): write the cover letter beside the résumé draft when the provider can serve both (#1389)",
-      "author": {
-        "date": "2026-10-08T06:31:51Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "756fe4c37dfaae73bb8c8d20e31703230f13d807",
-    "commit": {
-      "message": "fix(desktop): import, contact seeding, export filename and monitoring fixes from the e2e round (#1388)",
-      "author": {
-        "date": "2026-10-08T06:17:11Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "8f5518fa1de526697d6bedba81738ee310dd9be4",
-    "commit": {
-      "message": "fix(desktop): referral, monitoring, settings search and copy polish from the e2e round (#1387)",
-      "author": {
-        "date": "2026-10-08T04:51:57Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "ef622c3b94b2b828fa234721b4e0051431cd2cc3",
-    "commit": {
-      "message": "fix(desktop): jobs list, letter preview, résumé checklist and model picker fixes from the e2e round (#1386)",
-      "author": {
-        "date": "2026-10-08T04:48:10Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "c4813aafdd863e041f8d5f307aa1b89dd101a69a",
-    "commit": {
-      "message": "fix(extension): show the auto-save notice only on its own tab and count skipped autofill fields (#1385)",
-      "author": {
-        "date": "2026-10-08T04:28:54Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "1b84b384e6fb7b38ce3c3b337f87249d01db511d",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-08T04:24:01Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "79c6ae90ec40fc2b865e591d58b4856894855827",
-    "commit": {
-      "message": "fix(ai): retry a degraded job analysis or strategy once and never cache it (#1384)",
-      "author": {
-        "date": "2026-10-08T04:05:01Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "6453654c4076316eb74db799be0ef64b5b81017e",
-    "commit": {
-      "message": "fix(pipeline): send the user's reasoning effort on the staged résumé run (#1383)",
-      "author": {
-        "date": "2026-10-07T20:04:24Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "dcaec0c4fe324e033258ded902ce56dee27ab002",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-07T10:13:34Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
     }
   }
 ]
