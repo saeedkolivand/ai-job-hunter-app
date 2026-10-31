@@ -1,5 +1,17 @@
 [
   {
+    "sha": "24da8a787efa8efc58787f04c663dae55c094cb1",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-10-30T09:58:10Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "1b79bf6bc9bb3f98bc719cda8841cd1e9b942632",
     "commit": {
       "message": "chore: bump the javascript group across 1 directory with 6 updates (#1478)",
@@ -1181,18 +1193,6 @@
       "message": "chore: bump the ci-actions group with 2 updates (#1378)",
       "author": {
         "date": "2026-10-08T08:31:04Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "7f44e56526897df1faeced9820d8b7fc7ab441c7",
-    "commit": {
-      "message": "chore: bump the desktop-rust group (#1377)",
-      "author": {
-        "date": "2026-10-08T08:30:57Z"
       }
     },
     "author": {
