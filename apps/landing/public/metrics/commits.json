@@ -1,5 +1,17 @@
 [
   {
+    "sha": "fac8496ef45c0ec2031641e6748a191f60f988ac",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-10-31T09:35:46Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "24da8a787efa8efc58787f04c663dae55c094cb1",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1181,18 +1193,6 @@
       "message": "chore: bump the vitest group with 3 updates (#1376)",
       "author": {
         "date": "2026-10-08T08:31:09Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "bb2b1b5b944bc69b9e1c03bc72250c4dc611f332",
-    "commit": {
-      "message": "chore: bump the ci-actions group with 2 updates (#1378)",
-      "author": {
-        "date": "2026-10-08T08:31:04Z"
       }
     },
     "author": {
