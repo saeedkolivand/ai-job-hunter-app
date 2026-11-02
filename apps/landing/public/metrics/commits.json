@@ -1,5 +1,17 @@
 [
   {
+    "sha": "7303ffaac379dff9a1d5ff6a42679e5ebe95b1b9",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-11-01T10:24:53Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "fac8496ef45c0ec2031641e6748a191f60f988ac",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1181,18 +1193,6 @@
       "message": "chore: bump motion from 13.4.0 to 14.0.0 (#1380)",
       "author": {
         "date": "2026-10-08T08:39:58Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "bce0012c3debd3c1fbcf65adb24c41e5fdc254a2",
-    "commit": {
-      "message": "chore: bump the vitest group with 3 updates (#1376)",
-      "author": {
-        "date": "2026-10-08T08:31:09Z"
       }
     },
     "author": {
