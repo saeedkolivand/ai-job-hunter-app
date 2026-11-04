@@ -2279,25 +2279,41 @@ dependencies = [
  "cssparser 0.37.0",
  "foldhash 0.2.0",
  "html5ever 0.39.0",
- "nom 8.0.0",
  "precomputed-hash",
  "selectors 0.38.0",
  "tendril",
 ]
 
 [[package]]
-name = "dom_smoothie"
-version = "0.18.2"
+name = "dom_query"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1afbed996f0bcb119c068504c7c504d625700d58c8bd862d6f66abd7ae7d3859"
+checksum = "498c698ac51127148a3984450e51fca7f01805a91d7a1f7a24af0a5f761e3385"
 dependencies = [
- "dom_query",
+ "bit-set 0.11.1",
+ "cssparser 0.38.0",
+ "foldhash 0.2.0",
+ "html5ever 0.40.1",
+ "memchr",
+ "nom 8.0.0",
+ "precomputed-hash",
+ "selectors 0.41.0",
+ "tendril",
+]
+
+[[package]]
+name = "dom_smoothie"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22343bf0885f3841bc1cc4cdfad8d3d1dd1658f4718bd1b17092f0bb9436d893"
+dependencies = [
+ "dom_query 0.29.0",
  "flagset",
  "foldhash 0.2.0",
  "gjson",
  "html-escape",
- "once_cell",
- "phf 0.13.1",
+ "itoa",
+ "phf 0.14.0",
  "tendril",
  "thiserror 2.0.21",
  "unicode-segmentation",
@@ -4894,9 +4910,9 @@ dependencies = [
 
 [[package]]
 name = "memchr"
-version = "2.8.2"
+version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
+checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "memmap2"
@@ -8938,7 +8954,7 @@ dependencies = [
  "brotli",
  "cargo_metadata",
  "ctor",
- "dom_query",
+ "dom_query 0.28.0",
  "dunce",
  "glob",
  "http 1.4.2",
@@ -11304,7 +11320,7 @@ dependencies = [
  "cookie",
  "crossbeam-channel",
  "dirs 7.0.0",
- "dom_query",
+ "dom_query 0.28.0",
  "dpi",
  "dunce",
  "gdkx11",
