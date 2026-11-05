@@ -252,7 +252,7 @@ flate2 = "1.0"
 # keyring v4 split into keyring-core (Entry API) + platform store crates.
 keyring-core = "1"
 
-sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+sysinfo = { version = "0.40", default-features = false, features = ["system"] }
 
 # Cross-platform dependencies
 rusqlite = { version = "0.41", features = ["bundled"] }
