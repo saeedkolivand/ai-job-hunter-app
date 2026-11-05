@@ -1,5 +1,17 @@
 [
   {
+    "sha": "5f5a78b8de44d9a3496171c3227e173648983a50",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-11-03T10:49:09Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "2fba0e6e454d9cc58ab5f206ac967f81486a0232",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1185,18 +1197,6 @@
     },
     "author": {
       "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "a9fd611d17415710a9cca41e99f55e420628cb1f",
-    "commit": {
-      "message": "chore: bump the javascript group across 1 directory with 8 updates (#1390)",
-      "author": {
-        "date": "2026-10-08T08:48:35Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
     }
   }
 ]
