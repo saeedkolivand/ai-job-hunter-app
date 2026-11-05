@@ -306,7 +306,7 @@ htmd = "0.5.4"
 # JSON-LD `JobPosting` matched — the guess itself stays as the final fallback
 # below it. MIT-licensed — permitted under deny.toml's `[licenses] allow`
 # list, enforced by CI's `cargo deny check`.
-dom_smoothie = "0.18"
+dom_smoothie = "0.19"
 
 # IMAP client for email-confirmation watching (task #23, opt-in, default OFF —
 # `email_watch`). `native-tls` (the crate's default), NOT `rustls-tls`: the
