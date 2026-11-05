@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ContactProfile } from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
+import { useUserName } from '@/store/preferences-store';
 
 import { keys } from '../query-client';
 
@@ -12,6 +13,13 @@ export const useContactProfile = () => {
     queryKey: keys.contactProfile.all,
     queryFn: () => api.contactProfile.get(),
   });
+};
+
+/** Keep the synced contact identity visible on installs with no local nickname. */
+export const useDisplayName = () => {
+  const localName = useUserName();
+  const { data: profile } = useContactProfile();
+  return localName?.trim() || profile?.fullName?.trim() || '';
 };
 
 export const useSaveContactProfile = () => {

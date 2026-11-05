@@ -25,9 +25,9 @@ import { Button, cn, Image, NavPill, transition, variants } from '@ajh/ui';
 import { ROUTES } from '@/constants/routes';
 import { getTimeGreeting } from '@/lib/greeting';
 import { TOOLTIP_HIDE_MS } from '@/lib/timings';
-import { useContactProfile } from '@/services';
+import { useContactProfile, useDisplayName } from '@/services';
 import { useAppVersion } from '@/services/use-system';
-import { useToggleSidebar, useUserName } from '@/store/preferences-store';
+import { useToggleSidebar } from '@/store/preferences-store';
 
 import { HEADED_SECTIONS, type NavTourId, PINNED_SECTION, type SidebarPage } from './nav';
 
@@ -64,7 +64,7 @@ function scrollPageToTop() {
 export function Sidebar() {
   const { t } = useTranslation();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const userName = useUserName();
+  const userName = useDisplayName();
   // Use the contact-profile photo (a local data: URL) as the footer avatar when set.
   const { data: contactProfile } = useContactProfile();
   const avatar = contactProfile?.photo;
@@ -117,8 +117,8 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="app-sidebar glass-surface m-3 mr-0 flex w-60 flex-col rounded-2xl p-3">
-      <div className="flex justify-end pb-2">
+    <aside className="app-sidebar glass-surface m-3 mr-0 flex min-h-0 w-60 flex-col rounded-2xl p-3">
+      <div className="flex shrink-0 justify-end pb-2">
         <Button
           variant="ghost"
           size="sm"
@@ -128,24 +128,26 @@ export function Sidebar() {
           <PanelLeftClose size={16} />
         </Button>
       </div>
-      <nav className="flex flex-col gap-4">
+      <nav className="min-h-0 flex-1 overflow-y-auto">
         {/* The pinned group is deliberately absent here — it has no heading and
             is rendered by the footer nav below. */}
-        {HEADED_SECTIONS.map((section) => (
-          <div key={section.labelKey}>
-            <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              {t(section.labelKey)}
+        <div className="flex flex-col gap-4">
+          {HEADED_SECTIONS.map((section) => (
+            <div key={section.labelKey}>
+              <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                {t(section.labelKey)}
+              </div>
+              <div className="flex flex-col gap-1">{section.pages.map(renderNavItem)}</div>
             </div>
-            <div className="flex flex-col gap-1">{section.pages.map(renderNavItem)}</div>
-          </div>
-        ))}
+          ))}
+        </div>
       </nav>
 
-      <nav className="mt-auto flex flex-col gap-1 border-t border-foreground/[0.06] pb-3 pt-3">
+      <nav className="flex shrink-0 flex-col gap-1 border-t border-foreground/[0.06] pb-3 pt-3">
         {PINNED_SECTION.pages.map(renderNavItem)}
       </nav>
 
-      <div className="space-y-2 px-3 pb-3">
+      <div className="shrink-0 space-y-2 px-3 pb-3">
         {userName && (
           <div className="flex items-center gap-2.5 px-1">
             {avatar ? (
