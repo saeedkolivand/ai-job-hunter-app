@@ -1,5 +1,89 @@
 [
   {
+    "number": 1484,
+    "title": "chore: bump @hookform/resolvers from 6.0.1 to 7.0.2",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1484",
+    "draft": false,
+    "created_at": "2026-11-04T16:30:36Z",
+    "updated_at": "2026-11-05T17:43:50Z",
+    "merged_at": "2026-11-05T17:27:54Z",
+    "closed_at": "2026-11-05T17:27:54Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1483,
+    "title": "chore: bump the javascript group with 28 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1483",
+    "draft": false,
+    "created_at": "2026-11-04T16:29:17Z",
+    "updated_at": "2026-11-05T17:24:15Z",
+    "merged_at": "2026-11-05T17:24:12Z",
+    "closed_at": "2026-11-05T17:24:13Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1482,
+    "title": "chore: bump the ci-actions group with 3 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1482",
+    "draft": false,
+    "created_at": "2026-11-04T16:10:42Z",
+    "updated_at": "2026-11-05T17:23:49Z",
+    "merged_at": "2026-11-05T17:23:46Z",
+    "closed_at": "2026-11-05T17:23:46Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1481,
+    "title": "chore: bump sysinfo from 0.39.6 to 0.40.1 in /apps/desktop/src-tauri",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1481",
+    "draft": false,
+    "created_at": "2026-11-04T16:10:12Z",
+    "updated_at": "2026-11-05T17:23:26Z",
+    "merged_at": "2026-11-05T17:23:22Z",
+    "closed_at": "2026-11-05T17:23:23Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1480,
+    "title": "chore: bump dom_smoothie from 0.18.2 to 0.19.0 in /apps/desktop/src-tauri",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1480",
+    "draft": false,
+    "created_at": "2026-11-04T16:10:03Z",
+    "updated_at": "2026-11-05T17:23:06Z",
+    "merged_at": "2026-11-05T17:23:04Z",
+    "closed_at": "2026-11-05T17:23:04Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1479,
+    "title": "chore: bump the desktop-rust group in /apps/desktop/src-tauri with 12 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1479",
+    "draft": false,
+    "created_at": "2026-11-04T16:09:50Z",
+    "updated_at": "2026-11-05T17:22:50Z",
+    "merged_at": "2026-11-05T17:22:48Z",
+    "closed_at": "2026-11-05T17:22:48Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
     "number": 1478,
     "title": "chore: bump the javascript group across 1 directory with 6 updates",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1478",
@@ -610,90 +694,6 @@
     "updated_at": "2026-10-09T03:46:58Z",
     "merged_at": "2026-10-07T04:43:18Z",
     "closed_at": "2026-10-07T04:43:18Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1374,
-    "title": "chore(ai): persist content-free provider routing and timing per pipeline stage",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1374",
-    "draft": false,
-    "created_at": "2026-10-07T05:14:53Z",
-    "updated_at": "2026-10-09T03:46:57Z",
-    "merged_at": "2026-10-07T05:14:56Z",
-    "closed_at": "2026-10-07T05:14:56Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1375,
-    "title": "perf(ai): humanize with line patches and run the résumé and letter arms together",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1375",
-    "draft": false,
-    "created_at": "2026-10-07T06:04:56Z",
-    "updated_at": "2026-10-09T03:46:56Z",
-    "merged_at": "2026-10-07T06:05:00Z",
-    "closed_at": "2026-10-07T06:05:00Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1383,
-    "title": "fix(pipeline): send the user's reasoning effort on the staged résumé run",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1383",
-    "draft": false,
-    "created_at": "2026-10-07T20:04:21Z",
-    "updated_at": "2026-10-09T03:46:55Z",
-    "merged_at": "2026-10-07T20:04:24Z",
-    "closed_at": "2026-10-07T20:04:24Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1384,
-    "title": "fix(pipeline): retry and never cache a job analysis or strategy below the quality floor",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1384",
-    "draft": false,
-    "created_at": "2026-10-08T04:04:58Z",
-    "updated_at": "2026-10-09T03:46:54Z",
-    "merged_at": "2026-10-08T04:05:01Z",
-    "closed_at": "2026-10-08T04:05:01Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1385,
-    "title": "fix(extension): show the auto-save notice only on its own tab and count skipped autofill fields",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1385",
-    "draft": false,
-    "created_at": "2026-10-08T04:28:52Z",
-    "updated_at": "2026-10-09T03:46:53Z",
-    "merged_at": "2026-10-08T04:28:55Z",
-    "closed_at": "2026-10-08T04:28:55Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1386,
-    "title": "fix(desktop): jobs list, letter preview, résumé checklist and model picker fixes from the e2e round",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1386",
-    "draft": false,
-    "created_at": "2026-10-08T04:48:08Z",
-    "updated_at": "2026-10-09T03:46:52Z",
-    "merged_at": "2026-10-08T04:48:11Z",
-    "closed_at": "2026-10-08T04:48:11Z",
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"

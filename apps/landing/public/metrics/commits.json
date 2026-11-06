@@ -1,5 +1,89 @@
 [
   {
+    "sha": "fac77234194be43c67b7c58fb836ec309f70f1aa",
+    "commit": {
+      "message": "chore: bump @hookform/resolvers from 6.0.1 to 7.0.2 (#1484)",
+      "author": {
+        "date": "2026-11-05T17:27:53Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "4150e63f79ac369ab5e27515f6793b641950ab98",
+    "commit": {
+      "message": "chore: bump the javascript group with 28 updates (#1483)",
+      "author": {
+        "date": "2026-11-05T17:24:12Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "40d818af88d5c14b1402a6ddd5eedc75606590da",
+    "commit": {
+      "message": "chore: bump the ci-actions group with 3 updates (#1482)",
+      "author": {
+        "date": "2026-11-05T17:23:46Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "45c9da0839a8c1e43d2c559a64912a6d132b7108",
+    "commit": {
+      "message": "chore: bump sysinfo from 0.39.6 to 0.40.1 in /apps/desktop/src-tauri (#1481)",
+      "author": {
+        "date": "2026-11-05T17:23:22Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "3371df11d3faa2e52c0699e27cd9bf8b500eac4b",
+    "commit": {
+      "message": "chore: bump dom_smoothie in /apps/desktop/src-tauri (#1480)",
+      "author": {
+        "date": "2026-11-05T17:23:03Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "a57ff8b83b5477d7ede4eeede0411aa205945de7",
+    "commit": {
+      "message": "chore: bump the desktop-rust group (#1479)",
+      "author": {
+        "date": "2026-11-05T17:22:47Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "c133b37ae50935df7f67e2b618d20401ce656c3c",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-11-05T10:50:52Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "5f5a78b8de44d9a3496171c3227e173648983a50",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1113,90 +1197,6 @@
     },
     "author": {
       "login": "github"
-    }
-  },
-  {
-    "sha": "683d92020dc9c500de0ae97ec89d122c7f8ecbc8",
-    "commit": {
-      "message": "fix: cap local structured calls, abandon stages on cancel, name provider errors (#1406)",
-      "author": {
-        "date": "2026-10-08T17:28:13Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "ad863b17141e3b62ca33e90322b8145922e67e90",
-    "commit": {
-      "message": "fix: keep ai generate run state alive across navigation (#1405)",
-      "author": {
-        "date": "2026-10-08T17:11:40Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "add3d36c106635ca8756958e9bda57b1268ec643",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-08T13:16:15Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "563d44611212ad2e38e2d52746bfe865ef575241",
-    "commit": {
-      "message": "fix(extension): refuse non-job pages on import, surface stalled answer drafts, and sync the side panel with saved status (#1404)",
-      "author": {
-        "date": "2026-10-08T12:51:04Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "22d7e241b2ecf03de16439a94e815a1978e64b7d",
-    "commit": {
-      "message": "fix(pipeline): fall back to keyword must-haves and warn when the job analysis stays empty (#1403)",
-      "author": {
-        "date": "2026-10-08T12:45:49Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "590013a6fc234739c8f5418b41c3b0c40c0b4f68",
-    "commit": {
-      "message": "fix(desktop): jobs search clear, split-view focus, narrow headers, dashboard counts and small ux gaps (#1401)",
-      "author": {
-        "date": "2026-10-08T11:12:32Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "1c6aae825fab519b7c40fd1549b5b6966bbb6273",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-08T10:32:25Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
     }
   }
 ]
