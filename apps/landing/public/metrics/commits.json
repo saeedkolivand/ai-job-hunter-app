@@ -1,5 +1,17 @@
 [
   {
+    "sha": "a65b67e538b35129a59aa01a67e8b166915f5366",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-11-06T10:49:47Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "fac77234194be43c67b7c58fb836ec309f70f1aa",
     "commit": {
       "message": "chore: bump @hookform/resolvers from 6.0.1 to 7.0.2 (#1484)",
@@ -1185,18 +1197,6 @@
     },
     "author": {
       "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "e494e2b66aae317c87958c9a0fb55d185a097706",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-08T17:40:54Z"
-      }
-    },
-    "author": {
-      "login": "github"
     }
   }
 ]
