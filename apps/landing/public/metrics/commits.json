@@ -1,5 +1,17 @@
 [
   {
+    "sha": "533e0cc715a40989664bc56b8c3c68a3c61dc215",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-11-07T10:02:57Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "a65b67e538b35129a59aa01a67e8b166915f5366",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1185,18 +1197,6 @@
     },
     "author": {
       "login": "github"
-    }
-  },
-  {
-    "sha": "dcb931effca447ed33b06dc99f3f1097be3aa069",
-    "commit": {
-      "message": "fix: prefer the full posting body over thin json-ld and tidy export names (#1407)",
-      "author": {
-        "date": "2026-10-08T17:51:11Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
     }
   }
 ]
