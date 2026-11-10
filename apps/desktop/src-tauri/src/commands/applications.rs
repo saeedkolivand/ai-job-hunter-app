@@ -314,10 +314,6 @@ pub async fn applications_save_from_posting(app: AppHandle, req: ApplicationTrac
     }
     let (mut meta, job_url, board) = creation_target(req);
     // #1450: fill the ad from the persisted autopilot found jobs when the caller sent none.
-    let records = app
-        .try_state::<std::sync::Arc<parking_lot::Mutex<crate::autopilot::AutopilotStore>>>()
-        .map(|s| s.lock().list())
-        .unwrap_or_default();
     let stored = store(&app)
         .find_by_job_url(&crate::applications::normalize_job_url(&job_url))
         .map(|a| a.job_description)
@@ -325,7 +321,11 @@ pub async fn applications_save_from_posting(app: AppHandle, req: ApplicationTrac
     meta.job_description = description::draft_description(
         Some(meta.job_description).filter(|d| !d.is_empty()),
         &job_url,
-        &records,
+        || {
+            app.try_state::<std::sync::Arc<parking_lot::Mutex<crate::autopilot::AutopilotStore>>>()
+                .map(|s| s.lock().list())
+                .unwrap_or_default()
+        },
         &stored,
     );
     let result = store(&app).upsert_for_origin(
