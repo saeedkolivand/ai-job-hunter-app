@@ -28,6 +28,7 @@ const BOILERPLATE_PHRASES: &[&str] = &[
     "privacy policy",
     "cookie policy",
     "copyright policy",
+    "your california privacy choices",
     "brand policy",
     "guest controls",
     "community guidelines",
@@ -67,11 +68,38 @@ const BOILERPLATE_PHRASES: &[&str] = &[
 /// can't drift on what counts as "no text" (issues #1106, #1443).
 pub fn description_is_blank(description: Option<&str>) -> bool {
     let Some(d) = description else { return true };
-    let mut rest = markdown_to_plain(d).to_lowercase();
-    for p in BOILERPLATE_PHRASES {
-        rest = rest.replace(p, " ");
-    }
-    !rest.chars().any(char::is_alphabetic)
+    !markdown_to_plain(d).lines().any(|line| {
+        let l = line.trim().to_lowercase();
+        let bare = l.trim_matches(|c: char| !c.is_alphanumeric());
+        if WHOLE_LINE_TOKENS.contains(&bare) || is_language_picker_line(line.trim()) {
+            return false;
+        }
+        let mut rest = l;
+        for p in BOILERPLATE_PHRASES {
+            rest = rest.replace(p, " ");
+        }
+        rest.chars().any(char::is_alphabetic)
+    })
+}
+
+/// Single words that are footer chrome only when they are a whole line by themselves; stripping
+/// them from inside a sentence ("Tell us about yourself") would corrupt real ad text.
+const WHOLE_LINE_TOKENS: &[&str] = &["about", "accessibility", "language", "select language"];
+
+/// LinkedIn guest language-picker line: short `<native name> (<Capitalized English name>)`,
+/// e.g. `Deutsch (German)`, `العربية (Arabic)`.
+fn is_language_picker_line(line: &str) -> bool {
+    let Some(inner) = line.strip_suffix(')').and_then(|l| l.rsplit_once(" (")) else {
+        return false;
+    };
+    let (outer, name) = inner;
+    let words = |t: &str| t.split_whitespace().count();
+    (1..=3).contains(&words(outer))
+        && (1..=2).contains(&words(name))
+        && name.split_whitespace().all(|w| {
+            let mut c = w.chars();
+            c.next().is_some_and(char::is_uppercase) && c.all(|x| x.is_alphabetic() || x == '-')
+        })
 }
 
 /// Strip markdown syntax from a scoring text blob so URL fragments and

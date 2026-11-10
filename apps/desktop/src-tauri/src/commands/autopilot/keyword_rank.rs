@@ -41,9 +41,9 @@ pub(crate) fn build_found_job(p: &JobPosting, resume: &str, found_at: u64) -> Fo
         .map(|blob| crate::documents::keywords::coverage_score(resume, &blob))
     };
     // Whether the scoring blob had any usable description/requirements text,
-    // matching `posting_text_blob`'s own notion of "usable" (non-empty after
-    // `markdown_to_plain` for description, non-empty after trim for each
-    // requirement). Title is deliberately excluded: a title-only blob (e.g.
+    // using `description_is_blank` for the description (empty after
+    // `markdown_to_plain`, or only login-wall/footer boilerplate) and non-empty
+    // after trim for each requirement. Title is deliberately excluded: a title-only blob (e.g.
     // LinkedIn's free-tier `description: Some("")`) is exactly the "don't
     // fully trust this number" case this flags — a title full of
     // résumé-matching words can round to a high coverage % with no JD text

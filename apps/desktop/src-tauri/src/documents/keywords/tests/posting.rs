@@ -287,3 +287,25 @@ fn not_blank_for_real_ads_even_short_mixed_or_non_english() {
         "Cerchiamo uno sviluppatore backend con esperienza in Rust."
     )));
 }
+
+/// Synthetic-but-realistic LinkedIn guest login wall + footer (written from the token list in #1443).
+#[test]
+fn realistic_guest_footer_is_blank() {
+    let wall =
+        "Sign in to view more\nJoin now\nAbout\nAccessibility\nUser Agreement\nPrivacy Policy\n\
+Your California Privacy Choices\nCookie Policy\nCopyright Policy\nBrand Policy\nGuest Controls\n\
+Community Guidelines\nLanguage\nالعربية (Arabic)\nČeština (Czech)\nDeutsch (German)\n\
+English (English)\nEspañol (Spanish)\n© 2026 LinkedIn Corporation";
+    assert!(description_is_blank(Some(wall)));
+    assert!(description_is_blank(Some(
+        "Sign in to view more\nAbout\nAccessibility\nUser Agreement"
+    )));
+}
+
+#[test]
+fn single_footer_words_inside_real_sentences_stay_non_blank() {
+    assert!(!description_is_blank(Some(
+        "Tell us about yourself and why you fit."
+    )));
+    assert!(!description_is_blank(Some("Language: German")));
+}
