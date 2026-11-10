@@ -11,7 +11,7 @@ fn resolved(title: &str, company: &str, url: &str) -> ResolvedIdentity {
 }
 
 #[test]
-fn drift_sets_a_review_and_same_clears_it() {
+fn drift_sets_a_review_and_only_dismissal_releases_it() {
     let mut job = found_job_full(
         "https://www.adzuna.de/land/ad/1",
         "Rust Engineer",
@@ -27,6 +27,11 @@ fn drift_sets_a_review_and_same_clears_it() {
         "Acme GmbH",
         "https://boards.greenhouse.io/acme/jobs/9",
     );
+    // A caller-supplied "same" identity must neither release the hold nor be written.
+    assert!(!job.check_resolved(&same));
+    assert!(job.identity_review.is_some());
+
+    assert!(job.dismiss_identity_review());
     assert!(job.check_resolved(&same));
     assert!(job.identity_review.is_none());
 }

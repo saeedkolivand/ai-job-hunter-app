@@ -67,17 +67,25 @@ impl IdentityReview {
 }
 
 impl FoundJob {
-    /// Run the identity verdict of `resolved` against this row. Same clears a
-    /// stale review; Drift sets one unless the user already dismissed this
-    /// exact drift. Returns whether the resolved posting is the same advert.
+    /// Run the identity verdict of `resolved` against this row. Drift sets a
+    /// review unless the user already dismissed this exact drift. Returns
+    /// whether the caller may write the resolved content to this row.
+    ///
+    /// A held row is never written and never released here: `resolved` comes
+    /// from the caller (the renderer, or an agent through
+    /// `scrape_update_description`), so letting a Same verdict clear the review
+    /// would let any caller lift a hold that only `dismiss_identity_review`
+    /// (human-only) may lift.
     pub(crate) fn check_resolved(&mut self, resolved: &ResolvedIdentity) -> bool {
+        if self.identity_review.is_some() {
+            return false;
+        }
         let stored = PostingIdentity {
             title: &self.title,
             company: &self.company,
             url: &self.url,
         };
         if identity_verdict(stored, resolved.as_posting()) == IdentityVerdict::Same {
-            self.identity_review = None;
             return true;
         }
         let dismissed = self.identity_dismissed.as_deref()
