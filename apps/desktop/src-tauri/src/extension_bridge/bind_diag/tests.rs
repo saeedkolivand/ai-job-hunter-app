@@ -19,8 +19,5 @@ fn record_read_clear_roundtrip_and_cli_message() {
         "{msg}"
     );
     clear(dir.path());
-    assert_eq!(
-        read(dir.path()),
-        None
-    );
+    assert_eq!(read(dir.path()), None);
 }

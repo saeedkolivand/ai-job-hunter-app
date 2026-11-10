@@ -72,7 +72,10 @@ async fn port_probe_returns_none_when_full_span_busy_graceful_disable() {
     let result = probe_ports(held_port..=held_port).await;
     let failures = result.expect_err("probe_ports must fail when the only port in range is busy");
     assert_eq!(failures.len(), 1);
-    assert!(failures[0].starts_with(&format!("{held_port}: ")), "{failures:?}");
+    assert!(
+        failures[0].starts_with(&format!("{held_port}: ")),
+        "{failures:?}"
+    );
 
     // Control: once released, that exact port becomes bindable again, proving the
     // None above was due to the held listener — not a bug.
@@ -94,12 +97,17 @@ async fn full_range_busy_lists_every_port_and_cli_message_surfaces_it() {
     };
     let failures = probe_ports(lo..=hi).await.expect_err("all busy");
     assert_eq!(failures.len(), 2, "{failures:?}");
-    assert!(failures[0].starts_with(&format!("{lo}: ")) && failures[1].starts_with(&format!("{hi}: ")));
+    assert!(
+        failures[0].starts_with(&format!("{lo}: ")) && failures[1].starts_with(&format!("{hi}: "))
+    );
     let dir = tempfile::TempDir::new().unwrap();
     super::super::bind_diag::record(dir.path(), &failures);
     let detail = super::super::bind_diag::read(dir.path()).unwrap();
     let msg = super::super::bind_diag::cli_message(&detail);
-    assert!(msg.contains(&failures[0]) && msg.contains(&failures[1]), "{msg}");
+    assert!(
+        msg.contains(&failures[0]) && msg.contains(&failures[1]),
+        "{msg}"
+    );
     drop((a, b));
 }
 
