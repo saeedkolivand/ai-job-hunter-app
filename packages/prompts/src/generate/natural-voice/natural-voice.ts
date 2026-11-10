@@ -856,7 +856,7 @@ export function antiAiTellProse(language?: string, depth: PromptDepth = 'full'):
  */
 export const HUMANIZE_LEXICAL = `SPECIFICITY AND BULLET VARIETY (adds to the bans above, never replaces them; resume tier stays ATS safe, no contractions or fragments):
 - SPECIFICITY: prefer the real number, tool, or project name the resume already gives over a generic claim. "Cut checkout latency from 480ms to 90ms with Redis caching" beats "improved performance using caching".
-- BULLET VARIETY: every bullet still opens with a strong past-tense action verb, but vary the verb and the sentence construction after it within a role so bullets are not identical Verb, What, Tech, metric templates. Rows of identically shaped bullets are the single biggest resume AI tell.
+- BULLET VARIETY: every bullet still opens with a strong past-tense action verb, but vary the verb and the sentence construction after it within a role so bullets are not identical Verb, What, Tech, metric templates. Rows of identically shaped bullets read as templated.
 - This adds variety and specificity only. Every number, tool, and project still has to already be in the resume, exactly as the rules above require.`;
 
 /**
@@ -868,7 +868,7 @@ export const HUMANIZE_LEXICAL = `SPECIFICITY AND BULLET VARIETY (adds to the ban
  * written, never WHAT is claimed.
  */
 export const HUMANIZE_PROSE = `SOUNDING HUMAN (positive moves; adds to the bans above, never replaces them):
-- CADENCE: mix short, punchy sentences of about 3 to 7 words with longer ones of about 20 to 30 words. Never let three sentences in a row run the same length or shape; flat, uniform rhythm is the single biggest 2026 AI-detector tell.
+- CADENCE: mix short complete sentences of about 3 to 7 words (not stacked fragments) with longer ones of about 20 to 30 words. Never let three sentences in a row run the same length or shape; uniform rhythm is what makes prose read as machine-made.
 - CONCRETE OVER GENERIC: reach for the exact number, tool, or project name the fenced resume already gives, and build around one real challenge and its outcome, instead of a claim so broad no one could disprove it.
 - CUT THE CLICHES: no "not just X but Y", no hedging preambles ("it is important to note", "generally speaking"), no over-used transitions ("with that in mind", "building on this").
 - CONTROLLED IMPERFECTION, gated to the requested register: a formal or precise voice stays clean, with no fragments or asides; a warmer or casual voice may use a contraction, one deliberate fragment, an asymmetric paragraph, or a natural aside. Either way, never a typo or a grammar mistake.

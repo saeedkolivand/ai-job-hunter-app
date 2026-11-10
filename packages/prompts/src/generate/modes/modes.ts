@@ -50,37 +50,37 @@ export const MODES: Record<
     label: 'ATS Optimized',
     description: 'Maximize keyword coverage for applicant tracking systems',
     toneInstruction:
-      'Optimize for ATS parsing above all else. Use exact keyword phrases from the job ad verbatim in context. Ensure standard section headers: Professional Summary, Work Experience, Education, Skills. Consistent date format throughout. Start every bullet with a strong action verb. Quantify every achievement that can be quantified.',
+      'Optimize for ATS parsing above all else. Use exact keyword phrases from the job ad verbatim in context where the résumé names them. Ensure standard section headers: Professional Summary, Work Experience, Education, Skills. Consistent date format throughout. Start every bullet with a strong action verb. Quantify every achievement the résumé already gives a number for.',
   },
   recruiter: {
     label: 'Recruiter-Friendly',
     description: 'Optimized for human recruiter 7-second screening',
     toneInstruction:
-      'Optimize for the 7-second recruiter scan. Lead with most relevant experience. Every bullet starts with a strong action verb and ends with a measurable result. No walls of text. Professional Summary: 2-3 sentences stating seniority, domain, and value for THIS role.',
+      'Optimize for the 7-second recruiter scan. Lead with most relevant experience. Every bullet starts with a strong action verb and ends with its measurable result when the résumé gives one. No walls of text. Professional Summary: 2-3 sentences stating seniority, domain, and value for THIS role.',
   },
   technical: {
     label: 'Technical Role',
     description: 'Highlights technical depth and engineering specifics',
     toneInstruction:
-      'Lead with technical depth. Every bullet names specific technologies, architecture decisions, and scale metrics. Show system design thinking. Quantify performance improvements (latency, throughput, uptime, scale). Use precise technical vocabulary from the job ad.',
+      'Lead with technical depth. Every bullet names the technologies the résumé states, when it states any, along with the architecture decisions and scale metrics it states. Show system design thinking. Quantify performance improvements (latency, throughput, uptime, scale) only with figures the résumé states. Use technical vocabulary from the job ad only for terms the résumé names.',
   },
   executive: {
     label: 'Executive / Senior',
     description: 'Leadership-focused, strategic and high-level',
     toneInstruction:
-      'Lead with organizational impact. Every bullet answers: what changed, and what was the business outcome? Emphasize team size, budgets, revenue/cost impact, strategic initiatives. Remove tactical details. Use executive vocabulary: drove, built, transformed, scaled, led.',
+      'Lead with organizational impact. Every bullet answers: what changed, and what was the business outcome? Emphasize the team size, budgets, revenue/cost impact, and strategic initiatives the résumé states. Remove tactical details. Use executive verbs (drove, built, scaled, led) only for work the résumé states the candidate did.',
   },
   startup: {
     label: 'Startup Tone',
     description: 'Modern, dynamic, growth-oriented language',
     toneInstruction:
-      'Write for a startup reader who values velocity, ownership, and raw impact. Modern active language. Highlight things built from scratch, delivery speed, cross-functional ownership, growth metrics. Avoid corporate language.',
+      'Write for a startup reader who values velocity, ownership, and raw impact. Modern active language. Highlight the things built from scratch, delivery speed, cross-functional ownership, and growth metrics the résumé states. Avoid corporate language.',
   },
   corporate: {
     label: 'Corporate / Enterprise',
     description: 'Formal, structured, compliance-ready',
     toneInstruction:
-      'Formal enterprise tone. Precise and structured. Emphasize process adherence, stakeholder management, cross-functional collaboration, risk management, governance. Remove casual phrasing.',
+      'Formal enterprise tone. Precise and structured. Emphasize the process adherence, stakeholder management, cross-functional collaboration, risk management, and governance the résumé states. Remove casual phrasing.',
   },
   localize: {
     label: 'Localized Output',
