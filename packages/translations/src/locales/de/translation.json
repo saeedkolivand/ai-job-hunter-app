@@ -20,6 +20,8 @@
       "workspace": "Arbeitsbereich",
       "automation": "Automatisierung"
     },
+    "mainNav": "Hauptnavigation",
+    "pinnedNav": "Angeheftete Seiten",
     "dashboard": "Übersicht",
     "analyze": "Lebenslauf-Analyse",
     "generate": "KI-Generierung",
@@ -2140,7 +2142,7 @@
       "open": "Um eine Empfehlung bitten",
       "title": "Um eine Empfehlung bitten",
       "close": "Schließen",
-      "privacy": "Wird lokal auf diesem Gerät gespeichert (und auf Ihrem eigenen Sync-Server, wenn Sie die selbst gehostete Synchronisierung einschalten). Sie geben die Daten dieser Person selbst ein — nichts wird von LinkedIn abgerufen. Jederzeit entfernbar. Beim Entwerfen einer Nachricht werden Name, Rolle und Unternehmen dieser Person an Ihren ausgewählten KI-Anbieter gesendet.",
+      "privacy": "Wird lokal auf diesem Gerät gespeichert (und auf dem von Ihnen eingerichteten Sync-Server, wenn Sie die selbst gehostete Synchronisierung einschalten). Sie geben die Daten dieser Person selbst ein — nichts wird von LinkedIn abgerufen. Jederzeit entfernbar. Beim Entwerfen einer Nachricht werden Name, Rolle und Unternehmen dieser Person an Ihren ausgewählten KI-Anbieter gesendet.",
       "personName": "Name der Person",
       "personNamePlaceholder": "z. B. Jordan Lee",
       "personRole": "Ihre Rolle (optional)",

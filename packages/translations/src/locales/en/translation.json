@@ -20,6 +20,8 @@
       "workspace": "Workspace",
       "automation": "Automation"
     },
+    "mainNav": "Main navigation",
+    "pinnedNav": "Pinned pages",
     "dashboard": "Dashboard",
     "analyze": "Resume Analyzer",
     "generate": "AI Generate",
@@ -2136,7 +2138,7 @@
       "open": "Ask for a referral",
       "title": "Ask for a referral",
       "close": "Close",
-      "privacy": "Stored locally on this device (and on your own sync server if you turn on self-hosted sync). You're entering this person's details yourself — nothing is fetched from LinkedIn. Remove anytime. Drafting a message sends this person's name, role, and company to your selected AI provider.",
+      "privacy": "Stored locally on this device (and on the sync server you configure, if you turn on self-hosted sync). You're entering this person's details yourself — nothing is fetched from LinkedIn. Remove anytime. Drafting a message sends this person's name, role, and company to your selected AI provider.",
       "personName": "Person's name",
       "personNamePlaceholder": "e.g. Jordan Lee",
       "personRole": "Their role (optional)",

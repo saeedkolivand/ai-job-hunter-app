@@ -128,7 +128,7 @@ export function Sidebar() {
           <PanelLeftClose size={16} />
         </Button>
       </div>
-      <nav className="min-h-0 flex-1 overflow-y-auto">
+      <nav aria-label={t('nav.mainNav')} className="min-h-0 flex-1 overflow-y-auto">
         {/* The pinned group is deliberately absent here — it has no heading and
             is rendered by the footer nav below. */}
         <div className="flex flex-col gap-4">
@@ -143,7 +143,10 @@ export function Sidebar() {
         </div>
       </nav>
 
-      <nav className="flex shrink-0 flex-col gap-1 border-t border-foreground/[0.06] pb-3 pt-3">
+      <nav
+        aria-label={t('nav.pinnedNav')}
+        className="flex shrink-0 flex-col gap-1 border-t border-foreground/[0.06] pb-3 pt-3"
+      >
         {PINNED_SECTION.pages.map(renderNavItem)}
       </nav>
 

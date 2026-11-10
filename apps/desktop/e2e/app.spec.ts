@@ -43,13 +43,15 @@ test.describe('AI Job Hunter shell (mock client)', () => {
   for (const height of [540, 640, 720, 900]) {
     test(`keeps the sidebar footer accessible at ${height}px height`, async ({ page }) => {
       await page.setViewportSize({ width: 1280, height });
-      await page.addInitScript(() => {
+      // Set the name after the beforeEach seed has run (init-script order is undefined).
+      await page.goto('/e2e.html');
+      await page.evaluate(() => {
         const key = 'ai-job-hunter-preferences';
         const prefs = JSON.parse(localStorage.getItem(key) ?? '{}');
         prefs.state.userName = 'Test User';
         localStorage.setItem(key, JSON.stringify(prefs));
       });
-      await page.goto('/e2e.html');
+      await page.reload();
       const sidebar = page.locator('aside.app-sidebar');
       const identity = sidebar.getByText('Test User', { exact: true });
       const settings = sidebar.getByRole('link', { name: 'Settings', exact: true });
