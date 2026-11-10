@@ -151,8 +151,7 @@ fn real_world_drifts_stay_drift() {
         ),
         IdentityVerdict::Drift(_)
     ));
-    // Lead and Principal stay distinct from Senior only via the title text, but a
-    // same title at a different company is always drift.
+    // The same title at a different company is always drift.
     assert_eq!(
         identity_verdict(
             p("Senior Engineer", "Acme", url_a),
@@ -195,4 +194,56 @@ fn fingerprint_is_host_independent_where_the_board_id_is_known() {
         "https://www.linkedin.com/jobs/view/dev-at-acme-42",
     ));
     assert_eq!(de, www);
+}
+
+#[test]
+fn different_roles_at_the_same_company_are_drift() {
+    let (ua, ub) = (
+        "https://www.adzuna.de/land/ad/1",
+        "https://boards.greenhouse.io/x/jobs/1",
+    );
+    for (a, b) in [
+        ("Product Manager", "Project Manager"),
+        ("Software Engineer Frontend", "Software Engineer Backend"),
+        ("Software Engineer", "Software Engineer Intern"),
+        ("Software Engineer", "Senior Software Engineer"),
+        ("Software Engineer", "Sr. Software Engineer"),
+        ("Engineer", "Marketing Engineer"),
+    ] {
+        assert_eq!(
+            identity_verdict(p(a, "Acme", ua), p(b, "Acme", ub)),
+            IdentityVerdict::Drift(vec![DriftField::Title]),
+            "{a} vs {b}"
+        );
+    }
+}
+
+#[test]
+fn gender_noise_and_a_team_suffix_are_same() {
+    let (ua, ub) = (
+        "https://www.adzuna.de/land/ad/1",
+        "https://boards.greenhouse.io/x/jobs/1",
+    );
+    assert_eq!(
+        identity_verdict(
+            p("Software Engineer (m/w/d)", "Acme", ua),
+            p("Software Engineer, Payments", "Acme", ub)
+        ),
+        IdentityVerdict::Same
+    );
+}
+
+#[test]
+fn company_prefix_must_end_on_a_word_boundary() {
+    let (ua, ub) = (
+        "https://www.adzuna.de/land/ad/1",
+        "https://boards.greenhouse.io/x/jobs/1",
+    );
+    assert_eq!(
+        identity_verdict(
+            p("Rust Engineer", "Acme", ua),
+            p("Rust Engineer", "Acmeco", ub)
+        ),
+        IdentityVerdict::Drift(vec![DriftField::Company])
+    );
 }

@@ -221,7 +221,9 @@ pub use identity::job_identity;
 
 // Same-advert verdict (issue #1445) built on `job_identity` + the cluster normalization.
 mod verdict;
-pub use verdict::{identity_fingerprint, identity_verdict, IdentityVerdict, PostingIdentity};
+pub use verdict::{
+    identity_fingerprint, identity_verdict, DriftField, IdentityVerdict, PostingIdentity,
+};
 
 /// LinkedIn (and similar pages) render "Show more" / "Show less" toggle buttons
 /// right after the description markup; strip those trailing labels.

@@ -12,21 +12,20 @@
 //!    any other ATS) company and title decide, using the cluster module's
 //!    normalization (ADR-029 `scraping::cluster`) with redirect-friendly
 //!    matching: company names are equal or one is a whole-word prefix of the
-//!    other; titles are equal, one contains the other, or clear a looser
-//!    Jaccard floor than clustering uses. So a same-title requisition at the
-//!    same company on another ATS reads as Same — a known limit of having no
+//!    other; titles are equal, or one is a contiguous run of at least two
+//!    tokens inside the other with no level word among the extras. So a
+//!    same-title requisition at the same company on another ATS reads as Same — a known limit of having no
 //!    stable id there.
 //!
 //! A blank value on either side is "no evidence", not a mismatch; when nothing
-//! at all could be compared the verdict is [`IdentityVerdict::NoEvidence`].
+//! at all could be compared the verdict is [`IdentityVerdict::NoEvidence`]
+//! (no write, no flag). Known limit: a LinkedIn row whose refetch keeps
+//! resolving to nothing comparable is refetched on later runs; no retry
+//! machinery is added for that rare case.
 
-use crate::scraping::cluster::normalize::{normalize_company, normalize_title};
-use crate::scraping::cluster::trigram_jaccard;
-
-/// Looser than the clustering floor on purpose: a redirect check only has to
-/// tell "same advert, differently worded" from "a different advert", where
-/// clustering must never merge two distinct roles.
-const REDIRECT_TITLE_JACCARD_MIN: f64 = 0.6;
+use crate::scraping::cluster::normalize::{
+    normalize_company, normalize_title, PROTECTED_TITLE_TOKENS,
+};
 
 /// Borrowed `(title, company, url)` view of one posting.
 #[derive(Debug, Clone, Copy)]
@@ -84,17 +83,31 @@ fn company_matches(a: &str, b: &str) -> bool {
             .is_some_and(|rest| rest.starts_with(' '))
 }
 
-/// Same title when the token sequences are equal, one contains the other
-/// (e.g. a trailing team suffix), or they clear the redirect Jaccard floor.
+/// Same title when the folded token sequences are equal, or the shorter one
+/// (at least 2 tokens) is a contiguous run inside the longer one AND the extra
+/// tokens carry no level word (senior/junior/lead/principal/staff/intern, the
+/// set `normalize_title` already protects). No fuzzy similarity: a redirect to
+/// "Project Manager" from "Product Manager" is a different advert.
 fn title_matches(a: &str, b: &str) -> bool {
     let (ta, tb) = (title_tokens(a), title_tokens(b));
+    if ta == tb {
+        return true;
+    }
     let (short, long) = if ta.len() <= tb.len() {
         (&ta, &tb)
     } else {
         (&tb, &ta)
     };
-    long.windows(short.len()).any(|w| w == short.as_slice())
-        || trigram_jaccard(&ta.join(" "), &tb.join(" ")) >= REDIRECT_TITLE_JACCARD_MIN
+    if short.len() < 2 {
+        return false;
+    }
+    long.windows(short.len()).enumerate().any(|(i, w)| {
+        w == short.as_slice()
+            && long[..i]
+                .iter()
+                .chain(&long[i + short.len()..])
+                .all(|t| !PROTECTED_TITLE_TOKENS.contains(&t.as_str()))
+    })
 }
 
 /// Compare a stored posting against a freshly resolved one.

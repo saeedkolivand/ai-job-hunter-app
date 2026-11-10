@@ -131,6 +131,15 @@ fn fence_scraped_fields_wraps_identity_review_text_inside_found_jobs() {
             review[field].as_str().unwrap().starts_with("<job_posting>"),
             "{field} must be fenced"
         );
+        assert_eq!(
+            review[field]
+                .as_str()
+                .unwrap()
+                .matches("<job_posting>")
+                .count(),
+            1,
+            "{field} must be fenced exactly once"
+        );
     }
 }
 

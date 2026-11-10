@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { fireEvent, screen } from '@testing-library/react';
 
 import {
+  dismissState,
   expandCard,
   makeAutopilot,
   makeJob,
@@ -68,6 +69,18 @@ describe('AutopilotCard — identity review hold', () => {
     expect(mockNotifyError).toHaveBeenCalledWith({
       message: 'autopilot.identityReview.dismissFailed',
     });
+  });
+
+  it('disables Dismiss only on the row being dismissed', async () => {
+    const other = { ...held, url: 'https://example.com/job/held-2' };
+    dismissState.url = held.url;
+    renderCard(makeAutopilot([held, other]));
+    await expandCard();
+
+    const buttons = screen.getAllByText('autopilot.identityReview.dismiss');
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]).toBeDisabled();
+    expect(buttons[1]).toBeEnabled();
   });
 
   it('a normal row has no badge, no review block and an enabled Apply', async () => {

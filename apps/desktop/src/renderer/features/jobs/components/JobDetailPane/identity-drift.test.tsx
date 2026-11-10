@@ -4,7 +4,7 @@
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import { screen } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 
 import {
   flushMicrotasks,
@@ -65,6 +65,41 @@ describe('JobDetailPane — identity drift', () => {
     expect(screen.queryByText(OTHER_AD)).not.toBeInTheDocument();
     expect(screen.getByText('jobs.descriptionLoadError')).toBeInTheDocument();
     expect(screen.getByText('jobs.loadFullDescription')).toBeInTheDocument();
+    expect(mockScoreJob).not.toHaveBeenCalled();
+  });
+
+  it('retry after a failed persist calls updateDescription again and then reveals', async () => {
+    mockUpdateDescMutateAsync
+      .mockRejectedValueOnce(new Error('rejected'))
+      .mockResolvedValueOnce('updated');
+    resolveOtherAd();
+    await openPane(makePosting('d-retry', { description: '' }));
+    await flushMicrotasks(2);
+    expect(mockUpdateDescMutateAsync).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('jobs.loadFullDescription'));
+    });
+    await flushMicrotasks(2);
+
+    expect(mockUpdateDescMutateAsync).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(OTHER_AD)).toBeInTheDocument();
+    expect(mockScoreJob).toHaveBeenCalledTimes(1);
+  });
+
+  it('drift with NON-empty stored text keeps the stored text, shows the notice, never scores', async () => {
+    mockUpdateDescMutateAsync.mockResolvedValue('identityDrift');
+    resolveOtherAd();
+    await openPane(
+      makePosting('d-drift-stored', { source: 'aggregator', description: 'Stored ad.' })
+    );
+    await flushMicrotasks(2);
+
+    expect(screen.getByText('Stored ad.')).toBeInTheDocument();
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'jobs.identityDrift.notice|Plumber|Other Co'
+    );
+    expect(screen.queryByText(OTHER_AD)).not.toBeInTheDocument();
     expect(mockScoreJob).not.toHaveBeenCalled();
   });
 

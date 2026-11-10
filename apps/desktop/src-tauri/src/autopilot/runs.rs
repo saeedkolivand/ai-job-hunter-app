@@ -234,7 +234,10 @@ impl AutopilotStore {
                         changed |= !was_held;
                         continue;
                     }
-                    RowCheck::Skip => continue,
+                    RowCheck::Skip => {
+                        out.skipped += 1;
+                        continue;
+                    }
                 }
                 if let Some(description) = description {
                     job.description = Some(description.to_string());
@@ -244,8 +247,8 @@ impl AutopilotStore {
                         description,
                     ));
                     out.updated += 1;
+                    changed = true;
                 }
-                changed = true;
             }
             if changed {
                 ap.updated_at = now_ms();
@@ -258,18 +261,34 @@ impl AutopilotStore {
         out
     }
 
-    /// Dismiss the identity review on every row at `normalized_url`, across
-    /// every autopilot (issue #1445): a posting's identity is per url, and the
-    /// write-back above verdicts every copy, so a dismissal that released only
-    /// one copy would leave the others held. Returns whether any review was
-    /// dismissed.
-    pub fn dismiss_identity_review(&self, normalized_url: &str) -> bool {
+    /// Dismiss the identity review of the row at `normalized_url` in
+    /// `autopilot_id` (issue #1445), and of every other copy of that url,
+    /// across all autopilots, holding the SAME drift (equal review
+    /// fingerprint). A different, unseen drift on another copy stays held.
+    /// Returns whether any review was dismissed.
+    pub fn dismiss_identity_review(&self, autopilot_id: &str, normalized_url: &str) -> bool {
         let mut map = self.load();
+        let at_url =
+            |j: &FoundJob| crate::applications::normalize_job_url(&j.url) == normalized_url;
+        let Some(fingerprint) = map.get(autopilot_id).and_then(|ap| {
+            ap.found_jobs
+                .iter()
+                .filter(|j| at_url(j))
+                .find_map(|j| j.identity_review.as_ref().map(|r| r.fingerprint()))
+        }) else {
+            return false;
+        };
         let mut dismissed = false;
         for ap in map.values_mut() {
             let mut changed = false;
-            for job in &mut ap.found_jobs {
-                if crate::applications::normalize_job_url(&job.url) == normalized_url {
+            for job in ap.found_jobs.iter_mut().filter(|j| at_url(j)) {
+                if job
+                    .identity_review
+                    .as_ref()
+                    .map(|r| r.fingerprint())
+                    .as_deref()
+                    == Some(fingerprint.as_str())
+                {
                     changed |= job.dismiss_identity_review();
                 }
             }

@@ -19,7 +19,7 @@ export interface ResolvedPostingIdentity {
 }
 
 /** Outcome of {@link ScrapeContract.updateDescription}. */
-export type UpdateDescriptionResult = 'updated' | 'noMatch' | 'identityDrift';
+export type UpdateDescriptionResult = 'updated' | 'noMatch' | 'identityDrift' | 'unverified';
 
 /** Whether one arm of a {@link HybridSearchResult} actually ran. */
 export type HybridSearchArmStatus = 'ran' | 'skipped' | 'unavailable';
@@ -70,15 +70,22 @@ export interface ScrapeContract {
    * Takes `{ url, description, resolved: { title, company, url, externalId? } }`
    * and resolves `'updated'`, `'noMatch'` or `'identityDrift'`.
    *
-   * `resolved` is the identity of the posting the description came from. Each
-   * stored copy is checked against it: a copy that describes a different advert
-   * (an aggregator url that now redirects elsewhere) is NOT written — a found
-   * job gets an identity review instead, and the live cache write is skipped.
-   * The description text is otherwise stored verbatim.
+   * `resolved` is the identity of the posting the description came from. It is
+   * asserted by the CALLER: the check protects honest flows from attaching
+   * another advert's text and never authorizes releasing a hold (only
+   * `autopilot.dismissIdentityReview` does). Each stored copy is checked
+   * against it: a copy that describes a different advert (an aggregator url
+   * that now redirects elsewhere) is NOT written — a found job gets an identity
+   * review instead, and the live cache write is skipped. The description text
+   * is otherwise stored verbatim.
    *
-   * Resolves `'updated'` when at least one store was written and none drifted,
-   * `'noMatch'` when no store had a matching row, and `'identityDrift'` when a
-   * stored copy no longer matches `resolved`.
+   * Statuses: `'updated'` — at least one store was written and none drifted;
+   * `'identityDrift'` — a stored copy no longer matches `resolved`, or is
+   * already held (a held row keeps returning this until dismissed);
+   * `'unverified'` — a stored copy exists but nothing was written and nothing
+   * drifted (nothing comparable, or a drift the user already dismissed): keep
+   * the stored text, do not treat the new text as verified; `'noMatch'` — no
+   * stored row or cache entry exists at all.
    */
   updateDescription(req: {
     url: string;

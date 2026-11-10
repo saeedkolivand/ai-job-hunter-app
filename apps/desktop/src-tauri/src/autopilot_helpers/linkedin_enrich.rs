@@ -55,8 +55,8 @@ pub(crate) fn select_linkedin_enrichment_targets(found_jobs: &[FoundJob]) -> Vec
         .iter()
         .filter(|j| j.board.as_deref() == Some(LINKEDIN_BOARD_ID))
         .filter(|j| description_is_blank(j.description.as_deref()))
-        // A held row is waiting on the user; refetching it would only burn the rate budget.
-        .filter(|j| j.identity_review.is_none())
+        // A held or dismissed row is settled by the user; refetching it would only burn the rate budget.
+        .filter(|j| j.identity_review.is_none() && j.identity_dismissed.is_none())
         .filter(|j| seen.insert(j.url.clone()))
         .map(|j| EnrichTarget {
             url: j.url.clone(),

@@ -6,6 +6,8 @@ mod corrupt_file;
 mod crud;
 mod description_updates;
 mod found_jobs_db;
+mod identity_dismiss;
+mod identity_drift;
 mod merge_dedup;
 mod merge_resurface;
 mod new_job_counts;

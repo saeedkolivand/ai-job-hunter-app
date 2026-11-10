@@ -240,6 +240,8 @@ export const mockPersistJobAsync: Mock = vi.fn().mockResolvedValue(undefined);
 export const mockSplitMutate: Mock = vi.fn();
 export const mockDismissReviewMutate: Mock = vi.fn();
 export const mockNotifyError: Mock = vi.fn();
+/** Url whose dismiss mutation is in flight (undefined = idle). */
+export const dismissState: { url: string | undefined } = { url: undefined };
 
 export const state: {
   viewed: { url?: string }[];
@@ -251,7 +253,11 @@ export const state: {
 vi.mock('@/services', () => ({
   useOpenExternal: () => ({ mutate: mockOpenExternal, mutateAsync: mockOpenExternal }),
   usePersistJob: () => ({ mutateAsync: mockPersistJobAsync }),
-  useDismissIdentityReview: () => ({ mutate: mockDismissReviewMutate, isPending: false }),
+  useDismissIdentityReview: () => ({
+    mutate: mockDismissReviewMutate,
+    isPending: dismissState.url !== undefined,
+    variables: dismissState.url === undefined ? undefined : { url: dismissState.url },
+  }),
   useMarkNotDuplicate: () => ({ mutate: mockSplitMutate, isPending: false }),
   useInteractions: (type: string) => ({ data: type === 'viewed' ? state.viewed : state.opened }),
   // Track B1 — the card reads the LIVE per-board reliability verdict rather than
@@ -337,6 +343,7 @@ beforeEach(() => {
   mockSplitMutate.mockClear();
   mockDismissReviewMutate.mockClear();
   mockNotifyError.mockClear();
+  dismissState.url = undefined;
   state.viewed = [];
   state.opened = [];
   state.boardHealth = new Map<string, unknown>();

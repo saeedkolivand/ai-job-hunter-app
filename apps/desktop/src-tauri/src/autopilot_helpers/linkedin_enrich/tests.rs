@@ -197,9 +197,39 @@ fn a_row_held_for_identity_review_is_not_refetched() {
         "a held row must not be re-selected every run"
     );
     held.dismiss_identity_review();
+    assert!(
+        select_linkedin_enrichment_targets(std::slice::from_ref(&held)).is_empty(),
+        "a dismissed row is settled and must not be refetched forever"
+    );
+}
+
+#[test]
+fn classify_resolution_drift_carries_the_description_only_when_it_is_usable() {
+    let mut other = posting(Some("A different job text."));
+    other.url = "https://www.linkedin.com/jobs/view/2".to_string();
+    let EnrichOutcome::Drift { description, .. } =
+        classify_resolution(&stored(), Ok(Some(other.clone())))
+    else {
+        panic!("drift expected");
+    };
+    assert_eq!(description.as_deref(), Some("A different job text."));
+
+    other.description = Some(String::new());
+    let EnrichOutcome::Drift { description, .. } = classify_resolution(&stored(), Ok(Some(other)))
+    else {
+        panic!("drift expected");
+    };
+    assert_eq!(description, None, "a blank description is not carried");
+}
+
+#[test]
+fn classify_resolution_skips_when_nothing_is_comparable() {
+    let mut blank = posting(Some("Real text."));
+    blank.title = String::new();
+    blank.company = String::new();
+    blank.url = "https://example.com/careers/1".to_string();
     assert_eq!(
-        select_linkedin_enrichment_targets(std::slice::from_ref(&held)).len(),
-        1,
-        "a dismissed row is selectable again"
+        classify_resolution(&stored(), Ok(Some(blank))),
+        EnrichOutcome::Skip
     );
 }

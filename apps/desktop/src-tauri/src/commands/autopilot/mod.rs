@@ -247,18 +247,19 @@ pub fn autopilot_resume(app: AppHandle, autopilot_id: String) -> Value {
 
 /// Release a found job held for identity review (issue #1445): the row keeps
 /// its stored content, the review is cleared and the dismissed drift will not
-/// re-flag on the next refresh. Applies to EVERY copy of `url` across all
-/// autopilots (`autopilot_id` names the row the user acted on and is kept for
-/// the wire contract). Resolves `true` when a review was dismissed.
+/// re-flag on the next refresh. `autopilot_id` names the row the user acted
+/// on; every other copy of `url` (any autopilot) is released only when it holds
+/// the SAME drift. Resolves `true` when a review was dismissed.
 #[tauri::command]
 pub fn autopilot_dismiss_identity_review(
     app: AppHandle,
     autopilot_id: String,
     url: String,
 ) -> bool {
-    let _ = autopilot_id;
     let normalized = crate::applications::normalize_job_url(&url);
-    store(&app).lock().dismiss_identity_review(&normalized)
+    store(&app)
+        .lock()
+        .dismiss_identity_review(&autopilot_id, &normalized)
 }
 
 /// Cross-autopilot top-match surface (see `best_matches`'s module doc for the

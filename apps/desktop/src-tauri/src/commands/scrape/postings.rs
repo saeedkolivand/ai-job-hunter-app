@@ -39,6 +39,11 @@ pub enum DescriptionWriteStatus {
     /// The url now leads to a different advert; nothing was written onto the
     /// drifted rows and they carry an identity review.
     IdentityDrift,
+    /// A stored copy exists but nothing was written and nothing drifted
+    /// (nothing comparable, or a drift the user already dismissed): the text
+    /// could not be verified against the stored advert. `NoMatch` means only
+    /// that no stored row or cache entry exists at all.
+    Unverified,
 }
 
 /// Upper bound on a write-back description. A full JD is on the order of a few KB;
@@ -137,8 +142,10 @@ fn validate_update_description(url: &str, description: &str) -> AppResult<String
 const MAX_RESOLVED_FIELD_LEN: usize = 2 * 1024;
 
 /// Bound a caller-supplied resolved identity: every field at most
-/// [`MAX_RESOLVED_FIELD_LEN`] bytes and `url` an explicit http(s) url.
-fn validate_resolved(resolved: &ResolvedIdentity) -> AppResult<()> {
+/// [`MAX_RESOLVED_FIELD_LEN`] bytes and `url` a parseable http(s) url. Returns a
+/// copy whose `url` is the PARSED form, so control characters never reach the
+/// stored review (and from there an agent reply).
+fn validate_resolved(resolved: &ResolvedIdentity) -> AppResult<ResolvedIdentity> {
     let fields = [
         ("title", resolved.title.as_str()),
         ("company", resolved.company.as_str()),
@@ -152,31 +159,74 @@ fn validate_resolved(resolved: &ResolvedIdentity) -> AppResult<()> {
             )));
         }
     }
-    let lower = resolved.url.trim().to_ascii_lowercase();
-    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
-        return Err(AppError::Validation(
-            "resolved.url must have an explicit http(s) scheme".to_string(),
-        ));
+    let parsed = reqwest::Url::parse(resolved.url.trim())
+        .ok()
+        .filter(|u| matches!(u.scheme(), "http" | "https"))
+        .ok_or_else(|| {
+            AppError::Validation("resolved.url must be a valid http(s) url".to_string())
+        })?;
+    if parsed.as_str().len() > MAX_RESOLVED_FIELD_LEN {
+        return Err(AppError::Validation(format!(
+            "resolved.url exceeds the {MAX_RESOLVED_FIELD_LEN}-byte cap"
+        )));
     }
-    Ok(())
+    Ok(ResolvedIdentity {
+        url: parsed.as_str().to_string(),
+        ..resolved.clone()
+    })
 }
 
-/// Fold the per-store results into the one status the caller sees. Drift in
-/// EITHER store wins; otherwise success iff EITHER store matched a row.
-fn write_status(cache_hit: bool, cache_drift: bool, rows: ResolveWrite) -> DescriptionWriteStatus {
-    if cache_drift || rows.drifted > 0 {
+/// The one validation both write-back entry points run (`description: None` =
+/// verdict-only): the url + description rules of [`validate_update_description`]
+/// plus [`validate_resolved`]. Returns the normalized url and the sanitized
+/// resolved identity.
+fn validate_write_back(
+    url: &str,
+    description: Option<&str>,
+    resolved: &ResolvedIdentity,
+) -> AppResult<(String, ResolvedIdentity)> {
+    let normalized = validate_update_description(url, description.unwrap_or("-"))?;
+    Ok((normalized, validate_resolved(resolved)?))
+}
+
+/// Fold the per-store results into the one status the caller sees. A drifted
+/// found-job row always wins. A drift in the live cache alone (the url now opens
+/// a different posting) reports `IdentityDrift`, unless a row was genuinely
+/// written, in which case that write is the more useful fact. Otherwise success
+/// iff EITHER store matched a row; a copy that exists but could not be
+/// verified or written is `Unverified`, never `NoMatch`.
+fn write_status(
+    cache_hit: bool,
+    cache_drift: bool,
+    cache_unverified: bool,
+    rows: ResolveWrite,
+) -> DescriptionWriteStatus {
+    if rows.drifted > 0 || (cache_drift && rows.updated == 0) {
         DescriptionWriteStatus::IdentityDrift
     } else if cache_hit || rows.updated > 0 {
         DescriptionWriteStatus::Updated
+    } else if rows.skipped > 0 || cache_unverified {
+        DescriptionWriteStatus::Unverified
     } else {
         DescriptionWriteStatus::NoMatch
     }
 }
 
+/// Fold the live cache's per-entry verdicts into `(drifted, writable)`: drifted
+/// when ANY entry is a different advert; writable only when EVERY entry is the
+/// same advert (no entry at all is trivially writable — the write then reports
+/// no match).
+fn fold_cache_verdicts(verdicts: &[IdentityVerdict]) -> (bool, bool) {
+    (
+        verdicts
+            .iter()
+            .any(|v| matches!(v, IdentityVerdict::Drift(_))),
+        verdicts.iter().all(|v| *v == IdentityVerdict::Same),
+    )
+}
+
 /// How the live cache's entries for `normalized_url` compare with `resolved`
-/// (issue #1445): `(drifted, writable)`. Writable only when every matching entry
-/// is the same advert; no cached entry is trivially writable (the write then
-/// reports no match).
+/// (issue #1445), folded by [`fold_cache_verdicts`].
 fn cache_check(app: &AppHandle, normalized_url: &str, resolved: &ResolvedIdentity) -> (bool, bool) {
     let stored = app
         .state::<Mutex<PostingsCache>>()
@@ -195,13 +245,7 @@ fn cache_check(app: &AppHandle, normalized_url: &str, resolved: &ResolvedIdentit
             )
         })
         .collect();
-    let drifted = verdicts
-        .iter()
-        .any(|v| matches!(v, IdentityVerdict::Drift(_)));
-    (
-        drifted,
-        verdicts.iter().all(|v| *v == IdentityVerdict::Same),
-    )
+    fold_cache_verdicts(&verdicts)
 }
 
 /// Run only the identity verdict of `resolved` against every stored row at
@@ -212,12 +256,10 @@ pub(crate) fn flag_identity_drift(
     url: &str,
     resolved: &ResolvedIdentity,
 ) -> AppResult<u32> {
-    // Only the url half of the validation matters; the placeholder text is never written.
-    validate_resolved(resolved)?;
-    let normalized_url = validate_update_description(url, "-")?;
+    let (normalized_url, resolved) = validate_write_back(url, None, resolved)?;
     Ok(crate::commands::autopilot::store(app)
         .lock()
-        .update_found_job_descriptions(&normalized_url, None, resolved)
+        .update_found_job_descriptions(&normalized_url, None, &resolved)
         .drifted)
 }
 
@@ -226,19 +268,21 @@ pub fn scrape_update_description(
     app: AppHandle,
     req: ScrapeUpdateDescriptionRequest,
 ) -> AppResult<DescriptionWriteStatus> {
-    let normalized_url = validate_update_description(&req.url, &req.description)?;
-    validate_resolved(&req.resolved)?;
-    let (cache_drift, cache_writable) = cache_check(&app, &normalized_url, &req.resolved);
+    let (normalized_url, resolved) =
+        validate_write_back(&req.url, Some(&req.description), &req.resolved)?;
+    let (cache_drift, cache_writable) = cache_check(&app, &normalized_url, &resolved);
     let rows = crate::commands::autopilot::store(&app)
         .lock()
-        .update_found_job_descriptions(&normalized_url, Some(&req.description), &req.resolved);
+        .update_found_job_descriptions(&normalized_url, Some(&req.description), &resolved);
     let cache_hit = cache_writable && {
         let cache = app.state::<Mutex<PostingsCache>>();
         cache
             .lock()
             .update_description(&normalized_url, &req.description)
     };
-    Ok(write_status(cache_hit, cache_drift, rows))
+    // A cache entry that is neither drifted nor writable had nothing comparable.
+    let cache_unverified = !cache_drift && !cache_writable;
+    Ok(write_status(cache_hit, cache_drift, cache_unverified, rows))
 }
 
 #[tauri::command]

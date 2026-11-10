@@ -67,8 +67,8 @@ fn a_dismissed_drift_does_not_reflag_but_a_different_one_does() {
 
     assert_eq!(
         job.check_resolved(&first),
-        RowCheck::Write,
-        "a dismissed drift reads as Same"
+        RowCheck::Skip,
+        "a dismissed drift is skipped: no write, no flag"
     );
     assert!(job.identity_review.is_none());
 

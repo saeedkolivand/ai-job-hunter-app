@@ -85,9 +85,11 @@ export interface AutopilotContract {
    * resolved to a different advert than the one stored, so the row kept its old
    * content and left Best Matches. Dismissing clears the hold and remembers that
    * exact drift so it does not re-flag on the next refresh (a different drift
-   * does). The dismissal applies to EVERY copy of `url` across all autopilots
-   * (`autopilotId` names the row the user acted on). Resolves `true` when a
-   * review was dismissed, `false` when no copy had one.
+   * does). `autopilotId` names the row the user acted on; every other copy of
+   * `url`, in any autopilot, is released too, but only when it holds the SAME
+   * drift (a different, unseen drift stays held). Dismissal never writes the
+   * other advert onto the row: it only stops the flag and re-enables Apply.
+   * Resolves `true` when a review was dismissed, `false` when none matched.
    */
   dismissIdentityReview(req: { autopilotId: string; url: string }): Promise<boolean>;
 }
