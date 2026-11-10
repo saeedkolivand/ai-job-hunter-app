@@ -56,7 +56,7 @@ pub(in crate::extension_bridge::agent_read) const AGENT_CHEAP_BURST: f64 = 10.0;
 pub(in crate::extension_bridge::agent_read) const AGENT_CHEAP_REFILL_SECS: f64 = 1.0;
 /// `best-matches` bucket: burst 1, refilling one token every 30s. Sized off the measured worst
 /// case in `autopilot_best_matches`'s own doc (3.03s at 2000 found-jobs, 12.3s at 4000) — this PR
-/// calls that command UNMODIFIED rather than re-wrapping its private blocking half or duplicating
+/// calls `autopilot_best_matches_all` (same compute, un-truncated) rather than re-wrapping its private blocking half or duplicating
 /// its clustering, which leaves the compute itself UN-truncated per call; this bucket stops
 /// repeated invocation from stacking that cost, not a pre-clustering cap.
 const AGENT_BEST_MATCHES_BURST: f64 = 1.0;

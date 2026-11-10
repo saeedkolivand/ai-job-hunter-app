@@ -104,7 +104,7 @@ const ERROR_SENTINELS: &[(&str, &str)] = &[
     ),
     (
         ERR_BRIDGE_BIND_FAILED,
-        "nothing answered and the app recorded that its local bridge could not bind any discovery port — see stderr for ports and OS errors; close whatever holds them or reboot, then relaunch the app",
+        "nothing answered and the app recorded that its local bridge could not bind any discovery port (the fixed bridge port range) — close whatever holds those ports or reboot, then relaunch the app",
     ),
     (
         ERR_PAIRING_REJECTED,

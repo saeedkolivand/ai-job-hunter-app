@@ -27,7 +27,7 @@ pub fn start(app: AppHandle) {
         let listener = match bind_listener().await {
             Ok((listener, port)) => {
                 state.set_port(Some(port));
-                super::bind_diag::clear(&crate::platform::config::data_dir());
+                super::bind_diag::clear(&state.data_dir);
                 log::info!("[extension_bridge] listening on 127.0.0.1:{port}");
                 listener
             }
@@ -38,7 +38,7 @@ pub fn start(app: AppHandle) {
                     PORT_RANGE.end(),
                     failures.join("; ")
                 );
-                super::bind_diag::record(&crate::platform::config::data_dir(), &failures);
+                super::bind_diag::record(&state.data_dir, &failures);
                 return;
             }
         };

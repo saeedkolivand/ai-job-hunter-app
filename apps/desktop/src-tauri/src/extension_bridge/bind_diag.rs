@@ -6,7 +6,7 @@
 use std::io;
 use std::path::Path;
 
-use super::{BIND_DIAG_FILE, PORT_RANGE};
+use super::BIND_DIAG_FILE;
 
 /// One port's failure, e.g. `47615: os error 10048 (AddrInUse)`.
 pub(super) fn describe(port: u16, e: &io::Error) -> String {
@@ -26,23 +26,47 @@ pub(super) fn clear(dir: &Path) {
     let _ = std::fs::remove_file(dir.join(BIND_DIAG_FILE));
 }
 
-/// Read the recorded failure (CLI side). Caller must have validated `dir` already
-/// (the CLI only gets here after `read_pairing_token` accepted the same dir).
-pub(crate) fn read(dir: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(dir.join(BIND_DIAG_FILE)).ok()?;
-    let t: String = text.trim().chars().take(512).collect();
-    (!t.is_empty()).then_some(t)
+const MAX_READ: u64 = 1024;
+
+/// Read the recorded failure (CLI side). `dir` must already be validated (the CLI only gets
+/// here after `read_pairing_token` accepted it). Regular file only (no symlink/FIFO), at most
+/// [`MAX_READ`] bytes, and the content must match [`record`]'s own grammar, else `None`:
+/// the file is never echoed unvalidated.
+pub(super) fn read(dir: &Path) -> Option<String> {
+    use std::io::Read;
+    let path = dir.join(BIND_DIAG_FILE);
+    if !std::fs::symlink_metadata(&path).ok()?.is_file() {
+        return None;
+    }
+    let mut buf = Vec::new();
+    std::fs::File::open(&path)
+        .ok()?
+        .take(MAX_READ)
+        .read_to_end(&mut buf)
+        .ok()?;
+    let text = String::from_utf8_lossy(&buf).trim().to_string();
+    (buf.len() < MAX_READ as usize && matches_grammar(&text)).then_some(text)
 }
 
-/// The CLI-facing message for a recorded failure `detail`.
-pub(crate) fn cli_message(detail: &str) -> String {
-    format!(
-        "the app's local bridge could not bind ports {}-{} at its last launch ({detail}). \
-         If the app is running, close whatever holds those ports or reboot, then relaunch the app; \
-         if it is not running, just start it.",
-        PORT_RANGE.start(),
-        PORT_RANGE.end()
-    )
+/// `"; "`-separated items, each `<1-5 digits>: os error <digits> (<word>)` or `<digits>: <word>`.
+fn matches_grammar(text: &str) -> bool {
+    let word = |w: &str| !w.is_empty() && w.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    let digits =
+        |d: &str, max: usize| (1..=max).contains(&d.len()) && d.bytes().all(|b| b.is_ascii_digit());
+    !text.is_empty()
+        && text.split("; ").all(|item| {
+            let Some((port, rest)) = item.split_once(": ") else {
+                return false;
+            };
+            digits(port, 5)
+                && match rest.strip_prefix("os error ") {
+                    Some(r) => r
+                        .split_once(" (")
+                        .and_then(|(code, k)| k.strip_suffix(')').map(|k| (code, k)))
+                        .is_some_and(|(code, k)| digits(code, 10) && word(k)),
+                    None => word(rest),
+                }
+        })
 }
 
 #[cfg(test)]

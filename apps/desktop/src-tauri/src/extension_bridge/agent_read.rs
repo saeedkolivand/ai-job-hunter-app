@@ -26,7 +26,7 @@
 //! second one.
 //!
 //! ## Throttle, not a compute cap
-//! `best-matches` calls the already-public `autopilot_best_matches` unmodified rather than
+//! `best-matches` calls `autopilot_best_matches_all` rather than
 //! re-wrapping its private blocking fn — see [`AgentQueryThrottle`]'s doc for why that leaves the
 //! compute itself un-truncated and how the throttle compensates.
 

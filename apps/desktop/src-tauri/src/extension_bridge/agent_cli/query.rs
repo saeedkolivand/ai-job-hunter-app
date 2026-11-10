@@ -83,6 +83,15 @@ async fn send_agent_query_within(
 async fn send_agent_query(ws: WsStream, verb: &Verb) -> Result<Value, &'static str> {
     send_agent_query_within(ws, verb, QUERY_REPLY_TIMEOUT).await
 }
+/// Sentinel for a failed pairing: "nothing answered" becomes `bridge_bind_failed` when the app
+/// recorded a total bind failure (#1442). Content-free (no stderr), so the MCP invariant holds.
+fn failure_sentinel(f: PairingFailure, data_dir: &Path) -> &'static str {
+    if f == PairingFailure::AppNotRunning && super::super::bind_diag::read(data_dir).is_some() {
+        return ERR_BRIDGE_BIND_FAILED;
+    }
+    pairing_failure_sentinel(f)
+}
+
 /// The bridge round trip common to every verb, minus the CLI's own
 /// stdout/exit-code translation: pointer → token → [`super::handshake_client::connect_authenticated`]
 /// → [`send_agent_query`]. [`super::entrypoint::run_verb`] is now just this plus its own
@@ -93,17 +102,9 @@ async fn send_agent_query(ws: WsStream, verb: &Verb) -> Result<Value, &'static s
 pub(super) async fn query(verb: &Verb) -> Result<Value, &'static str> {
     let pointer = read_agent_pointer().ok_or(ERR_APP_NOT_LOCATED)?;
     let token = read_pairing_token(&pointer.data_dir).ok_or(ERR_PAIRING_TOKEN_UNAVAILABLE)?;
-    let ws = connect_authenticated(&token).await.map_err(|f| {
-        // Nothing answered: if the app recorded a total bind failure, say so (#1442).
-        if f == PairingFailure::AppNotRunning {
-            if let Some(d) = crate::extension_bridge::bind_diag::read(Path::new(&pointer.data_dir))
-            {
-                eprintln!("{}", crate::extension_bridge::bind_diag::cli_message(&d));
-                return ERR_BRIDGE_BIND_FAILED;
-            }
-        }
-        pairing_failure_sentinel(f)
-    })?;
+    let ws = connect_authenticated(&token)
+        .await
+        .map_err(|f| failure_sentinel(f, Path::new(&pointer.data_dir)))?;
     send_agent_query(ws, verb).await
 }
 

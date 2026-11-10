@@ -120,3 +120,30 @@ async fn send_agent_query_within_fails_fast_on_a_same_req_id_wrong_type_reply() 
          not silently `continue` toward a 30s timeout"
     );
 }
+
+#[test]
+fn failure_sentinel_maps_bind_diag_only_onto_app_not_running() {
+    let with = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        with.path().join(crate::extension_bridge::BIND_DIAG_FILE),
+        "47615: os error 10048 (AddrInUse)",
+    )
+    .unwrap();
+    let without = tempfile::TempDir::new().unwrap();
+    assert_eq!(
+        failure_sentinel(PairingFailure::AppNotRunning, with.path()),
+        ERR_BRIDGE_BIND_FAILED
+    );
+    assert_eq!(
+        failure_sentinel(PairingFailure::AppNotRunning, without.path()),
+        ERR_APP_NOT_RUNNING
+    );
+    assert_eq!(
+        failure_sentinel(PairingFailure::PairingRejected, with.path()),
+        ERR_PAIRING_REJECTED
+    );
+    assert_eq!(
+        failure_sentinel(PairingFailure::ConnectionError, with.path()),
+        ERR_CONNECTION_ERROR
+    );
+}

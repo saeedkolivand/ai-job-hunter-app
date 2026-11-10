@@ -85,9 +85,9 @@ async fn port_probe_returns_none_when_full_span_busy_graceful_disable() {
 }
 
 /// #1442: every port of a multi-port range occupied -> one diagnostic per port,
-/// and the CLI message built from the persisted record names the range + errors.
+/// and the persisted record reads back identically.
 #[tokio::test]
-async fn full_range_busy_lists_every_port_and_cli_message_surfaces_it() {
+async fn full_range_busy_lists_every_port_and_the_record_roundtrips() {
     // Hold two ADJACENT ports we bind ourselves (retry until a free pair is found).
     let (a, b, lo, hi) = loop {
         let (a, pa) = claim_busy_port().await;
@@ -103,11 +103,7 @@ async fn full_range_busy_lists_every_port_and_cli_message_surfaces_it() {
     let dir = tempfile::TempDir::new().unwrap();
     super::super::bind_diag::record(dir.path(), &failures);
     let detail = super::super::bind_diag::read(dir.path()).unwrap();
-    let msg = super::super::bind_diag::cli_message(&detail);
-    assert!(
-        msg.contains(&failures[0]) && msg.contains(&failures[1]),
-        "{msg}"
-    );
+    assert_eq!(detail, failures.join("; "));
     drop((a, b));
 }
 
