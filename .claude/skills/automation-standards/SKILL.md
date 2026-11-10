@@ -26,7 +26,9 @@ Authoritative: `docs/knowledge/automation-domain.md`.
 
 ### AI / LLM (cross-provider — Claude specifics live in the `claude-api` skill)
 
-- **OWASP Top 10 for LLM Apps (2025)** — https://genai.owasp.org/llm-top-10/
+- **OWASP LLM Top 10 (2026 edition, Aug 2026)** keeps prompt injection first and moved excessive agency up; plus the separate **OWASP Top 10 for Agentic Applications** (ASI01–ASI10). https://genai.owasp.org/
+  - **Containment over prevention.** Assume an injection gets through, then bound what it can do: least-privilege tools, validation at the tool layer (the calling model is untrusted input), no side effect without user confirmation, fixed output destinations. A system-prompt line saying "ignore injected instructions" is not a control and never closes a finding.
+- **OWASP Top 10 for LLM Apps (2025)**, item detail still applicable — https://genai.owasp.org/llm-top-10/
   - **LLM01 Prompt Injection** (direct + indirect) — **segregate/label untrusted external content** (scraped JD/résumé text is untrusted; never concatenate raw into the instruction block); constrain model role; deterministically validate output; least-privilege tool tokens; human-in-the-loop on high-risk actions. No fool-proof fix → layer defenses.
   - **LLM05 Improper Output Handling** — treat output as untrusted; parse/validate (Zod/serde) before it reaches IPC/files/render; never `eval`/shell/SQL with raw output.
   - **LLM02 Sensitive-Info Disclosure** + **LLM07 System-Prompt Leakage** — strip PII/secrets from prompts + logs; no secrets in system prompts. **LLM06 Excessive Agency** — minimal tools/permissions; gate side-effects behind user confirmation.

@@ -32,7 +32,7 @@ Renderer talks to the shell only via the `AppClient` context (`createTauriInvoke
 
 ## External standards & best-practices (verified 2026-06-19)
 
-> Latest stable **Tauri 2.10.x**. v2 model = **permissions** (per-command) + **scopes** (arg validators) + **capabilities** (bind sets to windows); no command is exposed by default. https://v2.tauri.app/security/
+> Pinned version: `tauri` in `apps/desktop/src-tauri/Cargo.lock`. Keep it on the latest patch: v2 security advisories ship as patch releases (e.g. CVE-2025-59053, remote-origin iframes reaching IPC without a capability; check https://github.com/tauri-apps/tauri/security/advisories before a bump). Never embed a remote-origin `<iframe>` in a window that holds capabilities. v2 model = **permissions** (per-command) + **scopes** (arg validators) + **capabilities** (bind sets to windows); no command is exposed by default. https://v2.tauri.app/security/
 
 - **Least-privilege capabilities** — grant only what each window needs in `capabilities/*.json`; scope to specific `windows`/`webviews`; prefer `allow`-scopes; never ship `*`-style `fs`/`shell`/`http`. https://v2.tauri.app/security/capabilities/
 - **CSP** — strict `app.security.csp` in `tauri.conf.json`; no `unsafe-inline`/`unsafe-eval` (Tauri hashes/nonces local assets). https://v2.tauri.app/security/csp/

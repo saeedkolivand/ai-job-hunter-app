@@ -28,12 +28,17 @@ Parsers read **linearly, top→bottom, left→right** — design for that.
 **What we ship today:** single-column, **selectable-text** PDFs with **logical top→bottom
 reading order** (the same structure ATS parse cleanly), and each PDF sets **document Title +
 author + language** metadata (`#set document(title/author)` + `#set text(lang)` in the Typst
-engine) plus embedded fonts — a real screen-reader aid. We do **not** yet emit a full
-PDF/UA-1 **tag tree**. Do not claim tagged/PDF-UA output that does not exist.
+engine) plus embedded fonts — a real screen-reader aid. PDFs are also **tagged**: the engine
+uses `PdfOptions::default()` (`export/typst_engine/engine.rs`), whose `tagged` flag is on by
+default since Typst 0.14 (verify in the pinned `typst-pdf` source). Tagged is **not** PDF/UA-1:
+we don't opt into the `ua-1` standard (stricter checks, export fails on violations), we don't
+validate with veraPDF, and templates carry no alt text. Claim "tagged", never "PDF/UA". Typst
+has no PDF/UA-2 yet.
 
 **Future goal (not a current guarantee):** full **PDF/UA-1** (ISO 14289 · WCAG 2.2 AA) is an
 all-or-nothing standard — tag tree, per-template alt text, nested heading structure, veraPDF
-validation — on a still-maturing Typst feature. Park it behind its own ADR if/when committed.
+validation. The first step is opting into the `ua-1` standard in `PdfOptions` and fixing what it
+rejects. Park it behind its own ADR if/when committed.
 
 The external standard, kept as the direction to grow toward:
 

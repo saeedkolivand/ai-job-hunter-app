@@ -48,6 +48,7 @@ A new message type/field is added in the **same change** to: the TS `EXTENSION_M
 >
 > - CWS Program Policies last updated **2025-05-22**; the 2025 wave added one-appeal-per-violation, a real-money-gambling ban, and single-purpose clarifications. ([2025 blog](https://developer.chrome.com/blog/cws-policy-updates-2025))
 > - **Firefox: in H1 2026, Mozilla requires ALL extensions (incl. existing ones, on their next update) to adopt the built-in data-collection consent framework.** New extensions already required since **2025-11-03**. This extension is already published → treat as in-scope now. ([Firefox data consent](https://extensionworkshop.com/documentation/develop/firefox-builtin-data-consent/), [Mozilla blog](https://blog.mozilla.org/addons/2025/10/23/data-collection-consent-changes-for-new-firefox-extensions/))
+> - **CWS 2026 policy update, enforced from 2026-08-01**: stricter data-collection baselines (collect only what the single stated purpose strictly needs, disclose it in the product, consent in the extension's own UI before collection) and new AI-safety rules. Re-read the policy before any store submission. ([CWS 2026 blog](https://developer.chrome.com/blog/cws-policy-updates-2026))
 > - **MV2 is end-of-life** — author/review against MV3 only.
 
 Run this before any release (both stores):

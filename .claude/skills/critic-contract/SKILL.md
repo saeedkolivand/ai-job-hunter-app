@@ -50,6 +50,10 @@ UNVERIFIED into verified-by-plausibility is invalid.
 
 ## Stating a finding
 
+- **Read the other side of the call before you flag it.** Missing cross-file context is the most
+  common source of false findings: the caller already validates, the helper already handles the
+  edge, the type already rules the case out. Pull the callers and callee (codegraph) for the symbol
+  you are about to flag, and drop the finding if they answer it.
 - **Quote the exact span.** Every finding carries `file:line` plus the verbatim code it is about. A
   finding that cannot name a line cannot be verified or refuted by anyone else — and it is what makes
   the refutation stage possible at all.
