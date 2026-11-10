@@ -328,13 +328,7 @@ pub async fn applications_save_from_posting(app: AppHandle, req: ApplicationTrac
         },
         &stored,
     );
-    let result = store(&app).upsert_for_origin(
-        &job_url,
-        &board,
-        &meta,
-        crate::applications::ApplicationOrigin::Saved,
-        Some(false),
-    );
+    let result = store(&app).upsert_saved_draft(&job_url, &board, &meta);
     finish(&span, result.map(|id| json!({ "id": id, "success": true })))
 }
 

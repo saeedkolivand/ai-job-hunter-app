@@ -45,7 +45,20 @@ impl ApplicationStore {
         // import funnel and direct IPC callers are capped (the renderer Zod cap is
         // UX-only and the import path never passes through it). Truncate, never drop.
         let clamped_jd = clamp_job_description(meta.job_description.clone());
-        self.upsert_internal(&normalized, board, meta, &clamped_jd, applied_at)
+        self.upsert_internal(&normalized, board, meta, &clamped_jd, applied_at, false)
+    }
+
+    /// Jobs-page Save (#1450): like `upsert_for_origin(.., Saved, Some(false))`, but the
+    /// description only fills a blank/boilerplate stored one, checked inside the write
+    /// transaction so a concurrent edit is never overwritten.
+    pub fn upsert_saved_draft(
+        &self,
+        job_url: &str,
+        board: &str,
+        meta: &ApplicationMeta,
+    ) -> AppResult<String> {
+        let jd = clamp_job_description(meta.job_description.clone());
+        self.upsert_internal(&normalize_job_url(job_url), board, meta, &jd, None, true)
     }
 
     /// Core upsert: `normalized` is already normalized; `applied_at` Some marks the
@@ -63,6 +76,7 @@ impl ApplicationStore {
         // `meta.job_description`, so the cap can't be bypassed.
         clamped_jd: &str,
         applied_at: Option<u64>,
+        keep_usable_description: bool,
     ) -> AppResult<String> {
         let pick = |inc: &str, ex: &str| -> String {
             if inc.trim().is_empty() {
@@ -104,7 +118,14 @@ impl ApplicationStore {
                 candidate: pick(&meta.candidate, &existing.candidate),
                 answers,
                 brief: pick(&meta.brief, &existing.brief),
-                job_description: pick(clamped_jd, &existing.job_description),
+                job_description: if keep_usable_description
+                    && !crate::documents::keywords::description_is_blank(Some(
+                        &existing.job_description,
+                    )) {
+                    existing.job_description.clone()
+                } else {
+                    pick(clamped_jd, &existing.job_description)
+                },
                 notes: existing.notes.clone(),
                 next_action_at: existing.next_action_at,
                 // Carried through untouched: a re-scrape/re-track must never

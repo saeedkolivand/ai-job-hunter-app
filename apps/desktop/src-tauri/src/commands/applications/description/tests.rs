@@ -75,7 +75,12 @@ fn usable_copy_in_another_autopilot_is_found_past_a_blank_one() {
 fn boilerplate_only_stored_description_is_repairable() {
     let r = records("https://example.com/jobs/1", Some(AD));
     assert_eq!(
-        draft_description(None, "https://example.com/jobs/1", || r, "  "),
+        draft_description(
+            None,
+            "https://example.com/jobs/1",
+            || r,
+            "Sign in to view more\nJoin now"
+        ),
         AD
     );
 }
