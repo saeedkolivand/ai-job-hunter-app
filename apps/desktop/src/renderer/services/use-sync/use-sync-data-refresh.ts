@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { type Query, useQueryClient } from '@tanstack/react-query';
 
 import { keys } from '../query-client';
 import { useSyncStatus } from './use-sync';
@@ -30,6 +30,9 @@ export const useSyncDataRefresh = () => {
       keys.discovery.all,
       keys.pipeline.all,
     ];
-    for (const queryKey of prefixes) void qc.invalidateQueries({ queryKey });
+    // `postings.resolve` fetches the job page over the network: never re-run it on sync.
+    const resolve = keys.postings.resolve('').slice(0, 2);
+    const local = (q: Query) => !resolve.every((part, i) => q.queryKey[i] === part);
+    for (const queryKey of prefixes) void qc.invalidateQueries({ queryKey, predicate: local });
   }, [qc, syncedAt, applied]);
 };

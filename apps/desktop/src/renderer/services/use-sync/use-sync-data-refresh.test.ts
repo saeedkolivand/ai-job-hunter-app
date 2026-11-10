@@ -19,6 +19,8 @@ describe('app-global received-data refresh', () => {
     queryClient.setQueryDefaults(keys.credentials.all, { gcTime: Infinity });
     queryClient.setQueryDefaults(keys.ai.models, { gcTime: Infinity });
     queryClient.setQueryData(keys.ai.models, ['local-model']);
+    queryClient.setQueryDefaults(keys.postings.resolve('u'), { gcTime: Infinity });
+    queryClient.setQueryData(keys.postings.resolve('u'), { description: 'fetched' });
     queryClient.setQueryData(keys.contactProfile.all, { fullName: 'Old name' });
     queryClient.setQueryData(keys.credentials.all, ['device-only']);
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
@@ -30,7 +32,9 @@ describe('app-global received-data refresh', () => {
     };
     await act(() => queryClient.setQueryData(keys.sync.status, received));
     await waitFor(() =>
-      expect(invalidate).toHaveBeenCalledWith({ queryKey: keys.contactProfile.all })
+      expect(invalidate).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: keys.contactProfile.all })
+      )
     );
     expect(queryClient.getQueryState(keys.contactProfile.all)?.isInvalidated).toBe(true);
     for (const queryKey of [
@@ -48,8 +52,9 @@ describe('app-global received-data refresh', () => {
       keys.discovery.all,
       keys.pipeline.all,
     ])
-      expect(invalidate).toHaveBeenCalledWith({ queryKey });
+      expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ queryKey }));
     expect(queryClient.getQueryState(keys.ai.models)?.isInvalidated).toBe(false);
+    expect(queryClient.getQueryState(keys.postings.resolve('u'))?.isInvalidated).toBe(false);
     expect(queryClient.getQueryState(keys.credentials.all)?.isInvalidated).toBe(false);
     expect(queryClient.getQueryState(keys.sync.status)?.isInvalidated).toBe(false);
     const calls = invalidate.mock.calls.length;

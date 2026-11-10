@@ -32,7 +32,8 @@ export interface ContactProfile {
   /**
    * Optional candidate photo as a `data:image/…;base64,…` URL produced by the
    * photo-upload control (decoded, square-cropped, downscaled, EXIF-stripped).
-   * File paths are never accepted — local-only, never sent over the network.
+   * File paths are never accepted. Stored locally; leaves the device only in app
+   * backups and opt-in self-hosted sync (never to an AI provider or agent).
    */
   photo?: string;
 }
