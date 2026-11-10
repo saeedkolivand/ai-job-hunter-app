@@ -96,7 +96,8 @@ pub(super) async fn query(verb: &Verb) -> Result<Value, &'static str> {
     let ws = connect_authenticated(&token).await.map_err(|f| {
         // Nothing answered: if the app recorded a total bind failure, say so (#1442).
         if f == PairingFailure::AppNotRunning {
-            if let Some(d) = crate::extension_bridge::bind_diag::read(Path::new(&pointer.data_dir)) {
+            if let Some(d) = crate::extension_bridge::bind_diag::read(Path::new(&pointer.data_dir))
+            {
                 eprintln!("{}", crate::extension_bridge::bind_diag::cli_message(&d));
                 return ERR_BRIDGE_BIND_FAILED;
             }

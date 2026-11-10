@@ -192,7 +192,9 @@ pub use entrypoint::run;
 // still declared exactly once, in its own file, and every consumer reaches it
 // exactly where it did when all of this was one file.
 use entrypoint::{exit_code_for_reply, usage_error_value};
-use handshake_client::{connect_authenticated, next_json, pairing_failure_sentinel, PairingFailure};
+use handshake_client::{
+    connect_authenticated, next_json, pairing_failure_sentinel, PairingFailure,
+};
 use parse::{parse_bool_flag, parse_verb};
 use parse_call::parse_call;
 use parse_found_jobs::parse_found_jobs;
