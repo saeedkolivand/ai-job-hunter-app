@@ -9,9 +9,20 @@ test('nobody stops the owner app, main session included', () => {
     'Stop-Process -Name ajh-tauri -Force',
     'Get-Process ajh-tauri | Stop-Process',
     'pkill -f ajh-tauri',
+    // macOS / Linux installed builds
+    'killall "AI Job Hunter"',
+    'pkill -f "AI Job Hunter.app"',
+    `osascript -e 'quit app "AI Job Hunter"'`,
+    'kill $(pgrep -f ai-job-hunter)',
+    'pgrep ajh-tauri | xargs kill -9',
   ])
     expect(verdict(cmd, undefined, false), cmd).toBeTruthy();
-  expect(verdict('tasklist | rg ajh-tauri', undefined, false)).toBeNull();
+  for (const cmd of [
+    'tasklist | rg ajh-tauri',
+    'ps aux | grep "AI Job Hunter"',
+    'pgrep -l ai-job-hunter',
+  ])
+    expect(verdict(cmd, undefined, false), cmd).toBeNull();
 });
 
 test('subagents never change git state; reads stay allowed', () => {

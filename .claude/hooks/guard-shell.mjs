@@ -9,8 +9,15 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const STOPS_APP =
-  /\b(taskkill|kill|pkill|killall|wmic|Stop-Process|spps)\b[^|;&\n]*ajh-tauri|ajh-tauri[^;&\n]*\|\s*(Stop-Process|spps|kill)\b/i;
+// Dev builds run as `ajh-tauri` on every OS; installed bundles use the product name
+// ("AI Job Hunter" on macOS, `ai-job-hunter` on Linux) or the bundle id.
+const APP = String.raw`(ajh-tauri|ai[- _]?job[- _]?hunter|com\.ajh\.desktop)`;
+const STOPS_APP = new RegExp(
+  String.raw`\b(taskkill|kill|pkill|killall|wmic|Stop-Process|spps)\b[^|;&\n]*${APP}` +
+    String.raw`|${APP}[^;&\n]*\|\s*(xargs\s+(-\S+\s+)*)?(kill|Stop-Process|spps)\b` +
+    String.raw`|osascript\b[^;&\n]*\bquit\b[^;&\n]*${APP}`,
+  'i'
+);
 const GIT_MUTATION =
   /\bgit\s+(-c\s+\S+\s+)*(commit|push|add|stash|checkout|switch|reset|restore|rebase|merge|cherry-pick|revert|clean|am|apply|worktree\s+(add|remove|prune)|branch\s+-[dDmM])\b/;
 const SHELL_WRITE =
