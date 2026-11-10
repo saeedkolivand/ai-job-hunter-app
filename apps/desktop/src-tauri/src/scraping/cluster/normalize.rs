@@ -210,7 +210,7 @@ const GENDER_TOKENS: &[&str] = &["m", "w", "d", "x", "f", "h", "divers", "gn"];
 
 /// Seniority/level words a trailing segment must NOT be stripped over — dropping
 /// a "senior"/"junior"/… qualifier would merge genuinely distinct roles.
-const PROTECTED_TITLE_TOKENS: &[&str] =
+pub const PROTECTED_TITLE_TOKENS: &[&str] =
     &["senior", "junior", "lead", "principal", "staff", "intern"];
 
 /// Remote/on-site markers that qualify a trailing dash/pipe or parenthetical

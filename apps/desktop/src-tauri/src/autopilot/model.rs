@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::identity::IdentityReview;
 use crate::scraping::cluster::ClusterMemberRef;
 
 // ── Back-compat deserializer: `board` (string) OR `boards` (array) → Vec<String> ──
@@ -305,6 +306,15 @@ pub struct FoundJob {
     /// computed at ingest from the built-in list + the user's extras.
     #[serde(default)]
     pub is_agency: bool,
+    /// Set when the posting's url resolved to a different advert than this row
+    /// describes (issue #1445). The row keeps its old content; it leaves Best
+    /// Matches and Apply stays disabled until the user dismisses the review.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_review: Option<IdentityReview>,
+    /// Fingerprint of the last drift the user dismissed, so that same drift
+    /// does not re-flag on the next refresh (a different one does).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_dismissed: Option<String>,
 }
 
 /// Serde default for [`FoundJob::cluster_canonical`] — a job with no cluster

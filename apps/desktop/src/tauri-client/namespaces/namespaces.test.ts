@@ -89,6 +89,12 @@ describe('tauri-client namespaces', () => {
     autopilot.bestMatches();
     expect(invoke).toHaveBeenCalledWith('autopilot_best_matches');
 
+    autopilot.dismissIdentityReview({ autopilotId: 'ap1', url: 'https://example.com/1' });
+    expect(invoke).toHaveBeenCalledWith('autopilot_dismiss_identity_review', {
+      autopilotId: 'ap1',
+      url: 'https://example.com/1',
+    });
+
     // The whole request travels under a single `req` key (the shape
     // `#[tauri::command] help_search(req: HelpSearchRequest)` deserializes),
     // exactly like `scrape_hybrid_search` above — a flattened payload would

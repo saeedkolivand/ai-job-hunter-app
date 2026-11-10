@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 
 import {
   flushMicrotasks,
@@ -22,6 +22,7 @@ import {
   rerenderPane,
   resetPaneMocks,
   resolveInFlight,
+  resolveReturns,
   resolveSettled,
 } from './harness';
 
@@ -189,7 +190,7 @@ describe('JobDetailPane — score on open', () => {
     expect(callOrder).toEqual(['update', 'score']);
   });
 
-  it('persist failure is non-fatal — scoreJob still fires after updateDescription rejects', async () => {
+  it('persist failure fails closed — resolved text is neither shown nor scored', async () => {
     mockUpdateDescMutateAsync.mockRejectedValue(new Error('persist failed'));
 
     resolveSettled('Full description from resolve endpoint.');
@@ -200,9 +201,9 @@ describe('JobDetailPane — score on open', () => {
     await openPane(posting);
     await flushMicrotasks(2);
 
-    // scoreJob fires even though persist failed.
-    expect(mockScoreJob).toHaveBeenCalledTimes(1);
-    expect(mockScoreJob).toHaveBeenCalledWith(posting.id);
+    expect(mockScoreJob).not.toHaveBeenCalled();
+    expect(screen.queryByText('Full description from resolve endpoint.')).not.toBeInTheDocument();
+    expect(screen.getByText('Short snippet.')).toBeInTheDocument();
   });
 
   it('one-shot guard — re-render with same posting does NOT call scoreJob again', async () => {
@@ -254,7 +255,35 @@ describe('JobDetailPane — updateDescription persist on upgrade', () => {
     expect(mockUpdateDescMutateAsync).toHaveBeenCalledWith({
       url: posting.url,
       description: fullDesc,
+      resolved: { title: posting.title, company: posting.company, url: posting.url },
     });
+  });
+
+  it('passes the RESOLVED posting identity so the backend can detect a different advert', async () => {
+    resolveReturns({
+      data: {
+        description: 'This is the much longer full job description fetched from the target page.',
+        title: 'Other Role',
+        company: 'Other Corp',
+        url: 'https://boards.greenhouse.io/other/jobs/9',
+        externalId: '9',
+      },
+      isFetched: true,
+    });
+    const posting = aggregator('persist-identity', 'Short snippet.');
+    await openPane(posting);
+    await flushMicrotasks();
+
+    expect(mockUpdateDescMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resolved: {
+          title: 'Other Role',
+          company: 'Other Corp',
+          url: 'https://boards.greenhouse.io/other/jobs/9',
+          externalId: '9',
+        },
+      })
+    );
   });
 
   it('one-shot guard — re-render does NOT call updateDescription again', async () => {

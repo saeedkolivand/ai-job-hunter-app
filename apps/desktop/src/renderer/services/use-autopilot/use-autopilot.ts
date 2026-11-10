@@ -132,6 +132,21 @@ export const useResumeAutopilot = () => {
   });
 };
 
+/**
+ * Release a found job held for identity review (#1445). Invalidates
+ * `keys.autopilot.all`, which also refreshes the found-jobs rows and the
+ * Best Matches child query by prefix.
+ */
+export const useDismissIdentityReview = () => {
+  const api = useAppClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: { autopilotId: string; url: string }) =>
+      api.autopilot.dismissIdentityReview(req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.autopilot.all }),
+  });
+};
+
 export const useAutopilotStepEvents = (onStep?: (event: AutopilotStepEvent) => void) => {
   const api = useAppClient();
   useEffect(() => {

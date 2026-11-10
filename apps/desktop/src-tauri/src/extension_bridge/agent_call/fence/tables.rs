@@ -95,6 +95,12 @@ pub(in crate::extension_bridge::agent_call) const FENCE_FIELD_NAMES: &[&str] = &
     // `discovered::DiscoveredCompany.display_name` (`discovery_search_
     // companies`) — board-harvested from a posting's own apply-redirect URL.
     "displayName",
+    // `autopilot::IdentityReview.resolved_*` (autopilot_list, autopilot_get ->
+    // `foundJobs[].identityReview`, issue #1445) — the title/company/external
+    // id of whatever advert a found job's url resolved to: scraped text.
+    "resolvedTitle",
+    "resolvedCompany",
+    "resolvedExternalId",
 ];
 
 /// `JobPosting`'s own always-present, distinctively-named field pair

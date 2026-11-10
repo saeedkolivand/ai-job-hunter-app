@@ -3,6 +3,20 @@
 
 use super::support::*;
 
+fn resolved(title: &str, company: &str, url: &str) -> crate::autopilot::ResolvedIdentity {
+    crate::autopilot::ResolvedIdentity {
+        title: title.into(),
+        company: company.into(),
+        url: url.into(),
+        external_id: None,
+    }
+}
+
+/// The resolved identity of the posting `found_job` stores (same title + company).
+fn same_id(url: &str) -> crate::autopilot::ResolvedIdentity {
+    resolved("Engineer", "Acme", url)
+}
+
 // ── update_found_job_descriptions (issue #1106 part b) ────────────────────────
 
 #[test]
@@ -17,7 +31,13 @@ fn update_found_job_descriptions_patches_the_matching_row() {
     );
 
     let normalized = crate::applications::normalize_job_url("https://boards.example.com/jobs/1");
-    let updated = store.update_found_job_descriptions(&normalized, "corrected text");
+    let updated = store
+        .update_found_job_descriptions(
+            &normalized,
+            Some("corrected text"),
+            &same_id("https://boards.example.com/jobs/1"),
+        )
+        .updated;
     assert_eq!(updated, 1, "exactly one row must be patched");
 
     let list = store.list();
@@ -39,7 +59,13 @@ fn update_found_job_descriptions_returns_zero_when_no_url_matches() {
     );
 
     let normalized = crate::applications::normalize_job_url("https://nowhere.example.com/x");
-    let updated = store.update_found_job_descriptions(&normalized, "ignored");
+    let updated = store
+        .update_found_job_descriptions(
+            &normalized,
+            Some("ignored"),
+            &same_id("https://nowhere.example.com/x"),
+        )
+        .updated;
     assert_eq!(updated, 0, "an unmatched url must patch nothing");
     assert_eq!(
         store.list()[0].found_jobs[0].description,
@@ -62,7 +88,9 @@ fn update_found_job_descriptions_updates_every_matching_row_across_autopilots() 
     record(&store, &ap2.id, 1, vec![found_job(shared_url, 2)]);
 
     let normalized = crate::applications::normalize_job_url(shared_url);
-    let updated = store.update_found_job_descriptions(&normalized, "shared correction");
+    let updated = store
+        .update_found_job_descriptions(&normalized, Some("shared correction"), &same_id(shared_url))
+        .updated;
     assert_eq!(
         updated, 2,
         "both autopilots' rows for the same url must update, not just the first"
@@ -113,7 +141,13 @@ fn update_found_job_descriptions_clears_stale_trust_but_leaves_score_provisional
          distributed systems platform. You will own the async runtime, mentor \
          junior engineers, and ship production services used by millions of \
          users daily.";
-    let updated = store.update_found_job_descriptions(&normalized, full_description);
+    let updated = store
+        .update_found_job_descriptions(
+            &normalized,
+            Some(full_description),
+            &resolved("Rust Engineer", "Acme", url),
+        )
+        .updated;
     assert_eq!(updated, 1);
 
     let job = &store.list()[0].found_jobs[0];

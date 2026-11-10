@@ -31,4 +31,6 @@ export const autopilot = {
     ),
   takePendingFocus: () => invoke<string | null>('autopilot_take_pending_focus'),
   bestMatches: () => invoke<AutopilotBestMatchesResult>('autopilot_best_matches'),
+  dismissIdentityReview: ({ autopilotId, url }: { autopilotId: string; url: string }) =>
+    invoke<boolean>('autopilot_dismiss_identity_review', { autopilotId, url }),
 };

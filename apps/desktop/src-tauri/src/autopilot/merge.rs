@@ -88,7 +88,13 @@ pub(super) fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -
         .map(|e| {
             let mut row = e.clone();
             row.is_new = false;
-            if let Some(inc) = incoming_by_key.get(&merge_key(e)) {
+            // A row held for identity review (issue #1445) keeps its old content,
+            // score and notes until the user dismisses it: the re-surfaced posting
+            // may be a different advert than the one the row describes.
+            if let Some(inc) = incoming_by_key
+                .get(&merge_key(e))
+                .filter(|_| e.identity_review.is_none())
+            {
                 row.title = inc.title.clone();
                 row.company = inc.company.clone();
                 if inc.location.is_some() {

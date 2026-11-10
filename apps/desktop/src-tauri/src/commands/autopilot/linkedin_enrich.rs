@@ -12,7 +12,8 @@ use std::sync::LazyLock;
 use parking_lot::Mutex;
 use tauri::AppHandle;
 
-use crate::autopilot_helpers::linkedin_enrich::{classify_resolution, EnrichOutcome};
+use crate::autopilot_helpers::linkedin_enrich::{classify_resolution, EnrichOutcome, EnrichTarget};
+use crate::commands::scrape::DescriptionWriteStatus;
 use crate::scraping::linkedin::rate_limiter::RateLimiter;
 
 /// Process-global set of LinkedIn URLs currently being enriched by an
@@ -71,23 +72,29 @@ fn release_claim(url: &str) {
 /// than fetched a second time; it stays selectable by
 /// `select_linkedin_enrichment_targets` on the NEXT run once this pass
 /// releases it.
-pub(super) async fn enrich_linkedin_descriptions(app: AppHandle, urls: Vec<String>) {
-    let urls = claim_unclaimed(urls);
-    if urls.is_empty() {
+pub(super) async fn enrich_linkedin_descriptions(app: AppHandle, targets: Vec<EnrichTarget>) {
+    let claimed: HashSet<String> = claim_unclaimed(targets.iter().map(|t| t.url.clone()).collect())
+        .into_iter()
+        .collect();
+    let targets: Vec<EnrichTarget> = targets
+        .into_iter()
+        .filter(|t| claimed.contains(&t.url))
+        .collect();
+    if targets.is_empty() {
         return;
     }
     let limiter = crate::scraping::linkedin::rate_limiter::linkedin_rate_limiter();
     let mut enriched = 0usize;
-    for url in &urls {
-        if enrich_one(&app, limiter, url).await {
+    for target in &targets {
+        if enrich_one(&app, limiter, target).await {
             enriched += 1;
         }
-        release_claim(url);
+        release_claim(&target.url);
     }
     if enriched > 0 {
         log::info!(
             "[autopilot] LinkedIn description enrichment: {enriched}/{} postings updated",
-            urls.len()
+            targets.len()
         );
     }
 }
@@ -97,9 +104,9 @@ pub(super) async fn enrich_linkedin_descriptions(app: AppHandle, urls: Vec<Strin
 /// [`enrich_linkedin_descriptions`] so every exit path (skip, fetch error,
 /// write-back error, success) funnels through one `return`, guaranteeing the
 /// caller's [`release_claim`] always runs exactly once per URL.
-async fn enrich_one(app: &AppHandle, limiter: &'static RateLimiter, url: &str) -> bool {
+async fn enrich_one(app: &AppHandle, limiter: &'static RateLimiter, target: &EnrichTarget) -> bool {
     limiter.wait_for_slot().await;
-    let result = crate::scraping::scrape_url::resolve(url).await;
+    let result = crate::scraping::scrape_url::resolve(&target.url).await;
     // Count the attempt against the shared budget regardless of outcome —
     // the request already reached LinkedIn's servers (or was denied one), so
     // a string of failures must still be paced, not retried in a burst.
@@ -111,33 +118,48 @@ async fn enrich_one(app: &AppHandle, limiter: &'static RateLimiter, url: &str) -
             crate::observability::sanitize_reason(&e.to_string())
         );
     }
-    let EnrichOutcome::Description(description) = classify_resolution(result) else {
-        return false;
-    };
-
-    // `scrape_update_description` does synchronous file I/O (both stores it
-    // patches persist to disk) — never call it inline on this async task;
-    // `spawn_blocking` matches every other sync/blocking call this crate
-    // makes from async code (e.g. `autopilot_best_matches`).
+    // Both write paths do synchronous file I/O — never call them inline on this
+    // async task; `spawn_blocking` matches every other sync/blocking call this
+    // crate makes from async code (e.g. `autopilot_best_matches`).
     let app_for_write = app.clone();
-    let url_for_write = url.to_string();
-    let joined = tauri::async_runtime::spawn_blocking(move || {
-        crate::commands::scrape::scrape_update_description(
-            app_for_write,
-            crate::commands::scrape::ScrapeUpdateDescriptionRequest {
-                url: url_for_write,
-                description,
-            },
-        )
-    })
-    .await;
-    match joined {
-        Ok(Ok(true)) => true,
-        Ok(Ok(false)) => {
-            // The row moved/was dismissed between discovery and this fetch —
-            // not an error, just nothing left to enrich.
-            false
+    let url_for_write = target.url.clone();
+    let joined = match classify_resolution(target, result) {
+        EnrichOutcome::Skip => return false,
+        // Issue #1445: the url now leads to a different advert. Never write its
+        // text; the store holds each stored row for review.
+        EnrichOutcome::Drift(resolved) => {
+            tauri::async_runtime::spawn_blocking(move || {
+                crate::commands::scrape::flag_identity_drift(
+                    &app_for_write,
+                    &url_for_write,
+                    &resolved,
+                )
+                .map(|_| DescriptionWriteStatus::IdentityDrift)
+            })
+            .await
         }
+        EnrichOutcome::Description {
+            description,
+            resolved,
+        } => {
+            tauri::async_runtime::spawn_blocking(move || {
+                crate::commands::scrape::scrape_update_description(
+                    app_for_write,
+                    crate::commands::scrape::ScrapeUpdateDescriptionRequest {
+                        url: url_for_write,
+                        description,
+                        resolved,
+                    },
+                )
+            })
+            .await
+        }
+    };
+    match joined {
+        Ok(Ok(DescriptionWriteStatus::Updated)) => true,
+        // The row moved/was dismissed between discovery and this fetch, or the
+        // store-side verdict held it for review — nothing left to enrich.
+        Ok(Ok(_)) => false,
         Ok(Err(e)) => {
             log::info!(
                 "[autopilot] LinkedIn description write-back failed for one posting: {}",

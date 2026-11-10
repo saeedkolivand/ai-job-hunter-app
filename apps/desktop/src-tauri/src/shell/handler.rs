@@ -157,6 +157,7 @@ pub(crate) fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + S
         commands::autopilot::autopilot_resume,
         commands::autopilot::autopilot_take_pending_focus,
         commands::autopilot::autopilot_best_matches,
+        commands::autopilot::autopilot_dismiss_identity_review,
         // ai generations
         commands::ai_generations::ai_generations_list,
         commands::ai_generations::ai_generations_save,

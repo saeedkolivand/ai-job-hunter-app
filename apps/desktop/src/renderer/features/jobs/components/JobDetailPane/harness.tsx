@@ -20,7 +20,9 @@ import { JobDetailPane as Subject } from './index';
 export const JobDetailPane = Subject;
 
 vi.mock('@ajh/translations', () => ({
-  useTranslation: () => ({ t: (k: string) => k }),
+  useTranslation: () => ({
+    t: (k: string, o?: Record<string, string>) => (o ? `${k}|${Object.values(o).join('|')}` : k),
+  }),
 }));
 
 vi.mock('motion/react', () => ({
@@ -49,6 +51,7 @@ vi.mock('lucide-react', () => ({
   MapPin: () => null,
   RefreshCw: () => null,
   Save: () => null,
+  TriangleAlert: () => null,
   Wand2: () => null,
 }));
 
@@ -122,7 +125,9 @@ vi.mock('@/features/jobs/providers', () => ({
 export const mockRefetch: Mock = vi.fn().mockResolvedValue(undefined);
 
 interface ResolveStub {
-  data: { description: string } | undefined;
+  data:
+    | { description: string; title?: string; company?: string; url?: string; externalId?: string }
+    | undefined;
   isLoading: boolean;
   isFetching: boolean;
   isFetched: boolean;
@@ -142,7 +147,7 @@ export function idleStub(): ResolveStub {
 }
 
 export const mockUseResolveJobUrl: Mock = vi.fn().mockReturnValue(idleStub());
-export const mockUpdateDescMutateAsync: Mock = vi.fn().mockResolvedValue(false);
+export const mockUpdateDescMutateAsync: Mock = vi.fn().mockResolvedValue('updated');
 
 // Cluster split (ADR-029) + external-open spies + notification container.
 export const mockSplitMutate: Mock = vi.fn();
@@ -224,7 +229,7 @@ export function resolveInFlight() {
 export function resetPaneMocks() {
   mockTrackInteraction.mockClear();
   mockRefetch.mockClear();
-  mockUpdateDescMutateAsync.mockReset().mockResolvedValue(false);
+  mockUpdateDescMutateAsync.mockReset().mockResolvedValue('noMatch');
   mockScoreJob.mockReset();
   mockSplitMutate.mockReset();
   mockOpenExternal.mockClear();

@@ -73,6 +73,8 @@ pub(in crate::extension_bridge::agent_read) fn full_found_job() -> FoundJob {
             url: "https://boards.example.com/jobs/42".into(),
         }],
         is_agency: false,
+        identity_review: None,
+        identity_dismissed: None,
     }
 }
 

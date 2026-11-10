@@ -170,3 +170,49 @@ fn update_description_patches_every_item_sharing_the_url() {
         "a different url must not be touched"
     );
 }
+
+#[test]
+fn checked_update_patches_only_same_entries_at_the_url() {
+    use crate::scraping::scrape_url::IdentityVerdict;
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({
+        "id": "same", "url": "https://example.com/jobs/1", "title": "Engineer", "company": "Acme", "description": "old",
+    }));
+    cache.add(serde_json::json!({
+        "id": "other", "url": "https://example.com/jobs/1?utm=x", "title": "Cook", "company": "Diner", "description": "old",
+    }));
+    let key = crate::applications::normalize_job_url("https://example.com/jobs/1");
+
+    let out = cache.update_description_checked(&key, "new text", |title, _, _| {
+        if title == "Engineer" {
+            IdentityVerdict::Same
+        } else {
+            IdentityVerdict::Drift
+        }
+    });
+    assert_eq!(
+        (out.written, out.drifted, out.unverified),
+        (true, true, false)
+    );
+    let desc = |cache: &PostingsCache, id: &str| {
+        cache
+            .get_all()
+            .iter()
+            .find(|p| p["id"] == id)
+            .and_then(|p| p["description"].as_str())
+            .map(str::to_string)
+    };
+    assert_eq!(desc(&cache, "same").as_deref(), Some("new text"));
+    assert_eq!(
+        desc(&cache, "other").as_deref(),
+        Some("old"),
+        "a drifted entry is never patched"
+    );
+
+    let none = cache.update_description_checked(&key, "x", |_, _, _| IdentityVerdict::NoEvidence);
+    assert_eq!(
+        (none.written, none.drifted, none.unverified),
+        (false, false, true)
+    );
+    assert_eq!(desc(&cache, "same").as_deref(), Some("new text"));
+}

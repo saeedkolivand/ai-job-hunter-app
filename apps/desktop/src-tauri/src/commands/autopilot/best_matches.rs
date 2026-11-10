@@ -176,7 +176,9 @@ pub(super) fn compute_best_matches(
         .filter(|ap| ap.status != AutopilotStatus::Archived)
     {
         let paused = ap.status == AutopilotStatus::Paused;
-        for job in &ap.found_jobs {
+        // A row held for identity review (issue #1445) is not a match until the
+        // user dismisses it — its stored score belongs to a different advert.
+        for job in ap.found_jobs.iter().filter(|j| j.identity_review.is_none()) {
             let key = crate::scraping::boards::common::canonical_job_key(
                 &job.url,
                 &job.title,

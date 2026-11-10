@@ -297,8 +297,10 @@ export {
   type HybridSearchArmStatus,
   type HybridSearchOutcome,
   type HybridSearchResult,
+  type ResolvedPostingIdentity,
   SCRAPE_CHANNELS,
   type ScrapeContract,
+  type UpdateDescriptionResult,
 } from './scrape.js';
 export { SUPPORT_CHANNELS, type SupportContract } from './support.js';
 export {

@@ -82,7 +82,12 @@ export const useUpdatePostingDescription = () => {
   return useMutation({
     mutationFn: (req: Parameters<ScrapeContract['updateDescription']>[0]) =>
       api.scrape.updateDescription(req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.postings.all }),
+    onSuccess: (result) => {
+      // A drift holds a found-job row server-side; refresh autopilot data so Best
+      // Matches / found-job rows drop it immediately (#1445).
+      if (result === 'identityDrift') void qc.invalidateQueries({ queryKey: keys.autopilot.all });
+      return qc.invalidateQueries({ queryKey: keys.postings.all });
+    },
   });
 };
 

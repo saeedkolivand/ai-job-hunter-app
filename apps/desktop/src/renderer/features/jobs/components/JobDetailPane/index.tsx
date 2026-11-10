@@ -1,4 +1,4 @@
-import { Briefcase, Loader2, RefreshCw } from 'lucide-react';
+import { Briefcase, Loader2, RefreshCw, TriangleAlert } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect, useRef } from 'react';
 
@@ -37,8 +37,16 @@ function DetailContent({
   const { t } = useTranslation();
   const actions = usePostingActions(posting);
   const { trackInteraction } = actions;
-  const { description, descLoading, showLoadButton, showError, refetch, announced } =
-    useResolvedDescription(posting);
+  const {
+    description,
+    descLoading,
+    showLoadButton,
+    showError,
+    refetch,
+    announced,
+    drift,
+    unverified,
+  } = useResolvedDescription(posting);
 
   // Mark 'viewed' after a 5s dwell (fire-once per job mount via key={posting.id}).
   // Depends ONLY on posting.id so a description-resolve re-render can't reset/refire it.
@@ -87,6 +95,22 @@ function DetailContent({
           {t('jobs.aboutTheJob')}
         </h3>
 
+        {/* #1445: the posting's url now opens a different advert. The other ad's
+            text is never rendered or scored; the stored description stays below. */}
+        {drift && (
+          <div
+            role="note"
+            className="mb-3 flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-caption text-foreground/80"
+          >
+            <TriangleAlert
+              size={14}
+              aria-hidden="true"
+              className="mt-0.5 shrink-0 text-amber-400"
+            />
+            <p>{t('jobs.identityDrift.notice', { title: drift.title, company: drift.company })}</p>
+          </div>
+        )}
+
         {/* Loading state: only shown when there is NO text to display yet */}
         {descLoading && !description && (
           <div
@@ -112,13 +136,22 @@ function DetailContent({
 
         {/* Description — rendered immediately when any text is available */}
         {description && (
-          <>
-            {/* fold 9: space-y-4 for block rhythm; headings use mt-2 not mt-4 */}
-            <JobDescription
-              markdown={description}
-              className="space-y-4 text-caption text-foreground/80"
-            />
+          /* fold 9: space-y-4 for block rhythm; headings use mt-2 not mt-4 */
+          <JobDescription
+            markdown={description}
+            className="space-y-4 text-caption text-foreground/80"
+          />
+        )}
 
+        {/* Nothing comparable was fetched and no stored text exists: a retry cannot help. */}
+        {unverified && !description && (
+          <p className="text-[11px] text-foreground/50">{t('jobs.descriptionUnverified')}</p>
+        )}
+
+        {/* Outside the description gate so an EMPTY stored text still gets the
+            error + retry when the identity check failed (fail-closed, #1445). */}
+        {!descLoading && (
+          <>
             {/* blocker 7: show error hint when resolve failed AND the gate fired;
                 gate on shouldResolve so non-aggregator postings are never affected */}
             {showError && (

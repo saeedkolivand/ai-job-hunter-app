@@ -12,8 +12,9 @@
 //! and therefore lives one layer up, in `commands::autopilot::linkedin_enrich`
 //! (L3) — see `docs/architecture-rules.md` R2/R7.
 
-use crate::autopilot::FoundJob;
+use crate::autopilot::{FoundJob, ResolvedIdentity};
 use crate::documents::keywords::description_is_blank;
+use crate::scraping::scrape_url::{identity_verdict, IdentityVerdict, PostingIdentity};
 use crate::scraping::JobPosting;
 
 /// Hard per-run cap on LinkedIn enrichment fetches. Mirrors the reasoning
@@ -31,6 +32,15 @@ pub(crate) const LINKEDIN_ENRICH_MAX: usize = 15;
 /// `FoundJob.board`) — matches the id LinkedIn's own `Scraper::id()` returns.
 const LINKEDIN_BOARD_ID: &str = "linkedin";
 
+/// A stored LinkedIn row to enrich: the url to fetch plus the identity the
+/// fetched posting must still match (issue #1445).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EnrichTarget {
+    pub(crate) url: String,
+    pub(crate) title: String,
+    pub(crate) company: String,
+}
+
 /// Pure selection: which found-job URLs need a LinkedIn description
 /// enrichment fetch this run. Filters on **blank description AND
 /// `board == "linkedin"`** — deliberately NOT `is_new` — so a posting whose
@@ -39,14 +49,20 @@ const LINKEDIN_BOARD_ID: &str = "linkedin";
 /// being permanently stuck title-only just because it was already "seen".
 /// Deduped (a posting can appear more than once across clustered members) and
 /// capped at [`LINKEDIN_ENRICH_MAX`].
-pub(crate) fn select_linkedin_enrichment_targets(found_jobs: &[FoundJob]) -> Vec<String> {
+pub(crate) fn select_linkedin_enrichment_targets(found_jobs: &[FoundJob]) -> Vec<EnrichTarget> {
     let mut seen = std::collections::HashSet::new();
     found_jobs
         .iter()
         .filter(|j| j.board.as_deref() == Some(LINKEDIN_BOARD_ID))
         .filter(|j| description_is_blank(j.description.as_deref()))
-        .map(|j| j.url.clone())
-        .filter(|url| seen.insert(url.clone()))
+        // A held or dismissed row is settled by the user; refetching it would only burn the rate budget.
+        .filter(|j| j.identity_review.is_none() && j.identity_dismissed.is_none())
+        .filter(|j| seen.insert(j.url.clone()))
+        .map(|j| EnrichTarget {
+            url: j.url.clone(),
+            title: j.title.clone(),
+            company: j.company.clone(),
+        })
         .take(LINKEDIN_ENRICH_MAX)
         .collect()
 }
@@ -57,8 +73,16 @@ pub(crate) fn select_linkedin_enrichment_targets(found_jobs: &[FoundJob]) -> Vec
 /// itself never touches an `AppHandle` or the network.
 #[derive(Debug, PartialEq)]
 pub(crate) enum EnrichOutcome {
-    /// A genuinely usable (non-blank) description to write back.
-    Description(String),
+    /// A genuinely usable (non-blank) description to write back, from a posting
+    /// that is still the same advert as the stored row.
+    Description {
+        description: String,
+        resolved: ResolvedIdentity,
+    },
+    /// The url now leads to a different advert (issue #1445): no description
+    /// is written; the store holds each stored row for review (a row whose drift
+    /// the user already dismissed is skipped).
+    Drift(ResolvedIdentity),
     /// Nothing usable this attempt — a network/HTTP error, a fetch that came
     /// back with no posting (host mismatch, non-2xx, or a genuinely-removed
     /// job — `resolve`'s `Ok(None)` conflates all three, so this pass cannot
@@ -78,13 +102,35 @@ pub(crate) enum EnrichOutcome {
 /// are not (yet) distinguished. Takes the plain `anyhow::Result` shape
 /// (rather than the L1 fn itself) so this stays callable with a fabricated
 /// value in a unit test, no network/AppHandle required.
-pub(crate) fn classify_resolution(result: anyhow::Result<Option<JobPosting>>) -> EnrichOutcome {
-    match result {
-        Ok(Some(p)) => match p.description.filter(|d| !description_is_blank(Some(d))) {
-            Some(d) => EnrichOutcome::Description(d),
+pub(crate) fn classify_resolution(
+    stored: &EnrichTarget,
+    result: anyhow::Result<Option<JobPosting>>,
+) -> EnrichOutcome {
+    let Ok(Some(p)) = result else {
+        return EnrichOutcome::Skip;
+    };
+    let resolved = ResolvedIdentity {
+        title: p.title.clone(),
+        company: p.company.clone(),
+        url: p.url.clone(),
+        external_id: p.external_id.clone(),
+    };
+    let stored_identity = PostingIdentity {
+        title: &stored.title,
+        company: &stored.company,
+        url: &stored.url,
+    };
+    let description = p.description.filter(|d| !description_is_blank(Some(d)));
+    match identity_verdict(stored_identity, resolved.as_posting()) {
+        IdentityVerdict::NoEvidence => EnrichOutcome::Skip,
+        IdentityVerdict::Drift => EnrichOutcome::Drift(resolved),
+        IdentityVerdict::Same => match description {
+            Some(description) => EnrichOutcome::Description {
+                description,
+                resolved,
+            },
             None => EnrichOutcome::Skip,
         },
-        Ok(None) | Err(_) => EnrichOutcome::Skip,
     }
 }
 

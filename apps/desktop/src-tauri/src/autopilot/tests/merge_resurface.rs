@@ -250,3 +250,32 @@ fn merge_score_source_moves_with_score_across_resurface() {
         "a re-ranked score must arrive with its own label"
     );
 }
+
+#[test]
+fn a_held_row_keeps_its_content_when_the_url_resurfaces() {
+    let mut held = found_job_full("https://a.com/1", "Rust Engineer", "Acme", 100);
+    held.description = Some("old text".into());
+    held.score = Some(80.0);
+    held.identity_review = Some(crate::autopilot::IdentityReview {
+        resolved_title: "Cook".into(),
+        resolved_company: "Diner".into(),
+        resolved_url: "https://other.example.com/1".into(),
+        resolved_external_id: None,
+        detected_at: 1,
+    });
+    held.is_new = true;
+
+    let mut again = found_job_full("https://a.com/1", "Cook", "Diner", 999);
+    again.description = Some("other advert text".into());
+    again.score = Some(10.0);
+
+    let merged = merge_found_jobs(&[held], vec![again]);
+    assert_eq!(merged.len(), 1);
+    let row = &merged[0];
+    assert_eq!(row.title, "Rust Engineer");
+    assert_eq!(row.company, "Acme");
+    assert_eq!(row.description.as_deref(), Some("old text"));
+    assert_eq!(row.score, Some(80.0));
+    assert!(row.identity_review.is_some(), "the hold survives");
+    assert!(!row.is_new, "is_new is still cleared");
+}

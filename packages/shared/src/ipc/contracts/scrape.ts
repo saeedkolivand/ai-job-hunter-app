@@ -6,6 +6,21 @@ import type {
 } from '../../schemas/index.js';
 import type { JobPosting } from '../../types/index.js';
 
+/**
+ * Identity of the posting a description was resolved from. The backend compares
+ * it with every stored copy of the url and refuses to write the text onto a
+ * row that describes a different advert (issue #1445).
+ */
+export interface ResolvedPostingIdentity {
+  title: string;
+  company: string;
+  url: string;
+  externalId?: string;
+}
+
+/** Outcome of {@link ScrapeContract.updateDescription}. */
+export type UpdateDescriptionResult = 'updated' | 'noMatch' | 'identityDrift' | 'unverified';
+
 /** Whether one arm of a {@link HybridSearchResult} actually ran. */
 export type HybridSearchArmStatus = 'ran' | 'skipped' | 'unavailable';
 
@@ -52,10 +67,32 @@ export interface ScrapeContract {
    * postings cache AND every matching found-job row persisted by an
    * autopilot, so the match scorer reads the full text instead of the
    * truncated aggregator snippet wherever the posting was surfaced from.
-   * Returns `true` when at least one of those stores had a matching row,
-   * `false` when neither did.
+   * Takes `{ url, description, resolved: { title, company, url, externalId? } }`
+   * and resolves `'updated'`, `'noMatch'`, `'identityDrift'` or `'unverified'`.
+   *
+   * `resolved` is the identity of the posting the description came from. It is
+   * asserted by the CALLER: the check protects honest flows from attaching
+   * another advert's text and never authorizes releasing a hold (only
+   * `autopilot.dismissIdentityReview` does). Each stored copy is checked
+   * against it: a copy that describes a different advert (an aggregator url
+   * that now redirects elsewhere) is NOT written — a found job gets an identity
+   * review instead, and the live cache write is skipped. The description text
+   * is otherwise stored verbatim.
+   *
+   * Statuses: `'updated'` — at least one store was written (a cache-only drift
+   * can co-occur);
+   * `'identityDrift'` — a stored copy no longer matches `resolved`, or is
+   * already held (a held row keeps returning this until dismissed);
+   * `'unverified'` — a stored copy exists but nothing was written and nothing
+   * drifted (nothing comparable, or a drift the user already dismissed): keep
+   * the stored text, do not treat the new text as verified; `'noMatch'` — no
+   * stored row or cache entry exists at all.
    */
-  updateDescription(req: { url: string; description: string }): Promise<boolean>;
+  updateDescription(req: {
+    url: string;
+    description: string;
+    resolved: ResolvedPostingIdentity;
+  }): Promise<UpdateDescriptionResult>;
 
   listPostings(): Promise<JobPosting[]>;
 

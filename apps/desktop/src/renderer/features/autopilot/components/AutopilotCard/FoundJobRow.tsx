@@ -1,4 +1,4 @@
-import { Check, ExternalLink, Eye, Sparkles, Wand2 } from 'lucide-react';
+import { Check, ExternalLink, Eye, Sparkles, TriangleAlert, Wand2 } from 'lucide-react';
 
 import type { AutopilotFoundJob } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
@@ -12,6 +12,7 @@ import { MatchBand } from '@/lib/match-band';
 import { TrustBadge } from '@/lib/trust-badge';
 
 import { scoreDetail, scoreVariant } from './found-jobs';
+import { IdentityReviewBlock } from './IdentityReviewBlock';
 
 const STATUS_TAG = 'rounded-full px-1.5 py-0.5 text-[8px] uppercase tracking-wider';
 
@@ -22,9 +23,11 @@ interface Props {
   mixedScoreSources: boolean;
   viewed: boolean;
   splitPending: boolean;
+  dismissPending: boolean;
   onOpen: (job: AutopilotFoundJob) => void;
   onApply: (job: AutopilotFoundJob) => void;
   onSplitCluster: (job: AutopilotFoundJob) => void;
+  onDismissReview: (job: AutopilotFoundJob) => void;
 }
 
 /** One found-job row: title/badges/score, the apply action, cluster row and AI note. */
@@ -34,11 +37,16 @@ export function FoundJobRow({
   mixedScoreSources,
   viewed,
   splitPending,
+  dismissPending,
   onOpen,
   onApply,
   onSplitCluster,
+  onDismissReview,
 }: Props) {
   const { t } = useTranslation();
+  // Held for review (#1445): Apply stays off until the user dismisses the flag.
+  const held = job.identityReview !== undefined;
+  const reviewId = `identity-review-${job.url}`;
   const formatRelativeTime = useFormatRelativeTime(t);
 
   return (
@@ -69,6 +77,11 @@ export function FoundJobRow({
                 <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-emerald-400/15 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-emerald-300">
                   <Check size={8} /> {t('autopilot.badge.applied')}
                 </span>
+              )}
+              {held && (
+                <Tag color="warning" icon={<TriangleAlert size={7} />} className={STATUS_TAG}>
+                  {t('autopilot.identityReview.badge')}
+                </Tag>
               )}
               {viewed && (
                 <Tag color="blue" icon={<Eye size={7} />} className={STATUS_TAG}>
@@ -157,12 +170,23 @@ export function FoundJobRow({
         </Button>
         <Button
           onClick={() => onApply(job)}
-          title={t('autopilot.applyJob')}
+          disabled={held}
+          aria-describedby={held ? reviewId : undefined}
+          title={held ? t('autopilot.identityReview.applyBlocked') : t('autopilot.applyJob')}
           className="flex shrink-0 items-center gap-1 rounded-lg border-transparent bg-brand/10 px-2 py-1 text-[10px] font-medium text-brand-soft transition-colors hover:bg-brand/20 h-auto"
         >
           <Wand2 size={10} /> {t('autopilot.applyJob')}
         </Button>
       </div>
+
+      {held && (
+        <IdentityReviewBlock
+          job={job}
+          describedById={reviewId}
+          pending={dismissPending}
+          onDismiss={onDismissReview}
+        />
+      )}
 
       {/* Cross-board cluster row (ADR-029) — agency marker, source
           chips for other boards, and a split action. Kept OUTSIDE
