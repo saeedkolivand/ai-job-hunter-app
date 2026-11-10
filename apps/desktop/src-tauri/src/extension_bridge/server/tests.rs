@@ -36,7 +36,7 @@ async fn port_probe_skips_busy_port_and_binds_next_free() {
     // (a) A range that is exactly the held port → no free port → None. This is the
     //     skip proof: the busy port is never bound.
     assert!(
-        probe_ports(busy_port..=busy_port).await.is_none(),
+        probe_ports(busy_port..=busy_port).await.is_err(),
         "a single-port range over the held port {busy_port} must yield None"
     );
 
@@ -70,16 +70,37 @@ async fn port_probe_returns_none_when_full_span_busy_graceful_disable() {
 
     // The span is the single held port → fully busy → graceful None.
     let result = probe_ports(held_port..=held_port).await;
-    assert!(
-        result.is_none(),
-        "probe_ports must return None when the only port in range is busy"
-    );
+    let failures = result.expect_err("probe_ports must fail when the only port in range is busy");
+    assert_eq!(failures.len(), 1);
+    assert!(failures[0].starts_with(&format!("{held_port}: ")), "{failures:?}");
 
     // Control: once released, that exact port becomes bindable again, proving the
     // None above was due to the held listener — not a bug.
     drop(held);
     let reclaim = pick_free_port().await; // exercises the free-detect helper
     let _ = reclaim;
+}
+
+/// #1442: every port of a multi-port range occupied -> one diagnostic per port,
+/// and the CLI message built from the persisted record names the range + errors.
+#[tokio::test]
+async fn full_range_busy_lists_every_port_and_cli_message_surfaces_it() {
+    // Hold two ADJACENT ports we bind ourselves (retry until a free pair is found).
+    let (a, b, lo, hi) = loop {
+        let (a, pa) = claim_busy_port().await;
+        if let Ok(b) = TcpListener::bind(("127.0.0.1", pa.wrapping_add(1))).await {
+            break (a, b, pa, pa + 1);
+        }
+    };
+    let failures = probe_ports(lo..=hi).await.expect_err("all busy");
+    assert_eq!(failures.len(), 2, "{failures:?}");
+    assert!(failures[0].starts_with(&format!("{lo}: ")) && failures[1].starts_with(&format!("{hi}: ")));
+    let dir = tempfile::TempDir::new().unwrap();
+    super::super::bind_diag::record(dir.path(), &failures);
+    let detail = super::super::bind_diag::read(dir.path()).unwrap();
+    let msg = super::super::bind_diag::cli_message(&detail);
+    assert!(msg.contains(&failures[0]) && msg.contains(&failures[1]), "{msg}");
+    drop((a, b));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

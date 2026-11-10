@@ -93,9 +93,16 @@ async fn send_agent_query(ws: WsStream, verb: &Verb) -> Result<Value, &'static s
 pub(super) async fn query(verb: &Verb) -> Result<Value, &'static str> {
     let pointer = read_agent_pointer().ok_or(ERR_APP_NOT_LOCATED)?;
     let token = read_pairing_token(&pointer.data_dir).ok_or(ERR_PAIRING_TOKEN_UNAVAILABLE)?;
-    let ws = connect_authenticated(&token)
-        .await
-        .map_err(pairing_failure_sentinel)?;
+    let ws = connect_authenticated(&token).await.map_err(|f| {
+        // Nothing answered: if the app recorded a total bind failure, say so (#1442).
+        if f == PairingFailure::AppNotRunning {
+            if let Some(d) = crate::extension_bridge::bind_diag::read(Path::new(&pointer.data_dir)) {
+                eprintln!("{}", crate::extension_bridge::bind_diag::cli_message(&d));
+                return ERR_BRIDGE_BIND_FAILED;
+            }
+        }
+        pairing_failure_sentinel(f)
+    })?;
     send_agent_query(ws, verb).await
 }
 
