@@ -30,6 +30,40 @@ import {
 export const ATS_PRECEDENCE = `ATS PRECEDENCE: If a word the anti-AI-tell rules discourage is an EXACT term from the <job_ad> and is truthfully grounded in the candidate's résumé, keep it (ATS keyword match wins). The anti-AI-tell bans govern only words the model introduces on its own.`;
 
 /**
+ * Length ceiling of one résumé bullet, in characters: about two printed lines at
+ * résumé column widths. ONE number for both sides: the prompt states it
+ * ({@link BULLET_EVIDENCE_RULES}) and `pnpm gen:prompts` freezes it into
+ * `validate/content/lexicon.rs`, where the advisory `ats.long_bullet` check
+ * (`ats::MAX_BULLET_CHARS`) reads it, so the rule the model is given and the
+ * rule it is graded on cannot drift apart.
+ */
+export const BULLET_CHAR_CEILING = 200;
+
+/**
+ * How a skill earns its place: made visible where a bullet already shows it, in
+ * one short plain claim. LLM screeners read context, so a skill that appears
+ * only in the Skills list reads as an unevidenced claim, and presentation noise
+ * (long, padded, polished bullets) changes screening outcomes while the
+ * candidate's competence has not. This only SURFACES existing evidence: the
+ * résumé may mention a skill anywhere, and a mention in Skills is not proof the
+ * role did that work, so the rule never licenses writing or rewording a bullet
+ * to carry a skill. "Names or states" is the evidence wording on purpose.
+ * Shared by every résumé tier (compact variant for brief/task) and, via
+ * `pnpm gen:prompts`, the Rust `draft` stage (full variant).
+ */
+const BULLET_EVIDENCE_SURFACE = `- Where a bullet of a role already shows a top job requirement the résumé names or states, make the requirement visible in that bullet. If the résumé only lists the skill, leave it in Skills; never add or reword a bullet to carry it.
+- Never add a requirement the résumé does not name or state.
+- One claim per bullet: the action and its result, not two separate achievements, at most ${BULLET_CHAR_CEILING} characters (about two printed lines).`;
+
+export const BULLET_EVIDENCE_RULES = `BULLET EVIDENCE (a skill counts when a bullet shows it):
+${BULLET_EVIDENCE_SURFACE}
+Short, plain bullets are read in full by a recruiter and an automated screener alike; long ones get skimmed or misread.`;
+
+/** Brief/task tiers: the same imperatives, without the rationale sentences. */
+export const BULLET_EVIDENCE_RULES_COMPACT = `BULLET EVIDENCE:
+${BULLET_EVIDENCE_SURFACE}`;
+
+/**
  * The résumé-tier counterpart to `HUMANIZE_PROSE`'s tone gate: tone shapes word
  * choice and the summary's register only. A résumé stays ATS-safe (bullet
  * structure, CAR format, no contractions/fragments) no matter which tone is
@@ -79,6 +113,8 @@ DATE FORMAT: "January 2021 – March 2023" or "Jan 2021 – Mar 2023" — consis
 
 ${emphasisNote}
 
+${BULLET_EVIDENCE_RULES_COMPACT}
+
 ${lexical}
 ${HUMANIZE_LEXICAL}
 ${ATS_PRECEDENCE}
@@ -110,6 +146,8 @@ ACCEPTANCE CHECKS (the output contract):
 - Output is the rewritten resume only (no commentary), in the target language, using that market's standard section headers and one consistent date format.
 - No skill or phrase was copied from the job ad as if the candidate did it.
 - Keyword emphasis uses **double asterisks**, max 2–3 per bullet.
+
+${BULLET_EVIDENCE_RULES_COMPACT}
 
 ${lexical}
 ${HUMANIZE_LEXICAL}
@@ -156,7 +194,6 @@ ATS OPTIMIZATION RULES:
 
 **Bullet Point Rules:**
 - Start with strong past-tense action verb (Architected, Engineered, Led, Optimized, Delivered)
-- Max 2 lines per bullet (recruiters scan, don't read)
 - Every bullet MUST have: Action + What + Technology/Tool (only when the original names one) + Measurable Result (only when the original supplies a number)
 - Example: "Architected **microservices** platform using **Kubernetes** and **Docker**, reducing deployment time by 60%"
 
@@ -227,6 +264,8 @@ ATS KEYWORD STRATEGY:
 - Critical keywords appear in Skills, Summary, and Experience; secondary ones once or twice
 - Don't stuff: max 3 bolded keywords per bullet point
 - Context matters: "5 years of **React**" > "**React**"
+
+${BULLET_EVIDENCE_RULES}
 
 ${lexical}
 ${HUMANIZE_LEXICAL}
@@ -321,7 +360,7 @@ Work Experience (most recent first):
 - Within each role, reorder bullets so the most relevant to this job come first
 - Rewrite weak bullets to CAR format: Action Verb + What + Technology (bolded, only when the original names one) + Result (only when the original supplies a number)
 - Embed bolded keywords naturally into EXISTING true statements
-- Condense wording within a role, but keep at least one bullet for every role so no role is left empty
+${hasGrounding ? '- Where a bullet already shows a requirement SKILL GROUNDING marks PRESENT, make it visible there; if the résumé only lists it under Skills, leave it there and never add or reword a bullet to carry it\n' : ''}- Condense wording within a role, but keep at least one bullet for every role so no role is left empty
 - Aim for 3–5 strong bullets on the most relevant roles; older or less relevant roles may have fewer, but never zero
 
 Skills Section:

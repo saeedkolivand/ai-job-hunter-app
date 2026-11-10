@@ -124,3 +124,21 @@ fn the_draft_prompt_injects_the_market_resolved_section_order() {
     assert!(!us.contains("Ausbildung, Zertifikate, Kenntnisse"));
     assert!(!de.contains("Skills, Projects, Education"));
 }
+
+/// A skill is shown in a bullet under the shared character ceiling, and the
+/// requirement is made visible only where a bullet already shows it (never a new
+/// bullet), in the role whose strategy `emphasis` lists it — the
+/// evidence map reaches the draft through `<resume_strategy>`.
+///
+/// Mutation check: drop `{BULLET_EVIDENCE_RULES}` or the placement sentence from
+/// `draft_system` and the matching assertion fails.
+#[test]
+fn draft_system_shows_requirements_in_bullets_under_the_shared_ceiling() {
+    let p = draft_system("en", "us");
+    assert!(p.contains(
+        "Where a bullet of a role already shows a top job requirement the résumé names or states"
+    ));
+    assert!(p.contains("never add or reword a bullet to carry one"));
+    assert!(p.contains("Where a bullet of a role already shows a requirement"));
+    assert!(p.contains("at most 200 characters"));
+}

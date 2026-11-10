@@ -67,14 +67,17 @@ describe('buildCoverLetterSystemPrompt', () => {
   });
 
   it('gates the three <company_research> sentences on the hasBrief flag, at every depth (fix #12)', () => {
-    // Defaults to true (today's behavior — unconditional mention) so callers
-    // that don't know yet whether a brief was fetched are unaffected; a
-    // caller that does know can pass false to drop the now-noisy pointer.
-    const large = buildCoverLetterSystemPrompt('recruiter', 'large');
-    const small = buildCoverLetterSystemPrompt('recruiter', 'small');
-    const cli = buildCoverLetterSystemPrompt('recruiter', { kind: 'cli' });
+    // Fails closed: the default is "no brief", so the pointer appears only when
+    // a caller passes true; the unset default drops it at every depth.
+    const args = [undefined, undefined, false, true] as const;
+    const large = buildCoverLetterSystemPrompt('recruiter', 'large', ...args);
+    const small = buildCoverLetterSystemPrompt('recruiter', 'small', ...args);
+    const cli = buildCoverLetterSystemPrompt('recruiter', { kind: 'cli' }, ...args);
     for (const prompt of [large, small, cli]) {
       expect(prompt).toMatch(/<company_research>/);
+    }
+    for (const t of ['large', 'small', { kind: 'cli' }] as const) {
+      expect(buildCoverLetterSystemPrompt('recruiter', t)).not.toMatch(/<company_research>/);
     }
 
     const noBriefLarge = buildCoverLetterSystemPrompt(

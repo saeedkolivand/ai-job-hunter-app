@@ -2,7 +2,8 @@
 //! note the stage appends after a wrong-language first attempt.
 
 use crate::pipeline::resume::prompt_blocks::{
-    resume_conventions, ATS_PRECEDENCE, FACTUAL_GROUNDING_RULES, HUMANIZE_LEXICAL,
+    resume_conventions, ATS_PRECEDENCE, BULLET_EVIDENCE_RULES, FACTUAL_GROUNDING_RULES,
+    HUMANIZE_LEXICAL,
 };
 use crate::pipeline::resume::types::ResumeStrategy;
 use crate::prompt_fence::{fenced, JOB_CAP, RESUME_CAP};
@@ -64,6 +65,8 @@ pub fn draft_system(lang: &str, market: &str) -> String {
 
 {ATS_PRECEDENCE}
 
+{BULLET_EVIDENCE_RULES}
+
 {HUMANIZE_LEXICAL}
 
 Structure:
@@ -95,7 +98,9 @@ nothing — an applicant tracking system extracts a comma list exactly as well.
 title and dates exactly as given.
 - <top_requirements> lists this posting's top requirements. Where one already \
 appears, truthfully, in a bullet you are writing, bold it — but never bold or claim \
-one <resume_strategy>'s own per-company emphasis does not already support.
+one <resume_strategy>'s own per-company emphasis does not already support. Where a \
+bullet of a role already shows a requirement that role's `emphasis` in <resume_strategy> \
+lists, make it visible there; never add or reword a bullet to carry one.
 - Do NOT write a contact header (name, email, phone, links). The application adds \
 it at export time; one written here is a duplicate the reader sees twice.
 - Output the résumé body only. No preamble, no commentary, no closing note.

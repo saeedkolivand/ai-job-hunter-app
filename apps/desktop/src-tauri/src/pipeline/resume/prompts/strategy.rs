@@ -30,7 +30,8 @@ Keep it last and keep it one entry.
 For each company, write the `angle` — one sentence on what this role should prove \
 for THIS posting — and list in `emphasis` the requirements it can evidence. Draw the \
 emphasis from <evidence_map>: a requirement whose status is `missing` has no support \
-in the résumé and must not be emphasized anywhere.
+in the résumé and must not be emphasized anywhere, and a `partial` one is not enough to \
+place in a role.
 
 `skillsGroups` may only contain skills the résumé already demonstrates.
 

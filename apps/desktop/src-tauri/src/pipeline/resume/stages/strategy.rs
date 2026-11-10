@@ -196,7 +196,10 @@ pub(crate) fn reseed(
     (plans, dropped)
 }
 
-/// The subset of `emphasis` the résumé can actually evidence.
+/// The subset of `emphasis` the résumé can actually evidence (anything but
+/// `Missing`, so truthfully present `Partial` terms keep their ATS emphasis).
+/// Placement in a role stays surface-only: the draft and letter prompts never
+/// add or reword a bullet to carry a requirement.
 fn grounded_emphasis(emphasis: &[String], evidence: &EvidenceMap) -> Vec<String> {
     emphasis
         .iter()
