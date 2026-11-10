@@ -57,14 +57,13 @@ fn the_found_jobs_cursor_is_advertised_as_an_opaque_per_autopilot_token() {
     );
 }
 
-/// Round 2 fix (B3-r2-F5) — `best-matches`' `query` filters the already-capped, ranked
-/// candidate list this tool computes (`BEST_MATCHES_CAP`, `commands::autopilot::best_matches`),
-/// not the full stored corpus: a posting outside that cap reads `total: 0`/`matches: []`, a
+/// Round 2 fix (B3-r2-F5) — `best-matches`' `query` filters the qualifying ranked rows
+/// (every one since #1448), not the full stored corpus: a non-qualifying posting reads `total: 0`/`matches: []`, a
 /// confident false negative for issue #1168's headline question ("is this role already in my
 /// list?"). Both the `query` property AND the tool's own base description (`VERB_TABLE`) must
 /// steer a caller toward `found-jobs`' own `query`, which spans everything.
 #[test]
-fn best_matches_query_advertises_it_is_scoped_to_the_capped_ranked_list_not_the_full_corpus() {
+fn best_matches_query_advertises_it_is_scoped_to_qualifying_rows_not_the_full_corpus() {
     let list = tools(Tier::Read);
     let query = property_description(&list, TOOL_BEST_MATCHES, "query");
     assert!(

@@ -315,20 +315,22 @@ fn ipc_cap_is_a_projection_over_the_full_sorted_set() {
             )
         })
         .collect();
-    let mut out = best(&[autopilot("cap", AutopilotStatus::Active, jobs)]);
-    assert_eq!((out.total, out.matches.len()), (256, 256));
-    let full_head: Vec<String> = out.matches[..BEST_MATCHES_CAP]
+    let full = best(&[autopilot("cap", AutopilotStatus::Active, jobs)]).matches;
+    assert_eq!(full.len(), 256);
+    let head: Vec<String> = full[..BEST_MATCHES_CAP]
         .iter()
         .map(|r| r.key.clone())
         .collect();
-    // Exactly what `autopilot_best_matches_blocking` does for the native command.
-    out.matches.truncate(BEST_MATCHES_CAP);
-    assert_eq!(out.matches.len(), 100);
+
+    let mut agent = full.clone();
+    limit_rows(&mut agent, false);
+    assert_eq!(agent.len(), 256, "the agent path is uncapped");
+
+    let mut native = full;
+    limit_rows(&mut native, true);
+    assert_eq!(native.len(), 100, "the native command is capped");
     assert_eq!(
-        out.matches
-            .iter()
-            .map(|r| r.key.clone())
-            .collect::<Vec<_>>(),
-        full_head
+        native.iter().map(|r| r.key.clone()).collect::<Vec<_>>(),
+        head
     );
 }

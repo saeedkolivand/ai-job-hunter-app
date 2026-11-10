@@ -35,7 +35,8 @@ fn best_matches_limit_zero_falls_back_to_the_default_not_to_zero() {
     );
 }
 
-/// B3-r3-F2 — `MAX_BEST_MATCHES_LIMIT` must reach the full row set
+/// B3-r3-F2 (premise since #1448: the agent path pages the FULL set, so this only pins the
+/// per-page max) — `MAX_BEST_MATCHES_LIMIT` must reach the full row set
 /// `commands::autopilot::best_matches::BEST_MATCHES_CAP` (100) allows
 /// through, in ONE page: that command's clustering pass is real CPU work
 /// (its own doc — 3.03s at 2000 found-jobs, 12.3s at 4000), and the
@@ -44,7 +45,7 @@ fn best_matches_limit_zero_falls_back_to_the_default_not_to_zero() {
 /// page never reached the end in one call — this fails against that value
 /// (both on the length assertion and on `nextCursor` staying non-null).
 #[test]
-fn max_best_matches_limit_covers_the_full_capped_row_set_in_one_page() {
+fn max_best_matches_limit_covers_one_native_cap_worth_of_rows_in_one_page() {
     // Mirrors `commands::autopilot::best_matches::BEST_MATCHES_CAP` — that
     // const is private to a sibling module this file doesn't own, so this is
     // a literal pin, not an import; the two must be kept in sync by hand.

@@ -388,6 +388,14 @@ pub(super) fn compute_best_matches(
     }
 }
 
+/// The native IPC command's payload projection (#1448): `capped` keeps only the first
+/// [`BEST_MATCHES_CAP`] rows of the already-sorted set; the agent path passes `false`.
+pub(super) fn limit_rows(rows: &mut Vec<BestMatchRow>, capped: bool) {
+    if capped {
+        rows.truncate(BEST_MATCHES_CAP);
+    }
+}
+
 /// Mark every row that already has an Application (ADR 0001) — checked
 /// against every `clusterMembers[i].url` (which always includes the
 /// canonical's own, since the canonical is itself one of the cluster's
