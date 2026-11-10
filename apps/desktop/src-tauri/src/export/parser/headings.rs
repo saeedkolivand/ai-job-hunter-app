@@ -2,7 +2,7 @@
 //! generic ALL-CAPS heading rule, letter-spaced-heading collapsing, Markdown
 //! ATX headings, and thematic breaks.
 
-use super::markdown::parse_inline_md;
+use super::markdown::{parse_inline_md, strip_md};
 use super::shapes::DATE_RE;
 use crate::export::types::{LineKind, ParsedLine};
 
@@ -311,16 +311,17 @@ pub(crate) fn strip_atx_heading(line: &str) -> Option<&str> {
     }
 }
 
-/// Is `line` (at `idx`) an H3+ ATX heading that sits under an earlier H1/H2 heading?
-/// Such a heading is an entry inside that section; a lone `### Notable Work` with
-/// no parent heading stays a section heading.
+/// Is `line` (at `idx`) an H3+ ATX heading under an earlier `##` section heading?
+/// Such a heading is an entry inside that section. An H1 doesn't count as a parent
+/// (it is usually the candidate's name), and a known section name (`### Skills`)
+/// always stays a section heading, as does a lone `### Notable Work`.
 pub(super) fn is_nested_entry_heading(line: &str, idx: usize, all_lines: &[&str]) -> bool {
     let level = |l: &str| l.chars().take_while(|&c| c == '#').count();
-    strip_atx_heading(line).is_some()
+    strip_atx_heading(line).is_some_and(|body| !is_known_section_name(&strip_md(body)))
         && level(line) >= 3
         && all_lines.get(..idx).is_some_and(|head| {
             head.iter()
-                .any(|l| strip_atx_heading(l.trim()).is_some() && level(l.trim()) <= 2)
+                .any(|l| strip_atx_heading(l.trim()).is_some() && level(l.trim()) == 2)
         })
 }
 

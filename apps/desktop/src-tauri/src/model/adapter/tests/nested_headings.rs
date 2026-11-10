@@ -54,3 +54,43 @@ fn h3_without_parent_heading_stays_a_section() {
     let m = model_from_resume_text("Jane Doe\n\n### Notable Work\nShipped things.\n");
     assert_eq!(section_headings(&m), vec!["Notable Work"]);
 }
+
+/// An H1 name is not a parent section, so `###` section headings under it stay
+/// sections (pre-PR review of #1440).
+#[test]
+fn h3_sections_under_an_h1_name_stay_sections() {
+    let m = model_from_resume_text(
+        "# Jane Doe
+
+### Experience
+Business Analyst | Acme
+2022 - Present
+
+### Education
+BBA | Example University
+2018 - 2021
+",
+    );
+    assert_eq!(
+        section_ids(&m),
+        vec![&SectionId::Experience, &SectionId::Education]
+    );
+}
+
+/// A known section name stays a section even beneath a `##` heading.
+#[test]
+fn known_section_name_h3_under_h2_stays_a_section() {
+    let m = model_from_resume_text(
+        "## Summary
+Analyst with five years in market research.
+
+### Skills
+Market research, forecasting.
+",
+    );
+    assert!(
+        section_ids(&m).contains(&&SectionId::Skills),
+        "{:?}",
+        section_headings(&m)
+    );
+}
