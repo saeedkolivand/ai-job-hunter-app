@@ -33,11 +33,11 @@ async fn pick_free_port() -> u16 {
 async fn port_probe_skips_busy_port_and_binds_next_free() {
     let (busy, busy_port) = claim_busy_port().await;
 
-    // (a) A range that is exactly the held port → no free port → None. This is the
+    // (a) A range that is exactly the held port → no free port → Err. This is the
     //     skip proof: the busy port is never bound.
     assert!(
         probe_ports(busy_port..=busy_port).await.is_err(),
-        "a single-port range over the held port {busy_port} must yield None"
+        "a single-port range over the held port {busy_port} must yield Err"
     );
 
     // (b) A wider range starting at the busy port → probe must skip the busy port
@@ -91,8 +91,11 @@ async fn full_range_busy_lists_every_port_and_the_record_roundtrips() {
     // Hold two ADJACENT ports we bind ourselves (retry until a free pair is found).
     let (a, b, lo, hi) = loop {
         let (a, pa) = claim_busy_port().await;
-        if let Ok(b) = TcpListener::bind(("127.0.0.1", pa.wrapping_add(1))).await {
-            break (a, b, pa, pa + 1);
+        let Some(pb) = pa.checked_add(1) else {
+            continue;
+        };
+        if let Ok(b) = TcpListener::bind(("127.0.0.1", pb)).await {
+            break (a, b, pa, pb);
         }
     };
     let failures = probe_ports(lo..=hi).await.expect_err("all busy");

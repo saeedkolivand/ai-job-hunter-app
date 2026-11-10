@@ -82,8 +82,8 @@ async fn bind_listener() -> Result<(TcpListener, u16), Vec<String>> {
 /// binds (or `Err` with one sanitized line per failed port if all fail). Factored out of [`bind_listener`] so the
 /// fallback/graceful-disable logic is testable against a caller-controlled range
 /// of known-busy/known-free ports instead of the fixed [`PORT_RANGE`] (whose
-/// availability on CI is non-deterministic). Behaviorally identical to the prior
-/// inline loop — same order, same first-binds-wins, same `None` when exhausted.
+/// availability on CI is non-deterministic). Same order and first-binds-wins as
+/// the prior inline loop; exhaustion now returns every port's failure instead of `None`.
 async fn probe_ports(
     range: std::ops::RangeInclusive<u16>,
 ) -> Result<(TcpListener, u16), Vec<String>> {
