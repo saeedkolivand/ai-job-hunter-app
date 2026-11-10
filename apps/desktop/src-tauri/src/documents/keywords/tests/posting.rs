@@ -250,3 +250,40 @@ fn markdown_to_plain_preserves_german_utf8() {
          with_link={kw_with_link:?} without_link={kw_without_link:?}"
     );
 }
+
+// --- description_is_blank (issue #1443) ---
+
+#[test]
+fn blank_covers_empty_url_only_and_boilerplate() {
+    assert!(description_is_blank(None));
+    assert!(description_is_blank(Some("  \n ")));
+    assert!(description_is_blank(Some(
+        "https://www.linkedin.com/jobs/view/123"
+    )));
+    assert!(description_is_blank(Some(
+        "Sign in to view more\nJoin now\nNew to LinkedIn?"
+    )));
+    assert!(description_is_blank(Some(
+        "Show more Show less\nSimilar jobs\nPeople also viewed\nUser Agreement | Privacy Policy | Cookie Policy\nLinkedIn Corporation © 2026"
+    )));
+    assert!(description_is_blank(Some(
+        "Mostra altro
+Offerte simili\nIscriviti ora"
+    )));
+}
+
+#[test]
+fn not_blank_for_real_ads_even_short_mixed_or_non_english() {
+    assert!(!description_is_blank(Some(
+        "We need a Rust engineer. Remote, full time."
+    )));
+    assert!(!description_is_blank(Some(
+        "Sign in to view more\nSenior Rust engineer wanted for payments."
+    )));
+    assert!(!description_is_blank(Some(
+        "Wir suchen einen Softwareentwickler (m/w/d) mit Erfahrung in Rust und Kubernetes."
+    )));
+    assert!(!description_is_blank(Some(
+        "Cerchiamo uno sviluppatore backend con esperienza in Rust."
+    )));
+}
