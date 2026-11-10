@@ -17,6 +17,7 @@ export interface ApplySourceJob {
   url: string;
   title: string;
   company: string;
+  description?: string;
   board?: string;
   salaryMin?: number;
   salaryMax?: number;
@@ -52,6 +53,7 @@ export function useApplyToFoundJob() {
           board: job.board ?? ap.target.boards[0] ?? AGGREGATOR_BOARD_ID,
           company: job.company,
           title: job.title,
+          jobDescription: job.description,
           salaryMin: job.salaryMin,
           salaryMax: job.salaryMax,
           salaryCurrency: job.salaryCurrency,
