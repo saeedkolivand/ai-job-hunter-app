@@ -115,3 +115,41 @@ fn letter_user_fences_a_non_empty_company_brief_and_omits_a_blank_one() {
     );
     assert_eq!(unset, blank_brief);
 }
+
+/// The letter centres on ONE proof story in both the brief and no-brief
+/// cases, and "why this company" is restricted to the job ad exactly when no
+/// research was fetched. Both rules are the shared TS blocks, not paraphrases.
+///
+/// Mutation check: drop the `else` arm of `brief_rule` (or the proof-story
+/// bullet) and the matching assertion fails.
+#[test]
+fn letter_system_carries_one_proof_story_and_gates_ad_only_on_the_missing_brief() {
+    let ad_only = "use only what the job posting itself states";
+    for has_brief in [true, false] {
+        let p = letter_system("en", "us", false, has_brief);
+        assert!(p.contains("ONE PROOF STORY: center the letter on one real achievement"));
+        assert!(p.contains("if any."));
+        assert_eq!(p.contains(ad_only), !has_brief);
+    }
+}
+
+/// A strategy with NO `emphasis` anywhere (every requirement missing or only
+/// partially evidenced) must not leave the letter pointing at a list that is
+/// empty: the system sentence is a soft preference ("if any") and the strategy
+/// fence is still well-formed, so the model falls back to the strongest
+/// achievement rather than inventing a requirement.
+///
+/// Mutation check: make the sentence unconditional ("Take its requirement
+/// from ...") and the first assertion fails.
+#[test]
+fn letter_prompts_stay_coherent_when_the_strategy_has_no_emphasis() {
+    let empty = ResumeStrategy::default();
+    assert!(empty.per_company.iter().all(|c| c.emphasis.is_empty()));
+    let system = letter_system("en", "us", false, false);
+    assert!(system.contains(
+        "Prefer a requirement named in the `emphasis` lists of <resume_strategy>, if any."
+    ));
+    let user = letter_user("resume", "job ad", &empty, "us", "", "");
+    assert!(user.contains("<resume_strategy>"));
+    assert!(user.contains("</resume_strategy>"));
+}

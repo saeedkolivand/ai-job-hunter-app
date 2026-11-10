@@ -67,6 +67,11 @@ pub fn template_openers(lang: &str) -> &'static [&'static str] {
     }
 }
 
+/// Longest résumé bullet, in characters, the prompt asks for (`BULLET_EVIDENCE_RULES`).
+/// `ats::MAX_BULLET_CHARS` aliases it, so the advisory `ats.long_bullet` check
+/// grades the exact rule the model was given.
+pub const BULLET_CHAR_CEILING: usize = 200;
+
 const AI_TELL_LEXICAL_EN: &[&str] = &[
     "delve",
     "leverage",

@@ -49,7 +49,11 @@ pub const MAX_KEYWORD_OCCURRENCES: usize = 6;
 pub const MIN_TOKENS_FOR_DENSITY: usize = 75;
 
 /// Character proxy for "longer than two printed lines" at résumé column widths.
-pub const MAX_BULLET_CHARS: usize = 200;
+/// The same ceiling the generation prompt states (`BULLET_EVIDENCE_RULES`): one
+/// generated constant, so the rule the model is given is the rule it is graded on.
+/// Advisory only (`ats.long_bullet` is a Warning), and résumé-only: a cover
+/// letter never reaches this module's checks.
+pub const MAX_BULLET_CHARS: usize = super::lexicon::BULLET_CHAR_CEILING;
 
 /// A role with no bullets says nothing; a role with too many buries its own
 /// best line.

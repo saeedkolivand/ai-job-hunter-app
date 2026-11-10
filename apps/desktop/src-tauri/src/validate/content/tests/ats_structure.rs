@@ -85,6 +85,36 @@ fn long_bullet_boundary_is_the_char_budget() {
     fired(&report_against(&over, &over), ATS_LONG_BULLET);
 }
 
+/// The ceiling is the ONE number the prompt states (`BULLET_CHAR_CEILING`,
+/// generated from `BULLET_EVIDENCE_RULES`'s constant), a normal one-claim bullet
+/// stays silent, and the warning is advisory.
+#[test]
+fn long_bullet_uses_the_prompts_ceiling_and_stays_advisory() {
+    assert_eq!(ats::MAX_BULLET_CHARS, lexicon::BULLET_CHAR_CEILING);
+    let doc = |bullet: &str| format!("EXPERIENCE\n\nAcme | 2021 - Present\n- {bullet}\n");
+    let normal = doc("Cut checkout latency from 480ms to 90ms with Redis caching");
+    silent(&report_against(&normal, &normal), ATS_LONG_BULLET);
+    let long = doc(&"Built the ledger service and then also rebuilt it. ".repeat(6));
+    let report = report_against(&long, &long);
+    let hits = fired(&report, ATS_LONG_BULLET);
+    assert_eq!(hits[0].severity, Severity::Warning);
+}
+
+/// A cover letter is prose, not bullets: one long paragraph, or even a long
+/// dash-led line, never reaches the bullet-length check.
+#[test]
+fn letter_prose_is_not_checked_as_bullets() {
+    let paragraph =
+        "I rebuilt the payments flow at Lumen and watched completed orders climb over a quarter. "
+            .repeat(6);
+    let letter = format!("{paragraph}\n\n- {paragraph}\n");
+    assert!(paragraph.chars().count() > ats::MAX_BULLET_CHARS);
+    silent(
+        &letter_report_for(&letter, &letter, EN_JOB_AD),
+        ATS_LONG_BULLET,
+    );
+}
+
 /// Both ends of the 1..=6 band, plus the band itself.
 #[test]
 fn bullet_count_boundaries_are_the_role_band() {
