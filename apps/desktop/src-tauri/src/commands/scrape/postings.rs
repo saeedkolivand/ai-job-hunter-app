@@ -10,7 +10,7 @@ use tauri::{AppHandle, Manager};
 use crate::autopilot::{ResolveWrite, ResolvedIdentity};
 use crate::error::{AppError, AppResult};
 use crate::postings::{attach_interactions, InteractionStore, PostingsCache};
-use crate::scraping::scrape_url::{identity_verdict, IdentityVerdict, PostingIdentity};
+use crate::scraping::scrape_url::{identity_verdict, PostingIdentity};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -187,40 +187,6 @@ fn write_status(
     }
 }
 
-/// Fold the live cache's per-entry verdicts into `(drifted, writable)`: drifted
-/// when ANY entry is a different advert; writable only when EVERY entry is the
-/// same advert (no entry at all is trivially writable — the write then reports
-/// no match).
-fn fold_cache_verdicts(verdicts: &[IdentityVerdict]) -> (bool, bool) {
-    (
-        verdicts.iter().any(|v| matches!(v, IdentityVerdict::Drift)),
-        verdicts.iter().all(|v| *v == IdentityVerdict::Same),
-    )
-}
-
-/// How the live cache's entries for `normalized_url` compare with `resolved`
-/// (issue #1445), folded by [`fold_cache_verdicts`].
-fn cache_check(app: &AppHandle, normalized_url: &str, resolved: &ResolvedIdentity) -> (bool, bool) {
-    let stored = app
-        .state::<Mutex<PostingsCache>>()
-        .lock()
-        .stored_identities(normalized_url);
-    let verdicts: Vec<IdentityVerdict> = stored
-        .iter()
-        .map(|(title, company, url)| {
-            identity_verdict(
-                PostingIdentity {
-                    title,
-                    company,
-                    url,
-                },
-                resolved.as_posting(),
-            )
-        })
-        .collect();
-    fold_cache_verdicts(&verdicts)
-}
-
 /// Run only the identity verdict of `resolved` against every stored row at
 /// `url`, flagging drifted rows (the LinkedIn enrichment's drift path). Returns
 /// the number of rows held for review.
@@ -273,19 +239,31 @@ pub fn scrape_update_description(
 ) -> AppResult<DescriptionWriteStatus> {
     let (normalized_url, resolved) =
         validate_write_back(&req.url, Some(&req.description), &req.resolved)?;
-    let (cache_drift, cache_writable) = cache_check(&app, &normalized_url, &resolved);
     let rows = crate::commands::autopilot::store(&app)
         .lock()
         .update_found_job_descriptions(&normalized_url, Some(&req.description), &resolved);
-    let cache_hit = cache_writable && {
-        let cache = app.state::<Mutex<PostingsCache>>();
-        cache
-            .lock()
-            .update_description(&normalized_url, &req.description)
-    };
-    // A cache entry that is neither drifted nor writable had nothing comparable.
-    let cache_unverified = !cache_drift && !cache_writable;
-    Ok(write_status(cache_hit, cache_drift, cache_unverified, rows))
+    // Verdict and patch under ONE cache lock, so an entry added concurrently by a
+    // streaming scrape can never receive text it was not checked for.
+    let cache = app
+        .state::<Mutex<PostingsCache>>()
+        .lock()
+        .update_description_checked(&normalized_url, &req.description, |title, company, url| {
+            identity_verdict(
+                PostingIdentity {
+                    title,
+                    company,
+                    url,
+                },
+                resolved.as_posting(),
+            )
+        });
+    let cache_unverified = cache.unverified && !cache.drifted;
+    Ok(write_status(
+        cache.written,
+        cache.drifted,
+        cache_unverified,
+        rows,
+    ))
 }
 
 #[tauri::command]

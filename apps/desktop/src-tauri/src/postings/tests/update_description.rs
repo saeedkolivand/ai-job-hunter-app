@@ -172,31 +172,47 @@ fn update_description_patches_every_item_sharing_the_url() {
 }
 
 #[test]
-fn stored_identities_returns_every_entry_for_the_url_and_nothing_for_a_miss() {
+fn checked_update_patches_only_same_entries_at_the_url() {
+    use crate::scraping::scrape_url::IdentityVerdict;
     let mut cache = PostingsCache::default();
     cache.add(serde_json::json!({
-        "id": "a", "url": "https://example.com/jobs/1", "title": "Engineer", "company": "Acme",
-    }));
-    // A variant url (tracking param) that normalizes to the same key.
-    cache.add(serde_json::json!({
-        "id": "b", "url": "https://example.com/jobs/1?utm_source=x", "title": "Dev", "company": "Acme",
+        "id": "same", "url": "https://example.com/jobs/1", "title": "Engineer", "company": "Acme", "description": "old",
     }));
     cache.add(serde_json::json!({
-        "id": "c", "url": "https://example.com/jobs/2", "title": "Designer", "company": "Other",
+        "id": "other", "url": "https://example.com/jobs/1?utm=x", "title": "Cook", "company": "Diner", "description": "old",
     }));
     let key = crate::applications::normalize_job_url("https://example.com/jobs/1");
 
-    let found = cache.stored_identities(&key);
+    let out = cache.update_description_checked(&key, "new text", |title, _, _| {
+        if title == "Engineer" {
+            IdentityVerdict::Same
+        } else {
+            IdentityVerdict::Drift
+        }
+    });
     assert_eq!(
-        found.len(),
-        2,
-        "both entries for the url, not just the first"
+        (out.written, out.drifted, out.unverified),
+        (true, true, false)
     );
-    assert!(found.iter().any(|(t, c, _)| t == "Engineer" && c == "Acme"));
-    assert!(found
-        .iter()
-        .any(|(t, _, u)| t == "Dev" && u.contains("utm_source")));
+    let desc = |cache: &PostingsCache, id: &str| {
+        cache
+            .get_all()
+            .iter()
+            .find(|p| p["id"] == id)
+            .and_then(|p| p["description"].as_str())
+            .map(str::to_string)
+    };
+    assert_eq!(desc(&cache, "same").as_deref(), Some("new text"));
+    assert_eq!(
+        desc(&cache, "other").as_deref(),
+        Some("old"),
+        "a drifted entry is never patched"
+    );
 
-    let missing = crate::applications::normalize_job_url("https://example.com/jobs/99");
-    assert!(cache.stored_identities(&missing).is_empty());
+    let none = cache.update_description_checked(&key, "x", |_, _, _| IdentityVerdict::NoEvidence);
+    assert_eq!(
+        (none.written, none.drifted, none.unverified),
+        (false, false, true)
+    );
+    assert_eq!(desc(&cache, "same").as_deref(), Some("new text"));
 }

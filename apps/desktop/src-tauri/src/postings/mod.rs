@@ -10,6 +10,18 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use crate::commands::ai_provider::EmbeddingVector;
+use crate::scraping::scrape_url::IdentityVerdict;
+
+/// Per-entry outcome of [`PostingsCache::update_description_checked`].
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct CacheWrite {
+    /// At least one entry received the description.
+    pub written: bool,
+    /// At least one entry is a different advert and was left untouched.
+    pub drifted: bool,
+    /// At least one entry had nothing comparable and was left untouched.
+    pub unverified: bool,
+}
 
 mod interactions;
 
@@ -93,24 +105,6 @@ impl PostingsCache {
         self.items.push(item);
     }
 
-    /// `(title, company, url)` of EVERY cached posting whose own `url`
-    /// normalizes to `normalized_url` — the stored identities a resolved
-    /// posting is checked against before its description is written back
-    /// (issue #1445).
-    pub fn stored_identities(&self, normalized_url: &str) -> Vec<(String, String, String)> {
-        let text = |item: &Value, key: &str| {
-            item.get(key)
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string()
-        };
-        self.items
-            .iter()
-            .filter(|i| crate::applications::normalize_job_url(&text(i, "url")) == normalized_url)
-            .map(|i| (text(i, "title"), text(i, "company"), text(i, "url")))
-            .collect()
-    }
-
     pub fn get_all(&self) -> &[Value] {
         &self.items
     }
@@ -142,20 +136,55 @@ impl PostingsCache {
     /// item is patched, not just the first — two board-synthetic ids can
     /// legitimately share one url within a single session.
     pub fn update_description(&mut self, normalized_url: &str, description: &str) -> bool {
+        self.update_description_checked(normalized_url, description, |_, _, _| {
+            IdentityVerdict::Same
+        })
+        .written
+    }
+
+    /// [`Self::update_description`] gated per entry by `verdict(title, company,
+    /// url)` (issue #1445): the verdict runs and the patch happens under the same
+    /// `&mut self` borrow, so an entry added between a separate check and write
+    /// can never receive text it was not checked for. Only `Same` entries are
+    /// patched; the rest are reported in the returned [`CacheWrite`].
+    pub fn update_description_checked(
+        &mut self,
+        normalized_url: &str,
+        description: &str,
+        verdict: impl Fn(&str, &str, &str) -> IdentityVerdict,
+    ) -> CacheWrite {
         // Two-pass approach to avoid holding a simultaneous mutable borrow on
         // `self.items` while also mutating `self.embeddings` (which is keyed by
         // `id`, not `url` — each matched item's OWN id is collected in pass 1).
         let mut stale_embedding_ids: Vec<String> = Vec::new();
-        let mut found = false;
+        let mut out = CacheWrite::default();
         for item in &mut self.items {
             let item_url = item.get("url").and_then(Value::as_str).unwrap_or("");
             if crate::applications::normalize_job_url(item_url) != normalized_url {
                 continue;
             }
+            let text = |key: &str| {
+                item.get(key)
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string()
+            };
+            let (title, company) = (text("title"), text("company"));
+            match verdict(&title, &company, item_url) {
+                IdentityVerdict::Same => {}
+                IdentityVerdict::Drift => {
+                    out.drifted = true;
+                    continue;
+                }
+                IdentityVerdict::NoEvidence => {
+                    out.unverified = true;
+                    continue;
+                }
+            }
             let Some(obj) = item.as_object_mut() else {
                 continue;
             };
-            found = true;
+            out.written = true;
             // Only invalidate the cached embedding when the text actually
             // changes. If the full description is identical to what's
             // already stored (e.g. a duplicate resolve-on-open call) we
@@ -177,7 +206,7 @@ impl PostingsCache {
         for id in stale_embedding_ids {
             self.embeddings.remove(&id);
         }
-        found
+        out
     }
 
     pub fn clear_all(&mut self) {

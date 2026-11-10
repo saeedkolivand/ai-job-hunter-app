@@ -162,32 +162,6 @@ fn write_status_reports_drift_from_either_store_over_any_match() {
     );
 }
 
-fn drift() -> IdentityVerdict {
-    IdentityVerdict::Drift
-}
-
-#[test]
-fn cache_verdicts_fold_to_drifted_any_and_writable_all() {
-    use IdentityVerdict::{NoEvidence, Same};
-    assert_eq!(
-        fold_cache_verdicts(&[]),
-        (false, true),
-        "no entry is writable"
-    );
-    assert_eq!(fold_cache_verdicts(&[Same, Same]), (false, true));
-    assert_eq!(fold_cache_verdicts(&[drift()]), (true, false));
-    assert_eq!(
-        fold_cache_verdicts(&[Same, drift()]),
-        (true, false),
-        "one drifted entry blocks the write for all"
-    );
-    assert_eq!(
-        fold_cache_verdicts(&[Same, NoEvidence]),
-        (false, false),
-        "no evidence is neither drift nor writable"
-    );
-}
-
 #[test]
 fn status_serializes_to_the_wire_strings() {
     for (status, wire) in [
