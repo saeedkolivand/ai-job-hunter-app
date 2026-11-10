@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.160.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.159.1...v0.160.0) (2026-11-10)
+
+### ✨ Features
+
+* **prompts:** tailor cv bullets and cover letters to the evidence the resume shows ([#1490](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1490)) ([0dc2de6](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0dc2de6e2bec174f4499c41c303eeb3a323f837b))
+
+### 🐛 Bug Fixes
+
+* batch the open fixable issues and fold in the stalled sync prs ([#1486](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1486)) ([9e9b132](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9e9b132c45d4e6d062397c5e5efb3dfb35fb775a)), closes [#1438](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1438) [#1443](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1443) [#1481](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1481) [#1450](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1450) [#1442](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1442) [#1440](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1440) [#1448](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1448)
+* **discovery:** hold a refreshed posting for review when its url leads to a different advert ([#1489](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1489)) ([77d29d3](https://github.com/saeedkolivand/ai-job-hunter-app/commit/77d29d35ab5f57e91a9e01dfb525b61f7b19f94f)), closes [#1445](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1445)
+
 ## [0.159.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.159.0...v0.159.1) (2026-10-27)
 
 ### 🐛 Bug Fixes
