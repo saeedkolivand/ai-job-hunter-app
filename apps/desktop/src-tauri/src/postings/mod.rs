@@ -93,10 +93,11 @@ impl PostingsCache {
         self.items.push(item);
     }
 
-    /// `(title, company, url)` of the first cached posting whose own `url`
-    /// normalizes to `normalized_url` — the stored identity a resolved posting
-    /// is checked against before its description is written back (issue #1445).
-    pub fn stored_identity(&self, normalized_url: &str) -> Option<(String, String, String)> {
+    /// `(title, company, url)` of EVERY cached posting whose own `url`
+    /// normalizes to `normalized_url` — the stored identities a resolved
+    /// posting is checked against before its description is written back
+    /// (issue #1445).
+    pub fn stored_identities(&self, normalized_url: &str) -> Vec<(String, String, String)> {
         let text = |item: &Value, key: &str| {
             item.get(key)
                 .and_then(Value::as_str)
@@ -105,8 +106,9 @@ impl PostingsCache {
         };
         self.items
             .iter()
-            .find(|i| crate::applications::normalize_job_url(&text(i, "url")) == normalized_url)
+            .filter(|i| crate::applications::normalize_job_url(&text(i, "url")) == normalized_url)
             .map(|i| (text(i, "title"), text(i, "company"), text(i, "url")))
+            .collect()
     }
 
     pub fn get_all(&self) -> &[Value] {

@@ -53,7 +53,20 @@ pub(super) struct FoundJobSlice {
     /// #1445); such a row never appears in `best-matches`. Its resolved title/company are scraped
     /// text, fenced by [`project_found_job_row`] like the row's own display fields.
     #[serde(skip_serializing_if = "Option::is_none")]
-    identity_review: Option<crate::autopilot::IdentityReview>,
+    identity_review: Option<IdentityReviewSlice>,
+}
+
+/// Explicit allowlist of the held-row review the agent may see (not the stored
+/// `IdentityReview`, so a field added there never leaks by default).
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct IdentityReviewSlice {
+    resolved_title: String,
+    resolved_company: String,
+    resolved_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resolved_external_id: Option<String>,
+    detected_at: u64,
 }
 
 /// `description`'s fence cap for `found-jobs`, distinct from `crate::prompt_fence::JOB_CAP` — a

@@ -20,7 +20,9 @@ import { JobDetailPane as Subject } from './index';
 export const JobDetailPane = Subject;
 
 vi.mock('@ajh/translations', () => ({
-  useTranslation: () => ({ t: (k: string) => k }),
+  useTranslation: () => ({
+    t: (k: string, o?: Record<string, string>) => (o ? `${k}|${Object.values(o).join('|')}` : k),
+  }),
 }));
 
 vi.mock('motion/react', () => ({
@@ -49,6 +51,7 @@ vi.mock('lucide-react', () => ({
   MapPin: () => null,
   RefreshCw: () => null,
   Save: () => null,
+  TriangleAlert: () => null,
   Wand2: () => null,
 }));
 

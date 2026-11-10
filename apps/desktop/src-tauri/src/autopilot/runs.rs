@@ -5,6 +5,7 @@
 use std::collections::HashSet;
 
 use super::cap;
+use super::identity::RowCheck;
 use super::merge::{cluster_found_jobs, merge_found_jobs, merge_key};
 use super::{
     derive_run_status, AutopilotStore, FoundJob, ResolveWrite, ResolvedIdentity, RunStatus,
@@ -215,6 +216,7 @@ impl AutopilotStore {
     ) -> ResolveWrite {
         let mut map = self.load();
         let mut out = ResolveWrite::default();
+        let mut dirty = false;
         for ap in map.values_mut() {
             let mut changed = false;
             for job in &mut ap.found_jobs {
@@ -223,10 +225,16 @@ impl AutopilotStore {
                 }
                 // Issue #1445: only the SAME advert may receive the text. A
                 // drifted row keeps its content and carries the review.
-                if !job.check_resolved(resolved) {
-                    out.drifted += 1;
-                    changed = true;
-                    continue;
+                let was_held = job.identity_review.is_some();
+                match job.check_resolved(resolved) {
+                    RowCheck::Write => {}
+                    RowCheck::Held => {
+                        out.drifted += 1;
+                        // An already-held row is left untouched (no re-stamp, no write).
+                        changed |= !was_held;
+                        continue;
+                    }
+                    RowCheck::Skip => continue,
                 }
                 if let Some(description) = description {
                     job.description = Some(description.to_string());
@@ -241,27 +249,33 @@ impl AutopilotStore {
             }
             if changed {
                 ap.updated_at = now_ms();
+                dirty = true;
             }
         }
-        if out.updated > 0 || out.drifted > 0 {
+        if dirty {
             self.save(map);
         }
         out
     }
 
-    /// Dismiss the identity review on the row at `url` in autopilot
-    /// `autopilot_id` (issue #1445). Returns whether a review was dismissed.
-    pub fn dismiss_identity_review(&self, autopilot_id: &str, normalized_url: &str) -> bool {
+    /// Dismiss the identity review on every row at `normalized_url`, across
+    /// every autopilot (issue #1445): a posting's identity is per url, and the
+    /// write-back above verdicts every copy, so a dismissal that released only
+    /// one copy would leave the others held. Returns whether any review was
+    /// dismissed.
+    pub fn dismiss_identity_review(&self, normalized_url: &str) -> bool {
         let mut map = self.load();
         let mut dismissed = false;
-        if let Some(ap) = map.get_mut(autopilot_id) {
+        for ap in map.values_mut() {
+            let mut changed = false;
             for job in &mut ap.found_jobs {
                 if crate::applications::normalize_job_url(&job.url) == normalized_url {
-                    dismissed |= job.dismiss_identity_review();
+                    changed |= job.dismiss_identity_review();
                 }
             }
-            if dismissed {
+            if changed {
                 ap.updated_at = now_ms();
+                dismissed = true;
             }
         }
         if dismissed {

@@ -158,3 +158,52 @@ fn status_serializes_to_the_wire_strings() {
         assert_eq!(serde_json::to_string(&status).unwrap(), wire);
     }
 }
+
+// ── resolved identity bounds (issue #1445) ────────────────────────────────
+
+fn resolved_ok() -> ResolvedIdentity {
+    ResolvedIdentity {
+        title: "Rust Engineer".into(),
+        company: "Acme".into(),
+        url: "https://example.com/jobs/1".into(),
+        external_id: None,
+    }
+}
+
+#[test]
+fn validate_resolved_accepts_a_normal_identity() {
+    assert!(validate_resolved(&resolved_ok()).is_ok());
+}
+
+#[test]
+fn validate_resolved_rejects_oversized_fields_and_non_http_urls() {
+    let big = "x".repeat(MAX_RESOLVED_FIELD_LEN + 1);
+    let cases = [
+        ResolvedIdentity {
+            title: big.clone(),
+            ..resolved_ok()
+        },
+        ResolvedIdentity {
+            company: big.clone(),
+            ..resolved_ok()
+        },
+        ResolvedIdentity {
+            external_id: Some(big),
+            ..resolved_ok()
+        },
+        ResolvedIdentity {
+            url: "javascript:alert(1)".into(),
+            ..resolved_ok()
+        },
+        ResolvedIdentity {
+            url: String::new(),
+            ..resolved_ok()
+        },
+    ];
+    for r in cases {
+        assert!(
+            matches!(validate_resolved(&r), Err(AppError::Validation(_))),
+            "must reject {r:?}"
+        );
+    }
+}

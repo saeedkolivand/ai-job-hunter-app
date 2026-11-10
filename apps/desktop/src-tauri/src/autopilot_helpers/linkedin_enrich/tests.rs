@@ -171,8 +171,35 @@ fn classify_resolution_skips_ok_none_the_same_as_an_error() {
 fn classify_resolution_flags_a_different_advert_even_with_a_description() {
     let mut other = posting(Some("A different job's full text."));
     other.url = "https://www.linkedin.com/jobs/view/2".to_string();
-    let EnrichOutcome::Drift(resolved) = classify_resolution(&stored(), Ok(Some(other))) else {
+    let EnrichOutcome::Drift { resolved, .. } = classify_resolution(&stored(), Ok(Some(other)))
+    else {
         panic!("a different linkedin id must be drift");
     };
     assert_eq!(resolved.url, "https://www.linkedin.com/jobs/view/2");
+}
+
+#[test]
+fn a_row_held_for_identity_review_is_not_refetched() {
+    let mut held = job(
+        Some("linkedin"),
+        None,
+        "https://www.linkedin.com/jobs/view/7",
+    );
+    held.identity_review = Some(crate::autopilot::IdentityReview {
+        resolved_title: "Other".into(),
+        resolved_company: "Other".into(),
+        resolved_url: "https://www.linkedin.com/jobs/view/8".into(),
+        resolved_external_id: None,
+        detected_at: 1,
+    });
+    assert!(
+        select_linkedin_enrichment_targets(std::slice::from_ref(&held)).is_empty(),
+        "a held row must not be re-selected every run"
+    );
+    held.dismiss_identity_review();
+    assert_eq!(
+        select_linkedin_enrichment_targets(std::slice::from_ref(&held)).len(),
+        1,
+        "a dismissed row is selectable again"
+    );
 }

@@ -67,6 +67,8 @@ export interface ScrapeContract {
    * postings cache AND every matching found-job row persisted by an
    * autopilot, so the match scorer reads the full text instead of the
    * truncated aggregator snippet wherever the posting was surfaced from.
+   * Takes `{ url, description, resolved: { title, company, url, externalId? } }`
+   * and resolves `'updated'`, `'noMatch'` or `'identityDrift'`.
    *
    * `resolved` is the identity of the posting the description came from. Each
    * stored copy is checked against it: a copy that describes a different advert

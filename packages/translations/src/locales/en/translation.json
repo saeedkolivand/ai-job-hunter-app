@@ -1984,6 +1984,15 @@
     "collapse": "Collapse",
     "viewJob": "Open posting",
     "applyJob": "Apply",
+    "identityReview": {
+      "badge": "Identity needs review",
+      "explain": "This link now opens a different posting than the one saved here. The saved details are kept; Apply is off until you review it.",
+      "stored": "Saved",
+      "resolved": "Link now opens",
+      "dismiss": "Dismiss",
+      "applyBlocked": "Apply is off until you review the identity change",
+      "dismissFailed": "Could not dismiss the review. Try again."
+    },
     "aiNote": "AI note",
     "provisionalScoreHint": "Estimated from limited text — open the job for the exact match score.",
     "scoreLabel": {
@@ -2639,6 +2648,9 @@
     "updatingDescription": "Updating…",
     "loadFullDescription": "Load full description",
     "fullDescriptionLoaded": "Full description loaded",
+    "identityDrift": {
+      "notice": "This link now opens a different posting: {{title}} at {{company}}"
+    },
     "descriptionLoadError": "Could not load the full description. You can try again.",
     "aboutTheJob": "About the job",
     "matchBand": {

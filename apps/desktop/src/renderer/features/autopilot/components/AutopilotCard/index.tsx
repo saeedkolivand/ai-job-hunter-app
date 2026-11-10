@@ -7,7 +7,13 @@ import { useTranslation } from '@ajh/translations';
 import { type ActionMenuItem, ConfirmModal, GlassCard, transition, useNotification } from '@ajh/ui';
 
 import type { AutopilotRunState } from '@/lib/machines/autopilot-run.machine';
-import { useInteractions, useMarkNotDuplicate, useOpenExternal, usePersistJob } from '@/services';
+import {
+  useDismissIdentityReview,
+  useInteractions,
+  useMarkNotDuplicate,
+  useOpenExternal,
+  usePersistJob,
+} from '@/services';
 
 import { AutopilotCardHeader } from './AutopilotCardHeader';
 import { type FoundJobsSortBy, scoreVariant, sortFoundJobsByDate } from './found-jobs';
@@ -77,6 +83,7 @@ export function AutopilotCard({
   const openExternal = useOpenExternal();
   const persistJob = usePersistJob();
   const split = useMarkNotDuplicate();
+  const dismissReview = useDismissIdentityReview();
   const notify = useNotification();
   // View-side sort choice for THIS card's found-jobs list — local, per-card
   // state (owner correction: two expanded autopilots must be sortable
@@ -196,6 +203,13 @@ export function AutopilotCard({
     );
   };
 
+  // Dismiss the held-for-review flag (#1445); the list refetches on success.
+  const handleDismissReview = (job: AutopilotFoundJob) =>
+    dismissReview.mutate(
+      { autopilotId: ap._id, url: job.url },
+      { onError: () => notify.error({ message: t('autopilot.identityReview.dismissFailed') }) }
+    );
+
   return (
     <GlassCard className="flex flex-col gap-3">
       <AutopilotCardHeader
@@ -248,9 +262,11 @@ export function AutopilotCard({
             mixedScoreSources={mixedScoreSources}
             viewedUrls={viewedUrls}
             splitPending={split.isPending}
+            dismissingUrl={dismissReview.isPending ? dismissReview.variables?.url : undefined}
             onOpen={(job) => void handleJobClick(job)}
             onApply={onApply}
             onSplitCluster={handleSplitCluster}
+            onDismissReview={handleDismissReview}
           />
         )}
       </AnimatePresence>

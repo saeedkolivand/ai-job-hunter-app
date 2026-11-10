@@ -125,9 +125,12 @@ async fn enrich_one(app: &AppHandle, limiter: &'static RateLimiter, target: &Enr
     let url_for_write = target.url.clone();
     let joined = match classify_resolution(target, result) {
         EnrichOutcome::Skip => return false,
-        // Issue #1445: the url now leads to a different advert — hold the row
-        // for review, never write the other ad's text onto it.
-        EnrichOutcome::Drift(resolved) => {
+        // Issue #1445: the url now leads to a different advert. The store holds
+        // the row for review (or writes, if the user dismissed this drift).
+        EnrichOutcome::Drift {
+            description: None,
+            resolved,
+        } => {
             tauri::async_runtime::spawn_blocking(move || {
                 crate::commands::scrape::flag_identity_drift(
                     &app_for_write,
@@ -140,6 +143,10 @@ async fn enrich_one(app: &AppHandle, limiter: &'static RateLimiter, target: &Enr
         }
         EnrichOutcome::Description {
             description,
+            resolved,
+        }
+        | EnrichOutcome::Drift {
+            description: Some(description),
             resolved,
         } => {
             tauri::async_runtime::spawn_blocking(move || {

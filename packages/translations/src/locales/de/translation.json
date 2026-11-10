@@ -1988,6 +1988,15 @@
     "collapse": "Einklappen",
     "viewJob": "Anzeige öffnen",
     "applyJob": "Bewerben",
+    "identityReview": {
+      "badge": "Identität prüfen",
+      "explain": "Dieser Link öffnet jetzt eine andere Anzeige als die hier gespeicherte. Die gespeicherten Angaben bleiben erhalten; Bewerben ist deaktiviert, bis du sie geprüft hast.",
+      "stored": "Gespeichert",
+      "resolved": "Link öffnet jetzt",
+      "dismiss": "Verwerfen",
+      "applyBlocked": "Bewerben ist deaktiviert, bis du die Identitätsänderung geprüft hast",
+      "dismissFailed": "Die Prüfung konnte nicht verworfen werden. Versuche es erneut."
+    },
     "aiNote": "KI-Notiz",
     "provisionalScoreHint": "Aus begrenztem Text geschätzt — öffnen Sie den Job für den genauen Match-Score.",
     "scoreLabel": {
@@ -2643,6 +2652,9 @@
     "updatingDescription": "Wird aktualisiert…",
     "loadFullDescription": "Vollständige Beschreibung laden",
     "fullDescriptionLoaded": "Vollständige Beschreibung geladen",
+    "identityDrift": {
+      "notice": "Dieser Link öffnet jetzt eine andere Anzeige: {{title}} bei {{company}}"
+    },
     "descriptionLoadError": "Vollständige Beschreibung konnte nicht geladen werden. Bitte erneut versuchen.",
     "aboutTheJob": "Über die Stelle",
     "matchBand": {

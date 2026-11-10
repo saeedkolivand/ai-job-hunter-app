@@ -203,11 +203,11 @@ fn a_drifted_row_is_held_not_written_and_dismiss_releases_it() {
         "Diner"
     );
 
-    assert!(store.dismiss_identity_review(&ap.id, &normalized));
+    assert!(store.dismiss_identity_review(&normalized));
     assert!(store.list()[0].found_jobs[0].identity_review.is_none());
-    // The same drift again: still not written, and not re-flagged.
+    // Dismiss means the user accepts this advert: the same drift now writes.
     let out = store.update_found_job_descriptions(&normalized, Some("other ad text"), &other);
-    assert_eq!((out.updated, out.drifted), (0, 1));
+    assert_eq!((out.updated, out.drifted), (1, 0));
     assert!(store.list()[0].found_jobs[0].identity_review.is_none());
 }
 
@@ -241,5 +241,78 @@ fn a_same_advert_stores_the_description_verbatim() {
     assert_eq!(
         store.list()[0].found_jobs[0].description.as_deref(),
         Some(text)
+    );
+}
+
+#[test]
+fn a_matching_resolved_identity_cannot_release_or_write_a_held_row() {
+    let (_temp, store) = temp_store();
+    let ap = create_ap(&store, "AP1", "linkedin", 0.0, "manual");
+    let url = "https://www.adzuna.de/land/ad/3";
+    record(
+        &store,
+        &ap.id,
+        1,
+        vec![found_job_full(url, "Rust Engineer", "Acme", 1)],
+    );
+    let normalized = crate::applications::normalize_job_url(url);
+
+    let other = resolved("Cook", "Diner", "https://boards.greenhouse.io/diner/jobs/1");
+    store.update_found_job_descriptions(&normalized, Some("other"), &other);
+    let stamped = store.list()[0].found_jobs[0]
+        .identity_review
+        .clone()
+        .expect("held");
+
+    // A caller asserting the ORIGINAL identity must not lift the hold or write.
+    let out = store.update_found_job_descriptions(
+        &normalized,
+        Some("forged"),
+        &resolved(
+            "Rust Engineer",
+            "Acme",
+            "https://boards.greenhouse.io/acme/jobs/1",
+        ),
+    );
+    assert_eq!((out.updated, out.drifted), (0, 1));
+    let job = &store.list()[0].found_jobs[0];
+    assert_eq!(
+        job.identity_review.as_ref(),
+        Some(&stamped),
+        "hold survives, not re-stamped"
+    );
+    assert_eq!(job.description, None);
+}
+
+#[test]
+fn a_dismissed_drift_is_written_and_a_no_evidence_resolve_changes_nothing() {
+    let (_temp, store) = temp_store();
+    let ap = create_ap(&store, "AP1", "linkedin", 0.0, "manual");
+    let url = "https://www.adzuna.de/land/ad/4";
+    record(
+        &store,
+        &ap.id,
+        1,
+        vec![found_job_full(url, "Rust Engineer", "Acme", 1)],
+    );
+    let normalized = crate::applications::normalize_job_url(url);
+
+    let blank = resolved("", "", "https://example.com/careers/1");
+    let out = store.update_found_job_descriptions(&normalized, Some("x"), &blank);
+    assert_eq!((out.updated, out.drifted), (0, 0));
+    assert_eq!(store.list()[0].found_jobs[0].description, None);
+
+    let other = resolved("Cook", "Diner", "https://boards.greenhouse.io/diner/jobs/1");
+    store.update_found_job_descriptions(&normalized, Some("t"), &other);
+    assert!(store.dismiss_identity_review(&normalized));
+    let out = store.update_found_job_descriptions(&normalized, Some("accepted"), &other);
+    assert_eq!(
+        (out.updated, out.drifted),
+        (1, 0),
+        "dismissed drift counts as Same"
+    );
+    assert_eq!(
+        store.list()[0].found_jobs[0].description.as_deref(),
+        Some("accepted")
     );
 }

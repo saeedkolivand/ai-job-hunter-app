@@ -1379,8 +1379,9 @@ Release a found job held for identity review (issue #1445): its url
 resolved to a different advert than the one stored, so the row kept its old
 content and left Best Matches. Dismissing clears the hold and remembers that
 exact drift so it does not re-flag on the next refresh (a different drift
-does). Resolves `true` when a review was dismissed, `false` when the row had
-none (already dismissed, or no such row).
+does). The dismissal applies to EVERY copy of `url` across all autopilots
+(`autopilotId` names the row the user acted on). Resolves `true` when a
+review was dismissed, `false` when no copy had one.
 
 ### Channels — `autopilot`
 
@@ -4212,6 +4213,8 @@ posting id — no reader outside the live cache can supply that): the live
 postings cache AND every matching found-job row persisted by an
 autopilot, so the match scorer reads the full text instead of the
 truncated aggregator snippet wherever the posting was surfaced from.
+Takes `{ url, description, resolved: { title, company, url, externalId? } }`
+and resolves `'updated'`, `'noMatch'` or `'identityDrift'`.
 
 `resolved` is the identity of the posting the description came from. Each
 stored copy is checked against it: a copy that describes a different advert

@@ -20,9 +20,12 @@ interface Props {
   mixedScoreSources: boolean;
   viewedUrls: Set<string>;
   splitPending: boolean;
+  /** Url whose dismiss is in flight (per row, not a global flag). */
+  dismissingUrl: string | undefined;
   onOpen: (job: AutopilotFoundJob) => void;
   onApply: (job: AutopilotFoundJob) => void;
   onSplitCluster: (job: AutopilotFoundJob) => void;
+  onDismissReview: (job: AutopilotFoundJob) => void;
 }
 
 /** Found jobs from the most recent run — header with the per-card sort, then the rows. */
@@ -37,9 +40,11 @@ export function FoundJobsPanel({
   mixedScoreSources,
   viewedUrls,
   splitPending,
+  dismissingUrl,
   onOpen,
   onApply,
   onSplitCluster,
+  onDismissReview,
 }: Props) {
   const { t } = useTranslation();
   return (
@@ -95,9 +100,11 @@ export function FoundJobsPanel({
               mixedScoreSources={mixedScoreSources}
               viewed={viewedUrls.has(job.url)}
               splitPending={splitPending}
+              dismissPending={dismissingUrl === job.url}
               onOpen={onOpen}
               onApply={onApply}
               onSplitCluster={onSplitCluster}
+              onDismissReview={onDismissReview}
             />
           ))}
         </div>

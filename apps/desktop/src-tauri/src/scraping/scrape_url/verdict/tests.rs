@@ -86,10 +86,80 @@ fn changed_role_is_drift() {
 }
 
 #[test]
-fn blank_resolved_fields_are_no_evidence_not_drift() {
+fn nothing_comparable_is_no_evidence_but_one_blank_field_is_skipped() {
     let stored = p("Rust Engineer", "Acme", "https://www.adzuna.de/land/ad/1");
-    let resolved = p("", "", "https://example.com/careers/1");
-    assert_eq!(identity_verdict(stored, resolved), IdentityVerdict::Same);
+    assert_eq!(
+        identity_verdict(stored, p("", "", "https://example.com/careers/1")),
+        IdentityVerdict::NoEvidence
+    );
+    // Blank company is skipped, the matching title still proves Same.
+    assert_eq!(
+        identity_verdict(
+            stored,
+            p("Rust Engineer", "", "https://example.com/careers/1")
+        ),
+        IdentityVerdict::Same
+    );
+}
+
+#[test]
+fn title_suffix_seniority_abbreviation_and_company_prefix_are_same() {
+    let url_a = "https://www.adzuna.de/land/ad/1";
+    let url_b = "https://boards.greenhouse.io/x/jobs/1";
+    for (st, sc, rt, rc) in [
+        (
+            "Software Engineer",
+            "Acme",
+            "Software Engineer, Payments",
+            "Acme",
+        ),
+        (
+            "Sr. Software Engineer",
+            "Acme",
+            "Senior Software Engineer",
+            "Acme",
+        ),
+        ("Jr Developer", "Acme", "Junior Developer", "Acme"),
+        ("Engineer", "BMW Group", "Engineer", "BMW AG"),
+        ("Engineer", "Amazon", "Engineer", "Amazon Web Services"),
+    ] {
+        assert_eq!(
+            identity_verdict(p(st, sc, url_a), p(rt, rc, url_b)),
+            IdentityVerdict::Same,
+            "{st}/{sc} vs {rt}/{rc}"
+        );
+    }
+}
+
+#[test]
+fn real_world_drifts_stay_drift() {
+    let url_a = "https://www.adzuna.de/land/ad/1";
+    let url_b = "https://boards.greenhouse.io/x/jobs/1";
+    // Clinora: same company, a different role.
+    assert_eq!(
+        identity_verdict(
+            p("BDR", "Clinora", url_a),
+            p("Customer Success", "Clinora", url_b)
+        ),
+        IdentityVerdict::Drift(vec![DriftField::Title])
+    );
+    // A different company entirely.
+    assert!(matches!(
+        identity_verdict(
+            p("Engineer", "OMRON", url_a),
+            p("Engineer", "Aratas", url_b)
+        ),
+        IdentityVerdict::Drift(_)
+    ));
+    // Lead and Principal stay distinct from Senior only via the title text, but a
+    // same title at a different company is always drift.
+    assert_eq!(
+        identity_verdict(
+            p("Senior Engineer", "Acme", url_a),
+            p("Senior Engineer", "Globex", url_b)
+        ),
+        IdentityVerdict::Drift(vec![DriftField::Company])
+    );
 }
 
 #[test]
@@ -114,4 +184,15 @@ fn fingerprint_ignores_title_noise_but_not_the_url() {
     let c = identity_fingerprint(p("Dev", "Acme", "https://x.example.com/b"));
     assert_eq!(a, b);
     assert_ne!(a, c);
+}
+
+#[test]
+fn fingerprint_is_host_independent_where_the_board_id_is_known() {
+    let de = identity_fingerprint(p("Dev", "Acme", "https://de.linkedin.com/jobs/view/42"));
+    let www = identity_fingerprint(p(
+        "Dev",
+        "Acme",
+        "https://www.linkedin.com/jobs/view/dev-at-acme-42",
+    ));
+    assert_eq!(de, www);
 }

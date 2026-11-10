@@ -19,7 +19,7 @@ fn drift_sets_a_review_and_only_dismissal_releases_it() {
         1,
     );
     let other = resolved("Cook", "Diner", "https://boards.greenhouse.io/diner/jobs/1");
-    assert!(!job.check_resolved(&other));
+    assert_eq!(job.check_resolved(&other), RowCheck::Held);
     assert_eq!(job.identity_review.as_ref().unwrap().resolved_title, "Cook");
 
     let same = resolved(
@@ -28,12 +28,27 @@ fn drift_sets_a_review_and_only_dismissal_releases_it() {
         "https://boards.greenhouse.io/acme/jobs/9",
     );
     // A caller-supplied "same" identity must neither release the hold nor be written.
-    assert!(!job.check_resolved(&same));
-    assert!(job.identity_review.is_some());
+    assert_eq!(job.check_resolved(&same), RowCheck::Held);
+    let stamped = job.identity_review.clone();
+    assert!(stamped.is_some());
 
     assert!(job.dismiss_identity_review());
-    assert!(job.check_resolved(&same));
-    assert!(job.identity_review.is_none());
+    assert_eq!(job.check_resolved(&same), RowCheck::Write);
+}
+
+#[test]
+fn an_active_review_is_not_restamped() {
+    let mut job = found_job_full(
+        "https://www.adzuna.de/land/ad/1",
+        "Rust Engineer",
+        "Acme",
+        1,
+    );
+    let other = resolved("Cook", "Diner", "https://boards.greenhouse.io/diner/jobs/1");
+    job.check_resolved(&other);
+    let first = job.identity_review.clone();
+    job.check_resolved(&other);
+    assert_eq!(job.identity_review, first);
 }
 
 #[test]
@@ -50,11 +65,15 @@ fn a_dismissed_drift_does_not_reflag_but_a_different_one_does() {
     assert!(job.identity_review.is_none());
     assert!(!job.dismiss_identity_review(), "nothing left to dismiss");
 
-    assert!(!job.check_resolved(&first));
-    assert!(job.identity_review.is_none(), "same drift stays dismissed");
+    assert_eq!(
+        job.check_resolved(&first),
+        RowCheck::Write,
+        "a dismissed drift reads as Same"
+    );
+    assert!(job.identity_review.is_none());
 
     let second = resolved("Pilot", "Air", "https://boards.greenhouse.io/air/jobs/2");
-    assert!(!job.check_resolved(&second));
+    assert_eq!(job.check_resolved(&second), RowCheck::Held);
     assert!(job.identity_review.is_some(), "a different drift re-flags");
 }
 

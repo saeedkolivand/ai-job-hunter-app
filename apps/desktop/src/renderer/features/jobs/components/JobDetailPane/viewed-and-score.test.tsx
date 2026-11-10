@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 
 import {
   flushMicrotasks,
@@ -190,7 +190,7 @@ describe('JobDetailPane — score on open', () => {
     expect(callOrder).toEqual(['update', 'score']);
   });
 
-  it('persist failure is non-fatal — scoreJob still fires after updateDescription rejects', async () => {
+  it('persist failure fails closed — resolved text is neither shown nor scored', async () => {
     mockUpdateDescMutateAsync.mockRejectedValue(new Error('persist failed'));
 
     resolveSettled('Full description from resolve endpoint.');
@@ -201,9 +201,9 @@ describe('JobDetailPane — score on open', () => {
     await openPane(posting);
     await flushMicrotasks(2);
 
-    // scoreJob fires even though persist failed.
-    expect(mockScoreJob).toHaveBeenCalledTimes(1);
-    expect(mockScoreJob).toHaveBeenCalledWith(posting.id);
+    expect(mockScoreJob).not.toHaveBeenCalled();
+    expect(screen.queryByText('Full description from resolve endpoint.')).not.toBeInTheDocument();
+    expect(screen.getByText('Short snippet.')).toBeInTheDocument();
   });
 
   it('one-shot guard — re-render with same posting does NOT call scoreJob again', async () => {

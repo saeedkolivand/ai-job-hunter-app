@@ -55,6 +55,8 @@ pub(crate) fn select_linkedin_enrichment_targets(found_jobs: &[FoundJob]) -> Vec
         .iter()
         .filter(|j| j.board.as_deref() == Some(LINKEDIN_BOARD_ID))
         .filter(|j| description_is_blank(j.description.as_deref()))
+        // A held row is waiting on the user; refetching it would only burn the rate budget.
+        .filter(|j| j.identity_review.is_none())
         .filter(|j| seen.insert(j.url.clone()))
         .map(|j| EnrichTarget {
             url: j.url.clone(),
@@ -77,9 +79,13 @@ pub(crate) enum EnrichOutcome {
         description: String,
         resolved: ResolvedIdentity,
     },
-    /// The url now leads to a different advert (issue #1445): write nothing,
-    /// hold the row for identity review.
-    Drift(ResolvedIdentity),
+    /// The url now leads to a different advert (issue #1445). The store makes
+    /// the per-row call: hold the row for review, or write when the user
+    /// already dismissed this exact drift. With no `description` it only flags.
+    Drift {
+        description: Option<String>,
+        resolved: ResolvedIdentity,
+    },
     /// Nothing usable this attempt — a network/HTTP error, a fetch that came
     /// back with no posting (host mismatch, non-2xx, or a genuinely-removed
     /// job — `resolve`'s `Ok(None)` conflates all three, so this pass cannot
@@ -117,15 +123,20 @@ pub(crate) fn classify_resolution(
         company: &stored.company,
         url: &stored.url,
     };
-    if identity_verdict(stored_identity, resolved.as_posting()) != IdentityVerdict::Same {
-        return EnrichOutcome::Drift(resolved);
-    }
-    match p.description.filter(|d| !description_is_blank(Some(d))) {
-        Some(description) => EnrichOutcome::Description {
+    let description = p.description.filter(|d| !description_is_blank(Some(d)));
+    match identity_verdict(stored_identity, resolved.as_posting()) {
+        IdentityVerdict::NoEvidence => EnrichOutcome::Skip,
+        IdentityVerdict::Drift(_) => EnrichOutcome::Drift {
             description,
             resolved,
         },
-        None => EnrichOutcome::Skip,
+        IdentityVerdict::Same => match description {
+            Some(description) => EnrichOutcome::Description {
+                description,
+                resolved,
+            },
+            None => EnrichOutcome::Skip,
+        },
     }
 }
 

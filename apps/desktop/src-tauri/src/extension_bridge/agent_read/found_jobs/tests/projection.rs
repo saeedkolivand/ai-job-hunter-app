@@ -146,6 +146,23 @@ fn found_jobs_exposes_a_held_row_identity_review_with_fenced_resolved_text() {
     let out = resolve_found_jobs(&records, Some("ap-1"), &no_filters(), &no_applied(), 0, 20)
         .expect("found");
     let review = &out["jobs"][0]["identityReview"];
+    let mut keys: Vec<&str> = review
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        [
+            "detectedAt",
+            "resolvedCompany",
+            "resolvedTitle",
+            "resolvedUrl"
+        ],
+        "the nested review must be exactly this allowlist"
+    );
     assert_eq!(review["resolvedUrl"], "https://other.example.com/1");
     for field in ["resolvedTitle", "resolvedCompany"] {
         let value = review[field].as_str().expect("string");

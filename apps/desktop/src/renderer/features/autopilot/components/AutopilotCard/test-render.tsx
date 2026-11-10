@@ -79,6 +79,7 @@ vi.mock('lucide-react', () => ({
   Play: () => null,
   RotateCcw: () => null,
   Sparkles: () => null,
+  TriangleAlert: () => null,
   Trash2: () => null,
   Wand2: () => null,
 }));
@@ -95,6 +96,7 @@ vi.mock('@ajh/ui', () => ({
     title,
     'data-degraded': dataDegraded,
     'data-testid': dataTestId,
+    'aria-describedby': ariaDescribedBy,
   }: {
     children?: React.ReactNode;
     onClick?: () => void;
@@ -103,6 +105,7 @@ vi.mock('@ajh/ui', () => ({
     title?: string;
     'data-degraded'?: boolean;
     'data-testid'?: string;
+    'aria-describedby'?: string;
   }) =>
     // Use createElement to avoid the JSXOpeningElement[name="button"] lint rule.
     // A native <button> is required so disabled + keyboard behavior are real.
@@ -119,6 +122,7 @@ vi.mock('@ajh/ui', () => ({
         disabled,
         'data-degraded': dataDegraded,
         'data-testid': dataTestId,
+        'aria-describedby': ariaDescribedBy,
       },
       children
     ),
@@ -175,7 +179,7 @@ vi.mock('@ajh/ui', () => ({
   ),
   cn: (...args: string[]) => args.filter(Boolean).join(' '),
   transition: { fast: {}, normal: {} },
-  useNotification: () => ({ success: vi.fn(), error: vi.fn() }),
+  useNotification: () => ({ success: vi.fn(), error: (...a: unknown[]) => mockNotifyError(...a) }),
 }));
 
 // ── MatchBand stub ────────────────────────────────────────────────────────────
@@ -234,6 +238,8 @@ vi.mock('@/lib/machines/autopilot-run.machine', () => ({
 export const mockOpenExternal: Mock = vi.fn().mockResolvedValue(undefined);
 export const mockPersistJobAsync: Mock = vi.fn().mockResolvedValue(undefined);
 export const mockSplitMutate: Mock = vi.fn();
+export const mockDismissReviewMutate: Mock = vi.fn();
+export const mockNotifyError: Mock = vi.fn();
 
 export const state: {
   viewed: { url?: string }[];
@@ -245,6 +251,7 @@ export const state: {
 vi.mock('@/services', () => ({
   useOpenExternal: () => ({ mutate: mockOpenExternal, mutateAsync: mockOpenExternal }),
   usePersistJob: () => ({ mutateAsync: mockPersistJobAsync }),
+  useDismissIdentityReview: () => ({ mutate: mockDismissReviewMutate, isPending: false }),
   useMarkNotDuplicate: () => ({ mutate: mockSplitMutate, isPending: false }),
   useInteractions: (type: string) => ({ data: type === 'viewed' ? state.viewed : state.opened }),
   // Track B1 — the card reads the LIVE per-board reliability verdict rather than
@@ -328,6 +335,8 @@ beforeEach(() => {
   mockOpenExternal.mockClear();
   mockPersistJobAsync.mockClear();
   mockSplitMutate.mockClear();
+  mockDismissReviewMutate.mockClear();
+  mockNotifyError.mockClear();
   state.viewed = [];
   state.opened = [];
   state.boardHealth = new Map<string, unknown>();

@@ -46,6 +46,17 @@ pub struct ResolveWrite {
     pub drifted: u32,
 }
 
+/// What a write-back may do with one stored row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RowCheck {
+    /// Same advert (or a drift the user dismissed): write.
+    Write,
+    /// Held for review: do not write.
+    Held,
+    /// Nothing comparable: neither write nor flag.
+    Skip,
+}
+
 impl ResolvedIdentity {
     pub fn as_posting(&self) -> PostingIdentity<'_> {
         PostingIdentity {
@@ -68,38 +79,42 @@ impl IdentityReview {
 
 impl FoundJob {
     /// Run the identity verdict of `resolved` against this row. Drift sets a
-    /// review unless the user already dismissed this exact drift. Returns
-    /// whether the caller may write the resolved content to this row.
+    /// review (once; an active review is never re-stamped) unless the user
+    /// already dismissed this exact drift, which counts as Same.
     ///
     /// A held row is never written and never released here: `resolved` comes
     /// from the caller (the renderer, or an agent through
     /// `scrape_update_description`), so letting a Same verdict clear the review
     /// would let any caller lift a hold that only `dismiss_identity_review`
     /// (human-only) may lift.
-    pub(crate) fn check_resolved(&mut self, resolved: &ResolvedIdentity) -> bool {
+    pub(crate) fn check_resolved(&mut self, resolved: &ResolvedIdentity) -> RowCheck {
         if self.identity_review.is_some() {
-            return false;
+            return RowCheck::Held;
         }
         let stored = PostingIdentity {
             title: &self.title,
             company: &self.company,
             url: &self.url,
         };
-        if identity_verdict(stored, resolved.as_posting()) == IdentityVerdict::Same {
-            return true;
+        match identity_verdict(stored, resolved.as_posting()) {
+            IdentityVerdict::Same => RowCheck::Write,
+            IdentityVerdict::NoEvidence => RowCheck::Skip,
+            IdentityVerdict::Drift(_) => {
+                if self.identity_dismissed.as_deref()
+                    == Some(identity_fingerprint(resolved.as_posting()).as_str())
+                {
+                    return RowCheck::Write;
+                }
+                self.identity_review = Some(IdentityReview {
+                    resolved_title: resolved.title.clone(),
+                    resolved_company: resolved.company.clone(),
+                    resolved_url: resolved.url.clone(),
+                    resolved_external_id: resolved.external_id.clone(),
+                    detected_at: now_ms(),
+                });
+                RowCheck::Held
+            }
         }
-        let dismissed = self.identity_dismissed.as_deref()
-            == Some(identity_fingerprint(resolved.as_posting()).as_str());
-        if !dismissed {
-            self.identity_review = Some(IdentityReview {
-                resolved_title: resolved.title.clone(),
-                resolved_company: resolved.company.clone(),
-                resolved_url: resolved.url.clone(),
-                resolved_external_id: resolved.external_id.clone(),
-                detected_at: now_ms(),
-            });
-        }
-        false
     }
 
     /// Dismiss the active review: the row is released and the fingerprint

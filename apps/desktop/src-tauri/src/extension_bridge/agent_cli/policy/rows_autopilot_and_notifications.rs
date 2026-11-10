@@ -72,7 +72,7 @@ pub(super) const AUTOPILOT_AND_NOTIFICATIONS: &[PolicyEntry] = &[
     PolicyEntry {
         path: "commands::autopilot::autopilot_dismiss_identity_review",
         effect: Effect::NotExposed(
-            "releases a safety hold the user must review themselves (the found job's url now              leads to a different advert) — an agent clearing it would defeat the review",
+            "releases a safety hold the user must review themselves (the found job's url now leads to a different advert) — an agent clearing it would defeat the review",
         ),
     },
     // commands/ai_generations.rs
