@@ -316,7 +316,7 @@ ${EMAIL_HONESTY}
 
 ${voice}
 
-ACCEPTANCE CHECKS (verify and revise until all pass):
+ACCEPTANCE CHECKS (the output contract):
 - Line 1 is exactly "Subject: …" — nothing before it.
 - Line 2 is blank.
 - The greeting follows: ${greeting}

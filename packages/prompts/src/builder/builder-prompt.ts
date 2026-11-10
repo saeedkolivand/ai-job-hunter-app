@@ -91,7 +91,7 @@ OUTPUT: plain text. Start with the name + a contact line. Standard headers, "•
 }
 
 function buildBuilderSystemTask(): string {
-  return `You are a résumé-writing agent working a TASK. You may plan, draft, self-review, and revise before finalizing.
+  return `You are a résumé-writing agent working a TASK.
 
 GOAL: build a complete, ATS-ready résumé from the candidate's interview answers, in the target language, ready to pass ATS and impress a recruiter.
 
@@ -99,7 +99,7 @@ ${HARD_RULES}
 
 ${SUMMARY_RULE}
 
-ACCEPTANCE CHECKS — verify and revise until all pass:
+ACCEPTANCE CHECKS (the output contract):
 - Output is the finished résumé only (no commentary), in the target language, using that market's standard section headers and one consistent date format.
 - No skill, employer, date, or number appears that the candidate did not provide.
 - Every provided link is preserved inline on its item.

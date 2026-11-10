@@ -87,11 +87,7 @@ MODE: ${MODES[mode].label}
 ${modeInstr}
 ${toneBlock}
 
-OUTPUT: Plain text. Standard section headers. Bullets start with •. No markdown except **bold**. Output ONLY the resume. Do NOT wrap it in a code fence (\`\`\`).
-
-FINAL CHECK — read your output and confirm:
-✓ No skill appears that is not in the original resume
-✓ No phrase was copied from the job ad verbatim`;
+OUTPUT: Plain text. Standard section headers. Bullets start with •. No markdown except **bold**. Output ONLY the resume. Do NOT wrap it in a code fence (\`\`\`).`;
 }
 
 function buildResumeSystemTaskBrief(
@@ -100,7 +96,7 @@ function buildResumeSystemTaskBrief(
   toneBlock: string,
   lexical: string
 ): string {
-  return `You are a resume-rewriting agent working a TASK. You may plan, draft, self-review, and revise before finalizing.
+  return `You are a resume-rewriting agent working a TASK.
 
 GOAL: rewrite the candidate's resume tailored to the target job, in the target language, ready to pass ATS and impress a recruiter.
 
@@ -110,7 +106,7 @@ HARD CONSTRAINTS (never violate):
 - Every bullet: action verb + what + technology (only when the original names one) + a measurable result (only when the original supplies a number).
 - Keep every work role from the candidate's resume — never drop or merge roles; only tailor the bullets inside each role.
 
-ACCEPTANCE CHECKS — verify and revise until all pass:
+ACCEPTANCE CHECKS (the output contract):
 - Output is the rewritten resume only (no commentary), in the target language, using that market's standard section headers and one consistent date format.
 - No skill or phrase was copied from the job ad as if the candidate did it.
 - Keyword emphasis uses **double asterisks**, max 2–3 per bullet.
@@ -141,8 +137,9 @@ CORE RULES (the output is sent to employers under the candidate's name, so every
 4. Every bullet point must refer to work the candidate actually did
 5. NEVER fabricate numbers - only use metrics if they're in the original
 6. NEVER add technologies the candidate hasn't used
-7. NEVER drop, merge, or omit a work role — every employer/role in the original resume MUST appear in the output, with its real title and dates; you may only reorder and condense the bullets within each role
-8. Write ALL body content — the Professional Summary AND every Work Experience and Skills bullet — in the target output language; if the source resume is in another language, TRANSLATE it (never leave source-language text). Proper nouns like employer/company names stay as written.
+7. NEVER copy responsibilities or phrases from the job ad as the candidate's own work
+8. NEVER drop, merge, or omit a work role — every employer/role in the original resume MUST appear in the output, with its real title and dates; you may only reorder and condense the bullets within each role
+9. Write ALL body content — the Professional Summary AND every Work Experience and Skills bullet — in the target output language; if the source resume is in another language, TRANSLATE it (never leave source-language text). Proper nouns like employer/company names stay as written.
 
 ATS OPTIMIZATION RULES:
 
@@ -194,14 +191,8 @@ Everything must flow top-to-bottom in a single column. ATS reads sequentially.
 
 BULLET QUALITY — CAR FORMAT mandatory (Context → Action → Result):
 
-**WEAK Examples (what NOT to do):**
-✗ "Responsible for backend API development"
-✗ "Worked on React projects"
-✗ "Helped improve system performance"
-✗ "Assisted with database optimization"
-✗ "Familiar with AWS services"
-
-Why weak: Passive voice, no metrics, vague, no specific technologies.
+**Weak (rewrite these):** "Responsible for backend API development", "Worked on React projects", "Familiar with AWS services".
+Why weak: passive, vague, and they name no concrete work. Rewrite each as what the candidate did, using only facts already in the résumé.
 
 **STRONG Examples (illustrative — each rewrite states no more than its source bullet):**
 Source: "Built REST APIs in Node.js that cut response times by 45%"
@@ -226,15 +217,14 @@ ${modeInstr}
 
 ATS KEYWORD STRATEGY:
 
-**Keyword Placement Priority (weighted by ATS importance):**
-1. **Skills Section (40% weight)**: List all relevant technologies from job ad
-2. **Professional Summary (25% weight)**: Include top 3-5 keywords naturally
-3. **Work Experience (25% weight)**: Embed keywords in bullet points with context
-4. **Section Headers (10% weight)**: Use standard headers (ATS scans these first)
+**Keyword placement (only keywords the résumé names; never add one it does not show):**
+1. Skills section: list the job-ad technologies the résumé shows
+2. Professional Summary: weave in the top 3-5 supported keywords naturally
+3. Work Experience: embed keywords in bullets, with context
+4. Section headers: use the standard ones (ATS scans these first)
 
-**Keyword Density Rules:**
-- Critical keywords: appear 2-3 times (Skills + Summary + Experience)
-- Secondary keywords: appear 1-2 times
+**Keyword density:**
+- Critical keywords appear in Skills, Summary, and Experience; secondary ones once or twice
 - Don't stuff: max 3 bolded keywords per bullet point
 - Context matters: "5 years of **React**" > "**React**"
 
@@ -261,7 +251,7 @@ export function buildResumePrompt(
   const conv = resumeConventions(meta.jobAdLanguage ?? meta.targetLanguage);
 
   const langNote = meta.mismatch
-    ? `IMPORTANT: The resume is in ${meta.resumeLanguage} but the job ad is in ${meta.jobAdLanguage}. Rewrite entirely in ${meta.targetLanguage} using job market terminology native to that market.`
+    ? `The resume is in ${meta.resumeLanguage} but the job ad is in ${meta.jobAdLanguage}. Rewrite entirely in ${meta.targetLanguage} using job market terminology native to that market.`
     : `Write in ${meta.targetLanguage}.`;
   const conventionsNote = `CONVENTIONS (target market: ${meta.targetLanguage}): use these section headers — ${conv.headers.Summary} / ${conv.headers.Experience} / ${conv.headers.Education} / ${conv.headers.Skills}; and one consistent date format like ${conv.dateExample}.`;
 
@@ -297,7 +287,7 @@ ${resumeBody}
 
 ${buildJobAdBlock(jobAd, jobAdChars)}
 
-Every skill, job title, company, date, achievement, and responsibility in your output MUST come from <candidate_resume>.
+Every skill, job title, company, date, achievement, and responsibility in your output must come from <candidate_resume>, because the output goes to employers under the candidate's name.
 
 ### CONTEXT ###
 Candidate: ${meta.candidateName || 'Unknown'}
@@ -338,14 +328,6 @@ Skills Section:
 - Order by relevance to this job ad (most relevant first)
 - Group: Languages | Frameworks | Tools | Platforms | Methodologies
 - ${skillsBoldInstruction}
-
-Verify before writing:
-✓ Dates are consistent throughout
-✓ Every bullet starts with action verb
-✓ Key job-ad technologies appear bolded and naturally integrated
-✓ No tables, columns, or special chars that break ATS parsers
-
-CRITICAL: Only use facts from the original resume.
 
 Now output ONLY the rewritten resume. Do not output analysis, phase labels, or explanations.
 Use this exact structure:
