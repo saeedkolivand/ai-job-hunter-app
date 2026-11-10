@@ -32,14 +32,20 @@ describe('synced contact display name', () => {
     const client = createMockClient({
       'contactProfile.get': vi.fn().mockResolvedValue({ fullName: 'Ada Lovelace' }),
     });
-    const { result } = renderHookWithClient(() => useDisplayName(), { client });
-    await waitFor(() => expect(result.current).toBe('Ada'));
+    const { result, queryClient } = renderHookWithClient(() => useDisplayName(), { client });
+    await waitFor(() =>
+      expect(queryClient.getQueryState(keys.contactProfile.all)?.status).toBe('success')
+    );
+    expect(result.current).toBe('Ada');
   });
 
   it('handles empty and unavailable contact profiles', async () => {
     usePreferencesStore.setState({ userName: ' ' });
     const client = createMockClient({ 'contactProfile.get': vi.fn().mockResolvedValue({}) });
-    const { result } = renderHookWithClient(() => useDisplayName(), { client });
-    await waitFor(() => expect(result.current).toBe(''));
+    const { result, queryClient } = renderHookWithClient(() => useDisplayName(), { client });
+    await waitFor(() =>
+      expect(queryClient.getQueryState(keys.contactProfile.all)?.status).toBe('success')
+    );
+    expect(result.current).toBe('');
   });
 });

@@ -17,4 +17,9 @@ describe('sync-covered data copy', () => {
     );
     expect(copy).toMatch(/sync/i);
   });
+
+  it.each([en.settings.contactProfile.photoHint, de.settings.contactProfile.photoHint])(
+    'photo hint discloses backups: %s',
+    (copy) => expect(copy).toMatch(/backup|Sicherung/i)
+  );
 });
