@@ -50,7 +50,8 @@ describe('buildAnalysisPrompt', () => {
 
   it('emits a compact prompt for small models', () => {
     const prompt = buildAnalysisPrompt(resume, jobAd, {}, 'small');
-    expect(prompt).toContain('Think step by step');
+    expect(prompt).toContain('Work through these checks');
+    expect(prompt).not.toContain('Think step by step');
     expect(prompt).not.toContain('STEP 10');
   });
 

@@ -1,5 +1,41 @@
 [
   {
+    "sha": "a8a2166c7bd201aa319c3fdf2653c0bc9046286b",
+    "commit": {
+      "message": "chore(agents): preload contracts, enforce fleet guardrails with hooks, adopt new coderabbit features (#1487)",
+      "author": {
+        "date": "2026-11-10T07:11:36Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "9e9b132c45d4e6d062397c5e5efb3dfb35fb775a",
+    "commit": {
+      "message": "fix: batch the open fixable issues and fold in the stalled sync prs (#1486)",
+      "author": {
+        "date": "2026-11-10T07:04:41Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "f03c9ce97af5b2d75b3ec8d08d08ad08551b61e3",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-11-09T11:27:19Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "d465c2c52ca07844750e986b5aee4c3f7650af62",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1157,42 +1193,6 @@
       "message": "fix(extension): refuse article and company pages on import and refresh the panel on status changes (#1415)",
       "author": {
         "date": "2026-10-08T19:21:22Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "d8f2c1c8ee8cd2d1540fc636badddc71dd38ba0f",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-08T19:16:18Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "7a73d053807a9c64482c6878a7a3a4718be8b33c",
-    "commit": {
-      "message": "fix: name the company and keep only the ad body on greenhouse page imports (#1414)",
-      "author": {
-        "date": "2026-10-08T19:02:29Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "79b69d38714dcad0e081aa53b0559a022c9c7626",
-    "commit": {
-      "message": "fix: show why a tailor run failed, add ai generate cancel, and fix narrow layouts (#1413)",
-      "author": {
-        "date": "2026-10-08T19:01:40Z"
       }
     },
     "author": {

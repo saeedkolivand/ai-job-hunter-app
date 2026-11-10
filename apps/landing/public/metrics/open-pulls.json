@@ -1,30 +1,16 @@
 [
   {
-    "number": 1436,
-    "title": "fix(sync): preserve numeric payloads across json round trips",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1436",
+    "number": 1488,
+    "title": "chore(prompts): refresh system prompts for current models",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1488",
     "draft": false,
-    "created_at": "2026-10-18T10:32:42Z",
-    "updated_at": "2026-10-18T12:48:45Z",
+    "created_at": "2026-11-10T11:06:22Z",
+    "updated_at": "2026-11-10T11:06:42Z",
     "merged_at": null,
     "closed_at": null,
     "requested_reviewers": [],
     "user": {
-      "login": "NimaNabi"
-    }
-  },
-  {
-    "number": 1434,
-    "title": "fix(sync): show received profiles and refresh open screens",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1434",
-    "draft": false,
-    "created_at": "2026-10-18T10:24:06Z",
-    "updated_at": "2026-10-18T15:22:03Z",
-    "merged_at": null,
-    "closed_at": null,
-    "requested_reviewers": [],
-    "user": {
-      "login": "NimaNabi"
+      "login": "saeedkolivand"
     }
   }
 ]

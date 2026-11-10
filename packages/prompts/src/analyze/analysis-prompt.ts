@@ -95,9 +95,7 @@ ${modeNote}
 ${toneNote}
 ${langNote}
 
-Analyze how well the resume matches the job ad. Think step by step before writing the JSON.
-
-Steps:
+Analyze how well the resume matches the job ad. Work through these checks, then write the JSON:
 1. Extract the top 10 required skills/technologies from the job ad
 2. Check each one against the resume — matched or missing?
 3. Check ATS format: standard section headers, single column, no tables
@@ -126,7 +124,7 @@ ${modeNote}
 ${toneNote}
 ${langNote}
 
-TASK: analyze the resume against the job ad through your three lenses (ATS, recruiter, strategist). Extract the job requirements, map each to the resume (semantic match), audit ATS formatting and achievement quality, then score every dimension honestly per your acceptance checks. Draft the JSON, validate it against the schema, and revise until every acceptance check passes.
+TASK: analyze the resume against the job ad through your three lenses (ATS, recruiter, strategist). Extract the job requirements, map each to the resume (semantic match), audit ATS formatting and achievement quality, then score every dimension honestly per your acceptance checks. Validate the JSON against the schema before you return it.
 
 Return a JSON object matching this schema:
 ${schemaStr}

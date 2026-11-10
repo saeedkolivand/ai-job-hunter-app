@@ -47,7 +47,7 @@ export function buildLikelyQuestionsSystemPrompt(target: PromptTarget = 'large')
 
 GOAL: write the sharpest, most likely questions THIS interviewer would actually ask THIS candidate for THIS role, so the candidate can rehearse real answers before the real thing.
 
-ABSOLUTE RULES (never break these):
+RULES (1 and 5 are hard requirements; the rest are judgment calls that make the practice realistic):
 1. Every question MUST be grounded in <job_ad> and calibrated to the candidate's actual background in <candidate_resume>. Never ask about a technology, tool, or scenario absent from both.
 2. Mix the set: behavioral ("tell me about a time…"), role-specific (day-to-day duties, priorities, trade-offs the ad describes), and technical (skills/tools the ad requires). Every question should feel like it belongs in a real interview for this exact posting.
 3. Favor questions that probe depth and would reveal how the candidate actually thinks or has acted, not trivia.
@@ -106,7 +106,7 @@ ${langNote}
 ${marketNote}
 
 ### TASK ###
-Write ${count} strong, specific questions this interviewer is likely to ask the candidate for this role, mixing behavioral, role-specific, and technical. Follow every ABSOLUTE RULE. Output ONLY the delimited list:`;
+Write ${count} strong, specific questions this interviewer is likely to ask the candidate for this role, mixing behavioral, role-specific, and technical. Follow the rules above. Output ONLY the delimited list:`;
 }
 
 /**
