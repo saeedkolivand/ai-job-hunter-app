@@ -88,6 +88,7 @@ mod autofill_check;
 /// `profile.get` → `profile.result` — see its own module doc.
 mod autofill_profile;
 mod autotrack;
+mod bind_diag;
 /// `CallerClass` + the per-verb dispatch matrix that gates on it — see its own module doc
 /// (R8 relief, PR1 — extension read tier).
 mod caller_gate;
@@ -224,6 +225,10 @@ const PORT_RANGE: std::ops::RangeInclusive<u16> = 47615..=47620;
 
 /// File under the app data dir holding the persisted pairing token.
 const TOKEN_FILE: &str = "extension_token";
+
+/// File under the app data dir recording a total bind failure of [`PORT_RANGE`] (#1442);
+/// written by `bind_diag::record`, read by the agent CLI. Cleared on a successful bind.
+const BIND_DIAG_FILE: &str = "bridge_bind_failed";
 
 /// File under the app data dir holding the assisted-autofill opt-in flag
 /// (`"1"` = on, anything else / absent = off). Default OFF: the desktop returns

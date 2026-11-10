@@ -46,8 +46,8 @@ pub enum TrustFlag {
     /// `TrustAssessment`/`FoundJob` record already on disk.
     ImplausibleCompany,
     /// The posting's own description carries no usable scoring text — empty,
-    /// whitespace-only, or blank once markdown noise (a bare URL, `***`,
-    /// `[](url)`, …) is stripped, per
+    /// whitespace-only, blank once markdown noise (a bare URL, `***`,
+    /// `[](url)`, …) is stripped, or only LinkedIn login-wall/footer boilerplate, per
     /// `crate::documents::keywords::description_is_blank`, the same predicate
     /// `commands::autopilot`'s `no_jd_text` uses. LinkedIn's free/guest board
     /// sets `description: Some(String::new())` for every posting (a "will be

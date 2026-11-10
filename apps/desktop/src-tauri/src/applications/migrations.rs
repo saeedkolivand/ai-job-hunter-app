@@ -428,6 +428,7 @@ impl ApplicationStore {
                     &meta,
                     &meta.job_description,
                     Some(g.created_at),
+                    false,
                 )?;
                 gen_conn.execute(
                     "UPDATE ai_generations SET application_id = ?2 WHERE id = ?1",

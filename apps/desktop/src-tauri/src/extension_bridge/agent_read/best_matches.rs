@@ -92,9 +92,9 @@ pub(in crate::extension_bridge) use cursor::{DEFAULT_BEST_MATCHES_LIMIT, MAX_BES
 /// already-computed row set (issue #1146 P11 — the same cursor `found-jobs` already has). Directly
 /// unit-testable with hand-built `Value` rows, no `AppHandle`.
 ///
-/// `total` here is the count of rows THIS call's `query` actually matches — never the command's
-/// own pre-cap qualifying count, which this fn never receives: `rows` is already capped at
-/// `BEST_MATCHES_CAP` upstream, so a caller paging to `null` only ever reaches what `rows` holds.
+/// `total` here is the count of rows THIS call's `query` actually matches. `rows` is the FULL
+/// qualifying set (the agent path bypasses the IPC command's `BEST_MATCHES_CAP`, #1448), so paging
+/// to `null` reaches every qualifying row.
 ///
 /// `nextCursor` is `<query fingerprint>:<offset>` (round 2 fix, B3-r1-F4), not a bare offset —
 /// `query` is already the SAME normalized value [`best_matches_resource`] fingerprinted to parse
@@ -196,7 +196,7 @@ fn best_matches_base_envelope_cost(cursor_issuer: &str, total: usize) -> usize {
 pub(super) async fn best_matches_resource(app: &AppHandle, payload: &Value) -> AppResult<Value> {
     let limit = clamp_best_matches_limit(payload);
     let (query, offset) = parse_best_matches_args(payload)?;
-    let raw = crate::commands::autopilot::autopilot_best_matches(app.clone()).await;
+    let raw = crate::commands::autopilot::autopilot_best_matches_all(app.clone()).await;
     let rows = raw
         .get("matches")
         .and_then(Value::as_array)

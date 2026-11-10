@@ -25,17 +25,20 @@ pub fn start(app: AppHandle) {
         };
 
         let listener = match bind_listener().await {
-            Some((listener, port)) => {
+            Ok((listener, port)) => {
                 state.set_port(Some(port));
+                super::bind_diag::clear(&state.data_dir);
                 log::info!("[extension_bridge] listening on 127.0.0.1:{port}");
                 listener
             }
-            None => {
+            Err(failures) => {
                 log::warn!(
-                    "[extension_bridge] no free port in {}..={} — bridge disabled",
+                    "[extension_bridge] no free port in {}..={} — bridge disabled ({})",
                     PORT_RANGE.start(),
-                    PORT_RANGE.end()
+                    PORT_RANGE.end(),
+                    failures.join("; ")
                 );
+                super::bind_diag::record(&state.data_dir, &failures);
                 return;
             }
         };
@@ -71,24 +74,27 @@ where
 }
 
 /// Try each port in [`PORT_RANGE`] in order; return the first that binds.
-async fn bind_listener() -> Option<(TcpListener, u16)> {
+async fn bind_listener() -> Result<(TcpListener, u16), Vec<String>> {
     probe_ports(PORT_RANGE).await
 }
 
 /// Probe an explicit, ordered port range on loopback and return the first that
-/// binds (or `None` if all are busy). Factored out of [`bind_listener`] so the
+/// binds (or `Err` with one sanitized line per failed port if all fail). Factored out of [`bind_listener`] so the
 /// fallback/graceful-disable logic is testable against a caller-controlled range
 /// of known-busy/known-free ports instead of the fixed [`PORT_RANGE`] (whose
-/// availability on CI is non-deterministic). Behaviorally identical to the prior
-/// inline loop — same order, same first-binds-wins, same `None` when exhausted.
-async fn probe_ports(range: std::ops::RangeInclusive<u16>) -> Option<(TcpListener, u16)> {
+/// availability on CI is non-deterministic). Same order and first-binds-wins as
+/// the prior inline loop; exhaustion now returns every port's failure instead of `None`.
+async fn probe_ports(
+    range: std::ops::RangeInclusive<u16>,
+) -> Result<(TcpListener, u16), Vec<String>> {
+    let mut failures = Vec::new();
     for port in range {
-        let addr = (Ipv4Addr::LOCALHOST, port);
-        if let Ok(listener) = TcpListener::bind(addr).await {
-            return Some((listener, port));
+        match TcpListener::bind((Ipv4Addr::LOCALHOST, port)).await {
+            Ok(listener) => return Ok((listener, port)),
+            Err(e) => failures.push(super::bind_diag::describe(port, &e)),
         }
     }
-    None
+    Err(failures)
 }
 
 #[cfg(test)]

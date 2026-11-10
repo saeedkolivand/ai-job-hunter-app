@@ -17,6 +17,7 @@ use crate::error::{AppError, AppResult};
 
 mod engine_cases;
 mod http_transport;
+mod legacy_float;
 mod rules_cases;
 mod settings_cases;
 mod stores;

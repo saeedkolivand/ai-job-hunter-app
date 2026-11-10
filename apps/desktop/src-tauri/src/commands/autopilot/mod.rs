@@ -274,7 +274,18 @@ pub fn autopilot_resume(app: AppHandle, autopilot_id: String) -> Value {
 /// lost by not interpolating the raw error.
 #[tauri::command]
 pub async fn autopilot_best_matches(app: AppHandle) -> Value {
-    tauri::async_runtime::spawn_blocking(move || autopilot_best_matches_blocking(&app))
+    best_matches_value(app, true).await
+}
+
+/// The full qualifying set, no [`BEST_MATCHES_CAP`] — for the agent resource,
+/// which runs its own query/paging over every qualifying row (#1448). Not a
+/// Tauri command.
+pub async fn autopilot_best_matches_all(app: AppHandle) -> Value {
+    best_matches_value(app, false).await
+}
+
+async fn best_matches_value(app: AppHandle, capped: bool) -> Value {
+    tauri::async_runtime::spawn_blocking(move || autopilot_best_matches_blocking(&app, capped))
         .await
         .unwrap_or_else(|e| {
             // `tauri::async_runtime::spawn_blocking`'s error is `tauri::Error`,
@@ -291,7 +302,7 @@ pub async fn autopilot_best_matches(app: AppHandle) -> Value {
         })
 }
 
-fn autopilot_best_matches_blocking(app: &AppHandle) -> Value {
+fn autopilot_best_matches_blocking(app: &AppHandle, capped: bool) -> Value {
     let records = store(app).lock().list();
     let (tombstones, extra_agency) = snapshot_dedup_inputs(app);
 
@@ -309,6 +320,7 @@ fn autopilot_best_matches_blocking(app: &AppHandle) -> Value {
         .unwrap_or_default();
 
     let mut outcome = compute_best_matches(&records, &tombstones, &extra_agency, &dismissed_keys);
+    limit_rows(&mut outcome.matches, capped);
     mark_applied(&mut outcome.matches, &applied_job_urls(app));
 
     json!({

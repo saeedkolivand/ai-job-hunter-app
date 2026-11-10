@@ -201,13 +201,13 @@ pub(super) const VERB_TABLE: &[VerbHelp] = &[
         name: "best-matches",
         args: "[--limit <n>] [--cursor <c>] [--query <q>]",
         returns: "the strongest jobs across every autopilot (default 20, max 100 per page); \
-                  repeat with the returned `nextCursor` to reach every ranked row; `--query` \
-                  filters to a title/company substring over the already-capped, ranked \
-                  candidate list this call computes (NOT the full stored corpus — use \
+                  repeat with the returned `nextCursor` to reach every ranked row (more than 100 \
+                  rows means several cursor pages, each rate-limited); `--query` \
+                  filters to a title/company substring over every qualifying ranked row \
+                  (NOT the full stored corpus of non-qualifying postings — use \
                   `found-jobs --query` to search every stored posting), and the cursor is only \
                   valid for the SAME `--query` (present or omitted) that issued it; `total` is \
-                  the size of this capped ranked list, not the number of qualifying postings in \
-                  storage — use `found-jobs` for a true corpus count",
+                  the number of qualifying rows matching `--query` (all of them when omitted)",
     },
     VerbHelp {
         name: "job",

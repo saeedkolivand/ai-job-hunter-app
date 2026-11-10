@@ -2,7 +2,9 @@
 //! generic ALL-CAPS heading rule, letter-spaced-heading collapsing, Markdown
 //! ATX headings, and thematic breaks.
 
+use super::markdown::{parse_inline_md, strip_md};
 use super::shapes::DATE_RE;
+use crate::export::types::{LineKind, ParsedLine};
 
 // Section names (multilingual)
 pub(super) const SECTION_NAMES: &[&str] = &[
@@ -307,4 +309,49 @@ pub(crate) fn strip_atx_heading(line: &str) -> Option<&str> {
     } else {
         None
     }
+}
+
+/// Is `line` (at `idx`) an H3+ ATX heading whose nearest H1/H2 above is a `##` section?
+/// Such a heading is an entry inside that section. An H1 doesn't count as a parent
+/// (it is usually the candidate's name), and a known section name (`### Skills`)
+/// always stays a section heading, as does a lone `### Notable Work`.
+pub(super) fn is_nested_entry_heading(line: &str, idx: usize, all_lines: &[&str]) -> bool {
+    let level = |l: &str| l.chars().take_while(|&c| c == '#').count();
+    strip_atx_heading(line).is_some_and(|body| !is_known_section_name(&strip_md(body)))
+        && level(line) >= 3
+        && all_lines.get(..idx).is_some_and(|head| {
+            head.iter()
+                .rev()
+                .map(|l| l.trim())
+                .find(|l| strip_atx_heading(l).is_some() && level(l) <= 2)
+                .is_some_and(|parent| level(parent) == 2)
+        })
+}
+
+/// `### Title | Org` under a `##` section is an ENTRY heading, not a new
+/// top-level section (which left `## Education` empty and dropped it, #1440).
+/// A date-only next line is its date; that line then collapses to Blank via
+/// `is_nested_entry_heading(prev)` in `parse_line`.
+pub(super) fn nested_entry_heading(
+    trimmed: &str,
+    heading_body: &str,
+    text: &str,
+    idx: usize,
+    all_lines: &[&str],
+) -> Option<ParsedLine> {
+    if text.is_empty() || !is_nested_entry_heading(trimmed, idx, all_lines) {
+        return None;
+    }
+    let date = all_lines
+        .get(idx + 1)
+        .and_then(|n| DATE_RE.find(n.trim()))
+        .filter(|m| m.start() == 0)
+        .map(|m| m.as_str().to_string());
+    Some(ParsedLine {
+        kind: LineKind::JobEntry,
+        raw: heading_body.to_string(),
+        text: text.to_string(),
+        segments: parse_inline_md(heading_body),
+        right_text: date,
+    })
 }

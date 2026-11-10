@@ -3,18 +3,103 @@
 //!
 //! Split out of `documents/keywords.rs` (R8's hard LOC cap); everything here moved verbatim.
 
-/// Whether a job description carries no usable JD text at all — absent, or
-/// blank once markdown syntax is stripped ([`markdown_to_plain`]). The
-/// description-only half of `commands::autopilot::build_found_job`'s
-/// `no_jd_text` predicate (which ALSO checks `JobPosting.requirements`, a
-/// field `FoundJob` has no room to carry) — extracted so it and
-/// `autopilot::AutopilotStore::update_found_job_descriptions` (which only
-/// ever has a description to look at, when a caller corrects one after the
-/// fact) can't drift on what counts as "no text" (issue #1106).
+/// Known LinkedIn guest-wall / footer / navigation strings (lowercase). A description made only of
+/// these (plus URLs and punctuation) is not a job ad (issue #1443). Phrases are deliberately
+/// multi-word so real ad prose is not eaten; stripping only matters when NOTHING else remains.
+const BOILERPLATE_PHRASES: &[&str] = &[
+    "sign in to view more",
+    "sign in to see more",
+    "sign in to apply",
+    "sign in",
+    "join now",
+    "join linkedin",
+    "new to linkedin",
+    "continue with google",
+    "welcome back",
+    "forgot password",
+    "show more",
+    "show less",
+    "see more",
+    "see less",
+    "similar jobs",
+    "people also viewed",
+    "set job alert",
+    "user agreement",
+    "privacy policy",
+    "cookie policy",
+    "copyright policy",
+    "your california privacy choices",
+    "brand policy",
+    "guest controls",
+    "community guidelines",
+    "linkedin corporation",
+    "accept & join",
+    "agree & join",
+    "by clicking continue",
+    "skip to main content",
+    "accedi per visualizzare",
+    "iscriviti ora",
+    "mostra altro",
+    "mostra meno",
+    "offerte simili",
+    "anmelden",
+    "jetzt anmelden",
+    "mehr anzeigen",
+    "weniger anzeigen",
+    "ähnliche jobs",
+    "se connecter",
+    "rejoindre maintenant",
+    "afficher plus",
+    "afficher moins",
+    "offres similaires",
+    "iniciar sesión",
+    "unirse ahora",
+    "ver más",
+    "ver menos",
+    "empleos similares",
+];
+
+/// Whether a job description carries no usable ad content: absent, empty once markdown syntax is
+/// stripped ([`markdown_to_plain`]), or only LinkedIn login-wall / footer / navigation
+/// boilerplate ([`BOILERPLATE_PHRASES`]) with no real text left. Length alone never makes a
+/// description blank, so a short genuine ad or a multilingual one stays non-blank.
+/// The description-only half of `commands::autopilot::build_found_job`'s `no_jd_text` predicate,
+/// shared with `AutopilotStore::update_found_job_descriptions` and LinkedIn enrichment so they
+/// can't drift on what counts as "no text" (issues #1106, #1443).
 pub fn description_is_blank(description: Option<&str>) -> bool {
-    description
-        .map(|d| markdown_to_plain(d).trim().is_empty())
-        .unwrap_or(true)
+    let Some(d) = description else { return true };
+    !markdown_to_plain(d).lines().any(|line| {
+        let l = line.trim().to_lowercase();
+        let bare = l.trim_matches(|c: char| !c.is_alphanumeric());
+        if WHOLE_LINE_TOKENS.contains(&bare) || is_language_picker_line(line.trim()) {
+            return false;
+        }
+        let mut rest = l;
+        for p in BOILERPLATE_PHRASES {
+            rest = rest.replace(p, " ");
+        }
+        rest.chars().any(char::is_alphabetic)
+    })
+}
+
+/// Single words that are footer chrome only when they are a whole line by themselves; stripping
+/// them from inside a sentence ("Tell us about yourself") would corrupt real ad text.
+const WHOLE_LINE_TOKENS: &[&str] = &["about", "accessibility", "language", "select language"];
+
+/// LinkedIn guest language-picker line: short `<native name> (<Capitalized English name>)`,
+/// e.g. `Deutsch (German)`, `العربية (Arabic)`.
+fn is_language_picker_line(line: &str) -> bool {
+    let Some(inner) = line.strip_suffix(')').and_then(|l| l.rsplit_once(" (")) else {
+        return false;
+    };
+    let (outer, name) = inner;
+    let words = |t: &str| t.split_whitespace().count();
+    (1..=3).contains(&words(outer))
+        && (1..=2).contains(&words(name))
+        && name.split_whitespace().all(|w| {
+            let mut c = w.chars();
+            c.next().is_some_and(char::is_uppercase) && c.all(|x| x.is_alphabetic() || x == '-')
+        })
 }
 
 /// Strip markdown syntax from a scoring text blob so URL fragments and

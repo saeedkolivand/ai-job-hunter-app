@@ -35,6 +35,7 @@ import {
   useExtensionBridgeEvents,
   useNotificationEvents,
   useSyncCloseToTray,
+  useSyncDataRefresh,
   useSyncSalaryExpectation,
   useSyncSemanticScoring,
 } from '@/services';
@@ -194,6 +195,7 @@ function RootLayout() {
   useAutopilotFocusNavigation();
   // Push the persisted close-to-tray preference to the shell once on boot.
   useSyncCloseToTray();
+  useSyncDataRefresh();
   // Push the persisted salary expectation onto the backend job_preferences
   // store once on boot (Task #30) — existing users' saved value lands there.
   useSyncSalaryExpectation();

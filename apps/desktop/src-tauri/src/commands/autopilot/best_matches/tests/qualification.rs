@@ -188,12 +188,13 @@ fn total_counts_qualifying_rows_before_the_cap() {
         .collect();
     let ap = autopilot("many", AutopilotStatus::Active, jobs);
     let out = best(&[ap]);
-    assert_eq!(out.total, 120, "total is the pre-cap qualifying count");
-    assert!(
-        out.matches.len() < out.total,
-        "matches is capped, total is not"
+    assert_eq!(out.total, 120);
+    assert_eq!(
+        out.matches.len(),
+        120,
+        "the shared computation is uncapped (#1448); the IPC command applies BEST_MATCHES_CAP"
     );
-    assert_eq!(out.matches.len(), BEST_MATCHES_CAP);
+    assert!(out.matches.len() > BEST_MATCHES_CAP);
 }
 
 #[test]
@@ -298,5 +299,38 @@ fn best_match_row_wire_shape_is_pinned() {
         "BestMatchRow's wire shape changed — mirror the change onto \
          extension_bridge::agent_read's AgentBestMatch projection and its \
          full_best_match_row_json() test fixture in the same PR"
+    );
+}
+
+#[test]
+fn ipc_cap_is_a_projection_over_the_full_sorted_set() {
+    let jobs: Vec<FoundJob> = (0..256)
+        .map(|i| {
+            job(
+                &format!("https://cap.example.com/job/{i}"),
+                &format!("Engineer {i}"),
+                &format!("Co{i}"),
+                Some(90.0),
+                ScoreSource::Keyword,
+            )
+        })
+        .collect();
+    let full = best(&[autopilot("cap", AutopilotStatus::Active, jobs)]).matches;
+    assert_eq!(full.len(), 256);
+    let head: Vec<String> = full[..BEST_MATCHES_CAP]
+        .iter()
+        .map(|r| r.key.clone())
+        .collect();
+
+    let mut agent = full.clone();
+    limit_rows(&mut agent, false);
+    assert_eq!(agent.len(), 256, "the agent path is uncapped");
+
+    let mut native = full;
+    limit_rows(&mut native, true);
+    assert_eq!(native.len(), 100, "the native command is capped");
+    assert_eq!(
+        native.iter().map(|r| r.key.clone()).collect::<Vec<_>>(),
+        head
     );
 }

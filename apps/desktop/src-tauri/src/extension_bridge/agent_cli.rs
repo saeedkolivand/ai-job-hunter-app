@@ -79,6 +79,7 @@ pub(super) type WsStream = tokio_tungstenite::WebSocketStream<TcpStream>;
 const ERR_APP_NOT_LOCATED: &str = "app_not_located";
 const ERR_PAIRING_TOKEN_UNAVAILABLE: &str = "pairing_token_unavailable";
 const ERR_APP_NOT_RUNNING: &str = "app_not_running";
+const ERR_BRIDGE_BIND_FAILED: &str = "bridge_bind_failed";
 const ERR_PAIRING_REJECTED: &str = "pairing_rejected";
 const ERR_CONNECTION_ERROR: &str = "connection_error";
 const ERR_RUNTIME_UNAVAILABLE: &str = "runtime_unavailable";
@@ -100,6 +101,10 @@ const ERROR_SENTINELS: &[(&str, &str)] = &[
     (
         ERR_APP_NOT_RUNNING,
         "nothing answered a connect on any candidate port",
+    ),
+    (
+        ERR_BRIDGE_BIND_FAILED,
+        "nothing answered and the app recorded that its local bridge could not bind any discovery port (the fixed bridge port range) — close whatever holds those ports or reboot, then relaunch the app",
     ),
     (
         ERR_PAIRING_REJECTED,
@@ -187,7 +192,9 @@ pub use entrypoint::run;
 // still declared exactly once, in its own file, and every consumer reaches it
 // exactly where it did when all of this was one file.
 use entrypoint::{exit_code_for_reply, usage_error_value};
-use handshake_client::{connect_authenticated, next_json, pairing_failure_sentinel};
+use handshake_client::{
+    connect_authenticated, next_json, pairing_failure_sentinel, PairingFailure,
+};
 use parse::{parse_bool_flag, parse_verb};
 use parse_call::parse_call;
 use parse_found_jobs::parse_found_jobs;

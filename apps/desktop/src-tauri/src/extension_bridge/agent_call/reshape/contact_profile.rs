@@ -6,7 +6,7 @@ use serde_json::Value;
 
 /// The one command whose raw reply is projected to a photo-less allowlist before an agent ever
 /// sees it (issue #1180). `contact_profile_get`'s real body returns the whole `ContactProfile`,
-/// including `photo` (a local-only `data:image/…;base64,…` URI, never sent over the network); the
+/// including `photo` (a `data:image/…;base64,…` URI that agents must never receive); the
 /// dedicated `profile` resource already resolves through that photo-less shape, so this makes the
 /// generic tier's `call-read contact_profile_get` match it instead of leaking `photo`.
 // `pub(in crate::extension_bridge)`, not `pub(super)`: `agent_cli::mcp`'s `commands` tool (a

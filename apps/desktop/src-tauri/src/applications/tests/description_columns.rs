@@ -293,3 +293,34 @@ fn job_summary_update_and_50kb_clamp_truncates_on_char_boundary() {
         "exactly the whole chars that fit"
     );
 }
+
+/// #1450 race: a draft save whose candidate text was chosen while the stored
+/// description was blank must not overwrite an edit that committed since.
+#[test]
+fn saved_draft_never_replaces_a_usable_stored_description() {
+    let (_dir, store) = open_store();
+    let url = "https://acme.com/job/race/1";
+    let id = store
+        .upsert_saved_draft(url, "linkedin", &meta("Acme", "Engineer"))
+        .unwrap();
+    edit(&store, &id, |p| {
+        p.job_description = Some("My own edited ad text.".into())
+    });
+
+    let stale = ApplicationMeta {
+        job_description: "Posting text from the autopilot.".into(),
+        ..meta("Acme", "Engineer")
+    };
+    store.upsert_saved_draft(url, "linkedin", &stale).unwrap();
+    assert_eq!(
+        store.get(&id).unwrap().job_description,
+        "My own edited ad text."
+    );
+
+    edit(&store, &id, |p| p.job_description = Some(String::new()));
+    store.upsert_saved_draft(url, "linkedin", &stale).unwrap();
+    assert_eq!(
+        store.get(&id).unwrap().job_description,
+        "Posting text from the autopilot."
+    );
+}

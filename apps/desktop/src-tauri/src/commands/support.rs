@@ -97,11 +97,10 @@ pub(crate) fn build_diagnostics_zip(
     // ── system-info.txt — generated, already clean ────────────────────────
     {
         use sysinfo::System;
-        let sys = System::new_all();
-        let os_name = System::name().unwrap_or_else(|| std::env::consts::OS.to_owned());
-        let os_ver = System::os_version().unwrap_or_else(|| "unknown".to_owned());
+        let os_name = System::name().unwrap_or_else(|_| std::env::consts::OS.to_owned());
+        let os_ver = System::os_version().unwrap_or_else(|_| "unknown".to_owned());
         let arch = std::env::consts::ARCH;
-        let total_ram_mb = sys.total_memory() / (1024 * 1024);
+        let total_ram_mb = System::new_all().map_or(0, |s| s.total_memory() / (1024 * 1024));
         let info = format!(
             "OS: {os_name} {os_ver}\nArch: {arch}\nApp version: {app_version}\nTotal RAM: {total_ram_mb} MB\n",
         );

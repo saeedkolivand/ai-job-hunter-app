@@ -14,8 +14,8 @@ use crate::error::AppResult;
 ///
 /// `MAX_BEST_MATCHES_LIMIT` equals `BEST_MATCHES_CAP` (round 3 fix, B3-r3-F2 — it used to be half
 /// that cap, so a full traversal took 2–5 calls against a 30s-refill bucket sized for one, i.e.
-/// 30–120s of forced stalls). Equal to the cap means one max-limit page always reaches the whole
-/// reachable set in a SINGLE call.
+/// 30–120s of forced stalls). Equal to the cap means one max-limit page is sized to cover the whole
+/// reachable set in a single call.
 pub(in crate::extension_bridge) const DEFAULT_BEST_MATCHES_LIMIT: usize = 20;
 pub(in crate::extension_bridge) const MAX_BEST_MATCHES_LIMIT: usize = 100;
 

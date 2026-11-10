@@ -6,6 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::envelope::{record_hash, Envelope, Page, PROTOCOL_VERSION};
+use super::legacy_float::legacy_record_hash;
 use super::rules::{decide, Decision, Local};
 use super::state::{BaselineEntry, SyncStateStore};
 use crate::data_store::SyncSection;
@@ -51,14 +52,25 @@ pub fn run(
     let device_id = state.device_id()?;
     let mut report = SyncReport::default();
 
+    let mut baseline = baseline_map(state, scope)?;
+    // Payloads are only needed for the hashes and the one-time rebaseline: drop them here.
+    let current: Hashes = {
+        let records = current_records(sections)?;
+        let current = records
+            .iter()
+            .map(|(k, (_, p))| (k.clone(), record_hash(p)))
+            .collect();
+        rebaseline_legacy_floats(state, scope, &records, &current, &mut baseline)?;
+        current
+    };
     let mut ctx = Ctx {
         by_name: sections.iter().map(|s| (s.section(), *s)).collect(),
         state,
         scope,
         run_rev,
         device_id: &device_id,
-        current: current_hashes(sections)?,
-        baseline: baseline_map(state, scope)?,
+        current,
+        baseline,
         applied: BTreeSet::new(),
     };
 
@@ -301,9 +313,27 @@ fn current_records(
     Ok(out)
 }
 
-fn current_hashes(sections: &[&dyn SyncSection]) -> AppResult<Hashes> {
-    Ok(current_records(sections)?
-        .into_iter()
-        .map(|(k, (_, p))| (k, record_hash(&p)))
-        .collect())
+/// A baseline hash written before `float_roundtrip` (#1435) can differ from
+/// the same unchanged record's hash now. Adopt the new hash silently so such a
+/// record is not mistaken for a local edit that beats a pending remote update.
+fn rebaseline_legacy_floats(
+    state: &SyncStateStore,
+    scope: &str,
+    records: &BTreeMap<Key, (u32, serde_json::Value)>,
+    current: &Hashes,
+    baseline: &mut BTreeMap<Key, BaselineEntry>,
+) -> AppResult<()> {
+    for (key, (_, payload)) in records {
+        let Some(entry) = baseline.get_mut(key).filter(|e| !e.deleted) else {
+            continue;
+        };
+        let Some(now) = current.get(key) else {
+            continue;
+        };
+        if entry.hash != *now && entry.hash == legacy_record_hash(payload) {
+            entry.hash.clone_from(now);
+            state.put_baseline(scope, &key.0, &key.1, entry)?;
+        }
+    }
+    Ok(())
 }

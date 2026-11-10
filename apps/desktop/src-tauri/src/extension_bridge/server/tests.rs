@@ -33,11 +33,11 @@ async fn pick_free_port() -> u16 {
 async fn port_probe_skips_busy_port_and_binds_next_free() {
     let (busy, busy_port) = claim_busy_port().await;
 
-    // (a) A range that is exactly the held port → no free port → None. This is the
+    // (a) A range that is exactly the held port → no free port → Err. This is the
     //     skip proof: the busy port is never bound.
     assert!(
-        probe_ports(busy_port..=busy_port).await.is_none(),
-        "a single-port range over the held port {busy_port} must yield None"
+        probe_ports(busy_port..=busy_port).await.is_err(),
+        "a single-port range over the held port {busy_port} must yield Err"
     );
 
     // (b) A wider range starting at the busy port → probe must skip the busy port
@@ -70,9 +70,11 @@ async fn port_probe_returns_none_when_full_span_busy_graceful_disable() {
 
     // The span is the single held port → fully busy → graceful None.
     let result = probe_ports(held_port..=held_port).await;
+    let failures = result.expect_err("probe_ports must fail when the only port in range is busy");
+    assert_eq!(failures.len(), 1);
     assert!(
-        result.is_none(),
-        "probe_ports must return None when the only port in range is busy"
+        failures[0].starts_with(&format!("{held_port}: ")),
+        "{failures:?}"
     );
 
     // Control: once released, that exact port becomes bindable again, proving the
@@ -80,6 +82,32 @@ async fn port_probe_returns_none_when_full_span_busy_graceful_disable() {
     drop(held);
     let reclaim = pick_free_port().await; // exercises the free-detect helper
     let _ = reclaim;
+}
+
+/// #1442: every port of a multi-port range occupied -> one diagnostic per port,
+/// and the persisted record reads back identically.
+#[tokio::test]
+async fn full_range_busy_lists_every_port_and_the_record_roundtrips() {
+    // Hold two ADJACENT ports we bind ourselves (retry until a free pair is found).
+    let (a, b, lo, hi) = loop {
+        let (a, pa) = claim_busy_port().await;
+        let Some(pb) = pa.checked_add(1) else {
+            continue;
+        };
+        if let Ok(b) = TcpListener::bind(("127.0.0.1", pb)).await {
+            break (a, b, pa, pb);
+        }
+    };
+    let failures = probe_ports(lo..=hi).await.expect_err("all busy");
+    assert_eq!(failures.len(), 2, "{failures:?}");
+    assert!(
+        failures[0].starts_with(&format!("{lo}: ")) && failures[1].starts_with(&format!("{hi}: "))
+    );
+    let dir = tempfile::TempDir::new().unwrap();
+    super::super::bind_diag::record(dir.path(), &failures);
+    let detail = super::super::bind_diag::read(dir.path()).unwrap();
+    assert_eq!(detail, failures.join("; "));
+    drop((a, b));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

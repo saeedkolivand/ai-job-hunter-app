@@ -112,8 +112,8 @@ pub struct ContactProfile {
     /// Optional candidate photo as a `data:image/<mime>;base64,<payload>` URI
     /// produced by the photo-upload control.  Stored as-is in the JSON column;
     /// `resolve_photo` validates, sanitises, dimension-caps, and re-encodes it
-    /// to PNG before embedding.  File paths are never accepted here — this field
-    /// is local-only and is never sent over the network.
+    /// to PNG before embedding.  File paths are never accepted here.  Leaves the
+    /// device only in app backups and opt-in self-hosted sync.
     /// `None` → no photo; the templates fall back gracefully.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub photo: Option<String>,

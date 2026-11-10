@@ -23,7 +23,9 @@ pub(crate) use shapes::{
     is_project_title_shaped,
 };
 
-use headings::{despace_letterspaced, is_thematic_break};
+use headings::{
+    despace_letterspaced, is_nested_entry_heading, is_thematic_break, nested_entry_heading,
+};
 use shapes::{
     is_contactish_segment, is_entry_title_shaped, separator_count, BULLET_RE, DATE_RE, SOLO_DATE_RE,
 };
@@ -81,6 +83,9 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
     // to Blank rather than emitting an empty heading.
     if let Some(heading_body) = strip_atx_heading(trimmed) {
         let text = strip_md(heading_body);
+        if let Some(entry) = nested_entry_heading(trimmed, heading_body, &text, idx, all_lines) {
+            return entry;
+        }
         if !text.is_empty() {
             return ParsedLine {
                 kind: LineKind::SectionHeader,
@@ -300,7 +305,10 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
         if let Some(m) = DATE_RE.find(trimmed) {
             if m.start() == 0 {
                 let prev_clean = strip_md(all_lines.get(idx - 1).unwrap_or(&"").trim());
-                if is_entry_title_shaped(&prev_clean) {
+                let prev_raw = all_lines.get(idx - 1).unwrap_or(&"").trim();
+                if is_entry_title_shaped(&prev_clean)
+                    || is_nested_entry_heading(prev_raw, idx - 1, all_lines)
+                {
                     let remainder = trimmed[m.end()..]
                         .trim_start_matches([',', '-', '\u{2013}', '\u{2014}', ' '])
                         .trim();

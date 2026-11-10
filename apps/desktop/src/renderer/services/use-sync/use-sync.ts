@@ -9,8 +9,8 @@ import { keys } from '../query-client';
 /**
  * Optional self-hosted sync (ADR-051). Every sync command echoes the fresh
  * status back, so mutations seed the cache directly rather than invalidating.
- * The status is refetched every minute while the card is open, so the
- * background runs (launch, every 15 minutes) show up without a reload.
+ * The status is refetched every minute while mounted (the app root mounts it via
+ * `useSyncDataRefresh`), so background runs show up without a reload.
  */
 export const useSyncStatus = () => {
   const api = useAppClient();

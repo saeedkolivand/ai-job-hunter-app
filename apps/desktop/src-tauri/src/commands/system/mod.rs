@@ -357,22 +357,24 @@ pub fn system_set_close_to_tray(app: AppHandle, enabled: bool) {
 #[tauri::command]
 pub fn system_get_metrics() -> Value {
     use sysinfo::System;
-    let mut sys = System::new_all();
-    sys.refresh_all();
+    // sysinfo 0.40 made init fallible; an unsupported host reports zeros
+    // rather than failing the metrics panel.
+    let sys = System::new_all().ok().map(|mut s| {
+        s.refresh_all();
+        s
+    });
+    let cpus = sys.as_ref().map_or(&[][..], |s| s.cpus());
 
-    let total_mem = sys.total_memory();
-    let used_mem = sys.used_memory();
-    let uptime = System::uptime();
-    let cpu_percent =
-        sys.cpus().iter().map(|c| c.cpu_usage()).sum::<f32>() / sys.cpus().len().max(1) as f32;
-    let cpu_count = sys.cpus().len();
-    let cpu_brand = sys
-        .cpus()
+    let total_mem = sys.as_ref().map_or(0, |s| s.total_memory());
+    let used_mem = sys.as_ref().map_or(0, |s| s.used_memory());
+    let uptime = System::uptime().unwrap_or(0);
+    let cpu_percent = cpus.iter().map(|c| c.usage()).sum::<f32>() / cpus.len().max(1) as f32;
+    let cpu_count = cpus.len();
+    let cpu_brand = cpus
         .first()
         .map(|c| c.brand().to_string())
         .unwrap_or_default();
-    let cpu_name = sys
-        .cpus()
+    let cpu_name = cpus
         .first()
         .map(|c| c.name().to_string())
         .unwrap_or_default();
