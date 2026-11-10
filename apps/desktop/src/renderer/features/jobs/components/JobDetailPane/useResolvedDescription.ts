@@ -45,11 +45,14 @@ export function useResolvedDescription(posting: Posting) {
   // pane keeps the stored text, so the other advert never flashes.
   const [verdictOk, setVerdictOk] = useState(false);
   const [verdictFailed, setVerdictFailed] = useState(false);
+  // 'unverified': a stored copy exists but nothing could be compared (or the drift
+  // was dismissed) — nothing was written, so the resolved text stays hidden.
+  const [unverified, setUnverified] = useState(false);
   const [drift, setDrift] = useState<{ title: string; company: string } | null>(null);
   const description: string =
     resolvedLonger && !verdictOk ? (posting.description ?? '') : mergedText;
   const verdictPending =
-    resolvedLonger && resolved.isFetched && !verdictOk && !drift && !verdictFailed;
+    resolvedLonger && resolved.isFetched && !verdictOk && !drift && !verdictFailed && !unverified;
 
   // Gate both the loading indicator and the retry button off isFetching so any
   // refetch (including the manual retry click) consistently drives the UI.
@@ -61,7 +64,8 @@ export function useResolvedDescription(posting: Posting) {
   //  - resolved text is not yet meaningfully longer than the snippet.
   const showLoadButton =
     ((isAggregatorShort || descriptionEmpty) && !resolved.isFetching && !resolvedLonger) ||
-    verdictFailed;
+    verdictFailed ||
+    unverified;
 
   // Persist-then-score: one ordered one-shot effect so the backend always reads
   // the full markdown when computing the match score, and the identity verdict
@@ -115,7 +119,13 @@ export function useResolvedDescription(posting: Posting) {
         setDrift({ title: resolvedIdentity.title, company: resolvedIdentity.company });
         return;
       }
-      // 'updated' and 'noMatch' (no stored row to compare) are both not-drift.
+      if (result === 'unverified') {
+        // Latch stays set: no re-persist on every render.
+        setUnverified(true);
+        return;
+      }
+      // 'updated' and 'noMatch' (no stored row or cache entry exists, so nothing
+      // to protect) both reveal.
       setVerdictOk(true);
       scoreJob(posting.id);
     })();
@@ -149,7 +159,7 @@ export function useResolvedDescription(posting: Posting) {
     description,
     descLoading,
     showLoadButton,
-    showError: shouldResolve && (resolved.isError || verdictFailed) && !descLoading,
+    showError: shouldResolve && (resolved.isError || verdictFailed || unverified) && !descLoading,
     refetch: () => {
       setVerdictFailed(false);
       return resolved.refetch();

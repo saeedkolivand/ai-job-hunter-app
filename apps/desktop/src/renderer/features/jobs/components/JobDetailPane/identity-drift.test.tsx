@@ -68,6 +68,32 @@ describe('JobDetailPane — identity drift', () => {
     expect(mockScoreJob).not.toHaveBeenCalled();
   });
 
+  it("'unverified' with stored text: stored shown, resolved hidden, not scored, no notice", async () => {
+    mockUpdateDescMutateAsync.mockResolvedValue('unverified');
+    resolveOtherAd();
+    await openPane(makePosting('d-unv', { source: 'aggregator', description: 'Stored ad.' }));
+    await flushMicrotasks(2);
+
+    expect(screen.getByText('Stored ad.')).toBeInTheDocument();
+    expect(screen.queryByText(OTHER_AD)).not.toBeInTheDocument();
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+    expect(mockScoreJob).not.toHaveBeenCalled();
+    expect(mockUpdateDescMutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("'unverified' with empty stored text shows the error + retry UI", async () => {
+    mockUpdateDescMutateAsync.mockResolvedValue('unverified');
+    resolveOtherAd();
+    await openPane(makePosting('d-unv-empty', { description: '' }));
+    await flushMicrotasks(2);
+
+    expect(screen.queryByText(OTHER_AD)).not.toBeInTheDocument();
+    expect(screen.getByText('jobs.descriptionLoadError')).toBeInTheDocument();
+    expect(screen.getByText('jobs.loadFullDescription')).toBeInTheDocument();
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+    expect(mockScoreJob).not.toHaveBeenCalled();
+  });
+
   it('retry after a failed persist calls updateDescription again and then reveals', async () => {
     mockUpdateDescMutateAsync
       .mockRejectedValueOnce(new Error('rejected'))
