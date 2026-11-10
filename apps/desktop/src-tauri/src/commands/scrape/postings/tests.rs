@@ -4,10 +4,13 @@ use super::*;
 // sends (`url`/`description`). Pins the serde contract without an AppHandle.
 #[test]
 fn update_description_request_deserializes_camel_case() {
-    let json = r#"{"url":"https://example.com/jobs/1","description":"full text"}"#;
+    let json = r#"{"url":"https://example.com/jobs/1","description":"full text",
+        "resolved":{"title":"Rust Engineer","company":"Acme","url":"https://example.com/jobs/1","externalId":"42"}}"#;
     let req: ScrapeUpdateDescriptionRequest = serde_json::from_str(json).unwrap();
     assert_eq!(req.url, "https://example.com/jobs/1");
     assert_eq!(req.description, "full text");
+    assert_eq!(req.resolved.title, "Rust Engineer");
+    assert_eq!(req.resolved.external_id.as_deref(), Some("42"));
 }
 
 #[test]
@@ -122,20 +125,36 @@ fn validate_canonicalizes_a_linkedin_search_view_url_to_the_same_identity_job_re
     );
 }
 
-// ── either_store_updated (issue #1106 — the two-store OR semantics) ──────
+// ── write_status (issue #1106 two-store OR semantics + #1445 drift) ────────
+
+fn rows(updated: u32, drifted: u32) -> ResolveWrite {
+    ResolveWrite { updated, drifted }
+}
 
 #[test]
-fn either_store_updated_is_true_unless_neither_store_matched() {
-    for (cache_hit, found_jobs_updated, expected, case) in [
-        (true, 0, true, "only the cache matched"),
-        (false, 1, true, "only found_jobs matched"),
-        (true, 2, true, "both matched"),
-        (false, 0, false, "neither matched"),
+fn write_status_is_updated_when_either_store_matched_and_no_drift() {
+    use DescriptionWriteStatus::{NoMatch, Updated};
+    assert_eq!(write_status(true, false, rows(0, 0)), Updated);
+    assert_eq!(write_status(false, false, rows(1, 0)), Updated);
+    assert_eq!(write_status(true, false, rows(2, 0)), Updated);
+    assert_eq!(write_status(false, false, rows(0, 0)), NoMatch);
+}
+
+#[test]
+fn write_status_reports_drift_from_either_store_over_any_match() {
+    use DescriptionWriteStatus::IdentityDrift;
+    assert_eq!(write_status(false, false, rows(0, 1)), IdentityDrift);
+    assert_eq!(write_status(false, true, rows(0, 0)), IdentityDrift);
+    assert_eq!(write_status(true, false, rows(1, 1)), IdentityDrift);
+}
+
+#[test]
+fn status_serializes_to_the_wire_strings() {
+    for (status, wire) in [
+        (DescriptionWriteStatus::Updated, "\"updated\""),
+        (DescriptionWriteStatus::NoMatch, "\"noMatch\""),
+        (DescriptionWriteStatus::IdentityDrift, "\"identityDrift\""),
     ] {
-        assert_eq!(
-            either_store_updated(cache_hit, found_jobs_updated),
-            expected,
-            "{case}"
-        );
+        assert_eq!(serde_json::to_string(&status).unwrap(), wire);
     }
 }

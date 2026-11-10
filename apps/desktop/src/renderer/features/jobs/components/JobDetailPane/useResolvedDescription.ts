@@ -31,7 +31,8 @@ export function useResolvedDescription(posting: Posting) {
   // Keep-longer merge: never render text shorter than the original snippet.
   // The resolved text wins only when it is meaningfully longer (guards against
   // a 429 / generic-HTML result degrading the pane).
-  const resolvedText = resolved.data?.description ?? '';
+  const resolvedPosting = resolved.data;
+  const resolvedText = resolvedPosting?.description ?? '';
   const description: string = (() => {
     if (descriptionEmpty) return resolvedText;
     if (resolvedText.length > snippetLen) return resolvedText;
@@ -79,7 +80,15 @@ export function useResolvedDescription(posting: Posting) {
       // Latch only AFTER persist resolves so a transient IPC failure doesn't
       // permanently prevent a re-score with the full text.
       doneRef.current = true;
-      void updateDescription({ url: posting.url, description })
+      // The backend checks this identity against the stored copy and holds a
+      // row that now describes a different advert (#1445) instead of writing.
+      const resolvedIdentity = {
+        title: resolvedPosting?.title ?? posting.title,
+        company: resolvedPosting?.company ?? posting.company,
+        url: resolvedPosting?.url ?? posting.url,
+        externalId: resolvedPosting?.externalId,
+      };
+      void updateDescription({ url: posting.url, description, resolved: resolvedIdentity })
         .catch(() => {
           // Persist failure is non-fatal — still score off the in-memory text,
           // but clear the latch so the pane can retry on next open.
@@ -95,7 +104,10 @@ export function useResolvedDescription(posting: Posting) {
     description,
     descLoading,
     posting.id,
+    posting.title,
+    posting.company,
     posting.url,
+    resolvedPosting,
     resolved.isFetched,
     resolved.isFetching,
     resolvedLonger,

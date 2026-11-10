@@ -22,6 +22,7 @@ import {
   rerenderPane,
   resetPaneMocks,
   resolveInFlight,
+  resolveReturns,
   resolveSettled,
 } from './harness';
 
@@ -254,7 +255,35 @@ describe('JobDetailPane — updateDescription persist on upgrade', () => {
     expect(mockUpdateDescMutateAsync).toHaveBeenCalledWith({
       url: posting.url,
       description: fullDesc,
+      resolved: { title: posting.title, company: posting.company, url: posting.url },
     });
+  });
+
+  it('passes the RESOLVED posting identity so the backend can detect a different advert', async () => {
+    resolveReturns({
+      data: {
+        description: 'This is the much longer full job description fetched from the target page.',
+        title: 'Other Role',
+        company: 'Other Corp',
+        url: 'https://boards.greenhouse.io/other/jobs/9',
+        externalId: '9',
+      },
+      isFetched: true,
+    });
+    const posting = aggregator('persist-identity', 'Short snippet.');
+    await openPane(posting);
+    await flushMicrotasks();
+
+    expect(mockUpdateDescMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resolved: {
+          title: 'Other Role',
+          company: 'Other Corp',
+          url: 'https://boards.greenhouse.io/other/jobs/9',
+          externalId: '9',
+        },
+      })
+    );
   });
 
   it('one-shot guard — re-render does NOT call updateDescription again', async () => {

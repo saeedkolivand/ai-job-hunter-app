@@ -49,6 +49,11 @@ pub(super) struct FoundJobSlice {
     score_provisional: bool,
     found_at: u64,
     is_agency: bool,
+    /// Present while the row is held because its url resolved to a different advert (issue
+    /// #1445); such a row never appears in `best-matches`. Its resolved title/company are scraped
+    /// text, fenced by [`project_found_job_row`] like the row's own display fields.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    identity_review: Option<crate::autopilot::IdentityReview>,
 }
 
 /// `description`'s fence cap for `found-jobs`, distinct from `crate::prompt_fence::JOB_CAP` — a

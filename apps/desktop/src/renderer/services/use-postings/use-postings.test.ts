@@ -11,6 +11,12 @@ import {
   useUpdatePostingDescription,
 } from './use-postings';
 
+const RESOLVED = {
+  title: 'Engineer',
+  company: 'Acme',
+  url: 'https://example.com/jobs/1',
+};
+
 describe('use-postings services', () => {
   it('renders every exported hook without crashing', async () => {
     await exerciseServiceHooks(mod);
@@ -74,7 +80,7 @@ describe('useUpdatePostingDescription — postings invalidation', () => {
    */
   it('refetches usePostings() after updateDescription mutates', async () => {
     const listPostings = vi.fn().mockResolvedValue([]);
-    const updateDescription = vi.fn().mockResolvedValue(undefined);
+    const updateDescription = vi.fn().mockResolvedValue('updated');
 
     const client = createMockClient({
       'scrape.listPostings': listPostings,
@@ -98,6 +104,7 @@ describe('useUpdatePostingDescription — postings invalidation', () => {
       await result.current.update.mutateAsync({
         url: 'https://example.com/jobs/1',
         description: 'Full text',
+        resolved: RESOLVED,
       });
     });
 
@@ -132,6 +139,7 @@ describe('useUpdatePostingDescription — postings invalidation', () => {
         await result.current.update.mutateAsync({
           url: 'https://example.com/jobs/1',
           description: 'Full text',
+          resolved: RESOLVED,
         });
       } catch {
         // expected rejection

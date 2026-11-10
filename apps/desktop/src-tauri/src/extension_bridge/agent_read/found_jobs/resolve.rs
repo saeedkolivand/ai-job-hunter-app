@@ -111,6 +111,17 @@ fn project_found_job_row(
         }
     }
     fence_posting_display_fields(&mut value);
+    if let Some(review) = value.get_mut("identityReview") {
+        for field in ["resolvedTitle", "resolvedCompany"] {
+            if let Some(s) = review.get(field).and_then(Value::as_str) {
+                review[field] = json!(crate::prompt_fence::fenced(
+                    "job_posting",
+                    s,
+                    crate::prompt_fence::JOB_CAP
+                ));
+            }
+        }
+    }
     if let Some(applied) = is_applied {
         value["applied"] = json!(applied);
     }

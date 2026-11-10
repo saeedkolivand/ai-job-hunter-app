@@ -7,6 +7,7 @@ import {
   type JobPosting,
   type ScrapeContract,
   type ScrapeProgressEvent,
+  type UpdateDescriptionResult,
 } from '@ajh/shared';
 import type {
   PostingsHybridSearchRequest,
@@ -26,7 +27,7 @@ export const scrape = {
   resolveUrl: ({ url }: { url: string }) =>
     invoke<JobPosting | null>('scrape_resolve_url', { url }),
   updateDescription: (req: Parameters<ScrapeContract['updateDescription']>[0]) =>
-    invoke<boolean>('scrape_update_description', { req }),
+    invoke<UpdateDescriptionResult>('scrape_update_description', { req }),
   persistJob: (req: unknown) => invoke<void>('scrape_persist_job', { req }),
   removeInteraction: (req: { jobId: string; interactionType: string }) =>
     invoke<boolean>('scrape_remove_interaction', { req }),

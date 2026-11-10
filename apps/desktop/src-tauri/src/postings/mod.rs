@@ -93,6 +93,22 @@ impl PostingsCache {
         self.items.push(item);
     }
 
+    /// `(title, company, url)` of the first cached posting whose own `url`
+    /// normalizes to `normalized_url` — the stored identity a resolved posting
+    /// is checked against before its description is written back (issue #1445).
+    pub fn stored_identity(&self, normalized_url: &str) -> Option<(String, String, String)> {
+        let text = |item: &Value, key: &str| {
+            item.get(key)
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string()
+        };
+        self.items
+            .iter()
+            .find(|i| crate::applications::normalize_job_url(&text(i, "url")) == normalized_url)
+            .map(|i| (text(i, "title"), text(i, "company"), text(i, "url")))
+    }
+
     pub fn get_all(&self) -> &[Value] {
         &self.items
     }

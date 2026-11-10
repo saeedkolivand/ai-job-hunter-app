@@ -33,7 +33,11 @@ fn selects_only_linkedin_jobs_with_a_blank_description() {
 
     assert_eq!(
         targets,
-        vec!["https://www.linkedin.com/jobs/view/1".to_string()]
+        vec![EnrichTarget {
+            url: "https://www.linkedin.com/jobs/view/1".to_string(),
+            title: "Engineer".to_string(),
+            company: "Acme".to_string(),
+        }]
     );
 }
 
@@ -52,7 +56,8 @@ fn ignores_is_new_entirely_so_a_prior_failed_attempt_retries() {
 
     let targets = select_linkedin_enrichment_targets(std::slice::from_ref(&stale));
 
-    assert_eq!(targets, vec![stale.url]);
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].url, stale.url);
 }
 
 #[test]
@@ -77,7 +82,7 @@ fn dedupes_and_caps_at_the_per_run_limit() {
     let targets = select_linkedin_enrichment_targets(&jobs);
 
     assert_eq!(targets.len(), LINKEDIN_ENRICH_MAX);
-    let unique: std::collections::HashSet<_> = targets.iter().collect();
+    let unique: std::collections::HashSet<_> = targets.iter().map(|t| &t.url).collect();
     assert_eq!(unique.len(), targets.len());
 }
 
@@ -108,13 +113,29 @@ fn posting(description: Option<&str>) -> JobPosting {
     }
 }
 
+fn stored() -> EnrichTarget {
+    EnrichTarget {
+        url: "https://www.linkedin.com/jobs/view/1".to_string(),
+        title: "Engineer".to_string(),
+        company: "Acme".to_string(),
+    }
+}
+
 #[test]
 fn classify_resolution_extracts_a_real_description() {
-    let outcome = classify_resolution(Ok(Some(posting(Some("A real job description.")))));
-    assert_eq!(
-        outcome,
-        EnrichOutcome::Description("A real job description.".to_string())
+    let outcome = classify_resolution(
+        &stored(),
+        Ok(Some(posting(Some("A real job description.")))),
     );
+    let EnrichOutcome::Description {
+        description,
+        resolved,
+    } = outcome
+    else {
+        panic!("expected a description outcome");
+    };
+    assert_eq!(description, "A real job description.");
+    assert_eq!(resolved.external_id.as_deref(), Some("1"));
 }
 
 #[test]
@@ -122,11 +143,11 @@ fn classify_resolution_skips_a_blank_description() {
     // LinkedIn's own sentinel (`Some("")`) — a resolve that still didn't find
     // real text must not be treated as a usable update.
     assert_eq!(
-        classify_resolution(Ok(Some(posting(Some(""))))),
+        classify_resolution(&stored(), Ok(Some(posting(Some(""))))),
         EnrichOutcome::Skip
     );
     assert_eq!(
-        classify_resolution(Ok(Some(posting(None)))),
+        classify_resolution(&stored(), Ok(Some(posting(None)))),
         EnrichOutcome::Skip
     );
 }
@@ -136,9 +157,22 @@ fn classify_resolution_skips_ok_none_the_same_as_an_error() {
     // Documented as one case, not two (see `EnrichOutcome::Skip`'s doc): a
     // genuinely-removed posting and a transient failure both retry on the
     // next run via `select_linkedin_enrichment_targets` alone.
-    assert_eq!(classify_resolution(Ok(None)), EnrichOutcome::Skip);
     assert_eq!(
-        classify_resolution(Err(anyhow::anyhow!("network error"))),
+        classify_resolution(&stored(), Ok(None)),
         EnrichOutcome::Skip
     );
+    assert_eq!(
+        classify_resolution(&stored(), Err(anyhow::anyhow!("network error"))),
+        EnrichOutcome::Skip
+    );
+}
+
+#[test]
+fn classify_resolution_flags_a_different_advert_even_with_a_description() {
+    let mut other = posting(Some("A different job's full text."));
+    other.url = "https://www.linkedin.com/jobs/view/2".to_string();
+    let EnrichOutcome::Drift(resolved) = classify_resolution(&stored(), Ok(Some(other))) else {
+        panic!("a different linkedin id must be drift");
+    };
+    assert_eq!(resolved.url, "https://www.linkedin.com/jobs/view/2");
 }

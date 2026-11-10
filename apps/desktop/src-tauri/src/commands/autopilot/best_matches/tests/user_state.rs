@@ -146,3 +146,30 @@ fn mark_applied_matches_a_non_canonical_board_copy() {
         "applied via a non-canonical cluster member still marks the row applied"
     );
 }
+
+#[test]
+fn a_row_held_for_identity_review_never_qualifies_until_dismissed() {
+    let mut ap = single(
+        "h",
+        "https://h.example.com/job",
+        "Platform Engineer",
+        "Holdco",
+        90.0,
+    );
+    ap.found_jobs[0].identity_review = Some(crate::autopilot::IdentityReview {
+        resolved_title: "Cook".into(),
+        resolved_company: "Other".into(),
+        resolved_url: "https://other.example.com/1".into(),
+        resolved_external_id: None,
+        detected_at: 1,
+    });
+    let held = compute_best_matches(&[ap.clone()], &no_tombstones(), &[], &HashSet::new());
+    assert!(
+        held.matches.is_empty(),
+        "a held row must leave Best Matches"
+    );
+
+    ap.found_jobs[0].dismiss_identity_review();
+    let released = compute_best_matches(&[ap], &no_tombstones(), &[], &HashSet::new());
+    assert_eq!(released.matches.len(), 1, "dismissing releases the row");
+}

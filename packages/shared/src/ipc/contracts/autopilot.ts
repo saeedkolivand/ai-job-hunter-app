@@ -79,6 +79,16 @@ export interface AutopilotContract {
    * truncation the caller may want to communicate (e.g. "and N more").
    */
   bestMatches(): Promise<AutopilotBestMatchesResult>;
+
+  /**
+   * Release a found job held for identity review (issue #1445): its url
+   * resolved to a different advert than the one stored, so the row kept its old
+   * content and left Best Matches. Dismissing clears the hold and remembers that
+   * exact drift so it does not re-flag on the next refresh (a different drift
+   * does). Resolves `true` when a review was dismissed, `false` when the row had
+   * none (already dismissed, or no such row).
+   */
+  dismissIdentityReview(req: { autopilotId: string; url: string }): Promise<boolean>;
 }
 
 export interface AutopilotStepEvent {
@@ -177,4 +187,5 @@ export const AUTOPILOT_CHANNELS = {
   pause: 'autopilot:pause',
   resume: 'autopilot:resume',
   bestMatches: 'autopilot:bestMatches',
+  dismissIdentityReview: 'autopilot:dismissIdentityReview',
 } as const;

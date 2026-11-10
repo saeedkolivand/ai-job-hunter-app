@@ -6,7 +6,9 @@ use std::collections::HashSet;
 
 use super::cap;
 use super::merge::{cluster_found_jobs, merge_found_jobs, merge_key};
-use super::{derive_run_status, AutopilotStore, FoundJob, RunStatus};
+use super::{
+    derive_run_status, AutopilotStore, FoundJob, ResolveWrite, ResolvedIdentity, RunStatus,
+};
 use crate::db::now_ms;
 use crate::scraping::cluster::new_cluster_count;
 
@@ -200,30 +202,71 @@ impl AutopilotStore {
     /// that never moved (the exact dishonesty issue #1105 exists to close).
     /// It only goes back to `false` once an actual autopilot run re-scores
     /// the corrected content.
-    pub fn update_found_job_descriptions(&self, normalized_url: &str, description: &str) -> u32 {
+    ///
+    /// Identity (issue #1445): every matching row first runs the identity
+    /// verdict of `resolved` against its own stored identity. A drifted row is
+    /// NOT written (it gets an `identity_review` instead); `description: None`
+    /// runs the verdict alone (the LinkedIn enrichment's drift path).
+    pub fn update_found_job_descriptions(
+        &self,
+        normalized_url: &str,
+        description: Option<&str>,
+        resolved: &ResolvedIdentity,
+    ) -> ResolveWrite {
         let mut map = self.load();
-        let mut updated = 0u32;
+        let mut out = ResolveWrite::default();
         for ap in map.values_mut() {
             let mut changed = false;
             for job in &mut ap.found_jobs {
-                if crate::applications::normalize_job_url(&job.url) == normalized_url {
+                if crate::applications::normalize_job_url(&job.url) != normalized_url {
+                    continue;
+                }
+                // Issue #1445: only the SAME advert may receive the text. A
+                // drifted row keeps its content and carries the review.
+                if !job.check_resolved(resolved) {
+                    out.drifted += 1;
+                    changed = true;
+                    continue;
+                }
+                if let Some(description) = description {
                     job.description = Some(description.to_string());
                     job.trust = Some(crate::scraping::trust::assess_trust(
                         &job.url,
                         &job.company,
                         description,
                     ));
-                    changed = true;
-                    updated += 1;
+                    out.updated += 1;
                 }
+                changed = true;
             }
             if changed {
                 ap.updated_at = now_ms();
             }
         }
-        if updated > 0 {
+        if out.updated > 0 || out.drifted > 0 {
             self.save(map);
         }
-        updated
+        out
+    }
+
+    /// Dismiss the identity review on the row at `url` in autopilot
+    /// `autopilot_id` (issue #1445). Returns whether a review was dismissed.
+    pub fn dismiss_identity_review(&self, autopilot_id: &str, normalized_url: &str) -> bool {
+        let mut map = self.load();
+        let mut dismissed = false;
+        if let Some(ap) = map.get_mut(autopilot_id) {
+            for job in &mut ap.found_jobs {
+                if crate::applications::normalize_job_url(&job.url) == normalized_url {
+                    dismissed |= job.dismiss_identity_review();
+                }
+            }
+            if dismissed {
+                ap.updated_at = now_ms();
+            }
+        }
+        if dismissed {
+            self.save(map);
+        }
+        dismissed
     }
 }

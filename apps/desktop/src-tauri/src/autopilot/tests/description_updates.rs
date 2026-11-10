@@ -3,6 +3,20 @@
 
 use super::support::*;
 
+fn resolved(title: &str, company: &str, url: &str) -> crate::autopilot::ResolvedIdentity {
+    crate::autopilot::ResolvedIdentity {
+        title: title.into(),
+        company: company.into(),
+        url: url.into(),
+        external_id: None,
+    }
+}
+
+/// The resolved identity of the posting `found_job` stores (same title + company).
+fn same_id(url: &str) -> crate::autopilot::ResolvedIdentity {
+    resolved("Engineer", "Acme", url)
+}
+
 // ── update_found_job_descriptions (issue #1106 part b) ────────────────────────
 
 #[test]
@@ -17,7 +31,13 @@ fn update_found_job_descriptions_patches_the_matching_row() {
     );
 
     let normalized = crate::applications::normalize_job_url("https://boards.example.com/jobs/1");
-    let updated = store.update_found_job_descriptions(&normalized, "corrected text");
+    let updated = store
+        .update_found_job_descriptions(
+            &normalized,
+            Some("corrected text"),
+            &same_id("https://boards.example.com/jobs/1"),
+        )
+        .updated;
     assert_eq!(updated, 1, "exactly one row must be patched");
 
     let list = store.list();
@@ -39,7 +59,13 @@ fn update_found_job_descriptions_returns_zero_when_no_url_matches() {
     );
 
     let normalized = crate::applications::normalize_job_url("https://nowhere.example.com/x");
-    let updated = store.update_found_job_descriptions(&normalized, "ignored");
+    let updated = store
+        .update_found_job_descriptions(
+            &normalized,
+            Some("ignored"),
+            &same_id("https://nowhere.example.com/x"),
+        )
+        .updated;
     assert_eq!(updated, 0, "an unmatched url must patch nothing");
     assert_eq!(
         store.list()[0].found_jobs[0].description,
@@ -62,7 +88,9 @@ fn update_found_job_descriptions_updates_every_matching_row_across_autopilots() 
     record(&store, &ap2.id, 1, vec![found_job(shared_url, 2)]);
 
     let normalized = crate::applications::normalize_job_url(shared_url);
-    let updated = store.update_found_job_descriptions(&normalized, "shared correction");
+    let updated = store
+        .update_found_job_descriptions(&normalized, Some("shared correction"), &same_id(shared_url))
+        .updated;
     assert_eq!(
         updated, 2,
         "both autopilots' rows for the same url must update, not just the first"
@@ -113,7 +141,13 @@ fn update_found_job_descriptions_clears_stale_trust_but_leaves_score_provisional
          distributed systems platform. You will own the async runtime, mentor \
          junior engineers, and ship production services used by millions of \
          users daily.";
-    let updated = store.update_found_job_descriptions(&normalized, full_description);
+    let updated = store
+        .update_found_job_descriptions(
+            &normalized,
+            Some(full_description),
+            &resolved("Rust Engineer", "Acme", url),
+        )
+        .updated;
     assert_eq!(updated, 1);
 
     let job = &store.list()[0].found_jobs[0];
@@ -138,5 +172,74 @@ fn update_found_job_descriptions_clears_stale_trust_but_leaves_score_provisional
          unchanged (still true) until an actual autopilot run re-scores \
          the corrected content, never flip to false just because the \
          description changed"
+    );
+}
+
+// ── identity drift (issue #1445) ──────────────────────────────────────────────
+
+#[test]
+fn a_drifted_row_is_held_not_written_and_dismiss_releases_it() {
+    let (_temp, store) = temp_store();
+    let ap = create_ap(&store, "AP1", "linkedin", 0.0, "manual");
+    let url = "https://www.adzuna.de/land/ad/1";
+    record(
+        &store,
+        &ap.id,
+        1,
+        vec![found_job_full(url, "Rust Engineer", "Acme", 1)],
+    );
+    let normalized = crate::applications::normalize_job_url(url);
+
+    let other = resolved("Cook", "Diner", "https://boards.greenhouse.io/diner/jobs/1");
+    let out = store.update_found_job_descriptions(&normalized, Some("other ad text"), &other);
+    assert_eq!((out.updated, out.drifted), (0, 1));
+    let job = &store.list()[0].found_jobs[0];
+    assert_eq!(
+        job.description, None,
+        "the other ad text must not be written"
+    );
+    assert_eq!(
+        job.identity_review.as_ref().unwrap().resolved_company,
+        "Diner"
+    );
+
+    assert!(store.dismiss_identity_review(&ap.id, &normalized));
+    assert!(store.list()[0].found_jobs[0].identity_review.is_none());
+    // The same drift again: still not written, and not re-flagged.
+    let out = store.update_found_job_descriptions(&normalized, Some("other ad text"), &other);
+    assert_eq!((out.updated, out.drifted), (0, 1));
+    assert!(store.list()[0].found_jobs[0].identity_review.is_none());
+}
+
+/// A redirect to the same company and role whose ad names a Spanish requirement
+/// for an Italy role: identity matches, so the text is stored verbatim.
+#[test]
+fn a_same_advert_stores_the_description_verbatim() {
+    let (_temp, store) = temp_store();
+    let ap = create_ap(&store, "AP1", "linkedin", 0.0, "manual");
+    let url = "https://www.adzuna.de/land/ad/2";
+    record(
+        &store,
+        &ap.id,
+        1,
+        vec![found_job_full(
+            url,
+            "Account Manager Italy (m/w/d)",
+            "Acme GmbH",
+            1,
+        )],
+    );
+    let normalized = crate::applications::normalize_job_url(url);
+    let text = "Account Manager Italy. Requirements: fluent Spanish required.";
+    let same = resolved(
+        "Account Manager Italy",
+        "Acme",
+        "https://boards.greenhouse.io/acme/jobs/5",
+    );
+    let out = store.update_found_job_descriptions(&normalized, Some(text), &same);
+    assert_eq!((out.updated, out.drifted), (1, 0));
+    assert_eq!(
+        store.list()[0].found_jobs[0].description.as_deref(),
+        Some(text)
     );
 }

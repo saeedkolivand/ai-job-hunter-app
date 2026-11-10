@@ -18,6 +18,14 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         ],
     },
     CatalogueEntry {
+        command: "autopilot_dismiss_identity_review",
+        description: "Release a found job held for identity review (issue #1445): its url resolved to a different advert than the one stored, so the row kept its old content and left Best Matches.",
+        args: &[
+            CatalogueArg { name: "autopilotId", required: true, fields: None },
+            CatalogueArg { name: "url", required: true, fields: None },
+        ],
+    },
+    CatalogueEntry {
         command: "autopilot_get",
         description: "",
         args: &[

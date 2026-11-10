@@ -489,6 +489,21 @@ export interface AutopilotFoundJob {
   clusterMembers?: Array<{ key: string; board?: string; url: string }>;
   /** Whether the posting's company is a recruiting/staffing agency (ADR-029 §i). */
   isAgency?: boolean;
+  /** Set when this posting's url resolved to a DIFFERENT advert than this row
+   *  describes (issue #1445). The row keeps its old content and score, leaves
+   *  Best Matches, and Apply stays disabled until the user dismisses the review
+   *  (`autopilot.dismissIdentityReview`). Absent = no review pending. */
+  identityReview?: AutopilotIdentityReview;
+}
+
+/** What a found job's url resolved to when it no longer matched the stored advert. */
+export interface AutopilotIdentityReview {
+  resolvedTitle: string;
+  resolvedCompany: string;
+  resolvedUrl: string;
+  resolvedExternalId?: string;
+  /** When the drift was detected (epoch ms). */
+  detectedAt: number;
 }
 
 /** Result record for a single autopilot run. */

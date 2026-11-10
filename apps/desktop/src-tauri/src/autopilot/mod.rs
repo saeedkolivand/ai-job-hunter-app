@@ -13,6 +13,7 @@ use uuid::Uuid;
 mod cap;
 mod corrupt;
 mod found_jobs_db;
+mod identity;
 mod merge;
 mod model;
 mod persist;
@@ -20,6 +21,7 @@ mod relax;
 mod runs;
 mod sync_section;
 
+pub use identity::{IdentityReview, ResolveWrite, ResolvedIdentity};
 pub(crate) use merge::found_job_cluster_inputs;
 pub(crate) use model::derive_run_status;
 pub use model::{

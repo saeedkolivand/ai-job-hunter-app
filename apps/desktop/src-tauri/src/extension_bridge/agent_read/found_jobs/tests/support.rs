@@ -80,6 +80,8 @@ pub(super) fn richest_realistic_job(n: usize) -> FoundJob {
         cluster_canonical: true,
         cluster_members: vec![],
         is_agency: false,
+        identity_review: None,
+        identity_dismissed: None,
     }
 }
 

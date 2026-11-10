@@ -122,7 +122,9 @@ vi.mock('@/features/jobs/providers', () => ({
 export const mockRefetch: Mock = vi.fn().mockResolvedValue(undefined);
 
 interface ResolveStub {
-  data: { description: string } | undefined;
+  data:
+    | { description: string; title?: string; company?: string; url?: string; externalId?: string }
+    | undefined;
   isLoading: boolean;
   isFetching: boolean;
   isFetched: boolean;
@@ -224,7 +226,7 @@ export function resolveInFlight() {
 export function resetPaneMocks() {
   mockTrackInteraction.mockClear();
   mockRefetch.mockClear();
-  mockUpdateDescMutateAsync.mockReset().mockResolvedValue(false);
+  mockUpdateDescMutateAsync.mockReset().mockResolvedValue('noMatch');
   mockScoreJob.mockReset();
   mockSplitMutate.mockReset();
   mockOpenExternal.mockClear();

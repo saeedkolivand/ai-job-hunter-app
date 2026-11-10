@@ -6,6 +6,21 @@ import type {
 } from '../../schemas/index.js';
 import type { JobPosting } from '../../types/index.js';
 
+/**
+ * Identity of the posting a description was resolved from. The backend compares
+ * it with every stored copy of the url and refuses to write the text onto a
+ * row that describes a different advert (issue #1445).
+ */
+export interface ResolvedPostingIdentity {
+  title: string;
+  company: string;
+  url: string;
+  externalId?: string;
+}
+
+/** Outcome of {@link ScrapeContract.updateDescription}. */
+export type UpdateDescriptionResult = 'updated' | 'noMatch' | 'identityDrift';
+
 /** Whether one arm of a {@link HybridSearchResult} actually ran. */
 export type HybridSearchArmStatus = 'ran' | 'skipped' | 'unavailable';
 
@@ -52,10 +67,22 @@ export interface ScrapeContract {
    * postings cache AND every matching found-job row persisted by an
    * autopilot, so the match scorer reads the full text instead of the
    * truncated aggregator snippet wherever the posting was surfaced from.
-   * Returns `true` when at least one of those stores had a matching row,
-   * `false` when neither did.
+   *
+   * `resolved` is the identity of the posting the description came from. Each
+   * stored copy is checked against it: a copy that describes a different advert
+   * (an aggregator url that now redirects elsewhere) is NOT written — a found
+   * job gets an identity review instead, and the live cache write is skipped.
+   * The description text is otherwise stored verbatim.
+   *
+   * Resolves `'updated'` when at least one store was written and none drifted,
+   * `'noMatch'` when no store had a matching row, and `'identityDrift'` when a
+   * stored copy no longer matches `resolved`.
    */
-  updateDescription(req: { url: string; description: string }): Promise<boolean>;
+  updateDescription(req: {
+    url: string;
+    description: string;
+    resolved: ResolvedPostingIdentity;
+  }): Promise<UpdateDescriptionResult>;
 
   listPostings(): Promise<JobPosting[]>;
 

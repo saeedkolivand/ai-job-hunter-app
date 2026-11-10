@@ -39,7 +39,7 @@ service hook, query key — see `AGENTS.md` rule 14.
 | [`ai`](#ai)                           | 29      |                                                                                                                                        |
 | [`aiGenerations`](#aigenerations)     | 5       |                                                                                                                                        |
 | [`applications`](#applications)       | 10      | Application-tracking capability (ADR 0001).                                                                                            |
-| [`autopilot`](#autopilot)             | 12      | Job-discovery agent:                                                                                                                   |
+| [`autopilot`](#autopilot)             | 13      | Job-discovery agent:                                                                                                                   |
 | [`boards`](#boards)                   | 6       |                                                                                                                                        |
 | [`cliAgents`](#cliagents)             | 3       |                                                                                                                                        |
 | [`contactProfile`](#contactprofile)   | 3       | The candidate's stored contact fields (name, email, phone, location, LinkedIn, GitHub, website, custom links), localized per language. |
@@ -1247,6 +1247,7 @@ Contract: `AutopilotContract` in `packages/shared/src/ipc/contracts/autopilot.ts
 - [`autopilot.onFocus`](#autopilotonfocus)
 - [`autopilot.takePendingFocus`](#autopilottakependingfocus)
 - [`autopilot.bestMatches`](#autopilotbestmatches)
+- [`autopilot.dismissIdentityReview`](#autopilotdismissidentityreview)
 
 #### `autopilot.list`
 
@@ -1368,23 +1369,37 @@ is capped at a fixed size as a payload guard only; `total` is the
 qualifying count before that cap, so `total > matches.length` signals
 truncation the caller may want to communicate (e.g. "and N more").
 
+#### `autopilot.dismissIdentityReview`
+
+```ts
+dismissIdentityReview(req: { autopilotId: string; url: string }): Promise<boolean>;
+```
+
+Release a found job held for identity review (issue #1445): its url
+resolved to a different advert than the one stored, so the row kept its old
+content and left Best Matches. Dismissing clears the hold and remembers that
+exact drift so it does not re-flag on the next refresh (a different drift
+does). Resolves `true` when a review was dismissed, `false` when the row had
+none (already dismissed, or no such row).
+
 ### Channels — `autopilot`
 
 `AUTOPILOT_CHANNELS` in `packages/shared/src/ipc/contracts/autopilot.ts`:
 
-| Key           | Channel                 |
-| ------------- | ----------------------- |
-| `list`        | `autopilot:list`        |
-| `get`         | `autopilot:get`         |
-| `create`      | `autopilot:create`      |
-| `update`      | `autopilot:update`      |
-| `remove`      | `autopilot:remove`      |
-| `run`         | `autopilot:run`         |
-| `pause`       | `autopilot:pause`       |
-| `resume`      | `autopilot:resume`      |
-| `bestMatches` | `autopilot:bestMatches` |
+| Key                     | Channel                           |
+| ----------------------- | --------------------------------- |
+| `list`                  | `autopilot:list`                  |
+| `get`                   | `autopilot:get`                   |
+| `create`                | `autopilot:create`                |
+| `update`                | `autopilot:update`                |
+| `remove`                | `autopilot:remove`                |
+| `run`                   | `autopilot:run`                   |
+| `pause`                 | `autopilot:pause`                 |
+| `resume`                | `autopilot:resume`                |
+| `bestMatches`           | `autopilot:bestMatches`           |
+| `dismissIdentityReview` | `autopilot:dismissIdentityReview` |
 
-`AUTOPILOT_CHANNELS` registers 9 of this namespace's 12 methods; the rest have no entry in it.
+`AUTOPILOT_CHANNELS` registers 10 of this namespace's 13 methods; the rest have no entry in it.
 
 ### Types — `autopilot`
 
@@ -4184,7 +4199,11 @@ Resolve a single posting (incl. full description) from its URL.
 #### `scrape.updateDescription`
 
 ```ts
-updateDescription(req: { url: string; description: string }): Promise<boolean>;
+updateDescription(req: {
+    url: string;
+    description: string;
+    resolved: ResolvedPostingIdentity;
+  }): Promise<UpdateDescriptionResult>;
 ```
 
 Write a freshly-resolved full description back into every store that can
@@ -4193,8 +4212,16 @@ posting id — no reader outside the live cache can supply that): the live
 postings cache AND every matching found-job row persisted by an
 autopilot, so the match scorer reads the full text instead of the
 truncated aggregator snippet wherever the posting was surfaced from.
-Returns `true` when at least one of those stores had a matching row,
-`false` when neither did.
+
+`resolved` is the identity of the posting the description came from. Each
+stored copy is checked against it: a copy that describes a different advert
+(an aggregator url that now redirects elsewhere) is NOT written — a found
+job gets an identity review instead, and the live cache write is skipped.
+The description text is otherwise stored verbatim.
+
+Resolves `'updated'` when at least one store was written and none drifted,
+`'noMatch'` when no store had a matching row, and `'identityDrift'` when a
+stored copy no longer matches `resolved`.
 
 #### `scrape.listPostings`
 
@@ -4286,6 +4313,21 @@ there is no separate cancel channel here).
 Declared in `packages/shared/src/ipc/contracts/scrape.ts`.
 
 ```ts
+/**
+ * Identity of the posting a description was resolved from. The backend compares
+ * it with every stored copy of the url and refuses to write the text onto a
+ * row that describes a different advert (issue #1445).
+ */
+export interface ResolvedPostingIdentity {
+  title: string;
+  company: string;
+  url: string;
+  externalId?: string;
+}
+
+/** Outcome of {@link ScrapeContract.updateDescription}. */
+export type UpdateDescriptionResult = 'updated' | 'noMatch' | 'identityDrift';
+
 /** Whether one arm of a {@link HybridSearchResult} actually ran. */
 export type HybridSearchArmStatus = 'ran' | 'skipped' | 'unavailable';
 

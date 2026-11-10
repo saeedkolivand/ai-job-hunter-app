@@ -83,6 +83,7 @@ export const appNamespaces = (): Pick<
     onFocus: () => () => {},
     takePendingFocus: () => Promise.resolve(null),
     bestMatches: async () => ({ matches: [], total: 0, autopilotCount: 0 }),
+    dismissIdentityReview: async () => false,
   },
 
   menu: {

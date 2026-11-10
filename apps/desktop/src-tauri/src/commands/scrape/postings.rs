@@ -3,12 +3,14 @@
 //! commands, so each keeps its `commands::scrape::<name>` path.
 
 use parking_lot::Mutex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+use crate::autopilot::{ResolveWrite, ResolvedIdentity};
 use crate::error::{AppError, AppResult};
 use crate::postings::{attach_interactions, InteractionStore, PostingsCache};
+use crate::scraping::scrape_url::{identity_verdict, IdentityVerdict, PostingIdentity};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -22,6 +24,21 @@ pub struct ScrapeUpdateDescriptionRequest {
     /// addresses by url.
     pub url: String,
     pub description: String,
+    /// Identity of the posting the description was resolved from (issue
+    /// #1445). A stored row that no longer matches it is held for review, not
+    /// written.
+    pub resolved: ResolvedIdentity,
+}
+
+/// Outcome of [`scrape_update_description`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DescriptionWriteStatus {
+    Updated,
+    NoMatch,
+    /// The url now leads to a different advert; nothing was written onto the
+    /// drifted rows and they carry an identity review.
+    IdentityDrift,
 }
 
 /// Upper bound on a write-back description. A full JD is on the order of a few KB;
@@ -51,8 +68,9 @@ const MAX_DESCRIPTION_LEN: usize = 256 * 1024;
 /// description invalidates cached scores for that job; on-demand scoring via
 /// `useJobMatchScore` will recompute.
 ///
-/// Both stores are tried independently and unconditionally — see
-/// [`either_store_updated`] for the resulting `data: true`/`false` rule.
+/// Both stores are tried independently, but a posting whose identity drifted
+/// (issue #1445) is never written — see [`write_status`] for the resulting
+/// `updated`/`noMatch`/`identityDrift` rule.
 ///
 /// Validate the write-back inputs, returning the NORMALIZED url on success
 /// (reused as-is for both stores, never re-derived per store). Pure (no
@@ -108,31 +126,70 @@ fn validate_update_description(url: &str, description: &str) -> AppResult<String
     Ok(normalized)
 }
 
-/// Whether either backing store had a matching row to correct — the `data`
-/// bit `scrape_update_description` returns. Its own tiny pure fn so "success
-/// iff EITHER `PostingsCache` or `Autopilot.found_jobs` matched, honest
-/// failure only when NEITHER did" is asserted directly rather than only
-/// implied by the command body.
-fn either_store_updated(cache_hit: bool, found_jobs_updated: u32) -> bool {
-    cache_hit || found_jobs_updated > 0
+/// Fold the per-store results into the one status the caller sees. Drift in
+/// EITHER store wins; otherwise success iff EITHER store matched a row.
+fn write_status(cache_hit: bool, cache_drift: bool, rows: ResolveWrite) -> DescriptionWriteStatus {
+    if cache_drift || rows.drifted > 0 {
+        DescriptionWriteStatus::IdentityDrift
+    } else if cache_hit || rows.updated > 0 {
+        DescriptionWriteStatus::Updated
+    } else {
+        DescriptionWriteStatus::NoMatch
+    }
+}
+
+/// Whether the live cache's entry for `normalized_url` is a different advert
+/// than `resolved` (issue #1445). No cached entry means nothing to drift from.
+fn cache_drifted(app: &AppHandle, normalized_url: &str, resolved: &ResolvedIdentity) -> bool {
+    let stored = app
+        .state::<Mutex<PostingsCache>>()
+        .lock()
+        .stored_identity(normalized_url);
+    stored.is_some_and(|(title, company, url)| {
+        identity_verdict(
+            PostingIdentity {
+                title: &title,
+                company: &company,
+                url: &url,
+            },
+            resolved.as_posting(),
+        ) != IdentityVerdict::Same
+    })
+}
+
+/// Run only the identity verdict of `resolved` against every stored row at
+/// `url`, flagging drifted rows (the LinkedIn enrichment's drift path). Returns
+/// the number of rows held for review.
+pub(crate) fn flag_identity_drift(
+    app: &AppHandle,
+    url: &str,
+    resolved: &ResolvedIdentity,
+) -> AppResult<u32> {
+    // Only the url half of the validation matters; the placeholder text is never written.
+    let normalized_url = validate_update_description(url, "-")?;
+    Ok(crate::commands::autopilot::store(app)
+        .lock()
+        .update_found_job_descriptions(&normalized_url, None, resolved)
+        .drifted)
 }
 
 #[tauri::command]
 pub fn scrape_update_description(
     app: AppHandle,
     req: ScrapeUpdateDescriptionRequest,
-) -> AppResult<bool> {
+) -> AppResult<DescriptionWriteStatus> {
     let normalized_url = validate_update_description(&req.url, &req.description)?;
-    let cache_hit = {
+    let cache_drift = cache_drifted(&app, &normalized_url, &req.resolved);
+    let rows = crate::commands::autopilot::store(&app)
+        .lock()
+        .update_found_job_descriptions(&normalized_url, Some(&req.description), &req.resolved);
+    let cache_hit = !cache_drift && rows.drifted == 0 && {
         let cache = app.state::<Mutex<PostingsCache>>();
         cache
             .lock()
             .update_description(&normalized_url, &req.description)
     };
-    let found_jobs_updated = crate::commands::autopilot::store(&app)
-        .lock()
-        .update_found_job_descriptions(&normalized_url, &req.description);
-    Ok(either_store_updated(cache_hit, found_jobs_updated))
+    Ok(write_status(cache_hit, cache_drift, rows))
 }
 
 #[tauri::command]
