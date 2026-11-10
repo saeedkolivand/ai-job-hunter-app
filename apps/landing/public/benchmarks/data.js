@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794310561777,
+  "lastUpdate": 1794343384948,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "52830b0c29885830bf7942af38865530167dba94",
-          "message": "fix: make letter-spaced headings, plain-text links and placeholder sections behave (#1073)\n\n* fix(parser): collapse letter-spaced headings so their sections are visible\n\nDesigners set headings with wide tracking and some pdf producers bake it into\nthe text layer, so a real CV extracts its headings as\n\"S E L E C T E D   P R O J E C T S\". Every heading test in the parser, in\ndocuments::evidence and in SectionId is a string match, so that line matched\nnothing at all: the section was invisible. Measured on the reported document -\nseed_projects returned ZERO projects and the evidence extractor logged\nprojects=0, so nothing seeded, no links were collected, and the section\nrendered as body text. After the fix the same CV seeds four projects, each\nwith its own stack, and the normalize guards report no bail.\n\nSingle-character tokens are the signal; word gaps survive as runs of two or\nmore spaces, so the heading restores as \"SELECTED PROJECTS\" rather than one\nwelded word. The rewrite is gated on the collapsed form being a KNOWN heading,\nso an ordinary line can never be rewritten by accident, and it happens on the\nparsed text every consumer reads rather than in three separate matchers.\n\nWide tracking is an ATS hazard in its own right, so collapsing it is also what\na real applicant-tracking parser would need to see.\n\nAdds \"selected projects\" and \"core skills\", both from the reported CV, to\nSECTION_NAMES and to the shared TS parity fixture.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(extraction): recover plain-text links from a pdf with no annotation layer\n\nThe reference list a resume carries is built from a pdf's /Annot link layer.\nA CV typeset without real hyperlinks has none, so its urls survive only as\ncharacters - and every consumer downstream reads that list: the link injector\nthat re-attaches a project url to its item, and the resume seeder. Measured on\nthe reported document: zero links extracted, so the generated resume kept a\nproject url only when the model happened to copy one, and this time it did not.\n\nHarvest url-ish tokens from the text when the annotation layer is empty. The\nsame CV now yields three contact links and four body links where it yielded\nnone, and the injector has something to re-attach.\n\nA path-less host is only accepted for a TLD a technology name does not use.\n.io is excluded there on purpose - socket.io and crates.io are a library and a\nregistry, not the candidate's links, and nothing about their shape says\notherwise. A .io host WITH a path is unambiguous and kept.\n\nLocal to the extractor rather than a relaxation of factual::URL_RE: that regex\ngrades link Criticals, and widening it would change what counts as a claimed\nlink everywhere. Annotations still win when present, so an accurate anchor is\nnever replaced by a guessed one.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(export): drop a section whose only content is a parenthetical note\n\nA generator told to omit a section it has no content for sometimes writes the\nheading anyway plus a note explaining the absence. Reported from a real export:\ntwo headings advertising that the candidate has no awards and no publications,\nwhich is worse than printing neither.\n\npush_nonempty_section could not catch it - the section is not empty - so it\nreached the page as a real heading. Tested on the SHAPE, not on wording: the\nnote is written in the resume's own language, so a keyword list would be a\npermanent translation debt. A lone paragraph wrapped end to end in parentheses\nis a meta-comment about the document in any language; real resume content is\nnot written that way, and a section with real content that merely contains a\nparenthetical is untouched.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* test(egress): declare the extractor's scheme-prefixing literal\n\nThe link harvest writes a scheme onto a host the CV spelled out without one, to\nbuild the extractor's own markdown reference list. It builds a string and never\nfetches it, the same reason model/rich.rs is declared beside it.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(export): require a true single parenthetical, and keep balanced parens in a url\n\nBoth review findings reproduced first, and both were real.\n\nData loss: the placeholder-section test checked only the first and last\ncharacter, so \"(B.Sc.) Computer Science (2020)\" satisfied it and the whole\nEDUCATION section was silently deleted - measured, the section vanished from\nthe model. It now tracks depth and requires the opening paren to stay unclosed\nuntil the final character, so a paragraph that merely starts and ends with\nparens keeps its section.\n\nTruncated links: the url regex stopped at every \")\", so\n\"example.com/Function_(mathematics)\" lost its closing paren and became a dead\nlink. The regex now keeps \")\" and a balance check decides afterwards - a\nclosing paren survives only when an unclosed \"(\" inside the token is waiting\nfor it, so \"(see example.com/a).\" still trims correctly either way round.\n\nThe test module moved to model/adapter/tests.rs, matching model_docx.rs: the\nnew cases pushed adapter.rs past the R8 module cap.\n\nBoth guards mutation-checked - reverting either predicate fails its test.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
-          "timestamp": "2026-08-22T04:39:01+02:00",
-          "tree_id": "92adb92a7835264fea3479de6d90bc8e02784471",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/52830b0c29885830bf7942af38865530167dba94"
-        },
-        "date": 1787367802838,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 1712942,
-            "range": "± 59439",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2042890,
-            "range": "± 17196",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 188285,
-            "range": "± 1832",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4193,6 +4151,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 267556,
             "range": "± 3933",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0dc2de6e2bec174f4499c41c303eeb3a323f837b",
+          "message": "feat(prompts): tailor cv bullets and cover letters to the evidence the resume shows (#1490)\n\nGrounded in 2026 screening research: llm screeners read skills from experience\nbullets, flip decisions on presentation alone, and recruiters penalize generic\nletters, not ai-assisted ones.\n- a top requirement is made visible in a bullet only where that role's bullet\n  already shows the work; a listed-only skill stays in skills\n- one claim per bullet under one shared ceiling, the same constant the existing\n  long-bullet warning grades against\n- the cover letter centres on one proof story a resume achievement shows\n- without company research, why-this-company uses only facts the posting states\n- tiered compact variant for small models; pins for every input-dependent line\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T21:20:06+01:00",
+          "tree_id": "b4bff8ba0e2d83728772775c3cada5f434230a94",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/0dc2de6e2bec174f4499c41c303eeb3a323f837b"
+        },
+        "date": 1794343384422,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1790432,
+            "range": "± 115903",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2224527,
+            "range": "± 52534",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 265704,
+            "range": "± 8296",
             "unit": "ns/iter"
           }
         ]
