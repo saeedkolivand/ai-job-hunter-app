@@ -1,5 +1,61 @@
 [
   {
+    "number": 1487,
+    "title": "chore(agents): preload contracts, enforce fleet guardrails with hooks, adopt new coderabbit features",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1487",
+    "draft": false,
+    "created_at": "2026-11-10T07:02:35Z",
+    "updated_at": "2026-11-10T07:22:53Z",
+    "merged_at": "2026-11-10T07:11:36Z",
+    "closed_at": "2026-11-10T07:11:36Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1486,
+    "title": "fix: batch the open fixable issues and fold in the stalled sync prs",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1486",
+    "draft": false,
+    "created_at": "2026-11-10T06:19:21Z",
+    "updated_at": "2026-11-10T07:17:05Z",
+    "merged_at": "2026-11-10T07:04:41Z",
+    "closed_at": "2026-11-10T07:04:42Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1434,
+    "title": "fix(sync): show received profiles and refresh open screens",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1434",
+    "draft": false,
+    "created_at": "2026-10-18T10:24:06Z",
+    "updated_at": "2026-11-10T06:19:39Z",
+    "merged_at": null,
+    "closed_at": "2026-11-10T06:19:39Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "NimaNabi"
+    }
+  },
+  {
+    "number": 1436,
+    "title": "fix(sync): preserve numeric payloads across json round trips",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1436",
+    "draft": false,
+    "created_at": "2026-10-18T10:32:42Z",
+    "updated_at": "2026-11-10T06:19:37Z",
+    "merged_at": null,
+    "closed_at": "2026-11-10T06:19:37Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "NimaNabi"
+    }
+  },
+  {
     "number": 1484,
     "title": "chore: bump @hookform/resolvers from 6.0.1 to 7.0.2",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1484",
@@ -641,62 +697,6 @@
     "requested_reviewers": [],
     "user": {
       "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1370,
-    "title": "perf(ai): run the mechanical pipeline stages at the lowest reasoning tier",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1370",
-    "draft": false,
-    "created_at": "2026-10-07T00:21:16Z",
-    "updated_at": "2026-10-09T03:47:01Z",
-    "merged_at": "2026-10-07T00:21:19Z",
-    "closed_at": "2026-10-07T00:21:19Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1371,
-    "title": "perf(ai): run cover-letter company research alongside strategy and draft",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1371",
-    "draft": false,
-    "created_at": "2026-10-07T00:29:46Z",
-    "updated_at": "2026-10-09T03:47:00Z",
-    "merged_at": "2026-10-07T00:29:49Z",
-    "closed_at": "2026-10-07T00:29:49Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1372,
-    "title": "perf(ai): stream every completion and time out on silence, not wall clock",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1372",
-    "draft": false,
-    "created_at": "2026-10-07T01:44:46Z",
-    "updated_at": "2026-10-09T03:46:59Z",
-    "merged_at": "2026-10-07T01:44:49Z",
-    "closed_at": "2026-10-07T01:44:49Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "number": 1373,
-    "title": "perf(ai): key the analyze cache on the job alone and trim unused stage output",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1373",
-    "draft": false,
-    "created_at": "2026-10-07T04:43:15Z",
-    "updated_at": "2026-10-09T03:46:58Z",
-    "merged_at": "2026-10-07T04:43:18Z",
-    "closed_at": "2026-10-07T04:43:18Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "saeedkolivand"
     }
   }
 ]
