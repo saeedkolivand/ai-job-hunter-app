@@ -7,6 +7,7 @@ use super::*;
 
 mod dropped_sections;
 mod entries;
+mod nested_headings;
 mod projects;
 mod structure;
 mod support;
