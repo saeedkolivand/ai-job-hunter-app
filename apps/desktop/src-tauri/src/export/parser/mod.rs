@@ -23,23 +23,12 @@ pub(crate) use shapes::{
     is_project_title_shaped,
 };
 
-use headings::{despace_letterspaced, is_thematic_break};
+use headings::{
+    despace_letterspaced, is_nested_entry_heading, is_thematic_break, nested_entry_heading,
+};
 use shapes::{
     is_contactish_segment, is_entry_title_shaped, separator_count, BULLET_RE, DATE_RE, SOLO_DATE_RE,
 };
-
-/// Is `line` (at `idx`) an H3+ ATX heading that sits under an earlier H1/H2 heading?
-/// Such a heading is an entry inside that section; a lone `### Notable Work` with
-/// no parent heading stays a section heading.
-fn is_nested_entry_heading(line: &str, idx: usize, all_lines: &[&str]) -> bool {
-    let level = |l: &str| l.chars().take_while(|&c| c == '#').count();
-    strip_atx_heading(line).is_some()
-        && level(line) >= 3
-        && all_lines.get(..idx).is_some_and(|head| {
-            head.iter()
-                .any(|l| strip_atx_heading(l.trim()).is_some() && level(l.trim()) <= 2)
-        })
-}
 
 /// Parse a single line
 fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
@@ -94,23 +83,8 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
     // to Blank rather than emitting an empty heading.
     if let Some(heading_body) = strip_atx_heading(trimmed) {
         let text = strip_md(heading_body);
-        if !text.is_empty() && is_nested_entry_heading(trimmed, idx, all_lines) {
-            // `### Title | Org` under a `##` section is an ENTRY heading, not a new
-            // top-level section (which left `## Education` empty and dropped it).
-            // A date-only next line is its date; that line then collapses to Blank
-            // via `is_nested_entry_heading(prev)` below.
-            let date = all_lines
-                .get(idx + 1)
-                .and_then(|n| DATE_RE.find(n.trim()))
-                .filter(|m| m.start() == 0)
-                .map(|m| m.as_str().to_string());
-            return ParsedLine {
-                kind: LineKind::JobEntry,
-                raw: heading_body.to_string(),
-                text,
-                segments: parse_inline_md(heading_body),
-                right_text: date,
-            };
+        if let Some(entry) = nested_entry_heading(trimmed, heading_body, &text, idx, all_lines) {
+            return entry;
         }
         if !text.is_empty() {
             return ParsedLine {
