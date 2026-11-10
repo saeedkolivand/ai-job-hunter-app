@@ -235,3 +235,42 @@ fn best_matches_trims_an_oversized_page_and_keeps_the_cursor_correct() {
 }
 
 // ── throttle ─────────────────────────────────────────────────────────────
+
+/// #1448 — the agent resource pages the FULL qualifying set, not the IPC command's
+/// 100-row cap: 256 rows are all reachable by cursor with an accurate `total`, and
+/// a unique title at rank 101+ is found by `query`.
+#[test]
+fn best_matches_full_set_is_cursor_traversable_and_queryable_past_rank_100() {
+    let rows: Vec<Value> = (0..256)
+        .map(|i| {
+            let mut row = full_best_match_row_json();
+            row["url"] = json!(format!("https://boards.example.com/jobs/{i}"));
+            row["title"] = json!(if i == 200 {
+                "Zebra Wrangler".to_string()
+            } else {
+                format!("Engineer {i}")
+            });
+            row
+        })
+        .collect();
+
+    let issuer = best_matches::best_matches_cursor_issuer(None);
+    let mut seen = 0;
+    let mut cursor: Option<String> = None;
+    loop {
+        let offset = best_matches::parse_best_matches_cursor(&json!({ "cursor": cursor }), &issuer)
+            .expect("own cursor");
+        let out = best_matches::resolve_best_matches(&rows, offset, 100, None);
+        assert_eq!(out["total"], 256);
+        seen += out["matches"].as_array().unwrap().len();
+        match out["nextCursor"].as_str() {
+            Some(next) => cursor = Some(next.to_string()),
+            None => break,
+        }
+    }
+    assert_eq!(seen, 256);
+
+    let hit = best_matches::resolve_best_matches(&rows, 0, 20, Some("zebra"));
+    assert_eq!(hit["total"], 1);
+    assert_eq!(hit["returned"], 1);
+}

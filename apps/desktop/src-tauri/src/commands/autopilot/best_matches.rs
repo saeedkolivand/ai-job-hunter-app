@@ -26,10 +26,11 @@ use crate::ipc_contracts::match_tiers::{MATCH_TIER_COMBINED_HIGH, MATCH_TIER_COV
 use crate::scraping::cluster::{assign_clusters, ClusterMemberRef};
 use crate::scraping::trust::TrustAssessment;
 
-/// Payload guard, not the selection rule: qualification (`qualifies`) and the
-/// sort below decide what's IN this list; this only bounds how many of those
-/// qualifying rows cross the wire in one response.
-const BEST_MATCHES_CAP: usize = 100;
+/// Payload guard for the native IPC command ONLY, not the selection rule and not
+/// applied by [`compute_best_matches`]: qualification (`qualifies`) and the sort
+/// decide what's IN the list; the command truncates to this before it crosses
+/// the renderer wire. The agent resource pages the full set instead (#1448).
+pub(super) const BEST_MATCHES_CAP: usize = 100;
 
 /// One autopilot that surfaced a [`BestMatchRow`].
 #[derive(Debug, Clone, Serialize)]
@@ -89,14 +90,11 @@ pub(super) struct BestMatchRow {
     pub(super) sources: Vec<BestMatchSource>,
 }
 
-/// [`compute_best_matches`]'s full result. `total`/`matches.len()` are kept
-/// separate (rather than truncating in place and losing the pre-cap count) so
-/// a caller — and every test in this file — can tell "capped" from "this is
-/// everything".
+/// [`compute_best_matches`]'s full, uncapped result (`total == matches.len()`).
 #[derive(Debug, Default)]
 pub(super) struct BestMatchesOutcome {
     pub(super) matches: Vec<BestMatchRow>,
-    /// Qualifying count BEFORE [`BEST_MATCHES_CAP`] truncates `matches`.
+    /// Qualifying count — every row in `matches`.
     pub(super) total: usize,
     /// Distinct autopilots contributing at least one qualifying row.
     pub(super) autopilot_count: usize,
@@ -379,10 +377,9 @@ pub(super) fn compute_best_matches(
             .then_with(|| a.key.cmp(&b.key))
     });
 
-    // Step 10: `total` is the qualifying count BEFORE the cap.
+    // Step 10: the full qualifying set; the IPC command applies the cap.
     let total = rows.len();
     let autopilot_count = contributing.len();
-    rows.truncate(BEST_MATCHES_CAP);
 
     BestMatchesOutcome {
         matches: rows,

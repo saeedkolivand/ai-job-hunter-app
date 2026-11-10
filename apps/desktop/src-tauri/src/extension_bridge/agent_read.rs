@@ -97,11 +97,9 @@ pub(super) const RESOURCES: &[(&str, &str)] = &[
          `cursor` (repeat with the returned `nextCursor` until it is `null` to reach every row \
          past the first page; a cursor is opaque and only valid for the same `query` — present \
          or omitted — that issued it), and `query` (case-insensitive substring over title or \
-         company). `query` filters the already-capped, ranked top-N candidate list this tool \
-         computes (NOT the full stored corpus) — a posting outside that cap reads as absent even \
-         when it is still in storage; use `found-jobs`' own `query` to search every stored \
-         posting. `total` is the size of this capped ranked list, not the number of qualifying \
-         postings in storage — use `found-jobs` for a true corpus count.",
+         company). `query` filters every qualifying ranked row (NOT the full stored corpus of \
+         non-qualifying postings; use `found-jobs`' own `query` for that). `total` is the number \
+         of qualifying rows matching `query` (all of them when `query` is omitted).",
     ),
     (
         RES_JOB,
