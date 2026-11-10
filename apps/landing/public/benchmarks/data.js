@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793278398593,
+  "lastUpdate": 1794310561777,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "c2df7bf6ea04914c8981ccf1961f4457a44ab228",
-          "message": "fix(export): render projects from resumes imported as pdf or docx (#1072)\n\n* fix(export): recognize project titles in resumes imported from pdf or docx\n\nA project entry only opened on a leading bold run. Bold is markdown, and an\nimported resume has none - extraction keeps the words and drops the styling.\nSo a candidate's own CV carrying a perfectly formed project block\n\n    AI Job Hunter   aijobhunter.app\n    Tauri 2 - Rust - React 19 - TypeScript\n    Local-first Windows and macOS desktop application.\n\nstill rendered as six loose paragraphs, which is the exact flat output this\nfeature exists to remove. Reported from a real export.\n\nFall back to the shape when there is no bold: a short, non-sentence line whose\nNEXT line is a technology stack is a project title. The stack line is the\ndiscriminator - prose does not sit above a middot-separated list - and the\nline must not be a stack itself, or a two-stack sequence would open an entry\non the second one. Lookahead skips blanks, so a project's last description\nline sees the next project's title rather than stopping at the gap.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(pipeline): group imported project entries by shape, and ask for a tech line\n\nSeeding shared the export path's bold-or-bullet rule for \"where does a project\nentry begin\", so an imported resume - which has no markdown at all, because\npdf and docx extraction keeps the words and drops the styling - fell through\nto the \"first line of the section\" arm. Measured on a real user source: three\nprojects collapsed into ONE seed whose description swallowed the next\nproject's title and stack. seed_projects_for_normalize then correctly refused\nto normalize from it, which is why a generated Projects section kept whatever\nfree-form shape the model chose.\n\nTeach project_entry_starts the same shape signal the export adapter now uses,\ndefined ONCE in export::parser::is_project_title_shaped and shared by both, so\nthe two can never disagree about where an entry starts - the property that\npredicate's own doc comment exists to protect. The same source now seeds two\nclean projects with no bail reason.\n\nAlso tell the job-ad resume prompt to put a project's technologies on their\nown line. Nothing asked for it before, so the model merged the stack into the\ndescription sentence and the export had no meta line to style. The builder\nprompt already carried this rule; the job-ad path did not.\n\nLimits pinned as tests rather than left to be rediscovered: the signal needs a\nstack line, so a prose-only Projects section still collapses, and the\nwhole-bail guards do not catch that shape. Pre-existing, unchanged here.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix(export): bound the project shape signal to its section and to paragraph starts\n\nBoth review findings reproduced before fixing, and both were real.\n\nCross-section lookahead: next_content_line scanned the whole document, so the\nlast line of Projects could be made a title by a separator-bearing HEADING in\nthe next section. \"SKILLS - TOOLS\" did exactly that, and the German and French\nheading pairs have the same shape. It now stops at a section header, which is\nhow the two sibling groupings were already scoped.\n\nSentence-like prose: any line under 100 characters could open an entry, so an\nunpunctuated body line above a SECOND stack line became a title - measured,\n\"Used by 200 teams\" above \"Go - gRPC - Redis\" split one project into two.\nA word count would not have caught that phrase; what separates a title from\nbody text is that entries are blank-separated and a description line is not.\nThe rule now requires the line to open a paragraph.\n\nBoth call sites in the pipeline compute that flag before the blank filter\ndestroys it, so all three groupings keep answering alike. Both guards\nmutation-checked: reverting either fix fails its test.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
-          "timestamp": "2026-08-22T02:13:21+02:00",
-          "tree_id": "6a7b995f8e6a2aa5fe60eb04b496b20f71e20de3",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/c2df7bf6ea04914c8981ccf1961f4457a44ab228"
-        },
-        "date": 1787359045796,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2325851,
-            "range": "± 53470",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2847921,
-            "range": "± 127113",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 318881,
-            "range": "± 9503",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4193,6 +4151,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 269715,
             "range": "± 7360",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0bb633f3f83e3bd24a0f01d57b0c1d130e1b8de5",
+          "message": "chore(prompts): refresh system prompts for current models (#1488)\n\nAudit-driven rewrite of packages/prompts, smallest diff per prompt:\n- remove invented ats statistics and an unsourced platform knowledge base from the\n  analyze prompt, plus two ats myths (all-exact-match, auto-reject)\n- resolve contradictions: skills list only what the resume names, bullets are not\n  an ats killer, cover-letter salutation follows market conventions, cadence no\n  longer asks for fragments, modes quantify only numbers the resume gives\n- evidence wording uses names/states, never supports (the #958 inference gap)\n- drop self-verification and step scaffolding current models over-apply; keep\n  absolutes only on true invariants and give judgment rules a reason\n- invariants.test.ts pins honesty, no-copy, fences, score caps and json-only\n  contracts per prompt and tier, mutation-checked\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T12:10:09+01:00",
+          "tree_id": "6eb571953927334de0b31de10b4e8203176c6f34",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/0bb633f3f83e3bd24a0f01d57b0c1d130e1b8de5"
+        },
+        "date": 1794310560492,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2397661,
+            "range": "± 34376",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2903102,
+            "range": "± 27347",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 267556,
+            "range": "± 3933",
             "unit": "ns/iter"
           }
         ]
