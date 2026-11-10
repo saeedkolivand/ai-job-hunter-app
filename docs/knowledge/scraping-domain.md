@@ -1,6 +1,6 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-10-05
+Last updated: 2026-11-10
 
 Describes the job-scraping subsystem: the board registry (`SCRAPERS` in `apps/desktop/src-tauri/src/scraping/boards/mod.rs`), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
@@ -394,6 +394,11 @@ Per-board scrape outcomes are now visible via a shared `BoardSummaryChips` compo
 - **Re-dispatch:** `apps/desktop/src-tauri/src/scraping/scrape_url/mod.rs: resolve()` — follows redirect and re-dispatches handlers per final URL
 - **Pane gate:** `apps/desktop/src/renderer/features/jobs/components/JobDetailPane/index.tsx` — on-open resolve when the source is the aggregator and the description is under that file's snippet floor; keep-longer merge logic
 - **Description mutation & re-score:** Backend command `scrape_update_description` (`ScrapeUpdateDescriptionRequest`, `commands/scrape/postings.rs`) addresses the posting by `url` (not a board-synthetic id — see the request struct's own doc), and writes the resolved text to BOTH the live `PostingsCache` and every matching `FoundJob` row across every persisted autopilot (`AutopilotStore::update_found_job_descriptions`), so a correction reaches postings surfaced via the Agent/MCP read resources too, not only the session-lifetime cache. The frontend's `MatchScoresProvider` holds a reactive `requested` set; when the description is updated, the per-job match score is re-computed on-demand via `useJobMatchScore` (single-job scoring, not batch). Not a generated IPC contract — the request type is hand-declared on both sides (`commands/scrape/postings.rs` / `tauri-client/namespaces/scrape/scrape.ts`).
+
+**Identity review (issue #1445):** a url can start leading to a different advert than the one stored. A refresh whose resolved identity no longer matches the stored row is held, not written; the row carries an identity review the user must resolve. Dismissing a review is human-only: no agent/MCP/resolved-identity path may release a hold.
+
+- **Verdict:** `scraping::scrape_url::identity_verdict` (stored `PostingIdentity` vs resolved); per-row check in `FoundJob::check_resolved` (`autopilot/identity.rs`).
+- **Write outcome:** `DescriptionWriteStatus` (`commands/scrape/postings.rs`) has four outcomes: updated, no stored copy, identity drift (held, nothing written), unverified (stored copy exists but nothing comparable or drift already dismissed). Wire shape lives in the generated `docs/API.md`.
 
 ## Source pointers
 
