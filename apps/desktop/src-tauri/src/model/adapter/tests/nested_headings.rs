@@ -94,3 +94,25 @@ Market research, forecasting.
         section_headings(&m)
     );
 }
+
+/// A later `#` heading ends the `##` parent, so `###` below it is a section again.
+#[test]
+fn h1_after_h2_ends_the_parent_section() {
+    let m = model_from_resume_text(
+        "## Experience\n### Analyst | Acme\n2022 - Present\n\n# Jane Doe\n\n### Projects\nShipped things.\n",
+    );
+    assert!(
+        section_headings(&m).iter().any(|h| h.contains("Projects")),
+        "{:?}",
+        section_headings(&m)
+    );
+}
+
+/// An entry heading with no date line below it has no date.
+#[test]
+fn nested_entry_heading_without_date_line_has_no_date() {
+    let m = model_from_resume_text("## Experience\n### Analyst | Acme\n- Built reports.\n");
+    let exp = section_entries(find_section(&m, SectionId::Experience).expect("experience"));
+    assert_eq!(exp.len(), 1);
+    assert_eq!(exp[0].date, None);
+}

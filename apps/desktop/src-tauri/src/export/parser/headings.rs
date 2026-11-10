@@ -311,7 +311,7 @@ pub(crate) fn strip_atx_heading(line: &str) -> Option<&str> {
     }
 }
 
-/// Is `line` (at `idx`) an H3+ ATX heading under an earlier `##` section heading?
+/// Is `line` (at `idx`) an H3+ ATX heading whose nearest H1/H2 above is a `##` section?
 /// Such a heading is an entry inside that section. An H1 doesn't count as a parent
 /// (it is usually the candidate's name), and a known section name (`### Skills`)
 /// always stays a section heading, as does a lone `### Notable Work`.
@@ -321,7 +321,10 @@ pub(super) fn is_nested_entry_heading(line: &str, idx: usize, all_lines: &[&str]
         && level(line) >= 3
         && all_lines.get(..idx).is_some_and(|head| {
             head.iter()
-                .any(|l| strip_atx_heading(l.trim()).is_some() && level(l.trim()) == 2)
+                .rev()
+                .map(|l| l.trim())
+                .find(|l| strip_atx_heading(l).is_some() && level(l) <= 2)
+                .is_some_and(|parent| level(parent) == 2)
         })
 }
 
