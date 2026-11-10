@@ -35,25 +35,18 @@ pub struct PostingIdentity<'a> {
     pub url: &'a str,
 }
 
-/// Which part of the identity changed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DriftField {
-    Id,
-    Company,
-    Title,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdentityVerdict {
     Same,
-    Drift(Vec<DriftField>),
+    Drift,
     /// Nothing could be compared (resolved title and company blank, no
     /// same-board id): neither a write nor a flag is justified.
     NoEvidence,
 }
 
-/// Normalized title tokens with seniority abbreviations folded
-/// (`sr`/`snr` → senior, `jr` → junior).
+/// Normalized title tokens with seniority abbreviations folded (`sr`/`snr` →
+/// senior, `jr` → junior) and the synonymous role nouns developer/dev/programmer
+/// folded to engineer. A fixed list, no fuzzy matching.
 fn title_tokens(s: &str) -> Vec<String> {
     normalize_title(s)
         .split_whitespace()
@@ -62,6 +55,7 @@ fn title_tokens(s: &str) -> Vec<String> {
         .map(|t| match t {
             "sr" | "snr" => "senior",
             "jr" => "junior",
+            "developer" | "dev" | "programmer" => "engineer",
             other => other,
         })
         .map(str::to_string)
@@ -123,28 +117,28 @@ pub fn identity_verdict(
             return if sid == rid {
                 IdentityVerdict::Same
             } else {
-                IdentityVerdict::Drift(vec![DriftField::Id])
+                IdentityVerdict::Drift
             };
         }
     }
-    let mut fields = Vec::new();
+    let mut drifted = false;
     let mut compared = false;
     if !normalize_company(stored.company).is_empty()
         && !normalize_company(resolved.company).is_empty()
     {
         compared = true;
         if !company_matches(stored.company, resolved.company) {
-            fields.push(DriftField::Company);
+            drifted = true;
         }
     }
     if !title_tokens(stored.title).is_empty() && !title_tokens(resolved.title).is_empty() {
         compared = true;
         if !title_matches(stored.title, resolved.title) {
-            fields.push(DriftField::Title);
+            drifted = true;
         }
     }
-    if !fields.is_empty() {
-        IdentityVerdict::Drift(fields)
+    if drifted {
+        IdentityVerdict::Drift
     } else if compared {
         IdentityVerdict::Same
     } else {

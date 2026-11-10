@@ -37,8 +37,16 @@ function DetailContent({
   const { t } = useTranslation();
   const actions = usePostingActions(posting);
   const { trackInteraction } = actions;
-  const { description, descLoading, showLoadButton, showError, refetch, announced, drift } =
-    useResolvedDescription(posting);
+  const {
+    description,
+    descLoading,
+    showLoadButton,
+    showError,
+    refetch,
+    announced,
+    drift,
+    unverified,
+  } = useResolvedDescription(posting);
 
   // Mark 'viewed' after a 5s dwell (fire-once per job mount via key={posting.id}).
   // Depends ONLY on posting.id so a description-resolve re-render can't reset/refire it.
@@ -133,6 +141,11 @@ function DetailContent({
             markdown={description}
             className="space-y-4 text-caption text-foreground/80"
           />
+        )}
+
+        {/* Nothing comparable was fetched and no stored text exists: a retry cannot help. */}
+        {unverified && !description && (
+          <p className="text-[11px] text-foreground/50">{t('jobs.descriptionUnverified')}</p>
         )}
 
         {/* Outside the description gate so an EMPTY stored text still gets the

@@ -1,6 +1,6 @@
 # Automation domain (scraping + apply assistant + AI provider)
 
-Last updated: 2026-10-05 (task #16: backend-owned active AI provider store)
+Last updated: 2026-11-10 (task #16: backend-owned active AI provider store)
 
 Merged knowledge for `scraping-applier-expert` and `ai-provider-expert`. Source is authoritative for board/provider counts.
 
@@ -14,7 +14,7 @@ Merged knowledge for `scraping-applier-expert` and `ai-provider-expert`. Source 
 - **Context** — `ScrapeContext` carries a **cancellation token** + progress/item callbacks. Honoring cancellation, bounded retries/backoff, and per-board rate limits are reliability requirements (ignoring the token or unbounded retries on a network loop = HIGH).
 - **Selector resilience** — core boards need fallback selectors; a brittle single-selector parse on a core board is HIGH (it breaks on the next site redesign).
 - **Full-description resolve on detail-pane open** — for aggregator sources whose description is under the pane's snippet floor (the threshold lives in `JobDetailPane/index.tsx`), the detail pane auto-fetches on open by following the redirect chain (IP-guarded, per-hop) and re-dispatching named-board handlers on the final URL. This yields full board-API text when the redirect resolves to a supported ATS; falls back to generic HTML or returns Ok(None) on error. The pane keeps the snippet floor if resolved text is not meaningfully longer (guards against 429/generic degrading the display).
-  - **Re-score path:** If resolved text is meaningfully longer than the snippet, the pane calls `scrape_update_description(id, text)` to mutate the `PostingsCache` entry in-place. The match score is then re-computed on demand rather than in a batch: which jobs get requested is owned by `MatchScoresProvider` (`renderer/features/jobs/providers/MatchScoresProvider.tsx`), and the per-job query (its cache key, its cache lifetime, and therefore what a repeat open costs) is owned by `useJobMatchScore` (`renderer/services/use-match/use-match.ts`). Read those two; don't copy their knobs. Unopened aggregator jobs retain cached snippet-based scores (efficient for large batches; convergent per opened job).
+  - **Re-score path:** If resolved text is meaningfully longer than the snippet, the pane calls `scrape_update_description` with the url, the text and the resolved identity; the text is withheld until the identity verdict (`identity_verdict`), so a drifted or unverifiable copy is not written. The match score is then re-computed on demand rather than in a batch: which jobs get requested is owned by `MatchScoresProvider` (`renderer/features/jobs/providers/MatchScoresProvider.tsx`), and the per-job query (its cache key, its cache lifetime, and therefore what a repeat open costs) is owned by `useJobMatchScore` (`renderer/services/use-match/use-match.ts`). Read those two; don't copy their knobs. Unopened aggregator jobs retain cached snippet-based scores (efficient for large batches; convergent per opened job).
 
 ## Apply assistant (no auto-apply engine)
 

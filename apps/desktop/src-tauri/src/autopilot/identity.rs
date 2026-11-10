@@ -114,7 +114,7 @@ impl FoundJob {
                 log::debug!("[identity] nothing comparable between stored and resolved posting");
                 RowCheck::Skip
             }
-            IdentityVerdict::Drift(_) => {
+            IdentityVerdict::Drift => {
                 if self.identity_dismissed.as_deref()
                     == Some(fingerprint_digest(resolved.as_posting()).as_str())
                 {

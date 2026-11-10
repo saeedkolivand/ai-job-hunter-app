@@ -79,13 +79,10 @@ pub(crate) enum EnrichOutcome {
         description: String,
         resolved: ResolvedIdentity,
     },
-    /// The url now leads to a different advert (issue #1445). The store makes
-    /// the per-row call: hold the row for review, or write when the user
-    /// already dismissed this exact drift. With no `description` it only flags.
-    Drift {
-        description: Option<String>,
-        resolved: ResolvedIdentity,
-    },
+    /// The url now leads to a different advert (issue #1445): no description
+    /// is written; the store holds each stored row for review (a row whose drift
+    /// the user already dismissed is skipped).
+    Drift(ResolvedIdentity),
     /// Nothing usable this attempt — a network/HTTP error, a fetch that came
     /// back with no posting (host mismatch, non-2xx, or a genuinely-removed
     /// job — `resolve`'s `Ok(None)` conflates all three, so this pass cannot
@@ -126,10 +123,7 @@ pub(crate) fn classify_resolution(
     let description = p.description.filter(|d| !description_is_blank(Some(d)));
     match identity_verdict(stored_identity, resolved.as_posting()) {
         IdentityVerdict::NoEvidence => EnrichOutcome::Skip,
-        IdentityVerdict::Drift(_) => EnrichOutcome::Drift {
-            description,
-            resolved,
-        },
+        IdentityVerdict::Drift => EnrichOutcome::Drift(resolved),
         IdentityVerdict::Same => match description {
             Some(description) => EnrichOutcome::Description {
                 description,

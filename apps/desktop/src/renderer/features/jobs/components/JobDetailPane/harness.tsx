@@ -147,7 +147,7 @@ export function idleStub(): ResolveStub {
 }
 
 export const mockUseResolveJobUrl: Mock = vi.fn().mockReturnValue(idleStub());
-export const mockUpdateDescMutateAsync: Mock = vi.fn().mockResolvedValue(false);
+export const mockUpdateDescMutateAsync: Mock = vi.fn().mockResolvedValue('updated');
 
 // Cluster split (ADR-029) + external-open spies + notification container.
 export const mockSplitMutate: Mock = vi.fn();

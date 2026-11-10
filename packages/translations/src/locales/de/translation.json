@@ -2655,6 +2655,7 @@
     "identityDrift": {
       "notice": "Dieser Link öffnet jetzt eine andere Anzeige: {{title}} bei {{company}}"
     },
+    "descriptionUnverified": "Die vollständige Beschreibung konnte für diesen Link nicht verifiziert werden.",
     "descriptionLoadError": "Vollständige Beschreibung konnte nicht geladen werden. Bitte erneut versuchen.",
     "aboutTheJob": "Über die Stelle",
     "matchBand": {

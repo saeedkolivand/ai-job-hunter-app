@@ -2651,6 +2651,7 @@
     "identityDrift": {
       "notice": "This link now opens a different posting: {{title}} at {{company}}"
     },
+    "descriptionUnverified": "The full description could not be verified for this link.",
     "descriptionLoadError": "Could not load the full description. You can try again.",
     "aboutTheJob": "About the job",
     "matchBand": {

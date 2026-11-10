@@ -68,7 +68,7 @@ export interface ScrapeContract {
    * autopilot, so the match scorer reads the full text instead of the
    * truncated aggregator snippet wherever the posting was surfaced from.
    * Takes `{ url, description, resolved: { title, company, url, externalId? } }`
-   * and resolves `'updated'`, `'noMatch'` or `'identityDrift'`.
+   * and resolves `'updated'`, `'noMatch'`, `'identityDrift'` or `'unverified'`.
    *
    * `resolved` is the identity of the posting the description came from. It is
    * asserted by the CALLER: the check protects honest flows from attaching
@@ -79,7 +79,8 @@ export interface ScrapeContract {
    * review instead, and the live cache write is skipped. The description text
    * is otherwise stored verbatim.
    *
-   * Statuses: `'updated'` — at least one store was written and none drifted;
+   * Statuses: `'updated'` — at least one store was written (a cache-only drift
+   * can co-occur);
    * `'identityDrift'` — a stored copy no longer matches `resolved`, or is
    * already held (a held row keeps returning this until dismissed);
    * `'unverified'` — a stored copy exists but nothing was written and nothing

@@ -1,5 +1,11 @@
 use super::*;
 
+/// The url + description rules together, as `validate_write_back` applies them.
+fn validate_both(url: &str, description: &str) -> AppResult<String> {
+    validate_description(description)?;
+    validate_update_url(url)
+}
+
 // The request must deserialize from the camelCase wire shape the renderer
 // sends (`url`/`description`). Pins the serde contract without an AppHandle.
 #[test]
@@ -75,7 +81,7 @@ fn validate_rejects_every_invalid_input_with_a_validation_error() {
     ] {
         assert!(
             matches!(
-                validate_update_description(url, description),
+                validate_both(url, description),
                 Err(AppError::Validation(_))
             ),
             "{why}"
@@ -87,9 +93,8 @@ fn validate_rejects_every_invalid_input_with_a_validation_error() {
 fn validate_accepts_valid_input_and_normalizes_the_url() {
     // At-cap is allowed (boundary): only strictly-over-cap is rejected.
     let at_cap = "x".repeat(MAX_DESCRIPTION_LEN);
-    let normalized =
-        validate_update_description("  HTTPS://Example.com/Jobs/1/?utm_source=x  ", &at_cap)
-            .expect("a normalizable url with an at-cap description must validate");
+    let normalized = validate_both("  HTTPS://Example.com/Jobs/1/?utm_source=x  ", &at_cap)
+        .expect("a normalizable url with an at-cap description must validate");
     assert_eq!(
         normalized, "https://example.com/jobs/1",
         "the returned value is the NORMALIZED url (lowercase host, no trailing slash, \
@@ -108,10 +113,10 @@ fn validate_canonicalizes_a_linkedin_search_view_url_to_the_same_identity_job_re
     let search_view = "https://www.linkedin.com/jobs/search/?currentJobId=4185657072";
     let canonical_view = "https://www.linkedin.com/jobs/view/4185657072";
 
-    let from_search = validate_update_description(search_view, "text")
-        .expect("a recognised LinkedIn url must validate");
-    let from_canonical = validate_update_description(canonical_view, "text")
-        .expect("the canonical view url must validate");
+    let from_search =
+        validate_both(search_view, "text").expect("a recognised LinkedIn url must validate");
+    let from_canonical =
+        validate_both(canonical_view, "text").expect("the canonical view url must validate");
 
     assert_eq!(
         from_search, from_canonical,
@@ -158,7 +163,7 @@ fn write_status_reports_drift_from_either_store_over_any_match() {
 }
 
 fn drift() -> IdentityVerdict {
-    IdentityVerdict::Drift(vec![crate::scraping::scrape_url::DriftField::Title])
+    IdentityVerdict::Drift
 }
 
 #[test]

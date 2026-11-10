@@ -36,10 +36,7 @@ fn different_id_on_the_same_board_is_drift_even_with_identical_text() {
         "Acme",
         "https://www.linkedin.com/jobs/view/222",
     );
-    assert_eq!(
-        identity_verdict(stored, resolved),
-        IdentityVerdict::Drift(vec![DriftField::Id])
-    );
+    assert_eq!(identity_verdict(stored, resolved), IdentityVerdict::Drift);
 }
 
 #[test]
@@ -65,10 +62,7 @@ fn changed_company_is_drift() {
         "Globex",
         "https://boards.greenhouse.io/globex/jobs/1",
     );
-    assert_eq!(
-        identity_verdict(stored, resolved),
-        IdentityVerdict::Drift(vec![DriftField::Company])
-    );
+    assert_eq!(identity_verdict(stored, resolved), IdentityVerdict::Drift);
 }
 
 #[test]
@@ -79,10 +73,7 @@ fn changed_role_is_drift() {
         "Acme",
         "https://boards.greenhouse.io/acme/jobs/2",
     );
-    assert_eq!(
-        identity_verdict(stored, resolved),
-        IdentityVerdict::Drift(vec![DriftField::Title])
-    );
+    assert_eq!(identity_verdict(stored, resolved), IdentityVerdict::Drift);
 }
 
 #[test]
@@ -141,7 +132,7 @@ fn real_world_drifts_stay_drift() {
             p("BDR", "Clinora", url_a),
             p("Customer Success", "Clinora", url_b)
         ),
-        IdentityVerdict::Drift(vec![DriftField::Title])
+        IdentityVerdict::Drift
     );
     // A different company entirely.
     assert!(matches!(
@@ -149,7 +140,7 @@ fn real_world_drifts_stay_drift() {
             p("Engineer", "OMRON", url_a),
             p("Engineer", "Aratas", url_b)
         ),
-        IdentityVerdict::Drift(_)
+        IdentityVerdict::Drift
     ));
     // The same title at a different company is always drift.
     assert_eq!(
@@ -157,7 +148,7 @@ fn real_world_drifts_stay_drift() {
             p("Senior Engineer", "Acme", url_a),
             p("Senior Engineer", "Globex", url_b)
         ),
-        IdentityVerdict::Drift(vec![DriftField::Company])
+        IdentityVerdict::Drift
     );
 }
 
@@ -212,7 +203,7 @@ fn different_roles_at_the_same_company_are_drift() {
     ] {
         assert_eq!(
             identity_verdict(p(a, "Acme", ua), p(b, "Acme", ub)),
-            IdentityVerdict::Drift(vec![DriftField::Title]),
+            IdentityVerdict::Drift,
             "{a} vs {b}"
         );
     }
@@ -244,6 +235,32 @@ fn company_prefix_must_end_on_a_word_boundary() {
             p("Rust Engineer", "Acme", ua),
             p("Rust Engineer", "Acmeco", ub)
         ),
-        IdentityVerdict::Drift(vec![DriftField::Company])
+        IdentityVerdict::Drift
+    );
+}
+
+#[test]
+fn role_noun_synonyms_fold_but_distinct_roles_do_not() {
+    let (ua, ub) = (
+        "https://www.adzuna.de/land/ad/1",
+        "https://boards.greenhouse.io/x/jobs/1",
+    );
+    for (a, b) in [
+        ("Backend Developer", "Backend Engineer"),
+        ("Software Dev", "Software Engineer"),
+        ("Sr. Programmer", "Senior Engineer"),
+    ] {
+        assert_eq!(
+            identity_verdict(p(a, "Acme", ua), p(b, "Acme", ub)),
+            IdentityVerdict::Same,
+            "{a} vs {b}"
+        );
+    }
+    assert_eq!(
+        identity_verdict(
+            p("Product Manager", "Acme", ua),
+            p("Project Manager", "Acme", ub)
+        ),
+        IdentityVerdict::Drift
     );
 }

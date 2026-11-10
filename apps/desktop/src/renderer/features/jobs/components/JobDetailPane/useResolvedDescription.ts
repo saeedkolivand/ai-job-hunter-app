@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { AGGREGATOR_BOARD_ID } from '@ajh/shared';
+import { AGGREGATOR_BOARD_ID, type UpdateDescriptionResult } from '@ajh/shared';
 
 import { useMatchScores } from '@/features/jobs/providers';
 import type { Posting } from '@/features/jobs/types';
@@ -64,8 +64,7 @@ export function useResolvedDescription(posting: Posting) {
   //  - resolved text is not yet meaningfully longer than the snippet.
   const showLoadButton =
     ((isAggregatorShort || descriptionEmpty) && !resolved.isFetching && !resolvedLonger) ||
-    verdictFailed ||
-    unverified;
+    verdictFailed;
 
   // Persist-then-score: one ordered one-shot effect so the backend always reads
   // the full markdown when computing the match score, and the identity verdict
@@ -103,7 +102,7 @@ export function useResolvedDescription(posting: Posting) {
       externalId: resolvedPosting?.externalId,
     };
     void (async () => {
-      let result: string;
+      let result: UpdateDescriptionResult;
       try {
         result = await updateDescription({
           url: posting.url,
@@ -159,12 +158,13 @@ export function useResolvedDescription(posting: Posting) {
     description,
     descLoading,
     showLoadButton,
-    showError: shouldResolve && (resolved.isError || verdictFailed || unverified) && !descLoading,
+    showError: shouldResolve && (resolved.isError || verdictFailed) && !descLoading,
     refetch: () => {
       setVerdictFailed(false);
       return resolved.refetch();
     },
     announced,
     drift,
+    unverified,
   };
 }

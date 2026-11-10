@@ -3,6 +3,7 @@ import { act, waitFor } from '@testing-library/react';
 
 import { createMockClient, exerciseServiceHooks, renderHookWithClient } from '@/test-support';
 
+import { useAutopilots } from '../use-autopilot';
 import * as mod from './use-postings';
 import {
   useInteractions,
@@ -148,5 +149,34 @@ describe('useUpdatePostingDescription — postings invalidation', () => {
 
     // onSuccess must NOT have fired — call count unchanged.
     expect(listPostings.mock.calls.length).toBe(callCountBefore);
+  });
+
+  it.each([
+    ['identityDrift', true],
+    ['updated', false],
+  ])('%s: autopilot list refetch = %s', async (outcome, refetches) => {
+    const list = vi.fn().mockResolvedValue([]);
+    const client = createMockClient({
+      'autopilot.list': list,
+      'scrape.updateDescription': vi.fn().mockResolvedValue(outcome),
+      'scrape.listPostings': vi.fn().mockResolvedValue([]),
+    });
+    const { result } = renderHookWithClient(
+      () => ({ autopilots: useAutopilots(), update: useUpdatePostingDescription() }),
+      { client }
+    );
+    await waitFor(() => expect(result.current.autopilots.isSuccess).toBe(true));
+    const before = list.mock.calls.length;
+
+    await act(async () => {
+      await result.current.update.mutateAsync({
+        url: 'https://example.com/jobs/1',
+        description: 'Full text',
+        resolved: RESOLVED,
+      });
+    });
+
+    if (refetches) await waitFor(() => expect(list.mock.calls.length).toBeGreaterThan(before));
+    else expect(list.mock.calls.length).toBe(before);
   });
 });

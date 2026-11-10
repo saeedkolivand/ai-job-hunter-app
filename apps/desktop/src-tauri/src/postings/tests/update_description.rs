@@ -170,3 +170,33 @@ fn update_description_patches_every_item_sharing_the_url() {
         "a different url must not be touched"
     );
 }
+
+#[test]
+fn stored_identities_returns_every_entry_for_the_url_and_nothing_for_a_miss() {
+    let mut cache = PostingsCache::default();
+    cache.add(serde_json::json!({
+        "id": "a", "url": "https://example.com/jobs/1", "title": "Engineer", "company": "Acme",
+    }));
+    // A variant url (tracking param) that normalizes to the same key.
+    cache.add(serde_json::json!({
+        "id": "b", "url": "https://example.com/jobs/1?utm_source=x", "title": "Dev", "company": "Acme",
+    }));
+    cache.add(serde_json::json!({
+        "id": "c", "url": "https://example.com/jobs/2", "title": "Designer", "company": "Other",
+    }));
+    let key = crate::applications::normalize_job_url("https://example.com/jobs/1");
+
+    let found = cache.stored_identities(&key);
+    assert_eq!(
+        found.len(),
+        2,
+        "both entries for the url, not just the first"
+    );
+    assert!(found.iter().any(|(t, c, _)| t == "Engineer" && c == "Acme"));
+    assert!(found
+        .iter()
+        .any(|(t, _, u)| t == "Dev" && u.contains("utm_source")));
+
+    let missing = crate::applications::normalize_job_url("https://example.com/jobs/99");
+    assert!(cache.stored_identities(&missing).is_empty());
+}

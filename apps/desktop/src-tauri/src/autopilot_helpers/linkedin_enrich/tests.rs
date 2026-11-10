@@ -171,8 +171,7 @@ fn classify_resolution_skips_ok_none_the_same_as_an_error() {
 fn classify_resolution_flags_a_different_advert_even_with_a_description() {
     let mut other = posting(Some("A different job's full text."));
     other.url = "https://www.linkedin.com/jobs/view/2".to_string();
-    let EnrichOutcome::Drift { resolved, .. } = classify_resolution(&stored(), Ok(Some(other)))
-    else {
+    let EnrichOutcome::Drift(resolved) = classify_resolution(&stored(), Ok(Some(other))) else {
         panic!("a different linkedin id must be drift");
     };
     assert_eq!(resolved.url, "https://www.linkedin.com/jobs/view/2");
@@ -204,22 +203,18 @@ fn a_row_held_for_identity_review_is_not_refetched() {
 }
 
 #[test]
-fn classify_resolution_drift_carries_the_description_only_when_it_is_usable() {
+fn classify_resolution_drift_never_carries_a_description() {
     let mut other = posting(Some("A different job text."));
     other.url = "https://www.linkedin.com/jobs/view/2".to_string();
-    let EnrichOutcome::Drift { description, .. } =
-        classify_resolution(&stored(), Ok(Some(other.clone())))
-    else {
-        panic!("drift expected");
-    };
-    assert_eq!(description.as_deref(), Some("A different job text."));
-
+    assert!(matches!(
+        classify_resolution(&stored(), Ok(Some(other.clone()))),
+        EnrichOutcome::Drift(_)
+    ));
     other.description = Some(String::new());
-    let EnrichOutcome::Drift { description, .. } = classify_resolution(&stored(), Ok(Some(other)))
-    else {
-        panic!("drift expected");
-    };
-    assert_eq!(description, None, "a blank description is not carried");
+    assert!(matches!(
+        classify_resolution(&stored(), Ok(Some(other))),
+        EnrichOutcome::Drift(_)
+    ));
 }
 
 #[test]

@@ -77,19 +77,22 @@ describe('JobDetailPane — identity drift', () => {
     expect(screen.getByText('Stored ad.')).toBeInTheDocument();
     expect(screen.queryByText(OTHER_AD)).not.toBeInTheDocument();
     expect(screen.queryByRole('note')).not.toBeInTheDocument();
+    expect(screen.queryByText('jobs.loadFullDescription')).not.toBeInTheDocument();
+    expect(screen.queryByText('jobs.descriptionUnverified')).not.toBeInTheDocument();
     expect(mockScoreJob).not.toHaveBeenCalled();
     expect(mockUpdateDescMutateAsync).toHaveBeenCalledTimes(1);
   });
 
-  it("'unverified' with empty stored text shows the error + retry UI", async () => {
+  it("'unverified' with empty stored text shows a non-retry line", async () => {
     mockUpdateDescMutateAsync.mockResolvedValue('unverified');
     resolveOtherAd();
     await openPane(makePosting('d-unv-empty', { description: '' }));
     await flushMicrotasks(2);
 
     expect(screen.queryByText(OTHER_AD)).not.toBeInTheDocument();
-    expect(screen.getByText('jobs.descriptionLoadError')).toBeInTheDocument();
-    expect(screen.getByText('jobs.loadFullDescription')).toBeInTheDocument();
+    expect(screen.getByText('jobs.descriptionUnverified')).toBeInTheDocument();
+    expect(screen.queryByText('jobs.descriptionLoadError')).not.toBeInTheDocument();
+    expect(screen.queryByText('jobs.loadFullDescription')).not.toBeInTheDocument();
     expect(screen.queryByRole('note')).not.toBeInTheDocument();
     expect(mockScoreJob).not.toHaveBeenCalled();
   });

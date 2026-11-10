@@ -52,48 +52,32 @@ pub enum DescriptionWriteStatus {
 /// so a caller can tell the write didn't take effect as sent.
 const MAX_DESCRIPTION_LEN: usize = 256 * 1024;
 
-/// Write a freshly-resolved full description back into BOTH stores that can
-/// carry a copy of this posting, addressed by `url` (issue #1106): the live
-/// [`PostingsCache`] (session-lifetime, in-memory) AND every matching
-/// `FoundJob` row across every persisted `Autopilot` record
-/// (`AutopilotStore::update_found_job_descriptions`). `id` — this command's
-/// old parameter — was a board-synthetic key with no meaning off
-/// `PostingsCache`: no Agent/MCP read command ever exposed it, and even a
-/// correct `id`-based lookup would still silently miss every posting
-/// surfaced via `job`/`best-matches`/`autopilot_best_matches`, which read
-/// `Autopilot.found_jobs` directly and never touch `PostingsCache` at all.
-/// `url` is the one identity every surface already shares — see
-/// `extension_bridge::agent_read`'s own module doc ("`url` is the
-/// CROSS-RESOURCE KEY — not an id").
-///
-/// The detail pane resolves a fuller description on demand (see
-/// [`scrape_resolve_url`]); without this, match scoring would continue
-/// reading the truncated aggregator snippet from whichever store still held
-/// it. The match-score cache is job-text-hash-keyed, so updating the
-/// description invalidates cached scores for that job; on-demand scoring via
-/// `useJobMatchScore` will recompute.
-///
-/// The verdict runs on `resolved`, an identity the CALLER asserts (the renderer,
-/// or an agent): it protects honest flows from attaching another advert's text,
-/// and never authorizes releasing a hold — a held row is only released by
-/// `autopilot_dismiss_identity_review`.
-///
-/// Both stores are tried independently, but a posting whose identity drifted
-/// (issue #1445) is never written — see [`write_status`] for the resulting
-/// `updated`/`noMatch`/`identityDrift` rule.
-///
-/// Validate the write-back inputs, returning the NORMALIZED url on success
+/// Validate the description: non-blank (this command CORRECTS a description, it
+/// does not clear one — an empty string would wipe every matching row) and
+/// within [`MAX_DESCRIPTION_LEN`] (rejected, never truncated).
+fn validate_description(description: &str) -> AppResult<()> {
+    if description.trim().is_empty() {
+        return Err(AppError::Validation(
+            "description must not be empty — this command corrects a description, it does not              clear one"
+                .to_string(),
+        ));
+    }
+    if description.len() > MAX_DESCRIPTION_LEN {
+        return Err(AppError::Validation(format!(
+            "description exceeds the {MAX_DESCRIPTION_LEN}-byte cap"
+        )));
+    }
+    Ok(())
+}
+
+/// Validate the write-back url, returning the NORMALIZED url on success
 /// (reused as-is for both stores, never re-derived per store). Pure (no
 /// `AppHandle`) so the error paths are unit-tested directly. Rejects an empty
 /// or non-http(s) url (an explicit `http://`/`https://` prefix is REQUIRED —
 /// `normalize_job_url` alone passes a schemeless bare token like the
 /// pre-rename `id` shape straight through unchanged, which would otherwise
 /// validate and then miss both stores as a silent, honest-looking
-/// `data: false`), an empty/whitespace-only description (this command
-/// CORRECTS a description, it does not clear one — an empty string here
-/// would otherwise wipe every matching row across both stores), and an
-/// over-cap description rather than silently truncating, so the caller can
-/// tell the write didn't take effect as sent.
+/// `noMatch`).
 ///
 /// Canonicalizes via [`crate::scraping::scrape_url::canonical_job_url`]
 /// BEFORE normalizing — the exact two-line pipeline
@@ -102,22 +86,10 @@ const MAX_DESCRIPTION_LEN: usize = 256 * 1024;
 /// on the SAME identity a `job`/`answers.save` read resolves it to, rather
 /// than a normalized value neither store was ever keyed by (issue #1106
 /// follow-up).
-fn validate_update_description(url: &str, description: &str) -> AppResult<String> {
+fn validate_update_url(url: &str) -> AppResult<String> {
     let url = url.trim();
     if url.is_empty() {
         return Err(AppError::Validation("url is required".to_string()));
-    }
-    if description.trim().is_empty() {
-        return Err(AppError::Validation(
-            "description must not be empty — this command corrects a description, it does not \
-             clear one"
-                .to_string(),
-        ));
-    }
-    if description.len() > MAX_DESCRIPTION_LEN {
-        return Err(AppError::Validation(format!(
-            "description exceeds the {MAX_DESCRIPTION_LEN}-byte cap"
-        )));
     }
     let lower = url.to_ascii_lowercase();
     if !(lower.starts_with("http://") || lower.starts_with("https://")) {
@@ -177,7 +149,8 @@ fn validate_resolved(resolved: &ResolvedIdentity) -> AppResult<ResolvedIdentity>
 }
 
 /// The one validation both write-back entry points run (`description: None` =
-/// verdict-only): the url + description rules of [`validate_update_description`]
+/// verdict-only): the url + description rules of [`validate_update_url`] and
+/// [`validate_description`]
 /// plus [`validate_resolved`]. Returns the normalized url and the sanitized
 /// resolved identity.
 fn validate_write_back(
@@ -185,8 +158,10 @@ fn validate_write_back(
     description: Option<&str>,
     resolved: &ResolvedIdentity,
 ) -> AppResult<(String, ResolvedIdentity)> {
-    let normalized = validate_update_description(url, description.unwrap_or("-"))?;
-    Ok((normalized, validate_resolved(resolved)?))
+    if let Some(description) = description {
+        validate_description(description)?;
+    }
+    Ok((validate_update_url(url)?, validate_resolved(resolved)?))
 }
 
 /// Fold the per-store results into the one status the caller sees. A drifted
@@ -218,9 +193,7 @@ fn write_status(
 /// no match).
 fn fold_cache_verdicts(verdicts: &[IdentityVerdict]) -> (bool, bool) {
     (
-        verdicts
-            .iter()
-            .any(|v| matches!(v, IdentityVerdict::Drift(_))),
+        verdicts.iter().any(|v| matches!(v, IdentityVerdict::Drift)),
         verdicts.iter().all(|v| *v == IdentityVerdict::Same),
     )
 }
@@ -263,6 +236,36 @@ pub(crate) fn flag_identity_drift(
         .drifted)
 }
 
+/// Write a freshly-resolved full description back into BOTH stores that can
+/// carry a copy of this posting, addressed by `url` (issue #1106): the live
+/// [`PostingsCache`] (session-lifetime, in-memory) AND every matching
+/// `FoundJob` row across every persisted `Autopilot` record
+/// (`AutopilotStore::update_found_job_descriptions`). `id` — this command's
+/// old parameter — was a board-synthetic key with no meaning off
+/// `PostingsCache`: no Agent/MCP read command ever exposed it, and even a
+/// correct `id`-based lookup would still silently miss every posting
+/// surfaced via `job`/`best-matches`/`autopilot_best_matches`, which read
+/// `Autopilot.found_jobs` directly and never touch `PostingsCache` at all.
+/// `url` is the one identity every surface already shares — see
+/// `extension_bridge::agent_read`'s own module doc ("`url` is the
+/// CROSS-RESOURCE KEY — not an id").
+///
+/// The detail pane resolves a fuller description on demand (see
+/// [`scrape_resolve_url`]); without this, match scoring would continue
+/// reading the truncated aggregator snippet from whichever store still held
+/// it. The match-score cache is job-text-hash-keyed, so updating the
+/// description invalidates cached scores for that job; on-demand scoring via
+/// `useJobMatchScore` will recompute.
+///
+/// The verdict runs on `resolved`, an identity the CALLER asserts (the renderer,
+/// or an agent): it protects honest flows from attaching another advert's text,
+/// and never authorizes releasing a hold — a held row is only released by
+/// `autopilot_dismiss_identity_review`.
+///
+/// Both stores are tried independently, but a posting whose identity drifted
+/// (issue #1445) is never written — see [`write_status`] for the resulting
+/// `updated`/`noMatch`/`identityDrift`/`unverified` rule.
+///
 #[tauri::command]
 pub fn scrape_update_description(
     app: AppHandle,
