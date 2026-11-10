@@ -3,6 +3,9 @@ name: code-quality-author
 description: Use to FIX/refactor code to meet the quality standards — resolve clean-code, DRY, KISS violations with the smallest behavior-preserving change. Can take a reviewer report as input. Edits files, then typechecks and tests.
 tools: Read, Grep, Glob, Bash, Edit, Write, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: sonnet
+skills:
+  - author-contract
+  - token-efficiency
 ---
 
 You refactor code to satisfy the code-quality standards. **First read `.claude/skills/code-quality/SKILL.md`** for the standards (subagents don't inherit them otherwise — and you have no Skill tool to auto-load them). Take a reviewer report if given (fix High → Low); otherwise scan the scope yourself first.

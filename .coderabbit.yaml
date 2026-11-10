@@ -41,7 +41,6 @@ reviews:
     - '!**/dist/**'
     - '!pnpm-lock.yaml'
     - '!**/Cargo.lock'
-    - '!landing/**'
     - '!graphify-out/**'
     - '!**/*.gen.ts'
     - '!apps/desktop/src/renderer/routeTree.gen.ts'
@@ -53,14 +52,11 @@ reviews:
   path_instructions:
     - path: 'apps/desktop/src/renderer/**'
       instructions: >
-        React renderer. Enforce ports & adapters: no window.api in features/routes/
-        components — use service hooks from @/services (React Query). Use @ajh/ui
-        primitives (Button/Input/TextArea/SelectDropdown/ModalShell/etc.), never raw
-        <button>/<select>/<textarea>. Brand/design tokens only (text-brand, bg-brand,
-        var(--color-brand)); no hardcoded [#RRGGBB]. Motion via `@ajh/ui` tokens,
-        no inline {duration,ease}. i18n via @ajh/translations, never react-i18next/
-        i18next directly. No useState+useEffect for remote data. Never cross-import
-        between feature dirs.
+        React renderer. The renderer rules (service hooks, @ajh/ui primitives,
+        tokens, motion, i18n, feature isolation) are AGENTS.md rules 1-11, loaded
+        as code guidelines — apply them from there. Also check that backend work
+        survives navigation (AGENTS.md rule 16): subscriptions belong in
+        routes/__root.tsx or a provider, not a route component.
     - path: 'packages/ui/**'
       instructions: >
         Design-system library. No Zustand, no IPC, no routing imports. Keep
@@ -131,6 +127,46 @@ reviews:
         raise the finding on the source it renders from (the TSDoc on the contract
         member), never as an edit to the page itself.
 
+  # PR-level checks. All advisory (warning): CodeRabbit never gates merge.
+  pre_merge_checks:
+    docstrings:
+      mode: 'off' # repo docs are thin pointers (AGENTS.md rule 17), not coverage
+    title:
+      mode: warning
+      requirements: >-
+        Conventional commit: type in feat|fix|perf|refactor|ui|style|test|docs|build|ci|chore|revert,
+        optional (scope), lowercase subject (acronyms too), imperative, <=100 chars, no trailing period.
+    description:
+      mode: warning
+    issue_assessment:
+      mode: warning
+
+  # Only HIGH/CRITICAL block (AGENTS.md "Review conventions"); this is what
+  # CodeRabbit's merge/security risk ratings should measure.
+  merge_risk_instructions: >-
+    High risk: architecture-rule violations (tests/architecture.rs, AGENTS.md rules 12/14/16),
+    data loss or corruption in local stores, sync or migrations, an untested error path the PR
+    introduces, a broken IPC contract or renderer/Rust mirror. Low risk: docs, copy, tests-only,
+    style.
+  security_risk_instructions: >-
+    High risk: credential or keychain exposure, IPC attack surface or capability widening, updater
+    or signature checks, network egress outside ADR 0005, prompt injection or leakage in
+    ai_provider/prompts, the extension bridge pairing token, and unbounded reads of files or
+    network input.
+
+  # The repo has its own test-author and docs flow, and Autofix needs paid credits.
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
+
   # Area labels — mirrors the retired .github/labeler.yml path→label map. CodeRabbit
   # applies labels by name from these instructions.
   labeling_instructions:
@@ -182,5 +218,9 @@ chat:
   auto_reply: true
 
 knowledge_base:
+  # AGENTS.md, CLAUDE.md and .claude/rules/** are read as review guidelines by
+  # default; never list them in path_instructions (they'd be reviewed as code).
+  code_guidelines:
+    enabled: true
   learnings:
     scope: local
