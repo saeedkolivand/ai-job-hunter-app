@@ -16,6 +16,7 @@
 pub mod engine;
 pub mod envelope;
 pub mod http;
+pub mod legacy_float;
 pub mod rules;
 pub mod settings;
 pub mod state;
