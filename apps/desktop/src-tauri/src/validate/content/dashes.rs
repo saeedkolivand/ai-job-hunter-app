@@ -107,6 +107,12 @@ fn is_prose_dash(chars: &[char], i: usize, first: Option<usize>) -> bool {
     if Some(i) == first || i == 0 || i + 1 >= chars.len() {
         return false;
     }
+    // The most common AI tell: an unspaced EM dash between two letters
+    // ("fast—and reliable"). Never an unspaced en dash (`Rolls–Royce`,
+    // `Jan–Mar`) and never one beside a digit (`2019—2022`).
+    if chars[i] == '—' && chars[i - 1].is_alphabetic() && chars[i + 1].is_alphabetic() {
+        return true;
+    }
     if !chars[i - 1].is_whitespace() || !chars[i + 1].is_whitespace() {
         return false;
     }
@@ -121,7 +127,8 @@ fn is_prose_dash(chars: &[char], i: usize, first: Option<usize>) -> bool {
 /// `text` with every prose clause dash replaced by a comma.
 ///
 /// Conservative by construction: a dash is only replaced when it is spaced on
-/// both sides and sits between ordinary words ([`is_prose_dash`]), and a line
+/// both sides, or is an unspaced em dash between two letters, and sits between
+/// ordinary words ([`is_prose_dash`]), and a line
 /// carrying a URL is left whole, so a date column, a range, a compound name or
 /// a bullet marker can never be altered. Deterministic and idempotent.
 pub(crate) fn strip_long_dashes(text: &str) -> String {

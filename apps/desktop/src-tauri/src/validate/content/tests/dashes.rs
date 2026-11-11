@@ -40,8 +40,24 @@ fn ranges_compound_names_and_list_markers_are_never_damaged() {
 }
 
 #[test]
-fn an_unspaced_clause_dash_is_left_alone() {
-    assert_eq!(strip_long_dashes("It ran—and fast."), "It ran—and fast.");
+fn an_unspaced_em_dash_between_words_becomes_a_comma() {
+    assert_eq!(
+        strip_long_dashes("Fast—and reliable, it ran—well."),
+        "Fast, and reliable, it ran, well."
+    );
+}
+
+#[test]
+fn an_unspaced_en_dash_or_numeric_em_dash_is_left_alone() {
+    for kept in [
+        "Rolls–Royce",
+        "Jan–Mar 2020",
+        "2019—2022",
+        "2019–2022",
+        "Mon–Fri",
+    ] {
+        assert_eq!(strip_long_dashes(kept), kept, "{kept:?}");
+    }
 }
 
 #[test]
