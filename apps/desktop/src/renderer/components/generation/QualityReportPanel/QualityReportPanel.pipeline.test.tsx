@@ -119,6 +119,32 @@ describe('QualityReportPanel — staged run extras', () => {
       expect(onRemoveEvidence).not.toHaveBeenCalled();
     });
 
+    it('offers no Remove for an entry without a line — only Keep and an edit hint', async () => {
+      const onResolveFabrication = vi.fn();
+      const { line: _line, ...noLine } = PENDING;
+      renderPanel(pipeline({ fabrications: [noLine], onResolveFabrication }));
+
+      expect(screen.queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
+      expect(screen.getByText(/edit the text yourself/i)).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: /keep/i }));
+      expect(onResolveFabrication).toHaveBeenCalledWith(PENDING.issueKey, 'keep');
+    });
+
+    it('lets a marked-for-removal entry be switched back to Keep', async () => {
+      const onResolveFabrication = vi.fn();
+      renderPanel(
+        pipeline({
+          fabrications: [{ ...PENDING, decision: 'remove' }],
+          onResolveFabrication,
+        })
+      );
+
+      expect(screen.getByText(/still in the document/i)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: /keep/i }));
+      expect(onResolveFabrication).toHaveBeenCalledWith(PENDING.issueKey, 'keep');
+    });
+
     it('surfaces a failed resolve write in an alert, like the Fix twin does', () => {
       renderPanel(
         pipeline({
