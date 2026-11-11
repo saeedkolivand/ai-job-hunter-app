@@ -15,7 +15,7 @@ use crate::error::{AppError, AppResult};
 
 use super::super::research::SearchResult;
 use super::super::{timeouts, ProviderId, RequestTrace};
-use super::WebSearcher;
+use super::{cap_chars, WebSearcher};
 
 pub struct SearxngSearcher {
     base: String,
@@ -37,8 +37,26 @@ impl SearxngSearcher {
     }
 }
 
+/// Whether `url` may be reached over plain `http`: loopback, private/LAN addresses, `localhost`
+/// and `.local` names. Anything else is a public host and must use `https`.
+fn is_local_host(url: &reqwest::Url) -> bool {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    if let Ok(ip) = host.parse::<Ipv4Addr>() {
+        return ip.is_loopback() || ip.is_private();
+    }
+    if let Ok(ip) = host.trim_matches(['[', ']']).parse::<Ipv6Addr>() {
+        return ip.is_loopback() || (ip.segments()[0] & 0xfe00) == 0xfc00;
+    }
+    host == "localhost" || host.ends_with(".local")
+}
+
 /// Validate and normalise a user-entered SearXNG base URL: trimmed, http/https with a host,
-/// no query/fragment, no trailing slash. `Ok(None)` for blank input (clears the setting).
+/// no credentials, no query/fragment, no trailing slash; plain `http` only for a local host.
+/// `Ok(None)` for blank input (clears the setting). Credentials are refused because the URL
+/// is stored in plaintext, exported in backups and synced.
 pub fn normalize_searxng_url(raw: &str) -> AppResult<Option<String>> {
     let raw = raw.trim();
     if raw.is_empty() {
@@ -47,27 +65,49 @@ pub fn normalize_searxng_url(raw: &str) -> AppResult<Option<String>> {
     crate::net::ssrf::validate_provider_base_url(raw)?;
     let url = reqwest::Url::parse(raw)
         .map_err(|e| AppError::Validation(format!("Invalid SearXNG URL: {e}")))?;
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(AppError::Validation(
+            "SearXNG URL must not contain a username or password.".into(),
+        ));
+    }
     if url.query().is_some() || url.fragment().is_some() {
         return Err(AppError::Validation(
             "SearXNG URL must not contain a query or fragment.".into(),
         ));
     }
+    if url.scheme() == "http" && !is_local_host(&url) {
+        return Err(AppError::Validation(
+            "SearXNG URL must use https unless it points at this machine or the local network."
+                .into(),
+        ));
+    }
     Ok(Some(url.as_str().trim_end_matches('/').to_string()))
 }
 
-/// A SearXNG non-2xx as a typed error. Body deliberately NOT read (it is an HTML page or a
-/// reverse proxy's text, and the message ends up in a run's failure record). An instance that
-/// has not enabled `json` under `search.formats` answers 403; that reads as unusable, so it is
-/// worded as an auth refusal and the pass moves on to the next backend.
+/// A SearXNG-compatible non-2xx as a typed error. The server is keyless and user-run, so NONE
+/// of these fall through to another backend, and the messages are FIXED: no status digits, no
+/// body, no URL, so no remote or scraped text can make `FailureKind` read a bare "401"/"402"
+/// as billing or auth. A 401/403 is almost always `json` missing from the server's `formats`,
+/// or the user's own proxy refusing; both are fixed by the user, not by another vendor.
 pub(super) fn searxng_status_error(status: reqwest::StatusCode) -> AppError {
     match status.as_u16() {
         401 | 403 => AppError::Config(
-            "searxng: unauthorized or JSON output disabled (403); enable `json` in search.formats."
+            "searxng: the server refused the request; enable JSON output (`json` under `formats`) on the server."
                 .into(),
         ),
-        429 => AppError::RateLimited("searxng: rate limit reached.".into()),
-        500..=599 => AppError::Network(format!("searxng: service error ({}).", status.as_u16())),
-        code => AppError::Provider(format!("searxng returned {code}")),
+        429 => AppError::RateLimited("searxng: the server is rate limiting requests.".into()),
+        500..=599 => AppError::Network("searxng: the server reported an error.".into()),
+        _ => AppError::Provider("searxng: the server sent an unexpected response.".into()),
+    }
+}
+
+/// A transport failure, classified by the reqwest variant with a fixed message. `Display` on
+/// `reqwest::Error` embeds the request URL (host AND the `q=` query), so it is never used.
+fn transport_error(e: &reqwest::Error) -> AppError {
+    if e.is_timeout() {
+        AppError::Timeout("searxng: the server did not answer in time.".into())
+    } else {
+        AppError::Network("searxng: the server could not be reached.".into())
     }
 }
 
@@ -90,7 +130,7 @@ impl WebSearcher for SearxngSearcher {
             .await
             .map_err(|e| {
                 trace.end(None, false);
-                AppError::Network(format!("searxng unreachable: {e}"))
+                transport_error(&e)
             })?;
         let status = resp.status();
         if !status.is_success() {
@@ -100,9 +140,9 @@ impl WebSearcher for SearxngSearcher {
         let body =
             crate::net::http::read_json_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
                 .await
-                .map_err(|e| {
+                .map_err(|_| {
                     trace.end(Some(status.as_u16()), false);
-                    AppError::Provider(format!("searxng response was not JSON: {e}"))
+                    AppError::Provider("searxng: the response was not valid JSON.".into())
                 })?;
         let parsed = parse_searxng_results(&body, limit);
         trace.end(Some(status.as_u16()), parsed.is_ok());
@@ -112,22 +152,32 @@ impl WebSearcher for SearxngSearcher {
 
 /// Map a SearXNG-compatible `/search?format=json` body to [`SearchResult`]s. Pure + unit-tested.
 ///
-/// A body with no `results` array is NOT "the web had nothing" — it is a response that is not
-/// SearXNG's search output (an error page served as JSON, a proxy), so it is a typed error;
-/// only a present-but-empty `results` is an empty `Ok`. A result with neither `content` nor `snippet` is dropped
-/// (a bare title costs synthesis tokens for nothing); `content` is capped on a char boundary.
+/// A body with no `results` array is NOT "the web had nothing": it is not search output at all
+/// (an error page served as JSON, a proxy), so it is a typed error. An EMPTY `results` next to
+/// a non-empty `unresponsive_engines` is the server saying its engines failed (CAPTCHA,
+/// suspended), which is `Unavailable`, not "found nothing" (#1500). Only a plain empty
+/// `results` is an empty `Ok`. A result with neither `content` nor `snippet`, or without an
+/// http(s) `url`, is dropped; `content` and `title` are capped on a char boundary.
 pub(super) fn parse_searxng_results(
     body: &serde_json::Value,
     limit: usize,
 ) -> AppResult<Vec<SearchResult>> {
     const CONTENT_CAP: usize = 1_000;
+    const URL_CAP: usize = 2_048;
 
     let results = body
         .get("results")
         .and_then(|r| r.as_array())
-        .ok_or_else(|| {
-            AppError::Provider("searxng search parse failed: no results array".into())
-        })?;
+        .ok_or_else(|| AppError::Provider("searxng: the response had no results list.".into()))?;
+    let engines_failed = body
+        .get("unresponsive_engines")
+        .and_then(|u| u.as_array())
+        .is_some_and(|u| !u.is_empty());
+    if results.is_empty() && engines_failed {
+        return Err(AppError::Network(
+            "searxng: its search engines are unavailable.".into(),
+        ));
+    }
     let text = |r: &serde_json::Value, key: &str| {
         r.get(key)
             .and_then(|v| v.as_str())
@@ -138,16 +188,18 @@ pub(super) fn parse_searxng_results(
     Ok(results
         .iter()
         .filter_map(|r| {
+            let url = text(r, "url");
+            if url.chars().count() > URL_CAP
+                || !(url.starts_with("http://") || url.starts_with("https://"))
+            {
+                return None;
+            }
             let content = Some(text(r, "content")).filter(|c| !c.is_empty());
-            let snippet: String = content
-                .unwrap_or_else(|| text(r, "snippet"))
-                .chars()
-                .take(CONTENT_CAP)
-                .collect();
+            let snippet = cap_chars(&content.unwrap_or_else(|| text(r, "snippet")), CONTENT_CAP);
             (!snippet.is_empty()).then(|| SearchResult {
-                title: text(r, "title"),
+                title: cap_chars(&text(r, "title"), super::TITLE_CAP),
                 snippet,
-                url: text(r, "url"),
+                url,
             })
         })
         .take(limit)

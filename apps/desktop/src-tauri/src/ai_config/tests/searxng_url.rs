@@ -86,6 +86,34 @@ fn a_tampered_backup_cannot_restore_an_invalid_url() {
     );
 }
 
+/// A stored value that fails today's rules (written before they tightened, or planted by a
+/// restore) is never returned: not to the egress path, not to `ai_search_settings`.
+#[test]
+fn an_invalid_stored_value_reads_as_unset() {
+    let (_dir, store) = new_store();
+    for bad in [
+        "http://search.example.org",
+        "https://user:pw@host.example.org",
+        "ftp://x",
+    ] {
+        AiConfigStore::write_searxng_url_conn(&store.conn.lock(), Some(bad)).unwrap();
+        assert_eq!(store.searxng_url(), None, "{bad}");
+        assert!(store.export().get("searxng_url").is_none());
+    }
+}
+
+#[test]
+fn credentials_in_the_url_are_refused() {
+    let (_dir, store) = new_store();
+    assert!(store
+        .set_searxng_url(Some("https://u:p@search.example.org"))
+        .is_err());
+    assert!(store
+        .set_searxng_url(Some("https://u@search.example.org"))
+        .is_err());
+    assert_eq!(store.searxng_url(), None);
+}
+
 #[test]
 fn an_unconfigured_export_omits_the_field() {
     let (_dir, store) = new_store();

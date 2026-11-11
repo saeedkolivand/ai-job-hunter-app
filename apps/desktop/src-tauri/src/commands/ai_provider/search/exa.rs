@@ -164,11 +164,10 @@ pub(super) fn parse_exa_results(body: &serde_json::Value, limit: usize) -> Vec<S
                                 .map(|t| t.chars().take(TEXT_FALLBACK_CAP).collect())
                         })?;
                     Some(SearchResult {
-                        title: r
-                            .get("title")
-                            .and_then(|t| t.as_str())
-                            .unwrap_or_default()
-                            .to_string(),
+                        title: super::cap_chars(
+                            r.get("title").and_then(|t| t.as_str()).unwrap_or_default(),
+                            super::TITLE_CAP,
+                        ),
                         snippet,
                         url: r
                             .get("url")

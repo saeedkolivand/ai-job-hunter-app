@@ -18,7 +18,8 @@
 use serde_json::json;
 
 use super::super::searxng::{normalize_searxng_url, parse_searxng_results, searxng_status_error};
-use crate::error::AppError;
+use super::super::{falls_through, SearxngSearcher, WebSearcher};
+use crate::error::{AppError, FailureKind};
 
 fn fixture(raw: &str) -> serde_json::Value {
     serde_json::from_str(raw).expect("fixture is valid JSON")
@@ -48,8 +49,8 @@ fn maps_a_rustxng_response() {
 #[test]
 fn reads_snippet_when_there_is_no_content() {
     let body = json!({ "results": [
-        { "url": "u1", "title": "t1", "snippet": "from snippet" },
-        { "url": "u2", "title": "t2", "content": "from content", "snippet": "ignored" },
+        { "url": "https://u1.test", "title": "t1", "snippet": "from snippet" },
+        { "url": "https://u2.test", "title": "t2", "content": "from content", "snippet": "ignored" },
     ]});
     let out = parse_searxng_results(&body, 10).unwrap();
     assert_eq!(out[0].snippet, "from snippet");
@@ -60,7 +61,7 @@ fn reads_snippet_when_there_is_no_content() {
 fn honours_the_limit_and_caps_content_on_a_char_boundary() {
     let long = "é".repeat(5_000);
     let results: Vec<_> = (0..6)
-        .map(|i| json!({ "url": format!("u{i}"), "title": "t", "content": long }))
+        .map(|i| json!({ "url": format!("https://u{i}.test"), "title": "t", "content": long }))
         .collect();
     let out = parse_searxng_results(&json!({ "results": results }), 3).unwrap();
     assert_eq!(out.len(), 3);
@@ -120,6 +121,21 @@ fn the_url_must_be_http_or_https_with_a_host() {
         Some("https://search.example.org/searx".to_string())
     );
     assert_eq!(normalize_searxng_url("   ").unwrap(), None);
+    // Plain http only for this machine and the local network.
+    for ok in [
+        "http://127.0.0.1:8888",
+        "http://192.168.1.20:8080",
+        "http://10.0.0.5",
+        "http://localhost",
+        "http://searx.local:8888",
+        "http://[::1]:8888",
+        "https://search.example.org",
+    ] {
+        assert!(
+            normalize_searxng_url(ok).unwrap().is_some(),
+            "{ok} must be accepted"
+        );
+    }
     for bad in [
         "ftp://host",
         "file:///etc/passwd",
@@ -127,6 +143,11 @@ fn the_url_must_be_http_or_https_with_a_host() {
         "not a url",
         "http://",
         "http://169.254.169.254",
+        "https://user@host.example.org",
+        "https://user:pass@host.example.org",
+        "http://:secret@localhost:8888",
+        "http://search.example.org",
+        "http://8.8.8.8:8888",
         "https://host/?q=1",
         "https://host/#frag",
     ] {
@@ -135,4 +156,73 @@ fn the_url_must_be_http_or_https_with_a_host() {
             "{bad} must be rejected"
         );
     }
+}
+
+/// An EMPTY `results` beside failed engines is `Unavailable`, not "found nothing". Mutation
+/// check: drop the `engines_failed` branch and the first assertion fails.
+#[test]
+fn empty_results_with_unresponsive_engines_is_unavailable() {
+    let body = json!({
+        "results": [],
+        "unresponsive_engines": [["duckduckgo", "CAPTCHA"], ["brave", "suspended: too many requests"]]
+    });
+    let err = parse_searxng_results(&body, 5).err().unwrap();
+    assert_eq!(
+        FailureKind::of(&err),
+        Some(FailureKind::Unavailable),
+        "{err}"
+    );
+    assert!(!falls_through(&err));
+    // Plain empty, or results alongside failed engines, are answers.
+    assert!(
+        parse_searxng_results(&json!({ "results": [], "unresponsive_engines": [] }), 5)
+            .unwrap()
+            .is_empty()
+    );
+    let partial = json!({
+        "results": [{ "url": "https://a.test", "title": "t", "content": "c" }],
+        "unresponsive_engines": [["brave", "timeout"]]
+    });
+    assert_eq!(parse_searxng_results(&partial, 5).unwrap().len(), 1);
+}
+
+#[test]
+fn title_is_capped_and_a_result_without_an_http_url_is_dropped() {
+    let body = json!({ "results": [
+        { "url": "https://a.test", "title": "é".repeat(500), "content": "c" },
+        { "url": "javascript:alert(1)", "title": "t", "content": "c" },
+        { "url": "", "title": "t", "content": "c" },
+        { "url": format!("https://a.test/{}", "x".repeat(3_000)), "title": "t", "content": "c" },
+    ]});
+    let out = parse_searxng_results(&body, 10).unwrap();
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].title.chars().count(), 200);
+}
+
+/// Mutation check: put reqwest's own `Display` (which embeds the URL and the `q=` text) back in
+/// the message and the kind turns into Billing/Auth, and the query leaks into the error.
+/// A real request against a closed loopback port, with a query a text sniffer would misread.
+#[tokio::test]
+async fn an_unreachable_server_is_unavailable_and_never_echoes_the_query() {
+    let port = {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        l.local_addr().unwrap().port()
+    };
+    let searcher = SearxngSearcher::new(&format!("http://127.0.0.1:{port}")).unwrap();
+    let err = searcher
+        .try_search("Route 401 Ltd Hospital 402 401(k) 403", 5)
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(
+        FailureKind::of(&err),
+        Some(FailureKind::Unavailable),
+        "{err}"
+    );
+    assert!(!falls_through(&err));
+    let text = err.to_string();
+    assert!(
+        !text.contains("401") && !text.contains("127.0.0.1"),
+        "{text}"
+    );
 }

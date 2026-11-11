@@ -1,8 +1,8 @@
 use tempfile::TempDir;
 
 use super::{
-    cache_key, is_no_info, settle, FailureKind, ResearchStatus, SearchBackend, StageIdentity,
-    CACHE_NS, TTL_SECS,
+    attributable_backend, cache_key, is_no_info, settle, FailureKind, ResearchStatus,
+    SearchBackend, StageIdentity, CACHE_NS, TTL_SECS,
 };
 use crate::error::AppError;
 use crate::pipeline::cache::KvCache;
@@ -199,4 +199,26 @@ fn an_answer_with_nothing_in_it_is_empty_and_a_real_brief_is_ok() {
         ResearchStatus::Empty.wire(),
         serde_json::json!({ "status": "empty" })
     );
+}
+
+/// A deadline names no backend (the one in flight had not answered); otherwise the backend whose
+/// search last returned stays named, even when synthesis then failed. Mutation check: ignore
+/// `timed_out` and the first assertion fails.
+#[test]
+fn a_backend_is_named_unless_the_deadline_fired() {
+    let served = crate::ai_provider::ServedBackend::default();
+    assert_eq!(
+        attributable_backend(false, &served),
+        None,
+        "nothing returned yet"
+    );
+    served.set(SearchBackend::Native);
+    assert_eq!(attributable_backend(true, &served), None);
+    assert_eq!(
+        attributable_backend(false, &served),
+        Some(SearchBackend::Native)
+    );
+    // Synthesis (the user's own model) failing is classified from ITS error, not the backend's.
+    let (_, status) = settle(Some(Err(AppError::Billing("model out of credit".into()))));
+    assert_eq!(status, ResearchStatus::Failed(Some(FailureKind::Billing)));
 }

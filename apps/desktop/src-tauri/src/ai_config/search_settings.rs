@@ -33,7 +33,9 @@ impl AiConfigStore {
         )
         .ok()
         .flatten()
-        .filter(|u| !u.trim().is_empty())
+        // Re-validated on every read: a restored backup, or a rule tightened since the value
+        // was written, must not hand an invalid URL to the egress path or `ai_search_settings`.
+        .and_then(|u| normalize_searxng_url(&u).ok().flatten())
     }
 
     pub(super) fn write_searxng_url_conn(conn: &Connection, url: Option<&str>) -> AppResult<()> {

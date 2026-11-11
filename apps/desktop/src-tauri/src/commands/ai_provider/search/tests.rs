@@ -197,14 +197,14 @@ fn a_chain_never_prefers_a_fallback_over_a_ready_native_searcher() {
     // pairs the tag with the searcher a fetch would use.
     let r = route(fake_searcher(), fake_searcher(), fake_searcher());
     assert_eq!(r.backend(), SearchBackend::Native);
-    assert_eq!(r.served().get(), Some(SearchBackend::Native));
+    assert_eq!(r.served().get(), None, "named only once a search returned");
 }
 
 #[test]
 fn a_chain_starts_at_searxng_when_native_is_absent() {
     let r = route(None, fake_searcher(), fake_searcher());
     assert_eq!(r.backend(), SearchBackend::Searxng);
-    assert_eq!(r.served().get(), Some(SearchBackend::Searxng));
+    assert_eq!(r.served().get(), None, "named only once a search returned");
 }
 
 #[test]

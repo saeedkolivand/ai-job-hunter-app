@@ -35,8 +35,6 @@
 //! prompt-injection guard (search results are attacker-reachable text) and the
 //! `is_no_info` filter, and it would move generation spend to a second vendor.
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use tauri::AppHandle;
 
@@ -55,7 +53,15 @@ pub use searxng::{normalize_searxng_url, SearxngSearcher};
 /// every existing consumer of `commands::ai_provider::search::SearchBackend`
 /// keeps compiling unchanged; see that module's doc comment for the full
 /// reasoning.
-pub use crate::ai_provider::SearchBackend;
+pub use crate::ai_provider::{SearchBackend, ServedBackend};
+
+/// Longest title passed on to synthesis, in chars. A title is remote text going into a prompt.
+pub(super) const TITLE_CAP: usize = 200;
+
+/// `s` cut to `max` chars (never mid-character).
+pub(super) fn cap_chars(s: &str, max: usize) -> String {
+    s.chars().take(max).collect()
+}
 
 /// The backends one research pass may use, in the order it tries them: native, then
 /// SearXNG-compatible (free and local), then Exa (paid). Pure, so the policy is testable
@@ -103,26 +109,6 @@ pub fn falls_through(e: &AppError) -> bool {
     )
 }
 
-/// Which backend a research pass reached, shared between the chain (which writes it as it
-/// goes) and the caller (which reads it after the pass, even when the pass timed out). Set to
-/// the backend ABOUT to be tried, so a deadline names the one it was waiting on.
-#[derive(Clone, Default)]
-pub struct ServedBackend(Arc<parking_lot::Mutex<Option<SearchBackend>>>);
-
-impl ServedBackend {
-    fn of(backend: SearchBackend) -> Self {
-        Self(Arc::new(parking_lot::Mutex::new(Some(backend))))
-    }
-
-    fn set(&self, backend: SearchBackend) {
-        *self.0.lock() = Some(backend);
-    }
-
-    pub fn get(&self) -> Option<SearchBackend> {
-        *self.0.lock()
-    }
-}
-
 /// The resolved backends of one pass, in [`search_order`] order, behaving as ONE
 /// [`WebSearcher`] that falls through per [`falls_through`].
 pub struct SearchChain {
@@ -148,10 +134,10 @@ impl SearchChain {
             .into_iter()
             .filter_map(|b| Some((b, pool.iter_mut().find(|(k, _)| *k == b)?.1.take()?)))
             .collect();
-        let served = candidates
-            .first()
-            .map_or_else(ServedBackend::default, |(b, _)| ServedBackend::of(*b));
-        Self { candidates, served }
+        Self {
+            candidates,
+            served: ServedBackend::default(),
+        }
     }
 
     fn is_empty(&self) -> bool {
@@ -170,8 +156,11 @@ impl WebSearcher for SearchChain {
     async fn try_search(&self, query: &str, limit: usize) -> AppResult<Vec<SearchResult>> {
         let mut rest = self.candidates.iter().peekable();
         while let Some((backend, searcher)) = rest.next() {
+            let outcome = searcher.try_search(query, limit).await;
+            // Recorded only once the search RETURNED, so a later failure (synthesis on the
+            // user's own model) or a deadline is never pinned on a backend still in flight.
             self.served.set(*backend);
-            match searcher.try_search(query, limit).await {
+            match outcome {
                 Err(e) if rest.peek().is_some() && falls_through(&e) => {
                     tracing::warn!(
                         backend = backend.as_str(),
@@ -327,7 +316,7 @@ impl CompanySearchRoute {
     }
 
     /// A handle the caller keeps across the move into [`fetch_company_brief`], to name the
-    /// backend that served the pass (or was being tried when it timed out) afterwards.
+    /// backend that served the pass afterwards.
     pub fn served(&self) -> ServedBackend {
         match self {
             Self::Native => ServedBackend::of(SearchBackend::Native),

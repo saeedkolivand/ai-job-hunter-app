@@ -166,15 +166,81 @@ async fn a_single_backend_failure_is_returned_as_is() {
     assert_eq!(calls(&n), 1);
 }
 
-/// SearXNG failing on billing/auth-shaped refusal (403, JSON disabled) hands on to Exa;
-/// its 5xx does not.
+/// The owner decision: SearXNG-compatible servers are keyless and user-run, so NO failure of
+/// theirs falls through, whatever the status. Mutation check: map 401/403 to a text containing
+/// "401"/"403" (or widen `falls_through`) and a case below fails.
+#[test]
+fn no_searxng_failure_falls_through() {
+    use reqwest::StatusCode as S;
+    for status in [
+        S::UNAUTHORIZED,
+        S::FORBIDDEN,
+        S::PAYMENT_REQUIRED,
+        S::TOO_MANY_REQUESTS,
+        S::BAD_REQUEST,
+        S::INTERNAL_SERVER_ERROR,
+        S::BAD_GATEWAY,
+    ] {
+        let e = super::super::searxng::searxng_status_error(status);
+        assert!(!falls_through(&e), "{status} must not fall through: {e}");
+    }
+}
+
+/// Native out of credit, SearXNG then fails (JSON disabled): the pass ends there. Exa is
+/// never reached, so the query is not sent to a second vendor.
 #[tokio::test]
-async fn a_searxng_403_falls_through_but_its_5xx_does_not() {
-    let refused = super::super::searxng::searxng_status_error(reqwest::StatusCode::FORBIDDEN);
-    assert!(falls_through(&refused));
-    let down = super::super::searxng::searxng_status_error(reqwest::StatusCode::BAD_GATEWAY);
-    assert!(!falls_through(&down));
-    assert!(!falls_through(
-        &super::super::searxng::searxng_status_error(reqwest::StatusCode::TOO_MANY_REQUESTS)
+async fn a_failing_searxng_does_not_hand_the_query_to_exa() {
+    fn refused() -> AppResult<Vec<SearchResult>> {
+        Err(super::super::searxng::searxng_status_error(
+            reqwest::StatusCode::FORBIDDEN,
+        ))
+    }
+    let (native, n) = scripted(billing);
+    let (searxng, s) = scripted(refused);
+    let (exa, e) = scripted(hit);
+    let chain = SearchChain::new(native, searxng, exa);
+    assert!(matches!(
+        chain.try_search("q", 5).await,
+        Err(AppError::Config(_))
     ));
+    assert_eq!((calls(&n), calls(&s), calls(&e)), (1, 1, 0));
+    assert_eq!(chain.served.get(), Some(SearchBackend::Searxng));
+}
+
+/// A backend is named only once its search has RETURNED: while it is still in flight nothing is
+/// named, so a deadline (or a later synthesis failure) is never pinned on a pending backend.
+#[tokio::test]
+async fn a_backend_is_named_only_after_its_search_returned() {
+    struct Probe(
+        ServedBackend,
+        Arc<parking_lot::Mutex<Vec<Option<SearchBackend>>>>,
+    );
+    #[async_trait]
+    impl WebSearcher for Probe {
+        async fn try_search(&self, _q: &str, _l: usize) -> AppResult<Vec<SearchResult>> {
+            self.1.lock().push(self.0.get());
+            hit()
+        }
+    }
+    let seen = Arc::new(parking_lot::Mutex::new(Vec::new()));
+    let (native, _n) = scripted(billing);
+    let chain = SearchChain::new(native, None, None);
+    let probe = Probe(chain.served.clone(), seen.clone());
+    let chain = SearchChain {
+        candidates: vec![
+            (
+                SearchBackend::Native,
+                chain.candidates.into_iter().next().unwrap().1,
+            ),
+            (SearchBackend::Searxng, Box::new(probe)),
+        ],
+        served: chain.served,
+    };
+    chain.try_search("q", 5).await.unwrap();
+    assert_eq!(
+        *seen.lock(),
+        [Some(SearchBackend::Native)],
+        "while searxng ran, only the already-returned native was named"
+    );
+    assert_eq!(chain.served.get(), Some(SearchBackend::Searxng));
 }

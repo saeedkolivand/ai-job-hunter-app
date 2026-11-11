@@ -29,6 +29,28 @@ pub enum SearchBackend {
     None,
 }
 
+use std::sync::Arc;
+
+/// Which backend a research pass reached, shared between the chain (which writes it as it
+/// goes) and the caller (which reads it after the pass). Set to a backend only once its
+/// search has returned, `Ok` or `Err`.
+#[derive(Clone, Default)]
+pub struct ServedBackend(Arc<parking_lot::Mutex<Option<SearchBackend>>>);
+
+impl ServedBackend {
+    pub(crate) fn of(backend: SearchBackend) -> Self {
+        Self(Arc::new(parking_lot::Mutex::new(Some(backend))))
+    }
+
+    pub(crate) fn set(&self, backend: SearchBackend) {
+        *self.0.lock() = Some(backend);
+    }
+
+    pub fn get(&self) -> Option<SearchBackend> {
+        *self.0.lock()
+    }
+}
+
 impl SearchBackend {
     /// Stable string term for a cache key (e.g.
     /// `cover_letter::research`'s `company_brief` key) — not `Debug`, so a
