@@ -229,12 +229,10 @@ fn real_multi_word_regions_render_readably_and_match_the_requested_region() {
             region: Some(requested.into()),
             ..Default::default()
         };
-        assert!(
-            !matches!(
-                location_verdict(Some(&loc), false, &spec),
-                LocationVerdict::Mismatch
-            ),
-            "{requested} must not mismatch {loc}"
+        assert_eq!(
+            location_verdict(Some(&loc), false, &spec),
+            LocationVerdict::PlaceMatch,
+            "{requested} must place-match {loc}"
         );
     }
 }

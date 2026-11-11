@@ -69,10 +69,29 @@ pub(super) fn resolve_found_job(
             && !j.score_provisional
             && j.description.as_deref().is_some_and(|d| !blank(d))
     };
+    // An exact spelling wins. The normalizer can collapse two postings that differ only by a
+    // query-string id on a host outside its allowlist, so a normalized-only match that spans
+    // more than one distinct stored URL is ambiguous and refused rather than guessed.
+    let exact_url = req.job_url.trim();
+    let mut candidates: Vec<&FoundJob> = matching()
+        .filter(|j| j.url == exact_url)
+        .filter(usable)
+        .collect();
+    if candidates.is_empty() {
+        candidates = matching().filter(usable).collect();
+        let distinct: std::collections::HashSet<&str> =
+            candidates.iter().map(|j| j.url.as_str()).collect();
+        if distinct.len() > 1 {
+            return Err(AppError::Validation(
+                "jobUrl matches more than one found job; pass jobId to pick one".to_string(),
+            ));
+        }
+    }
     // The same posting can sit in several autopilots: the most text wins, then the most recently
     // found, then the url — a total order, so the pick never depends on store iteration order.
-    let found = matching()
-        .filter(usable)
+    let found = candidates
+        .iter()
+        .copied()
         .max_by(|a, b| {
             let len = |j: &FoundJob| j.description.as_deref().map_or(0, str::len);
             (len(a), a.found_at, &a.url).cmp(&(len(b), b.found_at, &b.url))

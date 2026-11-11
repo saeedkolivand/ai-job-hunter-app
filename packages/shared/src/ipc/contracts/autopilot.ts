@@ -12,14 +12,14 @@ export interface AutopilotContract {
   /**
    * Every autopilot.
    *
-   * @agent Every autopilot as a summary: `foundJobs` is replaced by `foundJobsTotal` (page the postings with the found-jobs resource) and `resumeText` by `hasResumeText`; per-board outcomes of the last run are in `lastRunSummaries`. autopilot_get returns one full record.
+   * @agent Every autopilot as a summary: `foundJobs` is replaced by `foundJobsTotal` (page the postings with the found-jobs resource) and `resumeText` by `hasResumeText`; `coverLetter` is omitted; per-board outcomes of the last run are in `lastRunSummaries`. autopilot_get returns one full record.
    */
   list(): Promise<Autopilot[]>;
 
   get(req: { autopilotId: string }): Promise<Autopilot | null>;
 
   /**
-   * Resolves with the saved record; `warning` is set when no resume text and no default document exist; it is for agent/MCP callers, the UI does not show it.
+   * Resolves with the saved record; `warning` is set when no resume text and no default document exist (agent/MCP callers read it; the wizard shows a localized notice).
    *
    * @agent Create a scheduled job-search autopilot. Body `{"req": {...}}` (JSON Schema in `args[].schema`): required `name`, `target` ({boards[], query, optional location/countryCode/workTypes/pages/dateFilter}), `filter` ({minMatchScore 0-100, optional keywords/excludeKeywords}) and `schedule` (manual|hourly|daily|twice_daily); `scheduleHour`/`scheduleMinute` set the clock time. `resumeText` is the text runs score against; leave it out or blank and each run uses the default document's text instead, and the reply carries a `warning` when neither exists. `dateFilter` outside its allowed values is refused. The reply is the saved record plus the optional `warning`.
    */
@@ -30,7 +30,9 @@ export interface AutopilotContract {
    *
    * @agent Patch an autopilot. Body `{"autopilotId": "<id>", "req": {...}}`; `req` takes any subset of the create fields plus `status` (active|paused|archived). Omitted fields keep their stored value; there is no way to clear one back to unset. `target` and `filter` are replaced whole, not merged: send every field you want to keep, because an omitted `target.pages` or `filter.minMatchScore` inside a supplied object resets to its default (2 and 0). `resumeText: ""` stores a blank, which a run treats as "use the default document". `assistant: false` also drops the stored provider, model and base URL. An unknown id resolves to `null`.
    */
-  update(req: { autopilotId: string } & AutopilotUpdate): Promise<Autopilot & { warning?: string }>;
+  update(
+    req: { autopilotId: string } & AutopilotUpdate
+  ): Promise<(Autopilot & { warning?: string }) | null>;
 
   /** Permanently delete this autopilot and stop its scheduled runs — the found-jobs history it built goes with it. */
   remove(req: { autopilotId: string }): Promise<void>;

@@ -15,13 +15,13 @@ use crate::pipeline::{Pipeline, Stage, StageHooks, StageInfo, StageOutcome};
 /// link connecting the two ends that only a source read can confirm without
 /// a live run.
 ///
-/// Mutation check: change the timeout arm's `data` field back to `None` (the
+/// Mutation check: change the timeout arm's data argument back to `None` (the
 /// pre-fix shape) and this fails.
 #[test]
 fn executes_timeout_arm_attaches_the_structured_failure_data() {
     let source = include_str!("../run.rs");
     assert!(
-        source.contains("data: Some(hooks::timeout_failure_data(stage, ms, lowest))"),
+        source.contains("Some(hooks::timeout_failure_data(stage, ms, lowest))"),
         "execute's per-call-timeout arm must attach timeout_failure_data to the \
          ExecuteFailure it returns — otherwise job.failed's event carries no \
          structured payload and the renderer's timeout banner never renders"

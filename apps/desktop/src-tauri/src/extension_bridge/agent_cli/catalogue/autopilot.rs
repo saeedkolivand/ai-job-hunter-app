@@ -34,7 +34,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "autopilot_list",
-        description: "Every autopilot as a summary: `foundJobs` is replaced by `foundJobsTotal` (page the postings with the found-jobs resource) and `resumeText` by `hasResumeText`; per-board outcomes of the last run are in `lastRunSummaries`. autopilot_get returns one full record.",
+        description: "Every autopilot as a summary: `foundJobs` is replaced by `foundJobsTotal` (page the postings with the found-jobs resource) and `resumeText` by `hasResumeText`; `coverLetter` is omitted; per-board outcomes of the last run are in `lastRunSummaries`. autopilot_get returns one full record.",
         args: &[],
     },
     CatalogueEntry {

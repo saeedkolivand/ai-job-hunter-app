@@ -1271,12 +1271,14 @@ get(req: { autopilotId: string }): Promise<Autopilot | null>;
 create(req: AutopilotCreate): Promise<Autopilot & { warning?: string }>;
 ```
 
-Resolves with the saved record; `warning` is set when no resume text and no default document exist; it is for agent/MCP callers, the UI does not show it.
+Resolves with the saved record; `warning` is set when no resume text and no default document exist (agent/MCP callers read it; the wizard shows a localized notice).
 
 #### `autopilot.update`
 
 ```ts
-update(req: { autopilotId: string } & AutopilotUpdate): Promise<Autopilot & { warning?: string }>;
+update(
+    req: { autopilotId: string } & AutopilotUpdate
+  ): Promise<(Autopilot & { warning?: string }) | null>;
 ```
 
 Same reply as `create`, including the optional `warning`.

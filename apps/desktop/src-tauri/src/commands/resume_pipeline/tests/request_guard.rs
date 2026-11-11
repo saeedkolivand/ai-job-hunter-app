@@ -209,3 +209,32 @@ fn an_escaped_stored_description_is_decoded_before_it_reaches_the_prompts() {
     resolve_found_job(&mut req, &[ap]).expect("resolves");
     assert_eq!(req.job_ad_text, "Own the payments platform.");
 }
+
+/// Two postings that differ only by a query-string id collapse under `normalize_job_url` on a
+/// host outside its allowlist. Mutation check: match on the normalized form only and the exact
+/// case picks the longer description of the OTHER job, the ambiguous case resolves silently.
+#[test]
+fn a_job_url_prefers_the_exact_posting_and_refuses_an_ambiguous_collapse() {
+    let first = "https://careers.example.org/view?id=1";
+    let second = "https://careers.example.org/view?id=2";
+    assert_eq!(
+        crate::applications::normalize_job_url(first),
+        crate::applications::normalize_job_url(second),
+        "premise: the normalizer collapses the pair"
+    );
+    let ap = autopilot_with(vec![
+        described(first, Some("short text")),
+        described(
+            second,
+            Some("a much longer description of the other posting"),
+        ),
+    ]);
+
+    let mut exact = request(json!({ "jobUrl": first }));
+    resolve_found_job(&mut exact, std::slice::from_ref(&ap)).expect("exact wins");
+    assert_eq!(exact.job_ad_text, "short text");
+
+    let mut ambiguous = request(json!({ "jobUrl": "https://careers.example.org/view?id=3" }));
+    let err = err_text(resolve_found_job(&mut ambiguous, &[ap]));
+    assert!(err.contains("jobId"), "{err}");
+}

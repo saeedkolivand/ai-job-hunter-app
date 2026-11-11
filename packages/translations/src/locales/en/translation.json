@@ -2332,6 +2332,7 @@
       "alreadyRunning": "A run is already in progress for this autopilot.",
       "createFailed": "Failed to create autopilot",
       "updateFailed": "Failed to update autopilot",
+      "noResumeWarning": "This autopilot has no resume text and there is no default document, so runs cannot score jobs against a resume. Add a resume or set a default document.",
       "running": "Running…",
       "run": "Run",
       "never": "Never",

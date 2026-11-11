@@ -28,6 +28,25 @@ fn tag_param_respects_jobicy_3_to_20_char_limit() {
 }
 
 #[test]
+fn locally_filtered_requests_ask_for_the_documented_max_count() {
+    use super::build_url;
+    // Exact tag: server-side search is authoritative, count follows `amount`.
+    let (url, local) = build_url("Frontend Developer", 10);
+    assert!(!local);
+    assert!(url.contains("count=10&"), "{url}");
+    // Shortened tag: local filter, so over-fetch to the documented max.
+    let (url, local) = build_url("senior backend engineer", 10);
+    assert!(local);
+    assert!(url.contains("count=50&tag=senior%20backend"), "{url}");
+    // Dropped tag (too short) is also locally filtered.
+    let (url, local) = build_url("ab", 10);
+    assert!(local);
+    assert!(url.ends_with("count=50"), "{url}");
+    // Exact path still clamps to the documented cap.
+    assert!(build_url("rust", 500).0.contains("count=50&"));
+}
+
+#[test]
 fn truncated_tag_results_are_narrowed_to_the_full_query() {
     use super::{map_job, matches_all_tokens, Job};
     let job = |title: &str| {

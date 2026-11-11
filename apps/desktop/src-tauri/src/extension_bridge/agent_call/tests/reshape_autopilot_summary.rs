@@ -48,6 +48,7 @@ fn the_summary_swaps_both_heavy_fields_for_a_count_and_a_flag() {
         autopilot(2, 0, Some("   ")),
         autopilot(3, 1, None),
     ]);
+    data[0]["coverLetter"] = json!("Dear hiring team, ".repeat(100));
     // The premise, read off the real struct: these ARE the keys the wire carries.
     assert!(data[0].get("foundJobs").is_some() && data[0].get("resumeText").is_some());
 
@@ -55,6 +56,10 @@ fn the_summary_swaps_both_heavy_fields_for_a_count_and_a_flag() {
 
     for row in data.as_array().unwrap() {
         assert!(row.get("foundJobs").is_none() && row.get("resumeText").is_none());
+        assert!(
+            row.get("coverLetter").is_none(),
+            "the unbounded letter is dropped"
+        );
     }
     assert_eq!(data[0]["foundJobsTotal"], 3);
     assert_eq!(data[0]["hasResumeText"], true);

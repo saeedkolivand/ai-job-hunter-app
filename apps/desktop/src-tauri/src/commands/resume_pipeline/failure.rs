@@ -38,26 +38,32 @@ pub(super) fn message_of(error: &AppError) -> String {
 
 /// Make the failed run readable: create the row if the run died before `execute` wrote one,
 /// close it if it was left `running`, and stamp the kind + message into its metrics.
-/// `job_url` is only used for a row that did not exist.
+/// `fallback_job_url` is the store key for a row that did not exist; `None` means no row may be
+/// created (the run's own row was written and has since been deleted — the delete wins — or the
+/// posting has no resolvable URL, which would pool every such failure under one empty key).
 pub(super) fn record(
     store: &PipelineRunStore,
     run_id: &str,
-    job_url: &str,
+    fallback_job_url: Option<&str>,
     started_at: u64,
     error: &AppError,
 ) {
     let now = crate::db::now_ms();
-    let mut row = store.run(run_id).unwrap_or_else(|| RunRow {
-        id: run_id.to_string(),
-        job_url: job_url.to_string(),
-        kind: RUN_KIND.to_string(),
-        depth: RUN_DEPTH.to_string(),
-        status: STATUS_FAILED.to_string(),
-        started_at,
-        finished_at: Some(now),
-        stopped_reason: None,
-        metrics_json: "{}".to_string(),
-    });
+    let Some(mut row) = store.run(run_id).or_else(|| {
+        Some(RunRow {
+            id: run_id.to_string(),
+            job_url: fallback_job_url?.to_string(),
+            kind: RUN_KIND.to_string(),
+            depth: RUN_DEPTH.to_string(),
+            status: STATUS_FAILED.to_string(),
+            started_at,
+            finished_at: Some(now),
+            stopped_reason: None,
+            metrics_json: "{}".to_string(),
+        })
+    }) else {
+        return;
+    };
     if row.status == STATUS_RUNNING {
         row.status = STATUS_FAILED.to_string();
         row.finished_at = Some(now);
@@ -81,50 +87,79 @@ pub(super) fn record(
     store.prune();
 }
 
-/// The retention key for a failed run that never got a row from `execute`: the resolved posting
-/// where it can be known, else a key unique to this run. Never the shared `""` — failures pooled
-/// there would be pruned three at a time, and the fourth would evict the first and bring back
-/// the null this module exists to remove.
+/// The retention key for a failed run that never got a row from `execute`: the same decision
+/// `execute` makes once it has resolved the posting (the cached posting's own URL wins on the
+/// `jobId` path), else a key unique to this run. Never the shared `""` — failures pooled there
+/// would be pruned three at a time, and the fourth would evict the first and bring back the null
+/// this module exists to remove.
 pub(super) fn failure_job_url(
     request_url: &str,
     source: Option<resolve::JobSource<'_>>,
     cached_url: Option<String>,
     run_id: &str,
 ) -> String {
+    // `cached_url` is only ever looked up on the `Cache` path.
+    if let Some(url) = cached_url.filter(|url| !url.trim().is_empty()) {
+        return url;
+    }
     if !request_url.trim().is_empty() {
         return request_url.to_string();
     }
     match source {
-        Some(resolve::JobSource::Cache(_)) => cached_url
-            .filter(|url| !url.trim().is_empty())
-            .unwrap_or_else(|| resolve::unlinked_run_key(run_id)),
         Some(resolve::JobSource::Text(text)) => resolve::unlinked_run_key(text),
-        None => resolve::unlinked_run_key(run_id),
+        _ => resolve::unlinked_run_key(run_id),
     }
 }
 
-/// Leave the failed run readable through `resume_pipeline_get` (see [`failure::record`]).
+/// Leave the failed run readable through `resume_pipeline_get` (see [`record`]).
+/// `row_written`: `execute` already wrote this run's row, so a missing row was deleted and stays so.
 pub(super) fn record_failure(
     app: &AppHandle,
     run_id: &str,
     req: &ResumePipelineRunRequest,
     started_at: u64,
     error: &AppError,
+    row_written: bool,
 ) {
-    // The run store's key for a row that never got one from `execute`: the same decision
-    // `execute` makes once it has resolved the posting.
     let clamped = resolve::clamp_request(req);
-    let source = resolve::job_source(&clamped.job_id, &clamped.job_ad_text);
-    let cached_url = match source {
-        Some(resolve::JobSource::Cache(id)) => {
-            crate::commands::match_resume::job_meta_for(app, id).map(|meta| meta.url)
-        }
-        _ => None,
-    };
-    let job_url = failure_job_url(&clamped.job_url, source, cached_url, run_id);
+    let job_url = (!row_written).then(|| {
+        let source = resolve::job_source(&clamped.job_id, &clamped.job_ad_text);
+        let cached_url = match source {
+            Some(resolve::JobSource::Cache(id)) => {
+                crate::commands::match_resume::job_meta_for(app, id).map(|meta| meta.url)
+            }
+            _ => None,
+        };
+        failure_job_url(&clamped.job_url, source, cached_url, run_id)
+    });
     if let Some(store) = app.try_state::<PipelineRunStore>() {
-        record(&store, run_id, &job_url, started_at, error);
+        record(&store, run_id, job_url.as_deref(), started_at, error);
     }
+}
+
+/// A failed run's whole teardown: the readable row ([`record_failure`]), then the job and its
+/// cancel registration ([`fail`]).
+pub(super) async fn fail_run(
+    app: &AppHandle,
+    job_id: &str,
+    run_id: &str,
+    req: &ResumePipelineRunRequest,
+    started_at: u64,
+    failure: ExecuteFailure,
+) {
+    record_failure(
+        app,
+        run_id,
+        req,
+        started_at,
+        &failure.error,
+        failure.row_written,
+    );
+    let cancels = app
+        .state::<std::sync::Arc<CancelRegistry>>()
+        .inner()
+        .clone();
+    fail(app, &cancels, job_id, &failure.error, failure.data).await;
 }
 
 /// The failure [`execute`] hands its caller: a typed message plus OPTIONAL
@@ -137,11 +172,28 @@ pub(super) fn record_failure(
 pub(super) struct ExecuteFailure {
     pub(super) error: AppError,
     pub(super) data: Option<Value>,
+    /// `execute` had already written this run's row when it failed (see [`record_failure`]).
+    pub(super) row_written: bool,
+}
+
+impl ExecuteFailure {
+    /// A failure after `execute` wrote the run's row.
+    pub(super) fn after_row(error: AppError, data: Option<Value>) -> Self {
+        Self {
+            error,
+            data,
+            row_written: true,
+        }
+    }
 }
 
 impl From<AppError> for ExecuteFailure {
     fn from(error: AppError) -> Self {
-        Self { error, data: None }
+        Self {
+            error,
+            data: None,
+            row_written: false,
+        }
     }
 }
 

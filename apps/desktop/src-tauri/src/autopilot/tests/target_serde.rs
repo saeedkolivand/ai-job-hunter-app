@@ -223,3 +223,20 @@ fn unknown_date_filter_is_dropped_not_a_failed_load() {
     .unwrap();
     assert_eq!(ok.date_filter.as_deref(), Some("week"));
 }
+
+/// A non-string `dateFilter` must not fail the record (parse_records would drop the autopilot).
+/// Mutation check: deserialize `raw` as `Option<String>` again and the `7` case errors.
+#[test]
+fn non_string_date_filter_is_dropped_not_a_failed_load() {
+    for bad in [
+        serde_json::json!(7),
+        serde_json::json!(["week"]),
+        serde_json::Value::Null,
+    ] {
+        let target: AutopilotTarget = serde_json::from_value(serde_json::json!({
+            "boards": ["linkedin"], "query": "rust", "pages": 1, "dateFilter": bad,
+        }))
+        .unwrap_or_else(|e| panic!("{bad} must not fail the target: {e}"));
+        assert_eq!(target.date_filter, None, "{bad}");
+    }
+}
