@@ -1,0 +1,96 @@
+{
+  "ergebnisliste": [
+    {
+      "stellenangebotsart": "ARBEIT",
+      "stellenangebotsTitel": "Senior Frontend Angular Developer (all genders)",
+      "quereinstiegGeeignet": false,
+      "arbeitszeitSchichtNachtWochenende": false,
+      "arbeitszeitTeilzeitAbend": false,
+      "arbeitszeitTeilzeitNachmittag": true,
+      "arbeitszeitTeilzeitVormittag": true,
+      "arbeitszeitTeilzeitFlexibel": false,
+      "arbeitszeitVollzeit": true,
+      "eintrittszeitraum": {
+        "von": "2026-11-03"
+      },
+      "verguetungsangabe": "KEINE_ANGABEN",
+      "vertragsdauer": "UNBEFRISTET",
+      "istGeringfuegigeBeschaeftigung": false,
+      "stellenlokationen": [
+        {
+          "adresse": {
+            "plz": "10243",
+            "ort": "Berlin",
+            "region": "BERLIN",
+            "land": "DEUTSCHLAND"
+          },
+          "breite": 52.512791,
+          "laenge": 13.4401776
+        }
+      ],
+      "homeofficemoeglich": false,
+      "chiffrenummer": "2807299",
+      "veroeffentlichungszeitraum": {
+        "von": "2026-11-03"
+      },
+      "datumErsteVeroeffentlichung": "2026-11-03",
+      "aenderungsdatum": "2026-11-03T14:13:26.419",
+      "externeURL": "https://www.jobexport.de/job/5288611.html?exp=81&cid=8d04dc16-a5e8-4232-8f8f-099f11417652",
+      "hauptberuf": "Wirtschaftsinformatiker/in (Hochschule)",
+      "firma": "]init[ AG",
+      "referenznummer": "13635-8d04dc16_JB5288611-S",
+      "entfernung": 1,
+      "alleBerufe": ["Wirtschaftsinformatiker/in (Hochschule)"]
+    },
+    {
+      "stellenangebotsart": "ARBEIT",
+      "stellenangebotsTitel": "(Senior) Angular Frontend Developer im Bereich Critical Communication Systems",
+      "arbeitszeitSchichtNachtWochenende": false,
+      "arbeitszeitTeilzeitAbend": false,
+      "arbeitszeitTeilzeitNachmittag": false,
+      "arbeitszeitTeilzeitVormittag": false,
+      "arbeitszeitTeilzeitFlexibel": false,
+      "arbeitszeitVollzeit": true,
+      "eintrittszeitraum": {
+        "von": "2025-02-06"
+      },
+      "verguetungsangabe": "KEINE_ANGABEN",
+      "vertragsdauer": "UNBEFRISTET",
+      "stellenlokationen": [
+        {
+          "adresse": {
+            "ort": "Berlin",
+            "region": "BERLIN",
+            "land": "DEUTSCHLAND"
+          },
+          "breite": 52.4926832,
+          "laenge": 13.4025753
+        }
+      ],
+      "veroeffentlichungszeitraum": {
+        "von": "2024-04-11"
+      },
+      "datumErsteVeroeffentlichung": "2024-04-08",
+      "aenderungsdatum": "2025-07-19T21:19:03.000",
+      "hauptberuf": "Frontend-Entwickler/in",
+      "firma": "Best Profile",
+      "referenznummer": "10001-1000078259-S",
+      "entfernung": 3,
+      "alleBerufe": ["Frontend-Entwickler/in"]
+    }
+  ],
+  "maxErgebnisse": 12,
+  "page": 1,
+  "size": 3,
+  "woOutput": {
+    "bereinigterOrt": "Berlin",
+    "suchmodus": "UMKREISSUCHE",
+    "koordinaten": [
+      {
+        "lat": 52.5112613,
+        "lon": 13.4255145
+      }
+    ]
+  },
+  "facetten": {}
+}

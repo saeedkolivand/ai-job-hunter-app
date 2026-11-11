@@ -1,0 +1,83 @@
+{
+  "stellenangebotsart": "ARBEIT",
+  "stellenangebotsTitel": "(Senior) Angular Frontend Developer im Bereich Critical Communication Systems",
+  "stellenangebotsBeschreibung": "Stellenbeschreibung:\n\nDas Unternehmen ist ein Hightech-Software-Hersteller und Nischen-Champion für **kritische Kommunikationssysteme in Deutschland**. Als mittelständisches Unternehmen bietet es speziell auf dessen Kunden (aus dem Katastrophenschutz und Verteidigung) zugeschnittene Dienstleistungen und Softwaresysteme an. Das Team besteht aus zahlreichen, hochqualifizierten IT und Kommunikationsfachleuten. Die rund 170 Mitarbeiterinnen und Mitarbeiter arbeiten an sechs verschiedenen Standorten in der DACH-Region, nach Wunsch hybrid, im Office oder fully remote. Die Arbeitskultur ist agil mit Einsatz von Scrum.\n\n**Aufgaben:**\n\n- Mitarbeit in einem agilen Software-Entwicklungsteam bestehend aus internen und externen Mitarbeitenden\n- Verstehen der Feature-Anforderungen sowie kreative und kommunikative Beteiligung an der Lösungsfindung und deren Umsetzung\n- Aktive Beteiligung an der Fehleranalyse und -beseitigung\n- Erstellung der technischen Dokumentation\n- Implementierung von Unit- und Komponententests\n- Mitarbeit bei der Erstellung von Realisierungskonzepten, Aufwandsabschätzungen sowie modularen und erweiterbaren Software-Architekturen\n- Informationsweitergabe von innerhalb der Software erkannter Risiken z.B. hinsichtlich Erweiterbarkeit, Limitierungen oder Fehlerquellen\n- Unterstützung bei Integration und Test\n\n**Das bringst Du mit:**\n\n- Studium der Informatik, Elektro- und Informationstechnik, Informations- und Kommunikationstechnik **oder** mehrjährige Erfahrung als Fachinformatiker/-in im Bereich Anwendungsentwicklung **oder** vergleichbar\n- Praktische Erfahrung in der Entwicklung von webbasierten Anwendungen\n- Kenntnisse bei der Anwendung von gängigen Webtechnologien\n- Einschlägige Erfahrung mit Angular 13+\n- Erfahrung mit gängigen Werkzeugen der Webentwicklung (z.B. DevTools/Inspector, Postman, Swagger etc.)\n- Entwicklung selbstständiger Ideen für die Lösung von Kundenproblemen\n- Verständnis von agilen Methoden und das Einbringen von Best Practices in den Prozess",
+  "arbeitszeitSchichtNachtWochenende": false,
+  "arbeitszeitTeilzeitAbend": false,
+  "arbeitszeitTeilzeitNachmittag": false,
+  "arbeitszeitTeilzeitVormittag": false,
+  "arbeitszeitTeilzeitFlexibel": false,
+  "arbeitszeitVollzeit": true,
+  "eintrittszeitraum": {
+    "von": "2025-02-06"
+  },
+  "verguetungsangabe": "KEINE_ANGABEN",
+  "vertragsdauer": "UNBEFRISTET",
+  "stellenlokationen": [
+    {
+      "adresse": {
+        "ort": "Berlin",
+        "region": "BERLIN",
+        "land": "DEUTSCHLAND"
+      },
+      "breite": 52.4926832,
+      "laenge": 13.4025753
+    },
+    {
+      "adresse": {
+        "ort": "Nürnberg, Mittelfranken",
+        "region": "BAYERN",
+        "land": "DEUTSCHLAND"
+      },
+      "breite": 49.4348452,
+      "laenge": 11.1009041
+    },
+    {
+      "adresse": {
+        "ort": "Memmingen",
+        "region": "BAYERN",
+        "land": "DEUTSCHLAND"
+      },
+      "breite": 47.9831114,
+      "laenge": 10.161478
+    },
+    {
+      "adresse": {
+        "ort": "Salzburg",
+        "region": "SALZBURG",
+        "land": "OESTERREICH"
+      }
+    },
+    {
+      "adresse": {
+        "ort": "München",
+        "region": "BAYERN",
+        "land": "DEUTSCHLAND"
+      },
+      "breite": 48.1521045,
+      "laenge": 11.5502023
+    },
+    {
+      "adresse": {
+        "ort": "Koblenz am Rhein",
+        "region": "RHEINLAND_PFALZ",
+        "land": "DEUTSCHLAND"
+      },
+      "breite": 50.3502341,
+      "laenge": 7.5828494
+    }
+  ],
+  "istPrivateArbeitsvermittlung": true,
+  "istArbeitnehmerUeberlassung": false,
+  "veroeffentlichungszeitraum": {
+    "von": "2024-04-11"
+  },
+  "datumErsteVeroeffentlichung": "2024-04-08",
+  "aenderungsdatum": "2025-07-19T21:19:03.000",
+  "istBetreut": false,
+  "hauptberuf": "Frontend-Entwickler/in",
+  "firma": "Best Profile",
+  "allianzpartnerUrl": "http://www.arbeitsagentur.de",
+  "allianzpartnerName": "arbeitsagentur.de",
+  "referenznummer": "10001-1000078259-S"
+}

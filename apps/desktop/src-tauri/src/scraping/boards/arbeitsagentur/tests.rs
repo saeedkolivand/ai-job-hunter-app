@@ -46,62 +46,59 @@ fn test_arbeitsagentur_scraper_mode_partial_eq() {
     assert_ne!(mode, ScraperMode::Browser);
 }
 
-#[test]
-fn test_arbeitsort_struct() {
-    let ort = Arbeitsort {
-        ort: Some("Berlin".to_string()),
-        region: Some("Berlin".to_string()),
-        land: Some("Germany".to_string()),
-    };
-    assert_eq!(ort.ort, Some("Berlin".to_string()));
-}
+const LIST_FIXTURE: &str = include_str!("fixtures/list_v6.json");
+const DETAIL_FIXTURE: &str = include_str!("fixtures/details_v4.json");
 
 #[test]
-fn test_arbeitsort_struct_defaults() {
-    let ort = Arbeitsort {
-        ort: None,
-        region: None,
-        land: None,
-    };
-    assert!(ort.ort.is_none());
-}
-
-#[test]
-fn test_stellenangebot_struct() {
-    let offer = Stellenangebot {
-        refnr: "123456".to_string(),
-        titel: Some("Software Engineer".to_string()),
-        beruf: None,
-        arbeitgeber: Some("Test Corp".to_string()),
-        arbeitsort: None,
-        aktuelle_veroeffentlichungsdatum: None,
-        eintrittsdatum: None,
-        externe_url: None,
-        hash_id: None,
-    };
-    assert_eq!(offer.refnr, "123456");
-    assert_eq!(offer.titel, Some("Software Engineer".to_string()));
-}
-
-#[test]
-fn test_branche_struct() {
-    let branche = Branche {
-        bezeichnung: Some("IT".to_string()),
-    };
-    assert_eq!(branche.bezeichnung, Some("IT".to_string()));
-}
-
-#[test]
-fn test_list_resp_struct() {
-    let resp = ListResp {
-        stellenangebote: Some(vec![]),
-        max_ergebnisse: Some(100),
-    };
-    assert!(resp
-        .stellenangebote
+fn v6_list_fixture_parses_into_postings_fields() {
+    let resp: ListResp = serde_json::from_str(LIST_FIXTURE).unwrap();
+    assert!(!resp.is_shape_drift());
+    let items = resp.ergebnisliste.unwrap();
+    assert_eq!(items.len(), 2);
+    let j = &items[0];
+    assert_eq!(j.referenznummer, "13635-8d04dc16_JB5288611-S");
+    assert_eq!(
+        j.titel.as_deref(),
+        Some("Senior Frontend Angular Developer (all genders)")
+    );
+    assert_eq!(j.firma.as_deref(), Some("]init[ AG"));
+    assert!(j.externe_url.as_deref().unwrap().starts_with("https://"));
+    assert_eq!(j.erste_veroeffentlichung.as_deref(), Some("2026-11-03"));
+    let ort = j.stellenlokationen.as_ref().unwrap()[0]
+        .adresse
         .as_ref()
-        .map(|v| v.is_empty())
-        .unwrap_or(true));
+        .unwrap();
+    assert_eq!(ort.ort.as_deref(), Some("Berlin"));
+    // The second item has no externeURL: the deep link falls back to the hash.
+    assert!(items[1].externe_url.is_none());
+}
+
+#[test]
+fn v4_detail_fixture_still_yields_a_description() {
+    let d: DetailResp = serde_json::from_str(DETAIL_FIXTURE).unwrap();
+    assert!(d.stellenangebots_beschreibung.unwrap().contains("Aufgaben"));
+}
+
+#[test]
+fn detail_key_is_base64url_of_referenznummer() {
+    // Live: v4 /jobdetails/MTAwMDEtMTAwMDA3ODI1OS1T answered 200 for this refnr.
+    assert_eq!(
+        ArbeitsagenturScraper.to_base64_url("10001-1000078259-S"),
+        "MTAwMDEtMTAwMDA3ODI1OS1T"
+    );
+}
+
+#[test]
+fn zero_hit_response_is_not_drift_but_missing_list_is() {
+    // Real zero-hit v6 body: no `ergebnisliste`, `maxErgebnisse` 0.
+    let empty: ListResp = serde_json::from_str(r#"{"maxErgebnisse":0,"page":1,"size":3}"#).unwrap();
+    assert!(!empty.is_shape_drift());
+    // The old v4 shape (`stellenangebote`) deserializes to neither -> drift.
+    let old: ListResp =
+        serde_json::from_str(r#"{"stellenangebote":[],"maxErgebnisse":5}"#).unwrap();
+    assert!(old.is_shape_drift());
+    let bare: ListResp = serde_json::from_str("{}").unwrap();
+    assert!(bare.is_shape_drift());
 }
 
 #[tokio::test]
