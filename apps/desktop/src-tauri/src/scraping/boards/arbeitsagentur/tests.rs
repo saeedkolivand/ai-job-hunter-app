@@ -147,3 +147,50 @@ async fn live_search_returns_results() {
     println!("arbeitsagentur: {} results", postings.len());
     println!("first: {:?}", first.title);
 }
+
+#[test]
+fn page_one_without_list_and_nonzero_total_is_an_error() {
+    let drift: ListResp = serde_json::from_str(r#"{"maxErgebnisse":7,"page":1}"#).unwrap();
+    assert!(matches!(drift.check_first_page(), Err(AppError::Parse(_))));
+    let zero: ListResp = serde_json::from_str(r#"{"maxErgebnisse":0}"#).unwrap();
+    assert!(zero.check_first_page().is_ok());
+}
+
+#[test]
+fn posted_at_prefers_the_current_publication_window() {
+    let items = serde_json::from_str::<ListResp>(LIST_FIXTURE)
+        .unwrap()
+        .ergebnisliste
+        .unwrap();
+    // Real specimen: veroeffentlichungszeitraum.von 2024-04-11 vs first 2024-04-08.
+    let ms = |d: &str| {
+        chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d")
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis()
+    };
+    assert_eq!(items[1].posted_at_ms(), Some(ms("2024-04-11")));
+    let mut no_window = items.into_iter().nth(1).unwrap();
+    no_window.veroeffentlichungszeitraum = None;
+    assert_eq!(no_window.posted_at_ms(), Some(ms("2024-04-08")));
+}
+
+#[test]
+fn location_drops_duplicate_region_and_title_cases_upper_case_text() {
+    let a = |o: &str, r: &str, l: &str| Adresse {
+        ort: Some(o.into()),
+        region: Some(r.into()),
+        land: Some(l.into()),
+    };
+    assert_eq!(
+        format_location(Some(&a("Berlin", "BERLIN", "DEUTSCHLAND"))),
+        "Berlin, Deutschland"
+    );
+    assert_eq!(
+        format_location(Some(&a("Leipzig", "SACHSEN", "DEUTSCHLAND"))),
+        "Leipzig, Sachsen, Deutschland"
+    );
+    assert_eq!(format_location(None), "");
+}

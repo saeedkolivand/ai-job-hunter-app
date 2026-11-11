@@ -32,6 +32,11 @@ struct Stellenlokation {
 }
 
 #[derive(Debug, Deserialize)]
+struct Zeitraum {
+    von: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct Stellenangebot {
     referenznummer: String,
     #[serde(rename = "stellenangebotsTitel")]
@@ -39,7 +44,9 @@ struct Stellenangebot {
     hauptberuf: Option<String>,
     firma: Option<String>,
     stellenlokationen: Option<Vec<Stellenlokation>>,
-    /// `YYYY-MM-DD` (date only).
+    /// Current publication window; `von` is the (re)publication date.
+    veroeffentlichungszeitraum: Option<Zeitraum>,
+    /// `YYYY-MM-DD`; the FIRST publication, so old for republished listings.
     #[serde(rename = "datumErsteVeroeffentlichung")]
     erste_veroeffentlichung: Option<String>,
     #[serde(rename = "externeURL")]
@@ -59,6 +66,68 @@ impl ListResp {
     fn is_shape_drift(&self) -> bool {
         self.ergebnisliste.is_none() && self.max_ergebnisse != Some(0)
     }
+
+    /// Page-1 gate: a changed response shape is an error, not "found nothing".
+    fn check_first_page(&self) -> Result<(), AppError> {
+        if self.is_shape_drift() {
+            return Err(AppError::Parse(
+                "arbeitsagentur list response has no `ergebnisliste`".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl Stellenangebot {
+    /// Prefer the current publication date over the first one (republished
+    /// listings would otherwise look months old and fail recency filters).
+    fn posted_at_ms(&self) -> Option<i64> {
+        let d = self
+            .veroeffentlichungszeitraum
+            .as_ref()
+            .and_then(|z| z.von.as_deref())
+            .or(self.erste_veroeffentlichung.as_deref())?;
+        let d = chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()?;
+        Some(d.and_hms_opt(0, 0, 0)?.and_utc().timestamp_millis())
+    }
+}
+
+/// v6 writes region/country upper-case ("BERLIN", "DEUTSCHLAND"); show them
+/// title-cased. Keeps the country text so the location post-filter (which
+/// tokenizes the whole location string, case-insensitively) still sees it.
+fn title_case(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut start = true;
+    for c in s.chars() {
+        if start {
+            out.extend(c.to_uppercase());
+        } else {
+            out.extend(c.to_lowercase());
+        }
+        start = !c.is_alphanumeric();
+    }
+    out
+}
+
+/// "Berlin, Berlin, DEUTSCHLAND" -> "Berlin, Deutschland": region is dropped
+/// when it repeats the city (ignoring case).
+fn format_location(a: Option<&Adresse>) -> String {
+    let Some(a) = a else { return String::new() };
+    let ort = a.ort.as_deref().filter(|s| !s.is_empty());
+    let region = a
+        .region
+        .as_deref()
+        .filter(|r| !r.is_empty() && ort.is_none_or(|o| !o.eq_ignore_ascii_case(r)));
+    let land = a.land.as_deref().filter(|s| !s.is_empty());
+    [
+        ort.map(str::to_string),
+        region.map(title_case),
+        land.map(title_case),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(", ")
 }
 
 #[derive(Debug, Deserialize)]
@@ -184,11 +253,8 @@ impl Scraper for ArbeitsagenturScraper {
             // Page 1 with neither a list nor a zero total is a changed response
             // shape (the v4 -> v6 rename was silent): fail loudly so board health
             // records it instead of reading as "found nothing".
-            if page == 1 && list_resp.is_shape_drift() {
-                return Err(AppError::Parse(
-                    "arbeitsagentur list response has no `ergebnisliste`".into(),
-                )
-                .into());
+            if page == 1 {
+                list_resp.check_first_page()?;
             }
             let items = list_resp.ergebnisliste.unwrap_or_default();
 
@@ -248,23 +314,9 @@ impl Scraper for ArbeitsagenturScraper {
                     .as_ref()
                     .and_then(|l| l.first())
                     .and_then(|l| l.adresse.as_ref());
-                let location = vec![
-                    adresse.and_then(|a| a.ort.as_deref()),
-                    adresse.and_then(|a| a.region.as_deref()),
-                    adresse.and_then(|a| a.land.as_deref()),
-                ]
-                .into_iter()
-                .flatten()
-                .filter(|s| !s.is_empty())
-                .collect::<Vec<_>>()
-                .join(", ");
+                let location = format_location(adresse);
 
-                let posted_at = j
-                    .erste_veroeffentlichung
-                    .as_deref()
-                    .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
-                    .and_then(|d| d.and_hms_opt(0, 0, 0))
-                    .map(|dt| dt.and_utc().timestamp_millis());
+                let posted_at = j.posted_at_ms();
 
                 let posting = JobPosting {
                     id: format!("{}:{}", self.id(), refnr),

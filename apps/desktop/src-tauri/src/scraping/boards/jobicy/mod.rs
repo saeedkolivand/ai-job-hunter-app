@@ -183,7 +183,9 @@ pub(crate) fn parse_response(
 /// real search phrase like "senior backend engineer" failed the whole board.
 /// Over-long phrases are cut at a word boundary (hard-cut when the first word
 /// alone is too long); too-short ones drop the filter. The engine's central
-/// post-filter still narrows the result.
+/// post-filters only cover location and work type, NOT query text, so
+/// `search` re-applies the original query with [`matches_all_tokens`] whenever
+/// the tag differs from it.
 pub(crate) fn tag_param(q: &str) -> Option<String> {
     const MAX: usize = 20;
     let q = q.trim();
@@ -203,6 +205,20 @@ pub(crate) fn tag_param(q: &str) -> Option<String> {
         out = next;
     }
     (out.chars().count() >= 3).then_some(out)
+}
+
+/// Every whitespace-separated token of `query` appears (case-insensitive) in the
+/// posting's title or description.
+pub(crate) fn matches_all_tokens(posting: &JobPosting, query: &str) -> bool {
+    let hay = format!(
+        "{} {}",
+        posting.title,
+        posting.description.as_deref().unwrap_or("")
+    )
+    .to_lowercase();
+    query
+        .split_whitespace()
+        .all(|t| hay.contains(&t.to_lowercase()))
 }
 
 pub struct JobicyScraper;
@@ -243,7 +259,8 @@ impl Scraper for JobicyScraper {
         // would break the whole search on any non-matching value, so this board
         // leaves `geo` unset and lets the engine's central post-filter handle it.
         let mut url = format!("https://jobicy.com/api/v2/remote-jobs?count={count}");
-        if let Some(tag) = tag_param(q) {
+        let tag = tag_param(q);
+        if let Some(tag) = &tag {
             // LIVE-VERIFIED (2026-07-17): unlike `geo`, `tag` genuinely performs
             // relevance-ranked full-text search over title/description, NOT a
             // fixed category whitelist — `tag=dev` surfaces "Sales Development
@@ -257,7 +274,7 @@ impl Scraper for JobicyScraper {
             // value. That 404-for-zero-matches case is handled in
             // `parse_response` below (treated as an authoritative empty
             // result, never a fetch failure).
-            url.push_str(&format!("&tag={}", urlencoding::encode(&tag)));
+            url.push_str(&format!("&tag={}", urlencoding::encode(tag)));
         }
 
         let res = fetch_text(&url, Default::default(), ctx.signal).await?;
@@ -265,7 +282,12 @@ impl Scraper for JobicyScraper {
         let now = chrono::Utc::now().timestamp_millis();
         // 404-vs-other-status decision + parse lives in `parse_response` (pure,
         // hermetically unit tested) — see its doc comment for the contract.
-        let out = parse_response(res.status_code, &res.text, self.id(), now)?;
+        let mut out = parse_response(res.status_code, &res.text, self.id(), now)?;
+        // The tag was cut or dropped: it no longer carries the whole query, so
+        // keep only jobs that do.
+        if !q.is_empty() && tag.as_deref() != Some(q) {
+            out.retain(|p| matches_all_tokens(p, q));
+        }
 
         if let Some(ref on_item) = ctx.on_item {
             for posting in &out {
