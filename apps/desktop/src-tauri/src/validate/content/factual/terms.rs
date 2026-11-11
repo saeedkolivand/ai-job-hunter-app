@@ -77,6 +77,9 @@ pub(super) fn stems(ctx: &Analysis, text: &str) -> HashSet<String> {
     ctx.document.tokens(&preclean(text))
 }
 
+// TODO(#1498): the kernel tokenizer splits `Node.js` at the dot, so spelling
+// variants are folded here instead. Fixing it in `documents/keywords` would move
+// ATS scores and cached keyword sets, so it is deliberately not done in this PR.
 fn preclean(text: &str) -> String {
     let text = JS_SUFFIX.replace_all(text, "$1");
     CICD.replace_all(&text, "ci/cd").into_owned()
@@ -185,12 +188,14 @@ pub(super) fn terms_in(ctx: &Analysis, line: &str, declared: &HashSet<String>) -
                     continue;
                 }
                 let lower = part.to_lowercase();
+                let proper = capitals_mean_names && !at_start && is_capitalized(part);
+                // A declared Skills item makes a word a tool only when it is
+                // WRITTEN like one here: "Mentoring" in a Skills list must not
+                // turn "Mentored three engineers" into a tool claim.
                 let strong = shape_is_tool(part)
                     || is_vocab(part, &keys)
-                    || keys.iter().any(|k| declared.contains(k));
-                let weak = capitals_mean_names
-                    && !at_start
-                    && is_capitalized(part)
+                    || (proper && keys.iter().any(|k| declared.contains(k)));
+                let weak = proper
                     && !LEGAL_FORMS.contains(&lower.as_str())
                     && !GEOGRAPHY_TOKENS.contains(&lower.as_str())
                     && !NON_TERM_CAPITALS.contains(&lower.as_str());

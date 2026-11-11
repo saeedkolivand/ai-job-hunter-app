@@ -353,6 +353,13 @@ describe('emphasis keeps the résumé spelling', () => {
     expect(sourceCased('react')).toBe('react');
   });
 
+  it('prefers the mixed-case spelling over a heading or a prose word', () => {
+    const body = 'SKILLS: REACT\nBuilt the go-to-market plan. Languages: Go, React.';
+    expect(sourceCased('react', body)).toBe('React');
+    expect(sourceCased('go', body)).toBe('Go');
+    expect(sourceCased('react', 'REACT only')).toBe('REACT');
+  });
+
   it('bolds the source spelling in both emphasis blocks, never the key', () => {
     const resumeBlock = buildEmphasisBlock(['react', 'aws'], resume);
     expect(resumeBlock).toContain('**React**');

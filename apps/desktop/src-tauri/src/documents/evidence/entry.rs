@@ -10,6 +10,7 @@
 use crate::export::types::ParsedLine;
 
 use super::dates::{is_date_column_segment, word_tokens};
+use super::geography::GEOGRAPHY_TOKENS;
 
 /// Legal-form suffixes: they name a corporate structure, never an employer.
 /// "GmbH" appearing in a document proves nothing about which GmbH.
@@ -34,35 +35,6 @@ pub const LEGAL_FORMS: &[&str] = &[
     "sa",
     "srl",
     "spa",
-];
-
-/// Country/region/city tokens an employer's legal name — or an entry line's
-/// location column — carries. Same argument as [`LEGAL_FORMS`]: "Deutschland"
-/// or "Berlin" identifies no particular employer, so neither may be the SOLE
-/// reason `validate::content` decides an entry survived, and a comma-tail made
-/// of nothing but these is a location rather than a company (see
-/// [`split_entry`]).
-pub const GEOGRAPHY_TOKENS: &[&str] = &[
-    "deutschland",
-    "germany",
-    "österreich",
-    "austria",
-    "schweiz",
-    "switzerland",
-    "europe",
-    "europa",
-    "emea",
-    "apac",
-    "dach",
-    "international",
-    "global",
-    "worldwide",
-    "berlin",
-    "münchen",
-    "munich",
-    "hamburg",
-    "wien",
-    "zürich",
 ];
 
 /// The tokens of `company` that name a SPECIFIC employer: alphanumeric runs of

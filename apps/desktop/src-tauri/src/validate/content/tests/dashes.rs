@@ -19,16 +19,29 @@ fn date_ranges_and_link_lines_are_left_whole() {
     assert_eq!(strip_long_dashes(kept), kept);
 }
 
+/// Each of these was corrupted by the first version of the strip.
 #[test]
-fn a_dash_at_a_line_edge_is_dropped_without_a_stray_comma() {
-    assert_eq!(
-        strip_long_dashes("— Shipped the cache"),
-        "Shipped the cache"
-    );
-    assert_eq!(
-        strip_long_dashes("Shipped the cache —"),
-        "Shipped the cache"
-    );
+fn ranges_compound_names_and_list_markers_are_never_damaged() {
+    for kept in [
+        "March – June 2021",
+        "Jan–Mar 2020",
+        "Mon – Fri",
+        "Mon–Fri",
+        "Rolls–Royce",
+        "– Shipped the cache",
+        "  — Shipped the cache",
+        "Shipped the cache —",
+        "Shipped the cache — ",
+        "Januar – März 2021",
+        "10:00 – 18:00",
+    ] {
+        assert_eq!(strip_long_dashes(kept), kept, "{kept:?}");
+    }
+}
+
+#[test]
+fn an_unspaced_clause_dash_is_left_alone() {
+    assert_eq!(strip_long_dashes("It ran—and fast."), "It ran—and fast.");
 }
 
 #[test]

@@ -1931,6 +1931,7 @@
         "conflated_term": "This skill or tool is in your résumé, but not under this entry — check it belongs here.",
         "conflated_role_term": "This role is credited with a skill or tool your résumé lists elsewhere, not under this job — it may belong to another entry.",
         "invented_location": "Your résumé gives no such location for this role — remove it unless it's true.",
+        "unsupported_location": "Your résumé names this place, but not for this role — check it belongs here.",
         "unsupported_bullet": "This bullet shares almost nothing with this entry in your résumé — check it describes work you did there.",
         "unsupported_outcome": "This outcome or scope claim isn't stated for this entry in your résumé — keep it only if it's true.",
         "inflated_experience": "This claims more years of experience than your résumé supports — correct it before sending.",

@@ -1935,6 +1935,7 @@
         "conflated_term": "Diese Fähigkeit oder dieses Tool steht in Ihrem Lebenslauf, aber nicht unter diesem Eintrag — prüfen Sie, ob es hierher gehört.",
         "conflated_role_term": "Dieser Station wird eine Fähigkeit oder ein Tool zugeschrieben, das Ihr Lebenslauf an anderer Stelle nennt, nicht bei dieser Stelle — es gehört evtl. zu einem anderen Eintrag.",
         "invented_location": "Ihr Lebenslauf nennt für diese Station keinen solchen Ort — entfernen Sie ihn, falls er nicht stimmt.",
+        "unsupported_location": "Ihr Lebenslauf nennt diesen Ort, aber nicht für diese Station — prüfen Sie, ob er hierher gehört.",
         "unsupported_bullet": "Dieser Punkt hat kaum etwas mit diesem Eintrag in Ihrem Lebenslauf gemeinsam — prüfen Sie, ob er Arbeit beschreibt, die Sie dort geleistet haben.",
         "unsupported_outcome": "Dieses Ergebnis bzw. dieser Umfang steht für diesen Eintrag nicht in Ihrem Lebenslauf — nur behalten, wenn es stimmt.",
         "inflated_experience": "Hier werden mehr Jahre Erfahrung angegeben, als Ihr Lebenslauf hergibt — bitte vor dem Versenden korrigieren.",

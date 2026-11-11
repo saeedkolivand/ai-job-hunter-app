@@ -23,7 +23,7 @@ use crate::validate::content::{
 use std::collections::HashSet;
 
 use super::blocks::{all_blocks, counterparts, keys_of, section_blocks, Block, Kind};
-use super::entry_checks::{bullet_issues, location_issues};
+use super::entry_checks::{bullet_issues, location_issues, places_in};
 use super::terms::{declared_skills, keys, skill_items, stems, terms_in, Term};
 
 /// What the source and the posting contain, resolved once.
@@ -31,6 +31,12 @@ pub(super) struct Grounding {
     pub source: HashSet<String>,
     pub job: HashSet<String>,
     pub declared: HashSet<String>,
+    /// Every place the source names anywhere.
+    pub places: HashSet<String>,
+    /// The source and the output are written in the same language. A translated
+    /// term has no source spelling to compare against, so when this is false no
+    /// term finding may be Critical and the bullet check does not run.
+    pub comparable: bool,
 }
 
 impl Grounding {
@@ -39,6 +45,8 @@ impl Grounding {
             source: keys(ctx, ctx.input.source_resume),
             job: keys(ctx, ctx.input.job_ad),
             declared: declared_skills(ctx, &ctx.source_sections),
+            places: places_in(ctx.input.source_resume),
+            comparable: languages_align(ctx.input.source_resume, &ctx.lang),
         }
     }
 }
@@ -84,7 +92,7 @@ pub(super) fn term_issues(
             continue;
         }
         let (unsupported, strong) = (i < 2, i % 2 == 1);
-        let critical = role && strong;
+        let critical = role && strong && g.comparable;
         let (code, message) = if unsupported {
             (
                 if critical {
@@ -128,7 +136,6 @@ fn entry_issues(
     block: &Block,
     source: &[Block],
     section: Option<&str>,
-    same_language: bool,
 ) -> Vec<ContentIssue> {
     let matches = counterparts(block, source);
     let entry_keys = (!matches.is_empty()).then(|| keys_of(ctx, &matches));
@@ -150,7 +157,7 @@ fn entry_issues(
     let role = block.kind == Kind::Role;
     let mut out = Vec::new();
     if role && !matches.is_empty() {
-        out.extend(location_issues(block, &matches, section));
+        out.extend(location_issues(block, &matches, &g.places, section));
     }
     for line in &block.body {
         if !matches!(line.kind, LineKind::Bullet | LineKind::Text) {
@@ -166,7 +173,7 @@ fn entry_issues(
             section,
             Some(line.raw.trim()),
         ));
-        if role && same_language {
+        if role && g.comparable {
             if let Some(stems_of_entry) = &entry_stems {
                 out.extend(bullet_issues(
                     ctx,
@@ -186,21 +193,13 @@ fn entry_issues(
 pub(super) fn validate(ctx: &Analysis) -> Vec<ContentIssue> {
     let g = Grounding::new(ctx);
     let source = all_blocks(&ctx.source_sections);
-    let same_language = languages_align(ctx.input.source_resume, &ctx.lang);
     let mut out = Vec::new();
     for section in &ctx.generated_sections {
         let heading = section.heading.as_deref();
         match section.kind {
             SectionKind::Experience | SectionKind::Projects => {
                 for block in section_blocks(section) {
-                    out.extend(entry_issues(
-                        ctx,
-                        &g,
-                        &block,
-                        &source,
-                        heading,
-                        same_language,
-                    ));
+                    out.extend(entry_issues(ctx, &g, &block, &source, heading));
                 }
             }
             SectionKind::Skills => {

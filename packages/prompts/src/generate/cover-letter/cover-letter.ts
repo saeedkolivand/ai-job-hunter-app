@@ -49,8 +49,13 @@ function buildMarketConventionsBlock(market: string, targetLanguage: string): st
     ? `Include a subject line labelled ${fit.inOutputLanguage(c.subjectLine.label)} on its own line before the salutation, stating the role (and reference if any).`
     : `Do NOT add a subject line.`;
 
+  // The parenthesised gloss ("salary expectation (Gehaltsvorstellung)") is a word
+  // of the market's language: keep it only when the letter is written in it.
+  const inclusionItems = fit.sameLanguage
+    ? c.inclusions
+    : c.inclusions.map((item) => item.replace(/\s*\([^)]*\)\s*$/, ''));
   const inclusions = c.inclusions.length
-    ? `Market-expected content: ${c.inclusions.join('; ')}. Include ONLY if the applicant actually provided this; never invent a number or date.`
+    ? `Market-expected content: ${inclusionItems.join('; ')}. Include ONLY if the applicant actually provided this; never invent a number or date.`
     : `No market-specific extra content required.`;
 
   return `

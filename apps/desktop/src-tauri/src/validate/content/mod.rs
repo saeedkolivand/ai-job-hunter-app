@@ -122,6 +122,9 @@ pub const FACTUAL_CONFLATED_TERM: &str = "factual.conflated_term";
 pub const FACTUAL_CONFLATED_ROLE_TERM: &str = "factual.conflated_role_term";
 /// A place on a role's header that the source gives that role no such place for.
 pub const FACTUAL_INVENTED_LOCATION: &str = "factual.invented_location";
+/// A place the source names, but not for this role (it appears in the header or
+/// under another job). Advisory: it may be a legitimate restatement.
+pub const FACTUAL_UNSUPPORTED_LOCATION: &str = "factual.unsupported_location";
 /// A bullet sharing almost nothing with its source entry. Advisory: a
 /// paraphrase can legitimately share little.
 pub const FACTUAL_UNSUPPORTED_BULLET: &str = "factual.unsupported_bullet";
@@ -259,6 +262,7 @@ pub const CONTENT_ISSUE_CODES: &[(&str, Severity)] = &[
     (FACTUAL_INVENTED_LOCATION, Severity::Critical),
     (FACTUAL_UNSUPPORTED_TERM, Severity::Warning),
     (FACTUAL_CONFLATED_TERM, Severity::Warning),
+    (FACTUAL_UNSUPPORTED_LOCATION, Severity::Warning),
     (FACTUAL_UNSUPPORTED_BULLET, Severity::Warning),
     (FACTUAL_UNSUPPORTED_OUTCOME, Severity::Warning),
     (FACTUAL_UNSOURCED_TERM, Severity::Warning),

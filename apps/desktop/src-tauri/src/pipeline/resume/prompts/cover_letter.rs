@@ -9,6 +9,7 @@ use crate::pipeline::resume::prompt_blocks::{
 };
 use crate::pipeline::resume::types::ResumeStrategy;
 use crate::prompt_fence::{fenced, JOB_CAP, RESUME_CAP};
+use crate::validate::content::normalize_language;
 
 use super::shared::{fenced_artifact, system_language_name, ARTIFACT_CAP, BRIEF_CAP, NOTE_CAP};
 
@@ -22,8 +23,18 @@ pub(in crate::pipeline::resume) const LETTER_INTENT: &str = "prose_grounded";
 /// they apply only then; a letter in another language uses that language's own
 /// conventions, however the market is resolved (a German job, an English letter).
 fn writes_in_market_language(conv: &LetterConventions, lang: &str) -> bool {
-    let code: String = lang.trim().chars().take(2).collect();
-    conv.native_language.eq_ignore_ascii_case(&code)
+    conv.native_language
+        .eq_ignore_ascii_case(&normalize_language(lang))
+}
+
+/// An inclusion with its parenthesised gloss (`salary expectation
+/// (Gehaltsvorstellung)`) only when the letter is in the market's language: the
+/// gloss is a word of that language and has no business in another.
+fn inclusion_text(item: &str, own: bool) -> &str {
+    match item.split_once(" (") {
+        Some((plain, _)) if !own && item.ends_with(')') => plain,
+        _ => item,
+    }
 }
 
 fn subject_label(conv: &LetterConventions, own: bool, language: &str) -> String {
@@ -76,7 +87,11 @@ fn market_conventions_block(market: &str, lang: &str) -> String {
     if !conv.inclusions.is_empty() {
         text.push_str(&format!(
             "Market-expected content, state ONLY if <candidate_resume> already supplies it: {}.\n",
-            conv.inclusions.join("; ")
+            conv.inclusions
+                .iter()
+                .map(|item| inclusion_text(item, own))
+                .collect::<Vec<_>>()
+                .join("; ")
         ));
     }
     fenced("market_conventions", &text, ARTIFACT_CAP)

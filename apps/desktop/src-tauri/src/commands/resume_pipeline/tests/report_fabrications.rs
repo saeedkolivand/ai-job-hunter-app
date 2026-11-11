@@ -166,3 +166,63 @@ fn an_entry_with_no_locatable_line_omits_the_anchor_but_stays_decidable() {
     );
     assert_eq!(only_fabrication(&within)["line"], json!(at_cap));
 }
+
+fn critical(code: &'static str, evidence: &str) -> crate::validate::content::ContentReport {
+    use crate::validate::content::{ContentIssue, ContentMetrics, ContentReport};
+    ContentReport {
+        ok: false,
+        issues: vec![ContentIssue {
+            severity: crate::validate::Severity::Critical,
+            code,
+            section: None,
+            message: "m".to_string(),
+            evidence: Some(evidence.to_string()),
+        }],
+        metrics: ContentMetrics::default(),
+    }
+}
+
+/// **A Remove must never delete more than the finding.** An invented location
+/// sits on the role's HEADER line, and a letter's term finding sits in a whole
+/// paragraph, so neither carries an anchor: the renderer then records the
+/// verdict and asks the user to edit the text, and only Keep resolves it.
+///
+/// Mutation check: drop `allows_line_removal`'s filter and the anchors below
+/// reappear.
+#[test]
+fn a_location_or_letter_term_finding_carries_no_line_to_delete() {
+    use crate::validate::content::{FACTUAL_CONFLATED_ROLE_TERM, FACTUAL_INVENTED_LOCATION};
+    let resume =
+        "Jane Doe\n\nEXPERIENCE\n\nEngineer | Acme | Berlin | 2020 - 2024\n- Shipped the ledger\n";
+    let location = critical(FACTUAL_INVENTED_LOCATION, "Berlin");
+    let wrapper = report::build("quality", 1, Some((&location, resume)), None);
+    let parsed: serde_json::Value = serde_json::from_str(&wrapper).unwrap();
+    let entry = &parsed["resume"]["fabrications"][0];
+    assert_eq!(entry["evidence"], json!("Berlin"));
+    assert!(entry.get("line").is_none(), "{entry}");
+
+    let letter = "Dear Hiring Manager,\n\nAt Acme I ran Redis for the billing team.\n";
+    let term = critical(FACTUAL_CONFLATED_ROLE_TERM, "Redis");
+    let wrapper = report::build("quality", 1, None, Some((&term, letter)));
+    let parsed: serde_json::Value = serde_json::from_str(&wrapper).unwrap();
+    assert!(parsed["coverLetter"]["fabrications"][0]
+        .get("line")
+        .is_none());
+
+    // The same code in a RÉSUMÉ quotes a whole bullet, which is safe to remove.
+    let bullet = "Jane Doe\n\nEXPERIENCE\n\n- Ran Redis for the billing team\n";
+    let wrapper = report::build(
+        "quality",
+        1,
+        Some((
+            &critical(
+                FACTUAL_CONFLATED_ROLE_TERM,
+                "- Ran Redis for the billing team",
+            ),
+            bullet,
+        )),
+        None,
+    );
+    let parsed: serde_json::Value = serde_json::from_str(&wrapper).unwrap();
+    assert!(parsed["resume"]["fabrications"][0].get("line").is_some());
+}

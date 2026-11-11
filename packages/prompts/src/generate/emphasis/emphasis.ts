@@ -344,8 +344,20 @@ export function sourceCased(term: string, resumeBody?: string): string {
   if (!t || !resumeBody) return term;
   const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const edge = '[\\p{L}\\p{N}_]';
-  const pattern = new RegExp(`(?<!${edge})${escaped}(?!${edge})`, 'iu');
-  return pattern.exec(resumeBody)?.[0] ?? term;
+  const pattern = new RegExp(`(?<!${edge})${escaped}(?!${edge})`, 'giu');
+  // Several spellings can occur ("REACT" in a SKILLS heading, "go" in
+  // "go-to-market", "Go" in a list): prefer the mixed-case one, then an
+  // all-caps one, then whatever is left.
+  const rank = (hit: string): number => {
+    const hasUpper = hit !== hit.toLowerCase();
+    if (!hasUpper) return 1;
+    return hit === hit.toUpperCase() && hit.length > 1 && /\p{L}{2,}/u.test(hit) ? 2 : 3;
+  };
+  let best: string | undefined;
+  for (const [hit] of resumeBody.matchAll(pattern)) {
+    if (best === undefined || rank(hit) > rank(best)) best = hit;
+  }
+  return best ?? term;
 }
 
 /** The one casing rule both emphasis blocks carry. */

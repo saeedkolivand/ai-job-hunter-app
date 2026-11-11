@@ -198,3 +198,18 @@ fn market_label_and_date_format_apply_only_in_the_market_language() {
     assert!(german_user.contains("D. Month YYYY"));
     assert!(letter_system("de", "de", true, false).contains("D. Month YYYY"));
 }
+
+/// The `(Gehaltsvorstellung)` gloss is a German word: it reaches a German
+/// letter's prompt and no other.
+///
+/// Mutation check: return `item` unconditionally from `inclusion_text` and the
+/// English assertion fails.
+#[test]
+fn a_market_gloss_never_reaches_a_letter_in_another_language() {
+    let strategy = ResumeStrategy::default();
+    let english = letter_user("resume", "job ad", &strategy, "de", "en", "", "");
+    assert!(english.contains("salary expectation"), "{english}");
+    assert!(!english.contains("Gehaltsvorstellung"), "{english}");
+    let german = letter_user("resume", "job ad", &strategy, "de", "de", "", "");
+    assert!(german.contains("Gehaltsvorstellung"));
+}

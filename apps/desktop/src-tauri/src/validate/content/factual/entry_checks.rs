@@ -7,10 +7,12 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::documents::evidence::{split_entry, GEOGRAPHY_TOKENS};
+use crate::documents::evidence::{
+    canonical_place, country_of, split_entry, GEOGRAPHY_TOKENS, NON_PLACE_TOKENS,
+};
 use crate::validate::content::{
     issue, Analysis, ContentIssue, FACTUAL_INVENTED_LOCATION, FACTUAL_UNSUPPORTED_BULLET,
-    FACTUAL_UNSUPPORTED_OUTCOME,
+    FACTUAL_UNSUPPORTED_LOCATION, FACTUAL_UNSUPPORTED_OUTCOME,
 };
 
 use super::blocks::Block;
@@ -23,36 +25,6 @@ pub const MIN_BULLET_TOKENS: usize = 4;
 pub const MIN_BULLET_OVERLAP: usize = 2;
 /// An outcome clause needs at least this many content tokens to be judged.
 pub const MIN_OUTCOME_TOKENS: usize = 2;
-
-/// Place names that are the same place in another language, so a translated
-/// résumé is not read as inventing one.
-const GEO_EQUIVALENTS: &[(&str, &str)] = &[
-    ("deutschland", "germany"),
-    ("österreich", "austria"),
-    ("schweiz", "switzerland"),
-    ("europa", "europe"),
-    ("münchen", "munich"),
-    ("wien", "vienna"),
-    ("zürich", "zurich"),
-];
-
-/// Geography tokens that describe a company, not where a role was held.
-const NON_PLACE_TOKENS: &[&str] = &[
-    "international",
-    "global",
-    "worldwide",
-    "emea",
-    "apac",
-    "dach",
-];
-
-fn canonical_place(token: &str) -> String {
-    GEO_EQUIVALENTS
-        .iter()
-        .find(|(a, b)| *a == token || *b == token)
-        .map_or(token, |(a, _)| a)
-        .to_string()
-}
 
 fn words(text: &str) -> impl Iterator<Item = String> + '_ {
     text.split(|c: char| !c.is_alphanumeric())
@@ -73,16 +45,32 @@ fn header_places(block: &Block) -> Vec<String> {
         .collect()
 }
 
+/// Canonical places in `text`, with the country of every city among them.
+pub(super) fn places_in(text: &str) -> HashSet<String> {
+    let mut out: HashSet<String> = words(text).map(|w| canonical_place(&w)).collect();
+    let countries: Vec<String> = out
+        .iter()
+        .filter_map(|p| country_of(p))
+        .map(str::to_string)
+        .collect();
+    out.extend(countries);
+    out
+}
+
+/// A place on a role's header that the source entry does not give it:
+/// `factual.invented_location` (Critical) when the source names that place
+/// nowhere, `factual.unsupported_location` (Warning) when it appears elsewhere
+/// (the header, another job), which may be a legitimate re-statement.
 pub(super) fn location_issues(
     block: &Block,
     source: &[&Block],
+    anywhere: &HashSet<String>,
     section: Option<&str>,
 ) -> Vec<ContentIssue> {
-    let known: HashSet<String> = source
-        .iter()
-        .flat_map(|b| words(&b.text()).collect::<Vec<_>>())
-        .map(|w| canonical_place(&w))
-        .collect();
+    let known = places_in(&source.iter().map(|b| b.text()).collect::<Vec<_>>().join(
+        "
+",
+    ));
     let mut seen = HashSet::new();
     header_places(block)
         .into_iter()
@@ -96,12 +84,16 @@ pub(super) fn location_issues(
                 .find(|w| canonical_place(&w.to_lowercase()) == place)
                 .unwrap_or(&place)
                 .to_string();
+            let code = if anywhere.contains(&place) {
+                FACTUAL_UNSUPPORTED_LOCATION
+            } else {
+                FACTUAL_INVENTED_LOCATION
+            };
             issue(
-                FACTUAL_INVENTED_LOCATION,
+                code,
                 section,
                 format!(
-                    "Your source résumé gives no location \"{shown}\" for \"{}\". Remove it from \
-                     this entry unless it is true.",
+                    "Your source résumé gives no location \"{shown}\" for \"{}\". Remove it from                      this entry unless it is true.",
                     block.identity
                 ),
                 Some(shown),

@@ -68,7 +68,7 @@ fn code_table_is_complete_and_unique() {
     }
     assert_eq!(
         CONTENT_ISSUE_CODES.len(),
-        42,
+        43,
         "the code vocabulary changed — update the renderer's i18n keys too"
     );
     let criticals = CONTENT_ISSUE_CODES

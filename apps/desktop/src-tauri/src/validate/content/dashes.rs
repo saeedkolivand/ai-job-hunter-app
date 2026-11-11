@@ -7,14 +7,6 @@
 /// The em and en dash.
 const LONG_DASHES: [char; 2] = ['—', '–'];
 
-/// A dash with a digit beside it (`2020 – 2023`, `2021 – Present`): a date or
-/// numeric range, correct typography.
-fn digit_adjacent(chars: &[char], i: usize) -> bool {
-    let before = chars[..i].iter().rev().find(|c| !c.is_whitespace());
-    let after = chars[i + 1..].iter().find(|c| !c.is_whitespace());
-    before.is_some_and(char::is_ascii_digit) || after.is_some_and(char::is_ascii_digit)
-}
-
 /// A tight numeric range: the validator's own exemption (`2020–2023`).
 fn tight_range(chars: &[char], i: usize) -> bool {
     i.checked_sub(1)
@@ -31,11 +23,107 @@ pub(super) fn clause_dash_count(text: &str) -> usize {
         .count()
 }
 
-/// `text` with every prose dash replaced by a comma (or dropped at a line edge).
+/// Month and weekday names (English, German; full and short): a spaced dash
+/// between two of them is a range ("March – June", "Mon – Fri"), not a clause.
+const RANGE_NAMES: &[&str] = &[
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+    "jan",
+    "feb",
+    "mar",
+    "apr",
+    "jun",
+    "jul",
+    "aug",
+    "sep",
+    "sept",
+    "oct",
+    "nov",
+    "dec",
+    "januar",
+    "februar",
+    "märz",
+    "mai",
+    "juni",
+    "juli",
+    "oktober",
+    "dezember",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+    "mon",
+    "tue",
+    "wed",
+    "thu",
+    "fri",
+    "sat",
+    "sun",
+    "montag",
+    "dienstag",
+    "mittwoch",
+    "donnerstag",
+    "freitag",
+    "samstag",
+    "sonntag",
+    "mo",
+    "di",
+    "mi",
+    "do",
+    "fr",
+    "sa",
+    "so",
+];
+
+/// A neighbouring word that makes the dash a range: it carries a digit or names
+/// a month or weekday.
+fn range_word(word: Option<&str>) -> bool {
+    word.is_some_and(|w| {
+        let w = w
+            .trim_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase();
+        w.chars().any(|c| c.is_ascii_digit()) || RANGE_NAMES.contains(&w.as_str())
+    })
+}
+
+/// Whether the dash at `i` is a clause dash the ban applies to: spaces on both
+/// sides, text on both sides, not a leading list marker, and not part of a
+/// date, month or weekday range. An unspaced dash (`Rolls–Royce`, `Jan–Mar`)
+/// is never touched.
+fn is_prose_dash(chars: &[char], i: usize, first: Option<usize>) -> bool {
+    if Some(i) == first || i == 0 || i + 1 >= chars.len() {
+        return false;
+    }
+    if !chars[i - 1].is_whitespace() || !chars[i + 1].is_whitespace() {
+        return false;
+    }
+    let before: String = chars[..i].iter().collect();
+    let after: String = chars[i + 1..].iter().collect();
+    if after.trim().is_empty() {
+        return false;
+    }
+    !range_word(before.split_whitespace().last()) && !range_word(after.split_whitespace().next())
+}
+
+/// `text` with every prose clause dash replaced by a comma.
 ///
-/// Prose only: a dash with a digit beside it is a date or range and stays, and a
-/// line carrying a URL is left whole, so neither a date column nor a link can be
-/// altered. Deterministic and idempotent.
+/// Conservative by construction: a dash is only replaced when it is spaced on
+/// both sides and sits between ordinary words ([`is_prose_dash`]), and a line
+/// carrying a URL is left whole, so a date column, a range, a compound name or
+/// a bullet marker can never be altered. Deterministic and idempotent.
 pub(crate) fn strip_long_dashes(text: &str) -> String {
     let mut out = Vec::new();
     for line in text.split('\n') {
@@ -44,25 +132,21 @@ pub(crate) fn strip_long_dashes(text: &str) -> String {
             continue;
         }
         let chars: Vec<char> = line.chars().collect();
+        let first = chars.iter().position(|c| !c.is_whitespace());
         let mut rebuilt = String::new();
-        let mut skip_space = false;
-        for (i, &c) in chars.iter().enumerate() {
-            if LONG_DASHES.contains(&c) && !digit_adjacent(&chars, i) {
-                let trimmed = rebuilt.trim_end().len();
-                rebuilt.truncate(trimmed);
-                let at_end = chars[i + 1..].iter().all(|c| c.is_whitespace());
-                if !rebuilt.trim().is_empty() && !at_end {
-                    rebuilt.push(',');
-                    rebuilt.push(' ');
+        let mut i = 0;
+        while i < chars.len() {
+            if LONG_DASHES.contains(&chars[i]) && is_prose_dash(&chars, i, first) {
+                rebuilt.truncate(rebuilt.trim_end().len());
+                rebuilt.push_str(", ");
+                i += 1;
+                while i < chars.len() && chars[i].is_whitespace() {
+                    i += 1;
                 }
-                skip_space = true;
                 continue;
             }
-            if skip_space && c.is_whitespace() {
-                continue;
-            }
-            skip_space = false;
-            rebuilt.push(c);
+            rebuilt.push(chars[i]);
+            i += 1;
         }
         out.push(rebuilt);
     }

@@ -36,6 +36,7 @@ mod dates;
 mod entry;
 mod extract;
 mod function_words;
+mod geography;
 mod sections;
 mod vocabulary;
 
@@ -50,9 +51,12 @@ pub use self::dates::{
     contains_word, date_spans, is_open_ended, looks_like_date_span, trailing_date_column, years_in,
     PRESENT_MARKERS,
 };
-pub use self::entry::{identity_tokens, split_entry, GEOGRAPHY_TOKENS, LEGAL_FORMS};
+pub use self::entry::{identity_tokens, split_entry, LEGAL_FORMS};
 pub use self::extract::extract_evidence;
 pub(crate) use self::function_words::{function_words, has_curated_function_words};
+pub use self::geography::{
+    canonical_place, country_of, GEOGRAPHY_EQUIVALENTS, GEOGRAPHY_TOKENS, NON_PLACE_TOKENS,
+};
 pub use self::sections::{classify_section, SectionKind};
 
 /// One résumé bullet, scored by how much of THIS posting's vocabulary it carries.

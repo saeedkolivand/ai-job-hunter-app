@@ -29,6 +29,7 @@ mod ats_structure;
 mod cert_prose;
 mod certs;
 mod conflation;
+mod conflation_faithful;
 mod consistency_checks;
 mod coverage;
 mod credential_calibration;
