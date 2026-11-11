@@ -104,6 +104,30 @@ fn default_document_returns_the_default_row_or_none() {
     assert_eq!(store.default_document().unwrap().id, doc2.id);
 }
 
+fn clear_default_flags(store: &DocumentStore) {
+    store
+        .conn
+        .lock()
+        .execute("UPDATE documents SET is_default = 0", [])
+        .unwrap();
+}
+
+#[test]
+fn default_document_falls_back_to_most_recent_when_none_flagged() {
+    let (_dir, store) = open_store();
+    let (_older, newer) = insert_two_documents(&store); // doc2 has the later created_at
+    clear_default_flags(&store);
+    assert_eq!(store.default_document().unwrap().id, newer.id);
+}
+
+#[test]
+fn default_document_prefers_flagged_older_over_newer_unflagged() {
+    let (_dir, store) = open_store();
+    let (older, _newer) = insert_two_documents(&store); // doc1 is flagged by the first-insert rule
+    assert!(store.get(&older.id).unwrap().is_default);
+    assert_eq!(store.default_document().unwrap().id, older.id);
+}
+
 // Verify that keywords_json survives an insert → list → get round-trip without
 // any column-position corruption from future migrations.
 #[test]
