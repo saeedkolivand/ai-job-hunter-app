@@ -1,16 +1,212 @@
 [
   {
-    "number": 1487,
-    "title": "chore(agents): preload contracts, enforce fleet guardrails with hooks, adopt new coderabbit features",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1487",
+    "number": 1489,
+    "title": "fix(discovery): hold a refreshed posting for review when its url leads to a different advert",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1489",
     "draft": false,
-    "created_at": "2026-11-10T07:02:35Z",
-    "updated_at": "2026-11-10T07:22:53Z",
-    "merged_at": "2026-11-10T07:11:36Z",
-    "closed_at": "2026-11-10T07:11:36Z",
+    "created_at": "2026-11-10T16:04:28Z",
+    "updated_at": "2026-11-10T20:33:06Z",
+    "merged_at": "2026-11-10T20:19:33Z",
+    "closed_at": "2026-11-10T20:19:33Z",
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1470,
+    "title": "chore: bump zip from 9.0.5 to 9.1.2 in /apps/desktop/src-tauri in the desktop-rust group",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1470",
+    "draft": false,
+    "created_at": "2026-10-28T16:08:08Z",
+    "updated_at": "2026-11-10T20:25:24Z",
+    "merged_at": "2026-10-29T12:13:49Z",
+    "closed_at": "2026-10-29T12:13:49Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1476,
+    "title": "chore: bump the javascript group with 14 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1476",
+    "draft": false,
+    "created_at": "2026-10-28T16:19:10Z",
+    "updated_at": "2026-11-10T20:25:21Z",
+    "merged_at": "2026-10-29T12:17:47Z",
+    "closed_at": "2026-10-29T12:17:47Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1473,
+    "title": "chore: bump rusqlite from 0.40.2 to 0.41.0 in /apps/desktop/src-tauri",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1473",
+    "draft": false,
+    "created_at": "2026-10-28T16:08:36Z",
+    "updated_at": "2026-11-10T20:25:18Z",
+    "merged_at": "2026-10-29T12:18:09Z",
+    "closed_at": "2026-10-29T12:18:09Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1472,
+    "title": "chore: bump lopdf from 0.45.0 to 0.46.0 in /apps/desktop/src-tauri",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1472",
+    "draft": false,
+    "created_at": "2026-10-28T16:08:27Z",
+    "updated_at": "2026-11-10T20:25:17Z",
+    "merged_at": "2026-10-29T12:18:22Z",
+    "closed_at": "2026-10-29T12:18:23Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1471,
+    "title": "chore: bump parking_lot from 0.12.5 to 0.13.0 in /apps/desktop/src-tauri",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1471",
+    "draft": false,
+    "created_at": "2026-10-28T16:08:19Z",
+    "updated_at": "2026-11-10T20:25:12Z",
+    "merged_at": "2026-10-29T12:18:37Z",
+    "closed_at": "2026-10-29T12:18:37Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1475,
+    "title": "chore: bump taiki-e/install-action from 2.87.30 to 2.87.31 in the ci-actions group",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1475",
+    "draft": false,
+    "created_at": "2026-10-28T16:10:01Z",
+    "updated_at": "2026-11-10T20:25:09Z",
+    "merged_at": "2026-10-29T12:18:55Z",
+    "closed_at": "2026-10-29T12:18:55Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1474,
+    "title": "chore: bump scraper from 0.27.0 to 0.29.0 in /apps/desktop/src-tauri",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1474",
+    "draft": false,
+    "created_at": "2026-10-28T16:08:45Z",
+    "updated_at": "2026-11-10T20:25:07Z",
+    "merged_at": "2026-10-29T12:21:34Z",
+    "closed_at": "2026-10-29T12:21:34Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1478,
+    "title": "chore: bump the javascript group across 1 directory with 6 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1478",
+    "draft": false,
+    "created_at": "2026-10-29T15:14:14Z",
+    "updated_at": "2026-11-10T20:25:06Z",
+    "merged_at": "2026-10-29T15:14:34Z",
+    "closed_at": "2026-10-29T15:14:34Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1479,
+    "title": "chore: bump the desktop-rust group in /apps/desktop/src-tauri with 12 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1479",
+    "draft": false,
+    "created_at": "2026-11-04T16:09:50Z",
+    "updated_at": "2026-11-10T20:25:05Z",
+    "merged_at": "2026-11-05T17:22:48Z",
+    "closed_at": "2026-11-05T17:22:48Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1480,
+    "title": "chore: bump dom_smoothie from 0.18.2 to 0.19.0 in /apps/desktop/src-tauri",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1480",
+    "draft": false,
+    "created_at": "2026-11-04T16:10:03Z",
+    "updated_at": "2026-11-10T20:25:04Z",
+    "merged_at": "2026-11-05T17:23:04Z",
+    "closed_at": "2026-11-05T17:23:04Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1481,
+    "title": "chore: bump sysinfo from 0.39.6 to 0.40.1 in /apps/desktop/src-tauri",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1481",
+    "draft": false,
+    "created_at": "2026-11-04T16:10:12Z",
+    "updated_at": "2026-11-10T20:25:03Z",
+    "merged_at": "2026-11-05T17:23:22Z",
+    "closed_at": "2026-11-05T17:23:23Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1482,
+    "title": "chore: bump the ci-actions group with 3 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1482",
+    "draft": false,
+    "created_at": "2026-11-04T16:10:42Z",
+    "updated_at": "2026-11-10T20:25:02Z",
+    "merged_at": "2026-11-05T17:23:46Z",
+    "closed_at": "2026-11-05T17:23:46Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1483,
+    "title": "chore: bump the javascript group with 28 updates",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1483",
+    "draft": false,
+    "created_at": "2026-11-04T16:29:17Z",
+    "updated_at": "2026-11-10T20:25:01Z",
+    "merged_at": "2026-11-05T17:24:12Z",
+    "closed_at": "2026-11-05T17:24:13Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "number": 1484,
+    "title": "chore: bump @hookform/resolvers from 6.0.1 to 7.0.2",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1484",
+    "draft": false,
+    "created_at": "2026-11-04T16:30:36Z",
+    "updated_at": "2026-11-10T20:25:00Z",
+    "merged_at": "2026-11-05T17:27:54Z",
+    "closed_at": "2026-11-05T17:27:54Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "dependabot[bot]"
     }
   },
   {
@@ -19,9 +215,51 @@
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1486",
     "draft": false,
     "created_at": "2026-11-10T06:19:21Z",
-    "updated_at": "2026-11-10T07:17:05Z",
+    "updated_at": "2026-11-10T20:24:59Z",
     "merged_at": "2026-11-10T07:04:41Z",
     "closed_at": "2026-11-10T07:04:42Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1487,
+    "title": "chore(agents): preload contracts, enforce fleet guardrails with hooks, adopt new coderabbit features",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1487",
+    "draft": false,
+    "created_at": "2026-11-10T07:02:35Z",
+    "updated_at": "2026-11-10T20:24:58Z",
+    "merged_at": "2026-11-10T07:11:36Z",
+    "closed_at": "2026-11-10T07:11:36Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1488,
+    "title": "chore(prompts): refresh system prompts for current models",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1488",
+    "draft": false,
+    "created_at": "2026-11-10T11:06:22Z",
+    "updated_at": "2026-11-10T20:24:57Z",
+    "merged_at": "2026-11-10T11:10:09Z",
+    "closed_at": "2026-11-10T11:10:09Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1490,
+    "title": "feat(prompts): tailor cv bullets and cover letters to the evidence the resume shows",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1490",
+    "draft": false,
+    "created_at": "2026-11-10T16:04:31Z",
+    "updated_at": "2026-11-10T20:24:55Z",
+    "merged_at": "2026-11-10T20:20:07Z",
+    "closed_at": "2026-11-10T20:20:07Z",
     "requested_reviewers": [],
     "user": {
       "login": "saeedkolivand"
@@ -56,104 +294,6 @@
     }
   },
   {
-    "number": 1484,
-    "title": "chore: bump @hookform/resolvers from 6.0.1 to 7.0.2",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1484",
-    "draft": false,
-    "created_at": "2026-11-04T16:30:36Z",
-    "updated_at": "2026-11-05T17:43:50Z",
-    "merged_at": "2026-11-05T17:27:54Z",
-    "closed_at": "2026-11-05T17:27:54Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1483,
-    "title": "chore: bump the javascript group with 28 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1483",
-    "draft": false,
-    "created_at": "2026-11-04T16:29:17Z",
-    "updated_at": "2026-11-05T17:24:15Z",
-    "merged_at": "2026-11-05T17:24:12Z",
-    "closed_at": "2026-11-05T17:24:13Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1482,
-    "title": "chore: bump the ci-actions group with 3 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1482",
-    "draft": false,
-    "created_at": "2026-11-04T16:10:42Z",
-    "updated_at": "2026-11-05T17:23:49Z",
-    "merged_at": "2026-11-05T17:23:46Z",
-    "closed_at": "2026-11-05T17:23:46Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1481,
-    "title": "chore: bump sysinfo from 0.39.6 to 0.40.1 in /apps/desktop/src-tauri",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1481",
-    "draft": false,
-    "created_at": "2026-11-04T16:10:12Z",
-    "updated_at": "2026-11-05T17:23:26Z",
-    "merged_at": "2026-11-05T17:23:22Z",
-    "closed_at": "2026-11-05T17:23:23Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1480,
-    "title": "chore: bump dom_smoothie from 0.18.2 to 0.19.0 in /apps/desktop/src-tauri",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1480",
-    "draft": false,
-    "created_at": "2026-11-04T16:10:03Z",
-    "updated_at": "2026-11-05T17:23:06Z",
-    "merged_at": "2026-11-05T17:23:04Z",
-    "closed_at": "2026-11-05T17:23:04Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1479,
-    "title": "chore: bump the desktop-rust group in /apps/desktop/src-tauri with 12 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1479",
-    "draft": false,
-    "created_at": "2026-11-04T16:09:50Z",
-    "updated_at": "2026-11-05T17:22:50Z",
-    "merged_at": "2026-11-05T17:22:48Z",
-    "closed_at": "2026-11-05T17:22:48Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1478,
-    "title": "chore: bump the javascript group across 1 directory with 6 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1478",
-    "draft": false,
-    "created_at": "2026-10-29T15:14:14Z",
-    "updated_at": "2026-10-29T15:39:42Z",
-    "merged_at": "2026-10-29T15:14:34Z",
-    "closed_at": "2026-10-29T15:14:34Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
     "number": 1477,
     "title": "chore: bump the javascript group across 1 directory with 19 updates",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1477",
@@ -162,104 +302,6 @@
     "updated_at": "2026-10-29T15:13:58Z",
     "merged_at": null,
     "closed_at": "2026-10-29T15:13:53Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1474,
-    "title": "chore: bump scraper from 0.27.0 to 0.29.0 in /apps/desktop/src-tauri",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1474",
-    "draft": false,
-    "created_at": "2026-10-28T16:08:45Z",
-    "updated_at": "2026-10-29T12:52:56Z",
-    "merged_at": "2026-10-29T12:21:34Z",
-    "closed_at": "2026-10-29T12:21:34Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1473,
-    "title": "chore: bump rusqlite from 0.40.2 to 0.41.0 in /apps/desktop/src-tauri",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1473",
-    "draft": false,
-    "created_at": "2026-10-28T16:08:36Z",
-    "updated_at": "2026-10-29T12:51:07Z",
-    "merged_at": "2026-10-29T12:18:09Z",
-    "closed_at": "2026-10-29T12:18:09Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1472,
-    "title": "chore: bump lopdf from 0.45.0 to 0.46.0 in /apps/desktop/src-tauri",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1472",
-    "draft": false,
-    "created_at": "2026-10-28T16:08:27Z",
-    "updated_at": "2026-10-29T12:46:16Z",
-    "merged_at": "2026-10-29T12:18:22Z",
-    "closed_at": "2026-10-29T12:18:23Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1471,
-    "title": "chore: bump parking_lot from 0.12.5 to 0.13.0 in /apps/desktop/src-tauri",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1471",
-    "draft": false,
-    "created_at": "2026-10-28T16:08:19Z",
-    "updated_at": "2026-10-29T12:44:29Z",
-    "merged_at": "2026-10-29T12:18:37Z",
-    "closed_at": "2026-10-29T12:18:37Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1475,
-    "title": "chore: bump taiki-e/install-action from 2.87.30 to 2.87.31 in the ci-actions group",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1475",
-    "draft": false,
-    "created_at": "2026-10-28T16:10:01Z",
-    "updated_at": "2026-10-29T12:19:09Z",
-    "merged_at": "2026-10-29T12:18:55Z",
-    "closed_at": "2026-10-29T12:18:55Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1476,
-    "title": "chore: bump the javascript group with 14 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1476",
-    "draft": false,
-    "created_at": "2026-10-28T16:19:10Z",
-    "updated_at": "2026-10-29T12:17:49Z",
-    "merged_at": "2026-10-29T12:17:47Z",
-    "closed_at": "2026-10-29T12:17:47Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1470,
-    "title": "chore: bump zip from 9.0.5 to 9.1.2 in /apps/desktop/src-tauri in the desktop-rust group",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1470",
-    "draft": false,
-    "created_at": "2026-10-28T16:08:08Z",
-    "updated_at": "2026-10-29T12:13:53Z",
-    "merged_at": "2026-10-29T12:13:49Z",
-    "closed_at": "2026-10-29T12:13:49Z",
     "requested_reviewers": [],
     "user": {
       "login": "dependabot[bot]"
@@ -655,48 +697,6 @@
     "requested_reviewers": [],
     "user": {
       "login": "NimaNabi"
-    }
-  },
-  {
-    "number": 1432,
-    "title": "chore(deps): clear the zip <9 advisories (rustsec-2026-0367..0369)",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1432",
-    "draft": false,
-    "created_at": "2026-10-17T11:22:03Z",
-    "updated_at": "2026-10-17T17:52:24Z",
-    "merged_at": "2026-10-17T17:35:49Z",
-    "closed_at": "2026-10-17T17:35:49Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "NimaNabi"
-    }
-  },
-  {
-    "number": 1431,
-    "title": "feat(settings): self-hosted sync card under privacy (PR 3)",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1431",
-    "draft": false,
-    "created_at": "2026-10-16T20:51:11Z",
-    "updated_at": "2026-10-17T17:52:24Z",
-    "merged_at": "2026-10-17T13:18:54Z",
-    "closed_at": "2026-10-17T13:18:54Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "NimaNabi"
-    }
-  },
-  {
-    "number": 1425,
-    "title": "chore: bump the javascript group with 36 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1425",
-    "draft": false,
-    "created_at": "2026-10-14T21:29:47Z",
-    "updated_at": "2026-10-15T20:37:21Z",
-    "merged_at": null,
-    "closed_at": "2026-10-15T20:37:19Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
     }
   }
 ]

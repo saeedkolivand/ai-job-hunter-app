@@ -1,5 +1,113 @@
 [
   {
+    "sha": "dc281a114a29d94778e0d4035acb4dcd2c415fda",
+    "commit": {
+      "message": "chore: sync landing download version to v0.160.0",
+      "author": {
+        "date": "2026-11-10T21:18:06Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "48e0183e4aac84a0b2894405ce8f96a26bb45ff7",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.160.0 [skip ci]",
+      "author": {
+        "date": "2026-11-10T21:17:46Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "f00fa3d51e998547d15958c77a052f981be43245",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-11-10T20:43:04Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "98f2ffe5664d3e7243423ee371d2091d576f0e5d",
+    "commit": {
+      "message": "chore(release): 0.160.0 [skip ci]",
+      "author": {
+        "date": "2026-11-10T20:24:18Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "0dc2de6e2bec174f4499c41c303eeb3a323f837b",
+    "commit": {
+      "message": "feat(prompts): tailor cv bullets and cover letters to the evidence the resume shows (#1490)",
+      "author": {
+        "date": "2026-11-10T20:20:06Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "77d29d35ab5f57e91a9e01dfb525b61f7b19f94f",
+    "commit": {
+      "message": "fix(discovery): hold a refreshed posting for review when its url leads to a different advert (#1489)",
+      "author": {
+        "date": "2026-11-10T20:19:32Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "9361073a6049ef2e7618759d4add7cd22e835f71",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-11-10T11:36:01Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "0bb633f3f83e3bd24a0f01d57b0c1d130e1b8de5",
+    "commit": {
+      "message": "chore(prompts): refresh system prompts for current models (#1488)",
+      "author": {
+        "date": "2026-11-10T11:10:09Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "3ffab0c80661c6ad7109585dfd2acaf41dcfcbff",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-11-10T11:07:42Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "a8a2166c7bd201aa319c3fdf2653c0bc9046286b",
     "commit": {
       "message": "chore(agents): preload contracts, enforce fleet guardrails with hooks, adopt new coderabbit features (#1487)",
@@ -1089,114 +1197,6 @@
     },
     "author": {
       "login": "NimaNabi"
-    }
-  },
-  {
-    "sha": "5aa705b9b5528c2e5737898a59d15f6653b4ae9a",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-10T09:48:05Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "3b14ce79583bcc3756a2a535599ceffac6a5b388",
-    "commit": {
-      "message": "chore: sync landing download version to v0.157.1",
-      "author": {
-        "date": "2026-10-09T18:47:55Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "9f337a15a58fe6c9bb2f7d2009706613a38ac982",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.157.1 [skip ci]",
-      "author": {
-        "date": "2026-10-09T18:47:28Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "804853915e139c4f1e844cb91c3d21e7bdaa4ddc",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-09T10:30:39Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "d4747798a8a49dabba5b11e7c73398f7d460cd03",
-    "commit": {
-      "message": "chore(release): 0.157.1 [skip ci]",
-      "author": {
-        "date": "2026-10-09T03:45:17Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "cd227a4f8a56b5d0b93ba7b2a5970c5099b148e2",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-08T20:18:06Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "8891631274c5f8ac712e4740aaa845f2c1498be2",
-    "commit": {
-      "message": "fix(scraping): drop the greenhouse header on extension imports and decode escaped json-ld text (#1417)",
-      "author": {
-        "date": "2026-10-08T19:52:32Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "f474444a9a043c2d578c91daf8f5dd62248e910b",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-08T19:34:53Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "9d66ed8ba3a582d53ba8bfb804f33eaadfcc60f3",
-    "commit": {
-      "message": "fix(extension): refuse article and company pages on import and refresh the panel on status changes (#1415)",
-      "author": {
-        "date": "2026-10-08T19:21:22Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
     }
   }
 ]
