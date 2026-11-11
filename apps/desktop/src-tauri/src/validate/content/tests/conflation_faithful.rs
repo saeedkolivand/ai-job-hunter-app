@@ -157,3 +157,25 @@ fn a_letter_sentence_naming_the_full_employer_is_still_checked() {
         report.issues
     );
 }
+
+const GRAPHQL_AD: &str = "We run Rust, Kubernetes and GraphQL.";
+
+#[test]
+fn a_letter_clause_addressing_the_reader_is_not_the_employers_claim() {
+    let letter = "Dear Hiring Manager,\n\nAt Acme Payments I worked on payments, and your GraphQL role interests me.\n\nBest regards,\nJane Doe\n";
+    let report = letter_report_for(letter, EN_SOURCE, GRAPHQL_AD);
+    for code in ANY_ROLE_CRITICAL {
+        silent(&report, code);
+    }
+}
+
+#[test]
+fn a_letter_clause_attributing_an_unsourced_tool_to_the_employer_is_still_critical() {
+    let letter = "Dear Hiring Manager,\n\nAt Acme Payments I built GraphQL APIs.\n\nBest regards,\nJane Doe\n";
+    let report = letter_report_for(letter, EN_SOURCE, GRAPHQL_AD);
+    assert!(
+        ANY_ROLE_CRITICAL.iter().any(|c| count(&report, c) > 0),
+        "{:#?}",
+        report.issues
+    );
+}

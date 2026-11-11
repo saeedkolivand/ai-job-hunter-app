@@ -401,16 +401,21 @@ pub fn html_to_text(html: &str) -> String {
 }
 
 /// Whether `text` is HTML delivered entity-escaped: no real tag, but the decoded text holds a
-/// known HTML element tag AND a closing tag or `<br`. Prose that merely mentions `Vec&lt;String&gt;`
+/// known HTML element tag AND a closing tag or `<br` (or, for a fragment that lost its closers,
+/// two or more opening block tags). Prose that merely mentions `Vec&lt;String&gt;`
 /// or `&lt;div&gt;` stays untouched (decoding it would eat the words as unknown tags).
 pub fn has_escaped_markup(text: &str) -> bool {
     static KNOWN_CLOSE_OR_BR: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
         regex::Regex::new(r"(?i)</(p|ul|ol|li|strong|em|b|i|h[1-6]|div|span|a)\s*>|<br\b")
             .expect("static escaped-markup regex is valid")
     });
+    static BLOCK_OPEN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?i)<(?:li|p|ul|ol|div|h[1-6]|tr|td)(?:\s[^>]*)?>")
+            .expect("static block-open regex is valid")
+    });
     text.contains("&lt;") && !HTML_TAG_RE.is_match(text) && {
         let decoded = unescape_entities(text);
-        KNOWN_CLOSE_OR_BR.is_match(&decoded)
+        KNOWN_CLOSE_OR_BR.is_match(&decoded) || BLOCK_OPEN.find_iter(&decoded).count() >= 2
     }
 }
 

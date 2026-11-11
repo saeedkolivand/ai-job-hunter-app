@@ -37,11 +37,12 @@ fn header_places(block: &Block) -> Vec<String> {
     let (company, title, _) = split_entry(block.header);
     let identity: HashSet<String> = words(&company).chain(words(&title)).collect();
     words(&block.header.text)
-        .filter(|w| {
-            GEOGRAPHY_TOKENS.contains(&w.as_str()) && !NON_PLACE_TOKENS.contains(&w.as_str())
-        })
         .filter(|w| !identity.contains(w))
         .map(|w| canonical_place(&w))
+        // Canonical first: "Vienna"/"Zurich"/"EU" are equivalents, not listed tokens.
+        .filter(|p| {
+            GEOGRAPHY_TOKENS.contains(&p.as_str()) && !NON_PLACE_TOKENS.contains(&p.as_str())
+        })
         .collect()
 }
 

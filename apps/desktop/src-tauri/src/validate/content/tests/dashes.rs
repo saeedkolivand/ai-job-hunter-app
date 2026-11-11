@@ -84,3 +84,14 @@ fn a_stripped_letter_no_longer_trips_the_dash_check() {
     let after = letter_report_for(&strip_long_dashes(letter), EN_SOURCE, EN_JOB_AD);
     silent(&after, VOICE_EM_DASH_OVERUSE);
 }
+
+/// The check counts exactly what the strip would remove: kept dashes never raise the warning.
+#[test]
+fn kept_dashes_are_not_counted_as_overuse() {
+    use super::super::dashes::clause_dash_count;
+    assert_eq!(
+        clause_dash_count("Rolls–Royce, Jan–Mar, Mon – Fri\nhttps://example.dev/a – b"),
+        0
+    );
+    assert_eq!(clause_dash_count("I built it — and it ran – well."), 2);
+}

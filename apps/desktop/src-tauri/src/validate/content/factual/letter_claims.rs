@@ -67,12 +67,36 @@ fn tie(sentence: &str, company: &str) -> Option<Tie> {
     }
 }
 
+/// The clauses of `sentence` that can attribute work to an employer: split at clause boundaries,
+/// minus any clause that addresses the reader ("your GraphQL role interests me" is about the
+/// reader's job, not the employer named in the clause before it).
+fn claim_clauses(sentence: &str) -> Vec<String> {
+    static BOUNDARY: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?i);|,\s*(?:and|but|while|und|aber)\b|\s(?:but|aber)\s")
+            .expect("static clause-boundary regex is valid")
+    });
+    static READER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(
+            r"(?i:\b(?:your|yours|you)\b)|\b(?:Sie|Ihr|Ihre|Ihren|Ihrem|Ihrer|Ihres)\b",
+        )
+        .expect("static reader-address regex is valid")
+    });
+    BOUNDARY
+        .split(sentence)
+        .filter(|c| !READER.is_match(c))
+        .map(str::to_string)
+        .collect()
+}
+
 pub(super) fn validate(ctx: &Analysis) -> Vec<ContentIssue> {
     let g = Grounding::new(ctx);
     let source = all_blocks(&ctx.source_sections);
     let roles: Vec<&Block> = source.iter().filter(|b| b.kind == Kind::Role).collect();
     let mut out = Vec::new();
-    for sentence in sentences(ctx.input.generated) {
+    for sentence in sentences(ctx.input.generated)
+        .iter()
+        .flat_map(|s| claim_clauses(s))
+    {
         let named: Vec<(&Block, Tie)> = roles
             .iter()
             .filter_map(|b| tie(&sentence, &b.identity).map(|t| (*b, t)))

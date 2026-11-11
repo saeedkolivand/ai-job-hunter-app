@@ -139,8 +139,11 @@ fn by_representative(a: &FoundJob, b: &FoundJob) -> std::cmp::Ordering {
         j.score.is_some_and(|s| qualifies(s, j.score_source))
             && !crate::documents::keywords::description_is_blank(j.description.as_deref())
     };
-    solid(b)
-        .cmp(&solid(a))
+    // Block first (ADR-020: Combined before Keyword); the description preference is only
+    // meaningful inside one block, never across.
+    super::rerank::score_block(a.score_source)
+        .cmp(&super::rerank::score_block(b.score_source))
+        .then_with(|| solid(b).cmp(&solid(a)))
         .then_with(|| super::rerank::by_rank(a, b))
 }
 
@@ -189,6 +192,8 @@ pub(super) fn compute_best_matches(
     // records instead of across runs).
     let mut key_order: Vec<String> = Vec::new();
     let mut by_key: HashMap<String, (&FoundJob, Vec<Origin>)> = HashMap::new();
+    // First note carried by ANY copy of a key, so a note on a dropped duplicate copy survives.
+    let mut copy_notes: HashMap<String, String> = HashMap::new();
     for ap in records
         .iter()
         .filter(|ap| ap.status != AutopilotStatus::Archived)
@@ -208,6 +213,9 @@ pub(super) fn compute_best_matches(
                 paused,
                 found_at: job.found_at,
             };
+            if let Some(n) = &job.assistant_notes {
+                copy_notes.entry(key.clone()).or_insert_with(|| n.clone());
+            }
             match by_key.get_mut(&key) {
                 Some((kept, origins)) => {
                     if by_representative(job, kept) == std::cmp::Ordering::Less {
@@ -321,11 +329,15 @@ pub(super) fn compute_best_matches(
         // which on a merged cross-autopilot row can be a different
         // autopilot's résumé/provider context entirely, with no provenance
         // on the payload to say so.
-        let assistant_notes = canonical
-            .assistant_notes
-            .clone()
-            .or_else(|| jobs[best_idx].assistant_notes.clone())
-            .or_else(|| idxs.iter().find_map(|&i| jobs[i].assistant_notes.clone()));
+        let note_of = |i: usize| {
+            jobs[i]
+                .assistant_notes
+                .clone()
+                .or_else(|| copy_notes.get(&key_order[i]).cloned())
+        };
+        let assistant_notes = note_of(canonical_idx)
+            .or_else(|| note_of(best_idx))
+            .or_else(|| idxs.iter().find_map(|&i| note_of(i)));
 
         // One `BestMatchSource` per distinct contributing autopilot — a
         // `BTreeMap` (not `HashMap`) so a cluster whose members span the same

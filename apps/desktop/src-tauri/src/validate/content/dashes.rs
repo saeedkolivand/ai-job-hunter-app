@@ -7,22 +7,6 @@
 /// The em and en dash.
 const LONG_DASHES: [char; 2] = ['—', '–'];
 
-/// A tight numeric range: the validator's own exemption (`2020–2023`).
-fn tight_range(chars: &[char], i: usize) -> bool {
-    i.checked_sub(1)
-        .and_then(|p| chars.get(p))
-        .is_some_and(char::is_ascii_digit)
-        && chars.get(i + 1).is_some_and(char::is_ascii_digit)
-}
-
-/// How many long dashes sit between clauses (tight numeric ranges excluded).
-pub(super) fn clause_dash_count(text: &str) -> usize {
-    let chars: Vec<char> = text.chars().collect();
-    (0..chars.len())
-        .filter(|&i| LONG_DASHES.contains(&chars[i]) && !tight_range(&chars, i))
-        .count()
-}
-
 /// Month and weekday names (English, German; full and short): a spaced dash
 /// between two of them is a range ("March – June", "Mon – Fri"), not a clause.
 const RANGE_NAMES: &[&str] = &[
@@ -124,6 +108,26 @@ fn is_prose_dash(chars: &[char], i: usize, first: Option<usize>) -> bool {
     !range_word(before.split_whitespace().last()) && !range_word(after.split_whitespace().next())
 }
 
+/// A line the ban never touches or counts: it carries a URL.
+fn is_url_line(line: &str) -> bool {
+    line.contains("://") || line.contains("www.")
+}
+
+/// How many clause dashes `strip_long_dashes` would remove: the same predicate, so a dash the
+/// strip deliberately keeps (`Rolls–Royce`, `Jan–Mar`, a date range) never counts as overuse.
+pub(super) fn clause_dash_count(text: &str) -> usize {
+    text.split('\n')
+        .filter(|line| !is_url_line(line))
+        .map(|line| {
+            let chars: Vec<char> = line.chars().collect();
+            let first = chars.iter().position(|c| !c.is_whitespace());
+            (0..chars.len())
+                .filter(|&i| LONG_DASHES.contains(&chars[i]) && is_prose_dash(&chars, i, first))
+                .count()
+        })
+        .sum()
+}
+
 /// `text` with every prose clause dash replaced by a comma.
 ///
 /// Conservative by construction: a dash is only replaced when it is spaced on
@@ -134,7 +138,7 @@ fn is_prose_dash(chars: &[char], i: usize, first: Option<usize>) -> bool {
 pub(crate) fn strip_long_dashes(text: &str) -> String {
     let mut out = Vec::new();
     for line in text.split('\n') {
-        if !line.contains(LONG_DASHES) || line.contains("://") || line.contains("www.") {
+        if !line.contains(LONG_DASHES) || is_url_line(line) {
             out.push(line.to_string());
             continue;
         }
