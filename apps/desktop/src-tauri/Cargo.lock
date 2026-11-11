@@ -8747,9 +8747,9 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-sentry"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38e95ef0266d65565a14c02b0d77cacff021a379c484097ab8cb24f200a80c14"
+checksum = "f6dbd0dc9ddc6829040de7684abe205e8dfa1db15418c227a417705628eec4a1"
 dependencies = [
  "base64 0.23.1",
  "schemars 0.8.22",
@@ -8759,6 +8759,10 @@ dependencies = [
  "tauri",
  "tauri-plugin",
  "thiserror 2.0.21",
+ "webkit2gtk",
+ "webview2-com",
+ "windows-core",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
