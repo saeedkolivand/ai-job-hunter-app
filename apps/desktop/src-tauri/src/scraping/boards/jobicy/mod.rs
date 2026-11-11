@@ -178,6 +178,33 @@ pub(crate) fn parse_response(
         .collect())
 }
 
+/// Jobicy rejects a `tag` outside 3..=20 characters with HTTP 400 (live:
+/// "The 'tag' parameter must contain between 3 and 20 characters", #1501), so a
+/// real search phrase like "senior backend engineer" failed the whole board.
+/// Over-long phrases are cut at a word boundary (hard-cut when the first word
+/// alone is too long); too-short ones drop the filter. The engine's central
+/// post-filter still narrows the result.
+pub(crate) fn tag_param(q: &str) -> Option<String> {
+    const MAX: usize = 20;
+    let q = q.trim();
+    let mut out = String::new();
+    for word in q.split_whitespace() {
+        let next = if out.is_empty() {
+            word.to_string()
+        } else {
+            format!("{out} {word}")
+        };
+        if next.chars().count() > MAX {
+            if out.is_empty() {
+                out = word.chars().take(MAX).collect();
+            }
+            break;
+        }
+        out = next;
+    }
+    (out.chars().count() >= 3).then_some(out)
+}
+
 pub struct JobicyScraper;
 
 #[async_trait]
@@ -216,7 +243,7 @@ impl Scraper for JobicyScraper {
         // would break the whole search on any non-matching value, so this board
         // leaves `geo` unset and lets the engine's central post-filter handle it.
         let mut url = format!("https://jobicy.com/api/v2/remote-jobs?count={count}");
-        if !q.is_empty() {
+        if let Some(tag) = tag_param(q) {
             // LIVE-VERIFIED (2026-07-17): unlike `geo`, `tag` genuinely performs
             // relevance-ranked full-text search over title/description, NOT a
             // fixed category whitelist — `tag=dev` surfaces "Sales Development
@@ -230,7 +257,7 @@ impl Scraper for JobicyScraper {
             // value. That 404-for-zero-matches case is handled in
             // `parse_response` below (treated as an authoritative empty
             // result, never a fetch failure).
-            url.push_str(&format!("&tag={}", urlencoding::encode(q)));
+            url.push_str(&format!("&tag={}", urlencoding::encode(&tag)));
         }
 
         let res = fetch_text(&url, Default::default(), ctx.signal).await?;
