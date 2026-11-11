@@ -9,6 +9,7 @@ use crate::autopilot::{Autopilot, AutopilotStatus, AutopilotStore, FoundJob, Sco
 // The save-path `country_code` backfill (a location saved without a geocode
 // pick) — shared with the manual scrape path since trust-fix #2.
 use crate::commands::geocoding::derive_country_code;
+use crate::error::AppResult;
 use crate::observability::sanitize_reason;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
@@ -92,14 +93,15 @@ pub fn autopilot_get(app: AppHandle, autopilot_id: String) -> Value {
 }
 
 #[tauri::command]
-pub async fn autopilot_create(app: AppHandle, mut req: AutopilotCreateRequest) -> Value {
+pub async fn autopilot_create(app: AppHandle, mut req: AutopilotCreateRequest) -> AppResult<Value> {
+    guards::check_date_filter(req.target.date_filter.as_deref())?;
     if req.target.country_code.is_none() {
         req.target.country_code = derive_country_code(req.target.location.as_deref()).await;
     }
     let ap = store(&app)
         .lock()
         .create(serde_json::to_value(&req).unwrap_or_default());
-    json!(ap)
+    Ok(with_resume_warning(&app, ap))
 }
 
 #[tauri::command]
@@ -107,7 +109,8 @@ pub async fn autopilot_update(
     app: AppHandle,
     autopilot_id: String,
     mut req: AutopilotUpdateRequest,
-) -> Value {
+) -> AppResult<Value> {
+    guards::check_date_filter(req.target.as_ref().and_then(|t| t.date_filter.as_deref()))?;
     if let Some(target) = req.target.as_mut() {
         if target.country_code.is_none() {
             target.country_code = derive_country_code(target.location.as_deref()).await;
@@ -117,7 +120,17 @@ pub async fn autopilot_update(
     let ap = mutate_record(&app, &autopilot_id, |records| {
         records.lock().update(&autopilot_id, patch)
     });
-    json!(ap)
+    Ok(ap.map_or(Value::Null, |ap| with_resume_warning(&app, ap)))
+}
+
+/// The saved record as JSON, plus a `warning` when a run would have no resume to score against.
+fn with_resume_warning(app: &AppHandle, ap: Autopilot) -> Value {
+    let warning = guards::resume_warning(app, ap.resume_text.as_deref());
+    let mut out = json!(ap);
+    if let (Some(w), Some(obj)) = (warning, out.as_object_mut()) {
+        obj.insert("warning".into(), json!(w));
+    }
+    out
 }
 
 #[tauri::command]
@@ -373,6 +386,7 @@ mod linkedin_enrich;
 //
 // Same LOC-cap reasoning as `rerank` above: `keyword_rank` holds the pure phase-1 helpers,
 // `run` the pipeline that drives both phases (`autopilot_run` below is its IPC entry point).
+mod guards;
 mod keyword_rank;
 mod phases;
 mod run;

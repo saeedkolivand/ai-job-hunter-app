@@ -13,9 +13,11 @@ export interface AutopilotContract {
 
   get(req: { autopilotId: string }): Promise<Autopilot | null>;
 
-  create(req: AutopilotCreate): Promise<Autopilot>;
+  /** Resolves with the saved record; `warning` is set when no resume text and no default document exist. */
+  create(req: AutopilotCreate): Promise<Autopilot & { warning?: string }>;
 
-  update(req: { autopilotId: string } & AutopilotUpdate): Promise<Autopilot>;
+  /** Same reply as `create`, including the optional `warning`. */
+  update(req: { autopilotId: string } & AutopilotUpdate): Promise<Autopilot & { warning?: string }>;
 
   /** Permanently delete this autopilot and stop its scheduled runs — the found-jobs history it built goes with it. */
   remove(req: { autopilotId: string }): Promise<void>;

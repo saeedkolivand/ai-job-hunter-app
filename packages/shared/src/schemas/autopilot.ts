@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { WORK_TYPE_OPTIONS } from './scraping.js';
+import { DATE_FILTER_OPTIONS, WORK_TYPE_OPTIONS } from './scraping.js';
 
 // ─── Autopilot schemas ────────────────────────────────────────────────────────
 
@@ -25,7 +25,7 @@ export const AutopilotTargetSchema = z.object({
   // `.max` CWE-770 cap as `ScrapeBoardsRequestSchema.workTypes` above.
   workTypes: z.array(z.enum(WORK_TYPE_OPTIONS)).max(WORK_TYPE_OPTIONS.length).optional(),
   pages: z.number().int().min(1).max(10).default(2),
-  dateFilter: z.string().optional(),
+  dateFilter: z.enum(DATE_FILTER_OPTIONS).optional(),
   // Watched-companies-only mode (ADR-030 §e): when true, a run resolves the
   // user's currently-starred discovered companies at run time and scrapes only
   // those per-ATS company slugs (instead of the curated seed). Additive +

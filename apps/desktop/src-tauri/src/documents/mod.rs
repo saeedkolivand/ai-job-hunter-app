@@ -178,6 +178,18 @@ impl DocumentStore {
         .ok()
     }
 
+    /// The user's default document (`is_default`), or `None` when none is marked.
+    pub fn default_document(&self) -> Option<DocumentRecord> {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT id, title, name, locale, text, pages, created_at, indexed, is_default, keywords_json
+             FROM documents WHERE is_default = 1 LIMIT 1",
+            [],
+            record_from_row,
+        )
+        .ok()
+    }
+
     pub fn insert(&self, rec: &DocumentRecord) -> AppResult<()> {
         let conn = self.conn.lock();
         // If this is the first document, automatically set it as default

@@ -109,6 +109,22 @@ where
     }))
 }
 
+/// `Option<String>` that DROPS a value outside the shared `dateFilter` vocabulary (#1492) rather
+/// than failing the record: a failed load would delete the autopilot on the next save.
+fn parse_date_filter_lenient<'de, D>(de: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw: Option<String> = Option::deserialize(de)?;
+    Ok(raw.filter(|v| {
+        let known = crate::ipc_contracts::date_filters::DATE_FILTER_OPTIONS.contains(&v.as_str());
+        if !known {
+            log::warn!("[autopilot] dropped an unrecognised dateFilter while loading a target");
+        }
+        known
+    }))
+}
+
 // ── Data model ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,7 +169,12 @@ pub struct AutopilotTarget {
     )]
     pub work_types: Option<Vec<crate::scraping::types::WorkType>>,
     pub pages: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// An out-of-set stored value is dropped to `None` ("any time"), never a failed load.
+    #[serde(
+        default,
+        deserialize_with = "parse_date_filter_lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub date_filter: Option<String>,
     /// How many top-scoring postings autopilot should apply to after scraping.
     /// Defaults to 3 when absent.

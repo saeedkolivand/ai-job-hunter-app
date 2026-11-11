@@ -207,3 +207,19 @@ fn target_country_code_round_trips_and_none_is_omitted() {
         "country_code None must be omitted from serialized JSON (skip_serializing_if)"
     );
 }
+
+#[test]
+fn unknown_date_filter_is_dropped_not_a_failed_load() {
+    // #1492: without `parse_date_filter_lenient` the stored value survives as `Some("past_week")`.
+    let target: AutopilotTarget = serde_json::from_value(serde_json::json!({
+        "boards": ["linkedin"], "query": "rust", "pages": 1, "dateFilter": "past_week",
+    }))
+    .expect("a bad dateFilter must not fail the whole target");
+    assert_eq!(target.date_filter, None);
+    assert_eq!(target.query, "rust");
+    let ok: AutopilotTarget = serde_json::from_value(serde_json::json!({
+        "boards": ["linkedin"], "query": "rust", "pages": 1, "dateFilter": "week",
+    }))
+    .unwrap();
+    assert_eq!(ok.date_filter.as_deref(), Some("week"));
+}

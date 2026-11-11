@@ -94,6 +94,16 @@ fn test_set_default() {
     assert!(docs.iter().find(|d| d.id == doc2.id).unwrap().is_default);
 }
 
+#[test]
+fn default_document_returns_the_default_row_or_none() {
+    let (_dir, store) = open_store();
+    assert!(store.default_document().is_none());
+
+    let (_doc1, doc2) = insert_two_documents(&store);
+    store.set_default(&doc2.id).unwrap();
+    assert_eq!(store.default_document().unwrap().id, doc2.id);
+}
+
 // Verify that keywords_json survives an insert → list → get round-trip without
 // any column-position corruption from future migrations.
 #[test]
