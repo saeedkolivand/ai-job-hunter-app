@@ -127,19 +127,30 @@ pub(super) fn classify_tool_call(params: &Value, server: &Server) -> ToolCall {
                 )));
             }
         }
-        // A `command` outside the given `namespace` would match nothing: a refusal disguised as
-        // `{"commands":[]}`, exit 0.
-        if let (Some(ns), Some(cmd)) = (
-            arguments.get("namespace").and_then(Value::as_str),
-            arguments.get("command").and_then(Value::as_str),
-        ) {
-            let paired = POLICY.iter().any(|entry| {
-                let (n, c) = agent_call::split_path(entry.path);
-                n == ns && c == cmd
-            });
-            if !paired {
+        // A `command` outside the given `namespace`, or with a different `effect`, would match
+        // nothing: a refusal disguised as `{"commands":[]}`, exit 0.
+        if let Some(cmd) = arguments.get("command").and_then(Value::as_str) {
+            let ns = arguments.get("namespace").and_then(Value::as_str);
+            let effect = arguments.get("effect").and_then(Value::as_str);
+            let rows = || {
+                POLICY
+                    .iter()
+                    .filter(|entry| agent_call::split_path(entry.path).1 == cmd)
+            };
+            if ns.is_some_and(|ns| !rows().any(|e| agent_call::split_path(e.path).0 == ns)) {
                 return ToolCall::Local(Ok(tool_result(
                     usage_error_value("command is not in the given namespace"),
+                    2,
+                )));
+            }
+            if effect.is_some_and(|f| {
+                !rows().any(|e| {
+                    ns.is_none_or(|ns| agent_call::split_path(e.path).0 == ns)
+                        && super::commands_tool::effect_name(&e.effect) == f
+                })
+            }) {
+                return ToolCall::Local(Ok(tool_result(
+                    usage_error_value("command does not have the given effect"),
                     2,
                 )));
             }

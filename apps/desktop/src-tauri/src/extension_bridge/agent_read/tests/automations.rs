@@ -93,7 +93,7 @@ fn automations_projection_never_carries_forbidden_keys() {
 }
 
 /// #1495: a caller must see which boards failed without reading the whole record. Only the
-/// allowlisted keys leave — `truncated` stays behind.
+/// allowlisted keys leave; `truncated` rides fenced so a partial count never reads as complete.
 #[test]
 fn automations_carry_per_board_last_run_summaries() {
     let summaries: Vec<crate::scraping::BoardScrapeSummary> = serde_json::from_value(json!([
@@ -117,7 +117,12 @@ fn automations_carry_per_board_last_run_summaries() {
     );
     assert_eq!(
         runs[1],
-        json!({ "board": "jobicy", "count": 4, "notes": ["location-filtered:2"] })
+        json!({
+            "board": "jobicy", "count": 4, "notes": ["location-filtered:2"],
+            "truncated": crate::prompt_fence::fenced(
+                "job_posting", "page 3 of 5 failed", crate::prompt_fence::JOB_CAP
+            ),
+        })
     );
     assert_eq!(
         runs[2]["skipped"],
@@ -190,10 +195,7 @@ fn every_board_derived_summary_string_is_fenced() {
             "{key} reaches the agent unfenced: {text}"
         );
     }
-    assert!(
-        !value.to_string().contains("UPSTREAM-TRUNC-TEXT"),
-        "truncated is not projected"
-    );
+    assert!(run.contains_key("truncated"), "truncated must be projected");
 }
 
 #[test]

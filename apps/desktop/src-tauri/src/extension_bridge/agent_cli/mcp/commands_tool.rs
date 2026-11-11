@@ -21,6 +21,16 @@ pub(super) fn catalogue_lookup(command: &str) -> Option<&'static CatalogueEntry>
     CATALOGUE.iter().find(|entry| entry.command == command)
 }
 
+/// The wire name of an effect, as the `effect` filter and each row spell it.
+pub(super) fn effect_name(effect: &Effect) -> &'static str {
+    match effect {
+        Effect::Read => "read",
+        Effect::Reversible => "reversible",
+        Effect::Irreversible(_) => "irreversible",
+        Effect::NotExposed(_) => "not_exposed",
+    }
+}
+
 pub(super) fn commands_value(arguments: &Value, tier: Tier) -> Value {
     let effect_filter = arguments.get("effect").and_then(Value::as_str);
     let namespace_filter = arguments.get("namespace").and_then(Value::as_str);
@@ -36,12 +46,7 @@ pub(super) fn commands_value(arguments: &Value, tier: Tier) -> Value {
             {
                 return None;
             }
-            let effect_name = match entry.effect {
-                Effect::Read => "read",
-                Effect::Reversible => "reversible",
-                Effect::Irreversible(_) => "irreversible",
-                Effect::NotExposed(_) => "not_exposed",
-            };
+            let effect_name = effect_name(&entry.effect);
             if effect_filter.is_some_and(|f| f != effect_name) {
                 return None;
             }

@@ -115,14 +115,18 @@ fn parse_date_filter_lenient<'de, D>(de: D) -> Result<Option<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let raw: Option<String> = Option::deserialize(de)?;
-    Ok(raw.filter(|v| {
-        let known = crate::scraping::types::is_known_date_filter(v);
-        if !known {
-            log::warn!("[autopilot] dropped an unrecognised dateFilter while loading a target");
+    // A JSON value, not `Option<String>`: a stored `7` would fail the whole record.
+    let raw: Option<serde_json::Value> = Option::deserialize(de)?;
+    Ok(match raw {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(v)) if crate::scraping::types::is_known_date_filter(&v) => {
+            Some(v)
         }
-        known
-    }))
+        Some(_) => {
+            log::warn!("[autopilot] dropped an unrecognised dateFilter while loading a target");
+            None
+        }
+    })
 }
 
 // ── Data model ────────────────────────────────────────────────────────────────

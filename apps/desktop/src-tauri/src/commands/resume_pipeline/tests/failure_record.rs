@@ -41,7 +41,7 @@ fn a_run_that_failed_before_it_had_a_row_is_readable_with_its_kind() {
     record(
         &store,
         "run-early",
-        "https://boards.example/jobs/1",
+        Some("https://boards.example/jobs/1"),
         STARTED,
         &error,
     );
@@ -64,7 +64,7 @@ fn a_run_left_running_is_closed_and_keeps_its_metrics() {
     store.upsert_run(&running_row("run-late", metrics)).unwrap();
 
     let error = AppError::Config("openai: invalid or unauthorized API key.".into());
-    record(&store, "run-late", "", STARTED, &error);
+    record(&store, "run-late", None, STARTED, &error);
 
     let wire = summary(&store.run("run-late").unwrap());
     assert_eq!(wire["status"], "failed");
@@ -83,7 +83,13 @@ fn a_run_left_running_is_closed_and_keeps_its_metrics() {
 fn an_unclassified_failure_has_a_message_and_a_null_kind() {
     let (_dir, store) = store();
     let error = AppError::Validation("resume not found: r1".into());
-    record(&store, "run-v", "", STARTED, &error);
+    record(
+        &store,
+        "run-v",
+        Some("https://boards.example/jobs/3"),
+        STARTED,
+        &error,
+    );
     let wire = summary(&store.run("run-v").unwrap());
     assert_eq!(wire["errorKind"], Value::Null);
     assert_eq!(wire["errorMessage"], "resume not found: r1");
@@ -220,7 +226,7 @@ fn many_early_failures_stay_readable() {
         let id = format!("run-{i}");
         let url = failure_job_url("", Some(JobSource::Cache("gone")), None, &id);
         let error = AppError::Validation("job not found".into());
-        record(&store, &id, &url, STARTED + i, &error);
+        record(&store, &id, Some(&url), STARTED + i, &error);
     }
     for i in 0..5 {
         assert!(store.run(&format!("run-{i}")).is_some(), "run-{i} evicted");
@@ -229,7 +235,7 @@ fn many_early_failures_stay_readable() {
 
 /// Which `run.rs` paths record a run row. A limiter or queue refusal must not (the job row and
 /// event carry it; a looping caller would evict a posting's real runs through `prune()`), and the
-/// `execute` failure must. Scoped to the spawned task's two failure arms.
+/// `execute` failure (via `fail_run`, which records the row) must. Scoped to the spawned task's two failure arms.
 #[test]
 fn only_an_execute_failure_records_a_run_row() {
     let src = include_str!("../run.rs");
@@ -239,10 +245,10 @@ fn only_an_execute_failure_records_a_run_row() {
     let acquire_arm = &spawn[spawn.find("Err(e) =>").expect("acquire arm")..execute_at];
     let execute_arm = &spawn[execute_at..];
     assert!(
-        !acquire_arm.contains("record_failure("),
+        !acquire_arm.contains("fail_run(") && !acquire_arm.contains("record_failure("),
         "a refusal must not write a run row"
     );
-    assert_eq!(execute_arm.matches("record_failure(").count(), 1);
+    assert_eq!(execute_arm.matches("fail_run(").count(), 1);
 }
 
 /// A row written before this change has no kind, message or research: it still loads, as null.
@@ -257,4 +263,49 @@ fn an_old_row_without_the_new_fields_still_reads() {
         assert_eq!(wire[key], Value::Null, "{key}");
     }
     assert_eq!(wire["metrics"]["calls"], 2);
+}
+
+/// A run whose row `execute` wrote and the user then deleted must stay deleted when a refused
+/// save reports its failure. Mutation check: build the fallback row even when no URL is given
+/// (use `unwrap_or("")`) and the deleted run comes back.
+#[test]
+fn a_deleted_run_is_not_resurrected_by_its_failure_report() {
+    let (_dir, store) = store();
+    let error = AppError::Message("the document was refused".into());
+    record(&store, "run-deleted", None, STARTED, &error);
+    assert!(store.run("run-deleted").is_none());
+}
+
+/// An id-only request (no `jobUrl`) failing before `execute` wrote a row is keyed by the cached
+/// posting's own URL. Where part 1 returned no key (no row) for an unresolvable id, the run's own
+/// key is used instead so the failure stays readable (#1496). Mutation check: drop the cached-URL
+/// preference and the first assertion gets the run key.
+#[test]
+fn an_id_only_failure_is_keyed_by_the_cached_postings_url() {
+    let cached = Some("https://boards.example/jobs/9".to_string());
+    assert_eq!(
+        failure_job_url("", Some(JobSource::Cache("job-1")), cached.clone(), "r"),
+        "https://boards.example/jobs/9"
+    );
+    // The cached posting's URL wins over the request's, as it does in `execute`.
+    assert_eq!(
+        failure_job_url(
+            "https://boards.example/jobs/4",
+            Some(JobSource::Cache("job-1")),
+            cached,
+            "r"
+        ),
+        "https://boards.example/jobs/9"
+    );
+    assert_eq!(
+        failure_job_url(
+            "https://boards.example/jobs/4",
+            Some(JobSource::Cache("gone")),
+            None,
+            "r"
+        ),
+        "https://boards.example/jobs/4"
+    );
+    let text_key = failure_job_url("", Some(JobSource::Text("a pasted ad")), None, "r");
+    assert!(text_key.starts_with("https://unlinked.ajh.invalid/"));
 }
