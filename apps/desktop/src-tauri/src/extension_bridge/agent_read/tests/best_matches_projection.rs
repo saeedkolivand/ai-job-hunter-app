@@ -62,6 +62,7 @@ fn best_match_projection_has_exact_keys() {
             "isAgency",
             "location",
             "postedAt",
+            "rank",
             "salaryCurrency",
             "salaryMax",
             "salaryMin",
@@ -148,4 +149,19 @@ fn best_match_title_company_location_are_fenced_as_untrusted_data() {
             "an embedded fence tag inside scraped {field} must be neutralized: {value}"
         );
     }
+}
+
+/// #1497: `rank` is the 1-based position in the full ranked set, assigned before the `query`
+/// filter, so it keeps naming the app's order (block order included) on a filtered or paged reply.
+#[test]
+fn best_match_rank_is_the_position_in_the_full_ranked_set() {
+    let mut second = full_best_match_row_json();
+    second["title"] = json!("Needle Engineer");
+    let out = best_matches::resolve_best_matches(
+        &[full_best_match_row_json(), second],
+        0,
+        20,
+        Some("needle"),
+    );
+    assert_eq!(out["matches"][0]["rank"], 2);
 }

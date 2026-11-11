@@ -93,6 +93,26 @@ export function resolveNestedFields(sources: FieldSources, typeName: string): st
   return sources.interfaceFields.get(typeName);
 }
 
+/** Compact JSON Schema (draft 2020-12, `$schema` dropped) of the INPUT side of a Zod schema —
+ *  `io: 'input'` so a field with a `.default(...)` is optional, which is what a caller sends.
+ *  Refinements and transforms are not representable and are ignored (`unrepresentable: 'any'`). */
+export function toInputJsonSchema(schema: unknown): string {
+  if (!(schema instanceof z.ZodType)) fail('toInputJsonSchema was given a non-Zod value');
+  const json: Record<string, unknown> = z.toJSONSchema(schema, {
+    io: 'input',
+    unrepresentable: 'any',
+  });
+  delete json.$schema;
+  return JSON.stringify(json);
+}
+
+/** JSON Schema for a wrapper key typed `typeName` when that is a generated Zod request type. */
+export function resolveJsonSchema(sources: FieldSources, typeName: string): string | undefined {
+  const schemaName = sources.zodAliases.get(typeName);
+  const schema = schemaName ? sources.zodSchemas[schemaName] : undefined;
+  return schema instanceof z.ZodType ? toInputJsonSchema(schema) : undefined;
+}
+
 // ── Scalar type aliases — A1-r1-AC-3 MEDIUM ────────────────────────────────────────────────────
 //
 // A wrapper key's named type can resolve to neither of the two sources above (e.g. `PipelineStage`,

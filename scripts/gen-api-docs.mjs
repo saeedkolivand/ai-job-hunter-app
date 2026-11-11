@@ -91,6 +91,26 @@ export function parseContractFiles() {
  * byte-for-byte instead of being re-serialized.
  */
 export function docOf(node, sf) {
+  return rawDocOf(node, sf).replace(AGENT_NOTE_RE, '').trim();
+}
+
+/** `@agent <text>` — a paragraph-long note for the agent command catalogue only. It rides in the
+ *  contract member's TSDoc (so it cannot drift from the code beside it) but `docOf` strips it, so
+ *  `docs/API.md` never shows it. Runs to the next `@tag` or the end of the comment. */
+const AGENT_NOTE_RE = /(?:^|\n)@agent\b[\s\S]*?(?=\n@\w|$)/;
+
+/** The note [`AGENT_NOTE_RE`] marks, or `''` — read by `gen-agent-catalogue`. */
+export function agentNoteOf(node, sf) {
+  const m = AGENT_NOTE_RE.exec(rawDocOf(node, sf));
+  return m
+    ? m[0]
+        .replace(/^\s*@agent\b/, '')
+        .replace(/\s*\n\s*/g, ' ')
+        .trim()
+    : '';
+}
+
+function rawDocOf(node, sf) {
   const ranges = ts.getLeadingCommentRanges(sf.text, node.getFullStart()) ?? [];
   const block = ranges.filter((r) => sf.text.slice(r.pos, r.pos + 3) === '/**').pop();
   if (!block) return '';

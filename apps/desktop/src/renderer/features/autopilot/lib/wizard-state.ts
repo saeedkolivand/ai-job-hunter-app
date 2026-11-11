@@ -2,6 +2,7 @@ import {
   AGGREGATOR_BOARD_ID,
   type Autopilot,
   type AutopilotCreate,
+  DATE_FILTER_OPTIONS,
   type JobPreferences,
 } from '@ajh/shared';
 
@@ -34,7 +35,7 @@ export function wizardStateToPayload(form: WizardState): AutopilotCreate {
       // old autopilot round-trips clean, matching the `dateFilter` precedent below.
       workTypes: form.workTypes.length > 0 ? form.workTypes : undefined,
       pages: form.pages,
-      dateFilter: form.dateFilter || undefined,
+      dateFilter: DATE_FILTER_OPTIONS.find((o) => o === form.dateFilter),
       // Off collapses to undefined so an old autopilot stays free of the field.
       watchedCompaniesOnly: form.watchedCompaniesOnly || undefined,
     },

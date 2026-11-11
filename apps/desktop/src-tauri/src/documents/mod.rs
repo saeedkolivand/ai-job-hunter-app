@@ -178,6 +178,19 @@ impl DocumentStore {
         .ok()
     }
 
+    /// The default document: the `is_default` row, else the most recently created one (the same
+    /// fallback as `resolve_resume` and the renderer's `useDefaultResume`); `None` with no documents.
+    pub fn default_document(&self) -> Option<DocumentRecord> {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT id, title, name, locale, text, pages, created_at, indexed, is_default, keywords_json
+             FROM documents ORDER BY is_default DESC, created_at DESC LIMIT 1",
+            [],
+            record_from_row,
+        )
+        .ok()
+    }
+
     pub fn insert(&self, rec: &DocumentRecord) -> AppResult<()> {
         let conn = self.conn.lock();
         // If this is the first document, automatically set it as default
@@ -241,12 +254,33 @@ impl DocumentStore {
         )
     }
 
+    /// Delete a document. When it was the flagged default, the newest remaining document is
+    /// flagged in the same transaction, so the store agrees with the UI's "first saved" fallback
+    /// instead of leaving no default (which would make run-time fallbacks pick one silently).
     pub fn remove(&self, id: &str) -> AppResult<()> {
-        let conn = self.conn.lock();
-        conn.execute("DELETE FROM documents WHERE id = ?1", params![id])
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        let was_default: bool = tx
+            .query_row(
+                "SELECT is_default FROM documents WHERE id = ?1",
+                params![id],
+                |r| r.get::<_, i64>(0),
+            )
+            .map(|v| v != 0)
+            .unwrap_or(false);
+        tx.execute("DELETE FROM documents WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
-        conn.execute("DELETE FROM vectors WHERE doc_id = ?1", params![id])
+        tx.execute("DELETE FROM vectors WHERE doc_id = ?1", params![id])
             .map_err(|e| e.to_string())?;
+        if was_default {
+            tx.execute(
+                "UPDATE documents SET is_default = 1 WHERE id =
+                 (SELECT id FROM documents ORDER BY created_at DESC LIMIT 1)",
+                [],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        tx.commit().map_err(|e| e.to_string())?;
         Ok(())
     }
 

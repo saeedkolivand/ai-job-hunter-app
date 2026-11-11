@@ -295,11 +295,18 @@ impl JobTracker {
     }
 
     pub fn fail(&mut self, id: &str, error: String) {
+        self.fail_with(id, error, None);
+    }
+
+    /// [`fail`](Self::fail), also recording a small content-free `result` on the failed row
+    /// (e.g. `{ "errorKind": "billing" }`) — the existing column, so no migration.
+    pub fn fail_with(&mut self, id: &str, error: String, result: Option<Value>) {
         let record = match self.jobs.get_mut(id) {
             Some(job) => {
                 let now = now_ms();
                 job.status = JobStatus::Failed;
                 job.error = Some(error);
+                job.result = result;
                 job.updated_at = now;
                 job.finished_at = Some(now);
                 job.clone()

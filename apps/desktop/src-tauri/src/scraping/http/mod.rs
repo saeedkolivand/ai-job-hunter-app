@@ -400,6 +400,22 @@ pub fn html_to_text(html: &str) -> String {
     s.trim().to_string()
 }
 
+/// Whether `text` is HTML delivered entity-escaped: no real tag, but `&lt;tag&gt;`
+/// that decodes into one. Plain prose that merely mentions `&lt;` stays untouched.
+pub fn has_escaped_markup(text: &str) -> bool {
+    text.contains("&lt;")
+        && !HTML_TAG_RE.is_match(text)
+        && HTML_TAG_RE.is_match(&unescape_entities(text))
+}
+
+fn unescape_entities(text: &str) -> String {
+    text.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&")
+}
+
 /// Convert HTML to Markdown for job description fields.
 ///
 /// When the input contains HTML tags (detected by a simple `<tag>` scan) it is
@@ -420,6 +436,11 @@ pub fn html_to_markdown(html: &str) -> String {
     if trimmed_input.is_empty() {
         return String::new();
     }
+
+    // Some boards (Greenhouse's API, LinkedIn) deliver the markup entity-escaped
+    // (`&lt;p&gt;…`): decode it once so it converts like real HTML (#1497).
+    let decoded = has_escaped_markup(trimmed_input).then(|| unescape_entities(trimmed_input));
+    let trimmed_input = decoded.as_deref().unwrap_or(trimmed_input);
 
     // If the input has no HTML tags, treat it as plain text / already-markdown
     // and return it as-is — skipping htmd avoids escaping existing ** markers.

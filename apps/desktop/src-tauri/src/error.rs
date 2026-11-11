@@ -67,6 +67,9 @@ pub enum AppError {
 /// Crate-wide result alias for the typed error.
 pub type AppResult<T> = Result<T, AppError>;
 
+mod failure_kind;
+pub use failure_kind::FailureKind;
+
 // `code`/`retriable`/`message` are the structured-error surface consumed by a
 // future `{ code, message, retriable }` IPC envelope (roadmap Phase 3 follow-up)
 // and by logging; allowed-dead until that wire format lands.

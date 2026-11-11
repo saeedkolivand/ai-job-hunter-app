@@ -164,7 +164,9 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
         curated_tool(
             TOOL_BEST_MATCHES,
             "Best Matches",
-            UNTRUSTED_FIELDS_NOTICE,
+            &format!(
+                "Rows are ordered by the app's ranking, given by each row's `rank` (1 = first): combined-scored rows come first, then keyword-scored rows, and within a block rows with a description come before description-less ones, then by score descending. So a lower `score` can sit above a higher one across those boundaries; that is the intended order, not a bug. {UNTRUSTED_FIELDS_NOTICE}"
+            ),
             schema_object(
                 json!({
                     "limit": { "type": "integer", "minimum": 0, "description": format!("rows to return (default {DEFAULT_BEST_MATCHES_LIMIT}, server cap {MAX_BEST_MATCHES_LIMIT})") },
@@ -214,7 +216,12 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
              the same underlying data through.",
             no_args.clone(),
         ),
-        curated_tool(TOOL_AUTOMATIONS, "Automations", "", no_args),
+        curated_tool(
+            TOOL_AUTOMATIONS,
+            "Automations",
+            UNTRUSTED_FIELDS_NOTICE,
+            no_args,
+        ),
         curated_tool(
             TOOL_FOUND_JOBS,
             "Found Jobs",
@@ -237,11 +244,12 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
         json!({
             "name": TOOL_COMMANDS,
             "title": "Commands",
-            "description": "Enumerate every command this server can dispatch through call-read/call-reversible/call-irreversible, grouped by Effect class. Local — no bridge call, works even with the app closed. Each row carries a one-line description (when the source has one) and args: either null (this command's input contract is not catalogued — nothing here validates its keys) or a list of {name, required, fields?} — fields lists a wrapper key's own nested field names when those resolved, and is null when they did not: a null fields wrapper is still checked for presence, but nothing inside it is validated. An Irreversible row also carries proofKind (\"field\" | \"count\" | \"response_value\"): what a confirm ceremony's proof will be, answerable without dispatching anything. proofField (the field name to read it from) is present only when proofKind is \"field\" — a \"count\" proof is the array length/total, a \"response_value\" proof is the whole read response, and neither names a field. Filter with effect and/or namespace (an exact match on the row's own namespace, never partial). A row this server wasn't launched to expose is still listed, marked \"unavailable\" with the flag that would expose it, never silently dropped.",
+            "description": "Enumerate every command this server can dispatch through call-read/call-reversible/call-irreversible, grouped by Effect class. Local — no bridge call, works even with the app closed. Each row carries a one-line description (when the source has one) and args: either null (this command's input contract is not catalogued — nothing here validates its keys) or a list of {name, required, fields?} — fields lists a wrapper key's own nested field names when those resolved, and is null when they did not: a null fields wrapper is still checked for presence, but nothing inside it is validated. An Irreversible row also carries proofKind (\"field\" | \"count\" | \"response_value\"): what a confirm ceremony's proof will be, answerable without dispatching anything. proofField (the field name to read it from) is present only when proofKind is \"field\" — a \"count\" proof is the array length/total, a \"response_value\" proof is the whole read response, and neither names a field. Each arg of a command whose input has a Zod contract carries hasSchema: true; pass `command` (an exact command name) to get just that row with every such arg's full JSON Schema inline as `schema` — nested fields, types, enums and ranges, which the list omits to stay small. Filter with effect, namespace and/or command (each an exact match, never partial). A row this server wasn't launched to expose is still listed, marked \"unavailable\" with the flag that would expose it, never silently dropped.",
             "inputSchema": schema_object(
                 json!({
                     "effect": { "type": "string", "enum": EFFECT_FILTER_VALUES, "description": "filter to one effect class" },
                     "namespace": { "type": "string", "description": "filter to one namespace, e.g. \"jobs\" — an exact match on the row's own namespace, never a partial one" },
+                    "command": { "type": "string", "description": "return only this command's row, with each wrapper arg's full JSON Schema inline — e.g. \"autopilot_create\". An exact match on the command name, never a partial one" },
                 }),
                 &[],
             ),

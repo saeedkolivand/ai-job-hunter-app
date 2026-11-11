@@ -14,7 +14,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "resume_pipeline_get",
-        description: "One run with its full stage trail. `null` for an unknown id.",
+        description: "One run with its full stage trail. `null` only for an unknown id — a run that failed, even before its first stage, is readable (see `errorKind`/`errorMessage`).",
         args: &[
             CatalogueArg { name: "runId", required: true, fields: None },
         ],
@@ -42,7 +42,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "resume_pipeline_run",
-        description: "Start one staged run. Resolves as soon as the run is admitted (the concurrency wait happens inside the run, so a queued run still returns its ids immediately).",
+        description: "Start one staged resume generation. Body `{\"req\": {...}}` (JSON Schema in `args[].schema`): you need one of `resumeId` or `resumeText` AND one of `jobId`, `jobAdText` or `jobUrl` (a found job's URL, looked up in the found-jobs store; refused if it matches nothing); an id always wins over its text twin and an unknown id is an error, never a text fallback. Missing inputs are refused at once, before any id. Optional: `jobTitle`, `companyName`, `targetLanguage`, `market`, `effort`, `includeCoverLetter`, `includeResume` (false = cover-letter-only), `researchCompany`. Replies as soon as the run is admitted with its ids, not when it finishes; read the outcome with resume_pipeline_get (a failed run has `errorKind` billing|auth|rate_limited|unavailable|model_output and `errorMessage`; `research` is ok|empty|failed). It calls the configured AI provider, so it is billable.",
         args: &[
             CatalogueArg { name: "req", required: true, fields: Some(&[]) },
         ],

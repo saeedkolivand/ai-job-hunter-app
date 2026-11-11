@@ -3,14 +3,17 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
-import { ts } from '../../../scripts/gen-api-docs.mjs';
+import { agentNoteOf, docOf, ts } from '../../../scripts/gen-api-docs.mjs';
 import {
   type CatalogueArg,
   type CatalogueEntry,
   collectContractInterfaceFields,
   mergeCatalogueEntry,
 } from './gen-agent-catalogue';
+import { type FieldSources, toInputJsonSchema } from './gen-agent-catalogue/field-sources';
+import { applyOverrides } from './gen-agent-catalogue/schema-overrides';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -164,5 +167,86 @@ describe('CI drift-gate entry point (A1-r3-AC-3)', () => {
     };
     expect(pkg.scripts['gen:agent-catalogue:check']).toContain('--check');
     expect(pkg.scripts['gen:agent-catalogue']).not.toContain('--check');
+  });
+});
+
+// #1491: the catalogue carries JSON Schema generated from the Zod contracts, and a hand-written
+// `@agent` note that `docs/API.md` never shows.
+describe('toInputJsonSchema (issue #1491)', () => {
+  it('emits nested fields, enums and ranges, with a defaulted field optional (input side)', () => {
+    const schema = JSON.parse(
+      toInputJsonSchema(
+        z.object({
+          mode: z.enum(['a', 'b']),
+          pages: z.number().int().min(1).max(10).default(2),
+          nested: z.object({ tag: z.string().max(5) }),
+        })
+      )
+    );
+    expect(schema.$schema).toBeUndefined();
+    expect(schema.properties.mode.enum).toEqual(['a', 'b']);
+    expect(schema.properties.pages).toMatchObject({ minimum: 1, maximum: 10 });
+    expect(schema.properties.nested.properties.tag.maxLength).toBe(5);
+    expect(schema.required).toEqual(['mode', 'nested']);
+  });
+
+  it('refuses a non-Zod value instead of emitting a guess', () => {
+    expect(() => toInputJsonSchema({ type: 'object' })).toThrow(/non-Zod/);
+  });
+});
+
+describe('@agent note (issue #1491)', () => {
+  const src = `interface C {
+    /**
+     * Short summary.
+     *
+     * @agent Long note
+     *   over two lines.
+     */
+    a(): void;
+  }`;
+  const sf = sourceFile('c.ts', src);
+  const [member] = (sf.statements[0] as ts.InterfaceDeclaration).members;
+
+  it('is read whole, on one line, for the catalogue', () => {
+    expect(agentNoteOf(member, sf)).toBe('Long note over two lines.');
+  });
+
+  it('is stripped from the text docs/API.md renders', () => {
+    expect(docOf(member, sf)).toBe('Short summary.');
+  });
+});
+
+// `.refine`s never reach z.toJSONSchema; `resume_pipeline_run.req` re-adds them as `allOf`/`anyOf`.
+describe('applyOverrides — resume_pipeline_run rules', () => {
+  const sources = (names: string[]) =>
+    ({
+      zodSchemas: Object.fromEntries(names.map((n) => [n, z.object({ a: z.string().optional() })])),
+    }) as unknown as FieldSources;
+  const entries = () =>
+    new Map([
+      ['autopilot_update', { args: [{ name: 'req' }] }],
+      ['job_preferences_set', { args: [{ name: 'prefs' }] }],
+      ['resume_pipeline_run', { args: [{ name: 'req' }] }],
+    ]) as unknown as Map<string, CatalogueEntry>;
+  const NAMES = ['AutopilotUpdateSchema', 'JobPreferencesSchema', 'ResumePipelineRunSchema'];
+
+  it('adds a resume source, a posting source and an output rule', () => {
+    const map = entries();
+    applyOverrides(map, sources(NAMES));
+    const schema = JSON.parse(map.get('resume_pipeline_run')?.args[0]?.schema ?? '{}');
+    expect(schema.allOf).toHaveLength(3);
+    expect(schema.allOf[0].anyOf.map((o: { required: string[] }) => o.required[0])).toEqual([
+      'resumeId',
+      'resumeText',
+    ]);
+    expect(schema.allOf[1].anyOf).toHaveLength(3);
+    expect(schema.allOf[0].anyOf[0].properties.resumeId.pattern).toBe(String.raw`\S`);
+    expect(JSON.parse(map.get('autopilot_update')?.args[0]?.schema ?? '{}').allOf).toBeUndefined();
+  });
+
+  it('throws when a row matches no catalogued argument or schema', () => {
+    expect(() => applyOverrides(new Map(), sources(NAMES))).toThrow(/matches no catalogued/);
+    expect(() => applyOverrides(entries(), sources([]))).toThrow(/is not exported/);
   });
 });

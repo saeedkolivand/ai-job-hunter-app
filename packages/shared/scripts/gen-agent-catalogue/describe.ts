@@ -1,4 +1,5 @@
 import {
+  agentNoteOf,
   docOf,
   INDEX_FILE,
   isExported,
@@ -101,5 +102,7 @@ export function describe(ctx: DescCtx, namespace: string, method: string): strin
   if (!contract || !ts.isInterfaceDeclaration(contract.node)) return '';
   const member = contract.node.members.find((m) => m.name?.getText(contract.sf) === method);
   if (!member) return '';
-  return catalogueSummarize(docOf(member, contract.sf));
+  // An `@agent` note (stripped from `docs/API.md` by `docOf`) is the whole description when present:
+  // the main write commands need more than one sentence (merge semantics, defaults).
+  return agentNoteOf(member, contract.sf) || catalogueSummarize(docOf(member, contract.sf));
 }

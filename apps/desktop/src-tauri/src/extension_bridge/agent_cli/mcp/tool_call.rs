@@ -112,6 +112,49 @@ pub(super) fn classify_tool_call(params: &Value, server: &Server) -> ToolCall {
                 )));
             }
         }
+        // Same shape again for `command`: an unknown name would answer `{"commands":[]}` as a
+        // success. Checked against POLICY's own rows, never a typed list.
+        if let Some(command_value) = arguments.get("command") {
+            let valid = command_value.as_str().is_some_and(|s| {
+                POLICY
+                    .iter()
+                    .any(|entry| agent_call::split_path(entry.path).1 == s)
+            });
+            if !valid {
+                return ToolCall::Local(Ok(tool_result(
+                    usage_error_value("command does not match any real command"),
+                    2,
+                )));
+            }
+        }
+        // A `command` outside the given `namespace`, or with a different `effect`, would match
+        // nothing: a refusal disguised as `{"commands":[]}`, exit 0.
+        if let Some(cmd) = arguments.get("command").and_then(Value::as_str) {
+            let ns = arguments.get("namespace").and_then(Value::as_str);
+            let effect = arguments.get("effect").and_then(Value::as_str);
+            let rows = || {
+                POLICY
+                    .iter()
+                    .filter(|entry| agent_call::split_path(entry.path).1 == cmd)
+            };
+            if ns.is_some_and(|ns| !rows().any(|e| agent_call::split_path(e.path).0 == ns)) {
+                return ToolCall::Local(Ok(tool_result(
+                    usage_error_value("command is not in the given namespace"),
+                    2,
+                )));
+            }
+            if effect.is_some_and(|f| {
+                !rows().any(|e| {
+                    ns.is_none_or(|ns| agent_call::split_path(e.path).0 == ns)
+                        && super::commands_tool::effect_name(&e.effect) == f
+                })
+            }) {
+                return ToolCall::Local(Ok(tool_result(
+                    usage_error_value("command does not have the given effect"),
+                    2,
+                )));
+            }
+        }
         return ToolCall::Local(Ok(tool_result(commands_value(&arguments, server.tier), 0)));
     }
 

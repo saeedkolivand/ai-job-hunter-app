@@ -92,4 +92,82 @@ fn automations_projection_never_carries_forbidden_keys() {
     }
 }
 
+/// #1495: a caller must see which boards failed without reading the whole record. Only the
+/// allowlisted keys leave; `truncated` rides fenced so a partial count never reads as complete.
+#[test]
+fn automations_carry_per_board_last_run_summaries() {
+    let summaries: Vec<crate::scraping::BoardScrapeSummary> = serde_json::from_value(json!([
+        { "board": "arbeitsagentur", "count": 0, "error": "HTTP 403" },
+        { "board": "jobicy", "count": 4, "notes": ["location-filtered:2"],
+          "truncated": "page 3 of 5 failed" },
+        { "board": "linkedin", "count": 0, "skipped": "needs-login" },
+    ]))
+    .expect("summaries deserialize");
+    let records = vec![Autopilot {
+        last_run_summaries: summaries,
+        ..blank_autopilot("ap-1")
+    }];
+    let row = &resolve_automations(&records)["automations"][0];
+    let runs = row["lastRunSummaries"].as_array().expect("present");
+    assert_eq!(runs.len(), 3);
+    assert_eq!(runs[0]["board"], "arbeitsagentur");
+    assert_eq!(
+        runs[0]["error"],
+        crate::prompt_fence::fenced("job_posting", "HTTP 403", crate::prompt_fence::JOB_CAP)
+    );
+    assert_eq!(
+        runs[1],
+        json!({
+            "board": "jobicy", "count": 4, "notes": ["location-filtered:2"],
+            "truncated": crate::prompt_fence::fenced(
+                "job_posting", "page 3 of 5 failed", crate::prompt_fence::JOB_CAP
+            ),
+        })
+    );
+    assert_eq!(
+        runs[2]["skipped"],
+        crate::prompt_fence::fenced("job_posting", "needs-login", crate::prompt_fence::JOB_CAP)
+    );
+}
+
+/// Every string a board's summary carries to an agent is fenced unless it is on the plain list
+/// (`board` is our own registry id, `notes` a fixed vocabulary). Driven off the OUTPUT, so a
+/// board-derived field added to the projection later and left bare fails here.
+#[test]
+fn every_board_derived_summary_string_is_fenced() {
+    let summary: crate::scraping::BoardScrapeSummary = serde_json::from_value(json!({
+        "board": "jobicy", "count": 1,
+        "error": "UPSTREAM-ERROR-TEXT", "skipped": "UPSTREAM-SKIP-TEXT",
+        "truncated": "UPSTREAM-TRUNC-TEXT", "notes": ["location-filtered:2"],
+    }))
+    .expect("summary deserializes");
+    let records = vec![Autopilot {
+        last_run_summaries: vec![summary],
+        ..blank_autopilot("ap-1")
+    }];
+    let value = resolve_automations(&records);
+    let run = value["automations"][0]["lastRunSummaries"][0]
+        .as_object()
+        .expect("a summary object");
+    for (key, v) in run {
+        if matches!(key.as_str(), "board" | "count" | "notes") {
+            continue;
+        }
+        let text = v
+            .as_str()
+            .unwrap_or_else(|| panic!("{key} is not a string"));
+        assert!(
+            text.contains("<job_posting") && text.contains("UPSTREAM-"),
+            "{key} reaches the agent unfenced: {text}"
+        );
+    }
+    assert!(run.contains_key("truncated"), "truncated must be projected");
+}
+
+#[test]
+fn automations_omit_last_run_summaries_before_the_first_run() {
+    let row = &resolve_automations(&[blank_autopilot("ap-1")])["automations"][0];
+    assert!(row.get("lastRunSummaries").is_none());
+}
+
 // ── best-matches ─────────────────────────────────────────────────────────

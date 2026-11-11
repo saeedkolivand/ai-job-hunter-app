@@ -59,7 +59,7 @@ pub(super) async fn semantic_rerank_step(
     // keyword-coverage meaning (no silent threshold regression for existing
     // autopilots), and only jobs that survived dedup can cost an embed.
     //
-    // A résumé-less autopilot short-circuits with the flag: phase 1 produced no
+    // An autopilot with no résumé (own text blank AND no default document) short-circuits with the flag: phase 1 produced no
     // scores at all for it, so there is nothing to re-rank. The gate itself is
     // `should_semantic_rerank`, applied inside `semantic_rerank_phase` — which
     // is also what keeps the `setup` closure below (the state resolve + the blob

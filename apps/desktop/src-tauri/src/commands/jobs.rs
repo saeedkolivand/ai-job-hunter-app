@@ -1,3 +1,4 @@
+use crate::error::FailureKind;
 use crate::events::{emit_event, JobEvent, JOBS_EVENT};
 use crate::jobs::{JobTracker, KeyedExclusiveStart};
 use crate::observability::sanitize_reason;
@@ -178,14 +179,19 @@ pub fn job_complete(app: &AppHandle, id: &str, result: Value) {
 /// `event_data` overrides what rides as the event payload (see
 /// [`job_fail_with_data`]'s doc for why) — `None` reuses the sanitized error
 /// string, mirroring the plain [`job_fail`] shape.
+///
+/// `kind`, when the failure is a classified provider failure, rides on the failed row's
+/// `result` as `{ "errorKind": … }` so `jobs_get`/`jobs_list` can say why (#1496).
 fn fail_in_tracker(
     tracker: &mut JobTracker,
     id: &str,
     error: String,
     event_data: Option<Value>,
+    kind: Option<FailureKind>,
 ) -> Value {
     let error = sanitize_reason(&error);
-    tracker.fail(id, error.clone());
+    let result = kind.map(|k| json!({ "errorKind": k.as_str() }));
+    tracker.fail_with(id, error.clone(), result);
     event_data.unwrap_or(Value::String(error))
 }
 
@@ -195,6 +201,7 @@ pub fn job_fail(app: &AppHandle, id: &str, error: String) {
         &mut app.state::<Mutex<JobTracker>>().lock(),
         id,
         error,
+        None,
         None,
     );
     emit_job_event(app, "job.failed", id, Some(data));
@@ -219,6 +226,26 @@ pub fn job_fail_with_data(app: &AppHandle, id: &str, message: String, data: Valu
         id,
         message,
         Some(data),
+        None,
+    );
+    emit_job_event(app, "job.failed", id, Some(data));
+}
+
+/// [`job_fail`]/[`job_fail_with_data`] for a failure with a [`FailureKind`]: the kind lands on
+/// the job row, the event payload stays `data` (or the sanitized message).
+pub fn job_fail_classified(
+    app: &AppHandle,
+    id: &str,
+    message: String,
+    data: Option<Value>,
+    kind: Option<FailureKind>,
+) {
+    let data = fail_in_tracker(
+        &mut app.state::<Mutex<JobTracker>>().lock(),
+        id,
+        message,
+        data,
+        kind,
     );
     emit_job_event(app, "job.failed", id, Some(data));
 }

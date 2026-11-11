@@ -23,6 +23,7 @@
 //!   research, so a letter-less run never admits or pays for a lookup.
 
 use std::future::Future;
+use std::sync::Arc;
 
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
@@ -130,6 +131,7 @@ impl<'a> QualityCtx<'a> {
         let (early, role_rx, brief_tx) = EarlyResearch::channel();
         self.early_research = Some(early);
         let completer = self.completer_for(LETTER_STAGE);
+        let ledger = Arc::clone(&self.ledger);
         let (job_ad, company, effort) = (
             self.input.job_ad,
             self.input.company_name,
@@ -138,7 +140,7 @@ impl<'a> QualityCtx<'a> {
         Some(drive(role_rx, brief_tx, move |role| async move {
             cancellable(
                 &cancel,
-                research_brief(completer, job_ad, company, &role, effort),
+                research_brief(completer, &ledger, job_ad, company, &role, effort),
             )
             .await
         }))

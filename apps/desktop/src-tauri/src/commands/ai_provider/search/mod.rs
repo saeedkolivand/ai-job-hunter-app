@@ -34,6 +34,7 @@ use async_trait::async_trait;
 use tauri::AppHandle;
 
 use super::research::SearchResult;
+use crate::error::AppResult;
 
 mod exa;
 pub use exa::{ExaSearcher, EXA_KEY};
@@ -74,6 +75,14 @@ pub fn resolve_search_backend(native_ready: bool, exa_key_present: bool) -> Sear
 #[async_trait]
 pub trait WebSearcher: Send + Sync {
     async fn search(&self, query: &str, limit: usize) -> Vec<SearchResult>;
+
+    /// [`search`](Self::search) that reports WHY it found nothing, for the callers that tell a
+    /// failed lookup from an empty one (company research, #1500: an out-of-credit account must
+    /// not read as "the web had nothing"). Defaults to the swallowing form; a searcher whose
+    /// transport can name its failure overrides it.
+    async fn try_search(&self, query: &str, limit: usize) -> AppResult<Vec<SearchResult>> {
+        Ok(self.search(query, limit).await)
+    }
 }
 
 /// Whether research can actually run for `provider`/`model` right now.
@@ -236,8 +245,8 @@ pub async fn fetch_company_brief<P: super::AiProvider + ?Sized>(
         CompanySearchRoute::Backend(_, Some(searcher)) => searcher,
     };
     let results = searcher
-        .search(&super::research::search_query(company), 5)
-        .await;
+        .try_search(&super::research::search_query(company), 5)
+        .await?;
     if results.is_empty() {
         return Ok(String::new());
     }

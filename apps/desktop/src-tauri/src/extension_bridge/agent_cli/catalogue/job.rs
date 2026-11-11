@@ -12,7 +12,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "job_preferences_set",
-        description: "Writes the preference row with MERGE semantics: a key the body OMITS keeps its stored value, a key sent as explicit `null` CLEARS that column.",
+        description: "Merge job preferences. Body `{\"prefs\": {...}}` (JSON Schema in `args[].schema`): a key you omit keeps its stored value and a key sent as `null` clears it (only `location` and `countryCode` accept `null`; clearing `location` clears `countryCode` with it). Fields: location, countryCode, techStack ([{name, category}], replaces the whole list), salaryExpectation, extraAgencyCompanies.",
         args: &[
             CatalogueArg { name: "prefs", required: true, fields: Some(&[]) },
         ],

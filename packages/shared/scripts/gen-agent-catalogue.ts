@@ -58,7 +58,14 @@ import {
   TAURI_CLIENT_DIR,
   type Uncatalogued,
 } from './gen-agent-catalogue/model.js';
-import { renderAggregator, renderShardFile, shardEntries } from './gen-agent-catalogue/render.js';
+import {
+  INPUT_SCHEMAS_MODULE,
+  renderAggregator,
+  renderInputSchemas,
+  renderShardFile,
+  shardEntries,
+} from './gen-agent-catalogue/render.js';
+import { applyOverrides } from './gen-agent-catalogue/schema-overrides.js';
 
 // Public surface of this module — `gen-agent-catalogue.test.ts` and the `.cli.ts` entry import these.
 export { collectContractInterfaceFields } from './gen-agent-catalogue/field-sources.js';
@@ -108,6 +115,7 @@ export async function main() {
   const uncataloguedNames = [...new Set(uncatalogued.map((u) => u.command))].sort();
   for (const cmd of uncataloguedNames) entries.delete(cmd);
 
+  applyOverrides(entries, fieldSources);
   const sortedEntries = [...entries.values()].sort((a, b) => a.command.localeCompare(b.command));
   const shards = shardEntries(sortedEntries);
 
@@ -143,6 +151,11 @@ export async function main() {
     }
     outputs.push([join(SHARD_DIR, `${shard.name}.rs`), formatted]);
   }
+
+  outputs.push([
+    join(SHARD_DIR, `${INPUT_SCHEMAS_MODULE}.rs`),
+    formatWithRustfmt(renderInputSchemas(sortedEntries)),
+  ]);
 
   // Shard files this run no longer produces (a prefix disappeared, or the old `shard_N.rs`
   // naming) — deleted rather than left as stale, since a `mod` that no longer exists in the

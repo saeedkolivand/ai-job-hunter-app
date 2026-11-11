@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 
 import type { Autopilot } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, cn, ModalShell, transition } from '@ajh/ui';
+import { Button, cn, ModalShell, transition, useNotification } from '@ajh/ui';
 
 import { StepAction } from '@/features/autopilot/components/wizard-steps/StepAction';
 import { StepFilter } from '@/features/autopilot/components/wizard-steps/StepFilter';
@@ -37,6 +37,7 @@ const STEP_FIELDS: Partial<Record<number, (keyof WizardState)[]>> = {
 
 export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
   const { t } = useTranslation();
+  const notify = useNotification();
   const { data: jobPrefs } = useJobPreferences();
 
   const { autopilot, setAutopilot } = useSessionStore();
@@ -98,6 +99,9 @@ export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {
         editingId !== null
           ? await updateAutopilot.mutateAsync({ id: editingId, ...payload })
           : await createAutopilot.mutateAsync(payload);
+      if (ap === null) throw new Error(t('autopilot.wizard.updateFailed'));
+      // Backend warns (English) when no resume text and no default document exist.
+      if (ap.warning) notify.warning({ message: t('autopilot.wizard.noResumeWarning') });
       onDone(ap);
     } catch (err) {
       setError(

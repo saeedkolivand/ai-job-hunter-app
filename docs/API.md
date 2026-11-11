@@ -1123,6 +1123,8 @@ when `eventId` does not resolve to a pending row.
 update(req: ApplicationUpdateRequest): Promise<ApplicationMutationResult>;
 ```
 
+Patch the user-editable tracking fields of an Application.
+
 #### `applications.remove`
 
 ```ts
@@ -1255,6 +1257,8 @@ Contract: `AutopilotContract` in `packages/shared/src/ipc/contracts/autopilot.ts
 list(): Promise<Autopilot[]>;
 ```
 
+Every autopilot.
+
 #### `autopilot.get`
 
 ```ts
@@ -1264,14 +1268,20 @@ get(req: { autopilotId: string }): Promise<Autopilot | null>;
 #### `autopilot.create`
 
 ```ts
-create(req: AutopilotCreate): Promise<Autopilot>;
+create(req: AutopilotCreate): Promise<Autopilot & { warning?: string }>;
 ```
+
+Resolves with the saved record; `warning` is set when no resume text and no default document exist (agent/MCP callers read it; the wizard shows a localized notice).
 
 #### `autopilot.update`
 
 ```ts
-update(req: { autopilotId: string } & AutopilotUpdate): Promise<Autopilot>;
+update(
+    req: { autopilotId: string } & AutopilotUpdate
+  ): Promise<(Autopilot & { warning?: string }) | null>;
 ```
+
+Same reply as `create`, including the optional `warning`.
 
 #### `autopilot.remove`
 
@@ -3832,12 +3842,14 @@ progress streams as `pipeline:stage` events (subscribe via `ResumePipelineContra
    the first stage and rewritten once at the end, so its terminal
    `completed`/`needsReview`/`failed`/`cancelled` is the fact everything else
    describes. Poll or re-`get` on a stage event; do not derive the outcome.
-2. **The umbrella job's `job.failed` covers the runs that never get a row.**
-   A résumé or posting that cannot be resolved, no configured provider, or a
-   refused admission all fail BEFORE the run row is inserted — `get(runId)`
-   then returns `null` forever, and the failure reaches the renderer only as
-   the `jobs:event` failure for `jobId`. A surface that consumes stage
-   events alone shows such a run as still starting.
+2. **A run that fails before its first stage still gets a row.** A résumé or
+   posting that cannot be resolved, no configured provider, or a refused
+   admission is recorded as a `failed` row carrying `errorKind` and
+   `errorMessage`, so `get(runId)` reads it (it is `null` only for an id that
+   never existed). The umbrella job's `job.failed` still fires, and the job
+   row carries the same kind. A request that can never run — no résumé, no
+   posting, no document to write — is refused by `run` itself, before any id
+   exists.
 
 **Stage events are progress, not completion.** There is no guaranteed final
 `finish`/`error` event: the cancel + deadline check runs in the stage hook's
@@ -3882,7 +3894,8 @@ ids immediately).
 get(runId: string): Promise<PipelineRunDetail | null>;
 ```
 
-One run with its full stage trail. `null` for an unknown id.
+One run with its full stage trail. `null` only for an unknown id — a run that
+failed, even before its first stage, is readable (see `errorKind`/`errorMessage`).
 
 **`resumeText`/`report` come from the per-job AGGREGATE, not from this
 run.** Every run of a posting merges into one `ai_generations` row (keyed by
@@ -4017,7 +4030,38 @@ export interface PipelineRunSummary {
    * `status` is the authority on how the run ended.
    */
   stoppedReason?: string | null;
+  /**
+   * Why a failed run failed, in one of five words — {@link PipelineErrorKind}. `null` for a run
+   * that did not fail, for a failure that is not a provider failure (a missing résumé, say), and
+   * for a run recorded before this field existed.
+   */
+  errorKind?: PipelineErrorKind | null;
+  /**
+   * The failure's message, redacted (no URLs, paths, credentials) and length-bounded — never
+   * prompt or résumé text. `null` on a run that did not fail and on older runs.
+   */
+  errorMessage?: string | null;
+  /**
+   * How the cover letter's company research ended, `null` when the run did not research (or
+   * predates this field). A letter written after `failed` has no research in it — e.g. the
+   * account ran out of credit — which is a different fact from `empty` (nothing found).
+   * Research failure never fails the run.
+   */
+  research?: PipelineResearchStatus | null;
   metrics: PipelineRunMetrics;
+}
+
+/**
+ * The closed vocabulary of provider failure kinds. `model_output` is the provider answering with
+ * nothing usable (a refusal, a cut-off, an empty analysis) rather than failing.
+ */
+export type PipelineErrorKind =
+  'billing' | 'auth' | 'rate_limited' | 'unavailable' | 'model_output';
+
+/** The outcome of a run's company research. `errorKind` is present only on `failed`. */
+export interface PipelineResearchStatus {
+  status: 'ok' | 'empty' | 'failed';
+  errorKind?: PipelineErrorKind;
 }
 
 /**
@@ -4173,6 +4217,8 @@ Contract: `ScrapeContract` in `packages/shared/src/ipc/contracts/scrape.ts`
 ```ts
 boards(req: ScrapeBoardsRequest): Promise<{ jobId: string }>;
 ```
+
+Start a manual multi-board search; resolves with the job id once the scrape is admitted.
 
 #### `scrape.url`
 

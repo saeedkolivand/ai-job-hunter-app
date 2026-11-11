@@ -12,13 +12,14 @@
 //!
 //! Split further, by concern: list paging (`paging`), base64 re-encode (`base64`), the
 //! `contact_profile_get`/`_set` projection (`contact_profile`), dropping a dead field
-//! (`drop_fields`), the inbound unfence mirror (`unfence`), and the bare-string reply fence plus
+//! (`drop_fields`), the `autopilot_list` summary (`autopilot_summary`), the inbound unfence mirror (`unfence`), and the bare-string reply fence plus
 //! its truncation marker (`scalar_fence`). The ordering orchestrators stay here.
 
 use serde_json::Value;
 
 use super::fence::*;
 
+mod autopilot_summary;
 mod base64;
 mod contact_profile;
 mod drop_fields;
@@ -26,6 +27,7 @@ mod paging;
 mod scalar_fence;
 mod unfence;
 
+pub(super) use autopilot_summary::summarize_autopilot_list;
 pub(in crate::extension_bridge) use base64::{base64_byte_fields, encode_base64};
 #[cfg(test)]
 pub(super) use base64::{BASE64_BYTE_FIELDS, BASE64_ENCODING, ENCODING_KEY_SUFFIX};
@@ -67,6 +69,7 @@ pub(super) fn fence_reply(command: &str, data: &mut Value) {
 /// exactly like the fencing gap this mirrors.
 pub(super) fn reshape_pre_fence(command: &str, data: &mut Value) {
     drop_dead_fields(command, data);
+    summarize_autopilot_list(command, data);
     if command == "documents_list" {
         mark_truncated_document_text(data);
     }
@@ -79,8 +82,9 @@ pub(super) fn reshape_pre_fence(command: &str, data: &mut Value) {
 /// 1. **Project first.** [`project_contact_profile_get`] only ever touches its own one command, so
 ///    its position relative to the other steps cannot change their output; placed first as the
 ///    same "runs no matter what else happens" class of step fencing is.
-/// 2. **Drop dead fields, then reserve the truncation marker.** [`reshape_pre_fence`] removes a
-///    [`DROP_FIELDS`] key before anything else looks at the payload, so later byte-budget math
+/// 2. **Drop dead fields, summarise `autopilot_list`, then reserve the truncation marker.**
+///    [`reshape_pre_fence`] removes a [`DROP_FIELDS`] key and swaps `autopilot_list`'s `foundJobs`/
+///    `resumeText` for counts/flags before anything else looks at the payload, so later byte-budget math
 ///    never accounts for a key about to disappear. It then reserves [`TRUNCATION_MARKER`] room on
 ///    `documents_list` only, BEFORE fencing — it needs the ORIGINAL text length, which fencing's
 ///    own truncation would otherwise have destroyed. The SAME fn [`super::proof::

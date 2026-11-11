@@ -1,9 +1,8 @@
 /// Bundesagentur für Arbeit — official German federal employment agency
 ///
-/// Detail endpoint note (2026-06): the `/jobdetails/{hash}` endpoint returns 404
-/// for most jobs when called from non-browser clients (no session cookie / bot filter).
-/// Jobs are emitted from list data alone; description is populated only when the
-/// detail fetch succeeds. This degrades gracefully — list data has title/company/
+/// Detail endpoint note: `/jobdetails/{hash}` is opportunistic (404s seen from
+/// non-browser clients). Jobs are emitted from list data alone; description is
+/// populated only when the detail fetch succeeds. This degrades gracefully — list data has title/company/
 /// location/url which is sufficient for search results.
 ///
 use super::super::http::{fetch_json, strip_html};
@@ -13,65 +12,21 @@ use crate::error::AppError;
 use async_trait::async_trait;
 use serde::Deserialize;
 
-const API_BASE: &str = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4";
+/// List endpoint. v4 now answers 403 (#1494); v6 is the live list API.
+const LIST_BASE: &str = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v6";
+/// Details stay on v4: v6 `/jobdetails/{hash}` answers 403 while v4 answers 200
+/// (checked live 2026-11), keyed by base64url(referenznummer).
+const DETAIL_BASE: &str = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4";
 const API_KEY: &str = "jobboerse-jobsuche";
 
-#[derive(Debug, Deserialize)]
-struct Arbeitsort {
-    ort: Option<String>,
-    region: Option<String>,
-    land: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Stellenangebot {
-    refnr: String,
-    titel: Option<String>,
-    beruf: Option<String>,
-    arbeitgeber: Option<String>,
-    arbeitsort: Option<Arbeitsort>,
-    #[serde(rename = "aktuelleVeroeffentlichungsdatum")]
-    aktuelle_veroeffentlichungsdatum: Option<String>,
-    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
-    #[serde(rename = "eintrittsdatum")]
-    eintrittsdatum: Option<String>,
-    #[serde(rename = "externeUrl")]
-    externe_url: Option<String>,
-    #[serde(rename = "hashId")]
-    hash_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ListResp {
-    stellenangebote: Option<Vec<Stellenangebot>>,
-    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
-    #[serde(rename = "maxErgebnisse")]
-    max_ergebnisse: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Branche {
-    #[allow(dead_code)] // serde-deserialized; kept for completeness / future use
-    bezeichnung: Option<String>,
-}
+mod model;
+use model::*;
 
 #[derive(Debug, Deserialize)]
 struct DetailResp {
-    // Live API (2026-06): fields renamed; all Option so future renames degrade gracefully.
-    #[allow(dead_code)]
-    #[serde(rename = "referenznummer")]
-    referenznummer: Option<String>,
     #[serde(rename = "stellenangebotsBeschreibung")]
     stellenangebots_beschreibung: Option<String>,
     arbeitgeberdarstellung: Option<String>,
-    #[allow(dead_code)]
-    branche: Option<Branche>,
-    // live API uses "firma" for company name in detail response
-    #[allow(dead_code)]
-    firma: Option<String>,
-    #[allow(dead_code)]
-    #[serde(rename = "stellenangebotsTitel")]
-    stellenangebots_titel: Option<String>,
 }
 
 pub struct ArbeitsagenturScraper;
@@ -141,7 +96,7 @@ impl Scraper for ArbeitsagenturScraper {
                 .join("&");
 
             let list_resp = match fetch_json::<ListResp>(
-                &format!("{}/jobs?{}", API_BASE, query_string),
+                &format!("{}/jobs?{}", LIST_BASE, query_string),
                 super::super::http::FetchOptions {
                     headers: Some(vec![
                         ("X-API-Key".to_string(), API_KEY.to_string()),
@@ -169,7 +124,13 @@ impl Scraper for ArbeitsagenturScraper {
                 }
             };
 
-            let items = list_resp.stellenangebote.unwrap_or_default();
+            // Page 1 with neither a list nor a zero total is a changed response
+            // shape (the v4 -> v6 rename was silent): fail loudly so board health
+            // records it instead of reading as "found nothing".
+            if page == 1 {
+                list_resp.check_first_page()?;
+            }
+            let items = list_resp.ergebnisliste.unwrap_or_default();
 
             if items.is_empty() {
                 break;
@@ -180,24 +141,22 @@ impl Scraper for ArbeitsagenturScraper {
                     break;
                 }
 
-                if j.refnr.is_empty() || seen.contains(&j.refnr) {
+                let refnr = &j.referenznummer;
+                if refnr.is_empty() || seen.contains(refnr) {
                     continue;
                 }
 
-                seen.insert(j.refnr.clone());
+                seen.insert(refnr.clone());
 
                 // Attempt detail fetch opportunistically — 404s are common from non-browser
                 // clients (bot filter). On failure/404 we still emit the job from list data.
-                let hash = j
-                    .hash_id
-                    .clone()
-                    .unwrap_or_else(|| self.to_base64_url(&j.refnr));
+                let hash = self.to_base64_url(refnr);
 
                 // Detail is opportunistic — 404s are common from non-browser clients
                 // (bot filter). On any failure we still emit the job from list data,
                 // so a failed detail fetch collapses to `None`, not a board error.
                 let detail = fetch_json::<DetailResp>(
-                    &format!("{}/jobdetails/{}", API_BASE, urlencoding::encode(&hash)),
+                    &format!("{}/jobdetails/{}", DETAIL_BASE, urlencoding::encode(&hash)),
                     super::super::http::FetchOptions {
                         headers: Some(vec![("X-API-Key".to_string(), API_KEY.to_string())]),
                         ..Default::default()
@@ -224,39 +183,26 @@ impl Scraper for ArbeitsagenturScraper {
                     }
                 });
 
-                let location = vec![
-                    j.arbeitsort.as_ref().and_then(|a| a.ort.as_deref()),
-                    j.arbeitsort.as_ref().and_then(|a| a.region.as_deref()),
-                    j.arbeitsort.as_ref().and_then(|a| a.land.as_deref()),
-                ]
-                .into_iter()
-                .flatten()
-                .filter(|s| !s.is_empty())
-                .collect::<Vec<_>>()
-                .join(", ");
-
-                let posted_at = j
-                    .aktuelle_veroeffentlichungsdatum
+                let adresse = j
+                    .stellenlokationen
                     .as_ref()
-                    .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
-                    .map(|dt| dt.timestamp_millis());
+                    .and_then(|l| l.first())
+                    .and_then(|l| l.adresse.as_ref());
+                let location = format_location(adresse);
+
+                let posted_at = j.posted_at_ms();
 
                 let posting = JobPosting {
-                    id: format!("{}:{}", self.id(), j.refnr),
-                    external_id: Some(j.refnr.clone()),
+                    id: format!("{}:{}", self.id(), refnr),
+                    external_id: Some(refnr.clone()),
                     title: j
                         .titel
                         .as_deref()
-                        .or(j.beruf.as_deref())
+                        .or(j.hauptberuf.as_deref())
                         .unwrap_or("")
                         .trim()
                         .to_string(),
-                    company: j
-                        .arbeitgeber
-                        .as_deref()
-                        .unwrap_or("Unbekannt")
-                        .trim()
-                        .to_string(),
+                    company: j.firma.as_deref().unwrap_or("Unbekannt").trim().to_string(),
                     location: if location.is_empty() {
                         None
                     } else {

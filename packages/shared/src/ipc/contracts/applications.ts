@@ -130,6 +130,11 @@ export interface ApplicationsContract {
    *  `eventId`-targeting requirement as {@link acceptStatusEvent}. A no-op
    *  when `eventId` does not resolve to a pending row. */
   rejectStatusEvent(args: { id: string; eventId: number }): Promise<ApplicationMutationResult>;
+  /**
+   * Patch the user-editable tracking fields of an Application.
+   *
+   * @agent Patch one tracked application. Body `{"req": {"id": "<application id>", ...}}` (JSON Schema in `args[].schema`): only `id` is required, every other field you send (notes, comp, contactName, contactEmail, jobDescription, jobSummary, nextActionAt) overwrites the stored one and an omitted field is left unchanged. `nextActionAt` is epoch milliseconds, or `null` to clear the reminder. To move the status use applications_set_status. A reply with an `error` key is a failure.
+   */
   update(req: ApplicationUpdateRequest): Promise<ApplicationMutationResult>;
   /** Delete the Application and its status history — always irreversible; `keepDocuments: false`
    *  ALSO deletes every résumé/cover-letter generation produced for it, while `keepDocuments:

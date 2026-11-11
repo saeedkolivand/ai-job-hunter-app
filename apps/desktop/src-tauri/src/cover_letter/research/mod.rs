@@ -5,8 +5,9 @@ use std::time::Duration;
 use tauri::Manager;
 
 use crate::ai_provider::SearchBackend;
+use crate::error::{AppResult, FailureKind};
 use crate::pipeline::cache::KvCache;
-use crate::pipeline::enrichment::EnrichmentResult;
+use crate::pipeline::enrichment::{EnrichmentResult, ResearchStatus};
 use crate::pipeline::resume::cache::StageIdentity;
 use crate::pipeline::Completer;
 
@@ -95,6 +96,7 @@ impl CompanyResearch {
                 return EnrichmentResult {
                     key: company,
                     content: brief,
+                    status: ResearchStatus::Ok,
                 };
             }
         }
@@ -111,6 +113,7 @@ impl CompanyResearch {
             return EnrichmentResult {
                 key: company,
                 content: String::new(),
+                status: ResearchStatus::Failed(Some(FailureKind::RateLimited)),
             };
         }
 
@@ -119,41 +122,47 @@ impl CompanyResearch {
         // `route` (resolved above, before the cache check) is MOVED in here —
         // the only way to get a brief is along the exact route the key above
         // was named from; there is no second resolution to diverge from it.
-        let brief =
-            match tokio::time::timeout(deadline, completer.research_via(route, &company, &role))
-                .await
-            {
-                Ok(Ok(b)) => b,
-                Ok(Err(e)) => {
-                    tracing::warn!("research: provider research failed for {company}: {e}");
-                    String::new()
-                }
-                Err(_) => {
-                    tracing::warn!(
-                        company = %company,
-                        deadline_secs = deadline.as_secs(),
-                        "research: timed out"
-                    );
-                    String::new()
-                }
-            };
-
-        // Drop unhelpful "no information" / too-short responses so they neither
-        // pollute the cover letter nor get cached (a bad miss must not stick for
-        // the 7-day TTL).
-        if is_no_info(&brief) {
-            // Length only — same discipline as the two `tracing::info!` calls
-            // above/below (ADR-027); this fires on the provider's own filler
-            // text, not attacker input, but it is still not ours to log.
-            tracing::info!(
+        let outcome =
+            tokio::time::timeout(deadline, completer.research_via(route, &company, &role)).await;
+        match &outcome {
+            Ok(Err(e)) => tracing::warn!("research: provider research failed for {company}: {e}"),
+            Err(_) => tracing::warn!(
                 company = %company,
-                chars = brief.len(),
-                "research: no usable brief (provider found nothing)"
-            );
-            return EnrichmentResult {
-                key: company,
-                content: String::new(),
-            };
+                deadline_secs = deadline.as_secs(),
+                "research: timed out"
+            ),
+            Ok(Ok(_)) => {}
+        }
+        let (brief, status) = settle(outcome.ok());
+        match status {
+            // A lookup that could not be made is not the same fact as one that found
+            // nothing (#1500): the letter goes ahead either way, but the log and the run
+            // say which one happened.
+            ResearchStatus::Failed(kind) => {
+                tracing::warn!(
+                    company = %company,
+                    kind = kind.map_or("unclassified", FailureKind::as_str),
+                    "research: failed, continuing without a brief"
+                );
+                return EnrichmentResult {
+                    key: company,
+                    content: String::new(),
+                    status,
+                };
+            }
+            // No text of any kind — ADR-027; this fires on the provider's own filler.
+            ResearchStatus::Empty => {
+                tracing::info!(
+                    company = %company,
+                    "research: no usable brief (provider answered, found nothing)"
+                );
+                return EnrichmentResult {
+                    key: company,
+                    content: String::new(),
+                    status,
+                };
+            }
+            ResearchStatus::Ok => {}
         }
 
         // Length only — never the brief itself (ADR-027): it's free web prose
@@ -173,7 +182,24 @@ impl CompanyResearch {
         EnrichmentResult {
             key: company,
             content: brief,
+            status,
         }
+    }
+}
+
+/// How the bounded provider call ended -> the brief to use and the status to report. `None` is
+/// the deadline firing. Drops unhelpful "no information" / too-short responses so they neither
+/// pollute the cover letter nor get cached (a bad miss must not stick for the 7-day TTL).
+/// Pure + unit-tested.
+fn settle(outcome: Option<AppResult<String>>) -> (String, ResearchStatus) {
+    match outcome {
+        None => (
+            String::new(),
+            ResearchStatus::Failed(Some(FailureKind::Unavailable)),
+        ),
+        Some(Err(e)) => (String::new(), ResearchStatus::Failed(FailureKind::of(&e))),
+        Some(Ok(brief)) if is_no_info(&brief) => (String::new(), ResearchStatus::Empty),
+        Some(Ok(brief)) => (brief, ResearchStatus::Ok),
     }
 }
 

@@ -11,6 +11,8 @@ export interface JobPreferencesContract {
    * MUST send `null` (hence the nullish fields on `JobPreferencesSchema`).
    * A field whose meaning depends on another (`countryCode` describes
    * `location`) is cleared together with it.
+   *
+   * @agent Merge job preferences. Body `{"prefs": {...}}` (JSON Schema in `args[].schema`): a key you omit keeps its stored value and a key sent as `null` clears it (only `location` and `countryCode` accept `null`; clearing `location` clears `countryCode` with it). Fields: location, countryCode, techStack ([{name, category}], replaces the whole list), salaryExpectation, extraAgencyCompanies.
    */
   set(prefs: JobPreferences): Promise<void>;
 

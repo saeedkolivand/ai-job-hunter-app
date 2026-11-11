@@ -164,7 +164,9 @@ impl<'a> Stage<QualityCtx<'a>> for AnalyzeJob {
                 // Intentionally BEFORE the keyword fallback: a model that returns
                 // nothing at all is broken, not weak.
                 if analysis.is_empty() {
-                    return Err(AppError::Provider(
+                    // `Parse`, not `Provider`: the provider answered, the OUTPUT was unusable, so the
+                    // run reports `model_output` rather than a `provider_error` stop (#1496).
+                    return Err(AppError::Parse(
                         "The model returned no requirements for this posting. Try again, or \
                          pick a larger model."
                             .to_string(),

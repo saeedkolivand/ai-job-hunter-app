@@ -41,6 +41,14 @@ describe('AutopilotTargetSchema', () => {
     ).not.toThrow();
   });
 
+  it('accepts a known dateFilter and rejects an unknown one, naming the allowed values', () => {
+    const base = { boards: ['linkedin'], query: 'dev' };
+    expect(AutopilotTargetSchema.parse({ ...base, dateFilter: 'week' }).dateFilter).toBe('week');
+    const bad = AutopilotTargetSchema.safeParse({ ...base, dateFilter: 'past_week' });
+    expect(bad.success).toBe(false);
+    expect(JSON.stringify(bad.error?.issues)).toContain('24h');
+  });
+
   it('rejects a grossly oversized boards array (sanity bound, not the real cap)', () => {
     // The real dedup+truncate defense is server-side (Rust registry cap); this
     // schema-level bound only guards against a corrupt/hostile payload.

@@ -80,12 +80,17 @@ pub(super) fn parse_web_search(body: &serde_json::Value, limit: usize) -> Vec<Se
 }
 
 /// Shared search step for every Ollama-family research facet: resolve the
-/// account key and run the Ollama Web Search API. Returns an empty `Vec` when
-/// the key is missing or the search fails, so callers degrade to `""` without
-/// each re-implementing the key-check + trace boilerplate.
-async fn ollama_search(model: &str, key: &str, query: &str, limit: usize) -> Vec<SearchResult> {
+/// account key and run the Ollama Web Search API. An empty `Vec` when the key is
+/// missing; the transport's error otherwise, for the caller to swallow
+/// ([`ollama_search`]) or report ([`OllamaSearcher::try_search`]).
+async fn ollama_search_checked(
+    model: &str,
+    key: &str,
+    query: &str,
+    limit: usize,
+) -> AppResult<Vec<SearchResult>> {
     if key.trim().is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let trace = RequestTrace::begin(
         ProviderId::OllamaCloud,
@@ -94,17 +99,20 @@ async fn ollama_search(model: &str, key: &str, query: &str, limit: usize) -> Vec
         "https://ollama.com",
         false,
     );
-    match ollama_web_search(key, query, limit).await {
-        Ok(r) => {
-            trace.end(Some(200), true);
-            r
-        }
-        Err(e) => {
-            trace.end(None, false);
+    let result = ollama_web_search(key, query, limit).await;
+    trace.end(result.is_ok().then_some(200), result.is_ok());
+    result
+}
+
+/// [`ollama_search_checked`], degrading every failure to no results so callers need no
+/// error handling of their own.
+async fn ollama_search(model: &str, key: &str, query: &str, limit: usize) -> Vec<SearchResult> {
+    ollama_search_checked(model, key, query, limit)
+        .await
+        .unwrap_or_else(|e| {
             tracing::warn!("ollama web_search failed: {e}");
             Vec::new()
-        }
-    }
+        })
 }
 
 /// The Ollama Web Search API as a [`WebSearcher`](super::super::search::WebSearcher).
@@ -140,5 +148,9 @@ impl OllamaSearcher {
 impl super::super::search::WebSearcher for OllamaSearcher {
     async fn search(&self, query: &str, limit: usize) -> Vec<SearchResult> {
         ollama_search(&self.model, &self.key, query, limit).await
+    }
+
+    async fn try_search(&self, query: &str, limit: usize) -> AppResult<Vec<SearchResult>> {
+        ollama_search_checked(&self.model, &self.key, query, limit).await
     }
 }

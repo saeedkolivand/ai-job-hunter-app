@@ -42,9 +42,10 @@ use crate::commands::ai_provider::call_trace;
 use crate::commands::ai_provider::timeouts::research_deadline;
 use crate::commands::ai_provider::{AiGenerateRequest, AiGenerateRequestMessage};
 use crate::cover_letter::research::CompanyResearch;
-use crate::error::AppResult;
+use crate::error::{AppResult, FailureKind};
+use crate::pipeline::enrichment::ResearchStatus;
 use crate::pipeline::resume::prompts::{letter_system, letter_user, LETTER_INTENT};
-use crate::pipeline::resume::QualityCtx;
+use crate::pipeline::resume::{QualityCtx, RunLedger};
 use crate::pipeline::{Completer, Stage};
 
 pub struct CoverLetter;
@@ -81,15 +82,18 @@ impl<'a> Stage<QualityCtx<'a>> for CoverLetter {
         };
         ctx.ledger.count_call(false);
         // Length only — never the letter or the brief itself (ADR-027).
-        ctx.ledger.record(
-            NAME,
-            json!({
-                "chars": text.chars().count(),
-                "lines": text.lines().count(),
-                "researchAttempted": ctx.input.research_company,
-                "researchBriefChars": brief_chars,
-            }),
-        );
+        let mut artifact = json!({
+            "chars": text.chars().count(),
+            "lines": text.lines().count(),
+            "researchAttempted": ctx.input.research_company,
+            "researchBriefChars": brief_chars,
+        });
+        // How the lookup ended: `empty` (nothing found) and `failed` (could not ask, with the
+        // kind) are different facts (#1500). Absent when research was off or never answered.
+        if let Some(research) = ctx.ledger.research() {
+            artifact["researchStatus"] = research.wire();
+        }
+        ctx.ledger.record(NAME, artifact);
         ctx.letter = text;
         Ok(())
     }
@@ -211,6 +215,7 @@ pub(crate) async fn write_letter(job: LetterJob<'_, '_>) -> AppResult<LetterOut>
 pub(crate) async fn research_company_brief(completer: &Completer, ctx: &QualityCtx<'_>) -> String {
     research_brief(
         completer,
+        &ctx.ledger,
         ctx.input.job_ad,
         ctx.input.company_name,
         &ctx.analysis.role_title,
@@ -223,17 +228,20 @@ pub(crate) async fn research_company_brief(completer: &Completer, ctx: &QualityC
 /// lookup. Same non-fatal `String` return, same admission before any spend.
 pub(crate) async fn research_brief(
     completer: &Completer,
+    ledger: &RunLedger,
     job_ad: &str,
     company: &str,
     role: &str,
     effort: Option<&str>,
 ) -> String {
     let Some(_guard) = completer.admit_research(NAME) else {
+        // Our own rate/concurrency ceiling refused it — a lookup that could not be made.
+        ledger.note_research(ResearchStatus::Failed(Some(FailureKind::RateLimited)));
         return String::new();
     };
     let deadline = research_deadline(effort);
     let (company, role) = (company.trim(), role.trim());
-    CompanyResearch
+    let result = CompanyResearch
         .enrich_with(
             completer,
             job_ad,
@@ -241,6 +249,7 @@ pub(crate) async fn research_brief(
             (!role.is_empty()).then_some(role),
             deadline,
         )
-        .await
-        .content
+        .await;
+    ledger.note_research(result.status);
+    result.content
 }

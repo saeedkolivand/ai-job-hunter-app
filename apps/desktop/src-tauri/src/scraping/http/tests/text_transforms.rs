@@ -280,3 +280,25 @@ fn test_html_to_markdown_falls_back_on_empty_output() {
     // returns a clean string (trimmed).
     assert_eq!(result.trim(), result, "result must already be trimmed");
 }
+
+// ── entity-escaped markup (#1497) ───────────────────────────────────────────
+
+/// `content` of a real public Greenhouse job response (the same specimen the
+/// `scrape_url::greenhouse` tests trim): the API delivers markup entity-escaped.
+const ESCAPED_SPECIMEN: &str =
+    "&lt;p&gt;GitLab is the intelligent orchestration platform.&lt;/p&gt;";
+
+#[test]
+fn test_html_to_markdown_decodes_entity_escaped_markup() {
+    assert_eq!(
+        html_to_markdown(ESCAPED_SPECIMEN),
+        "GitLab is the intelligent orchestration platform."
+    );
+}
+
+#[test]
+fn test_has_escaped_markup_leaves_prose_and_real_html_alone() {
+    assert!(has_escaped_markup(ESCAPED_SPECIMEN));
+    assert!(!has_escaped_markup("<p>real</p>"));
+    assert!(!has_escaped_markup("Use a &lt; b in the comparison"));
+}

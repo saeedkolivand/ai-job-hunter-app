@@ -59,6 +59,25 @@ describe('ResumePipelineRunSchema', () => {
     ).toThrow();
   });
 
+  // #1496: `jobUrl` alone names a found job (looked up server-side); it is the third way to
+  // name the posting. Rust twin: `request_guard.rs`.
+  it('accepts a jobUrl alone as the posting, and still rejects when no posting is named', () => {
+    expect(() =>
+      ResumePipelineRunSchema.parse({
+        resumeId: 'res-1',
+        jobUrl: 'https://boards.example/jobs/42',
+      })
+    ).not.toThrow();
+    const typed: ResumePipelineRunRequest = {
+      resumeId: 'res-1',
+      jobUrl: 'https://boards.example/jobs/42',
+    };
+    expect(typed.jobUrl).toBeDefined();
+    expect(() => ResumePipelineRunSchema.parse({ resumeId: 'res-1', jobUrl: '  ' })).toThrow(
+      /jobId, jobAdText or jobUrl/
+    );
+  });
+
   // Matches the Rust twin (`resume_source_is_none_when_both_are_empty_or_whitespace`
   // in `commands/resume_pipeline/tests/resolve_source.rs`) — whitespace counts as
   // empty on both refine rules, not just `''`.

@@ -3,6 +3,14 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// The accepted `dateFilter` tokens (the generated cross-language vocabulary).
+pub const DATE_FILTER_OPTIONS: &[&str] = crate::ipc_contracts::date_filters::DATE_FILTER_OPTIONS;
+
+/// Whether `v` is a token of the shared `dateFilter` vocabulary.
+pub fn is_known_date_filter(v: &str) -> bool {
+    DATE_FILTER_OPTIONS.contains(&v)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JobPosting {
     pub id: String,

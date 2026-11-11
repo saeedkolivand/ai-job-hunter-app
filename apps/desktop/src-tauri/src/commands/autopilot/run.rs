@@ -99,7 +99,11 @@ pub(super) async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value
         return json!({ "skipped": "already-running" });
     };
 
-    let autopilot = store(&app).lock().get(&autopilot_id);
+    let autopilot = store(&app).lock().get(&autopilot_id).map(|mut a| {
+        // #1493: a blank/absent resume falls back to the default document for this run.
+        a.resume_text = super::guards::resume_for_run(&app, a.resume_text.as_deref());
+        a
+    });
 
     let Some(autopilot) = autopilot else {
         return json!({ "error": format!("autopilot not found: {autopilot_id}") });

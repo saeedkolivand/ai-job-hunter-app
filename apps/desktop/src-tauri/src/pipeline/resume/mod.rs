@@ -67,6 +67,7 @@ use serde_json::{json, Value};
 use crate::error::AppResult;
 use crate::pipeline::budget::{Budget, StoppedReason};
 use crate::pipeline::cache::KvCache;
+use crate::pipeline::enrichment::ResearchStatus;
 use crate::pipeline::{Completer, Pipeline};
 use crate::validate::content::ContentReport;
 
@@ -300,6 +301,9 @@ struct LedgerState {
     /// step didn't respond within 300s") without threading the stage/duration
     /// pair through the command by hand.
     timeout: Option<(&'static str, u64)>,
+    /// How the cover letter's company research ended — `None` when the run never asked for
+    /// one (or the lookup was dropped before answering).
+    research: Option<ResearchStatus>,
 }
 
 impl RunLedger {
@@ -361,6 +365,16 @@ impl RunLedger {
         self.state.lock().timeout
     }
 
+    /// Record the company research's outcome. The early lookup and the inline path both end
+    /// here, so the run reports one status whichever ran (#1500).
+    pub fn note_research(&self, status: ResearchStatus) {
+        self.state.lock().research = Some(status);
+    }
+
+    pub fn research(&self) -> Option<ResearchStatus> {
+        self.state.lock().research
+    }
+
     pub fn note_repair(&self, rounds: u32, reverted: bool) {
         let mut state = self.state.lock();
         state.repair_rounds = rounds;
@@ -370,12 +384,16 @@ impl RunLedger {
     /// The run's content-free metrics blob, for `pipeline_runs.metrics_json`.
     pub fn metrics(&self) -> Value {
         let state = self.state.lock();
-        json!({
+        let mut metrics = json!({
             "calls": state.calls,
             "cached": state.cached,
             "repairRounds": state.repair_rounds,
             "reverted": state.reverted,
-        })
+        });
+        if let Some(research) = state.research {
+            metrics["research"] = research.wire();
+        }
+        metrics
     }
 }
 

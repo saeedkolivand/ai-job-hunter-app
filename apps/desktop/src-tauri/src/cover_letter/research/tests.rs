@@ -1,6 +1,10 @@
 use tempfile::TempDir;
 
-use super::{cache_key, is_no_info, SearchBackend, StageIdentity, CACHE_NS, TTL_SECS};
+use super::{
+    cache_key, is_no_info, settle, FailureKind, ResearchStatus, SearchBackend, StageIdentity,
+    CACHE_NS, TTL_SECS,
+};
+use crate::error::AppError;
 use crate::pipeline::cache::KvCache;
 
 /// A routing identity, for the key tests below — same helper shape as
@@ -147,5 +151,52 @@ fn enrich_with_checks_the_cache_before_charging_the_daily_budget() {
         "enrich_with must check its cache BEFORE charging the daily budget — a cache \
          hit must never spend a day's provider allowance: cache check at byte \
          {cache_check_pos}, daily charge at byte {charge_pos}"
+    );
+}
+
+// ── settle (#1500: a failed lookup is not an empty one) ──
+
+const REAL_BRIEF: &str = "Example Corp builds payment infrastructure for mid-size merchants,     competes with larger processors, and is currently expanding its fraud tooling.";
+
+/// The reported case: an out-of-credit account must read `failed` + `billing`, never `empty`.
+/// Mutation check: map `Some(Err(_))` to `Empty` (the old behaviour) and the first case fails.
+#[test]
+fn a_provider_error_is_failed_with_its_kind_not_empty() {
+    let (brief, status) = settle(Some(Err(AppError::Network(
+        "ollama web_search 402 Payment Required: add credits".into(),
+    ))));
+    assert!(brief.is_empty());
+    assert_eq!(status, ResearchStatus::Failed(Some(FailureKind::Billing)));
+    assert_eq!(
+        status.wire(),
+        serde_json::json!({ "status": "failed", "errorKind": "billing" })
+    );
+
+    let (_, key) = settle(Some(Err(AppError::Network(
+        "ollama web_search 401 Unauthorized".into(),
+    ))));
+    assert_eq!(key, ResearchStatus::Failed(Some(FailureKind::Auth)));
+}
+
+#[test]
+fn a_timeout_is_failed_unavailable() {
+    assert_eq!(
+        settle(None).1,
+        ResearchStatus::Failed(Some(FailureKind::Unavailable))
+    );
+}
+
+#[test]
+fn an_answer_with_nothing_in_it_is_empty_and_a_real_brief_is_ok() {
+    assert_eq!(settle(Some(Ok(String::new()))).1, ResearchStatus::Empty);
+    assert_eq!(
+        settle(Some(Ok("No information found.".into()))).1,
+        ResearchStatus::Empty
+    );
+    let (brief, status) = settle(Some(Ok(REAL_BRIEF.to_string())));
+    assert_eq!((brief.as_str(), status), (REAL_BRIEF, ResearchStatus::Ok));
+    assert_eq!(
+        ResearchStatus::Empty.wire(),
+        serde_json::json!({ "status": "empty" })
     );
 }

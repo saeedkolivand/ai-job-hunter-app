@@ -62,6 +62,7 @@
 //!   `an_edit_that_moves_the_document_leaves_every_verdict_landable` and
 //!   `a_save_replaces_a_slot_whole_so_the_writer_owns_the_review_list`.
 
+mod failure;
 pub mod hooks;
 pub mod max;
 pub mod notify;
@@ -74,6 +75,7 @@ mod persist;
 pub(crate) mod read;
 pub(crate) mod regenerate;
 pub mod report;
+mod request;
 mod resolve;
 pub(crate) mod run;
 mod save;

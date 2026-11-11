@@ -238,3 +238,69 @@ fn the_ollama_family_is_routed_to_a_search_backend() {
         );
     }
 }
+
+// ── try_search (#1500) ───────────────────────────────────────────────────────
+
+/// A searcher whose transport fails: `search` swallows (the trait's contract), `try_search`
+/// reports.
+struct Failing;
+
+#[async_trait]
+impl WebSearcher for Failing {
+    async fn search(&self, _query: &str, _limit: usize) -> Vec<SearchResult> {
+        Vec::new()
+    }
+    async fn try_search(&self, _query: &str, _limit: usize) -> AppResult<Vec<SearchResult>> {
+        Err(crate::error::AppError::Network(
+            "ollama web_search 402 Payment Required".into(),
+        ))
+    }
+}
+
+/// A searcher that only implements `search` keeps working through the default `try_search`.
+struct Plain;
+
+#[async_trait]
+impl WebSearcher for Plain {
+    async fn search(&self, _query: &str, _limit: usize) -> Vec<SearchResult> {
+        Vec::new()
+    }
+}
+
+#[tokio::test]
+async fn try_search_reports_a_failure_that_search_swallows() {
+    assert!(Failing.search("q", 5).await.is_empty());
+    let err = Failing.try_search("q", 5).await.err().expect("reports");
+    assert_eq!(
+        crate::error::FailureKind::of(&err),
+        Some(crate::error::FailureKind::Billing)
+    );
+    assert!(Plain
+        .try_search("q", 5)
+        .await
+        .expect("default is Ok")
+        .is_empty());
+}
+
+/// The company brief must use the reporting form: the crate has no mock `AppHandle`, so the
+/// wiring is pinned by scan. Mutation check: change `try_search` back to `search` in
+/// `fetch_company_brief` and this fails (the 402 reads as "found nothing" again).
+#[test]
+fn the_company_brief_reports_search_failures() {
+    let source = include_str!("mod.rs");
+    let start = source
+        .find("pub async fn fetch_company_brief")
+        .expect("exists");
+    let end = source[start..]
+        .find("pub async fn searched_research_salary")
+        .expect("next fn");
+    let body = &source[start..start + end];
+    assert!(
+        body.contains(".try_search("),
+        "fetch_company_brief must call try_search"
+    );
+    assert!(
+        !body.contains(".search("),
+        "fetch_company_brief must not swallow search errors"
+    );
+}

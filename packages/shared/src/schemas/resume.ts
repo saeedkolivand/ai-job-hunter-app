@@ -126,7 +126,10 @@ export const ResumePipelineRunSchema = z
      *  board. Short slug (`"linkedin"`, `"indeed"`, an aggregator name). */
     board: z.string().max(64).default(''),
     /** The posting URL this run belongs to — the run store's retention key and
-     *  the `ai_generations` aggregate key. Empty for an unlinked generation. */
+     *  the `ai_generations` aggregate key. Empty for an unlinked generation.
+     *  **Also a lookup:** with neither `jobId` nor `jobAdText`, it names a found job
+     *  (an autopilot's found-jobs row) whose stored description becomes the posting
+     *  text; a URL that matches nothing, or a row with no description, is refused. */
     jobUrl: z.string().max(2_048).default(''),
     targetLanguage: z.string().max(32).default('en'),
     /** Resolved job-market id (see `resolveMarket`) — drives the letter's
@@ -176,10 +179,13 @@ export const ResumePipelineRunSchema = z
     message: 'either resumeId or resumeText is required',
     path: ['resumeId'],
   })
-  .refine((data) => data.jobId.trim() !== '' || data.jobAdText.trim() !== '', {
-    message: 'either jobId or jobAdText is required',
-    path: ['jobId'],
-  })
+  .refine(
+    (data) => data.jobId.trim() !== '' || data.jobAdText.trim() !== '' || data.jobUrl.trim() !== '',
+    {
+      message: 'either jobId, jobAdText or jobUrl is required',
+      path: ['jobId'],
+    }
+  )
   .refine((data) => data.includeResume || data.includeCoverLetter, {
     message: 'a run must produce at least one document',
     path: ['includeResume'],
@@ -211,7 +217,11 @@ type ResumePipelineRunRequestBase = Omit<
 >;
 export type ResumePipelineRunRequest = ResumePipelineRunRequestBase &
   ({ resumeId: string; resumeText?: string } | { resumeId?: string; resumeText: string }) &
-  ({ jobId: string; jobAdText?: string } | { jobId?: string; jobAdText: string });
+  (
+    | { jobId: string; jobAdText?: string }
+    | { jobId?: string; jobAdText: string }
+    | { jobId?: string; jobAdText?: string; jobUrl: string }
+  );
 
 /**
  * Request for `resumePipeline.regenerateSection` — re-run ONE section of a

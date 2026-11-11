@@ -66,7 +66,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
     },
     CatalogueEntry {
         command: "applications_update",
-        description: "",
+        description: "Patch one tracked application. Body `{\"req\": {\"id\": \"<application id>\", ...}}` (JSON Schema in `args[].schema`): only `id` is required, every other field you send (notes, comp, contactName, contactEmail, jobDescription, jobSummary, nextActionAt) overwrites the stored one and an omitted field is left unchanged. `nextActionAt` is epoch milliseconds, or `null` to clear the reminder. To move the status use applications_set_status. A reply with an `error` key is a failure.",
         args: &[
             CatalogueArg { name: "req", required: true, fields: Some(&["id", "notes", "nextActionAt", "comp", "contactName", "contactEmail", "jobDescription", "jobSummary", "recipientName", "recipientEmail"]) },
         ],

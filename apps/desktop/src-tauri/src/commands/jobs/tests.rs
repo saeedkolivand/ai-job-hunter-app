@@ -12,7 +12,7 @@ fn job_fail_sanitizes_before_it_reaches_the_tracker_or_the_event() {
     let mut tracker = JobTracker::default();
     tracker.start("job-1", "test.kind");
 
-    let event_data = fail_in_tracker(&mut tracker, "job-1", RAW_ERROR.to_string(), None);
+    let event_data = fail_in_tracker(&mut tracker, "job-1", RAW_ERROR.to_string(), None, None);
 
     // The tracker's own `error` field — what `jobs_get`/`jobs_list` return.
     let tracked = tracker.get("job-1").and_then(|r| r.error.as_deref());
@@ -50,6 +50,7 @@ fn job_fail_with_data_sanitizes_the_message_but_leaves_the_structured_data_alone
         "job-2",
         RAW_ERROR.to_string(),
         Some(structured.clone()),
+        None,
     );
 
     let tracked = tracker.get("job-2").and_then(|r| r.error.as_deref());
@@ -72,11 +73,37 @@ fn job_fail_leaves_an_already_friendly_message_unchanged() {
     let msg = "The \"resume\" step didn't get a response within 45s. Try a faster model or \
                     a lower effort level.";
 
-    let event_data = fail_in_tracker(&mut tracker, "job-3", msg.to_string(), None);
+    let event_data = fail_in_tracker(&mut tracker, "job-3", msg.to_string(), None, None);
 
     assert_eq!(
         tracker.get("job-3").and_then(|r| r.error.as_deref()),
         Some(msg)
     );
     assert_eq!(event_data.as_str(), Some(msg));
+}
+
+// #1496: a failed job row says WHY, in the existing `result` column, without the message.
+#[test]
+fn a_classified_failure_leaves_its_kind_on_the_job_row() {
+    let mut tracker = JobTracker::default();
+    tracker.start("job-4", "test.kind");
+
+    let event_data = fail_in_tracker(
+        &mut tracker,
+        "job-4",
+        "ollama-cloud 402: Add usage credits".to_string(),
+        None,
+        Some(FailureKind::Billing),
+    );
+
+    let row = tracker.get("job-4").expect("row");
+    assert_eq!(row.result, Some(json!({ "errorKind": "billing" })));
+    assert_eq!(row.status, crate::jobs::JobStatus::Failed);
+    // The event payload is still the plain sanitized message.
+    assert!(event_data.is_string());
+
+    // An unclassified failure carries no kind at all.
+    tracker.start("job-5", "test.kind");
+    fail_in_tracker(&mut tracker, "job-5", "boom".to_string(), None, None);
+    assert_eq!(tracker.get("job-5").expect("row").result, None);
 }

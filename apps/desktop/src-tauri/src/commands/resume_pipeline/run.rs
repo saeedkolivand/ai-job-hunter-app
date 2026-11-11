@@ -18,8 +18,10 @@ use crate::pipeline::resume::{quality_pipeline, QualityCtx, QualityInput, RunDea
 use crate::pipeline::runs::{PipelineRunStore, RunRow};
 use crate::pipeline::Completer;
 
+use super::failure::{fail_run, ExecuteFailure};
 use super::hooks::{self, RunHooks};
 use super::persist::persist_document;
+use super::request;
 use super::resolve::{
     self, clamp_request, job_ad_for_persist, job_meta_from_request, job_source, resume_source,
 };
@@ -37,8 +39,18 @@ use super::{
 /// returned `jobId` is the renderer's only handle, so a terminal event
 /// emitted before this returns is silently dropped and the run looks stuck at
 /// pending forever.
+///
+/// What CAN be checked without the provider is checked first ([`request::admit`]): a request
+/// with no résumé, no posting, or no document to write is refused here with a validation error
+/// instead of returning ids for a run that was always going to fail. A failure inside the
+/// task still leaves a readable, classified run row ([`failure::record`]).
 #[tauri::command]
-pub async fn resume_pipeline_run(app: AppHandle, req: ResumePipelineRunRequest) -> Value {
+pub async fn resume_pipeline_run(
+    app: AppHandle,
+    req: ResumePipelineRunRequest,
+) -> Result<Value, AppError> {
+    let req = request::admit(&app, req)?;
+    let started_at = crate::db::now_ms();
     let job_id = crate::db::new_job_id();
     let run_id = format!("run-{}", uuid::Uuid::new_v4());
     crate::commands::jobs::job_start(&app, &job_id, "resumePipeline.run");
@@ -78,18 +90,27 @@ pub async fn resume_pipeline_run(app: AppHandle, req: ResumePipelineRunRequest) 
                 guard
             }
             Err(e) => {
-                fail(&app_task, &cancels, &job_id_task, e.to_string(), None).await;
+                fail_run(
+                    &app_task,
+                    &job_id_task,
+                    &run_id_task,
+                    &req,
+                    started_at,
+                    e.into(),
+                )
+                .await;
                 return;
             }
         };
 
         if let Err(failure) = execute(&app_task, &run_id_task, &job_id_task, &req, &cancel).await {
-            fail(
+            fail_run(
                 &app_task,
-                &cancels,
                 &job_id_task,
-                failure.error.to_string(),
-                failure.data,
+                &run_id_task,
+                &req,
+                started_at,
+                failure,
             )
             .await;
             return;
@@ -97,45 +118,7 @@ pub async fn resume_pipeline_run(app: AppHandle, req: ResumePipelineRunRequest) 
         cancels.unregister(&job_id_task).await;
     });
 
-    json!({ "runId": run_id, "jobId": job_id })
-}
-
-/// The failure [`execute`] hands its caller: a typed message plus OPTIONAL
-/// structured data for `job.failed`'s event payload — for the one case a
-/// caller can say more than the message text alone (currently just the
-/// per-call timeout: WHICH stage, and how long — see
-/// `hooks::timeout_failure_data`). `From<AppError>` covers every ordinary `?`
-/// inside `execute` with `data: None`, so only the arm that actually has more
-/// to say constructs this by hand.
-pub(super) struct ExecuteFailure {
-    pub(super) error: AppError,
-    pub(super) data: Option<Value>,
-}
-
-impl From<AppError> for ExecuteFailure {
-    fn from(error: AppError) -> Self {
-        Self { error, data: None }
-    }
-}
-
-/// Mark the job failed and release its cancel registration — the two calls
-/// every early return owes. `data`, when present, becomes `job.failed`'s
-/// event payload INSTEAD of `message` (see
-/// [`crate::commands::jobs::job_fail_with_data`]) — currently only
-/// [`ExecuteFailure`]'s per-call-timeout arm ever sets one; every other
-/// failure keeps riding as the plain message string it always has.
-async fn fail(
-    app: &AppHandle,
-    cancels: &CancelRegistry,
-    job_id: &str,
-    message: String,
-    data: Option<Value>,
-) {
-    match data {
-        Some(data) => crate::commands::jobs::job_fail_with_data(app, job_id, message, data),
-        None => crate::commands::jobs::job_fail(app, job_id, message),
-    }
-    cancels.unregister(job_id).await;
+    Ok(json!({ "runId": run_id, "jobId": job_id }))
 }
 
 /// The run itself, from resolution through persistence.
@@ -428,7 +411,9 @@ async fn execute(
         object.insert("resumeInRun".to_string(), json!(ctx.input.include_resume));
     }
     row.metrics_json = metrics.to_string();
-    store.upsert_run(&row)?;
+    store
+        .upsert_run(&row)
+        .map_err(|e| ExecuteFailure::after_row(e, None))?;
     // Retention runs at the END of a run rather than on a timer: this is the
     // moment a fourth run for this posting exists.
     store.prune();
@@ -470,7 +455,10 @@ async fn execute(
             // says `failed`; the JOB has to agree, and the user needs the
             // reason — the alternative is a green run over an unchanged
             // document. `execute`'s caller turns this into `job_fail`.
-            SaveVerdict::Refused(reason) => Err(AppError::Message(reason.to_string()).into()),
+            SaveVerdict::Refused(reason) => Err(ExecuteFailure::after_row(
+                AppError::Message(reason.to_string()),
+                None,
+            )),
             SaveVerdict::Save | SaveVerdict::Nothing => {
                 crate::commands::jobs::job_complete(
                     app,
@@ -507,12 +495,12 @@ async fn execute(
         Err(e) => Err(match ledger.timeout_detail() {
             Some((stage, ms)) => {
                 let lowest = ctx.stage_at_lowest_effort(stage);
-                ExecuteFailure {
-                    error: AppError::Timeout(hooks::timeout_message(stage, ms, lowest)),
-                    data: Some(hooks::timeout_failure_data(stage, ms, lowest)),
-                }
+                ExecuteFailure::after_row(
+                    AppError::Timeout(hooks::timeout_message(stage, ms, lowest)),
+                    Some(hooks::timeout_failure_data(stage, ms, lowest)),
+                )
             }
-            None => e.into(),
+            None => ExecuteFailure::after_row(e, None),
         }),
     }
 }

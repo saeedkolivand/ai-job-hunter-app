@@ -8,6 +8,16 @@ use super::*;
 /// better at trimming; raising it silently re-permits a paragraph dump.
 const MAX_CATALOGUE_DESCRIPTION_LENGTH: usize = 500;
 
+/// The commands whose contract member carries a hand-written `@agent` note (#1491): a caller
+/// cannot build their body from a one-line summary, so they get a short paragraph instead. A
+/// hand-written literal on purpose: adding another is a decision, not a side effect.
+const AGENT_NOTE_COMMANDS: &[&str] = &[
+    "autopilot_create",
+    "autopilot_update",
+    "resume_pipeline_run",
+];
+const MAX_AGENT_NOTE_LENGTH: usize = 900;
+
 #[test]
 fn a_catalogued_description_never_grows_into_a_paragraph() {
     let out = commands_value(&json!({}), Tier::Irreversible);
@@ -15,9 +25,14 @@ fn a_catalogued_description_never_grows_into_a_paragraph() {
         let Some(description) = row["description"].as_str() else {
             continue;
         };
+        let cap = if AGENT_NOTE_COMMANDS.contains(&row["command"].as_str().unwrap_or_default()) {
+            MAX_AGENT_NOTE_LENGTH
+        } else {
+            MAX_CATALOGUE_DESCRIPTION_LENGTH
+        };
         assert!(
-            description.len() <= MAX_CATALOGUE_DESCRIPTION_LENGTH,
-            "{}: description is {} chars (cap {MAX_CATALOGUE_DESCRIPTION_LENGTH}), not a one-line \
+            description.len() <= cap,
+            "{}: description is {} chars (cap {cap}), not a one-line \
              description: {description:?}",
             row["command"],
             description.len()

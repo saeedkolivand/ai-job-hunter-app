@@ -31,6 +31,10 @@ export interface CatalogueArg {
    *  the `commands` tool (and dispatch-time validation) can tell "known to take no nested
    *  fields" apart from "unknown nested shape" instead of collapsing both to an empty slice. */
   fields: string[] | null | undefined;
+  /** The wrapper's input as compact JSON Schema (`z.toJSONSchema`, `io: 'input'`), when its type
+   *  resolves to a Zod schema. Rendered into `catalogue/input_schemas.rs`, never onto the arg
+   *  itself, so the `commands` list stays small; `commands {command}` returns it. */
+  schema?: string;
 }
 
 export interface CatalogueEntry {

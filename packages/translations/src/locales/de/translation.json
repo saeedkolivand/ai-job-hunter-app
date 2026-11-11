@@ -2328,6 +2328,7 @@
       "alreadyRunning": "Für diesen Autopilot läuft bereits ein Durchlauf.",
       "createFailed": "Autopilot konnte nicht erstellt werden",
       "updateFailed": "Autopilot konnte nicht aktualisiert werden",
+      "noResumeWarning": "Dieser Autopilot hat keinen Lebenslauftext und es gibt kein Standarddokument, daher können Läufe Jobs nicht mit einem Lebenslauf abgleichen. Füge einen Lebenslauf hinzu oder lege ein Standarddokument fest.",
       "running": "Läuft…",
       "run": "Ausführen",
       "never": "Nie",

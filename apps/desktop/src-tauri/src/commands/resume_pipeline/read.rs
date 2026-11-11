@@ -49,7 +49,13 @@ pub async fn resume_pipeline_list_for_job(app: AppHandle, job_url: String) -> Va
 }
 
 /// The summary half of a run — everything but the trail and the document.
-fn summary(row: &RunRow) -> Value {
+///
+/// `errorKind`/`errorMessage` (why a failed run failed) and `research` (how the cover letter's
+/// company lookup ended) are lifted out of the metrics blob they are stored in, so a caller
+/// reads them at the top level. A row written before they existed simply lacks them.
+pub(super) fn summary(row: &RunRow) -> Value {
+    let metrics = serde_json::from_str::<Value>(&row.metrics_json).unwrap_or_else(|_| json!({}));
+    let lifted = |key: &str| metrics.get(key).cloned().unwrap_or(Value::Null);
     json!({
         "runId": row.id,
         "jobUrl": row.job_url,
@@ -59,7 +65,10 @@ fn summary(row: &RunRow) -> Value {
         "startedAt": row.started_at,
         "finishedAt": row.finished_at,
         "stoppedReason": row.stopped_reason,
-        "metrics": serde_json::from_str::<Value>(&row.metrics_json).unwrap_or_else(|_| json!({})),
+        "errorKind": lifted("errorKind"),
+        "errorMessage": lifted("errorMessage"),
+        "research": lifted("research"),
+        "metrics": metrics,
     })
 }
 

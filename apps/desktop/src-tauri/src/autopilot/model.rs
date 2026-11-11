@@ -109,6 +109,26 @@ where
     }))
 }
 
+/// `Option<String>` that DROPS a value outside the shared `dateFilter` vocabulary (#1492) rather
+/// than failing the record: a failed load would delete the autopilot on the next save.
+fn parse_date_filter_lenient<'de, D>(de: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    // A JSON value, not `Option<String>`: a stored `7` would fail the whole record.
+    let raw: Option<serde_json::Value> = Option::deserialize(de)?;
+    Ok(match raw {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(v)) if crate::scraping::types::is_known_date_filter(&v) => {
+            Some(v)
+        }
+        Some(_) => {
+            log::warn!("[autopilot] dropped an unrecognised dateFilter while loading a target");
+            None
+        }
+    })
+}
+
 // ── Data model ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,7 +173,12 @@ pub struct AutopilotTarget {
     )]
     pub work_types: Option<Vec<crate::scraping::types::WorkType>>,
     pub pages: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// An out-of-set stored value is dropped to `None` ("any time"), never a failed load.
+    #[serde(
+        default,
+        deserialize_with = "parse_date_filter_lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub date_filter: Option<String>,
     /// How many top-scoring postings autopilot should apply to after scraping.
     /// Defaults to 3 when absent.
