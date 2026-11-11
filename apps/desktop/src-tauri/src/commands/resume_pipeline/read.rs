@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::ai_generations::AiGenerationStore;
+use crate::error::FailureKind;
 use crate::pipeline::runs::{PipelineRunStore, RunRow};
 
 use super::hooks;
@@ -54,8 +55,9 @@ pub async fn resume_pipeline_list_for_job(app: AppHandle, job_url: String) -> Va
 /// company lookup ended) are lifted out of the metrics blob they are stored in, so a caller
 /// reads them at the top level. A row written before they existed simply lacks them.
 pub(super) fn summary(row: &RunRow) -> Value {
-    let metrics = serde_json::from_str::<Value>(&row.metrics_json).unwrap_or_else(|_| json!({}));
-    let lifted = |key: &str| metrics.get(key).cloned().unwrap_or(Value::Null);
+    let mut metrics =
+        serde_json::from_str::<Value>(&row.metrics_json).unwrap_or_else(|_| json!({}));
+    let (error_kind, error_message, research) = clean_failure_fields(&mut metrics);
     json!({
         "runId": row.id,
         "jobUrl": row.job_url,
@@ -65,11 +67,75 @@ pub(super) fn summary(row: &RunRow) -> Value {
         "startedAt": row.started_at,
         "finishedAt": row.finished_at,
         "stoppedReason": row.stopped_reason,
-        "errorKind": lifted("errorKind"),
-        "errorMessage": lifted("errorMessage"),
-        "research": lifted("research"),
+        "errorKind": error_kind,
+        "errorMessage": error_message,
+        "research": research,
         "metrics": metrics,
     })
+}
+
+/// Longest free-text failure message a row may carry through to a reader.
+const MESSAGE_CAP: usize = 200;
+
+/// The three failure fields of a run's metrics, rebuilt from what parses — and written back into
+/// `metrics`, so the copy inside the returned blob is the same cleaned value, not the raw one.
+///
+/// The blob is storage a restored backup can fill with anything, and these fields reach agents
+/// unfenced, so nothing is passed through as found: `errorKind` and `research` are parsed into
+/// their closed vocabularies (anything else is dropped), a row with a kind reports that kind's
+/// fixed sentence rather than whatever text is stored, and a row with only free text gets it
+/// shape-redacted and capped. (Rows this build writes only store free text for app-authored
+/// validation and config errors.)
+fn clean_failure_fields(metrics: &mut Value) -> (Value, Value, Value) {
+    let kind = metrics
+        .get("errorKind")
+        .and_then(Value::as_str)
+        .and_then(FailureKind::parse);
+    let message = match (kind, metrics.get("errorMessage").and_then(Value::as_str)) {
+        (Some(kind), _) => Some(kind.summary().to_string()),
+        (None, Some(text)) => Some(
+            crate::observability::sanitize_reason(text)
+                .chars()
+                .take(MESSAGE_CAP)
+                .collect::<String>(),
+        ),
+        (None, None) => None,
+    };
+    let research = metrics.get("research").and_then(|r| {
+        let status = r.get("status").and_then(Value::as_str)?;
+        if !["ok", "empty", "failed"].contains(&status) {
+            return None;
+        }
+        let kind = r
+            .get("errorKind")
+            .and_then(Value::as_str)
+            .and_then(FailureKind::parse);
+        Some(match kind {
+            Some(kind) if status == "failed" => {
+                json!({ "status": status, "errorKind": kind.as_str() })
+            }
+            _ => json!({ "status": status }),
+        })
+    });
+    let (kind, message, research) = (
+        kind.map_or(Value::Null, |k| json!(k.as_str())),
+        message.map_or(Value::Null, |m| json!(m)),
+        research.unwrap_or(Value::Null),
+    );
+    if let Some(object) = metrics.as_object_mut() {
+        for (key, value) in [
+            ("errorKind", &kind),
+            ("errorMessage", &message),
+            ("research", &research),
+        ] {
+            if value.is_null() {
+                object.remove(key);
+            } else {
+                object.insert(key.to_string(), value.clone());
+            }
+        }
+    }
+    (kind, message, research)
 }
 
 /// ONE persisted stage artifact, as the WIRE carries it: the counts, never a

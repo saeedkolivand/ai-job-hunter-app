@@ -55,24 +55,29 @@ pub(super) fn resolve_found_job(
             "jobUrl is not a valid http(s) link".to_string(),
         ));
     }
-    let described = |j: &&FoundJob| j.description.as_deref().is_some_and(|d| !blank(d));
     let matching = || {
         autopilots
             .iter()
             .flat_map(|a| a.found_jobs.iter())
             .filter(|j| crate::applications::normalize_job_url(&j.url) == wanted)
     };
-    // The same posting can sit in several autopilots; take the one with the most text.
+    // A row can match and still be unusable: it is held for an identity review (it may be a
+    // different posting than the url says), or its stored text is the truncated snippet the
+    // provisional score was computed over, not the full description.
+    let usable = |j: &&FoundJob| {
+        j.identity_review.is_none()
+            && !j.score_provisional
+            && j.description.as_deref().is_some_and(|d| !blank(d))
+    };
+    // The same posting can sit in several autopilots: the most text wins, then the most recently
+    // found, then the url — a total order, so the pick never depends on store iteration order.
     let found = matching()
-        .filter(described)
-        .max_by_key(|j| j.description.as_deref().map_or(0, str::len))
-        .ok_or_else(|| {
-            AppError::Validation(if matching().next().is_some() {
-                "the found job has no stored description; pass jobAdText".to_string()
-            } else {
-                "jobUrl does not match any found job; pass jobId or jobAdText".to_string()
-            })
-        })?;
+        .filter(usable)
+        .max_by(|a, b| {
+            let len = |j: &FoundJob| j.description.as_deref().map_or(0, str::len);
+            (len(a), a.found_at, &a.url).cmp(&(len(b), b.found_at, &b.url))
+        })
+        .ok_or_else(|| AppError::Validation(refusal(matching())))?;
     req.job_ad_text = found.description.clone().unwrap_or_default();
     if blank(&req.job_title) {
         req.job_title = found.title.clone();
@@ -84,6 +89,21 @@ pub(super) fn resolve_found_job(
         req.board = found.board.clone().unwrap_or_default();
     }
     Ok(())
+}
+
+/// Why no matching found job was usable, naming the reason so the caller knows what to pass.
+fn refusal<'a>(matches: impl Iterator<Item = &'a FoundJob>) -> String {
+    let rows: Vec<&FoundJob> = matches.collect();
+    if rows.is_empty() {
+        "jobUrl does not match any found job; pass jobId or jobAdText".to_string()
+    } else if rows.iter().all(|j| j.identity_review.is_some()) {
+        "the found job is held for an identity review and may be a different posting; resolve it          or pass jobAdText"
+            .to_string()
+    } else if rows.iter().any(|j| j.score_provisional) {
+        "the found job only has a truncated description; pass jobAdText".to_string()
+    } else {
+        "the found job has no stored description; pass jobAdText".to_string()
+    }
 }
 
 /// [`validate`], then the `jobUrl` lookup when it applies. The one entry `resume_pipeline_run`

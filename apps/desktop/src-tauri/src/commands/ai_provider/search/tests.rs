@@ -134,8 +134,8 @@ struct FakeSearcher;
 
 #[async_trait]
 impl WebSearcher for FakeSearcher {
-    async fn search(&self, _query: &str, _limit: usize) -> Vec<SearchResult> {
-        Vec::new()
+    async fn try_search(&self, _query: &str, _limit: usize) -> AppResult<Vec<SearchResult>> {
+        Ok(Vec::new())
     }
 }
 
@@ -239,68 +239,83 @@ fn the_ollama_family_is_routed_to_a_search_backend() {
     }
 }
 
-// ── try_search (#1500) ───────────────────────────────────────────────────────
+// ── try_search / search_then_synthesize (#1500) ──────────────────────────────
 
-/// A searcher whose transport fails: `search` swallows (the trait's contract), `try_search`
-/// reports.
-struct Failing;
+use crate::error::AppError;
+
+/// A searcher with a scripted outcome.
+struct Scripted(fn() -> AppResult<Vec<SearchResult>>);
 
 #[async_trait]
-impl WebSearcher for Failing {
-    async fn search(&self, _query: &str, _limit: usize) -> Vec<SearchResult> {
-        Vec::new()
-    }
+impl WebSearcher for Scripted {
     async fn try_search(&self, _query: &str, _limit: usize) -> AppResult<Vec<SearchResult>> {
-        Err(crate::error::AppError::Network(
-            "ollama web_search 402 Payment Required".into(),
-        ))
+        (self.0)()
     }
 }
 
-/// A searcher that only implements `search` keeps working through the default `try_search`.
-struct Plain;
-
-#[async_trait]
-impl WebSearcher for Plain {
-    async fn search(&self, _query: &str, _limit: usize) -> Vec<SearchResult> {
-        Vec::new()
+fn snippet() -> SearchResult {
+    SearchResult {
+        title: "Example Corp".into(),
+        snippet: "Builds payment infrastructure.".into(),
+        url: "https://example.com".into(),
     }
 }
 
+/// The provided `search` degrades the reason away; `try_search` keeps it.
 #[tokio::test]
-async fn try_search_reports_a_failure_that_search_swallows() {
-    assert!(Failing.search("q", 5).await.is_empty());
-    let err = Failing.try_search("q", 5).await.err().expect("reports");
-    assert_eq!(
-        crate::error::FailureKind::of(&err),
-        Some(crate::error::FailureKind::Billing)
-    );
-    assert!(Plain
-        .try_search("q", 5)
-        .await
-        .expect("default is Ok")
-        .is_empty());
+async fn search_degrades_the_failure_that_try_search_reports() {
+    let failing = Scripted(|| Err(AppError::Billing("out of credit".into())));
+    assert!(failing.search("q", 5).await.is_empty());
+    assert!(matches!(
+        failing.try_search("q", 5).await,
+        Err(AppError::Billing(_))
+    ));
 }
 
-/// The company brief must use the reporting form: the crate has no mock `AppHandle`, so the
-/// wiring is pinned by scan. Mutation check: change `try_search` back to `search` in
-/// `fetch_company_brief` and this fails (the 402 reads as "found nothing" again).
+/// #1500: an out-of-credit search must surface as an error, not as "found nothing".
+/// Mutation check: make `search_then_synthesize` call `.search()` instead of `.try_search()`
+/// and the first case returns `Ok("")`.
+#[tokio::test]
+async fn a_failed_search_is_an_error_and_an_empty_one_is_not() {
+    let synthesize = |_user: String| async { Ok("a brief".to_string()) };
+    let prompt = |_r: &[SearchResult]| "prompt".to_string();
+
+    let failed = Scripted(|| Err(AppError::Billing("out of credit".into())));
+    let out = search_then_synthesize(&failed, "q", prompt, synthesize).await;
+    assert!(matches!(out, Err(AppError::Billing(_))), "{out:?}");
+
+    let empty = Scripted(|| Ok(Vec::new()));
+    let out = search_then_synthesize(&empty, "q", prompt, |_u: String| async {
+        panic!("no synthesis call when nothing was found")
+    })
+    .await;
+    assert_eq!(out.expect("empty is Ok"), "");
+
+    let found = Scripted(|| Ok(vec![snippet()]));
+    let out = search_then_synthesize(
+        &found,
+        "q",
+        |r| format!("{} result(s)", r.len()),
+        |user| async move { Ok(user) },
+    )
+    .await;
+    assert_eq!(out.expect("synthesizes"), "1 result(s)");
+}
+
+/// Exa's statuses map to typed errors: the reason survives to `FailureKind`.
+/// Mutation check: map 402 to `Provider` and the billing case fails.
 #[test]
-fn the_company_brief_reports_search_failures() {
-    let source = include_str!("mod.rs");
-    let start = source
-        .find("pub async fn fetch_company_brief")
-        .expect("exists");
-    let end = source[start..]
-        .find("pub async fn searched_research_salary")
-        .expect("next fn");
-    let body = &source[start..start + end];
-    assert!(
-        body.contains(".try_search("),
-        "fetch_company_brief must call try_search"
-    );
-    assert!(
-        !body.contains(".search("),
-        "fetch_company_brief must not swallow search errors"
-    );
+fn exa_statuses_are_typed_by_what_they_mean() {
+    use crate::error::FailureKind;
+    use reqwest::StatusCode;
+    let kind = |c: u16| {
+        FailureKind::of(&exa::exa_status_error(StatusCode::from_u16(c).unwrap()))
+            .map(FailureKind::as_str)
+    };
+    assert_eq!(kind(402), Some("billing"));
+    assert_eq!(kind(401), Some("auth"));
+    assert_eq!(kind(403), Some("auth"));
+    assert_eq!(kind(429), Some("rate_limited"));
+    assert_eq!(kind(503), Some("unavailable"));
+    assert_eq!(kind(418), None);
 }

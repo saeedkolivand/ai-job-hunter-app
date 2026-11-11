@@ -107,3 +107,20 @@ fn a_classified_failure_leaves_its_kind_on_the_job_row() {
     fail_in_tracker(&mut tracker, "job-5", "boom".to_string(), None, None);
     assert_eq!(tracker.get("job-5").expect("row").result, None);
 }
+
+/// A failure without a kind must not wipe a result already on the row.
+#[test]
+fn an_unclassified_failure_keeps_an_existing_result() {
+    let mut tracker = JobTracker::default();
+    tracker.start("job-6", "test.kind");
+    tracker.fail_with(
+        "job-6",
+        "first".into(),
+        Some(json!({ "errorKind": "auth" })),
+    );
+    tracker.fail_with("job-6", "second".into(), None);
+    assert_eq!(
+        tracker.get("job-6").expect("row").result,
+        Some(json!({ "errorKind": "auth" }))
+    );
+}

@@ -43,7 +43,7 @@ use crate::commands::ai_provider::timeouts::research_deadline;
 use crate::commands::ai_provider::{AiGenerateRequest, AiGenerateRequestMessage};
 use crate::cover_letter::research::CompanyResearch;
 use crate::error::{AppResult, FailureKind};
-use crate::pipeline::enrichment::ResearchStatus;
+use crate::pipeline::enrichment::{EnrichmentResult, ResearchStatus};
 use crate::pipeline::resume::prompts::{letter_system, letter_user, LETTER_INTENT};
 use crate::pipeline::resume::{QualityCtx, RunLedger};
 use crate::pipeline::{Completer, Stage};
@@ -82,21 +82,38 @@ impl<'a> Stage<QualityCtx<'a>> for CoverLetter {
         };
         ctx.ledger.count_call(false);
         // Length only — never the letter or the brief itself (ADR-027).
-        let mut artifact = json!({
-            "chars": text.chars().count(),
-            "lines": text.lines().count(),
-            "researchAttempted": ctx.input.research_company,
-            "researchBriefChars": brief_chars,
-        });
-        // How the lookup ended: `empty` (nothing found) and `failed` (could not ask, with the
-        // kind) are different facts (#1500). Absent when research was off or never answered.
-        if let Some(research) = ctx.ledger.research() {
-            artifact["researchStatus"] = research.wire();
-        }
+        let artifact = letter_artifact(
+            &text,
+            ctx.input.research_company,
+            brief_chars,
+            ctx.ledger.research(),
+        );
         ctx.ledger.record(NAME, artifact);
         ctx.letter = text;
         Ok(())
     }
+}
+
+/// The letter stage's ledger artifact. Length only — never the letter or the brief (ADR-027).
+/// `researchStatus` says how the lookup ended: `empty` (nothing found) and `failed` (could not
+/// ask, with the kind) are different facts (#1500). Absent when research was off or never
+/// answered.
+pub(crate) fn letter_artifact(
+    text: &str,
+    research_attempted: bool,
+    brief_chars: usize,
+    research: Option<ResearchStatus>,
+) -> serde_json::Value {
+    let mut artifact = json!({
+        "chars": text.chars().count(),
+        "lines": text.lines().count(),
+        "researchAttempted": research_attempted,
+        "researchBriefChars": brief_chars,
+    });
+    if let Some(research) = research {
+        artifact["researchStatus"] = research.wire();
+    }
+    artifact
 }
 
 /// What a finished letter hands to the ledger.
@@ -167,6 +184,7 @@ pub(crate) async fn write_letter(job: LetterJob<'_, '_>) -> AppResult<LetterOut>
                     ctx.input.job_ad,
                     &ctx.strategy,
                     ctx.input.market,
+                    ctx.input.target_language,
                     ctx.input.today,
                     &brief,
                 ),
@@ -235,9 +253,7 @@ pub(crate) async fn research_brief(
     effort: Option<&str>,
 ) -> String {
     let Some(_guard) = completer.admit_research(NAME) else {
-        // Our own rate/concurrency ceiling refused it — a lookup that could not be made.
-        ledger.note_research(ResearchStatus::Failed(Some(FailureKind::RateLimited)));
-        return String::new();
+        return research_refused(ledger);
     };
     let deadline = research_deadline(effort);
     let (company, role) = (company.trim(), role.trim());
@@ -250,6 +266,18 @@ pub(crate) async fn research_brief(
             deadline,
         )
         .await;
+    research_settled(ledger, result)
+}
+
+/// Our own rate/concurrency ceiling refused the lookup — one that could not be made, so the run
+/// says `failed`, not silence. The letter goes ahead without a brief.
+pub(crate) fn research_refused(ledger: &RunLedger) -> String {
+    ledger.note_research(ResearchStatus::Failed(Some(FailureKind::RateLimited)));
+    String::new()
+}
+
+/// Record how the lookup ended and hand its brief (possibly empty) to the letter.
+pub(crate) fn research_settled(ledger: &RunLedger, result: EnrichmentResult) -> String {
     ledger.note_research(result.status);
     result.content
 }

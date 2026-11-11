@@ -215,7 +215,8 @@ impl Completer {
             })
             .unwrap_or_default();
         if text.trim().is_empty() {
-            return Err(AppError::Provider(
+            // `Parse`: the model answered with nothing usable (kind `model_output`).
+            return Err(AppError::Parse(
                 "The model produced no résumé text. Try again, or pick a different model."
                     .to_string(),
             ));

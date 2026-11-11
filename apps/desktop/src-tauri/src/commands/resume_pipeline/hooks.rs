@@ -155,9 +155,12 @@ pub(crate) fn note_provider_failure(
         return;
     }
     match outcome {
-        Err(AppError::Provider(_) | AppError::Network(_) | AppError::Refusal(_)) => {
-            ledger.stop(StoppedReason::ProviderError)
-        }
+        Err(
+            AppError::Provider(_)
+            | AppError::Network(_)
+            | AppError::Billing(_)
+            | AppError::Refusal(_),
+        ) => ledger.stop(StoppedReason::ProviderError),
         Err(AppError::OutputLimit(_)) => ledger.stop(StoppedReason::OutputLimit),
         _ => {}
     }

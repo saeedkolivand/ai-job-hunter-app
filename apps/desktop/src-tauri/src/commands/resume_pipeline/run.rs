@@ -90,7 +90,8 @@ pub async fn resume_pipeline_run(
                 guard
             }
             Err(e) => {
-                record_failure(&app_task, &run_id_task, &req, started_at, &e);
+                // No run row for a limiter or queue refusal: the job row and its event carry
+                // it, and a looping caller must not be able to evict a posting's real runs.
                 fail(&app_task, &cancels, &job_id_task, &e, None).await;
                 return;
             }

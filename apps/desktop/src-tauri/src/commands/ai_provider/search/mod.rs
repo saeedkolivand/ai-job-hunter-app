@@ -69,19 +69,19 @@ pub fn resolve_search_backend(native_ready: bool, exa_key_present: bool) -> Sear
 
 /// A source of web-search snippets for research.
 ///
-/// Returns an empty `Vec` rather than an error on every failure — a missing key,
-/// a refused request, an unparseable body. Research degrades to "no brief" and
+/// [`try_search`](WebSearcher::try_search) reports a failure; [`search`](WebSearcher::search)
+/// degrades it to an empty `Vec`. Either way research degrades to "no brief" at the caller and
 /// generation proceeds; it must never fail because a search did.
 #[async_trait]
 pub trait WebSearcher: Send + Sync {
-    async fn search(&self, query: &str, limit: usize) -> Vec<SearchResult>;
+    /// The search, reporting WHY it found nothing (#1500: an out-of-credit account must not
+    /// read as "the web had nothing"). Required, so no searcher can inherit a swallow.
+    async fn try_search(&self, query: &str, limit: usize) -> AppResult<Vec<SearchResult>>;
 
-    /// [`search`](Self::search) that reports WHY it found nothing, for the callers that tell a
-    /// failed lookup from an empty one (company research, #1500: an out-of-credit account must
-    /// not read as "the web had nothing"). Defaults to the swallowing form; a searcher whose
-    /// transport can name its failure overrides it.
-    async fn try_search(&self, query: &str, limit: usize) -> AppResult<Vec<SearchResult>> {
-        Ok(self.search(query, limit).await)
+    /// [`try_search`](Self::try_search), degrading every failure to no results for the callers
+    /// that have no use for the reason.
+    async fn search(&self, query: &str, limit: usize) -> Vec<SearchResult> {
+        self.try_search(query, limit).await.unwrap_or_default()
     }
 }
 
@@ -244,16 +244,36 @@ pub async fn fetch_company_brief<P: super::AiProvider + ?Sized>(
         CompanySearchRoute::Backend(_, None) => return Ok(String::new()),
         CompanySearchRoute::Backend(_, Some(searcher)) => searcher,
     };
-    let results = searcher
-        .try_search(&super::research::search_query(company), 5)
-        .await?;
+    search_then_synthesize(
+        searcher.as_ref(),
+        &super::research::search_query(company),
+        |results| super::research::synth_user(company, role, results),
+        |user| async move {
+            provider
+                .complete(app, model, super::research::SYNTH_SYSTEM, &user, Some(0.2))
+                .await
+        },
+    )
+    .await
+}
+
+/// Search, then synthesize — the shared shape of the three research facets, free of `AppHandle`
+/// so the failure behaviour is testable. A search that FAILED is an `Err` (the caller decides
+/// how to degrade, and says why); a search that found nothing is `Ok("")` with no synthesis call.
+async fn search_then_synthesize<Fut>(
+    searcher: &dyn WebSearcher,
+    query: &str,
+    user_prompt: impl FnOnce(&[SearchResult]) -> String,
+    synthesize: impl FnOnce(String) -> Fut,
+) -> AppResult<String>
+where
+    Fut: std::future::Future<Output = AppResult<String>>,
+{
+    let results = searcher.try_search(query, 5).await?;
     if results.is_empty() {
         return Ok(String::new());
     }
-    let user = super::research::synth_user(company, role, &results);
-    provider
-        .complete(app, model, super::research::SYNTH_SYSTEM, &user, Some(0.2))
-        .await
+    synthesize(user_prompt(&results)).await
 }
 
 /// Salary-range sibling of [`fetch_company_brief`] — same shape (search then
@@ -281,21 +301,20 @@ pub async fn searched_research_salary<P: super::AiProvider + ?Sized>(
         return Ok(String::new());
     };
     let query = super::research::salary_search_query(role, company, location, country, currency);
-    let results = searcher.search(&query, 5).await;
-    if results.is_empty() {
-        return Ok(String::new());
-    }
-    let user =
-        super::research::salary_synth_user(role, company, location, country, currency, &results);
-    provider
-        .complete(
-            app,
-            model,
-            &super::research::salary_system(currency),
-            &user,
-            Some(0.2),
-        )
-        .await
+    search_then_synthesize(
+        searcher.as_ref(),
+        &query,
+        |results| {
+            super::research::salary_synth_user(role, company, location, country, currency, results)
+        },
+        |user| async move {
+            let system = super::research::salary_system(currency);
+            provider
+                .complete(app, model, &system, &user, Some(0.2))
+                .await
+        },
+    )
+    .await
 }
 
 /// Application-answer sibling of [`fetch_company_brief`], scoped to a single
@@ -314,20 +333,23 @@ pub async fn searched_research_answer<P: super::AiProvider + ?Sized>(
         return Ok(String::new());
     };
     let query = super::research::answer_search_query(question, role, company);
-    let results = searcher.search(&query, 5).await;
-    if results.is_empty() {
-        return Ok(String::new());
-    }
-    let user = super::research::answer_synth_user(question, role, company, &results);
-    provider
-        .complete(
-            app,
-            model,
-            super::research::ANSWER_SYNTH_SYSTEM,
-            &user,
-            Some(0.2),
-        )
-        .await
+    search_then_synthesize(
+        searcher.as_ref(),
+        &query,
+        |results| super::research::answer_synth_user(question, role, company, results),
+        |user| async move {
+            provider
+                .complete(
+                    app,
+                    model,
+                    super::research::ANSWER_SYNTH_SYSTEM,
+                    &user,
+                    Some(0.2),
+                )
+                .await
+        },
+    )
+    .await
 }
 
 #[cfg(test)]

@@ -63,6 +63,24 @@ pub fn redact_body_for_log(s: &str) -> String {
     crate::observability::sanitize_reason(bound_bytes(s, MAX_LOG_BODY_BYTES))
 }
 
+/// Whether an upstream error body (or in-band error frame) says the account is out of credit or
+/// quota. Phrases a provider uses for that and for nothing else.
+pub(crate) fn is_billing_text(text: &str) -> bool {
+    let t = text.to_ascii_lowercase();
+    [
+        "insufficient_quota",
+        "exceeded your current quota",
+        "credit balance is too low",
+        "out of credit",
+        "insufficient credit",
+        "usage credits",
+        "payment required",
+        "billing_hard_limit",
+    ]
+    .iter()
+    .any(|k| t.contains(k))
+}
+
 /// Map a provider HTTP error to a clear, actionable message.
 pub fn friendly_api_error(
     provider: ProviderId,
@@ -72,6 +90,14 @@ pub fn friendly_api_error(
     let name = provider.as_str();
     let code = status.as_u16();
     let detail = redact_upstream_text(&extract_error_message(body));
+    // Status AND body are in hand only here: an out-of-credit account is a 402, but OpenAI
+    // reports it as a 429 `insufficient_quota` and Anthropic as a 400 "credit balance" —
+    // none of which the arms below can tell from a rate limit or a bad request.
+    if code == 402 || (matches!(code, 400 | 403 | 429) && is_billing_text(body)) {
+        return AppError::Billing(format!(
+            "{name}: out of credit, over quota, or billing required — {detail}"
+        ));
+    }
     match code {
         401 | 403 => AppError::Config(format!("{name}: invalid or unauthorized API key.")),
         404 => AppError::Provider(format!("{name}: model or endpoint not found — {detail}")),
@@ -206,6 +232,7 @@ pub fn strip_secrets_in_place(e: AppError, secrets: &[&str]) -> AppError {
         AppError::Config(m) => AppError::Config(s(m)),
         AppError::Network(m) => AppError::Network(s(m)),
         AppError::Provider(m) => AppError::Provider(s(m)),
+        AppError::Billing(m) => AppError::Billing(s(m)),
         AppError::OutputLimit(m) => AppError::OutputLimit(s(m)),
         AppError::Refusal(m) => AppError::Refusal(s(m)),
         AppError::Storage(m) => AppError::Storage(s(m)),

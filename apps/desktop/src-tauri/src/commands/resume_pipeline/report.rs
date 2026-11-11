@@ -52,6 +52,9 @@ const FABRICATION_CODES: &[&str] = &[
     crate::validate::content::FACTUAL_UNSOURCED_TERM,
     crate::validate::content::FACTUAL_ALTERED_PROJECT_LINK,
     crate::validate::content::FACTUAL_UNSOURCED_CERTIFICATION,
+    crate::validate::content::FACTUAL_UNSUPPORTED_ROLE_TERM,
+    crate::validate::content::FACTUAL_CONFLATED_ROLE_TERM,
+    crate::validate::content::FACTUAL_INVENTED_LOCATION,
 ];
 
 /// djb2, byte-for-byte the renderer's `hashText`.

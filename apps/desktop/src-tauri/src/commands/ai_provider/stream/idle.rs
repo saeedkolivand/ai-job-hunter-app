@@ -167,6 +167,9 @@ impl ChunkSource for Response {
 /// the upstream wording kept so `is_context_length_error` still matches it.
 pub(in crate::commands::ai_provider) fn frame_error(label: &str, raw: &str) -> AppError {
     let detail = redact_upstream_text(raw);
+    if super::super::is_billing_text(raw) {
+        return AppError::Billing(format!("{label}: out of credit or over quota ({detail})"));
+    }
     let lower = detail.to_ascii_lowercase();
     let busy = [
         "overload",
