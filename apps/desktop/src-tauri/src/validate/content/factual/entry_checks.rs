@@ -57,20 +57,24 @@ pub(super) fn places_in(text: &str) -> HashSet<String> {
     out
 }
 
-/// A place on a role's header that the source entry does not give it:
-/// `factual.invented_location` (Critical) when the source names that place
-/// nowhere, `factual.unsupported_location` (Warning) when it appears elsewhere
-/// (the header, another job), which may be a legitimate re-statement.
+/// A place on a role's header that the source entry does not give it.
+///
+/// Known: the matched entry's own places, with the country of any city among
+/// them. A place found only in the contact block (`contact`) is advisory,
+/// `factual.unsupported_location`; a place found nowhere, or only under another
+/// role or in Education ("TU Berlin" is no evidence the role was in Berlin), is
+/// `factual.invented_location`.
 pub(super) fn location_issues(
     block: &Block,
     source: &[&Block],
-    anywhere: &HashSet<String>,
+    contact: &HashSet<String>,
     section: Option<&str>,
 ) -> Vec<ContentIssue> {
-    let known = places_in(&source.iter().map(|b| b.text()).collect::<Vec<_>>().join(
+    let entry_text = source.iter().map(|b| b.text()).collect::<Vec<_>>().join(
         "
 ",
-    ));
+    );
+    let known = places_in(&entry_text);
     let mut seen = HashSet::new();
     header_places(block)
         .into_iter()
@@ -84,20 +88,24 @@ pub(super) fn location_issues(
                 .find(|w| canonical_place(&w.to_lowercase()) == place)
                 .unwrap_or(&place)
                 .to_string();
-            let code = if anywhere.contains(&place) {
-                FACTUAL_UNSUPPORTED_LOCATION
+            let (code, message) = if contact.contains(&place) {
+                (
+                    FACTUAL_UNSUPPORTED_LOCATION,
+                    format!(
+                        "\"{shown}\" is given elsewhere in your résumé, not for \"{}\". Keep it                          on this entry only if it is true.",
+                        block.identity
+                    ),
+                )
             } else {
-                FACTUAL_INVENTED_LOCATION
+                (
+                    FACTUAL_INVENTED_LOCATION,
+                    format!(
+                        "Your source résumé gives no location \"{shown}\" for \"{}\". Remove it                          from this entry unless it is true.",
+                        block.identity
+                    ),
+                )
             };
-            issue(
-                code,
-                section,
-                format!(
-                    "Your source résumé gives no location \"{shown}\" for \"{}\". Remove it from                      this entry unless it is true.",
-                    block.identity
-                ),
-                Some(shown),
-            )
+            issue(code, section, message, Some(shown))
         })
         .collect()
 }

@@ -14,7 +14,7 @@
 //! language) is skipped, never guessed at.
 
 use crate::documents::evidence::SectionKind;
-use crate::documents::keywords::languages_align;
+use crate::documents::keywords::detected_language;
 use crate::export::types::LineKind;
 use crate::validate::content::{
     issue, Analysis, ContentIssue, FACTUAL_CONFLATED_ROLE_TERM, FACTUAL_CONFLATED_TERM,
@@ -31,11 +31,13 @@ pub(super) struct Grounding {
     pub source: HashSet<String>,
     pub job: HashSet<String>,
     pub declared: HashSet<String>,
-    /// Every place the source names anywhere.
-    pub places: HashSet<String>,
-    /// The source and the output are written in the same language. A translated
-    /// term has no source spelling to compare against, so when this is false no
-    /// term finding may be Critical and the bullet check does not run.
+    /// The places the source's contact block (everything before its first
+    /// section) names.
+    pub contact_places: HashSet<String>,
+    /// The source is not CONFIDENTLY in another language than the output. A
+    /// translated term has no source spelling, so when this is false a
+    /// job-ad term missing from the source cannot be Critical and the bullet
+    /// check does not run. An unreadable language counts as comparable.
     pub comparable: bool,
 }
 
@@ -45,10 +47,25 @@ impl Grounding {
             source: keys(ctx, ctx.input.source_resume),
             job: keys(ctx, ctx.input.job_ad),
             declared: declared_skills(ctx, &ctx.source_sections),
-            places: places_in(ctx.input.source_resume),
-            comparable: languages_align(ctx.input.source_resume, &ctx.lang),
+            contact_places: places_in(&contact_text(&ctx.source_sections)),
+            comparable: detected_language(ctx.input.source_resume)
+                .is_none_or(|detected| detected.get(..2) == Some(ctx.lang.as_str())),
         }
     }
+}
+
+/// The source's contact block: every line before its first section heading.
+fn contact_text(sections: &[crate::validate::content::Section]) -> String {
+    sections
+        .iter()
+        .filter(|s| s.heading.is_none())
+        .flat_map(|s| s.lines.iter())
+        .map(|l| l.text.as_str())
+        .collect::<Vec<_>>()
+        .join(
+            "
+",
+        )
 }
 
 fn names(terms: &[&Term]) -> String {
@@ -92,7 +109,9 @@ pub(super) fn term_issues(
             continue;
         }
         let (unsupported, strong) = (i < 2, i % 2 == 1);
-        let critical = role && strong && g.comparable;
+        // Conflation (a term spelled the same, under the wrong entry) needs no
+        // translation; only "absent from the source" does.
+        let critical = role && strong && (!unsupported || g.comparable);
         let (code, message) = if unsupported {
             (
                 if critical {
@@ -157,7 +176,7 @@ fn entry_issues(
     let role = block.kind == Kind::Role;
     let mut out = Vec::new();
     if role && !matches.is_empty() {
-        out.extend(location_issues(block, &matches, &g.places, section));
+        out.extend(location_issues(block, &matches, &g.contact_places, section));
     }
     for line in &block.body {
         if !matches!(line.kind, LineKind::Bullet | LineKind::Text) {

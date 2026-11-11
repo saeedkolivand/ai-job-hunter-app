@@ -189,12 +189,12 @@ pub(super) fn terms_in(ctx: &Analysis, line: &str, declared: &HashSet<String>) -
                 }
                 let lower = part.to_lowercase();
                 let proper = capitals_mean_names && !at_start && is_capitalized(part);
-                // A declared Skills item makes a word a tool only when it is
-                // WRITTEN like one here: "Mentoring" in a Skills list must not
-                // turn "Mentored three engineers" into a tool claim.
-                let strong = shape_is_tool(part)
-                    || is_vocab(part, &keys)
-                    || (proper && keys.iter().any(|k| declared.contains(k)));
+                // A declared Skills item makes a word a tool when the output
+                // spells it exactly as the source's Skills section does
+                // ("Terraform" in any position or language). "Mentored" is not
+                // the declared "Mentoring", so a soft skill's verb stays quiet.
+                let strong =
+                    shape_is_tool(part) || is_vocab(part, &keys) || declared.contains(&lower);
                 let weak = proper
                     && !LEGAL_FORMS.contains(&lower.as_str())
                     && !GEOGRAPHY_TOKENS.contains(&lower.as_str())
@@ -239,12 +239,12 @@ pub(super) fn skill_items(ctx: &Analysis, section: &Section) -> Vec<Term> {
     out
 }
 
-/// Every skill the source résumé declares in a Skills section.
+/// The single-word Skills items the source declares, lowercased as written.
 pub(super) fn declared_skills(ctx: &Analysis, sections: &[Section]) -> HashSet<String> {
     sections
         .iter()
         .filter(|s| s.kind == SectionKind::Skills)
         .flat_map(|s| skill_items(ctx, s))
-        .flat_map(|t| t.keys)
+        .map(|t| t.word.to_lowercase())
         .collect()
 }

@@ -346,12 +346,14 @@ export function sourceCased(term: string, resumeBody?: string): string {
   const edge = '[\\p{L}\\p{N}_]';
   const pattern = new RegExp(`(?<!${edge})${escaped}(?!${edge})`, 'giu');
   // Several spellings can occur ("REACT" in a SKILLS heading, "go" in
-  // "go-to-market", "Go" in a list): prefer the mixed-case one, then an
-  // all-caps one, then whatever is left.
+  // "go-to-market", "Go" in a list). Rank: mixed case ("TypeScript") first, then
+  // a short all-caps acronym ("AWS", "AI"), then Title case ("React"), then a
+  // longer all-caps word (a heading), then lowercase prose.
   const rank = (hit: string): number => {
-    const hasUpper = hit !== hit.toLowerCase();
-    if (!hasUpper) return 1;
-    return hit === hit.toUpperCase() && hit.length > 1 && /\p{L}{2,}/u.test(hit) ? 2 : 3;
+    if (hit === hit.toLowerCase()) return 1;
+    const allCaps = hit === hit.toUpperCase();
+    if (allCaps) return hit.length > 1 && hit.length <= 4 ? 4 : 2;
+    return /\p{Ll}\p{Lu}|\p{Lu}{2}/u.test(hit) ? 5 : 3;
   };
   let best: string | undefined;
   for (const [hit] of resumeBody.matchAll(pattern)) {

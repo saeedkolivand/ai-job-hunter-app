@@ -107,8 +107,10 @@ fn a_skills_list_term_credited_to_one_employer_is_conflation() {
 #[test]
 fn a_term_moved_into_a_project_entry_only_warns() {
     let generated = edited(
-        "freelancers, on the command line",
-        "freelancers on Redis, on the command line",
+        "Rust · SQLite · Clap
+Double-entry",
+        "Rust · SQLite · Clap
+Redis-backed double-entry",
     );
     let report = report_against(&generated, EN_SOURCE);
     assert_eq!(
@@ -148,12 +150,12 @@ fn spelling_variants_of_a_supported_tool_are_the_same_tool() {
 fn a_location_the_source_never_gave_the_role_is_flagged() {
     let generated = edited(
         "Backend Developer | Globex Logistics | 2018 - 2021",
-        "Backend Developer | Globex Logistics | Hamburg | 2018 - 2021",
+        "Backend Developer | Globex Logistics | Berlin | 2018 - 2021",
     );
     let report = report_against(&generated, EN_SOURCE);
     let found = only(&report, FACTUAL_INVENTED_LOCATION);
     assert_eq!(found.len(), 1, "{:#?}", report.issues);
-    assert_eq!(found[0].evidence.as_deref(), Some("Hamburg"));
+    assert_eq!(found[0].evidence.as_deref(), Some("Berlin"));
 }
 
 #[test]

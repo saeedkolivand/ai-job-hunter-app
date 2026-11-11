@@ -358,6 +358,8 @@ describe('emphasis keeps the résumé spelling', () => {
     expect(sourceCased('react', body)).toBe('React');
     expect(sourceCased('go', body)).toBe('Go');
     expect(sourceCased('react', 'REACT only')).toBe('REACT');
+    expect(sourceCased('aws', 'Aws notes, AWS usage')).toBe('AWS');
+    expect(sourceCased('typescript', 'Typescript and TypeScript')).toBe('TypeScript');
   });
 
   it('bolds the source spelling in both emphasis blocks, never the key', () => {
