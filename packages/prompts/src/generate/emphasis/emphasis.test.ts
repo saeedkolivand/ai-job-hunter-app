@@ -363,6 +363,8 @@ describe('emphasis keeps the résumé spelling', () => {
     expect(sourceCased('rust', 'RUST developer; Rust services')).toBe('Rust');
     expect(sourceCased('sap', 'Sap notes, SAP usage')).toBe('SAP');
     expect(sourceCased('typescript', 'Typescript and TypeScript')).toBe('TypeScript');
+    expect(sourceCased('rest', 'Rest of the team built REST APIs')).toBe('REST');
+    expect(sourceCased('it', 'It supports IT infrastructure')).toBe('IT');
   });
 
   it('bolds the source spelling in both emphasis blocks, never the key', () => {
