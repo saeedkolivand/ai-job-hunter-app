@@ -72,21 +72,22 @@ pub(super) fn resolve_found_job(
     // An exact spelling wins. The normalizer can collapse two postings that differ only by a
     // query-string id on a host outside its allowlist, so a normalized-only match that spans
     // more than one distinct stored URL is ambiguous and refused rather than guessed.
+    // Identity is decided before usability: an exact row that is unusable is refused as such,
+    // never swapped for a different usable URL that merely normalizes to the same key.
     let exact_url = req.job_url.trim();
-    let mut candidates: Vec<&FoundJob> = matching()
-        .filter(|j| j.url == exact_url)
-        .filter(usable)
-        .collect();
-    if candidates.is_empty() {
-        candidates = matching().filter(usable).collect();
+    let exact: Vec<&FoundJob> = matching().filter(|j| j.url == exact_url).collect();
+    let candidates: Vec<&FoundJob> = if exact.is_empty() {
         let distinct: std::collections::HashSet<&str> =
-            candidates.iter().map(|j| j.url.as_str()).collect();
+            matching().map(|j| j.url.as_str()).collect();
         if distinct.len() > 1 {
             return Err(AppError::Validation(
                 "jobUrl matches more than one found job; pass jobId to pick one".to_string(),
             ));
         }
-    }
+        matching().filter(usable).collect()
+    } else {
+        exact.iter().copied().filter(usable).collect()
+    };
     // The same posting can sit in several autopilots: the most text wins, then the most recently
     // found, then the url — a total order, so the pick never depends on store iteration order.
     let found = candidates
@@ -96,7 +97,13 @@ pub(super) fn resolve_found_job(
             let len = |j: &FoundJob| j.description.as_deref().map_or(0, str::len);
             (len(a), a.found_at, &a.url).cmp(&(len(b), b.found_at, &b.url))
         })
-        .ok_or_else(|| AppError::Validation(refusal(matching())))?;
+        .ok_or_else(|| {
+            AppError::Validation(refusal(if exact.is_empty() {
+                matching().collect()
+            } else {
+                exact.clone()
+            }))
+        })?;
     // A stored row that arrived entity-escaped (#1497) is decoded once here, before any prompt.
     let stored = found.description.as_deref().unwrap_or_default();
     req.job_ad_text = if crate::scraping::http::has_escaped_markup(stored) {
@@ -117,8 +124,7 @@ pub(super) fn resolve_found_job(
 }
 
 /// Why no matching found job was usable, naming the reason so the caller knows what to pass.
-fn refusal<'a>(matches: impl Iterator<Item = &'a FoundJob>) -> String {
-    let rows: Vec<&FoundJob> = matches.collect();
+fn refusal(rows: Vec<&FoundJob>) -> String {
     if rows.is_empty() {
         "jobUrl does not match any found job; pass jobId or jobAdText".to_string()
     } else if rows.iter().all(|j| j.identity_review.is_some()) {

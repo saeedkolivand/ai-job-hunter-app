@@ -63,23 +63,7 @@ pub fn redact_body_for_log(s: &str) -> String {
     crate::observability::sanitize_reason(bound_bytes(s, MAX_LOG_BODY_BYTES))
 }
 
-/// Whether an upstream error body (or in-band error frame) says the account is out of credit or
-/// quota. Phrases a provider uses for that and for nothing else.
-pub(crate) fn is_billing_text(text: &str) -> bool {
-    let t = text.to_ascii_lowercase();
-    [
-        "insufficient_quota",
-        "exceeded your current quota",
-        "credit balance is too low",
-        "out of credit",
-        "insufficient credit",
-        "usage credits",
-        "payment required",
-        "billing_hard_limit",
-    ]
-    .iter()
-    .any(|k| t.contains(k))
-}
+pub(crate) use crate::error::is_billing_text;
 
 /// Map a provider HTTP error to a clear, actionable message.
 pub fn friendly_api_error(

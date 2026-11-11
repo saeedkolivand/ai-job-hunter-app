@@ -79,17 +79,40 @@ impl FailureKind {
             AppError::RateLimited(_) => Some(Self::RateLimited),
             AppError::Timeout(_) => Some(Self::Unavailable),
             AppError::Config(m) => from_text(m).filter(|k| *k == Self::Auth),
-            AppError::Network(m) | AppError::Provider(m) => from_text(m),
+            // A `Network` error is either an HTTP status the mapper already put into its text, or
+            // a transport failure (no response at all): the latter has no text to recognise, and
+            // is unavailable by definition.
+            AppError::Network(m) => from_text(m).or(Some(Self::Unavailable)),
+            AppError::Provider(m) => from_text(m),
             _ => None,
         }
     }
+}
+
+/// Whether an upstream error body (or in-band error frame) says the account is out of credit or
+/// quota. Phrases a provider uses for that and for nothing else. Lives here, in the lower layer,
+/// so both the provider's status mapper and [`from_text`] share one list.
+pub(crate) fn is_billing_text(text: &str) -> bool {
+    let t = text.to_ascii_lowercase();
+    [
+        "insufficient_quota",
+        "exceeded your current quota",
+        "credit balance is too low",
+        "out of credit",
+        "insufficient credit",
+        "usage credits",
+        "payment required",
+        "billing_hard_limit",
+    ]
+    .iter()
+    .any(|k| t.contains(k))
 }
 
 /// Status-or-phrase sniffing over a message. Billing before auth before rate limit.
 fn from_text(message: &str) -> Option<FailureKind> {
     let t = message.to_lowercase();
     let any = |needles: &[&str]| needles.iter().any(|n| t.contains(n));
-    if has_status(&t, "402") || any(&["payment required", "insufficient_quota"]) {
+    if has_status(&t, "402") || is_billing_text(&t) {
         Some(FailureKind::Billing)
     } else if has_status(&t, "401")
         || has_status(&t, "403")

@@ -137,3 +137,23 @@ fn the_wire_token_round_trips_and_unknown_tokens_are_dropped() {
     }
     assert_eq!(FailureKind::parse("run: call-irreversible"), None);
 }
+
+/// Mutation check: drop `is_billing_text` from `from_text` and this reads `rate_limited`.
+#[test]
+fn an_ollama_search_429_with_a_credit_body_is_billing() {
+    let e = AppError::Network(
+        "ollama web_search 429 Too Many Requests: Your credit balance is too low".to_string(),
+    );
+    assert_eq!(kind(e), Some("billing"));
+    let e = AppError::Network("ollama web_search 429 Too Many Requests: slow down".to_string());
+    assert_eq!(kind(e), Some("rate_limited"));
+}
+
+/// A transport failure has no status to read. Mutation check: revert the `.or(Some(Unavailable))`
+/// on the `Network` arm and this reads `None`. An unknown provider error stays unclassified.
+#[test]
+fn a_transport_failure_is_unavailable_and_an_unknown_provider_error_is_not() {
+    let e = AppError::Network("Stream error: connection reset by peer".to_string());
+    assert_eq!(kind(e), Some("unavailable"));
+    assert_eq!(kind(AppError::Provider("mystery".to_string())), None);
+}
