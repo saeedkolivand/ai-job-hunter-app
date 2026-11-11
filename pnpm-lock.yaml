@@ -367,14 +367,14 @@ importers:
   packages/translations:
     dependencies:
       i18next:
-        specifier: ^26.7.1
-        version: 26.7.1(typescript@7.0.2)
+        specifier: ^27.0.1
+        version: 27.0.1(typescript@7.0.2)
       i18next-browser-languagedetector:
         specifier: ^8.3.0
         version: 8.3.0
       react-i18next:
         specifier: ^17.1.11
-        version: 17.1.11(i18next@26.7.1(typescript@7.0.2))(react@19.3.1)(typescript@7.0.2)
+        version: 17.1.11(i18next@27.0.1(typescript@7.0.2))(react@19.3.1)(typescript@7.0.2)
     devDependencies:
       '@types/react':
         specifier: ^19.3.0
@@ -4293,6 +4293,15 @@ packages:
 
   i18next@26.7.1:
     resolution: {integrity: sha512-cX+3RRVczel/V2kCMTACckSGSpqgtWYEA6beXNYVms7dOQiHojdPYHD26lT4IKimNeoGWrLvtPgjftbRvmZJVw==}
+    peerDependencies:
+      typescript: ^5 || ^6 || ^7
+    peerDependenciesMeta:
+      typescript:
+        optional: true
+
+  i18next@27.0.1:
+    resolution: {integrity: sha512-KaE5ozP8UUeVpOJIwMVbbnpRKpyYQuxd9ZbseJoDzezE3nvLnZZQn20pkzyIJwPI2Uet/Qs3WzPTG812f6F/Eg==}
+    engines: {node: '>=22'}
     peerDependencies:
       typescript: ^5 || ^6 || ^7
     peerDependenciesMeta:
@@ -10245,6 +10254,10 @@ snapshots:
     optionalDependencies:
       typescript: 7.0.2
 
+  i18next@27.0.1(typescript@7.0.2):
+    optionalDependencies:
+      typescript: 7.0.2
+
   idb-keyval@6.2.5: {}
 
   ignore@5.3.2: {}
@@ -11707,6 +11720,16 @@ snapshots:
       '@babel/runtime': 7.29.10
       html-parse-stringify: 4.0.1
       i18next: 26.7.1(typescript@7.0.2)
+      react: 19.3.1
+      use-sync-external-store: 1.7.0(react@19.3.1)
+    optionalDependencies:
+      typescript: 7.0.2
+
+  react-i18next@17.1.11(i18next@27.0.1(typescript@7.0.2))(react@19.3.1)(typescript@7.0.2):
+    dependencies:
+      '@babel/runtime': 7.29.10
+      html-parse-stringify: 4.0.1
+      i18next: 27.0.1(typescript@7.0.2)
       react: 19.3.1
       use-sync-external-store: 1.7.0(react@19.3.1)
     optionalDependencies:
