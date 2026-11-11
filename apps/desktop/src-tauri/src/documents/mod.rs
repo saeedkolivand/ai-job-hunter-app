@@ -178,12 +178,13 @@ impl DocumentStore {
         .ok()
     }
 
-    /// The user's default document (`is_default`), or `None` when none is marked.
+    /// The default document: the `is_default` row, else the most recently created one (the same
+    /// fallback as `resolve_resume` and the renderer's `useDefaultResume`); `None` with no documents.
     pub fn default_document(&self) -> Option<DocumentRecord> {
         let conn = self.conn.lock();
         conn.query_row(
             "SELECT id, title, name, locale, text, pages, created_at, indexed, is_default, keywords_json
-             FROM documents WHERE is_default = 1 LIMIT 1",
+             FROM documents ORDER BY is_default DESC, created_at DESC LIMIT 1",
             [],
             record_from_row,
         )

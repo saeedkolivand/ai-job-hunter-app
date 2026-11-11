@@ -3,13 +3,13 @@
 use tauri::{AppHandle, Manager};
 
 use crate::error::{AppError, AppResult};
-use crate::ipc_contracts::date_filters::DATE_FILTER_OPTIONS;
+use crate::scraping::types::{is_known_date_filter, DATE_FILTER_OPTIONS};
 
 /// Refuse a `dateFilter` outside the shared vocabulary instead of storing a value that silently
 /// means "no date filter". `None` (any time) is valid.
 pub(super) fn check_date_filter(date_filter: Option<&str>) -> AppResult<()> {
     match date_filter {
-        Some(v) if !DATE_FILTER_OPTIONS.contains(&v) => Err(AppError::Validation(format!(
+        Some(v) if !is_known_date_filter(v) => Err(AppError::Validation(format!(
             "invalid dateFilter; allowed values: {}",
             DATE_FILTER_OPTIONS.join(", ")
         ))),
@@ -39,12 +39,17 @@ pub(super) fn resume_for_run(app: &AppHandle, own: Option<&str>) -> Option<Strin
 }
 
 /// Warning for the create/update reply when a run would have no résumé to score against.
+/// Skips the default-document read when the autopilot has its own text.
 pub(super) fn resume_warning(app: &AppHandle, own: Option<&str>) -> Option<&'static str> {
-    resume_for_run(app, own).is_none().then_some(
-        "No resume text and no default document: runs will score every job against an empty \
-         resume. Set resumeText or upload a default document.",
-    )
+    if own.is_some_and(|t| !t.trim().is_empty()) {
+        return None;
+    }
+    default_document_text(app)
+        .is_none_or(|t| t.trim().is_empty())
+        .then_some(NO_RESUME_WARNING)
 }
+
+pub(super) const NO_RESUME_WARNING: &str = "No resume text and no default document: runs will      score every job against an empty resume. Set resumeText or upload a default document.";
 
 #[cfg(test)]
 mod tests;

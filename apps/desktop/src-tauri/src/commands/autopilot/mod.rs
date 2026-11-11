@@ -101,7 +101,8 @@ pub async fn autopilot_create(app: AppHandle, mut req: AutopilotCreateRequest) -
     let ap = store(&app)
         .lock()
         .create(serde_json::to_value(&req).unwrap_or_default());
-    Ok(with_resume_warning(&app, ap))
+    let warning = guards::resume_warning(&app, ap.resume_text.as_deref());
+    Ok(reply_with_warning(ap, warning))
 }
 
 #[tauri::command]
@@ -120,12 +121,14 @@ pub async fn autopilot_update(
     let ap = mutate_record(&app, &autopilot_id, |records| {
         records.lock().update(&autopilot_id, patch)
     });
-    Ok(ap.map_or(Value::Null, |ap| with_resume_warning(&app, ap)))
+    Ok(ap.map_or(Value::Null, |ap| {
+        let warning = guards::resume_warning(&app, ap.resume_text.as_deref());
+        reply_with_warning(ap, warning)
+    }))
 }
 
-/// The saved record as JSON, plus a `warning` when a run would have no resume to score against.
-fn with_resume_warning(app: &AppHandle, ap: Autopilot) -> Value {
-    let warning = guards::resume_warning(app, ap.resume_text.as_deref());
+/// The saved record as JSON, plus a `warning` when one is given.
+fn reply_with_warning(ap: Autopilot, warning: Option<&str>) -> Value {
     let mut out = json!(ap);
     if let (Some(w), Some(obj)) = (warning, out.as_object_mut()) {
         obj.insert("warning".into(), json!(w));

@@ -711,10 +711,6 @@ const R7_ALLOW: &[(&str, &str)] = &[
     // and carrying the same TODO(arch): host the cross-language consts in an L0
     // module and all three clear.
     ("ai_config", "ipc_contracts"),
-    // `autopilot::model` drops a stored `dateFilter` outside the GENERATED
-    // `ipc_contracts::date_filters::DATE_FILTER_OPTIONS` vocabulary on load (#1492): a pure
-    // compile-time `&[&str]`, same TODO(arch) as the edges above.
-    ("autopilot", "ipc_contracts"),
     ("postings", "commands"),
     ("autopilot_scheduler", "commands"),
     // Centralized event emit: autopilot_helpers (L2) streams scrape progress via

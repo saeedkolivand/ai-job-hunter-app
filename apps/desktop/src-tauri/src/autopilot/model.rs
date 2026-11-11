@@ -117,7 +117,7 @@ where
 {
     let raw: Option<String> = Option::deserialize(de)?;
     Ok(raw.filter(|v| {
-        let known = crate::ipc_contracts::date_filters::DATE_FILTER_OPTIONS.contains(&v.as_str());
+        let known = crate::scraping::types::is_known_date_filter(v);
         if !known {
             log::warn!("[autopilot] dropped an unrecognised dateFilter while loading a target");
         }
