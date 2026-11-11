@@ -156,6 +156,7 @@ fn a_location_the_source_never_gave_the_role_is_flagged() {
     let found = only(&report, FACTUAL_INVENTED_LOCATION);
     assert_eq!(found.len(), 1, "{:#?}", report.issues);
     assert_eq!(found[0].evidence.as_deref(), Some("Berlin"));
+    assert!(!found[0].message.contains("  "), "{}", found[0].message);
 }
 
 #[test]

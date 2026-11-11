@@ -48,8 +48,26 @@ fn an_unspaced_em_dash_between_words_becomes_a_comma() {
 }
 
 #[test]
+fn a_pronoun_or_range_word_beside_an_unspaced_em_dash_is_prose() {
+    assert_eq!(
+        strip_long_dashes("I—along with colleagues—led the project"),
+        "I, along with colleagues, led the project"
+    );
+    assert_eq!(
+        strip_long_dashes("It may—however—fail"),
+        "It may, however, fail"
+    );
+    for kept in ["May—June 2021", "Mon—Fri", "Jan—Mar"] {
+        assert_eq!(strip_long_dashes(kept), kept, "{kept:?}");
+    }
+}
+
+#[test]
 fn an_unspaced_en_dash_or_numeric_em_dash_is_left_alone() {
     for kept in [
+        "Rolls—Royce",
+        "Jan—Mar",
+        "e—mail",
         "Rolls–Royce",
         "Jan–Mar 2020",
         "2019—2022",

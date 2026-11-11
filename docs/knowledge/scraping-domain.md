@@ -1,6 +1,6 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-11-10
+Last updated: 2026-11-11
 
 Describes the job-scraping subsystem: the board registry (`SCRAPERS` in `apps/desktop/src-tauri/src/scraping/boards/mod.rs`), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
@@ -422,7 +422,7 @@ Per-board scrape outcomes are now visible via a shared `BoardSummaryChips` compo
 - **Keyword aggregators (client-side filter, no server-side search):**
   - The Muse: `apps/desktop/src-tauri/src/scraping/boards/themuse/mod.rs`
 - **Simple HTTP remote-jobs boards (keyless, full descriptions, tag-based keyword search):**
-  - Jobicy: `apps/desktop/src-tauri/src/scraping/boards/jobicy/mod.rs` — HTTP GET request to Jobicy's free API with `count`/`tag` query params; returns full inline job descriptions (no truncation, no detail-fetch wall); free-text `tag` parameter for keyword search; part of the SCRAPERS registry.
+  - Jobicy: `apps/desktop/src-tauri/src/scraping/boards/jobicy/mod.rs` — HTTP GET request to Jobicy's free API with `count`/`tag` query params; returns full inline job descriptions (no truncation, no detail-fetch wall); free-text `tag` parameter for keyword search, which the API only accepts within a bounded length (`tag_param` trims or drops it, and `search` re-applies the full query client-side when the tag differs, #1501); part of the SCRAPERS registry.
 - **Aggregator:**
   - Registry: `apps/desktop/src-tauri/src/scraping/boards/aggregator/mod.rs`
   - Providers (Adzuna, JSearch, Jooble, Apify LinkedIn): `apps/desktop/src-tauri/src/scraping/boards/aggregator/` (`fallback.rs`: JobProvider trait; one module per provider)
@@ -588,7 +588,7 @@ under `apps/desktop/src-tauri/src/scraping/boards/`.
 **Fast-follow work items (deferred):**
 
 1. LinkedIn re-test when authentication cookies available (guest endpoint is facet-stripped; authenticated path may differ).
-2. Rippling (v2 undocumented), Arbeitsagentur (v6), Workable (v3 POST) require endpoint version changes.
+2. Rippling (v2 undocumented) and Workable (v3 POST) require endpoint version changes.
 
 **Source pointers:**
 

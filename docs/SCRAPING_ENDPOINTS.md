@@ -640,27 +640,20 @@ Implementation confirmed working. `includeCompensation=true` is already in the U
 
 #### Current scraper
 
-- **URL:** `https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs` (list); `/pc/v4/jobdetails/{hash}` (detail)
+- **URL:** list on `/pc/v6/jobs`; detail on `/pc/v4/jobdetails/{hash}`. v4 list answers 403 and v6 detail answers 403 (#1494), hence the split; the base URLs are `LIST_BASE` / `DETAIL_BASE` in `scraping/boards/arbeitsagentur/mod.rs`, the v6 response types in `model.rs`. A page-1 shape or status failure is a board error (board health), never an empty result.
 - **Mode:** HTTP (reqwest via `fetch_json`)
-- **Fields:** `stellenangebote[].{refnr, titel, beruf, arbeitgeber, arbeitsort, aktuelleVeroeffentlichungsdatum, externeUrl, hashId}`
+- **Fields:** the v6 list response types and field mapping live in `scraping/boards/arbeitsagentur/model.rs`
 
 #### Verified endpoint (2026-06-20)
 
-- **Search URL:** `https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs`
+- **Search URL:** the v6 list base above (query params below were verified against v4; re-check against `mod.rs` before relying on one)
 - **Query params:** `was` (keyword), `wo` (location), `page` (1-indexed), `size` (25 default); optional: `umkreis` (radius km), `arbeitszeit` (vz/tz/snw/ho/mj), `angebotsart`, `befristung`, `veroeffentlichtseit` (0–100 days)
 - **Required header:** `X-API-Key: jobboerse-jobsuche` (shared public key used by official frontend)
 - **Pagination:** `page` (1-indexed) + `size`; loop breaks when `items.len() < size`; max 10 pages in caller
 - **Auth required:** No login; `X-API-Key` header required (publicly known)
-- **Response format:** JSON `{ stellenangebote: [...], maxErgebnisse: N }`
-- **Key data fields:**
-  - Stable ID: `refnr` (prefixed `arbeitsagentur:{refnr}`)
-  - Title: `titel` (or `beruf` as fallback)
-  - Company: `arbeitgeber` (fallback `"Unbekannt"`)
-  - Location: `arbeitsort.ort` + `arbeitsort.region` + `arbeitsort.land` (comma-joined)
-  - URL: `externeUrl` (or constructed from `hashId`)
-  - Posted: `aktuelleVeroeffentlichungsdatum` (RFC3339, to ms)
-  - Description: from detail endpoint — `stellenangebotsBeschreibung` + `arbeitgeberdarstellung` (HTML-stripped)
-  - Salary: NOT exposed in either list or detail API
+- **Response format:** JSON with a result list (`ergebnisliste`) and a total count (`maxErgebnisse`); shape in `model.rs`
+- **Key data fields:** the v6 list and detail field mapping (ID, title, company, location, URL, posted date, description) lives in `scraping/boards/arbeitsagentur/model.rs` and `mod.rs`
+- **Salary:** NOT exposed in either list or detail API
 - **Anti-bot:** Detail endpoint (`/jobdetails/{hash}`) returns 404 for non-browser clients (bot filter). Scraper handles gracefully: detail fetch is wrapped in `.ok().flatten()`; on 404 the job is still emitted using list-only data (description=None). No blocking on list endpoint. Rate limiting: 700 ms + random 0–500 ms per page.
 
 #### Recommendation

@@ -147,6 +147,29 @@ fn allows_line_removal(code: &str, is_letter: bool) -> bool {
             && (code == FACTUAL_UNSUPPORTED_ROLE_TERM || code == FACTUAL_CONFLATED_ROLE_TERM))
 }
 
+/// The line an anchor-less finding sat on, so a Remove can be reconciled against
+/// THAT occurrence rather than the word document-wide (the same word may be
+/// true on another role). Several lines carry the span, so the entry's message —
+/// which quotes the role as its last quoted phrase — picks the header; still
+/// ambiguous means no context, and the entry falls back to the evidence check.
+fn context_line(text: &str, span: &str, message: &str) -> Option<String> {
+    let span = span.trim();
+    if span.is_empty() {
+        return None;
+    }
+    let mut lines: Vec<&str> = text.lines().filter(|l| l.contains(span)).collect();
+    if lines.len() > 1 {
+        let identity = message
+            .rsplit('"')
+            .nth(1)
+            .filter(|i| !i.trim().is_empty())?;
+        lines.retain(|l| l.contains(identity));
+    }
+    let [line] = lines[..] else { return None };
+    let line = line.trim();
+    (!line.is_empty() && line.chars().count() <= MAX_LINE_CHARS).then(|| line.to_string())
+}
+
 /// One flagged span awaiting (or carrying) the user's verdict, with the
 /// document line it sits on ([`containing_line`]).
 fn fabrications(report: &ContentReport, text: &str, is_letter: bool) -> Vec<Value> {
@@ -179,8 +202,13 @@ fn fabrications(report: &ContentReport, text: &str, is_letter: bool) -> Vec<Valu
             {
                 return None;
             }
-            let line = containing_line(text, &evidence)
-                .filter(|_| allows_line_removal(issue.code, is_letter));
+            let removable = allows_line_removal(issue.code, is_letter);
+            let line = containing_line(text, &evidence).filter(|_| removable);
+            let context = if removable {
+                None
+            } else {
+                context_line(text, &evidence, &issue.message)
+            };
             let mut entry = Map::new();
             entry.insert(
                 "issueKey".to_string(),
@@ -190,6 +218,9 @@ fn fabrications(report: &ContentReport, text: &str, is_letter: bool) -> Vec<Valu
             entry.insert("evidence".to_string(), json!(evidence));
             if let Some(line) = line {
                 entry.insert("line".to_string(), json!(line));
+            }
+            if let Some(context) = context {
+                entry.insert("context".to_string(), json!(context));
             }
             Some(Value::Object(entry))
         })
@@ -310,7 +341,10 @@ fn entry_resolved(entry: &Value, document_text: &str) -> bool {
     match entry.get("decision").and_then(Value::as_str) {
         Some("keep") => true,
         Some("remove") => {
-            if let Some(line) = entry.get("line").and_then(Value::as_str) {
+            // `context` anchors an occurrence a Remove may not delete a line
+            // for (a role header): it settles once that line is gone.
+            let anchor = entry.get("line").or_else(|| entry.get("context"));
+            if let Some(line) = anchor.and_then(Value::as_str) {
                 let line = line.trim();
                 return line.is_empty() || !document_text.contains(line);
             }

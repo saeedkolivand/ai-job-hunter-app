@@ -162,6 +162,20 @@ export function FabricationReview({
                   <p className="mt-0.5 text-[10px] leading-relaxed text-foreground/35">
                     {t('quality.panel.review.removalPendingHint')}
                   </p>
+                  {onResolve && (
+                    <Button
+                      type="button"
+                      variant="glass"
+                      size="sm"
+                      disabled={busy}
+                      loading={resolving}
+                      onClick={() => onResolve(entry.issueKey, 'keep')}
+                      className="mt-1.5 text-[10px]"
+                    >
+                      <Check size={10} />
+                      {t('quality.panel.review.keep')}
+                    </Button>
+                  )}
                 </div>
               ) : entry.decision ? (
                 <p className="mt-2 text-[10px] font-medium text-foreground/55">
@@ -171,19 +185,44 @@ export function FabricationReview({
                 </p>
               ) : (
                 onResolve && (
-                  <div className="mt-2 flex gap-1.5">
-                    <Button
-                      type="button"
-                      variant="danger"
-                      size="sm"
-                      disabled={busy}
-                      loading={resolving}
-                      onClick={() => void handleRemove(entry)}
-                      className="text-[10px]"
-                    >
-                      <Trash2 size={10} />
-                      {t('quality.panel.review.remove')}
-                    </Button>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {/* No `line` = the backend withheld the anchor (deleting it
+                        would drop a whole role header / letter paragraph), so a
+                        Remove here could not act. Offer Keep + an edit hint. */}
+                    {entry.line || presentation === 'orphaned' ? (
+                      <Button
+                        type="button"
+                        variant="danger"
+                        size="sm"
+                        disabled={busy}
+                        loading={resolving}
+                        onClick={() => void handleRemove(entry)}
+                        className="text-[10px]"
+                      >
+                        <Trash2 size={10} />
+                        {t('quality.panel.review.remove')}
+                      </Button>
+                    ) : (
+                      <p className="basis-full text-[10px] leading-relaxed text-foreground/35">
+                        {t('quality.panel.review.editToRemoveHint')}
+                      </p>
+                    )}
+                    {/* An occurrence-anchored entry settles only once the user
+                        has edited that line; this just records the verdict. */}
+                    {!entry.line && entry.context && presentation !== 'orphaned' && (
+                      <Button
+                        type="button"
+                        variant="danger"
+                        size="sm"
+                        disabled={busy}
+                        loading={resolving}
+                        onClick={() => onResolve(entry.issueKey, 'remove')}
+                        className="text-[10px]"
+                      >
+                        <Trash2 size={10} />
+                        {t('quality.panel.review.removedIt')}
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       variant="glass"

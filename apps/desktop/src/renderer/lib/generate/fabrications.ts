@@ -34,6 +34,12 @@ export interface Fabrication {
    * automatically (see {@link removeEvidenceLines}).
    */
   line?: string;
+  /**
+   * Set only when `line` is withheld: the line the evidence sat on. Never a
+   * deletion anchor — it only lets a `remove` verdict settle once THAT
+   * occurrence is gone while the same word stays true elsewhere.
+   */
+  context?: string;
   /** `undefined` until the user decides — which is what keeps the run `needsReview`. */
   decision?: 'remove' | 'keep';
 }
@@ -83,7 +89,7 @@ function parseDecision(value: unknown): Fabrication['decision'] {
  */
 function parseFabrication(value: unknown): Fabrication | null {
   if (!isRecord(value)) return null;
-  const { issueKey, code, evidence, line } = value;
+  const { issueKey, code, evidence, line, context } = value;
   if (typeof issueKey !== 'string' || issueKey.trim() === '') return null;
   if (typeof code !== 'string' || typeof evidence !== 'string') return null;
   const decision = parseDecision(value.decision);
@@ -92,6 +98,7 @@ function parseFabrication(value: unknown): Fabrication | null {
     code,
     evidence,
     ...(typeof line === 'string' ? { line } : {}),
+    ...(typeof context === 'string' ? { context } : {}),
     ...(decision ? { decision } : {}),
   };
 }
@@ -131,6 +138,8 @@ export function parseFabrications(value: unknown): Fabrication[] {
  * for why those two questions read different fields.
  */
 function evidencePresent(entry: Fabrication, documentText: string): boolean {
+  const context = entry.line === undefined ? entry.context?.trim() : undefined;
+  if (context) return documentText.includes(context);
   const span = entry.evidence.trim();
   return !!span && documentText.includes(span);
 }
@@ -170,7 +179,7 @@ function evidencePresent(entry: Fabrication, documentText: string): boolean {
  * absent rather than as a match against everything.
  */
 function removalTakenEffect(entry: Fabrication, documentText: string): boolean {
-  const line = entry.line?.trim();
+  const line = (entry.line ?? entry.context)?.trim();
   if (line !== undefined) return line === '' || !documentText.includes(line);
   return !evidencePresent(entry, documentText);
 }

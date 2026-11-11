@@ -349,18 +349,63 @@ export function sourceCased(term: string, resumeBody?: string): string {
   // "go-to-market", "Go" in a list). Rank: mixed case ("TypeScript") first, then
   // a short all-caps acronym ("AWS", "AI"), then Title case ("React"), then a
   // longer all-caps word (a heading), then lowercase prose.
-  const rank = (hit: string): number => {
+  const rank = (hit: string, shouting: boolean): number => {
     if (hit === hit.toLowerCase()) return 1;
-    const allCaps = hit === hit.toUpperCase();
-    if (allCaps) return hit.length > 1 && hit.length <= 4 ? 4 : 2;
+    if (hit === hit.toUpperCase()) {
+      const len = hit.length;
+      // Mid-sentence, outside an all-caps run, an all-caps word of up to four
+      // letters is an acronym ("REST", "IT"): the sentence-initial Title-case
+      // spelling ("Rest", "It") is only capitalised by position.
+      if (!shouting && len > 1 && len <= 4) return 4;
+      // Otherwise a short all-caps form is an acronym (AWS, AI, SAP), unless it
+      // is an ordinary word shouted in a heading ("GO TO MARKET"); a longer one
+      // is a heading.
+      return len > 1 && len <= 3 && !SHOUTED_WORDS.has(hit) ? 4 : 2;
+    }
     return /\p{Ll}\p{Lu}|\p{Lu}{2}/u.test(hit) ? 5 : 3;
   };
   let best: string | undefined;
-  for (const [hit] of resumeBody.matchAll(pattern)) {
-    if (best === undefined || rank(hit) > rank(best)) best = hit;
+  let bestRank = 0;
+  for (const m of resumeBody.matchAll(pattern)) {
+    const hit = m[0];
+    const before = resumeBody.slice(0, m.index);
+    const after = resumeBody.slice(m.index + hit.length);
+    const line = resumeBody.slice(before.lastIndexOf('\n') + 1).split('\n')[0] ?? '';
+    // Sentence/line start, a heading line, or part of an all-caps run: the
+    // casing there is positional, not evidence of an acronym.
+    const shouting =
+      /(?:^|[.!?]\s+|[\n\r]\s*[-*•]?\s*)$/.test(before) ||
+      line === line.toUpperCase() ||
+      /(?<!\p{L})\p{Lu}{2,}\s+$/u.test(before) ||
+      /^\s+\p{Lu}{2,}(?!\p{L})/u.test(after);
+    const r = rank(hit, shouting);
+    if (best === undefined || r > bestRank) {
+      best = hit;
+      bestRank = r;
+    }
   }
   return best ?? term;
 }
+
+/** Ordinary short words whose all-caps spelling is a heading, not an acronym. */
+const SHOUTED_WORDS = new Set([
+  'GO',
+  'IT',
+  'OR',
+  'TO',
+  'IN',
+  'ON',
+  'AS',
+  'AT',
+  'BY',
+  'MY',
+  'WE',
+  'US',
+  'DO',
+  'SO',
+  'NO',
+  'AN',
+]);
 
 /** The one casing rule both emphasis blocks carry. */
 const CASING_RULE =

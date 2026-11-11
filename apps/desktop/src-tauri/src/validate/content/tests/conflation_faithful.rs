@@ -128,6 +128,12 @@ fn a_place_given_elsewhere_in_the_source_only_warns() {
         report.issues
     );
     silent(&report, FACTUAL_INVENTED_LOCATION);
+    let warning = report
+        .issues
+        .iter()
+        .find(|i| i.code == FACTUAL_UNSUPPORTED_LOCATION)
+        .unwrap();
+    assert!(!warning.message.contains("  "), "{}", warning.message);
     assert!(report.ok);
 }
 
@@ -156,6 +162,65 @@ fn a_letter_sentence_naming_the_full_employer_is_still_checked() {
         "{:#?}",
         report.issues
     );
+}
+
+#[test]
+fn practice_words_in_a_skills_list_are_not_tool_claims_in_other_forms() {
+    // "Testing · Security · Monitoring · Design · Agile" are practices, not
+    // tools: rewording a bullet around them is faithful.
+    let source = "Jane Doe\n\nEXPERIENCE\n\n\
+        Backend Engineer | Acme Payments | 2020 - 2024\n\
+        - Verified the checkout cache under load before each release\n\
+        - Hardened the ledger service against fraud\n\
+        - Set up dashboards and alerts for the ledger service in Grafana\n\n\
+        Engineer | Globex Logistics | 2016 - 2020\n\
+        - Built the billing service in Rust\n\n\
+        SKILLS\n\nTesting · Security · Monitoring · Design · Agile · Rust · Grafana\n";
+    let generated = "Jane Doe\n\nEXPERIENCE\n\n\
+        Backend Engineer | Acme Payments | 2020 - 2024\n\
+        - Testing the checkout cache under load before each release\n\
+        - Improved the security of the ledger service against fraud\n\
+        - Set up monitoring dashboards and alerts for the ledger service\n\
+        - Worked in an agile team on the ledger service design\n\n\
+        Engineer | Globex Logistics | 2016 - 2020\n\
+        - Built the billing service in Rust\n\n\
+        SKILLS\n\nTesting · Security · Monitoring · Design · Agile · Rust · Grafana\n";
+    no_role_critical(&report_against(generated, source));
+}
+
+#[test]
+fn collaboration_and_a_shouted_practice_word_are_not_tool_claims() {
+    let source = "Jane Doe
+
+EXPERIENCE
+
+        Backend Engineer | Acme Payments | 2020 - 2024
+        - Partnered with designers on the checkout cache
+        - Verified the ledger service under load
+
+        Engineer | Globex Logistics | 2016 - 2020
+        - Built the billing service in Rust
+
+        SKILLS
+
+Collaboration · Testing · Rust
+";
+    let generated = "Jane Doe
+
+EXPERIENCE
+
+        Backend Engineer | Acme Payments | 2020 - 2024
+        - Collaboration with designers on the checkout cache
+        - TESTING the ledger service under load
+
+        Engineer | Globex Logistics | 2016 - 2020
+        - Built the billing service in Rust
+
+        SKILLS
+
+Collaboration · Testing · Rust
+";
+    no_role_critical(&report_against(generated, source));
 }
 
 const GRAPHQL_AD: &str = "We run Rust, Kubernetes and GraphQL.";

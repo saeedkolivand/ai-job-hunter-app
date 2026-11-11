@@ -93,16 +93,22 @@ pub(super) fn location_issues(
                 (
                     FACTUAL_UNSUPPORTED_LOCATION,
                     format!(
-                        "\"{shown}\" is given elsewhere in your résumé, not for \"{}\". Keep it                          on this entry only if it is true.",
-                        block.identity
+                        concat!(
+                            "\"{}\" is given elsewhere in your résumé, not for \"{}\". ",
+                            "Keep it on this entry only if it is true."
+                        ),
+                        shown, block.identity
                     ),
                 )
             } else {
                 (
                     FACTUAL_INVENTED_LOCATION,
                     format!(
-                        "Your source résumé gives no location \"{shown}\" for \"{}\". Remove it                          from this entry unless it is true.",
-                        block.identity
+                        concat!(
+                            "Your source résumé gives no location \"{}\" for \"{}\". ",
+                            "Remove it from this entry unless it is true."
+                        ),
+                        shown, block.identity
                     ),
                 )
             };

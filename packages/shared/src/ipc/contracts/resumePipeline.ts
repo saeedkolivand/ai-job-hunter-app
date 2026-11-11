@@ -318,6 +318,13 @@ export interface PipelineFabrication {
    * to fall back to substring deletion.
    */
   line?: string;
+  /**
+   * For a finding whose `line` is withheld (a role header, a letter paragraph):
+   * the line the evidence sat on, so a `remove` verdict settles once THAT line
+   * no longer exists, even if the same word is true elsewhere. Never a deletion
+   * anchor. Absent when the occurrence could not be told apart from others.
+   */
+  context?: string;
   /** `undefined` until the user decides — which is what keeps the run
    *  `needsReview`. */
   decision?: 'remove' | 'keep';
