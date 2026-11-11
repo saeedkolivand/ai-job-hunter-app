@@ -1,11 +1,39 @@
 [
   {
-    "number": 1488,
-    "title": "chore(prompts): refresh system prompts for current models",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1488",
+    "number": 1504,
+    "title": "fix: session defects part 2 of 3: provider failures, fabrication guard, letter language (#1491-#1501)",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1504",
     "draft": false,
-    "created_at": "2026-11-10T11:06:22Z",
-    "updated_at": "2026-11-10T11:06:42Z",
+    "created_at": "2026-11-11T10:17:01Z",
+    "updated_at": "2026-11-11T10:18:18Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1503,
+    "title": "fix: session defects part 1 of 3: scraping, autopilot, agent catalogue, pipeline validation (#1491-#1501)",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1503",
+    "draft": false,
+    "created_at": "2026-11-11T10:16:58Z",
+    "updated_at": "2026-11-11T10:50:27Z",
+    "merged_at": null,
+    "closed_at": null,
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1502,
+    "title": "fix: session defects part 3 of 3: review panel, practice words, docs (#1491-#1501)",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1502",
+    "draft": false,
+    "created_at": "2026-11-11T10:01:13Z",
+    "updated_at": "2026-11-11T10:31:35Z",
     "merged_at": null,
     "closed_at": null,
     "requested_reviewers": [],
