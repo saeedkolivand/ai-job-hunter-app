@@ -182,7 +182,7 @@ delegates to the same `normalise_accent`), so PDF and DOCX never disagree on val
 
 ## Page size & locale
 
-Cover-letter wording (salutation, sign-off, subject label) follows the language the letter is written in, not only the market: `conventions_for_letter` in `locale/letter.rs` uses the market's own conventions only when the letter language matches the market's native language. Page size stays with the market.
+Cover-letter wording (salutation, sign-off, subject label) follows the language the letter is written in, not only the market: `conventions_for_letter` in `locale/letter.rs` uses the market's own conventions when the letter language is blank or matches the market's native language, and falls back to them again when the language is one no convention set supports. Page size stays with the market.
 
 Page geometry comes from the request's locale (`LocaleProfile::get`), resolved to
 **one source of truth** read by every backend:

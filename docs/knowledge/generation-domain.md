@@ -30,7 +30,7 @@ The `validate` stage runs modules under [`apps/desktop/src-tauri/src/validate/co
 
 - Source consistency: dropped employment role, unsupported date (not in source history), altered link.
 - Language alignment: generated text reads as a different language than the target.
-- Entry-level grounding (#1498): a skill/tool the job ad names that the source never supports, a term attached to a role whose source entry lacks it, and an invented location on a role. Each has a Critical twin (inside a named employer's role entry) and a Warning twin elsewhere, because a code carries one severity; the codes and their severities are the registry in `CONTENT_ISSUE_CODES`, the detectors live under `validate/content/factual/`. These rest on tool-shaped or declared vocabulary and are only raised when the output language is confidently aligned with the source (unknown language counts as comparable), so a faithful document in another language is not flagged.
+- Entry-level grounding (#1498): a skill/tool the job ad names that the source never supports, a term attached to a role whose source entry lacks it, and an invented location on a role. Each has a Critical twin (inside a named employer's role entry) and a Warning twin elsewhere, because a code carries one severity; the codes and their severities are the registry in `CONTENT_ISSUE_CODES`, the detectors live under `validate/content/factual/`. These rest on tool-shaped or declared vocabulary. Only the "job-ad term absent from the source" check is limited by language comparability (`Grounding::comparable`, unknown counts as comparable), since a translated term has no source spelling; a term conflated onto the wrong role stays Critical across languages, and the location check does not compare languages.
 
 **Warning** issues are advisory — they note things worth reviewing but do not block export:
 
@@ -56,7 +56,7 @@ All repair attempts are logged at the run level; the repair rounds and their out
 
 When a run leaves the `repair` stage with unresolved Criticals, its status is set to `needsReview`. The UI renders the [`FabricationReview`](../../apps/desktop/src/renderer/components/generation/QualityReportPanel/FabricationReview.tsx) component, which shows each flagged claim with two choices:
 
-- **Remove:** Delete the line from the document (an actual edit, not a flag). Offered only when the finding carries a line anchor; a finding whose evidence sits on a structural line (a role header, a letter paragraph) has no anchor, so the panel shows Keep plus a hint to edit by hand instead.
+- **Remove:** Delete the line from the document (an actual edit, not a flag). Whether it is offered, and how a finding without a line anchor is resolved, is decided in `FabricationReview.tsx` (`presentFabrication`) and `commands/resume_pipeline/report.rs`; an orphaned finding, whose evidence is already gone from the document, is recorded as such rather than edited.
 - **Keep:** Accept the claim as-is. Also available on findings that cannot be removed, and a removal can be undone.
 
 **Nothing is saved without explicit verdict.** The run cannot transition to `completed` or `done` until every flagged claim has been decided. This is the **fabrication gate**: we refuse to save silently; you decide what stays.
@@ -65,7 +65,7 @@ The verdict is recorded separately (in the run's [`PipelineRunDetail.report.fabr
 
 ## Failure and research reporting
 
-A failed run carries a closed `errorKind` and a fixed-sentence `errorMessage` (`error/failure_kind.rs`), and the cover-letter research status (ok, empty or failed, with a kind) is persisted in the run's metrics and read back through `resume_pipeline_get` (`commands/resume_pipeline/read.rs`, `cover_letter/research/mod.rs`). An empty search and a failed search are different outcomes; the request gate that refuses a doomed run before ids are returned is `commands/resume_pipeline/request.rs`. Wire shapes: TSDoc in `packages/shared/src/ipc/contracts/resumePipeline.ts`.
+A failed run carries a closed `errorKind` and a fixed-sentence `errorMessage` (`error/failure_kind.rs`), and the cover-letter research status (ok, empty or failed; a failure's kind is optional, `ResearchStatus::Failed(None)` carries none) is persisted in the run's metrics and read back through `resume_pipeline_get` (`commands/resume_pipeline/read.rs`, `cover_letter/research/mod.rs`). An empty search and a failed search are different outcomes; the request gate that refuses a doomed run before ids are returned is `commands/resume_pipeline/request.rs`. Wire shapes: TSDoc in `packages/shared/src/ipc/contracts/resumePipeline.ts`.
 
 ## Cost accounting and call budget
 
