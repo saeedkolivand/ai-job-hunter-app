@@ -223,3 +223,21 @@ fn call_irreversible_says_long_work_outlives_the_call_and_names_what_to_poll() {
         "and it must name what to poll instead: {description}"
     );
 }
+
+/// #1497 — a caller must be told `best-matches` order is block order (combined, then keyword,
+/// described before description-less), so a lower score above a higher one is not read as a bug.
+#[test]
+fn best_matches_description_explains_block_order_and_rank() {
+    let list = tools(Tier::Read);
+    let desc = list
+        .iter()
+        .find(|t| t["name"] == TOOL_BEST_MATCHES)
+        .expect("best-matches must be listed")["description"]
+        .as_str()
+        .expect("description")
+        .to_string();
+    assert!(
+        desc.contains("`rank`") && desc.contains("description-less"),
+        "{desc}"
+    );
+}

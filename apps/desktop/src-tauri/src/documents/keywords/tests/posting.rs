@@ -309,3 +309,18 @@ fn single_footer_words_inside_real_sentences_stay_non_blank() {
     )));
     assert!(!description_is_blank(Some("Language: German")));
 }
+
+// --- entity-escaped stored descriptions (#1497) ---
+
+#[test]
+fn escaped_markup_in_a_stored_description_is_decoded_before_scoring() {
+    // Real public Greenhouse `content` shape; a stored row predating the ingest fix.
+    let blob = posting_text_blob(
+        "Owner",
+        Some("&lt;p&gt;GitLab is the intelligent orchestration platform.&lt;/p&gt;"),
+        None,
+    )
+    .unwrap();
+    assert!(!blob.contains("&lt;") && !blob.contains("<p>"), "{blob}");
+    assert!(blob.contains("GitLab is the intelligent orchestration platform."));
+}

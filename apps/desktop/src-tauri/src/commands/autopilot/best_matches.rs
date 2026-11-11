@@ -64,6 +64,11 @@ pub(super) struct BestMatchRow {
     pub(super) score: f64,
     pub(super) score_source: ScoreSource,
     pub(super) score_provisional: bool,
+    /// Whether the score-owning member has real description text. A description-less row's
+    /// keyword score is inflated by a title match alone, so it sorts below described rows in its
+    /// block (#1497). Ordering only — never serialized, never part of the score.
+    #[serde(skip)]
+    pub(super) has_description: bool,
     /// Present only when `score`/`score_source`/`score_provisional` belong to
     /// a DIFFERENT cluster member than the one `url`/the other display fields
     /// describe (the best-scored member decides the score — ADR-036's "always
@@ -348,6 +353,9 @@ pub(super) fn compute_best_matches(
             score,
             score_source: source,
             score_provisional: jobs[best_idx].score_provisional,
+            has_description: !crate::documents::keywords::description_is_blank(
+                jobs[best_idx].description.as_deref(),
+            ),
             score_url,
             posted_at: canonical.posted_at,
             found_at,
@@ -361,7 +369,7 @@ pub(super) fn compute_best_matches(
     }
 
     // Step 9: ADR-020's two-block rule — `Combined` rows first, then
-    // `Keyword`, each block score-desc, `key` asc. Not a single cross-scale
+    // `Keyword`, each block described-first then score-desc, `key` asc. Not a single cross-scale
     // axis: every row here already cleared its OWN kernel's High cut, so a
     // tier-desc-then-score-desc sort degenerates to a raw score compare — a
     // `keyword` 95 is not "better" than a `combined` 80, they are not on the
@@ -371,6 +379,8 @@ pub(super) fn compute_best_matches(
     rows.sort_by(|a, b| {
         super::rerank::score_block(a.score_source)
             .cmp(&super::rerank::score_block(b.score_source))
+            // Described rows first within a block (#1497): ordering only, no score change.
+            .then_with(|| b.has_description.cmp(&a.has_description))
             .then_with(|| {
                 b.score
                     .partial_cmp(&a.score)

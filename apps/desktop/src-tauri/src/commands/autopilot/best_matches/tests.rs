@@ -10,6 +10,7 @@ use crate::autopilot::tests::support::{
 use crate::autopilot::AutopilotTarget;
 
 mod merging;
+mod ordering;
 mod qualification;
 mod representative;
 mod user_state;

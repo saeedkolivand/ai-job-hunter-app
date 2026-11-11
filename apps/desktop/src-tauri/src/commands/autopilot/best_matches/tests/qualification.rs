@@ -245,6 +245,7 @@ fn best_match_row_wire_shape_is_pinned() {
         score: 82.0,
         score_source: ScoreSource::Combined,
         score_provisional: false,
+        has_description: true,
         score_url: Some("https://boards.example.com/jobs/42-other-member".to_string()),
         posted_at: Some(1_699_000_000),
         found_at: 1_700_000_000,

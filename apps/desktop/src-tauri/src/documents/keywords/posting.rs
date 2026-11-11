@@ -118,6 +118,15 @@ fn is_language_picker_line(line: &str) -> bool {
 ///    them blanket-corrupts ATS keyword extraction. Markdown `_` emphasis is
 ///    rare in scraped JD text and does not need dedicated removal here.
 pub fn markdown_to_plain(text: &str) -> String {
+    // A stored description that arrived entity-escaped (`&lt;p&gt;`, #1497) is decoded
+    // here, at the point of use, so scoring sees words rather than markup residue.
+    let converted;
+    let text = if crate::scraping::http::has_escaped_markup(text) {
+        converted = crate::scraping::http::html_to_markdown(text);
+        converted.as_str()
+    } else {
+        text
+    };
     // Step 1: collapse `[anchor text](url)` → `anchor text`.
     // Operates entirely on &str slices (char-boundary-safe) — never byte as char.
     let no_links = {

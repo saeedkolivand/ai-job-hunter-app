@@ -37,6 +37,12 @@ struct AgentBestMatchSource {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AgentBestMatch {
+    /// 1-based position in the full ranked set (before any `query` filter), so a caller can
+    /// tell the order is the app's ranking, not a bug: `combined`-scored rows come first, then
+    /// `keyword`-scored ones, each score-descending, so a lower number can sit above a higher
+    /// one across the block boundary.
+    #[serde(default)]
+    rank: usize,
     title: String,
     company: String,
     url: String,
@@ -112,7 +118,12 @@ pub(super) fn resolve_best_matches(
 ) -> Value {
     let mut matches: Vec<AgentBestMatch> = rows
         .iter()
-        .filter_map(|row| serde_json::from_value(row.clone()).ok())
+        .enumerate()
+        .filter_map(|(i, row)| {
+            serde_json::from_value::<AgentBestMatch>(row.clone())
+                .ok()
+                .map(|m| AgentBestMatch { rank: i + 1, ..m })
+        })
         .collect();
     if let Some(q) = query {
         matches
