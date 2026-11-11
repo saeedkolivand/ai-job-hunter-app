@@ -48,6 +48,8 @@ export interface ResumePipelineContract {
    * Start one staged run. Resolves as soon as the run is admitted (the
    * concurrency wait happens inside the run, so a queued run still returns its
    * ids immediately).
+   *
+   * @agent Start one staged resume generation. Body `{"req": {...}}` (JSON Schema in `args[].schema`): you need one of `resumeId` or `resumeText` AND one of `jobId` or `jobAdText`; an id always wins over its text twin and an unknown id is an error, never a text fallback. Optional: `jobUrl`, `jobTitle`, `companyName`, `targetLanguage`, `market`, `effort`, `includeCoverLetter`, `includeResume` (false = cover-letter-only), `researchCompany`. Replies as soon as the run is admitted with its ids, not when it finishes; read the outcome with resume_pipeline_get. It calls the configured AI provider, so it is billable.
    */
   run(req: ResumePipelineRunRequest): Promise<PipelineRunStarted>;
 

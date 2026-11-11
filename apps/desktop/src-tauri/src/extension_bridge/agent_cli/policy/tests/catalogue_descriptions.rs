@@ -11,7 +11,7 @@ use super::super::*;
 /// growing — a newly added command shipping with no TSDoc on its contract member, silently
 /// leaving the agent-CLI surface with less self-description than it had before. Lower this
 /// constant (never raise it) as descriptions are backfilled.
-const MAX_NO_DESCRIPTION_ROWS: usize = 48;
+const MAX_NO_DESCRIPTION_ROWS: usize = 40;
 
 #[test]
 fn catalogued_no_description_count_does_not_regress() {

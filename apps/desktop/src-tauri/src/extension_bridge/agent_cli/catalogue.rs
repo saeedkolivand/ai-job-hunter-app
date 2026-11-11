@@ -36,6 +36,7 @@ mod generate;
 mod geocode;
 mod github;
 mod help;
+mod input_schemas;
 mod job;
 mod jobs;
 mod r#match;
@@ -115,6 +116,15 @@ pub(crate) static CATALOGUE: LazyLock<Vec<CatalogueEntry>> = LazyLock::new(|| {
     entries.extend_from_slice(updater::ENTRIES);
     entries
 });
+
+/// `command`'s wrapper argument `arg` as compact JSON Schema (nested fields, types, enums,
+/// ranges), or `None` when that argument has no Zod contract to generate one from.
+pub(crate) fn input_schema(command: &str, arg: &str) -> Option<&'static str> {
+    input_schemas::SCHEMAS
+        .iter()
+        .find(|(c, a, _)| *c == command && *a == arg)
+        .map(|(_, _, schema)| *schema)
+}
 
 /// Commands with at least one `invoke()` call this generator could not parse with confidence
 /// (a computed key, a spread, a non-literal command name, or a non-object second argument) —

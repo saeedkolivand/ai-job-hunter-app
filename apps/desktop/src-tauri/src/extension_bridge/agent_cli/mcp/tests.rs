@@ -30,6 +30,7 @@ mod argument_typing;
 mod commands_local_tool;
 mod commands_namespaces;
 mod commands_proof_fields;
+mod commands_schemas;
 mod confirm_passthrough;
 mod curated_tool_descriptions;
 mod dispatch_queue_bound;

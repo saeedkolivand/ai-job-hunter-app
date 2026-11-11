@@ -24,11 +24,16 @@ pub(super) fn catalogue_lookup(command: &str) -> Option<&'static CatalogueEntry>
 pub(super) fn commands_value(arguments: &Value, tier: Tier) -> Value {
     let effect_filter = arguments.get("effect").and_then(Value::as_str);
     let namespace_filter = arguments.get("namespace").and_then(Value::as_str);
+    // One command's row, with each wrapper arg's full JSON Schema inline. The list itself stays
+    // compact (a `hasSchema` flag only): every schema together would not fit one reply.
+    let command_filter = arguments.get("command").and_then(Value::as_str);
     let rows: Vec<Value> = POLICY
         .iter()
         .filter_map(|entry| {
             let (namespace, command) = agent_call::split_path(entry.path);
-            if namespace_filter.is_some_and(|n| n != namespace) {
+            if namespace_filter.is_some_and(|n| n != namespace)
+                || command_filter.is_some_and(|c| c != command)
+            {
                 return None;
             }
             let effect_name = match entry.effect {
@@ -58,6 +63,17 @@ pub(super) fn commands_value(arguments: &Value, tier: Tier) -> Value {
                             // `null`, distinct from omission, so a caller can tell "known to
                             // take no nested fields" apart from "unknown nested shape" (MEDIUM —
                             // CLI review).
+                            if let Some(schema) = input_schema(command, arg.name) {
+                                match command_filter {
+                                    // Generated from the Zod contract, so it parses; the fallback
+                                    // keeps a corrupt row visible instead of dropping the key.
+                                    Some(_) => {
+                                        value["schema"] = serde_json::from_str(schema)
+                                            .unwrap_or_else(|e| json!({ "invalid": e.to_string() }))
+                                    }
+                                    None => value["hasSchema"] = json!(true),
+                                }
+                            }
                             match arg.fields {
                                 None => {}
                                 Some([]) => {

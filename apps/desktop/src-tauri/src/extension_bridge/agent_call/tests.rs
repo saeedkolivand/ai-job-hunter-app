@@ -25,6 +25,7 @@ mod refusal;
 mod reply_clamp;
 mod reply_core;
 mod reply_extension;
+mod reshape_autopilot_summary;
 mod reshape_base64;
 mod reshape_contact_profile;
 mod reshape_drop_fields;

@@ -168,7 +168,7 @@ use std::thread;
 use serde_json::Value;
 
 use super::agent_call;
-use super::catalogue::{CatalogueEntry, CATALOGUE};
+use super::catalogue::{input_schema, CatalogueEntry, CATALOGUE};
 use super::policy::{Effect, LookupInput, ProofSource, POLICY};
 use super::*;
 // The ENFORCING constants (issue #1129): both `limit` descriptions are `format!`ed from these,

@@ -92,4 +92,39 @@ fn automations_projection_never_carries_forbidden_keys() {
     }
 }
 
+/// #1495: a caller must see which boards failed without reading the whole record. Only the
+/// allowlisted keys leave — `truncated` stays behind.
+#[test]
+fn automations_carry_per_board_last_run_summaries() {
+    let summaries: Vec<crate::scraping::BoardScrapeSummary> = serde_json::from_value(json!([
+        { "board": "arbeitsagentur", "count": 0, "error": "HTTP 403" },
+        { "board": "jobicy", "count": 4, "notes": ["location-filtered:2"],
+          "truncated": "page 3 of 5 failed" },
+        { "board": "linkedin", "count": 0, "skipped": "needs-login" },
+    ]))
+    .expect("summaries deserialize");
+    let records = vec![Autopilot {
+        last_run_summaries: summaries,
+        ..blank_autopilot("ap-1")
+    }];
+    let row = &resolve_automations(&records)["automations"][0];
+    let runs = row["lastRunSummaries"].as_array().expect("present");
+    assert_eq!(runs.len(), 3);
+    assert_eq!(
+        runs[0],
+        json!({ "board": "arbeitsagentur", "count": 0, "error": "HTTP 403" })
+    );
+    assert_eq!(
+        runs[1],
+        json!({ "board": "jobicy", "count": 4, "notes": ["location-filtered:2"] })
+    );
+    assert_eq!(runs[2]["skipped"], "needs-login");
+}
+
+#[test]
+fn automations_omit_last_run_summaries_before_the_first_run() {
+    let row = &resolve_automations(&[blank_autopilot("ap-1")])["automations"][0];
+    assert!(row.get("lastRunSummaries").is_none());
+}
+
 // ── best-matches ─────────────────────────────────────────────────────────

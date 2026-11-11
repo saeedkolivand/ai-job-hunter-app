@@ -1123,6 +1123,8 @@ when `eventId` does not resolve to a pending row.
 update(req: ApplicationUpdateRequest): Promise<ApplicationMutationResult>;
 ```
 
+Patch the user-editable tracking fields of an Application.
+
 #### `applications.remove`
 
 ```ts
@@ -1255,6 +1257,8 @@ Contract: `AutopilotContract` in `packages/shared/src/ipc/contracts/autopilot.ts
 list(): Promise<Autopilot[]>;
 ```
 
+Every autopilot.
+
 #### `autopilot.get`
 
 ```ts
@@ -1264,14 +1268,18 @@ get(req: { autopilotId: string }): Promise<Autopilot | null>;
 #### `autopilot.create`
 
 ```ts
-create(req: AutopilotCreate): Promise<Autopilot>;
+create(req: AutopilotCreate): Promise<Autopilot & { warning?: string }>;
 ```
+
+Resolves with the saved record; `warning` is set when no resume text and no default document exist; it is for agent/MCP callers, the UI does not show it.
 
 #### `autopilot.update`
 
 ```ts
-update(req: { autopilotId: string } & AutopilotUpdate): Promise<Autopilot>;
+update(req: { autopilotId: string } & AutopilotUpdate): Promise<Autopilot & { warning?: string }>;
 ```
+
+Same reply as `create`, including the optional `warning`.
 
 #### `autopilot.remove`
 
@@ -4173,6 +4181,8 @@ Contract: `ScrapeContract` in `packages/shared/src/ipc/contracts/scrape.ts`
 ```ts
 boards(req: ScrapeBoardsRequest): Promise<{ jobId: string }>;
 ```
+
+Start a manual multi-board search; resolves with the job id once the scrape is admitted.
 
 #### `scrape.url`
 

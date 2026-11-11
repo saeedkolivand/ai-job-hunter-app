@@ -3,14 +3,16 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
-import { ts } from '../../../scripts/gen-api-docs.mjs';
+import { agentNoteOf, docOf, ts } from '../../../scripts/gen-api-docs.mjs';
 import {
   type CatalogueArg,
   type CatalogueEntry,
   collectContractInterfaceFields,
   mergeCatalogueEntry,
 } from './gen-agent-catalogue';
+import { toInputJsonSchema } from './gen-agent-catalogue/field-sources';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -164,5 +166,52 @@ describe('CI drift-gate entry point (A1-r3-AC-3)', () => {
     };
     expect(pkg.scripts['gen:agent-catalogue:check']).toContain('--check');
     expect(pkg.scripts['gen:agent-catalogue']).not.toContain('--check');
+  });
+});
+
+// #1491: the catalogue carries JSON Schema generated from the Zod contracts, and a hand-written
+// `@agent` note that `docs/API.md` never shows.
+describe('toInputJsonSchema (issue #1491)', () => {
+  it('emits nested fields, enums and ranges, with a defaulted field optional (input side)', () => {
+    const schema = JSON.parse(
+      toInputJsonSchema(
+        z.object({
+          mode: z.enum(['a', 'b']),
+          pages: z.number().int().min(1).max(10).default(2),
+          nested: z.object({ tag: z.string().max(5) }),
+        })
+      )
+    );
+    expect(schema.$schema).toBeUndefined();
+    expect(schema.properties.mode.enum).toEqual(['a', 'b']);
+    expect(schema.properties.pages).toMatchObject({ minimum: 1, maximum: 10 });
+    expect(schema.properties.nested.properties.tag.maxLength).toBe(5);
+    expect(schema.required).toEqual(['mode', 'nested']);
+  });
+
+  it('refuses a non-Zod value instead of emitting a guess', () => {
+    expect(() => toInputJsonSchema({ type: 'object' })).toThrow(/non-Zod/);
+  });
+});
+
+describe('@agent note (issue #1491)', () => {
+  const src = `interface C {
+    /**
+     * Short summary.
+     *
+     * @agent Long note
+     *   over two lines.
+     */
+    a(): void;
+  }`;
+  const sf = sourceFile('c.ts', src);
+  const [member] = (sf.statements[0] as ts.InterfaceDeclaration).members;
+
+  it('is read whole, on one line, for the catalogue', () => {
+    expect(agentNoteOf(member, sf)).toBe('Long note over two lines.');
+  });
+
+  it('is stripped from the text docs/API.md renders', () => {
+    expect(docOf(member, sf)).toBe('Short summary.');
   });
 });

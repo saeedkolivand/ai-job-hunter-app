@@ -112,6 +112,21 @@ pub(super) fn classify_tool_call(params: &Value, server: &Server) -> ToolCall {
                 )));
             }
         }
+        // Same shape again for `command`: an unknown name would answer `{"commands":[]}` as a
+        // success. Checked against POLICY's own rows, never a typed list.
+        if let Some(command_value) = arguments.get("command") {
+            let valid = command_value.as_str().is_some_and(|s| {
+                POLICY
+                    .iter()
+                    .any(|entry| agent_call::split_path(entry.path).1 == s)
+            });
+            if !valid {
+                return ToolCall::Local(Ok(tool_result(
+                    usage_error_value("command does not match any real command"),
+                    2,
+                )));
+            }
+        }
         return ToolCall::Local(Ok(tool_result(commands_value(&arguments, server.tier), 0)));
     }
 

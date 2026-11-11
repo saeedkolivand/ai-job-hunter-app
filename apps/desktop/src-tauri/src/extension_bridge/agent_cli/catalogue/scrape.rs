@@ -7,7 +7,7 @@ use super::{CatalogueArg, CatalogueEntry};
 pub(super) const ENTRIES: &[CatalogueEntry] = &[
     CatalogueEntry {
         command: "scrape_boards",
-        description: "",
+        description: "Start a one-off search across job boards. Body `{\"req\": {...}}` (JSON Schema in `args[].schema`): required `boards` (board ids) and `query`; optional `location`, `countryCode`, `amount` (1-100 postings per board, default 25), `dateFilter`, `workTypes`, `replace`. It replies with a `jobId` straight away; results stream into the live postings cache, not into any autopilot. Use autopilot_create for a recurring search.",
         args: &[
             CatalogueArg { name: "req", required: true, fields: Some(&["boards", "query", "location", "amount", "replace", "dateFilter", "countryCode", "latitude", "longitude", "radiusKm", "jobType", "workTypes", "experienceLevel", "easyApply", "activelyHiring", "verified", "sortBy", "companies"]) },
         ],

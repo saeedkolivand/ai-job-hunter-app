@@ -1,6 +1,11 @@
 import { abs, isExported, ts } from '../../../../scripts/gen-api-docs.mjs';
 import { type DescCtx, describe } from './describe.js';
-import { type FieldSources, readSource, resolveNestedFields } from './field-sources.js';
+import {
+  type FieldSources,
+  readSource,
+  resolveJsonSchema,
+  resolveNestedFields,
+} from './field-sources.js';
 import { mergeCatalogueEntry } from './merge.js';
 import type { CatalogueArg, CatalogueEntry, Uncatalogued } from './model.js';
 
@@ -185,7 +190,11 @@ function parseInvokeCall(
           ? (resolveNestedFields(sources, binding.typeName) ??
             (sources.scalarTypeAliases.has(binding.typeName) ? undefined : null))
           : undefined;
-    args.push({ name: key, required, fields });
+    const schema =
+      binding?.typeName && binding.typeName !== UNRESOLVED_WRAPPER_TYPE
+        ? resolveJsonSchema(sources, binding.typeName)
+        : undefined;
+    args.push({ name: key, required, fields, ...(schema ? { schema } : {}) });
   }
   return { command, args };
 }
