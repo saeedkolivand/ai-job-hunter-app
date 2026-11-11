@@ -145,6 +145,7 @@ export {
   type AiConfigSnapshot,
   type AiContract,
   type AiProviderRouting,
+  type AiSearchSettings,
   type AiSpendModelThinking,
   type AiSpendProviderTotals,
   type AiSpendSummary,

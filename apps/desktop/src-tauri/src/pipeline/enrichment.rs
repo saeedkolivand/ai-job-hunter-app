@@ -6,6 +6,7 @@
 
 use serde_json::{json, Value};
 
+use crate::ai_provider::SearchBackend;
 use crate::error::FailureKind;
 
 /// How one enrichment pass ended. `Empty` ("nothing found") and `Failed` ("could not ask")
@@ -37,12 +38,27 @@ impl ResearchStatus {
     }
 }
 
+impl ResearchStatus {
+    /// [`wire`](Self::wire) plus the `backend` that served the lookup, when one is named. A
+    /// `None` backend (nothing configured) is omitted, never reported.
+    pub fn wire_via(self, backend: Option<SearchBackend>) -> Value {
+        let mut wire = self.wire();
+        if let Some(backend) = backend.filter(|b| *b != SearchBackend::None) {
+            wire["backend"] = json!(backend.as_str());
+        }
+        wire
+    }
+}
+
 /// The product of an enrichment pass: a `key` identifying the subject (e.g. a
 /// company name) and the enrichment `content` (empty when nothing was found).
 pub struct EnrichmentResult {
     pub key: String,
     pub content: String,
     pub status: ResearchStatus,
+    /// The search backend that served (or, on failure, was last tried for) this lookup; `None`
+    /// when no lookup ran (a cache hit, a refused admission, no subject).
+    pub backend: Option<SearchBackend>,
 }
 
 impl EnrichmentResult {
@@ -51,6 +67,7 @@ impl EnrichmentResult {
             key: String::new(),
             content: String::new(),
             status: ResearchStatus::Empty,
+            backend: None,
         }
     }
 }

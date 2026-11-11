@@ -1,0 +1,33 @@
+{
+  "query": "example corp company overview",
+  "search_query": "example corp company overview",
+  "number_of_results": 2,
+  "results": [
+    {
+      "url": "https://example.com/about",
+      "title": "About Example Corp",
+      "content": "Example Corp builds payment infrastructure for online businesses.",
+      "engine": "wikipedia",
+      "engines": ["wikipedia"],
+      "positions": [1],
+      "score": 2.0,
+      "category": "general"
+    },
+    {
+      "url": "https://example.org/profile",
+      "title": "Example Corp profile",
+      "content": "Headquartered in Utrecht.",
+      "engine": "duckduckgo",
+      "engines": ["duckduckgo"],
+      "positions": [2],
+      "score": 1.0,
+      "category": "general"
+    }
+  ],
+  "answers": [],
+  "corrections": [],
+  "infoboxes": [],
+  "suggestions": [],
+  "unresponsive_engines": [],
+  "timings": []
+}

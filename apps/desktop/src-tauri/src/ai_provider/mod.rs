@@ -21,7 +21,9 @@
 pub enum SearchBackend {
     /// The provider's own model-side search (or the Ollama Web Search API).
     Native,
-    /// The user-configured fallback.
+    /// A SearXNG instance the user runs themselves (keyless, free).
+    Searxng,
+    /// The user-configured paid fallback.
     Exa,
     /// Nothing configured — research degrades to an empty brief.
     None,
@@ -34,8 +36,17 @@ impl SearchBackend {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Native => "native",
+            Self::Searxng => "searxng",
             Self::Exa => "exa",
             Self::None => "none",
         }
+    }
+
+    /// The wire token of a backend that can SERVE a pass; `None` for anything else (including
+    /// `"none"`), so a value read back from stored metrics never passes through unrecognised.
+    pub fn parse_served(token: &str) -> Option<Self> {
+        [Self::Native, Self::Searxng, Self::Exa]
+            .into_iter()
+            .find(|b| b.as_str() == token)
     }
 }

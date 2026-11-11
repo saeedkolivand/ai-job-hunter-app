@@ -55,6 +55,10 @@ export const ai = {
   }) => invoke('ai_set_stage_override', { stage, provider, model, contextWindow }),
   clearStageOverride: ({ stage }: { stage: PipelineStage }) =>
     invoke('ai_clear_stage_override', { stage }),
+  // Web-search backend settings (SearXNG-compatible server URL). Not a secret, so not a key.
+  searchSettings: () => invoke('ai_search_settings'),
+  setSearchSettings: ({ searxngUrl }: { searxngUrl: string | null }) =>
+    invoke('ai_set_search_settings', { searxngUrl }),
   // `effort` on both research calls: the backend's deadline around
   // search + synthesis scales with it, the same way the generation stream
   // deadline does. Omitting it leaves the unscaled baseline.

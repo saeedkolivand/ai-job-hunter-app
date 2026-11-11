@@ -36,7 +36,7 @@ service hook, query key — see `AGENTS.md` rule 14.
 
 | Namespace                             | Methods | Summary                                                                                                                                |
 | ------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| [`ai`](#ai)                           | 29      |                                                                                                                                        |
+| [`ai`](#ai)                           | 31      |                                                                                                                                        |
 | [`aiGenerations`](#aigenerations)     | 5       |                                                                                                                                        |
 | [`applications`](#applications)       | 10      | Application-tracking capability (ADR 0001).                                                                                            |
 | [`autopilot`](#autopilot)             | 13      | Job-discovery agent:                                                                                                                   |
@@ -84,6 +84,8 @@ Contract: `AiContract` in `packages/shared/src/ipc/contracts/ai.ts`
 - [`ai.stageOverrides`](#aistageoverrides)
 - [`ai.setStageOverride`](#aisetstageoverride)
 - [`ai.clearStageOverride`](#aiclearstageoverride)
+- [`ai.searchSettings`](#aisearchsettings)
+- [`ai.setSearchSettings`](#aisetsearchsettings)
 - [`ai.generatePipeline`](#aigeneratepipeline)
 - [`ai.onStream`](#aionstream)
 - [`ai.listModels`](#ailistmodels)
@@ -245,6 +247,32 @@ clearStageOverride(req: {
 
 Return ONE stage to the active provider. A no-op for a stage that has no
 override. Returns the fresh override map.
+
+#### `ai.searchSettings`
+
+```ts
+searchSettings(): Promise<AiSearchSettings>;
+```
+
+The web-search backend settings for company research: the URL of a SearXNG-compatible
+search server (SearXNG, RustXNG) the user runs themselves. `searxngUrl` is `null` when
+unset. Not a secret, so it is stored beside the provider config, not in the keychain (the
+Exa key keeps using the provider-key commands).
+
+Research order when several are configured: the provider's own search, then this server,
+then Exa. Each later backend is tried only when the earlier one fails with billing or auth.
+
+#### `ai.setSearchSettings`
+
+```ts
+setSearchSettings(req: {
+    searxngUrl: string | null;
+  }): Promise<AiSearchSettings | { error: string }>;
+```
+
+Set the SearXNG-compatible server URL, or clear it with `null`/blank. Validated
+server-side: http or https with a host, no query or fragment. Returns the fresh settings,
+or `{ error }` when the URL is rejected.
 
 #### `ai.generatePipeline`
 
@@ -554,7 +582,7 @@ window's total, never `today`, whenever `days > 1` was requested.
 | `unloadModel` | `ai:unloadModel` |
 | `embed`       | `ai:embed`       |
 
-`AI_CHANNELS` registers 5 of this namespace's 29 methods; the rest have no entry in it.
+`AI_CHANNELS` registers 5 of this namespace's 31 methods; the rest have no entry in it.
 
 ### Types — `ai`
 
@@ -638,6 +666,12 @@ export interface AiStageOverride {
   contextWindow?: number;
 }
 
+/** The web-search backend settings. Mirrors the Rust `ai_search_settings` reply. */
+export interface AiSearchSettings {
+  /** Base URL of a SearXNG-compatible search server (SearXNG, RustXNG), `null` when unset. */
+  searxngUrl: string | null;
+}
+
 /** The persisted snapshot the renderer seeds the backend store from — 1:1 with
  *  the old Zustand `aiProviderConfig` (`{ activeProvider, providers }`). */
 export interface AiConfigSnapshot {
@@ -645,6 +679,8 @@ export interface AiConfigSnapshot {
   providers: Record<string, AiProviderRouting>;
   /** Per-stage overrides. Optional so a pre-override bundle still validates. */
   stageOverrides?: Record<string, AiStageOverride>;
+  /** The SearXNG-compatible search server URL, when set. */
+  searxngUrl?: string;
 }
 
 /** Backend-owned active generation config (task #16). The active provider's own
@@ -4062,10 +4098,16 @@ export interface PipelineRunSummary {
 export type PipelineErrorKind =
   'billing' | 'auth' | 'rate_limited' | 'unavailable' | 'model_output';
 
-/** The outcome of a run's company research. `errorKind` is present only on `failed`. */
+/**
+ * The outcome of a run's company research. `errorKind` is present only on `failed`.
+ * `backend` names the search backend that served the lookup (or, on `failed`, the one tried
+ * last): the provider's own `native` search, a SearXNG-compatible server, or `exa`. Absent
+ * when no lookup ran or the run predates the field.
+ */
 export interface PipelineResearchStatus {
   status: 'ok' | 'empty' | 'failed';
   errorKind?: PipelineErrorKind;
+  backend?: 'native' | 'searxng' | 'exa';
 }
 
 /**

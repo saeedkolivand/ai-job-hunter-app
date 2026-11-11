@@ -77,6 +77,7 @@ impl CompanyResearch {
         // request) — `None` here is a real absence, not an omission.
         let identity = StageIdentity::of(completer, None);
         let route = completer.resolve_search_route();
+        let served = route.served();
         let key = cache_key(identity, route.backend(), &company);
 
         // Fast path: cached brief younger than the TTL.
@@ -97,6 +98,7 @@ impl CompanyResearch {
                     key: company,
                     content: brief,
                     status: ResearchStatus::Ok,
+                    backend: None,
                 };
             }
         }
@@ -114,6 +116,7 @@ impl CompanyResearch {
                 key: company,
                 content: String::new(),
                 status: ResearchStatus::Failed(Some(FailureKind::RateLimited)),
+                backend: None,
             };
         }
 
@@ -148,6 +151,7 @@ impl CompanyResearch {
                     key: company,
                     content: String::new(),
                     status,
+                    backend: served.get(),
                 };
             }
             // No text of any kind — ADR-027; this fires on the provider's own filler.
@@ -160,6 +164,7 @@ impl CompanyResearch {
                     key: company,
                     content: String::new(),
                     status,
+                    backend: served.get(),
                 };
             }
             ResearchStatus::Ok => {}
@@ -183,6 +188,7 @@ impl CompanyResearch {
             key: company,
             content: brief,
             status,
+            backend: served.get(),
         }
     }
 }

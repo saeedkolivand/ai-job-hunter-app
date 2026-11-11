@@ -80,7 +80,8 @@ fn policy_table_row_count_is_pinned() {
     // 168 + 4 (ADR-051, PR 2b): the `commands::sync` status/configure/
     // disable/now rows.
     // 172 + 1 (issue #1445): `autopilot_dismiss_identity_review`.
-    assert_eq!(POLICY.len(), 173);
+    // 173 + 2 (issue #1515): `ai_search_settings`, `ai_set_search_settings`.
+    assert_eq!(POLICY.len(), 175);
 }
 
 /// ADR-038 §1's core invariant: the policy table and `generate_handler!`
@@ -215,5 +216,5 @@ fn extraction_finds_known_paths_at_each_end_of_the_list() {
         "extraction must find the LAST registered command"
     );
     assert!(found.contains(&"commands::privacy::privacy_reset_app"));
-    assert_eq!(found.len(), 173);
+    assert_eq!(found.len(), 175);
 }

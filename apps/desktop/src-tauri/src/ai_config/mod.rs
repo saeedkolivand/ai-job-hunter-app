@@ -51,6 +51,7 @@ use std::path::PathBuf;
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 
+mod search_settings;
 pub mod stage_overrides;
 mod types;
 mod validation;
@@ -133,6 +134,15 @@ impl AiConfigStore {
                 )
             },
         },
+        Migration {
+            name: "create_search_settings",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS search_settings (id INTEGER PRIMARY KEY CHECK (id = 1), searxng_url TEXT);
+                    INSERT OR IGNORE INTO search_settings (id, searxng_url) VALUES (1, NULL);",
+                )
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -198,6 +208,7 @@ impl AiConfigStore {
             active_provider: Self::active_provider_conn(&conn),
             providers: Self::providers_conn(&conn),
             stage_overrides: Self::stage_overrides_conn(&conn),
+            searxng_url: Self::searxng_url_conn(&conn),
         }
     }
 
@@ -363,6 +374,7 @@ impl AiConfigStore {
         // import-replace has to sweep them too — otherwise a "cleared" config
         // still routes half the pipeline at the model the old config named.
         conn.execute("DELETE FROM ai_stage_overrides", [])?;
+        Self::write_searxng_url_conn(conn, None)?;
         conn.execute(
             "UPDATE active_provider SET provider = NULL WHERE id = 1",
             [],
@@ -397,6 +409,7 @@ impl AiConfigStore {
             written += 1;
         }
         written += Self::apply_stage_overrides_conn(conn, &snapshot.stage_overrides)?;
+        Self::apply_searxng_url_conn(conn, snapshot.searxng_url.as_deref())?;
         if let Some(ap) = snapshot.active_provider.as_deref() {
             if let Ok(id) = ProviderId::parse(ap) {
                 Self::set_active_conn(conn, id.as_str())?;

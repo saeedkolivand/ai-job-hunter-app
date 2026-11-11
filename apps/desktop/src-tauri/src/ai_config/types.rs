@@ -51,6 +51,10 @@ pub struct AiConfigSnapshot {
     /// omitted from the export entirely.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub stage_overrides: BTreeMap<String, StageOverride>,
+    /// The SearXNG base URL (web-search backend, not a provider). Defaulted and omitted when
+    /// unset so older bundles still deserialize and unconfigured exports are unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub searxng_url: Option<String>,
 }
 
 impl AiConfigSnapshot {
@@ -86,6 +90,10 @@ impl AiConfigSnapshot {
             active_provider,
             providers: parse_entries(obj.get("providers")),
             stage_overrides: parse_entries(obj.get("stageOverrides")),
+            searxng_url: obj
+                .get("searxngUrl")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
         })
     }
 }
