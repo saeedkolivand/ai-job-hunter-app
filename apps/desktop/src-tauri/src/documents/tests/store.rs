@@ -319,3 +319,47 @@ fn test_clear_all_wipes_posting_vectors_and_match_scores() {
         "clear_all() must wipe match_scores"
     );
 }
+
+fn default_flags(store: &DocumentStore) -> Vec<(String, bool)> {
+    let mut v: Vec<_> = store
+        .list()
+        .into_iter()
+        .map(|d| (d.id, d.is_default))
+        .collect();
+    v.sort();
+    v
+}
+
+#[test]
+fn removing_the_default_promotes_the_newest_remaining_document() {
+    let (_dir, store) = open_store();
+    let (older, newer) = insert_two_documents(&store); // `older` holds the default flag
+    let third = DocumentRecord {
+        created_at: now_ms() + 500, // between `older` and `newer`
+        ..record(&make_doc_id(), "Text 3")
+    };
+    store.insert(&third).unwrap();
+    store.remove(&older.id).unwrap();
+    let flags = default_flags(&store);
+    assert_eq!(flags.len(), 2);
+    assert!(flags.contains(&(newer.id.clone(), true)));
+    assert!(flags.contains(&(third.id, false)));
+}
+
+#[test]
+fn removing_a_non_default_leaves_flags_unchanged() {
+    let (_dir, store) = open_store();
+    let (older, newer) = insert_two_documents(&store);
+    store.remove(&newer.id).unwrap();
+    assert_eq!(default_flags(&store), vec![(older.id, true)]);
+}
+
+#[test]
+fn removing_the_last_document_is_ok_and_leaves_none() {
+    let (_dir, store) = open_store();
+    let doc = record(&make_doc_id(), "Only");
+    store.insert(&doc).unwrap();
+    store.remove(&doc.id).unwrap();
+    assert!(store.list().is_empty());
+    assert!(store.default_document().is_none());
+}
