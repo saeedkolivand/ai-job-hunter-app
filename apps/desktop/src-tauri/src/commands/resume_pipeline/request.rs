@@ -78,7 +78,13 @@ pub(super) fn resolve_found_job(
             (len(a), a.found_at, &a.url).cmp(&(len(b), b.found_at, &b.url))
         })
         .ok_or_else(|| AppError::Validation(refusal(matching())))?;
-    req.job_ad_text = found.description.clone().unwrap_or_default();
+    // A stored row that arrived entity-escaped (#1497) is decoded once here, before any prompt.
+    let stored = found.description.as_deref().unwrap_or_default();
+    req.job_ad_text = if crate::scraping::http::has_escaped_markup(stored) {
+        crate::scraping::http::html_to_markdown(stored)
+    } else {
+        stored.to_string()
+    };
     if blank(&req.job_title) {
         req.job_title = found.title.clone();
     }

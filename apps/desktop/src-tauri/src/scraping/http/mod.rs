@@ -400,12 +400,18 @@ pub fn html_to_text(html: &str) -> String {
     s.trim().to_string()
 }
 
-/// Whether `text` is HTML delivered entity-escaped: no real tag, but `&lt;tag&gt;`
-/// that decodes into one. Plain prose that merely mentions `&lt;` stays untouched.
+/// Whether `text` is HTML delivered entity-escaped: no real tag, but the decoded text holds a
+/// known HTML element tag AND a closing tag or `<br`. Prose that merely mentions `Vec&lt;String&gt;`
+/// or `&lt;div&gt;` stays untouched (decoding it would eat the words as unknown tags).
 pub fn has_escaped_markup(text: &str) -> bool {
-    text.contains("&lt;")
-        && !HTML_TAG_RE.is_match(text)
-        && HTML_TAG_RE.is_match(&unescape_entities(text))
+    static KNOWN_CLOSE_OR_BR: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?i)</(p|ul|ol|li|strong|em|b|i|h[1-6]|div|span|a)\s*>|<br\b")
+            .expect("static escaped-markup regex is valid")
+    });
+    text.contains("&lt;") && !HTML_TAG_RE.is_match(text) && {
+        let decoded = unescape_entities(text);
+        KNOWN_CLOSE_OR_BR.is_match(&decoded)
+    }
 }
 
 fn unescape_entities(text: &str) -> String {

@@ -197,3 +197,15 @@ fn the_pick_among_several_matches_is_deterministic() {
     assert_eq!(pick(&forward), "same length 2");
     assert_eq!(pick(&forward), pick(&reverse));
 }
+
+/// #1497: a stored row that arrived entity-escaped reaches the prompts decoded.
+#[test]
+fn an_escaped_stored_description_is_decoded_before_it_reaches_the_prompts() {
+    let ap = autopilot_with(vec![described(
+        "https://boards.example/jobs/77",
+        Some("&lt;p&gt;Own the payments platform.&lt;/p&gt;"),
+    )]);
+    let mut req = request(json!({ "jobUrl": "https://boards.example/jobs/77" }));
+    resolve_found_job(&mut req, &[ap]).expect("resolves");
+    assert_eq!(req.job_ad_text, "Own the payments platform.");
+}

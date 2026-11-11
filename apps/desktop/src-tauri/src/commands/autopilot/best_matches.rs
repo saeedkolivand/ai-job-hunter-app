@@ -131,6 +131,19 @@ fn is_degenerate_key(key: &str) -> bool {
     key.is_empty() || key == "\u{1}"
 }
 
+/// `rerank::by_rank`, but a member that qualifies AND carries real description text wins first
+/// (#1497): a stale bare copy with an inflated score must not stand in for a posting whose
+/// described copy independently qualifies. Scores stay as cached; this only picks which one speaks.
+fn by_representative(a: &FoundJob, b: &FoundJob) -> std::cmp::Ordering {
+    let solid = |j: &FoundJob| {
+        j.score.is_some_and(|s| qualifies(s, j.score_source))
+            && !crate::documents::keywords::description_is_blank(j.description.as_deref())
+    };
+    solid(b)
+        .cmp(&solid(a))
+        .then_with(|| super::rerank::by_rank(a, b))
+}
+
 /// Compute the cross-autopilot best-matches list. Pure: every input the
 /// command wrapper would otherwise reach through `AppHandle` (the dedup
 /// snapshot, which cluster-member keys carry a `dismissed` interaction) is
@@ -197,7 +210,7 @@ pub(super) fn compute_best_matches(
             };
             match by_key.get_mut(&key) {
                 Some((kept, origins)) => {
-                    if super::rerank::by_rank(job, kept) == std::cmp::Ordering::Less {
+                    if by_representative(job, kept) == std::cmp::Ordering::Less {
                         *kept = job;
                     }
                     origins.push(origin);
@@ -247,7 +260,7 @@ pub(super) fn compute_best_matches(
         let best_idx = idxs
             .iter()
             .copied()
-            .min_by(|&a, &b| super::rerank::by_rank(jobs[a], jobs[b]))
+            .min_by(|&a, &b| by_representative(jobs[a], jobs[b]))
             .expect("a cluster group from `by_cluster` is never empty");
 
         // Step 6: unscored clusters never qualify; scored ones must clear

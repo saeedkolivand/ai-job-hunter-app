@@ -39,3 +39,25 @@ fn description_less_rows_sort_below_described_rows_within_a_block() {
         "score untouched"
     );
 }
+
+/// One key held by two autopilots: a described copy at a qualifying 70 and a stale bare copy at
+/// 95. The described copy must speak for the row, so it is flagged described.
+#[test]
+fn a_qualifying_described_member_beats_a_higher_scored_bare_copy() {
+    let url = "https://a.example.com/job";
+    let bare = FoundJob {
+        description: None,
+        ..job(url, "A Engineer", "AltCo", Some(95.0), ScoreSource::Keyword)
+    };
+    let described = FoundJob {
+        description: Some("Build and run services in Rust and Postgres.".to_string()),
+        ..job(url, "A Engineer", "AltCo", Some(70.0), ScoreSource::Keyword)
+    };
+    let out = best(&[
+        autopilot("one", AutopilotStatus::Active, vec![bare]),
+        autopilot("two", AutopilotStatus::Active, vec![described]),
+    ]);
+    assert_eq!(out.matches.len(), 1);
+    assert!(out.matches[0].has_description);
+    assert_eq!(out.matches[0].score, 70.0);
+}

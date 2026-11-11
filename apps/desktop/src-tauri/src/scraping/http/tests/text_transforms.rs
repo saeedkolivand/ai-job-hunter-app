@@ -301,4 +301,12 @@ fn test_has_escaped_markup_leaves_prose_and_real_html_alone() {
     assert!(has_escaped_markup(ESCAPED_SPECIMEN));
     assert!(!has_escaped_markup("<p>real</p>"));
     assert!(!has_escaped_markup("Use a &lt; b in the comparison"));
+    for prose in [
+        "Experience with Vec&lt;String&gt; and List&lt;T&gt; in Java",
+        "write &lt;div&gt; and &lt;span&gt; tags by hand",
+        "if a &lt;b and c&gt; d",
+    ] {
+        assert!(!has_escaped_markup(prose), "{prose}");
+        assert_eq!(html_to_markdown(prose), prose, "{prose}");
+    }
 }
