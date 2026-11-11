@@ -11,9 +11,14 @@ use crate::documents::keywords::{keywords_normalized, SHORT_TECH_TERMS, SYNONYMS
 
 use super::{issue, Analysis, ContentIssue, DocKind, FACTUAL_UNSOURCED_TERM};
 
+mod blocks;
+mod conflation;
 mod employment;
+mod entry_checks;
+mod letter_claims;
 mod links;
 mod metrics;
+mod terms;
 
 use self::employment::{dropped_role_issues, unsupported_date_issues};
 use self::links::project_link_issues;
@@ -26,6 +31,8 @@ pub use self::links::{canonical_link, link_href, names_a_resource, urls_in};
 // directly rather than through a report.
 #[cfg(test)]
 pub use self::employment::MIN_SURVIVAL_COMPANY_TOKEN_CHARS;
+#[cfg(test)]
+pub use self::entry_checks::{MIN_BULLET_OVERLAP, MIN_BULLET_TOKENS, MIN_OUTCOME_TOKENS};
 #[cfg(test)]
 pub use self::metrics::{
     metrics_in, normalize_number, MetricKind, MIN_BARE_PHONE_LINE_DIGITS,
@@ -92,6 +99,7 @@ pub(super) fn validate(ctx: &Analysis) -> Vec<ContentIssue> {
         ctx.input.generated,
         &[ctx.input.source_resume, ctx.input.job_ad],
     ));
+    issues.extend(conflation::validate(ctx));
     issues
 }
 
@@ -105,5 +113,6 @@ pub(super) fn validate_letter(ctx: &Analysis) -> Vec<ContentIssue> {
         ctx.input.generated,
         &[ctx.input.source_resume, ctx.input.job_ad],
     ));
+    issues.extend(letter_claims::validate(ctx));
     issues
 }

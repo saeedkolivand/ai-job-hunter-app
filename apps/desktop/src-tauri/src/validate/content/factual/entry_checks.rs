@@ -1,0 +1,169 @@
+//! The per-entry checks that are not about a single term: a location the source
+//! gives the role no such place for, a bullet sharing nothing with its entry,
+//! and an outcome clause or scope claim the entry does not state.
+
+use std::collections::HashSet;
+use std::sync::LazyLock;
+
+use regex::Regex;
+
+use crate::documents::evidence::{split_entry, GEOGRAPHY_TOKENS};
+use crate::validate::content::{
+    issue, Analysis, ContentIssue, FACTUAL_INVENTED_LOCATION, FACTUAL_UNSUPPORTED_BULLET,
+    FACTUAL_UNSUPPORTED_OUTCOME,
+};
+
+use super::blocks::Block;
+use super::terms::stems;
+
+/// A bullet needs at least this many content tokens to be judged at all.
+pub const MIN_BULLET_TOKENS: usize = 4;
+/// Content tokens a bullet must share with its source entry to count as
+/// grounded in it.
+pub const MIN_BULLET_OVERLAP: usize = 2;
+/// An outcome clause needs at least this many content tokens to be judged.
+pub const MIN_OUTCOME_TOKENS: usize = 2;
+
+/// Place names that are the same place in another language, so a translated
+/// résumé is not read as inventing one.
+const GEO_EQUIVALENTS: &[(&str, &str)] = &[
+    ("deutschland", "germany"),
+    ("österreich", "austria"),
+    ("schweiz", "switzerland"),
+    ("europa", "europe"),
+    ("münchen", "munich"),
+    ("wien", "vienna"),
+    ("zürich", "zurich"),
+];
+
+/// Geography tokens that describe a company, not where a role was held.
+const NON_PLACE_TOKENS: &[&str] = &[
+    "international",
+    "global",
+    "worldwide",
+    "emea",
+    "apac",
+    "dach",
+];
+
+fn canonical_place(token: &str) -> String {
+    GEO_EQUIVALENTS
+        .iter()
+        .find(|(a, b)| *a == token || *b == token)
+        .map_or(token, |(a, _)| a)
+        .to_string()
+}
+
+fn words(text: &str) -> impl Iterator<Item = String> + '_ {
+    text.split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .map(str::to_lowercase)
+}
+
+/// Places on a role's header that are neither its employer nor its title.
+fn header_places(block: &Block) -> Vec<String> {
+    let (company, title, _) = split_entry(block.header);
+    let identity: HashSet<String> = words(&company).chain(words(&title)).collect();
+    words(&block.header.text)
+        .filter(|w| {
+            GEOGRAPHY_TOKENS.contains(&w.as_str()) && !NON_PLACE_TOKENS.contains(&w.as_str())
+        })
+        .filter(|w| !identity.contains(w))
+        .map(|w| canonical_place(&w))
+        .collect()
+}
+
+pub(super) fn location_issues(
+    block: &Block,
+    source: &[&Block],
+    section: Option<&str>,
+) -> Vec<ContentIssue> {
+    let known: HashSet<String> = source
+        .iter()
+        .flat_map(|b| words(&b.text()).collect::<Vec<_>>())
+        .map(|w| canonical_place(&w))
+        .collect();
+    let mut seen = HashSet::new();
+    header_places(block)
+        .into_iter()
+        .filter(|p| !known.contains(p) && seen.insert(p.clone()))
+        .map(|place| {
+            // As the header spells it: the evidence must be a verbatim span.
+            let shown = block
+                .header
+                .text
+                .split(|c: char| !c.is_alphanumeric())
+                .find(|w| canonical_place(&w.to_lowercase()) == place)
+                .unwrap_or(&place)
+                .to_string();
+            issue(
+                FACTUAL_INVENTED_LOCATION,
+                section,
+                format!(
+                    "Your source résumé gives no location \"{shown}\" for \"{}\". Remove it from \
+                     this entry unless it is true.",
+                    block.identity
+                ),
+                Some(shown),
+            )
+        })
+        .collect()
+}
+
+/// Connectives that open an outcome clause tacked on to a bullet (English and
+/// German). The clause is what follows.
+static OUTCOME_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i),\s*(?:reducing|improving|increasing|boosting|enabling|ensuring|driving|cutting|saving|streamlining|accelerating|resulting in|leading to|which (?:reduced|improved|increased|saved|enabled|boosted|cut)|wodurch|was zu|sodass|so that)\s+(.+)$",
+    )
+    .unwrap()
+});
+
+/// A claim of organisation-wide reach.
+static SCOPE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)\b(?:company|organi[sz]ation|enterprise|firm|unternehmens)[- ]?(?:wide|weit)\b",
+    )
+    .unwrap()
+});
+
+pub(super) fn bullet_issues(
+    ctx: &Analysis,
+    line_raw: &str,
+    line_text: &str,
+    entry_text: &str,
+    entry_stems: &HashSet<String>,
+    section: Option<&str>,
+) -> Vec<ContentIssue> {
+    let mut out = Vec::new();
+    let own = stems(ctx, line_text);
+    let shared = own.intersection(entry_stems).count();
+    if own.len() >= MIN_BULLET_TOKENS && shared < MIN_BULLET_OVERLAP {
+        out.push(issue(
+            FACTUAL_UNSUPPORTED_BULLET,
+            section,
+            "This bullet shares almost nothing with the entry it sits under in your source \
+             résumé. Check that it describes work you did there."
+                .to_string(),
+            Some(line_raw.to_string()),
+        ));
+    }
+    let clause = OUTCOME_RE
+        .captures(line_text)
+        .and_then(|c| c.get(1))
+        .map(|m| stems(ctx, m.as_str()));
+    let invented_clause =
+        clause.is_some_and(|c| c.len() >= MIN_OUTCOME_TOKENS && c.is_disjoint(entry_stems));
+    let invented_scope = SCOPE_RE.is_match(line_text) && !SCOPE_RE.is_match(entry_text);
+    if invented_clause || invented_scope {
+        out.push(issue(
+            FACTUAL_UNSUPPORTED_OUTCOME,
+            section,
+            "This bullet ends in an outcome your source résumé does not state for this entry. \
+             Keep it only if it is true."
+                .to_string(),
+            Some(line_raw.to_string()),
+        ));
+    }
+    out
+}

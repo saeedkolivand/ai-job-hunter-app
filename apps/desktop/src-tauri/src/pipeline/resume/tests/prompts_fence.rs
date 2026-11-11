@@ -95,6 +95,7 @@ fn every_untrusted_block_is_fenced_and_forgery_resistant() {
         hostile,
         &ResumeStrategy::default(),
         "de",
+        "de",
         hostile,
         hostile,
     );

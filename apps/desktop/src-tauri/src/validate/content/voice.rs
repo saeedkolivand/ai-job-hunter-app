@@ -8,6 +8,7 @@
 //! All Warnings. Prose taste is not a defect, and a résumé that legitimately
 //! contains the word "robust" is not broken.
 
+use super::dashes::clause_dash_count;
 use super::lexicon;
 use super::{
     contains_phrase, flattened_lower, issue, sentences, word_count, Analysis, ContentIssue,
@@ -276,20 +277,7 @@ fn rule_of_three_issues(ctx: &Analysis) -> Vec<ContentIssue> {
 /// (`2020–2023`) is correct typography and is skipped.
 fn em_dash_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     let text = ctx.input.generated;
-    let chars: Vec<char> = text.chars().collect();
-    let clause_dashes = chars
-        .iter()
-        .enumerate()
-        .filter(|(_, c)| matches!(c, '—' | '–'))
-        .filter(|(i, _)| {
-            let tight_range = i
-                .checked_sub(1)
-                .and_then(|p| chars.get(p))
-                .is_some_and(|c| c.is_ascii_digit())
-                && chars.get(i + 1).is_some_and(char::is_ascii_digit);
-            !tight_range
-        })
-        .count();
+    let clause_dashes = clause_dash_count(text);
     let words = word_count(text);
     let allowed = words / EM_DASH_WORDS_PER_ALLOWED;
     if clause_dashes <= allowed {

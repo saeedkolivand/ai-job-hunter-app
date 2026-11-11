@@ -303,7 +303,7 @@ export function buildResumePrompt(
   // instead of blindly cutting the tail.
   const resumeBody = truncateResume(stripLinkBlock(resume), truncation);
 
-  const emphasisBlock = buildEmphasisBlock(meta.topRequirements ?? []);
+  const emphasisBlock = buildEmphasisBlock(meta.topRequirements ?? [], resumeBody);
   const directivesBlock = buildEmphasisDirectivesBlock(meta.emphasis);
   const groundingBlock = buildGroundingBlock(resumeBody, meta.topRequirements ?? []);
   // Both blocks render '' when `meta.topRequirements` is empty (e.g. a

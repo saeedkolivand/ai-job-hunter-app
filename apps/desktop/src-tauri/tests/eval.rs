@@ -274,7 +274,13 @@ const CASES: &[Case] = &[
         "en_generated_dropped_role.txt",
         "en",
         DocKind::Resume,
-        Label::Planted(&[("factual.dropped_role", Severity::Critical)])
+        // Removing the Globex header leaves its bullets under Acme's entry, so
+        // the document ALSO credits Globex's tools to Acme: a real conflation,
+        // not a false accusation.
+        Label::Planted(&[
+            ("factual.dropped_role", Severity::Critical),
+            ("factual.conflated_role_term", Severity::Critical)
+        ])
     ),
     case!(
         "en_generated_altered_project_link.txt",

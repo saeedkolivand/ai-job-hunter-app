@@ -140,7 +140,7 @@ fn generated_experience_lower(sections: &[Section]) -> String {
 /// straight into the next word ("Sparkassen-Gruppe" evidences "Sparkasse"). A
 /// short one needs word boundaries, because two or three letters occur inside
 /// unrelated words all the time — "SAP" must not be evidenced by "sapphire".
-fn company_survives(generated_lower: &str, company: &str) -> bool {
+pub(super) fn company_survives(generated_lower: &str, company: &str) -> bool {
     survival_tokens(company).iter().any(|token| {
         if token.chars().count() >= MIN_DISTINCTIVE_COMPANY_TOKEN_CHARS {
             generated_lower.contains(token.as_str())

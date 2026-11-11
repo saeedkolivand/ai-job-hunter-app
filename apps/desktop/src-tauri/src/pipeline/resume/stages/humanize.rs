@@ -77,7 +77,7 @@ use crate::pipeline::budget::StoppedReason;
 use crate::pipeline::resume::prompts::HumanizeTier;
 use crate::pipeline::resume::{projects, QualityCtx};
 use crate::pipeline::Stage;
-use crate::validate::content::{ContentMetrics, ContentReport};
+use crate::validate::content::{strip_long_dashes, ContentMetrics, ContentReport};
 
 use super::validate::validate_documents;
 
@@ -106,6 +106,9 @@ pub(crate) use patches::{
 pub(crate) use predicates::{
     exceeds_humanize_cap, humanize_is_worse, is_usable_rewrite, voice_findings,
 };
+
+/// One document's attempt, or `None` when it was not eligible.
+type ArmResult = AppResult<Option<(HumanizeAttempt, Option<Mode>)>>;
 
 pub struct Humanize;
 
@@ -201,6 +204,50 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
     }
 
     async fn run(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
+        let outcome = self.polish(ctx).await;
+        enforce_dash_ban(ctx).await;
+        outcome
+    }
+}
+
+/// The em-dash HARD BAN, enforced rather than requested. The prompt tells the
+/// model never to use a long dash, the voice check only warns past a density,
+/// and a model that ignores the rule (or a run that never reached a provider
+/// call) would otherwise ship them. Runs on EVERY exit of the stage, including
+/// the zero-flag one, and re-grades only when something changed so the stored
+/// report describes the text that is kept. No provider call.
+async fn enforce_dash_ban(ctx: &mut QualityCtx<'_>) {
+    let draft = strip_long_dashes(&ctx.draft);
+    let letter = strip_long_dashes(&ctx.letter);
+    if draft == ctx.draft && letter == ctx.letter {
+        return;
+    }
+    ctx.draft = draft;
+    ctx.letter = letter;
+    let input = ctx.input;
+    let graded = validate_documents(
+        ctx.draft.clone(),
+        input.source_resume.to_string(),
+        input.job_ad.to_string(),
+        ctx.top_requirements(),
+        input.target_language.to_string(),
+        ctx.letter_text().to_string(),
+    )
+    .await;
+    // A failed re-grade keeps the stripped text and the earlier report: the
+    // ban is the point, the report is a description of it.
+    if let Ok((report, letter_report)) = graded {
+        if ctx.report.is_some() {
+            ctx.report = Some(report);
+        }
+        if ctx.letter_report.is_some() {
+            ctx.letter_report = letter_report;
+        }
+    }
+}
+
+impl Humanize {
+    async fn polish<'a>(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
         // The guard asks about BOTH documents, not just the résumé. It used to
         // bind `ctx.report` with a `let … else`, which made a résumé report the
         // precondition for the WHOLE stage — and `letter_flagged` is computed
@@ -332,10 +379,8 @@ impl<'a> Stage<QualityCtx<'a>> for Humanize {
             .await
             .map(Some)
         };
-        let (resume_result, letter_result): (
-            AppResult<Option<(HumanizeAttempt, Option<Mode>)>>,
-            AppResult<Option<(HumanizeAttempt, Option<Mode>)>>,
-        ) = tokio::join!(resume_arm, letter_arm);
+        let (resume_result, letter_result): (ArmResult, ArmResult) =
+            tokio::join!(resume_arm, letter_arm);
         let (resume_attempt, letter_attempt) = (resume_result?, letter_result?);
 
         let mut calls: u32 = 0;

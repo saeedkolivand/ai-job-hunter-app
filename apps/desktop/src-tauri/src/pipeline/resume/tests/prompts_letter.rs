@@ -10,13 +10,29 @@ use super::super::types::ResumeStrategy;
 /// `crate::locale::letter::conventions` and the unknown-market assertions do.
 #[test]
 fn letter_user_carries_market_conventions_for_de_and_falls_back_for_an_unknown_market() {
-    let de = letter_user("resume", "job ad", &ResumeStrategy::default(), "de", "", "");
+    let de = letter_user(
+        "resume",
+        "job ad",
+        &ResumeStrategy::default(),
+        "de",
+        "de",
+        "",
+        "",
+    );
     assert!(de.contains("<market_conventions>"));
     assert!(de.contains("Germany"));
     assert!(de.contains("Betreff"));
     assert!(de.contains("Gehaltsvorstellung"));
 
-    let unknown = letter_user("resume", "job ad", &ResumeStrategy::default(), "zz", "", "");
+    let unknown = letter_user(
+        "resume",
+        "job ad",
+        &ResumeStrategy::default(),
+        "zz",
+        "en",
+        "",
+        "",
+    );
     assert!(unknown.contains("International"));
     assert!(
         !unknown.contains("Betreff"),
@@ -85,6 +101,7 @@ fn letter_user_fences_a_non_empty_company_brief_and_omits_a_blank_one() {
         "job ad",
         &ResumeStrategy::default(),
         "intl",
+        "en",
         "",
         "Acme builds payment infrastructure.",
     );
@@ -97,6 +114,7 @@ fn letter_user_fences_a_non_empty_company_brief_and_omits_a_blank_one() {
         "job ad",
         &ResumeStrategy::default(),
         "intl",
+        "en",
         "",
         "   ",
     );
@@ -110,6 +128,7 @@ fn letter_user_fences_a_non_empty_company_brief_and_omits_a_blank_one() {
         "job ad",
         &ResumeStrategy::default(),
         "intl",
+        "en",
         "",
         "",
     );
@@ -149,7 +168,33 @@ fn letter_prompts_stay_coherent_when_the_strategy_has_no_emphasis() {
     assert!(system.contains(
         "Prefer a requirement named in the `emphasis` lists of <resume_strategy>, if any."
     ));
-    let user = letter_user("resume", "job ad", &empty, "us", "", "");
+    let user = letter_user("resume", "job ad", &empty, "us", "en", "", "");
     assert!(user.contains("<resume_strategy>"));
     assert!(user.contains("</resume_strategy>"));
+}
+
+/// Leakage: a market's subject-line label and date format are words and shapes
+/// of the market's OWN language. An English letter for a German job must not be
+/// told to write `Betreff` or a German date; a German letter still is.
+///
+/// Mutation check: drop the `writes_in_market_language` gate and the English
+/// assertions fail.
+#[test]
+fn market_label_and_date_format_apply_only_in_the_market_language() {
+    let strategy = ResumeStrategy::default();
+    let english_user = letter_user("resume", "job ad", &strategy, "de", "en", "", "");
+    assert!(!english_user.contains("Betreff"), "{english_user}");
+    assert!(!english_user.contains("D. Month YYYY"), "{english_user}");
+    let english_system = letter_system("en", "de", true, false);
+    assert!(!english_system.contains("Betreff"), "{english_system}");
+    assert!(
+        !english_system.contains("D. Month YYYY"),
+        "{english_system}"
+    );
+    assert!(english_system.contains("usual English word for a subject line"));
+
+    let german_user = letter_user("resume", "job ad", &strategy, "de", "de-DE", "", "");
+    assert!(german_user.contains("Betreff"));
+    assert!(german_user.contains("D. Month YYYY"));
+    assert!(letter_system("de", "de", true, false).contains("D. Month YYYY"));
 }

@@ -101,6 +101,12 @@ appears, truthfully, in a bullet you are writing, bold it — but never bold or 
 one <resume_strategy>'s own per-company emphasis does not already support. Where a \
 bullet of a role already shows a requirement that role's `emphasis` in <resume_strategy> \
 lists, make it visible there; never add or reword a bullet to carry one.
+- Every fact stays under the entry <candidate_resume> states it under. Never move a \
+tool, skill, location or result from one role or project to another, never add a bullet \
+the source entry does not support, never append an outcome or scope the source does not \
+state (\"reducing bugs in production\", \"adopted company-wide\"), and give a role a \
+location only when the source gives THAT role one.
+- Bold a term in exactly the casing <candidate_resume> uses (React, not react).
 - Do NOT write a contact header (name, email, phone, links). The application adds \
 it at export time; one written here is a duplicate the reader sees twice.
 - Output the résumé body only. No preamble, no commentary, no closing note.

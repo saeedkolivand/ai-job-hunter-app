@@ -382,7 +382,7 @@ export function buildCoverLetterPrompt(
   // else preserve high-value sections instead of cutting the tail.
   const resumeBody = truncateResume(stripLinkBlock(resume), truncation);
 
-  const emphasisBlock = buildLetterEmphasisBlock(meta.topRequirements ?? []);
+  const emphasisBlock = buildLetterEmphasisBlock(meta.topRequirements ?? [], resumeBody);
   const directivesBlock = buildEmphasisDirectivesBlock(meta.emphasis);
   const groundingBlock = buildGroundingBlock(resumeBody, meta.topRequirements ?? []);
 
