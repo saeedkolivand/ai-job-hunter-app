@@ -208,14 +208,17 @@ pub(crate) fn tag_param(q: &str) -> Option<String> {
 }
 
 /// Every whitespace-separated token of `query` appears (case-insensitive) in the
-/// posting's title or description.
+/// posting's title or description (markdown escapes ignored).
 pub(crate) fn matches_all_tokens(posting: &JobPosting, query: &str) -> bool {
     let hay = format!(
         "{} {}",
         posting.title,
         posting.description.as_deref().unwrap_or("")
     )
-    .to_lowercase();
+    .to_lowercase()
+    // `html_to_markdown` backslash-escapes `_`, `*` etc. ("snake\_case"), which
+    // would break tokens like `snake_case`.
+    .replace('\\', "");
     query
         .split_whitespace()
         .all(|t| hay.contains(&t.to_lowercase()))

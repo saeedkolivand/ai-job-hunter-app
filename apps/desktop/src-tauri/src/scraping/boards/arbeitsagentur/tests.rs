@@ -194,3 +194,47 @@ fn location_drops_duplicate_region_and_title_cases_upper_case_text() {
     );
     assert_eq!(format_location(None), "");
 }
+
+#[test]
+fn real_multi_word_regions_render_readably_and_match_the_requested_region() {
+    use crate::scraping::engine::location_filter::{location_verdict, LocationVerdict};
+    use crate::scraping::types::LocationSpec;
+    for (ort, region, shown, requested) in [
+        (
+            "Köln",
+            "NORDRHEIN_WESTFALEN",
+            "Nordrhein-Westfalen",
+            "Nordrhein-Westfalen",
+        ),
+        (
+            "Stuttgart",
+            "BADEN_WUERTTEMBERG",
+            "Baden-Württemberg",
+            "Baden-Württemberg",
+        ),
+        (
+            "Stuttgart",
+            "BADEN_WUERTTEMBERG",
+            "Baden-Württemberg",
+            "Baden-Wuerttemberg",
+        ),
+    ] {
+        let loc = format_location(Some(&Adresse {
+            ort: Some(ort.into()),
+            region: Some(region.into()),
+            land: Some("DEUTSCHLAND".into()),
+        }));
+        assert_eq!(loc, format!("{ort}, {shown}, Deutschland"));
+        let spec = LocationSpec {
+            region: Some(requested.into()),
+            ..Default::default()
+        };
+        assert!(
+            !matches!(
+                location_verdict(Some(&loc), false, &spec),
+                LocationVerdict::Mismatch
+            ),
+            "{requested} must not mismatch {loc}"
+        );
+    }
+}

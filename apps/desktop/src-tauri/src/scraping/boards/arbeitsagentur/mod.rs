@@ -96,6 +96,7 @@ impl Stellenangebot {
 /// title-cased. Keeps the country text so the location post-filter (which
 /// tokenizes the whole location string, case-insensitively) still sees it.
 fn title_case(s: &str) -> String {
+    let s = s.replace('_', "-");
     let mut out = String::with_capacity(s.len());
     let mut start = true;
     for c in s.chars() {
@@ -106,7 +107,10 @@ fn title_case(s: &str) -> String {
         }
         start = !c.is_alphanumeric();
     }
-    out
+    // v6 transliterates ("BADEN_WUERTTEMBERG"); restore the two spellings that
+    // occur in region names. The location filter folds ue/ü either way.
+    out.replace("Wuerttemberg", "Württemberg")
+        .replace("Thueringen", "Thüringen")
 }
 
 /// "Berlin, Berlin, DEUTSCHLAND" -> "Berlin, Deutschland": region is dropped

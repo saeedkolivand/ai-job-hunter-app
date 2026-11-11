@@ -46,3 +46,17 @@ fn truncated_tag_results_are_narrowed_to_the_full_query() {
         "senior backend engineer"
     ));
 }
+
+#[test]
+fn token_match_ignores_markdown_escapes_in_the_description() {
+    use super::{map_job, matches_all_tokens, Job};
+    // Real htmd output for this HTML is "snake\_case" (verified).
+    let j: Job = serde_json::from_value(serde_json::json!({
+        "id": 1, "url": "https://jobicy.com/jobs/1", "jobTitle": "Engineer",
+        "jobDescription": "<p>We use snake_case and Node.js.</p>"
+    }))
+    .unwrap();
+    let p = map_job(j, "jobicy", 0).unwrap();
+    assert!(p.description.as_deref().unwrap().contains("snake\\_case"));
+    assert!(matches_all_tokens(&p, "snake_case node.js"));
+}
