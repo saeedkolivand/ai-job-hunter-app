@@ -50,6 +50,9 @@ fn an_unspaced_em_dash_between_words_becomes_a_comma() {
 #[test]
 fn an_unspaced_en_dash_or_numeric_em_dash_is_left_alone() {
     for kept in [
+        "Rolls—Royce",
+        "Jan—Mar",
+        "e—mail",
         "Rolls–Royce",
         "Jan–Mar 2020",
         "2019—2022",

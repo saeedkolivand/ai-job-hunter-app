@@ -32,6 +32,38 @@ const NON_TOOL_ACRONYMS: &[&str] = &[
 /// spelling counts as the tool.
 const AMBIGUOUS_VOCAB: &[&str] = &["go", "r"];
 
+/// Generic practice words a Skills section lists ("Testing · Security") that
+/// ordinary bullets use in other forms. Never promoted to a tool claim by a
+/// Skills declaration; everything else keeps the exact-surface rule, so
+/// `Terraform`, `Docker` and `Redis` stay Critical.
+const PRACTICE_WORDS: &[&str] = &[
+    "testing",
+    "security",
+    "monitoring",
+    "design",
+    "agile",
+    "scrum",
+    "kanban",
+    "leadership",
+    "mentoring",
+    "communication",
+    "documentation",
+    "automation",
+    "management",
+    "architecture",
+    "analytics",
+    "testen",
+    "sicherheit",
+    "überwachung",
+    "führung",
+    "kommunikation",
+    "dokumentation",
+    "automatisierung",
+    "architektur",
+    "analyse",
+    "teamarbeit",
+];
+
 /// Languages that capitalise every noun, where mid-sentence capitalisation says
 /// nothing about being a proper name.
 const NOUN_CAPITALIZING_LANGS: &[&str] = &["de", "lb"];
@@ -193,8 +225,9 @@ pub(super) fn terms_in(ctx: &Analysis, line: &str, declared: &HashSet<String>) -
                 // spells it exactly as the source's Skills section does
                 // ("Terraform" in any position or language). "Mentored" is not
                 // the declared "Mentoring", so a soft skill's verb stays quiet.
-                let strong =
-                    shape_is_tool(part) || is_vocab(part, &keys) || declared.contains(&lower);
+                let strong = shape_is_tool(part)
+                    || is_vocab(part, &keys)
+                    || (declared.contains(&lower) && !PRACTICE_WORDS.contains(&lower.as_str()));
                 let weak = proper
                     && !LEGAL_FORMS.contains(&lower.as_str())
                     && !GEOGRAPHY_TOKENS.contains(&lower.as_str())

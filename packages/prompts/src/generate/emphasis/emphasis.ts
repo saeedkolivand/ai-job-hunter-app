@@ -352,7 +352,9 @@ export function sourceCased(term: string, resumeBody?: string): string {
   const rank = (hit: string): number => {
     if (hit === hit.toLowerCase()) return 1;
     const allCaps = hit === hit.toUpperCase();
-    if (allCaps) return hit.length > 1 && hit.length <= 4 ? 4 : 2;
+    // A short all-caps form is an acronym (AWS, AI, SAP), unless it is an ordinary
+    // word shouted in a heading ("GO TO MARKET"); a longer one is a heading.
+    if (allCaps) return hit.length > 1 && hit.length <= 3 && !SHOUTED_WORDS.has(hit) ? 4 : 2;
     return /\p{Ll}\p{Lu}|\p{Lu}{2}/u.test(hit) ? 5 : 3;
   };
   let best: string | undefined;
@@ -361,6 +363,26 @@ export function sourceCased(term: string, resumeBody?: string): string {
   }
   return best ?? term;
 }
+
+/** Ordinary short words whose all-caps spelling is a heading, not an acronym. */
+const SHOUTED_WORDS = new Set([
+  'GO',
+  'IT',
+  'OR',
+  'TO',
+  'IN',
+  'ON',
+  'AS',
+  'AT',
+  'BY',
+  'MY',
+  'WE',
+  'US',
+  'DO',
+  'SO',
+  'NO',
+  'AN',
+]);
 
 /** The one casing rule both emphasis blocks carry. */
 const CASING_RULE =

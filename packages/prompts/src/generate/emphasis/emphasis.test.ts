@@ -359,6 +359,9 @@ describe('emphasis keeps the résumé spelling', () => {
     expect(sourceCased('go', body)).toBe('Go');
     expect(sourceCased('react', 'REACT only')).toBe('REACT');
     expect(sourceCased('aws', 'Aws notes, AWS usage')).toBe('AWS');
+    expect(sourceCased('go', 'GO TO MARKET plan; Go services')).toBe('Go');
+    expect(sourceCased('rust', 'RUST developer; Rust services')).toBe('Rust');
+    expect(sourceCased('sap', 'Sap notes, SAP usage')).toBe('SAP');
     expect(sourceCased('typescript', 'Typescript and TypeScript')).toBe('TypeScript');
   });
 
