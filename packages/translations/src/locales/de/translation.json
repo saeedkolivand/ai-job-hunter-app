@@ -2303,7 +2303,7 @@
         "flowNotify": "Zeigt neue Treffer in der Gefundene-Jobs-Liste an (und benachrichtigt Sie).",
         "flowTailor": "Öffnen Sie einen Treffer und der Assistent passt Lebenslauf und Anschreiben dafür an — Sie senden die Bewerbung selbst. Autopilot bewirbt sich nie für Sie.",
         "assistantLabel": "KI-Notizen",
-        "assistantCaption": "Nutzt Ihren aktuellen KI-Anbieter, um Ihren besten Treffern eine kurze Notiz hinzuzufügen — nur eine Benachrichtigung, Autopilot bewirbt sich nie für Sie.",
+        "assistantCaption": "Nutzt Ihren aktuellen KI-Anbieter, um Ihren besten Treffern eine kurze Notiz hinzuzufügen. Dafür werden der Text Ihres Lebenslaufs (ohne eigenen Text dieses Autopiloten: Ihr Standarddokument) und der Text der Stellenanzeige an diesen Anbieter gesendet. Nur eine Benachrichtigung, Autopilot bewirbt sich nie für Sie.",
         "assistantNoProvider": "Richten Sie in den Einstellungen einen KI-Anbieter ein, um KI-Notizen zu aktivieren.",
         "assistantProviderHint": "Notizen verwenden {{provider}} · {{model}}"
       },
