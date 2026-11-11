@@ -48,6 +48,13 @@ pub(in crate::extension_bridge::agent_read) struct AgentAutomation {
     updated_at: u64,
 }
 
+/// `error` and `skipped` are written by the REMOTE side of a scrape (an upstream response can be
+/// quoted in `error`), so they leave fenced exactly as the generic tier fences the same fields by
+/// shape (`SCRAPE_SUMMARY_UNTRUSTED_FIELDS`). `notes` is a fixed engine vocabulary and stays plain.
+fn fence_board_text(s: &str) -> String {
+    crate::prompt_fence::fenced("job_posting", s, crate::prompt_fence::JOB_CAP)
+}
+
 /// One board's outcome in [`AgentAutomation::last_run_summaries`]: allowlisted off
 /// `BoardScrapeSummary`, which also carries `truncated` (not wanted here).
 #[derive(Debug, Serialize, Deserialize)]
@@ -101,8 +108,8 @@ pub(in crate::extension_bridge::agent_read) fn project_automation(
             .map(|s| AgentBoardRun {
                 board: s.board.clone(),
                 count: s.count,
-                error: s.error.clone(),
-                skipped: s.skipped.clone(),
+                error: s.error.as_deref().map(fence_board_text),
+                skipped: s.skipped.as_deref().map(fence_board_text),
                 notes: s.notes.clone(),
             })
             .collect(),

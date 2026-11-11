@@ -214,7 +214,12 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
              the same underlying data through.",
             no_args.clone(),
         ),
-        curated_tool(TOOL_AUTOMATIONS, "Automations", "", no_args),
+        curated_tool(
+            TOOL_AUTOMATIONS,
+            "Automations",
+            UNTRUSTED_FIELDS_NOTICE,
+            no_args,
+        ),
         curated_tool(
             TOOL_FOUND_JOBS,
             "Found Jobs",

@@ -168,3 +168,25 @@ fn an_unknown_command_filter_is_a_usage_error_not_an_empty_success() {
     };
     assert_eq!(ok["isError"], false);
 }
+
+#[test]
+fn a_command_outside_the_given_namespace_is_a_usage_error() {
+    let server = Server::new(false, false);
+    let call = |args: Value| {
+        let ToolCall::Local(Ok(r)) = classify_tool_call(
+            &json!({ "name": TOOL_COMMANDS, "arguments": args }),
+            &server,
+        ) else {
+            panic!("commands answers locally");
+        };
+        r
+    };
+    assert_eq!(
+        call(json!({ "namespace": "applications", "command": "autopilot_create" }))["isError"],
+        true
+    );
+    assert_eq!(
+        call(json!({ "namespace": "autopilot", "command": "autopilot_create" }))["isError"],
+        false
+    );
+}

@@ -127,6 +127,23 @@ pub(super) fn classify_tool_call(params: &Value, server: &Server) -> ToolCall {
                 )));
             }
         }
+        // A `command` outside the given `namespace` would match nothing: a refusal disguised as
+        // `{"commands":[]}`, exit 0.
+        if let (Some(ns), Some(cmd)) = (
+            arguments.get("namespace").and_then(Value::as_str),
+            arguments.get("command").and_then(Value::as_str),
+        ) {
+            let paired = POLICY.iter().any(|entry| {
+                let (n, c) = agent_call::split_path(entry.path);
+                n == ns && c == cmd
+            });
+            if !paired {
+                return ToolCall::Local(Ok(tool_result(
+                    usage_error_value("command is not in the given namespace"),
+                    2,
+                )));
+            }
+        }
         return ToolCall::Local(Ok(tool_result(commands_value(&arguments, server.tier), 0)));
     }
 

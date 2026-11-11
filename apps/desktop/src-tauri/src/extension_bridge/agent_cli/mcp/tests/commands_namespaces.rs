@@ -12,13 +12,9 @@ const MAX_CATALOGUE_DESCRIPTION_LENGTH: usize = 500;
 /// cannot build their body from a one-line summary, so they get a short paragraph instead. A
 /// hand-written literal on purpose: adding another is a decision, not a side effect.
 const AGENT_NOTE_COMMANDS: &[&str] = &[
-    "applications_update",
     "autopilot_create",
-    "autopilot_list",
     "autopilot_update",
-    "job_preferences_set",
     "resume_pipeline_run",
-    "scrape_boards",
 ];
 const MAX_AGENT_NOTE_LENGTH: usize = 900;
 
