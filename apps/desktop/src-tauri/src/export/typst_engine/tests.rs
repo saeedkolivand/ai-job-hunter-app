@@ -18,6 +18,7 @@ mod ats_harness;
 mod awesome_deedy;
 mod cadence_regent;
 mod classic_render;
+mod cologne_contact;
 mod education_style;
 mod every_template;
 mod lebenslauf;

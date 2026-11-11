@@ -164,7 +164,16 @@
     // The reference had separate `contact` and `links` lines. This IR carries
     // ONE contact list whose runs may each hold a `link`, so they render as a
     // single line — splitting it would mean guessing which items are "links".
-    text(size: sz-contact, fill: c-muted, header.contact.map(r => render-runs((r,))).join(sep))
+    // The model already holds the separators inside the plain-text runs
+    // (split at link boundaries), so re-style those in place instead of
+    // adding a second separator between runs (#1499).
+    text(size: sz-contact, fill: c-muted, for r in header.contact {
+      if "link" in r and r.link != none {
+        render-runs((r,))
+      } else {
+        r.text.split(regex("\\s*[|·•]\\s*")).map(p => render-runs(((..r, text: p),))).join(sep)
+      }
+    })
   }
 ]
 
