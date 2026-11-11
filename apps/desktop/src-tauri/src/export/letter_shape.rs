@@ -30,9 +30,7 @@
 //! with no error and no signal a fix was attempted and lost.
 
 use crate::export::typst_engine::looks_like_date;
-use crate::locale::letter::{
-    conventions, is_salutation, is_signoff, is_subject_line, LetterConventions,
-};
+use crate::locale::letter::{conventions_for_letter, is_salutation, is_signoff, is_subject_line};
 
 /// Give a body-only letter the furniture the pipeline prompt promises the app
 /// adds. No-op for a letter that already carries its own salutation AND
@@ -123,21 +121,6 @@ pub(crate) fn complete_letter_text(
     }
 
     out
-}
-
-/// The market's conventions when the letter is in its native language (or the
-/// language is unknown), else the conventions keyed by the letter's own
-/// language, falling back to the international (English) baseline.
-fn conventions_for_letter(market: &str, lang: Option<&str>) -> &'static LetterConventions {
-    let conv = conventions(market);
-    let code: String = lang
-        .map(|l| l.trim().chars().take(2).collect::<String>().to_lowercase())
-        .unwrap_or_default();
-    if code.is_empty() || conv.native_language.eq_ignore_ascii_case(&code) {
-        conv
-    } else {
-        conventions(&code)
-    }
 }
 
 #[cfg(test)]

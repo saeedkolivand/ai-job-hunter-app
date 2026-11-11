@@ -97,7 +97,7 @@ pub(super) fn generate_cover_letter_docx_layout(
     // label, so it matches the same market convention `letter_refined.typ`
     // reads from `data.opts.subject_line_label` (DOCX's scanner is otherwise
     // market-agnostic, same as Classic).
-    let subj_label = crate::locale::letter::conventions(req.market)
+    let subj_label = crate::locale::letter::conventions_for_letter(req.market, Some(req.lang))
         .subject_line
         .label
         .clone();

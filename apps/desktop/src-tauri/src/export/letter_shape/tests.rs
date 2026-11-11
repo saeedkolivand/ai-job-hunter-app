@@ -183,3 +183,10 @@ fn a_german_letter_on_a_german_market_keeps_the_german_pair() {
         "got: {out:?}"
     );
 }
+
+#[test]
+fn a_japanese_letter_on_the_us_market_gets_the_japanese_pair() {
+    let out = complete_letter_text("志望いたします。", "us", Some("ja"), "山田 太郎");
+    assert!(out.starts_with("採用ご担当者様\n\n"), "got: {out:?}");
+    assert!(!out.contains("Dear") && !out.contains("Sincerely"));
+}
