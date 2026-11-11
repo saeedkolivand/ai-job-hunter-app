@@ -48,6 +48,7 @@ mod repair_judge_cross_section;
 mod repair_loop;
 mod repair_loop_deadline;
 mod repair_loop_replies;
+mod research_status;
 mod routing;
 mod sections_context;
 mod sections_splice;

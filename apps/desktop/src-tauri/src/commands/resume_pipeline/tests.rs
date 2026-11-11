@@ -10,7 +10,8 @@
 //! [`hooks_run_timeout`], [`hooks_terminal`]); provider admission
 //! ([`admission`]); `resolve`'s clamp/id-wins/store decisions
 //! ([`resolve_clamp`], [`resolve_source`], [`resolve_job`],
-//! [`resolve_unlinked`]); the run store round trip ([`run_store_roundtrip`]);
+//! [`resolve_unlinked`]); the synchronous request gate ([`request_guard`]) and the readable
+//! failed run ([`failure_record`]); the run store round trip ([`run_store_roundtrip`]);
 //! a moved/edited aggregate document ([`aggregate_divergence`]); the
 //! Notification Center card ([`notify`]); the regenerate-section command's
 //! Projects normalization and résumé-provenance guard
@@ -20,6 +21,7 @@
 
 mod admission;
 mod aggregate_divergence;
+mod failure_record;
 mod hooks_apply;
 mod hooks_run_timeout;
 mod hooks_terminal;
@@ -31,6 +33,7 @@ mod regenerate_wrote_resume;
 mod report_fabrications;
 mod report_review;
 mod report_wrapper;
+mod request_guard;
 mod resolve_clamp;
 mod resolve_job;
 mod resolve_source;
