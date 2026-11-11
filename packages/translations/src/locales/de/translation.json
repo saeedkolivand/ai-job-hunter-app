@@ -1909,6 +1909,7 @@
         "removalPending": "Zum Entfernen markiert — steht noch im Dokument",
         "removalPendingHint": "Ihre Entscheidung ist festgehalten, die Zeile ließ sich von hier aus aber nicht löschen. Öffnen Sie den bei der Bewerbung zu dieser Stelle gespeicherten Lebenslauf und entfernen Sie die Zeile dort, um es abzuschließen.",
         "editToRemoveHint": "Diese Aussage lässt sich nicht mit einem Klick entfernen. Ist sie falsch, entfernen Sie sie im Text selbst; andernfalls behalten Sie sie.",
+        "removedIt": "Ich habe es entfernt",
         "failed": "Die Entscheidung konnte nicht gespeichert werden. Bitte erneut versuchen."
       },
       "metrics": {

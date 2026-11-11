@@ -323,3 +323,44 @@ describe('removeEvidenceLines', () => {
     expect(removeEvidenceLines(document, entry)).toBeNull();
   });
 });
+
+// An invented "Berlin" on one role header while "Berlin" stays TRUE on another
+// line: the verdict must settle on THAT occurrence, not the word document-wide.
+describe('an occurrence-anchored entry (context, no line)', () => {
+  const HEADER = 'Engineer | Globex | Berlin | 2018 - 2021';
+  const entry: Fabrication = {
+    issueKey: 'factual.invented_location#0',
+    code: 'factual.invented_location',
+    evidence: 'Berlin',
+    context: HEADER,
+  };
+  const before = `Jane Doe
+Berlin, Germany
+
+${HEADER}
+- Shipped`;
+  const edited = before.replace(HEADER, 'Engineer | Globex | 2018 - 2021');
+
+  it('keeps a recorded remove unresolved until the anchored line is edited', () => {
+    const removed: Fabrication = { ...entry, decision: 'remove' };
+    expect(presentFabrication(removed, before)).toBe('markedForRemoval');
+    expect(isFabricationResolved(removed, before)).toBe(false);
+  });
+
+  it('settles once the anchored line is gone even though the word survives elsewhere', () => {
+    const removed: Fabrication = { ...entry, decision: 'remove' };
+    expect(edited).toContain('Berlin');
+    expect(isFabricationResolved(removed, edited)).toBe(true);
+    expect(presentFabrication(removed, edited)).toBe('resolved');
+  });
+
+  it('presents an undecided entry as pending, then orphaned once the line is gone', () => {
+    expect(presentFabrication(entry, before)).toBe('pending');
+    expect(presentFabrication(entry, edited)).toBe('orphaned');
+  });
+
+  it('parses context and never uses it as a deletion anchor', () => {
+    expect(parseFabrications([entry])).toEqual([entry]);
+    expect(removeEvidenceLines(before, entry)).toBeNull();
+  });
+});

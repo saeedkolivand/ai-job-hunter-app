@@ -207,6 +207,22 @@ export function FabricationReview({
                         {t('quality.panel.review.editToRemoveHint')}
                       </p>
                     )}
+                    {/* An occurrence-anchored entry settles only once the user
+                        has edited that line; this just records the verdict. */}
+                    {!entry.line && entry.context && presentation !== 'orphaned' && (
+                      <Button
+                        type="button"
+                        variant="danger"
+                        size="sm"
+                        disabled={busy}
+                        loading={resolving}
+                        onClick={() => onResolve(entry.issueKey, 'remove')}
+                        className="text-[10px]"
+                      >
+                        <Trash2 size={10} />
+                        {t('quality.panel.review.removedIt')}
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       variant="glass"
