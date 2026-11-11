@@ -17,6 +17,8 @@ pub mod sections;
 mod strategy;
 mod validate;
 
+#[cfg(test)]
+pub(crate) use self::analyze::require_answered;
 pub use self::analyze::AnalyzeJob;
 pub use self::cover_letter::CoverLetter;
 pub(crate) use self::cover_letter::{research_brief, LETTER_STAGE};
@@ -38,7 +40,9 @@ pub use self::validate::{validate_documents, Validate};
 // `evidence` keeps its own tests in its own module, so nothing from it is
 // re-exported here.
 #[cfg(test)]
-pub(crate) use self::cover_letter::research_company_brief;
+pub(crate) use self::cover_letter::{
+    letter_artifact, research_company_brief, research_refused, research_settled,
+};
 #[cfg(test)]
 pub(crate) use self::draft::{
     apply_projects_normalization, draft_with_language_retry, run_draft_attempt, DraftEnv,

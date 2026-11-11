@@ -101,7 +101,7 @@ fn assistant_notes_prefer_canonical_over_first_in_input_order() {
             "https://x.example.com/job",
             "Senior Rust Engineer",
             "Acme",
-            Some(80.0),
+            Some(MATCH_TIER_COVERAGE_HIGH - 1.0),
             ScoreSource::Keyword,
         )
     };
@@ -123,7 +123,7 @@ fn assistant_notes_prefer_canonical_over_first_in_input_order() {
          happens to be first in input order"
     );
     // The higher-scored `first_in_input` (90.0) is NOT the canonical member
-    // here (`canonical_job`, 80.0, wins canonical via its description) — the
+    // here (`canonical_job`, below the High cut so it cannot out-rank a bare copy, wins canonical via its description) — the
     // exact split that produced #1104: `score` and `url` describe two
     // different real postings. `scoreUrl` must say so.
     assert_eq!(out.matches[0].url, "https://x.example.com/job");
@@ -168,7 +168,7 @@ fn score_url_reproduces_the_1104_bug_shape_directly() {
             "https://direct.example.com/job",
             "Senior Rust Engineer",
             "Acme",
-            Some(60.0),
+            Some(MATCH_TIER_COVERAGE_HIGH - 1.0),
             ScoreSource::Keyword,
         )
     };

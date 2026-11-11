@@ -69,6 +69,45 @@ static MARKETS: LazyLock<HashMap<String, LetterConventions>> = LazyLock::new(|| 
         .markets
 });
 
+/// Conventions of the language a letter is written in, matched on
+/// `native_language` across markets. Several markets can share a language; the
+/// home market is the one whose id IS the language code (`pt` -> Portugal, not
+/// Brazil; `de` -> Germany), else the neutral `intl` baseline (`en`), else the
+/// alphabetically first market (stable). `None` for a language no market speaks.
+pub fn conventions_for_language(lang: &str) -> Option<&'static LetterConventions> {
+    let code: String = lang
+        .trim()
+        .chars()
+        .take(2)
+        .collect::<String>()
+        .to_lowercase();
+    let mut hits: Vec<(&String, &LetterConventions)> = MARKETS
+        .iter()
+        .filter(|(_, c)| c.native_language.eq_ignore_ascii_case(&code))
+        .collect();
+    hits.sort_by_key(|(id, _)| (**id != code, *id != "intl", (*id).clone()));
+    hits.first().map(|(_, c)| *c)
+}
+
+/// The conventions for a letter: the market's own when the letter is written in
+/// its native language (or the language is unknown/blank), else the letter
+/// language's own, else the market's as a last resort. Words of the market's
+/// language (salutation, sign-off, subject label) must not land on a letter in
+/// another language; layout that follows the country (page size) stays on
+/// [`conventions`].
+pub fn conventions_for_letter(market: &str, lang: Option<&str>) -> &'static LetterConventions {
+    let conv = conventions(market);
+    let lang = lang.map(str::trim).unwrap_or("");
+    if lang.is_empty()
+        || conv
+            .native_language
+            .eq_ignore_ascii_case(&lang.chars().take(2).collect::<String>())
+    {
+        return conv;
+    }
+    conventions_for_language(lang).unwrap_or(conv)
+}
+
 /// Letter conventions for a market id (case-insensitive), falling back to the
 /// international baseline so an unknown/blank market always renders cleanly.
 pub fn conventions(market: &str) -> &'static LetterConventions {

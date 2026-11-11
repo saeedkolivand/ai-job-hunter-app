@@ -7,6 +7,8 @@ use async_trait::async_trait;
 use serde_json::json;
 use tauri::{AppHandle, Manager};
 
+use crate::error::{AppError, AppResult};
+
 use super::super::research::SearchResult;
 use super::super::{timeouts, ProviderId, RequestTrace};
 use super::WebSearcher;
@@ -41,36 +43,44 @@ impl ExaSearcher {
     /// Exa bills per request and is a DIFFERENT vendor than the AI provider, so
     /// it gets its own bucket rather than spending the provider's. The counter
     /// map is `(utc_day, vendor)`-keyed, so a name that is not a `ProviderId`
-    /// needs no schema change. `false` means the ceiling is reached and the
-    /// caller must not issue the request.
-    fn charge_daily(&self) -> bool {
+    /// needs no schema change. `Err` means the ceiling is reached (or no limiter
+    /// is managed) and the caller must not issue the request.
+    fn charge_daily(&self) -> AppResult<()> {
         let Some(limiter) = self
             .app
             .try_state::<std::sync::Arc<crate::limits::Limiter>>()
         else {
             // No limiter in state (only reachable in a partially-built app) —
             // fail CLOSED on a billable call rather than assume budget.
-            tracing::warn!("exa search: limiter unavailable, skipping search");
-            return false;
+            return Err(AppError::Config("exa search: limiter unavailable".into()));
         };
-        match limiter.charge_provider_daily(EXA_KEY, crate::limits::PROVIDER_DAILY_MAX) {
-            Ok(()) => true,
-            Err(e) => {
+        limiter
+            .charge_provider_daily(EXA_KEY, crate::limits::PROVIDER_DAILY_MAX)
+            .map_err(|e| {
                 tracing::warn!("exa search: daily budget exceeded: {e}");
-                false
-            }
-        }
+                AppError::RateLimited("exa search: daily budget reached".into())
+            })
+    }
+}
+
+/// An Exa non-2xx as a typed error. Body deliberately NOT read: an auth failure echoes request
+/// context, and the message ends up in a run's failure record.
+pub(super) fn exa_status_error(status: reqwest::StatusCode) -> AppError {
+    match status.as_u16() {
+        402 => AppError::Billing("exa: out of credit or billing required.".into()),
+        401 | 403 => AppError::Config("exa: invalid or unauthorized API key.".into()),
+        429 => AppError::RateLimited("exa: rate limit reached.".into()),
+        500..=599 => AppError::Network(format!("exa: service error ({}).", status.as_u16())),
+        code => AppError::Provider(format!("exa returned {code}")),
     }
 }
 
 #[async_trait]
 impl WebSearcher for ExaSearcher {
-    async fn search(&self, query: &str, limit: usize) -> Vec<SearchResult> {
+    async fn try_search(&self, query: &str, limit: usize) -> AppResult<Vec<SearchResult>> {
         // Charged BEFORE the request because this IS the billable call — unlike
         // the command-layer charges, which sit before an admission check.
-        if !self.charge_daily() {
-            return Vec::new();
-        }
+        self.charge_daily()?;
         let trace = RequestTrace::begin(
             // Traced under the ACTIVE provider is wrong here — the call is Exa's.
             // `ProviderId` has no Exa arm on purpose (a search backend is not a
@@ -96,39 +106,25 @@ impl WebSearcher for ExaSearcher {
             .header("x-api-key", &self.key)
             .json(&body)
             .send()
-            .await;
-
-        let resp = match resp {
-            Ok(r) => r,
-            Err(e) => {
+            .await
+            .map_err(|e| {
                 trace.end(None, false);
-                tracing::warn!("exa search request failed: {e}");
-                return Vec::new();
-            }
-        };
+                AppError::Network(format!("exa unreachable: {e}"))
+            })?;
         let status = resp.status();
         if !status.is_success() {
             trace.end(Some(status.as_u16()), false);
-            // Body deliberately NOT logged: an auth failure echoes request
-            // context, and this line is the one a diagnostics bundle ships.
-            tracing::warn!("exa search returned {status}");
-            return Vec::new();
+            return Err(exa_status_error(status));
         }
-        let body = match crate::net::http::read_json_capped(
-            resp,
-            crate::net::http::DEFAULT_MAX_BODY_BYTES,
-        )
-        .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                trace.end(Some(status.as_u16()), false);
-                tracing::warn!("exa search parse failed: {e}");
-                return Vec::new();
-            }
-        };
+        let body =
+            crate::net::http::read_json_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                .await
+                .map_err(|e| {
+                    trace.end(Some(status.as_u16()), false);
+                    AppError::Provider(format!("exa search parse failed: {e}"))
+                })?;
         trace.end(Some(status.as_u16()), true);
-        parse_exa_results(&body, limit)
+        Ok(parse_exa_results(&body, limit))
     }
 }
 

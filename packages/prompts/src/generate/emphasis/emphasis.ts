@@ -333,6 +333,40 @@ Reference salary range for this role: ${range.min}–${range.max} ${range.curren
 }
 
 /**
+ * The spelling of `term` as the résumé itself writes it (`React`, not the
+ * lowercase `react` a normalized keyword list carries), so the model bolds the
+ * candidate's own casing. Falls back to `term` untouched when the résumé never
+ * mentions it. Never emits a normalized key: `documents/keywords.rs` lowercases
+ * for MATCHING, and that form is not a spelling.
+ */
+export function sourceCased(term: string, resumeBody?: string): string {
+  const t = term.trim();
+  if (!t || !resumeBody) return term;
+  const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const edge = '[\\p{L}\\p{N}_]';
+  const pattern = new RegExp(`(?<!${edge})${escaped}(?!${edge})`, 'giu');
+  // Several spellings can occur ("REACT" in a SKILLS heading, "go" in
+  // "go-to-market", "Go" in a list). Rank: mixed case ("TypeScript") first, then
+  // a short all-caps acronym ("AWS", "AI"), then Title case ("React"), then a
+  // longer all-caps word (a heading), then lowercase prose.
+  const rank = (hit: string): number => {
+    if (hit === hit.toLowerCase()) return 1;
+    const allCaps = hit === hit.toUpperCase();
+    if (allCaps) return hit.length > 1 && hit.length <= 4 ? 4 : 2;
+    return /\p{Ll}\p{Lu}|\p{Lu}{2}/u.test(hit) ? 5 : 3;
+  };
+  let best: string | undefined;
+  for (const [hit] of resumeBody.matchAll(pattern)) {
+    if (best === undefined || rank(hit) > rank(best)) best = hit;
+  }
+  return best ?? term;
+}
+
+/** The one casing rule both emphasis blocks carry. */
+const CASING_RULE =
+  'Write each term exactly as the résumé spells it (React, AWS, Node.js), never in a normalized lowercase form.';
+
+/**
  * Restrained, prose-oriented keyword emphasis for the cover LETTER (not the
  * résumé). A letter is flowing prose, so {@link buildEmphasisBlock}'s
  * bullet/per-section rules don't apply and its full 12-keyword list pushes the
@@ -340,15 +374,15 @@ Reference salary range for this role: ${range.min}–${range.max} ${range.curren
  * caps emphasis to a few of the most relevant terms, bolded only where they
  * already belong in a sentence — natural prose first, emphasis second.
  */
-export function buildLetterEmphasisBlock(keywords: string[]): string {
-  const top = keywords.slice(0, 6);
+export function buildLetterEmphasisBlock(keywords: string[], resumeBody?: string): string {
+  const top = keywords.slice(0, 6).map((k) => sourceCased(k, resumeBody));
   if (!top.length) return '';
   return `
 KEYWORD EMPHASIS (LIGHT — this is prose, not a résumé):
 From these job-ad terms, bold only the 3–4 you genuinely demonstrate, and only where they already fit the sentence naturally: ${top
     .map((k) => `**${k}**`)
     .join(', ')}.
-Never bend a sentence to fit a keyword, never bold more than ~4, never stack them. A sentence that exists only to carry keywords is worse than no keyword at all.`;
+${CASING_RULE} Never bend a sentence to fit a keyword, never bold more than ~4, never stack them. A sentence that exists only to carry keywords is worse than no keyword at all.`;
 }
 
 /**
@@ -453,11 +487,11 @@ export function buildEmphasisDirectivesBlock(ids: EmphasisId[] | undefined): str
  * Build the bold emphasis instruction block for prompts.
  * The AI uses **keyword** notation; the renderer converts to real bold.
  */
-export function buildEmphasisBlock(keywords: string[]): string {
+export function buildEmphasisBlock(keywords: string[], resumeBody?: string): string {
   if (!keywords.length) return '';
   const list = keywords
     .slice(0, 12)
-    .map((k) => `**${k}**`)
+    .map((k) => `**${sourceCased(k, resumeBody)}**`)
     .join(', ');
   return `
 KEYWORD EMPHASIS:
@@ -469,6 +503,7 @@ Emphasis rules:
 - Bold the FIRST occurrence per section — not every instance
 - Maximum 2–3 bolded terms per bullet point
 - NEVER bold: company names, dates, pronouns, generic verbs, or section headers
+- ${CASING_RULE}
 - Bolding should feel strategic and natural — not keyword-stuffed
 - The **asterisks** will be converted to real bold typography in the exported document
 

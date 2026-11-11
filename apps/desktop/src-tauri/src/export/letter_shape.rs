@@ -30,7 +30,7 @@
 //! with no error and no signal a fix was attempted and lost.
 
 use crate::export::typst_engine::looks_like_date;
-use crate::locale::letter::{conventions, is_salutation, is_signoff, is_subject_line};
+use crate::locale::letter::{conventions_for_letter, is_salutation, is_signoff, is_subject_line};
 
 /// Give a body-only letter the furniture the pipeline prompt promises the app
 /// adds. No-op for a letter that already carries its own salutation AND
@@ -40,7 +40,18 @@ use crate::locale::letter::{conventions, is_salutation, is_signoff, is_subject_l
 /// round-trip through the export path unchanged — the same document gets
 /// re-validated on every preview render and every export, so a non-idempotent
 /// completion would double up the furniture each time.
-pub(crate) fn complete_letter_text(text: &str, market: &str, name: &str) -> String {
+///
+/// `lang` is the language the letter is written in (`meta.target_language`);
+/// `None` means unknown, which keeps the market's own pair. The market's
+/// salutation and sign-off are words OF its native language, so they apply
+/// only when the letter is written in it; otherwise the letter language's own
+/// convention is used (an English letter for a German job opens "Dear …").
+pub(crate) fn complete_letter_text(
+    text: &str,
+    market: &str,
+    lang: Option<&str>,
+    name: &str,
+) -> String {
     let body = text.trim();
     if body.is_empty() {
         // Nothing to complete — and nothing for the caller to render either.
@@ -53,7 +64,7 @@ pub(crate) fn complete_letter_text(text: &str, market: &str, name: &str) -> Stri
         return text.to_string();
     }
 
-    let conv = conventions(market);
+    let conv = conventions_for_letter(market, lang);
     let mut out = String::new();
 
     if !has_salutation {

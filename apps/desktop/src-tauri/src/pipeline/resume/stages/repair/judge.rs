@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::validate::content::{
     ContentIssue, ContentReport, CONSISTENCY_SKILL_NOT_DEMONSTRATED, CONTENT_LANGUAGE_MISMATCH,
-    DUPLICATE_BULLET, FACTUAL_ALTERED_PROJECT_LINK, FACTUAL_DROPPED_ROLE,
+    DUPLICATE_BULLET, FACTUAL_ALTERED_PROJECT_LINK, FACTUAL_CONFLATED_ROLE_TERM,
+    FACTUAL_DROPPED_ROLE, FACTUAL_INVENTED_LOCATION, FACTUAL_UNSUPPORTED_ROLE_TERM,
 };
 use crate::validate::Severity;
 
@@ -22,12 +23,35 @@ use super::super::validate::counts;
 /// model" need — reuses this exact format for its own `<humanize_findings>`
 /// block instead of a second, driftable copy.
 pub(in crate::pipeline::resume::stages) fn issue_line(issue: &ContentIssue) -> String {
+    // The message is written for the CANDIDATE ("keep it only if you can speak
+    // to it"); the repair model cannot verify that, so the entry-grounding
+    // codes carry an instruction it can act on instead.
+    let text = repair_instruction(issue.code).unwrap_or(&issue.message);
     match &issue.evidence {
-        Some(evidence) => format!(
-            "[{}] {} — offending text: {evidence}",
-            issue.code, issue.message
+        Some(evidence) => format!("[{}] {text} — offending text: {evidence}", issue.code),
+        None => format!("[{}] {text}", issue.code),
+    }
+}
+
+/// What a regeneration can do about an entry-grounding Critical: drop the claim
+/// or put it back where the source states it. Never "invent support".
+fn repair_instruction(code: &str) -> Option<&'static str> {
+    match code {
+        FACTUAL_UNSUPPORTED_ROLE_TERM => Some(
+            "This entry names a tool or skill that <candidate_resume> never states anywhere. \
+Remove it from the line, or rewrite the line to say only what <candidate_resume> states under \
+this entry. Never invent support for it.",
         ),
-        None => format!("[{}] {}", issue.code, issue.message),
+        FACTUAL_CONFLATED_ROLE_TERM => Some(
+            "This entry is credited with a tool or skill that <candidate_resume> states under a \
+different entry. Remove it from this line, or rewrite the line to say only what \
+<candidate_resume> states under this entry. Never invent support for it.",
+        ),
+        FACTUAL_INVENTED_LOCATION => Some(
+            "<candidate_resume> gives this role no such location. Remove it from the entry's \
+header line.",
+        ),
+        _ => None,
     }
 }
 

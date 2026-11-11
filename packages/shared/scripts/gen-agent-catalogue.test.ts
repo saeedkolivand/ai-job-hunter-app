@@ -193,6 +193,39 @@ describe('toInputJsonSchema (issue #1491)', () => {
   it('refuses a non-Zod value instead of emitting a guess', () => {
     expect(() => toInputJsonSchema({ type: 'object' })).toThrow(/non-Zod/);
   });
+
+  it('describes an allowlisted Uint8Array leaf by its real wire format, never `{}`', () => {
+    const schema = JSON.parse(toInputJsonSchema(z.object({ bytes: z.instanceof(Uint8Array) })));
+    expect(schema.properties.bytes).toMatchObject({
+      type: 'array',
+      items: { type: 'integer', minimum: 0, maximum: 255 },
+    });
+    expect(schema.properties.bytes.description).toMatch(/not base64/);
+  });
+
+  it('fails on an unrepresentable leaf that is not allowlisted', () => {
+    expect(() => toInputJsonSchema(z.object({ blob: z.instanceof(Uint8Array) }))).toThrow(
+      /unrepresentable schema at `properties.blob`/
+    );
+  });
+});
+
+describe('applyOverrides (issue #1491)', () => {
+  const sources = { zodSchemas: {} } as unknown as FieldSources;
+  const entry = (args: CatalogueArg[]): Map<string, CatalogueEntry> =>
+    new Map([['autopilot_update', { command: 'autopilot_update', description: '', args }]]);
+
+  it('throws when a stale override matches no catalogued command or argument', () => {
+    expect(() => applyOverrides(new Map(), sources)).toThrow(/matches no catalogued argument/);
+    expect(() => applyOverrides(entry([]), sources)).toThrow(/matches no catalogued argument/);
+  });
+
+  it('throws when the override names a schema the contracts do not export', () => {
+    const args: CatalogueArg[] = [{ name: 'req', required: true, fields: null }];
+    expect(() => applyOverrides(entry(args), sources)).toThrow(
+      /`AutopilotUpdateSchema` is not exported/
+    );
+  });
 });
 
 describe('@agent note (issue #1491)', () => {
@@ -210,6 +243,23 @@ describe('@agent note (issue #1491)', () => {
 
   it('is read whole, on one line, for the catalogue', () => {
     expect(agentNoteOf(member, sf)).toBe('Long note over two lines.');
+  });
+
+  it('ends at a tag that starts a line, but not at an indented or mid-line @', () => {
+    const text = `interface C {
+    /**
+     * Summary.
+     *
+     * @agent Mail a@example.com
+     *   @alice stays in the note.
+     * @param x kept out of the note
+     */
+    a(): void;
+  }`;
+    const f = sourceFile('d.ts', text);
+    const [m] = (f.statements[0] as ts.InterfaceDeclaration).members;
+    expect(agentNoteOf(m, f)).toBe('Mail a@example.com @alice stays in the note.');
+    expect(docOf(m, f)).toBe('Summary.\n\n@param x kept out of the note');
   });
 
   it('is stripped from the text docs/API.md renders', () => {

@@ -327,3 +327,33 @@ fn a_repair_round_that_drops_role_count_or_coverage_is_worse_even_with_fewer_cri
         "a coverage move under the threshold with an unchanged role count must not revert"
     );
 }
+
+/// The repair model is told what it can DO about an entry-grounding Critical
+/// (drop the claim or move it back, never invent support), not the
+/// candidate-facing "keep it only if you can speak to it".
+///
+/// Mutation check: drop `repair_instruction` and the message text reaches the
+/// model, failing the first assertion.
+#[test]
+fn entry_grounding_criticals_reach_repair_as_an_actionable_instruction() {
+    use crate::validate::content::{
+        ContentIssue, ContentMetrics, ContentReport, FACTUAL_CONFLATED_ROLE_TERM,
+    };
+    let document = "Jane Doe\n\nEXPERIENCE\n\nEngineer | Acme | 2020 - 2024\n- Ran Redis\n";
+    let report = ContentReport {
+        ok: false,
+        issues: vec![ContentIssue {
+            severity: crate::validate::Severity::Critical,
+            code: FACTUAL_CONFLATED_ROLE_TERM,
+            section: Some("EXPERIENCE".to_string()),
+            message: "Keep it only if you can speak to it in an interview.".to_string(),
+            evidence: Some("- Ran Redis".to_string()),
+        }],
+        metrics: ContentMetrics::default(),
+    };
+    let grouped = criticals_by_section(document, &report);
+    let line = &grouped[0].1[0];
+    assert!(line.contains("Never invent support"), "{line}");
+    assert!(!line.contains("speak to it"), "{line}");
+    assert!(line.contains("offending text: - Ran Redis"));
+}

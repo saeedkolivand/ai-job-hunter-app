@@ -198,6 +198,8 @@ describe('buildCoverLetterPrompt', () => {
     expect(prompt).toContain('the formal en equivalent of "Betreff"');
     expect(prompt).not.toContain('labelled "Betreff"');
     expect(prompt).toMatch(/salary expectation/i);
+    // The German gloss of an inclusion is a German word: not in an English letter.
+    expect(prompt).not.toContain('Gehaltsvorstellung');
     // Decision: write in the letter language (en here), apply German etiquette.
     expect(prompt).toMatch(/Write the letter in en/);
   });

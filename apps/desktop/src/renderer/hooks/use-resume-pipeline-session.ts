@@ -279,6 +279,27 @@ export function useResumePipelineSession(
   );
   useJobEvents(handleJobEvent);
 
+  // A remount that finds no record cannot tell a queued run from one the backend refused (a full
+  // queue or the rate limit writes no run row by design) — and the `job.failed` that said so
+  // fired while nothing was mounted. The job registry still holds it: read it once on reconnect.
+  // A still-queued or running job is left alone; only `failed` ends the session.
+  const detailAtMountRef = useRef(detail);
+  useEffect(() => {
+    if (!initialRunId || !initialJobId || detailAtMountRef.current) return;
+    let cancelled = false;
+    void fetchJob(initialJobId)
+      .then((job) => {
+        const found = job as { status?: string; error?: unknown } | null;
+        if (cancelled || found?.status !== 'failed') return;
+        setError(typeof found.error === 'string' && found.error ? found.error : null);
+        send('ERROR');
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [initialRunId, initialJobId, send]);
+
   // Terminal detection, and the ONLY place it happens: the record's status.
   // Not the last stage's `finish` (a boundary stop never reaches one), not the
   // umbrella job's `job.completed` (the draft stream fires that mid-run), not

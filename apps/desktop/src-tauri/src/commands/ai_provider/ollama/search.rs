@@ -80,9 +80,9 @@ pub(super) fn parse_web_search(body: &serde_json::Value, limit: usize) -> Vec<Se
 }
 
 /// Shared search step for every Ollama-family research facet: resolve the
-/// account key and run the Ollama Web Search API. An empty `Vec` when the key is
-/// missing; the transport's error otherwise, for the caller to swallow
-/// ([`ollama_search`]) or report ([`OllamaSearcher::try_search`]).
+/// account key and run the Ollama Web Search API. Every failure — a missing key included — is
+/// an `Err`, for the caller to swallow (`WebSearcher::search`) or report
+/// ([`OllamaSearcher::try_search`]).
 async fn ollama_search_checked(
     model: &str,
     key: &str,
@@ -90,7 +90,9 @@ async fn ollama_search_checked(
     limit: usize,
 ) -> AppResult<Vec<SearchResult>> {
     if key.trim().is_empty() {
-        return Ok(Vec::new());
+        return Err(AppError::Config(
+            "ollama web_search: invalid or unauthorized API key (none stored)".into(),
+        ));
     }
     let trace = RequestTrace::begin(
         ProviderId::OllamaCloud,
@@ -104,17 +106,6 @@ async fn ollama_search_checked(
     result
 }
 
-/// [`ollama_search_checked`], degrading every failure to no results so callers need no
-/// error handling of their own.
-async fn ollama_search(model: &str, key: &str, query: &str, limit: usize) -> Vec<SearchResult> {
-    ollama_search_checked(model, key, query, limit)
-        .await
-        .unwrap_or_else(|e| {
-            tracing::warn!("ollama web_search failed: {e}");
-            Vec::new()
-        })
-}
-
 /// The Ollama Web Search API as a [`WebSearcher`](super::super::search::WebSearcher).
 ///
 /// The search half of Ollama-family research. The synthesize half is generic and
@@ -123,7 +114,7 @@ async fn ollama_search(model: &str, key: &str, query: &str, limit: usize) -> Vec
 pub struct OllamaSearcher {
     /// Trace label only — the Web Search API takes no model.
     model: String,
-    /// Resolved once at construction. `ollama_search` used to re-read it on
+    /// Resolved once at construction. the old per-call lookup re-read it on
     /// every call, which with the capability probe meant three keychain lookups
     /// for one research pass.
     key: String,
@@ -146,10 +137,6 @@ impl OllamaSearcher {
 
 #[async_trait]
 impl super::super::search::WebSearcher for OllamaSearcher {
-    async fn search(&self, query: &str, limit: usize) -> Vec<SearchResult> {
-        ollama_search(&self.model, &self.key, query, limit).await
-    }
-
     async fn try_search(&self, query: &str, limit: usize) -> AppResult<Vec<SearchResult>> {
         ollama_search_checked(&self.model, &self.key, query, limit).await
     }

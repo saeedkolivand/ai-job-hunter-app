@@ -47,8 +47,8 @@ export function sortBySalary(matches: AutopilotBestMatch[]): AutopilotBestMatch[
 
 /**
  * `'score'` (default) returns `matches` UNTOUCHED — the backend already
- * sorts by tier desc, score desc, key asc, and re-sorting it here would just
- * be a slower no-op with a chance to get the tiebreak wrong. Never mutates
+ * ranks it (see the sort step in `commands/autopilot/best_matches.rs`), and
+ * re-sorting it here would just be a slower no-op with a chance to get the tiebreak wrong. Never mutates
  * its input in any branch.
  */
 export function sortBestMatches(

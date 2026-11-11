@@ -147,3 +147,20 @@ async fn a_transport_error_stays_a_network_error() {
 fn the_ceiling_is_the_idle_bound_times_the_shared_factor() {
     assert_eq!(limits().ceiling, IDLE * 4);
 }
+
+// ── in-band error frames carry their failure kind (#1496) ───────────────────
+
+/// An overloaded frame is a service problem, not a rate limit; an out-of-quota frame is credit.
+/// Mutation check: drop the `is_billing_text` branch in `frame_error` and the second case reads
+/// `unavailable`.
+#[test]
+fn an_error_frame_is_classified_by_what_it_says() {
+    use crate::error::FailureKind;
+    let kind = |raw: &str| FailureKind::of(&frame_error("anthropic", raw)).map(FailureKind::as_str);
+    assert_eq!(kind("overloaded_error: Overloaded"), Some("unavailable"));
+    assert_eq!(
+        kind("You exceeded your current quota (insufficient_quota)"),
+        Some("billing")
+    );
+    assert_eq!(kind("max_tokens: must be positive"), None);
+}

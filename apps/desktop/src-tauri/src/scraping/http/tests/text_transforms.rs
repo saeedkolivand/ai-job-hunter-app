@@ -301,4 +301,26 @@ fn test_has_escaped_markup_leaves_prose_and_real_html_alone() {
     assert!(has_escaped_markup(ESCAPED_SPECIMEN));
     assert!(!has_escaped_markup("<p>real</p>"));
     assert!(!has_escaped_markup("Use a &lt; b in the comparison"));
+    for prose in [
+        "Experience with Vec&lt;String&gt; and List&lt;T&gt; in Java",
+        "write &lt;div&gt; and &lt;span&gt; tags by hand",
+        "if a &lt;b and c&gt; d",
+    ] {
+        assert!(!has_escaped_markup(prose), "{prose}");
+        assert_eq!(html_to_markdown(prose), prose, "{prose}");
+    }
+}
+
+#[test]
+fn test_has_escaped_markup_detects_an_opening_only_fragment() {
+    let fragment = "&lt;li&gt;Build APIs&lt;li&gt;Maintain services";
+    assert!(has_escaped_markup(fragment));
+    assert!(has_escaped_markup(
+        "&lt;p class=\"x\"&gt;Intro&lt;ul&gt;&lt;li&gt;Rust"
+    ));
+    assert!(html_to_markdown(fragment).contains("Maintain services"));
+    // One mention of a block element is prose, not markup.
+    assert!(!has_escaped_markup(
+        "the &lt;div&gt; element groups content"
+    ));
 }

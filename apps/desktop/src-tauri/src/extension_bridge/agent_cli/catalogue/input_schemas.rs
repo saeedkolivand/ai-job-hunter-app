@@ -55,7 +55,7 @@ pub(super) const SCHEMAS: &[(&str, &str, &str)] = &[
     (
         "documents_import",
         "req",
-        r##"{"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":512},"bytes":{},"title":{"type":"string"},"locale":{"type":"string","enum":["en","de","fr","es","it","tr","pt","ru","zh","ja","ko"]}},"required":["name","bytes"]}"##,
+        r##"{"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":512},"bytes":{"type":"array","items":{"type":"integer","minimum":0,"maximum":255},"description":"Raw file bytes as a JSON array of integers 0-255 (not base64)."},"title":{"type":"string"},"locale":{"type":"string","enum":["en","de","fr","es","it","tr","pt","ru","zh","ja","ko"]}},"required":["name","bytes"]}"##,
     ),
     (
         "generate_pipeline",
@@ -85,7 +85,7 @@ pub(super) const SCHEMAS: &[(&str, &str, &str)] = &[
     (
         "resume_extract_text",
         "req",
-        r##"{"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":512},"bytes":{}},"required":["name","bytes"]}"##,
+        r##"{"type":"object","properties":{"name":{"type":"string","minLength":1,"maxLength":512},"bytes":{"type":"array","items":{"type":"integer","minimum":0,"maximum":255},"description":"Raw file bytes as a JSON array of integers 0-255 (not base64)."}},"required":["name","bytes"]}"##,
     ),
     (
         "resume_pipeline_regenerate_section",

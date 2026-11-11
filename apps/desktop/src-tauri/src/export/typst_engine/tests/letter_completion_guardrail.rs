@@ -37,6 +37,7 @@ fn body_only_us_letter_gets_completed_furniture_in_the_pdf_text_layer() {
     let completed = crate::export::letter_shape::complete_letter_text(
         LETTER_FIXTURE_BODY_ONLY_US,
         "us",
+        None,
         "Jane Smith",
     );
     let lower = letter_lower(LetterLayout::Classic, &completed, "us", false);
@@ -112,6 +113,7 @@ fn body_only_de_letter_gets_completed_furniture_in_the_pdf_text_layer() {
     let completed = crate::export::letter_shape::complete_letter_text(
         LETTER_FIXTURE_BODY_ONLY_DE,
         "de",
+        None,
         "Max Müller",
     );
     let lower = letter_lower(LetterLayout::Classic, &completed, "de", false);

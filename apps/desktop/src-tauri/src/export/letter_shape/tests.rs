@@ -4,7 +4,7 @@ use super::*;
 fn completes_a_body_only_de_letter() {
     let body = "Ich schreibe Ihnen, um mein Interesse an der Stelle als \
                  Softwareentwickler auszudrücken.";
-    let out = complete_letter_text(body, "de", "Max Müller");
+    let out = complete_letter_text(body, "de", None, "Max Müller");
     assert!(
         out.starts_with("Sehr geehrte Damen und Herren,\n\n"),
         "got: {out:?}"
@@ -20,7 +20,7 @@ fn completes_a_body_only_de_letter() {
 #[test]
 fn completes_a_body_only_us_letter_with_the_english_pair() {
     let body = "I am writing to express my interest in the Software Engineer role.";
-    let out = complete_letter_text(body, "us", "Jane Smith");
+    let out = complete_letter_text(body, "us", None, "Jane Smith");
     assert!(out.starts_with("Dear Hiring Manager,\n\n"), "got: {out:?}");
     assert!(out.contains(body));
     assert!(
@@ -37,20 +37,26 @@ fn completes_a_body_only_us_letter_with_the_english_pair() {
 fn is_a_noop_on_an_already_complete_letter() {
     let complete =
         "Dear Hiring Manager,\n\nI am writing about the role.\n\nSincerely,\nJane Smith\n";
-    assert_eq!(complete_letter_text(complete, "us", "Jane Smith"), complete);
+    assert_eq!(
+        complete_letter_text(complete, "us", None, "Jane Smith"),
+        complete
+    );
 }
 
 #[test]
 fn blank_input_is_returned_unchanged() {
-    assert_eq!(complete_letter_text("", "us", "Jane Smith"), "");
-    assert_eq!(complete_letter_text("   \n\t ", "de", "Max"), "   \n\t ");
+    assert_eq!(complete_letter_text("", "us", None, "Jane Smith"), "");
+    assert_eq!(
+        complete_letter_text("   \n\t ", "de", None, "Max"),
+        "   \n\t "
+    );
 }
 
 /// No candidate name known: the sign-off is still added, but with no
 /// dangling blank name line under it.
 #[test]
 fn skips_the_name_line_when_the_name_is_blank() {
-    let out = complete_letter_text("Body text here.", "us", "");
+    let out = complete_letter_text("Body text here.", "us", None, "");
     assert!(out.trim_end().ends_with("Sincerely,"), "got: {out:?}");
 }
 
@@ -59,7 +65,7 @@ fn skips_the_name_line_when_the_name_is_blank() {
 #[test]
 fn adds_only_the_missing_half() {
     let has_salutation_only = "Dear Hiring Manager,\n\nBody text here.";
-    let out = complete_letter_text(has_salutation_only, "us", "Jane Smith");
+    let out = complete_letter_text(has_salutation_only, "us", None, "Jane Smith");
     assert_eq!(out.matches("Dear Hiring Manager,").count(), 1);
     assert!(
         out.trim_end().ends_with("Sincerely,\nJane Smith"),
@@ -67,7 +73,7 @@ fn adds_only_the_missing_half() {
     );
 
     let has_signoff_only = "Body text here.\n\nSincerely,\nJane Smith";
-    let out2 = complete_letter_text(has_signoff_only, "us", "Jane Smith");
+    let out2 = complete_letter_text(has_signoff_only, "us", None, "Jane Smith");
     assert_eq!(out2.matches("Sincerely,").count(), 1);
     assert!(
         out2.starts_with("Dear Hiring Manager,\n\n"),
@@ -85,7 +91,7 @@ fn adds_only_the_missing_half() {
 fn inserts_the_salutation_after_a_leading_subject_line() {
     let body = "Betreff: Bewerbung als Software Engineer\n\n\
                  Ich bringe sechs Jahre Erfahrung mit.";
-    let out = complete_letter_text(body, "de", "Max Müller");
+    let out = complete_letter_text(body, "de", None, "Max Müller");
     assert!(
         out.starts_with(
             "Betreff: Bewerbung als Software Engineer\n\nSehr geehrte Damen und Herren,\n\n"
@@ -98,7 +104,7 @@ fn inserts_the_salutation_after_a_leading_subject_line() {
 #[test]
 fn inserts_the_salutation_after_a_leading_date_line() {
     let body = "Frankfurt, 12. Januar 2025\n\nIch bringe sechs Jahre Erfahrung mit.";
-    let out = complete_letter_text(body, "de", "Max Müller");
+    let out = complete_letter_text(body, "de", None, "Max Müller");
     assert!(
         out.starts_with("Frankfurt, 12. Januar 2025\n\nSehr geehrte Damen und Herren,\n\n"),
         "the date line must stay ahead of the salutation: {out:?}"
@@ -109,7 +115,7 @@ fn inserts_the_salutation_after_a_leading_date_line() {
 fn inserts_the_salutation_after_subject_and_date_in_either_order() {
     let subject_then_date = "Betreff: Bewerbung als Software Engineer\n\
                               \n12. Januar 2025\n\nIch bringe Erfahrung mit.";
-    let out = complete_letter_text(subject_then_date, "de", "Max Müller");
+    let out = complete_letter_text(subject_then_date, "de", None, "Max Müller");
     assert!(
         out.starts_with(
             "Betreff: Bewerbung als Software Engineer\n\n12. Januar 2025\n\n\
@@ -120,7 +126,7 @@ fn inserts_the_salutation_after_subject_and_date_in_either_order() {
 
     let date_then_subject = "12. Januar 2025\n\nBetreff: Bewerbung als Software Engineer\n\n\
                               Ich bringe Erfahrung mit.";
-    let out2 = complete_letter_text(date_then_subject, "de", "Max Müller");
+    let out2 = complete_letter_text(date_then_subject, "de", None, "Max Müller");
     assert!(
         out2.starts_with(
             "12. Januar 2025\n\nBetreff: Bewerbung als Software Engineer\n\n\
@@ -136,7 +142,7 @@ fn inserts_the_salutation_after_subject_and_date_in_either_order() {
 #[test]
 fn a_market_with_no_subject_line_convention_is_unaffected() {
     let body = "I am writing to express my interest in the Software Engineer role.";
-    let out = complete_letter_text(body, "us", "Jane Smith");
+    let out = complete_letter_text(body, "us", None, "Jane Smith");
     assert!(out.starts_with("Dear Hiring Manager,\n\n"), "got: {out:?}");
 }
 
@@ -147,7 +153,40 @@ fn a_market_with_no_subject_line_convention_is_unaffected() {
 fn is_idempotent_with_leading_furniture() {
     let body = "Betreff: Bewerbung als Software Engineer\n\n12. Januar 2025\n\n\
                  Ich bringe sechs Jahre Erfahrung mit.";
-    let once = complete_letter_text(body, "de", "Max Müller");
-    let twice = complete_letter_text(&once, "de", "Max Müller");
+    let once = complete_letter_text(body, "de", None, "Max Müller");
+    let twice = complete_letter_text(&once, "de", None, "Max Müller");
     assert_eq!(once, twice, "once: {once:?}\ntwice: {twice:?}");
+}
+
+#[test]
+fn an_english_letter_on_a_german_market_gets_the_english_pair() {
+    let body = "I am writing to apply for the Software Engineer role.";
+    let out = complete_letter_text(body, "de", Some("en"), "Max Müller");
+    assert!(out.starts_with("Dear Hiring Manager,\n\n"), "got: {out:?}");
+    assert!(
+        out.trim_end().ends_with("Sincerely,\nMax Müller"),
+        "got: {out:?}"
+    );
+    assert!(!out.contains("Sehr geehrte") && !out.contains("Grüßen"));
+}
+
+#[test]
+fn a_german_letter_on_a_german_market_keeps_the_german_pair() {
+    let out = complete_letter_text("Ich bewerbe mich.", "de", Some("de-DE"), "Max Müller");
+    assert!(
+        out.starts_with("Sehr geehrte Damen und Herren,\n\n"),
+        "got: {out:?}"
+    );
+    assert!(
+        out.trim_end()
+            .ends_with("Mit freundlichen Grüßen\nMax Müller"),
+        "got: {out:?}"
+    );
+}
+
+#[test]
+fn a_japanese_letter_on_the_us_market_gets_the_japanese_pair() {
+    let out = complete_letter_text("志望いたします。", "us", Some("ja"), "山田 太郎");
+    assert!(out.starts_with("採用ご担当者様\n\n"), "got: {out:?}");
+    assert!(!out.contains("Dear") && !out.contains("Sincerely"));
 }

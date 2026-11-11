@@ -165,7 +165,7 @@ pub(super) fn tools(tier: Tier) -> Vec<Value> {
             TOOL_BEST_MATCHES,
             "Best Matches",
             &format!(
-                "Rows are ordered by the app's ranking, given by each row's `rank` (1 = first): combined-scored rows come first, then keyword-scored rows, and within a block rows with a description come before description-less ones, then by score descending. So a lower `score` can sit above a higher one across those boundaries; that is the intended order, not a bug. {UNTRUSTED_FIELDS_NOTICE}"
+                "Rows are ordered by the app's ranking, given by each row's `rank` (1 = first, the position before any `query` filter): combined-scored rows come first, then keyword-scored rows, and within a block rows with a description come before description-less ones, then by score descending. So a lower `score` can sit above a higher one across those boundaries; that is the intended order, not a bug. {UNTRUSTED_FIELDS_NOTICE}"
             ),
             schema_object(
                 json!({

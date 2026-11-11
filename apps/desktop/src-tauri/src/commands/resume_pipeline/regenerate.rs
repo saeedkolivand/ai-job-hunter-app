@@ -174,7 +174,7 @@ pub async fn resume_pipeline_regenerate_section(
         SectionOutcome::Replaced(spliced) => spliced,
         SectionOutcome::Unusable => {
             span.end(false);
-            return Err(AppError::Provider(
+            return Err(AppError::Parse(
                 "The model's replacement section came back empty or truncated, so nothing was \
                  changed. Try again."
                     .to_string(),

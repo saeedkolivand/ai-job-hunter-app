@@ -4,14 +4,17 @@ import {
   buildApplicantDetailsBlock,
   buildCompanyResearchBlock,
   buildCoverLetterPrompt,
+  buildEmphasisBlock,
   buildEmphasisDirectivesBlock,
   buildGroundingBlock,
   buildJobAdBlock,
+  buildLetterEmphasisBlock,
   buildSalaryRangeBlock,
   buildWebSearchBlock,
   EMPHASIS_OPTIONS,
   type EmphasisId,
   resumeMentions,
+  sourceCased,
 } from '../index';
 import { META, RESUME_FOR_GROUNDING, RESUME_WITH_LINKS } from '../test-support';
 
@@ -331,5 +334,42 @@ describe('applicant preferences block', () => {
     );
     expect(prompt).toContain('<applicant_details>');
     expect(prompt).toContain('€70,000');
+  });
+});
+
+describe('emphasis keeps the résumé spelling', () => {
+  const resume = 'Built the client in React and Node.js, deployed on AWS with CI/CD.';
+
+  it('maps a normalized lowercase key back to the source casing', () => {
+    expect(sourceCased('react', resume)).toBe('React');
+    expect(sourceCased('node.js', resume)).toBe('Node.js');
+    expect(sourceCased('aws', resume)).toBe('AWS');
+    expect(sourceCased('ci/cd', resume)).toBe('CI/CD');
+  });
+
+  it('matches whole words only and leaves an unmentioned term untouched', () => {
+    expect(sourceCased('go', 'Category management')).toBe('go');
+    expect(sourceCased('kubernetes', resume)).toBe('kubernetes');
+    expect(sourceCased('react')).toBe('react');
+  });
+
+  it('prefers the mixed-case spelling over a heading or a prose word', () => {
+    const body = 'SKILLS: REACT\nBuilt the go-to-market plan. Languages: Go, React.';
+    expect(sourceCased('react', body)).toBe('React');
+    expect(sourceCased('go', body)).toBe('Go');
+    expect(sourceCased('react', 'REACT only')).toBe('REACT');
+    expect(sourceCased('aws', 'Aws notes, AWS usage')).toBe('AWS');
+    expect(sourceCased('typescript', 'Typescript and TypeScript')).toBe('TypeScript');
+  });
+
+  it('bolds the source spelling in both emphasis blocks, never the key', () => {
+    const resumeBlock = buildEmphasisBlock(['react', 'aws'], resume);
+    expect(resumeBlock).toContain('**React**');
+    expect(resumeBlock).toContain('**AWS**');
+    expect(resumeBlock).not.toContain('**react**');
+    const letterBlock = buildLetterEmphasisBlock(['react', 'ai'], `${resume} Some AI work.`);
+    expect(letterBlock).toContain('**React**');
+    expect(letterBlock).toContain('**AI**');
+    expect(letterBlock).not.toContain('**ai**');
   });
 });

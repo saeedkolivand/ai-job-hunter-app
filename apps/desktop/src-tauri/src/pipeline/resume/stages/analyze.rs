@@ -23,6 +23,19 @@ use crate::pipeline::Stage;
 
 pub struct AnalyzeJob;
 
+/// A structurally valid but empty analysis is the model answering nothing usable. `Parse`, not
+/// `Provider`: the provider answered, the OUTPUT was unusable, so the run reports `model_output`
+/// rather than a `provider_error` stop (#1496).
+pub(crate) fn require_answered(analysis: &JobAnalysis) -> AppResult<()> {
+    if analysis.is_empty() {
+        return Err(AppError::Parse(
+            "The model returned no requirements for this posting. Try again, or pick a larger model."
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
 const NAME: &str = "analyze_job";
 
 /// Most keyword-kernel terms promoted to must-haves when both model attempts
@@ -163,15 +176,7 @@ impl<'a> Stage<QualityCtx<'a>> for AnalyzeJob {
                 // emphasis, all reported as a clean run.
                 // Intentionally BEFORE the keyword fallback: a model that returns
                 // nothing at all is broken, not weak.
-                if analysis.is_empty() {
-                    // `Parse`, not `Provider`: the provider answered, the OUTPUT was unusable, so the
-                    // run reports `model_output` rather than a `provider_error` stop (#1496).
-                    return Err(AppError::Parse(
-                        "The model returned no requirements for this posting. Try again, or \
-                         pick a larger model."
-                            .to_string(),
-                    ));
-                }
+                require_answered(&analysis)?;
                 // Both attempts missed the floor: real must-haves from the
                 // keyword kernel beat none (the artifact flags it).
                 keyword_fallback = degraded

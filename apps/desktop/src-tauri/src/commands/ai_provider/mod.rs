@@ -63,6 +63,7 @@ pub use chat::{AgentTurn, ChatMsg, Role, StopReason, ToolCall, ToolSpec};
 pub use embeddings::{
     compare, embed_text, EmbeddingSpace, EmbeddingVector, EMBEDDING_VECTOR_VERSION,
 };
+pub(crate) use error_map::is_billing_text;
 pub use error_map::{
     emit_stream_error, extract_error_message, finish_provider_result, friendly_api_error,
     map_completion_transport_error, redact_body_for_log, redact_provider_error,

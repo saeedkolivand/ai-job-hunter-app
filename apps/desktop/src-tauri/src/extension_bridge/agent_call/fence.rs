@@ -23,10 +23,12 @@ use serde_json::Value;
 mod named_fields;
 mod shape_helpers;
 mod shape_tables;
+mod summary_notes;
 mod tables;
 
 pub(super) use named_fields::fence_named_fields_recursive;
 pub(super) use shape_tables::{is_application_answer_shaped, APPLICATION_ANSWER_QUESTION_FIELD};
+pub(in crate::extension_bridge) use summary_notes::is_known_note;
 pub(super) use tables::FENCE_FIELD_NAMES;
 
 /// Fence every [`FENCE_FIELD_NAMES`] string (or string array element)

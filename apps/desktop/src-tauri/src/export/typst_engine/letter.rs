@@ -21,7 +21,7 @@ use super::letterhead::{
     is_letterhead_name, letterhead_initials, looks_like_date, resolve_letterhead_candidate,
 };
 use crate::contact_profile::ContactProfile;
-use crate::locale::letter::conventions;
+use crate::locale::letter::{conventions, conventions_for_letter};
 use crate::model::rich::tokenize_rich;
 
 use model::{page_dims, LetterHead, LetterModel, LetterOpts, LetterRun, LetterStyle};
@@ -96,6 +96,11 @@ pub(super) fn parse_cover_letter(
     ats: bool,
 ) -> LetterModel {
     let conv = conventions(market);
+    // Subject label/use are words of the market's language: only when the letter
+    // is in it (`lang` is the request's target language, `parse_cover_letter`'s
+    // caller passes the tag it renders with). Layout (date/sender/recipient
+    // position, page size) follows the country, so stays on `conv`.
+    let letter_conv = conventions_for_letter(market, Some(lang));
 
     // Page geometry from market convention.
     let (page_w, page_h) = page_dims(market);
@@ -107,8 +112,8 @@ pub(super) fn parse_cover_letter(
         date_position: conv.date_position.clone(),
         sender_position: conv.sender_position.clone(),
         recipient_position: conv.recipient_position.clone(),
-        subject_line_used: conv.subject_line.used,
-        subject_line_label: conv.subject_line.label.clone(),
+        subject_line_used: letter_conv.subject_line.used,
+        subject_line_label: letter_conv.subject_line.label.clone(),
         ats,
     };
 

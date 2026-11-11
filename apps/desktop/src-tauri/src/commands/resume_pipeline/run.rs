@@ -18,7 +18,7 @@ use crate::pipeline::resume::{quality_pipeline, QualityCtx, QualityInput, RunDea
 use crate::pipeline::runs::{PipelineRunStore, RunRow};
 use crate::pipeline::Completer;
 
-use super::failure::{fail_run, ExecuteFailure};
+use super::failure::{fail, fail_run, ExecuteFailure};
 use super::hooks::{self, RunHooks};
 use super::persist::persist_document;
 use super::request;
@@ -90,15 +90,9 @@ pub async fn resume_pipeline_run(
                 guard
             }
             Err(e) => {
-                fail_run(
-                    &app_task,
-                    &job_id_task,
-                    &run_id_task,
-                    &req,
-                    started_at,
-                    e.into(),
-                )
-                .await;
+                // No run row for a limiter or queue refusal: the job row and its event carry
+                // it, and a looping caller must not be able to evict a posting's real runs.
+                fail(&app_task, &cancels, &job_id_task, &e, None).await;
                 return;
             }
         };

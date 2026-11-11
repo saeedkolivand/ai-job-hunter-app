@@ -79,3 +79,47 @@ fn detects_template_placeholder_lines() {
         "I led the migration of our payments service."
     ));
 }
+
+#[test]
+fn a_language_resolves_to_its_home_market() {
+    assert_eq!(
+        conventions_for_language("ja").unwrap().country,
+        conventions("jp").country
+    );
+    assert_eq!(
+        conventions_for_language("zh-CN").unwrap().country,
+        conventions("cn").country
+    );
+    // pt is shared by pt and br; the market whose id is the code wins.
+    assert_eq!(
+        conventions_for_language("pt-BR").unwrap().country,
+        conventions("pt").country
+    );
+    // en is shared by us/uk/intl; the neutral baseline wins.
+    assert_eq!(
+        conventions_for_language("en").unwrap().country,
+        conventions("intl").country
+    );
+    assert!(conventions_for_language("xx").is_none());
+}
+
+#[test]
+fn a_japanese_letter_on_the_us_market_gets_the_japanese_convention() {
+    let c = conventions_for_letter("us", Some("ja"));
+    assert_eq!(c.salutations.generic, "採用ご担当者様");
+    // native language or unknown language keeps the market's own.
+    assert_eq!(
+        conventions_for_letter("de", Some("de-DE"))
+            .subject_line
+            .label,
+        "Betreff"
+    );
+    assert_eq!(
+        conventions_for_letter("de", None).subject_line.label,
+        "Betreff"
+    );
+    assert_eq!(
+        conventions_for_letter("de", Some("en")).subject_line.label,
+        ""
+    );
+}

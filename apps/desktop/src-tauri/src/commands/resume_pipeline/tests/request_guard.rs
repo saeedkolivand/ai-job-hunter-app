@@ -134,6 +134,82 @@ fn an_id_or_text_means_the_url_is_not_looked_up() {
     assert!(!needs_found_job(&with_text));
 }
 
+fn matching(url: &str, found_at: u64, text: &str) -> crate::autopilot::FoundJob {
+    let mut job = described(url, Some(text));
+    job.found_at = found_at;
+    job
+}
+
+/// A row held for an identity review may be a different posting than its url says.
+/// Mutation check: drop the `identity_review.is_none()` clause and this resolves.
+#[test]
+fn a_row_held_for_identity_review_is_skipped_and_the_refusal_says_so() {
+    let mut held = matching("https://boards.example/jobs/5", 1, "description text");
+    held.identity_review = Some(crate::autopilot::IdentityReview {
+        resolved_title: "Other Role".into(),
+        resolved_company: "Other Corp".into(),
+        resolved_url: "https://boards.example/jobs/other".into(),
+        resolved_external_id: None,
+        detected_at: 1,
+    });
+    let aps = [autopilot_with(vec![held])];
+    let mut req = request(json!({ "jobUrl": "https://boards.example/jobs/5" }));
+    assert!(err_text(resolve_found_job(&mut req, &aps)).contains("identity review"));
+    assert!(req.job_ad_text.is_empty());
+}
+
+/// A provisional row's stored text is the truncated snippet, not the full description.
+#[test]
+fn a_provisionally_scored_row_has_no_full_description() {
+    let mut truncated = matching("https://boards.example/jobs/6", 1, "a snippet");
+    truncated.score_provisional = true;
+    let aps = [autopilot_with(vec![truncated])];
+    let mut req = request(json!({ "jobUrl": "https://boards.example/jobs/6" }));
+    assert!(err_text(resolve_found_job(&mut req, &aps)).contains("truncated description"));
+}
+
+/// A usable row is chosen over a held one for the same url, and ties break the same way
+/// whatever the iteration order.
+#[test]
+fn the_pick_among_several_matches_is_deterministic() {
+    let url = "https://boards.example/jobs/7";
+    let mut held = matching(url, 9, &"a very long held description ".repeat(10));
+    held.identity_review = Some(crate::autopilot::IdentityReview {
+        resolved_title: "Other Role".into(),
+        resolved_company: "Other Corp".into(),
+        resolved_url: "https://boards.example/jobs/other".into(),
+        resolved_external_id: None,
+        detected_at: 1,
+    });
+    let older = matching(url, 1, "same length 1");
+    let newer = matching(url, 2, "same length 2");
+    let forward = [autopilot_with(vec![
+        held.clone(),
+        older.clone(),
+        newer.clone(),
+    ])];
+    let reverse = [autopilot_with(vec![newer, older, held])];
+    let pick = |aps: &[Autopilot]| {
+        let mut req = request(json!({ "jobUrl": url }));
+        resolve_found_job(&mut req, aps).expect("resolves");
+        req.job_ad_text
+    };
+    assert_eq!(pick(&forward), "same length 2");
+    assert_eq!(pick(&forward), pick(&reverse));
+}
+
+/// #1497: a stored row that arrived entity-escaped reaches the prompts decoded.
+#[test]
+fn an_escaped_stored_description_is_decoded_before_it_reaches_the_prompts() {
+    let ap = autopilot_with(vec![described(
+        "https://boards.example/jobs/77",
+        Some("&lt;p&gt;Own the payments platform.&lt;/p&gt;"),
+    )]);
+    let mut req = request(json!({ "jobUrl": "https://boards.example/jobs/77" }));
+    resolve_found_job(&mut req, &[ap]).expect("resolves");
+    assert_eq!(req.job_ad_text, "Own the payments platform.");
+}
+
 /// Two postings that differ only by a query-string id collapse under `normalize_job_url` on a
 /// host outside its allowlist. Mutation check: match on the normalized form only and the exact
 /// case picks the longer description of the OTHER job, the ambiguous case resolves silently.
@@ -161,4 +237,28 @@ fn a_job_url_prefers_the_exact_posting_and_refuses_an_ambiguous_collapse() {
     let mut ambiguous = request(json!({ "jobUrl": "https://careers.example.org/view?id=3" }));
     let err = err_text(resolve_found_job(&mut ambiguous, &[ap]));
     assert!(err.contains("jobId"), "{err}");
+}
+
+/// An exact match that is held for review is refused, not swapped for another usable URL that
+/// normalizes to the same key. Mutation check: filter by usability before the exact match and
+/// this resolves to the other posting.
+#[test]
+fn an_unusable_exact_match_is_refused_not_replaced_by_a_normalized_neighbour() {
+    let first = "https://careers.example.org/view?id=1";
+    let second = "https://careers.example.org/view?id=2";
+    let mut held = described(first, Some("held description"));
+    held.identity_review = Some(crate::autopilot::IdentityReview {
+        resolved_title: "Other Role".into(),
+        resolved_company: "Other Corp".into(),
+        resolved_url: "https://careers.example.org/other".into(),
+        resolved_external_id: None,
+        detected_at: 1,
+    });
+    let aps = [autopilot_with(vec![
+        held,
+        described(second, Some("usable text")),
+    ])];
+    let mut req = request(json!({ "jobUrl": first }));
+    assert!(err_text(resolve_found_job(&mut req, &aps)).contains("identity review"));
+    assert!(req.job_ad_text.is_empty());
 }

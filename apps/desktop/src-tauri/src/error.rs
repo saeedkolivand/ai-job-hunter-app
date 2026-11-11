@@ -30,6 +30,12 @@ pub enum AppError {
     /// without echoing the model's own text.
     #[error("{0}")]
     Refusal(String),
+    /// The provider refused for want of credit, quota or a paid plan (HTTP 402, or an
+    /// out-of-quota body on 400/403/429). Typed at the source (`friendly_api_error`, which
+    /// has the status AND the body) so [`FailureKind`] never has to re-parse a message the
+    /// mapper already made lossy. Not retriable: waiting does not add credit.
+    #[error("{0}")]
+    Billing(String),
     /// Persistence: SQLite, filesystem, keychain.
     #[error("{0}")]
     Storage(String),
@@ -68,6 +74,7 @@ pub enum AppError {
 pub type AppResult<T> = Result<T, AppError>;
 
 mod failure_kind;
+pub(crate) use failure_kind::is_billing_text;
 pub use failure_kind::FailureKind;
 
 // `code`/`retriable`/`message` are the structured-error surface consumed by a
@@ -82,6 +89,7 @@ impl AppError {
             AppError::Config(_) => "CONFIG",
             AppError::Network(_) => "NETWORK",
             AppError::Provider(_) => "PROVIDER",
+            AppError::Billing(_) => "BILLING",
             AppError::OutputLimit(_) => "OUTPUT_LIMIT",
             AppError::Refusal(_) => "REFUSAL",
             AppError::Storage(_) => "STORAGE",

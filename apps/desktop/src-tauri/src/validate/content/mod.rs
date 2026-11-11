@@ -46,6 +46,7 @@ mod analysis;
 mod ats;
 mod consistency;
 mod credentials;
+mod dashes;
 mod duplicates;
 mod factual;
 mod issues;
@@ -57,6 +58,7 @@ mod voice;
 
 use self::analysis::significant_chars;
 pub(crate) use self::analysis::{normalize_language, split_sections, Analysis, Section};
+pub(crate) use self::dashes::strip_long_dashes;
 pub(crate) use self::issues::{cap_issues, issue};
 use self::language::language_issues;
 use self::text::{
@@ -108,6 +110,27 @@ pub const FACTUAL_DROPPED_ROLE: &str = "factual.dropped_role";
 pub const FACTUAL_UNSUPPORTED_DATE: &str = "factual.unsupported_date";
 pub const FACTUAL_ALTERED_PROJECT_LINK: &str = "factual.altered_project_link";
 pub const FACTUAL_UNSOURCED_TERM: &str = "factual.unsourced_term";
+/// A skill/tool the job ad names, the source résumé never does, and the output
+/// claims. The Critical twin is the same finding inside a role entry (a named
+/// employer): two codes because a code has one severity, as with the credential
+/// pair above. Both rest on the keyword kernel, never a raw substring.
+pub const FACTUAL_UNSUPPORTED_TERM: &str = "factual.unsupported_term";
+pub const FACTUAL_UNSUPPORTED_ROLE_TERM: &str = "factual.unsupported_role_term";
+/// A skill/tool the source has, but under a different entry than the one the
+/// output attaches it to. Critical inside a role entry, Warning elsewhere.
+pub const FACTUAL_CONFLATED_TERM: &str = "factual.conflated_term";
+pub const FACTUAL_CONFLATED_ROLE_TERM: &str = "factual.conflated_role_term";
+/// A place on a role's header that the source gives that role no such place for.
+pub const FACTUAL_INVENTED_LOCATION: &str = "factual.invented_location";
+/// A place the source names, but not for this role (it appears in the header or
+/// under another job). Advisory: it may be a legitimate restatement.
+pub const FACTUAL_UNSUPPORTED_LOCATION: &str = "factual.unsupported_location";
+/// A bullet sharing almost nothing with its source entry. Advisory: a
+/// paraphrase can legitimately share little.
+pub const FACTUAL_UNSUPPORTED_BULLET: &str = "factual.unsupported_bullet";
+/// A trailing outcome clause ("..., reducing X") or scope claim ("company-wide")
+/// the source entry does not state. Advisory.
+pub const FACTUAL_UNSUPPORTED_OUTCOME: &str = "factual.unsupported_outcome";
 /// A tenure the source résumé cannot support — see `credentials`.
 ///
 /// **A Warning, chosen against the shipping criterion rather than by failing
@@ -234,6 +257,14 @@ pub const CONTENT_ISSUE_CODES: &[(&str, Severity)] = &[
     (ATS_HEADER_IN_BODY, Severity::Critical),
     (ATS_EMPTY_SECTION, Severity::Warning),
     (LETTER_TEMPLATE_PLACEHOLDER, Severity::Critical),
+    (FACTUAL_UNSUPPORTED_ROLE_TERM, Severity::Critical),
+    (FACTUAL_CONFLATED_ROLE_TERM, Severity::Critical),
+    (FACTUAL_INVENTED_LOCATION, Severity::Critical),
+    (FACTUAL_UNSUPPORTED_TERM, Severity::Warning),
+    (FACTUAL_CONFLATED_TERM, Severity::Warning),
+    (FACTUAL_UNSUPPORTED_LOCATION, Severity::Warning),
+    (FACTUAL_UNSUPPORTED_BULLET, Severity::Warning),
+    (FACTUAL_UNSUPPORTED_OUTCOME, Severity::Warning),
     (FACTUAL_UNSOURCED_TERM, Severity::Warning),
     (FACTUAL_INFLATED_EXPERIENCE, Severity::Warning),
     (FACTUAL_UNSOURCED_CREDENTIAL, Severity::Warning),

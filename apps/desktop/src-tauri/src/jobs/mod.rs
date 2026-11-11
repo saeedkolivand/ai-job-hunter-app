@@ -306,7 +306,10 @@ impl JobTracker {
                 let now = now_ms();
                 job.status = JobStatus::Failed;
                 job.error = Some(error);
-                job.result = result;
+                // Only ever ADDS: a `None` must not wipe a result already on the row.
+                if result.is_some() {
+                    job.result = result;
+                }
                 job.updated_at = now;
                 job.finished_at = Some(now);
                 job.clone()

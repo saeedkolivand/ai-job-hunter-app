@@ -131,6 +131,22 @@ fn is_degenerate_key(key: &str) -> bool {
     key.is_empty() || key == "\u{1}"
 }
 
+/// `rerank::by_rank`, but a member that qualifies AND carries real description text wins first
+/// (#1497): a stale bare copy with an inflated score must not stand in for a posting whose
+/// described copy independently qualifies. Scores stay as cached; this only picks which one speaks.
+fn by_representative(a: &FoundJob, b: &FoundJob) -> std::cmp::Ordering {
+    let solid = |j: &FoundJob| {
+        j.score.is_some_and(|s| qualifies(s, j.score_source))
+            && !crate::documents::keywords::description_is_blank(j.description.as_deref())
+    };
+    // Block first (ADR-020: Combined before Keyword); the description preference is only
+    // meaningful inside one block, never across.
+    super::rerank::score_block(a.score_source)
+        .cmp(&super::rerank::score_block(b.score_source))
+        .then_with(|| solid(b).cmp(&solid(a)))
+        .then_with(|| super::rerank::by_rank(a, b))
+}
+
 /// Compute the cross-autopilot best-matches list. Pure: every input the
 /// command wrapper would otherwise reach through `AppHandle` (the dedup
 /// snapshot, which cluster-member keys carry a `dismissed` interaction) is
@@ -176,6 +192,8 @@ pub(super) fn compute_best_matches(
     // records instead of across runs).
     let mut key_order: Vec<String> = Vec::new();
     let mut by_key: HashMap<String, (&FoundJob, Vec<Origin>)> = HashMap::new();
+    // First note carried by ANY copy of a key, so a note on a dropped duplicate copy survives.
+    let mut copy_notes: HashMap<String, String> = HashMap::new();
     for ap in records
         .iter()
         .filter(|ap| ap.status != AutopilotStatus::Archived)
@@ -195,9 +213,12 @@ pub(super) fn compute_best_matches(
                 paused,
                 found_at: job.found_at,
             };
+            if let Some(n) = &job.assistant_notes {
+                copy_notes.entry(key.clone()).or_insert_with(|| n.clone());
+            }
             match by_key.get_mut(&key) {
                 Some((kept, origins)) => {
-                    if super::rerank::by_rank(job, kept) == std::cmp::Ordering::Less {
+                    if by_representative(job, kept) == std::cmp::Ordering::Less {
                         *kept = job;
                     }
                     origins.push(origin);
@@ -247,7 +268,7 @@ pub(super) fn compute_best_matches(
         let best_idx = idxs
             .iter()
             .copied()
-            .min_by(|&a, &b| super::rerank::by_rank(jobs[a], jobs[b]))
+            .min_by(|&a, &b| by_representative(jobs[a], jobs[b]))
             .expect("a cluster group from `by_cluster` is never empty");
 
         // Step 6: unscored clusters never qualify; scored ones must clear
@@ -308,11 +329,15 @@ pub(super) fn compute_best_matches(
         // which on a merged cross-autopilot row can be a different
         // autopilot's résumé/provider context entirely, with no provenance
         // on the payload to say so.
-        let assistant_notes = canonical
-            .assistant_notes
-            .clone()
-            .or_else(|| jobs[best_idx].assistant_notes.clone())
-            .or_else(|| idxs.iter().find_map(|&i| jobs[i].assistant_notes.clone()));
+        let note_of = |i: usize| {
+            jobs[i]
+                .assistant_notes
+                .clone()
+                .or_else(|| copy_notes.get(&key_order[i]).cloned())
+        };
+        let assistant_notes = note_of(canonical_idx)
+            .or_else(|| note_of(best_idx))
+            .or_else(|| idxs.iter().find_map(|&i| note_of(i)));
 
         // One `BestMatchSource` per distinct contributing autopilot — a
         // `BTreeMap` (not `HashMap`) so a cluster whose members span the same

@@ -168,3 +168,35 @@ fn letter_refined_shows_subject_when_market_omits_it() {
         "Classic must NOT render the subject when the market omits it (subject_line_used=false):\n{classic_txt}"
     );
 }
+
+/// An English letter on the German market (Refined, PDF): the market's
+/// "Betreff" caption is a German word and must not label an English subject.
+#[test]
+fn english_letter_on_german_market_has_no_betreff_caption() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    let letter = "Jane Smith\n\nSubject: Application for Software Engineer\n\n\
+                  Dear Hiring Manager,\n\nI am applying for the role.\n\nSincerely,\nJane Smith\n";
+    let render = |lang| {
+        let bytes = render_letter_pdf(
+            letter,
+            &t,
+            None,
+            Some("Jane Smith"),
+            LetterRender {
+                market: "de",
+                lang,
+                layout: LetterLayout::Refined,
+                ats: false,
+            },
+        )
+        .expect("render");
+        pdf_extract::extract_text_from_mem(&bytes)
+            .expect("extract")
+            .to_lowercase()
+    };
+    let en = render("en");
+    assert!(en.contains("application for software engineer"), "{en}");
+    assert!(!en.contains("betreff"), "German label leaked: {en}");
+    // Same letter declared German on the German market keeps the label.
+    assert!(render("de").contains("betreff"));
+}

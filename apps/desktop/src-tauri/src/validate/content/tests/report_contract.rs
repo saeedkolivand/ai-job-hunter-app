@@ -68,7 +68,7 @@ fn code_table_is_complete_and_unique() {
     }
     assert_eq!(
         CONTENT_ISSUE_CODES.len(),
-        35,
+        43,
         "the code vocabulary changed — update the renderer's i18n keys too"
     );
     let criticals = CONTENT_ISSUE_CODES
@@ -76,7 +76,7 @@ fn code_table_is_complete_and_unique() {
         .filter(|(_, s)| *s == Severity::Critical)
         .count();
     assert_eq!(
-        criticals, 8,
+        criticals, 11,
         "Criticals are deterministic factual/language/structure defects only, and every \
          one needs a RESOLUTION PATH or its run sits in needsReview forever: either a \
          REGENERATE (what `repair` does with a section-keyed finding — which is why \

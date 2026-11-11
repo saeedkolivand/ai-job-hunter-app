@@ -52,6 +52,9 @@ const FABRICATION_CODES: &[&str] = &[
     crate::validate::content::FACTUAL_UNSOURCED_TERM,
     crate::validate::content::FACTUAL_ALTERED_PROJECT_LINK,
     crate::validate::content::FACTUAL_UNSOURCED_CERTIFICATION,
+    crate::validate::content::FACTUAL_UNSUPPORTED_ROLE_TERM,
+    crate::validate::content::FACTUAL_CONFLATED_ROLE_TERM,
+    crate::validate::content::FACTUAL_INVENTED_LOCATION,
 ];
 
 /// djb2, byte-for-byte the renderer's `hashText`.
@@ -128,9 +131,25 @@ fn containing_line(text: &str, span: &str) -> Option<String> {
     (!line.is_empty() && line.chars().count() <= MAX_LINE_CHARS).then(|| line.to_string())
 }
 
+/// Whether a Remove may delete the line a finding sits on.
+///
+/// Not for a finding whose line is more than the finding: an invented location
+/// sits on the role's HEADER (deleting it orphans the bullets under it), and a
+/// letter's term finding sits in a whole paragraph. Those entries carry no
+/// anchor, so the renderer records the verdict and tells the user to edit the
+/// text itself; only Keep ever resolves them automatically.
+fn allows_line_removal(code: &str, is_letter: bool) -> bool {
+    use crate::validate::content::{
+        FACTUAL_CONFLATED_ROLE_TERM, FACTUAL_INVENTED_LOCATION, FACTUAL_UNSUPPORTED_ROLE_TERM,
+    };
+    code != FACTUAL_INVENTED_LOCATION
+        && !(is_letter
+            && (code == FACTUAL_UNSUPPORTED_ROLE_TERM || code == FACTUAL_CONFLATED_ROLE_TERM))
+}
+
 /// One flagged span awaiting (or carrying) the user's verdict, with the
 /// document line it sits on ([`containing_line`]).
-fn fabrications(report: &ContentReport, text: &str) -> Vec<Value> {
+fn fabrications(report: &ContentReport, text: &str, is_letter: bool) -> Vec<Value> {
     report
         .issues
         .iter()
@@ -160,7 +179,8 @@ fn fabrications(report: &ContentReport, text: &str) -> Vec<Value> {
             {
                 return None;
             }
-            let line = containing_line(text, &evidence);
+            let line = containing_line(text, &evidence)
+                .filter(|_| allows_line_removal(issue.code, is_letter));
             let mut entry = Map::new();
             entry.insert(
                 "issueKey".to_string(),
@@ -177,14 +197,14 @@ fn fabrications(report: &ContentReport, text: &str) -> Vec<Value> {
 }
 
 /// One document's slot.
-fn slot(report: &ContentReport, text: &str) -> Value {
+fn slot(report: &ContentReport, text: &str, is_letter: bool) -> Value {
     let mut slot = Map::new();
     slot.insert(
         "report".to_string(),
         serde_json::to_value(report).unwrap_or_else(|_| json!({})),
     );
     slot.insert("sourceTextHash".to_string(), json!(hash_text(text)));
-    let flagged = fabrications(report, text);
+    let flagged = fabrications(report, text, is_letter);
     // A document with nothing flagged carries NO key, rather than an empty
     // array: the renderer's "does this run still need review?" test is the
     // presence of an undecided entry, and an empty array is a shape it would
@@ -211,10 +231,10 @@ pub fn build(
     wrapper.insert("pipeline".to_string(), json!(depth));
     wrapper.insert("generatedAt".to_string(), json!(generated_at));
     if let Some((report, text)) = resume {
-        wrapper.insert("resume".to_string(), slot(report, text));
+        wrapper.insert("resume".to_string(), slot(report, text, false));
     }
     if let Some((report, text)) = cover_letter {
-        wrapper.insert("coverLetter".to_string(), slot(report, text));
+        wrapper.insert("coverLetter".to_string(), slot(report, text, true));
     }
     serde_json::to_string(&Value::Object(wrapper)).unwrap_or_default()
 }

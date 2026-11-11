@@ -114,7 +114,12 @@ pub(in crate::extension_bridge::agent_read) fn project_automation(
                 error: s.error.as_deref().map(fence_board_text),
                 skipped: s.skipped.as_deref().map(fence_board_text),
                 truncated: s.truncated.as_deref().map(fence_board_text),
-                notes: s.notes.clone(),
+                notes: s
+                    .notes
+                    .iter()
+                    .filter(|n| crate::extension_bridge::agent_call::is_known_note(n))
+                    .cloned()
+                    .collect(),
             })
             .collect(),
         last_run_at: ap.last_run_at,
