@@ -61,3 +61,54 @@ fn a_qualifying_described_member_beats_a_higher_scored_bare_copy() {
     assert!(out.matches[0].has_description);
     assert_eq!(out.matches[0].score, 70.0);
 }
+
+/// The description preference never crosses a block: a bare Combined copy stays the representative
+/// over a described Keyword copy, so the row keeps its Combined block (ADR-020).
+#[test]
+fn a_described_keyword_copy_does_not_replace_a_bare_combined_copy() {
+    let url = "https://a.example.com/job";
+    let bare = FoundJob {
+        description: None,
+        ..job(
+            url,
+            "A Engineer",
+            "AltCo",
+            Some(80.0),
+            ScoreSource::Combined,
+        )
+    };
+    let described = FoundJob {
+        description: Some("Build and run services in Rust and Postgres.".to_string()),
+        ..job(url, "A Engineer", "AltCo", Some(60.0), ScoreSource::Keyword)
+    };
+    let out = best(&[
+        autopilot("one", AutopilotStatus::Active, vec![bare]),
+        autopilot("two", AutopilotStatus::Active, vec![described]),
+    ]);
+    assert_eq!(out.matches.len(), 1);
+    assert_eq!(out.matches[0].score_source, ScoreSource::Combined);
+    assert_eq!(out.matches[0].score, 80.0);
+}
+
+/// A note on a dropped bare duplicate survives when the chosen described copy carries none.
+#[test]
+fn a_dropped_duplicate_copys_note_survives() {
+    let url = "https://a.example.com/job";
+    let bare = FoundJob {
+        description: None,
+        assistant_notes: Some("note on the bare copy".into()),
+        ..job(url, "A Engineer", "AltCo", Some(95.0), ScoreSource::Keyword)
+    };
+    let described = FoundJob {
+        description: Some("Build and run services in Rust and Postgres.".to_string()),
+        ..job(url, "A Engineer", "AltCo", Some(70.0), ScoreSource::Keyword)
+    };
+    let out = best(&[
+        autopilot("one", AutopilotStatus::Active, vec![bare]),
+        autopilot("two", AutopilotStatus::Active, vec![described]),
+    ]);
+    assert_eq!(
+        out.matches[0].assistant_notes.as_deref(),
+        Some("note on the bare copy")
+    );
+}

@@ -236,6 +236,24 @@ describe('useResumePipelineSession — failures', () => {
       consoleError.mockRestore();
     });
 
+    // A queue/rate-limit refusal writes no run row and its `job.failed` fired while nothing was
+    // mounted. Mutation check: drop the mount-time `fetchJob` effect and this stays `queued`.
+    it('learns a refusal from the job registry when it remounts with no record', async () => {
+      fetchJobMock.mockResolvedValue({ status: 'failed', error: 'queue is full' });
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      await waitFor(() => expect(result.current.state).toBe('error'));
+      expect(fetchJobMock).toHaveBeenCalledWith(JOB_ID);
+      expect(result.current.error).toBe('queue is full');
+    });
+
+    it('keeps a remounted run queued when its job is still queued and has no record', async () => {
+      fetchJobMock.mockResolvedValue({ status: 'queued' });
+      const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      await waitFor(() => expect(fetchJobMock).toHaveBeenCalledWith(JOB_ID));
+      expect(result.current.state).toBe('queued');
+      expect(result.current.error).toBeNull();
+    });
+
     it('ignores a failure belonging to another job', () => {
       const { result } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
       act(() => bus.job?.(jobFailed('someone-elses-job', 'boom')));

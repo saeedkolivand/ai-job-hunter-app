@@ -310,3 +310,17 @@ fn test_has_escaped_markup_leaves_prose_and_real_html_alone() {
         assert_eq!(html_to_markdown(prose), prose, "{prose}");
     }
 }
+
+#[test]
+fn test_has_escaped_markup_detects_an_opening_only_fragment() {
+    let fragment = "&lt;li&gt;Build APIs&lt;li&gt;Maintain services";
+    assert!(has_escaped_markup(fragment));
+    assert!(has_escaped_markup(
+        "&lt;p class=\"x\"&gt;Intro&lt;ul&gt;&lt;li&gt;Rust"
+    ));
+    assert!(html_to_markdown(fragment).contains("Maintain services"));
+    // One mention of a block element is prose, not markup.
+    assert!(!has_escaped_markup(
+        "the &lt;div&gt; element groups content"
+    ));
+}

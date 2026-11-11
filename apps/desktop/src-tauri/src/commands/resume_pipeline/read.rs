@@ -74,32 +74,29 @@ pub(super) fn summary(row: &RunRow) -> Value {
     })
 }
 
-/// Longest free-text failure message a row may carry through to a reader.
-const MESSAGE_CAP: usize = 200;
+/// What a failed row without a recognised kind reports.
+const GENERIC_MESSAGE: &str = "The run failed.";
 
 /// The three failure fields of a run's metrics, rebuilt from what parses — and written back into
 /// `metrics`, so the copy inside the returned blob is the same cleaned value, not the raw one.
 ///
 /// The blob is storage a restored backup can fill with anything, and these fields reach agents
 /// unfenced, so nothing is passed through as found: `errorKind` and `research` are parsed into
-/// their closed vocabularies (anything else is dropped), a row with a kind reports that kind's
-/// fixed sentence rather than whatever text is stored, and a row with only free text gets it
-/// shape-redacted and capped. (Rows this build writes only store free text for app-authored
-/// validation and config errors.)
+/// their closed vocabularies (anything else is dropped), and a row reports its kind's fixed
+/// sentence, or a generic one when it has a message but no kind. Stored text never reaches a
+/// reader, the metrics copy included.
 fn clean_failure_fields(metrics: &mut Value) -> (Value, Value, Value) {
     let kind = metrics
         .get("errorKind")
         .and_then(Value::as_str)
         .and_then(FailureKind::parse);
-    let message = match (kind, metrics.get("errorMessage").and_then(Value::as_str)) {
-        (Some(kind), _) => Some(kind.summary().to_string()),
-        (None, Some(text)) => Some(
-            crate::observability::sanitize_reason(text)
-                .chars()
-                .take(MESSAGE_CAP)
-                .collect::<String>(),
-        ),
-        (None, None) => None,
+    // A stored message is never echoed: a row records no provenance, so app-authored text cannot
+    // be told from a planted one. A kind reports its sentence; a stored message without a
+    // recognised kind reports the generic one.
+    let message = match (kind, metrics.get("errorMessage").is_some()) {
+        (Some(kind), _) => Some(kind.summary()),
+        (None, true) => Some(GENERIC_MESSAGE),
+        (None, false) => None,
     };
     let research = metrics.get("research").and_then(|r| {
         let status = r.get("status").and_then(Value::as_str)?;

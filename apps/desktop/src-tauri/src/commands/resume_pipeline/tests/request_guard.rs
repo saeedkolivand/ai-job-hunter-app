@@ -238,3 +238,27 @@ fn a_job_url_prefers_the_exact_posting_and_refuses_an_ambiguous_collapse() {
     let err = err_text(resolve_found_job(&mut ambiguous, &[ap]));
     assert!(err.contains("jobId"), "{err}");
 }
+
+/// An exact match that is held for review is refused, not swapped for another usable URL that
+/// normalizes to the same key. Mutation check: filter by usability before the exact match and
+/// this resolves to the other posting.
+#[test]
+fn an_unusable_exact_match_is_refused_not_replaced_by_a_normalized_neighbour() {
+    let first = "https://careers.example.org/view?id=1";
+    let second = "https://careers.example.org/view?id=2";
+    let mut held = described(first, Some("held description"));
+    held.identity_review = Some(crate::autopilot::IdentityReview {
+        resolved_title: "Other Role".into(),
+        resolved_company: "Other Corp".into(),
+        resolved_url: "https://careers.example.org/other".into(),
+        resolved_external_id: None,
+        detected_at: 1,
+    });
+    let aps = [autopilot_with(vec![
+        held,
+        described(second, Some("usable text")),
+    ])];
+    let mut req = request(json!({ "jobUrl": first }));
+    assert!(err_text(resolve_found_job(&mut req, &aps)).contains("identity review"));
+    assert!(req.job_ad_text.is_empty());
+}

@@ -115,3 +115,65 @@ fn a_declared_tool_in_a_german_target_is_still_conflation() {
         report.issues
     );
 }
+
+#[test]
+fn an_invented_equivalent_spelling_of_a_place_is_critical() {
+    // "Vienna" and "Zurich" are equivalents of listed tokens, not listed themselves.
+    for place in ["Vienna", "Zurich"] {
+        let generated = en_with(
+            "Backend Developer | Globex Logistics | 2018 - 2021",
+            &format!("Backend Developer | Globex Logistics | {place} | 2018 - 2021"),
+        );
+        let report = report_against(&generated, EN_SOURCE);
+        assert_eq!(
+            count(&report, FACTUAL_INVENTED_LOCATION),
+            1,
+            "{place}: {:#?}",
+            report.issues
+        );
+    }
+}
+
+const ACME_TWO_SOURCE: &str = "Jane Doe\n\nEXPERIENCE\n\n\
+    Backend Engineer | Acme Payments | 2021 - Present\n\
+    - Wrote the ledger service in Rust and cached it in Redis\n\n\
+    Platform Engineer | Acme Logistics | 2018 - 2021\n\
+    - Built the GraphQL gateway for the fleet dashboards\n\n\
+    SKILLS\n\nRust · Redis · GraphQL\n";
+
+#[test]
+fn a_shared_generic_employer_word_does_not_merge_two_employers() {
+    // "Acme" alone must not make Acme Payments a counterpart of Acme Logistics, or the union of
+    // their evidence hides GraphQL moving across employers.
+    let generated = ACME_TWO_SOURCE.replace(
+        "cached it in Redis\n",
+        "cached it in Redis\n    - Exposed the ledger through a GraphQL gateway\n",
+    );
+    let report = report_for(&generated, ACME_TWO_SOURCE, "We run Rust and GraphQL.", &[]);
+    let hits =
+        count(&report, FACTUAL_CONFLATED_ROLE_TERM) + count(&report, FACTUAL_UNSUPPORTED_ROLE_TERM);
+    assert_eq!(hits, 1, "{:#?}", report.issues);
+}
+
+#[test]
+fn a_faithful_two_acme_resume_stays_silent() {
+    let report = report_for(
+        ACME_TWO_SOURCE,
+        ACME_TWO_SOURCE,
+        "We run Rust and GraphQL.",
+        &[],
+    );
+    silent(&report, FACTUAL_CONFLATED_ROLE_TERM);
+    silent(&report, FACTUAL_UNSUPPORTED_ROLE_TERM);
+}
+
+#[test]
+fn a_contractor_line_matches_either_employer_it_names() {
+    let source = ACME_TWO_SOURCE.replace("Acme Logistics", "Initech (via Globex Logistics)");
+    for shown in ["Initech", "Globex Logistics"] {
+        let generated = source.replace("Initech (via Globex Logistics)", shown);
+        let report = report_for(&generated, &source, "We run Rust and GraphQL.", &[]);
+        silent(&report, FACTUAL_CONFLATED_ROLE_TERM);
+        silent(&report, FACTUAL_UNSUPPORTED_ROLE_TERM);
+    }
+}

@@ -74,6 +74,7 @@ pub enum AppError {
 pub type AppResult<T> = Result<T, AppError>;
 
 mod failure_kind;
+pub(crate) use failure_kind::is_billing_text;
 pub use failure_kind::FailureKind;
 
 // `code`/`retriable`/`message` are the structured-error surface consumed by a
