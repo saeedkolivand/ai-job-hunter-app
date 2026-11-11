@@ -12,7 +12,8 @@ import {
   collectContractInterfaceFields,
   mergeCatalogueEntry,
 } from './gen-agent-catalogue';
-import { toInputJsonSchema } from './gen-agent-catalogue/field-sources';
+import { type FieldSources, toInputJsonSchema } from './gen-agent-catalogue/field-sources';
+import { applyOverrides } from './gen-agent-catalogue/schema-overrides';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -213,5 +214,39 @@ describe('@agent note (issue #1491)', () => {
 
   it('is stripped from the text docs/API.md renders', () => {
     expect(docOf(member, sf)).toBe('Short summary.');
+  });
+});
+
+// `.refine`s never reach z.toJSONSchema; `resume_pipeline_run.req` re-adds them as `allOf`/`anyOf`.
+describe('applyOverrides — resume_pipeline_run rules', () => {
+  const sources = (names: string[]) =>
+    ({
+      zodSchemas: Object.fromEntries(names.map((n) => [n, z.object({ a: z.string().optional() })])),
+    }) as unknown as FieldSources;
+  const entries = () =>
+    new Map([
+      ['autopilot_update', { args: [{ name: 'req' }] }],
+      ['job_preferences_set', { args: [{ name: 'prefs' }] }],
+      ['resume_pipeline_run', { args: [{ name: 'req' }] }],
+    ]) as unknown as Map<string, CatalogueEntry>;
+  const NAMES = ['AutopilotUpdateSchema', 'JobPreferencesSchema', 'ResumePipelineRunSchema'];
+
+  it('adds a resume source, a posting source and an output rule', () => {
+    const map = entries();
+    applyOverrides(map, sources(NAMES));
+    const schema = JSON.parse(map.get('resume_pipeline_run')?.args[0]?.schema ?? '{}');
+    expect(schema.allOf).toHaveLength(3);
+    expect(schema.allOf[0].anyOf.map((o: { required: string[] }) => o.required[0])).toEqual([
+      'resumeId',
+      'resumeText',
+    ]);
+    expect(schema.allOf[1].anyOf).toHaveLength(3);
+    expect(schema.allOf[0].anyOf[0].properties.resumeId.pattern).toBe(String.raw`\S`);
+    expect(JSON.parse(map.get('autopilot_update')?.args[0]?.schema ?? '{}').allOf).toBeUndefined();
+  });
+
+  it('throws when a row matches no catalogued argument or schema', () => {
+    expect(() => applyOverrides(new Map(), sources(NAMES))).toThrow(/matches no catalogued/);
+    expect(() => applyOverrides(entries(), sources([]))).toThrow(/is not exported/);
   });
 });
