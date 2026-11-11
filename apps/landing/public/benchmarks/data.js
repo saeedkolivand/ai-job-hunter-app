@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794343384948,
+  "lastUpdate": 1794398580833,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "1d70c491c3f327d84da5a81059a65da4689ad1d3",
-          "message": "feat(scraping): make freehire its own selectable board (#1074)\n\n* feat(scraping): make freehire its own selectable board\n\nfreehire was only reachable as the aggregator's keyless last tier, so a user\nwho wanted it had to select the aggregator and hope every keyed provider\nfailed or came back empty first. It is now a board in the catalog, chosen\nlike any other.\n\nMoved out of the aggregator entirely rather than kept in both places, so no\nsearch fetches it twice and each board does one thing. The consequences are\ndeliberate:\n\n- The aggregator is keyed providers only again, so needs_keys() reports true\n  without keys and the needs-keys skip means what it says. That skip was\n  unreachable while an always-on keyless tier sat underneath.\n- A failure is now REPORTED instead of degraded to an empty result. Silent\n  degradation existed because nobody had opted into an always-on tier; picking\n  the board in the catalog is opting in, and an empty result would read as \"no\n  such jobs\" rather than \"the source is down\".\n- supports_location stays false and no country is sent. freehire's geography\n  facets are one OR-group - measured, countries=gb returns 89,211 and\n  countries=gb+cities=London returns 89,617, so naming a place WIDENS the\n  result. Claiming server-side support would switch off the engine's central\n  post-filter, the only thing actually narrowing this board to the location.\n\nThe tier's own rules went with the tier: last-rung position, skip-on-real-\nfailure and merge-behind-sparse-hits are gone, along with their tests and the\nflag in primary_chain that existed only to feed the skip-on-failure guard. The\nclient tests moved with the client and still pass unchanged.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* docs(landing): sync the architecture map's board count to the registry\n\nThe copy-drift guard reads the SCRAPERS registry, and freehire's registration\nmade the map's 24 stale.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* docs(scraping): drop the board count that just went stale, and thin the freehire section\n\nThe page opened with \"board registry (24 active scrapers)\". Registering\nfreehire made that 25, so the number silently became a lie - which is the\nfailure rule 17 describes, and bumping it to 25 would only reset the same trap.\nReplaced with a pointer to SCRAPERS itself.\n\nThe freehire section this PR added also spelled out the endpoint path. The\nmodule doc owns that, so the section now names what lives there instead of\nrepeating it.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
-          "timestamp": "2026-08-22T08:06:28+02:00",
-          "tree_id": "d50b95a9316fd1ab762389a8b2432743bd05d221",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/1d70c491c3f327d84da5a81059a65da4689ad1d3"
-        },
-        "date": 1787380100582,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 1696227,
-            "range": "± 55237",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2043786,
-            "range": "± 10924",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 189252,
-            "range": "± 3048",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4193,6 +4151,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 265704,
             "range": "± 8296",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1bd7f75701ca799ecf01133762313a1f08e30e6a",
+          "message": "fix: session defects part 1 of 3: scraping, autopilot, agent catalogue, pipeline validation (#1491-#1501) (#1503)\n\n* fix(scraping): port arbeitsagentur list to the v6 api and flag a changed response shape\n\nThe list endpoint now refuses v4 with 403 and v6 renamed the result array, so\nevery fetch failed. Details stay on v4, the only version that still serves them.\nA page 1 body with no result list and a non-zero total now errors instead of\nreading as an empty result, so a shape change reaches board health.\n\nFixes #1494\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(scraping): keep the jobicy tag parameter within its 3 to 20 character limit\n\nJobicy answers 400 for a tag outside that range, so a longer search phrase lost\nthe whole board. Cut over-long phrases at a word boundary and drop too-short\nones; the engine post-filter still narrows the result.\n\nFixes #1501\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(scraping): use the current arbeitsagentur publish date and filter truncated jobicy tags\n\nRepublished Arbeitsagentur listings carried their first publication date, so they\nfailed recency filters; prefer the current publication window and tidy the location\ntext. A truncated Jobicy tag returned unrelated jobs that no later filter removes,\nso require the full query's tokens when the tag was shortened.\n\nRefs #1494\nRefs #1501\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(export): render one separator style on the cologne navy contact line\n\nThe contact runs already carry their separators, split at link boundaries, and the\ntemplate added its own between runs, doubling them around every link. Normalise the\nseparators inside plain runs instead of joining the runs.\n\nFixes #1499\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(scraping): render multi-word arbeitsagentur regions and match escaped jobicy tokens\n\nThe v6 api returns regions like NORDRHEIN_WESTFALEN, which rendered with a stray\nunderscore. Jobicy descriptions are markdown-escaped, so a token like snake_case\nfailed the truncated-tag filter and good jobs were dropped.\n\nRefs #1494\nRefs #1501\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(autopilot): refuse unknown date filters and fall back to the default resume\n\nAn out-of-set dateFilter was stored and silently meant no date filter. It is now\nrefused on create and update naming the allowed values, and a stored bad value\nloads as any time. A run with no resume text scored every job against an empty\nresume; it now uses the default document, and the reply warns when neither exists.\n\nFixes #1492\nFixes #1493\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* refactor(scraping): move the arbeitsagentur response model into its own module\n\nKeeps the board module under the file size cap and removes unused detail fields.\n\nRefs #1494\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(autopilot): drop the layer exception and pin the date filter and resume wiring\n\nCheck the date filter through scraping types so no architecture exception is needed.\nPin the create and update guards with tests. The default document lookup now falls\nback to the newest document, matching the other resolvers, so a run still has a\nresume after the flagged default is deleted.\n\nRefs #1492\nRefs #1493\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* test(documents): cover the default document fallback order\n\nRefs #1493\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(agent): describe command inputs in the catalog and summarize autopilot_list\n\nThe catalog gave only top-level parameter names, so a caller without the source\ncould not build a valid body; it now carries generated JSON Schema, requested per\ncommand, plus descriptions for the main write commands. autopilot_list returned\nfull records and overflowed the output cap; agents now get summaries, and\nautomations rows carry the last run's per-board results.\n\nFixes #1491\nFixes #1495\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(agent): fence board failure text on automations and refuse mismatched catalog filters\n\nA board's error text can quote an upstream response, and the automations projection\nreturned it bare while the generic path fences it. Also refuse a catalog request\nwhose command is not in the given namespace instead of answering with an empty list.\n\nRefs #1491\nRefs #1495\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(pipeline): validate runs up front and report why a run or company research failed\n\nA run with no job was accepted and failed in the background, and a run that failed\nearly left no row, so resume_pipeline_get returned null. Requests are now validated\nbefore ids are returned, a found job's url can stand in for the posting, and failed\nruns and job rows carry an error kind and sanitized message. Company research no\nlonger reports a billing or auth failure as an empty result.\n\nFixes #1496\nFixes #1500\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(documents): promote the newest document when the default one is deleted\n\nDeleting the flagged default left no default, so the autopilot fallback picked the\nnewest document of any kind while the UI showed a different one as default. The\nstore now flags the newest remaining document in the same transaction.\n\nRefs #1493\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(matching): rank described jobs above description-less ones and decode escaped postings\n\nA row with no description scored from its title alone and floated above real\nmatches. Within a block, described rows now sort first, with no score change so the\ncaches stay valid, and best-matches replies carry a rank. Entity-escaped\ndescriptions are decoded before scoring, including rows already stored.\n\nFixes #1497\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(scraping): fetch jobicy's full candidate count when filtering locally\n\nWhen the tag is shortened or dropped, results are filtered by the full query, so\nthe request now asks for the documented maximum instead of the caller's amount.\nThe arbeitsagentur region tests now require a complete place match.\n\nRefs #1501, #1494\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(pipeline): keep failed runs keyed and deleted, and refuse ambiguous agent inputs\n\nA failure no longer re-creates a run the user deleted, and an id-only failure is\nkeyed by the posting's url instead of an empty one. A jobUrl prefers the exact\nposting and refuses a normalized match that spans several. Autopilots with a\nnon-string date filter still load. On the agent surface, autopilot_list drops the\nunbounded coverLetter, commands refuses a command paired with the wrong effect,\nand automations keep the partial-harvest flag, fenced.\n\nRefs #1491, #1492, #1495, #1496\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(autopilot): show the missing-resume warning after save and type update's null reply\n\nThe wizard now shows a translated warning when an autopilot has no resume text and\nno default document to fall back on, after create and after edit. autopilot_update\nis typed to return null for an unknown id, and the published resume_pipeline_run\nschema states its resume, posting and output requirements.\n\nRefs #1491, #1493\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-11T12:44:19+01:00",
+          "tree_id": "e7132bf55ad60cda9bbc8186fdfd93d8e4e03c4c",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/1bd7f75701ca799ecf01133762313a1f08e30e6a"
+        },
+        "date": 1794398579866,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1407895,
+            "range": "± 78788",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 1838050,
+            "range": "± 149636",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 194499,
+            "range": "± 14980",
             "unit": "ns/iter"
           }
         ]
