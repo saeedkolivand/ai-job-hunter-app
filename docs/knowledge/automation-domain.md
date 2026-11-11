@@ -1,6 +1,6 @@
 # Automation domain (scraping + apply assistant + AI provider)
 
-Last updated: 2026-11-10 (task #16: backend-owned active AI provider store)
+Last updated: 2026-11-11 (task #16: backend-owned active AI provider store)
 
 Merged knowledge for `scraping-applier-expert` and `ai-provider-expert`. Source is authoritative for board/provider counts.
 
@@ -33,6 +33,7 @@ Autopilot runs now persist per-board summaries and derive honest status:
 
 - **`RunStatus` enum** — `Completed`, `CompletedWithErrors` (some boards failed, run finished), `Failed` (zero boards succeeded), `Interrupted` (user cancelled). Source: `apps/desktop/src-tauri/src/autopilot/model.rs`.
 - **Per-board summaries** — `Autopilot.last_run_summaries: Vec<BoardScrapeSummary>` (persisted, defaulted empty for old records). Each summary carries `count`, `error`, `skipped`, and `truncated` signals. Source: `apps/desktop/src-tauri/src/autopilot/model.rs`.
+- **Save-time and run-time guards** (#1492, #1493) — `commands/autopilot/guards.rs`: a `dateFilter` outside the shared vocabulary is refused at the boundary (the schema is an enum; stored rows with an old value still load), and a run whose `resumeText` is blank scores against the default document (`DocumentStore::default_document`); create/update replies warn when neither exists. Deleting the flagged default document promotes the newest remaining one in the same transaction, so the store and the UI's fallback agree.
 - **Derivation** — `derive_run_status(&[BoardScrapeSummary]) -> RunStatus` (pure fn). Rules: empty → `Completed`; all boards errored/skipped → `Failed`; any error/truncated present → `CompletedWithErrors`; else → `Completed`.
 - **Store load tolerance** — `AutopilotStore::load()` parses as `Vec<serde_json::Value>` first, deserializes each record individually, drops+logs only the failures (e.g. an unrecognized `runStatus` from a newer build during downgrade). Prior behavior (ONE bad record wiped the entire file on next save) is fixed. Source: `apps/desktop/src-tauri/src/autopilot/mod.rs: load()`.
 - **IPC contract** — `AutopilotRunStatus` + `Autopilot.runStatus` + `Autopilot.lastRunSummaries`. Source: `packages/shared/src/ipc/contracts/autopilot.ts`, `packages/shared/src/types/index.ts`.
@@ -60,6 +61,7 @@ two-block rule, and capping the wire payload at `BEST_MATCHES_CAP`
 - **IPC contract** — `AutopilotContract.bestMatches()` → `AutopilotBestMatchesResult` (matches, total count, contributing autopilot count). Source: `packages/shared/src/ipc/contracts/autopilot.ts`.
 - **Rust command** — `commands/autopilot/best_matches.rs`: pure `compute_best_matches` + async IPC wrapper. Dedupes the union on `canonical_job_key`, clusters via `scraping::cluster::assign_clusters`, selects best member per cluster via the two-block rule, filters by qualification (best member >= its own kernel's high cut), and sorts Combined-first then Keyword-first each by score desc + key asc.
 - **Renderer surfaces** — `/best-matches` route with sort options (score desc, newest first, salary), empty states (no autopilot run yet vs. run completed, nothing qualified), and a truncation notice. `BestMatchRow` component reused by the Best Matches page and the `/autopilot` route's preview strip. Dismiss action via `useBestMatchActions` persists to `InteractionStore` as `interaction_type: 'dismissed'`, matching per-member on `canonical_job_key` and rolling back optimistically if the persist fails.
+- **Ordering and `rank`** (#1497) — description-less rows sort below described rows within their score block; this changes order only, never a score, so the ADR-017/020 caches stay valid. The agent `best-matches` resource returns each row's 1-based `rank` in the full ranked set (`agent_read/best_matches.rs`); HTML-escaped descriptions are decoded before scoring and prompts, including for rows already stored (decode only when the text contains known element names).
 - **Query key** — `keys.autopilot.bestMatches` (a child prefix of `keys.autopilot.all`, so fresh autopilot runs invalidate best-matches queries via prefix match).
 
 ## Email confirmation watching (task #23, auto-track Layer C)

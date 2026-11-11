@@ -1909,6 +1909,8 @@
         "orphanedHint": "You edited this line out, or it changed after the check. Decide it anyway to clear the review.",
         "removalPending": "Marked for removal — still in the document",
         "removalPendingHint": "Your decision is recorded, but this line couldn't be deleted from here. Open the résumé saved on this posting's application and edit the line out there to finish.",
+        "editToRemoveHint": "This claim can't be removed with one click. If it's wrong, edit the text yourself to remove it; otherwise keep it.",
+        "removedIt": "I removed it",
         "failed": "Couldn't record that decision. Try again."
       },
       "metrics": {

@@ -173,10 +173,10 @@ describe('QualityBadge — a needsReview run is never green', () => {
       );
     });
 
-    // A report persisted before `line` existed. The verdict is still recorded —
-    // it is the user's — but nothing is written, and the row says the line is
-    // still there rather than claiming a deletion that never happened.
-    it('refuses to write for a legacy entry with no line, and says so', async () => {
+    // A report persisted before `line` existed (or one the backend withheld the
+    // anchor from). Remove can't act, so it isn't offered; a verdict recorded
+    // earlier still reads as "still in the document", never as a deletion.
+    it('offers no Remove for an entry with no line, and a recorded one says it is still there', async () => {
       const onDocumentTextChange = vi.fn();
       const onResolveFabrication = vi.fn();
       const legacy: Fabrication = { issueKey: 'x#0', code: 'c', evidence: 'Cut latency by 40%' };
@@ -184,13 +184,10 @@ describe('QualityBadge — a needsReview run is never green', () => {
         badgeElement(pipeline({ fabrications, onResolveFabrication }), { onDocumentTextChange });
       const { rerender } = render(badge([legacy]));
 
-      await openAndRemove();
-
-      await waitFor(() => expect(onResolveFabrication).toHaveBeenCalledWith('x#0', 'remove'));
+      await userEvent.click(screen.getByRole('button', { name: /1 issue/i }));
+      expect(screen.queryByRole('button', { name: /^remove$/i })).not.toBeInTheDocument();
       expect(onDocumentTextChange).not.toHaveBeenCalled();
 
-      // …and once the recorded verdict comes back with the line still there,
-      // the row says exactly that rather than "Removed".
       rerender(badge([{ ...legacy, decision: 'remove' }]));
       expect(screen.getByText(/still in the document/i)).toBeInTheDocument();
       expect(screen.getByText(/edit the line out there to finish/i)).toBeInTheDocument();

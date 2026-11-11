@@ -226,3 +226,46 @@ fn a_location_or_letter_term_finding_carries_no_line_to_delete() {
     let parsed: serde_json::Value = serde_json::from_str(&wrapper).unwrap();
     assert!(parsed["resume"]["fabrications"][0].get("line").is_some());
 }
+
+/// **An invented location is reconciled against ITS occurrence.** "Berlin" is
+/// invented on Globex's header but true on Acme's: no `line` (no header
+/// deletion), a `context` naming the Globex header, and a recorded Remove that
+/// settles once that header is edited even though "Berlin" survives on Acme's.
+///
+/// Mutations (each applied and reverted): drop the `context` insert; make
+/// `entry_resolved` ignore `context`; make `context_line` skip the identity
+/// narrowing. Each fails an assertion below.
+#[test]
+fn an_invented_location_settles_on_its_own_occurrence_not_the_word_documentwide() {
+    use crate::validate::content::{
+        ContentIssue, ContentMetrics, ContentReport, FACTUAL_INVENTED_LOCATION,
+    };
+    let globex = "Engineer | Globex Logistics | Berlin | 2018 - 2021";
+    let resume = format!(
+        "Jane Doe\n\nEXPERIENCE\n\nDeveloper | Acme | Berlin | 2015 - 2018\n- Built it\n\n{globex}\n- Shipped\n"
+    );
+    let report = ContentReport {
+        ok: false,
+        issues: vec![ContentIssue {
+            severity: crate::validate::Severity::Critical,
+            code: FACTUAL_INVENTED_LOCATION,
+            section: None,
+            message: "Your source résumé gives no location \"Berlin\" for \"Globex Logistics\". Remove it.".to_string(),
+            evidence: Some("Berlin".to_string()),
+        }],
+        metrics: ContentMetrics::default(),
+    };
+    let wrapper = report::build("quality", 1, Some((&report, &resume)), None);
+    let entry = only_fabrication(&wrapper);
+    assert!(entry.get("line").is_none(), "{entry}");
+    assert_eq!(entry["context"], json!(globex));
+
+    let decided = report::record_decision(&wrapper, "factual.invented_location#0", "remove")
+        .expect("entry matched");
+    // Recorded but not edited: still pending.
+    assert_eq!(report::unresolved_count(&decided, &resume, ""), 1);
+    // Header edited, Acme still says Berlin: settled.
+    let edited = resume.replace(globex, "Engineer | Globex Logistics | 2018 - 2021");
+    assert!(edited.contains("Berlin"));
+    assert_eq!(report::unresolved_count(&decided, &edited, ""), 0);
+}

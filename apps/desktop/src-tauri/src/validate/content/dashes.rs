@@ -83,6 +83,35 @@ fn range_word(word: Option<&str>) -> bool {
     })
 }
 
+/// An unspaced em dash between letters is a clause break only when neither side
+/// is a single short fragment and the two sides are not both range names, and at least one side is a
+/// lowercase word (two capitalised words are a name).
+fn clause_break(chars: &[char], i: usize) -> bool {
+    let left: String = chars[..i]
+        .iter()
+        .rev()
+        .take_while(|c| c.is_alphabetic())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    let right: String = chars[i + 1..]
+        .iter()
+        .take_while(|c| c.is_alphabetic())
+        .collect();
+    let named = |w: &str| RANGE_NAMES.contains(&w.to_lowercase().as_str());
+    let lowercase = |w: &str| w.starts_with(char::is_lowercase);
+    // A word, not a split fragment: two letters or more, or a one-letter
+    // pronoun/article ("I", "a"). `e—mail` keeps its single-letter stub.
+    let word = |w: &str| w.chars().count() >= 2 || matches!(w, "I" | "a" | "A");
+    // A month/weekday name only protects the dash when the other side is a
+    // range name too ("Jan—Mar"); "may—however" is prose.
+    word(&left)
+        && word(&right)
+        && !(named(&left) && named(&right))
+        && (lowercase(&left) || lowercase(&right))
+}
+
 /// Whether the dash at `i` is a clause dash the ban applies to: spaces on both
 /// sides, text on both sides, not a leading list marker, and not part of a
 /// date, month or weekday range. An unspaced dash (`Rolls–Royce`, `Jan–Mar`)
@@ -91,11 +120,12 @@ fn is_prose_dash(chars: &[char], i: usize, first: Option<usize>) -> bool {
     if Some(i) == first || i == 0 || i + 1 >= chars.len() {
         return false;
     }
-    // The most common AI tell: an unspaced EM dash between two letters
+    // The most common AI tell: an unspaced EM dash that reads as a clause break
     // ("fast—and reliable"). Never an unspaced en dash (`Rolls–Royce`,
-    // `Jan–Mar`) and never one beside a digit (`2019—2022`).
+    // `Jan–Mar`), never one beside a digit (`2019—2022`), and not a name, a
+    // range or a split word (`Rolls—Royce`, `Jan—Mar`, `e—mail`).
     if chars[i] == '—' && chars[i - 1].is_alphabetic() && chars[i + 1].is_alphabetic() {
-        return true;
+        return clause_break(chars, i);
     }
     if !chars[i - 1].is_whitespace() || !chars[i + 1].is_whitespace() {
         return false;

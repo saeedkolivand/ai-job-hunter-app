@@ -1,6 +1,6 @@
 # Export Templates — the resume/cover-letter rendering contract
 
-Last updated: 2026-10-05
+Last updated: 2026-11-11
 
 The normative reference for the document export system: the sixteen templates, the
 single PDF engine, and the cross-cutting rules (page size, ATS mode, links, fonts,
@@ -181,6 +181,8 @@ delegates to the same `normalise_accent`), so PDF and DOCX never disagree on val
 ---
 
 ## Page size & locale
+
+Cover-letter wording (salutation, sign-off, subject label) follows the language the letter is written in, not only the market: `conventions_for_letter` in `locale/letter.rs` uses the market's own conventions when the letter language is blank or matches the market's native language, and falls back to them again when the language is one no convention set supports. Page size stays with the market.
 
 Page geometry comes from the request's locale (`LocaleProfile::get`), resolved to
 **one source of truth** read by every backend:
@@ -465,6 +467,8 @@ Builder flags CJK languages with an amber warning and a font icon. Follow-up: bu
 Contact and body hyperlinks are first-class rich-text runs, rendered as real
 clickable links (PDF `/Link /URI` annotations; DOCX `w:hyperlink` with the URL in
 the relationships part). The visible label is shown, never the raw URL.
+
+A header contact line is one list whose runs may each carry a link. The separators sit inside the plain-text runs, so a template that restyles them (Cologne Navy, `templates/cologne_navy.typ`) re-styles those in place rather than inserting its own between runs; the line then shows a single separator style whether or not an item is linked (#1499).
 
 `theme::link_style` per template:
 
