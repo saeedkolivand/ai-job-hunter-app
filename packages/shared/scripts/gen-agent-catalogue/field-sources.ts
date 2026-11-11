@@ -93,14 +93,34 @@ export function resolveNestedFields(sources: FieldSources, typeName: string): st
   return sources.interfaceFields.get(typeName);
 }
 
+/** Zod leaves JSON Schema cannot express, each allowed ONLY with the real wire format spelled out
+ *  (keyed by property name). A leaf not listed here makes the generator fail rather than emit `{}`,
+ *  which would tell a caller nothing. `Uint8Array` is sent as a JSON array of byte values because the
+ *  Rust side deserialises it into a `Vec<u8>` (serde: array of 0-255 integers, never base64). */
+const UNREPRESENTABLE_LEAVES: Readonly<Record<string, Record<string, unknown>>> = {
+  bytes: {
+    type: 'array',
+    items: { type: 'integer', minimum: 0, maximum: 255 },
+    description: 'Raw file bytes as a JSON array of integers 0-255 (not base64).',
+  },
+};
+
 /** Compact JSON Schema (draft 2020-12, `$schema` dropped) of the INPUT side of a Zod schema —
  *  `io: 'input'` so a field with a `.default(...)` is optional, which is what a caller sends.
- *  Refinements and transforms are not representable and are ignored (`unrepresentable: 'any'`). */
+ *  Refinements and transforms are not representable and are ignored; an unrepresentable LEAF fails
+ *  unless it is in `UNREPRESENTABLE_LEAVES`. */
 export function toInputJsonSchema(schema: unknown): string {
   if (!(schema instanceof z.ZodType)) fail('toInputJsonSchema was given a non-Zod value');
   const json: Record<string, unknown> = z.toJSONSchema(schema, {
     io: 'input',
-    unrepresentable: 'any',
+    unrepresentable: ({ path, message }) => {
+      const leaf = UNREPRESENTABLE_LEAVES[String(path[path.length - 1])];
+      if (!leaf)
+        fail(
+          `unrepresentable schema at \`${path.join('.')}\` (${message}); add it to UNREPRESENTABLE_LEAVES with its wire format`
+        );
+      return leaf;
+    },
   });
   delete json.$schema;
   return JSON.stringify(json);
