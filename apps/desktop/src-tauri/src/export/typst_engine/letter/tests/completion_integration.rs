@@ -16,7 +16,8 @@ use super::support::*;
 #[test]
 fn completed_body_only_letter_keeps_bold_as_a_rich_run_in_body() {
     let body = "I reduced deploy time by **40 percent** using Jest.";
-    let completed = crate::export::letter_shape::complete_letter_text(body, "us", "Jane Smith");
+    let completed =
+        crate::export::letter_shape::complete_letter_text(body, "us", None, "Jane Smith");
 
     let model = parse_cover_letter(
         &completed,
@@ -59,7 +60,8 @@ fn completed_letter_keeps_a_leading_subject_line_out_of_the_body() {
     let body = "Betreff: Bewerbung als Software Engineer\n\n\
                  Ich bringe sechs Jahre Erfahrung mit.\n\n\
                  In meiner bisherigen Tätigkeit konnte ich viel lernen.";
-    let completed = crate::export::letter_shape::complete_letter_text(body, "de", "Max Müller");
+    let completed =
+        crate::export::letter_shape::complete_letter_text(body, "de", None, "Max Müller");
 
     let model = parse_cover_letter(
         &completed,
@@ -96,7 +98,8 @@ fn completed_letter_keeps_a_leading_subject_line_out_of_the_body() {
 #[test]
 fn completed_letter_keeps_a_leading_date_line_out_of_the_body() {
     let body = "Frankfurt, 12. Januar 2025\n\nIch bringe sechs Jahre Erfahrung mit.";
-    let completed = crate::export::letter_shape::complete_letter_text(body, "de", "Max Müller");
+    let completed =
+        crate::export::letter_shape::complete_letter_text(body, "de", None, "Max Müller");
 
     let model = parse_cover_letter(
         &completed,
@@ -123,8 +126,12 @@ fn completed_letter_keeps_a_leading_date_line_out_of_the_body() {
 fn completed_letter_keeps_subject_and_date_furniture_out_of_the_body_either_order() {
     let subject_then_date = "Betreff: Bewerbung als Software Engineer\n\n\
                               12. Januar 2025\n\nIch bringe Erfahrung mit.";
-    let completed =
-        crate::export::letter_shape::complete_letter_text(subject_then_date, "de", "Max Müller");
+    let completed = crate::export::letter_shape::complete_letter_text(
+        subject_then_date,
+        "de",
+        None,
+        "Max Müller",
+    );
     let model = parse_cover_letter(
         &completed,
         None,
@@ -140,8 +147,12 @@ fn completed_letter_keeps_subject_and_date_furniture_out_of_the_body_either_orde
 
     let date_then_subject = "12. Januar 2025\n\nBetreff: Bewerbung als Software Engineer\n\n\
                               Ich bringe Erfahrung mit.";
-    let completed2 =
-        crate::export::letter_shape::complete_letter_text(date_then_subject, "de", "Max Müller");
+    let completed2 = crate::export::letter_shape::complete_letter_text(
+        date_then_subject,
+        "de",
+        None,
+        "Max Müller",
+    );
     let model2 = parse_cover_letter(
         &completed2,
         None,
@@ -162,7 +173,8 @@ fn completed_letter_keeps_subject_and_date_furniture_out_of_the_body_either_orde
 #[test]
 fn completed_letter_for_a_market_without_subject_line_convention_is_unaffected() {
     let body = "I am writing to express my interest in the Software Engineer role.";
-    let completed = crate::export::letter_shape::complete_letter_text(body, "us", "Jane Smith");
+    let completed =
+        crate::export::letter_shape::complete_letter_text(body, "us", None, "Jane Smith");
 
     let model = parse_cover_letter(
         &completed,

@@ -35,7 +35,8 @@ fn body_only_letter_gets_completed_furniture_in_docx_document_xml() {
             "Jest",
         ),
     ] {
-        let completed = crate::export::letter_shape::complete_letter_text(fixture, market, name);
+        let completed =
+            crate::export::letter_shape::complete_letter_text(fixture, market, None, name);
         let mut request = letter_request(&completed, LetterLayout::Classic);
         // `letter_request` defaults `locale: None` (→ `intl`); this fixture's
         // salutation/sign-off came from `conventions(market)`, so the render

@@ -59,7 +59,11 @@ fn validate_and_normalize(request: &mut ExportRequest) -> AppResult<()> {
     if request.document_type == DocumentType::CoverLetter {
         let market = request.locale.as_deref().unwrap_or("intl");
         let name = request.candidate_name().unwrap_or("");
-        request.text = complete_letter_text(&request.text, market, name);
+        let lang = request
+            .meta
+            .as_ref()
+            .and_then(|m| m.target_language.as_deref());
+        request.text = complete_letter_text(&request.text, market, lang, name);
     }
 
     Ok(())
