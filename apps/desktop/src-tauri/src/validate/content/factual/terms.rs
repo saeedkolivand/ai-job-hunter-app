@@ -52,6 +52,7 @@ const PRACTICE_WORDS: &[&str] = &[
     "management",
     "architecture",
     "analytics",
+    "collaboration",
     "testen",
     "sicherheit",
     "überwachung",
@@ -62,6 +63,7 @@ const PRACTICE_WORDS: &[&str] = &[
     "architektur",
     "analyse",
     "teamarbeit",
+    "zusammenarbeit",
 ];
 
 /// Languages that capitalise every noun, where mid-sentence capitalisation says
@@ -163,6 +165,7 @@ fn shape_is_tool(word: &str) -> bool {
     let digit_and_alpha = word.chars().any(|c| c.is_ascii_digit()) && has_alpha(word);
     let plus_hash = word.contains(['+', '#']) && has_alpha(word);
     let acronym = all_caps(word)
+        && !PRACTICE_WORDS.contains(&word.to_lowercase().as_str())
         && !NON_TOOL_ACRONYMS.contains(&word.to_uppercase().as_str())
         && !LEGAL_FORMS.contains(&word.to_lowercase().as_str());
     digit_and_alpha || plus_hash || inner_dot(word) || has_inner_capital(word) || acronym

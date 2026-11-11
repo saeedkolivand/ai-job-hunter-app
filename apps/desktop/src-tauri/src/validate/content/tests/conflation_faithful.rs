@@ -188,6 +188,41 @@ fn practice_words_in_a_skills_list_are_not_tool_claims_in_other_forms() {
     no_role_critical(&report_against(generated, source));
 }
 
+#[test]
+fn collaboration_and_a_shouted_practice_word_are_not_tool_claims() {
+    let source = "Jane Doe
+
+EXPERIENCE
+
+        Backend Engineer | Acme Payments | 2020 - 2024
+        - Partnered with designers on the checkout cache
+        - Verified the ledger service under load
+
+        Engineer | Globex Logistics | 2016 - 2020
+        - Built the billing service in Rust
+
+        SKILLS
+
+Collaboration · Testing · Rust
+";
+    let generated = "Jane Doe
+
+EXPERIENCE
+
+        Backend Engineer | Acme Payments | 2020 - 2024
+        - Collaboration with designers on the checkout cache
+        - TESTING the ledger service under load
+
+        Engineer | Globex Logistics | 2016 - 2020
+        - Built the billing service in Rust
+
+        SKILLS
+
+Collaboration · Testing · Rust
+";
+    no_role_critical(&report_against(generated, source));
+}
+
 const GRAPHQL_AD: &str = "We run Rust, Kubernetes and GraphQL.";
 
 #[test]

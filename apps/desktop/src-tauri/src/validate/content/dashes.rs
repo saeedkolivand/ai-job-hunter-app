@@ -84,7 +84,7 @@ fn range_word(word: Option<&str>) -> bool {
 }
 
 /// An unspaced em dash between letters is a clause break only when neither side
-/// is a single short fragment or a range name, and at least one side is a
+/// is a single short fragment and the two sides are not both range names, and at least one side is a
 /// lowercase word (two capitalised words are a name).
 fn clause_break(chars: &[char], i: usize) -> bool {
     let left: String = chars[..i]
@@ -101,10 +101,14 @@ fn clause_break(chars: &[char], i: usize) -> bool {
         .collect();
     let named = |w: &str| RANGE_NAMES.contains(&w.to_lowercase().as_str());
     let lowercase = |w: &str| w.starts_with(char::is_lowercase);
-    left.chars().count() >= 2
-        && right.chars().count() >= 2
-        && !named(&left)
-        && !named(&right)
+    // A word, not a split fragment: two letters or more, or a one-letter
+    // pronoun/article ("I", "a"). `e—mail` keeps its single-letter stub.
+    let word = |w: &str| w.chars().count() >= 2 || matches!(w, "I" | "a" | "A");
+    // A month/weekday name only protects the dash when the other side is a
+    // range name too ("Jan—Mar"); "may—however" is prose.
+    word(&left)
+        && word(&right)
+        && !(named(&left) && named(&right))
         && (lowercase(&left) || lowercase(&right))
 }
 
