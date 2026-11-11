@@ -55,6 +55,30 @@ fn fence_board_text(s: &str) -> String {
     crate::prompt_fence::fenced("job_posting", s, crate::prompt_fence::JOB_CAP)
 }
 
+/// The engine's own note producers, each `<token>:<short value>` (a count or a country code):
+/// `ats_partial_note`/`ats_failed_fetches_note` (`scraping/boards/common.rs`), Adzuna's
+/// `guessed-market`/`broadened`, and the engine's two post-filters (`scrape_boards.rs`).
+const KNOWN_NOTE_TOKENS: [&str; 7] = [
+    "slugs-invalid",
+    "rows-dropped",
+    "companies-failed",
+    "guessed-market",
+    "broadened",
+    "location-filtered",
+    "work-type-filtered",
+];
+
+/// `notes` is persisted, and a crafted backup import can put any string there, so it is checked
+/// on the way out instead of trusted: only `<known token>:<up to 8 alphanumerics>` passes.
+fn is_known_note(note: &str) -> bool {
+    note.split_once(':').is_some_and(|(token, value)| {
+        KNOWN_NOTE_TOKENS.contains(&token)
+            && !value.is_empty()
+            && value.len() <= 8
+            && value.bytes().all(|b| b.is_ascii_alphanumeric())
+    })
+}
+
 /// One board's outcome in [`AgentAutomation::last_run_summaries`]: allowlisted off
 /// `BoardScrapeSummary`, which also carries `truncated` (not wanted here).
 #[derive(Debug, Serialize, Deserialize)]
@@ -110,7 +134,12 @@ pub(in crate::extension_bridge::agent_read) fn project_automation(
                 count: s.count,
                 error: s.error.as_deref().map(fence_board_text),
                 skipped: s.skipped.as_deref().map(fence_board_text),
-                notes: s.notes.clone(),
+                notes: s
+                    .notes
+                    .iter()
+                    .filter(|n| is_known_note(n))
+                    .cloned()
+                    .collect(),
             })
             .collect(),
         last_run_at: ap.last_run_at,
