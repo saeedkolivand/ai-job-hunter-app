@@ -56,21 +56,35 @@ pub(super) fn resolve_found_job(
         ));
     }
     let described = |j: &&FoundJob| j.description.as_deref().is_some_and(|d| !blank(d));
-    let matching = || {
-        autopilots
-            .iter()
-            .flat_map(|a| a.found_jobs.iter())
+    let all = || autopilots.iter().flat_map(|a| a.found_jobs.iter());
+    // An exact spelling wins. The normalizer can collapse two postings that differ only by a
+    // query-string id on a host outside its allowlist, so a normalized-only match that spans
+    // more than one distinct stored URL is ambiguous and refused rather than guessed.
+    let exact_url = req.job_url.trim();
+    let mut candidates: Vec<&FoundJob> = all().filter(|j| j.url == exact_url).collect();
+    if candidates.is_empty() {
+        candidates = all()
             .filter(|j| crate::applications::normalize_job_url(&j.url) == wanted)
-    };
+            .collect();
+        let distinct: std::collections::HashSet<&str> =
+            candidates.iter().map(|j| j.url.as_str()).collect();
+        if distinct.len() > 1 {
+            return Err(AppError::Validation(
+                "jobUrl matches more than one found job; pass jobId to pick one".to_string(),
+            ));
+        }
+    }
     // The same posting can sit in several autopilots; take the one with the most text.
-    let found = matching()
+    let found = candidates
+        .iter()
+        .copied()
         .filter(described)
         .max_by_key(|j| j.description.as_deref().map_or(0, str::len))
         .ok_or_else(|| {
-            AppError::Validation(if matching().next().is_some() {
-                "the found job has no stored description; pass jobAdText".to_string()
-            } else {
+            AppError::Validation(if candidates.is_empty() {
                 "jobUrl does not match any found job; pass jobId or jobAdText".to_string()
+            } else {
+                "the found job has no stored description; pass jobAdText".to_string()
             })
         })?;
     req.job_ad_text = found.description.clone().unwrap_or_default();

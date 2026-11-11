@@ -48,7 +48,7 @@ pub(in crate::extension_bridge::agent_read) struct AgentAutomation {
     updated_at: u64,
 }
 
-/// `error` and `skipped` are written by the REMOTE side of a scrape (an upstream response can be
+/// `error`, `skipped` and `truncated` are written by the REMOTE side of a scrape (an upstream response can be
 /// quoted in `error`), so they leave fenced exactly as the generic tier fences the same fields by
 /// shape (`SCRAPE_SUMMARY_UNTRUSTED_FIELDS`). `notes` is a fixed engine vocabulary and stays plain.
 fn fence_board_text(s: &str) -> String {
@@ -56,7 +56,7 @@ fn fence_board_text(s: &str) -> String {
 }
 
 /// One board's outcome in [`AgentAutomation::last_run_summaries`]: allowlisted off
-/// `BoardScrapeSummary`, which also carries `truncated` (not wanted here).
+/// `BoardScrapeSummary`.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(in crate::extension_bridge::agent_read) struct AgentBoardRun {
@@ -67,6 +67,9 @@ pub(in crate::extension_bridge::agent_read) struct AgentBoardRun {
     /// Set when the board was skipped without running (e.g. `needs-login`).
     #[serde(skip_serializing_if = "Option::is_none")]
     skipped: Option<String>,
+    /// Set when a paginated board kept a partial harvest: `count` is then a partial tally.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    truncated: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     notes: Vec<String>,
 }
@@ -110,6 +113,7 @@ pub(in crate::extension_bridge::agent_read) fn project_automation(
                 count: s.count,
                 error: s.error.as_deref().map(fence_board_text),
                 skipped: s.skipped.as_deref().map(fence_board_text),
+                truncated: s.truncated.as_deref().map(fence_board_text),
                 notes: s.notes.clone(),
             })
             .collect(),

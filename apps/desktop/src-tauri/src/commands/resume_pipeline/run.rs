@@ -18,7 +18,7 @@ use crate::pipeline::resume::{quality_pipeline, QualityCtx, QualityInput, RunDea
 use crate::pipeline::runs::{PipelineRunStore, RunRow};
 use crate::pipeline::Completer;
 
-use super::failure::{fail, record_failure, ExecuteFailure};
+use super::failure::{fail_run, ExecuteFailure};
 use super::hooks::{self, RunHooks};
 use super::persist::persist_document;
 use super::request;
@@ -90,20 +90,27 @@ pub async fn resume_pipeline_run(
                 guard
             }
             Err(e) => {
-                record_failure(&app_task, &run_id_task, &req, started_at, &e);
-                fail(&app_task, &cancels, &job_id_task, &e, None).await;
+                fail_run(
+                    &app_task,
+                    &job_id_task,
+                    &run_id_task,
+                    &req,
+                    started_at,
+                    e.into(),
+                )
+                .await;
                 return;
             }
         };
 
         if let Err(failure) = execute(&app_task, &run_id_task, &job_id_task, &req, &cancel).await {
-            record_failure(&app_task, &run_id_task, &req, started_at, &failure.error);
-            fail(
+            fail_run(
                 &app_task,
-                &cancels,
                 &job_id_task,
-                &failure.error,
-                failure.data,
+                &run_id_task,
+                &req,
+                started_at,
+                failure,
             )
             .await;
             return;
@@ -404,7 +411,9 @@ async fn execute(
         object.insert("resumeInRun".to_string(), json!(ctx.input.include_resume));
     }
     row.metrics_json = metrics.to_string();
-    store.upsert_run(&row)?;
+    store
+        .upsert_run(&row)
+        .map_err(|e| ExecuteFailure::after_row(e, None))?;
     // Retention runs at the END of a run rather than on a timer: this is the
     // moment a fourth run for this posting exists.
     store.prune();
@@ -446,7 +455,10 @@ async fn execute(
             // says `failed`; the JOB has to agree, and the user needs the
             // reason — the alternative is a green run over an unchanged
             // document. `execute`'s caller turns this into `job_fail`.
-            SaveVerdict::Refused(reason) => Err(AppError::Message(reason.to_string()).into()),
+            SaveVerdict::Refused(reason) => Err(ExecuteFailure::after_row(
+                AppError::Message(reason.to_string()),
+                None,
+            )),
             SaveVerdict::Save | SaveVerdict::Nothing => {
                 crate::commands::jobs::job_complete(
                     app,
@@ -483,12 +495,12 @@ async fn execute(
         Err(e) => Err(match ledger.timeout_detail() {
             Some((stage, ms)) => {
                 let lowest = ctx.stage_at_lowest_effort(stage);
-                ExecuteFailure {
-                    error: AppError::Timeout(hooks::timeout_message(stage, ms, lowest)),
-                    data: Some(hooks::timeout_failure_data(stage, ms, lowest)),
-                }
+                ExecuteFailure::after_row(
+                    AppError::Timeout(hooks::timeout_message(stage, ms, lowest)),
+                    Some(hooks::timeout_failure_data(stage, ms, lowest)),
+                )
             }
-            None => e.into(),
+            None => ExecuteFailure::after_row(e, None),
         }),
     }
 }

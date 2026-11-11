@@ -190,3 +190,33 @@ fn a_command_outside_the_given_namespace_is_a_usage_error() {
         false
     );
 }
+
+/// `{"command":"autopilot_create","effect":"read"}` matched nothing and answered an empty success.
+/// Mutation check: drop the effect branch in `tool_call.rs` and the mismatch case turns false.
+#[test]
+fn a_command_with_a_different_effect_is_a_usage_error() {
+    let server = Server::new(false, false);
+    let call = |args: Value| {
+        let ToolCall::Local(Ok(r)) = classify_tool_call(
+            &json!({ "name": TOOL_COMMANDS, "arguments": args }),
+            &server,
+        ) else {
+            panic!("commands answers locally");
+        };
+        r
+    };
+    assert_eq!(
+        call(json!({ "command": "autopilot_create", "effect": "read" }))["isError"],
+        true
+    );
+    assert_eq!(
+        call(json!({ "command": "autopilot_create", "effect": "reversible" }))["isError"],
+        false
+    );
+    assert_eq!(
+        call(json!({
+            "namespace": "autopilot", "command": "autopilot_create", "effect": "read"
+        }))["isError"],
+        true
+    );
+}
