@@ -3841,11 +3841,11 @@ progress streams as `pipeline:stage` events (subscribe via `ResumePipelineContra
    `completed`/`needsReview`/`failed`/`cancelled` is the fact everything else
    describes. Poll or re-`get` on a stage event; do not derive the outcome.
 2. **A run that fails before its first stage still gets a row.** A résumé or
-   posting that cannot be resolved, no configured provider, or a refused
-   admission is recorded as a `failed` row carrying `errorKind` and
-   `errorMessage`, so `get(runId)` reads it (it is `null` only for an id that
-   never existed). The umbrella job's `job.failed` still fires, and the job
-   row carries the same kind. A request that can never run — no résumé, no
+   posting that cannot be resolved, or no configured provider, is recorded as
+   a `failed` row carrying `errorKind` and `errorMessage`, so `get(runId)`
+   reads it. The one exception is a refused admission (rate limit or full
+   queue): that writes no run row — `get(runId)` is `null` — and shows only
+   as the umbrella job's `job.failed` (the job row carries the same kind). A request that can never run — no résumé, no
    posting, no document to write — is refused by `run` itself, before any id
    exists.
 
@@ -4029,14 +4029,18 @@ export interface PipelineRunSummary {
    */
   stoppedReason?: string | null;
   /**
-   * Why a failed run failed, in one of five words — {@link PipelineErrorKind}. `null` for a run
+   * Why a failed run failed, in one of five words — {@link PipelineErrorKind}. Read back from
+   * storage through a closed vocabulary: an unrecognised stored value reads as `null`. `null` for a run
    * that did not fail, for a failure that is not a provider failure (a missing résumé, say), and
    * for a run recorded before this field existed.
    */
   errorKind?: PipelineErrorKind | null;
   /**
-   * The failure's message, redacted (no URLs, paths, credentials) and length-bounded — never
-   * prompt or résumé text. `null` on a run that did not fail and on older runs.
+   * The failure's message. When {@link errorKind} is set this is a fixed, app-authored sentence
+   * for that kind — the provider's own text is never passed on, because it can echo prompt or
+   * résumé content. Otherwise it is free text only for app-authored validation/config errors
+   * (shape-redacted, at most 200 characters, and re-bounded on every read). `null` on a run that
+   * did not fail.
    */
   errorMessage?: string | null;
   /**
