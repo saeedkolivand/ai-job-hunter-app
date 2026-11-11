@@ -640,13 +640,13 @@ Implementation confirmed working. `includeCompensation=true` is already in the U
 
 #### Current scraper
 
-- **URL:** `https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs` (list); `/pc/v4/jobdetails/{hash}` (detail)
+- **URL:** list on `/pc/v6/jobs`; detail on `/pc/v4/jobdetails/{hash}`. v4 list answers 403 and v6 detail answers 403 (#1494), hence the split; the base URLs are `LIST_BASE` / `DETAIL_BASE` in `scraping/boards/arbeitsagentur/mod.rs`, the v6 response types in `model.rs`. A page-1 shape or status failure is a board error (board health), never an empty result.
 - **Mode:** HTTP (reqwest via `fetch_json`)
 - **Fields:** `stellenangebote[].{refnr, titel, beruf, arbeitgeber, arbeitsort, aktuelleVeroeffentlichungsdatum, externeUrl, hashId}`
 
 #### Verified endpoint (2026-06-20)
 
-- **Search URL:** `https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs`
+- **Search URL:** the v6 list base above (query params below were verified against v4; re-check against `mod.rs` before relying on one)
 - **Query params:** `was` (keyword), `wo` (location), `page` (1-indexed), `size` (25 default); optional: `umkreis` (radius km), `arbeitszeit` (vz/tz/snw/ho/mj), `angebotsart`, `befristung`, `veroeffentlichtseit` (0–100 days)
 - **Required header:** `X-API-Key: jobboerse-jobsuche` (shared public key used by official frontend)
 - **Pagination:** `page` (1-indexed) + `size`; loop breaks when `items.len() < size`; max 10 pages in caller

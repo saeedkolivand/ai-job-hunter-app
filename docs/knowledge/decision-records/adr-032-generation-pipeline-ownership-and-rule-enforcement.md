@@ -1,6 +1,6 @@
 # ADR-032: Generation-pipeline ownership — mechanical core-rule enforcement
 
-Last updated: 2026-09-24
+Last updated: 2026-11-11
 
 **Status:** Accepted
 
@@ -52,6 +52,10 @@ The decision that language misalignment is a deterministic Critical (outlined in
 - **Retention and cleanup:** runs persist newest 3 per `(job_url, kind)` pair; validation/repair artifacts never cache (verdicts age); the run row is immutable history; the aggregate document is live state (join on source-text-hash for staleness detection). Historic max-depth runs still parse and render but cannot be re-generated or edited section-by-section.
 - **Budget enforcement:** outer deadline checked between stage calls (not just at boundaries) and enforced in the repair loop. Per-call bounds hold the sequence even if one call times out. Retry-after-timeout is eliminated for completion and stream entry points (sequence budget = per-call bound); embed sites deliberately preserve it via `send_embed_with_retry` (per-attempt bound + sequence-budget multiplier for cold-start recovery).
 - **Context isolation:** each stage receives only what it needs (prior artifact fenced, job ad fenced, user input fenced). The stage cannot access globals, priors beyond the one it consumes, or anything except its schema inputs.
+
+## Addendum 2026-11-11 (#1498): language-gated entry-level Criticals
+
+The Critical set grew beyond dropped roles and language alignment: a skill/tool the source never supports, a term attached to a role whose source entry lacks it, and an invented location on a role (codes in `CONTENT_ISSUE_CODES`). They stay deterministic with zero provider calls, still park the run at `needsReview`, and still never block export. Because a wrong Critical on a truthful document is worse than a missed one, they fire only when the output language is confidently aligned with the source (unknown counts as comparable) and rest on tool-shaped or declared vocabulary; each has a Warning twin outside role entries. A finding whose evidence is a structural line offers Keep only in the review panel. The post-humanize em-dash strip is likewise deterministic (`validate/content/dashes.rs`). Outcome clauses and invented bullets remain advisory.
 
 ## Related
 

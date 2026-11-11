@@ -85,6 +85,10 @@ renderer CSP entry is involved.
 README.md and SECURITY.md enumerate the egress classes and must name Exa as an
 option within the web-search class.
 
+## Addendum 2026-11-11 (#1500): failures are reported, not swallowed
+
+`try_search` is now the required `WebSearcher` method and returns a typed error; `search` is a provided wrapper that degrades it to empty. The "search → if empty return `""`" shape above still holds for a search that found nothing, but a search that failed (billing, auth, rate limit) is an `Err` that research reports as a failed status instead of reading as an empty brief. See `commands/ai_provider/search/mod.rs` and `cover_letter/research/mod.rs`.
+
 ## Consequences
 
 - Research works for every provider, including ones that never had it.

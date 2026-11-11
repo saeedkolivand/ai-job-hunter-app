@@ -30,11 +30,14 @@ The `validate` stage runs modules under [`apps/desktop/src-tauri/src/validate/co
 
 - Source consistency: dropped employment role, unsupported date (not in source history), altered link.
 - Language alignment: generated text reads as a different language than the target.
+- Entry-level grounding (#1498): a skill/tool the job ad names that the source never supports, a term attached to a role whose source entry lacks it, and an invented location on a role. Each has a Critical twin (inside a named employer's role entry) and a Warning twin elsewhere, because a code carries one severity; the codes and their severities are the registry in `CONTENT_ISSUE_CODES`, the detectors live under `validate/content/factual/`. These rest on tool-shaped or declared vocabulary and are only raised when the output language is confidently aligned with the source (unknown language counts as comparable), so a faithful document in another language is not flagged.
 
 **Warning** issues are advisory — they note things worth reviewing but do not block export:
 
 - Unsourced terms (the word is in the generated text but neither the source résumé nor the job ad).
 - Keyword density (a term repeats too often; ATS scoring prefers variety).
+- Bullet and outcome grounding: a bullet with almost no overlap with its source entry, or an outcome/scope clause the entry does not state. Deliberately advisory; invented bullets and outcome claims stay only partly catchable deterministically, so the draft prompt carries the rest.
+- Dashes: the em/en-dash ban is enforced after humanize by a deterministic strip (`validate/content/dashes.rs`, `strip_long_dashes`), not by trusting the model; `voice.em_dash_overuse` counts with the same definition.
 - Structure (a bullet is very long; a section is empty).
 
 The line reflects a practical constraint: **warnings _can_ escalate to Critical only via measurement, never by assumption.** The eval harness measures Warning false-positive rates on truthful documents (see [Eval](#eval) below); escalation decisions are data-driven, not policy-driven. See [ADR-032](decision-records/adr-032-generation-pipeline-ownership-and-rule-enforcement.md) for language-mismatch Critical enforcement.
@@ -53,12 +56,16 @@ All repair attempts are logged at the run level; the repair rounds and their out
 
 When a run leaves the `repair` stage with unresolved Criticals, its status is set to `needsReview`. The UI renders the [`FabricationReview`](../../apps/desktop/src/renderer/components/generation/QualityReportPanel/FabricationReview.tsx) component, which shows each flagged claim with two choices:
 
-- **Remove:** Delete the line from the document (an actual edit, not a flag).
-- **Keep:** Accept the claim as-is.
+- **Remove:** Delete the line from the document (an actual edit, not a flag). Offered only when the finding carries a line anchor; a finding whose evidence sits on a structural line (a role header, a letter paragraph) has no anchor, so the panel shows Keep plus a hint to edit by hand instead.
+- **Keep:** Accept the claim as-is. Also available on findings that cannot be removed, and a removal can be undone.
 
 **Nothing is saved without explicit verdict.** The run cannot transition to `completed` or `done` until every flagged claim has been decided. This is the **fabrication gate**: we refuse to save silently; you decide what stays.
 
 The verdict is recorded separately (in the run's [`PipelineRunDetail.report.fabrications`](../../packages/shared/src/ipc/index.ts)) from the document text, so a user can change their mind by re-opening and re-deciding (the text and verdicts are separate facts).
+
+## Failure and research reporting
+
+A failed run carries a closed `errorKind` and a fixed-sentence `errorMessage` (`error/failure_kind.rs`), and the cover-letter research status (ok, empty or failed, with a kind) is persisted in the run's metrics and read back through `resume_pipeline_get` (`commands/resume_pipeline/read.rs`, `cover_letter/research/mod.rs`). An empty search and a failed search are different outcomes; the request gate that refuses a doomed run before ids are returned is `commands/resume_pipeline/request.rs`. Wire shapes: TSDoc in `packages/shared/src/ipc/contracts/resumePipeline.ts`.
 
 ## Cost accounting and call budget
 
