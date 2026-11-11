@@ -761,10 +761,10 @@
     },
     "companyResearch": {
       "title": "Unternehmensrecherche",
-      "description": "Fügt Anschreiben und Bewerbungsantworten ein kurzes, faktisches Unternehmensprofil hinzu – über die Websuche Ihres aktiven KI-Anbieters. Cloud- und CLI-Anbieter suchen mit ihrem eigenen Schlüssel; Ollama benötigt den kostenlosen Ollama-Kontoschlüssel unten.",
+      "description": "Fügt Anschreiben und Bewerbungsantworten ein kurzes, faktisches Unternehmensprofil hinzu – über die Websuche Ihres aktiven KI-Anbieters. Cloud- und CLI-Anbieter suchen mit ihrem eigenen Schlüssel; Ollama benötigt den Ollama-Kontoschlüssel unten oder einen SearXNG-kompatiblen Server.",
       "connected": "Verbunden — Ollama-Schlüssel gespeichert",
       "remove": "Entfernen",
-      "getKeyAt": "Kostenlosen Ollama-Schlüssel erhalten unter",
+      "getKeyAt": "Ollama-Kontoschlüssel erhalten unter",
       "keyPlaceholder": "Ollama-API-Schlüssel einfügen…",
       "sameKeyNote": "Derselbe Schlüssel schaltet Ollama-Cloud-Modelle frei.",
       "save": "Speichern",
@@ -1457,7 +1457,7 @@
     "research": {
       "label": "Unternehmen recherchieren",
       "hint": "Fügt dem Anschreiben eine kurze Web-Zusammenfassung hinzu — über die eigene Websuche Ihres KI-Anbieters. Nach bestem Bemühen.",
-      "ollamaKeyHint": "Ollama benötigt einen kostenlosen Ollama-Schlüssel zum Suchen — unter Einstellungen → KI hinzufügen."
+      "ollamaKeyHint": "Ollama benötigt einen Ollama-Kontoschlüssel zum Suchen — unter Einstellungen → KI hinzufügen."
     },
     "market": {
       "label": "Zielmarkt",
@@ -3233,7 +3233,7 @@
       "title": "Bessere Anschreiben",
       "subtitle": "Lassen Sie die App optional das Unternehmen im Web recherchieren und eine sachliche Zusammenfassung in Ihre Anschreiben und Bewerbungsantworten einfließen.",
       "connected": "Verbunden — die Recherche ist startklar.",
-      "getKeyAt": "Kostenlosen Ollama-Schlüssel erhalten unter",
+      "getKeyAt": "Ollama-Kontoschlüssel erhalten unter",
       "keyPlaceholder": "Ollama-API-Schlüssel einfügen…",
       "saveKey": "Verbinden",
       "saved": "Ollama-Schlüssel gespeichert.",

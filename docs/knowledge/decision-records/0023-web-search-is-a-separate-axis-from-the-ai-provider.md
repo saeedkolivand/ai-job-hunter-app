@@ -99,3 +99,43 @@ option within the web-search class.
 - **Not adopted:** surfacing Exa's `costDollars` (returned per response) into the
   spend store. The store is token-shaped; a real per-search cost is a genuine
   improvement and a separate change.
+
+## Addendum (2026-11-11): ordered backends, billing/auth fall-through, SearXNG-compatible server
+
+Issue #1515. The axis split above stands; three things change.
+
+**Order.** The provider's own search, then a SearXNG-compatible server, then Exa
+(`search_order` / `SearchChain` in `commands/ai_provider/search/mod.rs`). SearXNG
+sits before Exa because it is free and user-run. It is one backend for SearXNG
+and RustXNG alike (same `/search?format=json` shape), with a user-set base URL and
+no key; the URL is validated on save and again on read, and lives in
+`AiConfigStore`, not the keychain. Agents may read it (`ai_search_settings`) but
+not set it.
+
+**"No second chance" now means EMPTY results only.** A backend that runs and
+returns nothing is still never retried elsewhere. A native search or Exa that
+fails with a billing or auth `FailureKind` does fall through to the next
+configured backend, once each (`falls_through`): the call produced nothing and
+the user's configuration is what is broken, so trying the next backend does not
+double-bill or re-send a query that already succeeded. Rate-limited and
+unavailable failures stay terminal.
+
+**A SearXNG-compatible server's failures never fall through.** It is keyless and
+user-run, so a billing/auth-shaped error from it is not a vendor account problem;
+a 403 typically means the instance has JSON output disabled. Falling through
+would hide that misconfiguration and move the query to a paid vendor the user
+did not choose for that failure. It reports a typed error instead.
+
+### Egress (addendum)
+
+Still [ADR 0005](0005-network-egress-privacy-boundary.md) class 3 (web search,
+opt-in); no new class. A SearXNG-compatible query sends the same company name,
+role title or question topic as the other backends, as a GET query string to the
+host the user typed, and nothing else (no résumé, generation or credential). That
+host is user-chosen, so the static inventory in `tests/egress.rs` cannot list it. Plain
+`http` is accepted only for local hosts;
+credentials in the URL are refused. Nothing is sent until the user sets a URL.
+
+Release note: the `ai_config` migration that stores the URL bumps the sync schema
+version, so an older peer holds the newer payload until it is upgraded (see
+[Schema versions](../sync-protocol.md#schema-versions)).

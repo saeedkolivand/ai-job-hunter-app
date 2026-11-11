@@ -761,10 +761,10 @@
     },
     "companyResearch": {
       "title": "Company Research",
-      "description": "Adds a short, factual company brief to cover letters and application answers, using your active AI provider's own web search. Cloud and CLI providers search with their own key; Ollama needs the free Ollama account key below.",
+      "description": "Adds a short, factual company brief to cover letters and application answers, using your active AI provider's own web search. Cloud and CLI providers search with their own key; Ollama needs an Ollama account key below, or a SearXNG-compatible server.",
       "connected": "Connected — Ollama account key stored",
       "remove": "Remove",
-      "getKeyAt": "Get a free Ollama key at",
+      "getKeyAt": "Get an Ollama account key at",
       "keyPlaceholder": "Paste your Ollama API key…",
       "sameKeyNote": "Same key unlocks Ollama Cloud models.",
       "save": "Save",
@@ -1453,7 +1453,7 @@
     "research": {
       "label": "Research the company",
       "hint": "Adds a short web brief to the cover letter, using your AI provider's own web search. Best-effort.",
-      "ollamaKeyHint": "Ollama needs a free Ollama account key to search — add it in Settings → AI."
+      "ollamaKeyHint": "Ollama needs an Ollama account key to search — add it in Settings → AI."
     },
     "market": {
       "label": "Target market",
@@ -3229,7 +3229,7 @@
       "title": "Smarter cover letters",
       "subtitle": "Optionally let the app research the company on the web and weave a factual brief into your cover letters and application answers.",
       "connected": "Connected — research is ready to go.",
-      "getKeyAt": "Get a free Ollama key at",
+      "getKeyAt": "Get an Ollama account key at",
       "keyPlaceholder": "Paste your Ollama API key…",
       "saveKey": "Connect",
       "saved": "Ollama key saved.",
