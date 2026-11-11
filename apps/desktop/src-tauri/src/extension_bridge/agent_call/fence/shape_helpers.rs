@@ -7,6 +7,7 @@ use super::shape_tables::{
     BOARD_HEALTH_ANCHOR_FIELDS, BOARD_HEALTH_UNTRUSTED_FIELDS, SCRAPE_SUMMARY_ANCHOR_FIELDS,
     SCRAPE_SUMMARY_UNTRUSTED_FIELDS,
 };
+use super::summary_notes::retain_known_notes;
 
 /// Fence the board-written strings on `map` when its keys match either scrape-diagnostics shape —
 /// [`SCRAPE_SUMMARY_ANCHOR_FIELDS`] → [`SCRAPE_SUMMARY_UNTRUSTED_FIELDS`],
@@ -35,6 +36,9 @@ pub(in crate::extension_bridge::agent_call) fn fence_board_derived_strings(
     ] {
         if !anchors.iter().all(|f| map.contains_key(*f)) {
             continue;
+        }
+        if anchors == SCRAPE_SUMMARY_ANCHOR_FIELDS.as_slice() {
+            retain_known_notes(map);
         }
         for field in fields {
             if let Some(s) = map.get(*field).and_then(Value::as_str) {

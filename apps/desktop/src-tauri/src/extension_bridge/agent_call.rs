@@ -89,6 +89,7 @@ pub(super) use reply::{
 // just above is re-exported test-only too.
 #[cfg(test)]
 use fence::fence_scraped_fields;
+pub(in crate::extension_bridge) use fence::is_known_note;
 mod fence;
 
 /// Substitute a [`Refusal::ResultTooLarge`] reply for any `reply` the bridge could not actually
