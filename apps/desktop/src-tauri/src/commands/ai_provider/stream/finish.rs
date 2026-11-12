@@ -196,7 +196,7 @@ pub(super) enum FinishOutcome {
 /// (and with what text + optional truncation warning) — with NO `AppHandle`,
 /// so it's directly unit-testable. Mirrors the pure-decision/thin-IO-shell
 /// split already used elsewhere in this crate (e.g.
-/// `net::http::is_allowed_redirect_target`, `profile_import::github::map_status`).
+/// `net::http::is_allowed_redirect`, `profile_import::github::map_status`).
 pub(super) fn finish_outcome(
     stripped: &str,
     stop_reason: Option<StopReason>,

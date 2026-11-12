@@ -69,7 +69,7 @@ fn redirect_policy() -> reqwest::redirect::Policy {
         if attempt.previous().len() >= MAX_REDIRECTS {
             return attempt.error("too many redirects");
         }
-        if is_allowed_redirect_target(attempt.url()) {
+        if is_allowed_redirect(attempt.previous(), attempt.url()) {
             attempt.follow()
         } else {
             attempt.error(
@@ -83,14 +83,42 @@ fn redirect_policy() -> reqwest::redirect::Policy {
 /// is unit-testable without constructing a `reqwest::redirect::Attempt`
 /// (its fields are private to `reqwest`, so the policy closure itself can't
 /// be exercised directly from this crate's tests).
-fn is_allowed_redirect_target(url: &reqwest::Url) -> bool {
-    if url.scheme() != "http" && url.scheme() != "https" {
+///
+/// `previous` is every URL requested so far in the chain (`attempt.previous()`).
+/// Link-local/metadata and unspecified targets are never followed. A public
+/// target is followed. An https hop to http (cleartext downgrade, judged
+/// against the immediately previous hop) is refused for every target. A non-public target is
+/// followed only if EVERY previous hop is the same host (port ignored), so a
+/// local provider may bounce http to https but a public hop can never pivot
+/// inward and a LAN host cannot bounce to another LAN host.
+fn is_allowed_redirect(previous: &[reqwest::Url], target: &reqwest::Url) -> bool {
+    use crate::net::ssrf::{
+        is_link_local_or_metadata_host, is_safe_public_host, is_unspecified_host,
+    };
+    if target.scheme() != "http" && target.scheme() != "https" {
         return false;
     }
-    match url.host_str() {
-        Some(host) => crate::net::ssrf::is_safe_public_host(host),
-        None => false,
+    let Some(host) = target.host_str() else {
+        return false;
+    };
+    if is_link_local_or_metadata_host(host) || is_unspecified_host(host) {
+        return false;
     }
+    if previous
+        .last()
+        .is_some_and(|p| p.scheme() == "https" && target.scheme() == "http")
+    {
+        return false;
+    }
+    if is_safe_public_host(host) {
+        return true;
+    }
+    let norm = |h: &str| h.trim_end_matches('.').to_ascii_lowercase();
+    let host = norm(host);
+    !previous.is_empty()
+        && previous
+            .iter()
+            .all(|p| p.host_str().is_some_and(|h| norm(h) == host))
 }
 
 /// The single pooled HTTP client. Built on first use, then cloned (cheap — a

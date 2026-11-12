@@ -90,6 +90,57 @@ fn base_url_blocks_cloud_metadata() {
 }
 
 #[test]
+fn base_url_blocks_link_local_and_metadata_in_every_form() {
+    for u in [
+        "http://169.254.170.2/v2/credentials",
+        "http://169.254.0.1/",
+        "http://169.254.169.254:80/",
+        "http://2852039166/",          // decimal 169.254.169.254
+        "http://0xa9fea9fe/",          // hex
+        "http://0251.0376.0251.0376/", // octal
+        "http://[fe80::1]/",
+        "http://[febf::1]/",
+        "http://[fd00:ec2::254]/",
+        "http://[FD00:EC2:0:0:0:0:0:254]/",
+        "http://[::ffff:169.254.169.254]/",
+        "http://[::ffff:a9fe:a9fe]/",
+        "http://[::169.254.169.254]/",
+        "http://[::ffff:169.254.170.2]/",
+        "http://100.100.100.200/",
+        "http://[::ffff:100.100.100.200]/",
+        "http://[2002:a9fe:a9fe::]/",
+        "http://[64:ff9b::a9fe:a9fe]/",
+        "http://[64:ff9b:1::a9fe:a9fe]/",
+        "http://[::ffff:0:a9fe:a9fe]/",
+    ] {
+        assert!(
+            validate_provider_base_url(u).is_err(),
+            "{u} must be rejected"
+        );
+    }
+}
+
+#[test]
+fn base_url_mapped_private_and_other_ula_stay_allowed() {
+    // Local gateways: mapped LAN/loopback and non-IMDS ULA are not link-local.
+    for u in [
+        "http://[::ffff:10.0.0.1]:8080/",
+        "http://[::ffff:127.0.0.1]:11434/",
+        "http://[fd12:3456::1]/",
+        "http://[fd00:ec2::255]/",
+        "http://[::1]:11434/",
+    ] {
+        assert!(validate_provider_base_url(u).is_ok(), "{u} must be allowed");
+    }
+}
+
+#[test]
+fn ipv4_compatible_private_is_unsafe() {
+    assert!(!is_safe_public_host("::10.0.0.1"));
+    assert!(!is_safe_public_host("::127.0.0.1"));
+}
+
+#[test]
 fn base_url_allows_local_gateways_and_public() {
     // The load-bearing exception: loopback/LAN gateways are legitimate AI
     // endpoints and must NOT be filtered — only the metadata addr + bad schemes.
@@ -105,4 +156,57 @@ fn base_url_allows_local_gateways_and_public() {
             "{u} must be allowed (provenance guard, not IP filter)"
         );
     }
+}
+
+#[test]
+fn trailing_dot_and_alias_loopback_names_are_not_public() {
+    for h in [
+        "localhost.",
+        "localhost..",
+        "x.localhost..",
+        "127.0.0.1..",
+        "LOCALHOST.",
+        "foo.localhost.",
+        "x.local.",
+        "localhost.localdomain",
+        "ip6-localhost",
+        "ip6-loopback.",
+    ] {
+        assert!(!is_safe_public_host(h), "{h}");
+    }
+    assert!(is_safe_public_host("example.com."));
+}
+
+#[test]
+fn wrapped_private_ipv4_is_unsafe_but_dns64_public_is_safe() {
+    for h in [
+        "2002:7f00:1::",       // 6to4 127.0.0.1
+        "64:ff9b::a00:1",      // NAT64 10.0.0.1
+        "64:ff9b:1::c0a8:101", // local-use NAT64 192.168.1.1
+        "::ffff:0:a00:1",      // SIIT 10.0.0.1
+    ] {
+        assert!(!is_safe_public_host(h), "{h}");
+    }
+    assert!(is_safe_public_host("64:ff9b::808:808"));
+    assert!(is_safe_public_host("2002:808:808::"));
+}
+
+#[test]
+fn local_use_nat64_every_layout_is_checked() {
+    // 169.254.169.254 in the /48, /56, /64 and /96 layouts of 64:ff9b:1::/48.
+    for h in [
+        "64:ff9b:1:a9fe:a9:fe00::",
+        "64:ff9b:1:a9:fe:a9fe::",
+        "64:ff9b:1:0:a9:fea9:fe00:0",
+        "64:ff9b:1::a9fe:a9fe",
+    ] {
+        let ip: IpAddr = h.parse().unwrap();
+        assert!(!is_safe_ip(ip), "{h}");
+        assert!(is_link_local_or_metadata_ip(ip), "{h}");
+        assert!(
+            validate_provider_base_url(&format!("http://[{h}]/")).is_err(),
+            "{h}"
+        );
+    }
+    assert!(is_safe_public_host("64:ff9b::808:808"));
 }

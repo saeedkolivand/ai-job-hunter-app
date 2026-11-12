@@ -13,6 +13,48 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use crate::error::{AppError, AppResult};
 
+/// Lowercase, strip brackets and trailing dots: `url` keeps the root dot on
+/// domains, so `localhost.` and `localhost..` must classify like `localhost`.
+fn normalize_host(host: &str) -> String {
+    let h = host.trim().trim_matches(|c| c == '[' || c == ']');
+    h.trim_end_matches('.').to_ascii_lowercase()
+}
+
+/// IPv4 addresses embedded in an IPv6 one: mapped/compatible, SIIT
+/// (`::ffff:0:a.b.c.d`), 6to4 (`2002::/16`), NAT64 well-known (`64:ff9b::/96`,
+/// /96 layout only per RFC 6052) and local-use NAT64 (`64:ff9b:1::/48`).
+/// Only the embedded address decides, so DNS64 to public IPv4 stays reachable.
+///
+/// RFC 6052 lets a local-use prefix be /48, /56, /64 or /96, each placing the
+/// IPv4 in different bits around the reserved u-octet (bits 64-71), and the
+/// address does not reveal the operator's prefix length. So every layout is
+/// returned and callers fail closed: the address is unsafe if ANY candidate is.
+/// A local-use NAT64 address whose other-layout reading is private is refused;
+/// that is acceptable.
+fn embedded_ipv4s(v6: Ipv6Addr) -> Vec<Ipv4Addr> {
+    let s = v6.segments();
+    let v4 = |hi: u16, lo: u16| Ipv4Addr::from((u32::from(hi) << 16) | u32::from(lo));
+    if let Some(v) = v6.to_ipv4() {
+        vec![v]
+    } else if s[..4] == [0; 4] && s[4] == 0xffff && s[5] == 0 {
+        vec![v4(s[6], s[7])]
+    } else if s[0] == 0x2002 {
+        vec![v4(s[1], s[2])]
+    } else if s[0] == 0x64 && s[1] == 0xff9b && s[2..6] == [0; 4] {
+        vec![v4(s[6], s[7])]
+    } else if s[0] == 0x64 && s[1] == 0xff9b && s[2] == 1 {
+        let o = v6.octets();
+        vec![
+            Ipv4Addr::new(o[6], o[7], o[9], o[10]),   // /48
+            Ipv4Addr::new(o[7], o[9], o[10], o[11]),  // /56
+            Ipv4Addr::new(o[9], o[10], o[11], o[12]), // /64
+            v4(s[6], s[7]),                           // /96
+        ]
+    } else {
+        Vec::new()
+    }
+}
+
 /// The host-only SSRF guard. `host` is a bare hostname or IP literal (no
 /// scheme/port). Rejects: `localhost`, any `*.localhost`, `local`, any
 /// `*.local`, loopback (`127.0.0.0/8`, `::1`), RFC-1918 private (`10/8`,
@@ -21,17 +63,21 @@ use crate::error::{AppError, AppResult};
 /// broadcast/multicast, and IPv4-mapped-private. A non-IP, non-blocked
 /// hostname is treated as public.
 pub fn is_safe_public_host(host: &str) -> bool {
-    let host = host.trim().trim_matches(|c| c == '[' || c == ']');
+    let lower = normalize_host(host);
+    let host = lower.as_str();
     if host.is_empty() {
         return false;
     }
-    let lower = host.to_ascii_lowercase();
 
-    // Hostname blocklist (case-insensitive).
-    if lower == "localhost" || lower.ends_with(".localhost") {
+    // Hostname blocklist.
+    if matches!(
+        host,
+        "localhost" | "localhost.localdomain" | "ip6-localhost" | "ip6-loopback"
+    ) || host.ends_with(".localhost")
+    {
         return false;
     }
-    if lower == "local" || lower.ends_with(".local") {
+    if host == "local" || host.ends_with(".local") {
         return false;
     }
 
@@ -84,20 +130,59 @@ pub fn is_safe_ipv6(ip: Ipv6Addr) -> bool {
     if (seg0 & 0xfe00) == 0xfc00 {
         return false;
     }
-    // IPv4-mapped (::ffff:a.b.c.d) — defer to the IPv4 rules so a mapped
-    // loopback/private address can't slip through.
-    if let Some(v4) = ip.to_ipv4_mapped() {
-        return is_safe_ipv4(v4);
-    }
-    true
+    // Wrapped IPv4 (mapped/compatible/SIIT/6to4/NAT64): defer to the IPv4 rules
+    // so a wrapped loopback/private address can't slip through.
+    embedded_ipv4s(ip).into_iter().all(is_safe_ipv4)
 }
 
-/// The cloud-metadata service address — the credential-theft pivot an SSRF
-/// attacker aims for. Blocked in any IPv4 notation (`url` canonicalizes IPv4
-/// hosts to dotted-decimal, so hex/octal/decimal forms normalize here too);
-/// an IPv6-mapped/ULA form of this address is not covered by this check (see
-/// [`validate_provider_base_url`]).
-const CLOUD_METADATA_IPV4: Ipv4Addr = Ipv4Addr::new(169, 254, 169, 254);
+/// AWS IMDS over IPv6.
+const AWS_IMDS_IPV6: Ipv6Addr = Ipv6Addr::new(0xfd00, 0x0ec2, 0, 0, 0, 0, 0, 0x0254);
+
+/// Alibaba Cloud metadata service.
+const ALIBABA_METADATA_IPV4: Ipv4Addr = Ipv4Addr::new(100, 100, 100, 200);
+
+fn is_metadata_ipv4(v4: Ipv4Addr) -> bool {
+    v4.is_link_local() || v4 == ALIBABA_METADATA_IPV4
+}
+
+/// Link-local / cloud-metadata addresses: all of `169.254.0.0/16` (incl. the
+/// ECS task-metadata `169.254.170.2`), `fe80::/10`, `fd00:ec2::254` and
+/// Alibaba's `100.100.100.200`. IPv4-mapped (`::ffff:a.b.c.d`) and
+/// IPv4-compatible forms are unwrapped and re-checked. Unlike [`is_safe_ip`]
+/// this does NOT cover loopback/LAN/ULA; local gateways legitimately live there.
+pub fn is_link_local_or_metadata_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => is_metadata_ipv4(v4),
+        IpAddr::V6(v6) => {
+            embedded_ipv4s(v6).into_iter().any(is_metadata_ipv4)
+                || (v6.segments()[0] & 0xffc0) == 0xfe80
+                || v6 == AWS_IMDS_IPV6
+        }
+    }
+}
+
+/// [`is_link_local_or_metadata_ip`] for a bare host string (brackets allowed);
+/// non-IP hostnames are `false`.
+pub fn is_link_local_or_metadata_host(host: &str) -> bool {
+    normalize_host(host)
+        .parse::<IpAddr>()
+        .is_ok_and(is_link_local_or_metadata_ip)
+}
+
+/// Whether a host is an unspecified address (`0.0.0.0`, `::`, or a mapped /
+/// compatible form); these connect to the local machine on most stacks.
+pub fn is_unspecified_host(host: &str) -> bool {
+    match host
+        .trim_matches(|c| c == '[' || c == ']')
+        .parse::<IpAddr>()
+    {
+        Ok(IpAddr::V4(v4)) => v4.is_unspecified(),
+        Ok(IpAddr::V6(v6)) => {
+            v6.is_unspecified() || embedded_ipv4s(v6).into_iter().any(|v4| v4.is_unspecified())
+        }
+        Err(_) => false,
+    }
+}
 
 /// Validate a user-supplied AI-provider base URL for the *generation egress*
 /// path (the endpoint that receives the stored API key + full prompt).
@@ -109,13 +194,11 @@ const CLOUD_METADATA_IPV4: Ipv4Addr = Ipv4Addr::new(169, 254, 169, 254);
 /// pointing the base URL at an attacker), not a wholesale IP filter. It blocks
 /// only:
 ///  1. a non-`http(s)` scheme, and
-///  2. the cloud-metadata address `169.254.169.254` in any IPv4 notation
-///     (hex/octal/decimal all normalize to dotted-decimal via `url`'s
-///     parser). An IPv6-mapped/ULA metadata form is not blocked here — this
-///     check is defense-in-depth only; the real boundary is provenance
-///     (the renderer never controls this value for the flipped commands, see
-///     `crate::ai_config`), and IMDS is a GET-only credential source, not a
-///     POST sink.
+///  2. link-local / cloud-metadata hosts ([`is_link_local_or_metadata_ip`]) in
+///     any notation (`url` normalizes hex/octal/decimal IPv4 to dotted-decimal;
+///     IPv6 and IPv4-mapped forms are unwrapped). Loopback, LAN and other ULA
+///     stay allowed. Defense-in-depth; the real boundary is provenance (see
+///     `crate::ai_config`).
 ///
 /// Uses the same `reqwest::Url` parser as [`crate::net::http::get_guarded`] —
 /// never hand-rolled URL parsing.
@@ -132,9 +215,10 @@ pub fn validate_provider_base_url(base_url: &str) -> AppResult<()> {
     }
     match url.host_str() {
         Some(host) => {
-            if matches!(host.parse::<Ipv4Addr>(), Ok(ip) if ip == CLOUD_METADATA_IPV4) {
+            let blocked = is_link_local_or_metadata_host(host);
+            if blocked {
                 return Err(AppError::Validation(
-                    "Provider base URL 169.254.169.254 (cloud metadata) is not allowed."
+                    "Provider base URL targets a link-local/cloud-metadata address and is not allowed."
                         .to_string(),
                 ));
             }
