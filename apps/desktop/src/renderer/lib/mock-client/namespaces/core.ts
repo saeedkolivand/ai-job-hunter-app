@@ -74,6 +74,8 @@ export const coreNamespaces = (): Pick<AppClient, 'system' | 'jobs' | 'ai' | 'ai
     stageOverrides: async () => ({}),
     setStageOverride: async () => ({}),
     clearStageOverride: async () => ({}),
+    searchSettings: async () => ({ searxngUrl: null }),
+    setSearchSettings: async ({ searxngUrl }) => ({ searxngUrl }),
     // Echo the requested window so a multi-day caller can be exercised against the mock.
     spendSummary: async (days = 1) => ({
       window: { days, from: 0, to: 0 },

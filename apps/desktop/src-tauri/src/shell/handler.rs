@@ -65,6 +65,8 @@ pub(crate) fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + S
         commands::ai::ai_seed_active_config,
         // per-stage model overrides (same store, same validation chain)
         commands::ai::ai_stage_overrides,
+        commands::ai::ai_search_settings,
+        commands::ai::ai_set_search_settings,
         commands::ai::ai_set_stage_override,
         commands::ai::ai_clear_stage_override,
         commands::pipeline::generate_pipeline,

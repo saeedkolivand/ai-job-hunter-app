@@ -196,10 +196,16 @@ export interface PipelineRunSummary {
 export type PipelineErrorKind =
   'billing' | 'auth' | 'rate_limited' | 'unavailable' | 'model_output';
 
-/** The outcome of a run's company research. `errorKind` is present only on `failed`. */
+/**
+ * The outcome of a run's company research. `errorKind` is present only on `failed`.
+ * `backend` names the search backend that served the lookup (or, on `failed`, the one tried
+ * last): the provider's own `native` search, a SearXNG-compatible server, or `exa`. Absent
+ * when no lookup ran or the run predates the field.
+ */
 export interface PipelineResearchStatus {
   status: 'ok' | 'empty' | 'failed';
   errorKind?: PipelineErrorKind;
+  backend?: 'native' | 'searxng' | 'exa';
 }
 
 /**

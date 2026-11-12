@@ -17,25 +17,65 @@ use super::*;
 #[test]
 fn a_working_native_search_is_never_replaced_by_exa() {
     assert_eq!(
-        resolve_search_backend(true, true),
+        resolve_search_backend(true, true, true),
         SearchBackend::Native,
-        "an Exa key must not override a provider that can already search"
+        "an Exa key or a SearXNG URL must not override a provider that can already search"
     );
-    assert_eq!(resolve_search_backend(true, false), SearchBackend::Native);
+    assert_eq!(
+        resolve_search_backend(true, false, false),
+        SearchBackend::Native
+    );
 }
 
 /// The population this feature exists for: local Ollama with no ollama.com
 /// account key, and every `openai-compatible` gateway. They get nothing today.
 #[test]
 fn exa_serves_a_provider_with_no_usable_native_search() {
-    assert_eq!(resolve_search_backend(false, true), SearchBackend::Exa);
+    assert_eq!(
+        resolve_search_backend(false, false, true),
+        SearchBackend::Exa
+    );
+}
+
+/// SearXNG is free and local, so it goes before the paid Exa. Mutation check: swap the two rows
+/// in `search_order` and this fails.
+#[test]
+fn searxng_is_preferred_to_exa_when_the_provider_has_no_native_search() {
+    assert_eq!(
+        resolve_search_backend(false, true, true),
+        SearchBackend::Searxng
+    );
+    assert_eq!(
+        resolve_search_backend(false, true, false),
+        SearchBackend::Searxng
+    );
+}
+
+#[test]
+fn the_order_is_native_then_searxng_then_exa() {
+    assert_eq!(
+        search_order(true, true, true),
+        [
+            SearchBackend::Native,
+            SearchBackend::Searxng,
+            SearchBackend::Exa
+        ]
+    );
+    assert_eq!(
+        search_order(true, false, true),
+        [SearchBackend::Native, SearchBackend::Exa]
+    );
+    assert!(search_order(false, false, false).is_empty());
 }
 
 #[test]
 fn nothing_configured_means_no_search_at_all() {
     // Not an error — research degrades to an empty brief and generation
     // proceeds, which is the existing contract.
-    assert_eq!(resolve_search_backend(false, false), SearchBackend::None);
+    assert_eq!(
+        resolve_search_backend(false, false, false),
+        SearchBackend::None
+    );
 }
 
 // ── parse_exa_results ────────────────────────────────────────────────────────
@@ -143,38 +183,42 @@ fn fake_searcher() -> Option<Box<dyn WebSearcher>> {
     Some(Box::new(FakeSearcher))
 }
 
-#[test]
-fn resolve_via_backend_never_prefers_exa_over_a_ready_native_searcher() {
-    // The SAME fallback-ONLY invariant `resolve_search_backend` guards, now
-    // pinned at the level that pairs the tag with the actual searcher a
-    // fetch would use — a Native tag must never be paired with `None` (or an
-    // Exa searcher) when a native one was available.
-    let route = CompanySearchRoute::resolve_via_backend(fake_searcher(), fake_searcher());
-    assert_eq!(route.backend(), SearchBackend::Native);
-    assert!(matches!(
-        route,
-        CompanySearchRoute::Backend(SearchBackend::Native, Some(_))
-    ));
+fn route(
+    native: Option<Box<dyn WebSearcher>>,
+    searxng: Option<Box<dyn WebSearcher>>,
+    exa: Option<Box<dyn WebSearcher>>,
+) -> CompanySearchRoute {
+    CompanySearchRoute::Backend(SearchChain::new(native, searxng, exa))
 }
 
 #[test]
-fn resolve_via_backend_falls_back_to_exa_when_native_is_absent() {
-    let route = CompanySearchRoute::resolve_via_backend(None, fake_searcher());
-    assert_eq!(route.backend(), SearchBackend::Exa);
-    assert!(matches!(
-        route,
-        CompanySearchRoute::Backend(SearchBackend::Exa, Some(_))
-    ));
+fn a_chain_never_prefers_a_fallback_over_a_ready_native_searcher() {
+    // The SAME fallback-ONLY invariant `resolve_search_backend` guards, pinned at the level that
+    // pairs the tag with the searcher a fetch would use.
+    let r = route(fake_searcher(), fake_searcher(), fake_searcher());
+    assert_eq!(r.backend(), SearchBackend::Native);
+    assert_eq!(r.served().get(), None, "named only once a search returned");
 }
 
 #[test]
-fn resolve_via_backend_is_none_when_nothing_is_configured() {
-    let route = CompanySearchRoute::resolve_via_backend(None, None);
-    assert_eq!(route.backend(), SearchBackend::None);
-    assert!(matches!(
-        route,
-        CompanySearchRoute::Backend(SearchBackend::None, None)
-    ));
+fn a_chain_starts_at_searxng_when_native_is_absent() {
+    let r = route(None, fake_searcher(), fake_searcher());
+    assert_eq!(r.backend(), SearchBackend::Searxng);
+    assert_eq!(r.served().get(), None, "named only once a search returned");
+}
+
+#[test]
+fn a_chain_falls_back_to_exa_when_it_is_the_only_one() {
+    let r = route(None, None, fake_searcher());
+    assert_eq!(r.backend(), SearchBackend::Exa);
+}
+
+#[test]
+fn an_empty_chain_is_none_when_nothing_is_configured() {
+    let r = route(None, None, None);
+    assert_eq!(r.backend(), SearchBackend::None);
+    assert_eq!(r.served().get(), None);
+    assert!(matches!(r, CompanySearchRoute::Backend(ref c) if c.is_empty()));
 }
 
 #[test]
@@ -182,7 +226,7 @@ fn the_native_route_never_carries_a_searcher() {
     // The bypass variant: no separate `WebSearcher` at all — `backend()`
     // still reports Native, matching the single arm `fetch_company_brief`
     // takes for it (a direct `AiProvider::research` call, never touching
-    // `resolve_via_backend` at all).
+    // `SearchChain::new` at all).
     assert_eq!(CompanySearchRoute::Native.backend(), SearchBackend::Native);
 }
 
@@ -319,3 +363,6 @@ fn exa_statuses_are_typed_by_what_they_mean() {
     assert_eq!(kind(503), Some("unavailable"));
     assert_eq!(kind(418), None);
 }
+
+mod chain;
+mod searxng;

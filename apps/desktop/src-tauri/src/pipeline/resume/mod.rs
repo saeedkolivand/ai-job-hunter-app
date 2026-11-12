@@ -64,6 +64,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 
+use crate::ai_provider::SearchBackend;
 use crate::error::AppResult;
 use crate::pipeline::budget::{Budget, StoppedReason};
 use crate::pipeline::cache::KvCache;
@@ -304,6 +305,8 @@ struct LedgerState {
     /// How the cover letter's company research ended — `None` when the run never asked for
     /// one (or the lookup was dropped before answering).
     research: Option<ResearchStatus>,
+    /// The search backend `research` came from, when one ran.
+    research_backend: Option<SearchBackend>,
 }
 
 impl RunLedger {
@@ -367,8 +370,10 @@ impl RunLedger {
 
     /// Record the company research's outcome. The early lookup and the inline path both end
     /// here, so the run reports one status whichever ran (#1500).
-    pub fn note_research(&self, status: ResearchStatus) {
-        self.state.lock().research = Some(status);
+    pub fn note_research(&self, status: ResearchStatus, backend: Option<SearchBackend>) {
+        let mut state = self.state.lock();
+        state.research = Some(status);
+        state.research_backend = backend;
     }
 
     pub fn research(&self) -> Option<ResearchStatus> {
@@ -391,7 +396,7 @@ impl RunLedger {
             "reverted": state.reverted,
         });
         if let Some(research) = state.research {
-            metrics["research"] = research.wire();
+            metrics["research"] = research.wire_via(state.research_backend);
         }
         metrics
     }

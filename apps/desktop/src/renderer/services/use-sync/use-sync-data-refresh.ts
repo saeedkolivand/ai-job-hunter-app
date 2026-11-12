@@ -23,6 +23,7 @@ export const useSyncDataRefresh = () => {
       keys.jobPreferences.all,
       keys.ai.activeConfig,
       keys.ai.stageOverrides,
+      keys.ai.searchSettings,
       keys.ai.spend,
       keys.autopilot.all,
       keys.postings.all,
