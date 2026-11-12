@@ -54,9 +54,8 @@ pub(crate) fn applied_job_urls_checked(app: &AppHandle) -> Option<HashSet<String
         .applied_job_urls_checked()
 }
 
-/// Fill each found job's `applied` from the set of `job_url`s that have a saved
-/// generation — so the badge reflects a real link (a generation exists for that
-/// job) rather than a hand-set flag that could drift.
+/// Fill each found job's `applied` from the Application aggregate, so the badge
+/// reflects a recorded submission rather than a hand-set flag that could drift.
 fn enrich_applied(app: &AppHandle, list: &mut [crate::autopilot::Autopilot]) {
     // "Applied" is now derived from the Application aggregate (ADR 0001): a URL
     // counts as applied when it has an Application whose status is past `saved`.

@@ -43,6 +43,9 @@ export const state: {
   documentText: string | undefined;
   /** Captured from the TailorFlow stub so the debounce tests can simulate a job-ad edit. */
   capturedOnJobDescChange: ((text: string) => void) | undefined;
+  /** Stage the stubbed TailorFlow reports through `onController` (undefined = never). */
+  controllerStage: 'done' | undefined;
+  setStatusPending: boolean;
 } = {
   tab: 'overview',
   from: undefined,
@@ -51,6 +54,8 @@ export const state: {
   docsData: [],
   documentText: undefined,
   capturedOnJobDescChange: undefined,
+  controllerStage: undefined,
+  setStatusPending: false,
 };
 
 export const mockNotify: Record<
@@ -100,9 +105,12 @@ export const mockUseAiGenerations: Mock = vi.fn();
 export const mockUpdateApplicationMutate: Mock = vi.fn();
 /** `setStatus.mutate(vars, options)` — resolves successfully by default so the
  *  optional-note prompt opens (mirrors the row's mock). */
-export type StatusMutateOptions = { onSuccess?: () => void; onError?: () => void };
+export type StatusMutateOptions = {
+  onSuccess?: (data: { error?: string }) => void;
+  onError?: () => void;
+};
 export const mockSetStatusMutate = vi.fn((_vars: unknown, options?: StatusMutateOptions) => {
-  options?.onSuccess?.();
+  options?.onSuccess?.({});
 });
 // Controlled so tests can assert `keepDocuments` on the delete path.
 export const mockRemoveMutateAsync: Mock = vi.fn().mockResolvedValue(undefined);
@@ -211,6 +219,8 @@ export function resetMocks() {
   state.docsData = [];
   state.documentText = undefined;
   state.capturedOnJobDescChange = undefined;
+  state.controllerStage = undefined;
+  state.setStatusPending = false;
   mockSessionState.autopilot.lastAppliedId = null;
   mockSessionState.applicationApply.applySeedResume = null;
   mockUseApplication.mockReset();
@@ -220,7 +230,7 @@ export function resetMocks() {
   mockUpdateApplicationMutate.mockReset();
   mockSetStatusMutate.mockClear();
   mockSetStatusMutate.mockImplementation((_vars: unknown, options?: StatusMutateOptions) => {
-    options?.onSuccess?.();
+    options?.onSuccess?.({});
   });
   mockSetApplicationApply.mockClear();
   mockRemoveMutateAsync.mockClear();

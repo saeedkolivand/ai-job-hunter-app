@@ -166,9 +166,9 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
    * on screen, and the mutation invalidates the generations query on success so
    * a remount rehydrates from the store.
    *
-   * Side effect (inherited from `ai_generations_save`, ADR-0001): the save also
-   * upserts the parent Application with a Generate origin, which advances a
-   * still-`saved` Application to `applied`. It never demotes a later stage.
+   * Side effect (inherited from `ai_generations_save`): the save also upserts
+   * the parent Application with a Generate origin, which creates or keeps it
+   * `saved` (it never records a submission) and never demotes a later stage.
    *
    * This surface owns ONLY the two email fields. Every other field is echoed
    * from the saved record, and a blank makes the backend `pick` merge keep the
@@ -184,7 +184,7 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
     // A URL-less Application cannot be saved onto. `ai_generations_save` keys
     // BOTH the parent-Application upsert and the generation merge on the job
     // url, and both treat '' as "no match" — so each save would mint a fresh
-    // `applied` Application (sorted to the top of the list) plus a generation
+    // `saved` Application (sorted to the top of the list) plus a generation
     // row whose FK points at that phantom, which `matchingGenerations` (an FK
     // join) can never surface. The draft would still be lost on a tab switch,
     // now with duplicate applications as a parting gift. Staying session-only
@@ -402,6 +402,8 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
             onCopy={() => copyBody(body)}
             onCopySubject={() => copySubject(subject)}
             mailtoHref={mailtoHref}
+            applicationId={application.id}
+            applicationStatus={application.status}
           />
         )}
       </div>

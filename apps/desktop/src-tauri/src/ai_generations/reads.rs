@@ -1,5 +1,5 @@
 //! The read side of the `ai_generations` store: the full list, the per-posting
-//! finders, and the url sets the cascade and the applied badge derive from.
+//! finders, and the url sets the delete cascade derives from.
 //!
 //! Split out of [`super`] to keep the store body under the architecture LOC cap
 //! (`tests/architecture.rs` R8). Persistence still lives entirely inside
@@ -53,20 +53,6 @@ impl AiGenerationStore {
                 .then(|| self.find_by_job_url(job_url))
                 .flatten()
         })
-    }
-
-    /// Distinct non-empty `job_url`s that have at least one saved generation —
-    /// the set used to derive a found job's `applied` flag.
-    pub fn applied_job_urls(&self) -> std::collections::HashSet<String> {
-        let conn = self.conn.lock();
-        conn.prepare("SELECT DISTINCT job_url FROM ai_generations WHERE job_url != ''")
-            .ok()
-            .and_then(|mut stmt| {
-                stmt.query_map([], |row| row.get::<_, String>(0))
-                    .ok()
-                    .map(|rows| rows.filter_map(|r| r.ok()).collect())
-            })
-            .unwrap_or_default()
     }
 
     /// The distinct, non-empty posting urls a set of generations belongs to.

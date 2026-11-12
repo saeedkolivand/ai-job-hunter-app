@@ -1,6 +1,6 @@
 # ADR-007: `ai_generations` as the application aggregate with merge-upsert by job URL
 
-Last updated: 2026-10-05
+Last updated: 2026-11-12
 
 **Status:** Accepted
 
@@ -8,13 +8,13 @@ Last updated: 2026-10-05
 
 A single job application involves multiple separate AI actions: résumé tailoring, cover-letter generation, application-question answers, and company-research brief. Storing each as an independent row would scatter them across the table and make it impossible to query "everything generated for this application" without a join.
 
-The `applied` status of a job (whether the user has generated documents for it) was previously stored explicitly — creating a dual-write risk if a save succeeded but the status update failed.
+The `applied` status of a job (originally: whether the user had generated documents for it; superseded, see ADR 0001) was previously stored explicitly — creating a dual-write risk if a save succeeded but the status update failed.
 
 ## Decision
 
 `ai_generations` is the **application aggregate**: one row per job URL. `save_application` in `apps/desktop/src-tauri/src/ai_generations/writes.rs` performs a **merge-upsert by `job_url`**: when an incoming record shares a `job_url` with an existing row, it calls the pure `merge_application` function to combine fields (résumé text, cover-letter text, answers, brief) into the existing row rather than inserting a new one. Records without a `job_url` (manual generations) always insert as fresh rows.
 
-`applied` status is **derived**, not stored: `applied_job_urls()` queries `DISTINCT job_url` from the table and returns the set. Schema additions (e.g. `application_answers` column, `job_link` column) are additive migrations — no destructive column changes.
+`applied` status was originally **derived** from the generation rows. **Superseded by ADR 0001** (and its 2026-11-12 amendment): applied is now the Application status, and generating documents does not set it. Schema additions (e.g. `application_answers` column, `job_link` column) are additive migrations — no destructive column changes.
 
 ## Consequences
 

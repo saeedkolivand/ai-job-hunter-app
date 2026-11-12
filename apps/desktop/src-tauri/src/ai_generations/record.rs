@@ -61,8 +61,8 @@ pub struct AiGenerationRecord {
     #[serde(rename = "jobAd")]
     pub job_ad: String,
     // Application link — makes the record the single "application" aggregate: the
-    // job it targets and the board it came from. `job_url` is what derives a found
-    // job's `applied` flag (a matching url means the user generated for it).
+    // job it targets and the board it came from. `job_url` is what links the
+    // generation to its Application (generating alone does not mark a job applied).
     #[serde(rename = "jobUrl", default)]
     pub job_url: String,
     #[serde(default)]

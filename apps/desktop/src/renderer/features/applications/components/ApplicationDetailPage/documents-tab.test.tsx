@@ -5,7 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 import { TEST_IDS } from '@ajh/test-ids';
 
@@ -14,10 +14,13 @@ import {
   makeApp,
   makeGen,
   mockSessionState,
+  mockSetStatusMutate,
   mockUseAiGenerations,
   setLoaded,
   state,
 } from './test-support';
+
+const MARK_APPLIED = /applications\.detail\.markApplied$/i;
 
 beforeEach(() => {
   state.tab = 'documents';
@@ -207,6 +210,51 @@ describe('ApplicationDetailPage — Documents tab toolbar', () => {
     ).not.toBeInTheDocument();
     // Referral button always present.
     expect(screen.getByRole('button', { name: /autopilot\.referral\.open/i })).toBeInTheDocument();
+  });
+
+  it('offers "Mark as applied" only for a saved application once generation is done, and sets applied', () => {
+    state.controllerStage = 'done';
+    setLoaded(makeApp({ id: 'app-1', status: 'saved' }), [], []);
+    render(<ApplicationDetailPage />);
+    fireEvent.click(screen.getByRole('button', { name: /applications\.detail\.markApplied/i }));
+    expect(mockSetStatusMutate).toHaveBeenCalledWith(
+      { id: 'app-1', status: 'applied' },
+      expect.anything()
+    );
+  });
+
+  it('hides "Mark as applied" while the stage is not done', () => {
+    setLoaded(makeApp({ status: 'saved' }), [], []);
+    render(<ApplicationDetailPage />);
+    expect(screen.queryByRole('button', { name: MARK_APPLIED })).not.toBeInTheDocument();
+  });
+
+  it('hides "Mark as applied" once the application is already applied', () => {
+    state.controllerStage = 'done';
+    setLoaded(makeApp({ status: 'applied' }), [], []);
+    render(<ApplicationDetailPage />);
+    expect(screen.queryByRole('button', { name: MARK_APPLIED })).not.toBeInTheDocument();
+  });
+
+  it('disables "Mark as applied" while the status call is pending', () => {
+    state.controllerStage = 'done';
+    state.setStatusPending = true;
+    setLoaded(makeApp({ status: 'saved' }), [], []);
+    render(<ApplicationDetailPage />);
+    expect(screen.getByRole('button', { name: MARK_APPLIED })).toBeDisabled();
+  });
+
+  it('shows an error when marking as applied fails', () => {
+    state.controllerStage = 'done';
+    // The command resolves `{ error }` on failure rather than rejecting.
+    mockSetStatusMutate.mockImplementationOnce(
+      (_v: unknown, o?: { onSuccess?: (d: { error?: string }) => void }) =>
+        o?.onSuccess?.({ error: 'x' })
+    );
+    setLoaded(makeApp({ status: 'saved' }), [], []);
+    render(<ApplicationDetailPage />);
+    fireEvent.click(screen.getByRole('button', { name: MARK_APPLIED }));
+    expect(screen.getByRole('alert')).toHaveTextContent('applications.detail.markAppliedError');
   });
 });
 

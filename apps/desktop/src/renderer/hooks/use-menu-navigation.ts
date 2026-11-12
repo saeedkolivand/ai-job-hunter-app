@@ -5,7 +5,7 @@ import type { Application, MenuActionEvent, MenuNavigateEvent } from '@ajh/share
 import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
-import { normalizeJobUrl } from '@/features/jobs/lib/canonical-job-key';
+import { normalizeJobUrl } from '@/lib/canonical-job-key';
 import { fetchApplications, useMenuIntents } from '@/services';
 import { MANAGED_BY_KEY, useUpdater } from '@/services/use-updater';
 import { useWindowControls } from '@/services/use-window-controls';

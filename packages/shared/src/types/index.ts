@@ -407,7 +407,7 @@ export interface Autopilot {
   assistantModel?: string;
   assistantBaseUrl?: string;
   totalFound: number;
-  /** Found jobs the user has applied to (derived from saved generations). */
+  /** Legacy and always `0`: the run path never counts it (#1171). Per-job applied state is `AutopilotFoundJob.applied`. */
   totalApplied: number;
   /** Jobs surfaced by the most recent run. */
   foundJobs?: AutopilotFoundJob[];
@@ -468,8 +468,9 @@ export interface AutopilotFoundJob {
   postedAt?: number;
   /** First surfaced in the most recent run — drives the "New" badge. */
   isNew?: boolean;
-  /** The user has generated an application for this job (derived from a saved
-   *  generation whose `jobUrl` matches `url`). Drives the "Applied" badge. */
+  /** The user's tracked Application for this job is past `saved` (derived from
+   *  its Application status, not from having generated documents). Drives the
+   *  "Applied" badge. */
   applied?: boolean;
   /** Ghost-job trust signal, computed at find-time. Absent only on a run
    *  recorded before this field existed. */

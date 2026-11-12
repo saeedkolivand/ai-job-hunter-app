@@ -10,10 +10,10 @@ use super::{support::*, *};
 // wrapper cannot be unit-tested without a live AppHandle).
 
 #[test]
-fn generate_save_creates_one_application_with_applied_status() {
+fn generate_save_creates_one_saved_application() {
     // Calling upsert_for_origin with Generate origin for the first time must
-    // produce exactly ONE Application row with status `applied` and a set
-    // `applied_at`.
+    // produce exactly ONE Application row with status `saved` and no
+    // `applied_at` (generating documents is not a submission).
     let (_dir, app_store) = open_store();
 
     let app_id = upsert(
@@ -29,12 +29,12 @@ fn generate_save_creates_one_application_with_applied_status() {
     let app = app_store.get(&app_id).unwrap();
     assert_eq!(
         app.status,
-        ApplicationStatus::Applied,
-        "Generate origin must yield status=applied"
+        ApplicationStatus::Saved,
+        "Generate origin must yield status=saved"
     );
     assert!(
-        app.applied_at.is_some(),
-        "applied_at must be set for Generate origin"
+        app.applied_at.is_none(),
+        "applied_at must stay unset for Generate origin"
     );
 }
 
@@ -111,8 +111,8 @@ fn generate_save_second_generation_same_url_merge_into_one_gen_row_and_one_appli
     assert_eq!(apps.len(), 1, "still exactly one Application for the url");
     assert_eq!(
         apps[0].status,
-        ApplicationStatus::Applied,
-        "Application status must remain applied"
+        ApplicationStatus::Saved,
+        "Application status must remain saved"
     );
 
     // AiGenerationStore merges same-url into one aggregate gen row (existing
@@ -124,4 +124,83 @@ fn generate_save_second_generation_same_url_merge_into_one_gen_row_and_one_appli
         1,
         "same-url generations merge into one gen row (per save_application semantics)"
     );
+}
+
+#[test]
+fn generate_never_demotes_or_rewrites_an_applied_row() {
+    let (_dir, store) = open_store();
+    let url = "https://acme.com/job/7";
+    let id = upsert(
+        &store,
+        url,
+        "linkedin",
+        &meta("Acme", "Engineer"),
+        ApplicationOrigin::Manual,
+    );
+    let before = store.get(&id).unwrap();
+    assert_eq!(before.status, ApplicationStatus::Applied);
+
+    let again = upsert(
+        &store,
+        url,
+        "linkedin",
+        &meta("Acme", "Engineer"),
+        ApplicationOrigin::Generate,
+    );
+    assert_eq!(again, id);
+    let after = store.get(&id).unwrap();
+    assert_eq!(after.status, ApplicationStatus::Applied);
+    assert_eq!(
+        after.applied_at, before.applied_at,
+        "original applied_at kept"
+    );
+}
+
+#[test]
+fn generate_with_explicit_applied_true_applies() {
+    let (_dir, store) = open_store();
+    let id = store
+        .upsert_for_origin(
+            "https://acme.com/job/8",
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Generate,
+            Some(true),
+        )
+        .unwrap();
+    let app = store.get(&id).unwrap();
+    assert_eq!(app.status, ApplicationStatus::Applied);
+    assert!(app.applied_at.is_some());
+}
+
+#[test]
+fn generate_then_explicit_set_status_applied_records_the_submission() {
+    let (_dir, store) = open_store();
+    let id = upsert(
+        &store,
+        "https://acme.com/job/9",
+        "linkedin",
+        &meta("Acme", "Engineer"),
+        ApplicationOrigin::Generate,
+    );
+    store
+        .set_status(&id, ApplicationStatus::Applied, "")
+        .unwrap();
+    let app = store.get(&id).unwrap();
+    assert_eq!(app.status, ApplicationStatus::Applied);
+    assert!(app.applied_at.is_some());
+}
+
+#[test]
+fn manual_and_backfill_origins_still_apply() {
+    let (_dir, store) = open_store();
+    for (url, origin) in [
+        ("https://acme.com/job/10", ApplicationOrigin::Manual),
+        ("https://acme.com/job/11", ApplicationOrigin::Backfill),
+    ] {
+        let id = upsert(&store, url, "linkedin", &meta("Acme", "Engineer"), origin);
+        let app = store.get(&id).unwrap();
+        assert_eq!(app.status, ApplicationStatus::Applied, "{origin:?}");
+        assert!(app.applied_at.is_some(), "{origin:?}");
+    }
 }

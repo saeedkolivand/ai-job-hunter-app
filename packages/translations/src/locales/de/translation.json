@@ -3587,6 +3587,9 @@
       "contactSection": "Kontakt",
       "briefTitle": "Unternehmens-Briefing",
       "answersTitle": "Bewerbungsantworten",
+      "markApplied": "Als beworben markieren",
+      "markAppliedError": "Konnte nicht als beworben markiert werden. Bitte erneut versuchen.",
+      "markedApplied": "Als beworben markiert",
       "jobLink": "Job-Link",
       "interview": {
         "title": "Fragen, die Sie stellen",

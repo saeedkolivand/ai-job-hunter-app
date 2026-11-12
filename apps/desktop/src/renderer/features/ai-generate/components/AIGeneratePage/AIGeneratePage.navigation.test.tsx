@@ -39,6 +39,7 @@ vi.mock('@/services', () => ({ useExtractText: () => ({}) }));
 vi.mock('@/services/use-ai-generations', () => ({
   useSaveAiGeneration: () => ({ mutate: vi.fn() }),
 }));
+vi.mock('./LinkedMarkApplied', () => ({ LinkedMarkApplied: () => <div>linked-mark-applied</div> }));
 vi.mock('@/features/ai-generate/hooks/useFileUpload', () => ({
   useFileUpload: () => ({ handleUpload: vi.fn() }),
 }));
@@ -159,5 +160,21 @@ describe('AIGeneratePage — survives navigation', () => {
 
     render(<AIGeneratePage />);
     expect(screen.getByText('done:final resume')).toBeTruthy();
+  });
+
+  it('offers the linked mark-as-applied action only at done and not while generating', async () => {
+    const { unmount } = render(<AIGeneratePage />);
+    expect(screen.queryByText('linked-mark-applied')).toBeNull(); // configuring
+    unmount();
+
+    useSessionStore.getState().setAIGenerate({ stage: 'done' });
+    useAIGenerateRunStore.setState({ isGenerating: true });
+    const second = render(<AIGeneratePage />);
+    expect(screen.queryByText('linked-mark-applied')).toBeNull(); // still generating
+    second.unmount();
+
+    useAIGenerateRunStore.setState({ isGenerating: false });
+    render(<AIGeneratePage />);
+    expect(screen.getByText('linked-mark-applied')).toBeTruthy();
   });
 });

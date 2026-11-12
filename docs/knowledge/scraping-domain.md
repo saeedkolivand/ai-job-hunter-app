@@ -1,6 +1,6 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-11-11
+Last updated: 2026-11-12
 
 Describes the job-scraping subsystem: the board registry (`SCRAPERS` in `apps/desktop/src-tauri/src/scraping/boards/mod.rs`), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
@@ -316,7 +316,7 @@ When a job posting appears across multiple boards (e.g., a job scraped both from
 
 **Canonical job key:**
 
-Every job is keyed by its `canonical_job_key(url, title, company)` — defined in `apps/desktop/src-tauri/src/scraping/boards/common.rs`, mirrored in `apps/desktop/src/renderer/features/jobs/lib/canonical-job-key.ts` for renderer-side dedup. The key normalizes URLs (lowercase whole URL, strip `www.`, drop fragments, keep only board-identifying query params like `indeed.com`'s `jk`) or falls back to `{title.trim().lowercase()}\u{0001}{company.trim().lowercase()}` (U+0001 separator prevents title/company forgery). The Rust function `normalize_job_url` is the shared app-wide URL identity (also used by autopilot's merge and extension import); the TS mirror must maintain byte-equivalence to the Rust implementation to ensure the same duplicate pairs are identified both sides.
+Every job is keyed by its `canonical_job_key(url, title, company)` — defined in `apps/desktop/src-tauri/src/scraping/boards/common.rs`, mirrored in `apps/desktop/src/renderer/lib/canonical-job-key.ts` for renderer-side dedup. The key normalizes URLs (lowercase whole URL, strip `www.`, drop fragments, keep only board-identifying query params like `indeed.com`'s `jk`) or falls back to `{title.trim().lowercase()}\u{0001}{company.trim().lowercase()}` (U+0001 separator prevents title/company forgery). The Rust function `normalize_job_url` is the shared app-wide URL identity (also used by autopilot's merge and extension import); the TS mirror must maintain byte-equivalence to the Rust implementation to ensure the same duplicate pairs are identified both sides.
 
 **Engine dedup pass:**
 
@@ -347,7 +347,7 @@ The Rust truth-table test cases (same URL across boards, url-less title+company,
 - Canonical key (Rust): `apps/desktop/src-tauri/src/scraping/boards/common.rs:canonical_job_key`
 - Engine dedup: `apps/desktop/src-tauri/src/scraping/engine/dedup.rs:dedup_cross_source`
 - Autopilot merge: `apps/desktop/src-tauri/src/autopilot/merge.rs:merge_found_jobs` (delegates `merge_key` to the shared canonical key)
-- Canonical key (TS mirror): `apps/desktop/src/renderer/features/jobs/lib/canonical-job-key.ts`
+- Canonical key (TS mirror): `apps/desktop/src/renderer/lib/canonical-job-key.ts`
 - Renderer dedup: `apps/desktop/src/renderer/features/jobs/lib/merge-postings.ts:mergePostings`
 
 ## Cross-board clustering (ADR-029, 2026-07-21)

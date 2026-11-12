@@ -5,8 +5,8 @@
 //! I". A [`crate::ai_generations`] generation is demoted to a **child Document**
 //! (résumé/cover text) that references its parent via `application_id`.
 //!
-//! "Applied" is no longer "a generation exists for this URL" — it is now
-//! "∃ Application(url) with status ≠ `saved`" ([`ApplicationStore::applied_job_urls`]).
+//! "Applied" is no longer "a generation exists for this URL" (generating leaves the
+//! Application `saved`) — it is now "∃ Application(url) with status ≠ `saved`" ([`ApplicationStore::applied_job_urls`]).
 //! An Application may have zero child generations (a `saved`/manual/external
 //! doc-less pursuit) or many (one URL, separate résumé + cover actions).
 //!

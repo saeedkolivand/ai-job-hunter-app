@@ -5,6 +5,7 @@
  * state the mocks read lives in ./test-support.
  */
 
+import { useEffect } from 'react';
 import { beforeEach, vi } from 'vitest';
 import { render } from '@testing-library/react';
 
@@ -72,7 +73,9 @@ vi.mock('@/features/documents/components/TailorFlow', () => ({
     onJobDescChange,
     persistence,
     resumeDocId,
+    onController,
   }: {
+    onController?: (c: unknown) => void;
     seedGeneration?: { id: string };
     onJobDescChange?: (text: string) => void;
     persistence?: {
@@ -83,6 +86,15 @@ vi.mock('@/features/documents/components/TailorFlow', () => ({
     resumeDocId?: string;
   }) => {
     state.capturedOnJobDescChange = onJobDescChange;
+    useEffect(() => {
+      if (state.controllerStage) {
+        onController?.({
+          stage: state.controllerStage,
+          questionsCount: 0,
+          interviewQuestionsCount: 0,
+        });
+      }
+    }, [onController]);
     return (
       <div
         data-testid={TEST_IDS.documents.tailorFlow}
@@ -106,7 +118,10 @@ vi.mock('@/features/documents/components/GenerationCard', () => ({
 
 vi.mock('@/services', () => ({
   useApplication: () => mockUseApplication(),
-  useSetApplicationStatus: () => ({ mutate: mockSetStatusMutate, isPending: false }),
+  useSetApplicationStatus: () => ({
+    mutate: mockSetStatusMutate,
+    isPending: state.setStatusPending,
+  }),
   useUpdateApplication: () => ({ mutate: mockUpdateApplicationMutate, isPending: false }),
   useOpenExternal: () => ({ mutate: vi.fn() }),
   useRemoveApplication: () => ({ mutateAsync: mockRemoveMutateAsync, isPending: false }),

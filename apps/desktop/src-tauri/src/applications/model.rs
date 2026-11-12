@@ -106,7 +106,8 @@ impl ApplicationStatus {
 pub enum ApplicationOrigin {
     /// "Save" on the Jobs/discovery page → `saved`.
     Saved,
-    /// Apply / Generate (résumé/cover) flow → `applied`.
+    /// Generate (résumé/cover) flow → `saved`: a draft exists, nothing was submitted.
+    /// The user records the submission explicitly via `set_status(applied)`.
     Generate,
     /// Manually tracked by the user (the `/applications` page) → `applied`.
     Manual,

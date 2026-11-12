@@ -57,8 +57,8 @@ describe('useSaveAiGeneration — post-save invalidation', () => {
 
     const invalidated = invalidate.mock.calls.map(([arg]) => arg?.queryKey);
     expect(invalidated).toContainEqual(keys.aiGenerations.all);
-    // The command also upserts the parent Application (ADR-0001), advancing a
-    // still-`saved` row to `applied`. Without this second invalidation the
+    // The command also upserts the parent Application (created or kept `saved`).
+    // Without this second invalidation the
     // applications list and the detail page's status chip/timeline keep showing
     // the pre-save status until something else happens to refetch them.
     expect(invalidated).toContainEqual(keys.applications.all);

@@ -5,6 +5,7 @@ import type { AiGenerationRecord, Application, AutopilotFoundJob } from '@ajh/sh
 import { useTranslation } from '@ajh/translations';
 import { Button, CardSkeleton } from '@ajh/ui';
 
+import { MarkAppliedButton } from '@/components/job/MarkAppliedButton';
 import {
   TailorFlow,
   type TailorFlowController,
@@ -185,8 +186,11 @@ export function DocumentsTab({ application, matchingGenerations }: DocumentsTabP
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Toolbar — Questions (only on `done`) + Referral */}
+      {/* Toolbar — Mark as applied + Questions (only on `done`), Interview, Referral */}
       <div className="flex shrink-0 items-center justify-end gap-2 border-b border-[var(--border-soft)] px-8 py-3">
+        {controller?.stage === 'done' && (
+          <MarkAppliedButton applicationId={application.id} status={application.status} />
+        )}
         {controller?.stage === 'done' && (
           <Button
             variant="glass"

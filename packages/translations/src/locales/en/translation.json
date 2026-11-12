@@ -3583,6 +3583,9 @@
       "contactSection": "Contact",
       "briefTitle": "Company brief",
       "answersTitle": "Application answers",
+      "markApplied": "Mark as applied",
+      "markAppliedError": "Could not mark as applied. Try again.",
+      "markedApplied": "Marked as applied",
       "jobLink": "Job link",
       "interview": {
         "title": "Questions to ask",

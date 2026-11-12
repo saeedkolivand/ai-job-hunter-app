@@ -259,3 +259,31 @@ describe('ApplyByEmailTab — select-to-rewrite', () => {
     openSpy.mockRestore();
   });
 });
+
+describe('ApplyByEmailTab — mark as applied next to mailto', () => {
+  const MARK = 'applications.detail.markApplied';
+
+  it('offers Mark as applied while the application is saved', async () => {
+    renderTab({ contactEmail: 'hr@acme.com', status: 'saved' });
+    await clickGenerate();
+    await screen.findByText(BODY);
+    expect(screen.getByRole('button', { name: MARK })).toBeInTheDocument();
+  });
+
+  it('offers Mark as applied even without a recipient (draft sent from another client)', async () => {
+    renderTab({ contactEmail: '', status: 'saved' });
+    await clickGenerate();
+    await screen.findByText(BODY);
+    expect(
+      screen.queryByRole('button', { name: 'applications.detail.email.openMailto' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: MARK })).toBeInTheDocument();
+  });
+
+  it('hides Mark as applied once the application is applied', async () => {
+    renderTab({ contactEmail: 'hr@acme.com', status: 'applied' });
+    await clickGenerate();
+    await screen.findByText(BODY);
+    expect(screen.queryByRole('button', { name: MARK })).not.toBeInTheDocument();
+  });
+});

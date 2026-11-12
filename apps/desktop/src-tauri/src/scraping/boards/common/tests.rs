@@ -317,7 +317,7 @@ fn canonical_key_urlless_matches_on_title_and_company() {
 }
 
 /// Cross-language drift fixture — the TS mirror
-/// (`features/jobs/lib/canonical-job-key.ts`) asserts against this EXACT same
+/// (`renderer/lib/canonical-job-key.ts`) asserts against this EXACT same
 /// title/company pair, so a divergence in either language's lowercasing rules
 /// is caught by comparing the two expected strings side by side.
 #[test]
