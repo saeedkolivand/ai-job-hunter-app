@@ -1,5 +1,317 @@
 [
   {
+    "sha": "449cc6eb39b9ee5334908d71592419a681b9e821",
+    "commit": {
+      "message": "chore: sync landing download version to v0.161.0",
+      "author": {
+        "date": "2026-11-12T05:26:32Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "0eb77e23f6af60780de6fd2665eabeb725bbd72c",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.161.0 [skip ci]",
+      "author": {
+        "date": "2026-11-12T05:26:04Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "61f6fa3b0c1855150dbb55d901a372bd09db3fdb",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-11-12T05:05:01Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "0d1110ad19403a7e74708100074af729dbaa21ec",
+    "commit": {
+      "message": "chore(release): 0.161.0 [skip ci]",
+      "author": {
+        "date": "2026-11-12T04:41:45Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "7ddf4bd578dbb173242a54da13f6181c682ffffc",
+    "commit": {
+      "message": "fix(applications): generating documents saves the job instead of marking it applied (#1524)",
+      "author": {
+        "date": "2026-11-12T04:39:24Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "700f9da401b35acaf79d81d27553c3be7b03987c",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-11-12T03:28:44Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "c15a47dddd5f27624993ab6edf389b11dc6d75ec",
+    "commit": {
+      "message": "fix(net): refuse link-local and metadata addresses in every form and allow same-host redirects (#1521)",
+      "author": {
+        "date": "2026-11-12T03:03:35Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "5d858ee46542f15fb7de516e089aef29d5445e0c",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-11-12T02:17:33Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "20c810ce5209ef057856c52418659f4f272f8f86",
+    "commit": {
+      "message": "ci: restore green checks after the react-i18next 18, jsdom 31 and zip advisory changes (#1520)",
+      "author": {
+        "date": "2026-11-12T01:54:27Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "0f22d57b5940735ce641d9bf39e8389db306e27f",
+    "commit": {
+      "message": "feat(research): fall back on billing or auth search failures and add a searxng-compatible backend (#1518)",
+      "author": {
+        "date": "2026-11-12T01:51:46Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "76aa70bb41d52bc0c554dea5c6ab96b1830c6aef",
+    "commit": {
+      "message": "chore: bump the javascript group across 1 directory with 27 updates (#1517)",
+      "author": {
+        "date": "2026-11-12T01:18:06Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "6294e1920e2f8aa01c3797feca5a49d19332300a",
+    "commit": {
+      "message": "chore: bump react-i18next from 17.1.11 to 18.0.1 (#1512)",
+      "author": {
+        "date": "2026-11-11T17:42:09Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "73a987ff9b456d8a5ee83e8a958d132c59cb1504",
+    "commit": {
+      "message": "chore: bump jsdom from 30.1.3 to 31.0.0 (#1514)",
+      "author": {
+        "date": "2026-11-11T17:41:52Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "b2f1e6e9e7565244c3062d43c6f5a2d5f19c011f",
+    "commit": {
+      "message": "chore: bump tauri-plugin-sentry in /apps/desktop/src-tauri (#1510)",
+      "author": {
+        "date": "2026-11-11T17:39:36Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "d53a5f7fa56dca8d0315b45a8b7d5334a9cf9455",
+    "commit": {
+      "message": "chore: bump lopdf from 0.46.0 to 0.47.0 in /apps/desktop/src-tauri (#1509)",
+      "author": {
+        "date": "2026-11-11T17:39:19Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "bad1779013177623cefbd706112c4ca497888f4e",
+    "commit": {
+      "message": "chore: bump the desktop-rust group (#1508)",
+      "author": {
+        "date": "2026-11-11T17:39:05Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "e266eb650a4cea73a40cc7c807d40c80a10e044e",
+    "commit": {
+      "message": "chore: bump i18next from 26.7.1 to 27.0.1 (#1513)",
+      "author": {
+        "date": "2026-11-11T17:38:35Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "d81451f72fe8a95b0423110aa5e32124ce9ab5ff",
+    "commit": {
+      "message": "chore: bump the vitest group with 3 updates (#1507)",
+      "author": {
+        "date": "2026-11-11T17:37:58Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "44c64b9a987abb18ea05230954ce5f72fb0ed383",
+    "commit": {
+      "message": "chore: bump the ci-actions group with 4 updates (#1506)",
+      "author": {
+        "date": "2026-11-11T17:37:34Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "cd1688a11596db6c323d374a9ff082acd378a4b1",
+    "commit": {
+      "message": "chore: bump the codeql-action group with 3 updates (#1505)",
+      "author": {
+        "date": "2026-11-11T17:37:19Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "1d58a8077210bf680db68a43bb9db76531b485c9",
+    "commit": {
+      "message": "fix: session defects part 3 of 3: review panel, practice words, docs (#1491-#1501) (#1502)",
+      "author": {
+        "date": "2026-11-11T17:36:44Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "7109b88145cf0436ea13e391048b8bdca1b5d031",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-11-11T17:28:57Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "5386eb8a760c5e96e7a51940652485dfa846a494",
+    "commit": {
+      "message": "fix: session defects part 2 of 3: provider failures, fabrication guard, letter language (#1491-#1501) (#1504)",
+      "author": {
+        "date": "2026-11-11T17:03:55Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "377fd64b025bb831c7409aa8ba8455f3c5b82211",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-11-11T12:03:00Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "1bd7f75701ca799ecf01133762313a1f08e30e6a",
+    "commit": {
+      "message": "fix: session defects part 1 of 3: scraping, autopilot, agent catalogue, pipeline validation (#1491-#1501) (#1503)",
+      "author": {
+        "date": "2026-11-11T11:44:19Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "5782b6eee3ac25af0ab92f194e10eae226782c13",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-11-11T10:53:43Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "dc281a114a29d94778e0d4035acb4dcd2c415fda",
     "commit": {
       "message": "chore: sync landing download version to v0.160.0",
@@ -885,318 +1197,6 @@
     },
     "author": {
       "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "cbd80960197a01d2b9a13c0ed32bfd8e5eee7680",
-    "commit": {
-      "message": "chore(deps): clear the zip <9 advisories (rustsec-2026-0367..0369) (#1432)",
-      "author": {
-        "date": "2026-10-17T17:35:49Z"
-      }
-    },
-    "author": {
-      "login": "NimaNabi"
-    }
-  },
-  {
-    "sha": "c6d1859f60ad3c758c84826fb663a30b71f83326",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-17T13:31:56Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "709612b00c56a6f9d19840905b14e45adce48b71",
-    "commit": {
-      "message": "feat(settings): self-hosted sync card under privacy (PR 3) (#1431)",
-      "author": {
-        "date": "2026-10-17T13:18:54Z"
-      }
-    },
-    "author": {
-      "login": "NimaNabi"
-    }
-  },
-  {
-    "sha": "f05c2fb1609e6bbd270e637d511914dfd1b01cb7",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-17T12:27:10Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "c719c0d53e4bc2ef6ea211492951a1fa06cf2b46",
-    "commit": {
-      "message": "feat(sync): http transport, background runs and sync commands (PR 2b) (#1430)",
-      "author": {
-        "date": "2026-10-17T12:08:14Z"
-      }
-    },
-    "author": {
-      "login": "NimaNabi"
-    }
-  },
-  {
-    "sha": "38120412879852b59436fd208b33aaaf085c6c94",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-17T07:45:35Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "6f43f4206b163fc3b38288632fafd7737f6f2c43",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-16T08:08:11Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "afc2a2bb0ef409344224b92ad943be32d11f747f",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-15T21:37:57Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "829e4f2067916563f09c332c4f1bcd9c2a89392c",
-    "commit": {
-      "message": "chore(deps): bump rustls to 0.23.46 for rustsec-2026-0346..0349 (#1429)",
-      "author": {
-        "date": "2026-10-15T21:14:47Z"
-      }
-    },
-    "author": {
-      "login": "NimaNabi"
-    }
-  },
-  {
-    "sha": "43f78d5351154e1225f53e2106c232e2ec3bdf0e",
-    "commit": {
-      "message": "chore: bump cycjimmy/semantic-release-action from 6.0.0 to 7.1.2 (#1426)",
-      "author": {
-        "date": "2026-10-15T20:55:16Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "0f65480a6deab586d837269067fb9ce2e6a5cdd3",
-    "commit": {
-      "message": "chore: bump the javascript group across 1 directory with 41 updates (#1428)",
-      "author": {
-        "date": "2026-10-15T20:54:48Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "0b3016893509554e5dd254db2e774da2ac2b826c",
-    "commit": {
-      "message": "feat(sync): local sync engine and per-record sync for every store (PR 2a) (#1427)",
-      "author": {
-        "date": "2026-10-15T20:54:24Z"
-      }
-    },
-    "author": {
-      "login": "NimaNabi"
-    }
-  },
-  {
-    "sha": "d5bbde378411f19882aea67d3d3d768c40eb53ab",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-15T20:27:43Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "6022e52f3b43ef9089491abad5733938bbf4793e",
-    "commit": {
-      "message": "chore: bump zip from 8.6.0 to 9.0.2 in /apps/desktop/src-tauri (#1424)",
-      "author": {
-        "date": "2026-10-15T20:04:16Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "892b6417cc7312b244397f7b1395e71784f8f486",
-    "commit": {
-      "message": "chore: bump the desktop-rust group (#1422)",
-      "author": {
-        "date": "2026-10-15T20:04:01Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "a767c1fbf392adbecc8a44642ecb5c0b83a8f0bb",
-    "commit": {
-      "message": "chore: bump the vitest group with 3 updates (#1421)",
-      "author": {
-        "date": "2026-10-15T20:03:28Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "a77dc51ed43f86866f1af1f81c9b957db8fc4f5a",
-    "commit": {
-      "message": "chore: bump the codeql-action group with 3 updates (#1420)",
-      "author": {
-        "date": "2026-10-15T20:02:46Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "ac66ed36387248925383fe40c6c6136591694a9b",
-    "commit": {
-      "message": "chore: bump the ci-actions group with 7 updates (#1423)",
-      "author": {
-        "date": "2026-10-15T20:02:18Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "ddc963e34a4235252e003d123734272a21613464",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-15T08:15:49Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "d3f9387190a9a29b1d495e95f30c147a5ee1f492",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-14T21:27:30Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "1e0d11f47023d9dd2075b5ecb797938e7cecc493",
-    "commit": {
-      "message": "fix(backup): keep application status history across backup and restore (#1419)",
-      "author": {
-        "date": "2026-10-14T21:03:45Z"
-      }
-    },
-    "author": {
-      "login": "NimaNabi"
-    }
-  },
-  {
-    "sha": "af4062df91c2eefbe1ba5e7e14d17fbf6ebf3b2e",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-14T08:40:41Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "f89afc6b07cf217dd74180ecb1704fb10ae5ec64",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-13T10:32:38Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "1b2a0b4dd94c76330de1bd542f812b5d72ba6b25",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-12T10:45:43Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "fb7e99ef4830d29accc9982264f44d742daf2581",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-11T09:58:24Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "c668bf4d4a390f651a6b82e17276f0fd27073fa8",
-    "commit": {
-      "message": "docs(sync): add the self-hosted sync adr and v1 protocol, amend the egress boundary adr (#1418)",
-      "author": {
-        "date": "2026-10-10T20:32:34Z"
-      }
-    },
-    "author": {
-      "login": "NimaNabi"
     }
   }
 ]
