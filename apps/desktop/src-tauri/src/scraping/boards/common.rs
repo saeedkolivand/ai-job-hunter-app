@@ -266,7 +266,7 @@ pub(crate) fn should_propagate_page_error(collected_so_far: usize) -> bool {
 /// App-wide canonical dedup key for a job posting — the single source of truth
 /// for "is this the same job?" across every source (the scrape engine's
 /// cross-board pass, autopilot's `merge_found_jobs`, and — mirrored in TS at
-/// `apps/desktop/src/renderer/features/jobs/lib/canonical-job-key.ts` — the
+/// `apps/desktop/src/renderer/lib/canonical-job-key.ts` — the
 /// renderer's `mergePostings`). Keeping all three keyed identically is the whole
 /// point of trust-program PR E: a job surfaced by two boards collapses to one row
 /// and fires one notification, not two or three.

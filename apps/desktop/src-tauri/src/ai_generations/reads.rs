@@ -1,5 +1,5 @@
 //! The read side of the `ai_generations` store: the full list, the per-posting
-//! finders, and the url sets the cascade and the applied badge derive from.
+//! finders, and the url sets the delete cascade derives from.
 //!
 //! Split out of [`super`] to keep the store body under the architecture LOC cap
 //! (`tests/architecture.rs` R8). Persistence still lives entirely inside

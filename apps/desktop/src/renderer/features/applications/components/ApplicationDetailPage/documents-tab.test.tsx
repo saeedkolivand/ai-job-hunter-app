@@ -246,8 +246,10 @@ describe('ApplicationDetailPage — Documents tab toolbar', () => {
 
   it('shows an error when marking as applied fails', () => {
     state.controllerStage = 'done';
-    mockSetStatusMutate.mockImplementationOnce((_v: unknown, o?: { onError?: () => void }) =>
-      o?.onError?.()
+    // The command resolves `{ error }` on failure rather than rejecting.
+    mockSetStatusMutate.mockImplementationOnce(
+      (_v: unknown, o?: { onSuccess?: (d: { error?: string }) => void }) =>
+        o?.onSuccess?.({ error: 'x' })
     );
     setLoaded(makeApp({ status: 'saved' }), [], []);
     render(<ApplicationDetailPage />);

@@ -170,7 +170,7 @@ export function EmailDraftView({
             </Button>
           )}
           {mailtoHref && (
-            <MarkAppliedButton applicationId={applicationId} status={applicationStatus} />
+            <MarkAppliedButton applicationId={applicationId} status={applicationStatus} size="sm" />
           )}
         </div>
       )}

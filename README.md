@@ -125,7 +125,7 @@ Your résumés, generations, applications, and tracked job data live in a local 
 <summary><strong>🤖 Autopilot &amp; application tracking</strong></summary>
 
 - **Autopilot workflows**: define a search (board, query, location, schedule, filters); it finds and scores matching jobs.
-- **Dedup + New/Applied badges**: re-running a workflow merges results by URL: prior finds are kept, genuinely new ones are badged **New**, and jobs you've generated for are badged **Applied** (derived automatically from your saved generations).
+- **Dedup + New/Applied badges**: re-running a workflow merges results by URL: prior finds are kept, genuinely new ones are badged **New**, and jobs you've marked as applied are badged **Applied** (generating documents alone doesn't count as applying).
 - **One-click tailoring**: from any found job, click **Tailor** to seed the AI Generate workspace, open the posting, and mark it applied on any board. Generate a tailored résumé + cover letter and **résumé-grounded answers** to common application questions, with optional company research.
 - **Documents / Activity**: every generated application is stored as a single per-job record (résumé, cover, answers, brief, board, date) and browsable in the **Documents** page (Résumés / Cover Letters / Activity tabs).
 

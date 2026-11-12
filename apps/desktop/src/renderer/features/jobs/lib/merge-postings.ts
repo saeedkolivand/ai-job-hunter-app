@@ -1,5 +1,6 @@
+import { canonicalJobKey } from '@/lib/canonical-job-key';
+
 import type { Posting } from '../types';
-import { canonicalJobKey } from './canonical-job-key';
 
 /** UTF-8 byte length, matching Rust's `str::len()` (bytes, not UTF-16 code
  * units) — required so the description tie-break can never flip vs the Rust

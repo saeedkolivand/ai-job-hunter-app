@@ -468,8 +468,9 @@ export interface AutopilotFoundJob {
   postedAt?: number;
   /** First surfaced in the most recent run — drives the "New" badge. */
   isNew?: boolean;
-  /** The user has generated an application for this job (derived from a saved
-   *  generation whose `jobUrl` matches `url`). Drives the "Applied" badge. */
+  /** The user's tracked Application for this job is past `saved` (derived from
+   *  its Application status, not from having generated documents). Drives the
+   *  "Applied" badge. */
   applied?: boolean;
   /** Ghost-job trust signal, computed at find-time. Absent only on a run
    *  recorded before this field existed. */

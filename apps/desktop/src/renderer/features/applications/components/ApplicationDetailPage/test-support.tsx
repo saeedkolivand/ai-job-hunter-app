@@ -105,9 +105,12 @@ export const mockUseAiGenerations: Mock = vi.fn();
 export const mockUpdateApplicationMutate: Mock = vi.fn();
 /** `setStatus.mutate(vars, options)` — resolves successfully by default so the
  *  optional-note prompt opens (mirrors the row's mock). */
-export type StatusMutateOptions = { onSuccess?: () => void; onError?: () => void };
+export type StatusMutateOptions = {
+  onSuccess?: (data: { error?: string }) => void;
+  onError?: () => void;
+};
 export const mockSetStatusMutate = vi.fn((_vars: unknown, options?: StatusMutateOptions) => {
-  options?.onSuccess?.();
+  options?.onSuccess?.({});
 });
 // Controlled so tests can assert `keepDocuments` on the delete path.
 export const mockRemoveMutateAsync: Mock = vi.fn().mockResolvedValue(undefined);
@@ -227,7 +230,7 @@ export function resetMocks() {
   mockUpdateApplicationMutate.mockReset();
   mockSetStatusMutate.mockClear();
   mockSetStatusMutate.mockImplementation((_vars: unknown, options?: StatusMutateOptions) => {
-    options?.onSuccess?.();
+    options?.onSuccess?.({});
   });
   mockSetApplicationApply.mockClear();
   mockRemoveMutateAsync.mockClear();

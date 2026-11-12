@@ -10,36 +10,42 @@ interface MarkAppliedButtonProps {
   applicationId: string;
   /** Current status; the action renders only while it is still `saved`. */
   status: string | undefined;
+  size?: React.ComponentProps<typeof Button>['size'];
 }
 
 /** Explicit "I submitted this application" action — generating documents never records one. */
-export function MarkAppliedButton({ applicationId, status }: MarkAppliedButtonProps) {
+export function MarkAppliedButton({ applicationId, status, size }: MarkAppliedButtonProps) {
   const { t } = useTranslation();
   const setStatus = useSetApplicationStatus();
   const [failed, setFailed] = useState(false);
   const [done, setDone] = useState(false);
 
-  // Keep a short live-region confirmation after OUR successful call: the focused
-  // button unmounts once the status flips, which would otherwise be silent.
-  if (done) {
-    return (
+  // After OUR successful call the focused button unmounts once the status flips;
+  // keep a short live-region confirmation (only while the status stays past `saved`).
+  if (status !== 'saved') {
+    return done ? (
       <span role="status" className="shrink-0 text-xs text-foreground/70">
         {t('applications.detail.markedApplied')}
       </span>
-    );
+    ) : null;
   }
-  if (status !== 'saved') return null;
 
   return (
     <>
       <Button
         variant="glass"
+        size={size}
         disabled={setStatus.isPending}
         onClick={() => {
           setFailed(false);
           setStatus.mutate(
             { id: applicationId, status: 'applied' },
-            { onSuccess: () => setDone(true), onError: () => setFailed(true) }
+            {
+              // The command resolves `{ error }` on failure (it never rejects), so
+              // `onError` only covers transport failures.
+              onSuccess: (data) => (data.error ? setFailed(true) : setDone(true)),
+              onError: () => setFailed(true),
+            }
           );
         }}
         className="shrink-0 gap-1.5 text-brand-soft"

@@ -287,9 +287,8 @@ pub struct FoundJob {
     /// [`AutopilotStore::record_run`]). Drives the "New" badge.
     #[serde(default)]
     pub is_new: bool,
-    /// Whether the user has generated an application for this job. **Derived** at
-    /// read time from a saved generation whose `job_url` matches `url` (see
-    /// `commands::autopilot`), never hand-set, so it can't drift. Stored value is
+    /// Whether an Application for this job has a status past `saved`. **Derived**
+    /// at read time (see `commands::autopilot`), never hand-set, so it can't drift. Stored value is
     /// always `false`; the read path fills it in.
     #[serde(default)]
     pub applied: bool,
