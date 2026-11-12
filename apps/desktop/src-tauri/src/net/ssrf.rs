@@ -84,20 +84,55 @@ pub fn is_safe_ipv6(ip: Ipv6Addr) -> bool {
     if (seg0 & 0xfe00) == 0xfc00 {
         return false;
     }
-    // IPv4-mapped (::ffff:a.b.c.d) — defer to the IPv4 rules so a mapped
-    // loopback/private address can't slip through.
-    if let Some(v4) = ip.to_ipv4_mapped() {
+    // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible (::a.b.c.d): defer to the
+    // IPv4 rules so a wrapped loopback/private address can't slip through.
+    if let Some(v4) = ip.to_ipv4() {
         return is_safe_ipv4(v4);
     }
     true
 }
 
-/// The cloud-metadata service address — the credential-theft pivot an SSRF
-/// attacker aims for. Blocked in any IPv4 notation (`url` canonicalizes IPv4
-/// hosts to dotted-decimal, so hex/octal/decimal forms normalize here too);
-/// an IPv6-mapped/ULA form of this address is not covered by this check (see
-/// [`validate_provider_base_url`]).
-const CLOUD_METADATA_IPV4: Ipv4Addr = Ipv4Addr::new(169, 254, 169, 254);
+/// AWS IMDS over IPv6.
+const AWS_IMDS_IPV6: Ipv6Addr = Ipv6Addr::new(0xfd00, 0x0ec2, 0, 0, 0, 0, 0, 0x0254);
+
+/// Link-local / cloud-metadata addresses: all of `169.254.0.0/16` (incl. the
+/// ECS task-metadata `169.254.170.2`), `fe80::/10`, and `fd00:ec2::254`.
+/// IPv4-mapped (`::ffff:a.b.c.d`) and IPv4-compatible forms are unwrapped and
+/// re-checked. Unlike [`is_safe_ip`] this does NOT cover loopback/LAN/ULA —
+/// local gateways legitimately live there.
+pub fn is_link_local_or_metadata_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => v4.is_link_local(),
+        IpAddr::V6(v6) => {
+            v6.to_ipv4().is_some_and(|v4| v4.is_link_local())
+                || (v6.segments()[0] & 0xffc0) == 0xfe80
+                || v6 == AWS_IMDS_IPV6
+        }
+    }
+}
+
+/// [`is_link_local_or_metadata_ip`] for a bare host string (brackets allowed);
+/// non-IP hostnames are `false`.
+pub fn is_link_local_or_metadata_host(host: &str) -> bool {
+    host.trim_matches(|c| c == '[' || c == ']')
+        .parse::<IpAddr>()
+        .is_ok_and(is_link_local_or_metadata_ip)
+}
+
+/// Whether a host is loopback: `localhost`, `*.localhost`, or a loopback IP
+/// literal (incl. IPv4-mapped/compatible forms).
+pub fn is_loopback_host(host: &str) -> bool {
+    let host = host.trim_matches(|c| c == '[' || c == ']');
+    let lower = host.to_ascii_lowercase();
+    if lower == "localhost" || lower.ends_with(".localhost") {
+        return true;
+    }
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(v4)) => v4.is_loopback(),
+        Ok(IpAddr::V6(v6)) => v6.is_loopback() || v6.to_ipv4().is_some_and(|v4| v4.is_loopback()),
+        Err(_) => false,
+    }
+}
 
 /// Validate a user-supplied AI-provider base URL for the *generation egress*
 /// path (the endpoint that receives the stored API key + full prompt).
@@ -109,13 +144,11 @@ const CLOUD_METADATA_IPV4: Ipv4Addr = Ipv4Addr::new(169, 254, 169, 254);
 /// pointing the base URL at an attacker), not a wholesale IP filter. It blocks
 /// only:
 ///  1. a non-`http(s)` scheme, and
-///  2. the cloud-metadata address `169.254.169.254` in any IPv4 notation
-///     (hex/octal/decimal all normalize to dotted-decimal via `url`'s
-///     parser). An IPv6-mapped/ULA metadata form is not blocked here — this
-///     check is defense-in-depth only; the real boundary is provenance
-///     (the renderer never controls this value for the flipped commands, see
-///     `crate::ai_config`), and IMDS is a GET-only credential source, not a
-///     POST sink.
+///  2. link-local / cloud-metadata hosts ([`is_link_local_or_metadata_ip`]) in
+///     any notation (`url` normalizes hex/octal/decimal IPv4 to dotted-decimal;
+///     IPv6 and IPv4-mapped forms are unwrapped). Loopback, LAN and other ULA
+///     stay allowed. Defense-in-depth; the real boundary is provenance (see
+///     `crate::ai_config`).
 ///
 /// Uses the same `reqwest::Url` parser as [`crate::net::http::get_guarded`] —
 /// never hand-rolled URL parsing.
@@ -132,9 +165,10 @@ pub fn validate_provider_base_url(base_url: &str) -> AppResult<()> {
     }
     match url.host_str() {
         Some(host) => {
-            if matches!(host.parse::<Ipv4Addr>(), Ok(ip) if ip == CLOUD_METADATA_IPV4) {
+            let blocked = is_link_local_or_metadata_host(host);
+            if blocked {
                 return Err(AppError::Validation(
-                    "Provider base URL 169.254.169.254 (cloud metadata) is not allowed."
+                    "Provider base URL targets a link-local/cloud-metadata address and is not allowed."
                         .to_string(),
                 ));
             }

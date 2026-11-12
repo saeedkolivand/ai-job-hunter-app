@@ -90,6 +90,51 @@ fn base_url_blocks_cloud_metadata() {
 }
 
 #[test]
+fn base_url_blocks_link_local_and_metadata_in_every_form() {
+    for u in [
+        "http://169.254.170.2/v2/credentials",
+        "http://169.254.0.1/",
+        "http://169.254.169.254:80/",
+        "http://2852039166/",          // decimal 169.254.169.254
+        "http://0xa9fea9fe/",          // hex
+        "http://0251.0376.0251.0376/", // octal
+        "http://[fe80::1]/",
+        "http://[febf::1]/",
+        "http://[fd00:ec2::254]/",
+        "http://[FD00:EC2:0:0:0:0:0:254]/",
+        "http://[::ffff:169.254.169.254]/",
+        "http://[::ffff:a9fe:a9fe]/",
+        "http://[::169.254.169.254]/",
+        "http://[::ffff:169.254.170.2]/",
+    ] {
+        assert!(
+            validate_provider_base_url(u).is_err(),
+            "{u} must be rejected"
+        );
+    }
+}
+
+#[test]
+fn base_url_mapped_private_and_other_ula_stay_allowed() {
+    // Local gateways: mapped LAN/loopback and non-IMDS ULA are not link-local.
+    for u in [
+        "http://[::ffff:10.0.0.1]:8080/",
+        "http://[::ffff:127.0.0.1]:11434/",
+        "http://[fd12:3456::1]/",
+        "http://[fd00:ec2::255]/",
+        "http://[::1]:11434/",
+    ] {
+        assert!(validate_provider_base_url(u).is_ok(), "{u} must be allowed");
+    }
+}
+
+#[test]
+fn ipv4_compatible_private_is_unsafe() {
+    assert!(!is_safe_public_host("::10.0.0.1"));
+    assert!(!is_safe_public_host("::127.0.0.1"));
+}
+
+#[test]
 fn base_url_allows_local_gateways_and_public() {
     // The load-bearing exception: loopback/LAN gateways are legitimate AI
     // endpoints and must NOT be filtered — only the metadata addr + bad schemes.

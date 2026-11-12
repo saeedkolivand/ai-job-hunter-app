@@ -115,115 +115,175 @@ fn url(s: &str) -> reqwest::Url {
     reqwest::Url::parse(s).unwrap()
 }
 
-#[test]
-fn is_allowed_redirect_target_accepts_public_https() {
-    assert!(is_allowed_redirect_target(&url(
-        "https://boards.greenhouse.io/acme/jobs/1"
-    )));
+/// Redirect decision for a request that started on a public host.
+fn allowed(target: &reqwest::Url) -> bool {
+    is_allowed_redirect(&url("https://example.com/"), target)
+}
+
+fn allowed_from(origin: &str, target: &str) -> bool {
+    is_allowed_redirect(&url(origin), &url(target))
 }
 
 #[test]
-fn is_allowed_redirect_target_rejects_loopback_literal() {
-    assert!(!is_allowed_redirect_target(&url("http://127.0.0.1/steal")));
-    assert!(!is_allowed_redirect_target(&url("http://[::1]/steal")));
+fn allowed_redirect_same_host_scheme_upgrade_on_local_hosts() {
+    assert!(allowed_from(
+        "http://127.0.0.1:11434/",
+        "https://127.0.0.1:11434/"
+    ));
+    assert!(allowed_from(
+        "http://192.168.1.50/",
+        "https://192.168.1.50/x"
+    ));
+    assert!(allowed_from(
+        "http://localhost:1234/",
+        "https://localhost:1234/"
+    ));
 }
 
 #[test]
-fn is_allowed_redirect_target_rejects_cloud_metadata_link_local() {
-    assert!(!is_allowed_redirect_target(&url(
-        "http://169.254.169.254/latest/meta-data/"
-    )));
+fn allowed_redirect_within_same_private_class() {
+    assert!(allowed_from("http://192.168.1.50/", "http://10.0.0.2/"));
+    assert!(allowed_from("http://127.0.0.1/", "http://localhost/"));
 }
 
 #[test]
-fn is_allowed_redirect_target_rejects_rfc1918_private_ranges() {
+fn allowed_redirect_refuses_public_to_private_and_cross_class() {
+    for t in [
+        "http://127.0.0.1/",
+        "http://192.168.1.1/",
+        "http://[::ffff:10.0.0.1]/",
+    ] {
+        assert!(!allowed_from("https://example.com/", t), "{t}");
+    }
+    assert!(!allowed_from("http://127.0.0.1/", "http://192.168.1.1/"));
+    assert!(!allowed_from("http://192.168.1.1/", "http://127.0.0.1/"));
+}
+
+#[test]
+fn allowed_redirect_refuses_https_to_http_downgrade_on_public_host() {
+    assert!(!allowed_from(
+        "https://example.com/",
+        "http://example.com/x"
+    ));
+    assert!(!allowed_from(
+        "https://example.com/",
+        "http://other.example.org/"
+    ));
+    assert!(allowed_from("http://example.com/", "https://example.com/x"));
+    assert!(allowed_from("http://example.com/", "http://example.com/x"));
+    assert!(allowed_from(
+        "https://example.com/",
+        "https://example.com/x"
+    ));
+    // local same-host https -> http is fine
+    assert!(allowed_from(
+        "https://127.0.0.1:8080/",
+        "http://127.0.0.1:8080/"
+    ));
+}
+
+#[test]
+fn allowed_redirect_link_local_always_blocked() {
+    for t in [
+        "http://169.254.169.254/",
+        "http://169.254.170.2/",
+        "http://[::ffff:169.254.169.254]/",
+        "http://[fe80::1]/",
+        "http://[fd00:ec2::254]/",
+    ] {
+        assert!(!allowed_from("https://example.com/", t), "{t}");
+        // even from the same host / a link-local origin
+        assert!(!allowed_from(t, t), "{t} same-host");
+    }
+}
+
+#[test]
+fn allowed_redirect_accepts_public_https() {
+    assert!(allowed(&url("https://boards.greenhouse.io/acme/jobs/1")));
+}
+
+#[test]
+fn allowed_redirect_rejects_loopback_literal() {
+    assert!(!allowed(&url("http://127.0.0.1/steal")));
+    assert!(!allowed(&url("http://[::1]/steal")));
+}
+
+#[test]
+fn allowed_redirect_rejects_cloud_metadata_link_local() {
+    assert!(!allowed(&url("http://169.254.169.254/latest/meta-data/")));
+}
+
+#[test]
+fn allowed_redirect_rejects_rfc1918_private_ranges() {
     for u in [
         "http://10.0.0.1/",
         "http://172.16.0.1/",
         "http://192.168.1.1/",
     ] {
-        assert!(!is_allowed_redirect_target(&url(u)), "{u} must be blocked");
+        assert!(!allowed(&url(u)), "{u} must be blocked");
     }
 }
 
 #[test]
-fn is_allowed_redirect_target_rejects_ipv6_unique_local() {
-    assert!(!is_allowed_redirect_target(&url("http://[fc00::1]/")));
+fn allowed_redirect_rejects_ipv6_unique_local() {
+    assert!(!allowed(&url("http://[fc00::1]/")));
 }
 
 #[test]
-fn is_allowed_redirect_target_rejects_non_http_scheme() {
-    assert!(!is_allowed_redirect_target(&url("file:///etc/passwd")));
-    assert!(!is_allowed_redirect_target(&url(
-        "ftp://files.example.com/x"
-    )));
+fn allowed_redirect_rejects_non_http_scheme() {
+    assert!(!allowed(&url("file:///etc/passwd")));
+    assert!(!allowed(&url("ftp://files.example.com/x")));
 }
 
 #[test]
-fn is_allowed_redirect_target_allows_arbitrary_public_hostname() {
+fn allowed_redirect_allows_arbitrary_public_hostname() {
     // A public-looking hostname is allowed here even though it could still
     // resolve to a private IP via DNS rebinding — this synchronous policy
     // cannot resolve DNS. See the `redirect_policy` doc comment.
-    assert!(is_allowed_redirect_target(&url("https://example.com/x")));
+    assert!(allowed(&url("https://example.com/x")));
 }
 
 // ── redirect_policy: actually wired onto the pooled client ─────────────────
-// The tests above only prove `is_allowed_redirect_target` is correct in
-// isolation (it has to be extracted — `reqwest::redirect::Attempt` has no
-// public constructor). This test closes the gap: a real round-trip through
-// `shared()` proves `redirect_policy()` is the policy the pooled client
-// actually uses, not merely a well-tested function nobody wired up.
-// NOTE: the redirect target must be REACHABLE (the same MockServer's own
-// `/landed` route) rather than a refusing port like 127.0.0.1:9. A
-// refusing port makes this test tautological — the default (unwired)
-// reqwest redirect policy would ALSO follow the hop, fail to connect, and
-// return `Err`, so the test would pass even if `redirect_policy()` were
-// never wired onto `shared()`. By pointing at a route that genuinely
-// returns 200, an `Err` here can only mean the SSRF guard blocked the
-// hop (loopback is unsafe regardless of reachability) — an unwired
-// client would instead SUCCEED (200, body "landed").
-#[tokio::test]
-async fn shared_client_blocks_redirect_to_loopback_target() {
+// `reqwest::redirect::Attempt` has no public constructor, so the decision is
+// unit-tested via `is_allowed_redirect`; these round-trips prove the policy is
+// the one `shared()` really uses. The loopback mock server is the ORIGIN, so a
+// same-host hop must be followed (200) while a hop to link-local must fail with
+// our block message (not a connect error: that message is what we assert on).
+async fn redirect_via_shared(
+    location: Option<&str>,
+) -> (wiremock::MockServer, reqwest::Result<reqwest::Response>) {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    let mock_server = MockServer::start().await;
-
+    let server = MockServer::start().await;
+    let location = location.map_or_else(|| format!("{}/landed", server.uri()), str::to_string);
     Mock::given(method("GET"))
         .and(path("/landed"))
         .respond_with(ResponseTemplate::new(200).set_body_string("landed"))
-        .mount(&mock_server)
+        .mount(&server)
         .await;
-
     Mock::given(method("GET"))
         .and(path("/start"))
-        .respond_with(
-            ResponseTemplate::new(302)
-                .insert_header("location", format!("{}/landed", mock_server.uri())),
-        )
-        .mount(&mock_server)
+        .respond_with(ResponseTemplate::new(302).insert_header("location", location.as_str()))
+        .mount(&server)
         .await;
+    let res = shared().get(format!("{}/start", server.uri())).send().await;
+    (server, res)
+}
 
-    let result = shared()
-        .get(format!("{}/start", mock_server.uri()))
-        .send()
-        .await;
+#[tokio::test]
+async fn shared_client_follows_same_host_redirect_on_loopback() {
+    let (_s, res) = redirect_via_shared(None).await;
+    assert_eq!(res.expect("same-host hop must be followed").status(), 200);
+}
 
-    let err = result.expect_err(
-        "shared() must error on a redirect to a loopback target — the target IS \
-             reachable (same MockServer's /landed route), so a follow would have \
-             succeeded (200) if redirect_policy() were never wired onto the real \
-             pooled client",
-    );
-    // reqwest::Error's Display only prints "error following redirect for url
-    // (...)" — the custom message passed to `attempt.error(...)` lives on the
-    // wrapped `source`, which Debug (not Display) surfaces. Assert on Debug so
-    // this actually proves *why* it failed (our guard) rather than merely that
-    // it failed (which a connect error would also satisfy).
-    let debug_msg = format!("{err:?}");
+#[tokio::test]
+async fn shared_client_blocks_redirect_to_link_local_target() {
+    let (_s, res) = redirect_via_shared(Some("http://169.254.169.254/landed")).await;
+    let debug_msg = format!("{:?}", res.expect_err("link-local hop must be blocked"));
     assert!(
         debug_msg.contains("blocked redirect"),
-        "error must reflect the redirect-policy block specifically, got: {debug_msg}"
+        "must be the redirect-policy block, got: {debug_msg}"
     );
 }
 
