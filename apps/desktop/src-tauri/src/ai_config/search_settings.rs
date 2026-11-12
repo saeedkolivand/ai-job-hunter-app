@@ -12,6 +12,15 @@ use super::AiConfigStore;
 use crate::commands::ai_provider::search::normalize_searxng_url;
 use crate::error::AppResult;
 
+/// Migration: the single-row `search_settings` table.
+pub(super) fn create_table(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS search_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1), searxng_url TEXT);
+        INSERT OR IGNORE INTO search_settings (id, searxng_url) VALUES (1, NULL);",
+    )
+}
+
 impl AiConfigStore {
     /// The stored SearXNG base URL, if one is set.
     pub fn searxng_url(&self) -> Option<String> {
@@ -36,6 +45,12 @@ impl AiConfigStore {
         // Re-validated on every read: a restored backup, or a rule tightened since the value
         // was written, must not hand an invalid URL to the egress path or `ai_search_settings`.
         .and_then(|u| normalize_searxng_url(&u).ok().flatten())
+    }
+
+    /// Whether a URL is configured: the seed gate counts it, so a first-run seed carrying an
+    /// older snapshot (no `searxngUrl`) cannot clear a URL set on a fresh store.
+    pub(super) fn has_searxng_url_conn(conn: &Connection) -> bool {
+        Self::searxng_url_conn(conn).is_some()
     }
 
     pub(super) fn write_searxng_url_conn(conn: &Connection, url: Option<&str>) -> AppResult<()> {

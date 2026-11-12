@@ -216,7 +216,11 @@ fn settle(outcome: Option<AppResult<String>>) -> (String, ResearchStatus) {
 /// The search backend to name on a finished pass: `None` when the deadline fired (the one in
 /// flight had not answered, and an earlier fall-through must not be blamed for the wait).
 fn attributable_backend(timed_out: bool, served: &ServedBackend) -> Option<SearchBackend> {
-    (!timed_out).then(|| served.get()).flatten()
+    if timed_out {
+        served.get_succeeded()
+    } else {
+        served.get()
+    }
 }
 
 /// The AI-extracted value when it is non-empty, else the heuristic one. The

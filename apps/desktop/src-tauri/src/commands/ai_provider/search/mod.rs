@@ -159,7 +159,7 @@ impl WebSearcher for SearchChain {
             let outcome = searcher.try_search(query, limit).await;
             // Recorded only once the search RETURNED, so a later failure (synthesis on the
             // user's own model) or a deadline is never pinned on a backend still in flight.
-            self.served.set(*backend);
+            self.served.set(*backend, outcome.is_ok());
             match outcome {
                 Err(e) if rest.peek().is_some() && falls_through(&e) => {
                     tracing::warn!(

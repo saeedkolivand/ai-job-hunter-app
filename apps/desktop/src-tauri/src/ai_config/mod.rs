@@ -136,12 +136,7 @@ impl AiConfigStore {
         },
         Migration {
             name: "create_search_settings",
-            up: |conn| {
-                conn.execute_batch(
-                    "CREATE TABLE IF NOT EXISTS search_settings (id INTEGER PRIMARY KEY CHECK (id = 1), searxng_url TEXT);
-                    INSERT OR IGNORE INTO search_settings (id, searxng_url) VALUES (1, NULL);",
-                )
-            },
+            up: search_settings::create_table,
         },
     ];
 
@@ -332,7 +327,11 @@ impl AiConfigStore {
             .map(|c| c > 0)
             .unwrap_or(false)
         };
-        active || rows("ai_provider_config") || rows("ai_stage_overrides")
+        active
+            || Self::has_searxng_url_conn(conn)
+            || ["ai_provider_config", "ai_stage_overrides"]
+                .into_iter()
+                .any(rows)
     }
 
     fn set_active_conn(conn: &Connection, provider: &str) -> AppResult<()> {

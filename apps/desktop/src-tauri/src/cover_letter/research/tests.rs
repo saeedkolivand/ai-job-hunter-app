@@ -212,8 +212,21 @@ fn a_backend_is_named_unless_the_deadline_fired() {
         None,
         "nothing returned yet"
     );
-    served.set(SearchBackend::Native);
+    // Native FAILED (billing), a fallback is in flight, the deadline fires: name none.
+    served.set(SearchBackend::Native, false);
     assert_eq!(attributable_backend(true, &served), None);
+    assert_eq!(
+        attributable_backend(false, &served),
+        Some(SearchBackend::Native),
+        "a finished pass still names the last backend it reached"
+    );
+    // SearXNG's search returned Ok and synthesis then hit the deadline: keep it.
+    served.set(SearchBackend::Searxng, true);
+    assert_eq!(
+        attributable_backend(true, &served),
+        Some(SearchBackend::Searxng)
+    );
+    served.set(SearchBackend::Native, true);
     assert_eq!(
         attributable_backend(false, &served),
         Some(SearchBackend::Native)

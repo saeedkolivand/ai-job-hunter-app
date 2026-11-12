@@ -98,7 +98,7 @@ fn an_invalid_stored_value_reads_as_unset() {
     ] {
         AiConfigStore::write_searxng_url_conn(&store.conn.lock(), Some(bad)).unwrap();
         assert_eq!(store.searxng_url(), None, "{bad}");
-        assert!(store.export().get("searxng_url").is_none());
+        assert!(store.export().get("searxngUrl").is_none());
     }
 }
 
@@ -118,4 +118,21 @@ fn credentials_in_the_url_are_refused() {
 fn an_unconfigured_export_omits_the_field() {
     let (_dir, store) = new_store();
     assert!(store.export().get("searxngUrl").is_none());
+}
+
+/// A URL set on a fresh store counts as seeded, so a later first-run seed carrying an older
+/// snapshot (no `searxngUrl`) leaves it alone. Mutation check: drop `has_searxng_url_conn` from
+/// `is_seeded_conn` and the URL is cleared.
+#[test]
+fn a_set_url_survives_a_first_run_seed_from_an_older_snapshot() {
+    let (_dir, store) = new_store();
+    store
+        .set_searxng_url(Some("http://localhost:8888"))
+        .unwrap();
+    let old = super::support::snapshot_of("ollama", vec![]);
+    assert!(!store.seed_if_empty(&old).unwrap(), "already seeded");
+    assert_eq!(
+        store.searxng_url().as_deref(),
+        Some("http://localhost:8888")
+    );
 }
