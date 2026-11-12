@@ -82,9 +82,10 @@ silently fall out of the strip. Count the cards there rather than trusting a num
 
 ## Amendment (2026-11-12, #1447): Generate no longer records a submission
 
-**Superseded:** the "Generate / Apply → `applied`" origin rule and the Consequences line that
-a generation backfills as `applied` for new records. Generating documents for a job
-(`ApplicationOrigin::Generate`) now creates or keeps the Application as `saved`.
+**Changed:** the Generate origin used to mark the Application `applied`. Generating documents
+for a job (`ApplicationOrigin::Generate`) now creates a new Application as `saved`; an existing
+Application keeps its current status (an `applied` or later one is never demoted). The one-time
+legacy backfill above is unchanged.
 
 **Why:** preparing documents is not evidence the user submitted anything; treating it so
 produced `applied` records for submissions that never happened and polluted the funnel and the

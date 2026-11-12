@@ -311,7 +311,8 @@ pnpm dev
 3. Open a found job → Tailor:
    • generate a tailored résumé + cover letter (target: Both)
    • pick application questions → get résumé-grounded answers
-   • the job flips to "Applied" and is saved in Documents → Activity
+   • the documents are saved in Documents → Activity; the job stays "Saved"
+4. After you submit the application, click "Mark as applied" so the job shows "Applied"
 ```
 
 </details>

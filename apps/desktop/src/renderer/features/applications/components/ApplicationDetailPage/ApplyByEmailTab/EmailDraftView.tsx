@@ -169,9 +169,7 @@ export function EmailDraftView({
               {t('applications.detail.email.openMailto')}
             </Button>
           )}
-          {mailtoHref && (
-            <MarkAppliedButton applicationId={applicationId} status={applicationStatus} size="sm" />
-          )}
+          <MarkAppliedButton applicationId={applicationId} status={applicationStatus} size="sm" />
         </div>
       )}
     </div>

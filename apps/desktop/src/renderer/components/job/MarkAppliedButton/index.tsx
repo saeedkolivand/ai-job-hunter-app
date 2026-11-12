@@ -19,6 +19,14 @@ export function MarkAppliedButton({ applicationId, status, size }: MarkAppliedBu
   const setStatus = useSetApplicationStatus();
   const [failed, setFailed] = useState(false);
   const [done, setDone] = useState(false);
+  const [seenStatus, setSeenStatus] = useState(status);
+
+  // Adjust state during render: when the status really returns to `saved` after
+  // having been past it (reverted elsewhere), our earlier success no longer holds.
+  if (status !== seenStatus) {
+    setSeenStatus(status);
+    if (status === 'saved') setDone(false);
+  }
 
   // After OUR successful call the focused button unmounts once the status flips;
   // keep a short live-region confirmation (only while the status stays past `saved`).
@@ -35,7 +43,9 @@ export function MarkAppliedButton({ applicationId, status, size }: MarkAppliedBu
       <Button
         variant="glass"
         size={size}
-        disabled={setStatus.isPending}
+        // `done` while still `saved`: the refetch hasn't landed — a second click would
+        // append another applied event.
+        disabled={setStatus.isPending || done}
         onClick={() => {
           setFailed(false);
           setStatus.mutate(

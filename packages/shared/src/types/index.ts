@@ -407,7 +407,7 @@ export interface Autopilot {
   assistantModel?: string;
   assistantBaseUrl?: string;
   totalFound: number;
-  /** Found jobs the user has applied to (derived from Applications past `saved`). */
+  /** Legacy and always `0`: the run path never counts it (#1171). Per-job applied state is `AutopilotFoundJob.applied`. */
   totalApplied: number;
   /** Jobs surfaced by the most recent run. */
   foundJobs?: AutopilotFoundJob[];

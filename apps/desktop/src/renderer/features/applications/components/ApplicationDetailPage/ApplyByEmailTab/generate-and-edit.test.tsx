@@ -270,6 +270,16 @@ describe('ApplyByEmailTab — mark as applied next to mailto', () => {
     expect(screen.getByRole('button', { name: MARK })).toBeInTheDocument();
   });
 
+  it('offers Mark as applied even without a recipient (draft sent from another client)', async () => {
+    renderTab({ contactEmail: '', status: 'saved' });
+    await clickGenerate();
+    await screen.findByText(BODY);
+    expect(
+      screen.queryByRole('button', { name: 'applications.detail.email.openMailto' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: MARK })).toBeInTheDocument();
+  });
+
   it('hides Mark as applied once the application is applied', async () => {
     renderTab({ contactEmail: 'hr@acme.com', status: 'applied' });
     await clickGenerate();

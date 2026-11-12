@@ -75,4 +75,22 @@ describe('MarkAppliedButton', () => {
     expect(screen.getByRole('button', BTN)).toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
+
+  it('stays disabled after success while the status is still saved, then recovers on revert', () => {
+    mutate.mockImplementationOnce(resolveWith({}));
+    const { rerender } = render(<MarkAppliedButton applicationId="a1" status="saved" />);
+    fireEvent.click(screen.getByRole('button', BTN));
+    expect(screen.getByRole('button', BTN)).toBeDisabled();
+    rerender(<MarkAppliedButton applicationId="a1" status="applied" />);
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    rerender(<MarkAppliedButton applicationId="a1" status="saved" />);
+    expect(screen.getByRole('button', BTN)).toBeEnabled();
+  });
+
+  it('allows a retry after a failure', () => {
+    mutate.mockImplementationOnce(resolveWith({ error: 'x' }));
+    render(<MarkAppliedButton applicationId="a1" status="saved" />);
+    fireEvent.click(screen.getByRole('button', BTN));
+    expect(screen.getByRole('button', BTN)).toBeEnabled();
+  });
 });
