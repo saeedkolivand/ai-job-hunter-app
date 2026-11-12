@@ -17,12 +17,13 @@ use crate::error::{AppError, AppResult};
 
 impl ApplicationStore {
     /// The single dedup/merge entry point for all four creation triggers
-    /// (Save→`saved`, Apply/Generate→`applied`, Manual→`applied`, Backfill).
+    /// (Save/Generate→`saved`, Manual→`applied`, Backfill→`applied`).
     /// Normalizes `job_url`, merges meta onto any existing Application for that
     /// url, and returns the (new or existing) Application id.
     ///
     /// `applied`: `Some(true)` forces `applied`; `Some(false)`/`None` defers to the
-    /// origin (Save stays `saved`; Generate/Manual/Backfill apply).
+    /// origin (Save and Generate stay `saved` — generating documents is not a
+    /// submission; Manual/Backfill apply). An existing applied+ row is never demoted.
     pub fn upsert_for_origin(
         &self,
         job_url: &str,
@@ -34,7 +35,7 @@ impl ApplicationStore {
         let normalized = normalize_job_url(job_url);
         let origin_applies = matches!(
             origin,
-            ApplicationOrigin::Generate | ApplicationOrigin::Manual | ApplicationOrigin::Backfill
+            ApplicationOrigin::Manual | ApplicationOrigin::Backfill
         );
         let applied_at = if applied == Some(true) || origin_applies {
             Some(now_ms())

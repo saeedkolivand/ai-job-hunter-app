@@ -78,7 +78,7 @@ export interface AiGenerationSaveRequest {
   resumeText: string;
   coverLetterText: string;
   jobAd: string;
-  /** The job this generation targets (marks the autopilot found job "applied"). */
+  /** The job this generation targets (links the generation to its Application; generating does not mark it applied). */
   jobUrl?: string;
   /** The board the job came from. */
   board?: string;

@@ -17,8 +17,9 @@ fn save_then_generate_merges_into_one_application() {
     let all = store.list();
     assert_eq!(all.len(), 1);
     let app = &all[0];
-    assert_eq!(app.status, ApplicationStatus::Applied);
-    assert!(app.applied_at.is_some());
+    // Generating is not a submission: the saved row stays `saved`.
+    assert_eq!(app.status, ApplicationStatus::Saved);
+    assert!(app.applied_at.is_none());
     assert_eq!(app.title, "Senior Engineer");
     assert_eq!(app.company, "Acme");
 }
@@ -26,7 +27,7 @@ fn save_then_generate_merges_into_one_application() {
 /// Documents WHY `ApplyByEmailTab::persistDraft` refuses to save for a URL-less
 /// Application. `row_by_job_url_conn` returns `None` unconditionally for an
 /// empty url, so `upsert_for_origin` can never merge and mints a BRAND-NEW
-/// `applied` Application on every call. Any renderer surface that saves
+/// Application on every call. Any renderer surface that saves
 /// per-keystroke/per-action for a URL-less job therefore forks a duplicate
 /// application each time — the guard in the email tab is what prevents that.
 #[test]
@@ -55,8 +56,8 @@ fn upsert_for_origin_forks_a_new_application_for_every_empty_url_save() {
     let all = store.list();
     assert_eq!(all.len(), 2, "two phantom Applications, not one merged row");
     assert!(
-        all.iter().all(|a| a.status == ApplicationStatus::Applied),
-        "each phantom is created already `applied`, so it sorts to the top of the list"
+        all.iter().all(|a| a.status == ApplicationStatus::Saved),
+        "each phantom is a `saved` draft row"
     );
 }
 
@@ -75,11 +76,22 @@ fn applied_job_urls_excludes_saved() {
         "https://b.com/2",
         "b",
         &meta("B", "T"),
+        ApplicationOrigin::Manual,
+    );
+    upsert(
+        &store,
+        "https://c.com/3",
+        "b",
+        &meta("C", "T"),
         ApplicationOrigin::Generate,
     );
     let applied = store.applied_job_urls();
     assert!(applied.contains("https://b.com/2"));
     assert!(!applied.contains("https://a.com/1"), "saved is not applied");
+    assert!(
+        !applied.contains("https://c.com/3"),
+        "a generated-only job is a draft, not applied"
+    );
 }
 
 /// Round-4 fix T3-cont (PR #1182 round-5) — a query failure (locked/corrupt
@@ -99,7 +111,7 @@ fn applied_job_urls_checked_returns_none_when_the_query_fails() {
         "https://gamma.example/1",
         "b",
         &meta("Gamma", "T"),
-        ApplicationOrigin::Generate,
+        ApplicationOrigin::Manual,
     );
     assert_eq!(
         store.applied_job_urls_checked().unwrap().len(),

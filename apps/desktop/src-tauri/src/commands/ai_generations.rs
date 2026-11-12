@@ -70,7 +70,7 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
     // ADR 0001: the Application aggregate is the source of truth for status +
     // "applied". A generation is its child Document. So before persisting the
     // generation we upsert/advance the Application for this job_url (Generate
-    // origin → `applied`), then store the generation (which still carries its
+    // origin → `saved`, never `applied`), then store the generation (which still carries its
     // own job/company/board copy for backward compatibility + offline export).
     link_application(
         app.try_state::<crate::applications::ApplicationStore>()
@@ -89,7 +89,7 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
 /// Upsert/advance the Application a generation belongs to and link `rec` to it by FK.
 /// A job-less generation (blank `job_url`, e.g. Résumé Builder / AI Generate with no
 /// posting) is a Documents entry only: an empty url never merges, so upserting would
-/// mint a fresh company-less "applied" row on every save (#1358). Pulled out of the
+/// mint a fresh company-less row on every save (#1358). Pulled out of the
 /// command so the gate is unit-testable without an `AppHandle`.
 fn link_application(
     apps: Option<&crate::applications::ApplicationStore>,
