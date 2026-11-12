@@ -5,6 +5,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button, StreamingText } from '@ajh/ui';
 
 import { RewritePopover } from '@/components/generation/EditableOutput/RewritePopover';
+import { MarkAppliedButton } from '@/components/job/MarkAppliedButton';
 
 import type { EmailRewrite } from './useEmailRewrite';
 
@@ -22,6 +23,8 @@ interface Props {
   onCopy: () => void;
   onCopySubject: () => void;
   mailtoHref: string | undefined;
+  applicationId: string;
+  applicationStatus: string;
 }
 
 const SECTION_LABEL = 'block text-xs font-semibold uppercase tracking-[0.14em] text-foreground/70';
@@ -41,6 +44,8 @@ export function EmailDraftView({
   onCopy,
   onCopySubject,
   mailtoHref,
+  applicationId,
+  applicationStatus,
 }: Props) {
   const { t } = useTranslation();
   const { subjectRef, bodyRef, frozen, openRewrite, closeRewrite, acceptRewrite } = rewrite;
@@ -163,6 +168,9 @@ export function EmailDraftView({
               <Mail size={13} />
               {t('applications.detail.email.openMailto')}
             </Button>
+          )}
+          {mailtoHref && (
+            <MarkAppliedButton applicationId={applicationId} status={applicationStatus} />
           )}
         </div>
       )}

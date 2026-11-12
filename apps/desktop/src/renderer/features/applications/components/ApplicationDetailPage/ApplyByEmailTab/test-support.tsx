@@ -60,6 +60,7 @@ vi.mock('@/services', () => ({
   useDocuments: () => ({ isLoading: false }),
   useDocumentText: () => documentTextMock(),
   useUpdateApplication: () => ({ mutate: updateApplicationMutate }),
+  useSetApplicationStatus: () => ({ mutate: vi.fn(), isPending: false }),
   useContactProfile: () => contactProfileMock(),
   useResolveJobUrl: (url: string, enabled?: boolean) => resolveJobUrlMock(url, enabled),
 }));

@@ -402,6 +402,8 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
             onCopy={() => copyBody(body)}
             onCopySubject={() => copySubject(subject)}
             mailtoHref={mailtoHref}
+            applicationId={application.id}
+            applicationStatus={application.status}
           />
         )}
       </div>
