@@ -37,6 +37,7 @@ import {
 } from '@/store/session-store';
 
 import { exportActiveDocument } from './export-document';
+import { LinkedMarkApplied } from './LinkedMarkApplied';
 import { runSetters } from './run-setters';
 import { useContactPromptGate } from './useContactPromptGate';
 
@@ -327,6 +328,7 @@ export function AIGeneratePage() {
               />
             )}
           </AnimatePresence>
+          {stage === 'done' && !isGenerating && <LinkedMarkApplied jobUrl={jobUrl} />}
 
           {error && (
             <div className="shrink-0 mx-6 mb-4">

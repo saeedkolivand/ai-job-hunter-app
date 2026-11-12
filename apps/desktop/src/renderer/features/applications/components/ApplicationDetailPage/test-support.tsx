@@ -43,6 +43,9 @@ export const state: {
   documentText: string | undefined;
   /** Captured from the TailorFlow stub so the debounce tests can simulate a job-ad edit. */
   capturedOnJobDescChange: ((text: string) => void) | undefined;
+  /** Stage the stubbed TailorFlow reports through `onController` (undefined = never). */
+  controllerStage: 'done' | undefined;
+  setStatusPending: boolean;
 } = {
   tab: 'overview',
   from: undefined,
@@ -51,6 +54,8 @@ export const state: {
   docsData: [],
   documentText: undefined,
   capturedOnJobDescChange: undefined,
+  controllerStage: undefined,
+  setStatusPending: false,
 };
 
 export const mockNotify: Record<
@@ -211,6 +216,8 @@ export function resetMocks() {
   state.docsData = [];
   state.documentText = undefined;
   state.capturedOnJobDescChange = undefined;
+  state.controllerStage = undefined;
+  state.setStatusPending = false;
   mockSessionState.autopilot.lastAppliedId = null;
   mockSessionState.applicationApply.applySeedResume = null;
   mockUseApplication.mockReset();

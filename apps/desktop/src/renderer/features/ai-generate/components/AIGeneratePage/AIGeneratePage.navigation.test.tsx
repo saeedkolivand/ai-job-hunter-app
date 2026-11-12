@@ -39,6 +39,7 @@ vi.mock('@/services', () => ({ useExtractText: () => ({}) }));
 vi.mock('@/services/use-ai-generations', () => ({
   useSaveAiGeneration: () => ({ mutate: vi.fn() }),
 }));
+vi.mock('./LinkedMarkApplied', () => ({ LinkedMarkApplied: () => null }));
 vi.mock('@/features/ai-generate/hooks/useFileUpload', () => ({
   useFileUpload: () => ({ handleUpload: vi.fn() }),
 }));
