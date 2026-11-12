@@ -109,7 +109,7 @@ fn is_allowed_redirect(previous: &[reqwest::Url], target: &reqwest::Url) -> bool
             .last()
             .is_some_and(|p| p.scheme() == "https" && target.scheme() == "http");
     }
-    let norm = |h: &str| h.strip_suffix('.').unwrap_or(h).to_ascii_lowercase();
+    let norm = |h: &str| h.trim_end_matches('.').to_ascii_lowercase();
     let host = norm(host);
     !previous.is_empty()
         && previous

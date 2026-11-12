@@ -13,11 +13,11 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use crate::error::{AppError, AppResult};
 
-/// Lowercase, strip brackets and ONE trailing dot: `url` keeps the root dot on
-/// domains, so `localhost.` must classify like `localhost`.
+/// Lowercase, strip brackets and trailing dots: `url` keeps the root dot on
+/// domains, so `localhost.` and `localhost..` must classify like `localhost`.
 fn normalize_host(host: &str) -> String {
     let h = host.trim().trim_matches(|c| c == '[' || c == ']');
-    h.strip_suffix('.').unwrap_or(h).to_ascii_lowercase()
+    h.trim_end_matches('.').to_ascii_lowercase()
 }
 
 /// IPv4 address embedded in an IPv6 one: mapped/compatible, SIIT

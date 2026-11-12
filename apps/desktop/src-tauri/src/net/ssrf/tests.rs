@@ -162,6 +162,9 @@ fn base_url_allows_local_gateways_and_public() {
 fn trailing_dot_and_alias_loopback_names_are_not_public() {
     for h in [
         "localhost.",
+        "localhost..",
+        "x.localhost..",
+        "127.0.0.1..",
         "LOCALHOST.",
         "foo.localhost.",
         "x.local.",
