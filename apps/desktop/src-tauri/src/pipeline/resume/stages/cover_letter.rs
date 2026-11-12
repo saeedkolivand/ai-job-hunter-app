@@ -272,12 +272,12 @@ pub(crate) async fn research_brief(
 /// Our own rate/concurrency ceiling refused the lookup — one that could not be made, so the run
 /// says `failed`, not silence. The letter goes ahead without a brief.
 pub(crate) fn research_refused(ledger: &RunLedger) -> String {
-    ledger.note_research(ResearchStatus::Failed(Some(FailureKind::RateLimited)));
+    ledger.note_research(ResearchStatus::Failed(Some(FailureKind::RateLimited)), None);
     String::new()
 }
 
 /// Record how the lookup ended and hand its brief (possibly empty) to the letter.
 pub(crate) fn research_settled(ledger: &RunLedger, result: EnrichmentResult) -> String {
-    ledger.note_research(result.status);
+    ledger.note_research(result.status, result.backend);
     result.content
 }

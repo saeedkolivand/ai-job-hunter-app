@@ -761,10 +761,10 @@
     },
     "companyResearch": {
       "title": "Company Research",
-      "description": "Adds a short, factual company brief to cover letters and application answers, using your active AI provider's own web search. Cloud and CLI providers search with their own key; Ollama needs the free Ollama account key below.",
+      "description": "Adds a short, factual company brief to cover letters and application answers, using your active AI provider's own web search. Cloud and CLI providers search with their own key; Ollama needs an Ollama account key below, a SearXNG-compatible server, or an Exa key.",
       "connected": "Connected — Ollama account key stored",
       "remove": "Remove",
-      "getKeyAt": "Get a free Ollama key at",
+      "getKeyAt": "Get an Ollama account key at",
       "keyPlaceholder": "Paste your Ollama API key…",
       "sameKeyNote": "Same key unlocks Ollama Cloud models.",
       "save": "Save",
@@ -773,7 +773,7 @@
       "removeConfirmTitle": "Remove Ollama key?",
       "removeConfirmDesc": "This deletes your saved Ollama account key. Company research stops until you add a key again.",
       "saveError": "Couldn't save the key.",
-      "fallbackDescription": "Fallback search — used only when your provider has no web search of its own (any OpenAI-compatible server, or Ollama without the key above). A provider that can already search is never switched to Exa.",
+      "fallbackDescription": "Fallback search — used when your provider has no web search of its own (any OpenAI-compatible server, or Ollama without the key above), and as the last resort when its search fails on billing or sign-in.",
       "exaConnected": "Connected — Exa key stored",
       "exaGetKeyAt": "Get an Exa key at",
       "exaKeyPlaceholder": "Paste your Exa API key…",
@@ -781,11 +781,16 @@
       "exaSaved": "Exa key saved.",
       "exaRemoved": "Exa key removed.",
       "exaRemoveConfirmTitle": "Remove Exa key?",
-      "exaRemoveConfirmDesc": "This deletes your saved Exa key. Providers without their own web search stop producing a company brief.",
+      "exaRemoveConfirmDesc": "This deletes your saved Exa key. Providers without their own web search then use your SearXNG-compatible server if you set one, and otherwise stop producing a company brief.",
       "showKey": "Show key",
       "hideKey": "Hide key",
       "ollamaFieldLabel": "Ollama API key",
-      "exaFieldLabel": "Exa API key"
+      "exaFieldLabel": "Exa API key",
+      "searxngLabel": "SearXNG-compatible server URL",
+      "searxngPlaceholder": "https://search.example.com",
+      "searxngDescription": "SearXNG-compatible search: enter the URL of a self-hosted SearXNG or RustXNG server (RustXNG runs natively on Windows). No key needed; the server must have JSON output enabled. Queries go to the server you set. Search order: your AI provider's own search, then this server, then Exa — the next one is used only when one fails on billing or sign-in. This server's own failures never move on to Exa; if JSON output is off, you get an error asking you to enable it.",
+      "searxngSaved": "Search server saved.",
+      "searxngRemoved": "Search server removed."
     },
     "aggregatorKeys": {
       "title": "Job search providers",
@@ -1448,7 +1453,7 @@
     "research": {
       "label": "Research the company",
       "hint": "Adds a short web brief to the cover letter, using your AI provider's own web search. Best-effort.",
-      "ollamaKeyHint": "Ollama needs a free Ollama account key to search — add it in Settings → AI."
+      "ollamaKeyHint": "Ollama needs an Ollama account key to search — add it in Settings → AI."
     },
     "market": {
       "label": "Target market",
@@ -3104,7 +3109,7 @@
       "privacyQuestions": {
         "whatLeaves": {
           "q": "What data leaves my computer?",
-          "a": "Your documents, applications and history stay in local files on your machine, and the app talks to job boards directly. The AI provider you pick in Settings → AI gets the job ad and your résumé — with \"Ollama (Local)\" even that stays local. Opt-in web research goes out too: \"Research the company\" and \"Search the web for better answers\" search through your provider, or through Exa if you saved a key under Settings → AI → \"Company Research\". Under Settings → Privacy, \"Fetch company logos\" (off by default) sends company names to Clearbit and \"Send crash reports\" sends errors to Sentry. Keys and the email app password live in your OS keychain."
+          "a": "Your documents, applications and history stay in local files on your machine, and the app talks to job boards directly. The AI provider you pick in Settings → AI gets the job ad and your résumé — with \"Ollama (Local)\" even that stays local. Opt-in web research goes out too: \"Research the company\" and \"Search the web for better answers\" search through your provider, or through the SearXNG-compatible server or Exa key you set under Settings → AI → \"Company Research\" (queries go to the server you set). Under Settings → Privacy, \"Fetch company logos\" (off by default) sends company names to Clearbit and \"Send crash reports\" sends errors to Sentry. Keys and the email app password live in your OS keychain."
         },
         "exportImport": {
           "q": "How do I back up or move my data?",
@@ -3226,7 +3231,7 @@
       "title": "Smarter cover letters",
       "subtitle": "Optionally let the app research the company on the web and weave a factual brief into your cover letters and application answers.",
       "connected": "Connected — research is ready to go.",
-      "getKeyAt": "Get a free Ollama key at",
+      "getKeyAt": "Get an Ollama account key at",
       "keyPlaceholder": "Paste your Ollama API key…",
       "saveKey": "Connect",
       "saved": "Ollama key saved.",

@@ -21,10 +21,40 @@
 pub enum SearchBackend {
     /// The provider's own model-side search (or the Ollama Web Search API).
     Native,
-    /// The user-configured fallback.
+    /// A SearXNG instance the user runs themselves (keyless, free).
+    Searxng,
+    /// The user-configured paid fallback.
     Exa,
     /// Nothing configured — research degrades to an empty brief.
     None,
+}
+
+use std::sync::Arc;
+
+/// Which backend a research pass reached, shared between the chain (which writes it as it
+/// goes) and the caller (which reads it after the pass). Set to a backend only once its
+/// search has returned, with whether that search succeeded.
+#[derive(Clone, Default)]
+pub struct ServedBackend(Arc<parking_lot::Mutex<Option<(SearchBackend, bool)>>>);
+
+impl ServedBackend {
+    pub(crate) fn of(backend: SearchBackend) -> Self {
+        Self(Arc::new(parking_lot::Mutex::new(Some((backend, true)))))
+    }
+
+    pub(crate) fn set(&self, backend: SearchBackend, succeeded: bool) {
+        *self.0.lock() = Some((backend, succeeded));
+    }
+
+    /// The backend whose search returned last, succeeded or not.
+    pub fn get(&self) -> Option<SearchBackend> {
+        self.0.lock().map(|(backend, _)| backend)
+    }
+
+    /// The backend whose search returned last, only when that search succeeded.
+    pub fn get_succeeded(&self) -> Option<SearchBackend> {
+        self.0.lock().and_then(|(b, ok)| ok.then_some(b))
+    }
 }
 
 impl SearchBackend {
@@ -34,8 +64,17 @@ impl SearchBackend {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Native => "native",
+            Self::Searxng => "searxng",
             Self::Exa => "exa",
             Self::None => "none",
         }
+    }
+
+    /// The wire token of a backend that can SERVE a pass; `None` for anything else (including
+    /// `"none"`), so a value read back from stored metrics never passes through unrecognised.
+    pub fn parse_served(token: &str) -> Option<Self> {
+        [Self::Native, Self::Searxng, Self::Exa]
+            .into_iter()
+            .find(|b| b.as_str() == token)
     }
 }

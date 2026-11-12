@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::ai_generations::AiGenerationStore;
+use crate::ai_provider::SearchBackend;
 use crate::error::FailureKind;
 use crate::pipeline::runs::{PipelineRunStore, RunRow};
 
@@ -107,12 +108,21 @@ fn clean_failure_fields(metrics: &mut Value) -> (Value, Value, Value) {
             .get("errorKind")
             .and_then(Value::as_str)
             .and_then(FailureKind::parse);
-        Some(match kind {
+        let mut out = match kind {
             Some(kind) if status == "failed" => {
                 json!({ "status": status, "errorKind": kind.as_str() })
             }
             _ => json!({ "status": status }),
-        })
+        };
+        // Closed vocabulary too: anything but a backend that can serve is dropped.
+        if let Some(backend) = r
+            .get("backend")
+            .and_then(Value::as_str)
+            .and_then(SearchBackend::parse_served)
+        {
+            out["backend"] = json!(backend.as_str());
+        }
+        Some(out)
     });
     let (kind, message, research) = (
         kind.map_or(Value::Null, |k| json!(k.as_str())),

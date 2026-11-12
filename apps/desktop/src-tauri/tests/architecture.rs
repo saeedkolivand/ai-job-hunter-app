@@ -550,6 +550,10 @@ const R3_ALLOW: &[&str] = &[
     // config would make neither readable. Persistence still lives entirely
     // inside the `ai_config` domain store, on the SAME connection.
     "ai_config/stage_overrides.rs",
+    // Same store, same connection: the web-search backend setting (SearXNG URL) that shares
+    // this store so backup, restore, sync and factory reset cover it. Split out of
+    // `ai_config/mod.rs`, which sits at the R8 cap.
+    "ai_config/search_settings.rs",
     "referrals/mod.rs",
     "dedup/mod.rs",
     "autopilot/found_jobs_db.rs",

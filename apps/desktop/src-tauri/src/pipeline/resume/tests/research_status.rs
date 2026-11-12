@@ -7,6 +7,7 @@
 use super::super::stages::{letter_artifact, require_answered, research_refused, research_settled};
 use super::super::types::JobAnalysis;
 use super::super::RunLedger;
+use crate::ai_provider::SearchBackend;
 use crate::commands::resume_pipeline::hooks::note_provider_failure;
 use crate::error::{AppError, AppResult, FailureKind};
 use crate::pipeline::budget::StoppedReason;
@@ -18,7 +19,36 @@ fn result(content: &str, status: ResearchStatus) -> EnrichmentResult {
         key: "Example Corp".into(),
         content: content.into(),
         status,
+        backend: None,
     }
+}
+
+/// The run's research status names the backend that served it, so a letter written from a
+/// fallback is attributable. Mutation check: drop the `backend` insert in `RunLedger::metrics`
+/// and this fails; a `None`/`none` backend must add nothing.
+#[test]
+fn the_ledger_names_the_backend_that_served_the_research() {
+    let ledger = RunLedger::new();
+    let mut served = result("a brief", ResearchStatus::Ok);
+    served.backend = Some(SearchBackend::Searxng);
+    research_settled(&ledger, served);
+    assert_eq!(
+        ledger.metrics()["research"],
+        json!({ "status": "ok", "backend": "searxng" })
+    );
+
+    let mut failed = result("", ResearchStatus::Failed(Some(FailureKind::Billing)));
+    failed.backend = Some(SearchBackend::Exa);
+    research_settled(&ledger, failed);
+    assert_eq!(
+        ledger.metrics()["research"],
+        json!({ "status": "failed", "errorKind": "billing", "backend": "exa" })
+    );
+
+    let mut nothing = result("", ResearchStatus::Empty);
+    nothing.backend = Some(SearchBackend::None);
+    research_settled(&ledger, nothing);
+    assert_eq!(ledger.metrics()["research"], json!({ "status": "empty" }));
 }
 
 /// Mutation check: drop the `research` entry from `RunLedger::metrics` and `get` can no longer

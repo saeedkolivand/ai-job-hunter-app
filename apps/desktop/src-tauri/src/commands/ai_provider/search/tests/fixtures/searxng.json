@@ -1,0 +1,45 @@
+{
+  "query": "example corp company overview",
+  "results": [
+    {
+      "url": "https://example.com/about",
+      "title": "About Example Corp",
+      "content": "Example Corp builds payment infrastructure for online businesses. Founded in 2015, around 200 employees.",
+      "engine": "duckduckgo",
+      "parsed_url": ["https", "example.com", "/about", "", "", ""],
+      "template": "default.html",
+      "engines": ["duckduckgo", "brave"],
+      "positions": [1, 2],
+      "score": 4.0,
+      "category": "general"
+    },
+    {
+      "url": "https://example.org/news/example-corp-funding",
+      "title": "Example Corp raises a funding round",
+      "content": "The company announced a new round to expand its European operations.",
+      "publishedDate": "2025-03-04T00:00:00",
+      "engine": "brave",
+      "parsed_url": ["https", "example.org", "/news/example-corp-funding", "", "", ""],
+      "template": "default.html",
+      "engines": ["brave"],
+      "positions": [3],
+      "score": 1.0,
+      "category": "general"
+    },
+    {
+      "url": "https://example.net/no-description",
+      "title": "A result with no description",
+      "content": "",
+      "engine": "brave",
+      "engines": ["brave"],
+      "positions": [5],
+      "score": 0.3,
+      "category": "general"
+    }
+  ],
+  "answers": [],
+  "corrections": [],
+  "infoboxes": [],
+  "suggestions": [],
+  "unresponsive_engines": []
+}

@@ -146,6 +146,26 @@ export interface AiContract {
   }): Promise<Record<string, AiStageOverride> | { error: string }>;
 
   /**
+   * The web-search backend settings for company research: the URL of a SearXNG-compatible
+   * search server (SearXNG, RustXNG) the user runs themselves. `searxngUrl` is `null` when
+   * unset. Not a secret, so it is stored beside the provider config, not in the keychain (the
+   * Exa key keeps using the provider-key commands).
+   *
+   * Research order when several are configured: the provider's own search, then this server,
+   * then Exa. Each later backend is tried only when the earlier one fails with billing or auth.
+   */
+  searchSettings(): Promise<AiSearchSettings>;
+
+  /**
+   * Set the SearXNG-compatible server URL, or clear it with `null`/blank. Validated
+   * server-side: http or https with a host, no query or fragment. Returns the fresh settings,
+   * or `{ error }` when the URL is rejected.
+   */
+  setSearchSettings(req: {
+    searxngUrl: string | null;
+  }): Promise<AiSearchSettings | { error: string }>;
+
+  /**
    * Stream a generation through the backend orchestration pipeline. Same wire
    * shape as `generate`, but the work runs as a composable `Pipeline` (so feature
    * generators share one lifecycle). Used by resume/cover-letter generation.
@@ -406,6 +426,12 @@ export interface AiStageOverride {
   contextWindow?: number;
 }
 
+/** The web-search backend settings. Mirrors the Rust `ai_search_settings` reply. */
+export interface AiSearchSettings {
+  /** Base URL of a SearXNG-compatible search server (SearXNG, RustXNG), `null` when unset. */
+  searxngUrl: string | null;
+}
+
 /** The persisted snapshot the renderer seeds the backend store from — 1:1 with
  *  the old Zustand `aiProviderConfig` (`{ activeProvider, providers }`). */
 export interface AiConfigSnapshot {
@@ -413,6 +439,8 @@ export interface AiConfigSnapshot {
   providers: Record<string, AiProviderRouting>;
   /** Per-stage overrides. Optional so a pre-override bundle still validates. */
   stageOverrides?: Record<string, AiStageOverride>;
+  /** The SearXNG-compatible search server URL, when set. */
+  searxngUrl?: string;
 }
 
 /** Backend-owned active generation config (task #16). The active provider's own

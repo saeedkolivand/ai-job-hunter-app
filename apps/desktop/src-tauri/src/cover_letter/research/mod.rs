@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use tauri::Manager;
 
-use crate::ai_provider::SearchBackend;
+use crate::ai_provider::{SearchBackend, ServedBackend};
 use crate::error::{AppResult, FailureKind};
 use crate::pipeline::cache::KvCache;
 use crate::pipeline::enrichment::{EnrichmentResult, ResearchStatus};
@@ -77,6 +77,7 @@ impl CompanyResearch {
         // request) — `None` here is a real absence, not an omission.
         let identity = StageIdentity::of(completer, None);
         let route = completer.resolve_search_route();
+        let served = route.served();
         let key = cache_key(identity, route.backend(), &company);
 
         // Fast path: cached brief younger than the TTL.
@@ -97,6 +98,7 @@ impl CompanyResearch {
                     key: company,
                     content: brief,
                     status: ResearchStatus::Ok,
+                    backend: None,
                 };
             }
         }
@@ -114,6 +116,7 @@ impl CompanyResearch {
                 key: company,
                 content: String::new(),
                 status: ResearchStatus::Failed(Some(FailureKind::RateLimited)),
+                backend: None,
             };
         }
 
@@ -133,6 +136,10 @@ impl CompanyResearch {
             ),
             Ok(Ok(_)) => {}
         }
+        // A deadline fired mid-pass: no search had returned for the backend in flight, so none
+        // is named. Otherwise the backend whose search last returned (a synthesis failure keeps
+        // it, with its kind read from the synthesis error by `settle`).
+        let backend = attributable_backend(outcome.is_err(), &served);
         let (brief, status) = settle(outcome.ok());
         match status {
             // A lookup that could not be made is not the same fact as one that found
@@ -148,6 +155,7 @@ impl CompanyResearch {
                     key: company,
                     content: String::new(),
                     status,
+                    backend,
                 };
             }
             // No text of any kind — ADR-027; this fires on the provider's own filler.
@@ -160,6 +168,7 @@ impl CompanyResearch {
                     key: company,
                     content: String::new(),
                     status,
+                    backend,
                 };
             }
             ResearchStatus::Ok => {}
@@ -183,6 +192,7 @@ impl CompanyResearch {
             key: company,
             content: brief,
             status,
+            backend,
         }
     }
 }
@@ -200,6 +210,16 @@ fn settle(outcome: Option<AppResult<String>>) -> (String, ResearchStatus) {
         Some(Err(e)) => (String::new(), ResearchStatus::Failed(FailureKind::of(&e))),
         Some(Ok(brief)) if is_no_info(&brief) => (String::new(), ResearchStatus::Empty),
         Some(Ok(brief)) => (brief, ResearchStatus::Ok),
+    }
+}
+
+/// The search backend to name on a finished pass: `None` when the deadline fired (the one in
+/// flight had not answered, and an earlier fall-through must not be blamed for the wait).
+fn attributable_backend(timed_out: bool, served: &ServedBackend) -> Option<SearchBackend> {
+    if timed_out {
+        served.get_succeeded()
+    } else {
+        served.get()
     }
 }
 
