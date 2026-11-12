@@ -20,23 +20,38 @@ fn normalize_host(host: &str) -> String {
     h.trim_end_matches('.').to_ascii_lowercase()
 }
 
-/// IPv4 address embedded in an IPv6 one: mapped/compatible, SIIT
-/// (`::ffff:0:a.b.c.d`), 6to4 (`2002::/16`), NAT64 (`64:ff9b::/96`,
-/// `64:ff9b:1::/48`). Only the embedded address decides, so DNS64 to public
-/// IPv4 stays reachable.
-fn embedded_ipv4(v6: Ipv6Addr) -> Option<Ipv4Addr> {
+/// IPv4 addresses embedded in an IPv6 one: mapped/compatible, SIIT
+/// (`::ffff:0:a.b.c.d`), 6to4 (`2002::/16`), NAT64 well-known (`64:ff9b::/96`,
+/// /96 layout only per RFC 6052) and local-use NAT64 (`64:ff9b:1::/48`).
+/// Only the embedded address decides, so DNS64 to public IPv4 stays reachable.
+///
+/// RFC 6052 lets a local-use prefix be /48, /56, /64 or /96, each placing the
+/// IPv4 in different bits around the reserved u-octet (bits 64-71), and the
+/// address does not reveal the operator's prefix length. So every layout is
+/// returned and callers fail closed: the address is unsafe if ANY candidate is.
+/// A local-use NAT64 address whose other-layout reading is private is refused;
+/// that is acceptable.
+fn embedded_ipv4s(v6: Ipv6Addr) -> Vec<Ipv4Addr> {
     let s = v6.segments();
-    let v4 = |hi: u16, lo: u16| Ipv4Addr::from(((u32::from(hi)) << 16) | u32::from(lo));
+    let v4 = |hi: u16, lo: u16| Ipv4Addr::from((u32::from(hi) << 16) | u32::from(lo));
     if let Some(v) = v6.to_ipv4() {
-        Some(v)
+        vec![v]
     } else if s[..4] == [0; 4] && s[4] == 0xffff && s[5] == 0 {
-        Some(v4(s[6], s[7]))
+        vec![v4(s[6], s[7])]
     } else if s[0] == 0x2002 {
-        Some(v4(s[1], s[2]))
-    } else if s[0] == 0x64 && s[1] == 0xff9b && (s[2..6] == [0; 4] || s[2] == 1) {
-        Some(v4(s[6], s[7]))
+        vec![v4(s[1], s[2])]
+    } else if s[0] == 0x64 && s[1] == 0xff9b && s[2..6] == [0; 4] {
+        vec![v4(s[6], s[7])]
+    } else if s[0] == 0x64 && s[1] == 0xff9b && s[2] == 1 {
+        let o = v6.octets();
+        vec![
+            Ipv4Addr::new(o[6], o[7], o[9], o[10]),   // /48
+            Ipv4Addr::new(o[7], o[9], o[10], o[11]),  // /56
+            Ipv4Addr::new(o[9], o[10], o[11], o[12]), // /64
+            v4(s[6], s[7]),                           // /96
+        ]
     } else {
-        None
+        Vec::new()
     }
 }
 
@@ -117,10 +132,7 @@ pub fn is_safe_ipv6(ip: Ipv6Addr) -> bool {
     }
     // Wrapped IPv4 (mapped/compatible/SIIT/6to4/NAT64): defer to the IPv4 rules
     // so a wrapped loopback/private address can't slip through.
-    if let Some(v4) = embedded_ipv4(ip) {
-        return is_safe_ipv4(v4);
-    }
-    true
+    embedded_ipv4s(ip).into_iter().all(is_safe_ipv4)
 }
 
 /// AWS IMDS over IPv6.
@@ -142,7 +154,7 @@ pub fn is_link_local_or_metadata_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => is_metadata_ipv4(v4),
         IpAddr::V6(v6) => {
-            embedded_ipv4(v6).is_some_and(is_metadata_ipv4)
+            embedded_ipv4s(v6).into_iter().any(is_metadata_ipv4)
                 || (v6.segments()[0] & 0xffc0) == 0xfe80
                 || v6 == AWS_IMDS_IPV6
         }
@@ -166,7 +178,7 @@ pub fn is_unspecified_host(host: &str) -> bool {
     {
         Ok(IpAddr::V4(v4)) => v4.is_unspecified(),
         Ok(IpAddr::V6(v6)) => {
-            v6.is_unspecified() || embedded_ipv4(v6).is_some_and(|v4| v4.is_unspecified())
+            v6.is_unspecified() || embedded_ipv4s(v6).into_iter().any(|v4| v4.is_unspecified())
         }
         Err(_) => false,
     }

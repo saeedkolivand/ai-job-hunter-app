@@ -121,10 +121,22 @@ fn allowed_redirect_refuses_https_to_http_downgrade_on_public_host() {
         "https://example.com/",
         "https://example.com/x"
     ));
-    // local same-host https -> http is fine
-    assert!(allowed_from(
+    // local same-host https -> http is a cleartext downgrade too
+    assert!(!allowed_from(
         "https://127.0.0.1:8080/",
         "http://127.0.0.1:8080/"
+    ));
+    assert!(!allowed_from(
+        "https://192.168.1.50/",
+        "http://192.168.1.50/"
+    ));
+    assert!(allowed_from(
+        "http://192.168.1.50/",
+        "https://192.168.1.50/"
+    ));
+    assert!(allowed_from(
+        "http://192.168.1.50/",
+        "http://192.168.1.50/x"
     ));
 }
 

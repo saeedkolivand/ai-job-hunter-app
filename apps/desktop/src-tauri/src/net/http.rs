@@ -86,8 +86,8 @@ fn redirect_policy() -> reqwest::redirect::Policy {
 ///
 /// `previous` is every URL requested so far in the chain (`attempt.previous()`).
 /// Link-local/metadata and unspecified targets are never followed. A public
-/// target is followed, except an https hop to http (cleartext downgrade,
-/// judged against the immediately previous hop). A non-public target is
+/// target is followed. An https hop to http (cleartext downgrade, judged
+/// against the immediately previous hop) is refused for every target. A non-public target is
 /// followed only if EVERY previous hop is the same host (port ignored), so a
 /// local provider may bounce http to https but a public hop can never pivot
 /// inward and a LAN host cannot bounce to another LAN host.
@@ -104,10 +104,14 @@ fn is_allowed_redirect(previous: &[reqwest::Url], target: &reqwest::Url) -> bool
     if is_link_local_or_metadata_host(host) || is_unspecified_host(host) {
         return false;
     }
+    if previous
+        .last()
+        .is_some_and(|p| p.scheme() == "https" && target.scheme() == "http")
+    {
+        return false;
+    }
     if is_safe_public_host(host) {
-        return !previous
-            .last()
-            .is_some_and(|p| p.scheme() == "https" && target.scheme() == "http");
+        return true;
     }
     let norm = |h: &str| h.trim_end_matches('.').to_ascii_lowercase();
     let host = norm(host);

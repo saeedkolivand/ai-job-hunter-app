@@ -190,3 +190,23 @@ fn wrapped_private_ipv4_is_unsafe_but_dns64_public_is_safe() {
     assert!(is_safe_public_host("64:ff9b::808:808"));
     assert!(is_safe_public_host("2002:808:808::"));
 }
+
+#[test]
+fn local_use_nat64_every_layout_is_checked() {
+    // 169.254.169.254 in the /48, /56, /64 and /96 layouts of 64:ff9b:1::/48.
+    for h in [
+        "64:ff9b:1:a9fe:a9:fe00::",
+        "64:ff9b:1:a9:fe:a9fe::",
+        "64:ff9b:1:0:a9:fea9:fe00:0",
+        "64:ff9b:1::a9fe:a9fe",
+    ] {
+        let ip: IpAddr = h.parse().unwrap();
+        assert!(!is_safe_ip(ip), "{h}");
+        assert!(is_link_local_or_metadata_ip(ip), "{h}");
+        assert!(
+            validate_provider_base_url(&format!("http://[{h}]/")).is_err(),
+            "{h}"
+        );
+    }
+    assert!(is_safe_public_host("64:ff9b::808:808"));
+}
