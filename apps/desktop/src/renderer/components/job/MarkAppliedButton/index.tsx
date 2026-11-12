@@ -17,7 +17,17 @@ export function MarkAppliedButton({ applicationId, status }: MarkAppliedButtonPr
   const { t } = useTranslation();
   const setStatus = useSetApplicationStatus();
   const [failed, setFailed] = useState(false);
+  const [done, setDone] = useState(false);
 
+  // Keep a short live-region confirmation after OUR successful call: the focused
+  // button unmounts once the status flips, which would otherwise be silent.
+  if (done) {
+    return (
+      <span role="status" className="shrink-0 text-xs text-foreground/70">
+        {t('applications.detail.markedApplied')}
+      </span>
+    );
+  }
   if (status !== 'saved') return null;
 
   return (
@@ -29,7 +39,7 @@ export function MarkAppliedButton({ applicationId, status }: MarkAppliedButtonPr
           setFailed(false);
           setStatus.mutate(
             { id: applicationId, status: 'applied' },
-            { onError: () => setFailed(true) }
+            { onSuccess: () => setDone(true), onError: () => setFailed(true) }
           );
         }}
         className="shrink-0 gap-1.5 text-brand-soft"

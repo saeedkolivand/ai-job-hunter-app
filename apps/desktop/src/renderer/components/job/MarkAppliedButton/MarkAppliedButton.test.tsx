@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
 import { MarkAppliedButton } from './index';
@@ -11,6 +11,11 @@ vi.mock('@/services', () => ({
 vi.mock('@ajh/translations', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
 
 describe('MarkAppliedButton', () => {
+  beforeEach(() => {
+    mutate.mockReset();
+    pending = false;
+  });
+
   it('sets applied on click', () => {
     render(<MarkAppliedButton applicationId="a1" status="saved" />);
     fireEvent.click(screen.getByRole('button', { name: /markApplied/ }));
@@ -34,5 +39,18 @@ describe('MarkAppliedButton', () => {
   it('renders nothing once applied', () => {
     const { container } = render(<MarkAppliedButton applicationId="a1" status="applied" />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('clears the error on a successful retry and announces success', () => {
+    mutate.mockImplementationOnce((_v: unknown, o?: { onError?: () => void }) => o?.onError?.());
+    mutate.mockImplementationOnce((_v: unknown, o?: { onSuccess?: () => void }) =>
+      o?.onSuccess?.()
+    );
+    render(<MarkAppliedButton applicationId="a1" status="saved" />);
+    fireEvent.click(screen.getByRole('button', { name: /markApplied/ }));
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /markApplied/ }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('applications.detail.markedApplied');
   });
 });
