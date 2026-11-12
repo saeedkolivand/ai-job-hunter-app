@@ -4,6 +4,9 @@ import { expect, test } from '@playwright/test';
 // modal that would intercept clicks) does not appear.
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
+    // Seed once: a test may register its own seed (see the sidebar-footer test), and
+    // init-script order is undefined, so neither side may overwrite the other.
+    if (localStorage.getItem('ai-job-hunter-preferences')) return;
     localStorage.setItem(
       'ai-job-hunter-preferences',
       JSON.stringify({
@@ -43,15 +46,20 @@ test.describe('AI Job Hunter shell (mock client)', () => {
   for (const height of [540, 640, 720, 900]) {
     test(`keeps the sidebar footer accessible at ${height}px height`, async ({ page }) => {
       await page.setViewportSize({ width: 1280, height });
-      // Set the name after the beforeEach seed has run (init-script order is undefined).
-      await page.goto('/e2e.html');
-      await page.evaluate(() => {
+      // The harness rewrites /e2e.html to / (see e2e-main.tsx), and a reload of / boots the
+      // real Tauri entry — so seed the name via an init script and navigate once, no reload.
+      await page.addInitScript(() => {
         const key = 'ai-job-hunter-preferences';
-        const prefs = JSON.parse(localStorage.getItem(key) ?? '{}');
-        prefs.state.userName = 'Test User';
+        const prefs = JSON.parse(localStorage.getItem(key) ?? '{"state":{},"version":3}');
+        Object.assign(prefs.state, {
+          version: 3,
+          language: 'en',
+          onboardingCompleted: true,
+          userName: 'Test User',
+        });
         localStorage.setItem(key, JSON.stringify(prefs));
       });
-      await page.reload();
+      await page.goto('/e2e.html');
       const sidebar = page.locator('aside.app-sidebar');
       const identity = sidebar.getByText('Test User', { exact: true });
       const settings = sidebar.getByRole('link', { name: 'Settings', exact: true });

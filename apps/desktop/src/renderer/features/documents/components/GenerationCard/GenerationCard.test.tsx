@@ -163,7 +163,7 @@ describe('GenerationCard — board chip', () => {
   beforeAll(async () => {
     const actual = await vi.importActual<typeof AjhTranslations>('@ajh/translations');
     const realT = actual.default.getFixedT('en');
-    mockTranslate = (key, opts) => String(realT(key, opts));
+    mockTranslate = (key, opts) => String(realT(key, opts ?? {}));
   });
 
   afterAll(() => {

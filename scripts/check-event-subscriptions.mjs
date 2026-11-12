@@ -123,7 +123,7 @@ const SUBSCRIBERS = {
 
   'hooks/use-resume-pipeline-session.ts': {
     mount: 'route-scoped',
-    hash: 'cbca895e9c36',
+    hash: 'ef75f3e8be00',
     note:
       'Mounted in TailorFlow/index.tsx (not GeneratingPanel, which takes only props) via ' +
       "useTailorPipeline → useResumePipelineSession. Reconnect (the session store's " +

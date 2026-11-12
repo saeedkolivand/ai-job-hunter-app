@@ -5,6 +5,20 @@ import userEvent from '@testing-library/user-event';
 import { ImagePreview } from './ImagePreview';
 import { Harness, imgTransform, renderPreview, SRC_A, SRC_B, SRC_C } from './ImagePreview.support';
 
+// jsdom 31 serializes a uniform scale as `scale(1.5)` (older: `scale(1.5, 1.5)`), so compare parsed values.
+function expectScale(transform: string, x: number, y: number): void {
+  const m = /scale\(([-\d.]+)(?:,\s*([-\d.]+))?\)/.exec(transform);
+  expect(m, transform).not.toBeNull();
+  expect([Number(m?.[1]), Number(m?.[2] ?? m?.[1])]).toEqual([x, y]);
+}
+
+// jsdom 31 serializes the z `0` as `0px`; compare the parsed x/y offsets.
+function expectTranslate(transform: string, x: number, y: number): void {
+  const m = /translate3d\(([-\d.]+)px,\s*([-\d.]+)px,/.exec(transform);
+  expect(m, transform).not.toBeNull();
+  expect([Number(m?.[1]), Number(m?.[2])]).toEqual([x, y]);
+}
+
 describe('ImagePreview — toolbar actions (zoom / rotate / flip / reset)', () => {
   it('zoom-in button multiplies scale by (1 + scaleStep)', async () => {
     const user = userEvent.setup();
@@ -16,7 +30,7 @@ describe('ImagePreview — toolbar actions (zoom / rotate / flip / reset)', () =
     const after = imgTransform();
 
     expect(after).not.toEqual(before);
-    expect(after).toContain('scale(1.5, 1.5)');
+    expectScale(after, 1.5, 1.5);
   });
 
   it('zoom-out button divides scale by (1 + scaleStep)', async () => {
@@ -25,11 +39,11 @@ describe('ImagePreview — toolbar actions (zoom / rotate / flip / reset)', () =
 
     // Zoom in first so we have room to zoom out.
     await user.click(screen.getByRole('button', { name: 'Zoom in' }));
-    expect(imgTransform()).toContain('scale(1.5, 1.5)');
+    expectScale(imgTransform(), 1.5, 1.5);
 
     await user.click(screen.getByRole('button', { name: 'Zoom out' }));
     // 1.5 / 1.5 = 1 (clamped to minScale=1)
-    expect(imgTransform()).toContain('scale(1, 1)');
+    expectScale(imgTransform(), 1, 1);
   });
 
   it('zoom-out is clamped to minScale', async () => {
@@ -37,7 +51,7 @@ describe('ImagePreview — toolbar actions (zoom / rotate / flip / reset)', () =
     render(<Harness scaleStep={0.5} minScale={1} />);
     // Already at minScale=1; zoom-out should stay at 1.
     await user.click(screen.getByRole('button', { name: 'Zoom out' }));
-    expect(imgTransform()).toContain('scale(1, 1)');
+    expectScale(imgTransform(), 1, 1);
   });
 
   it('zoom-in is clamped to maxScale', async () => {
@@ -47,7 +61,7 @@ describe('ImagePreview — toolbar actions (zoom / rotate / flip / reset)', () =
     await user.click(screen.getByRole('button', { name: 'Zoom in' }));
     await user.click(screen.getByRole('button', { name: 'Zoom in' }));
     await user.click(screen.getByRole('button', { name: 'Zoom in' }));
-    expect(imgTransform()).toContain('scale(2, 2)');
+    expectScale(imgTransform(), 2, 2);
   });
 
   it('rotate-right button adds 90° to rotation', async () => {
@@ -70,22 +84,22 @@ describe('ImagePreview — toolbar actions (zoom / rotate / flip / reset)', () =
     const user = userEvent.setup();
     render(<Harness />);
     // No flip: scale(1, 1)
-    expect(imgTransform()).toContain('scale(1, 1)');
+    expectScale(imgTransform(), 1, 1);
     await user.click(screen.getByRole('button', { name: 'Flip horizontal' }));
     // flipX=true: sx = scale * -1 = -1
-    expect(imgTransform()).toContain('scale(-1, 1)');
+    expectScale(imgTransform(), -1, 1);
     // Toggle back
     await user.click(screen.getByRole('button', { name: 'Flip horizontal' }));
-    expect(imgTransform()).toContain('scale(1, 1)');
+    expectScale(imgTransform(), 1, 1);
   });
 
   it('flip-vertical button negates y scale component', async () => {
     const user = userEvent.setup();
     render(<Harness />);
     await user.click(screen.getByRole('button', { name: 'Flip vertical' }));
-    expect(imgTransform()).toContain('scale(1, -1)');
+    expectScale(imgTransform(), 1, -1);
     await user.click(screen.getByRole('button', { name: 'Flip vertical' }));
-    expect(imgTransform()).toContain('scale(1, 1)');
+    expectScale(imgTransform(), 1, 1);
   });
 
   it('flip H + V combination negates both components', async () => {
@@ -93,7 +107,7 @@ describe('ImagePreview — toolbar actions (zoom / rotate / flip / reset)', () =
     render(<Harness />);
     await user.click(screen.getByRole('button', { name: 'Flip horizontal' }));
     await user.click(screen.getByRole('button', { name: 'Flip vertical' }));
-    expect(imgTransform()).toContain('scale(-1, -1)');
+    expectScale(imgTransform(), -1, -1);
   });
 
   it('reset button restores identity transform', async () => {
@@ -106,9 +120,9 @@ describe('ImagePreview — toolbar actions (zoom / rotate / flip / reset)', () =
     expect(imgTransform()).not.toContain('rotate(0deg)');
 
     await user.click(screen.getByRole('button', { name: 'Reset' }));
-    expect(imgTransform()).toContain('translate3d(0px, 0px, 0)');
+    expectTranslate(imgTransform(), 0, 0);
     expect(imgTransform()).toContain('rotate(0deg)');
-    expect(imgTransform()).toContain('scale(1, 1)');
+    expectScale(imgTransform(), 1, 1);
   });
 
   it('reset via opening a new item also restores identity', () => {
@@ -124,7 +138,7 @@ describe('ImagePreview — toolbar actions (zoom / rotate / flip / reset)', () =
       />
     );
     // Transform should be identity after item change.
-    expect(imgTransform()).toContain('scale(1, 1)');
+    expectScale(imgTransform(), 1, 1);
     expect(imgTransform()).toContain('rotate(0deg)');
   });
 });
@@ -135,7 +149,7 @@ describe('ImagePreview — double-click zoom toggle', () => {
     const img = screen.getByRole('dialog').querySelector('img');
     if (!img) throw new Error('img not found');
     fireEvent.doubleClick(img);
-    expect(imgTransform()).toContain('scale(2, 2)');
+    expectScale(imgTransform(), 2, 2);
   });
 
   it('resets to identity on second double-click when already zoomed', () => {
@@ -143,9 +157,9 @@ describe('ImagePreview — double-click zoom toggle', () => {
     const img = screen.getByRole('dialog').querySelector('img');
     if (!img) throw new Error('img not found');
     fireEvent.doubleClick(img);
-    expect(imgTransform()).toContain('scale(2, 2)');
+    expectScale(imgTransform(), 2, 2);
     fireEvent.doubleClick(img);
-    expect(imgTransform()).toContain('scale(1, 1)');
+    expectScale(imgTransform(), 1, 1);
     expect(imgTransform()).toContain('rotate(0deg)');
   });
 });
@@ -186,7 +200,7 @@ describe('ImagePreview — drag / pan', () => {
     ptrUp(img);
 
     // x/y should remain 0 (pan not applied when movable=false).
-    expect(imgTransform()).toContain('translate3d(0px, 0px, 0)');
+    expectTranslate(imgTransform(), 0, 0);
   });
 
   it('drag-to-pan updates translate on pointer move', () => {
@@ -198,7 +212,7 @@ describe('ImagePreview — drag / pan', () => {
     ptrMove(img, 160, 130);
 
     // dx=60, dy=30 relative to start
-    expect(imgTransform()).toContain('translate3d(60px, 30px, 0)');
+    expectTranslate(imgTransform(), 60, 30);
   });
 
   it('pan accumulates base position from previous drag', () => {
@@ -216,7 +230,7 @@ describe('ImagePreview — drag / pan', () => {
     ptrMove(img, 30, 10);
     ptrUp(img);
 
-    expect(imgTransform()).toContain('translate3d(80px, 30px, 0)');
+    expectTranslate(imgTransform(), 80, 30);
   });
 
   it('pointer move before pointer down has no effect', () => {
@@ -224,7 +238,7 @@ describe('ImagePreview — drag / pan', () => {
     const img = screen.getByRole('dialog').querySelector('img');
     if (!img) throw new Error('img not found');
     ptrMove(img, 999, 999);
-    expect(imgTransform()).toContain('translate3d(0px, 0px, 0)');
+    expectTranslate(imgTransform(), 0, 0);
   });
 });
 
@@ -238,18 +252,18 @@ describe('ImagePreview — keyboard pan', () => {
     fireEvent.keyDown(window, { key: 'ArrowDown' });
     // 40px per press; ArrowRight/ArrowDown move the image right/down exactly as
     // a rightward/downward drag does.
-    expect(imgTransform()).toContain('translate3d(40px, 40px, 0)');
+    expectTranslate(imgTransform(), 40, 40);
 
     fireEvent.keyDown(window, { key: 'ArrowLeft' });
     fireEvent.keyDown(window, { key: 'ArrowUp' });
-    expect(imgTransform()).toContain('translate3d(0px, 0px, 0)');
+    expectTranslate(imgTransform(), 0, 0);
   });
 
   it('does not pan at 1x — there is nothing outside the frame to reach', () => {
     render(<Harness />);
     fireEvent.keyDown(window, { key: 'ArrowRight' });
     fireEvent.keyDown(window, { key: 'ArrowDown' });
-    expect(imgTransform()).toContain('translate3d(0px, 0px, 0)');
+    expectTranslate(imgTransform(), 0, 0);
   });
 
   it('does not pan when movable=false, even zoomed (parity with drag-to-pan)', async () => {
@@ -257,7 +271,7 @@ describe('ImagePreview — keyboard pan', () => {
     render(<Harness movable={false} scaleStep={0.5} />);
     await user.click(screen.getByRole('button', { name: 'Zoom in' }));
     fireEvent.keyDown(window, { key: 'ArrowRight' });
-    expect(imgTransform()).toContain('translate3d(0px, 0px, 0)');
+    expectTranslate(imgTransform(), 0, 0);
   });
 
   it('a zoomed multi-item preview pans instead of changing item', async () => {
@@ -270,6 +284,6 @@ describe('ImagePreview — keyboard pan', () => {
     await user.click(screen.getByRole('button', { name: 'Zoom in' }));
     fireEvent.keyDown(window, { key: 'ArrowRight' });
     expect(onIndexChange).not.toHaveBeenCalled();
-    expect(imgTransform()).toContain('translate3d(40px, 0px, 0)');
+    expectTranslate(imgTransform(), 40, 0);
   });
 });
