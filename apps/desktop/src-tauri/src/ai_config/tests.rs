@@ -12,6 +12,7 @@ use super::{AiConfigSnapshot, AiConfigStore, ProviderConfig, ProviderSettingsPat
 use crate::data_store::DataStore;
 
 mod patch;
+mod searxng_url;
 mod seed_import;
 pub(in crate::ai_config) mod support;
 mod writer;

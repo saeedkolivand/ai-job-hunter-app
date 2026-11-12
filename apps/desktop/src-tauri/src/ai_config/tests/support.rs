@@ -56,5 +56,6 @@ pub(super) fn snapshot_of(
             .map(|(id, cfg)| (id.to_string(), cfg))
             .collect(),
         stage_overrides: Default::default(),
+        searxng_url: None,
     }
 }

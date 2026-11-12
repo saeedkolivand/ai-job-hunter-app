@@ -256,6 +256,19 @@ pub(super) const AI_EMBEDDINGS_AND_CONFIG: &[PolicyEntry] = &[
         ),
     },
     PolicyEntry { path: "commands::ai::ai_stage_overrides", effect: Effect::Read },
+    PolicyEntry { path: "commands::ai::ai_search_settings", effect: Effect::Read },
+    // The SearXNG URL is an egress endpoint: once set, every research query (company names,
+    // roles) is sent to that host with no per-call confirmation. The command takes no id and
+    // the only value to confirm IS the new target, so no ProofSource can bind it; a caller-set
+    // URL is the same shape as `ai_set_provider_settings`'s base_url redirect above.
+    PolicyEntry {
+        path: "commands::ai::ai_set_search_settings",
+        effect: Effect::NotExposed(
+            "searxngUrl redirects every later research query to a caller-chosen host with no \
+             per-call confirmation; the confirmed value would be the very value being planted, \
+             so no ProofSource can bind it (the ai_set_provider_settings base_url shape)",
+        ),
+    },
     PolicyEntry { path: "commands::ai::ai_set_stage_override", effect: Effect::Reversible },
     PolicyEntry { path: "commands::ai::ai_clear_stage_override", effect: Effect::Reversible },
 

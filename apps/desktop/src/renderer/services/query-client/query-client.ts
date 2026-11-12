@@ -79,6 +79,8 @@ export const keys = {
     // Per-stage model overrides — a separate row set from `activeConfig`, so a
     // separate key: changing one stage must not invalidate the active config.
     stageOverrides: ['ai', 'stageOverrides'] as const,
+    // Web-search backend settings (SearXNG-compatible server URL) for company research.
+    searchSettings: ['ai', 'searchSettings'] as const,
   },
   documents: {
     all: ['documents'] as const,

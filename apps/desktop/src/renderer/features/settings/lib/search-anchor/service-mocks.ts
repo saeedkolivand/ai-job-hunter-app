@@ -64,6 +64,13 @@ export const servicesMock: Record<string, unknown> = {
   // CompanyResearchSettings
   useCompanyResearchConfig: () => ({ data: undefined }),
   useSetCompanyResearchConfig: () => ({ mutate: vi.fn(), isPending: false }),
+  useSearchSettings: () => ({ data: { searxngUrl: null } }),
+  useSetSearchSettings: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+    isError: false,
+    reset: vi.fn(),
+  }),
   // DeveloperPreferences
   useOpenDevtools: () => ({ mutate: vi.fn(), isPending: false }),
   useExportDiagnostics: () => ({ mutateAsync: vi.fn(), isPending: false }),

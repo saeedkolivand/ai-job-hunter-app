@@ -234,6 +234,10 @@ pub const OLLAMA_WEB_SEARCH: Duration = Duration::from_secs(15);
 /// they share a value but not a constant, per this module's own rule.
 pub const EXA_SEARCH: Duration = Duration::from_secs(15);
 
+/// A user-run SearXNG instance (`GET /search?format=json`). It fans out to several upstream
+/// engines itself, so it is allowed longer than a single hosted API.
+pub const SEARXNG_SEARCH: Duration = Duration::from_secs(20);
+
 /// BASELINE for the OUTER bound on a whole research pass — search **plus** the
 /// model's synthesis of the results — held by `CompanyResearch::enrich_with` and
 /// `SalaryResearch`. Every call site uses [`research_deadline`], never this

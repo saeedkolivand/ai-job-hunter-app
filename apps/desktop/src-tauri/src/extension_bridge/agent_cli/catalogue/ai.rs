@@ -161,10 +161,15 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         ],
     },
     CatalogueEntry {
+        command: "ai_search_settings",
+        description: "The web-search backend settings for company research: the URL of a SearXNG-compatible search server (SearXNG, RustXNG) the user runs themselves.",
+        args: &[],
+    },
+    CatalogueEntry {
         command: "ai_seed_active_config",
         description: "One-time first-run seed from the renderer's migrated Zustand config.",
         args: &[
-            CatalogueArg { name: "config", required: true, fields: Some(&["activeProvider", "providers", "stageOverrides"]) },
+            CatalogueArg { name: "config", required: true, fields: Some(&["activeProvider", "providers", "stageOverrides", "searxngUrl"]) },
         ],
     },
     CatalogueEntry {
@@ -196,6 +201,13 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         description: "Edit a (possibly non-active) provider's model/base_url/context window without flipping the active provider (the \"edit\" half).",
         args: &[
             CatalogueArg { name: "req", required: true, fields: Some(&[]) },
+        ],
+    },
+    CatalogueEntry {
+        command: "ai_set_search_settings",
+        description: "Set the SearXNG-compatible server URL, or clear it with `null`/blank.",
+        args: &[
+            CatalogueArg { name: "searxngUrl", required: false, fields: None },
         ],
     },
     CatalogueEntry {

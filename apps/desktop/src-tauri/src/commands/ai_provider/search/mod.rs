@@ -11,7 +11,9 @@
 //! That second shape is the general one, and the only provider-specific part of
 //! it is the search call. Factoring it out behind [`WebSearcher`] means a
 //! provider with no usable search of its own can still research, using a
-//! search backend the user configures — today [`ExaSearcher`].
+//! search backend the user configures — [`SearxngSearcher`] (keyless, self-hosted;
+//! SearXNG-compatible servers such as SearXNG and RustXNG) or [`ExaSearcher`]
+//! (hosted, keyed).
 //!
 //! A **search backend is not an AI provider**: it returns web results and cannot
 //! generate. It deliberately does not appear in `ProviderId`, in
@@ -19,11 +21,14 @@
 //!
 //! ## Who runs
 //!
-//! [`resolve_search_backend`] decides from CONFIGURATION, before any call:
-//! native when the provider has a usable search, otherwise the configured
-//! fallback, otherwise nothing. A native search that runs and returns nothing is
-//! NOT retried against the fallback — one research pass makes one search, so
-//! cost stays predictable and only one vendor sees the query.
+//! [`search_order`] decides from CONFIGURATION, before any call: native when the
+//! provider has a usable search, then SearXNG-compatible (free, local), then Exa
+//! (paid). [`resolve_search_backend`] is its head. The pass walks that order only
+//! when a backend FAILS with billing or auth ([`falls_through`]): an out-of-credit
+//! or rejected key is a fact about that backend, so the next one is tried, each at
+//! most once. A search that runs and returns NOTHING, is rate limited, or is
+//! unavailable is NOT retried elsewhere: cost stays predictable and one query is
+//! not fanned out to several vendors (ADR 0023).
 //!
 //! Synthesis always stays on the user's own model. Exa's own answer endpoint
 //! would be fewer calls, but it would bypass both `research::SYNTH_SYSTEM`'s
@@ -34,10 +39,12 @@ use async_trait::async_trait;
 use tauri::AppHandle;
 
 use super::research::SearchResult;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult, FailureKind};
 
 mod exa;
+mod searxng;
 pub use exa::{ExaSearcher, EXA_KEY};
+pub use searxng::{normalize_searxng_url, SearxngSearcher};
 
 /// `SearchBackend` lives in the L1 `crate::ai_provider` module, not here —
 /// `cover_letter::research::cache_key` (L2) needs to name it for its
@@ -46,24 +53,125 @@ pub use exa::{ExaSearcher, EXA_KEY};
 /// every existing consumer of `commands::ai_provider::search::SearchBackend`
 /// keeps compiling unchanged; see that module's doc comment for the full
 /// reasoning.
-pub use crate::ai_provider::SearchBackend;
+pub use crate::ai_provider::{SearchBackend, ServedBackend};
 
-/// Pick the backend for one research pass. Pure, so the policy is testable
-/// without an `AppHandle` — this crate has no `tauri::test` mock-app harness,
-/// and the same extraction is why `OpenAiClient::supports_web_search` and
-/// `salary_research::role_is_missing` exist as standalone predicates.
+/// Longest title passed on to synthesis, in chars. A title is remote text going into a prompt.
+pub(super) const TITLE_CAP: usize = 200;
+
+/// `s` cut to `max` chars (never mid-character).
+pub(super) fn cap_chars(s: &str, max: usize) -> String {
+    s.chars().take(max).collect()
+}
+
+/// The backends one research pass may use, in the order it tries them: native, then
+/// SearXNG-compatible (free and local), then Exa (paid). Pure, so the policy is testable
+/// without an `AppHandle` -- this crate has no `tauri::test` mock-app harness, and the same
+/// extraction is why `OpenAiClient::supports_web_search` and `salary_research::role_is_missing`
+/// exist as standalone predicates.
 ///
-/// Fallback-ONLY by design: a user whose provider already searches keeps using
-/// it and never silently starts paying a second vendor, even with an Exa key
-/// stored. That is the whole decision, and the test on it is what stops this
-/// quietly becoming Exa-preferred later.
-pub fn resolve_search_backend(native_ready: bool, exa_key_present: bool) -> SearchBackend {
-    if native_ready {
-        SearchBackend::Native
-    } else if exa_key_present {
-        SearchBackend::Exa
-    } else {
-        SearchBackend::None
+/// The head runs FIRST; the rest are fallbacks, reached only through [`falls_through`]. A user
+/// whose provider already searches keeps using it and never silently starts paying a second
+/// vendor just because a key is stored.
+pub fn search_order(
+    native_ready: bool,
+    searxng_ready: bool,
+    exa_key_present: bool,
+) -> Vec<SearchBackend> {
+    [
+        (SearchBackend::Native, native_ready),
+        (SearchBackend::Searxng, searxng_ready),
+        (SearchBackend::Exa, exa_key_present),
+    ]
+    .into_iter()
+    .filter_map(|(backend, ready)| ready.then_some(backend))
+    .collect()
+}
+
+/// The backend that runs first -- the head of [`search_order`], or `None`.
+pub fn resolve_search_backend(
+    native_ready: bool,
+    searxng_ready: bool,
+    exa_key_present: bool,
+) -> SearchBackend {
+    search_order(native_ready, searxng_ready, exa_key_present)
+        .first()
+        .copied()
+        .unwrap_or(SearchBackend::None)
+}
+
+/// Whether a failed search moves on to the next backend: only billing (out of credit) and auth
+/// (bad key / refused). Rate limiting, an outage, unusable output and an EMPTY result do not --
+/// retrying those elsewhere would multiply cost and leak the query to more vendors.
+pub fn falls_through(e: &AppError) -> bool {
+    matches!(
+        FailureKind::of(e),
+        Some(FailureKind::Billing | FailureKind::Auth)
+    )
+}
+
+/// The resolved backends of one pass, in [`search_order`] order, behaving as ONE
+/// [`WebSearcher`] that falls through per [`falls_through`].
+pub struct SearchChain {
+    candidates: Vec<(SearchBackend, Box<dyn WebSearcher>)>,
+    served: ServedBackend,
+}
+
+impl SearchChain {
+    /// Pair the three ALREADY-resolved candidates with their tags in [`search_order`] order --
+    /// the one place a tag meets its searcher.
+    fn new(
+        native: Option<Box<dyn WebSearcher>>,
+        searxng: Option<Box<dyn WebSearcher>>,
+        exa: Option<Box<dyn WebSearcher>>,
+    ) -> Self {
+        let order = search_order(native.is_some(), searxng.is_some(), exa.is_some());
+        let mut pool = [
+            (SearchBackend::Native, native),
+            (SearchBackend::Searxng, searxng),
+            (SearchBackend::Exa, exa),
+        ];
+        let candidates: Vec<_> = order
+            .into_iter()
+            .filter_map(|b| Some((b, pool.iter_mut().find(|(k, _)| *k == b)?.1.take()?)))
+            .collect();
+        Self {
+            candidates,
+            served: ServedBackend::default(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.candidates.is_empty()
+    }
+
+    fn first_backend(&self) -> SearchBackend {
+        self.candidates
+            .first()
+            .map_or(SearchBackend::None, |(b, _)| *b)
+    }
+}
+
+#[async_trait]
+impl WebSearcher for SearchChain {
+    async fn try_search(&self, query: &str, limit: usize) -> AppResult<Vec<SearchResult>> {
+        let mut rest = self.candidates.iter().peekable();
+        while let Some((backend, searcher)) = rest.next() {
+            let outcome = searcher.try_search(query, limit).await;
+            // Recorded only once the search RETURNED, so a later failure (synthesis on the
+            // user's own model) or a deadline is never pinned on a backend still in flight.
+            self.served.set(*backend, outcome.is_ok());
+            match outcome {
+                Err(e) if rest.peek().is_some() && falls_through(&e) => {
+                    tracing::warn!(
+                        backend = backend.as_str(),
+                        kind = FailureKind::of(&e).map_or("unclassified", FailureKind::as_str),
+                        "search: backend failed, trying the next one"
+                    );
+                }
+                other => return other,
+            }
+        }
+        Ok(Vec::new())
     }
 }
 
@@ -106,6 +214,7 @@ pub fn research_available<P: super::AiProvider + ?Sized>(
     // reuses its generation key, so if generation is configured, so is search.
     provider.has_native_search(model)
         || provider.native_searcher(app, model).is_some()
+        || SearxngSearcher::from_settings(app).is_some()
         || ExaSearcher::from_credentials(app).is_some()
 }
 
@@ -124,19 +233,23 @@ pub fn searcher_for<P: super::AiProvider + ?Sized>(
     provider: &P,
     model: &str,
 ) -> Option<Box<dyn WebSearcher>> {
-    let native: Option<Box<dyn WebSearcher>> = provider
-        .native_searcher(app, model)
-        .map(|s| s as Box<dyn WebSearcher>);
-    match resolve_search_backend(
-        native.is_some(),
-        ExaSearcher::from_credentials(app).is_some(),
-    ) {
-        SearchBackend::Native => native,
-        SearchBackend::Exa => {
-            ExaSearcher::from_credentials(app).map(|s| Box::new(s) as Box<dyn WebSearcher>)
-        }
-        SearchBackend::None => None,
-    }
+    let chain = chain_from(app, provider, model);
+    (!chain.is_empty()).then(|| Box::new(chain) as Box<dyn WebSearcher>)
+}
+
+/// Read the three backends' configuration once and pair them.
+fn chain_from<P: super::AiProvider + ?Sized>(
+    app: &AppHandle,
+    provider: &P,
+    model: &str,
+) -> SearchChain {
+    SearchChain::new(
+        provider
+            .native_searcher(app, model)
+            .map(|s| s as Box<dyn WebSearcher>),
+        SearxngSearcher::from_settings(app).map(|s| Box::new(s) as Box<dyn WebSearcher>),
+        ExaSearcher::from_credentials(app).map(|s| Box::new(s) as Box<dyn WebSearcher>),
+    )
 }
 
 /// One company-research pass's routing, resolved from credentials/config
@@ -168,9 +281,9 @@ pub enum CompanySearchRoute {
     /// The provider's own model searches (`AiProvider::research`) — no
     /// separate [`WebSearcher`] call.
     Native,
-    /// Search-then-synthesize, with the searcher already resolved (`None`
-    /// when nothing usable is configured).
-    Backend(SearchBackend, Option<Box<dyn WebSearcher>>),
+    /// Search-then-synthesize over the already-resolved backends (an empty
+    /// chain when nothing usable is configured).
+    Backend(SearchChain),
 }
 
 impl CompanySearchRoute {
@@ -189,38 +302,25 @@ impl CompanySearchRoute {
             // wasted account/Exa lookup.
             return Self::Native;
         }
-        Self::resolve_via_backend(
-            provider
-                .native_searcher(app, model)
-                .map(|s| s as Box<dyn WebSearcher>),
-            ExaSearcher::from_credentials(app).map(|s| Box::new(s) as Box<dyn WebSearcher>),
-        )
+        Self::Backend(chain_from(app, provider, model))
     }
 
-    /// The non-native half of [`resolve`](Self::resolve): given the two
-    /// ALREADY-resolved candidates (not re-read here), picks the backend and
-    /// pairs it with the matching searcher — the ONE place that pairing
-    /// happens. Free of `AppHandle` (the candidates are already resolved),
-    /// so every branch is a direct unit test rather than something only
-    /// provable by inspection.
-    fn resolve_via_backend(
-        native: Option<Box<dyn WebSearcher>>,
-        exa: Option<Box<dyn WebSearcher>>,
-    ) -> Self {
-        let backend = resolve_search_backend(native.is_some(), exa.is_some());
-        let searcher = match backend {
-            SearchBackend::Native => native,
-            SearchBackend::Exa => exa,
-            SearchBackend::None => None,
-        };
-        Self::Backend(backend, searcher)
-    }
-
-    /// The `company_brief` cache-key term for this route.
+    /// The `company_brief` cache-key term for this route: the backend that runs FIRST. A
+    /// pass that falls through is still keyed by it -- the credentials are what the key
+    /// guards, and a brief is the same content whichever backend fetched it.
     pub fn backend(&self) -> SearchBackend {
         match self {
             Self::Native => SearchBackend::Native,
-            Self::Backend(backend, _) => *backend,
+            Self::Backend(chain) => chain.first_backend(),
+        }
+    }
+
+    /// A handle the caller keeps across the move into [`fetch_company_brief`], to name the
+    /// backend that served the pass afterwards.
+    pub fn served(&self) -> ServedBackend {
+        match self {
+            Self::Native => ServedBackend::of(SearchBackend::Native),
+            Self::Backend(chain) => chain.served.clone(),
         }
     }
 }
@@ -241,11 +341,11 @@ pub async fn fetch_company_brief<P: super::AiProvider + ?Sized>(
         CompanySearchRoute::Native => {
             return provider.research(app, model, company, role).await;
         }
-        CompanySearchRoute::Backend(_, None) => return Ok(String::new()),
-        CompanySearchRoute::Backend(_, Some(searcher)) => searcher,
+        CompanySearchRoute::Backend(chain) if chain.is_empty() => return Ok(String::new()),
+        CompanySearchRoute::Backend(chain) => chain,
     };
     search_then_synthesize(
-        searcher.as_ref(),
+        &searcher,
         &super::research::search_query(company),
         |results| super::research::synth_user(company, role, results),
         |user| async move {

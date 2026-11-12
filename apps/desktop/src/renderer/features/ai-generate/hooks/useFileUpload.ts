@@ -1,3 +1,5 @@
+import type { TFunction } from '@ajh/translations';
+
 import { ACCEPTED_EXTS, MAX_BYTES } from '@/features/ai-generate/constants';
 
 export function useFileUpload(
@@ -8,7 +10,7 @@ export function useFileUpload(
   extractTextMutation: {
     mutateAsync: (args: { name: string; bytes: Uint8Array<ArrayBuffer> }) => Promise<unknown>;
   },
-  t: (key: string, params?: Record<string, unknown>) => string
+  t: TFunction
 ) {
   const handleUpload = async (target: 'resume' | 'jobAd', file: File) => {
     setUploadError(null);

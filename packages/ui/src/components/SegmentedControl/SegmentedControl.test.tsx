@@ -90,7 +90,8 @@ describe('SegmentedControl', () => {
       />
     );
     const group = screen.getByRole('radiogroup', { name: 'Quality' });
-    expect(group.style.gridTemplateColumns).toBe('repeat(3, minmax(0, 1fr))');
+    // jsdom 31 serializes the zero as `0px`; accept either.
+    expect(group.style.gridTemplateColumns).toMatch(/^repeat\(3, minmax\(0(px)?, 1fr\)\)$/);
   });
 
   it('track container uses foreground-based opacity (not white) for theme-adaptive visibility', () => {

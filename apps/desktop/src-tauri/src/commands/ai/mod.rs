@@ -21,6 +21,7 @@ mod generate;
 mod local_models;
 mod provider_keys;
 mod research;
+mod search_settings;
 
 pub use active_config::*;
 pub use embeddings::*;
@@ -28,6 +29,7 @@ pub use generate::*;
 pub use local_models::*;
 pub use provider_keys::*;
 pub use research::*;
+pub use search_settings::*;
 
 // ── AI-spend visibility (issue #1161) ─────────────────────────────────────
 // The pure/`AppHandle`-free helpers below live in `spend.rs`, split out

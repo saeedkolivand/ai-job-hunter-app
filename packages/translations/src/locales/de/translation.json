@@ -761,10 +761,10 @@
     },
     "companyResearch": {
       "title": "Unternehmensrecherche",
-      "description": "Fügt Anschreiben und Bewerbungsantworten ein kurzes, faktisches Unternehmensprofil hinzu – über die Websuche Ihres aktiven KI-Anbieters. Cloud- und CLI-Anbieter suchen mit ihrem eigenen Schlüssel; Ollama benötigt den kostenlosen Ollama-Kontoschlüssel unten.",
+      "description": "Fügt Anschreiben und Bewerbungsantworten ein kurzes, faktisches Unternehmensprofil hinzu – über die Websuche Ihres aktiven KI-Anbieters. Cloud- und CLI-Anbieter suchen mit ihrem eigenen Schlüssel; Ollama benötigt den Ollama-Kontoschlüssel unten, einen SearXNG-kompatiblen Server oder einen Exa-Schlüssel.",
       "connected": "Verbunden — Ollama-Schlüssel gespeichert",
       "remove": "Entfernen",
-      "getKeyAt": "Kostenlosen Ollama-Schlüssel erhalten unter",
+      "getKeyAt": "Ollama-Kontoschlüssel erhalten unter",
       "keyPlaceholder": "Ollama-API-Schlüssel einfügen…",
       "sameKeyNote": "Derselbe Schlüssel schaltet Ollama-Cloud-Modelle frei.",
       "save": "Speichern",
@@ -773,7 +773,7 @@
       "removeConfirmTitle": "Ollama-Schlüssel entfernen?",
       "removeConfirmDesc": "Dadurch wird Ihr gespeicherter Ollama-Schlüssel gelöscht. Die Unternehmensrecherche pausiert, bis Sie wieder einen Schlüssel hinzufügen.",
       "saveError": "Schlüssel konnte nicht gespeichert werden.",
-      "fallbackDescription": "Ersatzsuche – wird nur verwendet, wenn Ihr Anbieter keine eigene Websuche hat (jeder OpenAI-kompatible Server oder Ollama ohne den Schlüssel oben). Ein Anbieter, der bereits suchen kann, wird nie auf Exa umgestellt.",
+      "fallbackDescription": "Ersatzsuche – wird verwendet, wenn Ihr Anbieter keine eigene Websuche hat (jeder OpenAI-kompatible Server oder Ollama ohne den Schlüssel oben) und als letzte Möglichkeit, wenn dessen Suche wegen Abrechnung oder Anmeldung fehlschlägt.",
       "exaConnected": "Verbunden – Exa-Schlüssel gespeichert",
       "exaGetKeyAt": "Exa-Schlüssel erhalten Sie unter",
       "exaKeyPlaceholder": "Exa-API-Schlüssel einfügen…",
@@ -781,11 +781,16 @@
       "exaSaved": "Exa-Schlüssel gespeichert.",
       "exaRemoved": "Exa-Schlüssel entfernt.",
       "exaRemoveConfirmTitle": "Exa-Schlüssel entfernen?",
-      "exaRemoveConfirmDesc": "Dies löscht Ihren gespeicherten Exa-Schlüssel. Anbieter ohne eigene Websuche erstellen dann kein Unternehmensprofil mehr.",
+      "exaRemoveConfirmDesc": "Dies löscht Ihren gespeicherten Exa-Schlüssel. Anbieter ohne eigene Websuche nutzen dann Ihren SearXNG-kompatiblen Server, falls Sie einen festgelegt haben, und erstellen sonst kein Unternehmensprofil mehr.",
       "showKey": "Schlüssel anzeigen",
       "hideKey": "Schlüssel verbergen",
       "ollamaFieldLabel": "Ollama-API-Schlüssel",
-      "exaFieldLabel": "Exa-API-Schlüssel"
+      "exaFieldLabel": "Exa-API-Schlüssel",
+      "searxngLabel": "URL eines SearXNG-kompatiblen Servers",
+      "searxngPlaceholder": "https://search.example.com",
+      "searxngDescription": "SearXNG-kompatible Suche: Geben Sie die URL eines selbst betriebenen SearXNG- oder RustXNG-Servers ein (RustXNG läuft nativ unter Windows). Kein Schlüssel nötig; auf dem Server muss die JSON-Ausgabe aktiviert sein. Suchanfragen gehen an den Server, den Sie festlegen. Suchreihenfolge: die eigene Suche Ihres KI-Anbieters, dann dieser Server, dann Exa – der nächste kommt nur zum Zug, wenn der vorherige wegen Abrechnung oder Anmeldung fehlschlägt. Fehler dieses Servers führen nie zu Exa; ist die JSON-Ausgabe deaktiviert, erscheint ein Fehler mit der Bitte, sie zu aktivieren.",
+      "searxngSaved": "Suchserver gespeichert.",
+      "searxngRemoved": "Suchserver entfernt."
     },
     "aggregatorKeys": {
       "title": "Jobsuche-Anbieter",
@@ -1452,7 +1457,7 @@
     "research": {
       "label": "Unternehmen recherchieren",
       "hint": "Fügt dem Anschreiben eine kurze Web-Zusammenfassung hinzu — über die eigene Websuche Ihres KI-Anbieters. Nach bestem Bemühen.",
-      "ollamaKeyHint": "Ollama benötigt einen kostenlosen Ollama-Schlüssel zum Suchen — unter Einstellungen → KI hinzufügen."
+      "ollamaKeyHint": "Ollama benötigt einen Ollama-Kontoschlüssel zum Suchen — unter Einstellungen → KI hinzufügen."
     },
     "market": {
       "label": "Zielmarkt",
@@ -3108,7 +3113,7 @@
       "privacyQuestions": {
         "whatLeaves": {
           "q": "Welche Daten verlassen meinen Computer?",
-          "a": "Ihre Dokumente, Bewerbungen und Ihr Verlauf bleiben in lokalen Dateien auf Ihrem Rechner, und die App spricht direkt mit den Jobbörsen. Der KI-Anbieter, den Sie unter Einstellungen → KI auswählen, erhält die Stellenanzeige und Ihren Lebenslauf — mit \"Ollama (Local)\" bleibt auch das lokal. Optionale Web-Recherche geht ebenfalls nach außen: \"Unternehmen recherchieren\" und \"Web für bessere Antworten durchsuchen\" suchen über Ihren Anbieter oder über Exa, wenn Sie unter Einstellungen → KI → \"Unternehmensrecherche\" einen Schlüssel gespeichert haben. Unter Einstellungen → Datenschutz sendet \"Unternehmenslogos abrufen\" (standardmäßig aus) Firmennamen an Clearbit, und \"Absturzberichte senden\" schickt Fehler an Sentry. Schlüssel und das E-Mail-App-Passwort liegen im OS-Schlüsselbund."
+          "a": "Ihre Dokumente, Bewerbungen und Ihr Verlauf bleiben in lokalen Dateien auf Ihrem Rechner, und die App spricht direkt mit den Jobbörsen. Der KI-Anbieter, den Sie unter Einstellungen → KI auswählen, erhält die Stellenanzeige und Ihren Lebenslauf — mit \"Ollama (Local)\" bleibt auch das lokal. Optionale Web-Recherche geht ebenfalls nach außen: \"Unternehmen recherchieren\" und \"Web für bessere Antworten durchsuchen\" suchen über Ihren Anbieter oder über den SearXNG-kompatiblen Server bzw. Exa-Schlüssel, den Sie unter Einstellungen → KI → \"Unternehmensrecherche\" festgelegt haben (Suchanfragen gehen an den Server, den Sie festlegen). Unter Einstellungen → Datenschutz sendet \"Unternehmenslogos abrufen\" (standardmäßig aus) Firmennamen an Clearbit, und \"Absturzberichte senden\" schickt Fehler an Sentry. Schlüssel und das E-Mail-App-Passwort liegen im OS-Schlüsselbund."
         },
         "exportImport": {
           "q": "Wie sichere oder übertrage ich meine Daten?",
@@ -3230,7 +3235,7 @@
       "title": "Bessere Anschreiben",
       "subtitle": "Lassen Sie die App optional das Unternehmen im Web recherchieren und eine sachliche Zusammenfassung in Ihre Anschreiben und Bewerbungsantworten einfließen.",
       "connected": "Verbunden — die Recherche ist startklar.",
-      "getKeyAt": "Kostenlosen Ollama-Schlüssel erhalten unter",
+      "getKeyAt": "Ollama-Kontoschlüssel erhalten unter",
       "keyPlaceholder": "Ollama-API-Schlüssel einfügen…",
       "saveKey": "Verbinden",
       "saved": "Ollama-Schlüssel gespeichert.",

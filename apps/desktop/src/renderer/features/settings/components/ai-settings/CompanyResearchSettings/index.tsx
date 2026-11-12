@@ -4,6 +4,7 @@ import { useTranslation } from '@ajh/translations';
 import { SettingsSection } from '@ajh/ui';
 
 import { SearchKeyField } from './SearchKeyField';
+import { SearxngField } from './SearxngField';
 
 const OLLAMA_KEYS_URL = 'https://ollama.com/settings/keys';
 const EXA_KEYS_URL = 'https://dashboard.exa.ai/api-keys';
@@ -16,10 +17,10 @@ const EXA_KEYS_URL = 'https://dashboard.exa.ai/api-keys';
  * providers work with the key they already have. The two slots here cover the
  * providers that cannot: the Ollama family needs the free Ollama account key,
  * and anything with no search at all (every `openai-compatible` gateway, or a
- * keyless local Ollama) falls back to Exa when a key is stored.
+ * keyless local Ollama) falls back to a SearXNG-compatible server, then Exa.
  *
- * Fallback only — a provider that can already search is never redirected to Exa,
- * so adding a key here cannot silently move existing spend to another vendor.
+ * Fallback only — a provider that can already search keeps using it; the next
+ * backend is tried only when it fails on billing or sign-in.
  */
 export function CompanyResearchSettings() {
   const { t } = useTranslation();
@@ -48,6 +49,8 @@ export function CompanyResearchSettings() {
         <p className="mb-2 text-xs leading-relaxed text-foreground/50">
           {t('settings.companyResearch.fallbackDescription')}
         </p>
+        <SearxngField />
+        <div className="mt-3" />
         <SearchKeyField
           provider="exa"
           keysUrl={EXA_KEYS_URL}
