@@ -761,7 +761,7 @@
     },
     "companyResearch": {
       "title": "Unternehmensrecherche",
-      "description": "Fügt Anschreiben und Bewerbungsantworten ein kurzes, faktisches Unternehmensprofil hinzu – über die Websuche Ihres aktiven KI-Anbieters. Cloud- und CLI-Anbieter suchen mit ihrem eigenen Schlüssel; Ollama benötigt den Ollama-Kontoschlüssel unten oder einen SearXNG-kompatiblen Server.",
+      "description": "Fügt Anschreiben und Bewerbungsantworten ein kurzes, faktisches Unternehmensprofil hinzu – über die Websuche Ihres aktiven KI-Anbieters. Cloud- und CLI-Anbieter suchen mit ihrem eigenen Schlüssel; Ollama benötigt den Ollama-Kontoschlüssel unten, einen SearXNG-kompatiblen Server oder einen Exa-Schlüssel.",
       "connected": "Verbunden — Ollama-Schlüssel gespeichert",
       "remove": "Entfernen",
       "getKeyAt": "Ollama-Kontoschlüssel erhalten unter",
@@ -788,7 +788,7 @@
       "exaFieldLabel": "Exa-API-Schlüssel",
       "searxngLabel": "URL eines SearXNG-kompatiblen Servers",
       "searxngPlaceholder": "https://search.example.com",
-      "searxngDescription": "SearXNG-kompatible Suche: Geben Sie die URL eines selbst betriebenen SearXNG- oder RustXNG-Servers ein (RustXNG läuft nativ unter Windows). Kein Schlüssel nötig; auf dem Server muss die JSON-Ausgabe aktiviert sein. Suchanfragen gehen an den Server, den Sie festlegen. Suchreihenfolge: die eigene Suche Ihres KI-Anbieters, dann dieser Server, dann Exa – der nächste kommt nur zum Zug, wenn der vorherige wegen Abrechnung oder Anmeldung fehlschlägt.",
+      "searxngDescription": "SearXNG-kompatible Suche: Geben Sie die URL eines selbst betriebenen SearXNG- oder RustXNG-Servers ein (RustXNG läuft nativ unter Windows). Kein Schlüssel nötig; auf dem Server muss die JSON-Ausgabe aktiviert sein. Suchanfragen gehen an den Server, den Sie festlegen. Suchreihenfolge: die eigene Suche Ihres KI-Anbieters, dann dieser Server, dann Exa – der nächste kommt nur zum Zug, wenn der vorherige wegen Abrechnung oder Anmeldung fehlschlägt. Fehler dieses Servers führen nie zu Exa; ist die JSON-Ausgabe deaktiviert, erscheint ein Fehler mit der Bitte, sie zu aktivieren.",
       "searxngSaved": "Suchserver gespeichert.",
       "searxngRemoved": "Suchserver entfernt."
     },

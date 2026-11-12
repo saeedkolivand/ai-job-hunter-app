@@ -1,5 +1,5 @@
 import { Check, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 import { Button, Input, useNotification } from '@ajh/ui';
@@ -13,6 +13,7 @@ import { useSearchSettings, useSetSearchSettings } from '@/services';
  */
 export function SearxngField() {
   const { t } = useTranslation();
+  const errorId = useId();
   const notify = useNotification();
   const { data } = useSearchSettings();
   const setSettings = useSetSearchSettings();
@@ -29,7 +30,8 @@ export function SearxngField() {
       { searxngUrl: clearing ? null : url },
       {
         onSuccess: () => {
-          setDraft(null);
+          // Keep a newer edit made while this save was in flight.
+          setDraft((d) => (d === null || d.trim() === url ? null : d));
           notify.success({
             message: t(
               clearing
@@ -59,6 +61,7 @@ export function SearxngField() {
           placeholder={t('settings.companyResearch.searxngPlaceholder')}
           aria-label={t('settings.companyResearch.searxngLabel')}
           aria-invalid={setSettings.isError}
+          aria-describedby={setSettings.isError ? errorId : undefined}
           className="w-full text-sm"
         />
         <Button
@@ -77,7 +80,7 @@ export function SearxngField() {
         </Button>
       </div>
       {setSettings.isError && (
-        <p role="alert" className="text-xs text-red-400">
+        <p id={errorId} role="alert" className="text-xs text-red-400">
           {setSettings.error.message}
         </p>
       )}

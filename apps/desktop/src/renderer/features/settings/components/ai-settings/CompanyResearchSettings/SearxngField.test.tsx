@@ -98,6 +98,28 @@ describe('SearxngField', () => {
       'URL must start with http:// or https://'
     );
     expect(screen.getByLabelText(LABEL)).toHaveValue('ftp://nope');
+    const alert = screen.getByRole('alert');
+    expect(alert.id).not.toBe('');
+    expect(screen.getByLabelText(LABEL)).toHaveAttribute('aria-describedby', alert.id);
     expect(mockNotify.success).not.toHaveBeenCalled();
+  });
+
+  it('keeps a newer edit typed while the save is still in flight', async () => {
+    let resolveSave: (v: { searxngUrl: string }) => void = () => {};
+    setSearchSettings.mockImplementationOnce(
+      () => new Promise((resolve) => (resolveSave = resolve))
+    );
+    const user = userEvent.setup();
+    renderField();
+    const input = await screen.findByDisplayValue('https://search.example.com');
+    await user.clear(input);
+    await user.type(input, 'https://a.example.com');
+    await user.click(screen.getByRole('button', { name: /save/i }));
+    await user.clear(input);
+    await user.type(input, 'https://b.example.com');
+
+    resolveSave({ searxngUrl: 'https://a.example.com' });
+    await waitFor(() => expect(mockNotify.success).toHaveBeenCalled());
+    expect(screen.getByLabelText(LABEL)).toHaveValue('https://b.example.com');
   });
 });

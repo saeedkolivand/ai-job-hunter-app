@@ -761,7 +761,7 @@
     },
     "companyResearch": {
       "title": "Company Research",
-      "description": "Adds a short, factual company brief to cover letters and application answers, using your active AI provider's own web search. Cloud and CLI providers search with their own key; Ollama needs an Ollama account key below, or a SearXNG-compatible server.",
+      "description": "Adds a short, factual company brief to cover letters and application answers, using your active AI provider's own web search. Cloud and CLI providers search with their own key; Ollama needs an Ollama account key below, a SearXNG-compatible server, or an Exa key.",
       "connected": "Connected — Ollama account key stored",
       "remove": "Remove",
       "getKeyAt": "Get an Ollama account key at",
@@ -788,7 +788,7 @@
       "exaFieldLabel": "Exa API key",
       "searxngLabel": "SearXNG-compatible server URL",
       "searxngPlaceholder": "https://search.example.com",
-      "searxngDescription": "SearXNG-compatible search: enter the URL of a self-hosted SearXNG or RustXNG server (RustXNG runs natively on Windows). No key needed; the server must have JSON output enabled. Queries go to the server you set. Search order: your AI provider's own search, then this server, then Exa — the next one is used only when one fails on billing or sign-in.",
+      "searxngDescription": "SearXNG-compatible search: enter the URL of a self-hosted SearXNG or RustXNG server (RustXNG runs natively on Windows). No key needed; the server must have JSON output enabled. Queries go to the server you set. Search order: your AI provider's own search, then this server, then Exa — the next one is used only when one fails on billing or sign-in. This server's own failures never move on to Exa; if JSON output is off, you get an error asking you to enable it.",
       "searxngSaved": "Search server saved.",
       "searxngRemoved": "Search server removed."
     },
