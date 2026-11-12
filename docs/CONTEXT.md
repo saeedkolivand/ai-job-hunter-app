@@ -151,8 +151,8 @@ A user's tracked pursuit of one job. The shared spine that the three application
 origins (the AI Generate page, an Autopilot run, the Jobs/postings page) all write to,
 and that the Documents page reads. It is distinct from the docs produced for it: one
 Application can have zero or many tailored resumes/cover letters. Its lifecycle status is
-user-mutable (it is _not_ the derived "applied" badge, which only asks "does a generation
-exist for this URL?").
+user-mutable (it is _not_ the derived "applied" badge, which only asks "does an Application
+for this URL have a status past `saved`?").
 _Avoid_: Job (a posting is not an application), Generation/SavedDocument (the produced
 artifact is not the pursuit), Interaction (a one-off logged event, not the mutable state)
 
@@ -183,8 +183,7 @@ _Avoid_: Interaction (the viewed/opened/applied event log on postings is a separ
 
 **Application origin**:
 Where an Application was first created. Canonical triggers: **Save** (a Jobs-page posting
-or browser-extension import → `saved`), **Generate** / **Apply** (AI Generate or Autopilot
-produce/submit docs → `applied`), **Manual** ("Track a job" — e.g. applied outside the
+or browser-extension import → `saved`), **Generate** (AI Generate produces docs → `saved`; preparing documents is not a submission, #1447) / **Apply**, **Manual** ("Track a job" — e.g. applied outside the
 app), and **Backfill** (legacy row migration). Dedup on create by normalized `jobUrl`; no
 URL ⇒ a new Application. The browser extension is a **Save** origin (Feature 2).
 _Avoid_: source (already means the job-board id on a JobPosting, e.g. greenhouse)

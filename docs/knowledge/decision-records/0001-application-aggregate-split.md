@@ -55,6 +55,8 @@ FK permits many, reserved for a future flow that splits them.
 - New top-level `/applications` route (grouped/sectioned collapsible list by stage, with
   per-row status selector) and a new `applications` IPC namespace (5-step capability flow).
 
+> **Amended 2026-11-12:** Generate no longer produces `applied`; see the last section.
+
 ## Addendum (2026-07-28, PR #897): the `/applications` list shape is superseded
 
 **Superseded:** the last Consequence bullet's "grouped/sectioned collapsible list by stage"
@@ -77,3 +79,21 @@ Owning source: `apps/desktop/src/renderer/features/applications/lib/pipeline.ts`
 decision, deliberately hand-derived rather than read from `APPLICATION_STAGES`;
 `lib/pipeline.test.ts` pins it against the domain stage list so a new backend stage cannot
 silently fall out of the strip. Count the cards there rather than trusting a number here.
+
+## Amendment (2026-11-12, #1447): Generate no longer records a submission
+
+**Superseded:** the "Generate / Apply → `applied`" origin rule and the Consequences line that
+a generation backfills as `applied` for new records. Generating documents for a job
+(`ApplicationOrigin::Generate`) now creates or keeps the Application as `saved`.
+
+**Why:** preparing documents is not evidence the user submitted anything; treating it so
+produced `applied` records for submissions that never happened and polluted the funnel and the
+autopilot badge.
+
+**What records a submission now:** an explicit status change to `applied` (the "Mark as applied"
+action on the Documents tab, the Apply-by-email tab and the AI Generate page), `Manual` tracking,
+the legacy `Backfill`, or an explicit applied flag (`applied: Some(true)`). The "applied"
+definition (an Application with status past `saved`) is unchanged, but generated-only jobs no
+longer satisfy it. Existing records are not rewritten.
+
+Owning source: `apps/desktop/src-tauri/src/applications/writes.rs` (`upsert_for_origin`).

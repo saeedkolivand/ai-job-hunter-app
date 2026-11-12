@@ -10,7 +10,7 @@ The `JobUrlImport` component (in `components/job/JobUrlImport`) has shipped insi
 
 However, two critical gaps emerged in integration with the broader system:
 
-1. **Lost provenance**: When a generation originates from URL import, the renderer's persist path (`features/ai-generate/hooks/useGeneration.ts::persist()`) does not set the already-existing `AiGenerationSaveRequest.jobUrl` and `board` fields. This breaks applied-detection joins (which derive `FoundJob.applied` from `ai_generations.job_url`) and loses cluster-provenance data for ADR-029.
+1. **Lost provenance**: When a generation originates from URL import, the renderer's persist path (`features/ai-generate/hooks/useGeneration.ts::persist()`) does not set the already-existing `AiGenerationSaveRequest.jobUrl` and `board` fields. This breaks the URL join that links a generation to its Application (applied-detection now reads Application status, ADR 0001) and loses cluster-provenance data for ADR-029.
 
 2. **No harvesting integration**: The URL resolve path does not feed into ADR-030's slug harvesting seam, leaving one import path disconnected from autocomplete aggregation.
 
