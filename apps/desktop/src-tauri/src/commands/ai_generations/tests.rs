@@ -54,4 +54,10 @@ fn link_application_links_a_generation_that_names_a_posting() {
         r.application_id.as_deref(),
         Some(apps.list()[0].id.as_str())
     );
+    // #1447: generating for a posting saves the job; it never records a submission.
+    assert_eq!(
+        apps.list()[0].status,
+        crate::applications::ApplicationStatus::Saved
+    );
+    assert!(apps.list()[0].applied_at.is_none());
 }

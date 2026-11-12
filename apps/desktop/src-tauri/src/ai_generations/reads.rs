@@ -55,20 +55,6 @@ impl AiGenerationStore {
         })
     }
 
-    /// Distinct non-empty `job_url`s that have at least one saved generation —
-    /// the set used to derive a found job's `applied` flag.
-    pub fn applied_job_urls(&self) -> std::collections::HashSet<String> {
-        let conn = self.conn.lock();
-        conn.prepare("SELECT DISTINCT job_url FROM ai_generations WHERE job_url != ''")
-            .ok()
-            .and_then(|mut stmt| {
-                stmt.query_map([], |row| row.get::<_, String>(0))
-                    .ok()
-                    .map(|rows| rows.filter_map(|r| r.ok()).collect())
-            })
-            .unwrap_or_default()
-    }
-
     /// The distinct, non-empty posting urls a set of generations belongs to.
     ///
     /// **Read BEFORE the delete, because the delete is what makes it

@@ -1,19 +1,5 @@
 use super::support::*;
 
-#[test]
-fn applied_job_urls_returns_only_non_empty_links() {
-    let (_dir, store) = open_store();
-    insert(&store, "g1", "https://acme.com/job/1");
-    insert(&store, "g2", "https://acme.com/job/2");
-    insert(&store, "g3", ""); // manual generation, no job link
-
-    let urls = store.applied_job_urls();
-    assert_eq!(urls.len(), 2);
-    assert!(urls.contains("https://acme.com/job/1"));
-    assert!(urls.contains("https://acme.com/job/2"));
-    assert!(!urls.contains(""));
-}
-
 // ── remove_many tests ─────────────────────────────────────────────────────────
 
 #[test]

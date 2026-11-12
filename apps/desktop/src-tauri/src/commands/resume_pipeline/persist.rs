@@ -33,8 +33,8 @@ use super::save::{save_verdict, SaveVerdict};
 ///
 /// **An UNLINKED run (no resolvable `jobUrl`) saves nothing.** The aggregate is
 /// keyed by posting url, so a row with an empty one is unreachable by every
-/// reader in the app (`find_for_job` looks up a url; `applied_job_urls` filters
-/// them out) and unreachable by the retention prune, which partitions on
+/// reader in the app (`find_for_job` looks up a url) and unreachable by the
+/// retention prune, which partitions on
 /// `(job_url, kind)` — a permanent, invisible row holding a full résumé. The
 /// plan calls an unlinked generation session-only, and the run row + the stream
 /// the user watched are that session.
