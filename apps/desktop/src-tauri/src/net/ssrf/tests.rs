@@ -106,6 +106,12 @@ fn base_url_blocks_link_local_and_metadata_in_every_form() {
         "http://[::ffff:a9fe:a9fe]/",
         "http://[::169.254.169.254]/",
         "http://[::ffff:169.254.170.2]/",
+        "http://100.100.100.200/",
+        "http://[::ffff:100.100.100.200]/",
+        "http://[2002:a9fe:a9fe::]/",
+        "http://[64:ff9b::a9fe:a9fe]/",
+        "http://[64:ff9b:1::a9fe:a9fe]/",
+        "http://[::ffff:0:a9fe:a9fe]/",
     ] {
         assert!(
             validate_provider_base_url(u).is_err(),
@@ -150,4 +156,34 @@ fn base_url_allows_local_gateways_and_public() {
             "{u} must be allowed (provenance guard, not IP filter)"
         );
     }
+}
+
+#[test]
+fn trailing_dot_and_alias_loopback_names_are_not_public() {
+    for h in [
+        "localhost.",
+        "LOCALHOST.",
+        "foo.localhost.",
+        "x.local.",
+        "localhost.localdomain",
+        "ip6-localhost",
+        "ip6-loopback.",
+    ] {
+        assert!(!is_safe_public_host(h), "{h}");
+    }
+    assert!(is_safe_public_host("example.com."));
+}
+
+#[test]
+fn wrapped_private_ipv4_is_unsafe_but_dns64_public_is_safe() {
+    for h in [
+        "2002:7f00:1::",       // 6to4 127.0.0.1
+        "64:ff9b::a00:1",      // NAT64 10.0.0.1
+        "64:ff9b:1::c0a8:101", // local-use NAT64 192.168.1.1
+        "::ffff:0:a00:1",      // SIIT 10.0.0.1
+    ] {
+        assert!(!is_safe_public_host(h), "{h}");
+    }
+    assert!(is_safe_public_host("64:ff9b::808:808"));
+    assert!(is_safe_public_host("2002:808:808::"));
 }
