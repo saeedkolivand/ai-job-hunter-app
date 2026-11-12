@@ -31,7 +31,8 @@ ignore = [
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
     # zip <9 extraction advisories (SUID/SGID bits kept, symlink targets and
-    # Unix permissions applied outside the destination on `extract()`). The
+    # Unix permissions applied outside the destination on `extract()`, and an
+    # abort on a symlink entry with a huge declared size, 0429). The
     # app's own `zip` is already 9.x; the two old copies left are transitive
     # pins with no semver-compatible upgrade (tauri-plugin-updater 2.14 needs
     # zip 4, docx-rs 0.4.22 needs zip 8 — both are their latest releases).
@@ -46,6 +47,7 @@ ignore = [
     "RUSTSEC-2026-0367",
     "RUSTSEC-2026-0368",
     "RUSTSEC-2026-0369",
+    "RUSTSEC-2026-0429",
 ]
 
 [licenses]
