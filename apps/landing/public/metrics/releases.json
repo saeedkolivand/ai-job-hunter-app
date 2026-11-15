@@ -15,7 +15,7 @@
       },
       {
         "name": "latest.json",
-        "download_count": 92
+        "download_count": 118
       },
       {
         "name": "linux-AI-Job-Hunter-0.161.0-1.x86_64.rpm",
@@ -59,7 +59,7 @@
       },
       {
         "name": "windows-AI-Job-Hunter_0.161.0_x64-setup.exe",
-        "download_count": 11
+        "download_count": 12
       },
       {
         "name": "windows-AI-Job-Hunter_0.161.0_x64-setup.exe.sig",
@@ -175,7 +175,7 @@
       },
       {
         "name": "linux-AI-Job-Hunter_0.159.1_amd64.deb",
-        "download_count": 8
+        "download_count": 9
       },
       {
         "name": "macos-AI-Job-Hunter-apple-silicon.app.tar.gz",
@@ -199,7 +199,7 @@
       },
       {
         "name": "macos-AI-Job-Hunter_0.159.1_x64-intel.dmg",
-        "download_count": 5
+        "download_count": 6
       },
       {
         "name": "windows-AI-Job-Hunter_0.159.1_x64-setup.exe",
@@ -794,7 +794,7 @@
       },
       {
         "name": "windows-AI-Job-Hunter_0.153.2_x64_en-US.msi",
-        "download_count": 3
+        "download_count": 4
       }
     ]
   },
@@ -822,7 +822,7 @@
       },
       {
         "name": "linux-AI-Job-Hunter_0.153.1_amd64.AppImage",
-        "download_count": 2
+        "download_count": 3
       },
       {
         "name": "linux-AI-Job-Hunter_0.153.1_amd64.AppImage.sig",
@@ -830,7 +830,7 @@
       },
       {
         "name": "linux-AI-Job-Hunter_0.153.1_amd64.deb",
-        "download_count": 8
+        "download_count": 9
       },
       {
         "name": "macos-AI-Job-Hunter-apple-silicon.app.tar.gz",
