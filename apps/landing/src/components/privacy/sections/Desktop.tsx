@@ -122,10 +122,12 @@ export function Desktop() {
         <br />
         <br />
         <b>What is sent:</b> the error and its stack trace, your operating system and architecture,
-        and the app version. <b>What is never sent:</b> your résumés, cover letters, job data,
-        prompts, generated documents, credentials, or anything you typed. Before any report leaves
-        your machine, file paths, links, host names, e-mail addresses and credential-shaped values
-        are replaced with placeholders, and the machine name is not attached.
+        the app version, the install type (e.g. snap or Windows installer), and the name of the app
+        command that was running. For a startup storage failure, which internal store failed and its
+        error code (no paths, no data). <b>What is never sent:</b> your résumés, cover letters, job
+        data, prompts, generated documents, credentials, or anything you typed. Before any report
+        leaves your machine, file paths, links, host names, e-mail addresses and credential-shaped
+        values are replaced with placeholders, and the machine name is not attached.
         <br />
         <br />
         <b>Your choice:</b> you are asked during first-run setup, and{' '}
