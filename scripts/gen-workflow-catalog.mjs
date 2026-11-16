@@ -1,8 +1,7 @@
 // Generates the GitHub Actions catalog from the workflow files themselves, so the
 // summary can never drift from reality:
-//   1. .github/workflows/README.md  — a descriptive table (what each does, triggers, gate)
-//      with a live status-badge grid.
-//   2. README.md                    — the same badge grid, spliced between markers.
+//   .github/workflows/README.md — a descriptive table (what each does, triggers, gate)
+//   with a live status-badge grid.
 //
 // Description text is read from each workflow's own leading comment block, so the
 // single source of truth stays in the workflow file. Run with `pnpm gen:workflows`;
@@ -17,9 +16,6 @@ const OWNER = 'saeedkolivand';
 const REPO = 'ai-job-hunter-app';
 const WORKFLOW_DIR = '.github/workflows';
 const CATALOG_PATH = join(WORKFLOW_DIR, 'README.md');
-const ROOT_README = 'README.md';
-const BADGE_START = '<!-- workflows:badges:start -->';
-const BADGE_END = '<!-- workflows:badges:end -->';
 
 // The only workflows whose checks the branch ruleset requires: ci-pipeline's "✅ CI OK"
 // umbrella (ADR-0008's "🤖 AI Review OK" gate was retired 2026-09-22). Everything else is
@@ -217,24 +213,6 @@ function renderCatalog(rows) {
   return `${header.join('\n')}\n`;
 }
 
-function spliceBadges(readme, rows) {
-  const start = readme.indexOf(BADGE_START);
-  const end = readme.indexOf(BADGE_END);
-  if (start === -1 || end === -1) {
-    throw new Error(
-      `Markers ${BADGE_START} / ${BADGE_END} not found in ${ROOT_README}. ` +
-        'Add them where the workflow badge grid should render.'
-    );
-  }
-  const before = readme.slice(0, start + BADGE_START.length);
-  const after = readme.slice(end);
-  const grid = `\n\n${renderBadges(rows)}\n\n`;
-  return `${before}${grid}${after}`;
-}
-
 const rows = buildRows();
 writeFileSync(CATALOG_PATH, renderCatalog(rows));
-writeFileSync(ROOT_README, spliceBadges(readFileSync(ROOT_README, 'utf8'), rows));
-console.log(
-  `Generated ${CATALOG_PATH} and refreshed badges in ${ROOT_README} (${rows.length} workflows).`
-);
+console.log(`Generated ${CATALOG_PATH} (${rows.length} workflows).`);
