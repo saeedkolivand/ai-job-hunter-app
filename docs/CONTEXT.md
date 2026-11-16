@@ -56,8 +56,8 @@ _Avoid_: tracking, telemetry (enrichment sends no behavioral data); also avoid c
 
 **Crash reporting**:
 The one **first-party-initiated** egress and the one class that is **default ON**: when the
-desktop app fails, the error, its stack trace, the OS/architecture and the app version go to
-Sentry. Gated on `enabled && consentShown` — the default is on but nothing is sent until the
+desktop app fails, a redacted error report goes to Sentry (what it carries is owned by
+[ADR 0020](knowledge/decision-records/0020-crash-reporting.md) and its #1525 amendment). Gated on `enabled && consentShown` — the default is on but nothing is sent until the
 setup wizard has shown the choice — and every event is redacted with the same `redact_token`
 pipeline as the diagnostics bundle. Desktop only; the extension is excluded so its AMO
 `data_collection_permissions: ['none']` stays true. See [ADR 0020](knowledge/decision-records/0020-crash-reporting.md).

@@ -45,10 +45,13 @@ export function IntroShort() {
           </li>
           <li>
             <b>Crash reports, on by default, from the desktop app only.</b> When something breaks,
-            the error and its stack trace, your operating system and the app version are sent to{' '}
-            <b>Sentry</b> so it can be fixed. Paths, links, e-mail addresses and credentials are
-            stripped before anything is sent. You are asked during setup and can switch it off there
-            or in <i>Settings → Privacy</i> at any time. The browser extension is excluded entirely.
+            the error and its stack trace, your operating system, the app version, the install type
+            (e.g. snap or Windows installer) and the name of the app command that was running are
+            sent to <b>Sentry</b> so it can be fixed. For a startup storage failure, which internal
+            store failed and its error code are sent too (no paths, no data). Paths, links, e-mail
+            addresses and credentials are stripped before anything is sent. You are asked during
+            setup and can switch it off there or in <i>Settings → Privacy</i> at any time. The
+            browser extension is excluded entirely.
           </li>
           <li>
             <b>The browser extension is loopback-only.</b> It talks to <i>your own</i> running
