@@ -6,7 +6,7 @@
 use parking_lot::Mutex;
 use tauri::Manager;
 
-use super::state;
+use super::{state, store_open};
 use crate::observability::sanitize_reason;
 use crate::{
     app_menu, autopilot_scheduler, commands, email_watch_scheduler, extension_bridge,
@@ -64,113 +64,116 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Erro
     state::manage_late_stores(app, &mut reset_registry, &data_dir, &scraper_engine);
 
     // A store that failed to open must not leave a half-managed app running: every
-    // `state::<T>()` call site assumes its store is registered (#1525).
-    if super::store_open::abort_if_failed(app, &data_dir) {
-        return Ok(());
-    }
+    // `state::<T>()` call site assumes its store is registered (#1525). So everything
+    // that reaches for the stores runs only when all of them opened.
+    store_open::finish_setup(
+        store_open::take_failures(),
+        |failures| store_open::abort(app, &data_dir, failures),
+        || {
+            // Guard: the registry must contain exactly the labels the
+            // completeness test pins (`MANAGE_RESETTABLE_LABELS`) before the
+            // bridge/notification stores register their own labels. A forgotten
+            // `manage_resettable` above trips this in debug builds.
+            debug_assert_eq!(
+                reset_registry.labels(),
+                commands::privacy::MANAGE_RESETTABLE_LABELS.to_vec(),
+                "manage_resettable registrations drifted from MANAGE_RESETTABLE_LABELS"
+            );
 
-    // Guard: the registry must contain exactly the labels the
-    // completeness test pins (`MANAGE_RESETTABLE_LABELS`) before the
-    // bridge/notification stores register their own labels. A forgotten
-    // `manage_resettable` above trips this in debug builds.
-    debug_assert_eq!(
-        reset_registry.labels(),
-        commands::privacy::MANAGE_RESETTABLE_LABELS.to_vec(),
-        "manage_resettable registrations drifted from MANAGE_RESETTABLE_LABELS"
-    );
+            // Browser-extension bridge (Feature 2): manage the pairing-token state
+            // (+ register its factory-reset token rotation). The loopback WS server
+            // itself is started below, after the registry is in state.
+            extension_bridge::manage(app, &mut reset_registry, &data_dir);
 
-    // Browser-extension bridge (Feature 2): manage the pairing-token state
-    // (+ register its factory-reset token rotation). The loopback WS server
-    // itself is started below, after the registry is in state.
-    extension_bridge::manage(app, &mut reset_registry, &data_dir);
+            // Notification Center (Phase 1): manage the persisted notification
+            // store (+ register its factory-reset wipe). Pure data + disk; the
+            // push orchestration (OS banner / tray / renderer event) is Phase 4.
+            notifications::manage(app, &mut reset_registry, &data_dir);
 
-    // Notification Center (Phase 1): manage the persisted notification
-    // store (+ register its factory-reset wipe). Pure data + disk; the
-    // push orchestration (OS banner / tray / renderer event) is Phase 4.
-    notifications::manage(app, &mut reset_registry, &data_dir);
+            app.manage(reset_registry);
 
-    app.manage(reset_registry);
+            // Build and set the application menu. Predefined roles self-handle;
+            // the custom items (Settings, Check for Updates, nav, reload, devtools,
+            // Help) are dispatched by the app-level handler registered below.
+            let menu = app_menu::build_app_menu(handle)?;
+            app.set_menu(menu)?;
+            app.on_menu_event(|app, event| app_menu::on_app_menu_event(app, event.id().as_ref()));
 
-    // Build and set the application menu. Predefined roles self-handle;
-    // the custom items (Settings, Check for Updates, nav, reload, devtools,
-    // Help) are dispatched by the app-level handler registered below.
-    let menu = app_menu::build_app_menu(handle)?;
-    app.set_menu(menu)?;
-    app.on_menu_event(|app, event| app_menu::on_app_menu_event(app, event.id().as_ref()));
+            // Platform-specific window decorations
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.set_decorations(false)?;
+                }
+            }
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.set_decorations(true)?;
+                }
+            }
 
-    // Platform-specific window decorations
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(window) = app.get_webview_window("main") {
-            window.set_decorations(false)?;
-        }
-    }
-    #[cfg(target_os = "macos")]
-    {
-        if let Some(window) = app.get_webview_window("main") {
-            window.set_decorations(true)?;
-        }
-    }
+            // Build system tray.
+            if let Err(e) = tray::build(handle) {
+                log::warn!(
+                    "[setup] tray build error (non-fatal): {}",
+                    sanitize_reason(&e.to_string())
+                );
+            }
 
-    // Build system tray.
-    if let Err(e) = tray::build(handle) {
-        log::warn!(
-            "[setup] tray build error (non-fatal): {}",
-            sanitize_reason(&e.to_string())
-        );
-    }
+            // Schedule background update checks (10 s after launch, then every
+            // 4 h) — on an NSIS/MSI install. A Store build announces once that
+            // the Store owns updates and never polls or checks; see
+            // `updater::setup_auto_check`.
+            updater::setup_auto_check(handle);
 
-    // Schedule background update checks (10 s after launch, then every
-    // 4 h) — on an NSIS/MSI install. A Store build announces once that
-    // the Store owns updates and never polls or checks; see
-    // `updater::setup_auto_check`.
-    updater::setup_auto_check(handle);
+            // Start autopilot schedule runner (checks every minute).
+            autopilot_scheduler::start(handle.clone());
 
-    // Start autopilot schedule runner (checks every minute).
-    autopilot_scheduler::start(handle.clone());
+            // Start the email-confirmation watch scheduler (task #23, auto-track
+            // Layer C) — a no-op sweep whenever the feature is disconnected/
+            // disabled/no credential; see `email_watch_scheduler` for the
+            // due/backoff logic.
+            email_watch_scheduler::start(handle.clone());
 
-    // Start the email-confirmation watch scheduler (task #23, auto-track
-    // Layer C) — a no-op sweep whenever the feature is disconnected/
-    // disabled/no credential; see `email_watch_scheduler` for the
-    // due/backoff logic.
-    email_watch_scheduler::start(handle.clone());
+            // Start the follow-up reminder sweep: a due/overdue `nextActionAt`
+            // on an open Application raises one notification per due date. No
+            // network, one indexed SQLite read per tick — see
+            // `reminder_scheduler` for the dedupe/cap rules.
+            reminder_scheduler::start(handle.clone());
 
-    // Start the follow-up reminder sweep: a due/overdue `nextActionAt`
-    // on an open Application raises one notification per due date. No
-    // network, one indexed SQLite read per tick — see
-    // `reminder_scheduler` for the dedupe/cap rules.
-    reminder_scheduler::start(handle.clone());
+            // Start the optional self-hosted sync loop (ADR-051). Off by default:
+            // each tick is a no-op until the user saves a server and a token.
+            crate::sync_scheduler::start(handle.clone());
 
-    // Start the optional self-hosted sync loop (ADR-051). Off by default:
-    // each tick is a no-op until the user saves a server and a token.
-    crate::sync_scheduler::start(handle.clone());
+            // Start the browser-extension WS bridge (loopback only). Fire-and-
+            // forget on the tokio runtime; a bind failure logs + disables the
+            // bridge and never blocks boot. `BridgeState` was managed above.
+            extension_bridge::start(handle.clone());
 
-    // Start the browser-extension WS bridge (loopback only). Fire-and-
-    // forget on the tokio runtime; a bind failure logs + disables the
-    // bridge and never blocks boot. `BridgeState` was managed above.
-    extension_bridge::start(handle.clone());
+            // Keep the native-messaging host manifests + OS registration current
+            // (path tracks app moves/updates) so the browser can spawn our stdio
+            // relay — the Firefox HTTPS-Only transport that survives the ws→wss
+            // upgrade. Best-effort; never blocks boot.
+            extension_bridge::register::register_native_host(&data_dir);
 
-    // Keep the native-messaging host manifests + OS registration current
-    // (path tracks app moves/updates) so the browser can spawn our stdio
-    // relay — the Firefox HTTPS-Only transport that survives the ws→wss
-    // upgrade. Best-effort; never blocks boot.
-    extension_bridge::register::register_native_host(&data_dir);
+            // Build the bundled offline geocoding index now, off the hot path.
+            // It is 60-250 ms of pure CPU; left lazy it lands on whichever
+            // command worker touches it first, including the one inside
+            // `derive_country_code`'s `tokio::time::timeout` — which cannot
+            // interrupt synchronous work, so that 2 s cap would silently not
+            // apply. `spawn_blocking` (not `spawn`) because this is CPU-bound,
+            // and via `tauri::async_runtime` so it uses the app's runtime.
+            tauri::async_runtime::spawn_blocking(commands::geocoding::warm_index);
 
-    // Build the bundled offline geocoding index now, off the hot path.
-    // It is 60-250 ms of pure CPU; left lazy it lands on whichever
-    // command worker touches it first, including the one inside
-    // `derive_country_code`'s `tokio::time::timeout` — which cannot
-    // interrupt synchronous work, so that 2 s cap would silently not
-    // apply. `spawn_blocking` (not `spawn`) because this is CPU-bound,
-    // and via `tauri::async_runtime` so it uses the app's runtime.
-    tauri::async_runtime::spawn_blocking(commands::geocoding::warm_index);
+            // Watch the OS accent color (Windows): on a personalization accent
+            // change, emit `system:accentChanged` so the renderer re-pulls the
+            // color and re-applies the theme live. The watcher parks its WinRT
+            // subscription in managed state to stay alive. No-op off Windows;
+            // there the renderer's window-focus refetch covers it. Best-effort.
+            platform::accent_watcher::start(handle);
 
-    // Watch the OS accent color (Windows): on a personalization accent
-    // change, emit `system:accentChanged` so the renderer re-pulls the
-    // color and re-applies the theme live. The watcher parks its WinRT
-    // subscription in managed state to stay alive. No-op off Windows;
-    // there the renderer's window-focus refetch covers it. Best-effort.
-    platform::accent_watcher::start(handle);
-
-    Ok(())
+            Ok(())
+        },
+    )
 }

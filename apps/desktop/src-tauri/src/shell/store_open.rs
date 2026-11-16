@@ -18,7 +18,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use crate::crash_reporting;
 use crate::error::AppResult;
 
-type Failures = Vec<(&'static str, &'static str)>;
+pub(super) type Failures = Vec<(&'static str, &'static str)>;
 
 /// `(store label, AppError::code())` of every store that failed to open.
 static FAILURES: Mutex<Failures> = Mutex::new(Vec::new());
@@ -52,7 +52,7 @@ pub(super) fn open_or_record<T>(
 }
 
 /// Drain the collected failures; `None` when every store opened.
-fn take_failures() -> Option<Failures> {
+pub(super) fn take_failures() -> Option<Failures> {
     let failures = std::mem::take(&mut *FAILURES.lock());
     (!failures.is_empty()).then_some(failures)
 }
@@ -81,46 +81,82 @@ fn dialog_text(failures: &[(&str, &str)], data_dir: &Path) -> String {
     )
 }
 
-/// If any store failed to open: report it (one event), lock IPC, show the dialog and
-/// exit with code 1. Returns `true` when that path was taken, so `setup` stops
-/// registering work that would reach for the missing stores.
+/// The post-store decision of `setup`: when any store failed to open, run `abort` and
+/// nothing else; otherwise run `start_services` (everything that reaches for stores).
+pub(super) fn finish_setup<E>(
+    failures: Option<Failures>,
+    abort: impl FnOnce(Failures),
+    start_services: impl FnOnce() -> Result<(), E>,
+) -> Result<(), E> {
+    match failures {
+        Some(failures) => {
+            abort(failures);
+            Ok(())
+        }
+        None => start_services(),
+    }
+}
+
+/// The abort sequence with its effects injected, so the ORDER is testable: lock IPC
+/// first (no command may run from here on), then report, hide the window, and show
+/// the dialog (which ends in the exit).
+fn abort_sequence(
+    failures: &[(&str, &str)],
+    data_dir: &Path,
+    lock_ipc: impl FnOnce(),
+    report: impl FnOnce(&[(&str, &str)]),
+    hide_window: impl FnOnce(),
+    show_dialog_then_exit: impl FnOnce(String),
+) {
+    lock_ipc();
+    report(failures);
+    hide_window();
+    show_dialog_then_exit(dialog_text(failures, data_dir));
+}
+
+/// Report the failures (one event), lock IPC, show the dialog and exit with code 1.
 ///
 /// The dialog's blocking API must not run on the main thread (where `setup` runs),
 /// and `setup` has no Tokio reactor, so a plain std thread owns the flush, the dialog
 /// and the exit; the main thread keeps pumping the event loop that dialog needs.
-pub(super) fn abort_if_failed(app: &App, data_dir: &Path) -> bool {
-    let Some(failures) = take_failures() else {
-        return false;
-    };
-    IPC_LOCKED.store(true, Ordering::Relaxed);
-    crash_reporting::report_store_open_failures(&failures);
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.hide();
-    }
-    let handle = app.handle().clone();
-    let text = dialog_text(&failures, data_dir);
-    let spawned = std::thread::Builder::new()
-        .name("store-open-failure".into())
-        .spawn(move || {
-            // Before the dialog: the event must leave even if nobody dismisses it.
-            crash_reporting::flush(FLUSH_TIMEOUT);
-            let acknowledged = handle
-                .dialog()
-                .message(text)
-                .title("AI Job Hunter")
-                .kind(MessageDialogKind::Error)
-                .blocking_show();
-            if !acknowledged {
-                log::error!("[setup] store-open error dialog was closed or could not be shown");
+pub(super) fn abort(app: &App, data_dir: &Path, failures: Failures) {
+    abort_sequence(
+        &failures,
+        data_dir,
+        || IPC_LOCKED.store(true, Ordering::Relaxed),
+        crash_reporting::report_store_open_failures,
+        || {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.hide();
             }
-            std::process::exit(1);
-        });
-    if spawned.is_err() {
-        log::error!("[setup] could not start the store-open error thread");
-        crash_reporting::flush(FLUSH_TIMEOUT);
-        std::process::exit(1);
-    }
-    true
+        },
+        |text| {
+            let handle = app.handle().clone();
+            let spawned = std::thread::Builder::new()
+                .name("store-open-failure".into())
+                .spawn(move || {
+                    // Before the dialog: the event must leave even if nobody dismisses it.
+                    crash_reporting::flush(FLUSH_TIMEOUT);
+                    let acknowledged = handle
+                        .dialog()
+                        .message(text)
+                        .title("AI Job Hunter")
+                        .kind(MessageDialogKind::Error)
+                        .blocking_show();
+                    if !acknowledged {
+                        log::error!(
+                            "[setup] store-open error dialog was closed or could not be shown"
+                        );
+                    }
+                    std::process::exit(1);
+                });
+            if spawned.is_err() {
+                log::error!("[setup] could not start the store-open error thread");
+                crash_reporting::flush(FLUSH_TIMEOUT);
+                std::process::exit(1);
+            }
+        },
+    );
 }
 
 #[cfg(test)]

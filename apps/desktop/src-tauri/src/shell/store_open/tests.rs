@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::path::Path;
 
 use super::*;
@@ -44,13 +45,71 @@ fn dialog_text_names_stores_codes_and_folder_but_not_an_error_message() {
     assert!(!text.contains("reinstall"));
 }
 
-/// `abort_if_failed` and the handler gate need a live `App`/`Invoke`, which a unit test
-/// cannot build, so these pin that the wiring is still present in the source.
 #[test]
-fn the_abort_and_the_gate_are_still_wired_in() {
-    assert!(include_str!("../setup.rs").contains("store_open::abort_if_failed(app, &data_dir)"));
-    assert!(include_str!("../handler.rs").contains("ipc_gate::gate("));
-    assert!(include_str!("../handler.rs").contains("store_open::ipc_locked(),"));
-    assert!(include_str!("../state.rs").contains("store_open::open_or_record("));
-    assert!(include_str!("../../tray/mod.rs").contains("store_open_failed()"));
+fn failures_abort_and_never_start_services() {
+    let log = RefCell::new(Vec::new());
+    let result: Result<(), ()> = finish_setup(
+        Some(vec![("documents", "STORAGE")]),
+        |failures| log.borrow_mut().push(format!("abort {}", failures.len())),
+        || {
+            log.borrow_mut().push("services".into());
+            Ok(())
+        },
+    );
+    assert_eq!(result, Ok(()));
+    assert_eq!(*log.borrow(), ["abort 1"]);
+}
+
+#[test]
+fn no_failures_start_services_and_never_abort() {
+    let log = RefCell::new(Vec::new());
+    let result: Result<(), &str> = finish_setup(
+        None,
+        |_| log.borrow_mut().push("abort".to_string()),
+        || {
+            log.borrow_mut().push("services".into());
+            Err("a setup error still propagates")
+        },
+    );
+    assert_eq!(result, Err("a setup error still propagates"));
+    assert_eq!(*log.borrow(), ["services"]);
+}
+
+#[test]
+fn the_abort_runs_lock_then_report_then_hide_then_dialog_once_each() {
+    let log = RefCell::new(Vec::new());
+    abort_sequence(
+        &[("documents", "STORAGE")],
+        Path::new("data-dir-for-test"),
+        || log.borrow_mut().push("lock".to_string()),
+        |failures| log.borrow_mut().push(format!("report {}", failures.len())),
+        || log.borrow_mut().push("hide".into()),
+        |text| {
+            assert!(text.contains("documents (STORAGE)"));
+            log.borrow_mut().push("dialog".into());
+        },
+    );
+    assert_eq!(*log.borrow(), ["lock", "report 1", "hide", "dialog"]);
+}
+
+/// Source text with comment lines and all whitespace removed (LF/CRLF-safe).
+fn squashed(source: &str) -> String {
+    source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .flat_map(|line| line.split_whitespace())
+        .collect()
+}
+
+/// Pins two wiring points into Tauri types that a unit test cannot construct (no
+/// `Invoke`, no `App`): the handler feeding the lock flag into the gate, and
+/// `show_focus` returning early while locked. The branch logic behind both is covered
+/// behaviourally by the `ipc_gate` and `abort_sequence` tests; this only guards that
+/// the real call sites still use it.
+#[test]
+fn the_handler_and_show_focus_are_wired_to_the_lock() {
+    assert!(squashed(include_str!("../handler.rs"))
+        .contains("super::ipc_gate::gate(super::store_open::ipc_locked(),invoke,"));
+    assert!(squashed(include_str!("../../tray/mod.rs"))
+        .contains("pubfnshow_focus(app:&AppHandle){ifcrate::shell::store_open_failed(){return;}"));
 }
