@@ -63,6 +63,12 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Erro
     let scraper_engine = state::manage_process_state(app);
     state::manage_late_stores(app, &mut reset_registry, &data_dir, &scraper_engine);
 
+    // A store that failed to open must not leave a half-managed app running: every
+    // `state::<T>()` call site assumes its store is registered (#1525).
+    if super::store_open::abort_if_failed(app, &data_dir) {
+        return Ok(());
+    }
+
     // Guard: the registry must contain exactly the labels the
     // completeness test pins (`MANAGE_RESETTABLE_LABELS`) before the
     // bridge/notification stores register their own labels. A forgotten

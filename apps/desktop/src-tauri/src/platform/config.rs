@@ -150,7 +150,7 @@ pub fn agent_cli_exe_path() -> Option<PathBuf> {
 ///
 /// `#[cfg]`-free (see [`agent_cli_exe_path`]), so every branch is unit-tested
 /// on every host rather than on a Linux-only CI leg.
-fn launched_appimage(running: Option<&Path>) -> Option<PathBuf> {
+pub(super) fn launched_appimage(running: Option<&Path>) -> Option<PathBuf> {
     let appimage = PathBuf::from(std::env::var_os(APPIMAGE_ENV)?);
     let appdir = PathBuf::from(std::env::var_os(APPDIR_ENV)?);
     let running = running?;

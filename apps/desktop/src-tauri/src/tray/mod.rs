@@ -153,6 +153,11 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
 /// window was hidden to the tray its activation policy is `Accessory` (no Dock
 /// icon); switch back to `Regular` before showing so the Dock icon returns.
 pub fn show_focus(app: &AppHandle) {
+    // Startup is aborting (a store failed to open): never bring the window back, from
+    // any caller (single-instance relaunch, deep link, notification click, tray).
+    if crate::shell::store_open_failed() {
+        return;
+    }
     // macOS only: restore the Dock icon dropped by close-to-tray. No-op (and the
     // policy stays `Regular`) on a normal show, so this is always safe to call.
     #[cfg(target_os = "macos")]

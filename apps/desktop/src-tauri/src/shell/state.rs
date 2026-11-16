@@ -25,9 +25,10 @@ use crate::{
     email_watch, job_preferences, limits, referrals, spend,
 };
 
-/// Register `opened` for factory reset under `label`, or log the non-fatal failure
-/// to open it. Only the path-free `code()` of the error is logged: a storage error
-/// can embed the data-dir path, and the repo path-privacy rule extends to logs.
+/// Register `opened` for factory reset under `label`, or collect the failure to
+/// open it (`store_open::abort_if_failed` stops the app once every store was tried).
+/// Only the path-free `code()` of the error is logged: a storage error can embed the
+/// data-dir path, and the repo path-privacy rule extends to logs.
 fn manage_opened<T: Resettable + Send + Sync + 'static>(
     app: &App,
     registry: &mut ResetRegistry,
@@ -35,9 +36,8 @@ fn manage_opened<T: Resettable + Send + Sync + 'static>(
     what: &str,
     opened: AppResult<T>,
 ) {
-    match opened {
-        Ok(store) => manage_resettable(app, registry, label, store),
-        Err(e) => log::warn!("[setup] {what} failed to open (non-fatal): {}", e.code()),
+    if let Some(store) = super::store_open::open_or_record(label, what, opened) {
+        manage_resettable(app, registry, label, store);
     }
 }
 

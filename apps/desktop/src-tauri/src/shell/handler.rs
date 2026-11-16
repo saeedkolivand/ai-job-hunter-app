@@ -10,7 +10,7 @@ use crate::{commands, export, updater};
 
 /// The handler `run()` installs with `invoke_handler`.
 pub(crate) fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
-    tauri::generate_handler![
+    let handler: fn(tauri::ipc::Invoke) -> bool = tauri::generate_handler![
         // cli agents (install status — #22)
         commands::cli_agents::cli_agents_status,
         commands::cli_agents::cli_agents_redetect,
@@ -222,5 +222,17 @@ pub(crate) fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + S
         updater::updater_download,
         updater::updater_install,
         updater::updater_changelog,
-    ]
+    ];
+    move |invoke| {
+        // A store failed to open: nothing may run against the missing state.
+        super::ipc_gate::gate(
+            super::store_open::ipc_locked(),
+            invoke,
+            |invoke| invoke.resolver.reject("the app is shutting down"),
+            |invoke| {
+                let command = invoke.message.command().to_owned();
+                crate::crash_reporting::with_ipc_command(&command, || handler(invoke))
+            },
+        )
+    }
 }

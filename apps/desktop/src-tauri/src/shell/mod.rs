@@ -6,11 +6,18 @@
 
 mod deep_link;
 mod handler;
+mod ipc_gate;
 mod panic_hook;
 mod setup;
 mod state;
+mod store_open;
 
 pub(crate) use deep_link::{handle_deep_link, log_rejected_deep_link};
 pub(crate) use handler::invoke_handler;
 pub(crate) use panic_hook::install_crash_log_hook;
 pub(crate) use setup::setup;
+
+/// True once a store failed to open and the app is shutting down.
+pub(crate) fn store_open_failed() -> bool {
+    store_open::ipc_locked()
+}

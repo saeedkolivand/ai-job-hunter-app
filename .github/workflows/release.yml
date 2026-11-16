@@ -304,8 +304,29 @@ jobs:
           if [ "${{ runner.os }}" == "macOS" ]; then
             # One arch per leg — the matrix runs Intel + Apple Silicon in parallel.
             pnpm --filter @ajh/desktop tauri build --target ${{ matrix.target }}
+          elif [ "${{ runner.os }}" == "Linux" ]; then
+            # Linux keeps its debug info INSIDE the binary until we split it
+            # ourselves (Sentry's documented Linux path is a `.debug` made with
+            # objcopy, not a packed `.dwp`), so the two release-profile settings
+            # that would discard it are overridden for this leg only — Cargo.toml
+            # keeps `strip = "debuginfo"` + `split-debuginfo = "packed"` for
+            # Windows/macOS. The linker flag guarantees a GNU build-id, which is
+            # what Sentry matches the uploaded `.debug` against.
+            export CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO=off
+            export CARGO_PROFILE_RELEASE_STRIP=none
+            export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=-Wl,--build-id=sha1"
+            # Build and bundle are separate so the binary can be split in between;
+            # the bundler then packs the stripped binary into AppImage/deb/rpm
+            # (the snap job repackages that same .deb).
+            pnpm --filter @ajh/desktop tauri build --no-bundle
+            BIN=apps/desktop/src-tauri/target/release/ajh-tauri
+            readelf -n "$BIN" | grep -q 'Build ID' || { echo "::error::$BIN has no GNU build-id, so Sentry could not match its debug file"; exit 1; }
+            objcopy --only-keep-debug "$BIN" "$BIN.debug"
+            # Debug info out, symbol table kept (the intent of `strip = "debuginfo"`).
+            objcopy --strip-debug --add-gnu-debuglink="$BIN.debug" "$BIN"
+            pnpm --filter @ajh/desktop tauri bundle
           else
-            # Build for current platform (Linux or Windows)
+            # Windows
             pnpm --filter @ajh/desktop tauri build
           fi
           echo "::endgroup::"
@@ -535,8 +556,12 @@ jobs:
           echo "::group::Uploading debug files + sourcemaps"
           VERSION="${{ steps.resolve.outputs.version }}"
           npx --yes @sentry/cli@^2 releases new "${VERSION#v}"
-          # Native debug files: PDB (Windows), dSYM (macOS), DWARF/dwp (Linux).
-          # `split-debuginfo = "packed"` puts them beside the binary in target/.
+          # Native debug files: PDB (Windows), dSYM (macOS), `.debug` (Linux).
+          # Windows/macOS: `split-debuginfo = "packed"` puts the pdb/dSYM beside
+          # the binary in target/. Linux: the release build keeps DWARF in the
+          # binary and the build step splits it with objcopy into
+          # `release/ajh-tauri.debug` (Sentry's documented Linux path; it does not
+          # document `.dwp`).
           # No `--include-sources`: that would ship our source into Sentry, and
           # line tables alone are enough to resolve a frame.
           #
@@ -551,7 +576,7 @@ jobs:
           # LIBRARY name (`ajh_tauri`, underscore) rather than the bin name
           # (`ajh-tauri`), and the copies under `release/`, `bundle/appimage/`
           # and `bundle/deb/` are hardlinks that dedupe to the same debug id:
-          #   linux    deps/ajh_tauri-<hash>
+          #   linux    release/ajh-tauri.debug + the stripped release/ajh-tauri (made by the build step)
           #   windows  deps/ajh_tauri.exe + deps/ajh_tauri.pdb
           #   macos    <triple>/deps/ajh_tauri-<hash> + .dSYM
           # macOS builds with an explicit --target so it nests under <triple>/;
@@ -569,7 +594,15 @@ jobs:
           DIFS=()
           for depsdir in "${DEPS_DIRS[@]}"; do
             if [ -d "$depsdir" ]; then
-              for f in "$depsdir"/ajh_tauri*; do DIFS+=("$f"); done
+              if [ "${{ runner.os }}" == "Linux" ]; then
+                # The split `.debug` plus the stripped executable it came from: the
+                # `.debug` has an empty `.eh_frame`, and native (minidump)
+                # stack-walking needs the executable's unwind info. The copy under
+                # deps/ is the unstripped original (same build-id), not uploaded twice.
+                for f in "$depsdir"/../ajh-tauri.debug "$depsdir"/../ajh-tauri; do DIFS+=("$f"); done
+              else
+                for f in "$depsdir"/ajh_tauri*; do DIFS+=("$f"); done
+              fi
             fi
           done
           if [ ${#DIFS[@]} -eq 0 ]; then
@@ -584,14 +617,17 @@ jobs:
           # actually produces, as observed in a real release run:
           #   windows  a separate .pdb
           #   macos    a .dSYM bundle
-          #   linux    none — DWARF stays inside the binary, nothing to require
+          #   linux    the objcopy-made .debug (an earlier release uploaded the
+          #            link-time-stripped binary: symbols but no debug info)
           case "${{ runner.os }}" in
             Windows) NEED='\.pdb$';  NEED_DESC='a .pdb debug companion' ;;
             macOS)   NEED='\.dSYM$'; NEED_DESC='a .dSYM debug companion' ;;
+            Linux)   NEED='\.debug$'; NEED_DESC='a .debug file' ;;
             *)       NEED='';        NEED_DESC='' ;;
           esac
           if [ -n "$NEED" ] && ! printf '%s\n' "${DIFS[@]}" | grep -qE "$NEED"; then
             echo "::error title=Debug companion missing::Found ajh_tauri artifacts on ${{ matrix.platform }} but not $NEED_DESC, so frames from this release will not resolve. Check the release profile's debug/split-debuginfo settings."
+            ls -la "${DEPS_DIRS[@]}" "${DEPS_DIRS[@]/%deps/}" 2>/dev/null | grep -E 'ajh' || true
             exit 1
           fi
 
