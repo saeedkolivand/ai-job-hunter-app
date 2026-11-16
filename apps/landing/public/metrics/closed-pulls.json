@@ -1,5 +1,47 @@
 [
   {
+    "number": 1532,
+    "title": "fix(startup): stop at a store that fails to open and report why instead of panicking later",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1532",
+    "draft": false,
+    "created_at": "2026-11-16T08:33:33Z",
+    "updated_at": "2026-11-16T09:30:22Z",
+    "merged_at": "2026-11-16T09:24:59Z",
+    "closed_at": "2026-11-16T09:24:59Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1527,
+    "title": "docs(readme): keep the essentials at the root and move the long sections into docs pages",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1527",
+    "draft": false,
+    "created_at": "2026-11-16T07:27:48Z",
+    "updated_at": "2026-11-16T09:27:03Z",
+    "merged_at": "2026-11-16T07:28:15Z",
+    "closed_at": "2026-11-16T07:28:15Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1529,
+    "title": "docs(readme): make the root readme short and user-first",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1529",
+    "draft": false,
+    "created_at": "2026-11-16T07:42:40Z",
+    "updated_at": "2026-11-16T09:27:02Z",
+    "merged_at": "2026-11-16T07:43:35Z",
+    "closed_at": "2026-11-16T07:43:35Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
     "number": 1524,
     "title": "fix(applications): generating documents saves the job instead of marking it applied",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1524",
@@ -652,48 +694,6 @@
     "updated_at": "2026-10-27T01:21:21Z",
     "merged_at": "2026-10-25T13:51:05Z",
     "closed_at": "2026-10-25T13:51:05Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1454,
-    "title": "chore: bump the codeql-action group across 1 directory with 3 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1454",
-    "draft": false,
-    "created_at": "2026-10-21T16:07:57Z",
-    "updated_at": "2026-10-27T01:21:20Z",
-    "merged_at": "2026-10-25T13:52:55Z",
-    "closed_at": "2026-10-25T13:52:55Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1459,
-    "title": "chore: bump cycjimmy/semantic-release-action from 7.1.2 to 8.1.3",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1459",
-    "draft": false,
-    "created_at": "2026-10-21T16:12:37Z",
-    "updated_at": "2026-10-27T01:21:19Z",
-    "merged_at": "2026-10-25T13:53:25Z",
-    "closed_at": "2026-10-25T13:53:25Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1455,
-    "title": "chore: bump the vitest group across 1 directory with 3 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1455",
-    "draft": false,
-    "created_at": "2026-10-21T16:08:06Z",
-    "updated_at": "2026-10-27T01:21:18Z",
-    "merged_at": "2026-10-25T16:33:53Z",
-    "closed_at": "2026-10-25T16:33:53Z",
     "requested_reviewers": [],
     "user": {
       "login": "dependabot[bot]"

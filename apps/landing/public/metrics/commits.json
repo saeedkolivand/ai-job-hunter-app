@@ -1,5 +1,101 @@
 [
   {
+    "sha": "ba5fcfe9261a238dbc542cce36317f6c4977024e",
+    "commit": {
+      "message": "chore: sync landing download version to v0.161.1",
+      "author": {
+        "date": "2026-11-16T10:54:25Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "a7d766bef2e6b00828696d7049428fa5461f4a32",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.161.1 [skip ci]",
+      "author": {
+        "date": "2026-11-16T10:54:00Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "a3051362b9e5036424c28ca111498b92e4fe23a3",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-11-16T09:48:28Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "6401864aa0d47250bbbeaff8fad6300e186635a8",
+    "commit": {
+      "message": "chore(release): 0.161.1 [skip ci]",
+      "author": {
+        "date": "2026-11-16T09:26:47Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "e3fe6d97a296d400ec32dde4984a4eceab688952",
+    "commit": {
+      "message": "fix(startup): stop at a store that fails to open and report why instead of panicking later (#1532)",
+      "author": {
+        "date": "2026-11-16T09:24:58Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "bc489a94bf6f8d2b27ddec1d566b5c740a4e6526",
+    "commit": {
+      "message": "docs(readme): make the root readme short and user-first (#1529)",
+      "author": {
+        "date": "2026-11-16T07:43:34Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "ac35a4c66a75e10b99109dd9c556546333602003",
+    "commit": {
+      "message": "docs(readme): keep the essentials at the root and move the long sections into docs pages (#1527)",
+      "author": {
+        "date": "2026-11-16T07:28:14Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "9933bf9379c48d5d5c03cc5b0b97168c042c3e49",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-11-15T10:49:21Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "0fc8924cd6da110a691cf866b3684356fb2b27cc",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1097,102 +1193,6 @@
       "message": "chore: update mission-control snapshot data [skip ci]",
       "author": {
         "date": "2026-10-24T08:05:33Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "a4a1e0d5cf845bb932c55cbd3ec55ff42011e061",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-23T08:30:32Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "8849a5a8cebf8179f3b973a4fc022167ecaced13",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-22T08:34:26Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "d75787c1b991999c8a7c7f036a3a200fc8e46a0f",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-21T08:32:01Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "c38362974c0431c8e788bb7547e5060f90510d1e",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-20T08:29:35Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "d38c31d25f309558f7a635eac482f23730340426",
-    "commit": {
-      "message": "fix(tracking): avoid misleading application status badges (#1441)",
-      "author": {
-        "date": "2026-10-19T19:09:00Z"
-      }
-    },
-    "author": {
-      "login": "NimaNabi"
-    }
-  },
-  {
-    "sha": "288d109964bdc89bd2d9cdcec6decd47e14ea811",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-19T08:49:17Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "14f679b784bc859176b791d105895f4b3b3672a3",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-18T07:59:43Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "70dac8eafba9c586f1a713617a84e3bf6f4e0d00",
-    "commit": {
-      "message": "chore: sync landing download version to v0.158.0",
-      "author": {
-        "date": "2026-10-17T18:41:58Z"
       }
     },
     "author": {
