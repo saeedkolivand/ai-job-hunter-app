@@ -127,7 +127,12 @@ use crate::commands::support::redact_lines;
 use crate::observability::sanitize_reason;
 use crate::platform::fs::write_atomic;
 
+mod diagnostics;
 mod transport;
+
+pub(crate) use diagnostics::{
+    flush, report_store_open_failures, set_install_channel, with_ipc_command,
+};
 
 /// Consent + "has the user been asked" state, persisted next to the app data.
 const FILE_NAME: &str = "crash-reporting.json";
@@ -311,7 +316,9 @@ pub fn init() -> Option<sentry::ClientInitGuard> {
     }
     let dsn = DSN?;
 
-    Some(sentry::init((dsn, client_options())))
+    let guard = sentry::init((dsn, client_options()));
+    set_install_channel();
+    Some(guard)
 }
 
 /// The client configuration, split out from [`init`] so the privacy-relevant
@@ -406,8 +413,20 @@ fn with_crash_supervisor_unless(
     if in_snap {
         return options;
     }
+    // Scope tags set in the app process do not cross into the reporter process
+    // (`MinidumpIntegration::set_tag` exists but needs a handle `add_integration`
+    // does not give back). `before_capture` runs INSIDE the reporter, which is this
+    // same binary and environment, so the channel is re-derived there. `ipc.command`
+    // is deliberately not mirrored: the reporter cannot know which command crashed.
     options.add_integration(
-        sentry::integrations::minidump::MinidumpIntegration::new().inherit_args(false),
+        sentry::integrations::minidump::MinidumpIntegration::new()
+            .inherit_args(false)
+            .before_capture(|scope, _minidump| {
+                scope.set_tag(
+                    "install.channel",
+                    crate::platform::install_channel::detect(),
+                );
+            }),
     )
 }
 

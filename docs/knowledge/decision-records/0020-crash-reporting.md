@@ -121,3 +121,26 @@ read the mission-control PAT from `localStorage`.
 - Any new field added to a transmitted payload must be assumed to carry PII
   until proven otherwise; extending the redactor remains a security change
   requiring a test (ADR 027).
+
+## Amendment (#1525): triage context
+
+A store-open crash on a Store install was undiagnosable: no stack, no channel. Decisions:
+
+- **Startup storage failure is one handled event per launch.** When any persistent
+  store fails to open, the app sends a single `error`-level event (no stack, path
+  or error text) tagged with the first failed store label, the `AppError::code()`,
+  a store count and the comma-joined static labels; the fingerprint is first label
+  plus code. It is consent- and DSN-gated like crash events and passes
+  `redact_event` and the wire gate. The user then sees a dialog naming the data
+  folder (local only, never sent) and the app exits. Owner:
+  `shell/store_open.rs` and `crash_reporting/diagnostics.rs`.
+- **Every event carries an `install.channel` tag** (`platform::install_channel::decide`
+  owns the label set), including native minidump reports via the reporter's
+  `before_capture` in `crash_reporting/mod.rs`. It names a channel, never a path.
+- **A panic inside a synchronous IPC command carries `ipc.command`**, set by
+  `diagnostics::with_ipc_command` only for names that pass its charset/length
+  check. Async commands are untagged; that is a known gap, not a bug.
+- **Linux symbolication uses an objcopy `.debug` file** uploaded to Sentry with the
+  stripped binary, not a packed sidecar. Neither is ever attached to a release.
+- The published disclosures (`SECURITY.md`, the landing privacy page) list the
+  install type, the failed store and its error code, and the command name.

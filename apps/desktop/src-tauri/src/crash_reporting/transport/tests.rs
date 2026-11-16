@@ -170,3 +170,25 @@ fn is_opaque_separates_raw_from_parsed() {
         "an envelope with items is inspectable"
     );
 }
+
+/// The handled store-open event is a plain parsed message event: the gate needs no
+/// special case for it, it passes with consent and is dropped without.
+#[test]
+fn a_store_open_failure_event_passes_with_consent_and_is_dropped_without() {
+    let envelope = || {
+        let mut envelope = Envelope::new();
+        envelope.add_item(
+            super::super::diagnostics::store_open_failed_event(&[("documents", "STORAGE")])
+                .expect("one failure"),
+        );
+        envelope
+    };
+
+    let (transport, inner) = guarded(true);
+    transport.send_envelope(envelope());
+    assert_eq!(inner.sent_count(), 1);
+
+    let (closed, inner) = guarded(false);
+    closed.send_envelope(envelope());
+    assert_eq!(inner.sent_count(), 0);
+}
