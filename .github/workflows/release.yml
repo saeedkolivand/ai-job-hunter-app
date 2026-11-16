@@ -1453,7 +1453,7 @@ jobs:
             eval "$(printf "%s\n" "ci" | gnome-keyring-daemon --unlock --daemonize --login)"
 
             echo "::group::msstore reconfigure"
-            msstore reconfigure --verbose \
+            msstore reconfigure \
               --tenantId "$MSSTORE_TENANT_ID" \
               --sellerId "$MSSTORE_SELLER_ID" \
               --clientId "$MSSTORE_CLIENT_ID" \
@@ -1463,7 +1463,10 @@ jobs:
             # No --noCommit = upload AND submit for review, mirroring the
             # Chrome/Firefox jobs. Free products only — msstore publish
             # rejects a paid product outright (see docs/DEPLOYMENT.md).
-            msstore publish "$MSIX" -id "$MSSTORE_PRODUCT_ID" --verbose
+            # Never --verbose here: it logs the package upload URL with its
+            # write SAS token (sp=rwl, valid ~24h) in a public log, and
+            # secret masking cannot catch a token minted at runtime.
+            msstore publish "$MSIX" -id "$MSSTORE_PRODUCT_ID"
             echo "::endgroup::"
           '
 
@@ -1478,7 +1481,7 @@ jobs:
             echo "| Product | [\`$MSSTORE_PRODUCT_ID\`](https://apps.microsoft.com/detail/$MSSTORE_PRODUCT_ID) |"
             echo "| Outcome | ${{ steps.msstore.outcome == 'success' && '✅ Submitted for review' || '❌ Failed' }} |"
             echo ""
-            echo "The CLI's own output is in the **Reconfigure + publish to the Microsoft Store** step log, where the runner's secret masking applies. It is deliberately not copied here."
+            echo "The CLI's own output is in the **Reconfigure + publish to the Microsoft Store** step log. Secret masking covers the repository secrets there, but not the package upload token the CLI receives at runtime, which is why the CLI runs without \`--verbose\`. It is deliberately not copied here."
             echo ""
             echo "> **Submitted ≠ live.** Certification review runs at Partner Center after this job ends; track it in the [developer dashboard](https://partner.microsoft.com/dashboard/products/$MSSTORE_PRODUCT_ID/overview)."
           } >> "$GITHUB_STEP_SUMMARY"
