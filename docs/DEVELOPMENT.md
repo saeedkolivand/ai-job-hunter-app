@@ -2,6 +2,15 @@
 
 Last updated: 2026-10-05
 
+<p align="center">
+  <a href="https://tauri.app"><img alt="Tauri" src="https://img.shields.io/badge/Tauri-2.x-24C8DB?logo=tauri&logoColor=white"></a>
+  <a href="https://www.rust-lang.org/"><img alt="Rust" src="https://img.shields.io/badge/Rust-stable-000000?logo=rust&logoColor=white"></a>
+  <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-7.0-3178C6?logo=typescript&logoColor=white"></a>
+  <a href="https://react.dev/"><img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black"></a>
+  <a href="https://tailwindcss.com/"><img alt="TailwindCSS" src="https://img.shields.io/badge/Tailwind-v4-06B6D4?logo=tailwindcss&logoColor=white"></a>
+  <a href="https://ollama.com/"><img alt="Ollama" src="https://img.shields.io/badge/Ollama-local-000000?logo=ollama&logoColor=white"></a>
+</p>
+
 This guide gets you from zero to a running dev environment.
 
 ---
@@ -103,20 +112,26 @@ pnpm dev:frontend     # Browser-only (mock IPC)
 # Building
 pnpm build            # Build all packages (Turbo)
 pnpm build:packages   # Build packages only (skip Tauri binary)
+pnpm build:chrome     # Build the browser extension (Chrome / MV3)
+pnpm build:firefox    # Build the browser extension (Firefox / MV3)
+pnpm package          # Package the desktop installers
 
 # Code quality
 pnpm typecheck        # tsc --noEmit across all packages
 pnpm lint             # ESLint across monorepo
 pnpm lint:fix         # ESLint auto-fix (runs on commit via husky)
 pnpm lint:strict      # --max-warnings 0 (CI mode)
-pnpm format           # Prettier format all files
+pnpm format           # Prettier format all files (format:check to verify)
+pnpm gen:ipc          # Regenerate Rust IPC structs from the shared Zod schemas
+pnpm gen:workflows    # Regenerate the CI workflow catalog + status badges
 
 # Testing
 pnpm test             # Run Vitest in all packages
-pnpm test:watch       # Watch mode
+pnpm test:watch       # Watch mode (test:coverage for coverage)
 
 # Cleanup
 pnpm clean            # Remove dist/, .turbo/, node_modules/
+pnpm storybook        # Run the @ajh/ui Storybook
 ```
 
 ---
@@ -140,6 +155,28 @@ packages/
   translations/         ← i18n configuration + locale strings
   test-ids/             ← @ajh/test-ids — centralized test-id constants (drift-proof data-testid)
 ```
+
+---
+
+## Tech Stack
+
+| Layer               | Technology                                                                |
+| ------------------- | ------------------------------------------------------------------------- |
+| Desktop shell       | [Tauri][tauri] 2.x: [Rust][rust] core + [React][react] renderer           |
+| UI framework        | [React][react] 19, [TypeScript][typescript] 7                             |
+| Routing             | [TanStack Router][tanstack-router] 1.x (file-based)                       |
+| Server state        | [TanStack Query][tanstack-query] 5.x                                      |
+| Client state        | [Zustand][zustand] 5                                                      |
+| Styling             | [Tailwind CSS][tailwindcss] v4 + CSS custom properties                    |
+| Animations          | [motion/react][motion-react]                                              |
+| Build system        | [Vite][vite] 8 + [Turborepo][turborepo] (monorepo)                        |
+| Package manager     | [pnpm][pnpm] 11 (workspaces)                                              |
+| Local AI            | [Ollama][ollama]                                                          |
+| Relational DB       | [SQLite][sqlite] via [rusqlite][rusqlite] ([Rust][rust] core)             |
+| Search & ranking    | SQLite FTS5 (BM25) + optional vector similarity, fused with RRF           |
+| Browser automation  | [chromiumoxide][chromiumoxide] ([Rust][rust]); Playwright for e2e only    |
+| Document generation | Typst engine (`export/typst_engine/`) + [docx-rs][docx-rs] ([Rust][rust]) |
+| Validation          | [Zod][zod] (shared schemas → generated [Rust][rust] structs)              |
 
 ---
 
@@ -216,6 +253,41 @@ cargo clippy        # lint
 4. Import from the route file only via the index export
 
 Never import internal feature components from outside the feature directory.
+
+---
+
+## Architecture in One Line
+
+The React renderer never calls the OS directly; it talks to the Rust core over a typed IPC contract.
+
+```
+React renderer  →  service hook (React Query)  →  tauri-client  →  Rust #[tauri::command]  →  core (scrape · AI · export · DB)
+                         apps/desktop/src/renderer/services            apps/desktop/src-tauri/src
+```
+
+IPC request shapes have a single source of truth: **[Zod][zod] schemas in `packages/shared`**, from which `pnpm gen:ipc` generates the matching [Rust][rust] structs, so the [TypeScript][typescript] and [Rust][rust] sides can't drift. The enforced checklist for a new IPC capability is rule 14 in [AGENTS.md](../AGENTS.md); the steps above (§Modifying IPC contracts) are the local walkthrough.
+
+### Adding an AI provider / a job board
+
+Config + adapter, no business-logic changes.
+
+- **AI provider**: implement the provider adapter and register it; the rest of the app routes through the centralized provider abstraction (`Completer` / streaming contract). Reasoning, limits, and job state are normalized at the adapter boundary, so the renderer holds one contract and zero per-provider branching.
+- **Job board**: add an entry to the scraper registry (`scraping/boards/mod.rs` `SCRAPERS`); discovery is registry-driven, so no caller changes.
+
+### Conventions & guardrails
+
+- **PRs only**: never push to `main`; [Conventional Commits][conventional-commits]; [ESLint][eslint] + [commitlint][commitlint] + architecture tests gate every change.
+- **Ports & adapters**: UI imports `@ajh/ui` primitives and service hooks, never `window.api` directly; design-system tokens (`text-brand`, motion tokens) over hardcoded values.
+- **Backend owns business logic**: Rust-first; the renderer is a thin client.
+- See **[CLAUDE.md](../CLAUDE.md)** for the enforced rules and **[PATTERNS.md](PATTERNS.md)** for the patterns.
+
+### Knowledge base & AI agent system
+
+This repo ships a knowledge base under [docs/knowledge/](knowledge/): domain notes plus **architecture decision records** ([ADRs](knowledge/decision-records/)), plus a Claude Code agent system under `.claude/` (a write-capable **author** + an independent **critic** per domain, plus commands). When in doubt about _why_ something is built a certain way, the ADRs are the fastest answer.
+
+For a **visual walkthrough** of the agent system (the fleet map, how a prompt is routed to an agent, the author→critic pipeline, and a with/without-agents comparison), open the interactive [Agent System page](https://aijobhunter.app/agent-system).
+
+A [graphify](https://pypi.org/project/graphifyy/) knowledge graph (`graphify-out/`) can also be queried directly or wired as an **optional, opt-in** local MCP server; see [Optional: Knowledge-Graph MCP (graphify)](#optional-knowledge-graph-mcp-graphify) below.
 
 ---
 
@@ -465,6 +537,21 @@ Workspace settings (`.vscode/settings.json`):
 - Enable [Prettier][prettier] as formatter on save
 - Use RustRover or IntelliJ + Rust plugin for `src-tauri/`
 
+[tauri]: https://tauri.app
+[react]: https://react.dev
+[rust]: https://www.rust-lang.org
+[typescript]: https://www.typescriptlang.org
+[tanstack-query]: https://tanstack.com/query
+[zustand]: https://github.com/pmndrs/zustand
+[tailwindcss]: https://tailwindcss.com
+[motion-react]: https://motion.dev
+[vite]: https://vite.dev
+[turborepo]: https://turborepo.com
+[rusqlite]: https://github.com/rusqlite/rusqlite
+[chromiumoxide]: https://github.com/mattsse/chromiumoxide
+[docx-rs]: https://github.com/bokuweb/docx-rs
+[zod]: https://zod.dev
+[conventional-commits]: https://www.conventionalcommits.org
 [pnpm]: https://pnpm.io
 [ollama]: https://ollama.com
 [tanstack-router]: https://tanstack.com/router

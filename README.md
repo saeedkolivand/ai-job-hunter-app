@@ -5,211 +5,42 @@
 <h1 align="center">AI Job Hunter</h1>
 
 <p align="center">
-  <em>Your local-first, AI-native desktop assistant for intelligent job searching, résumé &amp; cover-letter generation, and assisted applications. Run it fully offline with Ollama, plug in your own OpenAI, Anthropic, or Gemini key, or route it through an AI CLI agent (Claude Code, Codex, Gemini CLI).</em>
-</p>
-
-<p align="center">
-  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><strong>⬇️ Download the latest release</strong></a>
-  &nbsp;·&nbsp;
-  <a href="https://aijobhunter.app">🌐 Live site</a>
-  &nbsp;·&nbsp;
-  <a href="https://aijobhunter.app/creature">🎬 Short film</a>
-  &nbsp;·&nbsp;
-  <a href="#-installation">📦 Install</a>
-  &nbsp;·&nbsp;
-  <a href="#-features">✨ Features</a>
-  &nbsp;·&nbsp;
-  <a href="docs/">📚 Docs</a>
+  <em>Your local-first, AI-native desktop assistant for job searching, résumé &amp; cover-letter generation, and assisted applications.</em>
 </p>
 
 <p align="center">
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><img alt="Release" src="https://img.shields.io/github/v/release/saeedkolivand/ai-job-hunter-app?color=e24b4a&label=release"></a>
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><img alt="Installs" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/saeedkolivand/ai-job-hunter-app/badges/downloads.json"></a>
-  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/saeedkolivand/ai-job-hunter-app/ci-pipeline.yml?label=CI"></a>
-  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/saeedkolivand/ai-job-hunter-app"></a>
-  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
-</p>
-
-<p align="center">
   <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey"></a>
-  <a href="https://aijobhunter.app"><img alt="Live site" src="https://img.shields.io/badge/Live-site-e24b4a"></a>
-  <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll"><img alt="Chrome Web Store" src="https://img.shields.io/badge/Chrome%20Web%20Store-available-e24b4a?logo=googlechrome&logoColor=white"></a>
-  <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter/"><img alt="Firefox Add-ons" src="https://img.shields.io/badge/Firefox%20Add--ons-available-e24b4a?logo=firefoxbrowser&logoColor=white"></a>
-  <a href="SECURITY.md"><img alt="Security policy" src="https://img.shields.io/badge/security-policy-2ea44f"></a>
-  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/saeedkolivand/ai-job-hunter-app?style=flat&color=f5b301"></a>
-  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/pulls"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
+  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/saeedkolivand/ai-job-hunter-app/ci-pipeline.yml?label=CI"></a>
 </p>
 
 <p align="center">
-  <a href="https://tauri.app"><img alt="Tauri" src="https://img.shields.io/badge/Tauri-2.x-24C8DB?logo=tauri&logoColor=white"></a>
-  <a href="https://www.rust-lang.org/"><img alt="Rust" src="https://img.shields.io/badge/Rust-stable-000000?logo=rust&logoColor=white"></a>
-  <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-7.0-3178C6?logo=typescript&logoColor=white"></a>
-  <a href="https://react.dev/"><img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black"></a>
-  <a href="https://tailwindcss.com/"><img alt="TailwindCSS" src="https://img.shields.io/badge/Tailwind-v4-06B6D4?logo=tailwindcss&logoColor=white"></a>
-  <a href="https://ollama.com/"><img alt="Ollama" src="https://img.shields.io/badge/Ollama-local-000000?logo=ollama&logoColor=white"></a>
+  <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases"><strong>⬇️ Download</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll">Chrome extension</a>
+  &nbsp;·&nbsp;
+  <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter/">Firefox extension</a>
+  &nbsp;·&nbsp;
+  <a href="https://apps.microsoft.com/detail/9nc5kdjv0btm">Microsoft Store</a>
+  &nbsp;·&nbsp;
+  <a href="https://snapcraft.io/ai-job-hunter">Snap</a>
+  &nbsp;·&nbsp;
+  <a href="docs/README.md">📚 Docs</a>
 </p>
 
----
+## What it does
 
-<details open>
-<summary><strong>📑 Table of contents</strong></summary>
+- **Résumé & cover-letter generation**: streaming generation with your AI provider, DOCX / PDF / TXT export, ATS-safe formatting.
+- **Matching & ATS**: scrape job boards, match postings to your résumé, ATS scoring and skill-gap analysis.
+- **Autopilot & tracking**: scheduled searches, one-click tailoring, and tracking of everything you apply to.
+- **Browser extension**: save jobs in one click from Chrome or Firefox.
+- **Bring your own AI**: Ollama (fully offline), OpenAI, Anthropic, Gemini, OpenAI-compatible servers, or CLI agents (Claude Code, Codex, Gemini CLI).
 
-- <a href="#what-it-does" target="_blank" rel="noopener noreferrer">What It Does</a>
-- <a href="#quick-start" target="_blank" rel="noopener noreferrer">Quick Start</a>
-- <a href="#-features" target="_blank" rel="noopener noreferrer">Features</a>
-- <a href="#ai-provider-flexibility" target="_blank" rel="noopener noreferrer">AI Provider Flexibility</a>
-- <a href="#-installation" target="_blank" rel="noopener noreferrer">Installation</a>
-- <a href="#usage" target="_blank" rel="noopener noreferrer">Usage</a>
-- <a href="#configuration" target="_blank" rel="noopener noreferrer">Configuration</a>
-- <a href="#tech-stack" target="_blank" rel="noopener noreferrer">Tech Stack</a>
-- <a href="#for-developers" target="_blank" rel="noopener noreferrer">For Developers</a>
-- <a href="#project-structure" target="_blank" rel="noopener noreferrer">Project Structure</a>
-- <a href="#scripts" target="_blank" rel="noopener noreferrer">Scripts</a>
-- <a href="#documentation" target="_blank" rel="noopener noreferrer">Documentation</a>
-- <a href="#security" target="_blank" rel="noopener noreferrer">Security</a>
-- <a href="#license" target="_blank" rel="noopener noreferrer">License</a>
+## Install
 
-</details>
-
-## Quick Start
-
-```bash
-# 🚀 Try it           → download a build for your OS:
-#                        https://github.com/saeedkolivand/ai-job-hunter-app/releases
-#
-# 🛠️  Develop it       → run the full desktop app from source:
-git clone https://github.com/saeedkolivand/ai-job-hunter-app.git
-cd ai-job-hunter-app && pnpm install
-ollama pull mistral   # optional: a local model for the offline Ollama provider
-pnpm dev              # launches the Tauri app with hot reload
-```
-
-No API key required to start. Run fully offline with [Ollama][ollama], or add a cloud key later in **Settings → AI**. New here? See **<a href="#-installation" target="_blank" rel="noopener noreferrer">Installation</a>** for prerequisites and per-OS notes.
-
-## What It Does
-
-AI Job Hunter is a desktop application built with **[Tauri][tauri]** (a [Rust][rust] core with a [React][react] renderer) that brings AI-driven job hunting to your local machine. It scrapes 24 job boards (including an Adzuna/JSearch aggregator that covers walled boards like Indeed, Glassdoor, and Xing, plus company-scoped ATS boards like Greenhouse and Lever), semantically matches postings to your résumé, generates tailored cover letters and résumés with your AI provider of choice, drafts grounded answers to application questions, and tracks everything you apply to, all while keeping your data and credentials on your device.
-
-Your résumés, generations, applications, and tracked job data live in a local SQLite database on your device (credentials live in the OS keychain); there is **no app-operated backend** collecting them, and no behavioural analytics. **Two things happen automatically, without you asking:** the app checks for updates (GitHub, 10 s after launch then every 4 h, transmitting only your app version and OS/architecture), and sends crash reports to Sentry (error + stack trace, OS, app version) when the app breaks — the latter is on by default, asked during setup, switchable off in Settings → Privacy, and redacted of paths, links, hosts, e-mails and credentials before sending. The app's other outbound calls go to services **you** configure or invoke: your AI provider (which receives the résumé and job text you ask it to generate from), job boards you scrape (including the Adzuna, JSearch/RapidAPI, Jooble, Apify and freehire aggregator tiers — freehire being the one that needs no key, tried last), an optional web search you explicitly enable (your provider's own, then a SearXNG-compatible server you set (SearXNG or RustXNG, no key; queries go to that server), then Exa if you add a key; the next runs only when one fails on billing or sign-in), location autocomplete (Photon, with offline fallback), opt-in company-logo enrichment (Clearbit, default **off**), opt-in email-confirmation watching via IMAP (credential user-supplied and OS-keychain-backed; email content never leaves the device), opt-in self-hosted sync between your own devices (default **off**; it sends the same data an app backup holds — applications and their status history, documents, generations, contact profile, job preferences and AI provider routing, never passwords or API keys — only to a sync server **you** configure, with an OS-keychain-backed token), and your optional profile import from GitHub or LinkedIn. Neither the update check nor the crash report ever includes your documents or job data, and the browser extension is excluded entirely from all reporting; see [ADR 0005](docs/knowledge/decision-records/0005-network-egress-privacy-boundary.md).
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/saeedkolivand/ai-job-hunter-app/assets/templates-showcase.png" alt="The résumé templates rendered side by side, grouped ATS-Safe (Classic, Swiss Minimal, Academic, Meridian, Throughline, Cadence, Regent) and Design (Atelier, Portrait, Lebenslauf, Aria, Saffron)" width="100%">
-</p>
-<p align="center">
-  <sub>Twelve résumé templates in two tiers: ATS-Safe (Classic · Swiss Minimal · Academic · Meridian · Throughline · Cadence · Regent) and Design (Atelier · Portrait · Lebenslauf · Aria · Saffron)</sub>
-</p>
-
----
-
-## ✨ Features
-
-<details open>
-<summary><strong>📝 Résumé &amp; cover-letter generation</strong></summary>
-
-- **Streaming generation** with 12 professional templates (7 ATS-Safe tier + 5 Design tier), DOCX / PDF / TXT export, ATS-safe formatting.
-- **Universal "thinking" view**: see the model's reasoning stream live across **every** provider (Anthropic, OpenAI, Gemini, [Ollama][ollama], CLI agents), not just one.
-- **Background generation**: switch tabs, close the modal, or navigate away; generation keeps running and the result is there when you come back.
-- **Smaller PDFs**: fonts are glyph-subsetted per export (only the characters you actually use), shrinking a typical résumé PDF from ~3 MB to ~120 KB.
-
-</details>
-
-<details>
-<summary><strong>🎯 Matching, ATS &amp; analysis</strong></summary>
-
-- **Job search & matching**: Keyword search over your scraped postings, with vector similarity and LLM reranking _re-ordering_ the results when semantic ranking is enabled (off by default); separately, each posting is scored against your résumé.
-- **Résumé analysis**: ATS scoring, skill-gap detection, language-mismatch warnings, and improvement recommendations.
-
-</details>
-
-<details>
-<summary><strong>🤖 Autopilot &amp; application tracking</strong></summary>
-
-- **Autopilot workflows**: define a search (board, query, location, schedule, filters); it finds and scores matching jobs.
-- **Dedup + New/Applied badges**: re-running a workflow merges results by URL: prior finds are kept, genuinely new ones are badged **New**, and jobs you've marked as applied are badged **Applied** (generating documents alone doesn't count as applying).
-- **One-click tailoring**: from any found job, click **Tailor** to seed the AI Generate workspace, open the posting, and mark it applied on any board. Generate a tailored résumé + cover letter and **résumé-grounded answers** to common application questions, with optional company research.
-- **Documents / Activity**: every generated application is stored as a single per-job record (résumé, cover, answers, brief, board, date) and browsable in the **Documents** page (Résumés / Cover Letters / Activity tabs).
-
-</details>
-
-<details>
-<summary><strong>🌐 Browser extension (save jobs one-click)</strong></summary>
-
-- **Now on the Chrome Web Store and Firefox Add-ons**: <a href="https://chromewebstore.google.com/detail/ai-job-hunter-%E2%80%94-job-impor/oaoekkgkhmgdfnpmfkpphgiikliaicll" target="_blank" rel="noopener noreferrer">Install for Chrome</a> · <a href="https://addons.mozilla.org/en-US/firefox/addon/ai-job-hunter/" target="_blank" rel="noopener noreferrer">Install for Firefox</a>.
-- MV3 extension for **Chrome & Firefox**: while browsing any job board, click the extension button to import the job into your saved applications.
-- **One-click import**: click **"Import this job"** on any board page; the extension automatically captures the rendered DOM when possible (bypassing bot-walls on logged-in boards like LinkedIn/Indeed) and falls back to URL-only on restricted pages.
-- **Assisted autofill** (opt-in, default off): fill empty contact fields on any application with your saved profile; enabled only in Settings → Browser extension.
-- **Transport**: native messaging (primary) with loopback WebSocket fallback. Paired with mutual HMAC-SHA256 authentication (token used only as an HMAC key, never transmitted). Zero remote backend, zero analytics.
-- See <a href="apps/extension/README.md" target="_blank" rel="noopener noreferrer">apps/extension/README.md</a> for setup, dev pairing, and architecture. Try it locally: see the extension's <a href="apps/extension/README.md#local-development--testing" target="_blank" rel="noopener noreferrer">Local development & testing</a> guide.
-
-</details>
-
-<details>
-<summary><strong>🔎 Company research (opt-in)</strong></summary>
-
-- Before writing a cover letter or answers, optionally research the company on the web, using your active AI provider's **own** web search (on Ollama, its web search needs an ollama.com account key) → a concise, factual brief: what they do, size/stage, products, mission, recent news. Order: the provider's own search → a SearXNG-compatible server you set (SearXNG or RustXNG, no key; queries go to that server) → [Exa](https://exa.ai) with your own key. The next one runs only when one fails on billing or sign-in; a SearXNG-compatible server's own failures never fall through ([ADR 0023](docs/knowledge/decision-records/0023-web-search-is-a-separate-axis-from-the-ai-provider.md)).
-- Default **off**, cached for a week, and treated as **untrusted** reference context: it never becomes a candidate fact, and the no-fabrication grounding rule still governs every claim.
-
-</details>
-
-<details>
-<summary><strong>🧠 AI providers &amp; local tuning</strong></summary>
-
-- **Multi-provider**: [Ollama][ollama] (local), OpenAI, Anthropic, Gemini, any OpenAI-compatible server (LM Studio, vLLM, remote [Ollama][ollama]), plus headless **CLI agents** (Claude Code, Codex, Gemini CLI).
-- **Per-model local limits**: analyze a local model's real context window via [Ollama][ollama]'s `/api/show`, then set the context window + max output tokens per model, with a hardware-lag warning so large prompts aren't silently truncated.
-
-</details>
-
-<details>
-<summary><strong>🔒 Privacy &amp; data</strong></summary>
-
-- **Credentials in the OS keychain**: encrypted, never in plain text or config files.
-- **All data local**: jobs, résumés, generations, applications in a local SQLite database; **no behavioural analytics**. Two things go out automatically: an update check and an **opt-out crash report**.
-- **Full reset**: one action wipes every store (documents, generations, autopilots, contact/job preferences, caches, keychain entries) back to a clean install.
-- **Multilingual**: UI in English & German; generation in 11 languages: en, de, fr, es, it, tr, pt, ru, zh, ja, ko.
-
-</details>
-
----
-
-## How the AI is kept honest
-
-Resumé generation uses a staged pipeline where the model decides _how_ to present verified candidate evidence, never _what_ the candidate has done. Three structural enforcements make this real:
-
-1. **Grounding rule, enforced in Rust.** Every claim in the output is traced back to the source resumé or job ad; the evidence map is selected by Rust from the source résumé itself, with no model call, so a quote is always source text. See [`apps/desktop/src-tauri/src/pipeline/resume/`](apps/desktop/src-tauri/src/pipeline/resume/) (quality pipeline orchestration) and [`stages::evidence`](apps/desktop/src-tauri/src/pipeline/resume/stages/evidence.rs) (deterministic evidence selection).
-
-2. **Every Critical is deterministic, never a model opinion.** The validators in [`apps/desktop/src-tauri/src/validate/content/`](apps/desktop/src-tauri/src/validate/content/) check factual, structural, and language alignment deterministically — dropped roles, unsourced metrics, unsupported dates, language misalignment. A model cannot emit a Critical; a Critical means something is provably wrong in the source material. Warnings (unsourced terms, keyword density) are advisory; only Criticals park a run. See [`CONTENT_ISSUE_CODES`](apps/desktop/src-tauri/src/validate/content/mod.rs) for the registry and [`ADR-032`](docs/knowledge/decision-records/adr-032-generation-pipeline-ownership-and-rule-enforcement.md) for the design.
-
-3. **Fabrication-review gate: refuse to save rather than save with a flag.** When validation finds Criticals, the run parks at `needsReview`. The UI shows each flagged claim; you decide Remove (delete the line) or Keep. Nothing is silently dropped, and nothing is saved with an unresolved flag — every claim awaiting your verdict blocks export until you act. See [`FabricationReview`](apps/desktop/src/renderer/components/generation/QualityReportPanel/FabricationReview.tsx) (the review UI) and [`SaveVerdict::Refused`](apps/desktop/src-tauri/src/commands/resume_pipeline/save.rs) (the gate).
-
-4. **Untrusted-text fencing: anything you did not type gets wrapped.** The principle is: every blob entering a prompt without your fingerprint is fenced as untrusted — job ads (`<job_posting>`), prior-stage model outputs (strategy artifact, evidence map), web-sourced company research, and rerank candidates. Each fence instructs the model to ignore instructions within it and treat the text as reference only. The fencing mechanism and patterns are in [`prompt_fence.rs`](apps/desktop/src-tauri/src/prompt_fence.rs) (the OWASP LLM01 chokepoint); implementations include [`buildJobAdBlock`](packages/prompts/src/generate/emphasis/emphasis.ts) for job ads and pipeline prompts for artifacts. See [`ADR-010`](docs/knowledge/decision-records/adr-010-untrusted-input-fencing.md) for the design.
-
-**What is measured and what is not.** The offline eval harness ([`tests/eval.rs`](apps/desktop/src-tauri/tests/eval.rs)) measures the deterministic validators against planted-defect fixtures: every planted issue must be recalled at its claimed severity, and truthful documents must raise zero Criticals. This is in CI. What is _not_ measured: generation quality needs a live model (a live corpus of A/B runs); retrieval quality has no labelled dataset; search's dense arm re-orders keyword hits and only retrieves when keyword search finds nothing (see [`ADR-039`](docs/knowledge/decision-records/adr-039-hybrid-postings-search-lexical-dense-rerank.md) for search's exact scope). This repo's posture is: state which is which, measure the deterministic layer, and keep improving where the data allows.
-
----
-
-## AI Provider Flexibility
-
-Switch providers at any time in **Settings → AI**:
-
-| Provider               | Models                                           | Notes                                                                     |
-| ---------------------- | ------------------------------------------------ | ------------------------------------------------------------------------- |
-| **Ollama** (local)     | mistral, llama3.2, deepseek-r1, any Ollama model | No API key needed; fully offline; per-model context/output limits         |
-| **OpenAI**             | GPT-4o, o-series, GPT-4 Turbo                    | Requires API key                                                          |
-| **Anthropic**          | Claude (Sonnet / Opus), extended thinking        | Requires API key; reasoning streamed to the thinking view                 |
-| **Google Gemini**      | Gemini 2.5 / 1.5 (Pro, Flash)                    | Requires API key; thinking models supported                               |
-| **OpenAI-compatible**  | Any (LM Studio, vLLM, remote Ollama, …)          | Custom base URL                                                           |
-| **CLI agents** (local) | Claude Code, Codex, Gemini CLI                   | Run headless via the installed CLI: no API key (uses the CLI's own login) |
-
-API keys are stored encrypted in the OS keychain. CLI agents run as a headless subprocess and reuse whatever login that CLI already has, so they need no key in the app.
-
----
-
-## 📦 Installation
-
-<details open>
-<summary><strong>Download a released build</strong> (recommended)</summary>
-
-Grab the latest installer for your OS from the **<a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases" target="_blank" rel="noopener noreferrer">Releases</a>** page.
+Grab the latest installer for your OS from **[Releases](https://github.com/saeedkolivand/ai-job-hunter-app/releases)**, or install from a store:
 
 <a href="https://apps.microsoft.com/detail/9nc5kdjv0btm" target="_blank" rel="noopener noreferrer">
   <img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200" alt="Download from the Microsoft Store" />
@@ -218,448 +49,48 @@ Grab the latest installer for your OS from the **<a href="https://github.com/sae
   <img src="https://snapcraft.io/en/dark/install.svg" width="182" alt="Get it from the Snap Store" />
 </a>
 
-**macOS**: open the `.dmg` and drag the app into Applications. Because the app isn't notarized by Apple, Gatekeeper may refuse to open it the first time ("app is damaged and can't be opened"). Clear the quarantine attribute once:
+macOS (Homebrew): `brew tap saeedkolivand/ai-job-hunter-app https://github.com/saeedkolivand/ai-job-hunter-app && brew install --cask ai-job-hunter`
 
-```bash
-xattr -cr "/Applications/AI Job Hunter.app"
-```
+No API key needed to start. Per-OS notes, building from source and troubleshooting: **[docs/INSTALLATION.md](docs/INSTALLATION.md)**.
 
-**Windows / Linux**: run the installer / AppImage from the Releases page.
+## Privacy
 
-</details>
+- Your data is stored on your device (SQLite + OS keychain); there is no app-operated backend and no behavioural analytics.
+- Two calls happen automatically: the update check (app version and OS/architecture only) and crash reports (redacted, on by default, switchable off in Settings → Privacy).
+- Everything else goes only to services you configure or invoke, such as your AI provider or the job boards you scrape. Full detail: **[docs/PRIVACY.md](docs/PRIVACY.md)**.
 
-<details>
-<summary><strong>Homebrew (macOS)</strong></summary>
+## How the AI is kept honest
 
-Releases ship signed macOS `.dmg`s, and the repo doubles as its own Homebrew tap (the <a href="Casks/ai-job-hunter.rb" target="_blank" rel="noopener noreferrer">`Casks/ai-job-hunter.rb`</a> cask). Install with:
+- Grounding is enforced in Rust: every claim traces back to your source résumé or the job ad, and the evidence is selected without a model call.
+- Every Critical is deterministic, never a model opinion.
+- A fabrication-review gate refuses to save a run with unresolved flagged claims until you decide.
+- Anything you did not type (job ads, prior model output, web research) is fenced as untrusted text in prompts.
 
-```bash
-brew tap saeedkolivand/ai-job-hunter-app https://github.com/saeedkolivand/ai-job-hunter-app
-brew install --cask ai-job-hunter
-```
+Full mechanism and what is (not) measured: **[docs/AI_HONESTY.md](docs/AI_HONESTY.md)**.
 
-The cask clears the Gatekeeper quarantine flag for you (the app isn't notarized). Prefer a one-off download? Grab the `.dmg` straight from the <a href="https://github.com/saeedkolivand/ai-job-hunter-app/releases" target="_blank" rel="noopener noreferrer">Releases</a> page.
+## Docs
 
-> The cask pins per-arch `sha256` checksums for a verified install, tracking the latest release that ships macOS `.dmg`s. Since the installer build is manual, bump the cask `version` + both checksums when a newer build publishes dmgs (`brew bump-cask-pr`).
-
-</details>
-
-<details>
-<summary><strong>Build from source</strong></summary>
-
-**Prerequisites**
-
-| Requirement    | Version | Notes                                                                                               |
-| -------------- | ------- | --------------------------------------------------------------------------------------------------- |
-| Node.js        | 20+     | LTS recommended                                                                                     |
-| pnpm           | 11+     | `npm install -g pnpm`                                                                               |
-| Rust toolchain | stable  | `rustup install stable`                                                                             |
-| Ollama         | latest  | <a href="https://ollama.com" target="_blank" rel="noopener noreferrer">ollama.com</a>, for local AI |
-
-```bash
-git clone https://github.com/saeedkolivand/ai-job-hunter-app.git
-cd ai-job-hunter-app
-pnpm install
-
-# Pull a local model (optional — only for the Ollama provider)
-ollama pull mistral        # or: ollama pull llama3.2
-
-# Start the full Tauri desktop app with hot reload
-pnpm dev
-```
-
-</details>
-
-<details>
-<summary><strong>Troubleshooting</strong></summary>
-
-| Symptom                                       | Fix                                                                                                                                                                                                                                                                                                                                                                                |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| macOS: _"app is damaged and can't be opened"_ | Not notarized. Clear quarantine once: `xattr -cr "/Applications/AI Job Hunter.app"`                                                                                                                                                                                                                                                                                                |
-| No models in the picker / "select a model"    | Start Ollama and `ollama pull <model>`, or add a cloud key in **Settings → AI**                                                                                                                                                                                                                                                                                                    |
-| Company research does nothing                 | It's opt-in and uses your AI provider's own web search; on **Ollama** add an ollama.com account key (Settings → AI). No company brief: set a SearXNG-compatible server or an Exa key in the same place. "Search server refused JSON": enable `json` in that server's `formats`. Without a usable search the toggle reads off and generation proceeds without a brief               |
-| Scraping can't find a browser                 | The app auto-detects an installed Chromium browser (`detect_system_chrome`). If none is found, install Chrome or Edge, or set the `CHROME` env var to the browser executable path.                                                                                                                                                                                                 |
-| `pnpm dev` fails to build the Rust core       | Ensure the stable Rust toolchain is installed (`rustup install stable`) and re-run                                                                                                                                                                                                                                                                                                 |
-| Need to report a crash or bug                 | Open **Support → Contact/Feedback → Export Bundle**: saves `ajh-diagnostics-<date>.zip` (system info plus redacted crash/app logs; no résumés, API keys, job data, or database). Attach it to a new [GitHub issue](https://github.com/saeedkolivand/ai-job-hunter-app/issues/new). For security vulnerabilities use [SECURITY.md](SECURITY.md) instead; do not post them publicly. |
-
-</details>
-
----
-
-## Usage
-
-<details open>
-<summary><strong>Generate a tailored résumé / cover letter</strong></summary>
-
-```
-1. Open the app → AI Generate
-2. Paste your résumé text, or upload a PDF/DOCX/TXT file
-3. Paste the job ad text, or upload a job description file
-4. Click Continue → the app detects languages, role, company, top requirements
-5. Choose a template + style; optionally enable "Research the company"
-6. Generate → watch streaming output (with live reasoning) → export as DOCX / PDF / TXT
-```
-
-</details>
-
-<details>
-<summary><strong>Run Autopilot &amp; answer application questions</strong></summary>
-
-```
-1. Autopilot → New → set board, query, location, schedule, filters
-2. Run it → found jobs appear, scored and deduped (New badges on fresh results)
-3. Open a found job → Tailor:
-   • generate a tailored résumé + cover letter (target: Both)
-   • pick application questions → get résumé-grounded answers
-   • the documents are saved in Documents → Activity; the job stays "Saved"
-4. After you submit the application, click "Mark as applied" so the job shows "Applied"
-```
-
-</details>
-
-<details>
-<summary><strong>Scrape boards &amp; search semantically</strong></summary>
-
-```
-1. Jobs → Scrape → select boards (e.g. LinkedIn + Greenhouse + Aggregator)
-2. Query + location; for company-scoped ATS boards (Greenhouse, Lever, etc.), enter company slugs
-3. Click Start → results stream into the jobs table
-4. Ranked search over the scraped postings — keyword by default, with vector similarity and LLM reranking *re-ordering* the results when semantic ranking is enabled
-```
-
-**Note:** Company-scoped ATS boards require company slugs instead of free-text keywords. The **Aggregator** (Adzuna + JSearch) replaces direct scraping of anti-bot boards (Indeed, Glassdoor, Xing); free Adzuna keys available at https://developer.adzuna.com. See `docs/knowledge/scraping-domain.md` for the full board list and configuration details.
-
-</details>
-
-<details>
-<summary><strong>CLI agent — `ajh-tauri agent <verb>` (headless mode)</strong></summary>
-
-Run commands from your shell or an LLM agent, with the desktop app already running:
-
-```bash
-# Find the best matches across all autopilots
-ajh-tauri agent best-matches --limit 10
-
-# Get full details for one job by URL
-ajh-tauri agent job "https://example.com/job/123"
-
-# Export your profile for autofill (requires opt-in consent)
-ajh-tauri agent profile
-
-# List all autopilots and their status
-ajh-tauri agent automations
-
-# Generic command dispatch (advanced: read/reversible commands, irreversible with proof)
-ajh-tauri agent call "namespace:command" --input '{"key":"value"}'
-
-# Show help
-ajh-tauri agent --help
-```
-
-**Platform-specific paths:** The CLI is the same binary as the desktop app, no separate install needed. On **Linux** and **Homebrew/macOS** it is already on `PATH`. On **macOS with dmg drag-install**, add the path to your shell profile:
-
-```bash
-export PATH="/Applications/AI Job Hunter.app/Contents/MacOS:$PATH"
-```
-
-On **Windows**, the NSIS installer adds its per-user install directory to your `PATH`. If `ajh-tauri` still isn't found, invoke it by full path — `~/.ajh-agent/agent.json` carries it as `exePath` (the app rewrites that file on every launch).
-
-**In the app:** Settings → Developer shows this binary's path and ready-to-copy registration commands for Claude Code and Codex with that path already filled in.
-
-**Requirements:** Bridge-backed calls need the app running; `--help`, MCP startup (`initialize`) and the local `commands` tool do not. The CLI communicates over a local loopback bridge with mutual HMAC-SHA256 authentication (the pairing token is used only as an HMAC key and is never sent on the wire). Run `ajh-tauri agent --help` to see all verbs, exit codes, and error sentinels. For the design rationale see <a href="docs/knowledge/decision-records/adr-037-agent-cli-as-binary-mode-thin-client.md" target="_blank" rel="noopener noreferrer">ADR-037</a> and <a href="docs/knowledge/decision-records/adr-038-agent-cli-full-parity-two-tier.md" target="_blank" rel="noopener noreferrer">ADR-038</a>; for the full policy table, use the MCP `commands` tool or read `apps/desktop/src-tauri/src/extension_bridge/agent_cli/policy.rs` (`agent schema` lists only the five curated resources).
-
-**LLM agents (MCP mode):** The CLI can run as a standard MCP stdio server — any MCP client can run it, not just the two documented below:
-
-<details>
-<summary>Claude Code (recommended)</summary>
-
-Use `claude mcp add --scope user` to register the server (user scope = per-machine, runs only when you authorize):
-
-```bash
-claude mcp add --scope user ai-job-hunter -- "/path/to/ajh-tauri" agent mcp
-```
-
-On Linux/macOS with Homebrew, `ajh-tauri` is already on `PATH`. On Windows and macOS dmg, substitute the `exePath` from `~/.ajh-agent/agent.json` — keep the double quotes, because the default install directory contains a space on both platforms and an unquoted path registers a server that never connects. The in-app Settings → Developer card generates the same command already quoted (`shellDoubleQuoted` in `apps/desktop/src/renderer/features/settings/lib/agent-cli-snippets.ts`).
-
-By default the server is **read-only**: the model can search postings, read your profile and automations, and enumerate the command table. Two launch flags open the write tiers, each a superset of the last:
-
-```bash
-# undoable state changes — track an application, edit your profile, import a document
-claude mcp add --scope user ai-job-hunter-write -- "/path/to/ajh-tauri" agent mcp --allow-reversible
-# additionally: destructive actions and AI spend — delete documents, remove provider keys, run generation against your API budget
-claude mcp add --scope user ai-job-hunter-unrestricted -- "/path/to/ajh-tauri" agent mcp --allow-irreversible
-```
-
-The flags only decide which tools the model can _see_; every write still goes through the app's own policy table and, for destructive commands, the confirm ceremony (ADR-038).
-
-</details>
-
-<details>
-<summary>Codex</summary>
-
-Add to your `~/.codex/config.toml` (or create it):
-
-```toml
-[mcp_servers.ai-job-hunter]
-command = 'ajh-tauri'
-args = ["agent", "mcp"]
-```
-
-If `ajh-tauri` is not on your `PATH`, set `command` to the `exePath` from `~/.ajh-agent/agent.json` — keep it single-quoted, because a TOML literal string has no escape sequences and a Windows path is full of backslashes (in a double-quoted basic string they read as invalid escapes and the whole file stops parsing) — unless the path contains an apostrophe, in which case copy the Settings card's output verbatim (it falls back to an escaped basic string). The Settings → Developer card emits the correctly-quoted form for you (`tomlString` in `apps/desktop/src/renderer/features/settings/lib/agent-cli-snippets.ts`). The same `--allow-reversible` / `--allow-irreversible` flags go in `args`.
-
-</details>
-
-<details>
-<summary>Any MCP client</summary>
-
-Most other MCP clients (Claude Desktop, Cursor, Windsurf, Gemini CLI, LM Studio, Jan, etc.) read a `mcpServers` JSON block from their own config file rather than taking a CLI command:
-
-```json
-{
-  "mcpServers": {
-    "ai-job-hunter": {
-      "command": "/path/to/ajh-tauri",
-      "args": ["agent", "mcp"]
-    }
-  }
-}
-```
-
-The same tier flags as above go at the end of `args` — `--allow-reversible` (server name `ai-job-hunter-write`) or `--allow-irreversible` (server name `ai-job-hunter-unrestricted`). The Settings → Developer card copies this block with your real path already filled in — on Windows the backslashes must be doubled (`C:\\Users\\…`) — or just copy the block from the Settings card, which does it for you.
-
-</details>
-
-**URL-only clients:** `agent mcp --http <port>` runs the same server over MCP Streamable HTTP instead of stdio, for a client that only takes a URL rather than launching a subprocess. It binds `127.0.0.1` only — no flag can name a different host, so there is nothing to configure there — and prints one `{"transport":"http","url":"...","token":"..."}` line to stdout, once, before it starts serving; that token is never written to a file, so a client that loses it has to relaunch the server. Every `POST /mcp` needs `Authorization: Bearer <token>`, and any request carrying an `Origin` header is refused outright (this is for local scripts and agent frameworks, never a browser page's `fetch`). It answers one JSON-RPC request per `POST` — no streaming, no sessions, `GET`/`DELETE` both `405` — and shuts down the same way the stdio mode does, on Ctrl-C or stdin EOF.
-
-**Tool results are sent to the model and stored in the client's transcript.** Queries like `profile` and `documents_get_text` return PII; the model can access job postings, your résumé, and application records. Use these tools only when you ask the agent to retrieve that data.
-
-**Important:** The first argument to the MCP server must be `agent` (e.g., `agent mcp`), or the desktop app launches instead.
-
-</details>
-
----
-
-## Configuration
-
-The app uses the OS keychain for secrets instead of `.env` files. Keys and credentials are set in the UI and encrypted via Tauri's keychain plugin.
-
-| Setting                 | Location               | Description                                                                                                                                                                                                  |
-| ----------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AI provider + key       | Settings → AI          | Ollama / OpenAI / Anthropic / Gemini / compatible                                                                                                                                                            |
-| Local model limits      | Settings → AI          | Context window + max output, per Ollama model                                                                                                                                                                |
-| Ollama account key      | Settings → AI          | Optional: Ollama Cloud models + company research                                                                                                                                                             |
-| **Adzuna/JSearch keys** | **Settings → Jobs**    | **Optional: provider registry with Adzuna (primary, free) and JSearch (paid fallback). Covers anti-bot boards like Indeed, Glassdoor, Xing, and more. See `docs/knowledge/scraping-domain.md` for details.** |
-| Performance mode        | Settings → Performance | Low / Balanced / Performance                                                                                                                                                                                 |
-| Language                | Settings → General     | UI and generation locale                                                                                                                                                                                     |
-
----
-
-## Tech Stack
-
-| Layer               | Technology                                                                |
-| ------------------- | ------------------------------------------------------------------------- |
-| Desktop shell       | [Tauri][tauri] 2.x: [Rust][rust] core + [React][react] renderer           |
-| UI framework        | [React][react] 19, [TypeScript][typescript] 7                             |
-| Routing             | [TanStack Router][tanstack-router] 1.x (file-based)                       |
-| Server state        | [TanStack Query][tanstack-query] 5.x                                      |
-| Client state        | [Zustand][zustand] 5                                                      |
-| Styling             | [Tailwind CSS][tailwindcss] v4 + CSS custom properties                    |
-| Animations          | [motion/react][motion-react]                                              |
-| Build system        | [Vite][vite] 8 + [Turborepo][turborepo] (monorepo)                        |
-| Package manager     | [pnpm][pnpm] 11 (workspaces)                                              |
-| Local AI            | [Ollama][ollama]                                                          |
-| Relational DB       | [SQLite][sqlite] via [rusqlite][rusqlite] ([Rust][rust] core)             |
-| Search & ranking    | SQLite FTS5 (BM25) + optional vector similarity, fused with RRF           |
-| Browser automation  | [chromiumoxide][chromiumoxide] ([Rust][rust]); Playwright for e2e only    |
-| Document generation | Typst engine (`export/typst_engine/`) + [docx-rs][docx-rs] ([Rust][rust]) |
-| Validation          | [Zod][zod] (shared schemas → generated [Rust][rust] structs)              |
-
----
-
-## For Developers
-
-**Architecture in one line:** the React renderer never calls the OS directly; it talks to the Rust core over a typed IPC contract.
-
-```
-React renderer  →  service hook (React Query)  →  tauri-client  →  Rust #[tauri::command]  →  core (scrape · AI · export · DB)
-                         apps/desktop/src/renderer/services            apps/desktop/src-tauri/src
-```
-
-IPC request shapes have a single source of truth: **[Zod][zod] schemas in `packages/shared`**, from which `pnpm gen:ipc` generates the matching [Rust][rust] structs, so the [TypeScript][typescript] and [Rust][rust] sides can't drift.
-
-<details>
-<summary><strong>Add a new IPC capability (5 hand-synced touchpoints)</strong></summary>
-
-1. `packages/shared/src/ipc/contracts/*.ts`: add the method signature.
-2. `apps/desktop/src-tauri/src/commands/*.rs`: implement the `#[tauri::command]` and register it in `shell/handler.rs`.
-3. `apps/desktop/src/tauri-client/namespaces/*`: wire the `invoke(...)` call.
-4. `apps/desktop/src/renderer/services/*`: add the React Query service hook.
-5. If the request has a new shape: add a Zod schema and run `pnpm gen:ipc`.
-
-</details>
-
-<details>
-<summary><strong>Add an AI provider / a job board (config + adapter, no business-logic changes)</strong></summary>
-
-- **AI provider**: implement the provider adapter and register it; the rest of the app routes through the centralized provider abstraction (`Completer` / streaming contract). Reasoning, limits, and job state are normalized at the adapter boundary, so the renderer holds one contract and zero per-provider branching.
-- **Job board**: add an entry to the scraper registry (`scraping/boards/mod.rs` `SCRAPERS`); discovery is registry-driven, so no caller changes.
-
-</details>
-
-<details>
-<summary><strong>Conventions &amp; guardrails</strong></summary>
-
-- **PRs only**: never push to `main`; [Conventional Commits][conventional-commits]; [ESLint][eslint] + [commitlint][commitlint] + architecture tests gate every change.
-- **Ports &amp; adapters**: UI imports `@ajh/ui` primitives and service hooks, never `window.api` directly; design-system tokens (`text-brand`, motion tokens) over hardcoded values.
-- **Backend owns business logic**: Rust-first; the renderer is a thin client.
-- See **<a href="CLAUDE.md" target="_blank" rel="noopener noreferrer">CLAUDE.md</a>** for the enforced rules and **<a href="docs/PATTERNS.md" target="_blank" rel="noopener noreferrer">docs/PATTERNS.md</a>** for the patterns.
-
-</details>
-
-<details>
-<summary><strong>Knowledge base &amp; AI agent system</strong></summary>
-
-This repo ships a knowledge base under <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a>: domain notes plus **architecture decision records** (<a href="docs/knowledge/decision-records/" target="_blank" rel="noopener noreferrer">ADRs</a>), plus a Claude Code agent system under `.claude/` (23 agents, a write-capable **author** + an independent **critic** per domain, plus commands). When in doubt about _why_ something is built a certain way, the ADRs are the fastest answer.
-
-For a **visual walkthrough** of the agent system (the fleet map, how a prompt is routed to an agent, the author→critic pipeline, and a with/without-agents comparison), open the interactive <a href="apps/landing/agent-system.html" target="_blank" rel="noopener noreferrer">apps/landing/agent-system.html</a>.
-
-A <a href="https://pypi.org/project/graphifyy/" target="_blank" rel="noopener noreferrer">graphify</a> knowledge graph (`graphify-out/`) can also be queried directly or wired as an **optional, opt-in** local MCP server; see <a href="docs/DEVELOPMENT.md#optional-knowledge-graph-mcp-graphify" target="_blank" rel="noopener noreferrer">docs/DEVELOPMENT.md</a>.
-
-</details>
-
----
-
-## Project Structure
-
-```
-ai-job-hunter-app/
-├── apps/
-│   ├── desktop/                  # Main desktop app (Tauri shell: Rust core + React renderer)
-│   │   ├── src-tauri/            # Rust core (commands, scraping, AI, export, DB, extension bridge)
-│   │   └── src/renderer/         # React frontend
-│   │       ├── features/         # Feature-scoped components
-│   │       ├── routes/           # TanStack Router pages
-│   │       ├── services/         # React Query IPC hooks
-│   │       ├── lib/              # Utilities (generate, motion, i18n, machines)
-│   │       ├── store/            # Zustand stores
-│   │       └── providers/        # React context providers
-│   └── extension/                # Browser extension (MV3, Chrome + Firefox) — job import via loopback WS
-├── packages/
-│   ├── shared/                   # IPC contracts, Zod schemas, shared types, extension protocol
-│   ├── ui/                       # @ajh/ui — React component library
-│   ├── prompts/                  # Provider-aware, locale-driven AI prompt templates
-│   ├── translations/             # i18n config + locale strings (en, de, …)
-│   └── test-ids/                 # @ajh/test-ids — central TEST_IDS map
-├── docs/                         # Documentation + knowledge base (ADRs)
-├── turbo.json                    # Turbo build configuration
-├── pnpm-workspace.yaml           # pnpm workspaces
-└── package.json                  # Root scripts
-```
-
----
-
-## Scripts
-
-```bash
-pnpm dev              # Start the Tauri dev app (full stack)
-pnpm build            # Build everything (Turbo)
-pnpm build:packages   # Build shared packages only (excludes Tauri)
-pnpm build:chrome     # Build the browser extension (Chrome / MV3)
-pnpm build:firefox    # Build the browser extension (Firefox / MV3)
-pnpm package          # Package the desktop installers
-pnpm typecheck        # TypeScript check across the monorepo
-pnpm test             # Run the Vitest suite (test:watch / test:coverage variants)
-pnpm lint:strict      # Lint with --max-warnings 0 (CI mode); lint:fix to autofix
-pnpm format           # Prettier format (format:check to verify)
-pnpm gen:ipc          # Regenerate Rust IPC structs from the shared Zod schemas
-pnpm gen:workflows    # Regenerate the CI workflow catalog + status badges
-pnpm clean            # Remove dist / out / .turbo + caches
-pnpm storybook        # Run the @ajh/ui Storybook
-```
-
----
-
-## 🔧 CI & Workflows
-
-Live status of every GitHub Actions workflow. See
-<a href=".github/workflows/README.md" target="_blank" rel="noopener noreferrer">`.github/workflows/README.md`</a> for the full catalog:
-what each one does, its triggers, and whether it gates merges (only **✅ CI OK** does).
-Both are generated from the workflow files by `pnpm gen:workflows`.
-
-**[📊 Mission Control](https://aijobhunter.app/mission-control)**:
-a verdict-first, full-repo dashboard (delivery, work, quality, community) updated nightly from a GitHub API snapshot (with live fallback when signed in with a fine-grained PAT).
-
-<!-- workflows:badges:start -->
-
-### ✅ Required — gates merge
-
-[![🚀 CI Pipeline](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ci-pipeline.yml)
-
-### 🔒 Security — reports to the Security tab
-
-[![🔒 Security](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/security.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/security.yml)
-
-### 🔎 Advisory — never blocks
-
-[![🎨 Format Guard](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/format-guard.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/format-guard.yml)
-[![🏷️ PR Labeler](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/labeler.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/labeler.yml)
-[![📸 Mission Control Snapshot](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/metrics-snapshot.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/metrics-snapshot.yml)
-[![🔎 Quality](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/quality.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/quality.yml)
-[![📈 Repo Charts](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/repo-charts.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/repo-charts.yml)
-[![🖥️ UI Checks](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ui-checks.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ui-checks.yml)
-[![🧹 Workflow Lint](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/workflow-lint.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/workflow-lint.yml)
-
-### 🚀 Deploy — publishes on push to main
-
-[![🌐 Deploy Landing Page](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/pages.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/pages.yml)
-[![🚀 Release](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/release.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/release.yml)
-
-<!-- workflows:badges:end -->
-
----
+[Features](docs/FEATURES.md) · [Installation](docs/INSTALLATION.md) · [Usage](docs/USAGE.md) · [Configuration](docs/CONFIGURATION.md) · [Privacy](docs/PRIVACY.md) · [Development](docs/DEVELOPMENT.md) · **[All docs →](docs/README.md)**
 
 ## Contributing
 
-See <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a> for branching, commit conventions, code style, and PR guidelines. Quick rules:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for branching, commit conventions, and PR guidelines. All changes go through PRs; never push directly to `main`.
 
-- All changes go through PRs; never push directly to `main`.
-- Use [Conventional Commits][conventional-commits] (`feat:`, `fix:`, `chore:`, …).
-- Run `pnpm lint:fix && pnpm typecheck` before pushing; [ESLint][eslint] errors block commits.
+## Security
 
----
+Found a vulnerability? Report it privately: see **[SECURITY.md](SECURITY.md)**. Don't open a public issue.
 
-## Documentation
+## License
 
-| Document                                                                                                          | Description                                                                                                       |
-| ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| <a href="apps/desktop/README.md" target="_blank" rel="noopener noreferrer">apps/desktop/README.md</a>             | Desktop app architecture, directory map, Rust/React setup                                                         |
-| <a href="apps/extension/README.md" target="_blank" rel="noopener noreferrer">apps/extension/README.md</a>         | Browser extension (MV3): job import, local dev pairing, permissions                                               |
-| <a href="docs/ARCHITECTURE.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE.md</a>                 | System design, data flow, diagrams                                                                                |
-| <a href="docs/PATTERNS.md" target="_blank" rel="noopener noreferrer">docs/PATTERNS.md</a>                         | IPC, state machines, AI streaming, search patterns                                                                |
-| <a href="docs/API.md" target="_blank" rel="noopener noreferrer">docs/API.md</a>                                   | IPC namespaces + commands                                                                                         |
-| <a href="docs/EXPORT_TEMPLATES.md" target="_blank" rel="noopener noreferrer">docs/EXPORT_TEMPLATES.md</a>         | Templates, theming, PDF/DOCX export                                                                               |
-| <a href="docs/DESIGN_SYSTEM.md" target="_blank" rel="noopener noreferrer">docs/DESIGN_SYSTEM.md</a>               | Tokens, components, motion, theming                                                                               |
-| <a href="docs/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer">docs/DEVELOPMENT.md</a>                   | Local dev environment setup                                                                                       |
-| <a href="docs/DEPLOYMENT.md" target="_blank" rel="noopener noreferrer">docs/DEPLOYMENT.md</a>                     | Building and releasing installers                                                                                 |
-| <a href="docs/ARCHITECTURE_STATUS.md" target="_blank" rel="noopener noreferrer">docs/ARCHITECTURE_STATUS.md</a>   | Implementation status tracker                                                                                     |
-| <a href="docs/SCRAPING_ENDPOINTS.md" target="_blank" rel="noopener noreferrer">docs/SCRAPING_ENDPOINTS.md</a>     | Job-board scraping endpoint reconnaissance snapshot (21 boards, 2026-07-01)                                       |
-| <a href="docs/knowledge/" target="_blank" rel="noopener noreferrer">docs/knowledge/</a>                           | Knowledge base + architecture decision records (ADRs)                                                             |
-| <a href="SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a>                                   | Security policy &amp; vulnerability reporting                                                                     |
-| <a href="CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">CONTRIBUTING.md</a>                           | Code style, branching, PR process                                                                                 |
-| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/how-it-works">How it Works</a>         | How the AI Job Hunter works end-to-end (interactive walkthrough)                                                  |
-| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/architecture-map">Architecture Map</a> | Interactive architecture map of the AI Job Hunter                                                                 |
-| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/agent-system">Agent System</a>         | Interactive agent-fleet walkthrough: 23 paired author+critic agents, intake→delegation routing, per-task pipeline |
-| <a target="_blank" rel="noopener noreferrer" href="https://aijobhunter.app/creature">THE CREATURE</a>             | THE CREATURE: a hand-drawn doodle about the recruiter you summon                                                  |
+**Apache License 2.0** ([`Apache-2.0`](LICENSE)): open source, free for any use including commercial, with an explicit patent grant.
 
----
+One carve-out: the vendored ATS company datasets under `apps/desktop/src-tauri/ats-slugs/` are third-party data under **CC BY-NC 4.0**, not Apache-2.0 — see [their README](apps/desktop/src-tauri/ats-slugs/README.md) before redistributing commercially.
 
 ## 💛 Fund the job hunt
 
 This project is built by a guy who is, himself, still unemployed, a cry for help made between rejections. If it's saving you time or sanity, consider a voluntary gift:
 
 <a href="https://github.com/sponsors/saeedkolivand" target="_blank" rel="noopener noreferrer">GitHub Sponsors</a> · <a href="https://ko-fi.com/saeedkolivand" target="_blank" rel="noopener noreferrer">Ko-fi</a> · <a href="https://paypal.me/saeedkolivand" target="_blank" rel="noopener noreferrer">PayPal</a>
-
----
 
 ## ⚖️ Responsible Use
 
@@ -668,44 +99,6 @@ This project is built by a guy who is, himself, still unemployed, a cry for help
 - **Your data stays yours.** Processing is local-first and single-user; the project maintainers do not receive, store, or process your data. Bring-your-own-key means AI prompts go only to the provider you configure.
 - **No warranty.** Provided "as is" under the Apache License 2.0, without warranty of any kind and without liability for how it is used. This is not legal advice.
 
----
-
-## Security
-
-Found a vulnerability? Please report it privately: see **<a href="SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a>**. Don't open a public issue for security reports.
-
----
-
-## License
-
-**Apache License 2.0** ([SPDX: `Apache-2.0`](LICENSE)): open source, free for any use including commercial, with an explicit patent grant. Effective **2026-09-07**, replacing PolyForm Noncommercial 1.0.0; reason: the free code-signing programmes for open-source projects (SignPath Foundation, Certum) require an OSI-approved license, and PolyForm Noncommercial is not one.
-
-One carve-out: the vendored ATS company datasets under `apps/desktop/src-tauri/ats-slugs/` are third-party data under **CC BY-NC 4.0**, not Apache-2.0 — see <a href="apps/desktop/src-tauri/ats-slugs/README.md" target="_blank" rel="noopener noreferrer">their README</a> before redistributing commercially.
-
----
-
-[tauri]: https://tauri.app
-[react]: https://react.dev
-[rust]: https://www.rust-lang.org
-[typescript]: https://www.typescriptlang.org
-[tanstack-router]: https://tanstack.com/router
-[tanstack-query]: https://tanstack.com/query
-[zustand]: https://github.com/pmndrs/zustand
-[tailwindcss]: https://tailwindcss.com
-[motion-react]: https://motion.dev
-[vite]: https://vite.dev
-[turborepo]: https://turborepo.com
-[pnpm]: https://pnpm.io
-[ollama]: https://ollama.com
-[sqlite]: https://www.sqlite.org
-[rusqlite]: https://github.com/rusqlite/rusqlite
-[chromiumoxide]: https://github.com/mattsse/chromiumoxide
-[docx-rs]: https://github.com/bokuweb/docx-rs
-[zod]: https://zod.dev
-[conventional-commits]: https://www.conventionalcommits.org
-[eslint]: https://eslint.org
-[commitlint]: https://commitlint.js.org
-
 <h2 align="center">Contributors</h2>
 
 <p align="center">
@@ -713,10 +106,6 @@ One carve-out: the vendored ATS company datasets under `apps/desktop/src-tauri/a
     <img alt="Contributors" src="https://contrib.rocks/image?repo=saeedkolivand/ai-job-hunter-app&max=100">
   </a>
 </p>
-
-<p align="center"><em>Contributions welcome: see <a href="CONTRIBUTING.md">CONTRIBUTING.md</a>.</em></p>
-
----
 
 <h2 align="center">Growth</h2>
 
