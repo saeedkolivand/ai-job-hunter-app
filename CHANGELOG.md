@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.161.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.161.0...v0.161.1) (2026-11-16)
+
+### 🐛 Bug Fixes
+
+* **startup:** stop at a store that fails to open and report why instead of panicking later ([#1532](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1532)) ([e3fe6d9](https://github.com/saeedkolivand/ai-job-hunter-app/commit/e3fe6d97a296d400ec32dde4984a4eceab688952)), closes [#1525](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1525)
+
+### 📚 Documentation
+
+* **readme:** keep the essentials at the root and move the long sections into docs pages ([#1527](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1527)) ([ac35a4c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ac35a4c66a75e10b99109dd9c556546333602003)), closes [#1526](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1526)
+* **readme:** make the root readme short and user-first ([#1529](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1529)) ([bc489a9](https://github.com/saeedkolivand/ai-job-hunter-app/commit/bc489a94bf6f8d2b27ddec1d566b5c740a4e6526)), closes [#1528](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1528)
+
 ## [0.161.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.160.0...v0.161.0) (2026-11-12)
 
 ### ✨ Features
