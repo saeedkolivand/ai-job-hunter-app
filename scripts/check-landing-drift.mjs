@@ -15,8 +15,8 @@
 //   6. No stale "zero/no telemetry" privacy claim (ADR-0020 made it untrue).
 //   7. Every publicly-named third party in the egress inventory
 //      (apps/desktop/src-tauri/tests/egress.rs) is named, as a whole word, on
-//      the actual disclosure surfaces (README.md, SECURITY.md, the /privacy
-//      page) — a presence floor, not a semantic check.
+//      the actual disclosure surfaces (docs/PRIVACY.md, README.md, SECURITY.md,
+//      the /privacy page) — a presence floor, not a semantic check.
 //   8. No over-absolute "the only network calls…" / "sends … only to…" /
 //      "no data leaves … except…" family of claim — the shape ADR-0005
 //      exists because of.
@@ -24,7 +24,7 @@
 //      or re-vendor to a different, unverified build).
 // Secret-scan (ALL landing html/js): no committed GitHub token — the site is public.
 //
-// Check 6 reaches beyond apps/landing/ — to README.md, SECURITY.md and branding/ —
+// Check 6 reaches beyond apps/landing/ — to README.md, docs/PRIVACY.md, SECURITY.md and branding/ —
 // because a privacy claim drifts across every surface that repeats it, not just the
 // site. Hosted here rather than in a new script so there is one place to look for
 // "did the copy stop matching the code".
@@ -321,6 +321,7 @@ const TELEMETRY_CLAIM_RE = /\b(?:zero|no)[\s-]+telemetry\b/gi;
 // an explicit list only guards the three spots we already know about.
 const TELEMETRY_SCAN_ROOTS = [
   'README.md',
+  'docs/PRIVACY.md',
   'SECURITY.md',
   'branding',
   'apps/landing/src',
@@ -405,6 +406,7 @@ function checkTelemetryClaim() {
 // false claim of completeness.
 const EGRESS_FILE = 'apps/desktop/src-tauri/tests/egress.rs';
 const EGRESS_DISCLOSURE_SURFACES = [
+  'docs/PRIVACY.md',
   'README.md',
   'SECURITY.md',
   'apps/landing/src/components/privacy',
@@ -460,8 +462,8 @@ function checkEgressDisclosure() {
         'Undisclosed third party',
         EGRESS_FILE,
         `'${name}' carries public_name in the egress inventory but does not appear as a whole word ` +
-          `in README.md, SECURITY.md, or apps/landing/src/components/privacy — name it, e.g. in ` +
-          `apps/landing/src/components/privacy/sections/Desktop.tsx`
+          `in docs/PRIVACY.md, README.md, SECURITY.md, or apps/landing/src/components/privacy — name it, e.g. in ` +
+          `docs/PRIVACY.md`
       );
     }
   }
@@ -482,7 +484,7 @@ function checkEgressDisclosure() {
 // shape) so a true, narrowly-scoped claim elsewhere on the site — "sends that
 // HTML only to the local app" (Extension.tsx), "no network call is ever
 // made" (one specific write-action) — does not also trip it.
-const EGRESS_PROSE_ROOTS = ['README.md', 'SECURITY.md', 'apps/landing/src'];
+const EGRESS_PROSE_ROOTS = ['README.md', 'docs/PRIVACY.md', 'SECURITY.md', 'apps/landing/src'];
 const ABSOLUTE_EGRESS_CLAIM_RES = [
   // "(the) only network/outbound calls/connections/requests/traffic"
   /\b(?:the )?only\s+(?:network|outbound)\s+(?:calls?|connections?|requests?|traffic)\b/gi,
