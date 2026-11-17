@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.162.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.161.1...v0.162.0) (2026-11-17)
+
+### ✨ Features
+
+* **validate:** flag cover letters that restate the same point twice ([#1534](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1534)) ([b2ab27c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b2ab27ca370078b6f7bcf4317a2fc70afd804cad))
+
 ## [0.161.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.161.0...v0.161.1) (2026-11-16)
 
 ### 🐛 Bug Fixes
