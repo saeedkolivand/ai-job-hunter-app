@@ -276,6 +276,10 @@ fn voice_thresholds_are_pinned() {
     assert_eq!(voice::EM_DASH_WORDS_PER_ALLOWED, 150);
     assert_eq!(voice::TEMPLATE_OPENER_SCAN_CHARS, 200);
     assert_eq!(voice::MIN_JOB_SPECIFIC_TOKENS_IN_LETTER, 2);
+    assert_eq!(restated::MIN_SENTENCES_FOR_RESTATEMENT, 8);
+    assert_eq!(restated::MAX_SENTENCES_FOR_RESTATEMENT, 80);
+    assert_eq!(restated::MIN_CONTENT_WORDS_FOR_RESTATEMENT, 5);
+    assert_eq!(restated::MIN_RESTATEMENT_JACCARD, 0.7);
 }
 
 #[test]

@@ -6,55 +6,65 @@
 //! whose remaining content words largely coincide fire.
 //!
 //! Content words come from [`Analysis::tokens`], the stopword-filtered tokenizer
-//! the posting comparisons use, so there is no second tokenizer to drift. Before
-//! pairing, two kinds of term are removed from every sentence because sharing
-//! them proves nothing: the posting's own vocabulary (role title, company, stack:
-//! an opening and a closing that both name "Senior Rust Engineer at Acme" are
-//! not a restatement) and any term the letter uses in three or more sentences
-//! (its subject, e.g. "Kubernetes"). Advisory like the rest of the family.
+//! the posting comparisons use, so there is no second tokenizer to drift. Those
+//! tokens are keyed to the POSTING's language: an English ad with a German letter
+//! compares unstemmed, which can only make sets less alike (quieter, never
+//! louder). The posting's own vocabulary (role title, company, stack) is removed
+//! from every sentence first: an opening and a closing that both name "Senior
+//! Rust Engineer at Acme" are not a restatement.
+//!
+//! *Recall limit, stated:* this is lexical overlap, so a pure-synonym paraphrase
+//! ("mentored" / "coached", with every other word changed) is not caught. That is
+//! the accepted trade for the family: a wrong warning costs more than a missed one.
+//! Advisory like the rest of it.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use super::text::jaccard;
-use super::voice::MIN_SENTENCES_FOR_BURSTINESS;
 use super::{issue, sentences, Analysis, ContentIssue, VOICE_RESTATED_POINT};
+use crate::applications::clamp_to_bytes;
 use crate::documents::evidence::has_curated_function_words;
 
-/// Content words each sentence needs, AFTER the removals above, before it can be
-/// a restatement. Greetings, sign-offs and fragments fall below it.
+/// Sentences a letter needs before a repeat is a signal; mirrors the burstiness
+/// gate's reasoning (a short letter has little room to pad).
+pub const MIN_SENTENCES_FOR_RESTATEMENT: usize = 8;
+
+/// Above this many sentences the input is not a letter; the pairwise scan is
+/// O(n²), so it goes quiet instead, as `duplicates::MAX_DUP_BULLETS` bounds the
+/// duplicate scan.
+pub const MAX_SENTENCES_FOR_RESTATEMENT: usize = 80;
+
+/// Content words each sentence needs, AFTER the posting vocabulary is removed,
+/// before it can be a restatement. Greetings, sign-offs and fragments fall below it.
 pub const MIN_CONTENT_WORDS_FOR_RESTATEMENT: usize = 5;
 
 /// Jaccard overlap of two sentences' remaining content words at or above which
 /// they read as one point said twice. Jaccard, not overlap-coefficient: the
 /// latter scores a short sentence that reuses a longer one's terms as a perfect
-/// match. 0.6 means roughly two thirds of the combined vocabulary is shared.
-pub const MIN_RESTATEMENT_JACCARD: f64 = 0.6;
+/// match. 0.7 (about 70% of the combined vocabulary shared) keeps two parallel
+/// sentences that state DIFFERENT facts in one frame ("the first quarter ... payment
+/// services" / "the second quarter ... reporting services", about 0.6) quiet.
+pub const MIN_RESTATEMENT_JACCARD: f64 = 0.7;
 
-/// A term used in this many sentences is the letter's subject, not a point.
-pub const LETTER_WIDE_TERM_SENTENCES: usize = 3;
+/// Per-sentence budget in the evidence, so both sentences and the pair count fit
+/// the issue-evidence clamp.
+const EVIDENCE_SENTENCE_BYTES: usize = 170;
 
 pub(super) fn restated_point_issues(ctx: &Analysis) -> Vec<ContentIssue> {
-    // Only where function-word data is curated: the other stopword lists are
-    // job-ad filler and leave ordinary words in, which inflates overlap.
+    // The same language gate `ats`/`consistency` use for function-word checks.
     if !has_curated_function_words(&ctx.lang) || ctx.language_mismatch {
         return Vec::new();
     }
     let all = sentences(ctx.input.generated);
-    if all.len() < MIN_SENTENCES_FOR_BURSTINESS {
+    if !(MIN_SENTENCES_FOR_RESTATEMENT..=MAX_SENTENCES_FOR_RESTATEMENT).contains(&all.len()) {
         return Vec::new();
     }
-    let raw: Vec<HashSet<String>> = all.iter().map(|s| ctx.tokens(s)).collect();
-    let mut spread: HashMap<&str, usize> = HashMap::new();
-    for token in raw.iter().flatten() {
-        *spread.entry(token.as_str()).or_default() += 1;
-    }
-    let sets: Vec<HashSet<String>> = raw
+    let sets: Vec<HashSet<String>> = all
         .iter()
-        .map(|set| {
-            set.iter()
-                .filter(|t| !ctx.job_keywords.contains(*t))
-                .filter(|t| spread[t.as_str()] < LETTER_WIDE_TERM_SENTENCES)
-                .cloned()
+        .map(|s| {
+            ctx.tokens(s)
+                .into_iter()
+                .filter(|t| !ctx.job_keywords.contains(t))
                 .collect()
         })
         .collect();
@@ -80,12 +90,17 @@ pub(super) fn restated_point_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     let Some((_, i, j)) = best else {
         return Vec::new();
     };
+    let quote = |s: &str| clamp_to_bytes(s.to_string(), EVIDENCE_SENTENCE_BYTES);
     vec![issue(
         VOICE_RESTATED_POINT,
         None,
-        "Two sentences make the same point in different words. Say each point once and cut \
-         the restatement."
+        "Two sentences make the same point in different words. Merge them into one sentence \
+         that says the point once."
             .to_string(),
-        Some(format!("\"{}\" / \"{}\" ({pairs} pair(s))", all[i], all[j])),
+        Some(format!(
+            "{} / {} ({pairs} pair(s))",
+            quote(&all[i]),
+            quote(&all[j])
+        )),
     )]
 }
