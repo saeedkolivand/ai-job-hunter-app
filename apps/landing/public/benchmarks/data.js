@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794822508133,
+  "lastUpdate": 1794917150686,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "f65103265f63cbe18143710d4448bd0c41d95007",
-          "message": "fix: make the agent CLI reachable after an install or update (#1088)\n\n* fix: symlink the agent cli onto path for homebrew installs\n\nThe `ajh-tauri agent <verb>` CLI (ADR-037/038) ships inside every bundle but\nwas reachable only by callers that read the app's ~/.ajh-agent/agent.json\npointer file. A human typing `ajh-tauri agent` got \"command not found\" on a\nmachine where the app was installed.\n\nThe cask now symlinks the bundle's executable onto PATH. The binary name was\nverified against the shipped artifact rather than inferred: the macOS bundle\nlays out as `AI Job Hunter.app/Contents/MacOS/ajh-tauri`, i.e. named after the\nCargo [[bin]], not productName.\n\nLinux needs no equivalent change: the deb already installs `usr/bin/ajh-tauri`.\nWindows (nsis, installMode currentUser) is still unreachable and is handled\nseparately.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* docs: document the agent cli for users\n\nThe `ajh-tauri agent <verb>` surface (ADR-037/ADR-038) was invisible: it\nappeared nowhere in the README, nowhere under docs/ except CONTEXT.md, and\nnowhere on the landing site. The only landing mention is the `.claude/`\ndevelopment fleet, which a reader will conflate with it.\n\nAdds a README usage section and a knowledge-base entry, registered in the\nindex. The knowledge page states shape and points at `--help` and the owning\nsymbols rather than copying the verb table, the sentinel list or `max 50`,\nper AGENTS.md rule 17.\n\nBinary locations are stated per platform from shipped v0.145.0 artifacts, not\ninferred. Windows is documented as NOT on PATH, which is true today; the NSIS\nhook that changes it is a separate commit.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: add the agent cli directory to the per-user path on windows\n\nCompanion to the Homebrew cask change: the `ajh-tauri agent <verb>` CLI\n(ADR-037/ADR-038) ships inside the Windows bundle but the per-user install\ndirectory is not on PATH, so a human could not invoke it. Linux already\ninstalls to /usr/bin, and macOS is covered by the cask's binary stanza.\n\nAdds an NSIS POSTINSTALL/POSTUNINSTALL hook pair. PATH is a value whose\ncorruption breaks the user's shell, so every branch is defensive:\n\n- Truncation guard. ReadRegStr SILENTLY truncates past NSIS_MAX_STRLEN\n  (1024 in the Unicode build Tauri bundles). A value read within one char\n  of the cap cannot be trusted to be complete, and writing it back would\n  permanently drop the remainder, so PATH is left untouched instead. A\n  second budget check refuses an append that would land near the cap.\n- Idempotent across updates. The installer re-runs on every update, so both\n  haystack and needle are ';'-padded before searching; a directory sharing\n  our prefix cannot match, and the entry is never appended twice.\n- Type preserving. REG_SZ vs REG_EXPAND_SZ is queried via Advapi32 and the\n  write-back matches; any other type is left untouched.\n- Uninstall splices out exactly our segment and the one delimiter it owns,\n  leaving no doubled, leading or trailing ';'.\n- Best effort throughout: every failure path DetailPrints and continues, so\n  a PATH problem can never abort an install or uninstall.\n\nVerified by compiling these macros with makensis and running them against a\nscratch registry key: absent/REG_SZ/REG_EXPAND_SZ values, sibling-prefix\ndirectories, re-runs, both truncation guards, removal from first/middle/last/\nonly position, and an unexpected REG_DWORD. A full release-bundle install was\nnot run.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* docs: note the windows path hook lands in the next release\n\nThe previous commit added the NSIS hook, so \"Windows is not on PATH\" is only\ntrue for v0.145.0 and earlier. Stated as a release boundary rather than a\nbare \"yes\", since no shipped installer carries the hook yet.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: make the windows path hook compile and survive a failed probe\n\nSecurity review of 7b9e1755 blocked it on two defects and one that made the\nfeature a no-op on a realistic machine. All three are fixed here.\n\nThe uninstall hook did not compile. `${StrLoc}` expands to `Call StrLoc`, and\nNSIS forbids calling a non-`un.` function from an uninstall section. PR CI\nruns `cargo check` and never bundles, so this would first have appeared in\nthe release job. StrFunc is gone entirely, replaced by `Shlwapi::StrStrW`\nthrough `System::Call` — a plugin call, so the `un.` rule cannot apply.\n\nA failed probe took the destructive branch. `$1` was uninitialised, and a\n`System::Call` that fails to resolve writes the literal string \"error\" into\nits output register, which `${If} $1 != 0` treats as \"no PATH value exists\" —\nreplacing the whole per-user PATH with just $INSTDIR, then reporting success.\nOnly a literal ERROR_FILE_NOT_FOUND (2) now creates a value; every other\noutcome leaves PATH untouched.\n\nThe 1024-char ceiling made it a no-op on ordinary machines. NSIS string\nvariables cap at NSIS_MAX_STRLEN, and the old budget refused any PATH past\n~1016 chars — a developer machine with a 988-char PATH plus the install dir\nwas already over it, so the installer would silently do nothing while the\ndocs promised otherwise. The value's content now never enters an NSIS\nvariable: RegQueryValueExW/RegSetValueExW against GlobalAlloc'd memory, with\nStrStrW for the whole-segment search.\n\nCorrects the record from 7b9e1755: ReadRegStr does NOT silently truncate past\nthe cap. Measured, it sets the error flag and returns an empty string, so the\nreal protection was always the ${Errors} check. `${NSIS_MAX_STRLEN}` is also\na live compiler builtin, contrary to the previous comment.\n\nAdds a compile-time guard: the hook hardcodes HKCU, so it now refuses to\nbuild under any installMode other than currentUser rather than silently\nwriting an elevating admin's hive.\n\nVerified independently of the author: both macros compile clean in a real\nSection Install and a real Section Uninstall under makensis 3.11, and the\ninstallMode guard aborts the build when flipped to perMachine.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: gate every buffer input in the windows path hook\n\nSecurity re-review of a026a81a found no blocking defect but three crash\npaths, all one root cause: a length or pointer reached RtlMoveMemory or\nlstrcpyW without a precondition. Fixed as a single gate rather than three\npatches, since patching each symptom as it appears is what produced two\nearlier bugs in this file.\n\n- A registry value with cbData = 0 is legal Win32, and made `$3 - 2` yield\n  -2, which RtlMoveMemory reads as 0xFFFFFFFE. The install macro had no\n  clamp on the value size at all; uninstall survived the same input only\n  because StrStrW failed to match first. Both now refuse a value too small\n  to be a valid PATH before any arithmetic runs.\n- GlobalAlloc's return was dereferenced unchecked at four sites. Each now\n  bails, and the two second allocations free the first buffer on the way.\n- `System::Call` writes the literal string \"error\" into its output register\n  on a resolution failure, so uninstall's `${If} $5 == 0` fell through into\n  pointer arithmetic with $5 parsing as 0. Both sides now compare\n  numerically, so the sentinel lands in the safe branch by construction\n  rather than by luck of polarity.\n\nAlso restores a guard the previous rewrite dropped silently: a PATH already\nending in ';' no longer gains a doubled separator.\n\nPATH was left untouched in every injected failure before this change too —\nthese were liveness defects, not data-loss ones. Verified: the 15-case\nregression matrix still passes including the >1024-char case, cbData = 0 no\nlonger crashes, and both macros still compile in a real Section Install and\nSection Uninstall. Forcing GlobalAlloc to fail at the real ~20-100 byte\nallocation sizes was not achievable, so that branch is verified by pattern\nrather than end to end.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
-          "timestamp": "2026-09-01T20:09:57+02:00",
-          "tree_id": "df46d46872a2513c96fb9bc53f3b3e72ac4e6050",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/f65103265f63cbe18143710d4448bd0c41d95007"
-        },
-        "date": 1788286885327,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2190180,
-            "range": "± 15592",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2581973,
-            "range": "± 16085",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 302241,
-            "range": "± 7011",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4193,6 +4151,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 271213,
             "range": "± 10911",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b2ab27ca370078b6f7bcf4317a2fc70afd804cad",
+          "message": "feat(validate): flag cover letters that restate the same point twice (#1534)\n\n* feat(validate): flag cover letters that restate the same point twice\n\nAdds the advisory voice.restated_point check: sentence pairs whose content\nwords largely coincide (Jaccard >= 0.6) after removing posting vocabulary and\nletter-wide terms. Gated to languages with curated function words (en/de).\nMirrored by a \"make each point once\" line in the prose prompt at every depth.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(validate): tighten restated-point check after review\n\nDrop the letter-wide term filter (it silenced triple restatements), raise the\nJaccard bar to 0.7 so parallel sentences with different facts stay quiet, cap\nthe pair scan at 80 sentences, truncate each quoted sentence so the pair count\nsurvives the evidence clamp, and ask humanize to merge rather than cut so the\nrewrite clears its length floor. Boundary tests and threshold pins added.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* docs(knowledge): point at the restated-point letter check\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(validate): keep every fact when merging a one-word-swap restatement\n\nA sentence repeated with one word swapped (7/9 Jaccard) fires by design: it is\nrepeated wording. The message now asks for one sentence that keeps every fact,\nso the merge cannot drop one; doc comment corrected and the case pinned.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-17T12:45:23+01:00",
+          "tree_id": "61642b98dde26d31a9bf141c04ae030da74ed74d",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/b2ab27ca370078b6f7bcf4317a2fc70afd804cad"
+        },
+        "date": 1794917150323,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1796289,
+            "range": "± 26784",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2198458,
+            "range": "± 24432",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 210593,
+            "range": "± 8926",
             "unit": "ns/iter"
           }
         ]
