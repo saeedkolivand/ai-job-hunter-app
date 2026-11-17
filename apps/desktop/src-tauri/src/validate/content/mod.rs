@@ -53,6 +53,7 @@ mod issues;
 mod language;
 mod letter;
 pub mod lexicon;
+mod restated;
 mod text;
 mod voice;
 
@@ -219,6 +220,7 @@ pub const VOICE_LOW_BURSTINESS: &str = "voice.low_burstiness";
 pub const VOICE_RULE_OF_THREE_DENSITY: &str = "voice.rule_of_three_density";
 pub const VOICE_EM_DASH_OVERUSE: &str = "voice.em_dash_overuse";
 pub const VOICE_GENERIC_LETTER: &str = "voice.generic_letter";
+pub const VOICE_RESTATED_POINT: &str = "voice.restated_point";
 /// Synthetic marker appended when [`MAX_CONTENT_ISSUES`] truncates the issue
 /// list — never emitted by a real check, so it's registered like any other
 /// code (i18n key + severity) rather than special-cased.
@@ -286,6 +288,7 @@ pub const CONTENT_ISSUE_CODES: &[(&str, Severity)] = &[
     (VOICE_RULE_OF_THREE_DENSITY, Severity::Warning),
     (VOICE_EM_DASH_OVERUSE, Severity::Warning),
     (VOICE_GENERIC_LETTER, Severity::Warning),
+    (VOICE_RESTATED_POINT, Severity::Warning),
     (REPORT_TRUNCATED, Severity::Warning),
     (JUDGE_CLARITY, Severity::Warning),
     (JUDGE_EVIDENCE, Severity::Warning),

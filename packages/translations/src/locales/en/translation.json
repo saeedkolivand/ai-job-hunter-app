@@ -1979,7 +1979,8 @@
         "low_burstiness": "Sentence rhythm here is very uniform — try varying sentence length.",
         "rule_of_three_density": "Several three-item lists in a row can read as formulaic.",
         "em_dash_overuse": "Frequent em dashes here can read as AI-generated.",
-        "generic_letter": "This letter reads generically — consider adding a specific detail about the role or company."
+        "generic_letter": "This letter reads generically — consider adding a specific detail about the role or company.",
+        "restated_point": "Two sentences here make the same point in different words — say it once."
       },
       "report": {
         "truncated": "Some issues aren't shown — the full check found more than fit in this report."
