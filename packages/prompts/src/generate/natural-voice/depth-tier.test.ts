@@ -42,6 +42,7 @@ describe('depth-aware anti-AI-tell tier (brief vs full/task)', () => {
   const CHECKED_PROSE = [
     'EM-DASH HARD BAN', // voice.em_dash_overuse
     'No rule-of-three', // voice.rule_of_three_density
+    'Make each point once', // voice.restated_point
     // The prose array, reported under voice.ai_tell_lexical like the lexical
     // one ("in today's world", "it is worth noting"). There is no prose CODE.
     'Delete these outright',

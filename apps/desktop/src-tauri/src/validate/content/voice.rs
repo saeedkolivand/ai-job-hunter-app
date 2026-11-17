@@ -360,5 +360,6 @@ pub(super) fn validate_letter(ctx: &Analysis) -> Vec<ContentIssue> {
     issues.extend(rule_of_three_issues(ctx));
     issues.extend(em_dash_issues(ctx));
     issues.extend(generic_letter_issues(ctx));
+    issues.extend(super::restated::restated_point_issues(ctx));
     issues
 }

@@ -136,6 +136,7 @@ const LEXICAL_GUIDANCE_EN = `- Drop these too, unless the word is genuinely the 
  *
  * - the dash ban backs `voice.em_dash_overuse`;
  * - the rule-of-three ban backs `voice.rule_of_three_density`;
+ * - the make-each-point-once line backs `voice.restated_point`;
  * - the deletion line backs the PROSE half of `voice.ai_tell_lexical` (both
  *   quoted phrases ARE {@link AI_TELL_PROSE_WORDS_EN} entries, and nothing else
  *   is quoted here). There is no separate `voice.ai_tell_prose` CODE:
@@ -160,6 +161,7 @@ const LEXICAL_GUIDANCE_EN = `- Drop these too, unless the word is genuinely the 
 const PROSE_CHECKED_EN = `PROSE FLOW (anti-AI-tell, for connected writing):
 - EM-DASH HARD BAN: never use a long dash (em or en) anywhere. Replace it with a period, comma, colon, or parentheses.
 - No rule-of-three: do not force ideas into groups of three.
+- Make each point once: do not restate an earlier sentence in new words. Repeating the clear key term is fine; saying the same thing again is padding.
 - Delete these outright: "in today's world", "it is worth noting".`;
 
 /**
@@ -211,6 +213,7 @@ PROSE-FLUSS (Anti-KI-Floskeln, für zusammenhängenden Text):
 - Langer Gedankenstrich (Halbgeviert- oder Gedankenstrich) verboten: nie einsetzen, stattdessen Punkt, Komma, Doppelpunkt oder Klammern nutzen.
 - Variiere Satzlänge und -rhythmus; nutze natürliche Nebensatzkonstruktionen statt mehrerer gleichförmiger Hauptsätze hintereinander.
 - Kein Dreiklang-Zwang: presse Ideen nicht in Dreiergruppen.
+- Jeden Gedanken nur einmal sagen: wiederhole keinen früheren Satz mit anderen Worten. Das klare Schlüsselwort darf wiederkehren; dieselbe Aussage noch einmal ist Füllstoff.
 - Kein identischer Absatzanfang: jeder Absatz beginnt anders als der vorherige.
 - Konkret statt abstrakt: benenne die reale Sache und was sich geändert hat, nicht Adjektive.`;
 
@@ -239,6 +242,7 @@ FLUSSO DEL TESTO (anti-cliché IA, per la scrittura discorsiva):
 - Trattino lungo (mezzo o intero) vietato: mai usarlo, sostituiscilo con punto, virgola, due punti o parentesi.
 - Varia la lunghezza e il ritmo delle frasi; evita più frasi consecutive dalla stessa struttura.
 - Niente regola del tre: non forzare le idee in gruppi di tre.
+- Di' ogni punto una sola volta: non riformulare con altre parole una frase precedente. Ripetere la parola chiara va bene; ridire la stessa cosa è riempitivo.
 - Elimina gli incipit da IA sul "mondo di oggi": "nel panorama odierno", "in un mondo sempre più".
 - Elimina le premesse di cortesia vuote: "è importante sottolineare", "vale la pena notare".
 - Concreto invece che astratto: nomina la cosa reale e cosa è cambiato, non gli aggettivi.`;
@@ -805,6 +809,7 @@ PROSE FLOW (anti-AI-tell, for connected ${name} writing):
 - Vary sentence length and structure; do not run several same-shaped sentences in a row.
 - No rule-of-three: do not force ideas into groups of three.
 - Use natural idiom and sentence rhythm for ${name}, not a pattern copied from English AI writing.
+- Make each point once: do not restate an earlier sentence in new words.
 - Concrete over abstract: name the real thing and what changed, not adjectives.`;
 }
 
