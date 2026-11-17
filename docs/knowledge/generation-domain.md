@@ -38,6 +38,7 @@ The `validate` stage runs modules under [`apps/desktop/src-tauri/src/validate/co
 - Keyword density (a term repeats too often; ATS scoring prefers variety).
 - Bullet and outcome grounding: a bullet with almost no overlap with its source entry, or an outcome/scope clause the entry does not state. Deliberately advisory; invented bullets and outcome claims stay only partly catchable deterministically, so the draft prompt carries the rest.
 - Dashes: the em/en-dash ban is enforced after humanize by a deterministic strip (`validate/content/dashes.rs`, `strip_long_dashes`), not by trusting the model; `voice.em_dash_overuse` counts with the same definition.
+- Restated point: an advisory cover-letter check (`voice.restated_point`, `validate/content/restated.rs`) flags two sentences making the same point; like every `voice.*` code it feeds the humanize stage.
 - Structure (a bullet is very long; a section is empty).
 
 The line reflects a practical constraint: **warnings _can_ escalate to Critical only via measurement, never by assumption.** The eval harness measures Warning false-positive rates on truthful documents (see [Eval](#eval) below); escalation decisions are data-driven, not policy-driven. See [ADR-032](decision-records/adr-032-generation-pipeline-ownership-and-rule-enforcement.md) for language-mismatch Critical enforcement.
