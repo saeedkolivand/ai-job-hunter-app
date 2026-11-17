@@ -1,5 +1,53 @@
 [
   {
+    "sha": "dd1ac98261e18e337953233f2a464518539c4006",
+    "commit": {
+      "message": "chore(release): 0.162.0 [skip ci]",
+      "author": {
+        "date": "2026-11-17T11:46:18Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "b2ab27ca370078b6f7bcf4317a2fc70afd804cad",
+    "commit": {
+      "message": "feat(validate): flag cover letters that restate the same point twice (#1534)",
+      "author": {
+        "date": "2026-11-17T11:45:23Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "1ae44018d2c0bdc279b471be18263ce625768981",
+    "commit": {
+      "message": "ci(release): stop msstore verbose logging that leaked the package upload sas token (#1533)",
+      "author": {
+        "date": "2026-11-16T16:50:16Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "b9297bce6f8ef545fffbf894eedb2432bcd45d83",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-11-16T11:11:55Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "ba5fcfe9261a238dbc542cce36317f6c4977024e",
     "commit": {
       "message": "chore: sync landing download version to v0.161.1",
@@ -1145,54 +1193,6 @@
       "message": "chore: sync homebrew cask to v0.159.0 [skip ci]",
       "author": {
         "date": "2026-10-24T21:34:09Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "5e72a5e8dc4253ad7d6f61ab436ed61d4d6cfa6c",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-24T21:07:23Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "6a4e27e3bfccb4c8692d63e7861ae19eec760423",
-    "commit": {
-      "message": "chore(release): 0.159.0 [skip ci]",
-      "author": {
-        "date": "2026-10-24T20:48:33Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "d03407ffe4fea90137d56b5a08ec96aacb77486d",
-    "commit": {
-      "message": "feat(aggregator): send a keyword body for an optional LinkedIn jobs actor (#1462)",
-      "author": {
-        "date": "2026-10-24T20:46:36Z"
-      }
-    },
-    "author": {
-      "login": "johnisanerd"
-    }
-  },
-  {
-    "sha": "d848c1053c1b4aeb9c42fde30f82de7965d24efa",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-24T08:05:33Z"
       }
     },
     "author": {

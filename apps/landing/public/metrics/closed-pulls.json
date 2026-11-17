@@ -1,5 +1,33 @@
 [
   {
+    "number": 1533,
+    "title": "ci(release): stop msstore verbose logging that leaked the package upload sas token",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1533",
+    "draft": false,
+    "created_at": "2026-11-16T16:22:50Z",
+    "updated_at": "2026-11-17T11:46:30Z",
+    "merged_at": "2026-11-16T16:50:16Z",
+    "closed_at": "2026-11-16T16:50:16Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "number": 1534,
+    "title": "feat(validate): flag cover letters that restate the same point twice",
+    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1534",
+    "draft": false,
+    "created_at": "2026-11-17T11:27:48Z",
+    "updated_at": "2026-11-17T11:46:28Z",
+    "merged_at": "2026-11-17T11:45:24Z",
+    "closed_at": "2026-11-17T11:45:24Z",
+    "requested_reviewers": [],
+    "user": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
     "number": 1532,
     "title": "fix(startup): stop at a store that fails to open and report why instead of panicking later",
     "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1532",
@@ -666,34 +694,6 @@
     "updated_at": "2026-10-27T01:21:26Z",
     "merged_at": "2026-10-25T13:49:07Z",
     "closed_at": "2026-10-25T13:49:07Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1457,
-    "title": "chore: bump tauri-plugin-sentry from 0.7.0 to 0.8.0 in /apps/desktop/src-tauri",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1457",
-    "draft": false,
-    "created_at": "2026-10-21T16:09:11Z",
-    "updated_at": "2026-10-27T01:21:22Z",
-    "merged_at": "2026-10-25T13:49:55Z",
-    "closed_at": "2026-10-25T13:49:55Z",
-    "requested_reviewers": [],
-    "user": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "number": 1465,
-    "title": "chore: bump the desktop-rust group across 1 directory with 13 updates",
-    "html_url": "https://github.com/saeedkolivand/ai-job-hunter-app/pull/1465",
-    "draft": false,
-    "created_at": "2026-10-25T13:50:17Z",
-    "updated_at": "2026-10-27T01:21:21Z",
-    "merged_at": "2026-10-25T13:51:05Z",
-    "closed_at": "2026-10-25T13:51:05Z",
     "requested_reviewers": [],
     "user": {
       "login": "dependabot[bot]"
