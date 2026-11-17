@@ -149,6 +149,19 @@ fn parallel_sentences_with_different_facts_stay_quiet() {
     );
 }
 
+/// One word swapped in an otherwise repeated sentence (Jaccard 7/9) is repeated
+/// wording, not two points: it fires, and the fix is one sentence naming both.
+#[test]
+fn a_sentence_repeated_with_one_word_swapped_fires() {
+    fired(
+        &en([
+            "Nightly reconciliation batches caught ledger drift in finance systems.",
+            "Nightly reconciliation batches caught ledger drift in treasury systems.",
+        ]),
+        VOICE_RESTATED_POINT,
+    );
+}
+
 #[test]
 fn posting_vocabulary_shared_by_opening_and_closing_is_not_a_restatement() {
     let open = "I am applying for the Senior Rust Engineer role at Acme Payments in Berlin.";

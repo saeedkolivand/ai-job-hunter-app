@@ -42,8 +42,12 @@ pub const MIN_CONTENT_WORDS_FOR_RESTATEMENT: usize = 5;
 /// they read as one point said twice. Jaccard, not overlap-coefficient: the
 /// latter scores a short sentence that reuses a longer one's terms as a perfect
 /// match. 0.7 (about 70% of the combined vocabulary shared) keeps two parallel
-/// sentences that state DIFFERENT facts in one frame ("the first quarter ... payment
+/// sentences that differ in two or more facts ("the first quarter ... payment
 /// services" / "the second quarter ... reporting services", about 0.6) quiet.
+/// A sentence repeated with ONE word swapped ("... finance systems" / "...
+/// treasury systems", 7/9) fires by design: that is repeated wording, and the
+/// fix is one sentence naming both ("finance and treasury systems"), which is
+/// why the message says to keep every fact.
 pub const MIN_RESTATEMENT_JACCARD: f64 = 0.7;
 
 /// Per-sentence budget in the evidence, so both sentences and the pair count fit
@@ -94,8 +98,8 @@ pub(super) fn restated_point_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     vec![issue(
         VOICE_RESTATED_POINT,
         None,
-        "Two sentences make the same point in different words. Merge them into one sentence \
-         that says the point once."
+        "Two sentences say nearly the same thing. Merge them into one sentence that keeps \
+         every fact and says it once."
             .to_string(),
         Some(format!(
             "{} / {} ({pairs} pair(s))",
