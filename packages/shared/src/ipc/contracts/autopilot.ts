@@ -1,5 +1,10 @@
 import type { AutopilotCreate, AutopilotUpdate } from '../../schemas/index.js';
-import type { Autopilot, AutopilotRunStatus, JobTrustAssessment } from '../../types/index.js';
+import type {
+  Autopilot,
+  AutopilotGhostSignals,
+  AutopilotRunStatus,
+  JobTrustAssessment,
+} from '../../types/index.js';
 
 /**
  * Job-discovery agent: saved searches that run on a schedule, then rank and
@@ -174,6 +179,8 @@ export interface AutopilotBestMatch {
   applied?: boolean;
   isAgency?: boolean;
   trust?: JobTrustAssessment;
+  /** The canonical member's advisory ghost-job signals; absent when unknown. */
+  ghostSignals?: AutopilotGhostSignals;
   /** The canonical member's AI-reasoned note, falling back to the
    *  best-scored member's, then any member's, when one exists. */
   assistantNotes?: string;

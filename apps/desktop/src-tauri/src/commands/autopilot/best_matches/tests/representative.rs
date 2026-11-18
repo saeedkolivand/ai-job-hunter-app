@@ -209,3 +209,30 @@ fn score_url_reproduces_the_1104_bug_shape_directly() {
         "scoreUrl points at the actual posting the displayed score was computed from"
     );
 }
+
+#[test]
+fn a_rows_ghost_signals_come_from_its_canonical_member() {
+    let signals = crate::posting_history::signals_for(0, 2, 50 * 86_400_000);
+    let signalled = FoundJob {
+        ghost_signals: Some(signals.clone()),
+        ..job(
+            "https://x.example.com/job",
+            "Senior Rust Engineer",
+            "Acme",
+            Some(90.0),
+            ScoreSource::Keyword,
+        )
+    };
+    let unsignalled = job(
+        "https://y.example.com/job",
+        "Platform Engineer",
+        "Beta",
+        Some(90.0),
+        ScoreSource::Keyword,
+    );
+    let ap = autopilot("g", AutopilotStatus::Active, vec![signalled, unsignalled]);
+    let out = compute_best_matches(&[ap], &no_tombstones(), &[], &no_dismissed());
+    let by_company = |c: &str| out.matches.iter().find(|m| m.company == c).unwrap();
+    assert_eq!(by_company("Acme").ghost_signals, Some(signals));
+    assert_eq!(by_company("Beta").ghost_signals, None);
+}

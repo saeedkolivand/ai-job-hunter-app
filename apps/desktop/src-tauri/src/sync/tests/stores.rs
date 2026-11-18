@@ -13,6 +13,7 @@ use crate::discovered::DiscoveredCompanyStore;
 use crate::documents::DocumentStore;
 use crate::job_preferences::JobPreferencesStore;
 use crate::pipeline::runs::PipelineRunStore;
+use crate::posting_history::PostingHistoryStore;
 use crate::postings::{InteractionRecord, InteractionStore, InteractionsSection};
 use crate::referrals::ReferralStore;
 use crate::spend::SpendStore;
@@ -34,6 +35,7 @@ pub(super) struct RealDevice {
     dedup: DedupStore,
     discovered: DiscoveredCompanyStore,
     runs: PipelineRunStore,
+    history: PostingHistoryStore,
 }
 
 impl RealDevice {
@@ -55,6 +57,7 @@ impl RealDevice {
             dedup: DedupStore::open(&p).unwrap(),
             discovered: DiscoveredCompanyStore::open(&p).unwrap(),
             runs: PipelineRunStore::open(&p).unwrap(),
+            history: PostingHistoryStore::open(&p).unwrap(),
             _dir: dir,
         }
     }
@@ -63,7 +66,7 @@ impl RealDevice {
     fn with_sections<R>(&self, f: impl FnOnce(&[&dyn SyncSection]) -> R) -> R {
         let events = ApplicationStatusEvents(&self.applications);
         let interactions = InteractionsSection(&self.interactions);
-        let sections: [&dyn SyncSection; 14] = [
+        let sections: [&dyn SyncSection; 15] = [
             &self.documents,
             &self.generations,
             &self.applications,
@@ -78,6 +81,7 @@ impl RealDevice {
             &self.dedup,
             &self.discovered,
             &self.runs,
+            &self.history,
         ];
         f(&sections)
     }
@@ -175,6 +179,11 @@ impl RealDevice {
             "starred": true}]),
         );
         import(
+            &self.history,
+            json!([{"ghostKey": "acme|rust engineer", "firstSeenAt": 1, "lastSeenAt": 2,
+            "seenCount": 3, "repostCount": 1, "lastUrl": "https://acme.test/1"}]),
+        );
+        import(
             &self.runs,
             json!({"runs": [{"id": "run-1", "jobUrl": "https://acme.test/1",
             "kind": "resume", "depth": "full", "status": "done", "startedAt": 1}],
@@ -203,6 +212,7 @@ fn every_section_reaches_a_fresh_device_unchanged() {
         "spend",
         "dedupTombstones",
         "discoveredCompanies",
+        "postingHistory",
     ] {
         assert_eq!(b.count(section), 1, "{section}");
     }

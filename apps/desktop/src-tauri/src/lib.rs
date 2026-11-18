@@ -66,6 +66,7 @@ pub mod observability;
 pub mod performance;
 pub mod pipeline;
 pub mod platform;
+pub mod posting_history;
 pub mod postings;
 pub mod profile_import;
 pub mod prompt_fence;

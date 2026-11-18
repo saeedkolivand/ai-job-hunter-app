@@ -20,6 +20,7 @@ use crate::discovered::DiscoveredCompanyStore;
 use crate::documents::DocumentStore;
 use crate::job_preferences::JobPreferencesStore;
 use crate::pipeline::runs::PipelineRunStore;
+use crate::posting_history::PostingHistoryStore;
 use crate::postings::{InteractionRecord, InteractionStore};
 use crate::referrals::ReferralStore;
 use crate::spend::SpendStore;
@@ -64,6 +65,7 @@ const ARRAY_SECTIONS: &[&str] = &[
     "spend",
     "dedupTombstones",
     "discoveredCompanies",
+    "postingHistory",
 ];
 
 /// Sections whose export is a single JSON object. Two shapes share this check:
@@ -175,6 +177,11 @@ pub(crate) fn build_bundle(app: &AppHandle) -> Value {
     // bookkeeping (ids, the job URL, stage names, clamped summary artifacts) —
     // no secrets, no generated documents — so it round-trips through backups.
     if let Some(s) = app.try_state::<PipelineRunStore>() {
+        stores.insert(s.key().to_string(), s.export());
+    }
+    // First/last-seen observations behind the ghost-job signals. Not rebuildable
+    // from a re-scrape, so it is backed up; holds no secrets (keys + urls).
+    if let Some(s) = app.try_state::<PostingHistoryStore>() {
         stores.insert(s.key().to_string(), s.export());
     }
 
@@ -374,6 +381,9 @@ pub async fn data_import(app: AppHandle) -> Value {
     }
     if let Some(s) = app.try_state::<PipelineRunStore>() {
         import_into("pipelineRuns", s.inner());
+    }
+    if let Some(s) = app.try_state::<PostingHistoryStore>() {
+        import_into("postingHistory", s.inner());
     }
     // `import_into` (the `imported`/`had_error`-capturing closure) is never
     // called again after this point, so NLL can end its borrow here — letting

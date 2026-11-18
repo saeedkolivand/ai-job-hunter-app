@@ -14,6 +14,7 @@ mod ordering;
 mod qualification;
 mod representative;
 mod user_state;
+mod wire_shape;
 
 fn job(url: &str, title: &str, company: &str, score: Option<f64>, source: ScoreSource) -> FoundJob {
     FoundJob {

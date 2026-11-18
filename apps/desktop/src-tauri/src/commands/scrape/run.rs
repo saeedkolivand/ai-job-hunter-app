@@ -251,6 +251,7 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
             return;
         }
 
+        let search_key = crate::commands::ghost::input_key(&input);
         let result = engine
             .scrape_boards(
                 &boards,
@@ -271,6 +272,17 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
                 // BEFORE completion, so the jobs list renders grouped rows (and
                 // the annotations are present when the renderer refetches).
                 recluster_postings_cache(&app_clone);
+                // Posting history (ghost-job signals); signals are not shown on
+                // the manual-scrape cache, only the observation is kept. A
+                // Stopped scrape is a partial view, so it is not recorded.
+                if !cancel_token.is_cancelled() {
+                    crate::commands::ghost::record_scrape(
+                        &app_clone,
+                        &crate::commands::ghost::seen_of(postings),
+                        &search_key,
+                        summaries,
+                    );
+                }
                 // Passively harvest ATS company slugs from every posting's URL.
                 harvest_ats_slugs(
                     &app_clone,

@@ -26,6 +26,22 @@ fn kv_cache_reset_clears_entries() {
     assert!(cache.get("ns", "k", 3600).is_none(), "cache wiped on reset");
 }
 
+// Posting history is observation data: a factory reset must forget it.
+#[test]
+fn posting_history_reset_clears_every_key() {
+    use crate::data_store::DataStore;
+    use crate::posting_history::PostingHistoryStore;
+    let dir = TempDir::new().unwrap();
+    let store = PostingHistoryStore::open(dir.path()).unwrap();
+    store
+        .record_scrape([("Acme", "Engineer", "u", "s")], &["s".to_string()], 1)
+        .unwrap();
+    assert_eq!(DataStore::export(&store).as_array().unwrap().len(), 1);
+
+    Resettable::reset(&store);
+    assert!(DataStore::export(&store).as_array().unwrap().is_empty());
+}
+
 // HIGH fix: guards the WIRING specifically, not just `clear()`'s own
 // body (that's `email_watch::tests::clear_resets_the_auto_write_opt_in`)
 // — a regression back to a no-op `reset` (or a call to some OTHER
@@ -254,6 +270,7 @@ fn reset_registry_expected_labels_match_lib_rs_setup() {
     reg.register::<DedupStore>("dedup_tombstones");
     reg.register::<DiscoveredCompanyStore>("discovered_companies");
     reg.register::<PipelineRunStore>("pipeline_runs");
+    reg.register::<crate::posting_history::PostingHistoryStore>("posting_history");
     reg.register::<std::sync::Arc<crate::scraping::BoardHealthStore>>("board_health");
 
     let labels = reg.labels();

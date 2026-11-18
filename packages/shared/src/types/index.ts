@@ -495,6 +495,26 @@ export interface AutopilotFoundJob {
    *  Best Matches, and Apply stays disabled until the user dismisses the review
    *  (`autopilot.dismissIdentityReview`). Absent = no review pending. */
   identityReview?: AutopilotIdentityReview;
+  /** Advisory ghost-job signals from the local posting history, computed at the
+   *  run that last saw this posting. Never used to filter or hide a posting.
+   *  Absent on a record written before this field existed, or when the history
+   *  could not be written. */
+  ghostSignals?: AutopilotGhostSignals;
+}
+
+/** Ghost-job signals for one posting, keyed in the history by normalized
+ *  company + title (not url), so a repost under a new url still matches. */
+export interface AutopilotGhostSignals {
+  /** When this company + title was first seen by a scrape (epoch ms). */
+  firstSeenAt: number;
+  /** Whole days from `firstSeenAt` to the scrape that produced these signals. */
+  openDays: number;
+  /** Times the posting disappeared from scrapes for about a week or more and then came back. */
+  repostCount: number;
+  /** `openDays` reached the open-long threshold. */
+  openLong: boolean;
+  /** `repostCount` reached the reposted threshold. */
+  reposted: boolean;
 }
 
 /** What a found job's url resolved to when it no longer matched the stored advert. */

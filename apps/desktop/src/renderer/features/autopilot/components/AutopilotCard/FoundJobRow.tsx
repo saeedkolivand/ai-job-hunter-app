@@ -7,6 +7,7 @@ import { Button, cn, Tag } from '@ajh/ui';
 
 import { AgencyChip } from '@/components/job/AgencyChip';
 import { ClusterSourceChips } from '@/components/job/ClusterSourceChips';
+import { GhostBadge } from '@/components/job/GhostBadge';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
 import { MatchBand } from '@/lib/match-band';
 import { TrustBadge } from '@/lib/trust-badge';
@@ -91,6 +92,7 @@ export function FoundJobRow({
               {/* interactive=false: this whole row is already a <Button> (handleJobClick) —
                   a nested focusable popover trigger would be invalid HTML (button-in-button). */}
               <TrustBadge trust={job.trust} className={STATUS_TAG} interactive={false} />
+              <GhostBadge signals={job.ghostSignals} />
               {/* Board coverage is uneven — several boards ship no publish
                   date — so absence renders nothing rather than "NaN ago".
                   Same helper + namespace the Jobs page uses for postedAt

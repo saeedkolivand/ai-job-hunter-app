@@ -2619,6 +2619,13 @@
     "backToList": "Back to list",
     "selectAJob": "Select a job to see details",
     "agencyChip": "Agency",
+    "ghost": {
+      "openLong": "Open {{days}} days",
+      "openLongDetail": "This posting has been listed for {{days}} days.",
+      "reposted": "Reposted {{times}}×",
+      "repostedDetail": "This posting dropped off the job boards and came back, {{times}}× so far.",
+      "hint": "It is only a hint, not a verdict: employers keep roles open or repost them for many reasons."
+    },
     "filters": {
       "hideAgency": "Hide agency posts",
       "activeLabel": "Active filters",

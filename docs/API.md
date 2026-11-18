@@ -1518,6 +1518,8 @@ export interface AutopilotBestMatch {
   applied?: boolean;
   isAgency?: boolean;
   trust?: JobTrustAssessment;
+  /** The canonical member's advisory ghost-job signals; absent when unknown. */
+  ghostSignals?: AutopilotGhostSignals;
   /** The canonical member's AI-reasoned note, falling back to the
    *  best-scored member's, then any member's, when one exists. */
   assistantNotes?: string;
@@ -1545,7 +1547,7 @@ export interface AutopilotBestMatchesResult {
 ### Referenced types — `autopilot`
 
 - `packages/shared/src/schemas/index.ts` — `AutopilotCreate`, `AutopilotUpdate`
-- `packages/shared/src/types/index.ts` — `Autopilot`, `AutopilotRunStatus`, `JobTrustAssessment`
+- `packages/shared/src/types/index.ts` — `Autopilot`, `AutopilotGhostSignals`, `AutopilotRunStatus`, `JobTrustAssessment`
 
 ---
 

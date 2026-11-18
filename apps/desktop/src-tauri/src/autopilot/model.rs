@@ -339,6 +339,12 @@ pub struct FoundJob {
     /// does not re-flag on the next refresh (a different one does).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity_dismissed: Option<String>,
+    /// Advisory ghost-job signals (open for long / reposted), computed at ingest
+    /// from the posting history store. Never filters or hides the row.
+    /// `#[serde(default)]` so a record written before this field existed loads
+    /// as `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ghost_signals: Option<crate::posting_history::GhostSignals>,
 }
 
 /// Serde default for [`FoundJob::cluster_canonical`] — a job with no cluster

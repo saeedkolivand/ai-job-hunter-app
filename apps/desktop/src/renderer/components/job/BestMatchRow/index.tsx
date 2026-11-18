@@ -7,6 +7,7 @@ import { Button, cn, Tag } from '@ajh/ui';
 
 import { AgencyChip } from '@/components/job/AgencyChip';
 import { ClusterSourceChips } from '@/components/job/ClusterSourceChips';
+import { GhostBadge } from '@/components/job/GhostBadge';
 import { ROUTES } from '@/constants/routes';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
 import { formatSalaryRange } from '@/lib/format-salary';
@@ -113,6 +114,7 @@ export function BestMatchRow({
                 {match.title}
               </span>
               <TrustBadge trust={match.trust} className="shrink-0" interactive={false} />
+              <GhostBadge signals={match.ghostSignals} />
             </div>
             <div className="flex items-center gap-1.5 text-[10px] text-foreground/40">
               <span className="truncate">{match.company}</span>
