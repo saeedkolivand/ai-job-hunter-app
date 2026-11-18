@@ -13,7 +13,7 @@
     "gen:fonts": "node scripts/selfhost-fonts.mjs"
   },
   "dependencies": {
-    "next": "16.4.5",
+    "next": "16.4.6",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
@@ -25,10 +25,10 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
-    "jsdom": "^31.0.0",
-    "playwright": "^1.65.0",
+    "jsdom": "^31.0.1",
+    "playwright": "^1.65.1",
     "typescript": "6.0.3",
-    "vite": "^8.3.7",
+    "vite": "^8.3.8",
     "vitest": "^5.1.0"
   }
 }
