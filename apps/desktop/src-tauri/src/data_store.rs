@@ -25,6 +25,22 @@ pub trait DataStore {
     fn import(&self, data: &Value) -> AppResult<usize>;
 }
 
+/// Insert a section into a bundle, or leave it out (logged by code) when its
+/// read failed, so a restore keeps what it has instead of wiping it.
+pub fn omit_on_error(
+    stores: &mut serde_json::Map<String, Value>,
+    key: &str,
+    section: AppResult<Value>,
+    what: &str,
+) {
+    match section {
+        Ok(v) => {
+            stores.insert(key.to_string(), v);
+        }
+        Err(e) => log::warn!("[data] {what} left out of the backup: {}", e.code()),
+    }
+}
+
 /// One record of an export-bundle section as the optional self-hosted sync
 /// sees it (ADR-051): a stable id inside the section and the record's JSON,
 /// in the same shape the section exports.

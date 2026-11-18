@@ -2623,6 +2623,13 @@
     "backToList": "Zurück zur Liste",
     "selectAJob": "Job auswählen, um Details anzuzeigen",
     "agencyChip": "Personalvermittler",
+    "ghost": {
+      "openLong": "Seit {{days}} Tagen offen",
+      "openLongDetail": "Diese Anzeige ist seit {{days}} Tagen online.",
+      "reposted": "{{times}}× neu veröffentlicht",
+      "repostedDetail": "Diese Anzeige ist aus einer beobachteten Suche verschwunden und später wieder aufgetaucht, bisher {{times}}×.",
+      "hint": "Das ist nur ein Hinweis, kein Urteil: Arbeitgeber lassen Stellen aus vielen Gründen lange offen oder schreiben sie neu aus."
+    },
     "filters": {
       "hideAgency": "Vermittleranzeigen ausblenden",
       "activeLabel": "Aktive Filter",

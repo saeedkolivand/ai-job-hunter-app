@@ -131,6 +131,7 @@ pub(crate) fn build_found_job(p: &JobPosting, resume: &str, found_at: u64) -> Fo
         is_agency: false,
         identity_review: None,
         identity_dismissed: None,
+        ghost_signals: None,
     }
 }
 

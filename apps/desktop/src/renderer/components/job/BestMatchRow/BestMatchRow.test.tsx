@@ -55,6 +55,10 @@ vi.mock('@/store/session-store', () => ({
 
 vi.mock('@/components/job/AgencyChip', () => ({ AgencyChip: () => null }));
 vi.mock('@/components/job/ClusterSourceChips', () => ({ ClusterSourceChips: () => null }));
+vi.mock('@/components/job/GhostBadge', () => ({
+  GhostBadge: ({ signals }: { signals?: { openDays: number } }) =>
+    signals ? <span data-testid="ghost-badge">open {signals.openDays}</span> : null,
+}));
 vi.mock('@/lib/trust-badge', () => ({ TrustBadge: () => null }));
 vi.mock('@/lib/match-band', async (importOriginal) => {
   const actual = await importOriginal<typeof MatchBandModule>();
@@ -127,6 +131,27 @@ describe('BestMatchRow — action wiring', () => {
 
     await user.click(screen.getByTitle('bestMatches.row.dismiss'));
     expect(onDismiss).toHaveBeenCalledWith(match);
+  });
+});
+
+describe('BestMatchRow — ghost badge mount', () => {
+  it('renders the badge with the match own ghost signals', () => {
+    const ghostSignals = {
+      firstSeenAt: 0,
+      openDays: 74,
+      repostCount: 0,
+      openLong: true,
+      reposted: false,
+    };
+    render(
+      <BestMatchRow match={makeMatch({ ghostSignals })} mixedScoreSources={false} {...noop} />
+    );
+    expect(screen.getByTestId('ghost-badge')).toHaveTextContent('open 74');
+  });
+
+  it('renders no badge without ghost signals', () => {
+    render(<BestMatchRow match={makeMatch()} mixedScoreSources={false} {...noop} />);
+    expect(screen.queryByTestId('ghost-badge')).not.toBeInTheDocument();
   });
 });
 

@@ -39,6 +39,21 @@ fn found_jobs_compact_row_has_exact_keys_by_default() {
 }
 
 #[test]
+fn found_jobs_compact_row_carries_only_the_ghost_verdict_booleans() {
+    let mut job = full_found_job();
+    job.ghost_signals = Some(crate::posting_history::signals_for(0, 2, 60 * 86_400_000));
+    let records = vec![autopilot_with_jobs("ap-1", vec![job])];
+    let out = resolve_found_jobs(&records, Some("ap-1"), &no_filters(), &no_applied(), 0, 20)
+        .expect("found");
+    let ghost = out["jobs"][0]["ghostSignals"].as_object().expect("present");
+    let mut keys: Vec<&str> = ghost.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["openLong", "reposted"]);
+    assert_eq!(ghost["openLong"], true);
+    assert_eq!(ghost["reposted"], true);
+}
+
+#[test]
 fn found_jobs_includes_description_only_when_requested() {
     let records = vec![autopilot_with_jobs("ap-1", vec![full_found_job()])];
     let compact = resolve_found_jobs(&records, Some("ap-1"), &no_filters(), &no_applied(), 0, 20)

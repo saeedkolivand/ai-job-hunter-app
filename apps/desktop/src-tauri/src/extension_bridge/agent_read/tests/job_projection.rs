@@ -44,6 +44,33 @@ fn job_projection_has_exact_keys_and_drops_forbidden_fields() {
 }
 
 #[test]
+fn job_projection_carries_ghost_signals_when_present_and_omits_when_absent() {
+    let absent = project_value::<_, AgentJob>(&full_found_job()).expect("projects");
+    assert!(absent.get("ghostSignals").is_none());
+
+    let mut job = full_found_job();
+    job.ghost_signals = Some(crate::posting_history::signals_for(
+        1_000,
+        2,
+        60 * 86_400_000,
+    ));
+    let value = project_value::<_, AgentJob>(&job).expect("projects");
+    assert_object_keys(
+        &value["ghostSignals"],
+        "job.ghostSignals",
+        &[
+            "firstSeenAt",
+            "openDays",
+            "repostCount",
+            "openLong",
+            "reposted",
+        ],
+    );
+    assert_eq!(value["ghostSignals"]["openLong"], true);
+    assert_eq!(value["ghostSignals"]["reposted"], true);
+}
+
+#[test]
 fn job_projection_never_carries_forbidden_keys() {
     let value = project_value::<_, AgentJob>(&full_found_job()).expect("projects");
     let text = value.to_string();

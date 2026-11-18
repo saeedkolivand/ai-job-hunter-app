@@ -2,7 +2,7 @@
 
 Implementation status tracker. Updated as features ship.
 
-Last updated: 2026-11-12 (help chat over the shipped corpus, ADR-043; previously searchable help page, ADR-041; previously PR #966: opt-in two-phase Autopilot ranking — see the "Ranking via keyword-coverage" row under Autopilot)
+Last updated: 2026-11-18 (help chat over the shipped corpus, ADR-043; previously searchable help page, ADR-041; previously PR #966: opt-in two-phase Autopilot ranking — see the "Ranking via keyword-coverage" row under Autopilot)
 
 ---
 
@@ -97,6 +97,7 @@ The registry `SCRAPERS` in `apps/desktop/src-tauri/src/scraping/boards/mod.rs` i
 | Glassdoor                          | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                                                                                                                                                                                                  |
 | Cross-board clustering             | ✅      | Fuzzy recompute-at-ingest, pair tombstones in `dedup.db`, canonical member selection, source chips, "not a duplicate" split (ADR-029)                                                                                                                                                                             |
 | ATS slug harvesting                | ✅      | Passive extract_ats_ref over posting urls at ingest/import; discovered_companies store (dedup per ADR-022/009); ADR-030                                                                                                                                                                                           |
+| Ghost-job signals                  | ✅      | Advisory open-long / repost hints from a persisted, synced `posting_history` store; per-source repost rule; ADR-052                                                                                                                                                                                               |
 | Offline geocoding                  | ✅      | Bundled GeoNames index (`src-tauri/geodata/`, CC BY 4.0) answers the common case with zero egress; Photon (ODbL) fallback only; Nominatim retired. Attribution renders in Settings → About. ADR-0005 exemption clause (PR #893)                                                                                   |
 | Autopilot page budget              | ✅      | The wizard's scrape target is a true `pages` field mirroring `AutopilotTargetSchema` (1–10), not an item count converted at save time (PR #885)                                                                                                                                                                   |
 | Aggregator paging & spend budget   | ✅      | Adzuna/JSearch page to fill the request instead of one call per search; `SearchBudget` (`boards/aggregator/budget.rs`) splits the OUTPUT cap from the UPSTREAM spend target, so only manual searches buy the paid Apify tier. Metered fetches run `retries: 0`. PR #896 — see `docs/knowledge/scraping-domain.md` |

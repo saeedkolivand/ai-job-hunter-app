@@ -181,6 +181,10 @@ pub(super) async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value
         );
     }
 
+    // Every scraped posting, before any filtering, for the posting history below
+    // (first/last-seen reflect the board, not the user's keywords).
+    let history_seen = crate::commands::ghost::seen_of(&postings);
+
     // Raw count BEFORE the keyword filter, so `scrape_done` can distinguish "no
     // board returned anything" from "boards returned jobs but your keyword filter
     // dropped them all" — the difference between a scraping problem and an
@@ -306,8 +310,23 @@ pub(super) async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value
     // fresh score still reaches `merge_found_jobs` — excluded from `kept`/
     // `dropped` and from phase 2/AI notes (both already ran on the filtered
     // list), it exists in this batch purely so the merge can refresh it.
-    let found_jobs =
+    let mut found_jobs =
         readmit_stale_known_jobs(found_jobs, &scored_before_retain, &autopilot.found_jobs);
+
+    // Posting history (ghost-job signals), recorded only now that the run is
+    // known to be complete (a Stopped run saw a partial result and is never
+    // recorded), then attached to every row this run saves.
+    let ghost = crate::commands::ghost::record_scrape(
+        &app,
+        &history_seen,
+        &crate::commands::ghost::target_key(&target),
+        &summaries,
+        crate::autopilot_helpers::AUTOPILOT_ITEM_CAP as usize,
+    );
+    for job in &mut found_jobs {
+        job.ghost_signals = crate::posting_history::ghost_key(&job.company, &job.title)
+            .and_then(|key| ghost.get(&key).cloned());
+    }
     let new_count = store(&app).lock().record_run(
         &autopilot_id,
         kept as u32,

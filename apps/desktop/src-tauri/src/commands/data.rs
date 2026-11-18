@@ -13,13 +13,14 @@ use crate::ai_generations::AiGenerationStore;
 use crate::applications::{ApplicationStatusEvents, ApplicationStore};
 use crate::autopilot::AutopilotStore;
 use crate::contact_profile::ContactProfileStore;
-use crate::data_store::DataStore;
+use crate::data_store::{omit_on_error, DataStore};
 use crate::db::now_ms;
 use crate::dedup::DedupStore;
 use crate::discovered::DiscoveredCompanyStore;
 use crate::documents::DocumentStore;
 use crate::job_preferences::JobPreferencesStore;
 use crate::pipeline::runs::PipelineRunStore;
+use crate::posting_history::PostingHistoryStore;
 use crate::postings::{InteractionRecord, InteractionStore};
 use crate::referrals::ReferralStore;
 use crate::spend::SpendStore;
@@ -64,6 +65,7 @@ const ARRAY_SECTIONS: &[&str] = &[
     "spend",
     "dedupTombstones",
     "discoveredCompanies",
+    "postingHistory",
 ];
 
 /// Sections whose export is a single JSON object. Two shapes share this check:
@@ -128,13 +130,8 @@ pub(crate) fn build_bundle(app: &AppHandle) -> Value {
         // A failed read omits the section rather than exporting an empty one,
         // so a restore of this bundle keeps the seeded events instead of
         // wiping the history.
-        let events = ApplicationStatusEvents(s.inner());
-        match events.try_export() {
-            Ok(section) => {
-                stores.insert(events.key().to_string(), section);
-            }
-            Err(e) => log::warn!("[data] status history left out of the backup: {}", e.code()),
-        }
+        let ev = ApplicationStatusEvents(s.inner());
+        omit_on_error(&mut stores, ev.key(), ev.try_export(), "status history");
     }
     if let Some(s) = app.try_state::<JobPreferencesStore>() {
         stores.insert(s.key().to_string(), s.export());
@@ -176,6 +173,12 @@ pub(crate) fn build_bundle(app: &AppHandle) -> Value {
     // no secrets, no generated documents — so it round-trips through backups.
     if let Some(s) = app.try_state::<PipelineRunStore>() {
         stores.insert(s.key().to_string(), s.export());
+    }
+    // First/last-seen observations behind the ghost-job signals. Not rebuildable
+    // from a re-scrape, so it is backed up; holds no secrets (keys + urls).
+    // A failed read omits the section so a restore keeps the existing history.
+    if let Some(s) = app.try_state::<PostingHistoryStore>() {
+        omit_on_error(&mut stores, s.key(), s.try_export(), "posting history");
     }
 
     json!({
@@ -374,6 +377,9 @@ pub async fn data_import(app: AppHandle) -> Value {
     }
     if let Some(s) = app.try_state::<PipelineRunStore>() {
         import_into("pipelineRuns", s.inner());
+    }
+    if let Some(s) = app.try_state::<PostingHistoryStore>() {
+        import_into("postingHistory", s.inner());
     }
     // `import_into` (the `imported`/`had_error`-capturing closure) is never
     // called again after this point, so NLL can end its borrow here — letting

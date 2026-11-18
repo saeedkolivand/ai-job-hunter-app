@@ -40,10 +40,20 @@ pub(super) fn full_best_match_row_json() -> Value {
         "applied": false,
         "isAgency": false,
         "trust": { "score": 90, "level": "high", "flags": [] },
+        "ghostSignals": { "firstSeenAt": 1_690_000_000_000u64, "openDays": 60, "repostCount": 2, "openLong": true, "reposted": true, "futureField": 1 },
         "assistantNotes": "secret AI note",
         "clusterMembers": [{ "key": "k1", "board": "adzuna", "url": "https://boards.example.com/jobs/42" }],
         "sources": [{ "autopilotId": "ap-1", "autopilotName": "My autopilot", "paused": false, "foundAt": 1_700_000_000u64 }],
     })
+}
+
+#[test]
+fn best_match_ghost_signals_absent_when_unknown() {
+    let mut row = full_best_match_row_json();
+    row.as_object_mut().unwrap().remove("ghostSignals");
+    let out = best_matches::resolve_best_matches(&[row], 0, 20, None);
+    assert_eq!(out["matches"].as_array().unwrap().len(), 1);
+    assert!(out["matches"][0].get("ghostSignals").is_none());
 }
 
 #[test]
@@ -59,6 +69,7 @@ fn best_match_projection_has_exact_keys() {
             "board",
             "company",
             "foundAt",
+            "ghostSignals",
             "isAgency",
             "location",
             "postedAt",
@@ -90,6 +101,17 @@ fn best_match_projection_has_exact_keys() {
         &row["trust"],
         "bestMatch.trust",
         &["score", "level", "flags"],
+    );
+    assert_object_keys(
+        &row["ghostSignals"],
+        "bestMatch.ghostSignals",
+        &[
+            "firstSeenAt",
+            "openDays",
+            "repostCount",
+            "openLong",
+            "reposted",
+        ],
     );
     assert_object_keys(
         &row["sources"][0],

@@ -49,11 +49,23 @@ pub(super) struct FoundJobSlice {
     score_provisional: bool,
     found_at: u64,
     is_agency: bool,
+    /// Just the two verdict booleans of the wire `ghostSignals` (a compact triage hint); the
+    /// counts and `firstSeenAt` stay on `job`/`best-matches`. Absent when the posting has no history.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ghost_signals: Option<GhostFlagsSlice>,
     /// Present while the row is held because its url resolved to a different advert (issue
     /// #1445); such a row never appears in `best-matches`. Its resolved title/company are scraped
     /// text, fenced by [`project_found_job_row`] like the row's own display fields.
     #[serde(skip_serializing_if = "Option::is_none")]
     identity_review: Option<IdentityReviewSlice>,
+}
+
+/// Compact subset of `posting_history::GhostSignals` — see [`FoundJobSlice::ghost_signals`].
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct GhostFlagsSlice {
+    open_long: bool,
+    reposted: bool,
 }
 
 /// Explicit allowlist of the held-row review the agent may see (not the stored

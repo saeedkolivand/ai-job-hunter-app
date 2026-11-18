@@ -1,6 +1,6 @@
 # Knowledge base (`docs/knowledge/`)
 
-Last updated: 2026-09-14
+Last updated: 2026-11-18
 
 A **thin, pointer-style** index for AI agents (and humans). It describes _shape and contracts_ and points at the **owning source symbol**; it deliberately does **not** copy drift-prone literals (scoring weights, template/board counts) — those live in code.
 
@@ -98,6 +98,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-049](decision-records/adr-049-microsoft-store-msix-flavour.md)                          | Microsoft Store MSIX as a runtime-detected flavour of the same binary (no build variant), updates handed to the Store, write virtualization disabled on purpose                                                                                                               |
 | [ADR-050](decision-records/adr-050-extension-read-tier-and-settings-verbs.md)                | Extension read tier (a narrower caller class on the ADR-038 policy table) and dedicated settings verbs so the extension can toggle its own opt-ins                                                                                                                            |
 | [ADR-051](decision-records/adr-051-optional-self-hosted-multi-device-sync.md)                | Optional self-hosted multi-device sync: client-only HTTP protocol, diff of the export bundle at sync time, whole-record last-sync-wins, TLS expected (warned `http://`), no E2EE in v1                                                                                        |
+| [ADR-052](decision-records/adr-052-ghost-job-signals-posting-history.md)                     | Ghost-job signals: own company+title key, per-source repost rule, persisted and synced history with device-local markers                                                                                                                                                      |
 
 ### The `NNNN-` series (closed)
 

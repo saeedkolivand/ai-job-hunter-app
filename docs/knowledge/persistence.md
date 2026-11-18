@@ -1,6 +1,6 @@
 # Persistence Layer — State Ownership, SQLite, Transactions, Atomicity
 
-Last updated: 2026-10-05
+Last updated: 2026-11-18
 
 Canonical sources:
 
@@ -213,6 +213,7 @@ pub trait DataStore {
 | `SpendStore`             | `spend/mod.rs`                        | AI spend records                                                                                                                   |
 | `DedupStore`             | `dedup/mod.rs`                        | Dedup tombstones                                                                                                                   |
 | `DiscoveredCompanyStore` | `discovered/mod.rs`                   | Discovered companies                                                                                                               |
+| `PostingHistoryStore`    | `posting_history/mod.rs`              | First/last-seen history behind ghost-job signals (ADR-052)                                                                         |
 | `PipelineRunStore`       | `pipeline/runs/store.rs`              | Résumé pipeline runs + their stage events                                                                                          |
 | `AutopilotStore`         | `autopilot/mod.rs`                    | Autopilot records + run status (JSON file); found jobs in SQLite (`autopilot/found_jobs_db.rs`), still exported under `autopilots` |
 | `InteractionStore`       | Exported inline by `commands/data.rs` | Generated autopilot interactions (JSON file)                                                                                       |

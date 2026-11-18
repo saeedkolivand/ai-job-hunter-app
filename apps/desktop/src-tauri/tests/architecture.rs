@@ -64,6 +64,10 @@ const L1: &[&str] = &[
     // resolve the store via `try_state` and pass it in), same posture as `dedup`
     // and the other L1 stores.
     "discovered",
+    // Posting history (ghost-job signals): a per-domain SQLite store of
+    // first/last-seen observations per company+title key. Tauri-free; imports
+    // `scraping::cluster::normalize` for the key, like `dedup` does for pairs.
+    "posting_history",
     "credentials",
     "job_preferences",
     "contact_profile",
@@ -505,6 +509,7 @@ const R3_ALLOW: &[&str] = &[
     "applications/status_events_sync.rs",
     "dedup/sync_section.rs",
     "discovered/sync_section.rs",
+    "posting_history/sync_section.rs",
     "documents/sync_section.rs",
     "pipeline/runs/sync_section.rs",
     "referrals/sync_section.rs",
@@ -556,6 +561,7 @@ const R3_ALLOW: &[&str] = &[
     "ai_config/search_settings.rs",
     "referrals/mod.rs",
     "dedup/mod.rs",
+    "posting_history/mod.rs",
     "autopilot/found_jobs_db.rs",
     "discovered/mod.rs",
     // Same store, split only to stay under R8's LOC cap: the read queries

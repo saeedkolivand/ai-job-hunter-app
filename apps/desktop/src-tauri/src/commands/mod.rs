@@ -18,6 +18,7 @@ pub mod documents;
 pub mod email_watch;
 pub mod extension_bridge;
 pub mod geocoding;
+pub(crate) mod ghost;
 pub mod github;
 pub mod help;
 pub mod hybrid_search;

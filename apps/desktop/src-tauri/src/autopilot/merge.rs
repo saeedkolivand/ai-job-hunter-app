@@ -155,6 +155,11 @@ pub(super) fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -
                 if inc.trust.is_some() {
                     row.trust = inc.trust.clone();
                 }
+                // Signals are recomputed every time the posting is seen, so the
+                // re-surfaced row always carries the freshest open-days/reposts.
+                if inc.ghost_signals.is_some() {
+                    row.ghost_signals = inc.ghost_signals.clone();
+                }
             }
             row
         })

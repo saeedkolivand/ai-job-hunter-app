@@ -258,6 +258,17 @@ pub(super) fn manage_late_stores(
         "pipeline run store",
         crate::pipeline::runs::PipelineRunStore::open(data_dir),
     );
+    // Posting history (ghost-job signals): first/last seen + repost count per
+    // company+title key. Observation history, so unlike board health it IS in
+    // the backup bundle and syncs. Registered before `board_health`, which
+    // stays at the tail of `MANAGE_RESETTABLE_LABELS`.
+    manage_opened(
+        app,
+        registry,
+        "posting_history",
+        "posting history store",
+        crate::posting_history::PostingHistoryStore::open(data_dir),
+    );
     // Per-board reliability history (Track B1): ONE row per board, folded
     // from every run's `BoardScrapeSummary`, so a chip can tell "found
     // nothing today" apart from "broken since Tuesday". Bounded by the

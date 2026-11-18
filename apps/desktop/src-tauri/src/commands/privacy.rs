@@ -96,6 +96,12 @@ impl Resettable for std::sync::Arc<crate::scraping::BoardHealthStore> {
         self.clear_all();
     }
 }
+impl Resettable for crate::posting_history::PostingHistoryStore {
+    fn reset(&self) {
+        // Forget every first/last-seen observation (ghost-job signals).
+        self.clear_all();
+    }
+}
 impl Resettable for DiscoveredCompanyStore {
     fn reset(&self) {
         // Wipe every passively-harvested ATS slug + watched-company star (ADR-030).
@@ -201,6 +207,7 @@ pub const MANAGE_RESETTABLE_LABELS: &[&str] = &[
     "dedup_tombstones",
     "discovered_companies",
     "pipeline_runs",
+    "posting_history",
     "board_health",
 ];
 

@@ -29,6 +29,7 @@ use crate::documents::DocumentStore;
 use crate::error::{AppError, AppResult};
 use crate::job_preferences::JobPreferencesStore;
 use crate::pipeline::runs::PipelineRunStore;
+use crate::posting_history::PostingHistoryStore;
 use crate::postings::{InteractionStore, InteractionsSection};
 use crate::referrals::ReferralStore;
 use crate::spend::SpendStore;
@@ -174,10 +175,11 @@ fn with_sections<R>(
     let dedup = need::<DedupStore>(app, "dedup")?;
     let discovered = need::<DiscoveredCompanyStore>(app, "discovered companies")?;
     let runs = need::<PipelineRunStore>(app, "pipeline runs")?;
+    let history = need::<PostingHistoryStore>(app, "posting history")?;
 
     let events = ApplicationStatusEvents(applications.inner());
     let interactions = InteractionsSection(interactions.inner());
-    let sections: [&dyn SyncSection; 14] = [
+    let sections: [&dyn SyncSection; 15] = [
         documents.inner(),
         generations.inner(),
         applications.inner(),
@@ -193,6 +195,7 @@ fn with_sections<R>(
         dedup.inner(),
         discovered.inner(),
         runs.inner(),
+        history.inner(),
     ];
     f(&sections)
 }

@@ -88,6 +88,9 @@ pub(super) struct BestMatchRow {
     pub(super) is_agency: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) trust: Option<TrustAssessment>,
+    /// The canonical member's advisory ghost-job signals (absent when it has no history).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) ghost_signals: Option<crate::posting_history::GhostSignals>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) assistant_notes: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -387,6 +390,7 @@ pub(super) fn compute_best_matches(
             applied: false,
             is_agency: assignments[canonical_idx].is_agency,
             trust: canonical.trust.clone(),
+            ghost_signals: canonical.ghost_signals.clone(),
             assistant_notes,
             cluster_members: members.clone(),
             sources,
