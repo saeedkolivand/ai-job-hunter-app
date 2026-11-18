@@ -39,9 +39,10 @@ export interface Setters {
   setError: Mock;
   startStageRotation: Mock;
   stopStageRotation: Mock;
-  saveAiGeneration: { mutate: Mock };
+  saveAiGeneration: { mutateAsync: Mock };
   setStageLabel: Mock;
   setIsGenerating: Mock;
+  setGenerationId: Mock;
   notify: Record<'open' | 'success' | 'error' | 'info' | 'warning' | 'destroy', Mock>;
 }
 
@@ -73,9 +74,10 @@ export function setup(
     setError: vi.fn(),
     startStageRotation: vi.fn(),
     stopStageRotation: vi.fn(),
-    saveAiGeneration: { mutate: vi.fn() },
+    saveAiGeneration: { mutateAsync: vi.fn().mockResolvedValue({ id: 'gen-1', success: true }) },
     setStageLabel: vi.fn(),
     setIsGenerating: vi.fn(),
+    setGenerationId: vi.fn(),
     notify: {
       open: vi.fn(),
       success: vi.fn(),
@@ -121,7 +123,8 @@ export function setup(
       '', // marketOverride
       [], // emphasis
       provenance?.jobUrl,
-      provenance?.board
+      provenance?.board,
+      m.setGenerationId
     )
   );
   return { handleGenerate: result.current.handleGenerate, m, abortControllerRef };

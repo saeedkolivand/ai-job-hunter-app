@@ -85,14 +85,14 @@ function escapeSvgAmpersands(svg: string): string {
 
 type DocumentsApi = ReturnType<typeof getClient>['documents'];
 
-/** `exportAndSave`, passing the generation's job url only when there is one. */
+/** `exportAndSave`, passing the generation's id only when there is one. */
 const saveExport = (
   api: { documents: DocumentsApi },
   request: Parameters<DocumentsApi['exportAndSave']>[0],
-  generationJobUrl?: string
+  generationId?: string
 ) =>
-  generationJobUrl
-    ? api.documents.exportAndSave(request, generationJobUrl)
+  generationId
+    ? api.documents.exportAndSave(request, generationId)
     : api.documents.exportAndSave(request);
 
 export async function exportDOCX(
@@ -105,8 +105,8 @@ export async function exportDOCX(
   locale?: string,
   accent?: string,
   letterLayoutId?: LetterLayoutId,
-  /** Job url of the AI generation this export belongs to; the backend records the template on it. */
-  generationJobUrl?: string
+  /** Id of the AI generation this export belongs to; the backend records the template on it. */
+  generationId?: string
 ): Promise<string> {
   try {
     if (!text || text.trim().length === 0) {
@@ -159,7 +159,7 @@ export async function exportDOCX(
             }
           : undefined,
       },
-      generationJobUrl
+      generationId
     );
     console.warn('[export] done', { format: 'docx', type });
     return filePath;
@@ -184,8 +184,8 @@ export async function exportPDF(
   locale?: string,
   accent?: string,
   letterLayoutId?: LetterLayoutId,
-  /** Job url of the AI generation this export belongs to; the backend records the template on it. */
-  generationJobUrl?: string
+  /** Id of the AI generation this export belongs to; the backend records the template on it. */
+  generationId?: string
 ): Promise<string> {
   try {
     if (!text || text.trim().length === 0) {
@@ -231,7 +231,7 @@ export async function exportPDF(
             }
           : undefined,
       },
-      generationJobUrl
+      generationId
     );
     console.warn('[export] done', { format: 'pdf', type });
     return filePath;

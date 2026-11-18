@@ -137,12 +137,33 @@ describe('exportDOCX / exportPDF', () => {
     }
   );
 
-  it('passes no job url for an export that belongs to no generation', async () => {
+  it('passes only the request for an export that belongs to no generation', async () => {
     const exportAndSave = vi.fn().mockResolvedValue('/path/out.pdf');
     _registerClient(createMockClient({ documents: { exportAndSave } }));
 
-    await exportPDF('Resume body', 'out.pdf', 'resume', meta, 'classic');
-    expect(exportAndSave.mock.calls[0]?.[1]).toBeUndefined();
+    const saved = await exportPDF('Resume body', 'out.pdf', 'resume', meta, 'classic');
+    expect(exportAndSave).toHaveBeenCalledTimes(1);
+    expect(exportAndSave.mock.calls[0]).toHaveLength(1);
+    expect(saved).toBe('/path/out.pdf');
+  });
+
+  it('forwards the generation id as the second argument', async () => {
+    const exportAndSave = vi.fn().mockResolvedValue('/path/out.docx');
+    _registerClient(createMockClient({ documents: { exportAndSave } }));
+
+    await exportDOCX(
+      'Resume body',
+      'out.docx',
+      'resume',
+      meta,
+      'classic',
+      false,
+      undefined,
+      undefined,
+      undefined,
+      'gen-7'
+    );
+    expect(exportAndSave.mock.calls[0]?.[1]).toBe('gen-7');
   });
 
   it('threads the letter layout into the cover-letter export request', async () => {

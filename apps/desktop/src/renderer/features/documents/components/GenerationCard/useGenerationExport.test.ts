@@ -26,7 +26,7 @@ describe('useGenerationExport', () => {
         meta,
         resumeDraft: 'cv',
         coverDraft: 'letter',
-        jobUrl: 'https://example.com/job',
+        generationId: 'gen-1',
       })
     );
     let a: Promise<void> = Promise.resolve();

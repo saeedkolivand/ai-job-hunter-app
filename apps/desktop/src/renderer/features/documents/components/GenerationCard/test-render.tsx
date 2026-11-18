@@ -3,8 +3,8 @@ import { type Mock, vi } from 'vitest';
 import type { AiGenerationRecord } from '@ajh/shared/ipc';
 import type * as AjhUi from '@ajh/ui';
 
-import type * as Generate from '@/lib/generate';
-import { exportPDF as mockedExportPDF } from '@/lib/generate';
+import { _registerClient } from '@/lib/app-client';
+import { createMockClient } from '@/lib/mock-client';
 
 import { GenerationCard as CardUnderTest } from './index';
 
@@ -90,16 +90,11 @@ vi.mock('@ajh/translations', () => ({
   }),
 }));
 
-// Export helpers reach for Tauri IPC — stub them so tests stay offline.
-vi.mock('@/lib/generate', async (importOriginal) => {
-  const actual = await importOriginal<typeof Generate>();
-  return {
-    ...actual,
-    exportPDF: vi.fn(),
-    exportDOCX: vi.fn(),
-    exportTXT: vi.fn(),
-  };
-});
+// The renderer export helpers stay REAL; only the IPC edge is stubbed. Each suite
+// sets `exportAndSave`'s result (the saved path, or a rejection) and asserts the
+// request + generation id it was called with.
+export const exportAndSave: Mock = vi.fn();
+_registerClient(createMockClient({ documents: { exportAndSave } }));
 
 export const GEN: AiGenerationRecord = {
   id: 'gen-1',
@@ -124,6 +119,3 @@ export const GEN: AiGenerationRecord = {
 };
 
 export const GenerationCard = CardUnderTest;
-
-/** The `exportPDF` stub registered above (a suite's own `@/lib/generate` import may predate it). */
-export const exportPDF = vi.mocked(mockedExportPDF);

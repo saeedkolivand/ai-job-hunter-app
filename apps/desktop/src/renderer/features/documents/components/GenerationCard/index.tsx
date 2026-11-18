@@ -74,7 +74,7 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
     meta,
     resumeDraft,
     coverDraft,
-    jobUrl: gen.jobUrl,
+    generationId: gen.id,
   });
   const { exporting, doExport } = exportState;
 
