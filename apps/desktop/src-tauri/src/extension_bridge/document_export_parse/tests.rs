@@ -32,6 +32,7 @@ fn generation_record(resume_text: &str, cover_letter_text: &str) -> AiGeneration
         email_body: String::new(),
         application_id: None,
         quality_report: String::new(),
+        last_export_template: None,
     }
 }
 

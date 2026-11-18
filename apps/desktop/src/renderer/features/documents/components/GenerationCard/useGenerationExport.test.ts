@@ -22,7 +22,12 @@ describe('useGenerationExport', () => {
     let resolveA: (p: string) => void = () => {};
     vi.mocked(exportPDF).mockImplementationOnce(() => new Promise<string>((r) => (resolveA = r)));
     const { result } = renderHook(() =>
-      useGenerationExport({ meta, resumeDraft: 'cv', coverDraft: 'letter' })
+      useGenerationExport({
+        meta,
+        resumeDraft: 'cv',
+        coverDraft: 'letter',
+        generationId: 'gen-1',
+      })
     );
     let a: Promise<void> = Promise.resolve();
     act(() => {

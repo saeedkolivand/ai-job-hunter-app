@@ -10,6 +10,7 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         description: "Render, ask the user where to save, and write the file; resolves to the saved path.",
         args: &[
             CatalogueArg { name: "request", required: true, fields: Some(&["text", "format", "documentType", "templateId", "meta", "atsMode", "locale", "contact", "accent", "letterLayoutId"]) },
+            CatalogueArg { name: "generationId", required: false, fields: None },
         ],
     },
     CatalogueEntry {

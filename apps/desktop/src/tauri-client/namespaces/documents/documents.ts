@@ -37,8 +37,8 @@ export const documents = {
       report?: ExportReport;
       atsView?: AtsView;
     }>('documents_export_document', { request }),
-  exportAndSave: (request: BaseExportRequest) =>
-    invoke<string>('documents_export_and_save', { request }),
+  exportAndSave: (request: BaseExportRequest, generationId?: string) =>
+    invoke<string>('documents_export_and_save', { request, generationId }),
   renderPreviewImages: (request: BaseExportRequest) =>
     invoke<{ pages: string[]; mimeType: string }>('documents_render_preview_images', { request }),
 };

@@ -1,121 +1,11 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
-import type { AiGenerationRecord } from '@ajh/shared/ipc';
 import type * as AjhTranslations from '@ajh/translations';
-import type * as AjhUi from '@ajh/ui';
 
-import type * as Generate from '@/lib/generate';
-import { exportPDF, PERSIST_DEBOUNCE_MS } from '@/lib/generate';
+import { PERSIST_DEBOUNCE_MS } from '@/lib/generate';
 
-import { GenerationCard } from './index';
-
-// Mock the service barrel (ExternalLink reaches for useOpenExternal) and the
-// remove hook so the card renders without a provider tree. We capture the
-// mutate spy to prove deletion only fires *after* confirmation.
-const mockMutate = vi.fn();
-const mockUpdateMutate = vi.fn();
-
-// Translation resolver seam. Defaults to identity (raw key) so the delete +
-// debounced-persist blocks assert on keys; the board-chip block swaps in the REAL
-// en resolver (beforeAll/afterAll) so it verifies actual localized strings.
-let mockTranslate: (key: string, opts?: { defaultValue?: string }) => string = (key) => key;
-
-vi.mock('@/services', () => ({
-  useOpenExternal: () => ({ mutate: vi.fn() }),
-  // EditableOutput → useSelectedModel now reads the backend active-config query
-  // (task #16); stub it so the card mounts without a provider tree.
-  useActiveConfig: () => ({
-    data: { activeProvider: 'ollama', model: 'llama3', providers: { ollama: { model: 'llama3' } } },
-    isPending: false,
-  }),
-}));
-
-vi.mock('@/services/use-ai-generations', () => ({
-  useRemoveAiGeneration: () => ({ mutate: mockMutate, isPending: false }),
-  // The card debounce-persists inline edits through this hook; the delete tests
-  // don't edit, but the component calls it on render so the mock must provide it.
-  useUpdateAiGeneration: () => ({ mutate: mockUpdateMutate, isPending: false }),
-}));
-
-// The ATS panel reads the exported file through a service hook; stub it so the
-// card mounts without an AppClientProvider (the panel has its own test).
-vi.mock('@/components/generation/AtsViewPanel', () => ({
-  AtsViewPanel: ({ path }: { path: string | null }) =>
-    path ? <div data-testid="ats-panel">{path}</div> : null,
-}));
-
-// GenerationCard renders EditableOutput which calls useContactProfile() — stub it
-// so the component tree mounts without an AppClientProvider.
-vi.mock('@/services/use-contact-profile', () => ({
-  useContactProfile: () => ({ data: undefined }),
-}));
-
-// The card now display-joins referrals and toasts on copy/mark-sent; stub these
-// so it renders without a QueryClient/Notification provider tree.
-vi.mock('@/services/use-referrals/use-referrals', () => ({
-  useReferrals: () => ({ data: [] }),
-  useUpsertReferral: () => ({ mutate: vi.fn(), isPending: false }),
-}));
-
-// useNotification: return an API of spies; the export-failure test asserts on it.
-const mockNotify = {
-  open: vi.fn(),
-  success: vi.fn(),
-  error: vi.fn(),
-  info: vi.fn(),
-  warning: vi.fn(),
-  destroy: vi.fn(),
-};
-
-vi.mock('@ajh/ui', async (importOriginal) => {
-  const actual = await importOriginal<typeof AjhUi>();
-  return {
-    ...actual,
-    useNotification: () => mockNotify,
-  };
-});
-
-// t() delegates to a swappable resolver — identity by default (raw key), the real
-// en resolver inside the board-chip block. See mockTranslate above.
-vi.mock('@ajh/translations', () => ({
-  useTranslation: () => ({
-    t: (key: string, opts?: { defaultValue?: string }) => mockTranslate(key, opts),
-  }),
-}));
-
-// Export helpers reach for Tauri IPC — stub them so tests stay offline.
-vi.mock('@/lib/generate', async (importOriginal) => {
-  const actual = await importOriginal<typeof Generate>();
-  return {
-    ...actual,
-    exportPDF: vi.fn(),
-    exportDOCX: vi.fn(),
-    exportTXT: vi.fn(),
-  };
-});
-
-const GEN: AiGenerationRecord = {
-  id: 'gen-1',
-  jobTitle: 'Senior Engineer',
-  companyName: 'Acme',
-  candidateName: 'Jane Doe',
-  createdAt: Date.now(),
-  mode: 'ats',
-  board: '',
-  jobUrl: '',
-  resumeText: 'Original resume text.',
-  coverLetterText: 'Original cover letter text.',
-  jobAd: '',
-  companyBrief: '',
-  resumeLanguage: 'en',
-  jobAdLanguage: 'en',
-  targetLanguage: 'en',
-  mismatch: false,
-  topRequirements: [],
-  applicationAnswers: [],
-  interviewQuestions: [],
-};
+import { GEN, GenerationCard, mockMutate, mockUpdateMutate, translator } from './test-render';
 
 // ── Delete confirmation (pre-existing coverage) ───────────────────────────────
 
@@ -170,12 +60,12 @@ describe('GenerationCard — board chip', () => {
   beforeAll(async () => {
     const actual = await vi.importActual<typeof AjhTranslations>('@ajh/translations');
     const realT = actual.default.getFixedT('en');
-    mockTranslate = (key, opts) => String(realT(key, opts ?? {}));
+    translator.current = (key, opts) => String(realT(key, opts ?? {}));
   });
 
   afterAll(() => {
     // Restore identity so the debounced-persist block keeps asserting on raw keys.
-    mockTranslate = (key) => key;
+    translator.current = (key) => key;
   });
 
   it('labels a known board with its localized name (jobs.boards.linkedin → "LinkedIn")', () => {
@@ -196,7 +86,7 @@ describe('GenerationCard — board chip', () => {
   });
 
   it('renders no board chip when the generation has no board (pasted text)', () => {
-    const { container } = render(<GenerationCard gen={{ ...GEN, board: '' }} />);
+    const { container } = render(<GenerationCard gen={{ ...GEN, board: '', jobUrl: '' }} />);
     // Only the always-present mode chip occupies the uppercase-chip row — the
     // empty board yields no chip (not an empty one).
     expect(container.querySelectorAll('.uppercase')).toHaveLength(1);
@@ -344,113 +234,5 @@ describe('GenerationCard — debounced persist', () => {
       id: 'gen-1',
       coverLetterText: 'Edited cover letter text.',
     });
-  });
-});
-
-// ── Cover-letter export locale (fix/letter-export-contract) ──────────────────
-//
-// GenerationCard used to pass `locale: undefined` to the cover-letter export.
-// The backend resolves a missing locale to "intl" and its `complete_letter_text`
-// synthesizes an English salutation/sign-off onto a body-only letter — so a
-// German generation re-exported here silently got English furniture. This
-// guards the fix: the resolved market must reach the mocked export call, not
-// just "was called".
-
-describe('GenerationCard — cover-letter export locale', () => {
-  beforeEach(() => {
-    vi.mocked(exportPDF).mockClear();
-    vi.mocked(exportPDF).mockResolvedValue('/out/letter.pdf');
-  });
-
-  /** Export lives in the 3-dots overflow menu → the composed ExportPicker's
-   *  own action buttons (default format is pdf). */
-  function openExportModal() {
-    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.actions' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'resumes.generated.export' }));
-  }
-
-  it('resolves a German generation to the German market, not undefined', async () => {
-    render(<GenerationCard gen={{ ...GEN, targetLanguage: 'de' }} />);
-    openExportModal();
-    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportCoverLetter' }));
-
-    await waitFor(() => expect(exportPDF).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(exportPDF).mock.calls[0]?.[6]).toBe('de');
-  });
-
-  it('shows the ATS view for a saved résumé but not for a cover letter', async () => {
-    render(<GenerationCard gen={GEN} />);
-    openExportModal();
-    expect(screen.queryByTestId('ats-panel')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportCoverLetter' }));
-    await waitFor(() => expect(exportPDF).toHaveBeenCalledTimes(1));
-    expect(screen.queryByTestId('ats-panel')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportResume' }));
-    expect(await screen.findByTestId('ats-panel')).toHaveTextContent('/out/letter.pdf');
-  });
-
-  it('keeps the résumé panel when a cover letter is exported afterwards', async () => {
-    vi.mocked(exportPDF)
-      .mockResolvedValueOnce('/out/cv.pdf')
-      .mockResolvedValueOnce('/out/letter.pdf');
-    render(<GenerationCard gen={GEN} />);
-    openExportModal();
-    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportResume' }));
-    expect(await screen.findByTestId('ats-panel')).toHaveTextContent('/out/cv.pdf');
-
-    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportCoverLetter' }));
-    await waitFor(() => expect(exportPDF).toHaveBeenCalledTimes(2));
-    expect(screen.getByTestId('ats-panel')).toHaveTextContent('/out/cv.pdf');
-  });
-
-  it('leaves no panel when a résumé re-export is rejected', async () => {
-    vi.mocked(exportPDF)
-      .mockResolvedValueOnce('/out/cv.pdf')
-      .mockRejectedValueOnce(new Error('blocked'));
-    render(<GenerationCard gen={GEN} />);
-    openExportModal();
-    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportResume' }));
-    expect(await screen.findByTestId('ats-panel')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportResume' }));
-    await waitFor(() => expect(exportPDF).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(screen.queryByTestId('ats-panel')).not.toBeInTheDocument());
-  });
-
-  it('leaves the résumé export locale unset (unchanged behavior)', async () => {
-    render(<GenerationCard gen={{ ...GEN, targetLanguage: 'de' }} />);
-    openExportModal();
-    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportResume' }));
-
-    await waitFor(() => expect(exportPDF).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(exportPDF).mock.calls[0]?.[6]).toBeUndefined();
-  });
-});
-
-// ── Export failure surfaces a toast (was a silent unhandled rejection) ────────
-
-describe('GenerationCard — export failure', () => {
-  beforeEach(() => {
-    mockNotify.error.mockClear();
-    vi.mocked(exportPDF).mockReset();
-  });
-
-  it('shows a toast instead of dropping a rejected export on the floor', async () => {
-    vi.mocked(exportPDF).mockRejectedValueOnce(new Error('Export blocked: too many pages.'));
-    render(<GenerationCard gen={GEN} />);
-
-    // Export lives in the 3-dots overflow menu, then the composed ExportPicker's
-    // own "Export Resume" action button (default format is pdf).
-    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.actions' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'resumes.generated.export' }));
-    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportResume' }));
-
-    await waitFor(() =>
-      expect(mockNotify.error).toHaveBeenCalledWith({
-        message: 'Export blocked: too many pages.',
-      })
-    );
   });
 });

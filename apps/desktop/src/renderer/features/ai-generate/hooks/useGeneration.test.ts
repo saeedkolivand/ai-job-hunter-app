@@ -30,7 +30,7 @@ describe('useGeneration — progressive reveal (#23)', () => {
     expect(m.setIsGenerating).toHaveBeenLastCalledWith(false);
     expect(m.notify.success).toHaveBeenCalledWith({ message: 'aiGenerate.toast.bothReady' });
     // The cover-letter research brief is persisted alongside the documents.
-    expect(m.saveAiGeneration.mutate).toHaveBeenCalledWith(
+    expect(m.saveAiGeneration.mutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({
         resumeText: 'RESUME',
         coverLetterText: 'COVER',
@@ -49,7 +49,7 @@ describe('useGeneration — progressive reveal (#23)', () => {
     expect(stageCalls(m)).not.toContain('configuring');
     expect(m.notify.error).toHaveBeenCalledWith({ message: 'aiGenerate.toast.coverFailed' });
     // Persisted résumé-only (no cover text / no brief), and no hard error surfaced.
-    expect(m.saveAiGeneration.mutate).toHaveBeenCalledWith(
+    expect(m.saveAiGeneration.mutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({ resumeText: 'RESUME', coverLetterText: '', companyBrief: '' })
     );
     expect(m.setError).not.toHaveBeenCalledWith(expect.any(String));
@@ -65,7 +65,7 @@ describe('useGeneration — progressive reveal (#23)', () => {
     await h.handleGenerate();
 
     expect(stageCalls(h.m).at(-1)).toBe('done');
-    expect(h.m.saveAiGeneration.mutate).toHaveBeenCalledWith(
+    expect(h.m.saveAiGeneration.mutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({ resumeText: 'RESUME', coverLetterText: '' })
     );
     expect(h.m.notify.error).not.toHaveBeenCalled();
@@ -80,7 +80,7 @@ describe('useGeneration — progressive reveal (#23)', () => {
     expect(stageCalls(m).at(-1)).toBe('configuring');
     expect(m.setError).toHaveBeenCalledWith('resume boom');
     expect(m.notify.error).toHaveBeenCalledWith({ message: 'aiGenerate.toast.failed' });
-    expect(m.saveAiGeneration.mutate).not.toHaveBeenCalled();
+    expect(m.saveAiGeneration.mutateAsync).not.toHaveBeenCalled();
     expect(m.setIsGenerating).toHaveBeenLastCalledWith(false);
   });
 });
@@ -94,7 +94,7 @@ describe('useGeneration — single target', () => {
     expect(stages).toEqual(['generating', 'done']);
     expect(generateResume).not.toHaveBeenCalled();
     expect(m.notify.success).toHaveBeenCalledWith({ message: 'aiGenerate.toast.coverReady' });
-    expect(m.saveAiGeneration.mutate).toHaveBeenCalledWith(
+    expect(m.saveAiGeneration.mutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({ resumeText: '', coverLetterText: 'COVER', companyBrief: 'BRIEF' })
     );
   });
@@ -115,7 +115,7 @@ describe('useGeneration — URL-import provenance (ADR-031)', () => {
       board: 'greenhouse',
     });
 
-    expect(m.saveAiGeneration.mutate).toHaveBeenCalledWith(
+    expect(m.saveAiGeneration.mutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({
         jobUrl: 'https://boards.greenhouse.io/acme/jobs/1',
         board: 'greenhouse',
@@ -126,13 +126,40 @@ describe('useGeneration — URL-import provenance (ADR-031)', () => {
   it('omits jobUrl + board for pasted text (never invents provenance)', async () => {
     const { m } = await runGeneration('resume');
 
-    expect(m.saveAiGeneration.mutate).toHaveBeenCalled();
+    expect(m.saveAiGeneration.mutateAsync).toHaveBeenCalled();
     // No call carries provenance keys when the ad wasn't URL-imported.
-    expect(m.saveAiGeneration.mutate).not.toHaveBeenCalledWith(
+    expect(m.saveAiGeneration.mutateAsync).not.toHaveBeenCalledWith(
       expect.objectContaining({ jobUrl: expect.anything() })
     );
-    expect(m.saveAiGeneration.mutate).not.toHaveBeenCalledWith(
+    expect(m.saveAiGeneration.mutateAsync).not.toHaveBeenCalledWith(
       expect.objectContaining({ board: expect.anything() })
     );
+  });
+});
+
+describe('useGeneration — saved generation id', () => {
+  it('clears the previous id on start, then keeps the saved id after the save resolves', async () => {
+    const { m } = await runGeneration('resume');
+
+    expect(m.setGenerationId.mock.calls.map((c) => c[0])).toEqual([undefined, 'gen-1']);
+    expect(m.notify.success).toHaveBeenCalled();
+  });
+
+  it('a failed save stays best-effort: no id, generation still succeeds', async () => {
+    const harness = setup('resume');
+    harness.m.saveAiGeneration.mutateAsync.mockRejectedValueOnce(new Error('disk full'));
+    await harness.handleGenerate();
+
+    expect(harness.m.setGenerationId.mock.calls.map((c) => c[0])).toEqual([undefined]);
+    expect(harness.m.notify.success).toHaveBeenCalled();
+    expect(harness.m.setError).not.toHaveBeenCalledWith('aiGenerate.errors.generationFailed');
+  });
+
+  it('a save that returns an error result records no id', async () => {
+    const harness = setup('resume');
+    harness.m.saveAiGeneration.mutateAsync.mockResolvedValueOnce({ error: 'nope' });
+    await harness.handleGenerate();
+
+    expect(harness.m.setGenerationId.mock.calls.map((c) => c[0])).toEqual([undefined]);
   });
 });

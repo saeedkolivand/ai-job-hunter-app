@@ -1,4 +1,4 @@
-import type { AiGenerationSaveRequest } from '@ajh/shared/ipc';
+import type { AiGenerationSaveRequest, AiGenerationSaveResult } from '@ajh/shared/ipc';
 import type { NotificationApi } from '@ajh/ui';
 
 import { errorDetail } from '@/lib/error-class';
@@ -42,7 +42,9 @@ export function useGeneration(
   startStageRotation: () => void,
   stopStageRotation: () => void,
   abortControllerRef: React.MutableRefObject<AbortController | null>,
-  saveAiGeneration: { mutate: (data: AiGenerationSaveRequest) => void },
+  saveAiGeneration: {
+    mutateAsync: (data: AiGenerationSaveRequest) => Promise<AiGenerationSaveResult>;
+  },
   t: (key: string) => string,
   setStageLabel: (label: string) => void,
   /** Tracks an in-flight generation independently of `stage` — once the résumé is
@@ -68,7 +70,9 @@ export function useGeneration(
    * uploaded text — we never invent a url for text the user typed.
    */
   jobUrl?: string,
-  board?: string
+  board?: string,
+  /** Remembers the saved generation's id with the output it belongs to (cleared on a new run). */
+  setGenerationId: (id: string | undefined) => void = () => {}
 ) {
   const handleAnalyze = async () => {
     setError(null);
@@ -95,6 +99,7 @@ export function useGeneration(
     // renders the PREVIOUS run's report/evidence against the NEW résumé until
     // `persist` recomputes one.
     setReport(null);
+    setGenerationId(undefined);
     setResumeOut('');
     setCoverOut('');
     setStreamBuffer('');
@@ -157,26 +162,37 @@ export function useGeneration(
         return false;
       }
       setReport(report);
-      saveAiGeneration.mutate({
-        candidateName: meta.candidateName,
-        jobTitle: meta.jobTitle,
-        companyName: meta.companyName,
-        resumeLanguage: meta.resumeLanguage,
-        jobAdLanguage: meta.jobAdLanguage,
-        targetLanguage: meta.targetLanguage,
-        mismatch: meta.mismatch,
-        topRequirements: meta.topRequirements,
-        mode,
-        resumeText,
-        coverLetterText,
-        jobAd,
-        companyBrief,
-        // ADR-031: carry URL-import provenance ONLY when it exists — absent for
-        // pasted/uploaded text (never fabricate a url/board).
-        ...(jobUrl ? { jobUrl } : {}),
-        ...(board ? { board } : {}),
-        ...(report ? { qualityReport: serializeQualityReport(report) } : {}),
-      });
+      // Best-effort: a failed save never fails the generation, it only leaves the
+      // export without a generation id (nothing to record the template on).
+      let saved: AiGenerationSaveResult | null = null;
+      try {
+        saved = await saveAiGeneration.mutateAsync({
+          candidateName: meta.candidateName,
+          jobTitle: meta.jobTitle,
+          companyName: meta.companyName,
+          resumeLanguage: meta.resumeLanguage,
+          jobAdLanguage: meta.jobAdLanguage,
+          targetLanguage: meta.targetLanguage,
+          mismatch: meta.mismatch,
+          topRequirements: meta.topRequirements,
+          mode,
+          resumeText,
+          coverLetterText,
+          jobAd,
+          companyBrief,
+          // ADR-031: carry URL-import provenance ONLY when it exists — absent for
+          // pasted/uploaded text (never fabricate a url/board).
+          ...(jobUrl ? { jobUrl } : {}),
+          ...(board ? { board } : {}),
+          ...(report ? { qualityReport: serializeQualityReport(report) } : {}),
+        });
+      } catch (err) {
+        console.error('[handleGenerate] save failed', { error: errorDetail(err) });
+      }
+      // The save was awaited: a newer run may have taken over meanwhile, and its
+      // output must not inherit this run's generation id.
+      if (abortControllerRef.current !== controller) return false;
+      if (saved && 'id' in saved) setGenerationId(saved.id);
       return true;
     };
 

@@ -87,6 +87,63 @@ fn success_or_capped_reply_refuses_an_oversized_export() {
 }
 
 #[test]
+fn bounded_reply_reports_whether_the_reply_fits() {
+    // The caller records the export's template only when it fits.
+    let big = oversized_result(super::super::MAX_FRAME_BYTES);
+    assert!(matches!(
+        bounded_reply("r", &big, "resume", "pdf", "classic"),
+        Bounded::TooLarge(_)
+    ));
+    let small = oversized_result(1024);
+    assert!(matches!(
+        bounded_reply("r", &small, "resume", "pdf", "classic"),
+        Bounded::Fits(_)
+    ));
+}
+
+fn parsed(format: ExportFormat) -> ParsedRequest {
+    ParsedRequest {
+        source: Source::Generation("https://acme.com/job".into()),
+        document_type: DocumentType::Resume,
+        kind_wire: "resume".into(),
+        format,
+        format_wire: "pdf".into(),
+        template_id: crate::export::types::TemplateId::Atelier,
+        template_id_wire: "atelier".into(),
+        letter_layout: LetterLayout::Classic,
+        ats_mode: false,
+    }
+}
+
+fn finish(size: usize, format: ExportFormat, id: Option<&str>) -> (Value, Vec<(String, String)>) {
+    let mut recorded = Vec::new();
+    let reply = finish_export("r", &oversized_result(size), &parsed(format), id, |i, t| {
+        recorded.push((i.to_string(), t.to_string()));
+    });
+    (serde_json::from_str(&reply).unwrap(), recorded)
+}
+
+#[test]
+fn a_refused_oversized_export_records_nothing() {
+    let (v, recorded) = finish(super::super::MAX_FRAME_BYTES, ExportFormat::Pdf, Some("g1"));
+    assert_eq!(v["payload"]["ok"], false);
+    assert!(recorded.is_empty());
+}
+
+#[test]
+fn a_fitting_pdf_records_the_template_on_the_given_generation_id() {
+    let (v, recorded) = finish(1024, ExportFormat::Pdf, Some("g1"));
+    assert_eq!(v["payload"]["ok"], true);
+    assert_eq!(recorded, [("g1".to_string(), "atelier".to_string())]);
+}
+
+#[test]
+fn a_fitting_txt_or_an_export_without_a_generation_records_nothing() {
+    assert!(finish(1024, ExportFormat::Txt, Some("g1")).1.is_empty());
+    assert!(finish(1024, ExportFormat::Pdf, None).1.is_empty());
+}
+
+#[test]
 fn success_or_capped_reply_carries_the_real_export_bytes_when_it_fits() {
     let result = oversized_result(1024);
     let reply = success_or_capped_reply("req-small", &result, "resume", "pdf", "classic");

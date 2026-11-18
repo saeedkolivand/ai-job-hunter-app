@@ -1,4 +1,4 @@
-use tauri::command;
+use tauri::{command, Manager};
 use tauri_plugin_dialog::DialogExt;
 
 use super::{
@@ -261,12 +261,64 @@ pub async fn export_ats_view(path: String) -> AppResult<crate::validate::AtsView
         .map_err(|e| AppError::Message(format!("ATS view task failed: {e}")))?
 }
 
-/// Tauri command to export and save document with file dialog
+/// The wire id of the template a finished export used, or `None` when it must not be
+/// recorded: a plain-text export applies no template at all.
+pub(crate) fn recordable_template(
+    template: super::types::TemplateId,
+    format: super::types::ExportFormat,
+) -> Option<String> {
+    if format == super::types::ExportFormat::Txt {
+        return None;
+    }
+    serde_json::to_value(template)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+}
+
+/// Remember which template a generation was just exported with (`template` is its wire
+/// id), so the outcome insights can group by it. Best-effort bookkeeping: a missing
+/// store, an unknown or deleted generation id or a write error never fails the export
+/// the user just completed. Blocking (SQLite behind a mutex): call it off the async runtime.
+pub(crate) fn note_export_template(app: &tauri::AppHandle, generation_id: &str, template: &str) {
+    let Some(store) = app.try_state::<crate::ai_generations::AiGenerationStore>() else {
+        return;
+    };
+    if let Err(e) = store.record_export_template_by_id(generation_id, template) {
+        log::warn!("export: template not recorded: {}", e.code());
+    }
+}
+
+/// Write the exported bytes to `path`, then hand the generation id and template wire
+/// id to `record`. A write failure returns before `record` runs, so the stored
+/// template stays unchanged; a plain-text export, or no/blank generation id, records
+/// nothing. `record` failures are the recorder's to swallow (best-effort).
+fn write_then_record(
+    path: &std::path::Path,
+    data: &[u8],
+    generation_id: Option<&str>,
+    template: super::types::TemplateId,
+    format: super::types::ExportFormat,
+    record: impl FnOnce(&str, &str),
+) -> AppResult<()> {
+    std::fs::write(path, data).map_err(|e| format!("Failed to write file: {}", e))?;
+    let gid = generation_id.map(str::trim).filter(|g| !g.is_empty());
+    if let (Some(gid), Some(tpl)) = (gid, recordable_template(template, format)) {
+        record(gid, &tpl);
+    }
+    Ok(())
+}
+
+/// Tauri command to export and save document with file dialog.
+///
+/// `generation_id` (optional) is the `ai_generations` id whose export this is; on a
+/// completed PDF/DOCX save that record remembers the template used.
 #[command]
 pub async fn documents_export_and_save(
     app: tauri::AppHandle,
     request: ExportRequest,
+    generation_id: Option<String>,
 ) -> AppResult<String> {
+    let (template, format) = (request.template_id, request.format);
     // Generate the document
     let result = documents_export_document(request).await?;
 
@@ -286,8 +338,10 @@ pub async fn documents_export_and_save(
     // forever on the 2nd export" symptom). `spawn_blocking` keeps the wait on a
     // dedicated blocking thread so repeat exports work.
     let filename = result.filename.clone();
+    let dialog_app = app.clone();
     let file_path = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
+        dialog_app
+            .dialog()
             .file()
             .add_filter(&filter_name, &[&ext])
             .set_title("Save Document")
@@ -305,8 +359,20 @@ pub async fn documents_export_and_save(
         _ => return Err(AppError::Message("Unsupported file path type".to_string())),
     };
 
-    // Write bytes to file
-    std::fs::write(&path, result.data).map_err(|e| format!("Failed to write file: {}", e))?;
+    // Write the file, then record the template on the blocking pool (sync SQLite).
+    let (data, write_path, record_app) = (result.data, path.clone(), app.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        write_then_record(
+            &write_path,
+            &data,
+            generation_id.as_deref(),
+            template,
+            format,
+            |gid, tpl| note_export_template(&record_app, gid, tpl),
+        )
+    })
+    .await
+    .map_err(|e| AppError::Message(format!("Export write task failed: {e}")))??;
 
     Ok(path.to_string_lossy().to_string())
 }

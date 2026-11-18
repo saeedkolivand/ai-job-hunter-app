@@ -39,7 +39,7 @@ describe('useGeneration — quality report wiring', () => {
     const { m } = await runGeneration('resume');
 
     expect(m.setReport).toHaveBeenCalledWith(report);
-    expect(m.saveAiGeneration.mutate).toHaveBeenCalledWith(
+    expect(m.saveAiGeneration.mutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({ qualityReport: JSON.stringify(report) })
     );
   });
@@ -49,8 +49,8 @@ describe('useGeneration — quality report wiring', () => {
     const { m } = await runGeneration('resume');
 
     expect(m.setReport).toHaveBeenCalledWith(null);
-    expect(m.saveAiGeneration.mutate).toHaveBeenCalled();
-    expect(m.saveAiGeneration.mutate).not.toHaveBeenCalledWith(
+    expect(m.saveAiGeneration.mutateAsync).toHaveBeenCalled();
+    expect(m.saveAiGeneration.mutateAsync).not.toHaveBeenCalledWith(
       expect.objectContaining({ qualityReport: expect.anything() })
     );
   });
@@ -126,7 +126,7 @@ describe('useGeneration — stale-persist guard (Regenerate/reset during validat
     // what the save/notify counts below prove.
     expect(m.setReport).toHaveBeenCalledTimes(3);
     expect(m.setReport).toHaveBeenLastCalledWith(null);
-    expect(m.saveAiGeneration.mutate).toHaveBeenCalledTimes(1);
+    expect(m.saveAiGeneration.mutateAsync).toHaveBeenCalledTimes(1);
     expect(m.notify.success).toHaveBeenCalledTimes(1);
   });
 
@@ -152,7 +152,7 @@ describe('useGeneration — stale-persist guard (Regenerate/reset during validat
     // (nothing else replaced it) so it clears it back to null.
     expect(m.setReport).toHaveBeenCalledTimes(1);
     expect(m.setReport).toHaveBeenCalledWith(null);
-    expect(m.saveAiGeneration.mutate).not.toHaveBeenCalled();
+    expect(m.saveAiGeneration.mutateAsync).not.toHaveBeenCalled();
     expect(m.notify.success).not.toHaveBeenCalled();
     expect(abortControllerRef.current).toBeNull();
   });

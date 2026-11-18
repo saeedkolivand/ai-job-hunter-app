@@ -21,10 +21,17 @@ interface UseGenerationExportArgs {
   meta: GenerationExportMeta;
   resumeDraft: string;
   coverDraft: string;
+  /** Id of the generation being exported — the backend records the export template on it. */
+  generationId: string;
 }
 
 /** Export picker state plus the per-document export action for one generation card. */
-export function useGenerationExport({ meta, resumeDraft, coverDraft }: UseGenerationExportArgs) {
+export function useGenerationExport({
+  meta,
+  resumeDraft,
+  coverDraft,
+  generationId,
+}: UseGenerationExportArgs) {
   const { t } = useTranslation();
   const notify = useNotification();
   const [format, setFormat] = useState<ExportFormat>('pdf');
@@ -71,7 +78,9 @@ export function useGenerationExport({ meta, resumeDraft, coverDraft }: UseGenera
           template,
           false,
           coverLetterLocale,
-          accent
+          accent,
+          undefined,
+          generationId
         );
       });
     } catch (err) {

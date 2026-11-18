@@ -283,3 +283,71 @@ fn validate_and_normalize_leaves_a_resume_untouched_by_letter_completion() {
         "a résumé request must not gain a salutation/sign-off"
     );
 }
+
+#[test]
+fn a_plain_text_export_records_no_template_and_a_formatted_one_records_its_wire_id() {
+    assert_eq!(
+        recordable_template(TemplateId::Atelier, ExportFormat::Txt),
+        None
+    );
+    for format in [ExportFormat::Pdf, ExportFormat::Docx] {
+        assert_eq!(
+            recordable_template(TemplateId::Atelier, format).as_deref(),
+            Some("atelier")
+        );
+    }
+}
+
+/// Runs `write_then_record` against `path`, returning every `(generation id, template)` recorded.
+fn run_write_then_record(
+    path: &std::path::Path,
+    generation_id: Option<&str>,
+    format: ExportFormat,
+) -> (AppResult<()>, Vec<(String, String)>) {
+    let mut recorded = Vec::new();
+    let res = write_then_record(
+        path,
+        b"bytes",
+        generation_id,
+        TemplateId::Atelier,
+        format,
+        |gid, tpl| recorded.push((gid.to_string(), tpl.to_string())),
+    );
+    (res, recorded)
+}
+
+#[test]
+fn a_saved_pdf_records_the_template_on_the_generation_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("r.pdf");
+    let (res, recorded) = run_write_then_record(&path, Some("g1"), ExportFormat::Pdf);
+    res.unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), b"bytes");
+    assert_eq!(recorded, [("g1".to_string(), "atelier".to_string())]);
+}
+
+#[test]
+fn a_failed_write_records_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    // A directory path cannot be written as a file.
+    let (res, recorded) = run_write_then_record(dir.path(), Some("g1"), ExportFormat::Pdf);
+    assert!(res.is_err());
+    assert!(
+        recorded.is_empty(),
+        "template must stay unchanged on a write failure"
+    );
+}
+
+#[test]
+fn a_txt_save_or_a_missing_generation_id_records_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("r.txt");
+    let (res, recorded) = run_write_then_record(&path, Some("g1"), ExportFormat::Txt);
+    res.unwrap();
+    assert!(recorded.is_empty());
+    for gid in [None, Some("  ")] {
+        let (res, recorded) = run_write_then_record(&path, gid, ExportFormat::Pdf);
+        res.unwrap();
+        assert!(recorded.is_empty());
+    }
+}

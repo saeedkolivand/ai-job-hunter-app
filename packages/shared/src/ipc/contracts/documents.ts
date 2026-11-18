@@ -285,8 +285,16 @@ export interface DocumentsContract {
     atsView?: AtsView;
   }>;
 
-  /** Render, ask the user where to save, and write the file; resolves to the saved path. */
-  exportAndSave(req: BaseExportRequest): Promise<string>;
+  /**
+   * Render, ask the user where to save, and write the file; resolves to the saved path.
+   * `generationId` (optional) is the id of the `ai_generations` record whose export this
+   * is: once a PDF/DOCX is saved, that record remembers the template used, which feeds the
+   * template grouping of `insights.outcomes`. Recording is best-effort bookkeeping: a plain
+   * text (TXT) export never records and leaves any existing template unchanged, and an
+   * unknown or deleted id records nothing. A successful save does not guarantee the
+   * template was recorded. Omit it for an export that belongs to no generation.
+   */
+  exportAndSave(req: BaseExportRequest, generationId?: string): Promise<string>;
 
   /**
    * Render the same document to per-page images for the live preview, shown via

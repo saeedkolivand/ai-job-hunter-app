@@ -20,8 +20,11 @@ impl AiGenerationStore {
         Ok(())
     }
 
-    /// Overwrite an existing row by id (used by the per-job merge-upsert).
-    fn update(&self, rec: &AiGenerationRecord) -> AppResult<()> {
+    /// Overwrite an existing row's content by id (used by the per-job merge-upsert).
+    /// Deliberately never writes `last_export_template`: that column belongs to
+    /// [`record_export_template_by_id`](Self::record_export_template_by_id), and a merge built from
+    /// an earlier read would write a stale template over a newer export's.
+    pub(super) fn update(&self, rec: &AiGenerationRecord) -> AppResult<()> {
         let top_req_json = serde_json::to_string(&rec.top_requirements).unwrap_or_default();
         let answers_json = serde_json::to_string(&rec.application_answers).unwrap_or_default();
         let interview_questions_json =
@@ -113,6 +116,18 @@ impl AiGenerationStore {
             return Ok(merged_id);
         }
         Ok(id)
+    }
+
+    /// Record the template a generation was just exported with, selected by `id`:
+    /// `false` when no row has `id` (unknown, or deleted since the export began).
+    /// By id, never by job url, so it can only ever touch the row the export belongs to.
+    pub fn record_export_template_by_id(&self, id: &str, template: &str) -> AppResult<bool> {
+        let conn = self.conn.lock();
+        let changed = conn.execute(
+            "UPDATE ai_generations SET last_export_template = ?2 WHERE id = ?1",
+            params![id, template],
+        )?;
+        Ok(changed > 0)
     }
 
     /// Overwrite ONE row's `quality_report`, selected by `id`.

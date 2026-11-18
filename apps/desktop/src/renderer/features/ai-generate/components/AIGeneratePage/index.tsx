@@ -51,6 +51,7 @@ export function AIGeneratePage() {
     jobAd,
     jobUrl,
     board,
+    generationId,
     stage,
     meta,
     mode,
@@ -156,7 +157,8 @@ export function AIGeneratePage() {
     locale,
     emphasis,
     jobUrl,
-    board
+    board,
+    (id) => setAIGenerate({ generationId: id })
   );
 
   // Quality panel "Re-check" for the active document — owned HERE, not in
@@ -202,7 +204,8 @@ export function AIGeneratePage() {
 
   const { atsViewPath, doExport } = useActiveDocumentExport(
     { activeOut, resumeOut, coverOut, meta, locale, templateId, atsMode, accent, letterLayoutId },
-    isGenerating
+    isGenerating,
+    generationId
   );
 
   // Abort only — `useGeneration`'s catch owns the aborted outcome (keeps any finished

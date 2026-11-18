@@ -81,6 +81,9 @@ export function useTailorOutputActions({
           market,
           accent,
           letterLayoutId
+          // No generation id on purpose: a pipeline run exposes none (its record is
+          // merged per job url and the id is never returned), and the export template
+          // is recorded by generation id only — never by job url.
         );
       });
     } catch (err) {
