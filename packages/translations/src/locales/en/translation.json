@@ -2386,8 +2386,8 @@
     },
     "group": {
       "unknown": "Unknown",
-      "noGeneration": "No generation",
-      "noGenerationHint": "Applications sent without a generated résumé or letter.",
+      "languageNotRecorded": "Language not recorded",
+      "languageNotRecordedHint": "Applications with no generation, or whose generation has no target language.",
       "templateNotRecorded": "Template not recorded",
       "templateNotRecordedHint": "No recognized export template is recorded for these applications.",
       "tailored": {

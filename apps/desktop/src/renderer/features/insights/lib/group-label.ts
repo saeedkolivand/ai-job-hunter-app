@@ -5,11 +5,14 @@ import { TEMPLATES } from '@/lib/generate';
 
 import { UNKNOWN_KEY } from './insights';
 
-/** Language is only recorded on a generation, so its "unknown" means none exists. A
- * template is only recorded on an in-app export with the job link, so its "unknown"
+/** Language is recorded on a generation, so its "unknown" covers both no generation
+ * and a generation with no target language. A template is only recorded on an in-app export with the job link, so its "unknown"
  * also covers tailored applications exported earlier or elsewhere. */
 const UNKNOWN_COPY: Partial<Record<InsightsDimension, { label: string; hint: string }>> = {
-  targetLanguage: { label: 'insights.group.noGeneration', hint: 'insights.group.noGenerationHint' },
+  targetLanguage: {
+    label: 'insights.group.languageNotRecorded',
+    hint: 'insights.group.languageNotRecordedHint',
+  },
   template: {
     label: 'insights.group.templateNotRecorded',
     hint: 'insights.group.templateNotRecordedHint',

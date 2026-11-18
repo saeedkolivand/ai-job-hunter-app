@@ -153,7 +153,7 @@ describe('InsightsPage', () => {
     expect(screen.queryByText('By language')).not.toBeInTheDocument();
   });
 
-  it('lists "No generation" last in the language section, with its hint', () => {
+  it('lists "Language not recorded" last in the language section, with its hint', () => {
     mockState = {
       data: report({
         groups: [
@@ -166,15 +166,17 @@ describe('InsightsPage', () => {
     const section = screen.getByRole('region', { name: 'By language' });
     const rows = within(section).getAllByRole('listitem');
     expect(rows).toHaveLength(2);
-    const [english, noGen] = [rowOf(section, 'English'), rowOf(section, 'No generation')];
+    const [english, noGen] = [rowOf(section, 'English'), rowOf(section, 'Language not recorded')];
     expect(rows).toEqual([english, noGen]);
-    const hint = within(noGen).getByText(/without a generated résumé or letter/);
+    const hint = within(noGen).getByText(
+      /no generation, or whose generation has no target language/
+    );
     const stats = within(noGen).getByText(/0 positive/);
     // label, bar, stats, then the hint: same rhythm as every other row
     expect(stats.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('labels an unknown template "Template not recorded", not "No generation"', () => {
+  it('labels an unknown template "Template not recorded", not "Language not recorded"', () => {
     mockState = {
       data: report({
         groups: [group('template', 'unknown', counts({ positiveReply: 3, noReply: 4 }), 0.43)],
@@ -186,7 +188,7 @@ describe('InsightsPage', () => {
     expect(
       within(section).getByText(/No recognized export template is recorded/)
     ).toBeInTheDocument();
-    expect(within(section).queryByText('No generation')).not.toBeInTheDocument();
+    expect(within(section).queryByText('Language not recorded')).not.toBeInTheDocument();
   });
 
   it('keeps "Unknown" (no hint) for an unrecorded board', () => {
@@ -197,7 +199,7 @@ describe('InsightsPage', () => {
     };
     render(<InsightsPage />);
     expect(screen.getByText('Unknown')).toBeInTheDocument();
-    expect(screen.queryByText('No generation')).not.toBeInTheDocument();
+    expect(screen.queryByText('Language not recorded')).not.toBeInTheDocument();
   });
 
   it('shows the volume nudge even when there are no outcome groups', () => {

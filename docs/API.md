@@ -3206,8 +3206,10 @@ outcomes(): Promise<InsightsOutcomesReport>;
 
 Outcome of every application the user sent, grouped by board, tailored vs
 not, cover letter vs none, target language, month and export template, plus
-the volume nudge when it fires. Withdrawn and saved applications are never
-counted; pending ones are counted but kept out of every rate.
+the volume nudge when it fires. The outcome groups never count withdrawn or
+saved applications, and count pending ones but keep them out of every rate.
+The nudge measures sending volume, so its window counts every application sent
+in it, a later-withdrawn one included.
 
 ### Channels — `insights`
 

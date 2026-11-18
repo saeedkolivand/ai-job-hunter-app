@@ -2390,8 +2390,8 @@
     },
     "group": {
       "unknown": "Unbekannt",
-      "noGeneration": "Keine Generierung",
-      "noGenerationHint": "Bewerbungen ohne generierten Lebenslauf oder generiertes Anschreiben.",
+      "languageNotRecorded": "Sprache nicht erfasst",
+      "languageNotRecordedHint": "Bewerbungen ohne Generierung oder mit einer Generierung ohne Zielsprache.",
       "templateNotRecorded": "Vorlage nicht erfasst",
       "templateNotRecordedHint": "Für diese Bewerbungen ist keine erkannte Export-Vorlage erfasst.",
       "tailored": {

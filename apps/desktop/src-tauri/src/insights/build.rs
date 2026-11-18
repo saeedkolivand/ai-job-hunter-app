@@ -52,11 +52,20 @@ pub fn build_inputs(
     events_of: impl Fn(&str) -> Option<Vec<StatusEvent>>,
     now: u64,
 ) -> Vec<AppInput> {
-    let by_url: HashMap<String, &AiGenerationRecord> = generations
-        .iter()
-        .filter(|g| !g.job_url.is_empty())
-        .map(|g| (normalize_job_url(&g.job_url), g))
-        .collect();
+    // Two rows can share a normalized key (a legacy raw-url row beside the canonical
+    // one): the canonical row (stored url == key) wins, otherwise the first in input
+    // order, so the pick never depends on which duplicate came last.
+    let mut by_url: HashMap<String, &AiGenerationRecord> = HashMap::new();
+    for g in generations.iter().filter(|g| !g.job_url.is_empty()) {
+        let key = normalize_job_url(&g.job_url);
+        let canonical = g.job_url == key;
+        if by_url
+            .get(&key)
+            .is_none_or(|cur| canonical && cur.job_url != key)
+        {
+            by_url.insert(key, g);
+        }
+    }
     let mut out: Vec<AppInput> = apps
         .iter()
         .filter(|a| a.status != ApplicationStatus::Saved)

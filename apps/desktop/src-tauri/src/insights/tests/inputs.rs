@@ -256,3 +256,20 @@ fn dismissing_a_suggestion_after_a_manual_rejection_keeps_the_application_reject
     let inputs = build_inputs(&store.list(), &[], |a| Some(store.events(a)), clock);
     assert_eq!(inputs[0].outcome, Some(Outcome::Rejected));
 }
+
+#[test]
+fn the_canonical_generation_wins_over_a_later_legacy_duplicate() {
+    const CANON: &str = "https://example.com/job/1";
+    assert_eq!(crate::applications::normalize_job_url(CANON), CANON);
+    let generations = [
+        generation_row(CANON, "", Some("atelier")),
+        generation_row("  https://example.com/job/1  ", "", None),
+    ];
+    let apps = [app("a", "applied", CANON, Some(NOW))];
+    let inputs = build_inputs(&apps, &generations, |_| Some(vec![]), NOW);
+    let template = inputs[0]
+        .generation
+        .as_ref()
+        .and_then(|g| g.template.as_deref());
+    assert_eq!(template, Some("atelier"));
+}
