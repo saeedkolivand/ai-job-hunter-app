@@ -28,6 +28,7 @@ import { dialog } from './namespaces/dialog/index.js';
 import { discovery } from './namespaces/discovery/index.js';
 import { documents } from './namespaces/documents/index.js';
 import { emailWatch } from './namespaces/emailWatch/index.js';
+import { exportNs } from './namespaces/export/index.js';
 import { extensionBridge } from './namespaces/extensionBridge/index.js';
 import { geocode } from './namespaces/geocode/index.js';
 import { github } from './namespaces/github/index.js';
@@ -64,6 +65,7 @@ export function createTauriInvokeClient(): AppClient {
     extensionBridge: extensionBridge as AppClient['extensionBridge'],
     emailWatch: emailWatch as AppClient['emailWatch'],
     sync: sync as AppClient['sync'],
+    export: exportNs as AppClient['export'],
     scrape: scrape as AppClient['scrape'],
     match: match as AppClient['match'],
     geocode: geocode as AppClient['geocode'],

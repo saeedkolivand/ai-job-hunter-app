@@ -330,6 +330,7 @@ export function TailorFlow({
         exportOpen={gen.exportOpen}
         setExportOpen={gen.setExportOpen}
         onExport={(fmt) => void gen.exportAs(fmt)}
+        atsViewPath={gen.atsViewPath}
         runState={runState}
         // No live/reconnected session — a cold redisplay from `latestGeneration`,
         // so there is no interactive fix/resolve UI wired for it (see

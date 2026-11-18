@@ -1,3 +1,4 @@
+import { type TrackResumeExport, useResumeExportPath } from '@/hooks/use-resume-export-path';
 import { buildFilename, exportDOCX, exportPDF, exportTXT, resolveMarket } from '@/lib/generate';
 import type { useSessionStore } from '@/store/session-store';
 
@@ -17,7 +18,8 @@ export type ExportDocumentState = Pick<
   | 'letterLayoutId'
 >;
 
-/** Export the active document (résumé or cover letter) in `fmt`. No-op on empty text. */
+/** Export the active document (résumé or cover letter) in `fmt`. No-op on empty text.
+ *  `track` records a résumé's saved path (see `useResumeExportPath`). */
 export async function exportActiveDocument(
   {
     activeOut,
@@ -30,7 +32,8 @@ export async function exportActiveDocument(
     accent,
     letterLayoutId,
   }: ExportDocumentState,
-  fmt: 'pdf' | 'docx' | 'txt'
+  fmt: 'pdf' | 'docx' | 'txt',
+  track: TrackResumeExport
 ): Promise<void> {
   const text = activeOut === 'resume' ? resumeOut : coverOut;
   if (!text) return;
@@ -61,8 +64,10 @@ export async function exportActiveDocument(
     type,
     fmt
   );
-  if (fmt === 'pdf') {
-    await exportPDF(
+  await track(type === 'resume', async () => {
+    if (fmt === 'txt') return exportTXT(text, name);
+    const exporter = fmt === 'pdf' ? exportPDF : exportDOCX;
+    return exporter(
       text,
       name,
       type,
@@ -73,21 +78,14 @@ export async function exportActiveDocument(
       accent,
       letterLayoutId
     );
-  }
-  if (fmt === 'docx') {
-    await exportDOCX(
-      text,
-      name,
-      type,
-      meta ?? undefined,
-      templateId,
-      atsMode,
-      exportLocale,
-      accent,
-      letterLayoutId
-    );
-  }
-  if (fmt === 'txt') {
-    exportTXT(text, name);
-  }
+  });
+}
+
+/** Export action for the AI Generate page plus the saved résumé path that feeds the ATS panel. */
+export function useActiveDocumentExport(state: ExportDocumentState, blocked: boolean) {
+  const { path, track } = useResumeExportPath();
+  const doExport = async (fmt: 'pdf' | 'docx' | 'txt') => {
+    if (!blocked) await exportActiveDocument(state, fmt, track);
+  };
+  return { atsViewPath: path, doExport };
 }

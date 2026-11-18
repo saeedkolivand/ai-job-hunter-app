@@ -2348,6 +2348,52 @@
       "found": "Found"
     }
   },
+  "atsView": {
+    "title": "What an ATS sees: {{found}} of {{total}} fields found",
+    "hint": "A strict, automated reading of your exported file. Advisory only, real systems vary.",
+    "present": "present",
+    "status": {
+      "found": "Found",
+      "suspicious": "Unclear",
+      "missing": "Missing"
+    },
+    "groups": {
+      "contact": "Contact and layout",
+      "sections": "Section headings",
+      "role": "Role {{n}}"
+    },
+    "contact": {
+      "name": "Name",
+      "email": "Email",
+      "phone": "Phone",
+      "location": "Location"
+    },
+    "readingOrder": "Reading order",
+    "readingOrderOk": "In order",
+    "readingOrderUnchecked": "No standard section heading was found, so the reading order could not be checked.",
+    "section": {
+      "summary": "Summary",
+      "experience": "Experience",
+      "education": "Education",
+      "projects": "Projects",
+      "skills": "Skills",
+      "other": "Other heading"
+    },
+    "role": {
+      "title": "Job title",
+      "company": "Company",
+      "start": "Start date",
+      "end": "End date"
+    },
+    "reason": {
+      "notFound": "Nothing like this was found in the text.",
+      "unparseable": "The date is in a format an ATS may not read. A month and a full year work best.",
+      "datesInverted": "The end date comes before the start date.",
+      "wrapped": "The phone number was split across two lines.",
+      "nonstandardHeading": "An ATS does not usually recognise this heading. Standard names such as Experience or Education are safer.",
+      "interleaved": "Content was read before the header, which can happen with two-column layouts."
+    }
+  },
   "bestMatches": {
     "title": "Best Matches",
     "subtitle": "Top-scoring jobs across every autopilot, in one place.",

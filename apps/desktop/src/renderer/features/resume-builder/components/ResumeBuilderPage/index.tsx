@@ -10,6 +10,7 @@ import { AiSetupHint } from '@/components/ui/AiSetupHint';
 import { ModelSelector } from '@/components/ui/ModelSelector';
 import { OutputPanelDone } from '@/features/ai-generate/components/OutputPanelDone';
 import { OutputPanelGenerating } from '@/features/ai-generate/components/OutputPanelGenerating';
+import { useResumeExportPath } from '@/hooks/use-resume-export-path';
 import {
   buildFilename,
   exportDOCX,
@@ -69,12 +70,18 @@ export function ResumeBuilderPage() {
     setTimeout(() => setCopied(false), COPY_FEEDBACK_LONG_MS);
   };
 
+  const { path: atsViewPath, track: trackResumeExport } = useResumeExportPath();
+
   const doExport = async (fmt: 'pdf' | 'docx' | 'txt') => {
     if (isGenerating || !output) return;
     const name = buildFilename(meta, 'resume', fmt);
-    if (fmt === 'pdf') await exportPDF(output, name, 'resume', meta, templateId, atsMode, locale);
-    if (fmt === 'docx') await exportDOCX(output, name, 'resume', meta, templateId, atsMode, locale);
-    if (fmt === 'txt') exportTXT(output, name);
+    await trackResumeExport(true, async () => {
+      if (fmt === 'pdf')
+        return exportPDF(output, name, 'resume', meta, templateId, atsMode, locale);
+      if (fmt === 'docx')
+        return exportDOCX(output, name, 'resume', meta, templateId, atsMode, locale);
+      exportTXT(output, name);
+    });
   };
 
   const stageRegistry: Record<ResumeBuilderStage, () => ReactNode> = {
@@ -119,6 +126,7 @@ export function ResumeBuilderPage() {
           onActiveOutChange={() => {}}
           onCopy={() => void copyOutput()}
           onExport={doExport}
+          atsViewPath={atsViewPath}
           onOutputChange={(value) => setResumeBuilder({ output: value })}
           onRegenerate={() => void synthesize()}
           copied={copied}

@@ -5,6 +5,7 @@ import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { Button, type TabItem, Tabs } from '@ajh/ui';
 
+import { AtsViewPanel } from '@/components/generation/AtsViewPanel';
 import { EditableOutput } from '@/components/generation/EditableOutput';
 import { type ExportFormat, ExportPicker } from '@/components/generation/ExportPicker';
 import { HandEditNudge } from '@/components/generation/HandEditNudge';
@@ -67,6 +68,8 @@ interface Props {
   exportOpen: boolean;
   setExportOpen: React.Dispatch<React.SetStateAction<boolean>>;
   onExport: (fmt: 'pdf' | 'docx' | 'txt') => void;
+  /** Where the last PDF/DOCX résumé export was saved — feeds the ATS view panel. */
+  atsViewPath?: string | null;
   jobDesc: string;
   onJobDescChange: (v: string) => void;
   hasDesc: boolean;
@@ -111,6 +114,7 @@ export function GenerationOutput({
   exportOpen,
   setExportOpen,
   onExport,
+  atsViewPath,
   jobDesc,
   onJobDescChange,
   hasDesc,
@@ -360,6 +364,11 @@ export function GenerationOutput({
             />
           )}
         </div>
+        {view === 'doc' && activeOut === 'resume' && atsViewPath && (
+          <div className="shrink-0 px-3 pb-2">
+            <AtsViewPanel path={atsViewPath} />
+          </div>
+        )}
       </div>
     </div>
   );

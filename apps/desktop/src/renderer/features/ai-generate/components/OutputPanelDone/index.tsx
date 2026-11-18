@@ -1,4 +1,4 @@
-import { Check, Copy, Download, FileText, LayoutTemplate, Loader2, RotateCcw } from 'lucide-react';
+import { Check, Copy, Download, FileText, LayoutTemplate, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 
@@ -6,6 +6,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button, cn } from '@ajh/ui';
 
 import { AtsModeToggle } from '@/components/generation/AtsModeToggle';
+import { AtsViewPanel } from '@/components/generation/AtsViewPanel';
 import { EditableOutput } from '@/components/generation/EditableOutput';
 import { HandEditNudge } from '@/components/generation/HandEditNudge';
 import { LetterLayoutPicker } from '@/components/generation/LetterLayoutPicker';
@@ -16,7 +17,6 @@ import {
   type GenerationMeta,
   isDecoratedLetterLayout,
   type LetterLayoutId,
-  MODES,
   type QualityReport,
   resolveMarket,
   shouldClearAtsMode,
@@ -26,6 +26,7 @@ import {
 
 import { ExportModal } from '../ExportModal';
 import { TrimPanel } from '../TrimPanel';
+import { RegenerateBar } from './RegenerateBar';
 import { useCommittedPreview } from './useCommittedPreview';
 
 interface OutputPanelDoneProps {
@@ -68,6 +69,8 @@ interface OutputPanelDoneProps {
   onLetterLayoutChange?: (id: LetterLayoutId) => void;
   onCopy: () => void;
   onExport: (fmt: 'pdf' | 'docx' | 'txt') => Promise<void>;
+  /** Where the last PDF/DOCX résumé export was saved — shows the "what an ATS sees" panel. */
+  atsViewPath?: string | null;
   onOutputChange: (value: string) => void;
   onRegenerate: () => void;
   copied: boolean;
@@ -101,6 +104,7 @@ export function OutputPanelDone({
   onAtsModeChange,
   onCopy,
   onExport,
+  atsViewPath = null,
   onOutputChange,
   onRegenerate,
   copied,
@@ -343,19 +347,15 @@ export function OutputPanelDone({
         />
       )}
 
+      {/* What an ATS parsed from the last résumé export (hidden on the cover tab). */}
+      {activeOut === 'resume' && atsViewPath && (
+        <div className="shrink-0 max-h-60 overflow-y-auto px-6 pb-2">
+          <AtsViewPanel path={atsViewPath} />
+        </div>
+      )}
+
       {/* Re-generate option */}
-      <div className="shrink-0 border-t border-[var(--border-clear)] px-6 py-3 flex items-center justify-between">
-        <span className="text-[10px] text-foreground/30">
-          {MODES[mode as keyof typeof MODES].label} · {meta?.targetLanguage?.toUpperCase() ?? 'EN'}
-          {meta?.mismatch && ` · ${t('aiGenerate.localized')}`}
-        </span>
-        <Button
-          onClick={onRegenerate}
-          className="flex items-center gap-1.5 text-[11px] text-foreground/40 hover:text-foreground/70 transition-colors h-auto bg-transparent border-transparent"
-        >
-          <RotateCcw size={11} /> {t('aiGenerate.regenerate')}
-        </Button>
-      </div>
+      <RegenerateBar mode={mode} meta={meta} onRegenerate={onRegenerate} />
 
       <ExportModal
         open={exportOpen}

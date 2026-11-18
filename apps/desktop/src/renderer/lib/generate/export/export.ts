@@ -93,7 +93,7 @@ export async function exportDOCX(
   locale?: string,
   accent?: string,
   letterLayoutId?: LetterLayoutId
-): Promise<void> {
+): Promise<string> {
   try {
     if (!text || text.trim().length === 0) {
       throw new Error('Cannot export empty document. Please generate content first.');
@@ -120,7 +120,7 @@ export async function exportDOCX(
     // (never the résumé's company-link pool). Missing profile → undefined
     // (same fallback-only behavior, just nothing to fall back to).
     const contact = await api.contactProfile.get().catch(() => undefined);
-    const _filePath = await api.documents.exportAndSave({
+    const filePath = await api.documents.exportAndSave({
       text: exportText,
       format: 'docx',
       documentType: type,
@@ -144,6 +144,7 @@ export async function exportDOCX(
         : undefined,
     });
     console.warn('[export] done', { format: 'docx', type });
+    return filePath;
   } catch (error) {
     // Class only — the backend's validation messages can embed a header
     // URL and this line is persisted into the diagnostics bundle.
@@ -165,7 +166,7 @@ export async function exportPDF(
   locale?: string,
   accent?: string,
   letterLayoutId?: LetterLayoutId
-): Promise<void> {
+): Promise<string> {
   try {
     if (!text || text.trim().length === 0) {
       throw new Error('Cannot export empty document. Please generate content first.');
@@ -187,7 +188,7 @@ export async function exportPDF(
     const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
     // See exportDOCX: the contact profile is a header fallback, not the source of truth.
     const contact = await api.contactProfile.get().catch(() => undefined);
-    const _filePath = await api.documents.exportAndSave({
+    const filePath = await api.documents.exportAndSave({
       text: exportText,
       format: 'pdf',
       documentType: type,
@@ -209,6 +210,7 @@ export async function exportPDF(
         : undefined,
     });
     console.warn('[export] done', { format: 'pdf', type });
+    return filePath;
   } catch (error) {
     // Class only — the backend's validation messages can embed a header
     // URL and this line is persisted into the diagnostics bundle.

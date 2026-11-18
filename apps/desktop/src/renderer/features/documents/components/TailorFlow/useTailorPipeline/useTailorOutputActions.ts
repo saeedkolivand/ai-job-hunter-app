@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
+import { useResumeExportPath } from '@/hooks/use-resume-export-path';
 import { errorClass } from '@/lib/error-class';
 import {
   buildFilename,
@@ -42,6 +43,7 @@ export function useTailorOutputActions({
   const notify = useNotification();
   const [copied, setCopied] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const { path: atsViewPath, track } = useResumeExportPath();
 
   const copy = async () => {
     if (!output) return;
@@ -66,10 +68,10 @@ export function useTailorOutputActions({
     };
     const name = buildFilename(fileMeta, docType, fmt);
     try {
-      if (fmt === 'txt') exportTXT(output, name);
-      else {
+      await track(docType === 'resume', async () => {
+        if (fmt === 'txt') return exportTXT(output, name);
         const exporter = fmt === 'pdf' ? exportPDF : exportDOCX;
-        await exporter(
+        return exporter(
           output,
           name,
           docType,
@@ -80,7 +82,7 @@ export function useTailorOutputActions({
           accent,
           letterLayoutId
         );
-      }
+      });
     } catch (err) {
       console.error('[export] failed', {
         format: fmt,
@@ -93,5 +95,5 @@ export function useTailorOutputActions({
     }
   };
 
-  return { copied, exportOpen, setExportOpen, copy, exportAs };
+  return { copied, exportOpen, setExportOpen, copy, exportAs, atsViewPath };
 }

@@ -36,7 +36,7 @@ import {
   useSessionStore,
 } from '@/store/session-store';
 
-import { exportActiveDocument } from './export-document';
+import { useActiveDocumentExport } from './export-document';
 import { LinkedMarkApplied } from './LinkedMarkApplied';
 import { runSetters } from './run-setters';
 import { useContactPromptGate } from './useContactPromptGate';
@@ -200,13 +200,10 @@ export function AIGeneratePage() {
     setTimeout(() => setCopied(false), COPY_FEEDBACK_LONG_MS);
   };
 
-  const doExport = async (fmt: 'pdf' | 'docx' | 'txt') => {
-    if (isGenerating) return;
-    await exportActiveDocument(
-      { activeOut, resumeOut, coverOut, meta, locale, templateId, atsMode, accent, letterLayoutId },
-      fmt
-    );
-  };
+  const { atsViewPath, doExport } = useActiveDocumentExport(
+    { activeOut, resumeOut, coverOut, meta, locale, templateId, atsMode, accent, letterLayoutId },
+    isGenerating
+  );
 
   // Abort only — `useGeneration`'s catch owns the aborted outcome (keeps any finished
   // document, no error toast).
@@ -319,6 +316,7 @@ export function AIGeneratePage() {
                 onAtsModeChange={setAtsMode}
                 onCopy={() => void copyOutput()}
                 onExport={doExport}
+                atsViewPath={atsViewPath}
                 onOutputChange={activeOut === 'resume' ? setResumeOut : setCoverOut}
                 onRegenerate={() => void handleGenerate()}
                 copied={copied}

@@ -31,6 +31,8 @@ export function useGenerationExport({ meta, resumeDraft, coverDraft }: UseGenera
   // Per-export document accent (6-hex) — undefined = the template's own palette.
   const [accent, setAccent] = useState<string | undefined>(undefined);
   const [exporting, setExporting] = useState<'resume' | 'cover' | null>(null);
+  // Where the last PDF/DOCX résumé export was saved — feeds the "what an ATS sees" panel.
+  const [resumeExportPath, setResumeExportPath] = useState<string | null>(null);
 
   const doExport = async (type: 'resume' | 'cover') => {
     const text = type === 'resume' ? resumeDraft : coverDraft;
@@ -52,12 +54,14 @@ export function useGenerationExport({ meta, resumeDraft, coverDraft }: UseGenera
         ? resolveMarket({ targetLanguage: meta.targetLanguage })
         : undefined;
     setExporting(type);
+    // Only a new résumé export replaces the résumé's panel; a cover letter leaves it be.
+    if (type === 'resume') setResumeExportPath(null);
     try {
       if (format === 'txt') {
         exportTXT(text, filename.replace('.txt', ''));
       } else {
         const exporter = format === 'pdf' ? exportPDF : exportDOCX;
-        await exporter(
+        const savedPath = await exporter(
           text,
           filename.replace(`.${format}`, ''),
           docType,
@@ -67,6 +71,8 @@ export function useGenerationExport({ meta, resumeDraft, coverDraft }: UseGenera
           coverLetterLocale,
           accent
         );
+        // Résumés only: a cover letter has no ATS view.
+        if (type === 'resume' && savedPath) setResumeExportPath(savedPath);
       }
     } catch (err) {
       console.error('[export] failed', {
@@ -83,5 +89,15 @@ export function useGenerationExport({ meta, resumeDraft, coverDraft }: UseGenera
     }
   };
 
-  return { format, setFormat, template, setTemplate, accent, setAccent, exporting, doExport };
+  return {
+    format,
+    setFormat,
+    template,
+    setTemplate,
+    accent,
+    setAccent,
+    exporting,
+    doExport,
+    resumeExportPath,
+  };
 }

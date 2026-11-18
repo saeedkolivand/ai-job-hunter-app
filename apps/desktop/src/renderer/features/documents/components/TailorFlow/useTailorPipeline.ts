@@ -466,16 +466,18 @@ export function useTailorPipeline({
 
   const cancel = () => session.cancel();
 
-  const { copied, exportOpen, setExportOpen, copy, exportAs } = useTailorOutputActions({
-    output,
-    activeOut,
-    meta,
-    market,
-    templateId,
-    atsMode,
-    accent,
-    letterLayoutId,
-  });
+  const { copied, exportOpen, setExportOpen, copy, exportAs, atsViewPath } = useTailorOutputActions(
+    {
+      output,
+      activeOut,
+      meta,
+      market,
+      templateId,
+      atsMode,
+      accent,
+      letterLayoutId,
+    }
+  );
 
   return {
     state: session.state,
@@ -516,6 +518,7 @@ export function useTailorPipeline({
     cancel,
     copy,
     exportAs,
+    atsViewPath,
     editActiveOutput,
     meta,
     // Whether `meta`'s three language fields are a confident detection or the

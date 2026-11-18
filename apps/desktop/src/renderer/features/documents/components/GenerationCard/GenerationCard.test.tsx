@@ -38,6 +38,13 @@ vi.mock('@/services/use-ai-generations', () => ({
   useUpdateAiGeneration: () => ({ mutate: mockUpdateMutate, isPending: false }),
 }));
 
+// The ATS panel reads the exported file through a service hook; stub it so the
+// card mounts without an AppClientProvider (the panel has its own test).
+vi.mock('@/components/generation/AtsViewPanel', () => ({
+  AtsViewPanel: ({ path }: { path: string | null }) =>
+    path ? <div data-testid="ats-panel">{path}</div> : null,
+}));
+
 // GenerationCard renders EditableOutput which calls useContactProfile() — stub it
 // so the component tree mounts without an AppClientProvider.
 vi.mock('@/services/use-contact-profile', () => ({
@@ -352,7 +359,7 @@ describe('GenerationCard — debounced persist', () => {
 describe('GenerationCard — cover-letter export locale', () => {
   beforeEach(() => {
     vi.mocked(exportPDF).mockClear();
-    vi.mocked(exportPDF).mockResolvedValue(undefined);
+    vi.mocked(exportPDF).mockResolvedValue('/out/letter.pdf');
   });
 
   /** Export lives in the 3-dots overflow menu → the composed ExportPicker's
@@ -369,6 +376,47 @@ describe('GenerationCard — cover-letter export locale', () => {
 
     await waitFor(() => expect(exportPDF).toHaveBeenCalledTimes(1));
     expect(vi.mocked(exportPDF).mock.calls[0]?.[6]).toBe('de');
+  });
+
+  it('shows the ATS view for a saved résumé but not for a cover letter', async () => {
+    render(<GenerationCard gen={GEN} />);
+    openExportModal();
+    expect(screen.queryByTestId('ats-panel')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportCoverLetter' }));
+    await waitFor(() => expect(exportPDF).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('ats-panel')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportResume' }));
+    expect(await screen.findByTestId('ats-panel')).toHaveTextContent('/out/letter.pdf');
+  });
+
+  it('keeps the résumé panel when a cover letter is exported afterwards', async () => {
+    vi.mocked(exportPDF)
+      .mockResolvedValueOnce('/out/cv.pdf')
+      .mockResolvedValueOnce('/out/letter.pdf');
+    render(<GenerationCard gen={GEN} />);
+    openExportModal();
+    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportResume' }));
+    expect(await screen.findByTestId('ats-panel')).toHaveTextContent('/out/cv.pdf');
+
+    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportCoverLetter' }));
+    await waitFor(() => expect(exportPDF).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId('ats-panel')).toHaveTextContent('/out/cv.pdf');
+  });
+
+  it('leaves no panel when a résumé re-export is rejected', async () => {
+    vi.mocked(exportPDF)
+      .mockResolvedValueOnce('/out/cv.pdf')
+      .mockRejectedValueOnce(new Error('blocked'));
+    render(<GenerationCard gen={GEN} />);
+    openExportModal();
+    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportResume' }));
+    expect(await screen.findByTestId('ats-panel')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportResume' }));
+    await waitFor(() => expect(exportPDF).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByTestId('ats-panel')).not.toBeInTheDocument());
   });
 
   it('leaves the résumé export locale unset (unchanged behavior)', async () => {

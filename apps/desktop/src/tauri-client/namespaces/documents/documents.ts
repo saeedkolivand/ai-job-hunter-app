@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import type {
+  AtsView,
   BaseExportRequest,
   ContactFieldConflict,
   ContactProfile,
@@ -34,6 +35,7 @@ export const documents = {
       mimeType: string;
       filename: string;
       report?: ExportReport;
+      atsView?: AtsView;
     }>('documents_export_document', { request }),
   exportAndSave: (request: BaseExportRequest) =>
     invoke<string>('documents_export_and_save', { request }),
