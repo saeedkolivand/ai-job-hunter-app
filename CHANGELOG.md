@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.163.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.162.0...v0.163.0) (2026-11-18)
+
+### ✨ Features
+
+* **export:** record the template each generation was exported with ([#1540](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1540)) ([7c18184](https://github.com/saeedkolivand/ai-job-hunter-app/commit/7c181840d3b51622bc23a86cd877e328e2c5d338))
+* **export:** strict ats view of every exported resume ([#1538](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1538)) ([f5a4d0c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f5a4d0cd0ac0f779acf88b1f91fb6d0647da98c3))
+* **insights:** outcome insights page and volume nudge ([#1539](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1539)) ([0099f3d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0099f3d36aa59ade4156f98753f47c1bff3c8d5e))
+* **jobs:** ghost-job signals from a posting history ([#1537](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1537)) ([43fa7db](https://github.com/saeedkolivand/ai-job-hunter-app/commit/43fa7db17790886192661d47bd4c1084c4e38c44))
+
+### 🎨 UI/UX
+
+* **empty-state:** raise the description to aa contrast ([#1535](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1535)) ([ea7a66e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ea7a66e34e54d58ed2426ad6688b6a75c1c92e85))
+
 ## [0.162.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.161.1...v0.162.0) (2026-11-17)
 
 ### ✨ Features
