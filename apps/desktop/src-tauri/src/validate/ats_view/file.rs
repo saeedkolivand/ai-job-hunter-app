@@ -81,6 +81,12 @@ pub fn ats_view_for_file(path: &str) -> AppResult<AtsView> {
     if !matches!(real_ext.as_deref(), Some("pdf" | "docx")) {
         return Err(bad("only PDF and DOCX files are supported"));
     }
+    // ponytail: stat first, because `File::open` on a FIFO with no writer blocks forever
+    // (libc is not a direct dependency, so no O_NONBLOCK). A swap between this stat and the
+    // open is harmless: the handle check below still judges what was really opened.
+    if !std::fs::metadata(&real).is_ok_and(|m| m.is_file()) {
+        return Err(bad("not a file"));
+    }
     let file = std::fs::File::open(&real).map_err(|_| bad("file not readable"))?;
     let meta = file.metadata().map_err(|_| bad("file not readable"))?;
     if !meta.is_file() {

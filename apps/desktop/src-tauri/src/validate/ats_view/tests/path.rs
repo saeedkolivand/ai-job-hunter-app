@@ -207,3 +207,30 @@ fn a_file_over_the_size_cap_is_refused_without_being_read() {
     drop(f);
     refused_by(&slashed(&big), "too large");
 }
+
+#[cfg(unix)]
+#[test]
+fn a_fifo_with_a_pdf_name_is_refused_without_blocking() {
+    let dir = tempfile::tempdir().unwrap();
+    let fifo = dir.path().join("cv.pdf");
+    let made = std::process::Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .is_ok_and(|s| s.success());
+    if !made {
+        return; // no mkfifo on this host
+    }
+    let path = slashed(&fifo);
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(
+            ats_view_for_file(&path)
+                .map(|_| ())
+                .map_err(|e| e.to_string()),
+        );
+    });
+    let out = rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("a FIFO must be refused, not block on open");
+    assert!(out.is_err_and(|m| m.contains("not a file")));
+}

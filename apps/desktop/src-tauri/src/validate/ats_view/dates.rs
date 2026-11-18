@@ -234,7 +234,7 @@ static RANGE_RE: LazyLock<Regex> = LazyLock::new(|| {
     let present = present_alt();
     let point = loose_point();
     Regex::new(&format!(
-        r"(?i)(?:^|[^\d./])({point})\s*{SEP}\s*({point}|\d{{2}}\b|(?:{present})\b)"
+        r"(?i)(?:^|[^\w./])({point})\s*{SEP}\s*({point}|\d{{2}}\b|(?:{present})\b)"
     ))
     .unwrap()
 });

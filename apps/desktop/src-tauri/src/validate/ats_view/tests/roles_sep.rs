@@ -48,3 +48,11 @@ Senior Engineer
     assert_eq!(r.len(), 1, "{r:?}");
     assert_eq!(val(&r[0].title), Some("Senior Engineer"));
 }
+
+#[test]
+fn a_name_ending_in_a_month_prefix_is_not_split_into_a_date() {
+    let r = roles("Omar 2020 - 2021");
+    assert_eq!(r.len(), 1, "{r:?}");
+    assert_eq!(val(&r[0].company), Some("Omar"));
+    assert_eq!(val(&r[0].start), Some("2020"));
+}
