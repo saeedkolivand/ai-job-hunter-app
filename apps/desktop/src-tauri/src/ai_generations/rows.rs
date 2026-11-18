@@ -10,14 +10,15 @@ use rusqlite::{params, Connection};
 use super::AiGenerationRecord;
 use crate::db::{ts_from_db, ts_to_db};
 
-/// The 23-column projection every record read selects, in the order
+/// The 24-column projection every record read selects, in the order
 /// [`row_to_record`] decodes it — so the column list lives in one place.
 pub(super) const SELECT_COLS: &str =
     "SELECT id, created_at, candidate_name, job_title, company_name,
             resume_language, job_ad_language, target_language, mismatch,
             top_requirements, mode, resume_text, cover_letter_text, job_ad,
             job_url, board, application_answers, company_brief, application_id,
-            interview_questions, email_subject, email_body, quality_report
+            interview_questions, email_subject, email_body, quality_report,
+            last_export_template
      FROM ai_generations";
 
 /// Repair pre-#955 mojibake in `resume_text`/`cover_letter_text` on every
@@ -39,7 +40,7 @@ pub(super) fn repaired_generation_texts<'a>(
     )
 }
 
-/// Bind and run the 23-column `INSERT` for one whole record — the single copy of the
+/// Bind and run the 24-column `INSERT` for one whole record — the single copy of the
 /// statement, shared by [`super::AiGenerationStore::insert`] and the bulk-restore loop in
 /// `import` (which binds its own transaction and cannot go through `insert`, whose
 /// connection lock it would deadlock on). The caller supplies `quality_report`
@@ -65,8 +66,9 @@ pub(super) fn insert_row(
               resume_language, job_ad_language, target_language, mismatch,
               top_requirements, mode, resume_text, cover_letter_text, job_ad,
               job_url, board, application_answers, company_brief, application_id,
-              interview_questions, email_subject, email_body, quality_report)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23)",
+              interview_questions, email_subject, email_body, quality_report,
+              last_export_template)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24)",
             params![
                 rec.id,
                 ts_to_db(rec.created_at),
@@ -91,11 +93,12 @@ pub(super) fn insert_row(
                 rec.email_subject,
                 rec.email_body,
                 quality_report,
+                rec.last_export_template,
             ],
         )
 }
 
-/// Map a DB row (the full 23-column projection) to a record. Shared by `list`
+/// Map a DB row (the full 24-column projection) to a record. Shared by `list`
 /// and `find_by_job_url` so the column order lives in one place.
 pub(super) fn row_to_record(row: &rusqlite::Row) -> rusqlite::Result<AiGenerationRecord> {
     let top_req_json: String = row.get(9)?;
@@ -125,5 +128,6 @@ pub(super) fn row_to_record(row: &rusqlite::Row) -> rusqlite::Result<AiGeneratio
         email_subject: row.get(20)?,
         email_body: row.get(21)?,
         quality_report: row.get(22)?,
+        last_export_template: row.get(23)?,
     })
 }

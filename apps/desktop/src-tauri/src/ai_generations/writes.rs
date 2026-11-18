@@ -37,7 +37,7 @@ impl AiGenerationStore {
               cover_letter_text = ?12, job_ad = ?13, job_url = ?14, board = ?15,
               application_answers = ?16, company_brief = ?17, application_id = ?18,
               interview_questions = ?19, email_subject = ?20, email_body = ?21,
-              quality_report = ?22
+              quality_report = ?22, last_export_template = ?23
              WHERE id = ?1",
             params![
                 rec.id,
@@ -62,6 +62,7 @@ impl AiGenerationStore {
                 rec.email_subject,
                 rec.email_body,
                 rec.quality_report,
+                rec.last_export_template,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -113,6 +114,22 @@ impl AiGenerationStore {
             return Ok(merged_id);
         }
         Ok(id)
+    }
+
+    /// Record the template a job's generation was just exported with, matched
+    /// the way [`save_application`](Self::save_application) matches (normalized
+    /// url first, raw fallback). A job with no generation is a no-op (`Ok(false)`):
+    /// a base résumé export has nothing to annotate.
+    pub fn record_export_template(&self, job_url: &str, template: &str) -> AppResult<bool> {
+        let Some(found) = self.find_for_job(job_url) else {
+            return Ok(false);
+        };
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE ai_generations SET last_export_template = ?2 WHERE id = ?1",
+            params![found.id, template],
+        )?;
+        Ok(true)
     }
 
     /// Overwrite ONE row's `quality_report`, selected by `id`.

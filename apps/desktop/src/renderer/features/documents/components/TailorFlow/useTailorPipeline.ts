@@ -476,6 +476,7 @@ export function useTailorPipeline({
       atsMode,
       accent,
       letterLayoutId,
+      jobUrl,
     }
   );
 

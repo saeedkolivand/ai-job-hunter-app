@@ -26,6 +26,7 @@ fn base_record() -> AiGenerationRecord {
         email_body: String::new(),
         application_id: None,
         quality_report: String::new(),
+        last_export_template: None,
     }
 }
 

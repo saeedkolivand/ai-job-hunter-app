@@ -221,6 +221,12 @@ pub(super) async fn handle_document_export(
         }
     };
 
+    // A generation export attached to a real application is the strongest template
+    // signal the outcome insights get; best-effort, never fails the reply.
+    if let Source::Generation(url) = &parsed.source {
+        crate::export::commands::note_export_template(app, url, parsed.template_id);
+    }
+
     success_or_capped_reply(
         req_id,
         &result,

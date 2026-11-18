@@ -70,7 +70,12 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
     mismatch: gen.mismatch,
   };
 
-  const exportState = useGenerationExport({ meta, resumeDraft, coverDraft });
+  const exportState = useGenerationExport({
+    meta,
+    resumeDraft,
+    coverDraft,
+    jobUrl: gen.jobUrl,
+  });
   const { exporting, doExport } = exportState;
 
   const contacts = referrals.data ?? [];

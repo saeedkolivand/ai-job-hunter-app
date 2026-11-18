@@ -109,6 +109,7 @@ fn ai_generation_store_reset_empties_all_records() {
             email_body: String::new(),
             application_id: None,
             quality_report: String::new(),
+            last_export_template: None,
         })
         .unwrap();
     assert_eq!(store.list().len(), 1, "precondition: one record inserted");

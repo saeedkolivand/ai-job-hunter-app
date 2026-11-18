@@ -375,7 +375,8 @@ describe('GenerationCard — cover-letter export locale', () => {
     fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportCoverLetter' }));
 
     await waitFor(() => expect(exportPDF).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(exportPDF).mock.calls[0]?.[6]).toBe('de');
+    // Market 'de' + the job url (so the backend records the export template).
+    expect(vi.mocked(exportPDF).mock.calls[0]).toEqual(expect.arrayContaining(['de', GEN.jobUrl]));
   });
 
   it('shows the ATS view for a saved résumé but not for a cover letter', async () => {

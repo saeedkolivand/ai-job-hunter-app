@@ -84,6 +84,7 @@ fn generate_save_second_generation_same_url_merge_into_one_gen_row_and_one_appli
             email_body: String::new(),
             application_id: None,
             quality_report: String::new(),
+            last_export_template: None,
         }
     };
     let rec1 = record("gen-resume", "RESUME", "");

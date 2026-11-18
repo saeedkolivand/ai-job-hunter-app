@@ -285,8 +285,14 @@ export interface DocumentsContract {
     atsView?: AtsView;
   }>;
 
-  /** Render, ask the user where to save, and write the file; resolves to the saved path. */
-  exportAndSave(req: BaseExportRequest): Promise<string>;
+  /**
+   * Render, ask the user where to save, and write the file; resolves to the saved path.
+   * `generationJobUrl` (optional) names the job whose AI generation is being exported:
+   * once the file is saved, that generation remembers the template used, which feeds
+   * the template grouping of `insights.outcomes`. Omit it for an export that belongs
+   * to no generation.
+   */
+  exportAndSave(req: BaseExportRequest, generationJobUrl?: string): Promise<string>;
 
   /**
    * Render the same document to per-page images for the live preview, shown via

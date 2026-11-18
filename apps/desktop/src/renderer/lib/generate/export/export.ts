@@ -83,6 +83,18 @@ function escapeSvgAmpersands(svg: string): string {
 
 // ─── Public export API ────────────────────────────────────────────────────────
 
+type DocumentsApi = ReturnType<typeof getClient>['documents'];
+
+/** `exportAndSave`, passing the generation's job url only when there is one. */
+const saveExport = (
+  api: { documents: DocumentsApi },
+  request: Parameters<DocumentsApi['exportAndSave']>[0],
+  generationJobUrl?: string
+) =>
+  generationJobUrl
+    ? api.documents.exportAndSave(request, generationJobUrl)
+    : api.documents.exportAndSave(request);
+
 export async function exportDOCX(
   text: string,
   filename: string,
@@ -92,7 +104,9 @@ export async function exportDOCX(
   atsMode = false,
   locale?: string,
   accent?: string,
-  letterLayoutId?: LetterLayoutId
+  letterLayoutId?: LetterLayoutId,
+  /** Job url of the AI generation this export belongs to; the backend records the template on it. */
+  generationJobUrl?: string
 ): Promise<string> {
   try {
     if (!text || text.trim().length === 0) {
@@ -120,29 +134,33 @@ export async function exportDOCX(
     // (never the résumé's company-link pool). Missing profile → undefined
     // (same fallback-only behavior, just nothing to fall back to).
     const contact = await api.contactProfile.get().catch(() => undefined);
-    const filePath = await api.documents.exportAndSave({
-      text: exportText,
-      format: 'docx',
-      documentType: type,
-      templateId,
-      atsMode,
-      locale,
-      // Per-export document accent (6-hex) — undefined leaves the template palette
-      // untouched; the backend re-validates and ignores a malformed value.
-      accent,
-      // Cover-letter layout — omitted (undefined) → the backend renders classic;
-      // ignored for résumé exports.
-      letterLayoutId,
-      contact,
-      meta: meta
-        ? {
-            candidateName: meta.candidateName,
-            jobTitle: meta.jobTitle,
-            companyName: meta.companyName,
-            targetLanguage: meta.targetLanguage,
-          }
-        : undefined,
-    });
+    const filePath = await saveExport(
+      api,
+      {
+        text: exportText,
+        format: 'docx',
+        documentType: type,
+        templateId,
+        atsMode,
+        locale,
+        // Per-export document accent (6-hex) — undefined leaves the template palette
+        // untouched; the backend re-validates and ignores a malformed value.
+        accent,
+        // Cover-letter layout — omitted (undefined) → the backend renders classic;
+        // ignored for résumé exports.
+        letterLayoutId,
+        contact,
+        meta: meta
+          ? {
+              candidateName: meta.candidateName,
+              jobTitle: meta.jobTitle,
+              companyName: meta.companyName,
+              targetLanguage: meta.targetLanguage,
+            }
+          : undefined,
+      },
+      generationJobUrl
+    );
     console.warn('[export] done', { format: 'docx', type });
     return filePath;
   } catch (error) {
@@ -165,7 +183,9 @@ export async function exportPDF(
   atsMode = false,
   locale?: string,
   accent?: string,
-  letterLayoutId?: LetterLayoutId
+  letterLayoutId?: LetterLayoutId,
+  /** Job url of the AI generation this export belongs to; the backend records the template on it. */
+  generationJobUrl?: string
 ): Promise<string> {
   try {
     if (!text || text.trim().length === 0) {
@@ -188,27 +208,31 @@ export async function exportPDF(
     const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
     // See exportDOCX: the contact profile is a header fallback, not the source of truth.
     const contact = await api.contactProfile.get().catch(() => undefined);
-    const filePath = await api.documents.exportAndSave({
-      text: exportText,
-      format: 'pdf',
-      documentType: type,
-      templateId,
-      atsMode,
-      locale,
-      // Per-export document accent (6-hex) — see exportDOCX.
-      accent,
-      // Cover-letter layout — see exportDOCX.
-      letterLayoutId,
-      contact,
-      meta: meta
-        ? {
-            candidateName: meta.candidateName,
-            jobTitle: meta.jobTitle,
-            companyName: meta.companyName,
-            targetLanguage: meta.targetLanguage,
-          }
-        : undefined,
-    });
+    const filePath = await saveExport(
+      api,
+      {
+        text: exportText,
+        format: 'pdf',
+        documentType: type,
+        templateId,
+        atsMode,
+        locale,
+        // Per-export document accent (6-hex) — see exportDOCX.
+        accent,
+        // Cover-letter layout — see exportDOCX.
+        letterLayoutId,
+        contact,
+        meta: meta
+          ? {
+              candidateName: meta.candidateName,
+              jobTitle: meta.jobTitle,
+              companyName: meta.companyName,
+              targetLanguage: meta.targetLanguage,
+            }
+          : undefined,
+      },
+      generationJobUrl
+    );
     console.warn('[export] done', { format: 'pdf', type });
     return filePath;
   } catch (error) {

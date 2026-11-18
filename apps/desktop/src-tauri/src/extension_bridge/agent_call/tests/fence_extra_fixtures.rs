@@ -130,6 +130,7 @@ fn ai_generation_record_struct_fixture_fences_the_posting_derived_fields() {
         email_body: "Jane's own AI-drafted email body.".to_string(),
         application_id: Some("app-1".to_string()),
         quality_report: "{}".to_string(),
+        last_export_template: None,
     };
     let mut data = serde_json::to_value(&record).unwrap();
     fence_scraped_fields(&mut data);
