@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794917150686,
+  "lastUpdate": 1794976571033,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "f336aee29da2093700de054c75e2dbed99bef6c5",
-          "message": "fix: move the nsis installMode guard inside the hook macros (#1089)\n\nThe guard added in #1088 aborted every Windows bundle, so the Release\nworkflow failed on main. Tauri's generated installer.nsi does\n`!include \"<hooks file>\"` about ten lines BEFORE `!define INSTALLMODE`, so at\nfile-scope include time the symbol is undefined. NSIS leaves an undefined\n${SYMBOL} as literal text, which is never equal to \"currentUser\", so the\n!error fired unconditionally:\n\n  !error: windows/hooks.nsh hardcodes HKCU for the per-user PATH ...\n  Error in script installer.nsi -- aborting creation process\n  failed to bundle project: `Failed to bundle app with makensis`\n\nBoth the local verification and the security review missed it because their\nharnesses defined INSTALLMODE BEFORE including the hook file -- the reverse\nof the real ordering. The guard was the one part of that change never\nexercised against the real generated script, and it is the part that broke.\n\nThe check now lives inside both macros, which expand at their insertion\npoints inside the install and uninstall sections, far below the define,\nwhere the value is real. The reason is recorded at the top of the file so\nnobody moves it back.\n\nVerified with a harness that includes the hook BEFORE defining INSTALLMODE,\nmatching the real template. The control matters more than the fix: the\npre-fix file reproduces the exact CI error under that harness, the fixed\nfile compiles, and flipping the harness to perMachine still aborts, so the\nguard kept its purpose rather than being defanged.\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
-          "timestamp": "2026-09-01T20:52:01+02:00",
-          "tree_id": "349fe779e4aa93190174ec786fe51c504380e45e",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/f336aee29da2093700de054c75e2dbed99bef6c5"
-        },
-        "date": 1788289446029,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2195028,
-            "range": "± 10895",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2594370,
-            "range": "± 22819",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 308844,
-            "range": "± 7980",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4193,6 +4151,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 210593,
             "range": "± 8926",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0f933cb9930ab10dbd89aa2de1dd6e33ff7c2266",
+          "message": "test(eval): truthful cover-letter negatives and a macos release note (#1536)\n\n* test(eval): add truthful cover-letter negatives for voice warning fp\n\nFive authored truthful letters (en + de), written independently of the voice\nchecks, measure the false-positive rate of the voice.* warnings under the\nexisting warning budget.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* ci(release): add macos unsigned-app note to release notes\n\nA short \"macOS says it's damaged\" note with the xattr and homebrew commands,\nin tilde fences so the unquoted heredoc never executes them and github shows\ncopy buttons.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-18T05:18:28+01:00",
+          "tree_id": "7ea9448739c1e04ceffba3016ce76d43d95f2c33",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/0f933cb9930ab10dbd89aa2de1dd6e33ff7c2266"
+        },
+        "date": 1794976570174,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1337829,
+            "range": "± 102653",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 1561834,
+            "range": "± 8628",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 152322,
+            "range": "± 2136",
             "unit": "ns/iter"
           }
         ]
