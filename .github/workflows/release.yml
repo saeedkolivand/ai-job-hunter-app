@@ -181,7 +181,10 @@ jobs:
             arch_suffix: apple-silicon
 
     runs-on: ${{ matrix.platform }}
-    timeout-minutes: 60
+    # Cold Rust caches (a Cargo.lock change) push the cross-compiled Intel mac
+    # build to ~55 min, and the post-step cache saves then hit a 60-min cap
+    # after every asset had already uploaded (v0.163.0). Warm builds take ~15.
+    timeout-minutes: 90
     # Uploads installer assets to the GitHub Release (softprops/action-gh-release).
     permissions:
       contents: write
