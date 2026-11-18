@@ -429,3 +429,9 @@ criterion = "0.8.2"
 [[bench]]
 name = "export_render"
 harness = false
+
+# docx-rs 0.4.22 (its latest release) pins zip 8, which carries read-side
+# advisories. Upstream main has moved to zip 9 but not released it; pin that
+# exact commit so only zip 9 is built. Remove when a docx-rs release ships zip 9.
+[patch.crates-io]
+docx-rs = { git = "https://github.com/bokuweb/docx-rs", rev = "3b959fa73e6ea78a3c96ab50416407b2c3b8fa7a" }
