@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794980440092,
+  "lastUpdate": 1794995235368,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "c01e7eaf7a81cbc801498ee40ce1480f6e56924d",
-          "message": "docs: make the ai rigour visible where a reviewer actually reads (#1091)\n\n* docs: make the ai rigour visible where a reviewer actually reads\n\nThe repo already contained a deterministic validator taxonomy with a measured\nfalse-positive budget, evidence grounding that drops any quote not literally\nin the source, a fabrication gate that refuses to save rather than save with\na flag, untrusted-text fencing, and an offline eval harness in CI. None of it\nwas visible on the surfaces a reviewer reads first: the README had zero\noccurrences of recall, precision, false-positive or eval harness, and\ndocs/knowledge covered the provider layer but not the generation pipeline.\n\nAdds a README section that lets a reader answer, without installing, how the\noutput is known to be true and how the checks are known to work -- the\nharness stated as properties (every planted defect recalled at its claimed\nseverity, zero Criticals on truthful documents, Warning false positives held\nto a named budget, CI-enforced) rather than as numbers, and a candour\nparagraph on what is not measured. The fencing bullet is written around the\nprinciple -- anything the user did not type is fenced, including the model's\nown earlier output -- with scraped job ads as the example, since that is\nwhere an attacker has a foothold.\n\nAdds docs/knowledge/generation-domain.md, the missing domain page, and\nregisters it. Every number that would drift is a pointer to its owning\nsymbol; a first draft pasted a stage count, a repair-round cap, a call count\nand a candidate cap, and each was replaced with the constant that owns it.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: say on the landing what the app does, not just how the repo is built\n\nThe landing's only AI-shaped page documents the .claude development agent\nfleet -- how this repo is built -- and a reader takes it for the product's\nAI. A note at the top of /agent-system now says which it is and points at\n/how-it-works for the product's own pipeline. It reuses the page's existing\naccent tokens and the same callout shape /how-it-works already has, rather\nthan a new style.\n\nThe /how-it-works interview cheat-sheet gains entries a reviewer would ask,\neach answered from the source with file paths and no numbers that drift: how\nthe model is stopped from inventing experience, how the checks are known to\nwork (the harness, stated as properties), what happens when it is not sure,\nhow prompt injection from scraped ads is handled, what is deliberately not\nmeasured, and whether the job search is actually semantic -- answered exactly\nas ADR-039 does. The landing is not localized, so these are plain strings.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* test: measure which synonym pairs the lexical arm misses, and that the pool does not bridge them\n\nA deterministic table over a frozen copy of the keyword kernel's synonym\npairs: for each, one posting containing only the alias, queried with the\ncanonical, against a real FTS5 index. Under rusqlite's bundled build, 22 of\n24 pairs are lexical misses; the two hits are react.js and vue.js, because\nunicode61 splits on the dot and a bare-word query already matches. The count\nand the exact hit set are asserted as literals, not derived from each other.\n\nA second row per pair adds a distractor containing the canonical term and\nasserts the alias posting is absent from the dense candidate pool, so the\nmiss is not bridged once keyword search finds anything -- the policy ADR-039\nstates.\n\nThis measures two things and its header says so: the lexical arm's\nno-synonym behaviour, and the pool policy. It does not measure retrieval\nquality and it does not measure the embedding model; a proposal to do that\nwas rejected as unsound and the header records why. The pairs are a frozen\ncopy with a drift guard against the live table rather than an import of it,\nbecause that table is scoring data pinned to the match-formula version and\nan eval-motivated edit must never silently change ATS scoring.\n\nOne honest limit: dense_candidate_pool is private to its module, so the\nsecond row mirrors its lexical-hits branch rather than calling it, with the\nmirror cited to the source line and the in-crate unit test that pins the\nbranch named. Mutation-checked by making one alias resolve in the sanitiser:\nthe count dropped to 21 and the assertion failed.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: keep the adr filename on one line in the cheat-sheet\n\nA template literal broke the ADR-039 filename across a line inside a\n`.path` span. `white-space: nowrap` stops wrapping but still collapses the\nembedded newline to a space, so the page rendered `adr-039-hybrid-\npostings-…` with a spurious space inside the identifier -- not the\ncopy-pasteable path it is meant to be. Review caught it from the CSS spec\nrather than a render; the fix is the filename on one line.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: point the grounding link at the right file, and scope the critical claim honestly\n\nTwo external-review findings on the README and one on the landing.\n\nThe README linked `evidence::ground` to documents/evidence/mod.rs, which is\nthe scoring kernel's evidence ranking and defines no such function. The\ngrounding step lives at pipeline/resume/stages/evidence.rs; the link now\npoints there. Also fixes a typo the typos check did not catch.\n\nThe cheat-sheet said every Critical the content validator raises is a\ncomparison against the résumé text. That is the shape of the factual\nCriticals, but not of language_mismatch, header_in_body or\ntemplate_placeholder, which are structural rules. The property the code\nactually guarantees -- and the one worth claiming -- is that every Critical\nis deterministic: a comparison or a structural rule the code runs with no\nmodel in the loop. It now says that.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: strip the last drift-prone literals from the generation-domain page\n\nThird pass on a page that is meant to be a thin pointer. External review\nfound what two internal passes had reported clean: the company-research\nfence cap as a number, module-doc references by line number, an eight-entry\nnumbered stage list with per-stage prose, a per-module validator enumeration,\nand the eval harness's assertions restated in full. Each is now the symbol\nthat owns it -- buildCompanyResearchBlock, the module doc by name,\nQUALITY_STAGES with the stages as a plain ordered list, CONTENT_ISSUE_CODES,\nand tests/eval.rs for its own assertions.\n\nAlso repoints the grounding section at pipeline/resume/stages/evidence.rs,\nwhere ground() actually lives -- documents/evidence/ is the scoring kernel's\nevidence ranking, a different thing -- and shortens the Eval heading so the\nin-page fragment link resolves.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* test: assert the pool policy against the real function, not a mirror\n\nExternal review graded the mirrored candidate-pool logic in the lexical-gap\ntable as Major, and the in-repo test audit reached the same conclusion with\nthe fix: the in-crate test module already has access to the private\ndense_candidate_pool, so the pool half of the measurement belongs there.\n\nThe mixed-corpus assertion -- an alias-only posting is absent from the pool\nonce a distractor contains the canonical term -- now lives in\ncommands/hybrid_search/test.rs and calls the real function with real rows.\nMutation-checked by making the pool return the whole eligible set: the new\ntest failed on the first pair, and so did the existing ordering test, which\nis how a load-bearing mutation should look. The mirror is deleted.\n\nThe integration test keeps only the lexical half and its header now says\nso: it measures which pairs BM25 misses on this corpus, still 22 of 24 with\nthe same two dot-split hits, and points at the in-crate test for the pool.\nPer-row results are collected before any assertion, so the diagnostic table\nprints even when a row errors -- the audit's one advisory.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n---------\n\nCo-authored-by: Claude Fable 5.1 <noreply@anthropic.com>",
-          "timestamp": "2026-09-02T02:27:24+02:00",
-          "tree_id": "1aee121471b198b0a096268dcfbf17f50bfdc360",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/c01e7eaf7a81cbc801498ee40ce1480f6e56924d"
-        },
-        "date": 1788309544552,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2207096,
-            "range": "± 19950",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2659041,
-            "range": "± 27429",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 256917,
-            "range": "± 6651",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4193,6 +4151,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 250253,
             "range": "± 4023",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f5a4d0cd0ac0f779acf88b1f91fb6d0647da98c3",
+          "message": "feat(export): strict ats view of every exported resume (#1538)\n\n* feat(export): strict ats view of every exported resume\n\nEvery PDF/DOCX resume export now returns an AtsView read from the text the\nreadback already extracts: contact fields, recognised section headings,\nper-role title/company/dates (en/de/es/fr/it/pt/nl date formats) and\nsingle-column reading order, each found, missing or suspicious with a reason.\nAdvisory only, never blocks. export_ats_view re-reads a previously exported\nlocal absolute path (size, extension and canonical-path guards, bounded\nparsing); it is UI-only for agents (policy NotExposed). The auto-fix re-render\nreturns the view of the re-rendered file.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* feat(ui): \"what an ats sees\" panel after every resume export\n\nA collapsed panel shows N of M fields found, with each field's status and\nreason, after a PDF/DOCX resume export in Documents, AI Generate, Tailor and\nthe Resume Builder; it never shows for TXT or cover letters and clears when a\nnew resume export starts. en + de copy.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* docs(export): ats view glossary term and knowledge pointers\n\nCONTEXT.md defines the ATS view; resume-domain points at validate::ats_view\nand the AtsView contract; agent-cli notes export_ats_view stays UI-only;\narchitecture-status gains a strict ATS view row.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(export): read day-first dates and dot-separated roles in the ats view\n\nRange points start only at a full date token, DD.MM.YYYY and DD/MM/YYYY parse\nas month + year, and an invalid token stays unparseable instead of falling back\nto a bare year. A mid-line middle dot is a separator, so \"Title · Company ·\nDates\" lines yield a role. On Windows a symlink or junction anywhere in the\npath is refused before canonicalize can reach a remote target. Timing guards\nuse a CI-safe ceiling.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(ui): ignore a superseded resume export's ats view path\n\nEach resume export takes a ticket; only the latest one may set or clear the\npath, so a slow PDF export resolving after a newer TXT export no longer brings\nthe panel back. The Documents card now uses the same hook.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(export): check the ats view path for links from the root down\n\nLeaf-first, the first symlink_metadata call already traversed any linked\ndirectory above the file before that directory was checked.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(export): keep month names out of words and refuse fifos without blocking\n\nA range point may not follow a word character, so \"Omar 2020 - 2021\" keeps\ncompany Omar and start 2020. A non-regular file is refused by stat before the\nopen, so a FIFO named .pdf can no longer block the read on Unix.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-18T10:21:51+01:00",
+          "tree_id": "e7502c473f047dc9f0c9a88d91d3cd02860431c0",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/f5a4d0cd0ac0f779acf88b1f91fb6d0647da98c3"
+        },
+        "date": 1794995233866,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2286619,
+            "range": "± 23089",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2796280,
+            "range": "± 40633",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 248869,
+            "range": "± 2860",
             "unit": "ns/iter"
           }
         ]
