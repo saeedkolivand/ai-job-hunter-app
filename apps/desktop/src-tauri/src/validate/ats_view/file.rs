@@ -58,10 +58,15 @@ pub fn ats_view_for_file(path: &str) -> AppResult<AtsView> {
     // ponytail: Windows-only. A local symlink/junction aimed at a UNC share would make
     // canonicalize connect out (NTLM leak) before any later check. `is_symlink` covers
     // symlinks and junctions but not OneDrive placeholders. Unix is exempt: macOS
-    // `/var` and `/tmp` are symlinks.
+    // `/var` and `/tmp` are symlinks. Root first: each lookup then only traverses
+    // components already shown to be real (leaf-first would resolve a link while
+    // checking a path beneath it).
     #[cfg(windows)]
     if raw
         .ancestors()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
         .any(|a| std::fs::symlink_metadata(a).is_ok_and(|m| m.file_type().is_symlink()))
     {
         return Err(bad("invalid path"));
