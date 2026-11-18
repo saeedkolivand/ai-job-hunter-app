@@ -2341,15 +2341,16 @@ exportDocument(req: BaseExportRequest): Promise<{
 #### `documents.exportAndSave`
 
 ```ts
-exportAndSave(req: BaseExportRequest, generationJobUrl?: string): Promise<string>;
+exportAndSave(req: BaseExportRequest, generationId?: string): Promise<string>;
 ```
 
 Render, ask the user where to save, and write the file; resolves to the saved path.
-`generationJobUrl` (optional) names the job whose AI generation is being exported:
-once the file is saved, that generation remembers the template used, which feeds
-the template grouping of `insights.outcomes`. Omit it for an export that belongs
-to no generation. Recording the template is best-effort bookkeeping: a successful
-save does not guarantee the template was recorded (no generation, a store error).
+`generationId` (optional) is the id of the `ai_generations` record whose export this
+is: once a PDF/DOCX is saved, that record remembers the template used, which feeds the
+template grouping of `insights.outcomes`. Recording is best-effort bookkeeping: a plain
+text (TXT) export never records and leaves any existing template unchanged, and an
+unknown or deleted id records nothing. A successful save does not guarantee the
+template was recorded. Omit it for an export that belongs to no generation.
 
 #### `documents.renderPreviewImages`
 

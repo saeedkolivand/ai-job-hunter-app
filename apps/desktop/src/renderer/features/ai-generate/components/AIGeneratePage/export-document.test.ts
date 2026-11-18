@@ -1,5 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
+
+import { exportDOCX, exportPDF, exportTXT } from '@/lib/generate';
 
 import {
   exportActiveDocument,
@@ -65,5 +67,42 @@ describe('useActiveDocumentExport', () => {
     const cover = renderHook(() => useActiveDocumentExport(state('cover'), false));
     await act(() => cover.result.current.doExport('pdf'));
     expect(cover.result.current.atsViewPath).toBeNull();
+  });
+});
+
+describe('useActiveDocumentExport — generation id', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // exporter(text, name, type, meta, templateId, atsMode, locale, accent, letterLayoutId, generationId)
+  it.each([
+    ['pdf', exportPDF],
+    ['docx', exportDOCX],
+  ] as const)(
+    'passes the saved generation id as the final %s exporter argument',
+    async (fmt, exporter) => {
+      const { result } = renderHook(() =>
+        useActiveDocumentExport(state('resume'), false, 'gen-42')
+      );
+      await act(() => result.current.doExport(fmt));
+      expect(exporter).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(exporter).mock.calls[0]?.[9]).toBe('gen-42');
+    }
+  );
+
+  it('passes no id when the save failed (none captured)', async () => {
+    const { result } = renderHook(() => useActiveDocumentExport(state('resume'), false));
+    await act(() => result.current.doExport('pdf'));
+    expect(vi.mocked(exportPDF).mock.calls[0]?.[9]).toBeUndefined();
+  });
+
+  it('TXT and blocked exports call neither PDF nor DOCX exporter', async () => {
+    const open = renderHook(() => useActiveDocumentExport(state('resume'), false, 'gen-42'));
+    await act(() => open.result.current.doExport('txt'));
+    const blocked = renderHook(() => useActiveDocumentExport(state('resume'), true, 'gen-42'));
+    await act(() => blocked.result.current.doExport('pdf'));
+    await act(() => blocked.result.current.doExport('docx'));
+    expect(exportPDF).not.toHaveBeenCalled();
+    expect(exportDOCX).not.toHaveBeenCalled();
+    expect(exportTXT).toHaveBeenCalledTimes(1);
   });
 });

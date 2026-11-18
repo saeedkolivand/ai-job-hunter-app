@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import { exportPDF, GEN, GenerationCard, mockNotify } from './test-render';
+import { exportAndSave, GEN, GenerationCard, mockNotify } from './test-render';
 
 // ── Cover-letter export locale (fix/letter-export-contract) ──────────────────
 //
@@ -14,8 +14,8 @@ import { exportPDF, GEN, GenerationCard, mockNotify } from './test-render';
 
 describe('GenerationCard — cover-letter export locale', () => {
   beforeEach(() => {
-    exportPDF.mockClear();
-    exportPDF.mockResolvedValue('/out/letter.pdf');
+    exportAndSave.mockReset();
+    exportAndSave.mockResolvedValue('/out/letter.pdf');
   });
 
   /** Export lives in the 3-dots overflow menu → the composed ExportPicker's
@@ -30,11 +30,12 @@ describe('GenerationCard — cover-letter export locale', () => {
     openExportModal();
     fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportCoverLetter' }));
 
-    await waitFor(() => expect(exportPDF).toHaveBeenCalledTimes(1));
-    // Market 'de' (arg 7) + the job url (arg 10), so the backend records the export template.
-    const args = exportPDF.mock.calls[0];
-    expect(args?.[6]).toBe('de');
-    expect(args?.[9]).toBe(GEN.jobUrl);
+    await waitFor(() => expect(exportAndSave).toHaveBeenCalledTimes(1));
+    // The resolved market reaches the request; the generation's id (never its job
+    // url) is the second argument, so the backend records the export template on it.
+    const [request, generationId] = exportAndSave.mock.calls[0] ?? [];
+    expect(request).toMatchObject({ locale: 'de', documentType: 'cover-letter', format: 'pdf' });
+    expect(generationId).toBe(GEN.id);
   });
 
   it('shows the ATS view for a saved résumé but not for a cover letter', async () => {
@@ -43,7 +44,7 @@ describe('GenerationCard — cover-letter export locale', () => {
     expect(screen.queryByTestId('ats-panel')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportCoverLetter' }));
-    await waitFor(() => expect(exportPDF).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(exportAndSave).toHaveBeenCalledTimes(1));
     expect(screen.queryByTestId('ats-panel')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportResume' }));
@@ -51,26 +52,26 @@ describe('GenerationCard — cover-letter export locale', () => {
   });
 
   it('keeps the résumé panel when a cover letter is exported afterwards', async () => {
-    exportPDF.mockResolvedValueOnce('/out/cv.pdf').mockResolvedValueOnce('/out/letter.pdf');
+    exportAndSave.mockResolvedValueOnce('/out/cv.pdf').mockResolvedValueOnce('/out/letter.pdf');
     render(<GenerationCard gen={GEN} />);
     openExportModal();
     fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportResume' }));
     expect(await screen.findByTestId('ats-panel')).toHaveTextContent('/out/cv.pdf');
 
     fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportCoverLetter' }));
-    await waitFor(() => expect(exportPDF).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(exportAndSave).toHaveBeenCalledTimes(2));
     expect(screen.getByTestId('ats-panel')).toHaveTextContent('/out/cv.pdf');
   });
 
   it('leaves no panel when a résumé re-export is rejected', async () => {
-    exportPDF.mockResolvedValueOnce('/out/cv.pdf').mockRejectedValueOnce(new Error('blocked'));
+    exportAndSave.mockResolvedValueOnce('/out/cv.pdf').mockRejectedValueOnce(new Error('blocked'));
     render(<GenerationCard gen={GEN} />);
     openExportModal();
     fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportResume' }));
     expect(await screen.findByTestId('ats-panel')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportResume' }));
-    await waitFor(() => expect(exportPDF).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(exportAndSave).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByTestId('ats-panel')).not.toBeInTheDocument());
   });
 
@@ -79,8 +80,9 @@ describe('GenerationCard — cover-letter export locale', () => {
     openExportModal();
     fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportResume' }));
 
-    await waitFor(() => expect(exportPDF).toHaveBeenCalledTimes(1));
-    expect(exportPDF.mock.calls[0]?.[6]).toBeUndefined();
+    await waitFor(() => expect(exportAndSave).toHaveBeenCalledTimes(1));
+    expect(exportAndSave.mock.calls[0]?.[0].locale).toBeUndefined();
+    expect(exportAndSave.mock.calls[0]?.[1]).toBe(GEN.id);
   });
 });
 
@@ -89,11 +91,11 @@ describe('GenerationCard — cover-letter export locale', () => {
 describe('GenerationCard — export failure', () => {
   beforeEach(() => {
     mockNotify.error.mockClear();
-    exportPDF.mockReset();
+    exportAndSave.mockReset();
   });
 
   it('shows a toast instead of dropping a rejected export on the floor', async () => {
-    exportPDF.mockRejectedValueOnce(new Error('Export blocked: too many pages.'));
+    exportAndSave.mockRejectedValueOnce(new Error('Export blocked: too many pages.'));
     render(<GenerationCard gen={GEN} />);
 
     // Export lives in the 3-dots overflow menu, then the composed ExportPicker's
@@ -104,7 +106,7 @@ describe('GenerationCard — export failure', () => {
 
     await waitFor(() =>
       expect(mockNotify.error).toHaveBeenCalledWith({
-        message: 'Export blocked: too many pages.',
+        message: 'Failed to export PDF: Export blocked: too many pages.',
       })
     );
   });

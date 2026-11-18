@@ -26,8 +26,6 @@ interface Params {
   atsMode: boolean;
   accent?: string;
   letterLayoutId?: LetterLayoutId;
-  /** The job this generation is for — the backend records the export template on it. */
-  jobUrl?: string;
 }
 
 /** Copy-to-clipboard and export of the document currently on screen. */
@@ -40,7 +38,6 @@ export function useTailorOutputActions({
   atsMode,
   accent,
   letterLayoutId,
-  jobUrl,
 }: Params) {
   const { t } = useTranslation();
   const notify = useNotification();
@@ -83,8 +80,10 @@ export function useTailorOutputActions({
           atsMode,
           market,
           accent,
-          letterLayoutId,
-          jobUrl
+          letterLayoutId
+          // No generation id on purpose: a pipeline run exposes none (its record is
+          // merged per job url and the id is never returned), and the export template
+          // is recorded by generation id only — never by job url.
         );
       });
     } catch (err) {

@@ -37,6 +37,12 @@ interface AIGenerateSlice {
    */
   jobUrl?: string;
   board?: string;
+  /**
+   * Id of the `ai_generations` record saved for the CURRENT output; export records
+   * its template on it. Set after the save resolves, cleared when a run starts and
+   * on reset — never derived from `jobUrl`, which a later import can change.
+   */
+  generationId?: string;
   stage: AIGenerateStage;
   meta: GenerationMeta | null;
   mode: GenerationMode;

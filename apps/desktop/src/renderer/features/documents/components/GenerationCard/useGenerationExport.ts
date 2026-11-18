@@ -21,8 +21,8 @@ interface UseGenerationExportArgs {
   meta: GenerationExportMeta;
   resumeDraft: string;
   coverDraft: string;
-  /** The generation's job url — the backend records the export template on it. */
-  jobUrl: string;
+  /** Id of the generation being exported — the backend records the export template on it. */
+  generationId: string;
 }
 
 /** Export picker state plus the per-document export action for one generation card. */
@@ -30,7 +30,7 @@ export function useGenerationExport({
   meta,
   resumeDraft,
   coverDraft,
-  jobUrl,
+  generationId,
 }: UseGenerationExportArgs) {
   const { t } = useTranslation();
   const notify = useNotification();
@@ -80,7 +80,7 @@ export function useGenerationExport({
           coverLetterLocale,
           accent,
           undefined,
-          jobUrl
+          generationId
         );
       });
     } catch (err) {

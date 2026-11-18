@@ -34,8 +34,8 @@ export async function exportActiveDocument(
   }: ExportDocumentState,
   fmt: 'pdf' | 'docx' | 'txt',
   track: TrackResumeExport,
-  /** The generation's job url — the backend records the export template on it. */
-  jobUrl?: string
+  /** Id of the saved generation this output belongs to — the backend records the export template on it. */
+  generationId?: string
 ): Promise<void> {
   const text = activeOut === 'resume' ? resumeOut : coverOut;
   if (!text) return;
@@ -79,7 +79,7 @@ export async function exportActiveDocument(
       exportLocale,
       accent,
       letterLayoutId,
-      jobUrl
+      generationId
     );
   });
 }
@@ -88,11 +88,11 @@ export async function exportActiveDocument(
 export function useActiveDocumentExport(
   state: ExportDocumentState,
   blocked: boolean,
-  jobUrl?: string
+  generationId?: string
 ) {
   const { path, track } = useResumeExportPath();
   const doExport = async (fmt: 'pdf' | 'docx' | 'txt') => {
-    if (!blocked) await exportActiveDocument(state, fmt, track, jobUrl);
+    if (!blocked) await exportActiveDocument(state, fmt, track, generationId);
   };
   return { atsViewPath: path, doExport };
 }
